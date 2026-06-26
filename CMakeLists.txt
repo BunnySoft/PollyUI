@@ -1,22 +1,57 @@
 cmake_minimum_required(VERSION 3.25)
 
-# C now; CXX is added later when the Skia shim (skia_c.cpp) lands (see DESIGN.md §3).
-project(PollyUI LANGUAGES C)
+# C for the engine; CXX only for the Skia shim, skia_c.cpp (DESIGN.md §3).
+project(PollyUI LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
+set(CMAKE_CXX_STANDARD 17)            # Skia requires C++17
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Match the prebuilt Skia (Release, STATIC CRT /MT) so the CRT / iterator-debug
+# levels agree across the link.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
+# --- Skia (aseprite/skia m124 prebuilt) --------------------------------------
+set(SKIA_ROOT    ${CMAKE_SOURCE_DIR}/third_party/skia)
+set(SKIA_LIB_DIR ${SKIA_ROOT}/out/Release-x64)
+
 add_executable(pollyui
     src/main.c
     src/host/win32/window.c
+    src/render/skia_c.cpp
 )
 
-# `src` is the include root, so headers are included as "host/win32/window.h" etc.
-target_include_directories(pollyui PRIVATE src)
+# `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
+# Skia's root-relative includes (e.g. "include/core/SkSurface.h").
+target_include_directories(pollyui PRIVATE src ${SKIA_ROOT})
+
+# skia.lib is self-contained: it bundles its own zlib (Cr_z_-prefixed), libpng,
+# freetype, harfbuzz, icu, etc. The sibling component libs are redundant alternate
+# builds that reference an UNprefixed zlib and only cause link conflicts, so we
+# link skia.lib alone. Add specific siblings only if a real symbol is missing.
+set(SKIA_LIBS skia)
+foreach(lib ${SKIA_LIBS})
+    target_link_libraries(pollyui PRIVATE ${SKIA_LIB_DIR}/${lib}.lib)
+endforeach()
+
+# Skia's bundled zlib exports Cr_z_-prefixed names, but its bundled libpng calls
+# the unprefixed zlib entry points. They are the same functions, so alias the
+# unprefixed references onto the Cr_z_ definitions at link time (lld /alternatename).
+if (MSVC)
+    target_link_options(pollyui PRIVATE
+        "/alternatename:inflate=Cr_z_inflate"
+        "/alternatename:inflateInit2_=Cr_z_inflateInit2_"
+        "/alternatename:inflateEnd=Cr_z_inflateEnd"
+        "/alternatename:inflateReset=Cr_z_inflateReset")
+endif()
 
 if (WIN32)
     target_compile_definitions(pollyui PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-    target_link_libraries(pollyui PRIVATE user32 gdi32)
+    # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
+    target_link_libraries(pollyui PRIVATE
+        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite)
 endif()
