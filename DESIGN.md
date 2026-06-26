@@ -86,38 +86,51 @@ Its job: create the window, obtain a drawable GPU surface for Skia, pump the OS
 event loop, and translate native input into framework events. It is also where
 "app lifecycle" lives (start, vsync tick, resize, close).
 
-It is **not** a separate "bridge". The bridge (Script↔Model) is portable C++ and
+It is **not** a separate "bridge". The bridge (Script↔Model) is portable C and
 lives in `src/bridge`. Mixing "host" and "bridge" is a common confusion — we
 keep them separate: Host = *platform*, Bridge = *language boundary*.
 
-### Language: **C++ (C++17/20)** — recommended. Here is the reasoning vs your options.
+### Language: **C (C11)** — chosen. Reasoning vs the alternatives.
 
-- **QuickJS is C, Skia is C++, Yoga is C++.** The entire dependency surface is
-  C/C++. Any other host language means writing and maintaining FFI bindings to
-  three nontrivial native libraries — that's a permanent tax for zero benefit.
-- **C++ vs C:** C would work and gives the cleanest ABI, but you'd hand-roll
-  vtables/RAII/containers that Skia and the DOM tree want anyway. C++ gives
-  RAII for GPU/JS handles (huge for correctness), `std::` containers for the
-  node tree, and zero-overhead calls into Skia/Yoga. We still expose a **C ABI
-  at the script-binding boundary** so the Model stays bindable from other
-  languages — best of both.
-- **C++ vs Pascal (FreePascal/Lazarus):** Pascal is a fine language, but for
-  *this* stack it's the worst fit: you'd write FFI shims for QuickJS, Skia, and
-  Yoga by hand, the community/tooling for GPU+Skia work is thin, and you lose
-  direct use of Skia's C++ API (Skia's C API is limited). Pascal makes sense
-  only if the team's existing expertise is Delphi/Lazarus and that outweighs
-  everything above. It can still be a *consumer* of our C ABI later.
+Selection criteria (in priority order): **readability, runtime performance,
+long-term maintainability / a stable language standard.** C++ was rejected
+specifically for dialect sprawl (C++11/14/17/20/23, multiple idioms for every
+task) — a permanent maintenance tax — despite minimizing glue.
 
-**Verdict:** Host + all engines in **C++**, with a deliberate **C-style ABI**
-only at the QuickJS binding seam. Ranking for this project: **C++ (1) > C (2) >
-Pascal (3)**.
+- **QuickJS is C, Yoga has a first-class C API, Skia is C++.** Two of the three
+  libraries are used natively from C with zero binding layer. Only Skia needs
+  glue (see below).
+- **Why C wins for our criteria:** one obvious way to write things (readable),
+  identical codegen/performance to C++, and a standard (C11/C17) that has been
+  stable for a decade and doesn't move under us. QuickJS and Skia are
+  themselves proof that C-style code reaches top-tier performance.
+- **The cost — Skia:** Skia has no first-class C API, so we write **one thin
+  `extern "C"` C++ shim** (`src/render/skia_c.cpp`) exposing just the draw calls
+  we need. It is the *only* `.cpp` in the tree; everything else (host, model,
+  bridge, layout, script) is plain C. The maintained C++ surface is near zero.
+  (Alternative: the third-party `sk4d` C API → no C++ at all, at the cost of
+  Skia's C-API ceiling. We start with our own shim for full control.)
+- **Manual memory:** the lifetime-heavy bridge (§6) is managed the way QuickJS
+  itself is — intrusive refcounts, single-owner trees, arena/pool allocators
+  for transients. The Model uses tagged structs (`NodeType` + union) instead of
+  class inheritance — arguably more readable than a class hierarchy.
+- **vs Pascal:** also stable/readable and Skia4Delphi exists, but it needs a
+  binding layer for *all three* libs (mature for Skia, community for QuickJS,
+  hand-rolled for Yoga) vs C's two-of-three native. Stays a viable alternative
+  if the team is Delphi/Lazarus-strong.
+- **vs Rust/Zig:** rejected for our criteria — Rust adds borrow-checker
+  ceremony (against "readable"); Zig is pre-1.0 and still changing (against
+  "stable standard").
+
+**Verdict:** Host + all engines in **C11**, with a single isolated `extern "C"`
+C++ Skia shim. Ranking for these criteria: **C (1) > Pascal (2) > C++ (3)**.
 
 ---
 
 ## 4. The Model (DOM) — the heart of the bridge
 
-The Model is the shared retained tree. One `Node` base, specialized into
-`Document`, `Element`, and `TextNode`.
+The Model is the shared retained tree. One `Node` struct tagged by `NodeType`
+(`DOCUMENT`, `ELEMENT`, `TEXT`) — a tagged union, not a class hierarchy.
 
 ```
 Node
