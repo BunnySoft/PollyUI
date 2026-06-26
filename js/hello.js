@@ -12,7 +12,7 @@ card.style.backgroundColor = '#3b82f6';
 root.appendChild(card);
 
 const label = document.createElement('text');
-label.textContent = 'Hello, Quill';
+label.textContent = 'Hello, PollyUI';
 label.style.color = 'white';
 card.appendChild(label);
 

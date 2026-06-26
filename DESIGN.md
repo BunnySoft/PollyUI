@@ -1,8 +1,7 @@
-# Quill — Design
+# PollyUI — Design
 
-> Working name. A cross-platform UI framework: write UI in JavaScript, lay it
-> out with Flexbox, render it with Skia, run it natively on Windows, macOS, and
-> Linux.
+> A cross-platform UI framework: write UI in JavaScript, lay it out with
+> Flexbox, render it with Skia, run it natively on Windows, macOS, and Linux.
 
 Status: **design / pre-implementation**. This document is the contract we agree
 on before writing the engine. It will evolve, but the layering and the
@@ -163,7 +162,7 @@ box.style.backgroundColor = '#3b82f6';
 box.style.padding = 8;
 
 const label = document.createElement('text');
-label.textContent = 'Hello Quill';
+label.textContent = 'Hello PollyUI';
 label.style.color = 'white';
 
 box.appendChild(label);
@@ -254,19 +253,20 @@ registered as methods — this is the documented C ABI seam from §3.
 | Dep | Role | Acquisition |
 |---|---|---|
 | **QuickJS-ng** | JS engine | **Vendored** in `third_party/quickjs` (handful of C files; trivial to build). Maintained fork of Bellard's QuickJS. |
-| **Yoga** | Flexbox | CMake `FetchContent` from facebook/yoga (small C++). |
-| **Skia** | 2D GPU renderer | **Prebuilt binaries** via a `tools/fetch_skia.*` script (e.g. JetBrains skia-pack / google prebuilts). Building Skia from source needs depot_tools/GN and is slow — we avoid it for app devs. |
+| **Yoga** | Flexbox | CMake `FetchContent` from facebook/yoga. Used via its **first-class C API** (`YGNode*`) — no binding layer. |
+| **Skia** | 2D GPU renderer | **Prebuilt binaries** via a `tools/fetch_skia.*` script (e.g. JetBrains skia-pack / google prebuilts). Building from source needs depot_tools/GN and is slow — avoided. Driven through **our own `extern "C"` shim** (`src/render/skia_c.cpp`, the sole `.cpp` in the tree) compiled against Skia's headers — see §3. |
 | **Platform** | window/GPU | OS SDKs: Win32 + ANGLE/OpenGL (Windows); Cocoa + Metal (macOS); X11/Wayland + GL (Linux). |
 
-Build system: **CMake** (≥3.24) with presets per platform. Skia is the only
-heavyweight; everything else builds from a clean checkout.
+Build system: **CMake** (≥3.24) with presets per platform. Language: **C11**
+for everything except `skia_c.cpp` (C++, the Skia shim). Skia is the only
+heavyweight dependency; everything else builds from a clean checkout.
 
 ---
 
 ## 9. Repo layout
 
 ```
-quill/
+pollyui/
 ├─ CMakeLists.txt          # top-level build
 ├─ CMakePresets.json       # win/mac/linux presets
 ├─ DESIGN.md               # this file
@@ -276,16 +276,16 @@ quill/
 ├─ tools/                  # fetch_skia, dev scripts
 ├─ third_party/            # vendored quickjs (+ fetched yoga/skia at build)
 ├─ src/
-│  ├─ core/                # App, frame loop, geometry, Color, Result types
+│  ├─ core/                # app, frame loop, geometry, color, result types (.c/.h)
 │  ├─ host/                # HostEngine (platform)
 │  │  ├─ win32/            # MVP target
 │  │  ├─ mac/  linux/      # later
-│  ├─ render/              # Skia backend: surface, display list, painter
-│  ├─ layout/              # Yoga integration, Style→Yoga mapping
-│  ├─ model/               # Node, Element, TextNode, Document, Style
+│  ├─ render/              # Skia backend: skia_c.cpp shim (C++) + painter (.c)
+│  ├─ layout/              # Yoga integration (C API), style→Yoga mapping
+│  ├─ model/               # node (tagged union), document, style
 │  ├─ script/              # QuickJS VM wrapper, console, timers, rAF
 │  ├─ bridge/              # JSClassID defs, wrapper cache, qjs_* bindings
-│  └─ main.cpp             # wires Host + Script + Model + Render
+│  └─ main.c               # wires Host + Script + Model + Render
 ├─ js/                     # example apps (hello.js, flex-demo.js)
 └─ tests/                  # unit tests (layout, model, bridge)
 ```
@@ -316,12 +316,21 @@ multi-window; JS-on-own-thread; accessibility; images; gradients/shadows.
 
 ---
 
-## 11. Open decisions (to confirm as we build)
+## 11. Decisions
 
-1. **GPU backend on Windows:** ANGLE (GLES→D3D, portable, Skia-friendly) vs
-   native D3D vs raster-only for M0. *Leaning ANGLE/GL for cross-platform Skia
-   parity; raster fallback for first light.*
-2. **Skia source:** which prebuilt distribution to standardize on.
+Confirmed:
+
+- **Host language:** C11; single `extern "C"` C++ Skia shim (§3).
+- **Skia seam:** our own shim (not `sk4d`) for full Skia API access.
+- **M0 render path:** **raster first** — CPU `SkSurface` blitted to the window,
+  no GPU-context glue — then add the ANGLE/GL GPU backend immediately after.
+  Separates windowing from GPU so the first pixel is cheap.
+- **Project name:** **PollyUI**.
+
+Still open (confirm as we build):
+
+1. **Windows GPU backend (post-raster):** ANGLE (GLES→D3D, portable,
+   Skia-friendly) vs native D3D. *Leaning ANGLE/GL for cross-platform parity.*
+2. **Skia prebuilt distribution:** which one to standardize on.
 3. **Style value types:** numbers as px; strings for `'auto'`/percent/colors —
    confirm the coercion rules.
-4. **Project name:** "Quill" is a placeholder.

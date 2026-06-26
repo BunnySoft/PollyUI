@@ -1,4 +1,4 @@
-# Quill
+# PollyUI
 
 A cross-platform UI framework: write your UI in **JavaScript**, lay it out with
 **Flexbox**, render it with **Skia**, and run it as a native app on **Windows,
@@ -14,7 +14,7 @@ document.body.appendChild(box);
 
 ## Architecture
 
-Quill is built from five cooperating engines:
+PollyUI is built from five cooperating engines (host & engines in **C11**):
 
 - **ScriptEngine** — [QuickJS](https://github.com/quickjs-ng/quickjs) runs your JS.
 - **Model (DOM)** — a retained, DOM-like node tree exposed to JS; the shared
