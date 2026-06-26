@@ -7,10 +7,15 @@
  * and run a minimal event loop (promise microtasks + setTimeout) to completion.
  * The DOM bindings (Model bridge) arrive in M2. */
 
+#include "quickjs.h"
+
 typedef struct PuScript PuScript;
 
 /* Create a script VM with console + timers registered. NULL on failure. */
 PuScript *pu_script_create(void);
+
+/* The underlying QuickJS context (e.g. to install the DOM bridge). */
+JSContext *pu_script_jsctx(PuScript *s);
 
 /* Destroy the VM and free all resources. Safe with NULL. */
 void pu_script_destroy(PuScript *s);

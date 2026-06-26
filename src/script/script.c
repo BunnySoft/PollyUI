@@ -164,6 +164,11 @@ static void pu_register_globals(PuScript *s)
     JS_FreeValue(ctx, global);
 }
 
+JSContext *pu_script_jsctx(PuScript *s)
+{
+    return s ? s->ctx : NULL;
+}
+
 PuScript *pu_script_create(void)
 {
     PuScript *s = (PuScript *)calloc(1, sizeof(PuScript));

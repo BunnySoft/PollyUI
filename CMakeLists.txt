@@ -30,6 +30,8 @@ add_executable(pollyui
     src/host/win32/window.c
     src/render/skia_c.cpp
     src/script/script.c
+    src/model/node.c
+    src/bridge/bridge.c
 )
 
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
