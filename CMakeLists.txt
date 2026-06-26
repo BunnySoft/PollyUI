@@ -18,15 +18,27 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 set(SKIA_ROOT    ${CMAKE_SOURCE_DIR}/third_party/skia)
 set(SKIA_LIB_DIR ${SKIA_ROOT}/out/Release-x64)
 
+# --- QuickJS (quickjs-ng v0.15.1, vendored) ----------------------------------
+# Build only the `qjs` library; EXCLUDE_FROM_ALL keeps its CLI/tests out of the
+# build (they compile only if referenced, which they aren't).
+set(QJS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/quickjs EXCLUDE_FROM_ALL)
+
 add_executable(pollyui
     src/main.c
     src/host/win32/window.c
     src/render/skia_c.cpp
+    src/script/script.c
 )
 
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
-# Skia's root-relative includes (e.g. "include/core/SkSurface.h").
-target_include_directories(pollyui PRIVATE src ${SKIA_ROOT})
+# Skia's root-relative includes (e.g. "include/core/SkSurface.h"); quickjs for
+# "quickjs.h".
+target_include_directories(pollyui PRIVATE src ${SKIA_ROOT} ${CMAKE_SOURCE_DIR}/third_party/quickjs)
+
+# ScriptEngine.
+target_link_libraries(pollyui PRIVATE qjs)
 
 # skia.lib is self-contained: it bundles its own zlib (Cr_z_-prefixed), libpng,
 # freetype, harfbuzz, icu, etc. The sibling component libs are redundant alternate

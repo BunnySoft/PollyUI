@@ -28,12 +28,29 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 ## Status
 
-🚧 Pre-implementation. Design is in `DESIGN.md`; the engine is built in
-milestones (M0…M6) starting with a Windows-first vertical slice.
+🚧 Early development (Windows-first vertical slice). Working so far:
+
+- **M0** — Win32 window rendered by a Skia raster surface.
+- **M1** — embedded QuickJS: runs a `.js` file with `console`, timers, promises.
+
+Next: **M2** wires the DOM Model so JS can build a node tree. See `DESIGN.md` §10.
 
 ## Building
 
-> Not buildable yet — scaffold only. CMake + presets land with milestone M0.
+Windows, with CMake ≥ 3.25, Ninja, and LLVM/clang-cl (against an installed
+MSVC + Windows SDK).
+
+```powershell
+./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
+./tools/build.ps1          # configure + build (sets up the MSVC env)
+./tools/build.ps1 -Run     # build then open the window (M0)
+
+# run a script (M1):
+./build/win-clang/pollyui.exe js/m1.js
+```
+
+QuickJS (quickjs-ng) is vendored under `third_party/quickjs`; Skia is fetched by
+the script above.
 
 ## License
 
