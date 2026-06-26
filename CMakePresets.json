@@ -1,0 +1,21 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "win-clang",
+      "displayName": "Windows — clang-cl + Ninja + lld",
+      "description": "Uses LLVM clang-cl with the installed MSVC SDK. Run inside the MSVC env (tools/build.ps1 sets it up).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/win-clang",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_LINKER_TYPE": "LLD",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "win-clang", "configurePreset": "win-clang" }
+  ]
+}
