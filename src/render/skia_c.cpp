@@ -370,6 +370,16 @@ void pu_surface_translate(PuSurface *s, float dx, float dy) {
     s->surface->getCanvas()->translate(dx, dy);
 }
 
+void pu_surface_rotate(PuSurface *s, float degrees) {
+    if (!s || !s->surface) return;
+    s->surface->getCanvas()->rotate(degrees);
+}
+
+void pu_surface_scale(PuSurface *s, float sx, float sy) {
+    if (!s || !s->surface) return;
+    s->surface->getCanvas()->scale(sx, sy);
+}
+
 void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
                               float radius, int horizontal,
                               uint8_t r0, uint8_t g0, uint8_t b0, uint8_t a0,

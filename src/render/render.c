@@ -122,6 +122,23 @@ static void render_node(PuSurface *s, PuNode *n)
     int layered = (opacity < 1.0f);
     if (layered) pu_surface_save_layer_alpha(s, opacity);
 
+    /* transform: rotate/scale/translate about the element's center. Affects the
+     * element and its subtree (paint only; hit-testing stays on the layout box). */
+    float rot = style_num(n, "rotate", 0);
+    float scl = style_num(n, "scale", 1);
+    float tx  = style_num(n, "translateX", 0);
+    float ty  = style_num(n, "translateY", 0);
+    int xf = (rot != 0 || scl != 1 || tx != 0 || ty != 0);
+    if (xf) {
+        float cx = x + w / 2, cy = y + h / 2;
+        pu_surface_save(s);
+        pu_surface_translate(s, cx, cy);
+        if (rot != 0) pu_surface_rotate(s, rot);
+        if (scl != 1) pu_surface_scale(s, scl, scl);
+        if (tx != 0 || ty != 0) pu_surface_translate(s, tx, ty);
+        pu_surface_translate(s, -cx, -cy);
+    }
+
     const char *sc = pu_style_get(&n->style, "shadowColor");
     if (sc && parse_color(sc, &r, &g, &b, &a) && a > 0) {
         pu_surface_shadow(s, x, y, w, h, radius,
@@ -165,6 +182,7 @@ static void render_node(PuSurface *s, PuNode *n)
     if (bw > 0 && bc && parse_color(bc, &r, &g, &b, &a) && a > 0)
         pu_surface_stroke_rrect(s, x, y, w, h, radius, bw, r, g, b, a);
 
+    if (xf) pu_surface_restore(s);
     if (layered) pu_surface_restore(s);
 }
 

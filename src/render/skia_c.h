@@ -69,6 +69,8 @@ void pu_surface_restore(PuSurface *s);
 void pu_surface_save(PuSurface *s);
 void pu_surface_clip_rrect(PuSurface *s, float x, float y, float w, float h, float radius);
 void pu_surface_translate(PuSurface *s, float dx, float dy);
+void pu_surface_rotate(PuSurface *s, float degrees);
+void pu_surface_scale(PuSurface *s, float sx, float sy);
 
 /* Fill a (rounded) rect with a two-stop linear gradient. horizontal != 0 runs
  * left->right; otherwise top->bottom. */
