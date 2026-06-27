@@ -290,6 +290,38 @@ JSContext *pu_script_jsctx(PuScript *s)
     return s ? s->ctx : NULL;
 }
 
+static char *pu_read_file(const char *path, size_t *out_len);
+
+/* ES module support: names resolve relative to the working directory (identity
+ * normalize), and each module is compiled from its file on demand. */
+static char *pu_module_normalize(JSContext *ctx, const char *base_name,
+                                 const char *name, void *opaque)
+{
+    (void)base_name; (void)opaque;
+    size_t n = strlen(name) + 1;
+    char *p = (char *)js_malloc(ctx, n);
+    if (p) memcpy(p, name, n);
+    return p;
+}
+
+static JSModuleDef *pu_module_loader(JSContext *ctx, const char *module_name, void *opaque)
+{
+    (void)opaque;
+    size_t len = 0;
+    char *buf = pu_read_file(module_name, &len);
+    if (!buf) {
+        JS_ThrowReferenceError(ctx, "could not load module '%s'", module_name);
+        return NULL;
+    }
+    JSValue func = JS_Eval(ctx, buf, len, module_name,
+                           JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+    free(buf);
+    if (JS_IsException(func)) return NULL;
+    JSModuleDef *m = (JSModuleDef *)JS_VALUE_GET_PTR(func);
+    JS_FreeValue(ctx, func);
+    return m;
+}
+
 PuScript *pu_script_create(void)
 {
     PuScript *s = (PuScript *)calloc(1, sizeof(PuScript));
@@ -301,6 +333,7 @@ PuScript *pu_script_create(void)
     if (!s->ctx) { JS_FreeRuntime(s->rt); free(s); return NULL; }
 
     JS_SetContextOpaque(s->ctx, s);
+    JS_SetModuleLoaderFunc(s->rt, pu_module_normalize, pu_module_loader, NULL);
     pu_register_globals(s);
     return s;
 }
@@ -330,7 +363,12 @@ int pu_script_run_file(PuScript *s, const char *path)
         fprintf(stderr, "pollyui: cannot read script '%s'\n", path);
         return 1;
     }
-    JSValue val = JS_Eval(s->ctx, src, len, path, JS_EVAL_TYPE_GLOBAL);
+    /* `.mjs` runs as an ES module (import/export); `.js` stays a global script. */
+    size_t plen = strlen(path);
+    int is_module = plen >= 4 && strcmp(path + plen - 4, ".mjs") == 0;
+    int eval_flags = is_module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
+
+    JSValue val = JS_Eval(s->ctx, src, len, path, eval_flags);
     free(src);
     if (JS_IsException(val)) {
         pu_dump_error(s->ctx);
