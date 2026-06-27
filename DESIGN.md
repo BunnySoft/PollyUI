@@ -306,70 +306,68 @@ pollyui/
 
 ## 10. Status — implemented vs planned
 
-The Windows-first vertical slice is **complete and working**. Every feature
-below is committed with a runnable demo (`js/*.js`) and, where logic can be
-checked deterministically, a headless test (`tests/*.js`, run via
-`pollyui --test`).
+The Windows-first vertical slice is **complete and working**. Features are
+committed with runnable demos (`js/*.js`) and deterministic headless tests
+(`tests/*.js`, run via `pollyui --test`) — **101 assertions** at present.
+
+The full, row-by-row matrix lives in **[ROADMAP.md](./ROADMAP.md)**; this is the
+narrative summary.
 
 ### Implemented ✅
 
-**Engines & pipeline**
-- **HostEngine (Win32):** window, OS event loop, resize; per-monitor-v2 **DPI
-  awareness** (author in logical px, render crisp at physical); `WM_DPICHANGED`.
-- **ScriptEngine (QuickJS-ng):** runs `.js` files; `console.*`, `setTimeout`/
-  `clearTimeout`, promises/microtasks; error reporting; a non-blocking event
-  pump + a blocking run-loop, both async-aware.
-- **Model (DOM):** retained `PuNode` tree (document/element/text); refcounted
-  lifetimes (§6); string style map; computed layout fields.
-- **Bridge:** `document.createElement`/`createTextNode`/`body`, `el.style.*`
-  (exotic object), `appendChild`/`removeChild`/`insertBefore`, parent/child/
-  sibling/`childNodes`/`nodeType`/`tagName`/`textContent`; weak **wrapper cache**
-  with GC finalizers and verified-correct lifetimes; `measureText()`.
-- **LayoutEngine (Yoga):** Flexbox — `flexDirection`, `flexGrow`, `flexWrap`,
-  `justifyContent`, `alignItems`, `width`/`height` (px/%/auto), per-edge
-  `padding`/`margin`, and `position: absolute` + `top/left/right/bottom`
-  (overlapping views).
-- **RenderEngine (Skia):** rect fills, **text** (DirectWrite default font,
-  measured into layout, inherited `fontSize`/`color`), color parsing
-  (`#rgb`/`#rrggbb[aa]`/names), logical→physical scaling.
+**Engines & pipeline** — Win32 host (window/loop/resize, per-monitor-v2 **DPI**,
+`WM_DPICHANGED`); **QuickJS-ng** script engine; retained refcounted **DOM**;
+**Bridge** with a weak wrapper cache + GC finalizers; **Yoga** Flexbox; **Skia**
+renderer; async-aware event loop.
 
-**Rendering backend**
-- **GPU: Skia Ganesh → ANGLE → Direct3D 11** (the standard Windows path; works
-  without native GL). **Raster (CPU)** fallback + `StretchDIBits` when ANGLE is
-  unavailable; headless test mode always uses raster.
+**Paint (Skia)** — rect/rounded-rect fills, **borders**, **border-radius**,
+blurred **box shadows**, linear **gradients**, **images** (cached, scaled,
+clipped), **opacity** (subtree layers), **transforms** (rotate/scale/translate
+about center), **clipping** (`overflow:hidden`) and **scrolling**
+(`overflow:scroll`/`auto` + wheel). **Text** with DirectWrite, inherited
+`fontSize`/`color`, **bold/italic** weight, **multi-line** (`\n`), and a
+**blinking, movable caret**.
 
-**Interaction**
-- **Mouse:** hit-testing against computed layout + `addEventListener('click')`
-  with DOM-style **bubbling**; click-to-focus.
-- **Keyboard + focus:** `tabIndex` focusability, `keydown` (DOM key names),
-  **Tab** cycling, `focus`/`blur`, `el.focus()`/`blur()`,
-  `document.activeElement`; a **text field with a blinking, movable caret**.
+**Rendering backend** — **GPU: Skia Ganesh → ANGLE → Direct3D 11** (works
+without native GL); **raster (CPU)** + `StretchDIBits` fallback (headless tests
+always use raster).
 
-**Concurrency (UI thread + work threads)**
-- **`Worker`** — separate QuickJS context per thread, `postMessage`/`onmessage`
-  (JSON); **`computeAsync(n, cb)`** — native background compute, callback
-  marshaled to the UI thread. A UI-thread **dispatcher** (the `BeginInvoke`
-  mechanism) keeps the loop alive while async work is outstanding.
+**Layout** — `flexDirection`/`Grow`/`Shrink`/`Basis`/`Wrap`,
+`justify`/`align`(`Items`/`Self`/`Content`), `gap`, `width`/`height` +
+`min`/`max` (px/%/auto), per-edge `padding`/`margin`, `position:absolute`,
+`display:none`.
 
-**Tooling**
-- **Headless test API** (`pollyui --test t.js`): in-process `host.render/click/
-  key/pixel/save` — deterministic UI tests, no window or OS input.
-- Windowed (no-console) **release build** (`PU_WINDOWED`); in-process
-  symbolized **crash handler** (DbgHelp). CMake + Ninja + clang-cl; Skia fetched,
-  QuickJS/Yoga vendored, ANGLE staged from an installed browser.
+**DOM** — create/append/remove/insert, tree accessors, `textContent`;
+`setAttribute`/`getAttribute`/`has`/`remove`, `id`/`className`/`classList`,
+`getElementById`/`querySelector(All)` (`#id`/`.class`/tag/`*`), `scrollTop`/
+`scrollLeft`, `measureText()`.
+
+**Events** — click/`mousedown`/`up`/`move`, `mouseenter`/`leave` hover, `wheel`,
+`keydown`/`keyup`, `focus`/`blur`; **bubbling** with `stopPropagation`/
+`stopImmediatePropagation`/`preventDefault`; `tabIndex` + **Tab** focus cycling.
+
+**Runtime** — `console.*`, `setTimeout`/`setInterval`, promises/microtasks,
+**`requestAnimationFrame`**, **ES modules** (`.mjs` `import`/`export`), and
+**`localStorage`** (file-backed, survives restarts).
+
+**Concurrency** — **`Worker`** (per-thread QuickJS, JSON messages),
+**`computeAsync`** (native background compute), and a UI-thread **dispatcher**
+(the `BeginInvoke` mechanism) that keeps the loop alive while async is pending.
+
+**Tooling** — headless test API (`render`/`click`/`mouse`/`scroll`/`key`/`pixel`/
+`save`); no-console release build (`PU_WINDOWED`); symbolized **crash handler**;
+CMake + Ninja + clang-cl.
 
 ### Planned 🛠
 
-- **M6 — macOS / Linux host ports.** Cocoa/Metal and X11/Wayland windowing +
-  ANGLE-or-native GL. Everything above the Host layer is already portable.
-- **`requestAnimationFrame`** + an animation API (now cheap on the GPU).
-- **Text selection** + click-to-position caret (text hit-testing); **IME** for
-  CJK/emoji composition.
-- **Accessibility** — a semantic tree mapped to UI Automation / AT-SPI.
-- **More style/paint:** borders, border-radius, gradients, shadows, images,
-  `gap`, transforms/clipping, scrolling/overflow.
-- **A React-style reconciler** layered on the DOM API (optional, in JS).
-- **Perf (as needed):** persist + dirty-track the Yoga tree; multi-window.
+- **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
+  the last big architectural piece; everything above Host is already portable.
+- **Text:** word-wrap to width, `text-align`, selection + click-to-caret, **IME**.
+- **Declarative animation** (transitions/tweens + easing) on top of rAF.
+- **A CSS-ish stylesheet + selector layer** (styling is imperative today).
+- **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
+- **Networking** (`fetch`), **a React-style reconciler** (JS), **perf**
+  (persist + dirty-track the Yoga tree, multi-window).
 
 ### Deferred ⏸
 
