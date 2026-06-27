@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Runtime for releasing listener callbacks at node-free time (JS_FreeValueRT
+ * needs only the runtime, not a context). Set by the bridge. */
+static JSRuntime *g_rt;
+void pu_node_set_runtime(JSRuntime *rt) { g_rt = rt; }
+
 static char *pu_strdup(const char *s)
 {
     if (!s) return NULL;
@@ -88,6 +93,11 @@ static void pu_node_free(PuNode *n)
         pu_node_unref(c);
         c = next;
     }
+    for (int i = 0; i < n->listener_count; i++) {
+        free(n->listeners[i].type);
+        if (g_rt) JS_FreeValueRT(g_rt, n->listeners[i].func);
+    }
+    free(n->listeners);
     free(n->tag);
     free(n->text);
     pu_style_free(&n->style);
@@ -163,6 +173,52 @@ void pu_node_set_text(PuNode *n, const char *text)
     if (!nt && text) return;
     free(n->text);
     n->text = nt;
+}
+
+/* ---- events ----------------------------------------------------------------*/
+
+void pu_node_add_listener(PuNode *n, const char *type, JSValue func)
+{
+    if (n->listener_count == n->listener_cap) {
+        int ncap = n->listener_cap ? n->listener_cap * 2 : 4;
+        PuListener *l = (PuListener *)realloc(n->listeners, (size_t)ncap * sizeof(PuListener));
+        if (!l) { if (g_rt) JS_FreeValueRT(g_rt, func); return; }
+        n->listeners = l;
+        n->listener_cap = ncap;
+    }
+    n->listeners[n->listener_count].type = pu_strdup(type);
+    n->listeners[n->listener_count].func = func; /* takes ownership */
+    n->listener_count++;
+}
+
+void pu_node_remove_listener(PuNode *n, const char *type, JSValueConst func)
+{
+    for (int i = 0; i < n->listener_count; i++) {
+        if (strcmp(n->listeners[i].type, type) == 0 &&
+            JS_VALUE_GET_PTR(n->listeners[i].func) == JS_VALUE_GET_PTR(func)) {
+            free(n->listeners[i].type);
+            if (g_rt) JS_FreeValueRT(g_rt, n->listeners[i].func);
+            memmove(&n->listeners[i], &n->listeners[i + 1],
+                    (size_t)(n->listener_count - i - 1) * sizeof(PuListener));
+            n->listener_count--;
+            return;
+        }
+    }
+}
+
+PuNode *pu_node_hit_test(PuNode *n, float x, float y)
+{
+    if (!n || n->type != PU_NODE_ELEMENT) return NULL;
+    if (x < n->layout_x || y < n->layout_y ||
+        x >= n->layout_x + n->layout_w || y >= n->layout_y + n->layout_h)
+        return NULL;
+
+    /* Children paint in order, so the last one is topmost — test it first. */
+    for (PuNode *c = n->last_child; c; c = c->prev_sibling) {
+        PuNode *hit = pu_node_hit_test(c, x, y);
+        if (hit) return hit;
+    }
+    return n;
 }
 
 /* ---- debug -----------------------------------------------------------------*/

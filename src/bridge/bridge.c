@@ -1,6 +1,7 @@
 #include "bridge/bridge.h"
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -253,6 +254,65 @@ static JSValue js_node_set_textContent(JSContext *ctx, JSValueConst this_val, JS
     return JS_UNDEFINED;
 }
 
+/* ---- events ----------------------------------------------------------------*/
+
+static JSValue js_node_addEventListener(JSContext *ctx, JSValueConst this_val,
+                                        int argc, JSValueConst *argv)
+{
+    PuNode *self = self_node(this_val);
+    if (!self || argc < 2 || !JS_IsFunction(ctx, argv[1]))
+        return JS_ThrowTypeError(ctx, "addEventListener(type, fn)");
+    const char *type = JS_ToCString(ctx, argv[0]);
+    if (!type) return JS_EXCEPTION;
+    pu_node_add_listener(self, type, JS_DupValue(ctx, argv[1]));
+    JS_FreeCString(ctx, type);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_removeEventListener(JSContext *ctx, JSValueConst this_val,
+                                           int argc, JSValueConst *argv)
+{
+    PuNode *self = self_node(this_val);
+    if (!self || argc < 2) return JS_UNDEFINED;
+    const char *type = JS_ToCString(ctx, argv[0]);
+    if (type) { pu_node_remove_listener(self, type, argv[1]); JS_FreeCString(ctx, type); }
+    return JS_UNDEFINED;
+}
+
+static void dispatch_report(JSContext *ctx)
+{
+    JSValue exc = JS_GetException(ctx);
+    const char *msg = JS_ToCString(ctx, exc);
+    fprintf(stderr, "Uncaught (in event listener) %s\n", msg ? msg : "error");
+    if (msg) JS_FreeCString(ctx, msg);
+    JS_FreeValue(ctx, exc);
+}
+
+void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
+{
+    if (!b || !target || !type) return;
+    JSContext *ctx = b->ctx;
+
+    for (PuNode *n = target; n; n = n->parent) {       /* bubble to the root */
+        for (int i = 0; i < n->listener_count; i++) {
+            if (strcmp(n->listeners[i].type, type) != 0) continue;
+
+            JSValue ev = JS_NewObject(ctx);
+            JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
+            JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
+            JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
+
+            JSValue self = pu_node_wrapper(ctx, n);
+            JSValue arg = ev;
+            JSValue r = JS_Call(ctx, n->listeners[i].func, self, 1, &arg);
+            if (JS_IsException(r)) dispatch_report(ctx);
+            JS_FreeValue(ctx, r);
+            JS_FreeValue(ctx, self);
+            JS_FreeValue(ctx, ev);
+        }
+    }
+}
+
 /* ---- document --------------------------------------------------------------*/
 
 static JSValue js_document_createElement(JSContext *ctx, JSValueConst this_val,
@@ -321,6 +381,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
 
     JSRuntime *rt = JS_GetRuntime(ctx);
     JS_SetRuntimeOpaque(rt, b);
+    pu_node_set_runtime(rt); /* so freed nodes can release their listeners */
 
     if (pu_node_class_id == 0)  JS_NewClassID(rt, &pu_node_class_id);
     if (pu_style_class_id == 0) JS_NewClassID(rt, &pu_style_class_id);
@@ -332,6 +393,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, node_proto, "appendChild",  js_node_appendChild,  1);
     def_method(ctx, node_proto, "removeChild",  js_node_removeChild,  1);
     def_method(ctx, node_proto, "insertBefore", js_node_insertBefore, 2);
+    def_method(ctx, node_proto, "addEventListener",    js_node_addEventListener,    2);
+    def_method(ctx, node_proto, "removeEventListener", js_node_removeEventListener, 2);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);
     def_get(ctx, node_proto, "parentNode",      js_node_get_parentNode);

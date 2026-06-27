@@ -14,12 +14,32 @@
  *                         Yoga and paint it in a window (M1 + M2 + M3)
  */
 
+/* Shared state for the window callbacks. */
+typedef struct PuApp {
+    PuScript *script;
+    PuBridge *bridge;
+} PuApp;
+
 /* Per-frame: lay out the DOM for the current window size, then paint it. */
 static void app_paint(PuSurface *surface, int width, int height, void *user)
 {
-    PuNode *body = (PuNode *)user;
+    PuApp *app = (PuApp *)user;
+    PuNode *body = pu_bridge_body(app->bridge);
     pu_layout_calculate(body, (float)width, (float)height);
     pu_render_tree(surface, body);
+}
+
+/* Click: hit-test against the last computed layout, dispatch to JS, then drain
+ * any microtasks the handler queued. The window repaints afterward. */
+static void app_pointer(int x, int y, PuPointerType type, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    if (type != PU_POINTER_CLICK) return;
+    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
+    if (target) {
+        pu_bridge_dispatch_event(app->bridge, target, "click");
+        pu_script_run_loop(app->script);
+    }
 }
 
 static int run_app(const char *path)
@@ -47,7 +67,9 @@ static int run_app(const char *path)
         cfg.height = 600;
         PuWindow *win = pu_window_create(&cfg);
         if (win) {
-            pu_window_set_paint(win, app_paint, body);
+            PuApp app = { s, bridge };
+            pu_window_set_paint(win, app_paint, &app);
+            pu_window_set_pointer(win, app_pointer, &app);
             pu_window_run(win);
             pu_window_destroy(win);
         }

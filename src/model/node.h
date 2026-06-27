@@ -32,6 +32,12 @@ typedef struct PuStyle {
     int          cap;
 } PuStyle;
 
+/* An event listener: an event type + a JS callback (strong ref, owned). */
+typedef struct PuListener {
+    char   *type;
+    JSValue func;
+} PuListener;
+
 typedef struct PuNode PuNode;
 struct PuNode {
     PuNodeType type;
@@ -53,10 +59,19 @@ struct PuNode {
     float layout_x, layout_y, layout_w, layout_h;
     void *yoga;              /* transient YGNodeRef during a layout pass */
 
+    /* Event listeners (DESIGN.md §6). */
+    PuListener *listeners;
+    int         listener_count;
+    int         listener_cap;
+
     /* Bridge wrappers — weak handles managed by bridge.c. */
     JSValue js_wrapper;  bool has_wrapper;
     JSValue js_style;    bool has_style;
 };
+
+/* The runtime used to release listener callbacks when a node is freed.
+ * Set once by the bridge at install time. */
+void pu_node_set_runtime(JSRuntime *rt);
 
 /* --- lifetime --- */
 PuNode *pu_node_new(PuNodeType type);
@@ -73,6 +88,14 @@ void    pu_node_insert_before(PuNode *parent, PuNode *child, PuNode *ref_node);
 void        pu_node_set_text(PuNode *n, const char *text);
 void        pu_style_set(PuStyle *s, const char *name, const char *value);
 const char *pu_style_get(const PuStyle *s, const char *name);
+
+/* --- events --- */
+/* Add a listener; takes ownership of `func` (caller must have duped it). */
+void    pu_node_add_listener(PuNode *n, const char *type, JSValue func);
+/* Remove the first listener matching (type, func). */
+void    pu_node_remove_listener(PuNode *n, const char *type, JSValueConst func);
+/* Topmost element whose computed box contains (x, y), or NULL. */
+PuNode *pu_node_hit_test(PuNode *root, float x, float y);
 
 /* --- debug --- */
 void    pu_node_dump(const PuNode *n, int depth);

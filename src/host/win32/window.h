@@ -20,11 +20,23 @@ typedef struct PuWindowConfig {
  * the HostEngine decoupled from the Model/Layout/Render layers. */
 typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, void *user);
 
+/* Pointer event types. */
+typedef enum PuPointerType {
+    PU_POINTER_CLICK = 0
+} PuPointerType;
+
+/* Pointer callback: a click at client-area (x, y). After it returns the window
+ * repaints (the handler may have mutated the DOM). */
+typedef void (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
+
 /* Create and show the window. Returns NULL on failure. */
 PuWindow *pu_window_create(const PuWindowConfig *cfg);
 
 /* Install the per-frame paint callback (and request a repaint). */
 void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
+
+/* Install the pointer (mouse) callback. */
+void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 
 /* Run the OS event loop until the window is closed.
  * Returns the process exit code (the WM_QUIT wParam). */

@@ -14,8 +14,10 @@ struct PuWindow {
     PuSurface *surface;      /* Skia raster surface, sized to the client area */
     int        width;
     int        height;
-    PuPaintFn  paint_fn;     /* optional per-frame draw callback */
-    void      *paint_user;
+    PuPaintFn   paint_fn;     /* optional per-frame draw callback */
+    void       *paint_user;
+    PuPointerFn pointer_fn;   /* optional mouse callback */
+    void       *pointer_user;
 };
 
 static const wchar_t *kClassName = L"PollyUIWindowClass";
@@ -72,6 +74,15 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             w->height = HIWORD(lp);
             pu_surface_resize(w->surface, w->width, w->height);
             InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+
+    case WM_LBUTTONUP:
+        if (w && w->pointer_fn) {
+            int x = (short)LOWORD(lp);
+            int y = (short)HIWORD(lp);
+            w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
+            InvalidateRect(hwnd, NULL, FALSE); /* handler may have changed the DOM */
         }
         return 0;
 
@@ -159,6 +170,13 @@ void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user)
     w->paint_fn = fn;
     w->paint_user = user;
     if (w->hwnd) InvalidateRect(w->hwnd, NULL, FALSE);
+}
+
+void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user)
+{
+    if (!w) return;
+    w->pointer_fn = fn;
+    w->pointer_user = user;
 }
 
 int pu_window_run(PuWindow *w)
