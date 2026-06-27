@@ -15,7 +15,7 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **179
+The headless test suite (`pollyui --test tests/<name>`) currently covers **206
 assertions** across rendering, layout, DOM, events, runtime, networking,
 persistence, and the JS framework layer (Vue reactivity + components).
 
@@ -170,11 +170,11 @@ persistence, and the JS framework layer (Vue reactivity + components).
 |---|---|---|
 | **Vue-style reactivity + Composition API** (`js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
 | **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
-| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | Button/Card/Input/Switch/Tag/Checkbox/Radio/Slider/Tabs/Progress/Alert/Modal + light & dark themes |
+| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | Button/Card/Input/Switch/Tag/Checkbox/Radio/Slider/Tabs/Progress/Alert/Modal/Select/Tooltip + portal layer, form validation, light & dark themes |
 | **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
 | **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
 | **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
-| More components (Select dropdown, Tooltip, DatePicker, Table…) | 🟡 | broad set done; long tail pending |
+| More components (DatePicker, Table, Pagination, Dropdown menu…) | 🟡 | broad set done; long tail pending |
 
 ## Accessibility
 
