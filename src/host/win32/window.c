@@ -31,7 +31,28 @@ struct PuWindow {
     void       *paint_user;
     PuPointerFn pointer_fn;   /* optional mouse callback */
     void       *pointer_user;
+    PuKeyFn     key_fn;       /* optional keyboard callback */
+    void       *key_user;
 };
+
+/* Map a non-character virtual key to a DOM key name, or NULL. */
+static const char *pu_vk_name(WPARAM vk)
+{
+    switch (vk) {
+    case VK_BACK:   return "Backspace";
+    case VK_RETURN: return "Enter";
+    case VK_TAB:    return "Tab";
+    case VK_ESCAPE: return "Escape";
+    case VK_DELETE: return "Delete";
+    case VK_LEFT:   return "ArrowLeft";
+    case VK_RIGHT:  return "ArrowRight";
+    case VK_UP:     return "ArrowUp";
+    case VK_DOWN:   return "ArrowDown";
+    case VK_HOME:   return "Home";
+    case VK_END:    return "End";
+    default:        return NULL;
+    }
+}
 
 static const wchar_t *kClassName = L"PollyUIWindowClass";
 
@@ -111,6 +132,28 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                          rc->right - rc->left, rc->bottom - rc->top,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+
+    case WM_KEYDOWN: {
+        const char *name = pu_vk_name(wp);
+        if (w && w->key_fn && name) {
+            w->key_fn(name, w->key_user);
+            InvalidateRect(hwnd, NULL, FALSE);
+            return 0;
+        }
+        break; /* character keys -> WM_CHAR via TranslateMessage */
+    }
+
+    case WM_CHAR:
+        if (w && w->key_fn) {
+            wchar_t c = (wchar_t)wp;
+            if (c >= 0x20 && c != 0x7F) { /* printable; control keys come via WM_KEYDOWN */
+                char utf8[8] = { 0 };
+                WideCharToMultiByte(CP_UTF8, 0, &c, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
+                w->key_fn(utf8, w->key_user);
+                InvalidateRect(hwnd, NULL, FALSE);
+            }
         }
         return 0;
 
@@ -214,6 +257,13 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user)
     if (!w) return;
     w->pointer_fn = fn;
     w->pointer_user = user;
+}
+
+void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user)
+{
+    if (!w) return;
+    w->key_fn = fn;
+    w->key_user = user;
 }
 
 int pu_window_run(PuWindow *w)

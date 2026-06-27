@@ -24,4 +24,13 @@ PuNode *pu_bridge_body(PuBridge *b);
  * matching listeners with an event object. */
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
 
+/* --- focus + keyboard --- */
+/* Move focus to `node` (NULL = blur), firing blur/focus events. */
+void    pu_bridge_set_focus(PuBridge *b, PuNode *node);
+PuNode *pu_bridge_focused(PuBridge *b);
+/* Advance focus to the next focusable (tabIndex >= 0) element in tree order. */
+void    pu_bridge_focus_next(PuBridge *b);
+/* Dispatch a keyboard event (with a `key` field) to the focused element. */
+void    pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key);
+
 #endif /* POLLYUI_BRIDGE_BRIDGE_H */

@@ -40,6 +40,11 @@ void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
 /* Install the pointer (mouse) callback. */
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 
+/* Key callback: `key` is a DOM-style key name ("a", "Enter", "Backspace",
+ * "Tab", "ArrowLeft", ...). Fired on key-down / character input. */
+typedef void (*PuKeyFn)(const char *key, void *user);
+void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
+
 /* Run the OS event loop until the window is closed.
  * Returns the process exit code (the WM_QUIT wParam). */
 int pu_window_run(PuWindow *w);

@@ -53,6 +53,7 @@ struct PuNode {
     char   *tag;             /* element tag name (owned); NULL otherwise */
     char   *text;            /* text content (owned) for text nodes */
     PuStyle style;           /* element style */
+    int     tab_index;       /* >= 0 -> focusable (keyboard); -1 default */
 
     /* Computed layout (absolute, in pixels) — written by the LayoutEngine,
      * read by the RenderEngine. */

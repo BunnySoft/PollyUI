@@ -12,6 +12,7 @@ static JSClassID pu_style_class_id;
 struct PuBridge {
     JSContext *ctx;
     PuNode    *body;
+    PuNode    *focused;   /* currently focused element, or NULL */
 };
 
 static char *pu_bstrdup(const char *s)
@@ -279,6 +280,43 @@ static JSValue js_node_removeEventListener(JSContext *ctx, JSValueConst this_val
     return JS_UNDEFINED;
 }
 
+static JSValue js_node_focus(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv)
+{
+    PuNode *self = self_node(this_val);
+    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    if (self && b) pu_bridge_set_focus(b, self);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_blur(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv)
+{
+    PuNode *self = self_node(this_val);
+    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    if (self && b && b->focused == self) pu_bridge_set_focus(b, NULL);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_get_tabIndex(JSContext *ctx, JSValueConst this_val)
+{
+    PuNode *s = self_node(this_val);
+    return JS_NewInt32(ctx, s ? s->tab_index : -1);
+}
+
+static JSValue js_node_set_tabIndex(JSContext *ctx, JSValueConst this_val, JSValueConst val)
+{
+    PuNode *s = self_node(this_val);
+    if (s) { int32_t t = -1; JS_ToInt32(ctx, &t, val); s->tab_index = t; }
+    return JS_UNDEFINED;
+}
+
+static JSValue js_document_get_activeElement(JSContext *ctx, JSValueConst this_val)
+{
+    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    return b ? pu_node_wrapper(ctx, b->focused) : JS_NULL;
+}
+
 static void dispatch_report(JSContext *ctx)
 {
     JSValue exc = JS_GetException(ctx);
@@ -288,7 +326,9 @@ static void dispatch_report(JSContext *ctx)
     JS_FreeValue(ctx, exc);
 }
 
-void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
+/* Bubble `type` from `target` to the root, invoking matching listeners with an
+ * event object. `key` (optional) is attached for keyboard events. */
+static void dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key)
 {
     if (!b || !target || !type) return;
     JSContext *ctx = b->ctx;
@@ -301,6 +341,7 @@ void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
             JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
             JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
             JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
+            if (key) JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key));
 
             JSValue self = pu_node_wrapper(ctx, n);
             JSValue arg = ev;
@@ -311,6 +352,56 @@ void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
             JS_FreeValue(ctx, ev);
         }
     }
+}
+
+void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
+{
+    dispatch_impl(b, target, type, NULL);
+}
+
+void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
+{
+    if (b && b->focused) dispatch_impl(b, b->focused, type, key);
+}
+
+PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
+
+void pu_bridge_set_focus(PuBridge *b, PuNode *node)
+{
+    if (!b || b->focused == node) return;
+
+    if (b->focused) {
+        PuNode *old = b->focused;
+        b->focused = NULL;
+        dispatch_impl(b, old, "blur", NULL);
+        pu_node_unref(old);           /* release the focus ref */
+    }
+    b->focused = node;
+    if (node) {
+        pu_node_ref(node);            /* keep the focused node alive */
+        dispatch_impl(b, node, "focus", NULL);
+    }
+}
+
+static void collect_focusable(PuNode *n, PuNode **arr, int *count, int cap)
+{
+    if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0 && *count < cap)
+        arr[(*count)++] = n;
+    for (PuNode *c = n->first_child; c; c = c->next_sibling)
+        collect_focusable(c, arr, count, cap);
+}
+
+void pu_bridge_focus_next(PuBridge *b)
+{
+    if (!b) return;
+    PuNode *arr[256];
+    int count = 0;
+    collect_focusable(b->body, arr, &count, 256);
+    if (count == 0) return;
+    int idx = -1;
+    for (int i = 0; i < count; i++)
+        if (arr[i] == b->focused) { idx = i; break; }
+    pu_bridge_set_focus(b, arr[(idx + 1) % count]);
 }
 
 /* ---- document --------------------------------------------------------------*/
@@ -395,6 +486,9 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, node_proto, "insertBefore", js_node_insertBefore, 2);
     def_method(ctx, node_proto, "addEventListener",    js_node_addEventListener,    2);
     def_method(ctx, node_proto, "removeEventListener", js_node_removeEventListener, 2);
+    def_method(ctx, node_proto, "focus", js_node_focus, 0);
+    def_method(ctx, node_proto, "blur",  js_node_blur,  0);
+    def_getset(ctx, node_proto, "tabIndex", js_node_get_tabIndex, js_node_set_tabIndex);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);
     def_get(ctx, node_proto, "parentNode",      js_node_get_parentNode);
@@ -421,6 +515,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, document, "createElement",  js_document_createElement,  1);
     def_method(ctx, document, "createTextNode", js_document_createTextNode, 1);
     def_get(ctx, document, "body", js_document_get_body);
+    def_get(ctx, document, "activeElement", js_document_get_activeElement);
     JS_SetPropertyStr(ctx, global, "document", document);
     JS_FreeValue(ctx, global);
 

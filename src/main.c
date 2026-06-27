@@ -39,10 +39,27 @@ static void app_pointer(int x, int y, PuPointerType type, void *user)
     PuApp *app = (PuApp *)user;
     if (type != PU_POINTER_CLICK) return;
     PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
-    if (target) {
+
+    /* Click-to-focus: focus the nearest focusable ancestor (or blur). */
+    PuNode *f = target;
+    while (f && f->tab_index < 0) f = f->parent;
+    pu_bridge_set_focus(app->bridge, f);
+
+    if (target)
         pu_bridge_dispatch_event(app->bridge, target, "click");
-        pu_script_run_loop(app->script);
-    }
+    pu_script_run_loop(app->script);
+}
+
+/* Keyboard: Tab cycles focus; other keys dispatch a keydown to the focused
+ * element. The window repaints afterward (the handler may mutate the DOM). */
+static void app_key(const char *key, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    if (strcmp(key, "Tab") == 0)
+        pu_bridge_focus_next(app->bridge);
+    else
+        pu_bridge_dispatch_key(app->bridge, "keydown", key);
+    pu_script_run_loop(app->script);
 }
 
 /* ---- headless test API (`pollyui --test t.js`) ----------------------------*/
@@ -81,12 +98,30 @@ static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
-    if (target) {
+
+    PuNode *f = target;
+    while (f && f->tab_index < 0) f = f->parent;
+    pu_bridge_set_focus(g_test->bridge, f); /* click-to-focus */
+
+    if (target)
         pu_bridge_dispatch_event(g_test->bridge, target, "click");
-        pu_script_run_loop(g_test->script);
-    }
+    pu_script_run_loop(g_test->script);
     test_render();
     return JS_NewBool(ctx, target != NULL);
+}
+
+static JSValue host_key(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    const char *key = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    if (key) {
+        if (strcmp(key, "Tab") == 0) pu_bridge_focus_next(g_test->bridge);
+        else                         pu_bridge_dispatch_key(g_test->bridge, "keydown", key);
+        JS_FreeCString(ctx, key);
+        pu_script_run_loop(g_test->script);
+        test_render();
+    }
+    return JS_UNDEFINED;
 }
 
 static JSValue host_pixel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
@@ -120,6 +155,7 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "height", JS_NewInt32(ctx, h));
     JS_SetPropertyStr(ctx, host, "render", JS_NewCFunction(ctx, host_render, "render", 0));
     JS_SetPropertyStr(ctx, host, "click",  JS_NewCFunction(ctx, host_click, "click", 2));
+    JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 1));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
     JS_SetPropertyStr(ctx, global, "host", host);
@@ -181,6 +217,7 @@ static int run_app(const char *path)
             PuApp app = { s, bridge };
             pu_window_set_paint(win, app_paint, &app);
             pu_window_set_pointer(win, app_pointer, &app);
+            pu_window_set_key(win, app_key, &app);
             pu_window_run(win);
             pu_window_destroy(win);
         }

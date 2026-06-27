@@ -72,6 +72,7 @@ PuNode *pu_node_new(PuNodeType type)
     if (!n) return NULL;
     n->type = type;
     n->ref = 0;
+    n->tab_index = -1; /* not focusable by default */
     n->js_wrapper = JS_UNDEFINED;
     n->js_style   = JS_UNDEFINED;
     return n;
