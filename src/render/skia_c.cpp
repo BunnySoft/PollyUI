@@ -427,55 +427,86 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
     return 1;
 }
 
+// Break text into display lines (honoring '\n', and word-wrapping to max_width
+// when > 0), calling emit(ctx, start, byteLen, lineWidth) for each one.
+static void wrap_text(const SkFont &font, const char *utf8, float max_width,
+                      void (*emit)(void *, const char *, size_t, float), void *ctx) {
+    auto mw = [&](const char *a, const char *b) {
+        return font.measureText(a, (size_t)(b - a), SkTextEncoding::kUTF8, nullptr);
+    };
+    const char *p = utf8 ? utf8 : "";
+    for (;;) {
+        const char *nl = strchr(p, '\n');
+        const char *end = nl ? nl : (p + strlen(p));
+        if (max_width <= 0) {
+            emit(ctx, p, (size_t)(end - p), mw(p, end));
+        } else {
+            const char *lineFrom = p, *prevWe = p, *w = p;
+            while (w < end) {
+                while (w < end && *w == ' ') w++;                 // skip spaces
+                const char *ws = w;
+                while (w < end && *w != ' ') w++;                 // word [ws, w)
+                if (ws == w) break;
+                if (mw(lineFrom, w) > max_width && ws != lineFrom) {
+                    emit(ctx, lineFrom, (size_t)(prevWe - lineFrom), mw(lineFrom, prevWe));
+                    lineFrom = ws;                                // wrap before this word
+                }
+                prevWe = w;
+            }
+            emit(ctx, lineFrom, (size_t)(prevWe - lineFrom), mw(lineFrom, prevWe));
+        }
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+
+struct WrapMeasure { float maxw; int lines; };
+static void emit_measure(void *c, const char *s, size_t n, float w) {
+    (void)s; (void)n;
+    WrapMeasure *m = (WrapMeasure *)c;
+    if (w > m->maxw) m->maxw = w;
+    m->lines++;
+}
+
+struct WrapDraw { SkCanvas *canvas; const SkFont *font; const SkPaint *paint;
+                  float x, y, lineH, ascent, alignW; int align; };
+static void emit_draw(void *c, const char *s, size_t n, float w) {
+    WrapDraw *d = (WrapDraw *)c;
+    float dx = (d->align == 1) ? (d->alignW - w) * 0.5f : (d->align == 2) ? (d->alignW - w) : 0.0f;
+    if (n > 0)
+        d->canvas->drawSimpleText(s, n, SkTextEncoding::kUTF8, d->x + dx, d->y - d->ascent,
+                                  *d->font, *d->paint);
+    d->y += d->lineH;
+}
+
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
-                     float *out_w, float *out_h) {
+                     float max_width, float *out_w, float *out_h) {
     SkFont font = make_font(font_size, weight, italic);
     SkFontMetrics m;
     font.getMetrics(&m);
     float line_h = m.fDescent - m.fAscent; // ascent is negative
 
-    float maxw = 0;
-    int lines = 0;
-    const char *p = utf8 ? utf8 : "";
-    for (;;) {                                   // measure each '\n'-separated line
-        const char *nl = strchr(p, '\n');
-        size_t len = nl ? (size_t)(nl - p) : strlen(p);
-        if (len > 0) {
-            float w = font.measureText(p, len, SkTextEncoding::kUTF8, nullptr);
-            if (w > maxw) maxw = w;
-        }
-        lines++;
-        if (!nl) break;
-        p = nl + 1;
-    }
-    if (out_w) *out_w = maxw;
-    if (out_h) *out_h = line_h * (lines < 1 ? 1 : lines);
+    WrapMeasure wm = { 0, 0 };
+    wrap_text(font, utf8, max_width, emit_measure, &wm);
+    if (out_w) *out_w = wm.maxw;
+    if (out_h) *out_h = line_h * (wm.lines < 1 ? 1 : wm.lines);
 }
 
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
                           float font_size, int weight, int italic,
+                          float max_width, int align, float align_width,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (!s || !s->surface || !utf8 || !*utf8) return;
     SkFont font = make_font(font_size, weight, italic);
     SkFontMetrics m;
     font.getMetrics(&m);
-    float line_h = m.fDescent - m.fAscent;
     SkPaint paint;
     paint.setColor(SkColorSetARGB(a, r, g, b));
     paint.setAntiAlias(true);
 
-    SkCanvas *canvas = s->surface->getCanvas();
-    const char *p = utf8;
-    float ly = y;
-    for (;;) {                                   // draw each line, advancing baseline
-        const char *nl = strchr(p, '\n');
-        size_t len = nl ? (size_t)(nl - p) : strlen(p);
-        if (len > 0)
-            canvas->drawSimpleText(p, len, SkTextEncoding::kUTF8, x, ly - m.fAscent, font, paint);
-        ly += line_h;
-        if (!nl) break;
-        p = nl + 1;
-    }
+    WrapDraw wd = { s->surface->getCanvas(), &font, &paint,
+                    x, y, m.fDescent - m.fAscent, m.fAscent, align_width, align };
+    wrap_text(font, utf8, max_width, emit_draw, &wd);
 }
 
 void pu_surface_set_scale(PuSurface *s, float scale) {

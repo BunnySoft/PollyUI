@@ -91,6 +91,16 @@ static int text_italic(const PuNode *n)
     return v && strcmp(v, "italic") == 0;
 }
 
+static int text_align(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "textAlign") : NULL;
+    if (!v) return 0;
+    if (strcmp(v, "center") == 0) return 1;
+    if (strcmp(v, "right") == 0)  return 2;
+    return 0;
+}
+
 static float style_num(const PuNode *n, const char *name, float def)
 {
     const char *v = pu_style_get(&n->style, name);
@@ -104,7 +114,8 @@ static void render_node(PuSurface *s, PuNode *n)
             uint8_t r, g, b, a;
             text_color(n, &r, &g, &b, &a);
             pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n),
-                                 text_font_weight(n), text_italic(n), r, g, b, a);
+                                 text_font_weight(n), text_italic(n),
+                                 n->text_wrap_width, text_align(n), n->layout_w, r, g, b, a);
         }
         for (PuNode *c = n->first_child; c; c = c->next_sibling) render_node(s, c);
         return;

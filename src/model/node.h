@@ -59,6 +59,7 @@ struct PuNode {
     /* Computed layout (absolute, in pixels) — written by the LayoutEngine,
      * read by the RenderEngine. */
     float layout_x, layout_y, layout_w, layout_h;
+    float text_wrap_width;   /* width text was wrapped to in measure (0 = none) */
     void *yoga;              /* transient YGNodeRef during a layout pass */
 
     /* Event listeners (DESIGN.md §6). */

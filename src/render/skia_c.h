@@ -84,15 +84,18 @@ void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius);
 
-/* Measure a UTF-8 string at `font_size` (px) in the given weight (e.g. 400/700)
- * and slant: max line advance width + total height. Honors embedded '\n'. */
+/* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700) and slant:
+ * max line advance width + total height. Honors embedded '\n'. If max_width > 0,
+ * the text is word-wrapped to that width (height grows with the line count). */
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
-                     float *out_w, float *out_h);
+                     float max_width, float *out_w, float *out_h);
 
 /* Draw a UTF-8 string with its top-left at (x, y), in the given size, weight,
- * slant, and color. Embedded '\n' starts a new line. */
+ * slant, and color. '\n' and (when max_width > 0) word-wrap start new lines.
+ * align: 0 left, 1 center, 2 right — each line positioned within align_width. */
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
                           float font_size, int weight, int italic,
+                          float max_width, int align, float align_width,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 /* Reset the canvas transform to a uniform scale (DPI: logical -> physical px).

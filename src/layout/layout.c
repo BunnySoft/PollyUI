@@ -185,19 +185,41 @@ static int text_italic(const PuNode *n)
     return v && strcmp(v, "italic") == 0;
 }
 
+/* 0 left, 1 center, 2 right — inherited from the parent's textAlign. */
+static int text_align(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "textAlign") : NULL;
+    if (!v) return 0;
+    if (strcmp(v, "center") == 0) return 1;
+    if (strcmp(v, "right") == 0)  return 2;
+    return 0;
+}
+
 static YGSize measure_text(YGNodeConstRef node, float width, YGMeasureMode widthMode,
                            float height, YGMeasureMode heightMode)
 {
     PuNode *n = (PuNode *)YGNodeGetContext(node);
+    /* Wrap to the available width when bounded; remember it so paint reproduces
+     * the exact same line breaks. */
+    float maxw = (widthMode != YGMeasureModeUndefined) ? width : 0.0f;
     float tw = 0, th = 0;
-    if (n) pu_text_measure(n->text, text_font_size(n), text_font_weight(n), text_italic(n), &tw, &th);
+    if (n) {
+        pu_text_measure(n->text, text_font_size(n), text_font_weight(n), text_italic(n), maxw, &tw, &th);
+        n->text_wrap_width = maxw;
+    }
 
     YGSize size;
     size.width  = tw;
     size.height = th;
-    if (widthMode == YGMeasureModeExactly)                 size.width = width;
-    else if (widthMode == YGMeasureModeAtMost && tw > width) size.width = width;
-    if (heightMode == YGMeasureModeExactly)                size.height = height;
+    if (widthMode == YGMeasureModeExactly) {
+        size.width = width;
+    } else if (widthMode == YGMeasureModeAtMost) {
+        /* Fill the line box when aligned so center/right have room to work. */
+        if (text_align(n) != 0) size.width = width;
+        else if (tw > width)    size.width = width;
+    }
+    if (heightMode == YGMeasureModeExactly) size.height = height;
     return size;
 }
 
