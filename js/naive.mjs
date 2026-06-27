@@ -5,7 +5,7 @@
 //   import { NCard, NButton, NSpace, NSwitch, NTag, NInput, NTabs, useTheme }
 //     from './js/naive.mjs';
 
-import { h } from './js/vue.mjs';
+import { h, reactive } from './js/vue.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -226,4 +226,122 @@ export function NInput(props = {}) {
       else if (k.length === 1) onInput(value + k);
     },
   }, h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value));
+}
+
+// ---- portal / overlay layer -------------------------------------------------
+// Popups (Select dropdown, Tooltip) render into a top-level layer so they paint
+// over everything and aren't clipped by parents. Put NOverlayHost() once at the
+// end of your app root (which should fill the viewport). The layer is reactive,
+// so opening/closing a popup re-renders via Vue/the reconciler.
+
+const _overlays = reactive({ list: [] });
+let _ovSeq = 0;
+
+export function openPopup(render, opts = {}) {
+  const id = ++_ovSeq;
+  _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false });
+  return id;
+}
+export function closePopup(id) { _overlays.list = _overlays.list.filter(o => o.id !== id); }
+
+export function NOverlayHost() {
+  const active = _overlays.list.length > 0;
+  // Flattened: backdrop + positioned popup are DIRECT children (a wrapper view
+  // would be 0x0 since its children are absolute, and hit-testing prunes by box
+  // — that would make popups paint but not be clickable).
+  const kids = [];
+  for (const o of _overlays.list) {
+    if (o.backdrop) kids.push(h('view', { key: 'bd' + o.id, style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'transparent' }), onClick: () => o.onClose && o.onClose() }));
+    kids.push(h('view', { key: 'pop' + o.id, style: clean({ position: 'absolute', top: o.y, left: o.x }) }, typeof o.render === 'function' ? o.render() : o.render));
+  }
+  return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: active ? '100%' : 0, height: active ? '100%' : 0 }) }, ...kids);
+}
+
+// ---- NSelect ----------------------------------------------------------------
+
+export function NSelect(props = {}) {
+  const { value, options = [], onUpdate, placeholder = 'Select', width = 200, id } = props;
+  const sel = options.find(o => o.value === value);
+
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid;
+    const dropdown = () => h('view', {
+      style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }),
+    }, ...options.map(o => h('view', {
+      style: clean({ height: 32, paddingLeft: 10, paddingRight: 10, borderRadius: 3, justifyContent: 'center',
+        backgroundColor: o.value === value ? theme.primary + '1f' : 'transparent' }),
+      onClick: () => { onUpdate && onUpdate(o.value); closePopup(pid); },
+    }, h('view', { style: { color: o.value === value ? theme.primary : theme.text, fontSize: '14' } }, o.label))));
+    pid = openPopup(dropdown, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+
+  return h('view', {
+    id, tabIndex: 0,
+    style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    onClick: open,
+  },
+    h('view', { style: { color: sel ? theme.text : theme.textDisabled, fontSize: '14' } }, sel ? sel.label : placeholder),
+    h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
+}
+
+// ---- NTooltip ---------------------------------------------------------------
+
+export function NTooltip(props = {}, trigger) {
+  const { content, placement = 'top' } = props;
+  // mouseenter doesn't bubble, so attach the hover handlers to the trigger
+  // element itself (the node actually hovered) rather than a wrapper.
+  trigger.props = trigger.props || {};
+  trigger.props.onMouseenter = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const tip = () => h('view', {
+      style: clean({ backgroundColor: theme.name === 'dark' ? '#ffffff' : '#000000e0', borderRadius: 4, paddingLeft: 10, paddingRight: 10, paddingTop: 6, paddingBottom: 6 }),
+    }, h('view', { style: { color: theme.name === 'dark' ? '#000000' : '#ffffff', fontSize: '13' } }, content));
+    const y = placement === 'bottom' ? r.bottom + 8 : r.top - 34;
+    e.currentTarget.__tip = openPopup(tip, { x: r.left, y, backdrop: false });
+  };
+  trigger.props.onMouseleave = (e) => {
+    if (e.currentTarget.__tip) { closePopup(e.currentTarget.__tip); e.currentTarget.__tip = 0; }
+  };
+  return trigger;
+}
+
+// ---- form validation --------------------------------------------------------
+
+// Validate one value against an array of rules. Returns an error string or null.
+export function validateField(value, rules) {
+  for (const r of (rules || [])) {
+    const empty = value == null || value === '';
+    if (r.required && empty) return r.message || 'This field is required';
+    if (!empty) {
+      if (r.min != null && String(value).length < r.min) return r.message || `At least ${r.min} characters`;
+      if (r.max != null && String(value).length > r.max) return r.message || `At most ${r.max} characters`;
+      if (r.pattern && !r.pattern.test(String(value))) return r.message || 'Invalid format';
+      if (r.validator) { const e = r.validator(value); if (e) return e; }
+    }
+  }
+  return null;
+}
+
+// Validate a values object against a schema { field: rules[] }. Returns a map
+// of field -> error (empty object means the form is valid).
+export function validateForm(values, schema) {
+  const errors = {};
+  for (const key in schema) {
+    const e = validateField(values[key], schema[key]);
+    if (e) errors[key] = e;
+  }
+  return errors;
+}
+
+// ---- NFormItem --------------------------------------------------------------
+
+export function NFormItem(props = {}, control) {
+  const { label, error, required = false } = props;
+  return h('view', { style: { flexDirection: 'column', gap: '6' } },
+    label ? h('view', { style: { flexDirection: 'row', gap: '3' } },
+      h('view', { style: { color: theme.text, fontSize: '14', fontWeight: '500' } }, label),
+      required ? h('view', { style: { color: theme.error, fontSize: '14' } }, '*') : null) : null,
+    control,
+    error ? h('view', { id: props.errorId, style: { color: theme.error, fontSize: '12' } }, error) : null);
 }
