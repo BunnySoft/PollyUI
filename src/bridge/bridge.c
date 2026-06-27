@@ -517,6 +517,255 @@ static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
     return JS_NewFloat64(ctx, w);
 }
 
+/* ---- attributes / id / class / queries ------------------------------------*/
+
+static JSValue js_node_setAttribute(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = self_node(this_val);
+    if (!n || argc < 2) return JS_UNDEFINED;
+    const char *name = JS_ToCString(ctx, argv[0]);
+    const char *val  = JS_ToCString(ctx, argv[1]);
+    if (name) pu_style_set(&n->attrs, name, val ? val : "");
+    if (name) JS_FreeCString(ctx, name);
+    if (val)  JS_FreeCString(ctx, val);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_getAttribute(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = self_node(this_val);
+    if (!n || argc < 1) return JS_NULL;
+    const char *name = JS_ToCString(ctx, argv[0]);
+    const char *v = name ? pu_style_get(&n->attrs, name) : NULL;
+    JSValue r = v ? JS_NewString(ctx, v) : JS_NULL;
+    if (name) JS_FreeCString(ctx, name);
+    return r;
+}
+
+static JSValue js_node_hasAttribute(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = self_node(this_val);
+    if (!n || argc < 1) return JS_NewBool(ctx, 0);
+    const char *name = JS_ToCString(ctx, argv[0]);
+    int has = name && pu_style_get(&n->attrs, name) != NULL;
+    if (name) JS_FreeCString(ctx, name);
+    return JS_NewBool(ctx, has);
+}
+
+static JSValue js_node_removeAttribute(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = self_node(this_val);
+    if (!n || argc < 1) return JS_UNDEFINED;
+    const char *name = JS_ToCString(ctx, argv[0]);
+    if (name) { pu_style_remove(&n->attrs, name); JS_FreeCString(ctx, name); }
+    return JS_UNDEFINED;
+}
+
+static JSValue js_attr_get(JSContext *ctx, JSValueConst this_val, const char *key)
+{
+    PuNode *n = self_node(this_val);
+    const char *v = n ? pu_style_get(&n->attrs, key) : NULL;
+    return JS_NewString(ctx, v ? v : "");
+}
+
+static JSValue js_attr_set(JSContext *ctx, JSValueConst this_val, JSValueConst val, const char *key)
+{
+    PuNode *n = self_node(this_val);
+    const char *v = JS_ToCString(ctx, val);
+    if (n) pu_style_set(&n->attrs, key, v ? v : "");
+    if (v) JS_FreeCString(ctx, v);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_get_id(JSContext *ctx, JSValueConst t)              { return js_attr_get(ctx, t, "id"); }
+static JSValue js_node_set_id(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_attr_set(ctx, t, v, "id"); }
+static JSValue js_node_get_className(JSContext *ctx, JSValueConst t)       { return js_attr_get(ctx, t, "class"); }
+static JSValue js_node_set_className(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_attr_set(ctx, t, v, "class"); }
+
+/* Whitespace-separated token membership in a class string. */
+static int class_has(const char *classes, const char *cls)
+{
+    if (!classes || !cls || !*cls) return 0;
+    size_t len = strlen(cls);
+    for (const char *p = classes; *p; ) {
+        while (*p == ' ') p++;
+        const char *start = p;
+        while (*p && *p != ' ') p++;
+        if ((size_t)(p - start) == len && strncmp(start, cls, len) == 0) return 1;
+    }
+    return 0;
+}
+
+static void class_add(PuNode *n, const char *cls)
+{
+    if (!cls || !*cls || strchr(cls, ' ')) return;
+    const char *cur = pu_style_get(&n->attrs, "class");
+    if (class_has(cur, cls)) return;
+    size_t cl = cur ? strlen(cur) : 0, al = strlen(cls);
+    char *buf = (char *)malloc(cl + 2 + al);
+    if (!buf) return;
+    if (cl) { memcpy(buf, cur, cl); buf[cl] = ' '; memcpy(buf + cl + 1, cls, al + 1); }
+    else    { memcpy(buf, cls, al + 1); }
+    pu_style_set(&n->attrs, "class", buf);
+    free(buf);
+}
+
+static void class_remove(PuNode *n, const char *cls)
+{
+    const char *cur = pu_style_get(&n->attrs, "class");
+    if (!cur || !cls || !*cls) return;
+    size_t len = strlen(cls);
+    char *buf = (char *)malloc(strlen(cur) + 1);
+    if (!buf) return;
+    char *out = buf; *out = 0;
+    for (const char *p = cur; *p; ) {
+        while (*p == ' ') p++;
+        const char *start = p;
+        while (*p && *p != ' ') p++;
+        size_t tl = (size_t)(p - start);
+        if (tl == 0 || (tl == len && strncmp(start, cls, len) == 0)) continue;
+        if (out != buf) *out++ = ' ';
+        memcpy(out, start, tl); out += tl; *out = 0;
+    }
+    pu_style_set(&n->attrs, "class", buf);
+    free(buf);
+}
+
+static PuNode *classlist_node(JSContext *ctx, JSValueConst this_val)
+{
+    JSValue nw = JS_GetPropertyStr(ctx, this_val, "__node");
+    PuNode *n = self_node(nw);
+    JS_FreeValue(ctx, nw);
+    return n;
+}
+
+static JSValue js_classlist_contains(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = classlist_node(ctx, this_val);
+    if (!n || argc < 1) return JS_NewBool(ctx, 0);
+    const char *cls = JS_ToCString(ctx, argv[0]);
+    int has = cls && class_has(pu_style_get(&n->attrs, "class"), cls);
+    if (cls) JS_FreeCString(ctx, cls);
+    return JS_NewBool(ctx, has);
+}
+
+static JSValue js_classlist_add(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = classlist_node(ctx, this_val);
+    for (int i = 0; n && i < argc; i++) {
+        const char *cls = JS_ToCString(ctx, argv[i]);
+        if (cls) { class_add(n, cls); JS_FreeCString(ctx, cls); }
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue js_classlist_remove(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = classlist_node(ctx, this_val);
+    for (int i = 0; n && i < argc; i++) {
+        const char *cls = JS_ToCString(ctx, argv[i]);
+        if (cls) { class_remove(n, cls); JS_FreeCString(ctx, cls); }
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue js_classlist_toggle(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = classlist_node(ctx, this_val);
+    if (!n || argc < 1) return JS_NewBool(ctx, 0);
+    const char *cls = JS_ToCString(ctx, argv[0]);
+    int present = 0;
+    if (cls) {
+        present = class_has(pu_style_get(&n->attrs, "class"), cls);
+        if (present) class_remove(n, cls); else class_add(n, cls);
+        JS_FreeCString(ctx, cls);
+    }
+    return JS_NewBool(ctx, !present); /* true if now present */
+}
+
+static JSValue js_node_get_classList(JSContext *ctx, JSValueConst this_val)
+{
+    JSValue list = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, list, "__node", JS_DupValue(ctx, this_val));
+    JS_SetPropertyStr(ctx, list, "add",      JS_NewCFunction(ctx, js_classlist_add,      "add",      1));
+    JS_SetPropertyStr(ctx, list, "remove",   JS_NewCFunction(ctx, js_classlist_remove,   "remove",   1));
+    JS_SetPropertyStr(ctx, list, "toggle",   JS_NewCFunction(ctx, js_classlist_toggle,   "toggle",   1));
+    JS_SetPropertyStr(ctx, list, "contains", JS_NewCFunction(ctx, js_classlist_contains, "contains", 1));
+    return list;
+}
+
+/* Simple selector match: "#id", ".class", "tag", or "*". */
+static int node_matches(PuNode *n, const char *sel)
+{
+    if (!n || n->type != PU_NODE_ELEMENT || !sel || !*sel) return 0;
+    if (sel[0] == '#') { const char *v = pu_style_get(&n->attrs, "id");    return v && strcmp(v, sel + 1) == 0; }
+    if (sel[0] == '.') {                                                   return class_has(pu_style_get(&n->attrs, "class"), sel + 1); }
+    if (strcmp(sel, "*") == 0) return 1;
+    return n->tag && strcmp(n->tag, sel) == 0;
+}
+
+static PuNode *query_first(PuNode *root, const char *sel)
+{
+    for (PuNode *c = root->first_child; c; c = c->next_sibling) {
+        if (node_matches(c, sel)) return c;
+        PuNode *r = query_first(c, sel);
+        if (r) return r;
+    }
+    return NULL;
+}
+
+static void query_all(JSContext *ctx, PuNode *root, const char *sel, JSValue arr, uint32_t *idx)
+{
+    for (PuNode *c = root->first_child; c; c = c->next_sibling) {
+        if (node_matches(c, sel)) JS_SetPropertyUint32(ctx, arr, (*idx)++, pu_node_wrapper(ctx, c));
+        query_all(ctx, c, sel, arr, idx);
+    }
+}
+
+static PuNode *query_root(JSContext *ctx, JSValueConst this_val)
+{
+    PuNode *n = self_node(this_val);
+    if (n) return n; /* element.querySelector searches descendants */
+    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    return b ? b->body : NULL; /* document.querySelector searches the whole tree */
+}
+
+static JSValue js_querySelector(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *root = query_root(ctx, this_val);
+    if (!root || argc < 1) return JS_NULL;
+    const char *sel = JS_ToCString(ctx, argv[0]);
+    PuNode *r = sel ? query_first(root, sel) : NULL;
+    if (sel) JS_FreeCString(ctx, sel);
+    return r ? pu_node_wrapper(ctx, r) : JS_NULL;
+}
+
+static JSValue js_querySelectorAll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *root = query_root(ctx, this_val);
+    JSValue arr = JS_NewArray(ctx);
+    if (root && argc >= 1) {
+        const char *sel = JS_ToCString(ctx, argv[0]);
+        if (sel) { uint32_t i = 0; query_all(ctx, root, sel, arr, &i); JS_FreeCString(ctx, sel); }
+    }
+    return arr;
+}
+
+static JSValue js_document_getElementById(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    if (!b || argc < 1) return JS_NULL;
+    const char *id = JS_ToCString(ctx, argv[0]);
+    char sel[256]; sel[0] = '#';
+    PuNode *r = NULL;
+    if (id) {
+        snprintf(sel + 1, sizeof(sel) - 1, "%s", id);
+        r = node_matches(b->body, sel) ? b->body : query_first(b->body, sel);
+        JS_FreeCString(ctx, id);
+    }
+    return r ? pu_node_wrapper(ctx, r) : JS_NULL;
+}
+
 /* ---- install ---------------------------------------------------------------*/
 
 static void def_method(JSContext *ctx, JSValueConst obj, const char *name,
@@ -572,6 +821,15 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, node_proto, "focus", js_node_focus, 0);
     def_method(ctx, node_proto, "blur",  js_node_blur,  0);
     def_getset(ctx, node_proto, "tabIndex", js_node_get_tabIndex, js_node_set_tabIndex);
+    def_method(ctx, node_proto, "setAttribute",     js_node_setAttribute,    2);
+    def_method(ctx, node_proto, "getAttribute",     js_node_getAttribute,    1);
+    def_method(ctx, node_proto, "hasAttribute",     js_node_hasAttribute,    1);
+    def_method(ctx, node_proto, "removeAttribute",  js_node_removeAttribute, 1);
+    def_method(ctx, node_proto, "querySelector",    js_querySelector,    1);
+    def_method(ctx, node_proto, "querySelectorAll", js_querySelectorAll, 1);
+    def_getset(ctx, node_proto, "id",        js_node_get_id,        js_node_set_id);
+    def_getset(ctx, node_proto, "className", js_node_get_className, js_node_set_className);
+    def_get(ctx, node_proto, "classList", js_node_get_classList);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);
     def_get(ctx, node_proto, "parentNode",      js_node_get_parentNode);
@@ -599,6 +857,9 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, document, "createTextNode", js_document_createTextNode, 1);
     def_get(ctx, document, "body", js_document_get_body);
     def_get(ctx, document, "activeElement", js_document_get_activeElement);
+    def_method(ctx, document, "getElementById",   js_document_getElementById, 1);
+    def_method(ctx, document, "querySelector",    js_querySelector,    1);
+    def_method(ctx, document, "querySelectorAll", js_querySelectorAll, 1);
     JS_SetPropertyStr(ctx, global, "document", document);
     JS_SetPropertyStr(ctx, global, "measureText",
                       JS_NewCFunction(ctx, js_measure_text, "measureText", 2));

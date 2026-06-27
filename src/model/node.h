@@ -53,6 +53,7 @@ struct PuNode {
     char   *tag;             /* element tag name (owned); NULL otherwise */
     char   *text;            /* text content (owned) for text nodes */
     PuStyle style;           /* element style */
+    PuStyle attrs;           /* generic attribute map (setAttribute/id/class) */
     int     tab_index;       /* >= 0 -> focusable (keyboard); -1 default */
 
     /* Computed layout (absolute, in pixels) — written by the LayoutEngine,
@@ -89,6 +90,7 @@ void    pu_node_insert_before(PuNode *parent, PuNode *child, PuNode *ref_node);
 void        pu_node_set_text(PuNode *n, const char *text);
 void        pu_style_set(PuStyle *s, const char *name, const char *value);
 const char *pu_style_get(const PuStyle *s, const char *name);
+void        pu_style_remove(PuStyle *s, const char *name);
 
 /* --- events --- */
 /* Add a listener; takes ownership of `func` (caller must have duped it). */

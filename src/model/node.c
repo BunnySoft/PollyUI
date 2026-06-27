@@ -53,6 +53,21 @@ const char *pu_style_get(const PuStyle *s, const char *name)
     return NULL;
 }
 
+void pu_style_remove(PuStyle *s, const char *name)
+{
+    if (!name) return;
+    for (int i = 0; i < s->count; i++) {
+        if (strcmp(s->props[i].name, name) == 0) {
+            free(s->props[i].name);
+            free(s->props[i].value);
+            memmove(&s->props[i], &s->props[i + 1],
+                    (size_t)(s->count - i - 1) * sizeof(PuStyleProp));
+            s->count--;
+            return;
+        }
+    }
+}
+
 static void pu_style_free(PuStyle *s)
 {
     for (int i = 0; i < s->count; i++) {
@@ -102,6 +117,7 @@ static void pu_node_free(PuNode *n)
     free(n->tag);
     free(n->text);
     pu_style_free(&n->style);
+    pu_style_free(&n->attrs);
     free(n);
 }
 
