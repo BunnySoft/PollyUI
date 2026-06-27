@@ -34,11 +34,14 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 - **M1** — embedded QuickJS: runs a `.js` file with `console`, timers, promises.
 - **M2** — DOM Model + bridge: JS builds a retained native node tree
   (`document.createElement`, `style`, `appendChild`, …) with GC-safe lifetimes.
-- **M3** — Yoga layout + Skia paint: `pollyui app.js` builds the DOM and renders
-  it in a window. **The full pipeline (JS → DOM → layout → paint) works.**
+- **M3** — Yoga layout + Skia paint: the full pipeline (JS → DOM → layout → paint).
+- **M4** — text rendering (Skia + DirectWrite), measured into the layout.
+- **M5** — input: `addEventListener('click', …)` with hit-testing + bubbling.
+- **+** — `position: absolute` insets, so views can overlap.
 
-Next: **M4** text rendering, then **M5** input events + `requestAnimationFrame`,
-then **M6** macOS/Linux host ports. See `DESIGN.md` §10.
+So `pollyui app.js` now runs real interactive UIs with text and clicks. See
+`js/counter.js`. Next: `requestAnimationFrame` + animation, then **M6**
+macOS/Linux host ports. See `DESIGN.md` §10.
 
 ## Building
 
@@ -50,8 +53,8 @@ MSVC + Windows SDK).
 ./tools/build.ps1          # configure + build (sets up the MSVC env)
 ./tools/build.ps1 -Run     # build then open the built-in demo window
 
-# run a UI app (M3): build the DOM in JS, lay it out, render it
-./build/win-clang/pollyui.exe js/m3.js
+# run an interactive UI app: text, clickable buttons, overlapping badge
+./build/win-clang/pollyui.exe js/counter.js
 
 # run a headless script (M1/M2): console, timers, DOM assertions
 ./build/win-clang/pollyui.exe js/m2.js
