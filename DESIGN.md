@@ -347,8 +347,15 @@ always use raster).
 `stopImmediatePropagation`/`preventDefault`; `tabIndex` + **Tab** focus cycling.
 
 **Runtime** — `console.*`, `setTimeout`/`setInterval`, promises/microtasks,
-**`requestAnimationFrame`**, **ES modules** (`.mjs` `import`/`export`), and
-**`localStorage`** (file-backed, survives restarts).
+**`requestAnimationFrame`**, **ES modules** (`.mjs` `import`/`export`),
+**`localStorage`** (file-backed, survives restarts), and **`fetch`** (Promise;
+http/https via WinHTTP on a thread, plus `file://`; `Response.text()`/`json()`).
+
+**JS framework layer** (in `js/`, on the DOM API) — a **CSS stylesheet +
+selector engine** (`css.mjs`), a **React-style reconciler** (`reconciler.mjs`:
+`h`/`render`/`mount`, function components, minimal diffing), an **rAF tween
+library** (`anim.mjs`), and a **text input** with selection + editing
+(`textinput.mjs`).
 
 **Concurrency** — **`Worker`** (per-thread QuickJS, JSON messages),
 **`computeAsync`** (native background compute), and a UI-thread **dispatcher**
@@ -362,12 +369,11 @@ CMake + Ninja + clang-cl.
 
 - **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
   the last big architectural piece; everything above Host is already portable.
-- **Text:** word-wrap to width, `text-align`, selection + click-to-caret, **IME**.
-- **Declarative animation** (transitions/tweens + easing) on top of rAF.
-- **A CSS-ish stylesheet + selector layer** (styling is imperative today).
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-- **Networking** (`fetch`), **a React-style reconciler** (JS), **perf**
-  (persist + dirty-track the Yoga tree, multi-window).
+- **Text:** custom font families, **IME** (CJK/emoji), clipboard.
+- **Reconciler hooks** (`useState`-style state) + a packaged component library.
+- **Perf** (persist + dirty-track the Yoga tree, multi-window) and CSS units
+  (`em`/`rem`/`vh`/`vw`) + pseudo-states.
 
 ### Deferred ⏸
 

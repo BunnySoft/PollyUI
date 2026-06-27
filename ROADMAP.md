@@ -15,8 +15,9 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **133
-assertions** across rendering, layout, DOM, events, runtime, and persistence.
+The headless test suite (`pollyui --test tests/<name>`) currently covers **158
+assertions** across rendering, layout, DOM, events, runtime, networking, and
+persistence.
 
 ---
 
@@ -132,7 +133,7 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 | **`requestAnimationFrame` / `cancelAnimationFrame`** | ✅ | per-frame, ms timestamp |
 | **ES modules** (`import`/`export`, `.mjs`) | ✅ | loader + normalize |
 | **`localStorage`** (persistent key/value) | ✅ | file-backed, survives restarts |
-| `fetch` / networking | 🛠 | |
+| **`fetch`** (Promise; http/https + file://) | ✅ | WinHTTP on a thread; Response text()/json() |
 
 ## Concurrency
 
@@ -151,7 +152,7 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 |---|---|---|
 | Imperative `el.style.x = y` | ✅ | |
 | Inheritance (fontSize/color/weight/style) | ✅ | text inherits from parent |
-| CSS-ish stylesheets + selectors | 🛠 | |
+| **CSS-ish stylesheets + selectors** (`js/css.mjs`) | ✅ | tag/.class/#id/*, descendant, specificity |
 | Units beyond px/% (`em`/`rem`/`vh`/`vw`) | 🛠 | |
 | Pseudo-states (`:hover`/`:active`/`:focus`), theme variables | 🛠 | |
 
@@ -167,9 +168,11 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 
 | Feature | Status | Notes |
 |---|---|---|
-| React-style reconciler (virtual DOM / JSX) | 🛠 | optional, in JS |
-| Standard component library (buttons, inputs, lists…) | 🟡 | demos exist; not packaged |
-| Full text-input widget (selection + clipboard + IME) | 🛠 | caret done; rest planned |
+| **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
+| **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
+| **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
+| **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select, clipboard/IME pending |
+| Standard component library (buttons, inputs, lists…) | 🟡 | building blocks exist; not packaged |
 
 ## Accessibility
 
@@ -202,6 +205,6 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 ### Suggested next steps
 
 1. **macOS host port** (then Linux) — the last big architectural piece; everything above Host is portable.
-2. **Text**: custom font families, IME (CJK/emoji composition).
-3. **A CSS-ish stylesheet + selector layer** so styling isn't only imperative.
-4. **Declarative transitions** (auto-tween on style change) on top of the `js/anim.mjs` engine.
+2. **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
+3. **Text**: custom font families, IME (CJK/emoji composition), clipboard.
+4. **Hooks/state** for the reconciler (`useState`-style) and a packaged component library.
