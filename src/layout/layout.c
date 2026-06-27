@@ -70,6 +70,15 @@ static YGAlign parse_align(const char *v)
     return YGAlignStretch;
 }
 
+/* Apply an inset (top/left/right/bottom) used with position: absolute. */
+static void apply_inset(YGNodeRef y, YGEdge edge, const char *val)
+{
+    if (!val) return;
+    float f;
+    if (parse_percent(val, &f))    YGNodeStyleSetPositionPercent(y, edge, f);
+    else if (parse_number(val, &f)) YGNodeStyleSetPosition(y, edge, f);
+}
+
 static void apply_style(YGNodeRef y, const PuStyle *s)
 {
     const char *v;
@@ -87,6 +96,16 @@ static void apply_style(YGNodeRef y, const PuStyle *s)
     if ((v = pu_style_get(s, "padding"))  && parse_number(v, &f)) YGNodeStyleSetPadding(y, YGEdgeAll, f);
     if ((v = pu_style_get(s, "margin"))   && parse_number(v, &f)) YGNodeStyleSetMargin(y, YGEdgeAll, f);
     if ((v = pu_style_get(s, "flexGrow")) && parse_number(v, &f)) YGNodeStyleSetFlexGrow(y, f);
+
+    /* position: absolute lets elements overlap (placed by insets, out of flow). */
+    if ((v = pu_style_get(s, "position"))) {
+        if (strcmp(v, "absolute") == 0)      YGNodeStyleSetPositionType(y, YGPositionTypeAbsolute);
+        else if (strcmp(v, "relative") == 0) YGNodeStyleSetPositionType(y, YGPositionTypeRelative);
+    }
+    apply_inset(y, YGEdgeTop,    pu_style_get(s, "top"));
+    apply_inset(y, YGEdgeLeft,   pu_style_get(s, "left"));
+    apply_inset(y, YGEdgeRight,  pu_style_get(s, "right"));
+    apply_inset(y, YGEdgeBottom, pu_style_get(s, "bottom"));
 }
 
 /* ---- text measurement ------------------------------------------------------*/
