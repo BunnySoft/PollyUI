@@ -11,6 +11,9 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
@@ -280,6 +283,56 @@ void pu_surface_fill_rect(PuSurface *s, float x, float y, float w, float h,
     paint.setColor(SkColorSetARGB(a, r, g, b));
     paint.setAntiAlias(true);
     s->surface->getCanvas()->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
+}
+
+void pu_surface_fill_rrect(PuSurface *s, float x, float y, float w, float h,
+                           float radius, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (!s || !s->surface) return;
+    SkPaint paint;
+    paint.setColor(SkColorSetARGB(a, r, g, b));
+    paint.setAntiAlias(true);
+    SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, w, h), radius, radius);
+    s->surface->getCanvas()->drawRRect(rr, paint);
+}
+
+void pu_surface_stroke_rrect(PuSurface *s, float x, float y, float w, float h,
+                             float radius, float stroke_w,
+                             uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (!s || !s->surface || stroke_w <= 0) return;
+    SkPaint paint;
+    paint.setColor(SkColorSetARGB(a, r, g, b));
+    paint.setAntiAlias(true);
+    paint.setStyle(SkPaint::kStroke_Style);
+    paint.setStrokeWidth(stroke_w);
+    /* Inset by half the stroke so the border sits inside the box. */
+    float in = stroke_w * 0.5f;
+    SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x + in, y + in, w - stroke_w, h - stroke_w),
+                                     radius, radius);
+    s->surface->getCanvas()->drawRRect(rr, paint);
+}
+
+void pu_surface_shadow(PuSurface *s, float x, float y, float w, float h,
+                       float radius, float blur, float dx, float dy,
+                       uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (!s || !s->surface) return;
+    SkPaint paint;
+    paint.setColor(SkColorSetARGB(a, r, g, b));
+    paint.setAntiAlias(true);
+    if (blur > 0) paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, blur * 0.5f));
+    SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x + dx, y + dy, w, h), radius, radius);
+    s->surface->getCanvas()->drawRRect(rr, paint);
+}
+
+void pu_surface_save_layer_alpha(PuSurface *s, float alpha) {
+    if (!s || !s->surface) return;
+    int a = (int)(alpha * 255.0f + 0.5f);
+    if (a < 0) a = 0; if (a > 255) a = 255;
+    s->surface->getCanvas()->saveLayerAlpha(nullptr, (U8CPU)a);
+}
+
+void pu_surface_restore(PuSurface *s) {
+    if (!s || !s->surface) return;
+    s->surface->getCanvas()->restore();
 }
 
 void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h) {

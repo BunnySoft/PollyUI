@@ -64,9 +64,12 @@ static YGJustify parse_justify(const char *v)
 static YGAlign parse_align(const char *v)
 {
     if (!v) return YGAlignStretch;
-    if (strcmp(v, "center") == 0)     return YGAlignCenter;
-    if (strcmp(v, "flex-start") == 0) return YGAlignFlexStart;
-    if (strcmp(v, "flex-end") == 0)   return YGAlignFlexEnd;
+    if (strcmp(v, "center") == 0)        return YGAlignCenter;
+    if (strcmp(v, "flex-start") == 0)    return YGAlignFlexStart;
+    if (strcmp(v, "flex-end") == 0)      return YGAlignFlexEnd;
+    if (strcmp(v, "space-between") == 0) return YGAlignSpaceBetween;
+    if (strcmp(v, "space-around") == 0)  return YGAlignSpaceAround;
+    if (strcmp(v, "auto") == 0)          return YGAlignAuto;
     return YGAlignStretch;
 }
 
@@ -119,7 +122,24 @@ static void apply_style(YGNodeRef y, const PuStyle *s)
     apply_edge(y, s, "marginTop",    YGEdgeTop,    YGNodeStyleSetMargin);
     apply_edge(y, s, "marginBottom", YGEdgeBottom, YGNodeStyleSetMargin);
 
-    if ((v = pu_style_get(s, "flexGrow")) && parse_number(v, &f)) YGNodeStyleSetFlexGrow(y, f);
+    if ((v = pu_style_get(s, "flexGrow"))   && parse_number(v, &f)) YGNodeStyleSetFlexGrow(y, f);
+    if ((v = pu_style_get(s, "flexShrink")) && parse_number(v, &f)) YGNodeStyleSetFlexShrink(y, f);
+    if ((v = pu_style_get(s, "gap"))        && parse_number(v, &f)) YGNodeStyleSetGap(y, YGGutterAll, f);
+
+    apply_dim(y, pu_style_get(s, "minWidth"),  YGNodeStyleSetMinWidth,  YGNodeStyleSetMinWidthPercent,  NULL);
+    apply_dim(y, pu_style_get(s, "maxWidth"),  YGNodeStyleSetMaxWidth,  YGNodeStyleSetMaxWidthPercent,  NULL);
+    apply_dim(y, pu_style_get(s, "minHeight"), YGNodeStyleSetMinHeight, YGNodeStyleSetMinHeightPercent, NULL);
+    apply_dim(y, pu_style_get(s, "maxHeight"), YGNodeStyleSetMaxHeight, YGNodeStyleSetMaxHeightPercent, NULL);
+
+    if ((v = pu_style_get(s, "flexBasis"))) {
+        if (strcmp(v, "auto") == 0)      YGNodeStyleSetFlexBasisAuto(y);
+        else if (parse_percent(v, &f))   YGNodeStyleSetFlexBasisPercent(y, f);
+        else if (parse_number(v, &f))    YGNodeStyleSetFlexBasis(y, f);
+    }
+    if ((v = pu_style_get(s, "alignSelf")))    YGNodeStyleSetAlignSelf(y, parse_align(v));
+    if ((v = pu_style_get(s, "alignContent"))) YGNodeStyleSetAlignContent(y, parse_align(v));
+    if ((v = pu_style_get(s, "display")) && strcmp(v, "none") == 0)
+        YGNodeStyleSetDisplay(y, YGDisplayNone);
 
     /* position: absolute lets elements overlap (placed by insets, out of flow). */
     if ((v = pu_style_get(s, "position"))) {

@@ -46,6 +46,24 @@ void pu_surface_clear(PuSurface *s, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void pu_surface_fill_rect(PuSurface *s, float x, float y, float w, float h,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
+/* Fill a rounded rect (corner radius). radius 0 == sharp rect. */
+void pu_surface_fill_rrect(PuSurface *s, float x, float y, float w, float h,
+                           float radius, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+/* Stroke (outline) a rounded rect with the given border width. */
+void pu_surface_stroke_rrect(PuSurface *s, float x, float y, float w, float h,
+                             float radius, float stroke_w,
+                             uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+/* Draw a blurred drop shadow for a rounded rect (offset by dx,dy). */
+void pu_surface_shadow(PuSurface *s, float x, float y, float w, float h,
+                       float radius, float blur, float dx, float dy,
+                       uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+/* Push/pop a layer with alpha (0..1) for sub-tree element opacity. */
+void pu_surface_save_layer_alpha(PuSurface *s, float alpha);
+void pu_surface_restore(PuSurface *s);
+
 /* Measure a UTF-8 string at `font_size` (px): advance width + line height. */
 void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h);
 
