@@ -45,6 +45,16 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 typedef void (*PuKeyFn)(const char *key, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 
+/* Async pump callback: run pending UI-thread work (microtasks, worker/task
+ * deliveries, due timers). Returns > 0 if a repaint is warranted. Invoked on a
+ * frame timer and whenever pu_window_wake is called. */
+typedef int (*PuAsyncFn)(void *user);
+void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user);
+
+/* Wake the window (thread-safe) so it drains async deliveries promptly. Used as
+ * the dispatcher's waker from worker threads. */
+void pu_window_wake(PuWindow *w);
+
 /* Run the OS event loop until the window is closed.
  * Returns the process exit code (the WM_QUIT wParam). */
 int pu_window_run(PuWindow *w);

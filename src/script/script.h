@@ -8,8 +8,17 @@
  * The DOM bindings (Model bridge) arrive in M2. */
 
 #include "quickjs.h"
+#include "core/dispatch.h"
 
 typedef struct PuScript PuScript;
+
+/* Attach the UI dispatcher so the event loop drains async deliveries (worker
+ * messages, task callbacks) and stays alive while async work is outstanding. */
+void pu_script_set_dispatch(PuScript *s, PuDispatch *d);
+
+/* Non-blocking: run all immediately-runnable work (microtasks, async
+ * deliveries, due timers). Returns how many items ran. */
+int pu_script_pump(PuScript *s);
 
 /* Create a script VM with console + timers registered. NULL on failure. */
 PuScript *pu_script_create(void);

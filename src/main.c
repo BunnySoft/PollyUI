@@ -4,10 +4,53 @@
 #include "layout/layout.h"
 #include "render/render.h"
 #include "model/node.h"
+#include "core/dispatch.h"
+#include "concurrency/async.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <dbghelp.h>
+/* Print a symbolized stack trace on an unhandled crash (no debugger needed). */
+static LONG WINAPI pu_crash_handler(EXCEPTION_POINTERS *ep)
+{
+    HANDLE proc = GetCurrentProcess();
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+    SymInitialize(proc, NULL, TRUE);
+    CONTEXT *ctx = ep->ContextRecord;
+    fprintf(stderr, "\n*** CRASH code=0x%08lx at %p (thread %lu) ***\n",
+            ep->ExceptionRecord->ExceptionCode,
+            ep->ExceptionRecord->ExceptionAddress, GetCurrentThreadId());
+
+    STACKFRAME64 sf;
+    memset(&sf, 0, sizeof(sf));
+    sf.AddrPC.Offset = ctx->Rip;    sf.AddrPC.Mode = AddrModeFlat;
+    sf.AddrFrame.Offset = ctx->Rbp; sf.AddrFrame.Mode = AddrModeFlat;
+    sf.AddrStack.Offset = ctx->Rsp; sf.AddrStack.Mode = AddrModeFlat;
+
+    char buf[sizeof(SYMBOL_INFO) + 256];
+    SYMBOL_INFO *sym = (SYMBOL_INFO *)buf;
+    sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+    sym->MaxNameLen = 255;
+
+    for (int i = 0; i < 24; i++) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, proc, GetCurrentThread(), &sf, ctx,
+                         NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
+            break;
+        if (!sf.AddrPC.Offset) break;
+        DWORD64 disp = 0;
+        if (SymFromAddr(proc, sf.AddrPC.Offset, &disp, sym))
+            fprintf(stderr, "  #%-2d %s + 0x%llx\n", i, sym->Name, (unsigned long long)disp);
+        else
+            fprintf(stderr, "  #%-2d 0x%llx\n", i, (unsigned long long)sf.AddrPC.Offset);
+    }
+    fflush(stderr);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+#endif
 
 /* PollyUI entry point.
  *
@@ -47,7 +90,7 @@ static void app_pointer(int x, int y, PuPointerType type, void *user)
 
     if (target)
         pu_bridge_dispatch_event(app->bridge, target, "click");
-    pu_script_run_loop(app->script);
+    pu_script_pump(app->script);
 }
 
 /* Keyboard: Tab cycles focus; other keys dispatch a keydown to the focused
@@ -59,8 +102,18 @@ static void app_key(const char *key, void *user)
         pu_bridge_focus_next(app->bridge);
     else
         pu_bridge_dispatch_key(app->bridge, "keydown", key);
-    pu_script_run_loop(app->script);
+    pu_script_pump(app->script);
 }
+
+/* Frame/wake pump: run pending UI-thread work; repaint if anything ran. */
+static int app_async(void *user)
+{
+    PuApp *app = (PuApp *)user;
+    return pu_script_pump(app->script);
+}
+
+/* Dispatcher waker (called from worker threads): nudge the window to drain. */
+static void app_wake(void *win) { pu_window_wake((PuWindow *)win); }
 
 /* ---- headless test API (`pollyui --test t.js`) ----------------------------*/
 /* Drives the UI in-process (no window, no OS input) for deterministic tests:
@@ -169,6 +222,10 @@ static int run_test(const char *path)
     PuBridge *b = pu_bridge_install(pu_script_jsctx(s));
     if (!b) { pu_script_destroy(s); return 1; }
 
+    PuDispatch *disp = pu_dispatch_new();
+    pu_script_set_dispatch(s, disp);
+    pu_async_install(pu_script_jsctx(s), disp);
+
     PuTestHost host;
     host.script = s;
     host.bridge = b;
@@ -180,12 +237,14 @@ static int run_test(const char *path)
     install_host(pu_script_jsctx(s), host.width, host.height);
 
     int rc = pu_script_run_file(s, path);
-    if (rc == 0) pu_script_run_loop(s);
+    if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
 
     g_test = NULL;
+    pu_async_shutdown();
     if (host.surface) pu_surface_destroy(host.surface);
     pu_script_destroy(s);
     pu_bridge_free(b);
+    pu_dispatch_free(disp);
     return rc;
 }
 
@@ -198,9 +257,13 @@ static int run_app(const char *path)
     PuBridge *bridge = pu_bridge_install(pu_script_jsctx(s));
     if (!bridge) { pu_script_destroy(s); return 1; }
 
+    PuDispatch *disp = pu_dispatch_new();
+    pu_script_set_dispatch(s, disp);
+    pu_async_install(pu_script_jsctx(s), disp);
+
     int rc = pu_script_run_file(s, path);
     if (rc == 0)
-        pu_script_run_loop(s);   /* drain microtasks/timers from setup */
+        pu_script_pump(s);   /* drain microtasks/timers/async from setup (non-blocking) */
 
     if (rc == 0) {
         PuNode *body = pu_bridge_body(bridge);
@@ -218,13 +281,17 @@ static int run_app(const char *path)
             pu_window_set_paint(win, app_paint, &app);
             pu_window_set_pointer(win, app_pointer, &app);
             pu_window_set_key(win, app_key, &app);
+            pu_window_set_async(win, app_async, &app);
+            pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);
             pu_window_destroy(win);
         }
     }
 
+    pu_async_shutdown();    /* terminate workers before tearing down the context */
     pu_script_destroy(s);   /* GC finalizers; bridge ref keeps body alive */
     pu_bridge_free(bridge); /* frees the native tree */
+    pu_dispatch_free(disp);
     return rc;
 }
 
@@ -245,6 +312,9 @@ static int run_demo(void)
 
 int main(int argc, char **argv)
 {
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(pu_crash_handler);
+#endif
     if (argc >= 3 && strcmp(argv[1], "--test") == 0)
         return run_test(argv[2]);
     if (argc >= 2)

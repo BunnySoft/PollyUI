@@ -32,12 +32,13 @@ typedef struct PuTimer {
 } PuTimer;
 
 struct PuScript {
-    JSRuntime *rt;
-    JSContext *ctx;
-    PuTimer   *timers;
-    int        ntimers;
-    int        cap;
-    int        next_id;
+    JSRuntime  *rt;
+    JSContext  *ctx;
+    PuTimer    *timers;
+    int         ntimers;
+    int         cap;
+    int         next_id;
+    PuDispatch *dispatch;   /* optional: async deliveries from worker threads */
 };
 
 /* ---- error reporting -------------------------------------------------------*/
@@ -245,33 +246,69 @@ int pu_script_run_file(PuScript *s, const char *path)
     return 0;
 }
 
-void pu_script_run_loop(PuScript *s)
+void pu_script_set_dispatch(PuScript *s, PuDispatch *d)
 {
-    for (;;) {
-        /* 1. Drain promise jobs / microtasks. */
+    if (s) s->dispatch = d;
+}
+
+static void pu_fire_timer(PuScript *s, int idx)
+{
+    JSValue func = s->timers[idx].func;
+    s->timers[idx].active = 0;
+    s->timers[idx].func = JS_UNDEFINED;
+    JSValue ret = JS_Call(s->ctx, func, JS_UNDEFINED, 0, NULL);
+    if (JS_IsException(ret)) pu_dump_error(s->ctx);
+    JS_FreeValue(s->ctx, ret);
+    JS_FreeValue(s->ctx, func);
+}
+
+int pu_script_pump(PuScript *s)
+{
+    int total = 0, did;
+    do {
+        did = 0;
+
+        /* microtasks / promise jobs */
         JSContext *jctx;
         int r;
         do {
             r = JS_ExecutePendingJob(s->rt, &jctx);
             if (r < 0) pu_dump_error(jctx);
+            if (r > 0) did++;
         } while (r > 0);
 
-        /* 2. Next due timer, if any. */
+        /* async deliveries (worker messages, task callbacks) */
+        if (s->dispatch) did += pu_dispatch_drain(s->dispatch);
+
+        /* a single due timer (re-loop picks up the rest) */
         int idx = pu_next_timer(s);
-        if (idx < 0) break; /* no jobs, no timers -> idle */
+        if (idx >= 0 && s->timers[idx].due_ms <= pu_now_ms()) { pu_fire_timer(s, idx); did++; }
 
-        int64_t now = pu_now_ms();
-        int64_t due = s->timers[idx].due_ms;
-        if (due > now) pu_sleep_ms(due - now);
+        total += did;
+    } while (did > 0);
+    return total;
+}
 
-        JSValue func = s->timers[idx].func;
-        s->timers[idx].active = 0;
-        s->timers[idx].func = JS_UNDEFINED;
+void pu_script_run_loop(PuScript *s)
+{
+    for (;;) {
+        pu_script_pump(s);
 
-        JSValue ret = JS_Call(s->ctx, func, JS_UNDEFINED, 0, NULL);
-        if (JS_IsException(ret)) pu_dump_error(s->ctx);
-        JS_FreeValue(s->ctx, ret);
-        JS_FreeValue(s->ctx, func);
+        int idx = pu_next_timer(s);
+        int pending = s->dispatch ? pu_dispatch_pending(s->dispatch) : 0;
+        if (idx < 0 && pending == 0) break; /* fully idle */
+
+        if (idx < 0) {
+            /* only async work outstanding -> block until a delivery arrives */
+            pu_dispatch_wait(s->dispatch, 1000);
+            continue;
+        }
+
+        int64_t wait = s->timers[idx].due_ms - pu_now_ms();
+        if (wait > 0) {
+            if (s->dispatch && pending > 0) pu_dispatch_wait(s->dispatch, (int)wait);
+            else                            pu_sleep_ms(wait);
+        }
     }
 }
 

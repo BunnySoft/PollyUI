@@ -33,7 +33,12 @@ struct PuWindow {
     void       *pointer_user;
     PuKeyFn     key_fn;       /* optional keyboard callback */
     void       *key_user;
+    PuAsyncFn   async_fn;     /* optional async pump callback */
+    void       *async_user;
 };
+
+#define PU_WM_WAKE (WM_APP + 1)   /* posted by pu_window_wake */
+#define PU_FRAME_TIMER 1          /* periodic async/timer pump */
 
 /* Map a non-character virtual key to a DOM key name, or NULL. */
 static const char *pu_vk_name(WPARAM vk)
@@ -157,6 +162,14 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
 
+    case PU_WM_WAKE:
+    case WM_TIMER:
+        if (w && w->async_fn) {
+            int worked = w->async_fn(w->async_user);
+            if (worked > 0) InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
+
     case WM_ERASEBKGND:
         return 1; /* fully repainted in WM_PAINT; suppress flicker */
 
@@ -241,6 +254,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
+    SetTimer(hwnd, PU_FRAME_TIMER, 16, NULL); /* ~60Hz async/timer pump */
     return w;
 }
 
@@ -264,6 +278,18 @@ void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user)
     if (!w) return;
     w->key_fn = fn;
     w->key_user = user;
+}
+
+void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user)
+{
+    if (!w) return;
+    w->async_fn = fn;
+    w->async_user = user;
+}
+
+void pu_window_wake(PuWindow *w)
+{
+    if (w && w->hwnd) PostMessageW(w->hwnd, PU_WM_WAKE, 0, 0);
 }
 
 int pu_window_run(PuWindow *w)
