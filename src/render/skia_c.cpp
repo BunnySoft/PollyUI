@@ -27,7 +27,8 @@
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"  /* GrBackendRenderTargets::MakeGL */
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"        /* SkSurfaces::WrapBackendRenderTarget, FlushAndSubmit */
-#include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo */
+#include "include/gpu/gl/GrGLAssembleInterface.h" /* GrGLMakeAssembledGLESInterface */
+#include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo, GrGLFuncPtr */
 
 #include <windows.h>   /* WGL + HWND/HDC for the GPU surface */
 
@@ -67,13 +68,67 @@ struct PuSurface {
     int width  = 0;
     int height = 0;
 
-    /* GPU (GL) mode — renders to the window framebuffer. */
+    /* GPU mode — renders to the window framebuffer via ANGLE/EGL (GLES->D3D11). */
     bool  gl = false;
     HWND  hwnd = nullptr;
-    HDC   hdc = nullptr;
-    HGLRC hglrc = nullptr;
+    void *egl_display = nullptr;
+    void *egl_surface = nullptr;
+    void *egl_context = nullptr;
     sk_sp<GrDirectContext> grctx;
 };
+
+/* ---- ANGLE / EGL (dynamically loaded; no import lib needed) ----------------*/
+
+namespace {
+struct Egl {
+    HMODULE eglLib = nullptr, glesLib = nullptr;
+    void *(__stdcall *eglGetProc)(const char *) = nullptr;
+    void *(__stdcall *GetPlatformDisplayEXT)(unsigned, void *, const int *) = nullptr;
+    void *(__stdcall *GetDisplay)(void *) = nullptr;
+    unsigned (__stdcall *Initialize)(void *, int *, int *) = nullptr;
+    unsigned (__stdcall *ChooseConfig)(void *, const int *, void **, int, int *) = nullptr;
+    void *(__stdcall *CreateWindowSurface)(void *, void *, void *, const int *) = nullptr;
+    void *(__stdcall *CreateContext)(void *, void *, void *, const int *) = nullptr;
+    unsigned (__stdcall *MakeCurrent)(void *, void *, void *, void *) = nullptr;
+    unsigned (__stdcall *SwapBuffers)(void *, void *) = nullptr;
+    unsigned (__stdcall *BindAPI)(unsigned) = nullptr;
+    unsigned (__stdcall *DestroySurface)(void *, void *) = nullptr;
+    unsigned (__stdcall *DestroyContext)(void *, void *) = nullptr;
+    bool loaded = false, ok = false;
+};
+Egl g_egl;
+
+bool load_egl() {
+    if (g_egl.loaded) return g_egl.ok;
+    g_egl.loaded = true;
+    g_egl.eglLib  = LoadLibraryA("libEGL.dll");
+    g_egl.glesLib = LoadLibraryA("libGLESv2.dll");
+    if (!g_egl.eglLib || !g_egl.glesLib) return false;
+#define PU_LD(field, name) g_egl.field = (decltype(g_egl.field))(void *)::GetProcAddress(g_egl.eglLib, name)
+    PU_LD(eglGetProc,            "eglGetProcAddress");
+    PU_LD(GetPlatformDisplayEXT, "eglGetPlatformDisplayEXT");
+    PU_LD(GetDisplay,            "eglGetDisplay");
+    PU_LD(Initialize,            "eglInitialize");
+    PU_LD(ChooseConfig,          "eglChooseConfig");
+    PU_LD(CreateWindowSurface,   "eglCreateWindowSurface");
+    PU_LD(CreateContext,         "eglCreateContext");
+    PU_LD(MakeCurrent,           "eglMakeCurrent");
+    PU_LD(SwapBuffers,           "eglSwapBuffers");
+    PU_LD(BindAPI,               "eglBindAPI");
+    PU_LD(DestroySurface,        "eglDestroySurface");
+    PU_LD(DestroyContext,        "eglDestroyContext");
+#undef PU_LD
+    g_egl.ok = g_egl.eglGetProc && g_egl.GetDisplay && g_egl.Initialize && g_egl.ChooseConfig &&
+               g_egl.CreateWindowSurface && g_egl.CreateContext && g_egl.MakeCurrent && g_egl.SwapBuffers;
+    return g_egl.ok;
+}
+} // namespace
+
+extern "C" GrGLFuncPtr pu_egl_get_proc(void *, const char name[]) {
+    GrGLFuncPtr p = g_egl.glesLib ? (GrGLFuncPtr)(void *)::GetProcAddress(g_egl.glesLib, name) : nullptr;
+    if (!p && g_egl.eglGetProc) p = (GrGLFuncPtr)g_egl.eglGetProc(name);
+    return p;
+}
 
 static sk_sp<SkSurface> make_raster(int w, int h) {
     if (w < 1) w = 1;
@@ -113,57 +168,67 @@ PuSurface *pu_surface_create(int width, int height) {
     return s;
 }
 
+/* EGL constants (avoid needing the EGL headers). */
+#define PU_EGL_NONE                       0x3038
+#define PU_EGL_PLATFORM_ANGLE_ANGLE       0x3202
+#define PU_EGL_PLATFORM_ANGLE_TYPE_ANGLE  0x3203
+#define PU_EGL_PLATFORM_ANGLE_TYPE_D3D11  0x3208
+#define PU_EGL_RED_SIZE                   0x3024
+#define PU_EGL_GREEN_SIZE                 0x3023
+#define PU_EGL_BLUE_SIZE                  0x3022
+#define PU_EGL_ALPHA_SIZE                 0x3021
+#define PU_EGL_STENCIL_SIZE               0x3026
+#define PU_EGL_SURFACE_TYPE               0x3033
+#define PU_EGL_WINDOW_BIT                 0x0004
+#define PU_EGL_RENDERABLE_TYPE            0x3040
+#define PU_EGL_OPENGL_ES2_BIT             0x0004
+#define PU_EGL_OPENGL_ES_API              0x30A0
+#define PU_EGL_CONTEXT_CLIENT_VERSION     0x3098
+
 PuSurface *pu_surface_create_gl(void *hwndv, int width, int height) {
+    if (!load_egl()) { PU_GLLOG("ANGLE (libEGL/libGLESv2) not available - using raster"); return nullptr; }
+
     PuSurface *s = new (std::nothrow) PuSurface();
     if (!s) return nullptr;
     s->gl = true;
     s->hwnd = (HWND)hwndv;
-    s->hdc = GetDC(s->hwnd);
-    if (!s->hdc) { delete s; return nullptr; }
 
-    PIXELFORMATDESCRIPTOR pfd;
-    memset(&pfd, 0, sizeof(pfd));
-    pfd.nSize = sizeof(pfd);
-    pfd.nVersion = 1;
-    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-    pfd.iPixelType = PFD_TYPE_RGBA;
-    pfd.cColorBits = 32;
-    pfd.cAlphaBits = 8;
-    pfd.cStencilBits = 8;
-    pfd.iLayerType = PFD_MAIN_PLANE;
-    int pf = ChoosePixelFormat(s->hdc, &pfd);
-    if (!pf || !SetPixelFormat(s->hdc, pf, &pfd)) {
-        PU_GLLOG("ChoosePixelFormat/SetPixelFormat failed");
-        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    void *disp = nullptr;
+    if (g_egl.GetPlatformDisplayEXT) {
+        const int dattr[] = { PU_EGL_PLATFORM_ANGLE_TYPE_ANGLE, PU_EGL_PLATFORM_ANGLE_TYPE_D3D11, PU_EGL_NONE };
+        disp = g_egl.GetPlatformDisplayEXT(PU_EGL_PLATFORM_ANGLE_ANGLE, (void *)0 /*EGL_DEFAULT_DISPLAY*/, dattr);
     }
-    s->hglrc = wglCreateContext(s->hdc);
-    if (!s->hglrc || !wglMakeCurrent(s->hdc, s->hglrc)) {
-        PU_GLLOG("wglCreateContext/MakeCurrent failed");
-        if (s->hglrc) wglDeleteContext(s->hglrc);
-        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    if (!disp) disp = g_egl.GetDisplay((void *)0);
+    int maj = 0, min = 0;
+    if (!disp || !g_egl.Initialize(disp, &maj, &min)) { PU_GLLOG("eglInitialize failed"); delete s; return nullptr; }
+    s->egl_display = disp;
+    if (g_egl.BindAPI) g_egl.BindAPI(PU_EGL_OPENGL_ES_API);
+
+    const int cfgAttr[] = {
+        PU_EGL_RED_SIZE, 8, PU_EGL_GREEN_SIZE, 8, PU_EGL_BLUE_SIZE, 8, PU_EGL_ALPHA_SIZE, 8,
+        PU_EGL_STENCIL_SIZE, 8, PU_EGL_SURFACE_TYPE, PU_EGL_WINDOW_BIT,
+        PU_EGL_RENDERABLE_TYPE, PU_EGL_OPENGL_ES2_BIT, PU_EGL_NONE
+    };
+    void *config = nullptr;
+    int nCfg = 0;
+    if (!g_egl.ChooseConfig(disp, cfgAttr, &config, 1, &nCfg) || nCfg < 1) {
+        PU_GLLOG("eglChooseConfig failed"); delete s; return nullptr;
     }
-    s->grctx = GrDirectContexts::MakeGL();
-    if (!s->grctx) {
-        /* No usable GPU GL (e.g. software "GDI Generic" GL 1.1 in a remote/VM
-         * session). Report it; the caller falls back to a raster surface. */
-        typedef const unsigned char *(__stdcall *GetStr)(unsigned int);
-        GetStr glGetString = (GetStr)(void *)GetProcAddress(GetModuleHandleA("opengl32.dll"), "glGetString");
-        const char *ver = glGetString ? (const char *)glGetString(0x1F02) : "?";
-        const char *ren = glGetString ? (const char *)glGetString(0x1F01) : "?";
-        std::fprintf(stderr, "[render] no GPU OpenGL (GL %s, %s) - using raster\n",
-                     ver ? ver : "?", ren ? ren : "?");
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(s->hglrc);
-        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    s->egl_surface = g_egl.CreateWindowSurface(disp, config, (void *)s->hwnd, nullptr);
+    if (!s->egl_surface) { PU_GLLOG("eglCreateWindowSurface failed"); delete s; return nullptr; }
+
+    const int ctxAttr[] = { PU_EGL_CONTEXT_CLIENT_VERSION, 3, PU_EGL_NONE };
+    s->egl_context = g_egl.CreateContext(disp, config, nullptr, ctxAttr);
+    if (!s->egl_context) { PU_GLLOG("eglCreateContext failed"); delete s; return nullptr; }
+    if (!g_egl.MakeCurrent(disp, s->egl_surface, s->egl_surface, s->egl_context)) {
+        PU_GLLOG("eglMakeCurrent failed"); delete s; return nullptr;
     }
+
+    s->grctx = GrDirectContexts::MakeGL(GrGLMakeAssembledGLESInterface(nullptr, pu_egl_get_proc));
+    if (!s->grctx) { PU_GLLOG("GrDirectContexts::MakeGL (GLES) failed"); delete s; return nullptr; }
     rewrap_gl(s, width, height);
-    if (!s->surface) {
-        PU_GLLOG("WrapBackendRenderTarget returned null");
-        s->grctx.reset();
-        wglMakeCurrent(nullptr, nullptr);
-        wglDeleteContext(s->hglrc);
-        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
-    }
+    if (!s->surface) { PU_GLLOG("WrapBackendRenderTarget failed"); delete s; return nullptr; }
+    std::fprintf(stderr, "[render] GPU backend: ANGLE / D3D11 (EGL %d.%d)\n", maj, min);
     return s;
 }
 
@@ -172,7 +237,7 @@ int pu_surface_is_gl(const PuSurface *s) { return (s && s->gl) ? 1 : 0; }
 void pu_surface_present(PuSurface *s) {
     if (!s || !s->gl) return;
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
-    SwapBuffers(s->hdc);
+    if (g_egl.SwapBuffers) g_egl.SwapBuffers(s->egl_display, s->egl_surface);
 }
 
 void pu_surface_destroy(PuSurface *s) {
@@ -180,9 +245,9 @@ void pu_surface_destroy(PuSurface *s) {
     if (s->gl) {
         s->surface.reset();
         if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
-        wglMakeCurrent(nullptr, nullptr);
-        if (s->hglrc) wglDeleteContext(s->hglrc);
-        if (s->hdc && s->hwnd) ReleaseDC(s->hwnd, s->hdc);
+        if (g_egl.MakeCurrent && s->egl_display) g_egl.MakeCurrent(s->egl_display, nullptr, nullptr, nullptr);
+        if (g_egl.DestroyContext && s->egl_context) g_egl.DestroyContext(s->egl_display, s->egl_context);
+        if (g_egl.DestroySurface && s->egl_surface) g_egl.DestroySurface(s->egl_display, s->egl_surface);
     }
     delete s; // sk_sp releases the surface
 }
@@ -193,8 +258,9 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
     if (height < 1) height = 1;
     if (width == s->width && height == s->height && s->surface) return;
     if (s->gl) {
-        wglMakeCurrent(s->hdc, s->hglrc);
-        rewrap_gl(s, width, height); /* default FBO resized with the window */
+        if (g_egl.MakeCurrent)
+            g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context);
+        rewrap_gl(s, width, height); /* ANGLE window surface resizes with the window */
         return;
     }
     s->surface = make_raster(width, height);

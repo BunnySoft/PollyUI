@@ -51,6 +51,7 @@ MSVC + Windows SDK).
 ```powershell
 ./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
 ./tools/build.ps1          # configure + build (sets up the MSVC env)
+./tools/fetch_angle.ps1    # stage ANGLE DLLs for GPU (from installed Chrome/Edge)
 ./tools/build.ps1 -Run     # build then open the built-in demo window
 
 # the component gallery (interactive: buttons, toggles, tabs, ...)
@@ -59,6 +60,10 @@ MSVC + Windows SDK).
 # headless test: no window, no OS input — deterministic (host.click/pixel/save)
 ./build/win-clang/pollyui.exe --test tests/smoke.js
 ```
+
+Rendering is **GPU-accelerated** via Skia Ganesh → **ANGLE** (GLES → D3D11) — the
+standard Windows path, which works even where native OpenGL doesn't (remote/VM
+sessions). It falls back to a CPU raster surface if ANGLE is unavailable.
 
 The app is **per-monitor DPI-aware** — JS authors in logical pixels, Skia renders
 crisp at physical resolution. For a release GUI build with no console window:
