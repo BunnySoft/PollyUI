@@ -62,9 +62,9 @@ static int run_app(const char *path)
         fflush(stdout);
 
         PuWindowConfig cfg;
-        cfg.title  = "PollyUI \xE2\x80\x94 M3";
-        cfg.width  = 960;
-        cfg.height = 600;
+        cfg.title  = "PollyUI";
+        cfg.width  = 1080;
+        cfg.height = 720;
         PuWindow *win = pu_window_create(&cfg);
         if (win) {
             PuApp app = { s, bridge };

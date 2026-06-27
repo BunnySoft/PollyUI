@@ -79,6 +79,15 @@ static void apply_inset(YGNodeRef y, YGEdge edge, const char *val)
     else if (parse_number(val, &f)) YGNodeStyleSetPosition(y, edge, f);
 }
 
+/* Apply a numeric edge value (padding/margin) for a named style property. */
+static void apply_edge(YGNodeRef y, const PuStyle *s, const char *name, YGEdge edge,
+                       void (*set)(YGNodeRef, YGEdge, float))
+{
+    const char *v = pu_style_get(s, name);
+    float f;
+    if (v && parse_number(v, &f)) set(y, edge, f);
+}
+
 static void apply_style(YGNodeRef y, const PuStyle *s)
 {
     const char *v;
@@ -92,9 +101,24 @@ static void apply_style(YGNodeRef y, const PuStyle *s)
     if ((v = pu_style_get(s, "flexDirection")))  YGNodeStyleSetFlexDirection(y, parse_flex_dir(v));
     if ((v = pu_style_get(s, "justifyContent"))) YGNodeStyleSetJustifyContent(y, parse_justify(v));
     if ((v = pu_style_get(s, "alignItems")))     YGNodeStyleSetAlignItems(y, parse_align(v));
+    if ((v = pu_style_get(s, "flexWrap"))) {
+        if (strcmp(v, "wrap") == 0)              YGNodeStyleSetFlexWrap(y, YGWrapWrap);
+        else if (strcmp(v, "wrap-reverse") == 0) YGNodeStyleSetFlexWrap(y, YGWrapWrapReverse);
+        else                                     YGNodeStyleSetFlexWrap(y, YGWrapNoWrap);
+    }
 
-    if ((v = pu_style_get(s, "padding"))  && parse_number(v, &f)) YGNodeStyleSetPadding(y, YGEdgeAll, f);
-    if ((v = pu_style_get(s, "margin"))   && parse_number(v, &f)) YGNodeStyleSetMargin(y, YGEdgeAll, f);
+    if ((v = pu_style_get(s, "padding")) && parse_number(v, &f)) YGNodeStyleSetPadding(y, YGEdgeAll, f);
+    apply_edge(y, s, "paddingLeft",   YGEdgeLeft,   YGNodeStyleSetPadding);
+    apply_edge(y, s, "paddingRight",  YGEdgeRight,  YGNodeStyleSetPadding);
+    apply_edge(y, s, "paddingTop",    YGEdgeTop,    YGNodeStyleSetPadding);
+    apply_edge(y, s, "paddingBottom", YGEdgeBottom, YGNodeStyleSetPadding);
+
+    if ((v = pu_style_get(s, "margin")) && parse_number(v, &f)) YGNodeStyleSetMargin(y, YGEdgeAll, f);
+    apply_edge(y, s, "marginLeft",   YGEdgeLeft,   YGNodeStyleSetMargin);
+    apply_edge(y, s, "marginRight",  YGEdgeRight,  YGNodeStyleSetMargin);
+    apply_edge(y, s, "marginTop",    YGEdgeTop,    YGNodeStyleSetMargin);
+    apply_edge(y, s, "marginBottom", YGEdgeBottom, YGNodeStyleSetMargin);
+
     if ((v = pu_style_get(s, "flexGrow")) && parse_number(v, &f)) YGNodeStyleSetFlexGrow(y, f);
 
     /* position: absolute lets elements overlap (placed by insets, out of flow). */
