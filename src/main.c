@@ -96,6 +96,15 @@ static void app_pointer(int x, int y, PuPointerType type, void *user)
     pu_script_pump(app->script);
 }
 
+/* Wheel: hit-test, then dispatch + scroll the nearest scroll container. */
+static void app_wheel(int x, int y, float dy, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
+    pu_bridge_dispatch_wheel(app->bridge, target, (float)x, (float)y, dy);
+    pu_script_pump(app->script);
+}
+
 /* Keyboard: Tab cycles focus; other keys dispatch keydown/keyup to the focused
  * element. The window repaints afterward (the handler may mutate the DOM). */
 static void app_key(const char *key, int is_down, void *user)
@@ -203,6 +212,23 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     return JS_NewBool(ctx, target != NULL);
 }
 
+/* host.scroll(x, y, dy): wheel by dy logical px over the element at (x,y). */
+static JSValue host_scroll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    double x = 0, y = 0, dy = 0;
+    if (argc >= 1) JS_ToFloat64(ctx, &x, argv[0]);
+    if (argc >= 2) JS_ToFloat64(ctx, &y, argv[1]);
+    if (argc >= 3) JS_ToFloat64(ctx, &dy, argv[2]);
+    PuNode *body = pu_bridge_body(g_test->bridge);
+    pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
+    PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
+    pu_bridge_dispatch_wheel(g_test->bridge, target, (float)x, (float)y, (float)dy);
+    pu_script_run_loop(g_test->script);
+    test_render();
+    return JS_NewBool(ctx, target != NULL);
+}
+
 static JSValue host_key(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
@@ -254,6 +280,7 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "render", JS_NewCFunction(ctx, host_render, "render", 0));
     JS_SetPropertyStr(ctx, host, "click",  JS_NewCFunction(ctx, host_click, "click", 2));
     JS_SetPropertyStr(ctx, host, "mouse",  JS_NewCFunction(ctx, host_mouse, "mouse", 3));
+    JS_SetPropertyStr(ctx, host, "scroll", JS_NewCFunction(ctx, host_scroll, "scroll", 3));
     JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
@@ -327,6 +354,7 @@ static int run_app(const char *path)
             pu_window_set_paint(win, app_paint, &app);
             pu_window_set_pointer(win, app_pointer, &app);
             pu_window_set_key(win, app_key, &app);
+            pu_window_set_wheel(win, app_wheel, &app);
             pu_window_set_async(win, app_async, &app);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);

@@ -64,6 +64,12 @@ void pu_surface_shadow(PuSurface *s, float x, float y, float w, float h,
 void pu_surface_save_layer_alpha(PuSurface *s, float alpha);
 void pu_surface_restore(PuSurface *s);
 
+/* Canvas state stack for clipping/scrolling: save, clip to a (rounded) rect,
+ * translate (e.g. by the negated scroll offset), then restore to undo all. */
+void pu_surface_save(PuSurface *s);
+void pu_surface_clip_rrect(PuSurface *s, float x, float y, float w, float h, float radius);
+void pu_surface_translate(PuSurface *s, float dx, float dy);
+
 /* Fill a (rounded) rect with a two-stop linear gradient. horizontal != 0 runs
  * left->right; otherwise top->bottom. */
 void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,

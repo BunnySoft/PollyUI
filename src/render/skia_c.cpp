@@ -354,6 +354,22 @@ void pu_surface_restore(PuSurface *s) {
     s->surface->getCanvas()->restore();
 }
 
+void pu_surface_save(PuSurface *s) {
+    if (!s || !s->surface) return;
+    s->surface->getCanvas()->save();
+}
+
+void pu_surface_clip_rrect(PuSurface *s, float x, float y, float w, float h, float radius) {
+    if (!s || !s->surface) return;
+    SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, w, h), radius, radius);
+    s->surface->getCanvas()->clipRRect(rr, true);
+}
+
+void pu_surface_translate(PuSurface *s, float dx, float dy) {
+    if (!s || !s->surface) return;
+    s->surface->getCanvas()->translate(dx, dy);
+}
+
 void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
                               float radius, int horizontal,
                               uint8_t r0, uint8_t g0, uint8_t b0, uint8_t a0,

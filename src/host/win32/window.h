@@ -49,6 +49,11 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 typedef void (*PuKeyFn)(const char *key, int is_down, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 
+/* Wheel callback: vertical scroll by `dy` LOGICAL px at client (x, y).
+ * dy > 0 scrolls content down (matches DOM deltaY sign). */
+typedef void (*PuWheelFn)(int x, int y, float dy, void *user);
+void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
+
 /* Async pump callback: run pending UI-thread work (microtasks, worker/task
  * deliveries, due timers). Returns > 0 if a repaint is warranted. Invoked on a
  * frame timer and whenever pu_window_wake is called. */

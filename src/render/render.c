@@ -148,7 +148,17 @@ static void render_node(PuSurface *s, PuNode *n)
     const char *img = pu_style_get(&n->style, "backgroundImage");
     if (img && *img) pu_surface_draw_image(s, img, x, y, w, h, radius);
 
+    /* overflow: clip children to the box; scrollTop/Left translate them. */
+    const char *ov = pu_style_get(&n->style, "overflow");
+    int clip = ov && (strcmp(ov, "hidden") == 0 || strcmp(ov, "scroll") == 0 || strcmp(ov, "auto") == 0);
+    float sx = style_num(n, "scrollLeft", 0), sy = style_num(n, "scrollTop", 0);
+    if (clip) { pu_surface_save(s); pu_surface_clip_rrect(s, x, y, w, h, radius); }
+    if (sx != 0 || sy != 0) pu_surface_translate(s, -sx, -sy);
+
     for (PuNode *c = n->first_child; c; c = c->next_sibling) render_node(s, c);
+
+    if (clip) pu_surface_restore(s);     /* undoes the clip + translate */
+    else if (sx != 0 || sy != 0) pu_surface_translate(s, sx, sy); /* undo translate */
 
     const char *bc = pu_style_get(&n->style, "borderColor");
     float bw = style_num(n, "borderWidth", 0);

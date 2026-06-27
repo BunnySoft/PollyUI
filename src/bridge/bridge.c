@@ -433,6 +433,40 @@ void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, f
     if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1);
 }
 
+/* Wheel: dispatch a "wheel" event, then apply default scrolling to the nearest
+ * overflow:scroll/auto ancestor (clamped to its content height). */
+void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
+{
+    if (!b) return;
+    if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1);
+
+    PuNode *sc = NULL;
+    for (PuNode *p = target; p; p = p->parent) {
+        if (p->type != PU_NODE_ELEMENT) continue;
+        const char *ov = pu_style_get(&p->style, "overflow");
+        if (ov && (strcmp(ov, "scroll") == 0 || strcmp(ov, "auto") == 0)) { sc = p; break; }
+    }
+    if (!sc) return;
+
+    const char *cur_s = pu_style_get(&sc->style, "scrollTop");
+    float cur = cur_s ? (float)atof(cur_s) : 0.0f;
+
+    float content = 0; /* furthest child bottom, relative to the container top */
+    for (PuNode *c = sc->first_child; c; c = c->next_sibling) {
+        float bottom = (c->layout_y + c->layout_h) - sc->layout_y;
+        if (bottom > content) content = bottom;
+    }
+    float maxs = content - sc->layout_h;
+    if (maxs < 0) maxs = 0;
+
+    float next = cur + dy;
+    if (next < 0) next = 0;
+    if (next > maxs) next = maxs;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%g", next);
+    pu_style_set(&sc->style, "scrollTop", buf);
+}
+
 PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
 
 void pu_bridge_set_focus(PuBridge *b, PuNode *node)
@@ -578,6 +612,27 @@ static JSValue js_attr_set(JSContext *ctx, JSValueConst this_val, JSValueConst v
     if (v) JS_FreeCString(ctx, v);
     return JS_UNDEFINED;
 }
+
+static JSValue js_scroll_get(JSContext *ctx, JSValueConst this_val, const char *key)
+{
+    PuNode *n = self_node(this_val);
+    const char *v = n ? pu_style_get(&n->style, key) : NULL;
+    return JS_NewFloat64(ctx, v ? atof(v) : 0.0);
+}
+
+static JSValue js_scroll_set(JSContext *ctx, JSValueConst this_val, JSValueConst val, const char *key)
+{
+    PuNode *n = self_node(this_val);
+    double d = 0;
+    JS_ToFloat64(ctx, &d, val);
+    if (n) { char buf[32]; snprintf(buf, sizeof(buf), "%g", d < 0 ? 0 : d); pu_style_set(&n->style, key, buf); }
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_get_scrollTop(JSContext *ctx, JSValueConst t)        { return js_scroll_get(ctx, t, "scrollTop"); }
+static JSValue js_node_set_scrollTop(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_scroll_set(ctx, t, v, "scrollTop"); }
+static JSValue js_node_get_scrollLeft(JSContext *ctx, JSValueConst t)       { return js_scroll_get(ctx, t, "scrollLeft"); }
+static JSValue js_node_set_scrollLeft(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_scroll_set(ctx, t, v, "scrollLeft"); }
 
 static JSValue js_node_get_id(JSContext *ctx, JSValueConst t)              { return js_attr_get(ctx, t, "id"); }
 static JSValue js_node_set_id(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_attr_set(ctx, t, v, "id"); }
@@ -831,6 +886,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, node_proto, "querySelectorAll", js_querySelectorAll, 1);
     def_getset(ctx, node_proto, "id",        js_node_get_id,        js_node_set_id);
     def_getset(ctx, node_proto, "className", js_node_get_className, js_node_set_className);
+    def_getset(ctx, node_proto, "scrollTop",  js_node_get_scrollTop,  js_node_set_scrollTop);
+    def_getset(ctx, node_proto, "scrollLeft", js_node_get_scrollLeft, js_node_set_scrollLeft);
     def_get(ctx, node_proto, "classList", js_node_get_classList);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);

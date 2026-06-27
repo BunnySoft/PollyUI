@@ -230,9 +230,16 @@ PuNode *pu_node_hit_test(PuNode *n, float x, float y)
         x >= n->layout_x + n->layout_w || y >= n->layout_y + n->layout_h)
         return NULL;
 
+    /* Scrolled containers paint children translated by -scroll, so a screen
+     * point maps to child space by adding the scroll offset. */
+    const char *sl = pu_style_get(&n->style, "scrollLeft");
+    const char *st = pu_style_get(&n->style, "scrollTop");
+    float cx = x + (sl ? (float)atof(sl) : 0.0f);
+    float cy = y + (st ? (float)atof(st) : 0.0f);
+
     /* Children paint in order, so the last one is topmost — test it first. */
     for (PuNode *c = n->last_child; c; c = c->prev_sibling) {
-        PuNode *hit = pu_node_hit_test(c, x, y);
+        PuNode *hit = pu_node_hit_test(c, cx, cy);
         if (hit) return hit;
     }
     return n;

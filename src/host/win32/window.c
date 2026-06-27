@@ -33,6 +33,8 @@ struct PuWindow {
     void       *pointer_user;
     PuKeyFn     key_fn;       /* optional keyboard callback */
     void       *key_user;
+    PuWheelFn   wheel_fn;     /* optional wheel callback */
+    void       *wheel_user;
     PuAsyncFn   async_fn;     /* optional async pump callback */
     void       *async_user;
 };
@@ -141,6 +143,18 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
             }
             InvalidateRect(hwnd, NULL, FALSE); /* handler may have changed the DOM */
+        }
+        return 0;
+
+    case WM_MOUSEWHEEL:
+        if (w && w->wheel_fn) {
+            float scale = w->scale > 0 ? w->scale : 1.0f;
+            POINT pt = { (short)LOWORD(lp), (short)HIWORD(lp) }; /* screen coords */
+            ScreenToClient(hwnd, &pt);
+            int notches = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA; /* +1 = wheel up */
+            float dy = -(float)notches * 40.0f;                    /* up -> scroll content up */
+            w->wheel_fn((int)(pt.x / scale), (int)(pt.y / scale), dy, w->wheel_user);
+            InvalidateRect(hwnd, NULL, FALSE);
         }
         return 0;
 
@@ -305,6 +319,13 @@ void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user)
     if (!w) return;
     w->key_fn = fn;
     w->key_user = user;
+}
+
+void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user)
+{
+    if (!w) return;
+    w->wheel_fn = fn;
+    w->wheel_user = user;
 }
 
 void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user)

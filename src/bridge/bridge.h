@@ -29,6 +29,10 @@ void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
  * hovered element changes. Pass the hit-tested target (NULL = empty space). */
 void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y);
 
+/* Wheel at `target`: dispatch a "wheel" event, then scroll the nearest
+ * overflow:scroll/auto ancestor by dy (logical px), clamped to its content. */
+void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy);
+
 /* --- focus + keyboard --- */
 /* Move focus to `node` (NULL = blur), firing blur/focus events. */
 void    pu_bridge_set_focus(PuBridge *b, PuNode *node);
