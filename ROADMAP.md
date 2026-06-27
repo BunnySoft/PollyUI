@@ -15,7 +15,7 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **122
+The headless test suite (`pollyui --test tests/<name>`) currently covers **133
 assertions** across rendering, layout, DOM, events, runtime, and persistence.
 
 ---
@@ -72,7 +72,7 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 | **Word-wrap to a width** | ✅ | greedy word wrap; measure + paint agree |
 | **`text-align`** (left/center/right) | ✅ | per-line within the box |
 | **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
-| Text selection + click-to-position caret | 🛠 | needs text hit-testing |
+| **Text selection + click-to-position caret** | ✅ | `js/textinput.mjs` (drag-select, edit) |
 | IME (CJK / emoji composition) | 🛠 | |
 | Custom font families | 🛠 | default face only |
 
@@ -106,6 +106,7 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 | `id`, `className`, `classList` (add/remove/toggle/contains) | ✅ | |
 | `getElementById`, `querySelector(All)` | ✅ | `#id` / `.class` / tag / `*` |
 | `scrollTop` / `scrollLeft` | ✅ | reflected to scroll state |
+| `offsetLeft/Top/Width/Height`, `getBoundingClientRect()` | ✅ | computed layout geometry |
 | `innerHTML`, complex CSS selectors | 🛠 | |
 
 ## Events / input
@@ -201,6 +202,6 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 ### Suggested next steps
 
 1. **macOS host port** (then Linux) — the last big architectural piece; everything above Host is portable.
-2. **Text**: selection + click-to-position caret (text hit-testing), custom font families, IME.
+2. **Text**: custom font families, IME (CJK/emoji composition).
 3. **A CSS-ish stylesheet + selector layer** so styling isn't only imperative.
 4. **Declarative transitions** (auto-tween on style change) on top of the `js/anim.mjs` engine.

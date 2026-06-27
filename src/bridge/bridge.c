@@ -629,6 +629,28 @@ static JSValue js_scroll_set(JSContext *ctx, JSValueConst this_val, JSValueConst
     return JS_UNDEFINED;
 }
 
+/* Computed layout geometry (absolute logical px), read from the last layout. */
+static JSValue js_node_get_offsetLeft(JSContext *ctx, JSValueConst t)   { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_x : 0); }
+static JSValue js_node_get_offsetTop(JSContext *ctx, JSValueConst t)    { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_y : 0); }
+static JSValue js_node_get_offsetWidth(JSContext *ctx, JSValueConst t)  { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_w : 0); }
+static JSValue js_node_get_offsetHeight(JSContext *ctx, JSValueConst t) { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_h : 0); }
+
+static JSValue js_node_getBoundingClientRect(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    PuNode *n = self_node(this_val);
+    float x = n ? n->layout_x : 0, y = n ? n->layout_y : 0, w = n ? n->layout_w : 0, h = n ? n->layout_h : 0;
+    JSValue r = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, r, "x", JS_NewFloat64(ctx, x));
+    JS_SetPropertyStr(ctx, r, "y", JS_NewFloat64(ctx, y));
+    JS_SetPropertyStr(ctx, r, "left", JS_NewFloat64(ctx, x));
+    JS_SetPropertyStr(ctx, r, "top", JS_NewFloat64(ctx, y));
+    JS_SetPropertyStr(ctx, r, "width", JS_NewFloat64(ctx, w));
+    JS_SetPropertyStr(ctx, r, "height", JS_NewFloat64(ctx, h));
+    JS_SetPropertyStr(ctx, r, "right", JS_NewFloat64(ctx, x + w));
+    JS_SetPropertyStr(ctx, r, "bottom", JS_NewFloat64(ctx, y + h));
+    return r;
+}
+
 static JSValue js_node_get_scrollTop(JSContext *ctx, JSValueConst t)        { return js_scroll_get(ctx, t, "scrollTop"); }
 static JSValue js_node_set_scrollTop(JSContext *ctx, JSValueConst t, JSValueConst v){ return js_scroll_set(ctx, t, v, "scrollTop"); }
 static JSValue js_node_get_scrollLeft(JSContext *ctx, JSValueConst t)       { return js_scroll_get(ctx, t, "scrollLeft"); }
@@ -888,6 +910,11 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_getset(ctx, node_proto, "className", js_node_get_className, js_node_set_className);
     def_getset(ctx, node_proto, "scrollTop",  js_node_get_scrollTop,  js_node_set_scrollTop);
     def_getset(ctx, node_proto, "scrollLeft", js_node_get_scrollLeft, js_node_set_scrollLeft);
+    def_get(ctx, node_proto, "offsetLeft",   js_node_get_offsetLeft);
+    def_get(ctx, node_proto, "offsetTop",    js_node_get_offsetTop);
+    def_get(ctx, node_proto, "offsetWidth",  js_node_get_offsetWidth);
+    def_get(ctx, node_proto, "offsetHeight", js_node_get_offsetHeight);
+    def_method(ctx, node_proto, "getBoundingClientRect", js_node_getBoundingClientRect, 0);
     def_get(ctx, node_proto, "classList", js_node_get_classList);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);
