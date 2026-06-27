@@ -1,4 +1,5 @@
 #include "layout/layout.h"
+#include "render/skia_c.h"   /* pu_text_measure for the text measure callback */
 
 #include <yoga/Yoga.h>
 
@@ -88,19 +89,53 @@ static void apply_style(YGNodeRef y, const PuStyle *s)
     if ((v = pu_style_get(s, "flexGrow")) && parse_number(v, &f)) YGNodeStyleSetFlexGrow(y, f);
 }
 
+/* ---- text measurement ------------------------------------------------------*/
+
+/* Text inherits fontSize from its parent element (default 16px). */
+static float text_font_size(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    if (p) {
+        const char *v = pu_style_get(&p->style, "fontSize");
+        float f;
+        if (v && parse_number(v, &f)) return f;
+    }
+    return 16.0f;
+}
+
+static YGSize measure_text(YGNodeConstRef node, float width, YGMeasureMode widthMode,
+                           float height, YGMeasureMode heightMode)
+{
+    PuNode *n = (PuNode *)YGNodeGetContext(node);
+    float tw = 0, th = 0;
+    if (n) pu_text_measure(n->text, text_font_size(n), &tw, &th);
+
+    YGSize size;
+    size.width  = tw;
+    size.height = th;
+    if (widthMode == YGMeasureModeExactly)                 size.width = width;
+    else if (widthMode == YGMeasureModeAtMost && tw > width) size.width = width;
+    if (heightMode == YGMeasureModeExactly)                size.height = height;
+    return size;
+}
+
 /* ---- build / read back -----------------------------------------------------*/
 
 static YGNodeRef build_tree(PuNode *n)
 {
     YGNodeRef y = YGNodeNew();
     n->yoga = y;
-    if (n->type == PU_NODE_ELEMENT) apply_style(y, &n->style);
+    YGNodeSetContext(y, n);
 
-    size_t i = 0;
-    for (PuNode *c = n->first_child; c; c = c->next_sibling) {
-        if (c->type == PU_NODE_TEXT) continue; /* text laid out in M4 */
-        YGNodeInsertChild(y, build_tree(c), i++);
+    if (n->type == PU_NODE_TEXT) {
+        YGNodeSetMeasureFunc(y, measure_text); /* text is a measured leaf */
+        return y;
     }
+
+    apply_style(y, &n->style);
+    size_t i = 0;
+    for (PuNode *c = n->first_child; c; c = c->next_sibling)
+        YGNodeInsertChild(y, build_tree(c), i++);
     return y;
 }
 
@@ -117,10 +152,8 @@ static void read_layout(PuNode *n, float ox, float oy)
     n->layout_w = YGNodeLayoutGetWidth(y);
     n->layout_h = YGNodeLayoutGetHeight(y);
 
-    for (PuNode *c = n->first_child; c; c = c->next_sibling) {
-        if (c->type == PU_NODE_TEXT) continue;
+    for (PuNode *c = n->first_child; c; c = c->next_sibling)
         read_layout(c, x, t);
-    }
 }
 
 static void clear_yoga(PuNode *n)

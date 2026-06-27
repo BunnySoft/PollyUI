@@ -34,6 +34,13 @@ void pu_surface_clear(PuSurface *s, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void pu_surface_fill_rect(PuSurface *s, float x, float y, float w, float h,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
+/* Measure a UTF-8 string at `font_size` (px): advance width + line height. */
+void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h);
+
+/* Draw a UTF-8 string with its top-left at (x, y), in the given size + color. */
+void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
+                          float font_size, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
 /* Read-only access to the BGRA8888 pixel buffer (for blitting to the window).
  * Returns NULL if unavailable. row_bytes is the stride in bytes. */
 const void *pu_surface_pixels(const PuSurface *s);

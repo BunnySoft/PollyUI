@@ -11,9 +11,37 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkFontMetrics.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkTypeface.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <new>
+
+// SkFontMgr_New_DirectWrite is in skia.lib but the package ships no header for
+// it; declare it ourselves (default null args -> Skia builds a DWrite factory).
+struct IDWriteFactory;
+struct IDWriteFontCollection;
+struct IDWriteFontFallback;
+extern sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory *,
+                                                  IDWriteFontCollection *,
+                                                  IDWriteFontFallback *);
+
+// Lazily-resolved default system typeface (Windows UI font via DirectWrite).
+static sk_sp<SkTypeface> default_typeface() {
+    static sk_sp<SkTypeface> tf;
+    static bool tried = false;
+    if (!tried) {
+        tried = true;
+        sk_sp<SkFontMgr> mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr);
+        if (mgr) tf = mgr->legacyMakeTypeface(nullptr, SkFontStyle());
+    }
+    return tf;
+}
 
 // BGRA8888 + premul: byte order in memory is B,G,R,A, which matches a Windows
 // 32-bit top-down DIB (BI_RGB) for a zero-copy blit.
@@ -71,6 +99,32 @@ void pu_surface_fill_rect(PuSurface *s, float x, float y, float w, float h,
     paint.setColor(SkColorSetARGB(a, r, g, b));
     paint.setAntiAlias(true);
     s->surface->getCanvas()->drawRect(SkRect::MakeXYWH(x, y, w, h), paint);
+}
+
+void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h) {
+    SkFont font(default_typeface(), font_size);
+    float w = (utf8 && *utf8)
+                  ? font.measureText(utf8, std::strlen(utf8), SkTextEncoding::kUTF8, nullptr)
+                  : 0.0f;
+    SkFontMetrics m;
+    font.getMetrics(&m);
+    if (out_w) *out_w = w;
+    if (out_h) *out_h = m.fDescent - m.fAscent; // ascent is negative
+}
+
+void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
+                          float font_size, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+    if (!s || !s->surface || !utf8 || !*utf8) return;
+    SkFont font(default_typeface(), font_size);
+    font.setEdging(SkFont::Edging::kAntiAlias);
+    font.setSubpixel(true);
+    SkFontMetrics m;
+    font.getMetrics(&m);
+    SkPaint paint;
+    paint.setColor(SkColorSetARGB(a, r, g, b));
+    paint.setAntiAlias(true);
+    // (x, y) is the top-left; shift to baseline.
+    s->surface->getCanvas()->drawString(utf8, x, y - m.fAscent, font, paint);
 }
 
 const void *pu_surface_pixels(const PuSurface *s) {

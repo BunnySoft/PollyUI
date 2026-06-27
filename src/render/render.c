@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* ---- color parsing (#rgb, #rrggbb, #rrggbbaa, a few names) -----------------*/
@@ -56,6 +57,22 @@ static bool parse_color(const char *s, uint8_t *r, uint8_t *g, uint8_t *b, uint8
 
 /* ---- paint walk ------------------------------------------------------------*/
 
+/* Text inherits fontSize + color from its parent element. */
+static float text_font_size(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "fontSize") : NULL;
+    float f = v ? (float)atof(v) : 0.0f;
+    return f > 0 ? f : 16.0f;
+}
+
+static void text_color(const PuNode *n, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "color") : NULL;
+    if (!v || !parse_color(v, r, g, b, a)) { *r = *g = *b = 0; *a = 255; } /* default black */
+}
+
 static void render_node(PuSurface *s, PuNode *n)
 {
     if (n->type == PU_NODE_ELEMENT) {
@@ -63,6 +80,10 @@ static void render_node(PuSurface *s, PuNode *n)
         uint8_t r, g, b, a;
         if (bg && parse_color(bg, &r, &g, &b, &a) && a > 0)
             pu_surface_fill_rect(s, n->layout_x, n->layout_y, n->layout_w, n->layout_h, r, g, b, a);
+    } else if (n->type == PU_NODE_TEXT && n->text && *n->text) {
+        uint8_t r, g, b, a;
+        text_color(n, &r, &g, &b, &a);
+        pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n), r, g, b, a);
     }
     for (PuNode *c = n->first_child; c; c = c->next_sibling)
         render_node(s, c);
