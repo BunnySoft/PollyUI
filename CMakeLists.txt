@@ -46,6 +46,7 @@ add_executable(pollyui
     src/core/thread.c
     src/core/dispatch.c
     src/concurrency/async.c
+    src/net/fetch.c
 )
 
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
@@ -82,7 +83,7 @@ if (WIN32)
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
     # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
     target_link_libraries(pollyui PRIVATE
-        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp)
+        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp winhttp)
 endif()
 
 # Release/GUI build: no console window (console.log mirrors to the debugger via

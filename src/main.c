@@ -1,6 +1,7 @@
 #include "host/win32/window.h"
 #include "script/script.h"
 #include "script/storage.h"
+#include "net/fetch.h"
 #include "bridge/bridge.h"
 #include "layout/layout.h"
 #include "render/render.h"
@@ -312,6 +313,7 @@ static int run_test(const char *path)
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
     pu_storage_install(pu_script_jsctx(s), "build/win-clang/_localstorage.dat");
+    pu_fetch_install(pu_script_jsctx(s), disp);
 
     PuTestHost host;
     host.script = s;
@@ -349,6 +351,7 @@ static int run_app(const char *path)
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
     pu_storage_install(pu_script_jsctx(s), "pollyui_localstorage.dat");
+    pu_fetch_install(pu_script_jsctx(s), disp);
 
     int rc = pu_script_run_file(s, path);
     if (rc == 0)
