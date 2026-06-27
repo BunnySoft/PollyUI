@@ -15,7 +15,7 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **101
+The headless test suite (`pollyui --test tests/<name>`) currently covers **122
 assertions** across rendering, layout, DOM, events, runtime, and persistence.
 
 ---
@@ -69,11 +69,12 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 | Inherited `fontSize` / `color` | ✅ | from parent element |
 | **Font weight (bold) + style (italic)** | ✅ | `fontWeight`/`fontStyle` |
 | **Multi-line text** (embedded `\n`) | ✅ | measure + draw per line |
+| **Word-wrap to a width** | ✅ | greedy word wrap; measure + paint agree |
+| **`text-align`** (left/center/right) | ✅ | per-line within the box |
 | **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
-| Word-wrap to a width | 🛠 | newline breaks done; auto-wrap pending |
 | Text selection + click-to-position caret | 🛠 | needs text hit-testing |
 | IME (CJK / emoji composition) | 🛠 | |
-| `text-align`, custom font families | 🛠 | default face only |
+| Custom font families | 🛠 | default face only |
 
 ## Layout (Yoga)
 
@@ -157,8 +158,9 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 
 | Feature | Status | Notes |
 |---|---|---|
-| `requestAnimationFrame` driving | ✅ | build loops in JS today |
-| Declarative transitions / tween + easing helpers | 🛠 | |
+| `requestAnimationFrame` driving | ✅ | per-frame, ms timestamp |
+| **Tween + easing library** (`js/anim.mjs`) | ✅ | `animate()`, 8 easings, delay, promise |
+| Declarative CSS-like transitions (style triggers) | 🛠 | tween API done; auto-on-change pending |
 
 ## Higher-level
 
@@ -186,7 +188,7 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Headless test harness** (`--test`; click/mouse/scroll/key/pixel/save) | ✅ | deterministic, 101 assertions |
+| **Headless test harness** (`--test`; click/mouse/scroll/key/render(ts)/flush/pixel/save) | ✅ | deterministic, 122 assertions |
 | No-console release build (`PU_WINDOWED`) | ✅ | |
 | In-process symbolized crash handler (DbgHelp) | ✅ | |
 | CMake + Ninja + clang-cl; fetch/vendor deps | ✅ | |
@@ -199,6 +201,6 @@ assertions** across rendering, layout, DOM, events, runtime, and persistence.
 ### Suggested next steps
 
 1. **macOS host port** (then Linux) — the last big architectural piece; everything above Host is portable.
-2. **Text**: word-wrap to width, `text-align`, selection + click-to-caret.
-3. **Declarative animation** (transitions/tweens) on top of rAF.
-4. **A CSS-ish stylesheet + selector layer** so styling isn't only imperative.
+2. **Text**: selection + click-to-position caret (text hit-testing), custom font families, IME.
+3. **A CSS-ish stylesheet + selector layer** so styling isn't only imperative.
+4. **Declarative transitions** (auto-tween on style change) on top of the `js/anim.mjs` engine.

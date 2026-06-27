@@ -162,9 +162,12 @@ static void test_render(void)
 
 static JSValue host_render(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-    (void)this_val; (void)argc; (void)argv;
-    /* Each render advances one animation frame so rAF is testable headlessly. */
-    pu_script_flush_raf(g_test->script, pu_frame_ms());
+    (void)this_val;
+    /* Each render advances one animation frame so rAF is testable headlessly.
+     * An optional explicit timestamp (ms) makes animations deterministic. */
+    double ts = pu_frame_ms();
+    if (argc >= 1) JS_ToFloat64(ctx, &ts, argv[0]);
+    pu_script_flush_raf(g_test->script, ts);
     test_render();
     return JS_UNDEFINED;
 }
@@ -211,6 +214,14 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
         test_render();
     }
     return JS_NewBool(ctx, target != NULL);
+}
+
+/* host.flush(): drain microtasks / due timers / async deliveries (e.g. to let a
+ * resolved Promise's .then run). Returns how many items ran. */
+static JSValue host_flush(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val; (void)argc; (void)argv;
+    return JS_NewInt32(ctx, pu_script_pump(g_test->script));
 }
 
 /* host.scroll(x, y, dy): wheel by dy logical px over the element at (x,y). */
@@ -282,6 +293,7 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "click",  JS_NewCFunction(ctx, host_click, "click", 2));
     JS_SetPropertyStr(ctx, host, "mouse",  JS_NewCFunction(ctx, host_mouse, "mouse", 3));
     JS_SetPropertyStr(ctx, host, "scroll", JS_NewCFunction(ctx, host_scroll, "scroll", 3));
+    JS_SetPropertyStr(ctx, host, "flush",  JS_NewCFunction(ctx, host_flush, "flush", 0));
     JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
