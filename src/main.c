@@ -105,11 +105,23 @@ static void app_key(const char *key, void *user)
     pu_script_pump(app->script);
 }
 
-/* Frame/wake pump: run pending UI-thread work; repaint if anything ran. */
+/* Monotonic millisecond clock for animation timestamps. */
+static double pu_frame_ms(void)
+{
+#ifdef _WIN32
+    return (double)GetTickCount64();
+#else
+    return 0.0;
+#endif
+}
+
+/* Frame/wake pump: fire animation callbacks + pending UI-thread work; the
+ * window repaints if anything ran (rAF callbacks typically mutate the DOM). */
 static int app_async(void *user)
 {
     PuApp *app = (PuApp *)user;
-    return pu_script_pump(app->script);
+    int n = pu_script_flush_raf(app->script, pu_frame_ms());
+    return n + pu_script_pump(app->script);
 }
 
 /* Dispatcher waker (called from worker threads): nudge the window to drain. */
@@ -138,6 +150,8 @@ static void test_render(void)
 static JSValue host_render(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val; (void)argc; (void)argv;
+    /* Each render advances one animation frame so rAF is testable headlessly. */
+    pu_script_flush_raf(g_test->script, pu_frame_ms());
     test_render();
     return JS_UNDEFINED;
 }

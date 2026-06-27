@@ -20,6 +20,10 @@ void pu_script_set_dispatch(PuScript *s, PuDispatch *d);
  * deliveries, due timers). Returns how many items ran. */
 int pu_script_pump(PuScript *s);
 
+/* Fire all pending requestAnimationFrame callbacks once, passing `ts` (a
+ * monotonic millisecond timestamp). Returns how many ran. Call once per frame. */
+int pu_script_flush_raf(PuScript *s, double ts);
+
 /* Create a script VM with console + timers registered. NULL on failure. */
 PuScript *pu_script_create(void);
 

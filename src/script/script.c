@@ -26,10 +26,16 @@ static void pu_sleep_ms(int64_t m) {
 
 typedef struct PuTimer {
     int      id;
-    int64_t  due_ms;   /* absolute fire time */
-    JSValue  func;     /* owned (duped) callback */
+    int64_t  due_ms;       /* absolute fire time */
+    int      interval_ms;  /* 0 = one-shot (setTimeout); >0 = repeating (setInterval) */
+    JSValue  func;         /* owned (duped) callback */
     int      active;
 } PuTimer;
+
+typedef struct PuRaf {
+    int     id;
+    JSValue func;          /* owned (duped) callback */
+} PuRaf;
 
 struct PuScript {
     JSRuntime  *rt;
@@ -38,6 +44,10 @@ struct PuScript {
     int         ntimers;
     int         cap;
     int         next_id;
+    PuRaf      *rafs;       /* pending requestAnimationFrame callbacks */
+    int         nraf;
+    int         rafcap;
+    int         raf_id;
     PuDispatch *dispatch;   /* optional: async deliveries from worker threads */
 };
 
@@ -105,7 +115,7 @@ static JSValue js_console_print(JSContext *ctx, JSValueConst this_val,
 
 /* ---- timers ----------------------------------------------------------------*/
 
-static int pu_timer_add(PuScript *s, JSValue func, int64_t delay_ms)
+static int pu_timer_add(PuScript *s, JSValue func, int64_t delay_ms, int64_t interval_ms)
 {
     if (s->ntimers == s->cap) {
         int ncap = s->cap ? s->cap * 2 : 8;
@@ -116,10 +126,11 @@ static int pu_timer_add(PuScript *s, JSValue func, int64_t delay_ms)
     }
     int id = ++s->next_id;
     PuTimer *t = &s->timers[s->ntimers++];
-    t->id     = id;
-    t->due_ms = pu_now_ms() + (delay_ms < 0 ? 0 : delay_ms);
-    t->func   = func; /* takes ownership */
-    t->active = 1;
+    t->id          = id;
+    t->due_ms      = pu_now_ms() + (delay_ms < 0 ? 0 : delay_ms);
+    t->interval_ms = (interval_ms < 0) ? 0 : (int)interval_ms;
+    t->func        = func; /* takes ownership */
+    t->active      = 1;
     return id;
 }
 
@@ -131,7 +142,21 @@ static JSValue js_set_timeout(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeError(ctx, "setTimeout: a callback function is required");
     double delay = 0;
     if (argc >= 2) JS_ToFloat64(ctx, &delay, argv[1]);
-    int id = pu_timer_add(s, JS_DupValue(ctx, argv[0]), (int64_t)delay);
+    int id = pu_timer_add(s, JS_DupValue(ctx, argv[0]), (int64_t)delay, 0);
+    if (id < 0) return JS_ThrowOutOfMemory(ctx);
+    return JS_NewInt32(ctx, id);
+}
+
+static JSValue js_set_interval(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv)
+{
+    PuScript *s = (PuScript *)JS_GetContextOpaque(ctx);
+    if (argc < 1 || !JS_IsFunction(ctx, argv[0]))
+        return JS_ThrowTypeError(ctx, "setInterval: a callback function is required");
+    double delay = 0;
+    if (argc >= 2) JS_ToFloat64(ctx, &delay, argv[1]);
+    if (delay < 1) delay = 1; /* avoid a zero-delay spin */
+    int id = pu_timer_add(s, JS_DupValue(ctx, argv[0]), (int64_t)delay, (int64_t)delay);
     if (id < 0) return JS_ThrowOutOfMemory(ctx);
     return JS_NewInt32(ctx, id);
 }
@@ -151,6 +176,68 @@ static JSValue js_clear_timeout(JSContext *ctx, JSValueConst this_val,
         }
     }
     return JS_UNDEFINED;
+}
+
+/* ---- requestAnimationFrame -------------------------------------------------*/
+
+static JSValue js_request_anim_frame(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv)
+{
+    PuScript *s = (PuScript *)JS_GetContextOpaque(ctx);
+    if (argc < 1 || !JS_IsFunction(ctx, argv[0]))
+        return JS_ThrowTypeError(ctx, "requestAnimationFrame: a callback is required");
+    if (s->nraf == s->rafcap) {
+        int ncap = s->rafcap ? s->rafcap * 2 : 8;
+        PuRaf *r = (PuRaf *)realloc(s->rafs, (size_t)ncap * sizeof(PuRaf));
+        if (!r) return JS_ThrowOutOfMemory(ctx);
+        s->rafs = r;
+        s->rafcap = ncap;
+    }
+    int id = ++s->raf_id;
+    s->rafs[s->nraf].id   = id;
+    s->rafs[s->nraf].func = JS_DupValue(ctx, argv[0]);
+    s->nraf++;
+    return JS_NewInt32(ctx, id);
+}
+
+static JSValue js_cancel_anim_frame(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv)
+{
+    PuScript *s = (PuScript *)JS_GetContextOpaque(ctx);
+    int32_t id = 0;
+    if (argc >= 1) JS_ToInt32(ctx, &id, argv[0]);
+    for (int i = 0; i < s->nraf; i++) {
+        if (s->rafs[i].id == id) {
+            JS_FreeValue(ctx, s->rafs[i].func);
+            memmove(&s->rafs[i], &s->rafs[i + 1], (size_t)(s->nraf - i - 1) * sizeof(PuRaf));
+            s->nraf--;
+            break;
+        }
+    }
+    return JS_UNDEFINED;
+}
+
+/* Fire every pending rAF callback once with `ts` (ms). Callbacks that
+ * re-register go into the now-empty list for the next frame. */
+int pu_script_flush_raf(PuScript *s, double ts)
+{
+    if (!s || s->nraf == 0) return 0;
+    int n = s->nraf;
+    PuRaf *batch = (PuRaf *)malloc((size_t)n * sizeof(PuRaf));
+    if (!batch) return 0;
+    memcpy(batch, s->rafs, (size_t)n * sizeof(PuRaf));
+    s->nraf = 0; /* new registrations during callbacks append fresh */
+
+    JSValue arg = JS_NewFloat64(s->ctx, ts);
+    for (int i = 0; i < n; i++) {
+        JSValue ret = JS_Call(s->ctx, batch[i].func, JS_UNDEFINED, 1, &arg);
+        if (JS_IsException(ret)) pu_dump_error(s->ctx);
+        JS_FreeValue(s->ctx, ret);
+        JS_FreeValue(s->ctx, batch[i].func);
+    }
+    JS_FreeValue(s->ctx, arg);
+    free(batch);
+    return n;
 }
 
 /* Index of the soonest active timer, or -1 if none. */
@@ -186,6 +273,14 @@ static void pu_register_globals(PuScript *s)
         JS_NewCFunction(ctx, js_set_timeout, "setTimeout", 2));
     JS_SetPropertyStr(ctx, global, "clearTimeout",
         JS_NewCFunction(ctx, js_clear_timeout, "clearTimeout", 1));
+    JS_SetPropertyStr(ctx, global, "setInterval",
+        JS_NewCFunction(ctx, js_set_interval, "setInterval", 2));
+    JS_SetPropertyStr(ctx, global, "clearInterval",
+        JS_NewCFunction(ctx, js_clear_timeout, "clearInterval", 1));
+    JS_SetPropertyStr(ctx, global, "requestAnimationFrame",
+        JS_NewCFunction(ctx, js_request_anim_frame, "requestAnimationFrame", 1));
+    JS_SetPropertyStr(ctx, global, "cancelAnimationFrame",
+        JS_NewCFunction(ctx, js_cancel_anim_frame, "cancelAnimationFrame", 1));
 
     JS_FreeValue(ctx, global);
 }
@@ -253,13 +348,23 @@ void pu_script_set_dispatch(PuScript *s, PuDispatch *d)
 
 static void pu_fire_timer(PuScript *s, int idx)
 {
-    JSValue func = s->timers[idx].func;
-    s->timers[idx].active = 0;
-    s->timers[idx].func = JS_UNDEFINED;
+    /* Hold our own ref across the call: a callback that calls clearInterval(self)
+     * frees the timer's ref to a function that is still executing — without this
+     * dup that's a use-after-free. Also don't hold a PuTimer* across JS_Call: the
+     * callback may realloc s->timers by adding timers. */
+    JSValue func     = JS_DupValue(s->ctx, s->timers[idx].func);
+    int     interval = s->timers[idx].interval_ms;
+    if (interval > 0) {
+        s->timers[idx].due_ms = pu_now_ms() + interval; /* reschedule, stays active */
+    } else {
+        s->timers[idx].active = 0;
+        JS_FreeValue(s->ctx, s->timers[idx].func);      /* release the timer's ref */
+        s->timers[idx].func   = JS_UNDEFINED;
+    }
     JSValue ret = JS_Call(s->ctx, func, JS_UNDEFINED, 0, NULL);
     if (JS_IsException(ret)) pu_dump_error(s->ctx);
     JS_FreeValue(s->ctx, ret);
-    JS_FreeValue(s->ctx, func);
+    JS_FreeValue(s->ctx, func);                          /* release our temporary ref */
 }
 
 int pu_script_pump(PuScript *s)
@@ -319,6 +424,8 @@ void pu_script_destroy(PuScript *s)
         if (s->timers[i].active) JS_FreeValue(s->ctx, s->timers[i].func);
     }
     free(s->timers);
+    for (int i = 0; i < s->nraf; i++) JS_FreeValue(s->ctx, s->rafs[i].func);
+    free(s->rafs);
     if (s->ctx) JS_FreeContext(s->ctx);
     if (s->rt)  JS_FreeRuntime(s->rt);
     free(s);
