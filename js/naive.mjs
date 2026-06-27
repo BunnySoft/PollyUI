@@ -345,3 +345,153 @@ export function NFormItem(props = {}, control) {
     control,
     error ? h('view', { id: props.errorId, style: { color: theme.error, fontSize: '12' } }, error) : null);
 }
+
+// ---- NAvatar ----------------------------------------------------------------
+
+export function NAvatar(props = {}, fallback) {
+  const { src, size = 40, round = true, color } = props;
+  const style = clean({ width: size, height: size, borderRadius: round ? size / 2 : 6, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', backgroundColor: color || theme.primary });
+  if (src) style.backgroundImage = src;
+  return h('view', { id: props.id, style },
+    !src && fallback ? h('view', { style: clean({ color: theme.solidText, fontSize: Math.round(size * 0.4), fontWeight: 'bold' }) }, fallback) : null);
+}
+
+// ---- NBadge -----------------------------------------------------------------
+
+export function NBadge(props = {}, child) {
+  const { value, dot = false, max = 99 } = props;
+  const show = dot || (value != null && value !== 0);
+  const text = dot ? '' : (typeof value === 'number' && value > max ? max + '+' : String(value));
+  return h('view', { id: props.id, style: { position: 'relative', flexDirection: 'row' } },
+    child,
+    show ? h('view', {
+      style: clean({ position: 'absolute', top: dot ? 0 : -8, right: dot ? 0 : -10, minWidth: dot ? 8 : 18, height: dot ? 8 : 18,
+        borderRadius: dot ? 4 : 9, backgroundColor: theme.error, paddingLeft: dot ? 0 : 5, paddingRight: dot ? 0 : 5,
+        alignItems: 'center', justifyContent: 'center' }) },
+      text ? h('view', { style: { color: '#ffffff', fontSize: '12', fontWeight: 'bold' } }, text) : null) : null);
+}
+
+// ---- NPagination ------------------------------------------------------------
+
+export function NPagination(props = {}) {
+  const { page = 1, pageCount = 1, onUpdate, id } = props;
+  const btn = (lbl, target, opts = {}) => h('view', {
+    style: clean({ minWidth: 32, height: 32, paddingLeft: 6, paddingRight: 6, borderRadius: 3, alignItems: 'center', justifyContent: 'center',
+      flexDirection: 'row', borderWidth: 1, borderColor: opts.active ? theme.primary : theme.border,
+      backgroundColor: opts.active ? theme.primary : theme.card, opacity: opts.disabled ? 0.5 : 1 }),
+    onClick: opts.disabled || opts.active ? undefined : () => onUpdate && onUpdate(target),
+  }, h('view', { style: clean({ color: opts.active ? theme.solidText : theme.text, fontSize: 14 }) }, lbl));
+  const items = [btn('‹', page - 1, { disabled: page <= 1 })];
+  for (let p = 1; p <= pageCount; p++) items.push(btn(String(p), p, { active: p === page }));
+  items.push(btn('›', page + 1, { disabled: page >= pageCount }));
+  return h('view', { id, style: { flexDirection: 'row', gap: '8' } }, ...items);
+}
+
+// ---- NDataTable -------------------------------------------------------------
+
+export function NDataTable(props = {}) {
+  const { columns = [], data = [], id } = props;
+  const cell = (content, col, header) => h('view', {
+    style: clean({ width: col.width, flexGrow: col.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, justifyContent: 'center' }),
+  }, h('view', { style: clean({ color: header ? theme.textSecondary : theme.text, fontSize: 14, fontWeight: header ? 'bold' : 'normal' }) }, String(content)));
+
+  const rows = [
+    h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }) }, ...columns.map(c => cell(c.title, c, true))),
+    h('view', { style: { height: '1', backgroundColor: theme.border } }),
+  ];
+  data.forEach((row, i) => {
+    rows.push(h('view', { style: { flexDirection: 'row' } }, ...columns.map(c => cell(c.render ? c.render(row) : row[c.key], c, false))));
+    if (i < data.length - 1) rows.push(h('view', { style: { height: '1', backgroundColor: theme.border } }));
+  });
+  return h('view', { id, style: clean({ borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', backgroundColor: theme.card, flexDirection: 'column' }) }, ...rows);
+}
+
+// ---- NDropdown (menu on click) ----------------------------------------------
+
+export function NDropdown(props = {}, trigger) {
+  const { options = [], onSelect, width = 160 } = props;
+  trigger.props = trigger.props || {};
+  trigger.props.onClick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid;
+    const menu = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
+      ...options.map(o => h('view', {
+        style: clean({ height: 32, paddingLeft: 10, paddingRight: 10, borderRadius: 3, justifyContent: 'center' }),
+        onClick: () => { onSelect && onSelect(o.key); closePopup(pid); },
+      }, h('view', { style: { color: theme.text, fontSize: '14' } }, o.label))));
+    pid = openPopup(menu, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return trigger;
+}
+
+// ---- NDatePicker ------------------------------------------------------------
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+export const formatDate = (d) => d ? `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` : '';
+
+function calendar(view, selected, onPick, onNav) {
+  const startDow = new Date(view.year, view.month, 1).getDay();
+  const daysInMonth = new Date(view.year, view.month + 1, 0).getDate();
+  const header = h('view', { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8' } },
+    h('view', { style: { width: '24', height: '24', alignItems: 'center', justifyContent: 'center' }, onClick: () => onNav(-1) }, h('view', { style: { color: theme.text } }, '‹')),
+    h('view', { style: { color: theme.text, fontSize: '14', fontWeight: 'bold' } }, `${MONTHS[view.month]} ${view.year}`),
+    h('view', { style: { width: '24', height: '24', alignItems: 'center', justifyContent: 'center' }, onClick: () => onNav(1) }, h('view', { style: { color: theme.text } }, '›')));
+  const dow = h('view', { style: { flexDirection: 'row' } }, ...WEEKDAYS.map(w =>
+    h('view', { style: { width: '32', height: '28', alignItems: 'center', justifyContent: 'center' } }, h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, w))));
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(h('view', { style: { flexDirection: 'row' } }, ...cells.slice(i, i + 7).map(d => {
+      const isSel = d && selected && selected.getFullYear() === view.year && selected.getMonth() === view.month && selected.getDate() === d;
+      return h('view', {
+        style: clean({ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 3, backgroundColor: isSel ? theme.primary : 'transparent' }),
+        onClick: d ? () => onPick(new Date(view.year, view.month, d)) : undefined,
+      }, d ? h('view', { style: { color: isSel ? theme.solidText : theme.text, fontSize: '13' } }, String(d)) : null);
+    })));
+  }
+  return h('view', { style: clean({ backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 12 }) }, header, dow, ...weeks);
+}
+
+export function NDatePicker(props = {}) {
+  const { value, onUpdate, width = 200, id } = props;
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const base = value || new Date(2024, 0, 1);
+    const view = { year: base.getFullYear(), month: base.getMonth() };
+    let pid;
+    const draw = () => calendar(view, value,
+      (d) => { onUpdate && onUpdate(d); closePopup(pid); },
+      (delta) => { view.month += delta; if (view.month < 0) { view.month = 11; view.year--; } if (view.month > 11) { view.month = 0; view.year++; } _overlays.list = _overlays.list.slice(); });
+    pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return h('view', {
+    id, tabIndex: 0,
+    style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    onClick: open,
+  },
+    h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value ? formatDate(value) : 'Select date'),
+    h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, '📅'));
+}
+
+// ---- NMessage (toasts) ------------------------------------------------------
+
+export const message = {
+  _show(type, text, duration = 3000) {
+    const color = typeColor(type) || theme.info;
+    const toast = () => h('view', { style: clean({ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 4, paddingLeft: 14, paddingRight: 14, paddingTop: 10, paddingBottom: 10, shadowColor: '#0000002e', shadowBlur: 16, shadowY: 4 }) },
+      h('view', { style: clean({ width: 8, height: 8, borderRadius: 4, backgroundColor: color }) }),
+      h('view', { style: { color: theme.text, fontSize: '14' } }, text));
+    const id = openPopup(toast, { x: 300, y: 24, backdrop: false });
+    if (duration > 0) setTimeout(() => closePopup(id), duration);
+    return id;
+  },
+  info(t, d) { return this._show('info', t, d); },
+  success(t, d) { return this._show('success', t, d); },
+  warning(t, d) { return this._show('warning', t, d); },
+  error(t, d) { return this._show('error', t, d); },
+};
