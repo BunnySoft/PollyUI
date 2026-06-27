@@ -14,6 +14,7 @@ struct PuBridge {
     JSContext *ctx;
     PuNode    *body;
     PuNode    *focused;   /* currently focused element, or NULL */
+    PuNode    *hovered;   /* element under the pointer (for enter/leave), or NULL */
 };
 
 static char *pu_bstrdup(const char *s)
@@ -327,42 +328,109 @@ static void dispatch_report(JSContext *ctx)
     JS_FreeValue(ctx, exc);
 }
 
-/* Bubble `type` from `target` to the root, invoking matching listeners with an
- * event object. `key` (optional) is attached for keyboard events. */
-static void dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key)
+/* event.stopPropagation() / stopImmediatePropagation() / preventDefault() set
+ * flags on the event object itself; dispatch_impl reads them between listeners. */
+static JSValue js_event_stop(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-    if (!b || !target || !type) return;
+    (void)argc; (void)argv;
+    JS_SetPropertyStr(ctx, this_val, "__stop", JS_NewBool(ctx, 1));
+    return JS_UNDEFINED;
+}
+
+static JSValue js_event_stop_immediate(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)argc; (void)argv;
+    JS_SetPropertyStr(ctx, this_val, "__stop", JS_NewBool(ctx, 1));
+    JS_SetPropertyStr(ctx, this_val, "__stopImmediate", JS_NewBool(ctx, 1));
+    return JS_UNDEFINED;
+}
+
+static JSValue js_event_prevent(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)argc; (void)argv;
+    JS_SetPropertyStr(ctx, this_val, "defaultPrevented", JS_NewBool(ctx, 1));
+    return JS_UNDEFINED;
+}
+
+static int js_event_flag(JSContext *ctx, JSValueConst ev, const char *name)
+{
+    JSValue v = JS_GetPropertyStr(ctx, ev, name);
+    int set = JS_ToBool(ctx, v);
+    JS_FreeValue(ctx, v);
+    return set;
+}
+
+/* Dispatch `type` to `target`. With bubble, walk up to the root invoking
+ * matching listeners; stopPropagation/stopImmediatePropagation cut the walk.
+ * `key` (keyboard) and px,py (pointer) are attached when provided. Returns 1 if
+ * a listener called preventDefault(). */
+static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key,
+                         int has_pos, float px, float py, int bubble)
+{
+    if (!b || !target || !type) return 0;
     JSContext *ctx = b->ctx;
 
-    for (PuNode *n = target; n; n = n->parent) {       /* bubble to the root */
+    JSValue ev = JS_NewObject(ctx);                       /* one event for the whole walk */
+    JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
+    JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
+    JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
+    if (key) JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key));
+    if (has_pos) {
+        JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, px));
+        JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, py));
+    }
+    JS_SetPropertyStr(ctx, ev, "stopPropagation",
+        JS_NewCFunction(ctx, js_event_stop, "stopPropagation", 0));
+    JS_SetPropertyStr(ctx, ev, "stopImmediatePropagation",
+        JS_NewCFunction(ctx, js_event_stop_immediate, "stopImmediatePropagation", 0));
+    JS_SetPropertyStr(ctx, ev, "preventDefault",
+        JS_NewCFunction(ctx, js_event_prevent, "preventDefault", 0));
+
+    for (PuNode *n = target; n; n = n->parent) {
+        JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
         for (int i = 0; i < n->listener_count; i++) {
             if (strcmp(n->listeners[i].type, type) != 0) continue;
-
-            JSValue ev = JS_NewObject(ctx);
-            JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
-            JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
-            JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
-            if (key) JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key));
-
             JSValue self = pu_node_wrapper(ctx, n);
             JSValue arg = ev;
             JSValue r = JS_Call(ctx, n->listeners[i].func, self, 1, &arg);
             if (JS_IsException(r)) dispatch_report(ctx);
             JS_FreeValue(ctx, r);
             JS_FreeValue(ctx, self);
-            JS_FreeValue(ctx, ev);
+            if (js_event_flag(ctx, ev, "__stopImmediate")) break;
         }
+        if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
     }
+
+    int prevented = js_event_flag(ctx, ev, "defaultPrevented");
+    JS_FreeValue(ctx, ev);
+    return prevented;
 }
 
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
 {
-    dispatch_impl(b, target, type, NULL);
+    dispatch_impl(b, target, type, NULL, 0, 0, 0, 1);
 }
 
 void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
 {
-    if (b && b->focused) dispatch_impl(b, b->focused, type, key);
+    if (b && b->focused) dispatch_impl(b, b->focused, type, key, 0, 0, 0, 1);
+}
+
+/* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
+ * hit-tested target, carrying clientX/clientY. For mousemove, also emit
+ * mouseleave/mouseenter (non-bubbling) as the hovered element changes. */
+void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y)
+{
+    if (!b || !type) return;
+
+    if (strcmp(type, "mousemove") == 0 && target != b->hovered) {
+        PuNode *old = b->hovered;
+        b->hovered = target;
+        if (target) pu_node_ref(target);          /* keep hovered alive (like focus) */
+        if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0); pu_node_unref(old); }
+        if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0);
+    }
+    if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1);
 }
 
 PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
@@ -374,13 +442,13 @@ void pu_bridge_set_focus(PuBridge *b, PuNode *node)
     if (b->focused) {
         PuNode *old = b->focused;
         b->focused = NULL;
-        dispatch_impl(b, old, "blur", NULL);
+        dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
     b->focused = node;
     if (node) {
         pu_node_ref(node);            /* keep the focused node alive */
-        dispatch_impl(b, node, "focus", NULL);
+        dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0);
     }
 }
 
@@ -544,6 +612,7 @@ PuNode *pu_bridge_body(PuBridge *b) { return b ? b->body : NULL; }
 void pu_bridge_free(PuBridge *b)
 {
     if (!b) return;
+    if (b->hovered) pu_node_unref(b->hovered);
     if (b->body) pu_node_unref(b->body); /* releases the native tree */
     free(b);
 }

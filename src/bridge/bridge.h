@@ -24,6 +24,11 @@ PuNode *pu_bridge_body(PuBridge *b);
  * matching listeners with an event object. */
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
 
+/* Dispatch a pointer event (mousedown/mouseup/mousemove/click) at `target`,
+ * carrying clientX/clientY. mousemove also emits mouseenter/mouseleave as the
+ * hovered element changes. Pass the hit-tested target (NULL = empty space). */
+void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y);
+
 /* --- focus + keyboard --- */
 /* Move focus to `node` (NULL = blur), firing blur/focus events. */
 void    pu_bridge_set_focus(PuBridge *b, PuNode *node);

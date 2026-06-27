@@ -75,33 +75,36 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
     pu_render_tree(surface, body, scale);
 }
 
-/* Click: hit-test against the last computed layout, dispatch to JS, then drain
- * any microtasks the handler queued. The window repaints afterward. */
+/* Pointer: hit-test against the last computed layout and dispatch the matching
+ * DOM event (mousedown/mouseup/mousemove/click), then drain queued work. */
 static void app_pointer(int x, int y, PuPointerType type, void *user)
 {
     PuApp *app = (PuApp *)user;
-    if (type != PU_POINTER_CLICK) return;
     PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
 
-    /* Click-to-focus: focus the nearest focusable ancestor (or blur). */
-    PuNode *f = target;
-    while (f && f->tab_index < 0) f = f->parent;
-    pu_bridge_set_focus(app->bridge, f);
+    if (type == PU_POINTER_DOWN) {
+        /* Click-to-focus on press: focus the nearest focusable ancestor (or blur). */
+        PuNode *f = target;
+        while (f && f->tab_index < 0) f = f->parent;
+        pu_bridge_set_focus(app->bridge, f);
+    }
 
-    if (target)
-        pu_bridge_dispatch_event(app->bridge, target, "click");
+    const char *t = (type == PU_POINTER_DOWN) ? "mousedown"
+                  : (type == PU_POINTER_UP)   ? "mouseup"
+                  : (type == PU_POINTER_MOVE) ? "mousemove" : "click";
+    pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
     pu_script_pump(app->script);
 }
 
-/* Keyboard: Tab cycles focus; other keys dispatch a keydown to the focused
+/* Keyboard: Tab cycles focus; other keys dispatch keydown/keyup to the focused
  * element. The window repaints afterward (the handler may mutate the DOM). */
-static void app_key(const char *key, void *user)
+static void app_key(const char *key, int is_down, void *user)
 {
     PuApp *app = (PuApp *)user;
-    if (strcmp(key, "Tab") == 0)
+    if (is_down && strcmp(key, "Tab") == 0)
         pu_bridge_focus_next(app->bridge);
     else
-        pu_bridge_dispatch_key(app->bridge, "keydown", key);
+        pu_bridge_dispatch_key(app->bridge, is_down ? "keydown" : "keyup", key);
     pu_script_pump(app->script);
 }
 
@@ -170,21 +173,49 @@ static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     while (f && f->tab_index < 0) f = f->parent;
     pu_bridge_set_focus(g_test->bridge, f); /* click-to-focus */
 
-    if (target)
-        pu_bridge_dispatch_event(g_test->bridge, target, "click");
+    /* A real click is mousedown -> mouseup -> click. */
+    pu_bridge_dispatch_pointer(g_test->bridge, "mousedown", target, (float)x, (float)y);
+    pu_bridge_dispatch_pointer(g_test->bridge, "mouseup",   target, (float)x, (float)y);
+    pu_bridge_dispatch_pointer(g_test->bridge, "click",     target, (float)x, (float)y);
     pu_script_run_loop(g_test->script);
     test_render();
+    return JS_NewBool(ctx, target != NULL);
+}
+
+/* host.mouse(type, x, y): dispatch a single pointer event (mousedown/mouseup/
+ * mousemove). mousemove drives mouseenter/mouseleave hover transitions. */
+static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    const char *type = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    double x = 0, y = 0;
+    if (argc >= 2) JS_ToFloat64(ctx, &x, argv[1]);
+    if (argc >= 3) JS_ToFloat64(ctx, &y, argv[2]);
+    PuNode *body = pu_bridge_body(g_test->bridge);
+    pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
+    PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
+    if (type) {
+        pu_bridge_dispatch_pointer(g_test->bridge, type, target, (float)x, (float)y);
+        JS_FreeCString(ctx, type);
+        pu_script_run_loop(g_test->script);
+        test_render();
+    }
     return JS_NewBool(ctx, target != NULL);
 }
 
 static JSValue host_key(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
-    const char *key = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    const char *key  = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    const char *type = argc >= 2 ? JS_ToCString(ctx, argv[1]) : NULL;
     if (key) {
-        if (strcmp(key, "Tab") == 0) pu_bridge_focus_next(g_test->bridge);
-        else                         pu_bridge_dispatch_key(g_test->bridge, "keydown", key);
+        const char *t = type ? type : "keydown";
+        if (strcmp(t, "keydown") == 0 && strcmp(key, "Tab") == 0)
+            pu_bridge_focus_next(g_test->bridge);
+        else
+            pu_bridge_dispatch_key(g_test->bridge, t, key);
         JS_FreeCString(ctx, key);
+        if (type) JS_FreeCString(ctx, type);
         pu_script_run_loop(g_test->script);
         test_render();
     }
@@ -222,7 +253,8 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "height", JS_NewInt32(ctx, h));
     JS_SetPropertyStr(ctx, host, "render", JS_NewCFunction(ctx, host_render, "render", 0));
     JS_SetPropertyStr(ctx, host, "click",  JS_NewCFunction(ctx, host_click, "click", 2));
-    JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 1));
+    JS_SetPropertyStr(ctx, host, "mouse",  JS_NewCFunction(ctx, host_mouse, "mouse", 3));
+    JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
     JS_SetPropertyStr(ctx, global, "host", host);

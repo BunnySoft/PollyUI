@@ -125,12 +125,21 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
 
+    case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
+    case WM_MOUSEMOVE:
         if (w && w->pointer_fn) {
             float scale = w->scale > 0 ? w->scale : 1.0f;
             int x = (int)((short)LOWORD(lp) / scale); /* physical -> logical */
             int y = (int)((short)HIWORD(lp) / scale);
-            w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
+            if (msg == WM_LBUTTONDOWN) {
+                w->pointer_fn(x, y, PU_POINTER_DOWN, w->pointer_user);
+            } else if (msg == WM_MOUSEMOVE) {
+                w->pointer_fn(x, y, PU_POINTER_MOVE, w->pointer_user);
+            } else { /* WM_LBUTTONUP: up then click */
+                w->pointer_fn(x, y, PU_POINTER_UP, w->pointer_user);
+                w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
+            }
             InvalidateRect(hwnd, NULL, FALSE); /* handler may have changed the DOM */
         }
         return 0;
@@ -149,11 +158,20 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN: {
         const char *name = pu_vk_name(wp);
         if (w && w->key_fn && name) {
-            w->key_fn(name, w->key_user);
+            w->key_fn(name, 1, w->key_user);
             InvalidateRect(hwnd, NULL, FALSE);
             return 0;
         }
         break; /* character keys -> WM_CHAR via TranslateMessage */
+    }
+
+    case WM_KEYUP: {
+        const char *name = pu_vk_name(wp);
+        if (w && w->key_fn && name) {
+            w->key_fn(name, 0, w->key_user);
+            InvalidateRect(hwnd, NULL, FALSE);
+        }
+        return 0;
     }
 
     case WM_CHAR:
@@ -162,7 +180,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (c >= 0x20 && c != 0x7F) { /* printable; control keys come via WM_KEYDOWN */
                 char utf8[8] = { 0 };
                 WideCharToMultiByte(CP_UTF8, 0, &c, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
-                w->key_fn(utf8, w->key_user);
+                w->key_fn(utf8, 1, w->key_user);
                 InvalidateRect(hwnd, NULL, FALSE);
             }
         }

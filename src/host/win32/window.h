@@ -24,10 +24,13 @@ typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, float scale
 
 /* Pointer event types. */
 typedef enum PuPointerType {
-    PU_POINTER_CLICK = 0
+    PU_POINTER_CLICK = 0,
+    PU_POINTER_DOWN,
+    PU_POINTER_UP,
+    PU_POINTER_MOVE
 } PuPointerType;
 
-/* Pointer callback: a click at LOGICAL (DPI-independent) client coords (x, y).
+/* Pointer callback at LOGICAL (DPI-independent) client coords (x, y).
  * After it returns the window repaints (the handler may have mutated the DOM). */
 typedef void (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
 
@@ -41,8 +44,9 @@ void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 
 /* Key callback: `key` is a DOM-style key name ("a", "Enter", "Backspace",
- * "Tab", "ArrowLeft", ...). Fired on key-down / character input. */
-typedef void (*PuKeyFn)(const char *key, void *user);
+ * "Tab", "ArrowLeft", ...). is_down is 1 for key-down / character input, 0 for
+ * key-up. After it returns the window repaints. */
+typedef void (*PuKeyFn)(const char *key, int is_down, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 
 /* Async pump callback: run pending UI-thread work (microtasks, worker/task
