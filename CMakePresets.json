@@ -4,7 +4,7 @@
   "configurePresets": [
     {
       "name": "win-clang",
-      "displayName": "Windows — clang-cl + Ninja + lld",
+      "displayName": "Windows — clang-cl + Ninja + lld (console/dev)",
       "description": "Uses LLVM clang-cl with the installed MSVC SDK. Run inside the MSVC env (tools/build.ps1 sets it up).",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/win-clang",
@@ -14,9 +14,17 @@
         "CMAKE_LINKER_TYPE": "LLD",
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
+    },
+    {
+      "name": "win-clang-windowed",
+      "displayName": "Windows — GUI build (no console window)",
+      "inherits": "win-clang",
+      "binaryDir": "${sourceDir}/build/win-windowed",
+      "cacheVariables": { "PU_WINDOWED": "ON" }
     }
   ],
   "buildPresets": [
-    { "name": "win-clang", "configurePreset": "win-clang" }
+    { "name": "win-clang", "configurePreset": "win-clang" },
+    { "name": "win-clang-windowed", "configurePreset": "win-clang-windowed" }
   ]
 }

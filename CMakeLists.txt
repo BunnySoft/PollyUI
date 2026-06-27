@@ -80,3 +80,13 @@ if (WIN32)
     target_link_libraries(pollyui PRIVATE
         user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite)
 endif()
+
+# Release/GUI build: no console window (console.log mirrors to the debugger via
+# OutputDebugString). Dev builds keep the console so `console.log` hits the
+# terminal and `--test` output is capturable.
+#   cmake --preset win-clang -DPU_WINDOWED=ON
+option(PU_WINDOWED "Build a GUI app with no console window" OFF)
+if (WIN32 AND PU_WINDOWED)
+    target_compile_definitions(pollyui PRIVATE PU_WINDOWED)
+    target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+endif()

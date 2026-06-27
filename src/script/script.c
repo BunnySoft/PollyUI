@@ -67,13 +67,38 @@ static JSValue js_console_print(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv, int magic)
 {
     FILE *out = magic ? stderr : stdout; /* magic=1 -> warn/error */
+
+    /* Build the whole line (so it survives to the debugger in windowed mode). */
+    char  *line = NULL;
+    size_t len = 0, cap = 0;
     for (int i = 0; i < argc; i++) {
-        if (i) fputc(' ', out);
         const char *s = JS_ToCString(ctx, argv[i]);
-        if (s) { fputs(s, out); JS_FreeCString(ctx, s); }
+        if (!s) continue;
+        size_t sl = strlen(s);
+        size_t need = len + (i ? 1 : 0) + sl + 1;
+        if (need > cap) {
+            size_t ncap = need * 2;
+            char *n = (char *)realloc(line, ncap);
+            if (n) { line = n; cap = ncap; }
+        }
+        if (line && cap >= len + (i ? 1 : 0) + sl + 1) {
+            if (i) line[len++] = ' ';
+            memcpy(line + len, s, sl);
+            len += sl;
+            line[len] = '\0';
+        }
+        JS_FreeCString(ctx, s);
     }
+
+    if (line) fputs(line, out);
     fputc('\n', out);
     fflush(out);
+#if defined(_WIN32) && defined(PU_WINDOWED)
+    /* No console in windowed builds — mirror to the debugger output. */
+    OutputDebugStringA(line ? line : "");
+    OutputDebugStringA("\n");
+#endif
+    free(line);
     return JS_UNDEFINED;
 }
 

@@ -53,11 +53,19 @@ MSVC + Windows SDK).
 ./tools/build.ps1          # configure + build (sets up the MSVC env)
 ./tools/build.ps1 -Run     # build then open the built-in demo window
 
-# run an interactive UI app: text, clickable buttons, overlapping badge
-./build/win-clang/pollyui.exe js/counter.js
+# the component gallery (interactive: buttons, toggles, tabs, ...)
+./build/win-clang/pollyui.exe js/components.js
 
-# run a headless script (M1/M2): console, timers, DOM assertions
-./build/win-clang/pollyui.exe js/m2.js
+# headless test: no window, no OS input — deterministic (host.click/pixel/save)
+./build/win-clang/pollyui.exe --test tests/smoke.js
+```
+
+The app is **per-monitor DPI-aware** — JS authors in logical pixels, Skia renders
+crisp at physical resolution. For a release GUI build with no console window:
+
+```powershell
+./tools/build.ps1   # (or configure the windowed preset directly:)
+cmake --preset win-clang-windowed && cmake --build --preset win-clang-windowed
 ```
 
 QuickJS (quickjs-ng) is vendored under `third_party/quickjs`; Skia is fetched by
