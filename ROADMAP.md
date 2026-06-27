@@ -170,11 +170,11 @@ persistence, and the JS framework layer (Vue reactivity + components).
 |---|---|---|
 | **Vue-style reactivity + Composition API** (`js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
 | **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
-| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | NButton/NCard/NInput/NSwitch/NTag/NSpace + theme |
+| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | Button/Card/Input/Switch/Tag/Checkbox/Radio/Slider/Tabs/Progress/Alert/Modal + light & dark themes |
 | **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
 | **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
 | **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
-| More components (Modal, Tabs, Slider, Checkbox, Select…) | 🟡 | core set done; long tail pending |
+| More components (Select dropdown, Tooltip, DatePicker, Table…) | 🟡 | broad set done; long tail pending |
 
 ## Accessibility
 
@@ -209,4 +209,4 @@ persistence, and the JS framework layer (Vue reactivity + components).
 1. **macOS host port** (then Linux) — the last big architectural piece; everything above Host is portable.
 2. **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
 3. **Text**: custom font families, IME (CJK/emoji composition), clipboard.
-4. **More Naive UI components** (Modal, Tabs, Select, Slider, Checkbox, Radio, Tooltip) + a dark theme.
+4. **More Naive UI components** (Select dropdown, Tooltip, DatePicker, Table, Pagination) + form validation.
