@@ -392,9 +392,13 @@ export function NPagination(props = {}) {
 
 export function NDataTable(props = {}) {
   const { columns = [], data = [], id } = props;
-  const cell = (content, col, header) => h('view', {
-    style: clean({ width: col.width, flexGrow: col.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, justifyContent: 'center' }),
-  }, h('view', { style: clean({ color: header ? theme.textSecondary : theme.text, fontSize: 14, fontWeight: header ? 'bold' : 'normal' }) }, String(content)));
+  const cell = (content, col, header) => {
+    // a render() result is a vnode (object) -> use it directly; a plain value -> wrap in text
+    const inner = (content && typeof content === 'object')
+      ? content
+      : h('view', { style: clean({ color: header ? theme.textSecondary : theme.text, fontSize: 14, fontWeight: header ? 'bold' : 'normal' }) }, String(content));
+    return h('view', { style: clean({ width: col.width, flexGrow: col.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, justifyContent: 'center', flexDirection: 'row', alignItems: 'center' }) }, inner);
+  };
 
   const rows = [
     h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }) }, ...columns.map(c => cell(c.title, c, true))),
