@@ -351,11 +351,13 @@ always use raster).
 **`localStorage`** (file-backed, survives restarts), and **`fetch`** (Promise;
 http/https via WinHTTP on a thread, plus `file://`; `Response.text()`/`json()`).
 
-**JS framework layer** (in `js/`, on the DOM API) — a **CSS stylesheet +
-selector engine** (`css.mjs`), a **React-style reconciler** (`reconciler.mjs`:
-`h`/`render`/`mount`, function components, minimal diffing), an **rAF tween
-library** (`anim.mjs`), and a **text input** with selection + editing
-(`textinput.mjs`).
+**JS framework layer** (in `js/`, on the DOM API) — a **React-style reconciler**
+(`reconciler.mjs`: `h`/`render`/`mount`, diffing), a **Vue-style reactivity +
+Composition API** (`vue.mjs`: `ref`/`reactive`/`computed`/`watch`,
+`createApp`/`setup`) layered on it, a **Naive UI-style component library**
+(`naive.mjs`: `NButton`/`NCard`/`NInput`/`NSwitch`/`NTag`/`NSpace` + theme), a
+**CSS stylesheet + selector engine** (`css.mjs`), an **rAF tween library**
+(`anim.mjs`), and a **text input** with selection + editing (`textinput.mjs`).
 
 **Concurrency** — **`Worker`** (per-thread QuickJS, JSON messages),
 **`computeAsync`** (native background compute), and a UI-thread **dispatcher**
