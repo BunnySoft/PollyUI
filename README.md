@@ -32,8 +32,13 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 - **M0** — Win32 window rendered by a Skia raster surface.
 - **M1** — embedded QuickJS: runs a `.js` file with `console`, timers, promises.
+- **M2** — DOM Model + bridge: JS builds a retained native node tree
+  (`document.createElement`, `style`, `appendChild`, …) with GC-safe lifetimes.
+- **M3** — Yoga layout + Skia paint: `pollyui app.js` builds the DOM and renders
+  it in a window. **The full pipeline (JS → DOM → layout → paint) works.**
 
-Next: **M2** wires the DOM Model so JS can build a node tree. See `DESIGN.md` §10.
+Next: **M4** text rendering, then **M5** input events + `requestAnimationFrame`,
+then **M6** macOS/Linux host ports. See `DESIGN.md` §10.
 
 ## Building
 
@@ -43,10 +48,13 @@ MSVC + Windows SDK).
 ```powershell
 ./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
 ./tools/build.ps1          # configure + build (sets up the MSVC env)
-./tools/build.ps1 -Run     # build then open the window (M0)
+./tools/build.ps1 -Run     # build then open the built-in demo window
 
-# run a script (M1):
-./build/win-clang/pollyui.exe js/m1.js
+# run a UI app (M3): build the DOM in JS, lay it out, render it
+./build/win-clang/pollyui.exe js/m3.js
+
+# run a headless script (M1/M2): console, timers, DOM assertions
+./build/win-clang/pollyui.exe js/m2.js
 ```
 
 QuickJS (quickjs-ng) is vendored under `third_party/quickjs`; Skia is fetched by
