@@ -39,6 +39,7 @@ add_executable(pollyui
     src/render/skia_c.cpp
     src/render/render.c
     src/script/script.c
+    src/script/storage.c
     src/model/node.c
     src/bridge/bridge.c
     src/layout/layout.c
@@ -78,7 +79,7 @@ endif()
 
 if (WIN32)
     target_compile_definitions(pollyui PRIVATE
-        UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+        UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
     # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
     target_link_libraries(pollyui PRIVATE
         user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp)

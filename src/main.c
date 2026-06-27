@@ -1,5 +1,6 @@
 #include "host/win32/window.h"
 #include "script/script.h"
+#include "script/storage.h"
 #include "bridge/bridge.h"
 #include "layout/layout.h"
 #include "render/render.h"
@@ -298,6 +299,7 @@ static int run_test(const char *path)
     PuDispatch *disp = pu_dispatch_new();
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
+    pu_storage_install(pu_script_jsctx(s), "build/win-clang/_localstorage.dat");
 
     PuTestHost host;
     host.script = s;
@@ -314,6 +316,7 @@ static int run_test(const char *path)
 
     g_test = NULL;
     pu_async_shutdown();
+    pu_storage_shutdown();
     if (host.surface) pu_surface_destroy(host.surface);
     pu_script_destroy(s);
     pu_bridge_free(b);
@@ -333,6 +336,7 @@ static int run_app(const char *path)
     PuDispatch *disp = pu_dispatch_new();
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
+    pu_storage_install(pu_script_jsctx(s), "pollyui_localstorage.dat");
 
     int rc = pu_script_run_file(s, path);
     if (rc == 0)
