@@ -11,6 +11,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontMetrics.h"
@@ -20,9 +21,23 @@
 #include "include/core/SkStream.h"
 #include "include/encode/SkPngEncoder.h"
 
+/* GPU (Ganesh GL) backend. */
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"  /* GrBackendRenderTargets::MakeGL */
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"        /* SkSurfaces::WrapBackendRenderTarget, FlushAndSubmit */
+#include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo */
+
+#include <windows.h>   /* WGL + HWND/HDC for the GPU surface */
+
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <new>
+
+#define PU_GL_RGBA8 0x8058
+#define PU_GLLOG(msg) std::fprintf(stderr, "[gl] %s\n", msg)
 
 // SkFontMgr_New_DirectWrite is in skia.lib but the package ships no header for
 // it; declare it ourselves (default null args -> Skia builds a DWrite factory).
@@ -51,6 +66,13 @@ struct PuSurface {
     sk_sp<SkSurface> surface;
     int width  = 0;
     int height = 0;
+
+    /* GPU (GL) mode — renders to the window framebuffer. */
+    bool  gl = false;
+    HWND  hwnd = nullptr;
+    HDC   hdc = nullptr;
+    HGLRC hglrc = nullptr;
+    sk_sp<GrDirectContext> grctx;
 };
 
 static sk_sp<SkSurface> make_raster(int w, int h) {
@@ -59,6 +81,22 @@ static sk_sp<SkSurface> make_raster(int w, int h) {
     const SkImageInfo info =
         SkImageInfo::Make(w, h, kBGRA_8888_SkColorType, kPremul_SkAlphaType);
     return SkSurfaces::Raster(info);
+}
+
+/* Wrap the window's default framebuffer (FBO 0) as a Skia GPU surface. */
+static void rewrap_gl(PuSurface *s, int w, int h) {
+    if (w < 1) w = 1;
+    if (h < 1) h = 1;
+    GrGLFramebufferInfo fbInfo;
+    fbInfo.fFBOID = 0;
+    fbInfo.fFormat = PU_GL_RGBA8;
+    GrBackendRenderTarget target =
+        GrBackendRenderTargets::MakeGL(w, h, /*sampleCnt*/ 0, /*stencilBits*/ 8, fbInfo);
+    s->surface = SkSurfaces::WrapBackendRenderTarget(
+        s->grctx.get(), target, kBottomLeft_GrSurfaceOrigin,
+        kRGBA_8888_SkColorType, nullptr, nullptr);
+    s->width = w;
+    s->height = h;
 }
 
 extern "C" {
@@ -75,7 +113,77 @@ PuSurface *pu_surface_create(int width, int height) {
     return s;
 }
 
+PuSurface *pu_surface_create_gl(void *hwndv, int width, int height) {
+    PuSurface *s = new (std::nothrow) PuSurface();
+    if (!s) return nullptr;
+    s->gl = true;
+    s->hwnd = (HWND)hwndv;
+    s->hdc = GetDC(s->hwnd);
+    if (!s->hdc) { delete s; return nullptr; }
+
+    PIXELFORMATDESCRIPTOR pfd;
+    memset(&pfd, 0, sizeof(pfd));
+    pfd.nSize = sizeof(pfd);
+    pfd.nVersion = 1;
+    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+    pfd.iPixelType = PFD_TYPE_RGBA;
+    pfd.cColorBits = 32;
+    pfd.cAlphaBits = 8;
+    pfd.cStencilBits = 8;
+    pfd.iLayerType = PFD_MAIN_PLANE;
+    int pf = ChoosePixelFormat(s->hdc, &pfd);
+    if (!pf || !SetPixelFormat(s->hdc, pf, &pfd)) {
+        PU_GLLOG("ChoosePixelFormat/SetPixelFormat failed");
+        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    }
+    s->hglrc = wglCreateContext(s->hdc);
+    if (!s->hglrc || !wglMakeCurrent(s->hdc, s->hglrc)) {
+        PU_GLLOG("wglCreateContext/MakeCurrent failed");
+        if (s->hglrc) wglDeleteContext(s->hglrc);
+        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    }
+    s->grctx = GrDirectContexts::MakeGL();
+    if (!s->grctx) {
+        /* No usable GPU GL (e.g. software "GDI Generic" GL 1.1 in a remote/VM
+         * session). Report it; the caller falls back to a raster surface. */
+        typedef const unsigned char *(__stdcall *GetStr)(unsigned int);
+        GetStr glGetString = (GetStr)(void *)GetProcAddress(GetModuleHandleA("opengl32.dll"), "glGetString");
+        const char *ver = glGetString ? (const char *)glGetString(0x1F02) : "?";
+        const char *ren = glGetString ? (const char *)glGetString(0x1F01) : "?";
+        std::fprintf(stderr, "[render] no GPU OpenGL (GL %s, %s) - using raster\n",
+                     ver ? ver : "?", ren ? ren : "?");
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(s->hglrc);
+        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    }
+    rewrap_gl(s, width, height);
+    if (!s->surface) {
+        PU_GLLOG("WrapBackendRenderTarget returned null");
+        s->grctx.reset();
+        wglMakeCurrent(nullptr, nullptr);
+        wglDeleteContext(s->hglrc);
+        ReleaseDC(s->hwnd, s->hdc); delete s; return nullptr;
+    }
+    return s;
+}
+
+int pu_surface_is_gl(const PuSurface *s) { return (s && s->gl) ? 1 : 0; }
+
+void pu_surface_present(PuSurface *s) {
+    if (!s || !s->gl) return;
+    if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
+    SwapBuffers(s->hdc);
+}
+
 void pu_surface_destroy(PuSurface *s) {
+    if (!s) return;
+    if (s->gl) {
+        s->surface.reset();
+        if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
+        wglMakeCurrent(nullptr, nullptr);
+        if (s->hglrc) wglDeleteContext(s->hglrc);
+        if (s->hdc && s->hwnd) ReleaseDC(s->hwnd, s->hdc);
+    }
     delete s; // sk_sp releases the surface
 }
 
@@ -84,6 +192,11 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
     if (width  < 1) width  = 1;
     if (height < 1) height = 1;
     if (width == s->width && height == s->height && s->surface) return;
+    if (s->gl) {
+        wglMakeCurrent(s->hdc, s->hglrc);
+        rewrap_gl(s, width, height); /* default FBO resized with the window */
+        return;
+    }
     s->surface = make_raster(width, height);
     s->width  = width;
     s->height = height;

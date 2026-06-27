@@ -18,8 +18,20 @@ extern "C" {
 
 typedef struct PuSurface PuSurface;
 
-/* Create a raster surface of the given pixel size (clamped to >= 1x1). */
+/* Create a raster (CPU) surface of the given pixel size (clamped to >= 1x1). */
 PuSurface *pu_surface_create(int width, int height);
+
+/* Create a GPU (OpenGL) surface bound to a native window (HWND). Renders
+ * directly to the window's framebuffer; present with pu_surface_present.
+ * Returns NULL if a GL context can't be created (caller may fall back to
+ * pu_surface_create + blitting). width/height are physical pixels. */
+PuSurface *pu_surface_create_gl(void *hwnd, int width, int height);
+
+/* True if the surface is GPU-backed (present) vs raster (blit pixels). */
+int pu_surface_is_gl(const PuSurface *s);
+
+/* Present the current frame to the window (flush GPU + swap buffers). GL only. */
+void pu_surface_present(PuSurface *s);
 
 /* Destroy the surface. Safe with NULL. */
 void pu_surface_destroy(PuSurface *s);

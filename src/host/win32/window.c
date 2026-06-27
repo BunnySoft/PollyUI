@@ -80,6 +80,12 @@ static void pu_paint(PuWindow *w, HDC hdc)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
+    if (pu_surface_is_gl(w->surface)) {
+        pu_surface_present(w->surface); /* GPU: flush + swap buffers */
+        return;
+    }
+
+    /* Raster fallback: blit the pixel buffer to the window. */
     const void *pixels = pu_surface_pixels(w->surface);
     int sw = pu_surface_width(w->surface);
     int sh = pu_surface_height(w->surface);
@@ -245,7 +251,10 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     GetClientRect(hwnd, &client);
     w->width  = client.right - client.left;
     w->height = client.bottom - client.top;
-    w->surface = pu_surface_create(w->width, w->height);
+    /* Prefer a GPU surface; fall back to raster (CPU + blit) if GL is unavailable. */
+    w->surface = pu_surface_create_gl((void *)hwnd, w->width, w->height);
+    if (!w->surface)
+        w->surface = pu_surface_create(w->width, w->height);
     if (!w->surface) {
         DestroyWindow(hwnd);
         free(w);
