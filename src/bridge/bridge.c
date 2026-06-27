@@ -390,12 +390,17 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
         JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
         for (int i = 0; i < n->listener_count; i++) {
             if (strcmp(n->listeners[i].type, type) != 0) continue;
+            /* Dup the callback across the call: a handler that removeEventListeners
+             * itself (e.g. a reconciler swapping handlers on re-render) would
+             * otherwise free a function that is still executing. */
+            JSValue func = JS_DupValue(ctx, n->listeners[i].func);
             JSValue self = pu_node_wrapper(ctx, n);
             JSValue arg = ev;
-            JSValue r = JS_Call(ctx, n->listeners[i].func, self, 1, &arg);
+            JSValue r = JS_Call(ctx, func, self, 1, &arg);
             if (JS_IsException(r)) dispatch_report(ctx);
             JS_FreeValue(ctx, r);
             JS_FreeValue(ctx, self);
+            JS_FreeValue(ctx, func);
             if (js_event_flag(ctx, ev, "__stopImmediate")) break;
         }
         if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
