@@ -45,7 +45,8 @@ interactive, GPU-accelerated UIs from plain JavaScript. Implemented:
 
 Demos: `js/components.js` (gallery), `js/counter.js`, `js/textfield.js`,
 `js/threads.js`. Planned next: macOS/Linux ports, `requestAnimationFrame`, text
-selection. Full implemented-vs-planned list in **[DESIGN.md](./DESIGN.md) §10**.
+selection. Full implemented-vs-planned **feature matrix** in
+**[ROADMAP.md](./ROADMAP.md)** (architecture in [DESIGN.md](./DESIGN.md)).
 
 ## Building
 
