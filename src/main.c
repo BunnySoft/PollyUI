@@ -5,7 +5,9 @@
 #include "render/render.h"
 #include "model/node.h"
 
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 /* PollyUI entry point.
  *
@@ -20,13 +22,14 @@ typedef struct PuApp {
     PuBridge *bridge;
 } PuApp;
 
-/* Per-frame: lay out the DOM for the current window size, then paint it. */
-static void app_paint(PuSurface *surface, int width, int height, void *user)
+/* Per-frame: lay out the DOM for the current (logical) size, then paint it,
+ * scaling logical pixels up to physical for high-DPI displays. */
+static void app_paint(PuSurface *surface, int width, int height, float scale, void *user)
 {
     PuApp *app = (PuApp *)user;
     PuNode *body = pu_bridge_body(app->bridge);
     pu_layout_calculate(body, (float)width, (float)height);
-    pu_render_tree(surface, body);
+    pu_render_tree(surface, body, scale);
 }
 
 /* Click: hit-test against the last computed layout, dispatch to JS, then drain
@@ -40,6 +43,114 @@ static void app_pointer(int x, int y, PuPointerType type, void *user)
         pu_bridge_dispatch_event(app->bridge, target, "click");
         pu_script_run_loop(app->script);
     }
+}
+
+/* ---- headless test API (`pollyui --test t.js`) ----------------------------*/
+/* Drives the UI in-process (no window, no OS input) for deterministic tests:
+ * the script gets a `host` global to render, click, read pixels, and snapshot. */
+
+typedef struct PuTestHost {
+    PuScript  *script;
+    PuBridge  *bridge;
+    PuSurface *surface;
+    int        width, height;
+} PuTestHost;
+
+static PuTestHost *g_test;
+
+static void test_render(void)
+{
+    PuNode *body = pu_bridge_body(g_test->bridge);
+    pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
+    pu_render_tree(g_test->surface, body, 1.0f);
+}
+
+static JSValue host_render(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val; (void)argc; (void)argv;
+    test_render();
+    return JS_UNDEFINED;
+}
+
+static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    double x = 0, y = 0;
+    if (argc >= 1) JS_ToFloat64(ctx, &x, argv[0]);
+    if (argc >= 2) JS_ToFloat64(ctx, &y, argv[1]);
+    PuNode *body = pu_bridge_body(g_test->bridge);
+    pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
+    PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
+    if (target) {
+        pu_bridge_dispatch_event(g_test->bridge, target, "click");
+        pu_script_run_loop(g_test->script);
+    }
+    test_render();
+    return JS_NewBool(ctx, target != NULL);
+}
+
+static JSValue host_pixel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    int32_t x = 0, y = 0;
+    if (argc >= 1) JS_ToInt32(ctx, &x, argv[0]);
+    if (argc >= 2) JS_ToInt32(ctx, &y, argv[1]);
+    uint8_t rgba[4];
+    pu_surface_read_pixel(g_test->surface, x, y, rgba);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "#%02X%02X%02X", rgba[0], rgba[1], rgba[2]);
+    return JS_NewString(ctx, buf);
+}
+
+static JSValue host_save(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    if (argc < 1) return JS_NewBool(ctx, 0);
+    const char *path = JS_ToCString(ctx, argv[0]);
+    int ok = path ? pu_surface_save_png(g_test->surface, path) : 0;
+    if (path) JS_FreeCString(ctx, path);
+    return JS_NewBool(ctx, ok);
+}
+
+static void install_host(JSContext *ctx, int w, int h)
+{
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue host = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, host, "width",  JS_NewInt32(ctx, w));
+    JS_SetPropertyStr(ctx, host, "height", JS_NewInt32(ctx, h));
+    JS_SetPropertyStr(ctx, host, "render", JS_NewCFunction(ctx, host_render, "render", 0));
+    JS_SetPropertyStr(ctx, host, "click",  JS_NewCFunction(ctx, host_click, "click", 2));
+    JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
+    JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
+    JS_SetPropertyStr(ctx, global, "host", host);
+    JS_FreeValue(ctx, global);
+}
+
+static int run_test(const char *path)
+{
+    PuScript *s = pu_script_create();
+    if (!s) return 1;
+    PuBridge *b = pu_bridge_install(pu_script_jsctx(s));
+    if (!b) { pu_script_destroy(s); return 1; }
+
+    PuTestHost host;
+    host.script = s;
+    host.bridge = b;
+    host.width = 800;
+    host.height = 600;
+    host.surface = pu_surface_create(host.width, host.height);
+    g_test = &host;
+
+    install_host(pu_script_jsctx(s), host.width, host.height);
+
+    int rc = pu_script_run_file(s, path);
+    if (rc == 0) pu_script_run_loop(s);
+
+    g_test = NULL;
+    if (host.surface) pu_surface_destroy(host.surface);
+    pu_script_destroy(s);
+    pu_bridge_free(b);
+    return rc;
 }
 
 static int run_app(const char *path)
@@ -97,6 +208,8 @@ static int run_demo(void)
 
 int main(int argc, char **argv)
 {
+    if (argc >= 3 && strcmp(argv[1], "--test") == 0)
+        return run_test(argv[2]);
     if (argc >= 2)
         return run_app(argv[1]);
     return run_demo();

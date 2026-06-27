@@ -15,18 +15,20 @@ typedef struct PuWindowConfig {
     int         height;  /* client-area height in pixels */
 } PuWindowConfig;
 
-/* Paint callback: draw a frame into `surface` (sized width x height). Set via
- * pu_window_set_paint; when unset the window shows a built-in demo. This keeps
- * the HostEngine decoupled from the Model/Layout/Render layers. */
-typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, void *user);
+/* Paint callback: draw a frame into `surface`. `width`/`height` are LOGICAL
+ * (DPI-independent) pixels; `scale` maps them to the physical device pixels of
+ * `surface` (e.g. 1.5 on a 150% display). Set via pu_window_set_paint; when
+ * unset the window shows a built-in demo. Keeps the host decoupled from the
+ * Model/Layout/Render layers. */
+typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, float scale, void *user);
 
 /* Pointer event types. */
 typedef enum PuPointerType {
     PU_POINTER_CLICK = 0
 } PuPointerType;
 
-/* Pointer callback: a click at client-area (x, y). After it returns the window
- * repaints (the handler may have mutated the DOM). */
+/* Pointer callback: a click at LOGICAL (DPI-independent) client coords (x, y).
+ * After it returns the window repaints (the handler may have mutated the DOM). */
 typedef void (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
 
 /* Create and show the window. Returns NULL on failure. */

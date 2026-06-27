@@ -41,6 +41,16 @@ void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
                           float font_size, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
+/* Reset the canvas transform to a uniform scale (DPI: logical -> physical px).
+ * Call before clearing/drawing a frame. */
+void pu_surface_set_scale(PuSurface *s, float scale);
+
+/* Read one pixel as RGBA (0..255 each) into rgba[4]. For headless tests. */
+void pu_surface_read_pixel(const PuSurface *s, int x, int y, uint8_t *rgba);
+
+/* Encode the surface to a PNG file. Returns 1 on success, 0 on failure. */
+int pu_surface_save_png(const PuSurface *s, const char *path);
+
 /* Read-only access to the BGRA8888 pixel buffer (for blitting to the window).
  * Returns NULL if unavailable. row_bytes is the stride in bytes. */
 const void *pu_surface_pixels(const PuSurface *s);

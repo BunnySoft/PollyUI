@@ -89,8 +89,9 @@ static void render_node(PuSurface *s, PuNode *n)
         render_node(s, c);
 }
 
-void pu_render_tree(PuSurface *surface, PuNode *root)
+void pu_render_tree(PuSurface *surface, PuNode *root, float scale)
 {
-    pu_surface_clear(surface, 255, 255, 255, 255); /* white viewport */
+    pu_surface_set_scale(surface, scale);           /* logical -> physical */
+    pu_surface_clear(surface, 255, 255, 255, 255);  /* white viewport */
     if (root) render_node(surface, root);
 }

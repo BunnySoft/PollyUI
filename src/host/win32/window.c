@@ -1,6 +1,14 @@
 #include "host/win32/window.h"
 #include "render/skia_c.h"
 
+/* Need Windows 10 APIs (per-monitor DPI v2, GetDpiForWindow, ...). */
+#ifndef WINVER
+#define WINVER 0x0A00
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0A00
+#endif
+
 #include <windows.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,11 +17,16 @@
  * BGRA pixels to the client area (replacing the M0a GDI FillRect). The host
  * touches Skia only through the extern "C" API in render/skia_c.h. */
 
+#ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+#define DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((DPI_AWARENESS_CONTEXT)-4)
+#endif
+
 struct PuWindow {
     HWND       hwnd;
-    PuSurface *surface;      /* Skia raster surface, sized to the client area */
-    int        width;
-    int        height;
+    PuSurface *surface;      /* Skia raster surface, sized to the client (physical px) */
+    int        width;        /* client width  in PHYSICAL pixels */
+    int        height;       /* client height in PHYSICAL pixels */
+    float      scale;        /* physical / logical (DPI scale), e.g. 1.5 at 150% */
     PuPaintFn   paint_fn;     /* optional per-frame draw callback */
     void       *paint_user;
     PuPointerFn pointer_fn;   /* optional mouse callback */
@@ -27,8 +40,11 @@ static void pu_paint(PuWindow *w, HDC hdc)
 {
     if (!w->surface) return;
 
+    float scale = w->scale > 0 ? w->scale : 1.0f;
     if (w->paint_fn) {
-        w->paint_fn(w->surface, w->width, w->height, w->paint_user);
+        int lw = (int)(w->width / scale);
+        int lh = (int)(w->height / scale);
+        w->paint_fn(w->surface, lw, lh, scale, w->paint_user);
     } else {
         /* Built-in demo (M0b): dark slate + centered PollyUI-blue card. */
         pu_surface_clear(w->surface, 0x10, 0x12, 0x18, 0xFF);
@@ -79,10 +95,22 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_LBUTTONUP:
         if (w && w->pointer_fn) {
-            int x = (short)LOWORD(lp);
-            int y = (short)HIWORD(lp);
+            float scale = w->scale > 0 ? w->scale : 1.0f;
+            int x = (int)((short)LOWORD(lp) / scale); /* physical -> logical */
+            int y = (int)((short)HIWORD(lp) / scale);
             w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
             InvalidateRect(hwnd, NULL, FALSE); /* handler may have changed the DOM */
+        }
+        return 0;
+
+    case WM_DPICHANGED:
+        if (w) {
+            w->scale = LOWORD(wp) / 96.0f; /* new DPI in wParam */
+            RECT *rc = (RECT *)lp;         /* OS-suggested window rect */
+            SetWindowPos(hwnd, NULL, rc->left, rc->top,
+                         rc->right - rc->left, rc->bottom - rc->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            InvalidateRect(hwnd, NULL, FALSE);
         }
         return 0;
 
@@ -107,8 +135,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
     if (!cfg) return NULL;
 
-    /* Map device pixels 1:1 (no DPI virtualization/blurring). */
-    SetProcessDPIAware();
+    /* Per-monitor DPI awareness: render crisply at physical resolution and do
+     * the logical->physical scaling ourselves (see pu_paint). */
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof(PuWindow));
     if (!w) return NULL;
@@ -132,7 +161,11 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (MultiByteToWideChar(CP_UTF8, 0, title, -1, wtitle, 256) == 0)
         wcscpy_s(wtitle, 256, L"PollyUI");
 
-    RECT rc = { 0, 0, cfg->width, cfg->height };
+    /* Treat the requested size as LOGICAL pixels; scale to physical for the
+     * current system DPI so the window is the intended on-screen size. */
+    float s0 = GetDpiForSystem() / 96.0f;
+    if (s0 <= 0.0f) s0 = 1.0f;
+    RECT rc = { 0, 0, (int)(cfg->width * s0), (int)(cfg->height * s0) };
     DWORD style = WS_OVERLAPPEDWINDOW;
     AdjustWindowRect(&rc, style, FALSE);
 
@@ -147,7 +180,11 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     }
     w->hwnd = hwnd;
 
-    /* Size the Skia surface to the actual client area. */
+    /* Actual DPI scale of the monitor the window opened on. */
+    UINT dpi = GetDpiForWindow(hwnd);
+    w->scale = dpi > 0 ? dpi / 96.0f : s0;
+
+    /* Size the Skia surface to the actual client area (physical pixels). */
     RECT client;
     GetClientRect(hwnd, &client);
     w->width  = client.right - client.left;

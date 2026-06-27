@@ -17,6 +17,8 @@
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkStream.h"
+#include "include/encode/SkPngEncoder.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -125,6 +127,35 @@ void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
     paint.setAntiAlias(true);
     // (x, y) is the top-left; shift to baseline.
     s->surface->getCanvas()->drawString(utf8, x, y - m.fAscent, font, paint);
+}
+
+void pu_surface_set_scale(PuSurface *s, float scale) {
+    if (!s || !s->surface) return;
+    SkCanvas *c = s->surface->getCanvas();
+    c->resetMatrix();
+    c->scale(scale, scale);
+}
+
+void pu_surface_read_pixel(const PuSurface *s, int x, int y, uint8_t *rgba) {
+    rgba[0] = rgba[1] = rgba[2] = 0; rgba[3] = 255;
+    if (!s || !s->surface) return;
+    SkPixmap pm;
+    if (!s->surface->peekPixels(&pm)) return;
+    if (x < 0 || y < 0 || x >= pm.width() || y >= pm.height()) return;
+    SkColor c = pm.getColor(x, y); // unpremultiplied ARGB
+    rgba[0] = SkColorGetR(c);
+    rgba[1] = SkColorGetG(c);
+    rgba[2] = SkColorGetB(c);
+    rgba[3] = SkColorGetA(c);
+}
+
+int pu_surface_save_png(const PuSurface *s, const char *path) {
+    if (!s || !s->surface || !path) return 0;
+    SkPixmap pm;
+    if (!s->surface->peekPixels(&pm)) return 0;
+    SkFILEWStream out(path);
+    if (!out.isValid()) return 0;
+    return SkPngEncoder::Encode(&out, pm, SkPngEncoder::Options{}) ? 1 : 0;
 }
 
 const void *pu_surface_pixels(const PuSurface *s) {
