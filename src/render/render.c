@@ -73,6 +73,24 @@ static void text_color(const PuNode *n, uint8_t *r, uint8_t *g, uint8_t *b, uint
     if (!v || !parse_color(v, r, g, b, a)) { *r = *g = *b = 0; *a = 255; } /* default black */
 }
 
+static int text_font_weight(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "fontWeight") : NULL;
+    if (!v) return 400;
+    if (strcmp(v, "bold") == 0) return 700;
+    if (strcmp(v, "normal") == 0) return 400;
+    int w = atoi(v);
+    return w > 0 ? w : 400;
+}
+
+static int text_italic(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "fontStyle") : NULL;
+    return v && strcmp(v, "italic") == 0;
+}
+
 static float style_num(const PuNode *n, const char *name, float def)
 {
     const char *v = pu_style_get(&n->style, name);
@@ -85,7 +103,8 @@ static void render_node(PuSurface *s, PuNode *n)
         if (n->text && *n->text) {
             uint8_t r, g, b, a;
             text_color(n, &r, &g, &b, &a);
-            pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n), r, g, b, a);
+            pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n),
+                                 text_font_weight(n), text_italic(n), r, g, b, a);
         }
         for (PuNode *c = n->first_child; c; c = c->next_sibling) render_node(s, c);
         return;

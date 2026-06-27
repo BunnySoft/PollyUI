@@ -52,16 +52,29 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory *,
                                                   IDWriteFontCollection *,
                                                   IDWriteFontFallback *);
 
-// Lazily-resolved default system typeface (Windows UI font via DirectWrite).
-static sk_sp<SkTypeface> default_typeface() {
-    static sk_sp<SkTypeface> tf;
+// Lazily-resolved system font manager (Windows fonts via DirectWrite).
+static sk_sp<SkFontMgr> font_mgr() {
+    static sk_sp<SkFontMgr> mgr;
     static bool tried = false;
-    if (!tried) {
-        tried = true;
-        sk_sp<SkFontMgr> mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr);
-        if (mgr) tf = mgr->legacyMakeTypeface(nullptr, SkFontStyle());
-    }
-    return tf;
+    if (!tried) { tried = true; mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr); }
+    return mgr;
+}
+
+// Default UI typeface at a given weight (e.g. 400 normal, 700 bold) and slant.
+static sk_sp<SkTypeface> typeface_for(int weight, int italic) {
+    sk_sp<SkFontMgr> mgr = font_mgr();
+    if (!mgr) return nullptr;
+    SkFontStyle style(weight > 0 ? weight : SkFontStyle::kNormal_Weight,
+                      SkFontStyle::kNormal_Width,
+                      italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant);
+    return mgr->legacyMakeTypeface(nullptr, style);
+}
+
+static SkFont make_font(float size, int weight, int italic) {
+    SkFont font(typeface_for(weight, italic), size);
+    font.setEdging(SkFont::Edging::kAntiAlias);
+    font.setSubpixel(true);
+    return font;
 }
 
 // BGRA8888 + premul: byte order in memory is B,G,R,A, which matches a Windows
@@ -335,30 +348,55 @@ void pu_surface_restore(PuSurface *s) {
     s->surface->getCanvas()->restore();
 }
 
-void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h) {
-    SkFont font(default_typeface(), font_size);
-    float w = (utf8 && *utf8)
-                  ? font.measureText(utf8, std::strlen(utf8), SkTextEncoding::kUTF8, nullptr)
-                  : 0.0f;
+void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
+                     float *out_w, float *out_h) {
+    SkFont font = make_font(font_size, weight, italic);
     SkFontMetrics m;
     font.getMetrics(&m);
-    if (out_w) *out_w = w;
-    if (out_h) *out_h = m.fDescent - m.fAscent; // ascent is negative
+    float line_h = m.fDescent - m.fAscent; // ascent is negative
+
+    float maxw = 0;
+    int lines = 0;
+    const char *p = utf8 ? utf8 : "";
+    for (;;) {                                   // measure each '\n'-separated line
+        const char *nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        if (len > 0) {
+            float w = font.measureText(p, len, SkTextEncoding::kUTF8, nullptr);
+            if (w > maxw) maxw = w;
+        }
+        lines++;
+        if (!nl) break;
+        p = nl + 1;
+    }
+    if (out_w) *out_w = maxw;
+    if (out_h) *out_h = line_h * (lines < 1 ? 1 : lines);
 }
 
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
-                          float font_size, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+                          float font_size, int weight, int italic,
+                          uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (!s || !s->surface || !utf8 || !*utf8) return;
-    SkFont font(default_typeface(), font_size);
-    font.setEdging(SkFont::Edging::kAntiAlias);
-    font.setSubpixel(true);
+    SkFont font = make_font(font_size, weight, italic);
     SkFontMetrics m;
     font.getMetrics(&m);
+    float line_h = m.fDescent - m.fAscent;
     SkPaint paint;
     paint.setColor(SkColorSetARGB(a, r, g, b));
     paint.setAntiAlias(true);
-    // (x, y) is the top-left; shift to baseline.
-    s->surface->getCanvas()->drawString(utf8, x, y - m.fAscent, font, paint);
+
+    SkCanvas *canvas = s->surface->getCanvas();
+    const char *p = utf8;
+    float ly = y;
+    for (;;) {                                   // draw each line, advancing baseline
+        const char *nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        if (len > 0)
+            canvas->drawSimpleText(p, len, SkTextEncoding::kUTF8, x, ly - m.fAscent, font, paint);
+        ly += line_h;
+        if (!nl) break;
+        p = nl + 1;
+    }
 }
 
 void pu_surface_set_scale(PuSurface *s, float scale) {

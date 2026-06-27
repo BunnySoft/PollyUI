@@ -166,12 +166,31 @@ static float text_font_size(const PuNode *n)
     return 16.0f;
 }
 
+/* Text inherits fontWeight + fontStyle from its parent element. */
+static int text_font_weight(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "fontWeight") : NULL;
+    if (!v) return 400;
+    if (strcmp(v, "bold") == 0) return 700;
+    if (strcmp(v, "normal") == 0) return 400;
+    int w = atoi(v);
+    return w > 0 ? w : 400;
+}
+
+static int text_italic(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    const char *v = p ? pu_style_get(&p->style, "fontStyle") : NULL;
+    return v && strcmp(v, "italic") == 0;
+}
+
 static YGSize measure_text(YGNodeConstRef node, float width, YGMeasureMode widthMode,
                            float height, YGMeasureMode heightMode)
 {
     PuNode *n = (PuNode *)YGNodeGetContext(node);
     float tw = 0, th = 0;
-    if (n) pu_text_measure(n->text, text_font_size(n), &tw, &th);
+    if (n) pu_text_measure(n->text, text_font_size(n), text_font_weight(n), text_italic(n), &tw, &th);
 
     YGSize size;
     size.width  = tw;

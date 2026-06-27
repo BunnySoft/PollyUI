@@ -511,8 +511,10 @@ static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
     const char *s = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
     double fs = 16.0;
     if (argc >= 2) JS_ToFloat64(ctx, &fs, argv[1]);
+    int32_t weight = 400;
+    if (argc >= 3) JS_ToInt32(ctx, &weight, argv[2]);
     float w = 0, h = 0;
-    pu_text_measure(s ? s : "", (float)fs, &w, &h);
+    pu_text_measure(s ? s : "", (float)fs, weight, 0, &w, &h);
     if (s) JS_FreeCString(ctx, s);
     return JS_NewFloat64(ctx, w);
 }

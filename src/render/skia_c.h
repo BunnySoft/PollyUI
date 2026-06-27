@@ -64,12 +64,16 @@ void pu_surface_shadow(PuSurface *s, float x, float y, float w, float h,
 void pu_surface_save_layer_alpha(PuSurface *s, float alpha);
 void pu_surface_restore(PuSurface *s);
 
-/* Measure a UTF-8 string at `font_size` (px): advance width + line height. */
-void pu_text_measure(const char *utf8, float font_size, float *out_w, float *out_h);
+/* Measure a UTF-8 string at `font_size` (px) in the given weight (e.g. 400/700)
+ * and slant: max line advance width + total height. Honors embedded '\n'. */
+void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
+                     float *out_w, float *out_h);
 
-/* Draw a UTF-8 string with its top-left at (x, y), in the given size + color. */
+/* Draw a UTF-8 string with its top-left at (x, y), in the given size, weight,
+ * slant, and color. Embedded '\n' starts a new line. */
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
-                          float font_size, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+                          float font_size, int weight, int italic,
+                          uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 
 /* Reset the canvas transform to a uniform scale (DPI: logical -> physical px).
  * Call before clearing/drawing a frame. */
