@@ -133,6 +133,21 @@ static void render_node(PuSurface *s, PuNode *n)
     if (bg && parse_color(bg, &r, &g, &b, &a) && a > 0)
         pu_surface_fill_rrect(s, x, y, w, h, radius, r, g, b, a);
 
+    const char *gf = pu_style_get(&n->style, "gradientFrom");
+    const char *gt = pu_style_get(&n->style, "gradientTo");
+    if (gf && gt) {
+        uint8_t r0, g0, b0, a0, r1, g1, b1, a1;
+        if (parse_color(gf, &r0, &g0, &b0, &a0) && parse_color(gt, &r1, &g1, &b1, &a1)) {
+            const char *dir = pu_style_get(&n->style, "gradientDir");
+            int horiz = dir && strcmp(dir, "horizontal") == 0;
+            pu_surface_fill_gradient(s, x, y, w, h, radius, horiz,
+                                     r0, g0, b0, a0, r1, g1, b1, a1);
+        }
+    }
+
+    const char *img = pu_style_get(&n->style, "backgroundImage");
+    if (img && *img) pu_surface_draw_image(s, img, x, y, w, h, radius);
+
     for (PuNode *c = n->first_child; c; c = c->next_sibling) render_node(s, c);
 
     const char *bc = pu_style_get(&n->style, "borderColor");

@@ -64,6 +64,18 @@ void pu_surface_shadow(PuSurface *s, float x, float y, float w, float h,
 void pu_surface_save_layer_alpha(PuSurface *s, float alpha);
 void pu_surface_restore(PuSurface *s);
 
+/* Fill a (rounded) rect with a two-stop linear gradient. horizontal != 0 runs
+ * left->right; otherwise top->bottom. */
+void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
+                              float radius, int horizontal,
+                              uint8_t r0, uint8_t g0, uint8_t b0, uint8_t a0,
+                              uint8_t r1, uint8_t g1, uint8_t b1, uint8_t a1);
+
+/* Decode (cached) the image at `path` and draw it scaled into the box, clipped
+ * to the corner radius. Returns 1 if drawn, 0 if the image couldn't load. */
+int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
+                          float w, float h, float radius);
+
 /* Measure a UTF-8 string at `font_size` (px) in the given weight (e.g. 400/700)
  * and slant: max line advance width + total height. Honors embedded '\n'. */
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,

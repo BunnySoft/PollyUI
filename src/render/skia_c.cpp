@@ -22,6 +22,10 @@
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/effects/SkGradientShader.h"
 #include "include/encode/SkPngEncoder.h"
 
 /* GPU (Ganesh GL) backend. */
@@ -39,6 +43,8 @@
 #include <cstring>
 #include <cstdio>
 #include <new>
+#include <map>
+#include <string>
 
 #define PU_GL_RGBA8 0x8058
 #define PU_GLLOG(msg) std::fprintf(stderr, "[gl] %s\n", msg)
@@ -346,6 +352,53 @@ void pu_surface_save_layer_alpha(PuSurface *s, float alpha) {
 void pu_surface_restore(PuSurface *s) {
     if (!s || !s->surface) return;
     s->surface->getCanvas()->restore();
+}
+
+void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
+                              float radius, int horizontal,
+                              uint8_t r0, uint8_t g0, uint8_t b0, uint8_t a0,
+                              uint8_t r1, uint8_t g1, uint8_t b1, uint8_t a1) {
+    if (!s || !s->surface) return;
+    SkPoint pts[2] = { { x, y }, horizontal ? SkPoint{ x + w, y } : SkPoint{ x, y + h } };
+    SkColor colors[2] = { SkColorSetARGB(a0, r0, g0, b0), SkColorSetARGB(a1, r1, g1, b1) };
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp));
+    SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, w, h), radius, radius);
+    s->surface->getCanvas()->drawRRect(rr, paint);
+}
+
+// Cache of decoded images, keyed by file path.
+static std::map<std::string, sk_sp<SkImage>> &image_cache() {
+    static std::map<std::string, sk_sp<SkImage>> c;
+    return c;
+}
+
+int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
+                          float w, float h, float radius) {
+    if (!s || !s->surface || !path) return 0;
+    sk_sp<SkImage> img;
+    auto &cache = image_cache();
+    auto it = cache.find(path);
+    if (it != cache.end()) {
+        img = it->second;
+    } else {
+        sk_sp<SkData> data = SkData::MakeFromFileName(path);
+        if (data) img = SkImages::DeferredFromEncodedData(data);
+        cache[path] = img; // cache even null results to avoid re-hitting the disk
+    }
+    if (!img) return 0;
+
+    SkCanvas *canvas = s->surface->getCanvas();
+    canvas->save();
+    if (radius > 0) {
+        SkRRect rr = SkRRect::MakeRectXY(SkRect::MakeXYWH(x, y, w, h), radius, radius);
+        canvas->clipRRect(rr, true);
+    }
+    canvas->drawImageRect(img, SkRect::MakeXYWH(x, y, w, h),
+                          SkSamplingOptions(SkFilterMode::kLinear));
+    canvas->restore();
+    return 1;
 }
 
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
