@@ -1,4 +1,5 @@
 #include "bridge/bridge.h"
+#include "render/skia_c.h"   /* pu_text_measure for the global measureText() */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -434,6 +435,20 @@ static JSValue js_document_get_body(JSContext *ctx, JSValueConst this_val)
     return b ? pu_node_wrapper(ctx, b->body) : JS_NULL;
 }
 
+/* measureText(str, fontSize=16) -> advance width in (logical) pixels. Lets JS
+ * position carets, truncate labels, etc. */
+static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv)
+{
+    const char *s = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    double fs = 16.0;
+    if (argc >= 2) JS_ToFloat64(ctx, &fs, argv[1]);
+    float w = 0, h = 0;
+    pu_text_measure(s ? s : "", (float)fs, &w, &h);
+    if (s) JS_FreeCString(ctx, s);
+    return JS_NewFloat64(ctx, w);
+}
+
 /* ---- install ---------------------------------------------------------------*/
 
 static void def_method(JSContext *ctx, JSValueConst obj, const char *name,
@@ -517,6 +532,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_get(ctx, document, "body", js_document_get_body);
     def_get(ctx, document, "activeElement", js_document_get_activeElement);
     JS_SetPropertyStr(ctx, global, "document", document);
+    JS_SetPropertyStr(ctx, global, "measureText",
+                      JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
     JS_FreeValue(ctx, global);
 
     return b;
