@@ -28,20 +28,24 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 ## Status
 
-🚧 Early development (Windows-first vertical slice). Working so far:
+The Windows vertical slice is **working** — `pollyui app.js` runs real,
+interactive, GPU-accelerated UIs from plain JavaScript. Implemented:
 
-- **M0** — Win32 window rendered by a Skia raster surface.
-- **M1** — embedded QuickJS: runs a `.js` file with `console`, timers, promises.
-- **M2** — DOM Model + bridge: JS builds a retained native node tree
-  (`document.createElement`, `style`, `appendChild`, …) with GC-safe lifetimes.
-- **M3** — Yoga layout + Skia paint: the full pipeline (JS → DOM → layout → paint).
-- **M4** — text rendering (Skia + DirectWrite), measured into the layout.
-- **M5** — input: `addEventListener('click', …)` with hit-testing + bubbling.
-- **+** — `position: absolute` insets, so views can overlap.
+- **Pipeline** — JS (QuickJS) → DOM bridge → Yoga Flexbox → Skia → **GPU
+  (ANGLE / D3D11)**, per-monitor **DPI-aware**, with a CPU-raster fallback.
+- **Layout** — `flexDirection`, `flexGrow`, `flexWrap`, `justifyContent`/
+  `alignItems`, px/%/auto sizes, per-edge `padding`/`margin`, `position:absolute`.
+- **Text** — Skia + DirectWrite, measured into layout; `measureText()`.
+- **Input** — clicks (hit-test + bubbling), keyboard + `tabIndex` focus + Tab,
+  a **text field with a blinking caret**.
+- **Concurrency** — `Worker` (JS on a worker thread) + `computeAsync` (native
+  background work), results marshaled back to the UI thread.
+- **Tooling** — a deterministic **headless test harness** (`--test`), a
+  no-console release build, an in-process crash handler.
 
-So `pollyui app.js` now runs real interactive UIs with text and clicks. See
-`js/counter.js`. Next: `requestAnimationFrame` + animation, then **M6**
-macOS/Linux host ports. See `DESIGN.md` §10.
+Demos: `js/components.js` (gallery), `js/counter.js`, `js/textfield.js`,
+`js/threads.js`. Planned next: macOS/Linux ports, `requestAnimationFrame`, text
+selection. Full implemented-vs-planned list in **[DESIGN.md](./DESIGN.md) §10**.
 
 ## Building
 

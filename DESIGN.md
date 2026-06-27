@@ -3,9 +3,10 @@
 > A cross-platform UI framework: write UI in JavaScript, lay it out with
 > Flexbox, render it with Skia, run it natively on Windows, macOS, and Linux.
 
-Status: **design / pre-implementation**. This document is the contract we agree
-on before writing the engine. It will evolve, but the layering and the
-JS↔native boundary defined here should stay stable.
+Status: **working (Windows)**. The full vertical slice runs — JavaScript drives
+a native, GPU-accelerated, Flexbox-laid-out window. This document is the design
+contract; the layering and the JS↔native boundary have held stable. See §10 for
+the implemented-vs-planned feature list.
 
 ---
 
@@ -238,13 +239,25 @@ registered as methods — this is the documented C ABI seam from §3.
 
 ## 7. Threading model
 
-- **MVP: single-threaded.** Host event loop, JS, layout, and paint all run on
-  the UI thread. Simplest correct thing; good enough to prove the pipeline.
-- **Future:** move JS to its own thread with a lock-free command queue to a
-  render/UI thread (the React-Native / Lynx model). The Model becomes the
-  shared structure mutated on the JS thread and snapshotted for the render
-  thread. Designed-for but not built at MVP. The dirty-flag + display-list
-  split in §5 is chosen to make this migration mechanical.
+**Implemented: UI thread + isolated work threads.** The main JS, the DOM,
+layout, and paint all run on the **UI thread** (the DOM is touched from one
+thread only — like browsers and Flutter). Parallelism comes from isolation, not
+a shared multithreaded DOM:
+
+- **`Worker`** — a separate `JSRuntime` on its own thread, no DOM; communicates
+  by **copied messages** (`postMessage`/`onmessage`, JSON). No shared mutable
+  state ⇒ no locks around the tree, race-free by construction.
+- **Native async tasks** (`computeAsync`) — background C work on a thread, the
+  completion callback **marshaled back to the UI thread**.
+- A UI-thread **dispatcher** (`src/core/dispatch`) is the marshal-to-UI
+  mechanism (cf. WinForms `Control.BeginInvoke` / WPF `Dispatcher`); an
+  outstanding-async refcount keeps the event loop alive while work is in flight
+  (cf. libuv handle refs). Worker threads wake the window via a posted message.
+
+**Deferred:** moving the *main* DOM-manipulating JS onto its own thread (the
+old React-Native async-bridge model). The industry moved away from it
+(Fabric/JSI), and our bridge is already synchronous/JSI-like — so Workers cover
+parallelism without the bridge's costs.
 
 ---
 
@@ -252,14 +265,16 @@ registered as methods — this is the documented C ABI seam from §3.
 
 | Dep | Role | Acquisition |
 |---|---|---|
-| **QuickJS-ng** | JS engine | **Vendored** in `third_party/quickjs` (handful of C files; trivial to build). Maintained fork of Bellard's QuickJS. |
-| **Yoga** | Flexbox | CMake `FetchContent` from facebook/yoga. Used via its **first-class C API** (`YGNode*`) — no binding layer. |
-| **Skia** | 2D GPU renderer | **Prebuilt binaries** via a `tools/fetch_skia.*` script (e.g. JetBrains skia-pack / google prebuilts). Building from source needs depot_tools/GN and is slow — avoided. Driven through **our own `extern "C"` shim** (`src/render/skia_c.cpp`, the sole `.cpp` in the tree) compiled against Skia's headers — see §3. |
-| **Platform** | window/GPU | OS SDKs: Win32 + ANGLE/OpenGL (Windows); Cocoa + Metal (macOS); X11/Wayland + GL (Linux). |
+| **QuickJS-ng** | JS engine | **Vendored** in `third_party/quickjs` (v0.15.1, `add_subdirectory` builds the `qjs` lib). Maintained fork of Bellard's QuickJS. |
+| **Yoga** | Flexbox | **Vendored** (trimmed) in `third_party/yoga` (v3.2.1, `yogacore`). Used via its **first-class C API** (`YGNode*`). |
+| **Skia** | 2D GPU renderer | **Prebuilt** (aseprite/skia m124) via `tools/fetch_skia.ps1` (gitignored). Driven through **our `extern "C"` shim** (`src/render/skia_c.cpp`) compiled against Skia's headers — see §3. |
+| **ANGLE** | GLES → D3D11 | `libEGL`/`libGLESv2`/`d3dcompiler_47` (x64), **dynamically loaded** at runtime — no import lib. Staged next to the exe by `tools/fetch_angle.ps1` (from an installed Chrome/Edge). |
+| **Platform** | window/GPU | Win32 + ANGLE (Windows, done); Cocoa + Metal/ANGLE (macOS) and X11/Wayland + GL/ANGLE (Linux) — planned (§10). |
 
-Build system: **CMake** (≥3.24) with presets per platform. Language: **C11**
-for everything except `skia_c.cpp` (C++, the Skia shim). Skia is the only
-heavyweight dependency; everything else builds from a clean checkout.
+Build system: **CMake** (≥3.25) + Ninja + **clang-cl** (against an installed
+MSVC SDK), presets in `CMakePresets.json` (`win-clang`, `win-clang-windowed`).
+Language: **C11** for everything except `skia_c.cpp` (C++ — the Skia + ANGLE
+shim). Skia is the only heavyweight dependency.
 
 ---
 
@@ -268,69 +283,110 @@ heavyweight dependency; everything else builds from a clean checkout.
 ```
 pollyui/
 ├─ CMakeLists.txt          # top-level build
-├─ CMakePresets.json       # win/mac/linux presets
+├─ CMakePresets.json       # win-clang, win-clang-windowed (no-console)
 ├─ DESIGN.md               # this file
 ├─ README.md
-├─ .gitignore
-├─ cmake/                  # FetchContent + find scripts
-├─ tools/                  # fetch_skia, dev scripts
-├─ third_party/            # vendored quickjs (+ fetched yoga/skia at build)
+├─ tools/                  # build.ps1, fetch_skia.ps1, fetch_angle.ps1
+├─ third_party/            # quickjs + yoga (vendored); skia (fetched, gitignored)
 ├─ src/
-│  ├─ core/                # app, frame loop, geometry, color, result types (.c/.h)
-│  ├─ host/                # HostEngine (platform)
-│  │  ├─ win32/            # MVP target
-│  │  ├─ mac/  linux/      # later
-│  ├─ render/              # Skia backend: skia_c.cpp shim (C++) + painter (.c)
+│  ├─ core/                # thread (mutex/cond/thread), dispatch (UI marshal queue)
+│  ├─ host/win32/          # HostEngine: window, DPI, input, frame pump (mac/linux: planned)
+│  ├─ render/              # skia_c.cpp shim (C++: Skia + ANGLE/EGL) + render.c (paint walk)
 │  ├─ layout/              # Yoga integration (C API), style→Yoga mapping
-│  ├─ model/               # node (tagged union), document, style
-│  ├─ script/              # QuickJS VM wrapper, console, timers, rAF
-│  ├─ bridge/              # JSClassID defs, wrapper cache, qjs_* bindings
-│  └─ main.c               # wires Host + Script + Model + Render
-├─ js/                     # example apps (hello.js, flex-demo.js)
-└─ tests/                  # unit tests (layout, model, bridge)
+│  ├─ model/               # node.c (tagged-union tree, lifetimes, hit-test, listeners)
+│  ├─ script/              # QuickJS VM: console, timers, event loop + pump
+│  ├─ bridge/              # Node JSClass, wrapper cache, document, events, focus, measureText
+│  ├─ concurrency/         # async.c — Worker + computeAsync
+│  └─ main.c               # wires it together; --test harness; crash handler
+├─ js/                     # demos: components, counter, textfield, threads, m0..m5
+└─ tests/                  # headless tests: smoke, keyboard, workers, caret
 ```
 
 ---
 
-## 10. Milestones (Windows-first vertical slice)
+## 10. Status — implemented vs planned
 
-Each milestone is independently demoable and committed.
+The Windows-first vertical slice is **complete and working**. Every feature
+below is committed with a runnable demo (`js/*.js`) and, where logic can be
+checked deterministically, a headless test (`tests/*.js`, run via
+`pollyui --test`).
 
-- **M0 — Window + Skia clear.** Win32 window + GPU surface; Skia clears to a
-  color; resize works. *Proves Host + Render.*
-- **M1 — Embed QuickJS.** Run a `.js` file, `console.log`, error reporting,
-  timers. *Proves Script.*
-- **M2 — DOM + bindings.** `document`, `createElement('view')`, `style`,
-  `appendChild`, wrapper cache + lifetimes. *Proves Bridge + Model.*
-- **M3 — Layout + paint boxes.** Each Element gets a Yoga node; layout pass;
-  Skia paints background rects at computed boxes. *Proves Layout + Render of the
-  DOM.* → first visible JS-driven UI.
-- **M4 — Text.** `text` nodes, Skia text shaping/paint, color/font props.
-- **M5 — Events + animation.** Input → hit-test → `addEventListener` dispatch;
-  `requestAnimationFrame`. *Proves the full interactive loop.*
-- **M6 — Port Host.** macOS (Cocoa/Metal), then Linux (X11/Wayland). Everything
-  above Host is unchanged.
+### Implemented ✅
 
-**Later:** React-style reconciler on top of the DOM API; styling sugar;
-multi-window; JS-on-own-thread; accessibility; images; gradients/shadows.
+**Engines & pipeline**
+- **HostEngine (Win32):** window, OS event loop, resize; per-monitor-v2 **DPI
+  awareness** (author in logical px, render crisp at physical); `WM_DPICHANGED`.
+- **ScriptEngine (QuickJS-ng):** runs `.js` files; `console.*`, `setTimeout`/
+  `clearTimeout`, promises/microtasks; error reporting; a non-blocking event
+  pump + a blocking run-loop, both async-aware.
+- **Model (DOM):** retained `PuNode` tree (document/element/text); refcounted
+  lifetimes (§6); string style map; computed layout fields.
+- **Bridge:** `document.createElement`/`createTextNode`/`body`, `el.style.*`
+  (exotic object), `appendChild`/`removeChild`/`insertBefore`, parent/child/
+  sibling/`childNodes`/`nodeType`/`tagName`/`textContent`; weak **wrapper cache**
+  with GC finalizers and verified-correct lifetimes; `measureText()`.
+- **LayoutEngine (Yoga):** Flexbox — `flexDirection`, `flexGrow`, `flexWrap`,
+  `justifyContent`, `alignItems`, `width`/`height` (px/%/auto), per-edge
+  `padding`/`margin`, and `position: absolute` + `top/left/right/bottom`
+  (overlapping views).
+- **RenderEngine (Skia):** rect fills, **text** (DirectWrite default font,
+  measured into layout, inherited `fontSize`/`color`), color parsing
+  (`#rgb`/`#rrggbb[aa]`/names), logical→physical scaling.
+
+**Rendering backend**
+- **GPU: Skia Ganesh → ANGLE → Direct3D 11** (the standard Windows path; works
+  without native GL). **Raster (CPU)** fallback + `StretchDIBits` when ANGLE is
+  unavailable; headless test mode always uses raster.
+
+**Interaction**
+- **Mouse:** hit-testing against computed layout + `addEventListener('click')`
+  with DOM-style **bubbling**; click-to-focus.
+- **Keyboard + focus:** `tabIndex` focusability, `keydown` (DOM key names),
+  **Tab** cycling, `focus`/`blur`, `el.focus()`/`blur()`,
+  `document.activeElement`; a **text field with a blinking, movable caret**.
+
+**Concurrency (UI thread + work threads)**
+- **`Worker`** — separate QuickJS context per thread, `postMessage`/`onmessage`
+  (JSON); **`computeAsync(n, cb)`** — native background compute, callback
+  marshaled to the UI thread. A UI-thread **dispatcher** (the `BeginInvoke`
+  mechanism) keeps the loop alive while async work is outstanding.
+
+**Tooling**
+- **Headless test API** (`pollyui --test t.js`): in-process `host.render/click/
+  key/pixel/save` — deterministic UI tests, no window or OS input.
+- Windowed (no-console) **release build** (`PU_WINDOWED`); in-process
+  symbolized **crash handler** (DbgHelp). CMake + Ninja + clang-cl; Skia fetched,
+  QuickJS/Yoga vendored, ANGLE staged from an installed browser.
+
+### Planned 🛠
+
+- **M6 — macOS / Linux host ports.** Cocoa/Metal and X11/Wayland windowing +
+  ANGLE-or-native GL. Everything above the Host layer is already portable.
+- **`requestAnimationFrame`** + an animation API (now cheap on the GPU).
+- **Text selection** + click-to-position caret (text hit-testing); **IME** for
+  CJK/emoji composition.
+- **Accessibility** — a semantic tree mapped to UI Automation / AT-SPI.
+- **More style/paint:** borders, border-radius, gradients, shadows, images,
+  `gap`, transforms/clipping, scrolling/overflow.
+- **A React-style reconciler** layered on the DOM API (optional, in JS).
+- **Perf (as needed):** persist + dirty-track the Yoga tree; multi-window.
+
+### Deferred ⏸
+
+- **JS on its own thread** (RN-old-bridge style). The industry moved away from
+  it (Fabric/JSI) and our bridge is already synchronous/JSI-like; parallelism is
+  served by Workers instead. Revisit only if real apps show main-thread jank.
 
 ---
 
 ## 11. Decisions
 
-Confirmed:
-
-- **Host language:** C11; single `extern "C"` C++ Skia shim (§3).
-- **Skia seam:** our own shim (not `sk4d`) for full Skia API access.
-- **M0 render path:** **raster first** — CPU `SkSurface` blitted to the window,
-  no GPU-context glue — then add the ANGLE/GL GPU backend immediately after.
-  Separates windowing from GPU so the first pixel is cheap.
+- **Host language:** C11; ANGLE/EGL + Skia GPU live in the one `extern "C"` C++
+  shim (§3).
+- **Skia:** aseprite/skia m124 prebuilt (full C++ API via our own shim).
+- **GPU backend:** **ANGLE (GLES → D3D11)** — works without native GL drivers;
+  raster (CPU) fallback. (Native WGL GL was tried first; ANGLE is the keeper.)
+- **Layout/script units:** JS authors in **logical pixels**; numbers are px,
+  strings carry `%`/`auto`/colors; the renderer scales logical→physical by the
+  monitor DPI.
 - **Project name:** **PollyUI**.
-
-Still open (confirm as we build):
-
-1. **Windows GPU backend (post-raster):** ANGLE (GLES→D3D, portable,
-   Skia-friendly) vs native D3D. *Leaning ANGLE/GL for cross-platform parity.*
-2. **Skia prebuilt distribution:** which one to standardize on.
-3. **Style value types:** numbers as px; strings for `'auto'`/percent/colors —
-   confirm the coercion rules.
