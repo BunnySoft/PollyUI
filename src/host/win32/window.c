@@ -14,6 +14,8 @@ struct PuWindow {
     PuSurface *surface;      /* Skia raster surface, sized to the client area */
     int        width;
     int        height;
+    PuPaintFn  paint_fn;     /* optional per-frame draw callback */
+    void      *paint_user;
 };
 
 static const wchar_t *kClassName = L"PollyUIWindowClass";
@@ -23,13 +25,16 @@ static void pu_paint(PuWindow *w, HDC hdc)
 {
     if (!w->surface) return;
 
-    /* Clear to a dark slate, then draw a PollyUI-blue card — proves both
-     * SkCanvas::clear and drawRect through the shim. */
-    pu_surface_clear(w->surface, 0x10, 0x12, 0x18, 0xFF);
-    float cw = (float)w->width, ch = (float)w->height;
-    float rw = 320.0f, rh = 200.0f;
-    pu_surface_fill_rect(w->surface, (cw - rw) * 0.5f, (ch - rh) * 0.5f, rw, rh,
-                         0x3b, 0x82, 0xf6, 0xFF);
+    if (w->paint_fn) {
+        w->paint_fn(w->surface, w->width, w->height, w->paint_user);
+    } else {
+        /* Built-in demo (M0b): dark slate + centered PollyUI-blue card. */
+        pu_surface_clear(w->surface, 0x10, 0x12, 0x18, 0xFF);
+        float cw = (float)w->width, ch = (float)w->height;
+        float rw = 320.0f, rh = 200.0f;
+        pu_surface_fill_rect(w->surface, (cw - rw) * 0.5f, (ch - rh) * 0.5f, rw, rh,
+                             0x3b, 0x82, 0xf6, 0xFF);
+    }
 
     const void *pixels = pu_surface_pixels(w->surface);
     int sw = pu_surface_width(w->surface);
@@ -91,6 +96,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
     if (!cfg) return NULL;
 
+    /* Map device pixels 1:1 (no DPI virtualization/blurring). */
+    SetProcessDPIAware();
+
     PuWindow *w = (PuWindow *)calloc(1, sizeof(PuWindow));
     if (!w) return NULL;
     w->width  = cfg->width;
@@ -143,6 +151,14 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
     return w;
+}
+
+void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user)
+{
+    if (!w) return;
+    w->paint_fn = fn;
+    w->paint_user = user;
+    if (w->hwnd) InvalidateRect(w->hwnd, NULL, FALSE);
 }
 
 int pu_window_run(PuWindow *w)

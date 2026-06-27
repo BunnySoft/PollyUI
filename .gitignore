@@ -13,7 +13,6 @@
 
 # Fetched / prebuilt dependencies (acquired via tools/fetch_skia.*)
 /third_party/skia/
-/third_party/yoga/        # if FetchContent caches here
 .cache/
 
 # CMake

@@ -48,6 +48,11 @@ struct PuNode {
     char   *text;            /* text content (owned) for text nodes */
     PuStyle style;           /* element style */
 
+    /* Computed layout (absolute, in pixels) — written by the LayoutEngine,
+     * read by the RenderEngine. */
+    float layout_x, layout_y, layout_w, layout_h;
+    void *yoga;              /* transient YGNodeRef during a layout pass */
+
     /* Bridge wrappers — weak handles managed by bridge.c. */
     JSValue js_wrapper;  bool has_wrapper;
     JSValue js_style;    bool has_style;

@@ -25,13 +25,23 @@ set(QJS_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 set(QJS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(third_party/quickjs EXCLUDE_FROM_ALL)
 
+# --- Yoga (facebook/yoga v3.2.1, vendored) -----------------------------------
+# Build only the yogacore static lib (the inner dir skips Yoga's tests/fuzz).
+add_subdirectory(third_party/yoga/yoga EXCLUDE_FROM_ALL)
+if (MSVC)
+    # Yoga compiles with /WX; don't let a clang-cl warning fail our build.
+    target_compile_options(yogacore PRIVATE /WX-)
+endif()
+
 add_executable(pollyui
     src/main.c
     src/host/win32/window.c
     src/render/skia_c.cpp
+    src/render/render.c
     src/script/script.c
     src/model/node.c
     src/bridge/bridge.c
+    src/layout/layout.c
 )
 
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
@@ -39,8 +49,9 @@ add_executable(pollyui
 # "quickjs.h".
 target_include_directories(pollyui PRIVATE src ${SKIA_ROOT} ${CMAKE_SOURCE_DIR}/third_party/quickjs)
 
-# ScriptEngine.
-target_link_libraries(pollyui PRIVATE qjs)
+# ScriptEngine + LayoutEngine. yogacore PUBLIC-exports its include dir, so
+# layout.c can `#include <yoga/Yoga.h>`.
+target_link_libraries(pollyui PRIVATE qjs yogacore)
 
 # skia.lib is self-contained: it bundles its own zlib (Cr_z_-prefixed), libpng,
 # freetype, harfbuzz, icu, etc. The sibling component libs are redundant alternate
