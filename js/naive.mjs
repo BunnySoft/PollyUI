@@ -2,25 +2,36 @@
 // Components are factories returning vnodes, so they compose with h()/the
 // reconciler and Vue's createApp.
 //
-//   import { NCard, NButton, NSpace, NSwitch, NTag, NInput, theme } from './js/naive.mjs';
-//   NCard({ title: 'Demo' },
-//     NSpace({}, NButton({ type: 'primary' }, 'Save'), NButton({}, 'Cancel')));
+//   import { NCard, NButton, NSpace, NSwitch, NTag, NInput, NTabs, useTheme }
+//     from './js/naive.mjs';
 
 import { h } from './js/vue.mjs';
 
-// Naive UI default (light) theme tokens.
-export const theme = {
+// ---- themes -----------------------------------------------------------------
+
+export const lightTheme = {
+  name: 'light',
   primary: '#18a058', info: '#2080f0', success: '#18a058', warning: '#f0a020', error: '#d03050',
-  text: '#333639', textDisabled: '#c2c2c2',
-  border: '#e0e0e6', card: '#ffffff', body: '#ffffff',
-  radius: 3,
+  text: '#333639', textSecondary: '#666a73', textDisabled: '#c2c2c2',
+  border: '#e0e0e6', card: '#ffffff', body: '#f5f7fa',
+  solidText: '#ffffff', railOff: '#dbdbdb', trackBg: '#eef0f2',
+};
+export const darkTheme = {
+  name: 'dark',
+  primary: '#63e2b7', info: '#70c0e8', success: '#63e2b7', warning: '#f2c97d', error: '#e88080',
+  text: '#d6d6d8', textSecondary: '#9b9ba1', textDisabled: '#5b5b5f',
+  border: '#2d2d33', card: '#18181c', body: '#101014',
+  solidText: '#101014', railOff: '#3a3a40', trackBg: '#ffffff14',
 };
 
-const typeColor = { primary: theme.primary, info: theme.info, success: theme.success, warning: theme.warning, error: theme.error };
-const tagBg = { primary: '#e8f5ee', info: '#e3effd', success: '#e8f5ee', warning: '#fdf2e3', error: '#fce8ee', default: '#fafafc' };
+// The live, mutable active theme (components read it at render time).
+export const theme = { ...lightTheme };
+export function useTheme(name) { Object.assign(theme, name === 'dark' ? darkTheme : lightTheme); return theme; }
 
-const px = (n) => String(n);
-// drop undefined values so they don't become the string "undefined"
+const typeColor = (t) => ({ primary: theme.primary, info: theme.info, success: theme.success, warning: theme.warning, error: theme.error }[t]);
+const lightTagBg = { primary: '#e8f5ee', info: '#e3effd', success: '#e8f5ee', warning: '#fdf2e3', error: '#fce8ee', default: '#fafafc' };
+
+// drop undefined/null so they don't stringify to "undefined"
 const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined && o[k] !== null) r[k] = String(o[k]); return r; };
 
 // ---- NButton ----------------------------------------------------------------
@@ -28,37 +39,33 @@ const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined &
 const BTN_SIZE = { small: { h: 28, fs: 14, px: 10 }, medium: { h: 34, fs: 14, px: 14 }, large: { h: 40, fs: 16, px: 18 } };
 
 export function NButton(props = {}, label) {
-  const { type = 'default', size = 'medium', round = false, ghost = false, disabled = false, onClick } = props;
+  const { type = 'default', size = 'medium', round = false, ghost = false, disabled = false, onClick, id } = props;
   const sz = BTN_SIZE[size] || BTN_SIZE.medium;
-  const color = typeColor[type];
+  const color = typeColor(type);
   const style = {
-    height: sz.h, paddingLeft: sz.px, paddingRight: sz.px,
-    borderRadius: round ? sz.h / 2 : theme.radius,
+    height: sz.h, paddingLeft: sz.px, paddingRight: sz.px, borderRadius: round ? sz.h / 2 : 3,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    fontSize: sz.fs, fontWeight: '500', color: '#ffffff', opacity: disabled ? 0.5 : 1,
+    fontSize: sz.fs, fontWeight: '500', color: theme.solidText, opacity: disabled ? 0.5 : 1,
   };
-  if (!color) {                          // default: white, bordered
-    style.backgroundColor = ghost ? 'transparent' : '#ffffff';
-    style.borderWidth = 1; style.borderColor = theme.border; style.color = theme.text;
-  } else if (ghost) {                    // ghost: colored border + text
-    style.backgroundColor = 'transparent'; style.borderWidth = 1; style.borderColor = color; style.color = color;
-  } else {                               // solid: filled
-    style.backgroundColor = color;
-  }
-  return h('view', { id: props.id, style: clean(style), onClick: disabled ? undefined : onClick }, label);
+  if (!color)        { style.backgroundColor = ghost ? 'transparent' : theme.card; style.borderWidth = 1; style.borderColor = theme.border; style.color = theme.text; }
+  else if (ghost)    { style.backgroundColor = 'transparent'; style.borderWidth = 1; style.borderColor = color; style.color = color; }
+  else               { style.backgroundColor = color; }
+  return h('view', { id, style: clean(style), onClick: disabled ? undefined : onClick }, label);
 }
 
 // ---- NTag -------------------------------------------------------------------
 
 export function NTag(props = {}, label) {
-  const { type = 'default', round = false } = props;
-  const color = typeColor[type] || theme.text;
+  const { type = 'default', round = false, id } = props;
+  const color = typeColor(type) || theme.text;
+  const bg = type === 'default'
+    ? (theme.name === 'dark' ? '#ffffff14' : lightTagBg.default)
+    : (theme.name === 'dark' ? color + '2e' : (lightTagBg[type] || lightTagBg.default));
   return h('view', {
-    id: props.id,
+    id,
     style: clean({
       height: 24, paddingLeft: 9, paddingRight: 9, borderRadius: round ? 12 : 2,
-      backgroundColor: tagBg[type] || tagBg.default, borderWidth: 1,
-      borderColor: type === 'default' ? theme.border : color,
+      backgroundColor: bg, borderWidth: 1, borderColor: type === 'default' ? theme.border : color,
       alignItems: 'center', justifyContent: 'center', flexDirection: 'row',
     }),
   }, h('view', { style: { color, fontSize: '13' } }, label));
@@ -67,21 +74,115 @@ export function NTag(props = {}, label) {
 // ---- NSwitch ----------------------------------------------------------------
 
 export function NSwitch(props = {}) {
-  const { value = false, onUpdate, disabled = false } = props;
+  const { value = false, onUpdate, disabled = false, id } = props;
   const W = 40, H = 22, knob = 18, pad = 2;
   return h('view', {
-    id: props.id,
-    style: clean({
-      width: W, height: H, borderRadius: H / 2, position: 'relative',
-      backgroundColor: value ? theme.primary : '#dbdbdb', opacity: disabled ? 0.5 : 1,
-    }),
+    id,
+    style: clean({ width: W, height: H, borderRadius: H / 2, position: 'relative', backgroundColor: value ? theme.primary : theme.railOff, opacity: disabled ? 0.5 : 1 }),
     onClick: disabled ? undefined : () => onUpdate && onUpdate(!value),
-  }, h('view', {
-    style: clean({
-      position: 'absolute', top: pad, left: value ? W - knob - pad : pad,
-      width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff',
-    }),
-  }));
+  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }));
+}
+
+// ---- NCheckbox --------------------------------------------------------------
+
+export function NCheckbox(props = {}, label) {
+  const { checked = false, disabled = false, onChange, id } = props;
+  return h('view', {
+    id,
+    style: clean({ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
+    onClick: disabled ? undefined : () => onChange && onChange(!checked),
+  },
+    h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: checked ? theme.primary : theme.card, borderWidth: checked ? 0 : 1, borderColor: theme.border }) },
+      checked ? h('view', { style: { color: theme.solidText, fontSize: '13', fontWeight: 'bold' } }, '✓') : null),
+    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null);
+}
+
+// ---- NRadioGroup ------------------------------------------------------------
+
+export function NRadioGroup(props = {}) {
+  const { value, onUpdate, options = [], vertical = false } = props;
+  return h('view', { style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
+    ...options.map(opt => {
+      const on = opt.value === value;
+      return h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '8' }, onClick: () => onUpdate && onUpdate(opt.value) },
+        h('view', { style: clean({ width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.card, borderWidth: 2, borderColor: on ? theme.primary : theme.border }) },
+          on ? h('view', { style: { width: '8', height: '8', borderRadius: '4', backgroundColor: theme.primary } }) : null),
+        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label));
+    }));
+}
+
+// ---- NSlider (click + drag) -------------------------------------------------
+
+export function NSlider(props = {}) {
+  const { value = 0, min = 0, max = 100, width = 200, onUpdate, id } = props;
+  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const setFromX = (e) => {
+    const root = e.currentTarget;
+    let v = min + ((e.clientX - root.offsetLeft) / root.offsetWidth) * (max - min);
+    v = Math.max(min, Math.min(max, Math.round(v)));
+    onUpdate && onUpdate(v);
+  };
+  return h('view', {
+    id,
+    style: clean({ width, height: 18, position: 'relative', justifyContent: 'center' }),
+    onMousedown: (e) => { e.currentTarget.__drag = true; setFromX(e); },
+    onMousemove: (e) => { if (e.currentTarget.__drag) setFromX(e); },
+    onMouseup: (e) => { e.currentTarget.__drag = false; },
+  },
+    h('view', { style: clean({ position: 'absolute', top: 7, left: 0, width: '100%', height: 4, borderRadius: 2, backgroundColor: theme.railOff }) }),
+    h('view', { style: clean({ position: 'absolute', top: 7, left: 0, width: pct * width, height: 4, borderRadius: 2, backgroundColor: theme.primary }) }),
+    h('view', { style: clean({ position: 'absolute', top: 2, left: pct * width - 7, width: 14, height: 14, borderRadius: 7, backgroundColor: '#ffffff', borderWidth: 2, borderColor: theme.primary }) }));
+}
+
+// ---- NProgress --------------------------------------------------------------
+
+export function NProgress(props = {}) {
+  const { percentage = 0, type = 'primary', width } = props;
+  const color = typeColor(type) || theme.primary;
+  const p = Math.max(0, Math.min(100, percentage));
+  return h('view', { style: clean({ width, flexDirection: 'row', alignItems: 'center', gap: 10 }) },
+    h('view', { style: clean({ flexGrow: 1, height: 8, borderRadius: 4, backgroundColor: theme.trackBg }) },
+      h('view', { style: clean({ width: p + '%', height: 8, borderRadius: 4, backgroundColor: color }) })),
+    h('view', { style: clean({ width: 42, color: theme.textSecondary, fontSize: 13 }) }, p + '%'));
+}
+
+// ---- NAlert -----------------------------------------------------------------
+
+export function NAlert(props = {}, content) {
+  const { type = 'info', title, id } = props;
+  const color = typeColor(type) || theme.info;
+  return h('view', { id, style: clean({ flexDirection: 'row', gap: 10, padding: 14, borderRadius: 3, backgroundColor: color + '1f', borderWidth: 1, borderColor: color + '4d' }) },
+    h('view', { style: clean({ width: 4, borderRadius: 2, backgroundColor: color }) }),
+    h('view', { style: { gap: '4', flexGrow: '1' } },
+      title ? h('view', { style: { color: theme.text, fontSize: '14', fontWeight: 'bold' } }, title) : null,
+      content ? h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, content) : null));
+}
+
+// ---- NTabs ------------------------------------------------------------------
+
+export function NTabs(props = {}) {
+  const { value, onUpdate, panes = [] } = props;
+  const active = panes.find(p => p.name === value) || panes[0];
+  return h('view', { style: { flexDirection: 'column' } },
+    h('view', { style: clean({ flexDirection: 'row', gap: 24, borderBottomWidth: 0 }) },
+      ...panes.map(p => {
+        const on = active && p.name === active.name;
+        return h('view', { style: { flexDirection: 'column', gap: '8', paddingTop: '10' }, onClick: () => onUpdate && onUpdate(p.name) },
+          h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 'bold' : 'normal', paddingBottom: 8 }) }, p.label),
+          h('view', { style: clean({ height: 2, borderRadius: 1, backgroundColor: on ? theme.primary : 'transparent' }) }));
+      })),
+    h('view', { style: { paddingTop: '16' } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
+}
+
+// ---- NModal -----------------------------------------------------------------
+
+export function NModal(props = {}, ...children) {
+  const { show = false, title, onClose, width = 440 } = props;
+  if (!show) return h('view', { style: { width: '0', height: '0' } });
+  return h('view', {
+    style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#00000080', alignItems: 'center', justifyContent: 'center' }),
+    onClick: onClose,
+  }, h('view', { onClick: (e) => e.stopPropagation() }, NCard({ title, width }, ...children)));
 }
 
 // ---- NSpace -----------------------------------------------------------------
@@ -91,25 +192,21 @@ const SPACE_SIZE = { small: 8, medium: 12, large: 16 };
 export function NSpace(props = {}, ...children) {
   const { vertical = false, size = 'medium', align, justify } = props;
   const gap = typeof size === 'number' ? size : (SPACE_SIZE[size] || 12);
-  return h('view', {
-    style: clean({ flexDirection: vertical ? 'column' : 'row', gap, alignItems: align, justifyContent: justify }),
-  }, ...children);
+  return h('view', { style: clean({ flexDirection: vertical ? 'column' : 'row', gap, alignItems: align, justifyContent: justify }) }, ...children);
 }
 
 // ---- NCard ------------------------------------------------------------------
 
 export function NCard(props = {}, ...children) {
-  const { title, bordered = true, width } = props;
+  const { title, bordered = true, width, id } = props;
   const kids = [];
   if (title) {
     kids.push(h('view', { style: { paddingLeft: '20', paddingRight: '20', paddingTop: '15', paddingBottom: '15' } },
       h('view', { style: { fontSize: '18', fontWeight: 'bold', color: theme.text } }, title)));
-    kids.push(h('view', { style: { height: '1', backgroundColor: theme.border } })); // divider
+    kids.push(h('view', { style: { height: '1', backgroundColor: theme.border } }));
   }
   kids.push(h('view', { style: { padding: '20', gap: '12' } }, ...children));
-  return h('view', {
-    style: clean({ backgroundColor: theme.card, borderRadius: theme.radius, width, borderWidth: bordered ? 1 : 0, borderColor: theme.border }),
-  }, ...kids);
+  return h('view', { id, style: clean({ backgroundColor: theme.card, borderRadius: 3, width, borderWidth: bordered ? 1 : 0, borderColor: theme.border }) }, ...kids);
 }
 
 // ---- NInput (controlled) ----------------------------------------------------
@@ -120,12 +217,8 @@ export function NInput(props = {}) {
   const h0 = BTN_SIZE[size] ? BTN_SIZE[size].h : 34;
   const isPh = value.length === 0;
   return h('view', {
-    id,
-    tabIndex: 0,
-    style: clean({
-      width, height: h0, backgroundColor: '#ffffff', borderWidth: 1, borderColor: theme.border,
-      borderRadius: theme.radius, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden',
-    }),
+    id, tabIndex: 0,
+    style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
     onKeydown: (e) => {
       if (!onInput) return;
       const k = e.key;
