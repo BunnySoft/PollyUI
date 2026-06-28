@@ -11,7 +11,17 @@
 // attributes (id/className/tabIndex/...). Re-rendering diffs against the
 // previous tree and applies the minimal DOM mutations.
 
+// Custom-element registry: a string tag (e.g. 'button', 'date-picker') mapped to
+// a component function. When h()'s first arg is a registered tag, it authors like
+// a custom element and resolves to the component at call time:
+//   h('button', { type: 'primary' }, 'Save')   ===   NButton({ type:'primary' }, 'Save')
+const _tags = Object.create(null);
+export function defineTag(name, fn) { _tags[name] = fn; }
+export function defineTags(map) { for (const k in map) _tags[k] = map[k]; }
+export function tagNames() { return Object.keys(_tags).sort(); }
+
 export function h(type, props, ...children) {
+  if (typeof type === 'string' && _tags[type]) return _tags[type](props || {}, ...children);
   const flat = [];
   const add = (c) => {
     if (c === null || c === undefined || c === false || c === true) return;
