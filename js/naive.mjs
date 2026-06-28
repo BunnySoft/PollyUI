@@ -739,3 +739,127 @@ export function NCascader(props = {}) {
     h('view', { style: clean({ color: value.length ? theme.text : theme.textDisabled, fontSize: 14 }) }, value.length ? labelFor(value) : placeholder),
     h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
 }
+
+// ===== Wave 1: static layout / display ======================================
+
+export function NDivider(props = {}, title) {
+  const { vertical = false } = props;
+  if (vertical) return h('view', { style: clean({ width: 1, height: 14, marginLeft: 8, marginRight: 8, backgroundColor: theme.border }) });
+  if (title) return h('view', { id: props.id, style: { flexDirection: 'row', alignItems: 'center', gap: '12', paddingTop: '12', paddingBottom: '12' } },
+    h('view', { style: { height: '1', backgroundColor: theme.border, flexGrow: '1' } }),
+    h('view', { style: { color: theme.text, fontSize: '14', fontWeight: '500' } }, title),
+    h('view', { style: { height: '1', backgroundColor: theme.border, flexGrow: '1' } }));
+  return h('view', { id: props.id, style: { height: '1', backgroundColor: theme.border, marginTop: '8', marginBottom: '8' } });
+}
+
+export function NButtonGroup(props = {}, ...buttons) {
+  return h('view', { id: props.id, style: { flexDirection: 'row', gap: '0' } }, ...buttons);
+}
+
+export function NFlex(props = {}, ...children) {
+  const { vertical = false, gap = 12, align, justify, wrap = false } = props;
+  return h('view', { id: props.id, style: clean({ flexDirection: vertical ? 'column' : 'row', gap, alignItems: align, justifyContent: justify, flexWrap: wrap ? 'wrap' : undefined }) }, ...children);
+}
+
+// items: [{ span, content }]; span is out of `cols`.
+export function NGrid(props = {}) {
+  const { cols = 24, items = [], id } = props;
+  return h('view', { id, style: { flexDirection: 'row', flexWrap: 'wrap' } },
+    ...items.map(it => h('view', { style: clean({ width: ((it.span / cols) * 100) + '%' }) }, it.content)));
+}
+
+export function NText(props = {}, content) {
+  const { type, strong = false, italic = false, depth, fontSize = 14 } = props;
+  const color = typeColor(type) || (depth === 3 ? theme.textDisabled : depth === 2 ? theme.textSecondary : theme.text);
+  return h('view', { id: props.id, style: clean({ color, fontSize, fontWeight: strong ? 'bold' : 'normal', fontStyle: italic ? 'italic' : undefined }) }, content);
+}
+
+export function NTitle(props = {}, content) {
+  const { level = 1 } = props;
+  const sizes = { 1: 30, 2: 24, 3: 20, 4: 16, 5: 14, 6: 13 };
+  return h('view', { id: props.id, style: clean({ color: theme.text, fontSize: sizes[level] || 24, fontWeight: 'bold' }) }, content);
+}
+
+export function NEmpty(props = {}, ...extra) {
+  const { description = 'No Data' } = props;
+  return h('view', { id: props.id, style: { flexDirection: 'column', alignItems: 'center', gap: '12', paddingTop: '28', paddingBottom: '28' } },
+    h('view', { style: { fontSize: '40' } }, '📭'),
+    h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, description),
+    ...extra);
+}
+
+const RESULT_ICON = { success: ['✓', '#18a058'], error: ['✕', '#d03050'], warning: ['!', '#f0a020'], info: ['i', '#2080f0'], '404': ['?', '#909399'] };
+export function NResult(props = {}, ...actions) {
+  const { status = 'info', title, description } = props;
+  const [icon, baseColor] = RESULT_ICON[status] || RESULT_ICON.info;
+  const color = typeColor(status) || baseColor;
+  return h('view', { id: props.id, style: { flexDirection: 'column', alignItems: 'center', gap: '12', padding: '32' } },
+    h('view', { style: clean({ width: 64, height: 64, borderRadius: 32, backgroundColor: color + '1f', alignItems: 'center', justifyContent: 'center' }) },
+      h('view', { style: clean({ color, fontSize: 32, fontWeight: 'bold' }) }, icon)),
+    title ? h('view', { style: { color: theme.text, fontSize: '20', fontWeight: 'bold' } }, title) : null,
+    description ? h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, description) : null,
+    actions.length ? h('view', { style: { flexDirection: 'row', gap: '12', paddingTop: '8' } }, ...actions) : null);
+}
+
+export function NStatistic(props = {}) {
+  const { label, value, prefix, suffix, id } = props;
+  return h('view', { id, style: { flexDirection: 'column', gap: '6' } },
+    label ? h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, label) : null,
+    h('view', { style: { flexDirection: 'row', alignItems: 'flex-end', gap: '3' } },
+      prefix ? h('view', { style: { color: theme.textSecondary, fontSize: '16' } }, prefix) : null,
+      h('view', { style: { color: theme.text, fontSize: '28', fontWeight: 'bold' } }, String(value)),
+      suffix ? h('view', { style: { color: theme.textSecondary, fontSize: '16' } }, suffix) : null));
+}
+
+export function NListItem(props = {}, ...content) {
+  return h('view', { id: props.id, style: { paddingLeft: '14', paddingRight: '14', paddingTop: '12', paddingBottom: '12', flexDirection: 'row', alignItems: 'center', gap: '12' } }, ...content);
+}
+export function NList(props = {}, ...items) {
+  const { bordered = true, id } = props;
+  const kids = [];
+  items.forEach((it, i) => { kids.push(it); if (i < items.length - 1) kids.push(h('view', { style: { height: '1', backgroundColor: theme.border } })); });
+  return h('view', { id, style: clean({ borderWidth: bordered ? 1 : 0, borderColor: theme.border, borderRadius: 3, backgroundColor: theme.card, flexDirection: 'column' }) }, ...kids);
+}
+
+// items: [{ label, value }]
+export function NDescriptions(props = {}) {
+  const { column = 2, items = [], title, id } = props;
+  const rows = [];
+  for (let i = 0; i < items.length; i += column) rows.push(items.slice(i, i + column));
+  const labelBg = theme.name === 'dark' ? '#ffffff08' : '#fafafc';
+  return h('view', { id, style: clean({ flexDirection: 'column', borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden' }) },
+    title ? h('view', { style: { paddingLeft: '12', paddingTop: '10', paddingBottom: '10', color: theme.text, fontWeight: 'bold', fontSize: '15' } }, title) : null,
+    title ? h('view', { style: { height: '1', backgroundColor: theme.border } }) : null,
+    ...rows.map((row, ri) => h('view', { style: clean({ flexDirection: 'row', borderTopWidth: ri > 0 ? 0 : 0 }) },
+      ...row.map(it => h('view', { style: { flexGrow: '1', flexDirection: 'row' } },
+        h('view', { style: clean({ width: 110, backgroundColor: labelBg, paddingLeft: 12, paddingTop: 10, paddingBottom: 10 }) }, h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, it.label)),
+        h('view', { style: { flexGrow: '1', paddingLeft: '12', paddingTop: '10', paddingBottom: '10' } }, h('view', { style: { color: theme.text, fontSize: '14' } }, String(it.value))))))));
+}
+
+// items: [{ label, onClick? }]
+export function NBreadcrumb(props = {}) {
+  const { items = [], separator = '/', id } = props;
+  const kids = [];
+  items.forEach((it, i) => {
+    if (i > 0) kids.push(h('view', { style: { color: theme.textDisabled, fontSize: '14' } }, separator));
+    const last = i === items.length - 1;
+    kids.push(h('view', { style: clean({ color: last ? theme.text : theme.textSecondary, fontSize: 14 }), onClick: it.onClick }, it.label));
+  });
+  return h('view', { id, style: { flexDirection: 'row', alignItems: 'center', gap: '8' } }, ...kids);
+}
+
+// items: [{ title, content?, time?, type? }]
+export function NTimeline(props = {}) {
+  const { items = [], id } = props;
+  return h('view', { id, style: { flexDirection: 'column' } }, ...items.map((it, i) => {
+    const color = typeColor(it.type) || theme.primary;
+    return h('view', { style: { flexDirection: 'row', gap: '12' } },
+      h('view', { style: { flexDirection: 'column', alignItems: 'center', width: '14' } },
+        h('view', { style: clean({ width: 12, height: 12, borderRadius: 6, backgroundColor: 'transparent', borderWidth: 2, borderColor: color }) }),
+        i < items.length - 1 ? h('view', { style: { width: '2', flexGrow: '1', minHeight: '24', backgroundColor: theme.border } }) : null),
+      h('view', { style: { flexDirection: 'column', gap: '2', paddingBottom: '20', flexGrow: '1' } },
+        h('view', { style: { color: theme.text, fontSize: '14', fontWeight: '500' } }, it.title),
+        it.content ? h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, it.content) : null,
+        it.time ? h('view', { style: { color: theme.textDisabled, fontSize: '12' } }, it.time) : null));
+  }));
+}
