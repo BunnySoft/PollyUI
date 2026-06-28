@@ -239,7 +239,7 @@ let _ovSeq = 0;
 
 export function openPopup(render, opts = {}) {
   const id = ++_ovSeq;
-  _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false });
+  _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false, fullWidth: !!opts.fullWidth });
   return id;
 }
 export function closePopup(id) { _overlays.list = _overlays.list.filter(o => o.id !== id); }
@@ -252,7 +252,7 @@ export function NOverlayHost() {
   const kids = [];
   for (const o of _overlays.list) {
     if (o.backdrop) kids.push(h('view', { key: 'bd' + o.id, style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'transparent' }), onClick: () => o.onClose && o.onClose() }));
-    kids.push(h('view', { key: 'pop' + o.id, style: clean({ position: 'absolute', top: o.y, left: o.x }) }, typeof o.render === 'function' ? o.render() : o.render));
+    kids.push(h('view', { key: 'pop' + o.id, style: clean({ position: 'absolute', top: o.y, left: o.x, width: o.fullWidth ? '100%' : undefined }) }, typeof o.render === 'function' ? o.render() : o.render));
   }
   return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: active ? '100%' : 0, height: active ? '100%' : 0 }) }, ...kids);
 }
@@ -949,3 +949,104 @@ export function NImage(props = {}) {
   const { src, width = 120, height = 120, round = false, id } = props;
   return h('view', { id, style: clean({ width, height, borderRadius: round ? height / 2 : 6, backgroundColor: theme.railOff, backgroundImage: src, overflow: 'hidden' }) });
 }
+
+// ===== Wave 3: popovers, navigation, feedback ===============================
+
+export function NPopover(props = {}, trigger) {
+  const { content, trigger: mode = 'click', width } = props;
+  trigger.props = trigger.props || {};
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid;
+    const pop = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 6, padding: 14, shadowColor: '#0000002e', shadowBlur: 16, shadowY: 4 }) },
+      (content && typeof content === 'object') ? content : h('view', { style: { color: theme.text, fontSize: '14' } }, content));
+    pid = openPopup(pop, { x: r.left, y: r.bottom + 8, backdrop: mode === 'click', onClose: () => closePopup(pid) });
+    e.currentTarget.__pop = pid;
+  };
+  if (mode === 'hover') {
+    trigger.props.onMouseenter = open;
+    trigger.props.onMouseleave = (e) => { if (e.currentTarget.__pop) { closePopup(e.currentTarget.__pop); e.currentTarget.__pop = 0; } };
+  } else {
+    trigger.props.onClick = open;
+  }
+  return trigger;
+}
+
+export function NPopselect(props = {}, trigger) {
+  const { value, options = [], onUpdate, width = 160 } = props;
+  trigger.props = trigger.props || {};
+  trigger.props.onClick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid;
+    const menu = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
+      ...options.map(o => h('view', { style: clean({ height: 32, paddingLeft: 10, borderRadius: 3, justifyContent: 'center', backgroundColor: o.value === value ? theme.primary + '1f' : 'transparent' }), onClick: () => { onUpdate && onUpdate(o.value); closePopup(pid); } },
+        h('view', { style: clean({ color: o.value === value ? theme.primary : theme.text, fontSize: 14 }) }, o.label))));
+    pid = openPopup(menu, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return trigger;
+}
+
+export function NBackTop(props = {}) {
+  const { onClick, visible = true, id } = props;
+  if (!visible) return h('view', { style: { width: '0', height: '0' } });
+  return h('view', { id, style: clean({ position: 'absolute', right: 40, bottom: 40, width: 40, height: 40, borderRadius: 20, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, alignItems: 'center', justifyContent: 'center', shadowColor: '#0000002e', shadowBlur: 12, shadowY: 2 }), onClick },
+    h('view', { style: { color: theme.textSecondary, fontSize: '16' } }, '↑'));
+}
+
+export function NAnchor(props = {}) {
+  const { links = [], active, onSelect, id } = props;
+  return h('view', { id, style: { flexDirection: 'column', gap: '4', paddingLeft: '12' } },
+    ...links.map(l => {
+      const on = l.key === active;
+      return h('view', { style: { paddingTop: '6', paddingBottom: '6' }, onClick: () => onSelect && onSelect(l.key) },
+        h('view', { style: clean({ color: on ? theme.primary : theme.textSecondary, fontSize: 14, fontWeight: on ? 500 : 400 }) }, l.label));
+    }));
+}
+
+export function NAffix(props = {}, child) {
+  const { affixed = false, id } = props;
+  return h('view', { id, style: affixed ? clean({ position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: theme.body, shadowColor: '#0000001f', shadowBlur: 8, shadowY: 2 }) : {} }, child);
+}
+
+// ---- notification (stacked toast cards) ----
+let _notifyY = 0;
+export const notification = {
+  _show(type, opts) {
+    const o = typeof opts === 'string' ? { content: opts } : (opts || {});
+    const { title, content, duration = 4500 } = o;
+    const color = typeColor(type) || theme.info;
+    let id;
+    const card = () => h('view', { style: clean({ width: 340, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 6, padding: 16, gap: 6, flexDirection: 'column', shadowColor: '#0000002e', shadowBlur: 20, shadowY: 6 }) },
+      h('view', { style: { flexDirection: 'row', gap: '8', alignItems: 'center' } },
+        h('view', { style: clean({ width: 8, height: 8, borderRadius: 4, backgroundColor: color }) }),
+        h('view', { style: { color: theme.text, fontSize: '15', fontWeight: 'bold', flexGrow: '1' } }, title || ''),
+        h('view', { style: { color: theme.textSecondary, fontSize: '14' }, onClick: () => closePopup(id) }, '✕')),
+      content ? h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, content) : null);
+    const myY = 24 + _notifyY;
+    _notifyY += 96;
+    id = openPopup(card, { x: 440, y: myY, backdrop: false });
+    if (duration > 0) setTimeout(() => { closePopup(id); _notifyY = Math.max(0, _notifyY - 96); }, duration);
+    return id;
+  },
+  info(o) { return this._show('info', o); }, success(o) { return this._show('success', o); },
+  warning(o) { return this._show('warning', o); }, error(o) { return this._show('error', o); },
+};
+
+// ---- loadingBar (thin top progress bar) ----
+let _lbWidth = 0, _lbId = 0, _lbTimer = null;
+export const loadingBar = {
+  start() {
+    if (_lbTimer) clearInterval(_lbTimer);
+    _lbWidth = 15;
+    if (!_lbId) _lbId = openPopup(() => h('view', { style: clean({ width: '100%', height: 3 }) }, h('view', { style: clean({ width: _lbWidth + '%', height: 3, backgroundColor: theme.primary }) })), { x: 0, y: 0, backdrop: false, fullWidth: true });
+    else _overlays.list = _overlays.list.slice();
+    _lbTimer = setInterval(() => { _lbWidth = Math.min(90, _lbWidth + 12); _overlays.list = _overlays.list.slice(); }, 120);
+  },
+  finish() {
+    if (_lbTimer) { clearInterval(_lbTimer); _lbTimer = null; }
+    _lbWidth = 100; _overlays.list = _overlays.list.slice();
+    const id = _lbId;
+    setTimeout(() => { closePopup(id); if (_lbId === id) _lbId = 0; }, 300);
+  },
+  error() { this.finish(); },
+};
