@@ -142,7 +142,9 @@ function genElement(node) {
 }
 
 function gen(node) {
-  return node.text !== undefined ? genText(node.text) : genElement(node);
+  if (node.text !== undefined) return genText(node.text);
+  if (node.tag === 'slot') return '($slots || [])'; // <slot/> -> the passed children
+  return genElement(node);
 }
 
 function compileTemplate(tpl) {
@@ -152,27 +154,55 @@ function compileTemplate(tpl) {
 }
 
 // ---- assemble ---------------------------------------------------------------
-export function compileSFC(src) {
+function compile(src) {
   const tpl = section(src, 'template') || '';
   const scriptSrc = (section(src, 'script') || 'export default {}').replace(/export\s+default/, 'return');
   const rootExpr = compileTemplate(tpl);
-
   const depNames = Object.keys(Vue);
   const opts = new Function(...depNames, scriptSrc)(...depNames.map((k) => Vue[k])) || {};
   const renderFn = new Function('h', 'ctx', 'with (ctx) { return ' + rootExpr + '; }');
+  return { opts, renderFn };
+}
 
+function makeScope(props, bindings, children) {
+  const scope = {};
+  const merge = (obj) => { for (const k in obj) {
+    const v = obj[k];
+    if (v && v.__v_isRef) Object.defineProperty(scope, k, { get: () => v.value, set: (x) => { v.value = x; }, enumerable: true });
+    else scope[k] = v;
+  } };
+  merge(props || {}); merge(bindings);
+  scope.$slots = children || [];
+  return scope;
+}
+
+// Stateful component (setup runs once) — for createApp roots / app-level views.
+export function compileSFC(src) {
+  const { opts, renderFn } = compile(src);
   return {
     props: opts.props,
     setup(props) {
       const bindings = opts.setup ? (opts.setup(props) || {}) : {};
-      const scope = {};
-      const merge = (obj) => { for (const k in obj) {
-        const v = obj[k];
-        if (v && v.__v_isRef) Object.defineProperty(scope, k, { get: () => v.value, set: (x) => { v.value = x; }, enumerable: true });
-        else scope[k] = v;
-      } };
-      merge(props || {}); merge(bindings);
-      return () => renderFn(h, scope);
+      return () => renderFn(h, makeScope(props, bindings));
     },
   };
+}
+
+// Stateless tag component (props in, vnode out; <slot/> = passed children) — for
+// reusable controls registered via defineTag. State lifts to the app, matching
+// PollyUI's call-time tag resolution.
+export function compileSFCTag(src) {
+  const { opts, renderFn } = compile(src);
+  const fn = (props, ...children) => {
+    const bindings = opts.setup ? (opts.setup(props || {}) || {}) : {};
+    const vnode = renderFn(h, makeScope(props || {}, bindings, children));
+    // attribute fallthrough: id/class on the tag apply to the root element (Vue-style)
+    if (vnode && vnode.props && props) {
+      if (props.id != null && vnode.props.id == null) vnode.props.id = props.id;
+      if (props.class != null && vnode.props.class == null) vnode.props.class = props.class;
+    }
+    return vnode;
+  };
+  fn.props = opts.props;
+  return fn;
 }
