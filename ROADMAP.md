@@ -15,9 +15,9 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **253
+The headless test suite (`pollyui --test tests/<name>`) currently covers **319
 assertions** across rendering, layout, DOM, events, runtime, networking,
-persistence, and the JS framework layer (Vue reactivity + components).
+persistence, and the JS framework layer (Vue reactivity + ~80 components).
 
 ---
 
@@ -171,11 +171,11 @@ persistence, and the JS framework layer (Vue reactivity + components).
 |---|---|---|
 | **Vue-style reactivity + Composition API** (`js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
 | **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
-| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | 35+ components incl. Button/Card/Input/Switch/Tag/Checkbox/Radio/Slider/Tabs/Progress/Alert/Modal/Select/Tooltip/Pagination/DataTable(sort+select)/Avatar/Badge/Dropdown/DatePicker/Message/Collapse/Menu/Steps/Spin/Popconfirm/Drawer/Tree/Transfer/Calendar/Upload/Cascader + portal layer, form validation, light & dark themes |
+| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | **~80 components** — full Naive UI parity: inputs (Input/Number/Select/Cascader/TreeSelect/AutoComplete/Mention/DatePicker/TimePicker/ColorPicker/Slider/Switch/Checkbox/Radio/Rate/Upload/Transfer/DynamicInput/DynamicTags), data (DataTable+sort/select/VirtualList/Tree/List/Descriptions/Timeline/Calendar/Statistic/Avatar/Badge/Image/Carousel/Code/GradientText/Ellipsis/Time/Countdown), feedback (Modal/Drawer/Popconfirm/Popover/Popselect/Tooltip/Message/Notification/LoadingBar/Alert/Result/Spin/Skeleton/Progress), nav (Menu/Tabs/Steps/Pagination/Breadcrumb/Anchor/Affix/BackTop/Dropdown), layout (Layout/Grid/Flex/Space/Card/Divider/Collapse/Watermark/Scrollbar), Typography/Icon/ButtonGroup/Empty/ConfigProvider — plus a portal layer, form validation, light & dark themes |
 | **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
 | **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
 | **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
-| Remaining specialist components (Table virtual-scroll, AutoComplete, Mention, ColorPicker…) | 🟡 | 35+ done; deep long tail pending |
+| Per-glyph font fallback + font-family + gradient text | ✅ | symbols/emoji, monospace/serif, gradient-filled text |
 
 ## Accessibility
 
