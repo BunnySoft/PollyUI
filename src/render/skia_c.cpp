@@ -67,18 +67,26 @@ static sk_sp<SkFontMgr> font_mgr() {
     return mgr;
 }
 
-// Default UI typeface at a given weight (e.g. 400 normal, 700 bold) and slant.
-static sk_sp<SkTypeface> typeface_for(int weight, int italic) {
+// Typeface at a given weight/slant, optionally from a named family. "monospace"
+// maps to a system mono face; an unknown family falls back to the default UI font.
+static sk_sp<SkTypeface> typeface_for(int weight, int italic, const char *family) {
     sk_sp<SkFontMgr> mgr = font_mgr();
     if (!mgr) return nullptr;
     SkFontStyle style(weight > 0 ? weight : SkFontStyle::kNormal_Weight,
                       SkFontStyle::kNormal_Width,
                       italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant);
+    if (family && *family) {
+        const char *fam = family;
+        if (strcmp(family, "monospace") == 0) fam = "Consolas";
+        else if (strcmp(family, "serif") == 0) fam = "Georgia";
+        sk_sp<SkTypeface> tf = mgr->matchFamilyStyle(fam, style);
+        if (tf) return tf;
+    }
     return mgr->legacyMakeTypeface(nullptr, style);
 }
 
-static SkFont make_font(float size, int weight, int italic) {
-    SkFont font(typeface_for(weight, italic), size);
+static SkFont make_font(float size, int weight, int italic, const char *family) {
+    SkFont font(typeface_for(weight, italic, family), size);
     font.setEdging(SkFont::Edging::kAntiAlias);
     font.setSubpixel(true);
     return font;
@@ -557,8 +565,8 @@ static void emit_draw(void *c, const char *s, size_t n, float w) {
 }
 
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
-                     float max_width, float *out_w, float *out_h) {
-    SkFont font = make_font(font_size, weight, italic);
+                     const char *family, float max_width, float *out_w, float *out_h) {
+    SkFont font = make_font(font_size, weight, italic, family);
     SkFontMetrics m;
     font.getMetrics(&m);
     float line_h = m.fDescent - m.fAscent; // ascent is negative
@@ -570,11 +578,11 @@ void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
 }
 
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
-                          float font_size, int weight, int italic,
+                          float font_size, int weight, int italic, const char *family,
                           float max_width, int align, float align_width,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     if (!s || !s->surface || !utf8 || !*utf8) return;
-    SkFont font = make_font(font_size, weight, italic);
+    SkFont font = make_font(font_size, weight, italic, family);
     SkFontMetrics m;
     font.getMetrics(&m);
     SkPaint paint;
@@ -584,6 +592,24 @@ void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
     WrapDraw wd = { s->surface->getCanvas(), &font, &paint,
                     x, y, m.fDescent - m.fAscent, m.fAscent, align_width, align };
     wrap_text(font, utf8, max_width, emit_draw, &wd);
+}
+
+// Single-line text filled with a horizontal two-color gradient (for GradientText).
+void pu_surface_draw_text_gradient(PuSurface *s, const char *utf8, float x, float y,
+                                   float font_size, int weight, int italic, const char *family,
+                                   uint8_t r0, uint8_t g0, uint8_t b0,
+                                   uint8_t r1, uint8_t g1, uint8_t b1) {
+    if (!s || !s->surface || !utf8 || !*utf8) return;
+    SkFont font = make_font(font_size, weight, italic, family);
+    SkFontMetrics m;
+    font.getMetrics(&m);
+    float w = pu_measure_runs(font, utf8, strlen(utf8));
+    SkPoint pts[2] = { { x, y }, { x + w, y } };
+    SkColor colors[2] = { SkColorSetARGB(255, r0, g0, b0), SkColorSetARGB(255, r1, g1, b1) };
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp));
+    pu_draw_runs(s->surface->getCanvas(), font, paint, utf8, strlen(utf8), x, y - m.fAscent);
 }
 
 void pu_surface_set_scale(PuSurface *s, float scale) {

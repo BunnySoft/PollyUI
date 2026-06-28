@@ -185,6 +185,12 @@ static int text_italic(const PuNode *n)
     return v && strcmp(v, "italic") == 0;
 }
 
+static const char *text_font_family(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    return p ? pu_style_get(&p->style, "fontFamily") : NULL;
+}
+
 /* 0 left, 1 center, 2 right — inherited from the parent's textAlign. */
 static int text_align(const PuNode *n)
 {
@@ -205,7 +211,7 @@ static YGSize measure_text(YGNodeConstRef node, float width, YGMeasureMode width
     float maxw = (widthMode != YGMeasureModeUndefined) ? width : 0.0f;
     float tw = 0, th = 0;
     if (n) {
-        pu_text_measure(n->text, text_font_size(n), text_font_weight(n), text_italic(n), maxw, &tw, &th);
+        pu_text_measure(n->text, text_font_size(n), text_font_weight(n), text_italic(n), text_font_family(n), maxw, &tw, &th);
         n->text_wrap_width = maxw;
     }
 

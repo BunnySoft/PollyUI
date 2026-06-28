@@ -84,19 +84,26 @@ void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius);
 
-/* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700) and slant:
+/* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700), slant, and
+ * font `family` (NULL/"" = default UI font; "monospace"/"serif" or a face name).
  * max line advance width + total height. Honors embedded '\n'. If max_width > 0,
  * the text is word-wrapped to that width (height grows with the line count). */
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
-                     float max_width, float *out_w, float *out_h);
+                     const char *family, float max_width, float *out_w, float *out_h);
 
 /* Draw a UTF-8 string with its top-left at (x, y), in the given size, weight,
- * slant, and color. '\n' and (when max_width > 0) word-wrap start new lines.
+ * slant, font `family`, and color. '\n'/word-wrap start new lines.
  * align: 0 left, 1 center, 2 right — each line positioned within align_width. */
 void pu_surface_draw_text(PuSurface *s, const char *utf8, float x, float y,
-                          float font_size, int weight, int italic,
+                          float font_size, int weight, int italic, const char *family,
                           float max_width, int align, float align_width,
                           uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+
+/* Draw single-line text filled with a horizontal two-color gradient. */
+void pu_surface_draw_text_gradient(PuSurface *s, const char *utf8, float x, float y,
+                                   float font_size, int weight, int italic, const char *family,
+                                   uint8_t r0, uint8_t g0, uint8_t b0,
+                                   uint8_t r1, uint8_t g1, uint8_t b1);
 
 /* Reset the canvas transform to a uniform scale (DPI: logical -> physical px).
  * Call before clearing/drawing a frame. */

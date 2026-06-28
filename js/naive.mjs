@@ -1280,3 +1280,17 @@ export function NColorPicker(props = {}) {
     h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, backgroundColor: value, borderWidth: 1, borderColor: theme.border }) }),
     h('view', { style: { color: theme.text, fontSize: '14' } }, value));
 }
+
+// ===== Wave 6: native font-family + gradient text ===========================
+
+export function NCode(props = {}, code) {
+  const { inline = false, fontSize = 13, id } = props;
+  const bg = theme.name === 'dark' ? '#ffffff0d' : '#f5f5f7';
+  return h('view', { id, style: clean({ backgroundColor: bg, borderWidth: 1, borderColor: theme.border, borderRadius: 4, paddingLeft: inline ? 6 : 14, paddingRight: inline ? 6 : 14, paddingTop: inline ? 2 : 12, paddingBottom: inline ? 2 : 12, fontFamily: 'monospace' }) },
+    h('view', { style: clean({ color: theme.text, fontSize, fontFamily: 'monospace' }) }, code));
+}
+
+export function NGradientText(props = {}, content) {
+  const { from = '#2080f0', to = '#d03050', fontSize = 28, fontWeight = 'bold', id } = props;
+  return h('view', { id, style: clean({ textGradientFrom: from, textGradientTo: to, fontSize, fontWeight }) }, content);
+}

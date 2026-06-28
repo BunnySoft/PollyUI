@@ -101,6 +101,12 @@ static int text_align(const PuNode *n)
     return 0;
 }
 
+static const char *text_font_family(const PuNode *n)
+{
+    const PuNode *p = n->parent;
+    return p ? pu_style_get(&p->style, "fontFamily") : NULL;
+}
+
 static float style_num(const PuNode *n, const char *name, float def)
 {
     const char *v = pu_style_get(&n->style, name);
@@ -113,9 +119,21 @@ static void render_node(PuSurface *s, PuNode *n)
         if (n->text && *n->text) {
             uint8_t r, g, b, a;
             text_color(n, &r, &g, &b, &a);
-            pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n),
-                                 text_font_weight(n), text_italic(n),
-                                 n->text_wrap_width, text_align(n), n->layout_w, r, g, b, a);
+            const char *fam = text_font_family(n);
+            /* gradient-filled text when the parent sets textGradientFrom/To */
+            const PuNode *p = n->parent;
+            const char *gf = p ? pu_style_get(&p->style, "textGradientFrom") : NULL;
+            const char *gt = p ? pu_style_get(&p->style, "textGradientTo") : NULL;
+            uint8_t r0, g0, b0, a0, r1, g1, b1, a1;
+            if (gf && gt && parse_color(gf, &r0, &g0, &b0, &a0) && parse_color(gt, &r1, &g1, &b1, &a1)) {
+                pu_surface_draw_text_gradient(s, n->text, n->layout_x, n->layout_y, text_font_size(n),
+                                              text_font_weight(n), text_italic(n), fam,
+                                              r0, g0, b0, r1, g1, b1);
+            } else {
+                pu_surface_draw_text(s, n->text, n->layout_x, n->layout_y, text_font_size(n),
+                                     text_font_weight(n), text_italic(n), fam,
+                                     n->text_wrap_width, text_align(n), n->layout_w, r, g, b, a);
+            }
         }
         for (PuNode *c = n->first_child; c; c = c->next_sibling) render_node(s, c);
         return;
