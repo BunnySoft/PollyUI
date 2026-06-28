@@ -1153,3 +1153,130 @@ export function NVirtualList(props = {}) {
     h('view', { style: clean({ position: 'absolute', top: -st, left: 0, right: 0, height: total }) }, ...vis),
     maxS > 0 ? h('view', { style: clean({ position: 'absolute', right: 2, top: (st / maxS) * (height - Math.max(20, height / total * height)), width: 6, height: Math.max(20, height / total * height), borderRadius: 3, backgroundColor: theme.name === 'dark' ? '#ffffff33' : '#00000026' }) }) : null);
 }
+
+// ===== Wave 5b: popover-driven inputs =======================================
+
+export function NTimePicker(props = {}) {
+  const { value, onUpdate, width = 150, id } = props;
+  const cur0 = value || { h: 0, m: 0, s: 0 };
+  const disp = `${pad2(cur0.h)}:${pad2(cur0.m)}:${pad2(cur0.s)}`;
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid, cur = { ...cur0 };
+    const col = (unit, count) => h('view', { style: clean({ width: 48, height: 200, overflow: 'scroll' }) },
+      h('view', { style: { flexDirection: 'column' } }, ...Array.from({ length: count }, (_, n) =>
+        h('view', { style: clean({ height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 3, backgroundColor: cur[unit] === n ? theme.primary + '1f' : 'transparent' }), onClick: () => { cur = { ...cur, [unit]: n }; onUpdate && onUpdate(cur); _overlays.list = _overlays.list.slice(); } },
+          h('view', { style: clean({ color: cur[unit] === n ? theme.primary : theme.text, fontSize: 14 }) }, pad2(n))))));
+    const panel = () => h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3 }) }, col('h', 24), col('m', 60), col('s', 60));
+    pid = openPopup(panel, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center' }), onClick: open },
+    h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value ? disp : 'Select time'));
+}
+
+export function NTreeSelect(props = {}) {
+  const { value, options = [], onUpdate, width = 220, id } = props;
+  const labelFor = (key) => { let f = null; const walk = (ns) => ns.forEach(n => { if (n.key === key) f = n.label; if (n.children) walk(n.children); }); walk(options); return f; };
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid, exp = [];
+    const draw = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, maxHeight: 260, overflow: 'scroll' }) },
+      NTree({ data: options, expandedKeys: exp, selectedKeys: value ? [value] : [],
+        onExpand: e2 => { exp = e2; _overlays.list = _overlays.list.slice(); },
+        onSelect: s => { onUpdate && onUpdate(s[0]); closePopup(pid); } }));
+    pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), onClick: open },
+    h('view', { style: clean({ color: value ? theme.text : theme.textDisabled, fontSize: 14 }) }, value ? labelFor(value) : 'Select'),
+    h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
+}
+
+let _acLive = null;
+export function NAutoComplete(props = {}) {
+  const { value = '', options = [], onInput, onSelect, width = 240, placeholder = '', id } = props;
+  _acLive = { value, options, onInput, onSelect, width };
+  const open = (e) => {
+    const inputNode = e.currentTarget;
+    if (inputNode.__ac) return;
+    const r = inputNode.getBoundingClientRect();
+    let pid;
+    const menu = () => {
+      const st = _acLive; if (!st) return h('view', { style: { width: '0', height: '0' } });
+      const f = st.options.filter(o => { const s = typeof o === 'string' ? o : o.label; return st.value && s.toLowerCase().indexOf(st.value.toLowerCase()) >= 0; });
+      if (!f.length) return h('view', { style: { width: '0', height: '0' } });
+      return h('view', { style: clean({ width: st.width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
+        ...f.map(o => { const lbl = typeof o === 'string' ? o : o.label; const val = typeof o === 'string' ? o : o.value;
+          return h('view', { style: clean({ height: 32, paddingLeft: 10, borderRadius: 3, justifyContent: 'center' }), onClick: () => { st.onSelect && st.onSelect(val); st.onInput && st.onInput(lbl); closePopup(pid); inputNode.__ac = 0; } }, h('view', { style: { color: theme.text, fontSize: '14' } }, lbl)); }));
+    };
+    pid = openPopup(menu, { x: r.left, y: r.bottom + 4, backdrop: false, onClose: () => { closePopup(pid); inputNode.__ac = 0; } });
+    inputNode.__ac = pid;
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
+    onClick: open,
+    onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (!e.currentTarget.__ac) open(e); } },
+    h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || placeholder));
+}
+
+let _mLive = null;
+export function NMention(props = {}) {
+  const { value = '', options = [], onInput, width = 280, id } = props;
+  _mLive = { value, options, onInput, width };
+  const open = (e) => {
+    const inputNode = e.currentTarget;
+    if (inputNode.__m) return;
+    const r = inputNode.getBoundingClientRect();
+    let pid;
+    const menu = () => {
+      const st = _mLive; const at = st.value.lastIndexOf('@');
+      if (at < 0) return h('view', { style: { width: '0', height: '0' } });
+      const q = st.value.slice(at + 1).toLowerCase();
+      const f = st.options.filter(o => { const s = typeof o === 'string' ? o : o.value; return s.toLowerCase().indexOf(q) >= 0; });
+      if (!f.length) return h('view', { style: { width: '0', height: '0' } });
+      return h('view', { style: clean({ width: 180, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
+        ...f.map(o => { const s = typeof o === 'string' ? o : o.value;
+          return h('view', { style: clean({ height: 30, paddingLeft: 10, borderRadius: 3, justifyContent: 'center' }), onClick: () => { const nv = st.value.slice(0, at) + '@' + s + ' '; st.onInput && st.onInput(nv); closePopup(pid); inputNode.__m = 0; } }, h('view', { style: { color: theme.text, fontSize: '14' } }, '@' + s)); }));
+    };
+    pid = openPopup(menu, { x: r.left, y: r.bottom + 4, backdrop: false, onClose: () => { closePopup(pid); inputNode.__m = 0; } });
+    inputNode.__m = pid;
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
+    onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (nv.indexOf('@') >= 0 && !e.currentTarget.__m) open(e); } },
+    h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || 'Type @ to mention'));
+}
+
+function hsvToHex(hh, s, v) {
+  hh = ((hh % 360) + 360) % 360;
+  const c = v * s, x = c * (1 - Math.abs((hh / 60) % 2 - 1)), m = v - c;
+  let r, g, b;
+  if (hh < 60) { r = c; g = x; b = 0; } else if (hh < 120) { r = x; g = c; b = 0; }
+  else if (hh < 180) { r = 0; g = c; b = x; } else if (hh < 240) { r = 0; g = x; b = c; }
+  else if (hh < 300) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+  const to = (n) => ('0' + Math.round((n + m) * 255).toString(16)).slice(-2);
+  return '#' + to(r) + to(g) + to(b);
+}
+
+export function NColorPicker(props = {}) {
+  const { value = '#2080f0', onUpdate, width = 200, id } = props;
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid, hue = 210, sat = 0.85, val = 0.94;
+    const apply = () => onUpdate && onUpdate(hsvToHex(hue, sat, val));
+    const SVW = 180, SVH = 120, HUEW = 180;
+    const hueSegs = [['#ff0000', '#ffff00'], ['#ffff00', '#00ff00'], ['#00ff00', '#00ffff'], ['#00ffff', '#0000ff'], ['#0000ff', '#ff00ff'], ['#ff00ff', '#ff0000']];
+    const draw = () => h('view', { style: clean({ width: 200, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 6, padding: 10, gap: 10, shadowColor: '#0000002e', shadowBlur: 16, shadowY: 4 }) },
+      h('view', { style: clean({ width: SVW, height: SVH, position: 'relative', borderRadius: 3, overflow: 'hidden', backgroundColor: hsvToHex(hue, 1, 1) }),
+        onMousedown: (e2) => { const rr = e2.currentTarget.getBoundingClientRect(); sat = Math.max(0, Math.min(1, (e2.clientX - rr.left) / SVW)); val = Math.max(0, Math.min(1, 1 - (e2.clientY - rr.top) / SVH)); apply(); _overlays.list = _overlays.list.slice(); } },
+        h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', gradientFrom: '#ffffffff', gradientTo: '#ffffff00', gradientDir: 'horizontal' }) }),
+        h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', gradientFrom: '#00000000', gradientTo: '#000000ff' }) })),
+      h('view', { style: clean({ width: HUEW, height: 14, flexDirection: 'row', borderRadius: 3, overflow: 'hidden' }),
+        onMousedown: (e2) => { const rr = e2.currentTarget.getBoundingClientRect(); hue = Math.max(0, Math.min(359, ((e2.clientX - rr.left) / HUEW) * 360)); apply(); _overlays.list = _overlays.list.slice(); } },
+        ...hueSegs.map(([a, b]) => h('view', { style: clean({ flexGrow: 1, height: 14, gradientFrom: a, gradientTo: b, gradientDir: 'horizontal' }) }))),
+      h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '8' } },
+        h('view', { style: clean({ width: 24, height: 24, borderRadius: 3, backgroundColor: hsvToHex(hue, sat, val), borderWidth: 1, borderColor: theme.border }) }),
+        h('view', { style: { color: theme.text, fontSize: '13' } }, hsvToHex(hue, sat, val))));
+    pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }), onClick: open },
+    h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, backgroundColor: value, borderWidth: 1, borderColor: theme.border }) }),
+    h('view', { style: { color: theme.text, fontSize: '14' } }, value));
+}
