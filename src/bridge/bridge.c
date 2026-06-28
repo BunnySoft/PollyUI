@@ -365,7 +365,7 @@ static int js_event_flag(JSContext *ctx, JSValueConst ev, const char *name)
  * `key` (keyboard) and px,py (pointer) are attached when provided. Returns 1 if
  * a listener called preventDefault(). */
 static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key,
-                         int has_pos, float px, float py, int bubble)
+                         int has_pos, float px, float py, int bubble, double delta_y)
 {
     if (!b || !target || !type) return 0;
     JSContext *ctx = b->ctx;
@@ -379,6 +379,7 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
         JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, px));
         JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, py));
     }
+    if (strcmp(type, "wheel") == 0) JS_SetPropertyStr(ctx, ev, "deltaY", JS_NewFloat64(ctx, delta_y));
     JS_SetPropertyStr(ctx, ev, "stopPropagation",
         JS_NewCFunction(ctx, js_event_stop, "stopPropagation", 0));
     JS_SetPropertyStr(ctx, ev, "stopImmediatePropagation",
@@ -413,12 +414,12 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
 
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
 {
-    dispatch_impl(b, target, type, NULL, 0, 0, 0, 1);
+    dispatch_impl(b, target, type, NULL, 0, 0, 0, 1, 0);
 }
 
 void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
 {
-    if (b && b->focused) dispatch_impl(b, b->focused, type, key, 0, 0, 0, 1);
+    if (b && b->focused) dispatch_impl(b, b->focused, type, key, 0, 0, 0, 1, 0);
 }
 
 /* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
@@ -432,10 +433,10 @@ void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, f
         PuNode *old = b->hovered;
         b->hovered = target;
         if (target) pu_node_ref(target);          /* keep hovered alive (like focus) */
-        if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0); pu_node_unref(old); }
-        if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0);
+        if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0, 0); pu_node_unref(old); }
+        if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0, 0);
     }
-    if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1);
+    if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1, 0);
 }
 
 /* Wheel: dispatch a "wheel" event, then apply default scrolling to the nearest
@@ -443,7 +444,7 @@ void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, f
 void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
 {
     if (!b) return;
-    if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1);
+    if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1, dy);
 
     PuNode *sc = NULL;
     for (PuNode *p = target; p; p = p->parent) {
@@ -481,13 +482,13 @@ void pu_bridge_set_focus(PuBridge *b, PuNode *node)
     if (b->focused) {
         PuNode *old = b->focused;
         b->focused = NULL;
-        dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0);
+        dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
     b->focused = node;
     if (node) {
         pu_node_ref(node);            /* keep the focused node alive */
-        dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0);
+        dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0, 0);
     }
 }
 

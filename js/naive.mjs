@@ -1124,3 +1124,32 @@ export function NIcon(props = {}, glyph) {
   const { size = 18, color, id } = props;
   return h('view', { id, style: clean({ fontSize: size, color: color || theme.text }) }, glyph);
 }
+
+// ===== Wave 5a: custom scroll (wheel deltaY) ================================
+
+export function NScrollbar(props = {}, content) {
+  const { height = 200, width, scrollTop = 0, contentHeight = 0, onScroll, id } = props;
+  const maxS = Math.max(0, contentHeight - height);
+  const st = Math.max(0, Math.min(maxS, scrollTop));
+  const thumbH = contentHeight > height ? Math.max(20, (height / contentHeight) * height) : 0;
+  const thumbTop = maxS > 0 ? (st / maxS) * (height - thumbH) : 0;
+  return h('view', { id, style: clean({ height, width, position: 'relative', overflow: 'hidden' }),
+    onWheel: (e) => { if (onScroll) onScroll(Math.max(0, Math.min(maxS, st + e.deltaY))); } },
+    h('view', { style: clean({ position: 'absolute', top: -st, left: 0, right: 0 }) }, content),
+    thumbH > 0 ? h('view', { style: clean({ position: 'absolute', right: 2, top: thumbTop, width: 6, height: thumbH, borderRadius: 3, backgroundColor: theme.name === 'dark' ? '#ffffff33' : '#00000026' }) }) : null);
+}
+
+export function NVirtualList(props = {}) {
+  const { items = [], itemHeight = 34, height = 300, width, scrollTop = 0, onScroll, renderItem, id } = props;
+  const total = items.length * itemHeight;
+  const maxS = Math.max(0, total - height);
+  const st = Math.max(0, Math.min(maxS, scrollTop));
+  const start = Math.max(0, Math.floor(st / itemHeight) - 2);
+  const end = Math.min(items.length, Math.ceil((st + height) / itemHeight) + 2);
+  const vis = [];
+  for (let i = start; i < end; i++) vis.push(h('view', { key: i, style: clean({ position: 'absolute', top: i * itemHeight, left: 0, right: 0, height: itemHeight, paddingLeft: 10, justifyContent: 'center' }) }, renderItem(items[i], i)));
+  return h('view', { id, style: clean({ height, width, position: 'relative', overflow: 'hidden' }),
+    onWheel: (e) => { if (onScroll) onScroll(Math.max(0, Math.min(maxS, st + e.deltaY))); } },
+    h('view', { style: clean({ position: 'absolute', top: -st, left: 0, right: 0, height: total }) }, ...vis),
+    maxS > 0 ? h('view', { style: clean({ position: 'absolute', right: 2, top: (st / maxS) * (height - Math.max(20, height / total * height)), width: 6, height: Math.max(20, height / total * height), borderRadius: 3, backgroundColor: theme.name === 'dark' ? '#ffffff33' : '#00000026' }) }) : null);
+}
