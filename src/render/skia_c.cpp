@@ -45,6 +45,7 @@
 #include <new>
 #include <map>
 #include <string>
+#include <vector>
 
 #define PU_GL_RGBA8 0x8058
 #define PU_GLLOG(msg) std::fprintf(stderr, "[gl] %s\n", msg)
@@ -460,22 +461,98 @@ static void wrap_text(const SkFont &font, const char *utf8, float max_width,
     }
 }
 
-struct WrapMeasure { float maxw; int lines; };
+// ---- per-codepoint font fallback -------------------------------------------
+// The default UI face lacks some symbols/emoji; for any codepoint it can't
+// render we substitute a system font that can (Segoe UI Symbol/Emoji, ...).
+
+static SkUnichar pu_next_cp(const char *&p, const char *end) {
+    unsigned char c = (unsigned char)*p++;
+    if (c < 0x80) return c;
+    int extra; SkUnichar cp;
+    if ((c & 0xE0) == 0xC0)      { extra = 1; cp = c & 0x1F; }
+    else if ((c & 0xF0) == 0xE0) { extra = 2; cp = c & 0x0F; }
+    else if ((c & 0xF8) == 0xF0) { extra = 3; cp = c & 0x07; }
+    else return 0xFFFD;
+    while (extra-- > 0 && p < end) cp = (cp << 6) | ((unsigned char)(*p++) & 0x3F);
+    return cp;
+}
+
+static SkTypeface *pu_fallback_face(SkUnichar cp) {
+    static std::map<SkUnichar, sk_sp<SkTypeface>> cache;
+    auto it = cache.find(cp);
+    if (it != cache.end()) return it->second.get();
+    sk_sp<SkTypeface> tf;
+    sk_sp<SkFontMgr> mgr = font_mgr();
+    if (mgr) tf = sk_sp<SkTypeface>(mgr->matchFamilyStyleCharacter(nullptr, SkFontStyle(), nullptr, 0, cp));
+    cache[cp] = tf;
+    return tf.get();
+}
+
+struct PuRun { const char *start; size_t len; SkTypeface *tf; };
+
+// Split [s, s+n) into maximal runs sharing one typeface (base, else fallback).
+static void pu_runs(const SkFont &base, const char *s, size_t n, std::vector<PuRun> &out) {
+    SkTypeface *baseTf = base.getTypeface();
+    const char *end = s + n, *p = s, *runStart = s;
+    SkTypeface *cur = baseTf;
+    while (p < end) {
+        const char *cpStart = p;
+        SkUnichar cp = pu_next_cp(p, end);
+        SkTypeface *tf = baseTf;
+        if (cp > 0x20 && base.unicharToGlyph(cp) == 0) {
+            SkTypeface *fb = pu_fallback_face(cp);
+            if (fb) tf = fb;
+        }
+        if (tf != cur) {
+            if (cpStart > runStart) out.push_back({ runStart, (size_t)(cpStart - runStart), cur });
+            runStart = cpStart; cur = tf;
+        }
+    }
+    if (p > runStart) out.push_back({ runStart, (size_t)(p - runStart), cur });
+}
+
+static float pu_measure_runs(const SkFont &base, const char *s, size_t n) {
+    if (n == 0) return 0;
+    std::vector<PuRun> runs;
+    pu_runs(base, s, n, runs);
+    float w = 0;
+    for (auto &r : runs) {
+        SkFont f = base; f.setTypeface(sk_ref_sp(r.tf));
+        w += f.measureText(r.start, r.len, SkTextEncoding::kUTF8, nullptr);
+    }
+    return w;
+}
+
+static void pu_draw_runs(SkCanvas *canvas, const SkFont &base, const SkPaint &paint,
+                         const char *s, size_t n, float x, float baseline) {
+    std::vector<PuRun> runs;
+    pu_runs(base, s, n, runs);
+    for (auto &r : runs) {
+        SkFont f = base; f.setTypeface(sk_ref_sp(r.tf));
+        canvas->drawSimpleText(r.start, r.len, SkTextEncoding::kUTF8, x, baseline, f, paint);
+        x += f.measureText(r.start, r.len, SkTextEncoding::kUTF8, nullptr);
+    }
+}
+
+struct WrapMeasure { const SkFont *font; float maxw; int lines; };
 static void emit_measure(void *c, const char *s, size_t n, float w) {
-    (void)s; (void)n;
+    (void)w;
     WrapMeasure *m = (WrapMeasure *)c;
-    if (w > m->maxw) m->maxw = w;
+    float lw = pu_measure_runs(*m->font, s, n);
+    if (lw > m->maxw) m->maxw = lw;
     m->lines++;
 }
 
 struct WrapDraw { SkCanvas *canvas; const SkFont *font; const SkPaint *paint;
                   float x, y, lineH, ascent, alignW; int align; };
 static void emit_draw(void *c, const char *s, size_t n, float w) {
+    (void)w;
     WrapDraw *d = (WrapDraw *)c;
-    float dx = (d->align == 1) ? (d->alignW - w) * 0.5f : (d->align == 2) ? (d->alignW - w) : 0.0f;
-    if (n > 0)
-        d->canvas->drawSimpleText(s, n, SkTextEncoding::kUTF8, d->x + dx, d->y - d->ascent,
-                                  *d->font, *d->paint);
+    if (n > 0) {
+        float lw = (d->align != 0) ? pu_measure_runs(*d->font, s, n) : 0.0f;
+        float dx = (d->align == 1) ? (d->alignW - lw) * 0.5f : (d->align == 2) ? (d->alignW - lw) : 0.0f;
+        pu_draw_runs(d->canvas, *d->font, *d->paint, s, n, d->x + dx, d->y - d->ascent);
+    }
     d->y += d->lineH;
 }
 
@@ -486,7 +563,7 @@ void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
     font.getMetrics(&m);
     float line_h = m.fDescent - m.fAscent; // ascent is negative
 
-    WrapMeasure wm = { 0, 0 };
+    WrapMeasure wm = { &font, 0, 0 };
     wrap_text(font, utf8, max_width, emit_measure, &wm);
     if (out_w) *out_w = wm.maxw;
     if (out_h) *out_h = line_h * (wm.lines < 1 ? 1 : wm.lines);

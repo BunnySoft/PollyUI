@@ -32,7 +32,8 @@ render(h('view', { style: { gap: '8' } },
 host.render();
 const boxY = document.getElementById('cbY').firstChild;  // the box (first child of the row)
 const boxN = document.getElementById('cbN').firstChild;
-check('checked checkbox box is primary', at(boxY, 9, 9) === '#18A058');
+// sample a top corner (the centered checkmark glyph no longer obscures it)
+check('checked checkbox box is primary', at(boxY, 14, 4) === '#18A058');
 check('unchecked checkbox box is white', at(boxN, 9, 9) === '#FFFFFF');
 
 // --- radio group ---
