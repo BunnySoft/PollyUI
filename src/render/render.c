@@ -206,6 +206,24 @@ static void render_node(PuSurface *s, PuNode *n)
     if (clip) pu_surface_restore(s);     /* undoes the clip + translate */
     else if (sx != 0 || sy != 0) pu_surface_translate(s, sx, sy); /* undo translate */
 
+    /* visible scrollbar thumb when a scroll/auto container's content overflows */
+    if (ov && (strcmp(ov, "scroll") == 0 || strcmp(ov, "auto") == 0)) {
+        float content_bottom = 0;
+        for (PuNode *c = n->first_child; c; c = c->next_sibling) {
+            float cb = (c->layout_y + c->layout_h) - y;
+            if (cb > content_bottom) content_bottom = cb;
+        }
+        if (content_bottom > h + 0.5f) {
+            float track = h - 4;
+            float thumb_h = track * (h / content_bottom);
+            if (thumb_h < 24) thumb_h = 24;
+            if (thumb_h > track) thumb_h = track;
+            float max_scroll = content_bottom - h;
+            float thumb_y = max_scroll > 0 ? (sy / max_scroll) * (track - thumb_h) : 0;
+            pu_surface_fill_rrect(s, x + w - 8, y + 2 + thumb_y, 5, thumb_h, 2.5f, 128, 128, 128, 140);
+        }
+    }
+
     const char *bc = pu_style_get(&n->style, "borderColor");
     float bw = style_num(n, "borderWidth", 0);
     if (bw > 0 && bc && parse_color(bc, &r, &g, &b, &a) && a > 0)

@@ -125,6 +125,7 @@ struct Egl {
     unsigned (__stdcall *BindAPI)(unsigned) = nullptr;
     unsigned (__stdcall *DestroySurface)(void *, void *) = nullptr;
     unsigned (__stdcall *DestroyContext)(void *, void *) = nullptr;
+    unsigned (__stdcall *QuerySurface)(void *, void *, int, int *) = nullptr;
     bool loaded = false, ok = false;
 };
 Egl g_egl;
@@ -148,6 +149,7 @@ bool load_egl() {
     PU_LD(BindAPI,               "eglBindAPI");
     PU_LD(DestroySurface,        "eglDestroySurface");
     PU_LD(DestroyContext,        "eglDestroyContext");
+    PU_LD(QuerySurface,          "eglQuerySurface");
 #undef PU_LD
     g_egl.ok = g_egl.eglGetProc && g_egl.GetDisplay && g_egl.Initialize && g_egl.ChooseConfig &&
                g_egl.CreateWindowSurface && g_egl.CreateContext && g_egl.MakeCurrent && g_egl.SwapBuffers;
@@ -215,6 +217,8 @@ PuSurface *pu_surface_create(int width, int height) {
 #define PU_EGL_OPENGL_ES2_BIT             0x0004
 #define PU_EGL_OPENGL_ES_API              0x30A0
 #define PU_EGL_CONTEXT_CLIENT_VERSION     0x3098
+#define PU_EGL_HEIGHT                     0x3056
+#define PU_EGL_WIDTH                      0x3057
 
 PuSurface *pu_surface_create_gl(void *hwndv, int width, int height) {
     if (!load_egl()) { PU_GLLOG("ANGLE (libEGL/libGLESv2) not available - using raster"); return nullptr; }
@@ -291,7 +295,15 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
     if (s->gl) {
         if (g_egl.MakeCurrent)
             g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context);
-        rewrap_gl(s, width, height); /* ANGLE window surface resizes with the window */
+        /* Re-wrap to the ACTUAL backbuffer size ANGLE resized the window surface
+         * to, so Skia's render target matches the swapchain exactly (otherwise a
+         * resize can render one frame at a mismatched size — visible tearing). */
+        int qw = width, qh = height, vw = 0, vh = 0;
+        if (g_egl.QuerySurface) {
+            if (g_egl.QuerySurface(s->egl_display, s->egl_surface, PU_EGL_WIDTH, &vw) && vw > 0) qw = vw;
+            if (g_egl.QuerySurface(s->egl_display, s->egl_surface, PU_EGL_HEIGHT, &vh) && vh > 0) qh = vh;
+        }
+        rewrap_gl(s, qw, qh);
         return;
     }
     s->surface = make_raster(width, height);

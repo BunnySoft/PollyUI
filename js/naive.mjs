@@ -34,6 +34,35 @@ const lightTagBg = { primary: '#e8f5ee', info: '#e3effd', success: '#e8f5ee', wa
 // drop undefined/null so they don't stringify to "undefined"
 const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined && o[k] !== null) r[k] = String(o[k]); return r; };
 
+// ---- blinking text caret (shared by the text inputs) -----------------------
+// Native focus isn't reactive, so focus/blur handlers set the active id and a
+// reactive blink toggles re-renders. Inputs need a stable `id` for the caret.
+const _caret = reactive({ on: true, tick: 0, activeId: null });
+let _caretBlinking = false, _caretLast = 0;
+function caretFocus(id) {
+  if (!id) return;
+  _caret.activeId = id; _caret.on = true; _caret.tick++;
+  if (_caretBlinking) return;
+  // Blink via rAF (not setInterval): a perpetual interval would keep the
+  // headless run-loop alive forever; rAF is driven by the frame pump instead.
+  _caretBlinking = true; _caretLast = 0;
+  const loop = (ts) => {
+    if (_caret.activeId === null) { _caretBlinking = false; return; }
+    if (_caretLast === 0) _caretLast = ts;
+    if (ts - _caretLast >= 530) { _caretLast = ts; _caret.on = !_caret.on; }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+function caretBlur(id) { if (_caret.activeId === id) { _caret.activeId = null; _caret.tick++; } }
+// A caret vnode for a focused input (or null). Place inside a position:relative box.
+function textCaret(id, value, fontSize, padLeft, color, boxHeight) {
+  const on = _caret.on; void _caret.tick;            // track reactive deps
+  if (!id || _caret.activeId !== id || !on) return null;
+  const x = padLeft + measureText(String(value), fontSize);
+  return h('view', { style: clean({ position: 'absolute', left: x, top: (boxHeight - fontSize) / 2, width: 1.5, height: fontSize + 2, backgroundColor: color }) });
+}
+
 // ---- NButton ----------------------------------------------------------------
 
 const BTN_SIZE = { small: { h: 28, fs: 14, px: 10 }, medium: { h: 34, fs: 14, px: 14 }, large: { h: 40, fs: 16, px: 18 } };
@@ -218,14 +247,16 @@ export function NInput(props = {}) {
   const isPh = value.length === 0;
   return h('view', {
     id, tabIndex: 0,
-    style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
+    style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
+    onFocus: () => caretFocus(id), onBlur: () => caretBlur(id),
     onKeydown: (e) => {
       if (!onInput) return;
       const k = e.key;
       if (k === 'Backspace') onInput(value.slice(0, -1));
       else if (k.length === 1) onInput(value + k);
     },
-  }, h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value));
+  }, h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value),
+    textCaret(id, value, fs, 12, theme.text, h0));
 }
 
 // ---- portal / overlay layer -------------------------------------------------

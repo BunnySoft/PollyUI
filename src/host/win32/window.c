@@ -118,8 +118,17 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
+    case WM_GETMINMAXINFO: {
+        /* keep a sane minimum so layout doesn't collapse at tiny sizes */
+        MINMAXINFO *mmi = (MINMAXINFO *)lp;
+        float sc = (w && w->scale > 0) ? w->scale : 1.0f;
+        mmi->ptMinTrackSize.x = (LONG)(360 * sc);
+        mmi->ptMinTrackSize.y = (LONG)(280 * sc);
+        return 0;
+    }
+
     case WM_SIZE:
-        if (w) {
+        if (w && wp != SIZE_MINIMIZED) {
             w->width  = LOWORD(lp);
             w->height = HIWORD(lp);
             pu_surface_resize(w->surface, w->width, w->height);
