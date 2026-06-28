@@ -248,6 +248,12 @@ PuNode *pu_node_hit_test(PuNode *n, float x, float y)
         PuNode *hit = pu_node_hit_test(c, cx, cy);
         if (hit) return hit;
     }
+    /* pointerEvents:none makes the node itself transparent to hit-testing (its
+     * children stay hittable), so a point not over any child falls through to
+     * whatever is painted beneath — e.g. a full-screen overlay host that hosts
+     * only small toasts must not swallow clicks meant for the app below. */
+    const char *pe = pu_style_get(&n->style, "pointerEvents");
+    if (pe && strcmp(pe, "none") == 0) return NULL;
     return n;
 }
 

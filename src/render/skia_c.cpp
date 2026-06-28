@@ -220,7 +220,18 @@ PuSurface *pu_surface_create(int width, int height) {
 #define PU_EGL_HEIGHT                     0x3056
 #define PU_EGL_WIDTH                      0x3057
 
-PuSurface *pu_surface_create_gl(void *hwndv, int width, int height) {
+#ifndef PU_METAL_BACKEND
+/* Metal stub for the default GL/raster build. The real implementation lives in
+ * src/render/skia_metal.mm and is compiled (defining PU_METAL_BACKEND) only on
+ * Apple platforms — see docs/PORTING.md §2. */
+PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) {
+    (void)ca_metal_layer; (void)width; (void)height;
+    PU_GLLOG("Metal backend not built in this target - using raster");
+    return nullptr;
+}
+#endif
+
+PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     if (!load_egl()) { PU_GLLOG("ANGLE (libEGL/libGLESv2) not available - using raster"); return nullptr; }
 
     PuSurface *s = new (std::nothrow) PuSurface();
@@ -261,6 +272,9 @@ PuSurface *pu_surface_create_gl(void *hwndv, int width, int height) {
 
     s->grctx = GrDirectContexts::MakeGL(GrGLMakeAssembledGLESInterface(nullptr, pu_egl_get_proc));
     if (!s->grctx) { PU_GLLOG("GrDirectContexts::MakeGL (GLES) failed"); delete s; return nullptr; }
+    /* Cap the GPU resource cache (default budget is large). 64 MB is ample for
+     * UI and keeps the resident set down. */
+    s->grctx->setResourceCacheLimit(64 * 1024 * 1024);
     rewrap_gl(s, width, height);
     if (!s->surface) { PU_GLLOG("WrapBackendRenderTarget failed"); delete s; return nullptr; }
     std::fprintf(stderr, "[render] GPU backend: ANGLE / D3D11 (EGL %d.%d)\n", maj, min);
@@ -295,15 +309,16 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
     if (s->gl) {
         if (g_egl.MakeCurrent)
             g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context);
-        /* Re-wrap to the ACTUAL backbuffer size ANGLE resized the window surface
-         * to, so Skia's render target matches the swapchain exactly (otherwise a
-         * resize can render one frame at a mismatched size — visible tearing). */
-        int qw = width, qh = height, vw = 0, vh = 0;
-        if (g_egl.QuerySurface) {
-            if (g_egl.QuerySurface(s->egl_display, s->egl_surface, PU_EGL_WIDTH, &vw) && vw > 0) qw = vw;
-            if (g_egl.QuerySurface(s->egl_display, s->egl_surface, PU_EGL_HEIGHT, &vh) && vh > 0) qh = vh;
-        }
-        rewrap_gl(s, qw, qh);
+        /* Wrap Skia's render target to the window's authoritative client size
+         * (passed straight from WM_SIZE). We deliberately do NOT call
+         * eglQuerySurface here: ANGLE resizes its D3D11 swapchain lazily, only at
+         * the next eglSwapBuffers, so a query during WM_SIZE reports the PREVIOUS
+         * frame's size. Wrapping to that stale value guarantees a mismatch every
+         * resize frame — horizontal "jelly" when widening, and a black gap at the
+         * top when growing taller (the bottom-left GL origin anchors content to
+         * the bottom). Using the WM_SIZE size keeps render target == layout ==
+         * window; the swapchain catches up on the swap pumped from WM_SIZE. */
+        rewrap_gl(s, width, height);
         return;
     }
     s->surface = make_raster(width, height);

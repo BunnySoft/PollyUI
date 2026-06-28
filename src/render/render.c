@@ -66,10 +66,12 @@ static float text_font_size(const PuNode *n)
     return f > 0 ? f : 16.0f;
 }
 
+static const char *style_get_st(const PuNode *n, const char *key); /* fwd */
+
 static void text_color(const PuNode *n, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a)
 {
     const PuNode *p = n->parent;
-    const char *v = p ? pu_style_get(&p->style, "color") : NULL;
+    const char *v = p ? style_get_st(p, "color") : NULL; /* inherit parent hover/focus color */
     if (!v || !parse_color(v, r, g, b, a)) { *r = *g = *b = 0; *a = 255; } /* default black */
 }
 
@@ -107,9 +109,37 @@ static const char *text_font_family(const PuNode *n)
     return p ? pu_style_get(&p->style, "fontFamily") : NULL;
 }
 
+/* State-aware style lookup: when the node is focused/hovered, a `focus:KEY` or
+ * `hover:KEY` override (if non-empty) wins over the base `KEY`. Focus takes
+ * precedence over hover, resolved per-property so a node can, e.g., change its
+ * background on hover and its border on focus independently. */
+static const char *style_get_st(const PuNode *n, const char *key)
+{
+    if (n->state) {
+        char buf[80];
+        if (n->state & PU_STATE_FOCUS) {
+            snprintf(buf, sizeof(buf), "focus:%s", key);
+            const char *v = pu_style_get(&n->style, buf);
+            if (v && *v) return v;
+        }
+        if (n->state & PU_STATE_HOVER) {
+            snprintf(buf, sizeof(buf), "hover:%s", key);
+            const char *v = pu_style_get(&n->style, buf);
+            if (v && *v) return v;
+        }
+    }
+    return pu_style_get(&n->style, key);
+}
+
 static float style_num(const PuNode *n, const char *name, float def)
 {
     const char *v = pu_style_get(&n->style, name);
+    return (v && *v) ? (float)atof(v) : def;
+}
+
+static float style_num_st(const PuNode *n, const char *name, float def)
+{
+    const char *v = style_get_st(n, name);
     return (v && *v) ? (float)atof(v) : def;
 }
 
@@ -145,7 +175,7 @@ static void render_node(PuSurface *s, PuNode *n)
 
     float x = n->layout_x, y = n->layout_y, w = n->layout_w, h = n->layout_h;
     float radius  = style_num(n, "borderRadius", 0);
-    float opacity = style_num(n, "opacity", 1.0f);
+    float opacity = style_num_st(n, "opacity", 1.0f);
     uint8_t r, g, b, a;
 
     int layered = (opacity < 1.0f);
@@ -175,7 +205,7 @@ static void render_node(PuSurface *s, PuNode *n)
                           style_num(n, "shadowY", 4), r, g, b, a);
     }
 
-    const char *bg = pu_style_get(&n->style, "backgroundColor");
+    const char *bg = style_get_st(n, "backgroundColor");
     if (bg && parse_color(bg, &r, &g, &b, &a) && a > 0)
         pu_surface_fill_rrect(s, x, y, w, h, radius, r, g, b, a);
 
@@ -224,8 +254,8 @@ static void render_node(PuSurface *s, PuNode *n)
         }
     }
 
-    const char *bc = pu_style_get(&n->style, "borderColor");
-    float bw = style_num(n, "borderWidth", 0);
+    const char *bc = style_get_st(n, "borderColor");
+    float bw = style_num_st(n, "borderWidth", 0);
     if (bw > 0 && bc && parse_color(bc, &r, &g, &b, &a) && a > 0)
         pu_surface_stroke_rrect(s, x, y, w, h, radius, bw, r, g, b, a);
 

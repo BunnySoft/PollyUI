@@ -132,7 +132,23 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             w->width  = LOWORD(lp);
             w->height = HIWORD(lp);
             pu_surface_resize(w->surface, w->width, w->height);
+            /* Repaint SYNCHRONOUSLY during resize: deferring to a later WM_PAINT
+             * makes live-resize lag/jitter (the window shows a stale frame at the
+             * new size). UpdateWindow forces an immediate WM_PAINT.
+             *
+             * We pump TWO frames. ANGLE resizes its D3D11 swapchain lazily, only
+             * at eglSwapBuffers, so the first frame still renders into the old-
+             * sized backbuffer (and its swap is what triggers ANGLE to resize the
+             * swapchain to the new client size). The second frame then renders
+             * cleanly into the now-correctly-sized backbuffer, which is the frame
+             * the user actually sees. Without this, every live-resize step shows a
+             * one-frame-stale (stretched / top-gapped) image. */
             InvalidateRect(hwnd, NULL, FALSE);
+            UpdateWindow(hwnd);
+            if (pu_surface_is_gl(w->surface)) {
+                InvalidateRect(hwnd, NULL, FALSE);
+                UpdateWindow(hwnd);
+            }
         }
         return 0;
 
@@ -143,15 +159,21 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             float scale = w->scale > 0 ? w->scale : 1.0f;
             int x = (int)((short)LOWORD(lp) / scale); /* physical -> logical */
             int y = (int)((short)HIWORD(lp) / scale);
+            int changed = 0;
             if (msg == WM_LBUTTONDOWN) {
-                w->pointer_fn(x, y, PU_POINTER_DOWN, w->pointer_user);
+                changed = w->pointer_fn(x, y, PU_POINTER_DOWN, w->pointer_user);
             } else if (msg == WM_MOUSEMOVE) {
-                w->pointer_fn(x, y, PU_POINTER_MOVE, w->pointer_user);
+                changed = w->pointer_fn(x, y, PU_POINTER_MOVE, w->pointer_user);
             } else { /* WM_LBUTTONUP: up then click */
-                w->pointer_fn(x, y, PU_POINTER_UP, w->pointer_user);
-                w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
+                changed  = w->pointer_fn(x, y, PU_POINTER_UP, w->pointer_user);
+                changed |= w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
             }
-            InvalidateRect(hwnd, NULL, FALSE); /* handler may have changed the DOM */
+            /* Repaint only when the handler actually changed the DOM, and do it
+             * SYNCHRONOUSLY (UpdateWindow) so feedback isn't deferred behind
+             * queued input. This kills the per-mousemove repaint storm: a hover
+             * that changes nothing now costs ~0 instead of a full ~5ms
+             * relayout+repaint, and a click paints immediately. */
+            if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
         return 0;
 
@@ -162,8 +184,8 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             ScreenToClient(hwnd, &pt);
             int notches = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA; /* +1 = wheel up */
             float dy = -(float)notches * 40.0f;                    /* up -> scroll content up */
-            w->wheel_fn((int)(pt.x / scale), (int)(pt.y / scale), dy, w->wheel_user);
-            InvalidateRect(hwnd, NULL, FALSE);
+            int changed = w->wheel_fn((int)(pt.x / scale), (int)(pt.y / scale), dy, w->wheel_user);
+            if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
         return 0;
 
@@ -181,8 +203,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN: {
         const char *name = pu_vk_name(wp);
         if (w && w->key_fn && name) {
-            w->key_fn(name, 1, w->key_user);
-            InvalidateRect(hwnd, NULL, FALSE);
+            if (w->key_fn(name, 1, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
             return 0;
         }
         break; /* character keys -> WM_CHAR via TranslateMessage */
@@ -191,8 +212,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYUP: {
         const char *name = pu_vk_name(wp);
         if (w && w->key_fn && name) {
-            w->key_fn(name, 0, w->key_user);
-            InvalidateRect(hwnd, NULL, FALSE);
+            if (w->key_fn(name, 0, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
         return 0;
     }
@@ -203,8 +223,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (c >= 0x20 && c != 0x7F) { /* printable; control keys come via WM_KEYDOWN */
                 char utf8[8] = { 0 };
                 WideCharToMultiByte(CP_UTF8, 0, &c, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
-                w->key_fn(utf8, 1, w->key_user);
-                InvalidateRect(hwnd, NULL, FALSE);
+                if (w->key_fn(utf8, 1, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
             }
         }
         return 0;
@@ -292,8 +311,10 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     GetClientRect(hwnd, &client);
     w->width  = client.right - client.left;
     w->height = client.bottom - client.top;
-    /* Prefer a GPU surface; fall back to raster (CPU + blit) if GL is unavailable. */
-    w->surface = pu_surface_create_gl((void *)hwnd, w->width, w->height);
+    /* Prefer a GPU surface; fall back to raster (CPU + blit) if GL is unavailable.
+     * The handle is opaque (here an HWND); other host backends pass their own
+     * native window handle to the same seam — see docs/PORTING.md §2. */
+    w->surface = pu_surface_create_gpu((void *)hwnd, w->width, w->height);
     if (!w->surface)
         w->surface = pu_surface_create(w->width, w->height);
     if (!w->surface) {

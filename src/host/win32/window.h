@@ -31,8 +31,9 @@ typedef enum PuPointerType {
 } PuPointerType;
 
 /* Pointer callback at LOGICAL (DPI-independent) client coords (x, y).
- * After it returns the window repaints (the handler may have mutated the DOM). */
-typedef void (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
+ * Returns > 0 if the handler mutated the DOM (so the host repaints); 0 lets the
+ * host skip a needless repaint (e.g. a mousemove that changed nothing). */
+typedef int (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
 
 /* Create and show the window. Returns NULL on failure. */
 PuWindow *pu_window_create(const PuWindowConfig *cfg);
@@ -46,12 +47,12 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 /* Key callback: `key` is a DOM-style key name ("a", "Enter", "Backspace",
  * "Tab", "ArrowLeft", ...). is_down is 1 for key-down / character input, 0 for
  * key-up. After it returns the window repaints. */
-typedef void (*PuKeyFn)(const char *key, int is_down, void *user);
+typedef int (*PuKeyFn)(const char *key, int is_down, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 
 /* Wheel callback: vertical scroll by `dy` LOGICAL px at client (x, y).
- * dy > 0 scrolls content down (matches DOM deltaY sign). */
-typedef void (*PuWheelFn)(int x, int y, float dy, void *user);
+ * dy > 0 scrolls content down (matches DOM deltaY sign). Returns > 0 to repaint. */
+typedef int (*PuWheelFn)(int x, int y, float dy, void *user);
 void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
 
 /* Async pump callback: run pending UI-thread work (microtasks, worker/task

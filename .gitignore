@@ -30,3 +30,8 @@ CMakeUserPresets.json
 # OS
 Thumbs.db
 .DS_Store
+
+# Debug/diagnostic artifacts (perf traces, snapshots, redirected stderr/stdout)
+*.log
+*.out
+/*.png

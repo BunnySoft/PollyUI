@@ -425,25 +425,31 @@ void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
 /* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
  * hit-tested target, carrying clientX/clientY. For mousemove, also emit
  * mouseleave/mouseenter (non-bubbling) as the hovered element changes. */
-void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y)
-{
-    if (!b || !type) return;
+static void node_set_state(PuNode *n, unsigned flag, int on, int up_path); /* fwd */
 
+int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y)
+{
+    if (!b || !type) return 0;
+
+    int hover_changed = 0;
     if (strcmp(type, "mousemove") == 0 && target != b->hovered) {
         PuNode *old = b->hovered;
         b->hovered = target;
-        if (target) pu_node_ref(target);          /* keep hovered alive (like focus) */
+        if (old) node_set_state(old, PU_STATE_HOVER, 0, 1);       /* clear old hover path */
+        if (target) { pu_node_ref(target); node_set_state(target, PU_STATE_HOVER, 1, 1); } /* mark new path */
         if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0, 0); pu_node_unref(old); }
         if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0, 0);
+        hover_changed = 1; /* hover:* overrides changed -> the host should repaint */
     }
     if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1, 0);
+    return hover_changed;
 }
 
 /* Wheel: dispatch a "wheel" event, then apply default scrolling to the nearest
  * overflow:scroll/auto ancestor (clamped to its content height). */
-void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
+int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
 {
-    if (!b) return;
+    if (!b) return 0;
     if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1, dy);
 
     PuNode *sc = NULL;
@@ -452,7 +458,7 @@ void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, flo
         const char *ov = pu_style_get(&p->style, "overflow");
         if (ov && (strcmp(ov, "scroll") == 0 || strcmp(ov, "auto") == 0)) { sc = p; break; }
     }
-    if (!sc) return;
+    if (!sc) return 0;
 
     const char *cur_s = pu_style_get(&sc->style, "scrollTop");
     float cur = cur_s ? (float)atof(cur_s) : 0.0f;
@@ -471,16 +477,28 @@ void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, flo
     char buf[32];
     snprintf(buf, sizeof(buf), "%g", next);
     pu_style_set(&sc->style, "scrollTop", buf);
+    return next != cur; /* tell the host to repaint only if the offset moved */
 }
 
 PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
 
-void pu_bridge_set_focus(PuBridge *b, PuNode *node)
+/* Set/clear a state flag on a node, or up the whole ancestor chain to the root.
+ * Hover marks the path (CSS :hover applies to ancestors); focus marks one node. */
+static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
 {
-    if (!b || b->focused == node) return;
+    for (; n; n = n->parent) {
+        if (on) n->state |= flag; else n->state &= ~flag;
+        if (!up_path) break;
+    }
+}
+
+int pu_bridge_set_focus(PuBridge *b, PuNode *node)
+{
+    if (!b || b->focused == node) return 0;
 
     if (b->focused) {
         PuNode *old = b->focused;
+        node_set_state(old, PU_STATE_FOCUS, 0, 0);
         b->focused = NULL;
         dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0, 0);
         pu_node_unref(old);           /* release the focus ref */
@@ -488,8 +506,10 @@ void pu_bridge_set_focus(PuBridge *b, PuNode *node)
     b->focused = node;
     if (node) {
         pu_node_ref(node);            /* keep the focused node alive */
+        node_set_state(node, PU_STATE_FOCUS, 1, 0);
         dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0, 0);
     }
+    return 1; /* focus changed -> the host should repaint */
 }
 
 static void collect_focusable(PuNode *n, PuNode **arr, int *count, int cap)
@@ -645,6 +665,17 @@ static JSValue js_node_getBoundingClientRect(JSContext *ctx, JSValueConst this_v
 {
     PuNode *n = self_node(this_val);
     float x = n ? n->layout_x : 0, y = n ? n->layout_y : 0, w = n ? n->layout_w : 0, h = n ? n->layout_h : 0;
+    /* Convert layout coords to VIEWPORT coords by subtracting ancestor scroll
+     * offsets — the renderer paints scrolled children translated by -scroll, so
+     * an element's on-screen position is its layout position minus the scroll of
+     * every scroll-container above it. Popups positioned from this rect then land
+     * at the trigger's actual on-screen spot even when the page is scrolled. */
+    for (PuNode *p = n ? n->parent : NULL; p; p = p->parent) {
+        const char *sl = pu_style_get(&p->style, "scrollLeft");
+        const char *st = pu_style_get(&p->style, "scrollTop");
+        if (sl) x -= (float)atof(sl);
+        if (st) y -= (float)atof(st);
+    }
     JSValue r = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, r, "x", JS_NewFloat64(ctx, x));
     JS_SetPropertyStr(ctx, r, "y", JS_NewFloat64(ctx, y));

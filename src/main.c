@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -61,6 +62,26 @@ static LONG WINAPI pu_crash_handler(EXCEPTION_POINTERS *ep)
  *                         Yoga and paint it in a window (M1 + M2 + M3)
  */
 
+/* ---- optional perf tracing: set env PU_PERF=1 to print per-frame timings ---- */
+#ifdef _WIN32
+static int    g_perf = -1;
+static double g_qpc_freq = 0;
+static double pu_now_ms(void)
+{
+    LARGE_INTEGER c; QueryPerformanceCounter(&c);
+    if (g_qpc_freq == 0) { LARGE_INTEGER f; QueryPerformanceFrequency(&f); g_qpc_freq = (double)f.QuadPart; }
+    return (double)c.QuadPart * 1000.0 / g_qpc_freq;
+}
+static int pu_perf_on(void)
+{
+    if (g_perf < 0) { const char *e = getenv("PU_PERF"); g_perf = (e && e[0] && e[0] != '0') ? 1 : 0; }
+    return g_perf;
+}
+#else
+static double pu_now_ms(void) { return 0; }
+static int    pu_perf_on(void) { return 0; }
+#endif
+
 /* Shared state for the window callbacks. */
 typedef struct PuApp {
     PuScript *script;
@@ -73,50 +94,76 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
 {
     PuApp *app = (PuApp *)user;
     PuNode *body = pu_bridge_body(app->bridge);
+    if (pu_perf_on()) {
+        double t0 = pu_now_ms();
+        pu_layout_calculate(body, (float)width, (float)height);
+        double t1 = pu_now_ms();
+        pu_render_tree(surface, body, scale);
+        double t2 = pu_now_ms();
+        fprintf(stderr, "[perf] paint: layout %.2fms  render %.2fms  total %.2fms\n",
+                t1 - t0, t2 - t1, t2 - t0);
+        return;
+    }
     pu_layout_calculate(body, (float)width, (float)height);
     pu_render_tree(surface, body, scale);
 }
 
 /* Pointer: hit-test against the last computed layout and dispatch the matching
  * DOM event (mousedown/mouseup/mousemove/click), then drain queued work. */
-static void app_pointer(int x, int y, PuPointerType type, void *user)
+static int app_pointer(int x, int y, PuPointerType type, void *user)
 {
     PuApp *app = (PuApp *)user;
     PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
 
+    int state_changed = 0; /* hover/focus flag changes repaint natively (no re-render) */
     if (type == PU_POINTER_DOWN) {
         /* Click-to-focus on press: focus the nearest focusable ancestor (or blur). */
         PuNode *f = target;
         while (f && f->tab_index < 0) f = f->parent;
-        pu_bridge_set_focus(app->bridge, f);
+        state_changed |= pu_bridge_set_focus(app->bridge, f);
     }
 
     const char *t = (type == PU_POINTER_DOWN) ? "mousedown"
                   : (type == PU_POINTER_UP)   ? "mouseup"
                   : (type == PU_POINTER_MOVE) ? "mousemove" : "click";
-    pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
-    pu_script_pump(app->script);
+    if (pu_perf_on()) {
+        double t0 = pu_now_ms();
+        state_changed |= pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
+        double t1 = pu_now_ms();
+        int worked = pu_script_pump(app->script);
+        double t2 = pu_now_ms();
+        fprintf(stderr, "[perf] pointer %-9s: dispatch %.2fms  js+rerender %.2fms (worked=%d state=%d)\n",
+                t, t1 - t0, t2 - t1, worked, state_changed);
+        return worked | state_changed;
+    }
+    state_changed |= pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
+    /* Repaint signal: a re-render (worked > 0) OR a native hover/focus state
+     * change. A mousemove that stays within the same element returns 0 and the
+     * host skips the repaint. */
+    return pu_script_pump(app->script) | state_changed;
 }
 
 /* Wheel: hit-test, then dispatch + scroll the nearest scroll container. */
-static void app_wheel(int x, int y, float dy, void *user)
+static int app_wheel(int x, int y, float dy, void *user)
 {
     PuApp *app = (PuApp *)user;
     PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
-    pu_bridge_dispatch_wheel(app->bridge, target, (float)x, (float)y, dy);
-    pu_script_pump(app->script);
+    /* Native scroll is applied C-side (not reactive), so OR its "moved" signal
+     * with the pump result; either alone is a reason to repaint. */
+    int scrolled = pu_bridge_dispatch_wheel(app->bridge, target, (float)x, (float)y, dy);
+    return scrolled | pu_script_pump(app->script);
 }
 
 /* Keyboard: Tab cycles focus; other keys dispatch keydown/keyup to the focused
- * element. The window repaints afterward (the handler may mutate the DOM). */
-static void app_key(const char *key, int is_down, void *user)
+ * element. Returns > 0 if the DOM changed (so the host repaints). */
+static int app_key(const char *key, int is_down, void *user)
 {
     PuApp *app = (PuApp *)user;
     if (is_down && strcmp(key, "Tab") == 0)
         pu_bridge_focus_next(app->bridge);
     else
         pu_bridge_dispatch_key(app->bridge, is_down ? "keydown" : "keyup", key);
-    pu_script_pump(app->script);
+    return pu_script_pump(app->script);
 }
 
 /* Monotonic millisecond clock for animation timestamps. */
@@ -157,6 +204,16 @@ static PuTestHost *g_test;
 static void test_render(void)
 {
     PuNode *body = pu_bridge_body(g_test->bridge);
+    if (pu_perf_on()) {
+        double t0 = pu_now_ms();
+        pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
+        double t1 = pu_now_ms();
+        pu_render_tree(g_test->surface, body, 1.0f);
+        double t2 = pu_now_ms();
+        fprintf(stderr, "[perf] test_render: layout %.2fms  render %.2fms  total %.2fms\n",
+                t1 - t0, t2 - t1, t2 - t0);
+        return;
+    }
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     pu_render_tree(g_test->surface, body, 1.0f);
 }

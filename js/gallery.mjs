@@ -2,7 +2,7 @@
 //   Windowed:  pollyui js/gallery.mjs   (wheel to scroll)
 //   Snapshot:  pollyui --test js/gallery.mjs  (build/win-clang/gallery.png — top)
 
-import { ref, createApp, h } from './js/vue.mjs';
+import { ref, reactive, createApp, h } from './js/vue.mjs';
 import * as N from './js/naive.mjs';
 const { theme, useTheme, message, notification, loadingBar } = N;
 
@@ -21,6 +21,12 @@ const App = {
       page: ref(2), menu: ref('home'), collapse: ref(['a']), nav: ref('intro'), dark: ref(false),
       modal: ref(false), drawer: ref(false), spin: ref(0),
     };
+    const fmodel = reactive({ username: '', email: '', age: '' });
+    const form = N.createForm(fmodel, {
+      username: { required: true, message: 'Username is required' },
+      email: { required: true, pattern: /^[^@]+@[^@]+\.[^@]+$/, message: 'Enter a valid email address' },
+      age: { validator: (v) => (v === '' || Number(v) >= 18 ? true : 'Must be 18 or older') },
+    });
     return () => {
       useTheme(s.dark.value ? 'dark' : 'light');
       document.body.style.backgroundColor = theme.body;
@@ -43,7 +49,7 @@ const App = {
               N.NBadge({ value: 8 }, N.NButton({}, 'Inbox')), N.NBadge({ dot: true }, N.NButton({}, 'Alerts')))),
 
           section('Form inputs',
-            row(N.NInput({ value: s.input.value, onInput: v => s.input.value = v, width: 200 }),
+            row(N.NInput({ id: 'galleryInput', value: s.input.value, onInput: v => s.input.value = v, width: 200 }),
               N.NInputNumber({ value: s.num.value, onUpdate: v => s.num.value = v }),
               N.NSelect({ value: s.sel.value, onUpdate: v => s.sel.value = v, width: 160, options: opts('apple', 'banana', 'cherry').map((o, i) => ({ value: ['a', 'b', 'c'][i], label: o.label })) })),
             row(N.NCascader({ value: s.casc.value, onUpdate: v => s.casc.value = v, options: [{ value: 'asia', label: 'Asia', children: [{ value: 'cn', label: 'China' }, { value: 'jp', label: 'Japan' }] }] }),
@@ -59,6 +65,19 @@ const App = {
               N.NRadioGroup({ value: s.radio.value, onUpdate: v => s.radio.value = v, options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }, { value: 'c', label: 'C' }] })),
             row(N.NDynamicTags({ value: s.tags.value, onChange: v => s.tags.value = v, onAdd: () => s.tags.value = s.tags.value.concat('tag' + s.tags.value.length) }))),
 
+          section('Form validation',
+            N.NForm({},
+              N.NFormItem({ label: 'Username', form, path: 'username' }, N.NInput({ id: 'fmUser', value: fmodel.username, onInput: v => fmodel.username = v, width: 280 })),
+              N.NFormItem({ label: 'Email', form, path: 'email' }, N.NInput({ id: 'fmEmail', value: fmodel.email, onInput: v => fmodel.email = v, width: 280 })),
+              N.NFormItem({ label: 'Age', form, path: 'age' }, N.NInput({ id: 'fmAge', value: fmodel.age, onInput: v => fmodel.age = v, width: 280 })),
+              row(N.NButton({ type: 'primary', onClick: () => { if (form.validate()) N.message.success('Form submitted!', 2000); } }, 'Validate & submit'),
+                N.NButton({ onClick: () => { form.clearValidation(); fmodel.username = ''; fmodel.email = ''; fmodel.age = ''; } }, 'Reset')))),
+
+          section('Static table',
+            N.NTable({ bordered: true, striped: true,
+              columns: [{ title: 'Package', key: 'pkg' }, { title: 'Version', key: 'ver', width: 120 }, { title: 'Size', key: 'size', width: 120, align: 'right' }],
+              data: [{ pkg: 'skia', ver: 'm123', size: '8.2 MB' }, { pkg: 'quickjs-ng', ver: '0.9.0', size: '1.1 MB' }, { pkg: 'yoga', ver: '3.1.0', size: '420 KB' }] })),
+
           section('Data display',
             N.NDataTable({ columns: [{ title: 'Name', key: 'name' }, { title: 'Role', key: 'role', width: 120, render: u => N.NTag({ type: u.role === 'Admin' ? 'error' : 'info' }, u.role) }, { title: 'Score', key: 'score', width: 100, sortable: true }], onSort: () => {}, data: [{ name: 'Alice', role: 'Admin', score: 92 }, { name: 'Bob', role: 'Editor', score: 78 }] }),
             row(N.NStatistic({ label: 'Downloads', value: 12840, suffix: '/mo' }), N.NStatistic({ label: 'Uptime', value: 99.9, suffix: '%' }), N.NNumberAnimation({ value: 1234567 }), N.NCountdown({ value: 3725000, format: 'HH:MM:SS' })),
@@ -72,6 +91,7 @@ const App = {
             row(N.NButton({ onClick: () => message.success('Saved!', 2000) }, 'message'),
               N.NButton({ onClick: () => notification.info({ title: 'Update', content: 'A new version is available.', duration: 3000 }) }, 'notification'),
               N.NButton({ onClick: () => loadingBar.start() }, 'loadingBar'),
+              N.NButton({ type: 'error', onClick: () => N.dialog.warning({ title: 'Delete file?', content: 'This action cannot be undone. Continue?', positiveText: 'Delete', negativeText: 'Cancel', onPositiveClick: () => message.success('Deleted', 1500), onNegativeClick: () => message.info('Cancelled', 1500) }) }, 'dialog'),
               N.NButton({ type: 'primary', onClick: () => s.modal.value = true }, 'Modal'),
               N.NButton({ onClick: () => s.drawer.value = true }, 'Drawer'),
               N.NPopconfirm({ title: 'Delete this?', onConfirm: () => message.success('deleted', 1500) }, N.NButton({ type: 'error' }, 'Popconfirm')),

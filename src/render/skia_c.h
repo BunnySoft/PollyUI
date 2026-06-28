@@ -21,11 +21,21 @@ typedef struct PuSurface PuSurface;
 /* Create a raster (CPU) surface of the given pixel size (clamped to >= 1x1). */
 PuSurface *pu_surface_create(int width, int height);
 
-/* Create a GPU (OpenGL) surface bound to a native window (HWND). Renders
- * directly to the window's framebuffer; present with pu_surface_present.
- * Returns NULL if a GL context can't be created (caller may fall back to
+/* Create a GPU surface bound to a platform-native window handle. The handle is
+ * opaque so the same seam serves every host backend:
+ *   Windows  -> HWND                    (GL via ANGLE/D3D11)
+ *   Wayland  -> struct wl_egl_window *   (GL via Mesa EGL)
+ *   X11      -> Window                   (GL via Mesa EGL)
+ *   Android  -> ANativeWindow *          (GLES)
+ * Renders directly to the window framebuffer; present with pu_surface_present.
+ * Returns NULL if a GPU context can't be created (caller may fall back to
  * pu_surface_create + blitting). width/height are physical pixels. */
-PuSurface *pu_surface_create_gl(void *hwnd, int width, int height);
+PuSurface *pu_surface_create_gpu(void *native_window, int width, int height);
+
+/* Create a GPU surface backed by Skia's Metal backend, bound to a CAMetalLayer*
+ * (macOS / iOS). Built only in the Apple render path (src/render/skia_metal.mm);
+ * the default GL/raster build provides a stub that returns NULL. */
+PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height);
 
 /* True if the surface is GPU-backed (present) vs raster (blit pixels). */
 int pu_surface_is_gl(const PuSurface *s);

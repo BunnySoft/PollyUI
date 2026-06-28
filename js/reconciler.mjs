@@ -32,10 +32,21 @@ function setProp(el, k, v) {
   else                     el.setAttribute(k, String(v));
 }
 
+// State styles (hoverStyle/focusStyle) are flattened onto the node as
+// `hover:KEY` / `focus:KEY` style entries; the native renderer applies them when
+// the element is hovered/focused — no JS re-render needed (see render.c).
+function applyStateStyle(el, prefix, oldS, newS) {
+  oldS = oldS || {}; newS = newS || {};
+  for (const k in oldS) if (!(k in newS)) el.style[prefix + k] = '';
+  for (const k in newS) if (oldS[k] !== newS[k]) el.style[prefix + k] = String(newS[k]);
+}
+
 function applyProps(el, oldP, newP) {
   const oldStyle = oldP.style || {}, newStyle = newP.style || {};
   for (const k in oldStyle) if (!(k in newStyle)) el.style[k] = '';
   for (const k in newStyle) if (oldStyle[k] !== newStyle[k]) el.style[k] = String(newStyle[k]);
+  applyStateStyle(el, 'hover:', oldP.hoverStyle, newP.hoverStyle);
+  applyStateStyle(el, 'focus:', oldP.focusStyle, newP.focusStyle);
 
   el.__listeners = el.__listeners || {};
   for (const k in oldP) {
@@ -54,11 +65,11 @@ function applyProps(el, oldP, newP) {
     }
   }
   for (const k in newP) {
-    if (k === 'style' || k === 'key' || k.startsWith('on')) continue;
+    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'key' || k.startsWith('on')) continue;
     if (oldP[k] !== newP[k]) setProp(el, k, newP[k]);
   }
   for (const k in oldP) {
-    if (k === 'style' || k === 'key' || k.startsWith('on')) continue;
+    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'key' || k.startsWith('on')) continue;
     if (!(k in newP)) setProp(el, k, null);
   }
 }

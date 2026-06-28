@@ -31,6 +31,20 @@ export function useTheme(name) { Object.assign(theme, name === 'dark' ? darkThem
 const typeColor = (t) => ({ primary: theme.primary, info: theme.info, success: theme.success, warning: theme.warning, error: theme.error }[t]);
 const lightTagBg = { primary: '#e8f5ee', info: '#e3effd', success: '#e8f5ee', warning: '#fdf2e3', error: '#fce8ee', default: '#fafafc' };
 
+// Lighten (amt > 0, toward white) or darken (amt < 0, toward black) a #rrggbb
+// color by a fraction in [-1, 1]. Used for hover/active shades.
+export function shade(hex, amt) {
+  if (typeof hex !== 'string' || hex[0] !== '#' || hex.length < 7) return hex;
+  const to = amt < 0 ? 0 : 255, p = Math.min(1, Math.abs(amt));
+  const ch = (i) => { const c = parseInt(hex.slice(i, i + 2), 16); return Math.round(c + (to - c) * p).toString(16).padStart(2, '0'); };
+  return '#' + ch(1) + ch(3) + ch(5);
+}
+
+// Shared hover/focus border feedback for input-like control boxes (input,
+// select, pickers, ...): hover -> light primary border, focus -> primary border.
+const ctrlHover = () => ({ borderColor: shade(theme.primary, 0.35) });
+const ctrlFocus = () => ({ borderColor: theme.primary });
+
 // drop undefined/null so they don't stringify to "undefined"
 const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined && o[k] !== null) r[k] = String(o[k]); return r; };
 
@@ -55,6 +69,20 @@ function caretFocus(id) {
   requestAnimationFrame(loop);
 }
 function caretBlur(id) { if (_caret.activeId === id) { _caret.activeId = null; _caret.tick++; } }
+
+// Per-input caret/selection state (the value is controlled; caret index is not).
+const _inputs = {};
+function inputState(id, len) {
+  const st = _inputs[id] || (_inputs[id] = reactive({ caret: 0, anchor: null, dragging: false }));
+  if (st.caret > len) st.caret = len;
+  if (st.anchor != null && st.anchor > len) st.anchor = len;
+  return st;
+}
+function indexAtX(value, fontSize, localX) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i <= value.length; i++) { const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX); if (d < bestD) { bestD = d; best = i; } }
+  return best;
+}
 // A caret vnode for a focused input (or null). Place inside a position:relative box.
 function textCaret(id, value, fontSize, padLeft, color, boxHeight) {
   const on = _caret.on; void _caret.tick;            // track reactive deps
@@ -76,10 +104,14 @@ export function NButton(props = {}, label) {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     fontSize: sz.fs, fontWeight: '500', color: theme.solidText, opacity: disabled ? 0.5 : 1,
   };
-  if (!color)        { style.backgroundColor = ghost ? 'transparent' : theme.card; style.borderWidth = 1; style.borderColor = theme.border; style.color = theme.text; }
-  else if (ghost)    { style.backgroundColor = 'transparent'; style.borderWidth = 1; style.borderColor = color; style.color = color; }
-  else               { style.backgroundColor = color; }
-  return h('view', { id, style: clean(style), onClick: disabled ? undefined : onClick }, label);
+  let hoverStyle;
+  if (!color)        { style.backgroundColor = ghost ? 'transparent' : theme.card; style.borderWidth = 1; style.borderColor = theme.border; style.color = theme.text;
+                       hoverStyle = { borderColor: theme.primary, color: theme.primary }; }
+  else if (ghost)    { style.backgroundColor = 'transparent'; style.borderWidth = 1; style.borderColor = color; style.color = color;
+                       hoverStyle = { backgroundColor: shade(color, 0.88), borderColor: shade(color, 0.2) }; }
+  else               { style.backgroundColor = color;
+                       hoverStyle = { backgroundColor: shade(color, 0.16) }; }
+  return h('view', { id, style: clean(style), hoverStyle: disabled ? undefined : hoverStyle, onClick: disabled ? undefined : onClick }, label);
 }
 
 // ---- NTag -------------------------------------------------------------------
@@ -241,22 +273,47 @@ export function NCard(props = {}, ...children) {
 // ---- NInput (controlled) ----------------------------------------------------
 
 export function NInput(props = {}) {
-  const { value = '', placeholder = '', onInput, width = 200, size = 'medium', id } = props;
+  const { value = '', placeholder = '', onInput, width = 200, size = 'medium', id, selectionColor = '#93c5fd' } = props;
   const fs = size === 'large' ? 16 : 14;
   const h0 = BTN_SIZE[size] ? BTN_SIZE[size].h : 34;
+  const pad = 12;
   const isPh = value.length === 0;
+  const st = id ? inputState(id, value.length) : null;
+  const focused = id && _caret.activeId === id;
+  const xOf = (i) => pad + measureText(value.slice(0, i), fs);
+  const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
+  const sel = (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
+
+  const kids = [];
+  if (focused && sel) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(sel[1]) - xOf(sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
+  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value));
+  if (focused && _caret.on) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(st ? st.caret : value.length), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
+
+  const curSel = () => (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
+  const replace = (ins) => { const [s0, e0] = curSel() || [st.caret, st.caret]; onInput && onInput(value.slice(0, s0) + ins + value.slice(e0)); st.caret = s0 + ins.length; st.anchor = null; };
+
   return h('view', {
     id, tabIndex: 0,
-    style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
-    onFocus: () => caretFocus(id), onBlur: () => caretBlur(id),
+    style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: pad, paddingRight: pad, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
+    hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
+    onFocus: () => caretFocus(id), onBlur: () => { caretBlur(id); if (st) st.anchor = null; },
+    onMousedown: (e) => { if (e.currentTarget.focus) e.currentTarget.focus(); if (!st) return; const i = indexAtX(value, fs, localX(e)); st.caret = i; st.anchor = i; st.dragging = true; _caret.on = true; _caret.tick++; },
+    onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e)); _caret.tick++; } },
+    onMouseup: () => { if (st) { st.dragging = false; if (st.anchor === st.caret) st.anchor = null; _caret.tick++; } },
     onKeydown: (e) => {
-      if (!onInput) return;
+      if (!st) { if (onInput) { const k = e.key; if (k === 'Backspace') onInput(value.slice(0, -1)); else if (k.length === 1) onInput(value + k); } return; }
       const k = e.key;
-      if (k === 'Backspace') onInput(value.slice(0, -1));
-      else if (k.length === 1) onInput(value + k);
+      if (k === 'ArrowLeft') { st.caret = Math.max(0, st.caret - 1); st.anchor = null; }
+      else if (k === 'ArrowRight') { st.caret = Math.min(value.length, st.caret + 1); st.anchor = null; }
+      else if (k === 'Home') { st.caret = 0; st.anchor = null; }
+      else if (k === 'End') { st.caret = value.length; st.anchor = null; }
+      else if (k === 'Backspace') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret > 0) { onInput && onInput(value.slice(0, st.caret - 1) + value.slice(st.caret)); st.caret--; } }
+      else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { onInput && onInput(value.slice(0, st.caret) + value.slice(st.caret + 1)); } }
+      else if (k.length === 1) replace(k);
+      else return;
+      _caret.on = true; _caret.tick++;
     },
-  }, h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value),
-    textCaret(id, value, fs, 12, theme.text, h0));
+  }, ...kids);
 }
 
 // ---- portal / overlay layer -------------------------------------------------
@@ -270,7 +327,7 @@ let _ovSeq = 0;
 
 export function openPopup(render, opts = {}) {
   const id = ++_ovSeq;
-  _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false, fullWidth: !!opts.fullWidth });
+  _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false, fullWidth: !!opts.fullWidth, fullScreen: !!opts.fullScreen });
   return id;
 }
 export function closePopup(id) { _overlays.list = _overlays.list.filter(o => o.id !== id); }
@@ -283,9 +340,12 @@ export function NOverlayHost() {
   const kids = [];
   for (const o of _overlays.list) {
     if (o.backdrop) kids.push(h('view', { key: 'bd' + o.id, style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'transparent' }), onClick: () => o.onClose && o.onClose() }));
-    kids.push(h('view', { key: 'pop' + o.id, style: clean({ position: 'absolute', top: o.y, left: o.x, width: o.fullWidth ? '100%' : undefined }) }, typeof o.render === 'function' ? o.render() : o.render));
+    kids.push(h('view', { key: 'pop' + o.id, style: clean({ position: 'absolute', top: o.y, left: o.x, width: (o.fullWidth || o.fullScreen) ? '100%' : undefined, height: o.fullScreen ? '100%' : undefined }) }, typeof o.render === 'function' ? o.render() : o.render));
   }
-  return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: active ? '100%' : 0, height: active ? '100%' : 0 }) }, ...kids);
+  // pointerEvents:none lets clicks fall through the (full-screen) host to the app
+  // below; only the actual popups and modal backdrops (auto pointerEvents) catch
+  // clicks. Without this a non-modal toast/loadingBar would freeze the whole UI.
+  return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: active ? '100%' : 0, height: active ? '100%' : 0, pointerEvents: 'none' }) }, ...kids);
 }
 
 // ---- NSelect ----------------------------------------------------------------
@@ -310,6 +370,7 @@ export function NSelect(props = {}) {
   return h('view', {
     id, tabIndex: 0,
     style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onClick: open,
   },
     h('view', { style: { color: sel ? theme.text : theme.textDisabled, fontSize: '14' } }, sel ? sel.label : placeholder),
@@ -368,13 +429,55 @@ export function validateForm(values, schema) {
 // ---- NFormItem --------------------------------------------------------------
 
 export function NFormItem(props = {}, control) {
-  const { label, error, required = false } = props;
+  const { label, error, form, path } = props;
+  // When wired to a form (form + path), the error/required come from the form's
+  // reactive validation state and declared rules; otherwise use explicit props.
+  const err = error != null ? error : (form && path ? form.errors[path] : null);
+  const required = props.required != null ? props.required
+    : (form && path ? (Array.isArray(form.rules[path]) ? form.rules[path] : [form.rules[path]]).some(r => r && r.required) : false);
   return h('view', { style: { flexDirection: 'column', gap: '6' } },
     label ? h('view', { style: { flexDirection: 'row', gap: '3' } },
       h('view', { style: { color: theme.text, fontSize: '14', fontWeight: '500' } }, label),
       required ? h('view', { style: { color: theme.error, fontSize: '14' } }, '*') : null) : null,
     control,
-    error ? h('view', { id: props.errorId, style: { color: theme.error, fontSize: '12' } }, error) : null);
+    err ? h('view', { id: props.errorId, style: { color: theme.error, fontSize: '12' } }, err) : null);
+}
+
+// ---- NForm + createForm (validation orchestration) --------------------------
+// createForm(model, rules) returns a reactive form instance:
+//   { model, rules, errors, validate(), validateField(path), clearValidation() }
+// A rule is { required, min, max, pattern, validator(value, model), message } or
+// an array of them. validator returns true/undefined (ok) or false/string (fail).
+export function createForm(model, rules = {}) {
+  const state = reactive({ errors: {} });
+  const setErr = (path, msg) => { const e = { ...state.errors }; if (msg) e[path] = msg; else delete e[path]; state.errors = e; };
+  const validateField = (path) => {
+    const raw = rules[path]; if (!raw) { setErr(path, null); return true; }
+    const list = Array.isArray(raw) ? raw : [raw];
+    const v = model[path];
+    const empty = v == null || v === '' || (Array.isArray(v) && v.length === 0);
+    for (const r of list) {
+      let msg = null;
+      if (r.required && empty) msg = r.message || 'This field is required';
+      else if (!empty && r.min != null && String(v).length < r.min) msg = r.message || `At least ${r.min} characters`;
+      else if (!empty && r.max != null && String(v).length > r.max) msg = r.message || `At most ${r.max} characters`;
+      else if (!empty && r.pattern && !r.pattern.test(String(v))) msg = r.message || 'Invalid format';
+      else if (r.validator) { const res = r.validator(v, model); if (res === false || typeof res === 'string') msg = typeof res === 'string' ? res : (r.message || 'Invalid value'); }
+      if (msg) { setErr(path, msg); return false; }
+    }
+    setErr(path, null);
+    return true;
+  };
+  const validate = () => { let ok = true; for (const p in rules) if (!validateField(p)) ok = false; return ok; };
+  const clearValidation = () => { state.errors = {}; };
+  // `errors` is a live getter so reads always see the current reactive object
+  // (validate() reassigns it); reading form.errors[path] in NFormItem subscribes.
+  return { model, rules, validate, validateField, clearValidation, get errors() { return state.errors; } };
+}
+
+export function NForm(props = {}, ...items) {
+  const { id } = props;
+  return h('view', { id, style: clean({ flexDirection: 'column', gap: props.gap != null ? props.gap : 18 }) }, ...items.filter(Boolean));
 }
 
 // ---- NAvatar ----------------------------------------------------------------
@@ -473,6 +576,32 @@ export function NDataTable(props = {}) {
   return h('view', { id, style: clean({ borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', backgroundColor: theme.card, flexDirection: 'column' }) }, ...rows);
 }
 
+// ---- NTable (simple static table) -------------------------------------------
+// Lightweight columns+data table (vs. the sortable/selectable NDataTable).
+// columns: ['Name', ...] or [{ title, key, width, align, render(row, i) }].
+export function NTable(props = {}) {
+  const { columns = [], data = [], bordered = true, striped = false, size = 'medium', id } = props;
+  const pad = size === 'small' ? 8 : size === 'large' ? 14 : 11;
+  const cols = columns.map(c => (typeof c === 'string' ? { title: c, key: c } : c));
+  const cell = (content, c, header) => h('view', {
+    style: clean({ width: c.width, flexGrow: c.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: pad, paddingBottom: pad,
+      alignItems: c.align === 'right' ? 'flex-end' : c.align === 'center' ? 'center' : 'flex-start' }),
+  }, (content && typeof content === 'object') ? content
+    : h('view', { style: clean({ color: header ? theme.text : theme.textSecondary, fontSize: 14, fontWeight: header ? 'bold' : '400' }) }, String(content == null ? '' : content)));
+
+  const rows = [
+    h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }) }, ...cols.map(c => cell(c.title, c, true))),
+    h('view', { style: { height: '1', backgroundColor: theme.border } }),
+  ];
+  data.forEach((row, i) => {
+    const zebra = striped && i % 2 === 1;
+    rows.push(h('view', { style: clean({ flexDirection: 'row', backgroundColor: zebra ? (theme.name === 'dark' ? '#ffffff05' : '#fafafc') : 'transparent' }) },
+      ...cols.map(c => cell(c.render ? c.render(row, i) : row[c.key], c, false))));
+    if (bordered && i < data.length - 1) rows.push(h('view', { style: { height: '1', backgroundColor: theme.border } }));
+  });
+  return h('view', { id, style: clean({ borderWidth: bordered ? 1 : 0, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', backgroundColor: theme.card, flexDirection: 'column' }) }, ...rows);
+}
+
 // ---- NDropdown (menu on click) ----------------------------------------------
 
 export function NDropdown(props = {}, trigger) {
@@ -484,6 +613,7 @@ export function NDropdown(props = {}, trigger) {
     const menu = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
       ...options.map(o => h('view', {
         style: clean({ height: 32, paddingLeft: 10, paddingRight: 10, borderRadius: 3, justifyContent: 'center' }),
+        hoverStyle: { backgroundColor: theme.primary + '14' },
         onClick: () => { onSelect && onSelect(o.key); closePopup(pid); },
       }, h('view', { style: { color: theme.text, fontSize: '14' } }, o.label))));
     pid = openPopup(menu, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
@@ -538,6 +668,7 @@ export function NDatePicker(props = {}) {
   return h('view', {
     id, tabIndex: 0,
     style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onClick: open,
   },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value ? formatDate(value) : 'Select date'),
@@ -751,6 +882,7 @@ export function NCascader(props = {}) {
         cols.push(h('view', { style: clean({ width: 160, flexDirection: 'column', padding: 4, gap: 2 }) },
           ...opts.map(o => h('view', {
             style: clean({ height: 32, paddingLeft: 10, paddingRight: 8, borderRadius: 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: o.value === selKey ? theme.primary + '1f' : 'transparent' }),
+            hoverStyle: { backgroundColor: o.value === selKey ? theme.primary + '2e' : theme.primary + '14' },
             onClick: () => {
               activePath = activePath.slice(0, level); activePath.push(o.value);
               if (o.children && o.children.length) _overlays.list = _overlays.list.slice();
@@ -766,7 +898,7 @@ export function NCascader(props = {}) {
     };
     pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), onClick: open },
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(), onClick: open },
     h('view', { style: clean({ color: value.length ? theme.text : theme.textDisabled, fontSize: 14 }) }, value.length ? labelFor(value) : placeholder),
     h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
 }
@@ -1010,7 +1142,7 @@ export function NPopselect(props = {}, trigger) {
     const r = e.currentTarget.getBoundingClientRect();
     let pid;
     const menu = () => h('view', { style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }) },
-      ...options.map(o => h('view', { style: clean({ height: 32, paddingLeft: 10, borderRadius: 3, justifyContent: 'center', backgroundColor: o.value === value ? theme.primary + '1f' : 'transparent' }), onClick: () => { onUpdate && onUpdate(o.value); closePopup(pid); } },
+      ...options.map(o => h('view', { style: clean({ height: 32, paddingLeft: 10, borderRadius: 3, justifyContent: 'center', backgroundColor: o.value === value ? theme.primary + '1f' : 'transparent' }), hoverStyle: { backgroundColor: o.value === value ? theme.primary + '2e' : theme.primary + '14' }, onClick: () => { onUpdate && onUpdate(o.value); closePopup(pid); } },
         h('view', { style: clean({ color: o.value === value ? theme.primary : theme.text, fontSize: 14 }) }, o.label))));
     pid = openPopup(menu, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
   };
@@ -1080,6 +1212,39 @@ export const loadingBar = {
     setTimeout(() => { closePopup(id); if (_lbId === id) _lbId = 0; }, 300);
   },
   error() { this.finish(); },
+};
+
+// ---- dialog (preset confirm / alert modals) ---------------------------------
+// dialog.warning({ title, content, positiveText, negativeText, onPositiveClick,
+//   onNegativeClick, maskClosable }). Handlers may return false to keep it open.
+const _dialogIcon = { info: 'i', success: '✓', warning: '!', error: '✕' };
+export const dialog = {
+  _show(type, opts) {
+    const o = opts || {};
+    const { title, content, positiveText = 'OK', negativeText, onPositiveClick, onNegativeClick, onClose, maskClosable = true, positiveId, negativeId } = o;
+    const color = typeColor(type) || theme.primary;
+    let id;
+    const close = () => closePopup(id);
+    const render = () => h('view', {
+        style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#00000080', alignItems: 'center', justifyContent: 'center' }),
+        onClick: () => { if (maskClosable) { if (onClose) onClose(); close(); } },
+      },
+      h('view', { onClick: (e) => e.stopPropagation(),
+          style: clean({ width: 446, backgroundColor: theme.card, borderRadius: 8, padding: 24, flexDirection: 'column', gap: 16, shadowColor: '#00000040', shadowBlur: 28, shadowY: 10 }) },
+        h('view', { style: { flexDirection: 'row', gap: '12', alignItems: 'center' } },
+          type ? h('view', { style: clean({ width: 24, height: 24, borderRadius: 12, backgroundColor: color, alignItems: 'center', justifyContent: 'center' }) },
+            h('view', { style: clean({ color: theme.solidText, fontSize: 15, fontWeight: 'bold' }) }, _dialogIcon[type] || '!')) : null,
+          h('view', { style: { color: theme.text, fontSize: '16', fontWeight: 'bold', flexGrow: '1' } }, title || '')),
+        content ? h('view', { style: { color: theme.textSecondary, fontSize: '14', lineHeight: '20' } }, content) : null,
+        h('view', { style: { flexDirection: 'row', gap: '10', justifyContent: 'flex-end' } },
+          negativeText ? NButton({ id: negativeId, onClick: () => { const r = onNegativeClick && onNegativeClick(); if (r !== false) close(); } }, negativeText) : null,
+          NButton({ id: positiveId, type: type === 'error' ? 'error' : 'primary', onClick: () => { const r = onPositiveClick && onPositiveClick(); if (r !== false) close(); } }, positiveText))));
+    id = openPopup(render, { x: 0, y: 0, fullScreen: true, backdrop: false });
+    return { destroy: close };
+  },
+  info(o) { return this._show('info', o); }, success(o) { return this._show('success', o); },
+  warning(o) { return this._show('warning', o); }, error(o) { return this._show('error', o); },
+  create(o) { return this._show((o && o.type) || null, o); },
 };
 
 // ===== Wave 4: animated display + layout ====================================
@@ -1201,7 +1366,7 @@ export function NTimePicker(props = {}) {
     const panel = () => h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3 }) }, col('h', 24), col('m', 60), col('s', 60));
     pid = openPopup(panel, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center' }), onClick: open },
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(), onClick: open },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value ? disp : 'Select time'));
 }
 
@@ -1217,7 +1382,7 @@ export function NTreeSelect(props = {}) {
         onSelect: s => { onUpdate && onUpdate(s[0]); closePopup(pid); } }));
     pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), onClick: open },
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(), onClick: open },
     h('view', { style: clean({ color: value ? theme.text : theme.textDisabled, fontSize: 14 }) }, value ? labelFor(value) : 'Select'),
     h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
 }
@@ -1242,7 +1407,7 @@ export function NAutoComplete(props = {}) {
     pid = openPopup(menu, { x: r.left, y: r.bottom + 4, backdrop: false, onClose: () => { closePopup(pid); inputNode.__ac = 0; } });
     inputNode.__ac = pid;
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onClick: open,
     onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (!e.currentTarget.__ac) open(e); } },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || placeholder));
@@ -1270,7 +1435,7 @@ export function NMention(props = {}) {
     pid = openPopup(menu, { x: r.left, y: r.bottom + 4, backdrop: false, onClose: () => { closePopup(pid); inputNode.__m = 0; } });
     inputNode.__m = pid;
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }),
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (nv.indexOf('@') >= 0 && !e.currentTarget.__m) open(e); } },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || 'Type @ to mention'));
 }
@@ -1307,7 +1472,7 @@ export function NColorPicker(props = {}) {
         h('view', { style: { color: theme.text, fontSize: '13' } }, hsvToHex(hue, sat, val))));
     pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
   };
-  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }), onClick: open },
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(), onClick: open },
     h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, backgroundColor: value, borderWidth: 1, borderColor: theme.border }) }),
     h('view', { style: { color: theme.text, fontSize: '14' } }, value));
 }

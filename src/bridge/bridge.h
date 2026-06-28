@@ -27,15 +27,21 @@ void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
 /* Dispatch a pointer event (mousedown/mouseup/mousemove/click) at `target`,
  * carrying clientX/clientY. mousemove also emits mouseenter/mouseleave as the
  * hovered element changes. Pass the hit-tested target (NULL = empty space). */
-void pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y);
+/* Returns nonzero if the hovered element changed (so `hover:*` style overrides
+ * differ and the host must repaint, independent of any JS re-render). */
+int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y);
 
 /* Wheel at `target`: dispatch a "wheel" event, then scroll the nearest
- * overflow:scroll/auto ancestor by dy (logical px), clamped to its content. */
-void pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy);
+ * overflow:scroll/auto ancestor by dy (logical px), clamped to its content.
+ * Returns nonzero if the native scroll offset actually changed (this scroll is
+ * applied directly to the C-side style, NOT via the JS reactive path, so the
+ * host needs this signal to know it must repaint). */
+int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy);
 
 /* --- focus + keyboard --- */
-/* Move focus to `node` (NULL = blur), firing blur/focus events. */
-void    pu_bridge_set_focus(PuBridge *b, PuNode *node);
+/* Move focus to `node` (NULL = blur), firing blur/focus events. Returns nonzero
+ * if focus actually changed (so `focus:*` overrides differ -> host repaints). */
+int     pu_bridge_set_focus(PuBridge *b, PuNode *node);
 PuNode *pu_bridge_focused(PuBridge *b);
 /* Advance focus to the next focusable (tabIndex >= 0) element in tree order. */
 void    pu_bridge_focus_next(PuBridge *b);

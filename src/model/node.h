@@ -56,6 +56,12 @@ struct PuNode {
     PuStyle attrs;           /* generic attribute map (setAttribute/id/class) */
     int     tab_index;       /* >= 0 -> focusable (keyboard); -1 default */
 
+    /* Interaction state flags (maintained by the bridge, read by the renderer to
+     * apply `hover:`/`focus:`-prefixed style overrides). */
+    unsigned state;
+#define PU_STATE_HOVER 0x1u  /* node is the hovered element or one of its ancestors */
+#define PU_STATE_FOCUS 0x2u  /* node is the focused element */
+
     /* Computed layout (absolute, in pixels) — written by the LayoutEngine,
      * read by the RenderEngine. */
     float layout_x, layout_y, layout_w, layout_h;
