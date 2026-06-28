@@ -1,5 +1,6 @@
 #include "bridge/bridge.h"
 #include "render/skia_c.h"   /* pu_text_measure for the global measureText() */
+#include "layout/layout.h"   /* pu_layout_mark_dirty / pu_layout_affects */
 
 #include <stdint.h>
 #include <stdio.h>
@@ -104,7 +105,10 @@ static int js_style_set(JSContext *ctx, JSValueConst obj, JSAtom atom,
     const char *name = JS_AtomToCString(ctx, atom);
     if (!name) return -1;
     const char *val = JS_ToCString(ctx, value);
-    if (node && val) pu_style_set(&node->style, name, val);
+    if (node && val) {
+        pu_style_set(&node->style, name, val);
+        if (pu_layout_affects(name)) pu_layout_mark_dirty(); /* skip relayout for render-only props */
+    }
     JS_FreeCString(ctx, name);
     if (val) JS_FreeCString(ctx, val);
     (void)receiver; (void)flags;
@@ -136,6 +140,7 @@ static JSValue js_node_appendChild(JSContext *ctx, JSValueConst this_val,
     PuNode *child = argc >= 1 ? (PuNode *)JS_GetOpaque(argv[0], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "appendChild: a Node is required");
     pu_node_append(self, child);
+    pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
 
@@ -146,6 +151,7 @@ static JSValue js_node_removeChild(JSContext *ctx, JSValueConst this_val,
     PuNode *child = argc >= 1 ? (PuNode *)JS_GetOpaque(argv[0], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "removeChild: a Node is required");
     pu_node_remove(self, child);
+    pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
 
@@ -158,6 +164,7 @@ static JSValue js_node_insertBefore(JSContext *ctx, JSValueConst this_val,
                         ? (PuNode *)JS_GetOpaque(argv[1], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "insertBefore: a Node is required");
     pu_node_insert_before(self, child, ref);
+    pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
 
@@ -254,6 +261,7 @@ static JSValue js_node_set_textContent(JSContext *ctx, JSValueConst this_val, JS
         }
     }
     if (str) JS_FreeCString(ctx, str);
+    pu_layout_mark_dirty(); /* text content changed -> re-measure */
     return JS_UNDEFINED;
 }
 

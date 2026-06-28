@@ -272,9 +272,40 @@ static void clear_yoga(PuNode *n)
     for (PuNode *c = n->first_child; c; c = c->next_sibling) clear_yoga(c);
 }
 
+/* ---- incremental: skip the layout pass when nothing layout-affecting changed -
+ * The DOM mutators (bridge) call pu_layout_mark_dirty() on geometry/structure/
+ * text changes; render-only changes (color, opacity, scroll, transform, hover/
+ * focus state) leave the cached layout valid, so a hover/scroll/fade repaint
+ * skips the whole Yoga rebuild (~4ms -> ~0). */
+static int   g_layout_dirty = 1;
+static float g_last_w = -1.0f, g_last_h = -1.0f;
+
+void pu_layout_mark_dirty(void) { g_layout_dirty = 1; }
+
+/* 1 if changing `prop` can change layout; 0 for known render-only properties.
+ * Conservative: anything unrecognised returns 1 (force a relayout). */
+int pu_layout_affects(const char *prop)
+{
+    if (!prop) return 1;
+    if (strncmp(prop, "hover:", 6) == 0 || strncmp(prop, "focus:", 6) == 0) return 0;
+    static const char *render_only[] = {
+        "backgroundColor", "color", "borderColor", "borderWidth", "borderRadius",
+        "borderTopWidth", "borderBottomWidth", "borderLeftWidth", "borderRightWidth",
+        "opacity", "gradientFrom", "gradientTo", "gradientDir",
+        "textGradientFrom", "textGradientTo", "shadowColor", "shadowBlur", "shadowX",
+        "shadowY", "backgroundImage", "selectionColor", "rotate", "scale",
+        "scrollTop", "scrollLeft", "cursor", "pointerEvents", "appRegion", NULL,
+    };
+    for (int i = 0; render_only[i]; i++)
+        if (strcmp(prop, render_only[i]) == 0) return 0;
+    return 1;
+}
+
 void pu_layout_calculate(PuNode *root, float width, float height)
 {
     if (!root) return;
+    /* Cached: no layout-affecting mutation and the viewport size is unchanged. */
+    if (!g_layout_dirty && width == g_last_w && height == g_last_h) return;
 
     YGNodeRef y = build_tree(root);
     /* Root always fills the viewport. */
@@ -286,4 +317,8 @@ void pu_layout_calculate(PuNode *root, float width, float height)
 
     YGNodeFreeRecursive(y);
     clear_yoga(root);
+
+    g_layout_dirty = 0;
+    g_last_w = width;
+    g_last_h = height;
 }

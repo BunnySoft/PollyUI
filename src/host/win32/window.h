@@ -61,6 +61,18 @@ void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
 typedef int (*PuAsyncFn)(void *user);
 void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user);
 
+/* Custom title bar / frameless window. `region_fn` is asked, at LOGICAL client
+ * coords, whether a point is in the draggable title-bar area (returns nonzero =
+ * draggable, like CSS `-webkit-app-region: drag`). */
+typedef int (*PuRegionFn)(int x, int y, void *user);
+void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user);
+void pu_window_set_frameless(PuWindow *w, int frameless); /* hide/show OS title bar */
+void pu_window_set_backdrop(PuWindow *w, int type);       /* Win11 Mica(2)/Acrylic(3) */
+void pu_window_minimize(PuWindow *w);
+void pu_window_maximize_toggle(PuWindow *w);
+int  pu_window_is_maximized(PuWindow *w);
+void pu_window_close(PuWindow *w);
+
 /* Wake the window (thread-safe) so it drains async deliveries promptly. Used as
  * the dispatcher's waker from worker threads. */
 void pu_window_wake(PuWindow *w);

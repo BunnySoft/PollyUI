@@ -244,13 +244,18 @@ static void render_node(PuSurface *s, PuNode *n)
             if (cb > content_bottom) content_bottom = cb;
         }
         if (content_bottom > h + 0.5f) {
-            float track = h - 4;
+            /* Windows 11-style overlay scrollbar: a faint full-height track plus
+             * a clearly visible rounded thumb, sitting in a small right gutter so
+             * it reads as having its own width rather than hugging the edge. */
+            float track = h - 8;
             float thumb_h = track * (h / content_bottom);
-            if (thumb_h < 24) thumb_h = 24;
+            if (thumb_h < 28) thumb_h = 28;
             if (thumb_h > track) thumb_h = track;
             float max_scroll = content_bottom - h;
             float thumb_y = max_scroll > 0 ? (sy / max_scroll) * (track - thumb_h) : 0;
-            pu_surface_fill_rrect(s, x + w - 8, y + 2 + thumb_y, 5, thumb_h, 2.5f, 128, 128, 128, 140);
+            float bx = x + w - 11;   /* small gutter from the edge; clear of content */
+            pu_surface_fill_rrect(s, bx + 1, y + 4, 6, track, 3.0f, 0, 0, 0, 18);            /* track */
+            pu_surface_fill_rrect(s, bx, y + 4 + thumb_y, 8, thumb_h, 4.0f, 135, 135, 135, 205); /* thumb */
         }
     }
 

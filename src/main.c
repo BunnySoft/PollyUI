@@ -188,6 +188,57 @@ static int app_async(void *user)
 /* Dispatcher waker (called from worker threads): nudge the window to drain. */
 static void app_wake(void *win) { pu_window_wake((PuWindow *)win); }
 
+/* ---- windowed: custom title bar drag region + JS `window` controls -------- */
+static PuWindow *g_app_window;
+static int       g_pending_frameless = -1;
+
+/* Asked by the host (frameless mode) whether a logical-coord point is in the
+ * draggable title-bar area: walk up from the hit node and return 1 if the
+ * nearest `appRegion` style is "drag" (mirrors CSS -webkit-app-region: drag). */
+static int app_region(int x, int y, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    PuNode *n = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
+    for (; n; n = n->parent) {
+        const char *r = pu_style_get(&n->style, "appRegion");
+        if (r) return strcmp(r, "drag") == 0;
+    }
+    return 0;
+}
+
+static JSValue jswin_minimize(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)c;(void)t;(void)n;(void)a; pu_window_minimize(g_app_window); return JS_UNDEFINED; }
+static JSValue jswin_maximize(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)c;(void)t;(void)n;(void)a; pu_window_maximize_toggle(g_app_window); return JS_UNDEFINED; }
+static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)c;(void)t;(void)n;(void)a; pu_window_close(g_app_window); return JS_UNDEFINED; }
+static JSValue jswin_ismax(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)t;(void)n;(void)a; return JS_NewBool(c, pu_window_is_maximized(g_app_window)); }
+static JSValue jswin_frameless(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)t; int f = n >= 1 ? JS_ToBool(c, a[0]) : 1;
+  if (g_app_window) pu_window_set_frameless(g_app_window, f); else g_pending_frameless = f;
+  return JS_UNDEFINED; }
+static int g_pending_backdrop = -1;
+static JSValue jswin_backdrop(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)t; int ty = 2 /*Mica*/; if (n >= 1) { int32_t v; if (!JS_ToInt32(c, &v, a[0])) ty = v; }
+  if (g_app_window) pu_window_set_backdrop(g_app_window, ty); else g_pending_backdrop = ty;
+  return JS_UNDEFINED; }
+
+/* Install the global `window` object (windowed app only; absent under --test). */
+static void install_window_api(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue win = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, win, "minimize",     JS_NewCFunction(ctx, jswin_minimize, "minimize", 0));
+    JS_SetPropertyStr(ctx, win, "maximize",      JS_NewCFunction(ctx, jswin_maximize, "maximize", 0));
+    JS_SetPropertyStr(ctx, win, "close",         JS_NewCFunction(ctx, jswin_close, "close", 0));
+    JS_SetPropertyStr(ctx, win, "isMaximized",   JS_NewCFunction(ctx, jswin_ismax, "isMaximized", 0));
+    JS_SetPropertyStr(ctx, win, "setFrameless",  JS_NewCFunction(ctx, jswin_frameless, "setFrameless", 1));
+    JS_SetPropertyStr(ctx, win, "setBackdrop",   JS_NewCFunction(ctx, jswin_backdrop, "setBackdrop", 1));
+    JS_SetPropertyStr(ctx, g, "window", win);
+    JS_FreeValue(ctx, g);
+}
+
 /* ---- headless test API (`pollyui --test t.js`) ----------------------------*/
 /* Drives the UI in-process (no window, no OS input) for deterministic tests:
  * the script gets a `host` global to render, click, read pixels, and snapshot. */
@@ -377,6 +428,8 @@ static int run_test(const char *path)
     host.bridge = b;
     host.width = 800;
     host.height = 600;
+    { const char *e; if ((e = getenv("PU_TEST_W"))) host.width = atoi(e);
+      if ((e = getenv("PU_TEST_H"))) host.height = atoi(e); }
     host.surface = pu_surface_create(host.width, host.height);
     g_test = &host;
 
@@ -409,6 +462,7 @@ static int run_app(const char *path)
     pu_async_install(pu_script_jsctx(s), disp);
     pu_storage_install(pu_script_jsctx(s), "pollyui_localstorage.dat");
     pu_fetch_install(pu_script_jsctx(s), disp);
+    install_window_api(pu_script_jsctx(s)); /* global `window` controls */
 
     int rc = pu_script_run_file(s, path);
     if (rc == 0)
@@ -427,11 +481,15 @@ static int run_app(const char *path)
         PuWindow *win = pu_window_create(&cfg);
         if (win) {
             PuApp app = { s, bridge };
+            g_app_window = win;
             pu_window_set_paint(win, app_paint, &app);
             pu_window_set_pointer(win, app_pointer, &app);
             pu_window_set_key(win, app_key, &app);
             pu_window_set_wheel(win, app_wheel, &app);
             pu_window_set_async(win, app_async, &app);
+            pu_window_set_region(win, app_region, &app);     /* custom title bar drag */
+            if (g_pending_frameless >= 0) pu_window_set_frameless(win, g_pending_frameless);
+            if (g_pending_backdrop >= 0)  pu_window_set_backdrop(win, g_pending_backdrop);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);
             pu_window_destroy(win);

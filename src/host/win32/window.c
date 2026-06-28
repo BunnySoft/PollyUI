@@ -37,6 +37,9 @@ struct PuWindow {
     void       *wheel_user;
     PuAsyncFn   async_fn;     /* optional async pump callback */
     void       *async_user;
+    int         frameless;    /* 1 = OS title bar hidden, app draws its own */
+    PuRegionFn  region_fn;    /* hit-region query for the custom title bar drag area */
+    void       *region_user;
 };
 
 #define PU_WM_WAKE (WM_APP + 1)   /* posted by pu_window_wake */
@@ -126,6 +129,41 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         mmi->ptMinTrackSize.y = (LONG)(280 * sc);
         return 0;
     }
+
+    case WM_NCCALCSIZE:
+        /* Frameless: extend the client area over the OS title bar (so the app
+         * draws its own), while keeping the resizable WS_THICKFRAME border. When
+         * maximized, inset by the frame so content isn't clipped off-screen. */
+        if (w && w->frameless && wp) {
+            NCCALCSIZE_PARAMS *p = (NCCALCSIZE_PARAMS *)lp;
+            if (IsZoomed(hwnd)) {
+                int fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                int fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                p->rgrc[0].left += fx; p->rgrc[0].right  -= fx;
+                p->rgrc[0].top  += fy; p->rgrc[0].bottom -= fy;
+            }
+            return 0; /* client == window rect (no caption) */
+        }
+        break;
+
+    case WM_NCHITTEST:
+        /* Frameless: synthesize resize edges, and ask the app whether the point
+         * is in a draggable title-bar region (HTCAPTION) vs interactive (HTCLIENT). */
+        if (w && w->frameless) {
+            POINT pt = { (short)LOWORD(lp), (short)HIWORD(lp) };
+            ScreenToClient(hwnd, &pt);
+            RECT rc; GetClientRect(hwnd, &rc);
+            float sc = (w->scale > 0) ? w->scale : 1.0f;
+            int b = (int)(6 * sc); /* resize border thickness */
+            int L = pt.x < b, R = pt.x >= rc.right - b, T = pt.y < b, B = pt.y >= rc.bottom - b;
+            if (T && L) return HTTOPLEFT;    if (T && R) return HTTOPRIGHT;
+            if (B && L) return HTBOTTOMLEFT; if (B && R) return HTBOTTOMRIGHT;
+            if (L) return HTLEFT; if (R) return HTRIGHT; if (T) return HTTOP; if (B) return HTBOTTOM;
+            if (w->region_fn && w->region_fn((int)(pt.x / sc), (int)(pt.y / sc), w->region_user))
+                return HTCAPTION; /* draggable title-bar area (double-click maximizes) */
+            return HTCLIENT;
+        }
+        break;
 
     case WM_SIZE:
         if (w && wp != SIZE_MINIMIZED) {
@@ -364,6 +402,47 @@ void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user)
     w->async_fn = fn;
     w->async_user = user;
 }
+
+void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user)
+{
+    if (!w) return;
+    w->region_fn = fn;
+    w->region_user = user;
+}
+
+/* Hide/show the OS title bar at runtime. The window keeps WS_THICKFRAME so it
+ * stays resizable + snappable; the title bar removal is done by the WM_NCCALCSIZE
+ * handler, which we re-trigger via SWP_FRAMECHANGED. */
+void pu_window_set_frameless(PuWindow *w, int frameless)
+{
+    if (!w || !w->hwnd || w->frameless == (frameless ? 1 : 0)) return;
+    w->frameless = frameless ? 1 : 0;
+    SetWindowPos(w->hwnd, NULL, 0, 0, 0, 0,
+                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/* Windows 11 system backdrop (Mica/Acrylic) via DWM. type: 0 auto, 1 none,
+ * 2 Mica, 3 Acrylic, 4 Mica Alt. Loaded dynamically to avoid a dwmapi link dep.
+ * NOTE: for the backdrop to be *visible* the app must draw with transparency
+ * where it should show through (a transparent GPU surface) — see DESIGN notes;
+ * this sets the correct DWM attribute regardless. */
+void pu_window_set_backdrop(PuWindow *w, int type)
+{
+    if (!w || !w->hwnd) return;
+    typedef long (__stdcall *DwmSetFn)(HWND, unsigned long, const void *, unsigned long);
+    static DwmSetFn fn = NULL; static int tried = 0;
+    if (!tried) { tried = 1; HMODULE m = LoadLibraryW(L"dwmapi.dll");
+        if (m) fn = (DwmSetFn)(void *)GetProcAddress(m, "DwmSetWindowAttribute"); }
+    if (fn) { int t = type; fn(w->hwnd, 38 /*DWMWA_SYSTEMBACKDROP_TYPE*/, &t, sizeof(t)); }
+}
+
+void pu_window_minimize(PuWindow *w) { if (w && w->hwnd) ShowWindow(w->hwnd, SW_MINIMIZE); }
+void pu_window_close(PuWindow *w)    { if (w && w->hwnd) PostMessageW(w->hwnd, WM_CLOSE, 0, 0); }
+void pu_window_maximize_toggle(PuWindow *w)
+{
+    if (w && w->hwnd) ShowWindow(w->hwnd, IsZoomed(w->hwnd) ? SW_RESTORE : SW_MAXIMIZE);
+}
+int pu_window_is_maximized(PuWindow *w) { return (w && w->hwnd) ? IsZoomed(w->hwnd) : 0; }
 
 void pu_window_wake(PuWindow *w)
 {
