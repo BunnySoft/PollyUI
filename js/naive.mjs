@@ -637,3 +637,105 @@ export function NDrawer(props = {}, ...children) {
     h('view', { style: { padding: '20', gap: '12', flexDirection: 'column' } }, ...children));
   return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#00000080' }), onClick: onClose }, panel);
 }
+
+// ---- NTree ------------------------------------------------------------------
+
+export function NTree(props = {}) {
+  const { data = [], expandedKeys = [], selectedKeys = [], onExpand, onSelect, id } = props;
+  const exp = new Set(expandedKeys), sel = new Set(selectedKeys);
+  const rows = [];
+  const walk = (nodes, depth) => nodes.forEach(node => {
+    const hasKids = node.children && node.children.length;
+    const open = exp.has(node.key), isSel = sel.has(node.key);
+    rows.push(h('view', { style: clean({ flexDirection: 'row', alignItems: 'center', height: 32, paddingLeft: 8 + depth * 20, borderRadius: 3, backgroundColor: isSel ? theme.primary + '1f' : 'transparent' }) },
+      hasKids
+        ? h('view', { style: clean({ width: 18, height: 18, alignItems: 'center', justifyContent: 'center', rotate: open ? 90 : 0 }), onClick: () => onExpand && onExpand(open ? expandedKeys.filter(k => k !== node.key) : expandedKeys.concat(node.key)) },
+            h('view', { style: { color: theme.textSecondary, fontSize: '11' } }, '▶'))
+        : h('view', { style: { width: '18' } }),
+      h('view', { style: { flexGrow: '1', paddingLeft: '4', flexDirection: 'row', alignItems: 'center' }, onClick: () => onSelect && onSelect([node.key]) },
+        h('view', { style: clean({ color: isSel ? theme.primary : theme.text, fontSize: 14 }) }, node.label))));
+    if (hasKids && open) walk(node.children, depth + 1);
+  });
+  walk(data, 0);
+  return h('view', { id, style: { flexDirection: 'column', gap: '2', padding: '4' } }, ...rows);
+}
+
+// ---- NTransfer --------------------------------------------------------------
+
+export function NTransfer(props = {}) {
+  const { data = [], targetKeys = [], onChange, titles = ['Source', 'Target'], id } = props;
+  const tgt = new Set(targetKeys);
+  const panel = (title, items, onItem) => h('view', { style: clean({ width: 200, borderWidth: 1, borderColor: theme.border, borderRadius: 3, flexDirection: 'column', backgroundColor: theme.card }) },
+    h('view', { style: { paddingLeft: '12', paddingTop: '8', paddingBottom: '8' } }, h('view', { style: { color: theme.text, fontSize: '13', fontWeight: 'bold' } }, `${title} (${items.length})`)),
+    h('view', { style: { height: '1', backgroundColor: theme.border } }),
+    h('view', { style: { flexDirection: 'column', padding: '4', gap: '2', height: '160' } },
+      ...items.map(it => h('view', { style: { height: '30', paddingLeft: '8', justifyContent: 'center', borderRadius: '3' }, onClick: () => onItem(it.key) },
+        h('view', { style: { color: theme.text, fontSize: '14' } }, it.label)))));
+  return h('view', { id, style: { flexDirection: 'row', gap: '12', alignItems: 'center' } },
+    panel(titles[0], data.filter(d => !tgt.has(d.key)), (k) => onChange && onChange(targetKeys.concat(k))),
+    h('view', { style: { color: theme.textSecondary, fontSize: '16' } }, '⇄'),
+    panel(titles[1], data.filter(d => tgt.has(d.key)), (k) => onChange && onChange(targetKeys.filter(x => x !== k))));
+}
+
+// ---- NCalendar (standalone month grid) --------------------------------------
+
+export function NCalendar(props = {}) {
+  const { value, onUpdate, view, onNav, id } = props;
+  const v = view || { year: (value || new Date(2024, 0, 1)).getFullYear(), month: (value || new Date(2024, 0, 1)).getMonth() };
+  return h('view', { id, style: clean({ width: 320, borderWidth: 1, borderColor: theme.border, borderRadius: 3, backgroundColor: theme.card }) },
+    calendar(v, value, (d) => onUpdate && onUpdate(d), (delta) => onNav && onNav(delta)));
+}
+
+// ---- NUpload ----------------------------------------------------------------
+
+export function NUpload(props = {}) {
+  const { fileList = [], onTrigger, onRemove, id } = props;
+  return h('view', { id, style: { flexDirection: 'column', gap: '10' } },
+    h('view', { style: clean({ borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingTop: 24, paddingBottom: 24, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }), onClick: () => onTrigger && onTrigger() },
+      h('view', { style: { color: theme.primary, fontSize: '26' } }, '⬆'),
+      h('view', { style: { color: theme.text, fontSize: '14' } }, 'Click to upload'),
+      h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, 'or drag a file here')),
+    ...fileList.map(f => h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '8', paddingLeft: '4', paddingTop: '4', paddingBottom: '4' } },
+      h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, '📄'),
+      h('view', { style: { color: theme.text, fontSize: '13', flexGrow: '1' } }, f.name),
+      h('view', { style: { color: theme.error, fontSize: '13' }, onClick: () => onRemove && onRemove(f) }, '✕'))));
+}
+
+// ---- NCascader (column drill-down) ------------------------------------------
+
+export function NCascader(props = {}) {
+  const { value = [], options = [], onUpdate, width = 220, placeholder = 'Select', id } = props;
+  const labelFor = (path) => {
+    let opts = options, labels = [];
+    for (const k of path) { const o = opts.find(x => x.value === k); if (!o) break; labels.push(o.label); opts = o.children || []; }
+    return labels.join(' / ');
+  };
+  const open = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid, activePath = value.slice();
+    const draw = () => {
+      const cols = []; let opts = options;
+      for (let level = 0; opts && opts.length; level++) {
+        const selKey = activePath[level];
+        cols.push(h('view', { style: clean({ width: 160, flexDirection: 'column', padding: 4, gap: 2 }) },
+          ...opts.map(o => h('view', {
+            style: clean({ height: 32, paddingLeft: 10, paddingRight: 8, borderRadius: 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: o.value === selKey ? theme.primary + '1f' : 'transparent' }),
+            onClick: () => {
+              activePath = activePath.slice(0, level); activePath.push(o.value);
+              if (o.children && o.children.length) _overlays.list = _overlays.list.slice();
+              else { onUpdate && onUpdate(activePath.slice()); closePopup(pid); }
+            },
+          },
+            h('view', { style: clean({ color: o.value === selKey ? theme.primary : theme.text, fontSize: 14 }) }, o.label),
+            o.children && o.children.length ? h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '›') : null))));
+        const sel = opts.find(x => x.value === selKey);
+        if (sel && sel.children && sel.children.length) opts = sel.children; else break;
+      }
+      return h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3 }) }, ...cols);
+    };
+    pid = openPopup(draw, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
+  };
+  return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }), onClick: open },
+    h('view', { style: clean({ color: value.length ? theme.text : theme.textDisabled, fontSize: 14 }) }, value.length ? labelFor(value) : placeholder),
+    h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
+}

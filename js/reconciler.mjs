@@ -45,7 +45,9 @@ function applyProps(el, oldP, newP) {
     }
   }
   for (const k in newP) {
-    if (k.startsWith('on') && oldP[k] !== newP[k]) {
+    // only (re)add when the handler actually changed AND is a function; a prop
+    // like `onClick: undefined` (conditional handler) must not be added.
+    if (k.startsWith('on') && oldP[k] !== newP[k] && typeof newP[k] === 'function') {
       const ev = eventName(k);
       el.addEventListener(ev, newP[k]);
       el.__listeners[ev] = newP[k];
