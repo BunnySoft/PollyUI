@@ -43,9 +43,9 @@ interactive, GPU-accelerated UIs from plain JavaScript. Implemented:
 - **Tooling** — a deterministic **headless test harness** (`--test`), a
   no-console release build, an in-process crash handler.
 
-Demos: `js/components.js` (gallery), `js/counter.js`, `js/textfield.js`,
-`js/threads.js`. Planned next: macOS/Linux ports, `requestAnimationFrame`, text
-selection. Full implemented-vs-planned **feature matrix** in
+Demo: `js/gallery.mjs` — every Naive UI-style component on one scrollable page.
+Concurrency example: `js/threads.js`. Multi-platform plan (SDL3 + embedded
+Linux) in **[docs/PORTING.md](./docs/PORTING.md)**; full feature matrix in
 **[ROADMAP.md](./ROADMAP.md)** (architecture in [DESIGN.md](./DESIGN.md)).
 
 ## Building
@@ -60,7 +60,7 @@ MSVC + Windows SDK).
 ./tools/build.ps1 -Run     # build then open the built-in demo window
 
 # the component gallery (interactive: buttons, toggles, tabs, ...)
-./build/win-clang/pollyui.exe js/components.js
+./build/win-clang/pollyui.exe js/gallery.mjs
 
 # headless test: no window, no OS input — deterministic (host.click/pixel/save)
 ./build/win-clang/pollyui.exe --test tests/smoke.js
