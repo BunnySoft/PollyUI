@@ -1050,3 +1050,77 @@ export const loadingBar = {
   },
   error() { this.finish(); },
 };
+
+// ===== Wave 4: animated display + layout ====================================
+
+export function NCountdown(props = {}) {
+  const { value = 0, format = 'MM:SS', fontSize = 24, id } = props;
+  const total = Math.max(0, Math.floor(value / 1000));
+  const hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
+  const disp = format === 'HH:MM:SS' ? `${pad2(hh)}:${pad2(mm)}:${pad2(ss)}` : `${pad2(mm)}:${pad2(ss)}`;
+  return h('view', { id, style: clean({ color: theme.text, fontSize, fontWeight: 'bold' }) }, disp);
+}
+
+export function NNumberAnimation(props = {}) {
+  const { value = 0, precision = 0, prefix = '', suffix = '', fontSize = 28, id } = props;
+  const n = Number(value).toFixed(precision);
+  const parts = n.split('.');
+  const grouped = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return h('view', { id, style: clean({ color: theme.text, fontSize, fontWeight: 'bold' }) }, prefix + grouped + (parts[1] ? '.' + parts[1] : '') + suffix);
+}
+
+export function NSkeleton(props = {}) {
+  const { rows = 3, width, height = 16, round = false, text = true, id } = props;
+  const bg = theme.name === 'dark' ? '#ffffff14' : '#eef0f2';
+  if (!text) return h('view', { id, style: clean({ width: width || 40, height, borderRadius: round ? height / 2 : 4, backgroundColor: bg }) });
+  return h('view', { id, style: { flexDirection: 'column', gap: '10' } }, ...Array.from({ length: rows }, (_, i) =>
+    h('view', { style: clean({ height, borderRadius: 4, width: i === rows - 1 ? '60%' : '100%', backgroundColor: bg }) })));
+}
+
+export function NCarousel(props = {}) {
+  const { index = 0, slides = [], onUpdate, height = 200, id } = props;
+  return h('view', { id, style: clean({ height, borderRadius: 6, overflow: 'hidden', position: 'relative', backgroundColor: theme.railOff }) },
+    slides[index] || null,
+    h('view', { style: { position: 'absolute', bottom: '12', left: '0', right: '0', flexDirection: 'row', justifyContent: 'center', gap: '8' } },
+      ...slides.map((_, i) => h('view', { style: clean({ width: i === index ? 18 : 8, height: 8, borderRadius: 4, backgroundColor: i === index ? '#ffffff' : '#ffffff80' }), onClick: () => onUpdate && onUpdate(i) }))));
+}
+
+export function NWatermark(props = {}, child) {
+  const { content = 'PollyUI', rows = 5, cols = 4, id } = props;
+  const marks = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+    marks.push(h('view', { style: clean({ position: 'absolute', left: c * 160, top: r * 100, rotate: -20, opacity: 0.08 }) }, h('view', { style: { color: theme.text, fontSize: '16' } }, content)));
+  return h('view', { id, style: { position: 'relative' } }, child, ...marks);
+}
+
+export function NLayout(props = {}, ...children) {
+  const { hasSider = false, id } = props;
+  return h('view', { id, style: clean({ flexDirection: hasSider ? 'row' : 'column', flexGrow: 1, backgroundColor: theme.body }) }, ...children);
+}
+export function NLayoutHeader(props = {}, ...children) {
+  return h('view', { id: props.id, style: clean({ height: props.height || 64, backgroundColor: theme.card, flexDirection: 'row', alignItems: 'center', paddingLeft: 20, paddingRight: 20 }) }, ...children);
+}
+export function NLayoutSider(props = {}, ...children) {
+  return h('view', { id: props.id, style: clean({ width: props.width || 200, backgroundColor: theme.card, padding: 12, flexDirection: 'column' }) }, ...children);
+}
+export function NLayoutContent(props = {}, ...children) {
+  return h('view', { id: props.id, style: clean({ flexGrow: 1, padding: props.padding != null ? props.padding : 24 }) }, ...children);
+}
+export function NLayoutFooter(props = {}, ...children) {
+  return h('view', { id: props.id, style: clean({ backgroundColor: theme.card, padding: 16, alignItems: 'center' }) }, ...children);
+}
+
+// Pass children as a function so they're built AFTER the theme is applied
+// (h() evaluates eager args before the call, so a plain child would use the
+// previous theme): NConfigProvider({ theme: 'dark' }, () => NButton(...)).
+export function NConfigProvider(props = {}, content) {
+  if (props.theme) useTheme(props.theme);
+  const built = typeof content === 'function' ? content() : content;
+  const kids = Array.isArray(built) ? built : [built];
+  return h('view', { id: props.id, style: { flexGrow: '1' } }, ...kids);
+}
+
+export function NIcon(props = {}, glyph) {
+  const { size = 18, color, id } = props;
+  return h('view', { id, style: clean({ fontSize: size, color: color || theme.text }) }, glyph);
+}
