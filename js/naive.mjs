@@ -391,21 +391,52 @@ export function NPagination(props = {}) {
 // ---- NDataTable -------------------------------------------------------------
 
 export function NDataTable(props = {}) {
-  const { columns = [], data = [], id } = props;
+  const { columns = [], data = [], id, rowKey = (r, i) => i,
+          selectable = false, selectedKeys = [], onSelectionChange,
+          sortBy, sortOrder, onSort } = props;
+  const sel = new Set(selectedKeys);
+  const allKeys = data.map((r, i) => rowKey(r, i));
+
   const cell = (content, col, header) => {
-    // a render() result is a vnode (object) -> use it directly; a plain value -> wrap in text
     const inner = (content && typeof content === 'object')
       ? content
       : h('view', { style: clean({ color: header ? theme.textSecondary : theme.text, fontSize: 14, fontWeight: header ? 'bold' : 'normal' }) }, String(content));
     return h('view', { style: clean({ width: col.width, flexGrow: col.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, justifyContent: 'center', flexDirection: 'row', alignItems: 'center' }) }, inner);
   };
+  const checkCell = (node) => h('view', { style: { width: '44', paddingLeft: '14', paddingTop: '10', paddingBottom: '10', justifyContent: 'center' } }, node);
+
+  // header
+  const headerCells = [];
+  if (selectable) {
+    const allOn = data.length > 0 && allKeys.every(k => sel.has(k));
+    headerCells.push(checkCell(NCheckbox({ checked: allOn, onChange: () => onSelectionChange && onSelectionChange(allOn ? [] : allKeys.slice()) })));
+  }
+  columns.forEach(c => {
+    if (c.sortable && onSort) {
+      const active = sortBy === c.key;
+      const indicator = active ? (sortOrder === 'asc' ? ' ▲' : ' ▼') : ' ↕';
+      headerCells.push(h('view', {
+        style: clean({ width: c.width, flexGrow: c.width ? undefined : 1, paddingLeft: 12, paddingRight: 12, paddingTop: 10, paddingBottom: 10, flexDirection: 'row', alignItems: 'center' }),
+        onClick: () => onSort(c.key, active && sortOrder === 'asc' ? 'desc' : 'asc'),
+      }, h('view', { style: clean({ color: active ? theme.primary : theme.textSecondary, fontSize: 14, fontWeight: 'bold' }) }, c.title + indicator)));
+    } else {
+      headerCells.push(cell(c.title, c, true));
+    }
+  });
 
   const rows = [
-    h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }) }, ...columns.map(c => cell(c.title, c, true))),
+    h('view', { style: clean({ flexDirection: 'row', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }) }, ...headerCells),
     h('view', { style: { height: '1', backgroundColor: theme.border } }),
   ];
   data.forEach((row, i) => {
-    rows.push(h('view', { style: { flexDirection: 'row' } }, ...columns.map(c => cell(c.render ? c.render(row) : row[c.key], c, false))));
+    const k = rowKey(row, i);
+    const cells = [];
+    if (selectable) cells.push(checkCell(NCheckbox({ checked: sel.has(k), onChange: () => {
+      const next = sel.has(k) ? selectedKeys.filter(x => x !== k) : selectedKeys.concat(k);
+      onSelectionChange && onSelectionChange(next);
+    } })));
+    columns.forEach(c => cells.push(cell(c.render ? c.render(row) : row[c.key], c, false)));
+    rows.push(h('view', { style: clean({ flexDirection: 'row', backgroundColor: sel.has(k) ? theme.primary + '14' : 'transparent' }) }, ...cells));
     if (i < data.length - 1) rows.push(h('view', { style: { height: '1', backgroundColor: theme.border } }));
   });
   return h('view', { id, style: clean({ borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', backgroundColor: theme.card, flexDirection: 'column' }) }, ...rows);
@@ -499,3 +530,110 @@ export const message = {
   warning(t, d) { return this._show('warning', t, d); },
   error(t, d) { return this._show('error', t, d); },
 };
+
+// ---- NCollapse (accordion) --------------------------------------------------
+
+export function NCollapse(props = {}) {
+  const { value = [], onUpdate, items = [], id } = props;
+  const expanded = Array.isArray(value) ? value : [value];
+  const toggle = (name) => onUpdate && onUpdate(expanded.includes(name) ? expanded.filter(n => n !== name) : expanded.concat(name));
+  return h('view', { id, style: clean({ borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', flexDirection: 'column', backgroundColor: theme.card }) },
+    ...items.map((it, i) => {
+      const open = expanded.includes(it.name);
+      const parts = [
+        h('view', { style: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingLeft: '16', paddingRight: '16', paddingTop: '14', paddingBottom: '14' }, onClick: () => toggle(it.name) },
+          h('view', { style: { color: theme.text, fontSize: '14', fontWeight: '500' } }, it.title),
+          h('view', { style: clean({ color: theme.textSecondary, fontSize: 13, rotate: open ? 90 : 0 }) }, '›')),
+      ];
+      if (open) parts.push(h('view', { style: { paddingLeft: '16', paddingRight: '16', paddingBottom: '14' } },
+        (it.content && typeof it.content === 'object') ? it.content : h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, String(it.content))));
+      if (i < items.length - 1) parts.push(h('view', { style: { height: '1', backgroundColor: theme.border } }));
+      return h('view', { style: { flexDirection: 'column' } }, ...parts);
+    }));
+}
+
+// ---- NMenu ------------------------------------------------------------------
+
+export function NMenu(props = {}) {
+  const { value, onUpdate, items = [], mode = 'vertical', id } = props;
+  const horizontal = mode === 'horizontal';
+  return h('view', { id, style: clean({ flexDirection: horizontal ? 'row' : 'column', gap: horizontal ? 4 : 4, padding: horizontal ? 0 : 8, backgroundColor: theme.card }) },
+    ...items.map(it => {
+      const on = it.key === value;
+      return h('view', {
+        style: clean({ height: 40, paddingLeft: 16, paddingRight: 16, borderRadius: 3, flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: on ? theme.primary + '1f' : 'transparent' }),
+        onClick: () => onUpdate && onUpdate(it.key),
+      },
+        it.icon ? h('view', { style: clean({ color: on ? theme.primary : theme.textSecondary, fontSize: 15 }) }, it.icon) : null,
+        h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 500 : 400 }) }, it.label));
+    }));
+}
+
+// ---- NSteps -----------------------------------------------------------------
+
+export function NSteps(props = {}) {
+  const { current = 0, steps = [], id } = props;
+  const items = [];
+  steps.forEach((s, i) => {
+    const done = i < current, active = i === current;
+    if (i > 0) items.push(h('view', { style: clean({ flexGrow: 1, height: 2, marginLeft: 8, marginRight: 8, backgroundColor: i <= current ? theme.primary : theme.border }) }));
+    items.push(h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '10' } },
+      h('view', { style: clean({ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: done || active ? theme.primary : theme.railOff }) },
+        h('view', { style: clean({ color: done || active ? theme.solidText : theme.textSecondary, fontSize: 14, fontWeight: 'bold' }) }, done ? '✓' : String(i + 1))),
+      h('view', { style: clean({ color: active ? theme.text : theme.textSecondary, fontSize: 14, fontWeight: active ? 600 : 400 }) }, s.title)));
+  });
+  return h('view', { id, style: { flexDirection: 'row', alignItems: 'center' } }, ...items);
+}
+
+// ---- NSpin (dot spinner; animate by passing rotation) -----------------------
+
+export function NSpin(props = {}) {
+  const { size = 28, rotation = 0, color, id } = props;
+  const c = color || theme.primary;
+  const n = 8, r = size / 2 - 3, dot = Math.max(3, Math.round(size / 8));
+  const dots = [];
+  for (let i = 0; i < n; i++) {
+    const ang = (i / n) * 2 * Math.PI;
+    dots.push(h('view', { style: clean({ position: 'absolute',
+      left: size / 2 + r * Math.cos(ang) - dot / 2, top: size / 2 + r * Math.sin(ang) - dot / 2,
+      width: dot, height: dot, borderRadius: dot / 2, backgroundColor: c, opacity: (i + 1) / n }) }));
+  }
+  return h('view', { id, style: clean({ width: size, height: size, position: 'relative', rotate: rotation }) }, ...dots);
+}
+
+// ---- NPopconfirm ------------------------------------------------------------
+
+export function NPopconfirm(props = {}, trigger) {
+  const { title = 'Are you sure?', onConfirm, onCancel, confirmText = 'Yes', cancelText = 'No' } = props;
+  trigger.props = trigger.props || {};
+  trigger.props.onClick = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    let pid; const close = () => closePopup(pid);
+    const pop = () => h('view', { style: clean({ width: 240, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 4, padding: 14, gap: 12, shadowColor: '#0000002e', shadowBlur: 16, shadowY: 4 }) },
+      h('view', { style: { flexDirection: 'row', gap: '8', alignItems: 'center' } },
+        h('view', { style: { width: '16', height: '16', borderRadius: '8', backgroundColor: theme.warning, alignItems: 'center', justifyContent: 'center' } }, h('view', { style: { color: '#ffffff', fontSize: '11', fontWeight: 'bold' } }, '!')),
+        h('view', { style: { color: theme.text, fontSize: '14', flexGrow: '1' } }, title)),
+      h('view', { style: { flexDirection: 'row', gap: '8', justifyContent: 'flex-end' } },
+        NButton({ size: 'small', onClick: () => { onCancel && onCancel(); close(); } }, cancelText),
+        NButton({ size: 'small', type: 'primary', onClick: () => { onConfirm && onConfirm(); close(); } }, confirmText)));
+    pid = openPopup(pop, { x: r.left, y: r.bottom + 6, onClose: close });
+  };
+  return trigger;
+}
+
+// ---- NDrawer ----------------------------------------------------------------
+
+export function NDrawer(props = {}, ...children) {
+  const { show = false, placement = 'right', width = 320, title, onClose } = props;
+  if (!show) return h('view', { style: { width: '0', height: '0' } });
+  const panelStyle = clean({ position: 'absolute', top: 0, bottom: 0, width, height: '100%', backgroundColor: theme.card, flexDirection: 'column' });
+  panelStyle[placement] = '0';
+  const panel = h('view', { onClick: (e) => e.stopPropagation(), style: panelStyle },
+    title ? h('view', { style: { paddingLeft: '20', paddingRight: '20', paddingTop: '16', paddingBottom: '16', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' } },
+      h('view', { style: { color: theme.text, fontSize: '16', fontWeight: 'bold' } }, title),
+      h('view', { style: { color: theme.textSecondary, fontSize: '16' }, onClick: onClose }, '✕')) : null,
+    title ? h('view', { style: { height: '1', backgroundColor: theme.border } }) : null,
+    h('view', { style: { padding: '20', gap: '12', flexDirection: 'column' } }, ...children));
+  return h('view', { style: clean({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#00000080' }), onClick: onClose }, panel);
+}
