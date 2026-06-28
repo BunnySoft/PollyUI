@@ -93,7 +93,8 @@ function diff(parentDom, oldV, newV) {
   }
   if (oldV.type !== newV.type) {
     const dom = createDom(newV);
-    parentDom.replaceChild(dom, oldV.__dom);
+    parentDom.insertBefore(dom, oldV.__dom);   // replace = insert-before + remove
+    parentDom.removeChild(oldV.__dom);
     return dom;
   }
 

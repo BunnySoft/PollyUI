@@ -863,3 +863,89 @@ export function NTimeline(props = {}) {
         it.time ? h('view', { style: { color: theme.textDisabled, fontSize: '12' } }, it.time) : null));
   }));
 }
+
+// ===== Wave 2: data entry + simple display ==================================
+
+export function NInputNumber(props = {}) {
+  const { value = 0, onUpdate, min = -Infinity, max = Infinity, step = 1, width = 120, id } = props;
+  const set = (v) => onUpdate && onUpdate(Math.max(min, Math.min(max, v)));
+  const btn = (label, delta) => h('view', { style: clean({ width: 30, height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: theme.name === 'dark' ? '#ffffff08' : '#fafafc' }), onClick: () => set(value + delta) }, h('view', { style: { color: theme.text, fontSize: '16' } }, label));
+  return h('view', { id, style: clean({ width, height: 34, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: theme.border, borderRadius: 3, overflow: 'hidden', backgroundColor: theme.card }) },
+    btn('−', -step),
+    h('view', { style: { flexGrow: '1', alignItems: 'center', justifyContent: 'center' } }, h('view', { style: { color: theme.text, fontSize: '14' } }, String(value))),
+    btn('+', step));
+}
+
+export function NRate(props = {}) {
+  const { value = 0, onUpdate, count = 5, id } = props;
+  return h('view', { id, style: { flexDirection: 'row', gap: '4' } }, ...Array.from({ length: count }, (_, i) => {
+    const on = i < value;
+    return h('view', { style: clean({ fontSize: 20, color: on ? theme.warning : theme.railOff }), onClick: () => onUpdate && onUpdate(i + 1) }, on ? '★' : '☆');
+  }));
+}
+
+export function NDynamicTags(props = {}) {
+  const { value = [], onChange, onAdd, id } = props;
+  return h('view', { id, style: { flexDirection: 'row', gap: '8', flexWrap: 'wrap', alignItems: 'center' } },
+    ...value.map((t, i) => h('view', { style: clean({ height: 24, paddingLeft: 9, paddingRight: 6, borderRadius: 2, backgroundColor: theme.name === 'dark' ? '#ffffff14' : '#fafafc', borderWidth: 1, borderColor: theme.border, flexDirection: 'row', alignItems: 'center', gap: 6 }) },
+      h('view', { style: { color: theme.text, fontSize: '13' } }, t),
+      h('view', { style: { color: theme.textSecondary, fontSize: '12' }, onClick: () => onChange && onChange(value.filter((_, j) => j !== i)) }, '✕'))),
+    h('view', { style: clean({ height: 24, paddingLeft: 9, paddingRight: 9, borderRadius: 2, borderWidth: 1, borderColor: theme.border, flexDirection: 'row', alignItems: 'center' }), onClick: () => onAdd && onAdd() },
+      h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, '+ Add')));
+}
+
+export function NDynamicInput(props = {}) {
+  const { value = [], onChange, id } = props;
+  return h('view', { id, style: { flexDirection: 'column', gap: '8' } },
+    ...value.map((v, i) => h('view', { style: { flexDirection: 'row', gap: '8', alignItems: 'center' } },
+      h('view', { tabIndex: 0, style: clean({ flexGrow: 1, height: 34, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, justifyContent: 'center', backgroundColor: theme.card, overflow: 'hidden' }),
+        onKeydown: (e) => { const k = e.key; const nv = value.slice(); if (k === 'Backspace') nv[i] = v.slice(0, -1); else if (k.length === 1) nv[i] = v + k; else return; onChange && onChange(nv); } },
+        h('view', { style: { color: theme.text, fontSize: '14' } }, v || '')),
+      h('view', { style: { color: theme.error, fontSize: '14' }, onClick: () => onChange && onChange(value.filter((_, j) => j !== i)) }, '✕'))),
+    h('view', { style: clean({ height: 32, borderWidth: 1, borderColor: theme.border, borderRadius: 3, alignItems: 'center', justifyContent: 'center' }), onClick: () => onChange && onChange(value.concat('')) },
+      h('view', { style: { color: theme.textSecondary, fontSize: '14' } }, '+ Add')));
+}
+
+export function NAvatarGroup(props = {}, ...avatars) {
+  const { size = 36, max = 99 } = props;
+  const shown = avatars.slice(0, max), extra = avatars.length - shown.length;
+  return h('view', { id: props.id, style: { flexDirection: 'row' } },
+    ...shown.map((av, i) => h('view', { style: clean({ marginLeft: i === 0 ? 0 : -(size / 3), borderWidth: 2, borderColor: theme.card, borderRadius: size / 2 }) }, av)),
+    extra > 0 ? h('view', { style: clean({ marginLeft: -(size / 3), width: size, height: size, borderRadius: size / 2, backgroundColor: theme.railOff, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: theme.card }) }, h('view', { style: { color: theme.text, fontSize: '12' } }, '+' + extra)) : null);
+}
+
+export function NTime(props = {}) {
+  const { time = new Date(2024, 0, 1), type = 'datetime', id } = props;
+  const d = time instanceof Date ? time : new Date(time);
+  const fmt = type === 'date' ? formatDate(d)
+    : type === 'time' ? `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+    : `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return h('view', { id, style: clean({ color: theme.text, fontSize: 14 }) }, fmt);
+}
+
+export function NEllipsis(props = {}, text) {
+  const { width = 160, fontSize = 14, id } = props;
+  text = String(text);
+  let display = text;
+  if (measureText(text, fontSize) > width) {
+    let lo = 0, hi = text.length;
+    while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (measureText(text.slice(0, mid) + '…', fontSize) <= width) lo = mid; else hi = mid - 1; }
+    display = text.slice(0, lo) + '…';
+  }
+  return h('view', { id, style: clean({ width, overflow: 'hidden' }) }, h('view', { style: clean({ color: theme.text, fontSize }) }, display));
+}
+
+export function NThing(props = {}, ...content) {
+  const { title, description, avatar, id } = props;
+  return h('view', { id, style: { flexDirection: 'row', gap: '12' } },
+    avatar ? h('view', {}, avatar) : null,
+    h('view', { style: { flexDirection: 'column', gap: '4', flexGrow: '1' } },
+      title ? h('view', { style: { color: theme.text, fontSize: '15', fontWeight: 'bold' } }, title) : null,
+      description ? h('view', { style: { color: theme.textSecondary, fontSize: '13' } }, description) : null,
+      ...content));
+}
+
+export function NImage(props = {}) {
+  const { src, width = 120, height = 120, round = false, id } = props;
+  return h('view', { id, style: clean({ width, height, borderRadius: round ? height / 2 : 6, backgroundColor: theme.railOff, backgroundImage: src, overflow: 'hidden' }) });
+}
