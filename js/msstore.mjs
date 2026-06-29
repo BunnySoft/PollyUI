@@ -280,7 +280,7 @@ const detail = () => {
 const App = {
   setup() {
     if (typeof host === 'undefined') startHeroCarousel(); // windowed only (a pending timer would hang --test)
-    if (typeof window !== 'undefined' && window.setFrameless) window.setFrameless(true); // hide the OS title bar
+    if (typeof window !== 'undefined' && window.setFrameless) window.setFrameless(true); // custom title bar
 
     return () => {
       document.body.style.backgroundColor = C.body;

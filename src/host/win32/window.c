@@ -136,13 +136,16 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
          * maximized, inset by the frame so content isn't clipped off-screen. */
         if (w && w->frameless && wp) {
             NCCALCSIZE_PARAMS *p = (NCCALCSIZE_PARAMS *)lp;
-            if (IsZoomed(hwnd)) {
-                int fx = GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                int fy = GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                p->rgrc[0].left += fx; p->rgrc[0].right  -= fx;
-                p->rgrc[0].top  += fy; p->rgrc[0].bottom -= fy;
-            }
-            return 0; /* client == window rect (no caption) */
+            LONG topBefore = p->rgrc[0].top;
+            /* Keep the standard, DWM-buffered window frame so live-resize stays
+             * smooth — fully removing the non-client area (return 0) drops DWM's
+             * resize frame buffer and exposes the GPU swapchain's resize stretch
+             * ("rolling shutter"). Let DefWindowProc compute the framed client,
+             * then reclaim only the title-bar caption as client (custom title bar),
+             * keeping the thin L/R/B resize frame that DWM buffers. */
+            LRESULT ret = DefWindowProcW(hwnd, WM_NCCALCSIZE, wp, lp);
+            if (!IsZoomed(hwnd)) p->rgrc[0].top = topBefore;
+            return ret;
         }
         break;
 
