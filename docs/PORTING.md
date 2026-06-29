@@ -345,6 +345,7 @@ endif()
 | **Accessibility** (screen readers) | None today. Per-platform (UIA/AT-SPI/UIKit a11y). Real work; the Skia-direct (Flutter) trade-off. |
 | **IME depth** | SDL gives basic candidate/commit + soft keyboard; raw native is richer. Fine for Latin; verify for CJK. |
 | **QuickJS = interpreter (no JIT)** | Fine for UI logic (hot path is native Skia). Engine is swappable → Hermes for compute-heavy mobile. |
+| **Prebuilt Skia lacks Metal** | The pinned aseprite/skia m124 macOS prebuilt ships the GL backend, not Metal. The default macOS build therefore renders via the CPU raster fallback; GPU Metal (`-DPU_METAL=ON`) needs a Skia built with `skia_use_metal=true`. |
 | **Touch / gestures** | Needs the §1 `PuTouchFn` extension for multi-touch; single-touch maps to pointer today. |
 | **HiDPI / fractional scaling** | SDL + Wayland handle it; the existing `scale` plumbing already supports it. |
 | **Packaging / signing / stores** | Per platform (`.ipa` signing, Play upload, notarization). Out of engine scope. |
@@ -357,6 +358,10 @@ endif()
    *Done — behavior-neutral, GPU path intact, 250/250 tests pass on Windows.*
 2. **SDL3 desktop backend** (`src/host/sdl/`) → validate Win/Linux/macOS with one
    host. macOS forces the **Metal** path, exercising the new render code.
+   *Scaffolded:* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
+   poll loop so `main.c` is unchanged) + `src/render/skia_metal.mm` (Ganesh Metal
+   surface) + CMake `PU_HOST`/APPLE wiring + the `mac-sdl-metal` preset. Not yet
+   compiled/run on macOS hardware (needs a Metal-enabled Skia + SDL3).
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
 4. **Embedded Linux** (`wayland` first, then `drm`) for appliances — no Java, no SDL.

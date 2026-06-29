@@ -28,8 +28,11 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/encode/SkPngEncoder.h"
 
-/* GPU (Ganesh GL) backend. */
-#include "include/gpu/GrDirectContext.h"
+/* PuSurface struct, shared with the per-GPU-API backends (e.g. skia_metal.mm). */
+#include "render/skia_internal.h"
+
+#if defined(_WIN32)
+/* GPU (Ganesh GL) backend — ANGLE/EGL, Windows only. */
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"  /* GrBackendRenderTargets::MakeGL */
@@ -38,6 +41,15 @@
 #include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo, GrGLFuncPtr */
 
 #include <windows.h>   /* WGL + HWND/HDC for the GPU surface */
+#endif // _WIN32
+
+#if defined(PU_METAL_BACKEND)
+/* Metal surface lifecycle helpers, implemented in src/render/skia_metal.mm.
+ * skia_c.cpp stays free of Objective-C; it only forwards to these. */
+extern "C" void pu_metal_present(PuSurface *s);
+extern "C" void pu_metal_resize (PuSurface *s, int width, int height);
+extern "C" void pu_metal_destroy(PuSurface *s);
+#endif
 
 #include <cstdlib>
 #include <cstring>
@@ -92,22 +104,12 @@ static SkFont make_font(float size, int weight, int italic, const char *family) 
     return font;
 }
 
-// BGRA8888 + premul: byte order in memory is B,G,R,A, which matches a Windows
-// 32-bit top-down DIB (BI_RGB) for a zero-copy blit.
-struct PuSurface {
-    sk_sp<SkSurface> surface;
-    int width  = 0;
-    int height = 0;
+// PuSurface is defined in render/skia_internal.h (shared with the Metal
+// backend). Pixel-format note: BGRA8888 + premul matches a Windows 32-bit
+// top-down DIB (BI_RGB) for a zero-copy raster blit; on GPU paths Skia owns the
+// framebuffer.
 
-    /* GPU mode — renders to the window framebuffer via ANGLE/EGL (GLES->D3D11). */
-    bool  gl = false;
-    HWND  hwnd = nullptr;
-    void *egl_display = nullptr;
-    void *egl_surface = nullptr;
-    void *egl_context = nullptr;
-    sk_sp<GrDirectContext> grctx;
-};
-
+#if defined(_WIN32)
 /* ---- ANGLE / EGL (dynamically loaded; no import lib needed) ----------------*/
 
 namespace {
@@ -164,6 +166,7 @@ extern "C" GrGLFuncPtr pu_egl_get_proc(void *, const char name[]) {
     if (!p && g_egl.eglGetProc) p = (GrGLFuncPtr)g_egl.eglGetProc(name);
     return p;
 }
+#endif // _WIN32
 
 static sk_sp<SkSurface> make_raster(int w, int h) {
     if (w < 1) w = 1;
@@ -174,6 +177,7 @@ static sk_sp<SkSurface> make_raster(int w, int h) {
 }
 
 /* Wrap the window's default framebuffer (FBO 0) as a Skia GPU surface. */
+#if defined(_WIN32)
 static void rewrap_gl(PuSurface *s, int w, int h) {
     if (w < 1) w = 1;
     if (h < 1) h = 1;
@@ -188,6 +192,7 @@ static void rewrap_gl(PuSurface *s, int w, int h) {
     s->width = w;
     s->height = h;
 }
+#endif // _WIN32
 
 extern "C" {
 
@@ -233,6 +238,7 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
 }
 #endif
 
+#if defined(_WIN32)
 PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     if (!load_egl()) { PU_GLLOG("ANGLE (libEGL/libGLESv2) not available - using raster"); return nullptr; }
 
@@ -294,17 +300,36 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     std::fprintf(stderr, "[render] GPU backend: ANGLE / D3D11 (EGL %d.%d)\n", maj, min);
     return s;
 }
+#else // !_WIN32
+/* Non-Windows: the GL/ANGLE path is not built. Apple uses
+ * pu_surface_create_metal (src/render/skia_metal.mm); a Linux EGL path will land
+ * here later. Until then callers fall back to raster + blit. */
+PuSurface *pu_surface_create_gpu(void *native_window, int width, int height) {
+    (void)native_window; (void)width; (void)height;
+    PU_GLLOG("pu_surface_create_gpu: no GL backend on this platform - using raster/metal");
+    return nullptr;
+}
+#endif // _WIN32
 
 int pu_surface_is_gl(const PuSurface *s) { return (s && s->gl) ? 1 : 0; }
 
 void pu_surface_present(PuSurface *s) {
     if (!s || !s->gl) return;
+#if defined(PU_METAL_BACKEND)
+    if (s->metal) { pu_metal_present(s); return; }
+#endif
+#if defined(_WIN32)
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
     if (g_egl.SwapBuffers) g_egl.SwapBuffers(s->egl_display, s->egl_surface);
+#endif
 }
 
 void pu_surface_destroy(PuSurface *s) {
     if (!s) return;
+#if defined(PU_METAL_BACKEND)
+    if (s->metal) { pu_metal_destroy(s); delete s; return; }
+#endif
+#if defined(_WIN32)
     if (s->gl) {
         s->surface.reset();
         if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
@@ -312,6 +337,7 @@ void pu_surface_destroy(PuSurface *s) {
         if (g_egl.DestroyContext && s->egl_context) g_egl.DestroyContext(s->egl_display, s->egl_context);
         if (g_egl.DestroySurface && s->egl_surface) g_egl.DestroySurface(s->egl_display, s->egl_surface);
     }
+#endif
     delete s; // sk_sp releases the surface
 }
 
@@ -321,6 +347,10 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
     if (height < 1) height = 1;
     if (width == s->width && height == s->height && s->surface) return;
     if (s->gl) {
+#if defined(PU_METAL_BACKEND)
+        if (s->metal) { pu_metal_resize(s, width, height); return; }
+#endif
+#if defined(_WIN32)
         if (g_egl.MakeCurrent)
             g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context);
         /* Wrap Skia's render target to the window's authoritative client size
@@ -333,6 +363,7 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
          * the bottom). Using the WM_SIZE size keeps render target == layout ==
          * window; the swapchain catches up on the swap pumped from WM_SIZE. */
         rewrap_gl(s, width, height);
+#endif
         return;
     }
     s->surface = make_raster(width, height);

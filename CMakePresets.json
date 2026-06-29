@@ -21,10 +21,23 @@
       "inherits": "win-clang",
       "binaryDir": "${sourceDir}/build/win-windowed",
       "cacheVariables": { "PU_WINDOWED": "ON" }
+    },
+    {
+      "name": "mac-sdl-metal",
+      "displayName": "macOS — SDL3 host + Metal (Skia Ganesh)",
+      "description": "Builds the SDL3 host with the Apple Metal render backend. Set SKIA_LIB_DIR to a Metal-enabled macOS Skia (out/Release with libskia.a).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/mac-sdl",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PU_HOST": "sdl"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     }
   ],
   "buildPresets": [
     { "name": "win-clang", "configurePreset": "win-clang" },
-    { "name": "win-clang-windowed", "configurePreset": "win-clang-windowed" }
+    { "name": "win-clang-windowed", "configurePreset": "win-clang-windowed" },
+    { "name": "mac-sdl-metal", "configurePreset": "mac-sdl-metal" }
   ]
 }

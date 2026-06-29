@@ -81,6 +81,58 @@ cmake --preset win-clang-windowed && cmake --build --preset win-clang-windowed
 QuickJS (quickjs-ng) is vendored under `third_party/quickjs`; Skia is fetched by
 the script above.
 
+### macOS (experimental — SDL3 host)
+
+The macOS backend is **scaffolded** (SDL3 host + an opt-in Skia **Metal**
+surface) and selectable via CMake, but is **not yet verified on hardware** —
+treat it as a starting point. The shared engine (JS, DOM, Yoga, Skia draw calls)
+is identical to Windows; only the host (`src/host/sdl/window_sdl.c`) and the
+Metal surface (`src/render/skia_metal.mm`) are new.
+
+**Default build (CPU raster, works with the prebuilt Skia):**
+
+```bash
+# tools (Xcode command-line tools must already be installed)
+brew install cmake ninja sdl3
+
+# one shot: fetch Skia, configure, build (mirrors tools/build.ps1 on Windows)
+chmod +x tools/build.sh tools/fetch_skia.sh
+./tools/build.sh                # add --clean to wipe, --run to launch after
+
+# run
+./build/mac-sdl/pollyui js/gallery.mjs          # interactive demo
+./build/mac-sdl/pollyui --test tests/smoke.js   # headless test
+```
+
+`tools/build.sh` auto-fetches the matching prebuilt Skia, then configures +
+builds the `mac-sdl-metal` preset. The equivalent manual steps:
+
+```bash
+./tools/fetch_skia.sh           # prebuilt Skia -> third_party/skia
+cmake --preset mac-sdl-metal
+cmake --build --preset mac-sdl-metal
+```
+
+The pinned aseprite/skia prebuilt has the **GL** backend but **not Metal**, so
+the default build renders on the **CPU** (a raster surface blitted via
+`SDL_Renderer`). It runs, just not GPU-accelerated.
+
+**GPU Metal build (optional — requires building Skia yourself):**
+
+```bash
+# Build a Metal-enabled Skia (skia_use_metal=true) for your arch, then either:
+./tools/build.sh --metal --skia-dir /path/to/your/skia/out/Release-arm64
+# ...or the manual form:
+cmake --preset mac-sdl-metal -DPU_METAL=ON \
+      -DSKIA_LIB_DIR=/path/to/your/skia/out/Release-arm64
+cmake --build --preset mac-sdl-metal
+```
+
+`-DPU_METAL=ON` compiles `skia_metal.mm` and links the Metal frameworks; the
+host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
+
+Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
+
 ## License
 
 TBD.
