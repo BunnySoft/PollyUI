@@ -58,9 +58,59 @@ export const FluentToggle = compileSFCTag(`
   <script>export default { props: ['on','onToggle'], setup(p){ return { on: !!p.on, onToggle: p.onToggle }; } }</script>
 `);
 
+// Fluent hyperlink: accent text that darkens on hover. The view is the click
+// target (a reliable box); the text inside carries the accent color + hover.
+export const FluentHyperlink = compileSFCTag(`
+  <template>
+    <view :style="{ flexDirection:'row', alignSelf:'flex-start' }" @click="onClick">
+      <text :style="{ color:'#0067c0', fontSize:'14', fontWeight:'600' }" :hoverStyle="{ color:'#004a86' }"><slot/></text>
+    </view>
+  </template>
+  <script>export default { props:['onClick'], setup(p){ return { onClick:p.onClick }; } }</script>
+`);
+
+// Fluent badge: a small accent pill (a count or short label).
+export const FluentBadge = compileSFCTag(`
+  <template>
+    <view :style="{ minWidth:'18', height:'18', borderRadius:'9', paddingLeft:'6', paddingRight:'6', backgroundColor: color, alignItems:'center', justifyContent:'center' }">
+      <text :style="{ color:'#ffffff', fontSize:'11', fontWeight:'600' }">{{ value }}</text>
+    </view>
+  </template>
+  <script>export default { props:['value','color'], setup(p){ return { value: String(p.value), color: p.color || '#c42b1c' }; } }</script>
+`);
+
+// Fluent ProgressBar: thin determinate bar (value 0-100).
+export const FluentProgressBar = compileSFCTag(`
+  <template>
+    <view :style="{ height:'3', borderRadius:'2', backgroundColor:'#d9d9d9', width:'100%' }">
+      <view :style="{ height:'3', borderRadius:'2', backgroundColor:'#0067c0', width: pct }"></view>
+    </view>
+  </template>
+  <script>export default { props:['value'], setup(p){ const v=Math.max(0,Math.min(100,p.value||0)); return { pct: v + '%' }; } }</script>
+`);
+
+// Fluent Expander: a header row + collapsible body (controlled: expanded + onToggle).
+export const FluentExpander = compileSFCTag(`
+  <template>
+    <view :style="{ borderWidth:'1', borderColor:'#e5e5e5', borderRadius:'6', backgroundColor:'#fbfbfb', flexDirection:'column', overflow:'hidden' }">
+      <view :style="{ height:'48', flexDirection:'row', alignItems:'center', paddingLeft:'16', paddingRight:'16' }" :hoverStyle="{ backgroundColor:'#f0f0f0' }" @click="onToggle">
+        <text :style="{ flexGrow:'1', fontSize:'14', fontWeight:'600', color:'#1a1a1a' }">{{ title }}</text>
+        <text :style="{ fontSize:'11', color:'#5f6368' }">{{ chevron }}</text>
+      </view>
+      <view v-if="expanded" :style="{ height:'1', backgroundColor:'#e5e5e5' }"></view>
+      <view v-if="expanded" :style="{ padding:'16', flexDirection:'column', gap:'8' }"><slot/></view>
+    </view>
+  </template>
+  <script>export default { props:['title','expanded','onToggle'], setup(p){ return { title:p.title, expanded:!!p.expanded, onToggle:p.onToggle, chevron: p.expanded ? '▲' : '▼' }; } }</script>
+`);
+
 defineTags({
   'fluent-card': FluentCard,
   'fluent-button': FluentButton,
   'fluent-infobar': FluentInfoBar,
   'fluent-toggle': FluentToggle,
+  'fluent-hyperlink': FluentHyperlink,
+  'fluent-badge': FluentBadge,
+  'fluent-progressbar': FluentProgressBar,
+  'fluent-expander': FluentExpander,
 });
