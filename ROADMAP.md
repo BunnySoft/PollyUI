@@ -175,7 +175,8 @@ platform-specific code; the surface-creation seam is already abstracted.
 |---|---|---|
 | `requestAnimationFrame` driving | ✅ | per-frame, ms timestamp |
 | **Tween + easing library** (`js/anim.mjs`) | ✅ | `animate()`, 8 easings, delay, promise |
-| Declarative CSS-like transitions (style triggers) | 🛠 | tween API done; auto-on-change pending |
+| **Declarative transitions** (`transition` prop) | ✅ | reconciler tweens changed numbers/px/hex-colors; per-prop filter; re-target cancels in-flight |
+| **`<Transition>` enter/leave** (`js/transition.mjs`) | ✅ | onMount/onLeave reconciler hooks; leave defers DOM detach until tween ends |
 
 ## Higher-level
 

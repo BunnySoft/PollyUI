@@ -19,10 +19,12 @@
 
 import { defineTags } from './js/reconciler.mjs';
 import * as N from './js/naive.mjs';
+import './js/transition.mjs'; // registers the <transition> enter/leave tag
 
 // framework: reactivity + h/render (vue re-exports the reconciler's h)
 export * from './js/vue.mjs';
 export { render, mount, defineTag, defineTags, tagNames } from './js/reconciler.mjs';
+export { Transition } from './js/transition.mjs';
 // every component + the message/notification/dialog/loadingBar/theme APIs
 export * from './js/naive.mjs';
 

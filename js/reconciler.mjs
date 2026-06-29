@@ -33,6 +33,13 @@ export function h(type, props, ...children) {
 }
 
 const eventName = (k) => k.slice(2).toLowerCase(); // onClick -> click
+// Lifecycle hooks (used by <Transition>): onMount(el) fires after an element is
+// created; onLeave(el, done) defers a removal until done() is called. They look
+// like event handlers (`on*`) but are NOT addEventListener'd.
+const isLifecycle = (k) => k === 'onMount' || k === 'onLeave';
+// Unwrap function-component vnodes to the element vnode that actually carries a
+// leave hook (so a removed <Transition> can animate out before detaching).
+function leaveHookOf(v) { while (v && typeof v.type === 'function') v = v.__rendered; return v && v.props && v.props.onLeave; }
 
 function setProp(el, k, v) {
   if (k === 'className')   el.className = v == null ? '' : v;
@@ -51,16 +58,82 @@ function applyStateStyle(el, prefix, oldS, newS) {
   for (const k in newS) if (oldS[k] !== newS[k]) el.style[prefix + k] = String(newS[k]);
 }
 
+// --- Declarative transitions -------------------------------------------------
+// A `transition` prop animates style changes that flow through the reconciler
+// (state-driven, not engine hover/focus). Forms:
+//   transition: 200                                  // 200ms, easeOutCubic, all props
+//   transition: { duration: 250, easing: 'easeOutQuad' }
+//   transition: { duration: 250, props: ['opacity','translateX'] }
+// Animatable values: plain numbers ('0', '1.5'), pixel lengths ('12px'), and
+// hex colors ('#0067C0'). Everything else (auto, %, named colors) sets instantly.
+const easings = {
+  linear: t => t,
+  easeInQuad: t => t * t,
+  easeOutQuad: t => 1 - (1 - t) * (1 - t),
+  easeInOutCubic: t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  easeOutCubic: t => 1 - Math.pow(1 - t, 3),
+  easeOutBack: t => { const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); },
+};
+const _numRe = /^-?\d*\.?\d+(px)?$/;
+const _colRe = /^#([0-9a-fA-F]{6})$/;
+function _parseColor(v) { const m = _colRe.exec(String(v).trim()); if (!m) return null; const n = parseInt(m[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+const _hex2 = (n) => { const s = Math.max(0, Math.min(255, Math.round(n))).toString(16); return s.length < 2 ? '0' + s : s; };
+
+function transitionFor(tr, key) {
+  if (tr == null) return null;
+  if (typeof tr === 'number') return { duration: tr, ease: easings.easeOutCubic };
+  if (tr.props && !tr.props.includes(key)) return null;
+  const e = tr.easing;
+  return { duration: tr.duration ?? 200, ease: typeof e === 'function' ? e : (easings[e] || easings.easeOutCubic) };
+}
+
+// Start a rAF tween of el.style[key] from its live value to `target`. Returns
+// true if it took over the write, false if the values aren't interpolatable
+// (caller then sets the value instantly).
+function tweenStyle(el, key, target, t) {
+  const fc = _parseColor(el.style[key]), tc = _parseColor(target);
+  let from, to, color = false, unit = '';
+  if (fc && tc) { from = fc; to = tc; color = true; }
+  else {
+    const fs = String(el.style[key]).trim(), ts = String(target).trim();
+    if (!_numRe.test(fs) || !_numRe.test(ts)) return false;
+    if (fs.endsWith('px') || ts.endsWith('px')) unit = 'px';
+    from = parseFloat(fs); to = parseFloat(ts);
+    if (from === to) return false;
+  }
+  el.__tw = el.__tw || {};
+  const token = el.__tw[key] = (el.__tw[key] || 0) + 1; // newer target supersedes
+  const dur = t.duration, ease = t.ease;
+  let start = null;
+  const step = (now) => {
+    if (el.__tw[key] !== token) return;
+    if (start === null) start = now;
+    const p = dur > 0 ? Math.min(1, (now - start) / dur) : 1;
+    const e = ease(p);
+    if (color) el.style[key] = '#' + _hex2(from[0] + (to[0] - from[0]) * e) + _hex2(from[1] + (to[1] - from[1]) * e) + _hex2(from[2] + (to[2] - from[2]) * e);
+    else el.style[key] = (from + (to - from) * e) + unit;
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  return true;
+}
+
 function applyProps(el, oldP, newP) {
-  const oldStyle = oldP.style || {}, newStyle = newP.style || {};
+  const oldStyle = oldP.style || {}, newStyle = newP.style || {}, tr = newP.transition;
   for (const k in oldStyle) if (!(k in newStyle)) el.style[k] = '';
-  for (const k in newStyle) if (oldStyle[k] !== newStyle[k]) el.style[k] = String(newStyle[k]);
+  for (const k in newStyle) {
+    if (oldStyle[k] === newStyle[k]) continue;
+    // transition only on update (key existed before) so first mount is instant
+    const t = (tr != null && (k in oldStyle)) ? transitionFor(tr, k) : null;
+    if (t && tweenStyle(el, k, newStyle[k], t)) continue;
+    el.style[k] = String(newStyle[k]);
+  }
   applyStateStyle(el, 'hover:', oldP.hoverStyle, newP.hoverStyle);
   applyStateStyle(el, 'focus:', oldP.focusStyle, newP.focusStyle);
 
   el.__listeners = el.__listeners || {};
   for (const k in oldP) {
-    if (k.startsWith('on') && (!(k in newP) || oldP[k] !== newP[k])) {
+    if (k.startsWith('on') && !isLifecycle(k) && (!(k in newP) || oldP[k] !== newP[k])) {
       const ev = eventName(k);
       if (el.__listeners[ev]) { el.removeEventListener(ev, el.__listeners[ev]); delete el.__listeners[ev]; }
     }
@@ -68,18 +141,18 @@ function applyProps(el, oldP, newP) {
   for (const k in newP) {
     // only (re)add when the handler actually changed AND is a function; a prop
     // like `onClick: undefined` (conditional handler) must not be added.
-    if (k.startsWith('on') && oldP[k] !== newP[k] && typeof newP[k] === 'function') {
+    if (k.startsWith('on') && !isLifecycle(k) && oldP[k] !== newP[k] && typeof newP[k] === 'function') {
       const ev = eventName(k);
       el.addEventListener(ev, newP[k]);
       el.__listeners[ev] = newP[k];
     }
   }
   for (const k in newP) {
-    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'key' || k.startsWith('on')) continue;
+    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'transition' || k === 'key' || k.startsWith('on')) continue;
     if (oldP[k] !== newP[k]) setProp(el, k, newP[k]);
   }
   for (const k in oldP) {
-    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'key' || k.startsWith('on')) continue;
+    if (k === 'style' || k === 'hoverStyle' || k === 'focusStyle' || k === 'transition' || k === 'key' || k.startsWith('on')) continue;
     if (!(k in newP)) setProp(el, k, null);
   }
 }
@@ -97,12 +170,22 @@ function createDom(vnode) {
   vnode.__dom = el;
   applyProps(el, {}, vnode.props);
   vnode.children.forEach(c => el.appendChild(createDom(c)));
+  // Enter hook: fire synchronously so the element's first paint reflects the
+  // 'from' style the hook sets (no flicker), then it animates to natural.
+  if (typeof vnode.props.onMount === 'function') vnode.props.onMount(el);
   return el;
 }
 
 function diff(parentDom, oldV, newV) {
   if (oldV == null) { const dom = createDom(newV); parentDom.appendChild(dom); return dom; }
-  if (newV == null) { if (oldV.__dom) parentDom.removeChild(oldV.__dom); return null; }
+  if (newV == null) {
+    if (oldV.__dom) {
+      const leave = leaveHookOf(oldV), el = oldV.__dom;
+      if (leave) leave(el, () => { if (el.parentNode === parentDom) parentDom.removeChild(el); });
+      else parentDom.removeChild(el);
+    }
+    return null;
+  }
 
   if (typeof newV.type === 'function') {
     const rendered = newV.type(newV.props);
