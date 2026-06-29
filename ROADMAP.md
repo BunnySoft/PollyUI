@@ -15,9 +15,14 @@ One view of what's built and what's planned. For the architecture, see
 Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
 Host layer is the only platform-specific code; everything above it is portable).
 
-The headless test suite (`pollyui --test tests/<name>`) currently covers **319
+The headless test suite (`pollyui --test tests/<name>`) currently covers **283
 assertions** across rendering, layout, DOM, events, runtime, networking,
-persistence, and the JS framework layer (Vue reactivity + ~80 components).
+persistence, and the JS framework layer (Vue reactivity, ~86 components, the SFC
+compiler, and a Fluent control pack).
+
+Cross-platform plan in **[docs/PORTING.md](./docs/PORTING.md)** (SDL3 desktop+
+mobile backend, bare embedded-Linux/Wayland/DRM). The Host layer is the only
+platform-specific code; the surface-creation seam is already abstracted.
 
 ---
 
@@ -25,8 +30,12 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 
 | Feature | Status | Notes |
 |---|---|---|
-| HostEngine — Win32 window, event loop, resize | ✅ | `src/host/win32` |
+| HostEngine — Win32 window, event loop, resize | ✅ | `src/host/win32`; smooth live-resize (double-pump + authoritative size) |
+| **Frameless window / custom title bar** | ✅ | `WM_NCCALCSIZE`+`WM_NCHITTEST`; keeps resize/snap; `appRegion:drag` |
+| **JS `window` controls** (minimize/maximize/close/setFrameless/setBackdrop) | ✅ | global `window` object in the windowed app |
+| **Mica / Acrylic backdrop** (Win11 DWM) | 🟡 | `DwmSetWindowAttribute` set; visible Mica needs a transparent surface |
 | Per-monitor **DPI awareness** (logical px → physical) | ✅ | `WM_DPICHANGED`, scale in render + hit-test |
+| **Surface seam abstraction** (`create_gpu`/`create_metal`) | ✅ | opaque native handle; ready for SDL3/macOS/Linux |
 | ScriptEngine — QuickJS-ng VM | ✅ | runs `.js`/`.mjs`, error reporting |
 | Model — retained DOM tree, refcounted lifetimes | ✅ | `src/model/node.c` |
 | Bridge — JS ⇄ native, wrapper cache + GC finalizers | ✅ | verified by refcounts |
@@ -76,7 +85,8 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 | **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
 | **Text selection + click-to-position caret** | ✅ | `js/textinput.mjs` (drag-select, edit) |
 | IME (CJK / emoji composition) | 🛠 | |
-| Custom font families | 🛠 | default face only |
+| **Font families** (`fontFamily`) | 🟡 | monospace→Consolas, serif→Georgia; arbitrary loaded faces pending |
+| **Gradient-filled text** (`textGradientFrom/To`) | ✅ | |
 
 ## Layout (Yoga)
 
@@ -154,8 +164,10 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 | Imperative `el.style.x = y` | ✅ | |
 | Inheritance (fontSize/color/weight/style) | ✅ | text inherits from parent |
 | **CSS-ish stylesheets + selectors** (`js/css.mjs`) | ✅ | tag/.class/#id/*, descendant, specificity |
+| **Engine-level `:hover` / `:focus`** (`hoverStyle`/`focusStyle`) | ✅ | `PU_STATE_*` flags; per-property override; repaint-only (no relayout) |
+| **Light & dark themes** (`useTheme`) | ✅ | runtime theme switch |
 | Units beyond px/% (`em`/`rem`/`vh`/`vw`) | 🛠 | |
-| Pseudo-states (`:hover`/`:active`/`:focus`), theme variables | 🛠 | |
+| `:active`, full theme-variable system | 🛠 | |
 
 ## Animation
 
@@ -171,7 +183,11 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 |---|---|---|
 | **Vue-style reactivity + Composition API** (`js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
 | **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
-| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | **~80 components** — full Naive UI parity: inputs (Input/Number/Select/Cascader/TreeSelect/AutoComplete/Mention/DatePicker/TimePicker/ColorPicker/Slider/Switch/Checkbox/Radio/Rate/Upload/Transfer/DynamicInput/DynamicTags), data (DataTable+sort/select/VirtualList/Tree/List/Descriptions/Timeline/Calendar/Statistic/Avatar/Badge/Image/Carousel/Code/GradientText/Ellipsis/Time/Countdown), feedback (Modal/Drawer/Popconfirm/Popover/Popselect/Tooltip/Message/Notification/LoadingBar/Alert/Result/Spin/Skeleton/Progress), nav (Menu/Tabs/Steps/Pagination/Breadcrumb/Anchor/Affix/BackTop/Dropdown), layout (Layout/Grid/Flex/Space/Card/Divider/Collapse/Watermark/Scrollbar), Typography/Icon/ButtonGroup/Empty/ConfigProvider — plus a portal layer, form validation, light & dark themes |
+| **Vue SFC compiler** (`js/sfc.mjs`) | ✅ | `<template>/<script>/<style>` → component; v-if/v-for/:bind/@event, interpolation, ref auto-unwrap, **slots**, stateless tag form + attribute fallthrough |
+| **Custom element tags** (`defineTag`, `js/pollyui.mjs`) | ✅ | author by name: `h('button',…)` / `h('fluent-card',…)`; auto-registers all `N*` as kebab tags |
+| **Fluent / WinUI control pack** (`js/fluent.mjs`) | ✅ | `fluent-card/button/infobar/toggle` authored as SFCs, registered as tags (starter set) |
+| **MS Store / Fluent demo** (`js/msstore.mjs`) | ✅ | responsive card grid, auto-advancing hero, custom draggable title bar |
+| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | **~86 components** — full Naive UI parity (+ NForm/createForm validation, NTable, dialog API): inputs (Input/Number/Select/Cascader/TreeSelect/AutoComplete/Mention/DatePicker/TimePicker/ColorPicker/Slider/Switch/Checkbox/Radio/Rate/Upload/Transfer/DynamicInput/DynamicTags), data (DataTable+sort/select/VirtualList/Tree/List/Descriptions/Timeline/Calendar/Statistic/Avatar/Badge/Image/Carousel/Code/GradientText/Ellipsis/Time/Countdown), feedback (Modal/Drawer/Popconfirm/Popover/Popselect/Tooltip/Message/Notification/LoadingBar/Alert/Result/Spin/Skeleton/Progress), nav (Menu/Tabs/Steps/Pagination/Breadcrumb/Anchor/Affix/BackTop/Dropdown), layout (Layout/Grid/Flex/Space/Card/Divider/Collapse/Watermark/Scrollbar), Typography/Icon/ButtonGroup/Empty/ConfigProvider — plus a portal layer, form validation, light & dark themes |
 | **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
 | **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
 | **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
@@ -187,15 +203,17 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 
 | Feature | Status | Notes |
 |---|---|---|
-| Persist + dirty-track the Yoga tree | 🛠 | rebuilt every frame today |
-| Display-list / layer caching, subtree relayout | 🛠 | |
+| **Skip-when-clean layout** (cache; skip Yoga when only render-only state changed) | ✅ | scroll/hover/fade frames: layout 8ms → ~0 (3.6× per-frame) |
+| **Repaint gating** (no repaint when nothing changed) | ✅ | idle ~0% CPU; events repaint only on real change |
+| True per-subtree incremental layout (persistent Yoga + reset-aware styles) | 🛠 | helps layout-*changing* animations |
+| Display-list / dirty-region rendering, compositor-thread animation | 🛠 | the WinUI-class render path |
 | True idle (no 60 Hz frame-timer wakeups when idle) | 🛠 | |
 
 ## Tooling & infra
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Headless test harness** (`--test`; click/mouse/scroll/key/render(ts)/flush/pixel/save) | ✅ | deterministic, 122 assertions |
+| **Headless test harness** (`--test`; click/mouse/scroll/key/render(ts)/flush/pixel/save) | ✅ | deterministic, **283 assertions**; `PU_TEST_W/H` viewport, `PU_PERF` tracing |
 | No-console release build (`PU_WINDOWED`) | ✅ | |
 | In-process symbolized crash handler (DbgHelp) | ✅ | |
 | CMake + Ninja + clang-cl; fetch/vendor deps | ✅ | |
@@ -207,7 +225,13 @@ persistence, and the JS framework layer (Vue reactivity + ~80 components).
 
 ### Suggested next steps
 
-1. **macOS host port** (then Linux) — the last big architectural piece; everything above Host is portable.
-2. **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-3. **Text**: custom font families, IME (CJK/emoji composition), clipboard.
-4. **More Naive UI components** (Select dropdown, Tooltip, DatePicker, Table, Pagination) + form validation.
+1. **True per-subtree incremental layout** — persistent Yoga tree + reset-aware
+   style application; unblocks layout-changing animations and the compositor path.
+   (Needs a broadened layout test corpus first.)
+2. **SDL3 host backend** — one backend for Linux/macOS/iOS/Android (see PORTING.md);
+   then the **Skia Metal** surface path for Apple, and a **transparent surface** so
+   real Mica/Acrylic shows.
+3. **Dirty-region / display-list rendering + compositor-thread animation** — the
+   WinUI-class render path (60fps motion at scale).
+4. **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
+5. **Text**: custom font families beyond the built-ins, IME (CJK/emoji), clipboard.
