@@ -154,7 +154,18 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
              * then reclaim only the title-bar caption as client (custom title bar),
              * keeping the thin L/R/B resize frame that DWM buffers. */
             LRESULT ret = DefWindowProcW(hwnd, WM_NCCALCSIZE, wp, lp);
-            if (!IsZoomed(hwnd)) p->rgrc[0].top = topBefore;
+            if (IsZoomed(hwnd)) {
+                /* Maximized: a maximized window's frame hangs off every screen
+                 * edge by the frame thickness, so DefWindowProc insets the top by
+                 * frame + caption — leaving the caption as a (visible) OS title
+                 * bar. Reclaim the caption by pulling the client top up to the
+                 * monitor edge (topBefore + frame), dropping only the caption. */
+                UINT dpi = GetDpiForWindow(hwnd);
+                int frameY = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+                p->rgrc[0].top = topBefore + frameY;
+            } else {
+                p->rgrc[0].top = topBefore; /* reclaim the whole caption */
+            }
             return ret;
         }
         break;
@@ -167,11 +178,16 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             ScreenToClient(hwnd, &pt);
             RECT rc; GetClientRect(hwnd, &rc);
             float sc = (w->scale > 0) ? w->scale : 1.0f;
-            int b = (int)(6 * sc); /* resize border thickness */
-            int L = pt.x < b, R = pt.x >= rc.right - b, T = pt.y < b, B = pt.y >= rc.bottom - b;
-            if (T && L) return HTTOPLEFT;    if (T && R) return HTTOPRIGHT;
-            if (B && L) return HTBOTTOMLEFT; if (B && R) return HTBOTTOMRIGHT;
-            if (L) return HTLEFT; if (R) return HTRIGHT; if (T) return HTTOP; if (B) return HTBOTTOM;
+            /* Resize edges only when restored — a maximized window can't resize,
+             * and the top edge band would otherwise eat clicks on the title-bar
+             * controls that now sit flush at the screen top. */
+            if (!IsZoomed(hwnd)) {
+                int b = (int)(6 * sc); /* resize border thickness */
+                int L = pt.x < b, R = pt.x >= rc.right - b, T = pt.y < b, B = pt.y >= rc.bottom - b;
+                if (T && L) return HTTOPLEFT;    if (T && R) return HTTOPRIGHT;
+                if (B && L) return HTBOTTOMLEFT; if (B && R) return HTBOTTOMRIGHT;
+                if (L) return HTLEFT; if (R) return HTRIGHT; if (T) return HTTOP; if (B) return HTBOTTOM;
+            }
             if (w->region_fn && w->region_fn((int)(pt.x / sc), (int)(pt.y / sc), w->region_user))
                 return HTCAPTION; /* draggable title-bar area (double-click maximizes) */
             return HTCLIENT;
