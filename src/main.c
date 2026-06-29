@@ -470,9 +470,11 @@ static int run_app(const char *path)
 
     if (rc == 0) {
         PuNode *body = pu_bridge_body(bridge);
-        printf("--- native DOM tree ---\n");
-        pu_node_dump(body, 0);
-        fflush(stdout);
+        if (pu_perf_on()) {            /* debug aid: dump the initial tree (PU_PERF=1) */
+            printf("--- native DOM tree ---\n");
+            pu_node_dump(body, 0);
+            fflush(stdout);
+        }
 
         PuWindowConfig cfg;
         cfg.title  = "PollyUI";
