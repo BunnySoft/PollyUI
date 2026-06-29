@@ -11,6 +11,7 @@
 
 #include <windows.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 /* M0b: the window now paints by clearing a Skia raster surface and blitting its
@@ -86,7 +87,16 @@ static void pu_paint(PuWindow *w, HDC hdc)
     }
 
     if (pu_surface_is_gl(w->surface)) {
-        pu_surface_present(w->surface); /* GPU: flush + swap buffers */
+        static int perf = -1;
+        if (perf < 0) { const char *p = getenv("PU_PERF"); perf = (p && p[0] && p[0] != '0') ? 1 : 0; }
+        if (perf) {
+            LARGE_INTEGER f, a, b; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&a);
+            pu_surface_present(w->surface);
+            QueryPerformanceCounter(&b);
+            fprintf(stderr, "[perf] present (flush+swap): %.2fms\n", (double)(b.QuadPart - a.QuadPart) * 1000.0 / (double)f.QuadPart);
+        } else {
+            pu_surface_present(w->surface); /* GPU: flush + swap buffers */
+        }
         return;
     }
 

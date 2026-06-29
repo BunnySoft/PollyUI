@@ -32,8 +32,8 @@ const NAV = [['⌂', 'Home'], ['⌨', 'Basic input'], ['▤', 'Collections'], ['
 const navItem = ([icon, label]) => { const on = s.nav === label;
   // base background color-fades between rail<->selected; the accent bar slides
   // in/out via <transition>. (Engine hover overrides instantly, by design.)
-  return h('view', { style: cl({ height: 36, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 12, marginLeft: 4, marginRight: 4, borderRadius: 5, position: 'relative', backgroundColor: on ? C.sel : C.rail }), transition: { duration: 160, props: ['backgroundColor'] }, hoverStyle: { backgroundColor: on ? C.sel : '#e0e0e3' }, onClick: () => s.nav = label },
-    h('transition', { duration: 180, enter: { opacity: 0, translateX: -6 }, leave: { opacity: 0, translateX: -6 } },
+  return h('view', { style: cl({ height: 36, flexDirection: 'row', alignItems: 'center', gap: 12, paddingLeft: 12, marginLeft: 4, marginRight: 4, borderRadius: 5, position: 'relative', backgroundColor: on ? C.sel : C.rail }), transition: { duration: 110, props: ['backgroundColor'] }, hoverStyle: { backgroundColor: on ? C.sel : '#e0e0e3' }, onClick: () => s.nav = label },
+    h('transition', { duration: 130, enter: { opacity: 0, translateX: -6 }, leave: { opacity: 0, translateX: -6 } },
       on && h('view', { style: cl({ position: 'absolute', left: 0, top: 8, width: 3, height: 20, borderRadius: 2, backgroundColor: C.accent }) })),
     txt(icon, { size: 16, color: on ? C.accent : C.text }), txt(label, { size: 14, weight: on ? '600' : '400' })); };
 const navView = () => h('view', { style: cl({ width: 220, backgroundColor: C.rail, paddingTop: 8, flexDirection: 'column', gap: 2 }) }, ...NAV.map(navItem));
@@ -64,7 +64,7 @@ const pageBasicInput = () => h('view', { style: cl({ flexDirection: 'column', ga
     h('fluent-infobar', { title: 'Update available', message: 'A new version of the Gallery is ready to install.' })),
   sample('Transition',
     row(h('fluent-button', { accent: true, onClick: () => s.tip = !s.tip }, s.tip ? 'Hide message' : 'Show message')),
-    h('transition', { duration: 220, enter: { opacity: 0, translateY: 12 }, leave: { opacity: 0, translateY: 12 } },
+    h('transition', { duration: 150, enter: { opacity: 0, translateY: 12 }, leave: { opacity: 0, translateY: 12 } },
       s.tip && h('fluent-infobar', { title: 'Animated InfoBar', message: 'Fades and slides in/out via <transition> — opacity + translateY, no relayout.' }))),
   txt('Settings', { size: 16, weight: '600' }),
   h('view', { style: cl({ flexDirection: 'column', gap: 8 }) },
@@ -93,7 +93,7 @@ const App = {
     // the content view persists across nav changes — only its children swap.
     watch(() => s.nav, () => {
       const el = typeof document !== 'undefined' && document.getElementById('page-content');
-      if (el) { el.style.opacity = '0'; animate(el, { opacity: [0, 1], translateY: [8, 0] }, { duration: 240, easing: 'easeOutCubic' }); }
+      if (el) { el.style.opacity = '0'; animate(el, { opacity: [0, 1], translateY: [6, 0] }, { duration: 130, easing: 'easeOutCubic' }); }
     });
     return () => {
       document.body.style.backgroundColor = C.bg;

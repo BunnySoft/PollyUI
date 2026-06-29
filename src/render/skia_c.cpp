@@ -122,6 +122,7 @@ struct Egl {
     void *(__stdcall *CreateContext)(void *, void *, void *, const int *) = nullptr;
     unsigned (__stdcall *MakeCurrent)(void *, void *, void *, void *) = nullptr;
     unsigned (__stdcall *SwapBuffers)(void *, void *) = nullptr;
+    unsigned (__stdcall *SwapInterval)(void *, int) = nullptr;
     unsigned (__stdcall *BindAPI)(unsigned) = nullptr;
     unsigned (__stdcall *DestroySurface)(void *, void *) = nullptr;
     unsigned (__stdcall *DestroyContext)(void *, void *) = nullptr;
@@ -146,6 +147,7 @@ bool load_egl() {
     PU_LD(CreateContext,         "eglCreateContext");
     PU_LD(MakeCurrent,           "eglMakeCurrent");
     PU_LD(SwapBuffers,           "eglSwapBuffers");
+    PU_LD(SwapInterval,          "eglSwapInterval");
     PU_LD(BindAPI,               "eglBindAPI");
     PU_LD(DestroySurface,        "eglDestroySurface");
     PU_LD(DestroyContext,        "eglDestroyContext");
@@ -268,6 +270,18 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     if (!s->egl_context) { PU_GLLOG("eglCreateContext failed"); delete s; return nullptr; }
     if (!g_egl.MakeCurrent(disp, s->egl_surface, s->egl_surface, s->egl_context)) {
         PU_GLLOG("eglMakeCurrent failed"); delete s; return nullptr;
+    }
+
+    /* Swap interval. Default 0 (no vsync wait): we present on-demand, only when
+     * the UI changes, so blocking on vblank just adds input->photon latency
+     * (DXGI's default 3-frame queue + DWM composition). In a DWM-composited
+     * window, interval 0 doesn't tear — DWM still owns the final composite — it
+     * just hands the frame over immediately. Override with PU_VSYNC=1. */
+    if (g_egl.SwapInterval) {
+        const char *v = getenv("PU_VSYNC");
+        int interval = (v && v[0]) ? atoi(v) : 0;
+        g_egl.SwapInterval(disp, interval);
+        std::fprintf(stderr, "[render] swap interval = %d (%s)\n", interval, interval ? "vsync" : "low-latency");
     }
 
     s->grctx = GrDirectContexts::MakeGL(GrGLMakeAssembledGLESInterface(nullptr, pu_egl_get_proc));
