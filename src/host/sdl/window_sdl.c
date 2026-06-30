@@ -175,10 +175,44 @@ void pu_window_set_wheel  (PuWindow *w, PuWheelFn   fn, void *u){ if(w){w->wheel
 void pu_window_set_async  (PuWindow *w, PuAsyncFn   fn, void *u){ if(w){w->async_fn=fn;   w->async_user=u;} }
 void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->region_fn=fn;  w->region_user=u;} }
 
-/* Frameless: SDL toggles the OS border. Backdrop (Mica/Acrylic) is Win11-only;
- * a no-op here. */
+/* Native hit-testing for frameless windows: ask the app (region_fn) whether a
+ * point is in the draggable custom title bar (-> DRAGGABLE, like CSS
+ * -webkit-app-region: drag), synthesize resize edges near the borders, and treat
+ * everything else (buttons, content) as NORMAL so clicks/hover work. Coordinates
+ * are in window points — the same space region_fn (DOM hit-test) expects. */
+static SDL_HitTestResult SDLCALL pu_hit_test(SDL_Window *win, const SDL_Point *area, void *data)
+{
+    PuWindow *w = (PuWindow *)data;
+    if (!w || !w->frameless) return SDL_HITTEST_NORMAL;
+
+    int bw = 0, bh = 0;
+    SDL_GetWindowSize(win, &bw, &bh);   /* points */
+    const int M = 6;
+    int L = area->x < M, R = area->x >= bw - M;
+    int T = area->y < M, B = area->y >= bh - M;
+    if (T && L) return SDL_HITTEST_RESIZE_TOPLEFT;
+    if (T && R) return SDL_HITTEST_RESIZE_TOPRIGHT;
+    if (B && L) return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+    if (B && R) return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+    if (T) return SDL_HITTEST_RESIZE_TOP;
+    if (B) return SDL_HITTEST_RESIZE_BOTTOM;
+    if (L) return SDL_HITTEST_RESIZE_LEFT;
+    if (R) return SDL_HITTEST_RESIZE_RIGHT;
+
+    if (w->region_fn && w->region_fn(area->x, area->y, w->region_user))
+        return SDL_HITTEST_DRAGGABLE;   /* custom title bar: native window drag */
+    return SDL_HITTEST_NORMAL;
+}
+
+/* Frameless: hide the OS border and install the hit-test so the app's custom
+ * title bar can drag/resize the window. Backdrop (Mica/Acrylic) is Win11-only. */
 void pu_window_set_frameless(PuWindow *w, int frameless)
-{ if (w) { w->frameless = frameless; SDL_SetWindowBordered(w->win, frameless ? false : true); } }
+{
+    if (!w) return;
+    w->frameless = frameless ? 1 : 0;
+    SDL_SetWindowBordered(w->win, w->frameless ? false : true);
+    SDL_SetWindowHitTest(w->win, w->frameless ? pu_hit_test : NULL, w);
+}
 void pu_window_set_backdrop(PuWindow *w, int type) { (void)w; (void)type; }
 
 void pu_window_minimize(PuWindow *w) { if (w) SDL_MinimizeWindow(w->win); }
