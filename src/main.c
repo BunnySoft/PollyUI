@@ -226,6 +226,19 @@ static JSValue jswin_backdrop(JSContext *c, JSValueConst t, int n, JSValueConst 
 { (void)t; int ty = 2 /*Mica*/; if (n >= 1) { int32_t v; if (!JS_ToInt32(c, &v, a[0])) ty = v; }
   if (g_app_window) pu_window_set_backdrop(g_app_window, ty); else g_pending_backdrop = ty;
   return JS_UNDEFINED; }
+static int g_pending_titlebar = -1;
+/* setTitleBarStyle('default' | 'overlay'|'hidden'|'hiddenInset'); or an int. On
+ * macOS 'overlay' keeps native traffic lights with app-drawn full-size content. */
+static JSValue jswin_titlebarstyle(JSContext *c, JSValueConst t, int n, JSValueConst *a)
+{ (void)t; int style = 0;
+  if (n >= 1) {
+    if (JS_IsString(a[0])) { const char *s = JS_ToCString(c, a[0]);
+      if (s && (strcmp(s,"overlay")==0 || strcmp(s,"hidden")==0 || strcmp(s,"hiddenInset")==0)) style = 1;
+      if (s) JS_FreeCString(c, s); }
+    else { int32_t v; if (!JS_ToInt32(c, &v, a[0])) style = v; }
+  }
+  if (g_app_window) pu_window_set_titlebar_style(g_app_window, style); else g_pending_titlebar = style;
+  return JS_UNDEFINED; }
 
 /* Install the global `window` object (windowed app only; absent under --test). */
 static void install_window_api(JSContext *ctx)
@@ -238,6 +251,7 @@ static void install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "isMaximized",   JS_NewCFunction(ctx, jswin_ismax, "isMaximized", 0));
     JS_SetPropertyStr(ctx, win, "setFrameless",  JS_NewCFunction(ctx, jswin_frameless, "setFrameless", 1));
     JS_SetPropertyStr(ctx, win, "setBackdrop",   JS_NewCFunction(ctx, jswin_backdrop, "setBackdrop", 1));
+    JS_SetPropertyStr(ctx, win, "setTitleBarStyle", JS_NewCFunction(ctx, jswin_titlebarstyle, "setTitleBarStyle", 1));
     /* OS identity so apps can render OS-appropriate chrome (e.g. macOS
      * traffic-light buttons on the left vs Windows controls on the right). */
 #if defined(_WIN32)
@@ -505,6 +519,7 @@ static int run_app(const char *path)
             pu_window_set_region(win, app_region, &app);     /* custom title bar drag */
             if (g_pending_frameless >= 0) pu_window_set_frameless(win, g_pending_frameless);
             if (g_pending_backdrop >= 0)  pu_window_set_backdrop(win, g_pending_backdrop);
+            if (g_pending_titlebar >= 0)  pu_window_set_titlebar_style(win, g_pending_titlebar);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);
             pu_window_destroy(win);

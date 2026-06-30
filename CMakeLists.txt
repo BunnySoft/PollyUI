@@ -106,6 +106,14 @@ if (NOT WIN32)
     target_link_libraries(pollyui PRIVATE Threads::Threads)
 endif()
 
+# macOS native title-bar helper (transparent titlebar + native traffic lights).
+# Always built on Apple (the SDL host calls into it); Cocoa is linked below.
+if (APPLE)
+    target_sources(pollyui PRIVATE src/host/sdl/macos_titlebar.mm)
+    set_source_files_properties(src/host/sdl/macos_titlebar.mm
+        PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
+endif()
+
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
 # Skia's root-relative includes (e.g. "include/core/SkSurface.h"); quickjs for
 # "quickjs.h".

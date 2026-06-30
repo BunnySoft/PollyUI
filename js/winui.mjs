@@ -45,14 +45,10 @@ const isMac = (typeof window !== 'undefined' && window.platform) === 'macos';
 // Windows / Linux: — ▢ ✕ caption buttons on the right.
 const winBtn = (g, m, danger) => h('view', { style: cl({ width: 46, height: 40, alignItems: 'center', justifyContent: 'center', appRegion: 'no-drag' }), hoverStyle: { backgroundColor: danger ? '#e81123' : '#e3e3e6' }, onClick: () => winCtl(m) }, txt(g, { size: 11, color: C.sub }));
 
-// macOS: red/yellow/green traffic lights on the left (close/min/zoom).
-const dot = (bg, m) => h('view', { style: cl({ width: 12, height: 12, borderRadius: 6, backgroundColor: bg, appRegion: 'no-drag' }), onClick: () => winCtl(m) });
-const macLights = () => h('view', { style: cl({ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 6, appRegion: 'no-drag' }) },
-  dot('#ff5f57', 'close'), dot('#febc2e', 'minimize'), dot('#28c840', 'maximize'));
-
+// macOS uses the real system traffic lights (setTitleBarStyle('overlay')), so the
+// app reserves space on the left for them instead of drawing its own.
 const titleBar = () => isMac
-  ? h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.rail, appRegion: 'drag' }) },
-      macLights(),
+  ? h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 80, backgroundColor: C.rail, appRegion: 'drag' }) },
       txt('WinUI 3 Gallery', { size: 12, weight: '600' }),
       h('view', { style: { flexGrow: '1' } }))
   : h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, gap: 10, backgroundColor: C.rail, appRegion: 'drag' }) },
@@ -244,8 +240,13 @@ const pages = {
 // ---- root -------------------------------------------------------------------
 const App = {
   setup() {
-    if (typeof window !== 'undefined' && window.setFrameless) window.setFrameless(true);
-    if (typeof window !== 'undefined' && window.setBackdrop) window.setBackdrop(2); // Mica (Win11)
+    if (typeof window !== 'undefined') {
+      // macOS: transparent title bar keeping native traffic lights; elsewhere a
+      // frameless window with the app-drawn caption.
+      if (isMac && window.setTitleBarStyle) window.setTitleBarStyle('overlay');
+      else if (window.setFrameless) window.setFrameless(true);
+      if (window.setBackdrop) window.setBackdrop(2); // Mica (Win11)
+    }
     // Fade the page content in whenever the section changes (the content view
     // persists across nav changes — only its children swap — so drive it live).
     watch(() => s.nav, () => {

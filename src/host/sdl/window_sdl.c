@@ -25,6 +25,12 @@
 extern void pu_metal_begin_frame(PuSurface *s);
 #endif
 
+#if defined(__APPLE__)
+/* Implemented in src/host/sdl/macos_titlebar.mm: turn an SDL NSWindow into a
+ * transparent-titlebar / full-size-content window keeping native traffic lights. */
+extern void pu_macos_titlebar_overlay(void *nswindow, int on);
+#endif
+
 struct PuWindow {
     SDL_Window   *win;
     SDL_Renderer *renderer;   /* raster fallback only */
@@ -35,6 +41,7 @@ struct PuWindow {
     int           running;
     int           dirty;
     int           frameless;
+    int           custom_chrome;   /* 1 => app draws chrome: enable drag hit-test */
     int           is_metal;
 
     PuPaintFn   paint_fn;   void *paint_user;
@@ -183,7 +190,7 @@ void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->regio
 static SDL_HitTestResult SDLCALL pu_hit_test(SDL_Window *win, const SDL_Point *area, void *data)
 {
     PuWindow *w = (PuWindow *)data;
-    if (!w || !w->frameless) return SDL_HITTEST_NORMAL;
+    if (!w || !w->custom_chrome) return SDL_HITTEST_NORMAL;
 
     int bw = 0, bh = 0;
     SDL_GetWindowSize(win, &bw, &bh);   /* points */
@@ -210,10 +217,30 @@ void pu_window_set_frameless(PuWindow *w, int frameless)
 {
     if (!w) return;
     w->frameless = frameless ? 1 : 0;
+    w->custom_chrome = w->frameless;
     SDL_SetWindowBordered(w->win, w->frameless ? false : true);
-    SDL_SetWindowHitTest(w->win, w->frameless ? pu_hit_test : NULL, w);
+    SDL_SetWindowHitTest(w->win, w->custom_chrome ? pu_hit_test : NULL, w);
 }
 void pu_window_set_backdrop(PuWindow *w, int type) { (void)w; (void)type; }
+
+/* Overlay title bar (style 1): keep the OS window frame but make the title bar
+ * transparent with full-size content, so the app draws the bar while the OS
+ * keeps its native window buttons (macOS traffic lights). Dragging the custom
+ * bar still uses the SDL hit-test. On non-Apple this is a no-op (use frameless +
+ * a drawn caption). */
+void pu_window_set_titlebar_style(PuWindow *w, int style)
+{
+    if (!w) return;
+#if defined(__APPLE__)
+    void *nswin = SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
+                                         SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL);
+    pu_macos_titlebar_overlay(nswin, style == 1 ? 1 : 0);
+    w->custom_chrome = (style == 1) ? 1 : w->custom_chrome;
+    SDL_SetWindowHitTest(w->win, w->custom_chrome ? pu_hit_test : NULL, w);
+#else
+    (void)style;
+#endif
+}
 
 void pu_window_minimize(PuWindow *w) { if (w) SDL_MinimizeWindow(w->win); }
 void pu_window_maximize_toggle(PuWindow *w)

@@ -68,6 +68,14 @@ typedef int (*PuRegionFn)(int x, int y, void *user);
 void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user);
 void pu_window_set_frameless(PuWindow *w, int frameless); /* hide/show OS title bar */
 void pu_window_set_backdrop(PuWindow *w, int type);       /* Win11 Mica(2)/Acrylic(3) */
+
+/* Title-bar style for the custom-chrome app window:
+ *   0 = default (system title bar / the host's normal frame)
+ *   1 = overlay: keep the window framed but make the title bar transparent and
+ *       let app content fill it, while the OS still draws its native window
+ *       buttons (macOS traffic lights). On Windows/Linux this is a no-op (use
+ *       pu_window_set_frameless + draw your own caption). */
+void pu_window_set_titlebar_style(PuWindow *w, int style);
 void pu_window_minimize(PuWindow *w);
 void pu_window_maximize_toggle(PuWindow *w);
 int  pu_window_is_maximized(PuWindow *w);

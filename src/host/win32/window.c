@@ -465,6 +465,10 @@ void pu_window_set_backdrop(PuWindow *w, int type)
     if (fn) { int t = type; fn(w->hwnd, 38 /*DWMWA_SYSTEMBACKDROP_TYPE*/, &t, sizeof(t)); }
 }
 
+/* No native overlay title bar on Windows: apps use pu_window_set_frameless and
+ * draw their own caption (the WinUI-style — / ▢ / ✕ controls). */
+void pu_window_set_titlebar_style(PuWindow *w, int style) { (void)w; (void)style; }
+
 void pu_window_minimize(PuWindow *w) { if (w && w->hwnd) ShowWindow(w->hwnd, SW_MINIMIZE); }
 void pu_window_close(PuWindow *w)    { if (w && w->hwnd) PostMessageW(w->hwnd, WM_CLOSE, 0, 0); }
 void pu_window_maximize_toggle(PuWindow *w)
