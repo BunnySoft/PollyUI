@@ -1,8 +1,10 @@
 #include "net/fetch.h"
 #include "core/thread.h"
 
+#ifdef _WIN32
 #include <windows.h>
 #include <winhttp.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +62,7 @@ static void do_file(PuFetch *f)
     else     { f->status = 404; f->error = dup_str("file not found"); }
 }
 
+#ifdef _WIN32
 static void do_http(PuFetch *f)
 {
     wchar_t wurl[2048];
@@ -118,6 +121,14 @@ static void do_http(PuFetch *f)
     WinHttpCloseHandle(conn);
     WinHttpCloseHandle(sess);
 }
+#else
+/* No bundled native HTTP client on non-Windows yet (Windows uses WinHTTP).
+ * file:// requests still work via do_file(); remote fetch rejects clearly. */
+static void do_http(PuFetch *f)
+{
+    f->error = dup_str("network fetch not supported on this platform yet");
+}
+#endif
 
 /* ---- UI-thread delivery (settles the Promise) ------------------------------*/
 

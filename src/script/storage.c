@@ -9,6 +9,16 @@
 static PuStyle g_store;
 static char   *g_path;
 
+/* Portable strdup (MSVC spells the POSIX strdup as _strdup; avoid both). */
+static char *storage_strdup(const char *s)
+{
+    if (!s) return NULL;
+    size_t n = strlen(s) + 1;
+    char *p = (char *)malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
 /* ---- file format: "PUST1\n" then, per entry, <len>\n<bytes>\n for key+value */
 
 static void storage_load(void)
@@ -104,7 +114,7 @@ static JSValue js_ls_get_length(JSContext *ctx, JSValueConst t)
 void pu_storage_install(JSContext *ctx, const char *path)
 {
     free(g_path);
-    g_path = path ? _strdup(path) : NULL;
+    g_path = path ? storage_strdup(path) : NULL;
     pu_style_clear(&g_store);
     storage_load();
 

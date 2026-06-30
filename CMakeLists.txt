@@ -100,6 +100,12 @@ if (APPLE AND PU_METAL)
         "-framework Metal" "-framework QuartzCore" "-framework Foundation")
 endif()
 
+# POSIX threads for the concurrency layer (core/thread.c) on macOS/Linux.
+if (NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(pollyui PRIVATE Threads::Threads)
+endif()
+
 # `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
 # Skia's root-relative includes (e.g. "include/core/SkSurface.h"); quickjs for
 # "quickjs.h".
