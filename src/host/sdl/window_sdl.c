@@ -261,6 +261,26 @@ void pu_window_wake(PuWindow *w)
     SDL_PushEvent(&e);   /* thread-safe; breaks SDL_WaitEventTimeout */
 }
 
+/* Re-sync the surface (and raster texture) to the window's current pixel size.
+ * Idempotent: a no-op when the size is unchanged. */
+static void pu_sync_size(PuWindow *w)
+{
+    recompute_scale(w);
+    int pw = 0, ph = 0;
+    SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
+    if (pw < 1) pw = 1;
+    if (ph < 1) ph = 1;
+    if (pw == w->width && ph == w->height) return;
+    w->width = pw; w->height = ph;
+    pu_surface_resize(w->surface, pw, ph);
+    if (w->tex) {
+        SDL_DestroyTexture(w->tex);
+        w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
+                                   SDL_TEXTUREACCESS_STREAMING, pw, ph);
+    }
+    w->dirty = 1;
+}
+
 static void handle_event(PuWindow *w, const SDL_Event *e)
 {
     /* SDL3 reports mouse/touch coordinates in logical window points (the same
@@ -309,17 +329,7 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
 
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED:
-            recompute_scale(w);
-            SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height);
-            if (w->width < 1) w->width = 1;
-            if (w->height < 1) w->height = 1;
-            pu_surface_resize(w->surface, w->width, w->height);
-            if (w->tex) {
-                SDL_DestroyTexture(w->tex);
-                w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
-                                           SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
-            }
-            w->dirty = 1;
+            pu_sync_size(w);
             break;
 
         case SDL_EVENT_WINDOW_EXPOSED:
@@ -332,10 +342,31 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
     }
 }
 
+/* During a live window resize, macOS (and Windows) run a modal event-tracking
+ * loop on the main thread, which starves our pu_window_run loop — so the window
+ * would just stretch/zoom the last rendered frame until the drag ends. An SDL
+ * event watch is invoked synchronously as events are pumped, *including* from
+ * inside that modal loop, so we relayout + repaint here to keep content correct
+ * live. */
+static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
+{
+    PuWindow *w = (PuWindow *)userdata;
+    if (w && (e->type == SDL_EVENT_WINDOW_RESIZED ||
+              e->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+              e->type == SDL_EVENT_WINDOW_EXPOSED) &&
+        e->window.windowID == SDL_GetWindowID(w->win)) {
+        pu_sync_size(w);
+        pu_sdl_paint(w);     /* repaint live during the OS resize loop */
+        w->dirty = 0;
+    }
+    return true;             /* keep delivering the event to the main loop */
+}
+
 int pu_window_run(PuWindow *w)
 {
     if (!w) return 1;
     SDL_StartTextInput(w->win);   /* enable SDL_EVENT_TEXT_INPUT */
+    SDL_AddEventWatch(pu_resize_watch, w);
 
     while (w->running) {
         SDL_Event e;
@@ -347,6 +378,7 @@ int pu_window_run(PuWindow *w)
         if (w->dirty) { pu_sdl_paint(w); w->dirty = 0; }
     }
 
+    SDL_RemoveEventWatch(pu_resize_watch, w);
     SDL_StopTextInput(w->win);
     return 0;
 }
