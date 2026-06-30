@@ -29,6 +29,8 @@ extern void pu_metal_begin_frame(PuSurface *s);
 /* Implemented in src/host/sdl/macos_titlebar.mm: turn an SDL NSWindow into a
  * transparent-titlebar / full-size-content window keeping native traffic lights. */
 extern void pu_macos_titlebar_overlay(void *nswindow, int on);
+/* Configure the SDL content view to redraw (not stretch) during live resize. */
+extern void pu_macos_tune_live_resize(void *nswindow);
 #endif
 
 struct PuWindow {
@@ -182,6 +184,10 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     recompute_scale(w);
     create_surface(w);
     if (!w->surface) { SDL_DestroyWindow(w->win); free(w); return NULL; }
+#if defined(__APPLE__)
+    pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
+                              SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
+#endif
     return w;
 }
 

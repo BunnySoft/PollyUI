@@ -36,3 +36,22 @@ extern "C" void pu_macos_titlebar_overlay(void *nswindow, int on)
     if ([NSThread isMainThread]) apply();
     else dispatch_async(dispatch_get_main_queue(), apply);
 }
+
+/* Reduce live-resize artifacts ("rolling"/stretch): tell the SDL content view
+ * (and its render subview) to REDRAW their layer content while the view is being
+ * resized, instead of scaling the previously cached content. Pairs with the
+ * host's live repaint (SDL event watch). */
+extern "C" void pu_macos_tune_live_resize(void *nswindow)
+{
+    if (!nswindow) return;
+    NSWindow *win = (__bridge NSWindow *)nswindow;
+    void (^apply)(void) = ^{
+        NSView *cv = win.contentView;
+        if (!cv) return;
+        cv.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+        for (NSView *v in cv.subviews)
+            v.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+    };
+    if ([NSThread isMainThread]) apply();
+    else dispatch_async(dispatch_get_main_queue(), apply);
+}
