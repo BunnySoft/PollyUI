@@ -139,9 +139,19 @@ static void create_surface(PuWindow *w)
     /* Raster fallback (CPU surface blitted via SDL_Renderer). */
     w->surface  = pu_surface_create(w->width, w->height);
     w->renderer = SDL_CreateRenderer(w->win, NULL);
-    if (w->renderer)
+    if (w->renderer) {
+        /* vsync the present so a mid-scanout swap can't tear the frame (the
+         * "rolling shutter" banding seen during live resize). */
+        SDL_SetRenderVSync(w->renderer, 1);
+        /* Match the render target's actual pixel size so the full-surface blit
+         * is 1:1 (never scaled/sheared while the window size is in flux). */
+        SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height);
+        if (w->width < 1) w->width = 1;
+        if (w->height < 1) w->height = 1;
+        pu_surface_resize(w->surface, w->width, w->height);
         w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
                                    SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
+    }
 }
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
@@ -262,12 +272,14 @@ void pu_window_wake(PuWindow *w)
 }
 
 /* Re-sync the surface (and raster texture) to the window's current pixel size.
- * Idempotent: a no-op when the size is unchanged. */
+ * For the raster path we use the renderer's *actual* output size so the blit is
+ * always 1:1 (no scaling/shear mid-resize). Idempotent: no-op when unchanged. */
 static void pu_sync_size(PuWindow *w)
 {
     recompute_scale(w);
     int pw = 0, ph = 0;
-    SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
+    if (w->renderer) SDL_GetCurrentRenderOutputSize(w->renderer, &pw, &ph);
+    else             SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
     if (pw < 1) pw = 1;
     if (ph < 1) ph = 1;
     if (pw == w->width && ph == w->height) return;
