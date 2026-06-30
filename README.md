@@ -117,16 +117,24 @@ The pinned aseprite/skia prebuilt has the **GL** backend but **not Metal**, so
 the default build renders on the **CPU** (a raster surface blitted via
 `SDL_Renderer`). It runs, just not GPU-accelerated.
 
-**GPU Metal build (optional — requires building Skia yourself):**
+**GPU Metal build (optional — real GPU acceleration):**
+
+The pinned prebuilt has no Metal, so for GPU you build a Metal-enabled Skia of
+the **same version** (ABI-compatible with the vendored headers) and point the
+build at it:
 
 ```bash
-# Build a Metal-enabled Skia (skia_use_metal=true) for your arch, then either:
-./tools/build.sh --metal --skia-dir /path/to/your/skia/out/Release-arm64
-# ...or the manual form:
-cmake --preset mac-sdl-metal -DPU_METAL=ON \
-      -DSKIA_LIB_DIR=/path/to/your/skia/out/Release-arm64
-cmake --build --preset mac-sdl-metal
+# 1. compile a Metal Skia from source (heavy: clones Skia + deps, ~20-60 min)
+./tools/build_skia_metal.sh
+#    -> prints SKIA_LIB_DIR=<skia>/out/Release-metal-arm64
+
+# 2. build PollyUI against it with the Metal backend
+./tools/build.sh --metal --skia-dir <skia>/out/Release-metal-arm64
 ```
+
+`-DPU_METAL=ON` (set by `--metal`) compiles `skia_metal.mm` and links the Metal
+frameworks; the host then renders to a `CAMetalLayer` via Skia Ganesh/Metal and
+presents in lockstep with live resize (`presentsWithTransaction`).
 
 `-DPU_METAL=ON` compiles `skia_metal.mm` and links the Metal frameworks; the
 host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).

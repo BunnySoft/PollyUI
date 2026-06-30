@@ -7,14 +7,14 @@
 // untouched: this file only owns surface creation and the per-frame drawable.
 //
 // Pipeline per frame (driven by the host, e.g. src/host/sdl/window_sdl.c):
-//   pu_metal_begin_frame(s)  -> [layer nextDrawable] + wrap its texture as a
-//                               Skia GPU SkSurface (s->surface)
+//   pu_metal_begin_frame(s)  -> SkSurfaces::WrapCAMetalLayer (grabs the next
+//                               CAMetalLayer drawable) -> s->surface
 //   app_paint(s, ...)        -> the usual Skia draw calls (skia_c.cpp)
-//   pu_surface_present(s)    -> flush/submit + [commandBuffer presentDrawable]
+//   pu_surface_present(s)    -> flush/submit + present the drawable
 //
-// NOTE: written for manual reference counting (compile WITHOUT -fobjc-arc; the
-// CMake Apple branch sets -fno-objc-arc). Header paths follow Skia's Ganesh
-// Metal layout (m124+, the aseprite prebuilt); adjust if your Skia differs.
+// NOTE: manual reference counting (compile WITHOUT -fobjc-arc; the CMake Apple
+// branch sets -fno-objc-arc). Verified against Skia m124's Ganesh Metal headers
+// (the aseprite prebuilt header tree).
 
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -28,13 +28,12 @@
 #include "include/core/SkColorType.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"            // SkSurfaces::WrapBackendRenderTarget, FlushAndSubmit
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"            // skgpu::ganesh::FlushAndSubmit
 #include "include/gpu/ganesh/mtl/GrMtlBackendContext.h"    // GrMtlBackendContext
-#include "include/gpu/ganesh/mtl/GrMtlBackendSurface.h"    // GrBackendRenderTargets::MakeMetal
 #include "include/gpu/ganesh/mtl/GrMtlDirectContext.h"     // GrDirectContexts::MakeMetal
-#include "include/gpu/ganesh/mtl/GrMtlTypes.h"             // GrMtlTextureInfo
+#include "include/gpu/ganesh/mtl/GrMtlTypes.h"             // GrMTLHandle
+#include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"         // SkSurfaces::WrapCAMetalLayer
 
 #include <cstdio>
 
@@ -42,23 +41,11 @@
 
 // Apple-specific surface state, hung off PuSurface::metal (opaque void* there).
 struct PuMetalState {
-    id<MTLDevice>        device   = nil;
-    id<MTLCommandQueue>  queue    = nil;
-    CAMetalLayer        *layer    = nil;
-    id<CAMetalDrawable>  drawable = nil;  // the drawable for the in-flight frame
+    id<MTLDevice>       device   = nil;
+    id<MTLCommandQueue> queue    = nil;
+    CAMetalLayer       *layer    = nil;
+    void               *drawable = nullptr;  // GrMTLHandle (id<CAMetalDrawable>) in flight
 };
-
-// Wrap the current drawable's texture as a Skia GPU render-target surface.
-static void wrap_drawable(PuSurface *s, PuMetalState *st) {
-    GrMtlTextureInfo texInfo;
-    texInfo.fTexture.retain((__bridge GrMTLHandle)st->drawable.texture);
-    GrBackendRenderTarget backendRT =
-        GrBackendRenderTargets::MakeMetal(s->width, s->height, texInfo);
-    SkSurfaceProps props;
-    s->surface = SkSurfaces::WrapBackendRenderTarget(
-        s->grctx.get(), backendRT, kTopLeft_GrSurfaceOrigin,
-        kBGRA_8888_SkColorType, nullptr, &props);
-}
 
 extern "C" {
 
@@ -73,10 +60,11 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
     id<MTLCommandQueue> queue = [device newCommandQueue];   // +1 owned
 
     CAMetalLayer *layer = (__bridge CAMetalLayer *)ca_metal_layer;
-    layer.device          = device;
-    layer.pixelFormat     = MTLPixelFormatBGRA8Unorm;
-    layer.framebufferOnly  = NO;     // Skia may need to read back / blit
-    layer.drawableSize     = CGSizeMake(width, height);
+    layer.device                  = device;
+    layer.pixelFormat             = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly         = NO;     // Skia may need to read back / blit
+    layer.presentsWithTransaction = YES;    // sync present with layer geometry -> clean live resize
+    layer.drawableSize            = CGSizeMake(width, height);
 
     GrMtlBackendContext backendContext = {};
     backendContext.fDevice.retain((__bridge GrMTLHandle)device);
@@ -109,35 +97,42 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
     return s;
 }
 
-// Acquire the next drawable and (re)wrap the SkSurface. Must be called by the
-// host immediately before the per-frame paint. No-op on non-Metal surfaces, so
-// the SDL host can call it unconditionally on Apple.
+// Grab the next CAMetalLayer drawable and wrap it as the frame's SkSurface.
+// Called by the host immediately before the per-frame paint.
 void pu_metal_begin_frame(PuSurface *s) {
     if (!s || !s->metal) return;
     PuMetalState *st = (PuMetalState *)s->metal;
-    @autoreleasepool {
-        if (st->drawable) { [st->drawable release]; st->drawable = nil; }
-        id<CAMetalDrawable> d = [st->layer nextDrawable];
-        if (!d) { s->surface.reset(); return; }   // e.g. occluded; skip the frame
-        st->drawable = [d retain];
-        wrap_drawable(s, st);
-    }
+    if (st->drawable) { CFRelease(st->drawable); st->drawable = nullptr; }
+
+    GrMTLHandle drawable = nullptr;
+    SkSurfaceProps props;
+    s->surface = SkSurfaces::WrapCAMetalLayer(
+        s->grctx.get(), (__bridge GrMTLHandle)st->layer,
+        kTopLeft_GrSurfaceOrigin, /*sampleCnt*/ 1, kBGRA_8888_SkColorType,
+        /*colorSpace*/ nullptr, &props, &drawable);
+    if (drawable) CFRetain(drawable);   // keep alive until present
+    st->drawable = drawable;            // null when no drawable was available
 }
 
-// Flush the recorded Skia work and present the drawable (called via
-// pu_surface_present in skia_c.cpp).
+// Flush the recorded Skia work and present the drawable.
 void pu_metal_present(PuSurface *s) {
     if (!s || !s->metal) return;
     PuMetalState *st = (PuMetalState *)s->metal;
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
-    @autoreleasepool {
-        if (st->drawable) {
-            id<MTLCommandBuffer> cb = [st->queue commandBuffer];
-            [cb presentDrawable:st->drawable];
-            [cb commit];
-            [st->drawable release];
-            st->drawable = nil;
+    if (st->drawable) {
+        id<CAMetalDrawable> d = (__bridge id<CAMetalDrawable>)st->drawable;
+        id<MTLCommandBuffer> cb = [st->queue commandBuffer];
+        [cb commit];
+        if (st->layer.presentsWithTransaction) {
+            /* Present in lockstep with the layer's geometry: no tearing/wobble
+             * while the window is being live-resized. */
+            [cb waitUntilScheduled];
+            [d present];
+        } else {
+            [cb presentDrawable:d];
         }
+        CFRelease(st->drawable);
+        st->drawable = nullptr;
     }
     s->surface.reset();   // re-wrapped next begin_frame
 }
@@ -158,7 +153,7 @@ void pu_metal_destroy(PuSurface *s) {
     PuMetalState *st = (PuMetalState *)s->metal;
     s->surface.reset();
     if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
-    if (st->drawable) { [st->drawable release]; st->drawable = nil; }
+    if (st->drawable) { CFRelease(st->drawable); st->drawable = nullptr; }
     [st->layer release];
     [st->queue release];
     [st->device release];
