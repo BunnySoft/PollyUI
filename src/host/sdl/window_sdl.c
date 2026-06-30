@@ -202,30 +202,33 @@ void pu_window_wake(PuWindow *w)
 
 static void handle_event(PuWindow *w, const SDL_Event *e)
 {
-    float s = w->scale > 0 ? w->scale : 1.0f;
+    /* SDL3 reports mouse/touch coordinates in logical window points (the same
+     * coordinate space as our layout, which is computed at width/height in
+     * points). So pass them straight through — do NOT divide by the DPI scale,
+     * or clicks land at a fraction of their position on HiDPI displays. */
     switch (e->type) {
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             w->running = 0; break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if (w->pointer_fn && w->pointer_fn((int)(e->button.x / s), (int)(e->button.y / s), PU_POINTER_DOWN, w->pointer_user) > 0) w->dirty = 1;
+            if (w->pointer_fn && w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_DOWN, w->pointer_user) > 0) w->dirty = 1;
             break;
         case SDL_EVENT_MOUSE_BUTTON_UP:
             if (w->pointer_fn) {
-                int changed = w->pointer_fn((int)(e->button.x / s), (int)(e->button.y / s), PU_POINTER_UP, w->pointer_user);
-                changed |= w->pointer_fn((int)(e->button.x / s), (int)(e->button.y / s), PU_POINTER_CLICK, w->pointer_user);
+                int changed = w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_UP, w->pointer_user);
+                changed |= w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_CLICK, w->pointer_user);
                 if (changed > 0) w->dirty = 1;
             }
             break;
         case SDL_EVENT_MOUSE_MOTION:
-            if (w->pointer_fn && w->pointer_fn((int)(e->motion.x / s), (int)(e->motion.y / s), PU_POINTER_MOVE, w->pointer_user) > 0) w->dirty = 1;
+            if (w->pointer_fn && w->pointer_fn((int)e->motion.x, (int)e->motion.y, PU_POINTER_MOVE, w->pointer_user) > 0) w->dirty = 1;
             break;
         case SDL_EVENT_MOUSE_WHEEL:
             /* SDL wheel.y > 0 scrolls up; DOM deltaY > 0 scrolls down -> negate. */
             if (w->wheel_fn) {
                 float mx = 0, my = 0; SDL_GetMouseState(&mx, &my);
-                if (w->wheel_fn((int)(mx / s), (int)(my / s), -e->wheel.y * 40.0f, w->wheel_user) > 0) w->dirty = 1;
+                if (w->wheel_fn((int)mx, (int)my, -e->wheel.y * 40.0f, w->wheel_user) > 0) w->dirty = 1;
             }
             break;
 
