@@ -38,14 +38,28 @@ const s = reactive({
   modalOpen: false, drawerOpen: false, exp1: true, exp2: false,
 });
 
-// ---- title bar (frameless / draggable) -------------------------------------
+// ---- title bar (frameless / draggable, OS-aware) ---------------------------
 const winCtl = (m) => { if (typeof window !== 'undefined' && window[m]) window[m](); };
+const isMac = (typeof window !== 'undefined' && window.platform) === 'macos';
+
+// Windows / Linux: — ▢ ✕ caption buttons on the right.
 const winBtn = (g, m, danger) => h('view', { style: cl({ width: 46, height: 40, alignItems: 'center', justifyContent: 'center', appRegion: 'no-drag' }), hoverStyle: { backgroundColor: danger ? '#e81123' : '#e3e3e6' }, onClick: () => winCtl(m) }, txt(g, { size: 11, color: C.sub }));
-const titleBar = () => h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, gap: 10, backgroundColor: C.rail, appRegion: 'drag' }) },
-  h('view', { style: cl({ width: 18, height: 18, borderRadius: 4, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }) }, txt('◆', { size: 10, color: '#fff' })),
-  txt('WinUI 3 Gallery', { size: 12, weight: '600' }),
-  h('view', { style: { flexGrow: '1' } }),
-  winBtn('—', 'minimize'), winBtn('▢', 'maximize'), winBtn('✕', 'close', true));
+
+// macOS: red/yellow/green traffic lights on the left (close/min/zoom).
+const dot = (bg, m) => h('view', { style: cl({ width: 12, height: 12, borderRadius: 6, backgroundColor: bg, appRegion: 'no-drag' }), onClick: () => winCtl(m) });
+const macLights = () => h('view', { style: cl({ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 6, appRegion: 'no-drag' }) },
+  dot('#ff5f57', 'close'), dot('#febc2e', 'minimize'), dot('#28c840', 'maximize'));
+
+const titleBar = () => isMac
+  ? h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.rail, appRegion: 'drag' }) },
+      macLights(),
+      txt('WinUI 3 Gallery', { size: 12, weight: '600' }),
+      h('view', { style: { flexGrow: '1' } }))
+  : h('view', { style: cl({ height: 40, flexDirection: 'row', alignItems: 'center', paddingLeft: 14, gap: 10, backgroundColor: C.rail, appRegion: 'drag' }) },
+      h('view', { style: cl({ width: 18, height: 18, borderRadius: 4, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }) }, txt('◆', { size: 10, color: '#fff' })),
+      txt('WinUI 3 Gallery', { size: 12, weight: '600' }),
+      h('view', { style: { flexGrow: '1' } }),
+      winBtn('—', 'minimize'), winBtn('▢', 'maximize'), winBtn('✕', 'close', true));
 
 // ---- NavigationView rail ----------------------------------------------------
 const NAV = [['⌂', 'Home'], ['⌨', 'Basic input'], ['▤', 'Collections'], ['◳', 'Dialogs'], ['◐', 'Styles']];

@@ -238,6 +238,16 @@ static void install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "isMaximized",   JS_NewCFunction(ctx, jswin_ismax, "isMaximized", 0));
     JS_SetPropertyStr(ctx, win, "setFrameless",  JS_NewCFunction(ctx, jswin_frameless, "setFrameless", 1));
     JS_SetPropertyStr(ctx, win, "setBackdrop",   JS_NewCFunction(ctx, jswin_backdrop, "setBackdrop", 1));
+    /* OS identity so apps can render OS-appropriate chrome (e.g. macOS
+     * traffic-light buttons on the left vs Windows controls on the right). */
+#if defined(_WIN32)
+    const char *plat = "windows";
+#elif defined(__APPLE__)
+    const char *plat = "macos";
+#else
+    const char *plat = "linux";
+#endif
+    JS_SetPropertyStr(ctx, win, "platform", JS_NewString(ctx, plat));
     JS_SetPropertyStr(ctx, g, "window", win);
     JS_FreeValue(ctx, g);
 }
