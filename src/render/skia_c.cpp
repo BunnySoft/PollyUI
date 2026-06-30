@@ -62,20 +62,35 @@ extern "C" void pu_metal_destroy(PuSurface *s);
 #define PU_GL_RGBA8 0x8058
 #define PU_GLLOG(msg) std::fprintf(stderr, "[gl] %s\n", msg)
 
-// SkFontMgr_New_DirectWrite is in skia.lib but the package ships no header for
-// it; declare it ourselves (default null args -> Skia builds a DWrite factory).
+// Platform system font manager. Skia ships no header for these factory
+// functions in the prebuilt, so we forward-declare them (matching the C++
+// mangling) and let Skia build the native factory from null args.
+#if defined(_WIN32)
 struct IDWriteFactory;
 struct IDWriteFontCollection;
 struct IDWriteFontFallback;
 extern sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory *,
                                                   IDWriteFontCollection *,
                                                   IDWriteFontFallback *);
+#elif defined(__APPLE__)
+struct __CTFontCollection;   /* CTFontCollectionRef = const __CTFontCollection * */
+extern sk_sp<SkFontMgr> SkFontMgr_New_CoreText(const __CTFontCollection *);
+#endif
 
-// Lazily-resolved system font manager (Windows fonts via DirectWrite).
+// Lazily-resolved system font manager (Windows -> DirectWrite, macOS -> CoreText).
 static sk_sp<SkFontMgr> font_mgr() {
     static sk_sp<SkFontMgr> mgr;
     static bool tried = false;
-    if (!tried) { tried = true; mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr); }
+    if (!tried) {
+        tried = true;
+#if defined(_WIN32)
+        mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr);
+#elif defined(__APPLE__)
+        mgr = SkFontMgr_New_CoreText(nullptr);
+#else
+        mgr = nullptr;   /* TODO: SkFontMgr_New_FontConfig on Linux */
+#endif
+    }
     return mgr;
 }
 

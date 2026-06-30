@@ -130,15 +130,17 @@ else()
     endif()
     if (APPLE)
         target_link_libraries(pollyui PRIVATE ${SKIA_ARCHIVES})
-        # System frameworks Skia depends on (codecs, fonts, GL backend).
+        # System frameworks Skia depends on (codecs, fonts, GL backend) + the
+        # system zlib: Skia's bundled zlib is Cr_z_-prefixed, but freetype/libpng
+        # call the standard inflate/deflate, which /usr/lib/libz provides.
         target_link_libraries(pollyui PRIVATE
             "-framework CoreFoundation" "-framework CoreGraphics" "-framework CoreText"
             "-framework CoreServices" "-framework ImageIO" "-framework Cocoa"
-            "-framework OpenGL")
+            "-framework OpenGL" z)
     else()
         # GNU ld needs an explicit group for mutually-referencing static libs.
         target_link_libraries(pollyui PRIVATE
-            -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group)
+            -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group z)
     endif()
 endif()
 
