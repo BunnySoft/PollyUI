@@ -64,6 +64,14 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
     layer.pixelFormat             = MTLPixelFormatBGRA8Unorm;
     layer.framebufferOnly         = NO;     // Skia may need to read back / blit
     layer.drawableSize            = CGSizeMake(width, height);
+    // Crisp live resize: anchor content to the top-left (don't stretch cached
+    // content when the layer grows) and suppress CoreAnimation's implicit
+    // geometry/content animation, which otherwise wobbles during a drag-resize.
+    layer.contentsGravity            = kCAGravityTopLeft;
+    layer.needsDisplayOnBoundsChange = YES;
+    layer.actions = @{ @"bounds":   (id)[NSNull null],
+                       @"position": (id)[NSNull null],
+                       @"contents": (id)[NSNull null] };
 
     GrMtlBackendContext backendContext = {};
     backendContext.fDevice.retain((__bridge GrMTLHandle)device);
