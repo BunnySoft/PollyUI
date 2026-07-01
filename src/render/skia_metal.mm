@@ -44,7 +44,7 @@ struct PuMetalState {
     id<MTLDevice>       device   = nil;
     id<MTLCommandQueue> queue    = nil;
     CAMetalLayer       *layer    = nil;
-    void               *drawable = nullptr;  // GrMTLHandle (id<CAMetalDrawable>) in flight
+    const void         *drawable = nullptr;  // GrMTLHandle filled lazily at flush
 };
 
 extern "C" {
@@ -63,7 +63,6 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
     layer.device                  = device;
     layer.pixelFormat             = MTLPixelFormatBGRA8Unorm;
     layer.framebufferOnly         = NO;     // Skia may need to read back / blit
-    layer.presentsWithTransaction = YES;    // sync present with layer geometry -> clean live resize
     layer.drawableSize            = CGSizeMake(width, height);
 
     GrMtlBackendContext backendContext = {};
@@ -97,41 +96,37 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height) 
     return s;
 }
 
-// Grab the next CAMetalLayer drawable and wrap it as the frame's SkSurface.
-// Called by the host immediately before the per-frame paint.
+// Create the frame's SkSurface for the layer. WrapCAMetalLayer is LAZY: it does
+// not touch the layer here — it acquires the drawable during the flush in
+// pu_metal_present and writes it back through the out-param, which therefore
+// must point at persistent storage (st->drawable), not a stack local.
 void pu_metal_begin_frame(PuSurface *s) {
     if (!s || !s->metal) return;
     PuMetalState *st = (PuMetalState *)s->metal;
-    if (st->drawable) { CFRelease(st->drawable); st->drawable = nullptr; }
-
-    GrMTLHandle drawable = nullptr;
+    st->drawable = nullptr;
     SkSurfaceProps props;
     s->surface = SkSurfaces::WrapCAMetalLayer(
         s->grctx.get(), (__bridge GrMTLHandle)st->layer,
         kTopLeft_GrSurfaceOrigin, /*sampleCnt*/ 1, kBGRA_8888_SkColorType,
-        /*colorSpace*/ nullptr, &props, &drawable);
-    if (drawable) CFRetain(drawable);   // keep alive until present
-    st->drawable = (void *)drawable;    // GrMTLHandle is const void*; store mutably
+        /*colorSpace*/ nullptr, &props, &st->drawable);
 }
 
-// Flush the recorded Skia work and present the drawable.
+// Flush the recorded Skia work (which lazily grabs the drawable) and present it.
 void pu_metal_present(PuSurface *s) {
     if (!s || !s->metal) return;
     PuMetalState *st = (PuMetalState *)s->metal;
-    if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
-    if (st->drawable) {
-        id<CAMetalDrawable> d = (__bridge id<CAMetalDrawable>)st->drawable;
-        id<MTLCommandBuffer> cb = [st->queue commandBuffer];
-        [cb commit];
-        if (st->layer.presentsWithTransaction) {
-            /* Present in lockstep with the layer's geometry: no tearing/wobble
-             * while the window is being live-resized. */
-            [cb waitUntilScheduled];
-            [d present];
-        } else {
+    // The @autoreleasepool is REQUIRED: Skia's flush calls [layer nextDrawable],
+    // which autoreleases the drawable — without a pool in place that crashes in
+    // -[CAMetalDrawable init...]. The pool also frees the drawable right after we
+    // present it (we don't own a ref to it).
+    @autoreleasepool {
+        if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
+        if (st->drawable) {
+            id<CAMetalDrawable> d = (__bridge id<CAMetalDrawable>)const_cast<void *>(st->drawable);
+            id<MTLCommandBuffer> cb = [st->queue commandBuffer];
             [cb presentDrawable:d];
+            [cb commit];
         }
-        CFRelease(st->drawable);
         st->drawable = nullptr;
     }
     s->surface.reset();   // re-wrapped next begin_frame
@@ -153,7 +148,7 @@ void pu_metal_destroy(PuSurface *s) {
     PuMetalState *st = (PuMetalState *)s->metal;
     s->surface.reset();
     if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
-    if (st->drawable) { CFRelease(st->drawable); st->drawable = nullptr; }
+    st->drawable = nullptr;   // not owned (autorelease); nothing to release here
     [st->layer release];
     [st->queue release];
     [st->device release];
