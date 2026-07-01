@@ -111,7 +111,7 @@ void pu_metal_begin_frame(PuSurface *s) {
         kTopLeft_GrSurfaceOrigin, /*sampleCnt*/ 1, kBGRA_8888_SkColorType,
         /*colorSpace*/ nullptr, &props, &drawable);
     if (drawable) CFRetain(drawable);   // keep alive until present
-    st->drawable = drawable;            // null when no drawable was available
+    st->drawable = (void *)drawable;    // GrMTLHandle is const void*; store mutably
 }
 
 // Flush the recorded Skia work and present the drawable.
