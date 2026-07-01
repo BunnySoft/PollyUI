@@ -358,10 +358,13 @@ endif()
    *Done — behavior-neutral, GPU path intact, 250/250 tests pass on Windows.*
 2. **SDL3 desktop backend** (`src/host/sdl/`) → validate Win/Linux/macOS with one
    host. macOS forces the **Metal** path, exercising the new render code.
-   *Scaffolded:* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
+   *Done (macOS):* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
    poll loop so `main.c` is unchanged) + `src/render/skia_metal.mm` (Ganesh Metal
-   surface) + CMake `PU_HOST`/APPLE wiring + the `mac-sdl-metal` preset. Not yet
-   compiled/run on macOS hardware (needs a Metal-enabled Skia + SDL3).
+   via `SkSurfaces::WrapCAMetalLayer`) + CMake `PU_HOST`/`PU_METAL` wiring + the
+   `mac-sdl-metal` preset. **Verified on Apple Silicon**: GPU Metal rendering,
+   native traffic-light title bar (`window.setTitleBarStyle('overlay')`), live
+   input, and clean live resize. Also ported thread.c (pthreads), fetch.c, and
+   the CoreText font manager. Linux via the same host is next.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
 4. **Embedded Linux** (`wayland` first, then `drm`) for appliances — no Java, no SDL.

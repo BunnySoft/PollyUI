@@ -28,8 +28,9 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 ## Status
 
-The Windows vertical slice is **working** — `pollyui app.js` runs real,
-interactive, GPU-accelerated UIs from plain JavaScript. Implemented:
+The Windows and **macOS** vertical slices are **working** — `pollyui app.js`
+runs real, interactive, GPU-accelerated UIs from plain JavaScript (Windows via
+ANGLE/D3D11; macOS via SDL3 + Skia **Metal**). Implemented:
 
 - **Pipeline** — JS (QuickJS) → DOM bridge → Yoga Flexbox → Skia → **GPU
   (ANGLE / D3D11)**, per-monitor **DPI-aware**, with a CPU-raster fallback.
@@ -83,11 +84,15 @@ the script above.
 
 ### macOS (experimental — SDL3 host)
 
-The macOS backend is **scaffolded** (SDL3 host + an opt-in Skia **Metal**
-surface) and selectable via CMake, but is **not yet verified on hardware** —
-treat it as a starting point. The shared engine (JS, DOM, Yoga, Skia draw calls)
-is identical to Windows; only the host (`src/host/sdl/window_sdl.c`) and the
-Metal surface (`src/render/skia_metal.mm`) are new.
+The macOS backend is **working** (verified on Apple Silicon): an SDL3 host plus a
+Skia **Metal** GPU surface, with a native title bar and clean live resize. The
+shared engine (JS, DOM, Yoga, Skia draw calls) is identical to Windows; only the
+host (`src/host/sdl/window_sdl.c`) and the Metal surface
+(`src/render/skia_metal.mm`) are macOS-specific. Two build modes:
+
+- **CPU raster** (default) — works with the fetched prebuilt Skia, no GPU.
+- **GPU Metal** (`--metal`) — real GPU acceleration; needs a Metal-enabled Skia
+  you build once with `tools/build_skia_metal.sh` (see below).
 
 **Default build (CPU raster, works with the prebuilt Skia):**
 
