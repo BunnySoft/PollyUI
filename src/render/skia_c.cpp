@@ -31,8 +31,8 @@
 /* PuSurface struct, shared with the per-GPU-API backends (e.g. skia_metal.mm). */
 #include "render/skia_internal.h"
 
-#if defined(_WIN32)
-/* GPU (Ganesh GL) backend — ANGLE/EGL, Windows only. */
+#if defined(_WIN32) || defined(PU_SKIA_GL_BACKEND)
+/* GPU (Ganesh GL) backend. Windows owns ANGLE; SDL owns Linux GL contexts. */
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"  /* GrBackendRenderTargets::MakeGL */
@@ -40,7 +40,9 @@
 #include "include/gpu/gl/GrGLAssembleInterface.h" /* GrGLMakeAssembledGLESInterface */
 #include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo, GrGLFuncPtr */
 
-#include <windows.h>   /* WGL + HWND/HDC for the GPU surface */
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #endif // _WIN32
 
 #if defined(PU_METAL_BACKEND)
@@ -75,6 +77,10 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory *,
 #elif defined(__APPLE__)
 struct __CTFontCollection;   /* CTFontCollectionRef = const __CTFontCollection * */
 extern sk_sp<SkFontMgr> SkFontMgr_New_CoreText(const __CTFontCollection *);
+#elif defined(PU_FONTCONFIG_BACKEND)
+struct _FcConfig;
+typedef struct _FcConfig FcConfig;
+extern sk_sp<SkFontMgr> SkFontMgr_New_FontConfig(FcConfig *);
 #endif
 
 // Lazily-resolved system font manager (Windows -> DirectWrite, macOS -> CoreText).
@@ -87,8 +93,10 @@ static sk_sp<SkFontMgr> font_mgr() {
         mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr);
 #elif defined(__APPLE__)
         mgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(PU_FONTCONFIG_BACKEND)
+        mgr = SkFontMgr_New_FontConfig(nullptr);
 #else
-        mgr = nullptr;   /* TODO: SkFontMgr_New_FontConfig on Linux */
+        mgr = nullptr;
 #endif
     }
     return mgr;
@@ -104,8 +112,15 @@ static sk_sp<SkTypeface> typeface_for(int weight, int italic, const char *family
                       italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant);
     if (family && *family) {
         const char *fam = family;
+#if defined(_WIN32)
         if (strcmp(family, "monospace") == 0) fam = "Consolas";
         else if (strcmp(family, "serif") == 0) fam = "Georgia";
+        else if (strcmp(family, "sans-serif") == 0) fam = "Segoe UI";
+#elif defined(__APPLE__)
+        if (strcmp(family, "monospace") == 0) fam = "Menlo";
+        else if (strcmp(family, "serif") == 0) fam = "Times";
+        else if (strcmp(family, "sans-serif") == 0) fam = "Helvetica";
+#endif
         sk_sp<SkTypeface> tf = mgr->matchFamilyStyle(fam, style);
         if (tf) return tf;
     }
@@ -192,7 +207,7 @@ static sk_sp<SkSurface> make_raster(int w, int h) {
 }
 
 /* Wrap the window's default framebuffer (FBO 0) as a Skia GPU surface. */
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(PU_SKIA_GL_BACKEND)
 static void rewrap_gl(PuSurface *s, int w, int h) {
     if (w < 1) w = 1;
     if (h < 1) h = 1;
@@ -207,7 +222,7 @@ static void rewrap_gl(PuSurface *s, int w, int h) {
     s->width = w;
     s->height = h;
 }
-#endif // _WIN32
+#endif
 
 extern "C" {
 
@@ -316,15 +331,67 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     return s;
 }
 #else // !_WIN32
-/* Non-Windows: the GL/ANGLE path is not built. Apple uses
- * pu_surface_create_metal (src/render/skia_metal.mm); a Linux EGL path will land
- * here later. Until then callers fall back to raster + blit. */
+/* Non-Windows native hosts do not use the HWND/ANGLE constructor. Apple uses
+ * Metal; Linux SDL supplies its current context to create_current_gl below. */
 PuSurface *pu_surface_create_gpu(void *native_window, int width, int height) {
     (void)native_window; (void)width; (void)height;
     PU_GLLOG("pu_surface_create_gpu: no GL backend on this platform - using raster/metal");
     return nullptr;
 }
 #endif // _WIN32
+
+#if defined(PU_SKIA_GL_BACKEND)
+struct PuCurrentGLResolver {
+    PuGLGetProcFn get_proc;
+    void *user;
+};
+
+static GrGLFuncPtr pu_current_gl_get_proc(void *context, const char name[]) {
+    PuCurrentGLResolver *resolver = static_cast<PuCurrentGLResolver *>(context);
+    return resolver && resolver->get_proc
+        ? reinterpret_cast<GrGLFuncPtr>(resolver->get_proc(resolver->user, name))
+        : nullptr;
+}
+
+PuSurface *pu_surface_create_current_gl(PuGLGetProcFn get_proc, void *user,
+                                        int width, int height) {
+    if (!get_proc) return nullptr;
+    PuCurrentGLResolver resolver = { get_proc, user };
+    sk_sp<const GrGLInterface> interface =
+        GrGLMakeAssembledGLESInterface(&resolver, pu_current_gl_get_proc);
+    if (!interface) {
+        PU_GLLOG("could not assemble the current OpenGL ES interface");
+        return nullptr;
+    }
+
+    PuSurface *s = new (std::nothrow) PuSurface();
+    if (!s) return nullptr;
+    s->gl = true;
+    s->external_gl = true;
+    s->grctx = GrDirectContexts::MakeGL(interface);
+    if (!s->grctx) {
+        PU_GLLOG("GrDirectContexts::MakeGL failed for the current context");
+        delete s;
+        return nullptr;
+    }
+    s->grctx->setResourceCacheLimit(64 * 1024 * 1024);
+    rewrap_gl(s, width, height);
+    if (!s->surface) {
+        PU_GLLOG("could not wrap the current GL framebuffer");
+        delete s;
+        return nullptr;
+    }
+    std::fprintf(stderr, "[render] GPU backend: Skia Ganesh / OpenGL ES\n");
+    return s;
+}
+#else
+PuSurface *pu_surface_create_current_gl(PuGLGetProcFn get_proc, void *user,
+                                        int width, int height) {
+    (void)get_proc; (void)user; (void)width; (void)height;
+    PU_GLLOG("Ganesh GL is not available in this build");
+    return nullptr;
+}
+#endif
 
 int pu_surface_is_gl(const PuSurface *s) { return (s && s->gl) ? 1 : 0; }
 
@@ -336,6 +403,9 @@ void pu_surface_present(PuSurface *s) {
 #if defined(_WIN32)
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
     if (g_egl.SwapBuffers) g_egl.SwapBuffers(s->egl_display, s->egl_surface);
+#elif defined(PU_SKIA_GL_BACKEND)
+    if (s->external_gl && s->surface)
+        skgpu::ganesh::FlushAndSubmit(s->surface.get());
 #endif
 }
 
@@ -351,6 +421,12 @@ void pu_surface_destroy(PuSurface *s) {
         if (g_egl.MakeCurrent && s->egl_display) g_egl.MakeCurrent(s->egl_display, nullptr, nullptr, nullptr);
         if (g_egl.DestroyContext && s->egl_context) g_egl.DestroyContext(s->egl_display, s->egl_context);
         if (g_egl.DestroySurface && s->egl_surface) g_egl.DestroySurface(s->egl_display, s->egl_surface);
+    }
+#endif
+#if defined(PU_SKIA_GL_BACKEND)
+    if (s->external_gl) {
+        s->surface.reset();
+        if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
     }
 #endif
     delete s; // sk_sp releases the surface
@@ -378,6 +454,8 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
          * the bottom). Using the WM_SIZE size keeps render target == layout ==
          * window; the swapchain catches up on the swap pumped from WM_SIZE. */
         rewrap_gl(s, width, height);
+#elif defined(PU_SKIA_GL_BACKEND)
+        if (s->external_gl) rewrap_gl(s, width, height);
 #endif
         return;
     }

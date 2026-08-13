@@ -17,20 +17,23 @@ extern "C" {
 #endif
 
 typedef struct PuSurface PuSurface;
+typedef void (*PuGLProc)(void);
+typedef PuGLProc (*PuGLGetProcFn)(void *user, const char *name);
 
 /* Create a raster (CPU) surface of the given pixel size (clamped to >= 1x1). */
 PuSurface *pu_surface_create(int width, int height);
 
-/* Create a GPU surface bound to a platform-native window handle. The handle is
- * opaque so the same seam serves every host backend:
- *   Windows  -> HWND                    (GL via ANGLE/D3D11)
- *   Wayland  -> struct wl_egl_window *   (GL via Mesa EGL)
- *   X11      -> Window                   (GL via Mesa EGL)
- *   Android  -> ANativeWindow *          (GLES)
- * Renders directly to the window framebuffer; present with pu_surface_present.
- * Returns NULL if a GPU context can't be created (caller may fall back to
- * pu_surface_create + blitting). width/height are physical pixels. */
+/* Create the platform-owned GPU surface used by native hosts. Windows passes
+ * an HWND for ANGLE/D3D11. SDL hosts use the current-GL or Metal constructors
+ * below so SDL retains context and presentation ownership. */
 PuSurface *pu_surface_create_gpu(void *native_window, int width, int height);
+
+/* Wrap the current OpenGL ES default framebuffer in a Skia Ganesh surface.
+ * Context lifetime and buffer swapping remain owned by the caller. This keeps
+ * SDL and native display types out of the Skia bridge. Returns NULL when this
+ * build's Skia archives do not provide Ganesh GL. */
+PuSurface *pu_surface_create_current_gl(PuGLGetProcFn get_proc, void *user,
+                                        int width, int height);
 
 /* Create a GPU surface backed by Skia's Metal backend, bound to a CAMetalLayer*
  * (macOS / iOS). Built only in the Apple render path (src/render/skia_metal.mm);

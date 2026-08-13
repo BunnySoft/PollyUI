@@ -28,9 +28,10 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 ## Status
 
-The Windows and **macOS** vertical slices are **working** — `pollyui app.js`
-runs real, interactive, GPU-accelerated UIs from plain JavaScript (Windows via
-ANGLE/D3D11; macOS via SDL3 + Skia **Metal**). Implemented:
+The Windows and **macOS** vertical slices are working, and the first Linux
+desktop milestone is implemented: one SDL3 binary selects Wayland or X11 at
+startup and uses Skia Ganesh/OpenGL ES when the Linux Skia archives support it,
+with a reliable raster fallback.
 
 - **Pipeline** — JS (QuickJS) → DOM bridge → Yoga Flexbox → Skia → **GPU
   (ANGLE / D3D11)**, per-monitor **DPI-aware**, with a CPU-raster fallback.
@@ -141,8 +142,60 @@ build at it:
 frameworks; the host then renders to a `CAMetalLayer` via Skia Ganesh/Metal and
 presents in lockstep with live resize (`presentsWithTransaction`).
 
-`-DPU_METAL=ON` compiles `skia_metal.mm` and links the Metal frameworks; the
-host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
+### Linux desktop (SDL3 Wayland/X11)
+
+Linux uses the same `src/host/sdl/window_sdl.c` host for both display systems.
+Backend selection happens once, before `SDL_Init`; there are no native
+Wayland/Xlib clients in PollyUI and DRM/KMS is not part of this milestone.
+
+Install CMake >= 3.25, Ninja, SDL3 development files, FontConfig development
+files, zlib, and a C++20-capable compiler/standard library (GCC 11+ or a recent
+Clang). For example, on a distribution that packages SDL3:
+
+```bash
+# Package names vary by distribution.
+sudo apt install cmake ninja-build libsdl3-dev libfontconfig1-dev zlib1g-dev
+
+./tools/fetch_skia.sh
+cmake --preset linux-sdl
+cmake --build --preset linux-sdl
+ctest --test-dir build/linux-sdl --output-on-failure -R startup-options
+```
+
+`tools/build.sh` performs the fetch/configure/build sequence. CMake inspects the
+selected Skia archives: `PU_LINUX_GL=AUTO` enables Ganesh GL when available,
+`PU_LINUX_GL=ON` makes missing GL support a configuration error, and
+`PU_LINUX_GL=OFF` builds raster-only. FontConfig and a FontConfig-enabled Skia
+archive are required and reported clearly at configure time.
+
+Run with automatic selection (CLI overrides environment, which overrides
+`auto`):
+
+```bash
+./build/linux-sdl/pollyui js/gallery.mjs
+
+# Force Wayland + GPU. Either failure is fatal.
+./build/linux-sdl/pollyui --backend=wayland --renderer=gl js/gallery.mjs
+
+# Force X11 with the reliable CPU-raster path.
+./build/linux-sdl/pollyui --backend=x11 --renderer=raster js/gallery.mjs
+
+# Equivalent environment-based selection.
+PU_BACKEND=x11 PU_RENDERER=auto ./build/linux-sdl/pollyui js/gallery.mjs
+
+# Headless tests never initialize SDL video.
+./build/linux-sdl/pollyui --test tests/smoke.js
+```
+
+In `auto` mode PollyUI tries Wayland first when `WAYLAND_DISPLAY` is set and X11
+first when only `DISPLAY` is set, then falls back to the other Linux desktop
+driver. Only `auto` may fall back. The selected backend, SDL video driver, and
+renderer are logged.
+
+Known Linux limitations: accessibility and multi-window support are not
+implemented; SDL committed UTF-8 text input works, but PollyUI does not yet
+expose IME preedit/composition state or position the CJK candidate window at the
+caret; packaging is distribution-specific; direct DRM/KMS remains deferred.
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 

@@ -33,11 +33,25 @@
         "PU_HOST": "sdl"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "linux-sdl",
+      "displayName": "Linux - SDL3 Wayland/X11",
+      "description": "Single SDL3 binary with runtime Wayland/X11 selection, FontConfig, optional Ganesh GL, and raster fallback.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-sdl",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PU_HOST": "sdl",
+        "PU_LINUX_GL": "AUTO"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
     }
   ],
   "buildPresets": [
     { "name": "win-clang", "configurePreset": "win-clang" },
     { "name": "win-clang-windowed", "configurePreset": "win-clang-windowed" },
-    { "name": "mac-sdl-metal", "configurePreset": "mac-sdl-metal" }
+    { "name": "mac-sdl-metal", "configurePreset": "mac-sdl-metal" },
+    { "name": "linux-sdl", "configurePreset": "linux-sdl" }
   ]
 }

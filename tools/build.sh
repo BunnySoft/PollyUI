@@ -33,12 +33,12 @@ done
 # --- toolchain checks --------------------------------------------------------
 for tool in cmake ninja; do
   command -v "$tool" >/dev/null 2>&1 || {
-    echo "Required tool not found: $tool (brew install cmake ninja)" >&2; exit 1; }
+    echo "Required tool not found: $tool (install CMake >= 3.25 and Ninja)" >&2; exit 1; }
 done
 
 case "$(uname -s)" in
   Darwin) os="macos";  preset="mac-sdl-metal"; builddir="$repo/build/mac-sdl"; arch_dir="Release-$([[ $(uname -m) == arm64 ]] && echo arm64 || echo x64)" ;;
-  Linux)  os="linux";  preset="";              builddir="$repo/build/linux-sdl"; arch_dir="Release-x64" ;;
+  Linux)  os="linux";  preset="linux-sdl";      builddir="$repo/build/linux-sdl"; arch_dir="Release-x64" ;;
   *) echo "Unsupported OS: $(uname -s) (use tools/build.ps1 on Windows)" >&2; exit 1 ;;
 esac
 
@@ -65,20 +65,11 @@ cmake_args=(-DSKIA_LIB_DIR="$skia_dir")
 [[ "$metal" == 1 ]] && cmake_args+=(-DPU_METAL=ON)
 
 echo "==> configure"
-if [[ -n "$preset" ]]; then
-  cmake --preset "$preset" "${cmake_args[@]}"
-else
-  cmake -S "$repo" -B "$builddir" -G Ninja \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPU_HOST=sdl "${cmake_args[@]}"
-fi
+cmake --preset "$preset" "${cmake_args[@]}"
 
 # --- build -------------------------------------------------------------------
 echo "==> build"
-if [[ -n "$preset" ]]; then
-  cmake --build --preset "$preset"
-else
-  cmake --build "$builddir"
-fi
+cmake --build --preset "$preset"
 
 exe="$builddir/pollyui"
 echo "==> built: $exe"

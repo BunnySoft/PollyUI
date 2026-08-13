@@ -1,4 +1,5 @@
-#include "host/win32/window.h"
+#include "host/window.h"
+#include "host/startup.h"
 #include "script/script.h"
 #include "script/storage.h"
 #include "net/fetch.h"
@@ -88,6 +89,8 @@ typedef struct PuApp {
     PuScript *script;
     PuBridge *bridge;
 } PuApp;
+
+static PuStartupOptions g_startup;
 
 /* Per-frame: lay out the DOM for the current (logical) size, then paint it,
  * scaling logical pixels up to physical for high-DPI displays. */
@@ -507,6 +510,8 @@ static int run_app(const char *path)
         cfg.title  = "PollyUI";
         cfg.width  = 1080;
         cfg.height = 720;
+        cfg.backend = g_startup.backend;
+        cfg.renderer = g_startup.renderer;
         PuWindow *win = pu_window_create(&cfg);
         if (win) {
             PuApp app = { s, bridge };
@@ -523,7 +528,7 @@ static int run_app(const char *path)
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);
             pu_window_destroy(win);
-        }
+        } else rc = 1;
     }
 
     pu_async_shutdown();    /* terminate workers before tearing down the context */
@@ -539,6 +544,8 @@ static int run_demo(void)
     cfg.title  = "PollyUI \xE2\x80\x94 demo";
     cfg.width  = 960;
     cfg.height = 600;
+    cfg.backend = g_startup.backend;
+    cfg.renderer = g_startup.renderer;
 
     PuWindow *w = pu_window_create(&cfg);
     if (!w)
@@ -553,9 +560,18 @@ int main(int argc, char **argv)
 #ifdef _WIN32
     SetUnhandledExceptionFilter(pu_crash_handler);
 #endif
-    if (argc >= 3 && strcmp(argv[1], "--test") == 0)
-        return run_test(argv[2]);
-    if (argc >= 2)
-        return run_app(argv[1]);
+    char error[256];
+    if (!pu_startup_parse(argc, argv, getenv("PU_BACKEND"), getenv("PU_RENDERER"),
+                          &g_startup, error, sizeof(error))) {
+        fprintf(stderr, "pollyui: %s\n", error);
+        fprintf(stderr, "usage: pollyui [--backend=auto|wayland|x11] "
+                        "[--renderer=auto|gl|raster] [app.js]\n"
+                        "       pollyui [options] --test test.js\n");
+        return 2;
+    }
+    if (g_startup.test_path)
+        return run_test(g_startup.test_path);
+    if (g_startup.app_path)
+        return run_app(g_startup.app_path);
     return run_demo();
 }

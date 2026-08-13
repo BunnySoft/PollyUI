@@ -1,4 +1,5 @@
-#include "host/win32/window.h"
+#include "host/window.h"
+#include "host/startup.h"
 #include "render/skia_c.h"
 
 /* Need Windows 10 APIs (per-monitor DPI v2, GetDpiForWindow, ...). */
@@ -323,6 +324,13 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
     if (!cfg) return NULL;
+    fprintf(stderr, "[host] requested backend=%s renderer=%s\n",
+            pu_backend_name(cfg->backend), pu_renderer_name(cfg->renderer));
+    if (cfg->backend != PU_BACKEND_AUTO) {
+        fprintf(stderr, "[host] fatal: backend '%s' requires the SDL host\n",
+                pu_backend_name(cfg->backend));
+        return NULL;
+    }
 
     /* Per-monitor DPI awareness: render crisply at physical resolution and do
      * the logical->physical scaling ourselves (see pu_paint). */
@@ -381,7 +389,14 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     /* Prefer a GPU surface; fall back to raster (CPU + blit) if GL is unavailable.
      * The handle is opaque (here an HWND); other host backends pass their own
      * native window handle to the same seam — see docs/PORTING.md §2. */
-    w->surface = pu_surface_create_gpu((void *)hwnd, w->width, w->height);
+    if (cfg->renderer != PU_RENDERER_RASTER)
+        w->surface = pu_surface_create_gpu((void *)hwnd, w->width, w->height);
+    if (!w->surface && cfg->renderer == PU_RENDERER_GL) {
+        fprintf(stderr, "[host] fatal: requested renderer 'gl' could not initialize\n");
+        DestroyWindow(hwnd);
+        free(w);
+        return NULL;
+    }
     if (!w->surface)
         w->surface = pu_surface_create(w->width, w->height);
     if (!w->surface) {
@@ -389,6 +404,8 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
         free(w);
         return NULL;
     }
+    fprintf(stderr, "[host] selected backend=win32 renderer=%s\n",
+            pu_surface_is_gl(w->surface) ? "gl" : "raster");
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);

@@ -10,6 +10,23 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)            # Skia requires C++17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Vendored Yoga uses std::bit_cast internally and therefore needs a C++20
+# standard library even though PollyUI's own Skia shim remains C++17.
+include(CheckCXXSourceCompiles)
+set(PU_SAVED_CXX_STANDARD "${CMAKE_CXX_STANDARD}")
+set(CMAKE_CXX_STANDARD 20)
+check_cxx_source_compiles(
+    "#include <bit>
+     #include <cstdint>
+     int main() { return (int)std::bit_cast<std::uint32_t>(1.0f); }"
+    PU_HAVE_CXX20_BIT_CAST)
+set(CMAKE_CXX_STANDARD "${PU_SAVED_CXX_STANDARD}")
+if (NOT PU_HAVE_CXX20_BIT_CAST)
+    message(FATAL_ERROR
+        "PollyUI's vendored Yoga requires a C++20 standard library with "
+        "std::bit_cast (use GCC 11+ or a recent Clang/MSVC).")
+endif()
+
 # Match the prebuilt Skia (Release, STATIC CRT /MT) so the CRT / iterator-debug
 # levels agree across the link. (MSVC/Windows only.)
 if (MSVC)
@@ -24,6 +41,14 @@ else()
     set(PU_HOST_DEFAULT "sdl")
 endif()
 set(PU_HOST "${PU_HOST_DEFAULT}" CACHE STRING "Host backend: win32 | sdl")
+set_property(CACHE PU_HOST PROPERTY STRINGS win32 sdl)
+
+set(PU_LINUX_GL "AUTO" CACHE STRING
+    "Linux SDL Ganesh GL renderer: AUTO, ON (required), or OFF")
+set_property(CACHE PU_LINUX_GL PROPERTY STRINGS AUTO ON OFF)
+if (NOT PU_LINUX_GL MATCHES "^(AUTO|ON|OFF)$")
+    message(FATAL_ERROR "PU_LINUX_GL must be AUTO, ON, or OFF")
+endif()
 
 # --- Skia (aseprite/skia m124 prebuilt) --------------------------------------
 set(SKIA_ROOT ${CMAKE_SOURCE_DIR}/third_party/skia)
@@ -60,6 +85,7 @@ endif()
 
 add_executable(pollyui
     src/main.c
+    src/host/startup.c
     src/render/skia_c.cpp
     src/render/render.c
     src/script/script.c
@@ -149,6 +175,62 @@ else()
         # GNU ld needs an explicit group for mutually-referencing static libs.
         target_link_libraries(pollyui PRIVATE
             -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group z)
+
+        find_package(Fontconfig REQUIRED)
+        target_compile_definitions(pollyui PRIVATE PU_FONTCONFIG_BACKEND)
+        target_link_libraries(pollyui PRIVATE Fontconfig::Fontconfig)
+
+        if (NOT EXISTS "${SKIA_LIB_DIR}/libskia.a")
+            message(FATAL_ERROR "Expected ${SKIA_LIB_DIR}/libskia.a for Linux")
+        endif()
+        if (NOT CMAKE_NM)
+            message(FATAL_ERROR
+                "An nm-compatible symbol inspector is required to verify the "
+                "Linux Skia FontConfig and Ganesh features")
+        else()
+            execute_process(
+                COMMAND "${CMAKE_NM}" -C --defined-only
+                        "${SKIA_LIB_DIR}/libskia.a"
+                RESULT_VARIABLE PU_SKIA_NM_RESULT
+                OUTPUT_VARIABLE PU_SKIA_SYMBOLS
+                ERROR_VARIABLE PU_SKIA_NM_ERROR)
+            if (NOT PU_SKIA_NM_RESULT EQUAL 0)
+                message(FATAL_ERROR
+                    "Could not inspect ${SKIA_LIB_DIR}/libskia.a for required "
+                    "Linux Skia features: ${PU_SKIA_NM_ERROR}")
+            else()
+                string(FIND "${PU_SKIA_SYMBOLS}" "SkFontMgr_New_FontConfig"
+                       PU_FONTCONFIG_SYMBOL)
+                if (PU_FONTCONFIG_SYMBOL EQUAL -1)
+                    message(FATAL_ERROR
+                        "The Linux Skia archive lacks SkFontMgr_New_FontConfig. "
+                        "Use the pinned Linux Skia archives from tools/fetch_skia.sh "
+                        "or a Skia build with fontconfig enabled.")
+                endif()
+                string(FIND "${PU_SKIA_SYMBOLS}"
+                       "GrGLMakeAssembledGLESInterface"
+                       PU_GANESH_GL_SYMBOL)
+                if (PU_GANESH_GL_SYMBOL EQUAL -1)
+                    set(PU_LINUX_GL_AVAILABLE OFF)
+                else()
+                    set(PU_LINUX_GL_AVAILABLE ON)
+                endif()
+            endif()
+        endif()
+
+        if (PU_LINUX_GL STREQUAL "ON" AND NOT PU_LINUX_GL_AVAILABLE)
+            message(FATAL_ERROR
+                "PU_LINUX_GL=ON was requested, but the archives in "
+                "${SKIA_LIB_DIR} do not expose Ganesh OpenGL ES support.")
+        elseif (NOT PU_LINUX_GL STREQUAL "OFF" AND PU_LINUX_GL_AVAILABLE)
+            target_compile_definitions(pollyui PRIVATE PU_SKIA_GL_BACKEND)
+            message(STATUS
+                "Linux renderer support: Skia Ganesh OpenGL ES + raster fallback")
+        else()
+            message(STATUS
+                "Linux renderer support: raster only "
+                "(--renderer=gl will fail explicitly)")
+        endif()
     endif()
 endif()
 
@@ -181,3 +263,11 @@ if (WIN32 AND PU_WINDOWED)
     target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
 endif()
 
+include(CTest)
+if (BUILD_TESTING)
+    add_executable(pu_startup_options_tests
+        tests/startup_options_test.c
+        src/host/startup.c)
+    target_include_directories(pu_startup_options_tests PRIVATE src)
+    add_test(NAME startup-options COMMAND pu_startup_options_tests)
+endif()

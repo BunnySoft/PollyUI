@@ -12,8 +12,9 @@ One view of what's built and what's planned. For the architecture, see
 | 🛠 | Planned |
 | ⏸ | Deferred (deliberately not doing now) |
 
-Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
-Host layer is the only platform-specific code; everything above it is portable).
+Platform column: **Win** = Windows. macOS has the SDL/Metal vertical slice;
+Linux has the first SDL Wayland/X11 desktop milestone. Mobile and bare
+DRM/KMS remain planned.
 
 The headless test suite (`pollyui --test tests/<name>`) currently covers **283
 assertions** across rendering, layout, DOM, events, runtime, networking,
@@ -31,6 +32,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 | Feature | Status | Notes |
 |---|---|---|
 | HostEngine — Win32 window, event loop, resize | ✅ | `src/host/win32`; smooth live-resize (double-pump + authoritative size) |
+| HostEngine - Linux SDL Wayland/X11 | ✅ | one binary; startup selection before SDL init; explicit failure semantics |
 | **Frameless window / custom title bar** | ✅ | `WM_NCCALCSIZE`+`WM_NCHITTEST`; keeps resize/snap; `appRegion:drag` |
 | **JS `window` controls** (minimize/maximize/close/setFrameless/setBackdrop) | ✅ | global `window` object in the windowed app |
 | **Mica / Acrylic backdrop** (Win11 DWM) | 🟡 | `DwmSetWindowAttribute` set; visible Mica needs a transparent surface |
@@ -49,8 +51,9 @@ platform-specific code; the surface-creation seam is already abstracted.
 |---|---|---|
 | **GPU: Skia Ganesh → ANGLE → D3D11** | ✅ | the standard Windows GPU path |
 | Raster (CPU) surface + `StretchDIBits` fallback | ✅ | also used by headless tests |
-| macOS GPU (Metal / ANGLE) | 🛠 | with the macOS host port |
-| Linux GPU (GL / ANGLE) | 🛠 | with the Linux host port |
+| macOS GPU (Metal) | ✅ | SDL-owned window + Skia Ganesh Metal |
+| Linux GPU (OpenGL ES / Mesa) | ✅ | SDL-owned context/swap; feature-gated Ganesh framebuffer wrapper |
+| Linux raster fallback | ✅ | CPU Skia surface uploaded through SDL renderer |
 | Official ANGLE binaries for distribution | 🛠 | today staged from installed Chrome/Edge |
 
 ## Paint / visuals
@@ -84,8 +87,8 @@ platform-specific code; the surface-creation seam is already abstracted.
 | **`text-align`** (left/center/right) | ✅ | per-line within the box |
 | **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
 | **Text selection + click-to-position caret** | ✅ | `js/textinput.mjs` (drag-select, edit) |
-| IME (CJK / emoji composition) | 🛠 | |
-| **Font families** (`fontFamily`) | 🟡 | monospace→Consolas, serif→Georgia; arbitrary loaded faces pending |
+| IME (CJK / emoji composition) | 🟡 | committed SDL text works; preedit/candidate positioning pending |
+| **Font families** (`fontFamily`) | 🟡 | platform generic families + DirectWrite/CoreText/FontConfig; loaded faces pending |
 | **Gradient-filled text** (`textGradientFrom/To`) | ✅ | |
 
 ## Layout (Yoga)

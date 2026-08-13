@@ -31,12 +31,18 @@ So porting = **one new host file + one surface-creation path per GPU API.**
 
 ## 1. The HostEngine contract
 
-Every backend implements the exact interface already defined in
-`src/host/win32/window.h`. This is the seam:
+Every backend implements the exact interface defined in
+`src/host/window.h`. The old `src/host/win32/window.h` path is a compatibility
+forwarder only. This is the seam:
 
 ```c
 typedef struct PuWindow PuWindow;
-typedef struct PuWindowConfig { const char *title; int width, height; } PuWindowConfig;
+typedef struct PuWindowConfig {
+    const char *title;
+    int width, height;
+    PuBackend backend;     /* auto | wayland | x11 */
+    PuRenderer renderer;   /* auto | gl | raster */
+} PuWindowConfig;
 
 /* draw a frame; w/h are LOGICAL px, scale maps to physical px of `surface` */
 typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, float scale, void *user);
@@ -58,7 +64,7 @@ int  pu_window_run        (PuWindow *);   /* run the event loop until quit */
 void pu_window_destroy    (PuWindow *);
 ```
 
-`main.c` is already backend-neutral: it only calls these and provides
+`main.c` is backend-neutral: it only calls these and provides
 `app_paint` / `app_pointer` / `app_key` / `app_wheel` / `app_async`. A new
 backend is a drop-in `.c` implementing the same symbols.
 
@@ -90,12 +96,12 @@ the body's padding. Simplest: add `PuWindowConfig.on_safe_area` callback.
 
 ## 2. The Skia surface seam
 
-`skia_c.h` already exposes an **opaque-handle** GPU constructor — it takes
-`void *`, not `HWND`:
+`skia_c.h` exposes native-GPU and externally-owned-current-GL constructors:
 
 ```c
 PuSurface *pu_surface_create(int width, int height);                 /* raster (CPU) */
-PuSurface *pu_surface_create_gpu(void *native_window, int w, int h); /* GPU; opaque native handle */
+PuSurface *pu_surface_create_gpu(void *native_window, int w, int h); /* native host GPU */
+PuSurface *pu_surface_create_current_gl(PuGLGetProcFn, void *, int w, int h);
 PuSurface *pu_surface_create_metal(void *ca_metal_layer, int w, int h); /* Apple; stub in GL build */
 int  pu_surface_is_gl(const PuSurface *);
 void pu_surface_present(PuSurface *);
@@ -103,7 +109,9 @@ void pu_surface_resize (PuSurface *, int w, int h);
 void pu_surface_destroy(PuSurface *);
 ```
 
-So the surface boundary is portable — each host passes a different native handle.
+The boundary is portable. Windows keeps its native ANGLE constructor. On Linux,
+SDL owns the Wayland/X11 window, EGL/GL context, and swap; Skia receives only a
+procedure resolver and wraps the current framebuffer.
 **Phase 1 done:** `pu_surface_create_gl` was renamed to `pu_surface_create_gpu`
 (opaque handle) and a guarded `pu_surface_create_metal` stub added, verified
 behavior-neutral on Windows (GPU path intact, 250/250 tests). The Apple Metal
@@ -112,7 +120,7 @@ implementation lands in `src/render/skia_metal.mm` (defining `PU_METAL_BACKEND`)
 | Platform | Skia backend | Native handle passed | EGL/context source |
 |----------|--------------|----------------------|--------------------|
 | Windows  | GL (ANGLE→D3D11) *(current)* | `HWND` | ANGLE `libEGL`/`libGLESv2` |
-| Linux    | GL (Mesa) or Vulkan | `wl_egl_window*` / `Window` (X11) | Mesa `libEGL` (no ANGLE) |
+| Linux SDL | GL (Mesa) | none; current context + proc callback | SDL3 (EGL, no ANGLE) |
 | macOS    | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | iOS      | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | Android  | GL (GLES) or Vulkan | `ANativeWindow*` | system EGL |
@@ -172,20 +180,19 @@ native Wayland, clean Metal-layer access, App Store-proven on iOS).
 // src/host/sdl/window_sdl.c — implements the §1 PuWindow contract via SDL3
 #define SDL_MAIN_USE_CALLBACKS
 #include <SDL3/SDL.h>
-#include "host/win32/window.h"   /* the shared contract (rename header later) */
+#include "host/window.h"
 
 struct PuWindow { SDL_Window *win; PuSurface *surf; float scale;
                   PuPaintFn paint; PuPointerFn pointer; PuKeyFn key;
                   PuWheelFn wheel; PuAsyncFn async; void *u_paint, *u_ptr, *u_key, *u_wheel, *u_async; };
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg) {
+    /* Resolve/force wayland or x11 before SDL_Init. */
     SDL_Init(SDL_INIT_VIDEO);
     PuWindow *w = calloc(1, sizeof *w);
     Uint32 flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
 #if defined(__APPLE__)
     flags |= SDL_WINDOW_METAL;
-#else
-    flags |= SDL_WINDOW_OPENGL;
 #endif
     w->win = SDL_CreateWindow(cfg->title?cfg->title:"PollyUI", cfg->width, cfg->height, flags);
     w->scale = SDL_GetWindowDisplayScale(w->win);
@@ -194,9 +201,6 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg) {
 #if defined(__APPLE__)
     SDL_MetalView mv = SDL_Metal_CreateView(w->win);
     w->surf = pu_surface_create_metal(SDL_Metal_GetLayer(mv), pw, ph);   /* CAMetalLayer */
-#else
-    SDL_GL_CreateContext(w->win);
-    w->surf = pu_surface_create_gpu(/*native unused: ctx is current*/ NULL, pw, ph);
 #endif
     return w;
 }
@@ -238,12 +242,33 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
 - **iOS** — Metal backend; SDL owns the `UIApplication`/`CADisplayLink`, soft
   keyboard, and safe-area. You add `Info.plist` + signing. Artifact: `.ipa`.
 - **macOS** — Metal; SDL owns the `NSApplication`. Artifact: `.app`.
-- **Windows/Linux** — GL (ANGLE on Win, Mesa on Linux). SDL handles Wayland↔X11
-  automatically. Artifacts: `.exe` / ELF.
+- **Windows/Linux** — GL (ANGLE on Win, Mesa on Linux). The Linux SDL host
+  explicitly selects Wayland or X11 once before `SDL_Init`. Artifacts:
+  `.exe` / ELF.
+
+### Linux desktop milestone
+
+Linux desktop is one `PU_HOST=sdl` ELF. `--backend=auto|wayland|x11` and
+`PU_BACKEND` select SDL's existing video driver; CLI has priority over the
+environment. Automatic mode prefers `WAYLAND_DISPLAY`, then `DISPLAY`, and is
+the only mode allowed to fall back.
+
+`--renderer=auto|gl|raster` and `PU_RENDERER` follow the same precedence.
+For GL, SDL creates and owns the OpenGL ES context and swaps the window. Skia
+receives only a procedure callback and wraps framebuffer 0 through
+`pu_surface_create_current_gl`; no SDL, Wayland, or X11 native type crosses
+into `skia_c.cpp`. Resize rewraps the framebuffer, and presentation is Skia
+flush followed by `SDL_GL_SwapWindow`.
+
+The Linux build requires SDL3 and FontConfig. CMake inspects the selected Skia
+archives for FontConfig and Ganesh GLES symbols. Missing FontConfig support is
+fatal; missing Ganesh GL disables GL in `AUTO`, is fatal with
+`-DPU_LINUX_GL=ON`, and leaves `--renderer=gl` as an explicit runtime failure.
+Raster remains available in every valid Linux build.
 
 ---
 
-## 5. Tier 2 — bare embedded Linux (no Java, no SDL)
+## 5. Tier 2 — bare embedded Linux (no Java, no SDL; not implemented)
 
 For appliances that own the whole stack. Two sub-profiles.
 
@@ -295,32 +320,31 @@ Yocto/Buildroot straight into PollyUI. This is the kiosk / IVI / set-top path.
 ## 6. CMake wiring
 
 ```cmake
-set(PU_HOST "win32" CACHE STRING "win32 | sdl | wayland | drm")
-set(PU_GPU  "auto"  CACHE STRING "auto | gl | metal | vulkan | raster")
+set(PU_HOST "win32" CACHE STRING "win32 | sdl")
+set(PU_LINUX_GL "AUTO" CACHE STRING "AUTO | ON | OFF")
 
 if(PU_HOST STREQUAL "win32")    target_sources(pollyui PRIVATE src/host/win32/window.c)
 elseif(PU_HOST STREQUAL "sdl")  target_sources(pollyui PRIVATE src/host/sdl/window_sdl.c)
                                 find_package(SDL3 REQUIRED); target_link_libraries(pollyui SDL3::SDL3)
-elseif(PU_HOST STREQUAL "wayland") target_sources(pollyui PRIVATE src/host/wayland/window_wl.c)
-                                target_link_libraries(pollyui wayland-client wayland-egl xkbcommon EGL GLESv2)
-elseif(PU_HOST STREQUAL "drm")  target_sources(pollyui PRIVATE src/host/drm/window_drm.c)
-                                target_link_libraries(pollyui drm gbm EGL GLESv2 input udev xkbcommon)
 endif()
 
-if(APPLE)  target_sources(pollyui PRIVATE src/render/skia_metal.mm)   # Metal path (PU_METAL_BACKEND)
-                                                                     # skia_c.cpp's metal stub is then excluded
+if(LINUX)
+  find_package(Fontconfig REQUIRED)
+  # Feature detection enables PU_SKIA_GL_BACKEND only when archives support it.
 endif()
-# src/render/skia_c.cpp (GL/ANGLE/raster + metal stub) builds on every target
+if(APPLE AND PU_METAL)
+  target_sources(pollyui PRIVATE src/render/skia_metal.mm)
+endif()
 ```
 
 ---
 
 ## 7. Build & packaging matrix
 
-| Target | PU_HOST | PU_GPU | Toolchain | Artifact |
+| Target | PU_HOST | Renderer | Toolchain | Artifact |
 |--------|---------|--------|-----------|----------|
 | Windows | `win32` *(or `sdl`)* | gl (ANGLE) | clang-cl / MSVC | `.exe` |
-| Linux desktop | `sdl` | gl (Mesa) | clang/gcc | ELF |
+| Linux desktop | `sdl` | Ganesh GLES or raster | clang/gcc | ELF |
 | macOS | `sdl` | metal | clang + Xcode SDK | `.app` |
 | iOS | `sdl` | metal | Xcode + iOS SDK | `.ipa` |
 | Android | `sdl` | gl (GLES) | NDK + SDL Java shell | `.apk` |
@@ -343,7 +367,7 @@ endif()
 | Gap | Status / mitigation |
 |-----|---------------------|
 | **Accessibility** (screen readers) | None today. Per-platform (UIA/AT-SPI/UIKit a11y). Real work; the Skia-direct (Flutter) trade-off. |
-| **IME depth** | SDL gives basic candidate/commit + soft keyboard; raw native is richer. Fine for Latin; verify for CJK. |
+| **IME depth** | SDL committed UTF-8 text works. Preedit/composition and CJK candidate-window positioning are not exposed yet. |
 | **QuickJS = interpreter (no JIT)** | Fine for UI logic (hot path is native Skia). Engine is swappable → Hermes for compute-heavy mobile. |
 | **Prebuilt Skia lacks Metal** | The pinned aseprite/skia m124 macOS prebuilt ships the GL backend, not Metal. The default macOS build therefore renders via the CPU raster fallback; GPU Metal (`-DPU_METAL=ON`) needs a Skia built with `skia_use_metal=true`. |
 | **Touch / gestures** | Needs the §1 `PuTouchFn` extension for multi-touch; single-touch maps to pointer today. |
@@ -356,18 +380,21 @@ endif()
 
 1. ✅ **Refactor the surface seam** (`create_gl`→`create_gpu`, stub `create_metal`).
    *Done — behavior-neutral, GPU path intact, 250/250 tests pass on Windows.*
-2. **SDL3 desktop backend** (`src/host/sdl/`) → validate Win/Linux/macOS with one
-   host. macOS forces the **Metal** path, exercising the new render code.
-   *Done (macOS):* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
+2. ✅ **SDL3 desktop backend** (`src/host/sdl/`) for macOS and Linux with one
+   host. *Done (macOS):* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
    poll loop so `main.c` is unchanged) + `src/render/skia_metal.mm` (Ganesh Metal
    via `SkSurfaces::WrapCAMetalLayer`) + CMake `PU_HOST`/`PU_METAL` wiring + the
    `mac-sdl-metal` preset. **Verified on Apple Silicon**: GPU Metal rendering,
    native traffic-light title bar (`window.setTitleBarStyle('overlay')`), live
    input, and clean live resize. Also ported thread.c (pthreads), fetch.c, and
-   the CoreText font manager. Linux via the same host is next.
+   the CoreText font manager. *Done (Linux implementation):* runtime
+   Wayland/X11 selection, FontConfig, SDL-owned GLES + Skia Ganesh wrapping,
+   raster fallback, option tests, and the `linux-sdl` preset. Hardware/display
+   verification still belongs on a Linux Wayland/X11 machine.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
-4. **Embedded Linux** (`wayland` first, then `drm`) for appliances — no Java, no SDL.
+4. **Embedded Linux** (`wayland` first, then `drm`) for appliances - no Java,
+   no SDL. This milestone intentionally does not implement either backend.
 
 Throughout, the raw **`win32`** backend stays selectable for a zero-dependency
 Windows build. The HostEngine interface never changes shape — every backend is a

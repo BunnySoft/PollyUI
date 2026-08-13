@@ -1,21 +1,23 @@
 // HostEngine — SDL3 backend for PollyUI (Tier 1: macOS/Linux/Windows; mobile
-// later). One file implementing the PuWindow contract from host/win32/window.h
+// later). One file implementing the PuWindow contract from host/window.h
 // via SDL3. See docs/PORTING.md §4.
 //
 // GPU surface per platform:
 //   Apple  -> Metal: SDL_Metal_CreateView -> CAMetalLayer -> pu_surface_create_metal
-//   else   -> GL:    pu_surface_create_gpu (where available)
+//   Linux -> GL: SDL context + platform-neutral current-framebuffer Skia wrapper
 //   any    -> raster fallback: pu_surface_create + SDL_Renderer streaming blit
 //
 // Loop model: the existing src/main.c owns the loop (it calls pu_window_run),
 // so this host runs a classic SDL_WaitEventTimeout/poll loop here rather than
 // SDL's main-callbacks. That keeps main.c byte-for-byte identical across hosts.
 
-#include "host/win32/window.h"   /* the shared HostEngine contract */
+#include "host/window.h"
+#include "host/startup.h"
 #include "render/skia_c.h"
 
 #include <SDL3/SDL.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +39,10 @@ struct PuWindow {
     SDL_Window   *win;
     SDL_Renderer *renderer;   /* raster fallback only */
     SDL_Texture  *tex;        /* raster fallback only */
+    SDL_GLContext gl_context; /* Linux Ganesh GL only; SDL owns presentation */
+#if defined(PU_METAL_BACKEND)
+    SDL_MetalView metal_view;
+#endif
     PuSurface    *surface;
     int           width, height;   /* physical pixels */
     float         scale;           /* logical -> physical */
@@ -45,6 +51,7 @@ struct PuWindow {
     int           frameless;
     int           custom_chrome;   /* 1 => app draws chrome: enable drag hit-test */
     int           is_metal;
+    int           is_gl;
 
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
@@ -89,6 +96,12 @@ static void recompute_scale(PuWindow *w)
 static void pu_sdl_paint(PuWindow *w)
 {
     if (!w->surface) return;
+#if defined(PU_SKIA_GL_BACKEND)
+    if (w->gl_context && !SDL_GL_MakeCurrent(w->win, w->gl_context)) {
+        SDL_Log("SDL_GL_MakeCurrent failed while painting: %s", SDL_GetError());
+        return;
+    }
+#endif
 #if defined(PU_METAL_BACKEND)
     if (w->is_metal) pu_metal_begin_frame(w->surface);
 #endif
@@ -105,7 +118,10 @@ static void pu_sdl_paint(PuWindow *w)
     }
 
     if (pu_surface_is_gl(w->surface)) {
-        pu_surface_present(w->surface);   /* GPU: flush + present drawable/swap */
+        pu_surface_present(w->surface);
+#if defined(PU_SKIA_GL_BACKEND)
+        if (w->gl_context) SDL_GL_SwapWindow(w->win);
+#endif
         return;
     }
 
@@ -120,49 +136,218 @@ static void pu_sdl_paint(PuWindow *w)
     }
 }
 
-static void create_surface(PuWindow *w)
+static int create_raster_surface(PuWindow *w)
 {
     SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height);
     if (w->width  < 1) w->width  = 1;
     if (w->height < 1) w->height = 1;
 
-#if defined(PU_METAL_BACKEND)
-    SDL_MetalView mv = SDL_Metal_CreateView(w->win);
-    if (mv) {
-        void *layer = SDL_Metal_GetLayer(mv);
-        w->surface = pu_surface_create_metal(layer, w->width, w->height);
-        if (w->surface) { w->is_metal = 1; return; }
+    w->surface  = pu_surface_create(w->width, w->height);
+    if (!w->surface) {
+        SDL_Log("could not create the Skia raster surface");
+        return 0;
     }
+    w->renderer = SDL_CreateRenderer(w->win, NULL);
+    if (!w->renderer) {
+        SDL_Log("SDL_CreateRenderer failed for raster presentation: %s", SDL_GetError());
+        return 0;
+    }
+    SDL_SetRenderVSync(w->renderer, 1);
+    SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height);
+    if (w->width < 1) w->width = 1;
+    if (w->height < 1) w->height = 1;
+    pu_surface_resize(w->surface, w->width, w->height);
+    w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
+                               SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
+    if (!w->tex) {
+        SDL_Log("SDL_CreateTexture failed for raster presentation: %s", SDL_GetError());
+        return 0;
+    }
+    return 1;
+}
+
+static void destroy_window_resources(PuWindow *w)
+{
+    if (!w) return;
+    if (w->surface) { pu_surface_destroy(w->surface); w->surface = NULL; }
+    if (w->tex) { SDL_DestroyTexture(w->tex); w->tex = NULL; }
+    if (w->renderer) { SDL_DestroyRenderer(w->renderer); w->renderer = NULL; }
+#if defined(PU_METAL_BACKEND)
+    if (w->metal_view) { SDL_Metal_DestroyView(w->metal_view); w->metal_view = NULL; }
+#endif
+    if (w->gl_context) { SDL_GL_DestroyContext(w->gl_context); w->gl_context = NULL; }
+    if (w->win) { SDL_DestroyWindow(w->win); w->win = NULL; }
+    w->is_gl = 0;
+    w->is_metal = 0;
+}
+
+static int init_video_backend(PuBackend requested, PuRenderer renderer)
+{
+    const char *driver = requested == PU_BACKEND_AUTO ? NULL : pu_backend_name(requested);
+    SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+#if defined(PU_SKIA_GL_BACKEND)
+    SDL_ResetHint(SDL_HINT_VIDEO_FORCE_EGL);
+    if (renderer != PU_RENDERER_RASTER)
+        SDL_SetHintWithPriority(SDL_HINT_VIDEO_FORCE_EGL, "1", SDL_HINT_OVERRIDE);
 #else
-    w->surface = pu_surface_create_gpu(NULL, w->width, w->height);
-    if (w->surface) return;
+    (void)renderer;
+#endif
+    if (driver &&
+        !SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, driver, SDL_HINT_OVERRIDE)) {
+        SDL_Log("could not force SDL video driver '%s'", driver);
+        return 0;
+    }
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init failed for video driver '%s': %s",
+                driver ? driver : "default", SDL_GetError());
+        return 0;
+    }
+    const char *active = SDL_GetCurrentVideoDriver();
+    if (driver && (!active || strcmp(active, driver) != 0)) {
+        SDL_Log("SDL selected video driver '%s' instead of requested '%s'",
+                active ? active : "none", driver);
+        SDL_Quit();
+        return 0;
+    }
+    return 1;
+}
+
+static SDL_Window *create_sdl_window(const PuWindowConfig *cfg, SDL_WindowFlags extra)
+{
+    int cw = (cfg && cfg->width  > 0) ? cfg->width  : 960;
+    int ch = (cfg && cfg->height > 0) ? cfg->height : 640;
+    const char *title = (cfg && cfg->title) ? cfg->title : "PollyUI";
+    SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
+    return SDL_CreateWindow(title, cw, ch, flags | extra);
+}
+
+#if defined(PU_SKIA_GL_BACKEND)
+static PuGLProc pu_sdl_gl_get_proc(void *user, const char *name)
+{
+    (void)user;
+    return (PuGLProc)SDL_GL_GetProcAddress(name);
+}
 #endif
 
-    /* Raster fallback (CPU surface blitted via SDL_Renderer). */
-    w->surface  = pu_surface_create(w->width, w->height);
-    w->renderer = SDL_CreateRenderer(w->win, NULL);
-    if (w->renderer) {
-        /* vsync the present so a mid-scanout swap can't tear the frame (the
-         * "rolling shutter" banding seen during live resize). */
-        SDL_SetRenderVSync(w->renderer, 1);
-        /* Match the render target's actual pixel size so the full-surface blit
-         * is 1:1 (never scaled/sheared while the window size is in flux). */
-        SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height);
-        if (w->width < 1) w->width = 1;
-        if (w->height < 1) w->height = 1;
-        pu_surface_resize(w->surface, w->width, w->height);
-        w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
-                                   SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
+static int create_gl_surface(PuWindow *w, const PuWindowConfig *cfg)
+{
+#if defined(PU_SKIA_GL_BACKEND)
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+
+    w->win = create_sdl_window(cfg, SDL_WINDOW_OPENGL);
+    if (!w->win) {
+        SDL_Log("SDL_CreateWindow(OpenGL) failed: %s", SDL_GetError());
+        return 0;
     }
+    w->gl_context = SDL_GL_CreateContext(w->win);
+    if (!w->gl_context) {
+        SDL_Log("SDL_GL_CreateContext failed: %s", SDL_GetError());
+        return 0;
+    }
+    if (!SDL_GL_MakeCurrent(w->win, w->gl_context)) {
+        SDL_Log("SDL_GL_MakeCurrent failed: %s", SDL_GetError());
+        return 0;
+    }
+    const char *vsync = getenv("PU_VSYNC");
+    int interval = (vsync && vsync[0]) ? atoi(vsync) : 1;
+    if (!SDL_GL_SetSwapInterval(interval))
+        SDL_Log("SDL_GL_SetSwapInterval(%d) failed: %s", interval, SDL_GetError());
+
+    SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height);
+    if (w->width < 1) w->width = 1;
+    if (w->height < 1) w->height = 1;
+    w->surface = pu_surface_create_current_gl(pu_sdl_gl_get_proc, NULL,
+                                               w->width, w->height);
+    if (!w->surface) return 0;
+    w->is_gl = 1;
+    return 1;
+#else
+    (void)w; (void)cfg;
+    SDL_Log("this build has no Skia Ganesh GL support");
+    return 0;
+#endif
+}
+
+static int create_metal_surface(PuWindow *w, const PuWindowConfig *cfg)
+{
+#if defined(PU_METAL_BACKEND)
+    w->win = create_sdl_window(cfg, SDL_WINDOW_METAL);
+    if (!w->win) {
+        SDL_Log("SDL_CreateWindow(Metal) failed: %s", SDL_GetError());
+        return 0;
+    }
+    SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height);
+    if (w->width < 1) w->width = 1;
+    if (w->height < 1) w->height = 1;
+    w->metal_view = SDL_Metal_CreateView(w->win);
+    if (!w->metal_view) {
+        SDL_Log("SDL_Metal_CreateView failed: %s", SDL_GetError());
+        return 0;
+    }
+    w->surface = pu_surface_create_metal(SDL_Metal_GetLayer(w->metal_view),
+                                         w->width, w->height);
+    if (!w->surface) return 0;
+    w->is_metal = 1;
+    return 1;
+#else
+    (void)w; (void)cfg;
+    return 0;
+#endif
+}
+
+static int create_requested_renderer(PuWindow *w, const PuWindowConfig *cfg,
+                                     PuRenderer requested)
+{
+    int renderer_ok = 0;
+#if defined(__APPLE__)
+    if (requested == PU_RENDERER_GL) {
+        SDL_Log("renderer=gl is not supported by the Apple SDL host; use auto or raster");
+    } else if (requested == PU_RENDERER_AUTO) {
+        renderer_ok = create_metal_surface(w, cfg);
+    }
+#else
+    if (requested != PU_RENDERER_RASTER)
+        renderer_ok = create_gl_surface(w, cfg);
+#endif
+    if (!renderer_ok && requested != PU_RENDERER_GL) {
+        if (requested == PU_RENDERER_AUTO)
+            fprintf(stderr, "[host] GL/GPU renderer unavailable; falling back to raster\n");
+        destroy_window_resources(w);
+        w->win = create_sdl_window(cfg, 0);
+        if (w->win) renderer_ok = create_raster_surface(w);
+    }
+    return renderer_ok;
 }
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init failed: %s", SDL_GetError());
+    PuBackend requested_backend = cfg ? cfg->backend : PU_BACKEND_AUTO;
+    PuRenderer requested_renderer = cfg ? cfg->renderer : PU_RENDERER_AUTO;
+    fprintf(stderr, "[host] requested backend=%s renderer=%s\n",
+            pu_backend_name(requested_backend), pu_renderer_name(requested_renderer));
+
+    PuBackend attempts[3];
+#if defined(__linux__)
+    size_t attempt_count = pu_backend_plan(requested_backend,
+                                            getenv("WAYLAND_DISPLAY"),
+                                            getenv("DISPLAY"), attempts);
+#else
+    if (requested_backend != PU_BACKEND_AUTO) {
+        fprintf(stderr, "[host] fatal: backend '%s' is only available on Linux\n",
+                pu_backend_name(requested_backend));
         return NULL;
     }
-    if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
+    attempts[0] = PU_BACKEND_AUTO;
+    size_t attempt_count = 1;
+#endif
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof *w);
     if (!w) return NULL;
@@ -170,20 +355,39 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     w->dirty   = 1;
     w->scale   = 1.0f;
 
-    int cw = (cfg && cfg->width  > 0) ? cfg->width  : 960;
-    int ch = (cfg && cfg->height > 0) ? cfg->height : 640;
-    const char *title = (cfg && cfg->title) ? cfg->title : "PollyUI";
+    int initialized = 0;
+    for (size_t i = 0; i < attempt_count; ++i) {
+        if (init_video_backend(attempts[i], requested_renderer) &&
+            create_requested_renderer(w, cfg, requested_renderer)) {
+            initialized = 1;
+            break;
+        }
+        destroy_window_resources(w);
+        SDL_Quit();
+        if (requested_backend != PU_BACKEND_AUTO) break;
+        if (i + 1 < attempt_count)
+            SDL_Log("automatic backend attempt '%s' could not create the requested "
+                    "window/renderer; trying fallback",
+                    pu_backend_name(attempts[i]));
+    }
+    if (!initialized) {
+        fprintf(stderr,
+                "[host] fatal: backend '%s' with renderer '%s' could not initialize\n",
+                pu_backend_name(requested_backend),
+                pu_renderer_name(requested_renderer));
+        free(w);
+        return NULL;
+    }
 
-    SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
-#if defined(PU_METAL_BACKEND)
-    flags |= SDL_WINDOW_METAL;
-#endif
-    w->win = SDL_CreateWindow(title, cw, ch, flags);
-    if (!w->win) { SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError()); free(w); return NULL; }
+    const char *active_driver = SDL_GetCurrentVideoDriver();
+    fprintf(stderr, "[host] selected backend=%s (SDL video driver=%s)\n",
+            active_driver ? active_driver : "unknown",
+            active_driver ? active_driver : "none");
+    if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
 
     recompute_scale(w);
-    create_surface(w);
-    if (!w->surface) { SDL_DestroyWindow(w->win); free(w); return NULL; }
+    fprintf(stderr, "[host] selected renderer=%s\n",
+            w->is_gl ? "gl" : (w->is_metal ? "metal" : "raster"));
 #if defined(__APPLE__)
     pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
                               SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
@@ -290,11 +494,23 @@ static void pu_sync_size(PuWindow *w)
     if (ph < 1) ph = 1;
     if (pw == w->width && ph == w->height) return;
     w->width = pw; w->height = ph;
+#if defined(PU_SKIA_GL_BACKEND)
+    if (w->gl_context && !SDL_GL_MakeCurrent(w->win, w->gl_context)) {
+        SDL_Log("SDL_GL_MakeCurrent failed while resizing: %s", SDL_GetError());
+        return;
+    }
+#endif
     pu_surface_resize(w->surface, pw, ph);
     if (w->tex) {
+        SDL_Texture *next = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
+                                              SDL_TEXTUREACCESS_STREAMING, pw, ph);
+        if (!next) {
+            SDL_Log("SDL_CreateTexture failed while resizing: %s", SDL_GetError());
+            w->running = 0;
+            return;
+        }
         SDL_DestroyTexture(w->tex);
-        w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
-                                   SDL_TEXTUREACCESS_STREAMING, pw, ph);
+        w->tex = next;
     }
     w->dirty = 1;
 }
@@ -404,10 +620,7 @@ int pu_window_run(PuWindow *w)
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
-    if (w->surface)  pu_surface_destroy(w->surface);
-    if (w->tex)      SDL_DestroyTexture(w->tex);
-    if (w->renderer) SDL_DestroyRenderer(w->renderer);
-    if (w->win)      SDL_DestroyWindow(w->win);
+    destroy_window_resources(w);
     free(w);
     SDL_Quit();
 }

@@ -23,6 +23,7 @@ struct PuSurface {
 
     // GPU-backed (true => pu_surface_present must be called to show a frame).
     bool gl = false;
+    bool external_gl = false;  // Context and swapchain are owned by the host.
     sk_sp<GrDirectContext> grctx;
 
     // Windows GL/ANGLE backend state (HWND + EGL handles, all opaque here).
