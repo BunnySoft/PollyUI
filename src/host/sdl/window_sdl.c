@@ -577,11 +577,12 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
 }
 
 /* During a live window resize, macOS (and Windows) run a modal event-tracking
- * loop on the main thread, which starves our pu_window_run loop — so the window
- * would just stretch/zoom the last rendered frame until the drag ends. An SDL
- * event watch is invoked synchronously as events are pumped, *including* from
- * inside that modal loop, so we relayout + repaint here to keep content correct
- * live. */
+ * loop on the main thread, which starves our pu_window_run loop. Keep the
+ * existing synchronous repaint workaround on those platforms only. SDL warns
+ * that event watches may run on another thread, so using this path on Linux can
+ * race the Wayland/X11 event pump and GL context, causing input to stall. Linux
+ * compositors deliver resize events through the normal loop instead. */
+#if defined(_WIN32) || defined(__APPLE__)
 static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 {
     PuWindow *w = (PuWindow *)userdata;
@@ -595,12 +596,15 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
     }
     return true;             /* keep delivering the event to the main loop */
 }
+#endif
 
 int pu_window_run(PuWindow *w)
 {
     if (!w) return 1;
     SDL_StartTextInput(w->win);   /* enable SDL_EVENT_TEXT_INPUT */
+#if defined(_WIN32) || defined(__APPLE__)
     SDL_AddEventWatch(pu_resize_watch, w);
+#endif
 
     while (w->running) {
         SDL_Event e;
@@ -612,7 +616,9 @@ int pu_window_run(PuWindow *w)
         if (w->dirty) { pu_sdl_paint(w); w->dirty = 0; }
     }
 
+#if defined(_WIN32) || defined(__APPLE__)
     SDL_RemoveEventWatch(pu_resize_watch, w);
+#endif
     SDL_StopTextInput(w->win);
     return 0;
 }
