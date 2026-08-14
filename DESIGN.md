@@ -369,8 +369,8 @@ CMake + Ninja + clang-cl.
 
 ### Planned 🛠
 
-- **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
-  the last big architectural piece; everything above Host is already portable.
+- **Linux desktop follow-up:** native Linux hardware validation, WSLg performance
+  profiling, and CJK IME preedit/candidate positioning support.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
 - **Text:** custom font families, **IME** (CJK/emoji), clipboard.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.
