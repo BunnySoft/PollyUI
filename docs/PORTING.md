@@ -261,8 +261,9 @@ into `skia_c.cpp`. Resize rewraps the framebuffer, and presentation is Skia
 flush followed by `SDL_GL_SwapWindow`.
 
 The Linux build requires SDL3 and FontConfig. CMake inspects the selected Skia
-archives for FontConfig and Ganesh GLES symbols. Missing FontConfig support is
-fatal; missing Ganesh GL disables GL in `AUTO`, is fatal with
+archives for FontConfig and Ganesh GLES symbols and discovers OpenGL/GLX when
+the Ganesh path is enabled. Missing FontConfig support is fatal; missing Ganesh
+GL or OpenGL/GLX development files disables GL in `AUTO`, is fatal with
 `-DPU_LINUX_GL=ON`, and leaves `--renderer=gl` as an explicit runtime failure.
 Raster remains available in every valid Linux build.
 

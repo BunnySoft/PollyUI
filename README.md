@@ -53,7 +53,9 @@ Linux) in **[docs/PORTING.md](./docs/PORTING.md)**; full feature matrix in
 ## Building
 
 Windows, with CMake ≥ 3.25, Ninja, and LLVM/clang-cl (against an installed
-MSVC + Windows SDK).
+Visual Studio 2022 or newer C++ Build Tools + Windows SDK). The pinned Skia
+archive requires the VS 2022 STL runtime; CMake rejects older runtimes during
+configuration instead of failing later with unresolved `__std_*` symbols.
 
 ```powershell
 ./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
@@ -149,12 +151,14 @@ Backend selection happens once, before `SDL_Init`; there are no native
 Wayland/Xlib clients in PollyUI and DRM/KMS is not part of this milestone.
 
 Install CMake >= 3.25, Ninja, SDL3 development files, FontConfig development
-files, zlib, and a C++20-capable compiler/standard library (GCC 11+ or a recent
-Clang). For example, on a distribution that packages SDL3:
+files, zlib, OpenGL/GLX development files for the optional Ganesh path, and a
+C++20-capable compiler/standard library (GCC 11+ or a recent Clang). For
+example, on a distribution that packages SDL3:
 
 ```bash
 # Package names vary by distribution.
-sudo apt install cmake ninja-build libsdl3-dev libfontconfig1-dev zlib1g-dev
+sudo apt install cmake ninja-build libsdl3-dev libfontconfig1-dev \
+  libgl-dev libopengl-dev zlib1g-dev
 
 ./tools/fetch_skia.sh
 cmake --preset linux-sdl
@@ -167,6 +171,9 @@ selected Skia archives: `PU_LINUX_GL=AUTO` enables Ganesh GL when available,
 `PU_LINUX_GL=ON` makes missing GL support a configuration error, and
 `PU_LINUX_GL=OFF` builds raster-only. FontConfig and a FontConfig-enabled Skia
 archive are required and reported clearly at configure time.
+When OpenGL/GLX development files are unavailable, `AUTO` builds the reliable
+raster renderer and `ON` reports the missing dependency as a configuration
+error.
 
 Run with automatic selection (CLI overrides environment, which overrides
 `auto`):

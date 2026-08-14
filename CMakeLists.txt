@@ -33,6 +33,29 @@ if (MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 endif()
 
+if (MSVC)
+    # The pinned Windows Skia archive was built against the VS 2022 STL and
+    # references helper symbols that older MSVC runtimes do not export.
+    set(PU_SAVED_REQUIRED_LIBRARIES "${CMAKE_REQUIRED_LIBRARIES}")
+    list(APPEND CMAKE_REQUIRED_LIBRARIES libcpmt)
+    check_cxx_source_compiles(
+        "extern \"C\" float __std_max_f(float, float);
+         int main(int argc, char **) {
+             volatile float input = static_cast<float>(argc);
+             auto helper = &__std_max_f;
+             return helper(input, 2.0f) == 2.0f ? 0 : 1;
+         }"
+        PU_HAVE_SKIA_MSVC_RUNTIME)
+    set(CMAKE_REQUIRED_LIBRARIES "${PU_SAVED_REQUIRED_LIBRARIES}")
+    unset(PU_SAVED_REQUIRED_LIBRARIES)
+    if (NOT PU_HAVE_SKIA_MSVC_RUNTIME)
+        message(FATAL_ERROR
+            "The pinned Windows Skia archive requires the Visual Studio 2022 "
+            "or newer C++ runtime. Install the current VS Build Tools C++ "
+            "workload and reconfigure from its x64 developer environment.")
+    endif()
+endif()
+
 # --- Host backend selection (DESIGN.md §2; docs/PORTING.md) ------------------
 #   win32 -> raw Win32 host (zero deps)   sdl -> SDL3 (macOS/Linux/Windows)
 if (WIN32)
@@ -131,6 +154,10 @@ if (NOT WIN32)
     find_package(Threads REQUIRED)
     target_link_libraries(pollyui PRIVATE Threads::Threads)
 endif()
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Expose clock_gettime/nanosleep when compiling the C sources in strict C11 mode.
+    target_compile_definitions(pollyui PRIVATE _POSIX_C_SOURCE=200809L)
+endif()
 
 # macOS native title-bar helper (transparent titlebar + native traffic lights).
 # Always built on Apple (the SDL host calls into it); Cocoa is linked below.
@@ -212,24 +239,37 @@ else()
                        PU_GANESH_GL_SYMBOL)
                 if (PU_GANESH_GL_SYMBOL EQUAL -1)
                     set(PU_LINUX_GL_AVAILABLE OFF)
+                    set(PU_LINUX_GL_REASON
+                        "the selected Skia archives lack Ganesh OpenGL ES")
                 else()
-                    set(PU_LINUX_GL_AVAILABLE ON)
+                    find_package(OpenGL QUIET COMPONENTS OpenGL GLX)
+                    if (TARGET OpenGL::GLX)
+                        set(PU_LINUX_GL_AVAILABLE ON)
+                    else()
+                        set(PU_LINUX_GL_AVAILABLE OFF)
+                        set(PU_LINUX_GL_REASON
+                            "the OpenGL/GLX development libraries are unavailable")
+                    endif()
                 endif()
             endif()
         endif()
 
         if (PU_LINUX_GL STREQUAL "ON" AND NOT PU_LINUX_GL_AVAILABLE)
             message(FATAL_ERROR
-                "PU_LINUX_GL=ON was requested, but the archives in "
-                "${SKIA_LIB_DIR} do not expose Ganesh OpenGL ES support.")
+                "PU_LINUX_GL=ON was requested, but ${PU_LINUX_GL_REASON}.")
         elseif (NOT PU_LINUX_GL STREQUAL "OFF" AND PU_LINUX_GL_AVAILABLE)
             target_compile_definitions(pollyui PRIVATE PU_SKIA_GL_BACKEND)
+            target_link_libraries(pollyui PRIVATE OpenGL::GLX)
             message(STATUS
                 "Linux renderer support: Skia Ganesh OpenGL ES + raster fallback")
+        elseif (PU_LINUX_GL STREQUAL "OFF")
+            message(STATUS
+                "Linux renderer support: raster only (PU_LINUX_GL=OFF; "
+                "--renderer=gl will fail explicitly)")
         else()
             message(STATUS
-                "Linux renderer support: raster only "
-                "(--renderer=gl will fail explicitly)")
+                "Linux renderer support: raster only (${PU_LINUX_GL_REASON}; "
+                "--renderer=gl will fail explicitly)")
         endif()
     endif()
 endif()
