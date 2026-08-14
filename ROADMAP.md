@@ -87,7 +87,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 | **`text-align`** (left/center/right) | ✅ | per-line within the box |
 | **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
 | **Text selection + click-to-position caret** | ✅ | `js/textinput.mjs` (drag-select, edit) |
-| IME (CJK / emoji composition) | 🟡 | committed SDL text works; preedit/candidate positioning pending |
+| IME (CJK / emoji composition) | ✅ | SDL preedit/commit events + caret-relative candidate area; native frontend verification pending |
 | **Font families** (`fontFamily`) | 🟡 | platform generic families + DirectWrite/CoreText/FontConfig; loaded faces pending |
 | **Gradient-filled text** (`textGradientFrom/To`) | ✅ | |
 
@@ -239,4 +239,4 @@ platform-specific code; the surface-creation seam is already abstracted.
 3. **Dirty-region / display-list rendering + compositor-thread animation** — the
    WinUI-class render path (60fps motion at scale).
 4. **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-5. **Text**: custom font families beyond the built-ins, IME (CJK/emoji), clipboard.
+5. **Text**: custom font families beyond the built-ins and clipboard.

@@ -65,8 +65,8 @@ static LONG WINAPI pu_crash_handler(EXCEPTION_POINTERS *ep)
  */
 
 /* ---- optional perf tracing: set env PU_PERF=1 to print per-frame timings ---- */
+static int g_perf = -1;
 #ifdef _WIN32
-static int    g_perf = -1;
 static double g_qpc_freq = 0;
 static double pu_now_ms(void)
 {
@@ -74,21 +74,33 @@ static double pu_now_ms(void)
     if (g_qpc_freq == 0) { LARGE_INTEGER f; QueryPerformanceFrequency(&f); g_qpc_freq = (double)f.QuadPart; }
     return (double)c.QuadPart * 1000.0 / g_qpc_freq;
 }
+#else
+static double pu_now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+}
+#endif
 static int pu_perf_on(void)
 {
-    if (g_perf < 0) { const char *e = getenv("PU_PERF"); g_perf = (e && e[0] && e[0] != '0') ? 1 : 0; }
+    if (g_perf < 0) {
+        const char *e = getenv("PU_PERF");
+        g_perf = (e && e[0] && e[0] != '0') ? 1 : 0;
+    }
     return g_perf;
 }
-#else
-static double pu_now_ms(void) { return 0; }
-static int    pu_perf_on(void) { return 0; }
-#endif
 
 /* Shared state for the window callbacks. */
 typedef struct PuApp {
     PuScript *script;
     PuBridge *bridge;
+    int composing;
+    PuNode *composition_target;
 } PuApp;
+
+static void end_composition(PuBridge *bridge, int *composing,
+                            PuNode **target, const char *data);
 
 static PuStartupOptions g_startup;
 
@@ -125,6 +137,10 @@ static int app_pointer(int x, int y, PuPointerType type, void *user)
         PuNode *f = target;
         while (f && f->tab_index < 0) f = f->parent;
         state_changed |= pu_bridge_set_focus(app->bridge, f);
+        if (app->composing &&
+            app->composition_target != pu_bridge_focused(app->bridge))
+            end_composition(app->bridge, &app->composing,
+                            &app->composition_target, "");
     }
 
     const char *t = (type == PU_POINTER_DOWN) ? "mousedown"
@@ -136,8 +152,9 @@ static int app_pointer(int x, int y, PuPointerType type, void *user)
         double t1 = pu_now_ms();
         int worked = pu_script_pump(app->script);
         double t2 = pu_now_ms();
-        fprintf(stderr, "[perf] pointer %-9s: dispatch %.2fms  js+rerender %.2fms (worked=%d state=%d)\n",
-                t, t1 - t0, t2 - t1, worked, state_changed);
+        if (type != PU_POINTER_MOVE || worked || state_changed || t2 - t0 >= 1.0)
+            fprintf(stderr, "[perf] pointer %-9s: dispatch %.2fms  js+rerender %.2fms (worked=%d state=%d)\n",
+                    t, t1 - t0, t2 - t1, worked, state_changed);
         return worked | state_changed;
     }
     state_changed |= pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
@@ -163,11 +180,93 @@ static int app_wheel(int x, int y, float dy, void *user)
 static int app_key(const char *key, int is_down, void *user)
 {
     PuApp *app = (PuApp *)user;
-    if (is_down && strcmp(key, "Tab") == 0)
+    if (is_down && strcmp(key, "Tab") == 0) {
         pu_bridge_focus_next(app->bridge);
-    else
+        if (app->composing &&
+            app->composition_target != pu_bridge_focused(app->bridge))
+            end_composition(app->bridge, &app->composing,
+                            &app->composition_target, "");
+    } else {
         pu_bridge_dispatch_key(app->bridge, is_down ? "keydown" : "keyup", key);
+    }
     return pu_script_pump(app->script);
+}
+
+static void end_composition(PuBridge *bridge, int *composing,
+                            PuNode **target, const char *data)
+{
+    if (!*composing || !*target) return;
+    pu_bridge_dispatch_composition_to(bridge, *target, "compositionend",
+                                      data ? data : "", 0, 0);
+    pu_node_unref(*target);
+    *target = NULL;
+    *composing = 0;
+}
+
+static int dispatch_text_input(PuScript *script, PuBridge *bridge, int *composing,
+                               PuNode **composition_target,
+                               PuTextEventType type, const char *text,
+                               int start, int length)
+{
+    const char *data = text ? text : "";
+    PuNode *focused = pu_bridge_focused(bridge);
+    if (*composing && *composition_target != focused) {
+        end_composition(bridge, composing, composition_target, "");
+        return pu_script_pump(script);
+    }
+
+    if (type == PU_TEXT_EDITING) {
+        if (data[0] && !*composing) {
+            if (!focused) return pu_script_pump(script);
+            *composition_target = focused;
+            pu_node_ref(*composition_target);
+            pu_bridge_dispatch_composition_to(bridge, *composition_target,
+                                              "compositionstart", "", 0, 0);
+            *composing = 1;
+        }
+        if (*composing)
+            pu_bridge_dispatch_composition_to(bridge, *composition_target,
+                                              "compositionupdate",
+                                              data, start, length);
+        if (!data[0]) end_composition(bridge, composing, composition_target, "");
+    } else {
+        if (*composing) {
+            PuNode *target = *composition_target;
+            pu_bridge_dispatch_composition_to(bridge, target, "compositionend",
+                                              data, start, length);
+            if (data[0]) pu_bridge_dispatch_text_to(bridge, target, data);
+            pu_node_unref(target);
+            *composition_target = NULL;
+            *composing = 0;
+        } else if (data[0]) {
+            pu_bridge_dispatch_text_to(bridge, focused, data);
+        }
+    }
+    return pu_script_pump(script);
+}
+
+static int app_text(PuTextEventType type, const char *text,
+                    int start, int length, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    return dispatch_text_input(app->script, app->bridge, &app->composing,
+                               &app->composition_target,
+                               type, text, start, length);
+}
+
+static int app_text_area(PuTextInputArea *area, void *user)
+{
+    PuApp *app = (PuApp *)user;
+    float x, y, width, height, cursor;
+    if (!area ||
+        !pu_bridge_text_input_area(app->bridge, &x, &y, &width, &height, &cursor))
+        return 0;
+    area->x = (int)x;
+    area->y = (int)y;
+    area->width = width > 1 ? (int)width : 1;
+    area->height = height > 1 ? (int)height : 1;
+    area->cursor = (int)cursor;
+    return 1;
 }
 
 /* Monotonic millisecond clock for animation timestamps. */
@@ -278,6 +377,8 @@ typedef struct PuTestHost {
     PuBridge  *bridge;
     PuSurface *surface;
     int        width, height;
+    int        composing;
+    PuNode    *composition_target;
 } PuTestHost;
 
 static PuTestHost *g_test;
@@ -399,6 +500,44 @@ static JSValue host_key(JSContext *ctx, JSValueConst this_val, int argc, JSValue
     return JS_UNDEFINED;
 }
 
+static JSValue host_composition(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    const char *type = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    const char *text = argc >= 2 ? JS_ToCString(ctx, argv[1]) : NULL;
+    int32_t start = 0, length = 0;
+    if (argc >= 3) JS_ToInt32(ctx, &start, argv[2]);
+    if (argc >= 4) JS_ToInt32(ctx, &length, argv[3]);
+    if (type && (strcmp(type, "editing") == 0 || strcmp(type, "commit") == 0)) {
+        dispatch_text_input(g_test->script, g_test->bridge, &g_test->composing,
+                            &g_test->composition_target,
+                            strcmp(type, "editing") == 0 ? PU_TEXT_EDITING : PU_TEXT_COMMIT,
+                            text ? text : "", start, length);
+        pu_script_run_loop(g_test->script);
+        test_render();
+    }
+    if (text) JS_FreeCString(ctx, text);
+    if (type) JS_FreeCString(ctx, type);
+    return JS_UNDEFINED;
+}
+
+static JSValue host_text_input_area(JSContext *ctx, JSValueConst this_val,
+                                    int argc, JSValueConst *argv)
+{
+    (void)this_val; (void)argc; (void)argv;
+    float x, y, width, height, cursor;
+    if (!pu_bridge_text_input_area(g_test->bridge, &x, &y, &width, &height, &cursor))
+        return JS_NULL;
+    JSValue area = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, area, "x", JS_NewFloat64(ctx, x));
+    JS_SetPropertyStr(ctx, area, "y", JS_NewFloat64(ctx, y));
+    JS_SetPropertyStr(ctx, area, "width", JS_NewFloat64(ctx, width));
+    JS_SetPropertyStr(ctx, area, "height", JS_NewFloat64(ctx, height));
+    JS_SetPropertyStr(ctx, area, "cursor", JS_NewFloat64(ctx, cursor));
+    return area;
+}
+
 static JSValue host_pixel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
@@ -434,6 +573,10 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "scroll", JS_NewCFunction(ctx, host_scroll, "scroll", 3));
     JS_SetPropertyStr(ctx, host, "flush",  JS_NewCFunction(ctx, host_flush, "flush", 0));
     JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
+    JS_SetPropertyStr(ctx, host, "composition",
+                      JS_NewCFunction(ctx, host_composition, "composition", 4));
+    JS_SetPropertyStr(ctx, host, "textInputArea",
+                      JS_NewCFunction(ctx, host_text_input_area, "textInputArea", 0));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
     JS_SetPropertyStr(ctx, global, "host", host);
@@ -458,6 +601,8 @@ static int run_test(const char *path)
     host.bridge = b;
     host.width = 800;
     host.height = 600;
+    host.composing = 0;
+    host.composition_target = NULL;
     { const char *e; if ((e = getenv("PU_TEST_W"))) host.width = atoi(e);
       if ((e = getenv("PU_TEST_H"))) host.height = atoi(e); }
     host.surface = pu_surface_create(host.width, host.height);
@@ -468,6 +613,7 @@ static int run_test(const char *path)
     int rc = pu_script_run_file(s, path);
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
 
+    end_composition(b, &host.composing, &host.composition_target, "");
     g_test = NULL;
     pu_async_shutdown();
     pu_storage_shutdown();
@@ -514,11 +660,13 @@ static int run_app(const char *path)
         cfg.renderer = g_startup.renderer;
         PuWindow *win = pu_window_create(&cfg);
         if (win) {
-            PuApp app = { s, bridge };
+            PuApp app = { s, bridge, 0, NULL };
             g_app_window = win;
             pu_window_set_paint(win, app_paint, &app);
             pu_window_set_pointer(win, app_pointer, &app);
             pu_window_set_key(win, app_key, &app);
+            pu_window_set_text(win, app_text, &app);
+            pu_window_set_text_area(win, app_text_area, &app);
             pu_window_set_wheel(win, app_wheel, &app);
             pu_window_set_async(win, app_async, &app);
             pu_window_set_region(win, app_region, &app);     /* custom title bar drag */
@@ -527,6 +675,7 @@ static int run_app(const char *path)
             if (g_pending_titlebar >= 0)  pu_window_set_titlebar_style(win, g_pending_titlebar);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             pu_window_run(win);
+            end_composition(bridge, &app.composing, &app.composition_target, "");
             pu_window_destroy(win);
         } else rc = 1;
     }

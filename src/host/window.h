@@ -42,6 +42,19 @@ typedef enum PuPointerType {
 
 typedef int (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
 typedef int (*PuKeyFn)(const char *key, int is_down, void *user);
+typedef enum PuTextEventType {
+    PU_TEXT_EDITING = 0,
+    PU_TEXT_COMMIT
+} PuTextEventType;
+
+typedef struct PuTextInputArea {
+    int x, y, width, height;
+    int cursor; /* horizontal offset from x, in logical window coordinates */
+} PuTextInputArea;
+
+typedef int (*PuTextFn)(PuTextEventType type, const char *text,
+                        int start, int length, void *user);
+typedef int (*PuTextAreaFn)(PuTextInputArea *area, void *user);
 typedef int (*PuWheelFn)(int x, int y, float dy, void *user);
 typedef int (*PuAsyncFn)(void *user);
 typedef int (*PuRegionFn)(int x, int y, void *user);
@@ -50,6 +63,8 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg);
 void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
+void pu_window_set_text(PuWindow *w, PuTextFn fn, void *user);
+void pu_window_set_text_area(PuWindow *w, PuTextAreaFn fn, void *user);
 void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
 void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user);
 void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user);

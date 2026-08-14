@@ -369,8 +369,9 @@ CMake + Ninja + clang-cl.
 
 ### Planned 🛠
 
-- **Linux desktop follow-up:** native Linux hardware validation, WSLg performance
-  profiling, and CJK IME preedit/candidate positioning support.
+- **Linux desktop follow-up:** native Linux hardware/IME validation and continued
+  WSLg software-rendering performance optimization. Portable timing and CJK IME
+  preedit/candidate positioning are implemented.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
 - **Text:** custom font families, **IME** (CJK/emoji), clipboard.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.

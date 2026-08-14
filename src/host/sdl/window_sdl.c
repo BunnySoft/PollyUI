@@ -56,12 +56,31 @@ struct PuWindow {
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
     PuKeyFn     key_fn;     void *key_user;
+    PuTextFn    text_fn;    void *text_user;
+    PuTextAreaFn text_area_fn; void *text_area_user;
     PuWheelFn   wheel_fn;   void *wheel_user;
     PuAsyncFn   async_fn;   void *async_user;
     PuRegionFn  region_fn;  void *region_user;
+    int         composition_active;
+    int         text_area_valid;
+    PuTextInputArea text_area;
+    SDL_Keycode suppressed_keys[8];
+    int         suppressed_key_count;
 };
 
 static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
+static int g_perf = -1;
+
+static int pu_sdl_perf_on(void)
+{
+    if (g_perf < 0) {
+        const char *e = getenv("PU_PERF");
+        g_perf = (e && e[0] && e[0] != '0') ? 1 : 0;
+    }
+    return g_perf;
+}
+
+static double ns_to_ms(Uint64 ns) { return (double)ns / 1000000.0; }
 
 /* Map an SDL keycode to a DOM-style key name for non-text keys. Printable
  * characters arrive separately via SDL_EVENT_TEXT_INPUT, so return NULL for
@@ -86,6 +105,30 @@ static const char *sdl_key_name(SDL_Keycode k)
     }
 }
 
+static int suppressed_key_index(const PuWindow *w, SDL_Keycode key)
+{
+    for (int i = 0; i < w->suppressed_key_count; ++i)
+        if (w->suppressed_keys[i] == key) return i;
+    return -1;
+}
+
+static void remember_suppressed_key(PuWindow *w, SDL_Keycode key)
+{
+    if (suppressed_key_index(w, key) >= 0) return;
+    if (w->suppressed_key_count < (int)(sizeof(w->suppressed_keys) /
+                                        sizeof(w->suppressed_keys[0])))
+        w->suppressed_keys[w->suppressed_key_count++] = key;
+}
+
+static int take_suppressed_key(PuWindow *w, SDL_Keycode key)
+{
+    int index = suppressed_key_index(w, key);
+    if (index < 0) return 0;
+    --w->suppressed_key_count;
+    w->suppressed_keys[index] = w->suppressed_keys[w->suppressed_key_count];
+    return 1;
+}
+
 static void recompute_scale(PuWindow *w)
 {
     float s = SDL_GetWindowDisplayScale(w->win);
@@ -96,6 +139,8 @@ static void recompute_scale(PuWindow *w)
 static void pu_sdl_paint(PuWindow *w)
 {
     if (!w->surface) return;
+    int perf = pu_sdl_perf_on();
+    Uint64 t0 = perf ? SDL_GetTicksNS() : 0;
 #if defined(PU_SKIA_GL_BACKEND)
     if (w->gl_context && !SDL_GL_MakeCurrent(w->win, w->gl_context)) {
         SDL_Log("SDL_GL_MakeCurrent failed while painting: %s", SDL_GetError());
@@ -116,12 +161,22 @@ static void pu_sdl_paint(PuWindow *w)
         pu_surface_fill_rect(w->surface, (cw - rw) * 0.5f, (ch - rh) * 0.5f, rw, rh,
                              0x3b, 0x82, 0xf6, 0xFF);
     }
+    Uint64 t1 = perf ? SDL_GetTicksNS() : 0;
 
     if (pu_surface_is_gl(w->surface)) {
         pu_surface_present(w->surface);
+        Uint64 t2 = perf ? SDL_GetTicksNS() : 0;
 #if defined(PU_SKIA_GL_BACKEND)
         if (w->gl_context) SDL_GL_SwapWindow(w->win);
 #endif
+        if (perf) {
+            Uint64 t3 = SDL_GetTicksNS();
+            fprintf(stderr,
+                    "[perf] sdl frame (%s): app %.2fms  skia %.2fms  swap %.2fms  total %.2fms\n",
+                    w->is_gl ? "gl" : (w->is_metal ? "metal" : "gpu"),
+                    ns_to_ms(t1 - t0), ns_to_ms(t2 - t1),
+                    ns_to_ms(t3 - t2), ns_to_ms(t3 - t0));
+        }
         return;
     }
 
@@ -130,9 +185,17 @@ static void pu_sdl_paint(PuWindow *w)
         const void *pixels = pu_surface_pixels(w->surface);
         int row = pu_surface_row_bytes(w->surface);
         if (pixels) SDL_UpdateTexture(w->tex, NULL, pixels, row);
+        Uint64 t2 = perf ? SDL_GetTicksNS() : 0;
         SDL_RenderClear(w->renderer);
         SDL_RenderTexture(w->renderer, w->tex, NULL, NULL);
         SDL_RenderPresent(w->renderer);
+        if (perf) {
+            Uint64 t3 = SDL_GetTicksNS();
+            fprintf(stderr,
+                    "[perf] sdl frame (raster): app %.2fms  upload %.2fms  present %.2fms  total %.2fms\n",
+                    ns_to_ms(t1 - t0), ns_to_ms(t2 - t1),
+                    ns_to_ms(t3 - t2), ns_to_ms(t3 - t0));
+        }
     }
 }
 
@@ -185,6 +248,14 @@ static int init_video_backend(PuBackend requested, PuRenderer renderer)
 {
     const char *driver = requested == PU_BACKEND_AUTO ? NULL : pu_backend_name(requested);
     SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+#if defined(__linux__)
+    SDL_ResetHint(SDL_HINT_IME_IMPLEMENTED_UI);
+    if (!SDL_SetHintWithPriority(SDL_HINT_IME_IMPLEMENTED_UI, "composition",
+                                 SDL_HINT_OVERRIDE)) {
+        SDL_Log("could not enable SDL IME composition events");
+        return 0;
+    }
+#endif
 #if defined(PU_SKIA_GL_BACKEND)
     SDL_ResetHint(SDL_HINT_VIDEO_FORCE_EGL);
     if (renderer != PU_RENDERER_RASTER)
@@ -398,6 +469,8 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 void pu_window_set_paint  (PuWindow *w, PuPaintFn   fn, void *u){ if(w){w->paint_fn=fn;   w->paint_user=u;   w->dirty=1;} }
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *u){ if(w){w->pointer_fn=fn; w->pointer_user=u;} }
 void pu_window_set_key    (PuWindow *w, PuKeyFn     fn, void *u){ if(w){w->key_fn=fn;     w->key_user=u;} }
+void pu_window_set_text   (PuWindow *w, PuTextFn    fn, void *u){ if(w){w->text_fn=fn;    w->text_user=u;} }
+void pu_window_set_text_area(PuWindow *w, PuTextAreaFn fn, void *u){ if(w){w->text_area_fn=fn; w->text_area_user=u;} }
 void pu_window_set_wheel  (PuWindow *w, PuWheelFn   fn, void *u){ if(w){w->wheel_fn=fn;   w->wheel_user=u;} }
 void pu_window_set_async  (PuWindow *w, PuAsyncFn   fn, void *u){ if(w){w->async_fn=fn;   w->async_user=u;} }
 void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->region_fn=fn;  w->region_user=u;} }
@@ -515,8 +588,60 @@ static void pu_sync_size(PuWindow *w)
     w->dirty = 1;
 }
 
+static int text_area_equal(const PuTextInputArea *a, const PuTextInputArea *b)
+{
+    return a->x == b->x && a->y == b->y &&
+           a->width == b->width && a->height == b->height &&
+           a->cursor == b->cursor;
+}
+
+static void pu_sync_text_input_area(PuWindow *w)
+{
+    PuTextInputArea next;
+    int valid = w->text_area_fn &&
+                w->text_area_fn(&next, w->text_area_user) > 0;
+    if (valid) {
+        if (next.width < 1) next.width = 1;
+        if (next.height < 1) next.height = 1;
+        if (next.cursor < 0) next.cursor = 0;
+        if (next.cursor > next.width) next.cursor = next.width;
+    }
+    if (valid == w->text_area_valid &&
+        (!valid || text_area_equal(&next, &w->text_area)))
+        return;
+
+    bool ok;
+    if (valid) {
+        SDL_Rect rect = { next.x, next.y, next.width, next.height };
+        ok = SDL_SetTextInputArea(w->win, &rect, next.cursor);
+    } else {
+        ok = SDL_SetTextInputArea(w->win, NULL, 0);
+    }
+    if (!ok)
+        SDL_Log("SDL_SetTextInputArea failed: %s", SDL_GetError());
+    w->text_area_valid = valid;
+    if (valid) w->text_area = next;
+}
+
+static const char *perf_event_name(Uint32 type)
+{
+    switch (type) {
+        case SDL_EVENT_MOUSE_BUTTON_DOWN: return "mouse-down";
+        case SDL_EVENT_MOUSE_BUTTON_UP: return "mouse-up";
+        case SDL_EVENT_MOUSE_MOTION: return "mouse-move";
+        case SDL_EVENT_MOUSE_WHEEL: return "wheel";
+        case SDL_EVENT_KEY_DOWN: return "key-down";
+        case SDL_EVENT_KEY_UP: return "key-up";
+        case SDL_EVENT_TEXT_EDITING: return "text-editing";
+        case SDL_EVENT_TEXT_INPUT: return "text-input";
+        default: return NULL;
+    }
+}
+
 static void handle_event(PuWindow *w, const SDL_Event *e)
 {
+    const char *event_name = pu_sdl_perf_on() ? perf_event_name(e->type) : NULL;
+    Uint64 dispatch_start = event_name ? SDL_GetTicksNS() : 0;
     /* SDL3 reports mouse/touch coordinates in logical window points (the same
      * coordinate space as our layout, which is computed at width/height in
      * points). So pass them straight through — do NOT divide by the DPI scale,
@@ -549,16 +674,38 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
 
         case SDL_EVENT_KEY_DOWN: {
             const char *name = sdl_key_name(e->key.key);
-            if (name && w->key_fn && w->key_fn(name, 1, w->key_user) > 0) w->dirty = 1;
+            if (name && (w->composition_active ||
+                         suppressed_key_index(w, e->key.key) >= 0)) {
+                remember_suppressed_key(w, e->key.key);
+                break;
+            }
+            if (name && w->key_fn &&
+                w->key_fn(name, 1, w->key_user) > 0) w->dirty = 1;
             break;
         }
         case SDL_EVENT_KEY_UP: {
             const char *name = sdl_key_name(e->key.key);
-            if (name && w->key_fn && w->key_fn(name, 0, w->key_user) > 0) w->dirty = 1;
+            if (take_suppressed_key(w, e->key.key)) break;
+            if (name && w->key_fn &&
+                w->key_fn(name, 0, w->key_user) > 0) w->dirty = 1;
             break;
         }
+        case SDL_EVENT_TEXT_EDITING:
+            w->composition_active = e->edit.text && e->edit.text[0];
+            if (w->text_fn &&
+                w->text_fn(PU_TEXT_EDITING, e->edit.text,
+                           e->edit.start, e->edit.length, w->text_user) > 0)
+                w->dirty = 1;
+            break;
         case SDL_EVENT_TEXT_INPUT:
-            if (w->key_fn && w->key_fn(e->text.text, 1, w->key_user) > 0) w->dirty = 1;
+            if (w->text_fn) {
+                if (w->text_fn(PU_TEXT_COMMIT, e->text.text, 0, 0,
+                               w->text_user) > 0) w->dirty = 1;
+            } else if (w->key_fn &&
+                       w->key_fn(e->text.text, 1, w->key_user) > 0) {
+                w->dirty = 1;
+            }
+            w->composition_active = 0;
             break;
 
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -571,8 +718,31 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             recompute_scale(w);
             w->dirty = 1;
             break;
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            w->suppressed_key_count = 0;
+            if (w->composition_active) {
+                if (!SDL_ClearComposition(w->win))
+                    SDL_Log("SDL_ClearComposition failed: %s", SDL_GetError());
+                w->composition_active = 0;
+                if (w->text_fn &&
+                    w->text_fn(PU_TEXT_EDITING, "", 0, 0,
+                               w->text_user) > 0)
+                    w->dirty = 1;
+            }
+            break;
         default:
             break;
+    }
+    if (event_name) {
+        Uint64 done = SDL_GetTicksNS();
+        Uint64 queued = dispatch_start > e->common.timestamp
+                      ? dispatch_start - e->common.timestamp : 0;
+        Uint64 handled = done - dispatch_start;
+        if (e->type != SDL_EVENT_MOUSE_MOTION ||
+            queued >= 8000000 || handled >= 8000000) {
+            fprintf(stderr, "[perf] input %-12s: queue %.2fms  dispatch %.2fms\n",
+                    event_name, ns_to_ms(queued), ns_to_ms(handled));
+        }
     }
 }
 
@@ -601,7 +771,11 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 int pu_window_run(PuWindow *w)
 {
     if (!w) return 1;
-    SDL_StartTextInput(w->win);   /* enable SDL_EVENT_TEXT_INPUT */
+    if (!SDL_StartTextInput(w->win)) {
+        SDL_Log("SDL_StartTextInput failed: %s", SDL_GetError());
+        return 1;
+    }
+    pu_sync_text_input_area(w);
 #if defined(_WIN32) || defined(__APPLE__)
     SDL_AddEventWatch(pu_resize_watch, w);
 #endif
@@ -613,13 +787,15 @@ int pu_window_run(PuWindow *w)
             while (SDL_PollEvent(&e)) handle_event(w, &e);
         }
         if (w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
+        pu_sync_text_input_area(w);
         if (w->dirty) { pu_sdl_paint(w); w->dirty = 0; }
     }
 
 #if defined(_WIN32) || defined(__APPLE__)
     SDL_RemoveEventWatch(pu_resize_watch, w);
 #endif
-    SDL_StopTextInput(w->win);
+    if (!SDL_StopTextInput(w->win))
+        SDL_Log("SDL_StopTextInput failed: %s", SDL_GetError());
     return 0;
 }
 

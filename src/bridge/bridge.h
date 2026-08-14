@@ -47,5 +47,17 @@ PuNode *pu_bridge_focused(PuBridge *b);
 void    pu_bridge_focus_next(PuBridge *b);
 /* Dispatch a keyboard event (with a `key` field) to the focused element. */
 void    pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key);
+/* Dispatch committed text as keydown while marking it as text (`data`). */
+void    pu_bridge_dispatch_text(PuBridge *b, const char *text);
+void    pu_bridge_dispatch_text_to(PuBridge *b, PuNode *target, const char *text);
+/* Dispatch a DOM composition event carrying preedit data and its selected range. */
+void    pu_bridge_dispatch_composition(PuBridge *b, const char *type,
+                                       const char *data, int start, int length);
+void    pu_bridge_dispatch_composition_to(PuBridge *b, PuNode *target,
+                                          const char *type, const char *data,
+                                          int start, int length);
+/* Return the focused text input's viewport-space candidate area and caret offset. */
+int     pu_bridge_text_input_area(PuBridge *b, float *x, float *y,
+                                  float *width, float *height, float *cursor);
 
 #endif /* POLLYUI_BRIDGE_BRIDGE_H */

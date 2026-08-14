@@ -73,14 +73,30 @@ function caretBlur(id) { if (_caret.activeId === id) { _caret.activeId = null; _
 // Per-input caret/selection state (the value is controlled; caret index is not).
 const _inputs = {};
 function inputState(id, len) {
-  const st = _inputs[id] || (_inputs[id] = reactive({ caret: 0, anchor: null, dragging: false }));
+  const st = _inputs[id] || (_inputs[id] = reactive({
+    caret: 0, anchor: null, dragging: false, composition: null,
+  }));
   if (st.caret > len) st.caret = len;
   if (st.anchor != null && st.anchor > len) st.anchor = len;
   return st;
 }
+function prevTextIndex(value, i) {
+  if (i <= 0) return 0;
+  const low = value.charCodeAt(i - 1);
+  return low >= 0xdc00 && low <= 0xdfff && i >= 2 ? i - 2 : i - 1;
+}
+function nextTextIndex(value, i) {
+  if (i >= value.length) return value.length;
+  const high = value.charCodeAt(i);
+  return high >= 0xd800 && high <= 0xdbff && i + 1 < value.length ? i + 2 : i + 1;
+}
 function indexAtX(value, fontSize, localX) {
   let best = 0, bestD = Infinity;
-  for (let i = 0; i <= value.length; i++) { const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX); if (d < bestD) { bestD = d; best = i; } }
+  for (let i = 0; i <= value.length; i = nextTextIndex(value, i)) {
+    const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX);
+    if (d < bestD) { bestD = d; best = i; }
+    if (i === value.length) break;
+  }
   return best;
 }
 // A caret vnode for a focused input (or null). Place inside a position:relative box.
@@ -271,45 +287,90 @@ export function NCard(props = {}, ...children) {
 }
 
 // ---- NInput (controlled) ----------------------------------------------------
+// A stable id enables persistent caret/selection state, preedit rendering, and
+// native candidate positioning. ID-less inputs retain basic committed editing.
 
 export function NInput(props = {}) {
   const { value = '', placeholder = '', onInput, width = 200, size = 'medium', id, selectionColor = '#93c5fd' } = props;
   const fs = size === 'large' ? 16 : 14;
   const h0 = BTN_SIZE[size] ? BTN_SIZE[size].h : 34;
   const pad = 12;
-  const isPh = value.length === 0;
   const st = id ? inputState(id, value.length) : null;
   const focused = id && _caret.activeId === id;
-  const xOf = (i) => pad + measureText(value.slice(0, i), fs);
+  const utf16Index = (text, characters) => Array.from(text).slice(0, Math.max(0, characters)).join('').length;
+  const comp = st ? st.composition : null;
+  let shown = value;
+  let shownCaret = st ? st.caret : value.length;
+  if (comp) {
+    shown = value.slice(0, comp.baseStart) + comp.data + value.slice(comp.baseEnd);
+    shownCaret = comp.baseStart + utf16Index(comp.data, comp.start);
+  }
+  const isPh = shown.length === 0;
+  const xOf = (text, i) => pad + measureText(text.slice(0, i), fs);
   const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
   const sel = (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
+  const curSel = () => (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
 
   const kids = [];
-  if (focused && sel) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(sel[1]) - xOf(sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
-  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value));
-  if (focused && _caret.on) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(st ? st.caret : value.length), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
+  if (comp) kids.push(h('view', { style: clean({
+    position: 'absolute',
+    left: xOf(shown, comp.length > 0
+      ? comp.baseStart + utf16Index(comp.data, comp.start)
+      : comp.baseStart),
+    top: (h0 - fs) / 2 - 1,
+    width: Math.max(1, comp.length > 0
+      ? xOf(shown, comp.baseStart + utf16Index(comp.data, comp.start + comp.length)) -
+        xOf(shown, comp.baseStart + utf16Index(comp.data, comp.start))
+      : xOf(shown, comp.baseStart + comp.data.length) - xOf(shown, comp.baseStart)),
+    height: fs + 2, backgroundColor: selectionColor,
+  }) }));
+  else if (focused && sel) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(value, sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(value, sel[1]) - xOf(value, sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
+  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : shown));
+  if (focused && _caret.on) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(shown, shownCaret), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
 
-  const curSel = () => (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
   const replace = (ins) => { const [s0, e0] = curSel() || [st.caret, st.caret]; onInput && onInput(value.slice(0, s0) + ins + value.slice(e0)); st.caret = s0 + ins.length; st.anchor = null; };
 
   return h('view', {
     id, tabIndex: 0,
+    textInput: st ? 'true' : null,
+    textInputCursor: st ? xOf(shown, shownCaret) : null,
     style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: pad, paddingRight: pad, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
     hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
-    onFocus: () => caretFocus(id), onBlur: () => { caretBlur(id); if (st) st.anchor = null; },
+    onFocus: () => caretFocus(id), onBlur: () => { caretBlur(id); if (st) { st.anchor = null; st.composition = null; } },
     onMousedown: (e) => { if (e.currentTarget.focus) e.currentTarget.focus(); if (!st) return; const i = indexAtX(value, fs, localX(e)); st.caret = i; st.anchor = i; st.dragging = true; _caret.on = true; _caret.tick++; },
     onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e)); _caret.tick++; } },
     onMouseup: () => { if (st) { st.dragging = false; if (st.anchor === st.caret) st.anchor = null; _caret.tick++; } },
+    onCompositionstart: () => {
+      if (!st) return;
+      const [baseStart, baseEnd] = curSel() || [st.caret, st.caret];
+      st.composition = { data: '', start: 0, length: 0, baseStart, baseEnd };
+      _caret.on = true; _caret.tick++;
+    },
+    onCompositionupdate: (e) => {
+      if (!st) return;
+      if (!st.composition) {
+        const [baseStart, baseEnd] = curSel() || [st.caret, st.caret];
+        st.composition = { data: '', start: 0, length: 0, baseStart, baseEnd };
+      }
+      st.composition.data = e.data || '';
+      st.composition.start = e.start || 0;
+      st.composition.length = e.length || 0;
+      _caret.on = true; _caret.tick++;
+    },
+    onCompositionend: () => {
+      if (st) { st.composition = null; _caret.on = true; _caret.tick++; }
+    },
     onKeydown: (e) => {
-      if (!st) { if (onInput) { const k = e.key; if (k === 'Backspace') onInput(value.slice(0, -1)); else if (k.length === 1) onInput(value + k); } return; }
+      if (!st) { if (onInput) { const k = e.key; if (k === 'Backspace') onInput(value.slice(0, prevTextIndex(value, value.length))); else if (e.data != null || k.length === 1) onInput(value + k); } return; }
+      if (st.composition) return;
       const k = e.key;
-      if (k === 'ArrowLeft') { st.caret = Math.max(0, st.caret - 1); st.anchor = null; }
-      else if (k === 'ArrowRight') { st.caret = Math.min(value.length, st.caret + 1); st.anchor = null; }
+      if (k === 'ArrowLeft') { st.caret = prevTextIndex(value, st.caret); st.anchor = null; }
+      else if (k === 'ArrowRight') { st.caret = nextTextIndex(value, st.caret); st.anchor = null; }
       else if (k === 'Home') { st.caret = 0; st.anchor = null; }
       else if (k === 'End') { st.caret = value.length; st.anchor = null; }
-      else if (k === 'Backspace') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret > 0) { onInput && onInput(value.slice(0, st.caret - 1) + value.slice(st.caret)); st.caret--; } }
-      else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { onInput && onInput(value.slice(0, st.caret) + value.slice(st.caret + 1)); } }
-      else if (k.length === 1) replace(k);
+      else if (k === 'Backspace') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret > 0) { const p = prevTextIndex(value, st.caret); onInput && onInput(value.slice(0, p) + value.slice(st.caret)); st.caret = p; } }
+      else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { const n = nextTextIndex(value, st.caret); onInput && onInput(value.slice(0, st.caret) + value.slice(n)); } }
+      else if (e.data != null || k.length === 1) replace(k);
       else return;
       _caret.on = true; _caret.tick++;
     },

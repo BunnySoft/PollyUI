@@ -368,7 +368,7 @@ endif()
 | Gap | Status / mitigation |
 |-----|---------------------|
 | **Accessibility** (screen readers) | None today. Per-platform (UIA/AT-SPI/UIKit a11y). Real work; the Skia-direct (Flutter) trade-off. |
-| **IME depth** | SDL committed UTF-8 text works. Preedit/composition and CJK candidate-window positioning are not exposed yet. |
+| **IME depth** | SDL committed UTF-8 and preedit/composition are exposed as DOM key/composition events. Focused text inputs publish a caret rectangle to `SDL_SetTextInputArea` for native candidate positioning. Headless coverage is complete; representative native Linux IME frontends still require verification. |
 | **QuickJS = interpreter (no JIT)** | Fine for UI logic (hot path is native Skia). Engine is swappable → Hermes for compute-heavy mobile. |
 | **Prebuilt Skia lacks Metal** | The pinned aseprite/skia m124 macOS prebuilt ships the GL backend, not Metal. The default macOS build therefore renders via the CPU raster fallback; GPU Metal (`-DPU_METAL=ON`) needs a Skia built with `skia_use_metal=true`. |
 | **Touch / gestures** | Needs the §1 `PuTouchFn` extension for multi-touch; single-touch maps to pointer today. |
@@ -390,8 +390,10 @@ endif()
    input, and clean live resize. Also ported thread.c (pthreads), fetch.c, and
    the CoreText font manager. *Done (Linux implementation):* runtime
    Wayland/X11 selection, FontConfig, SDL-owned GLES + Skia Ganesh wrapping,
-   raster fallback, option tests, and the `linux-sdl` preset. Hardware/display
-   verification still belongs on a Linux Wayland/X11 machine.
+   raster fallback, composition/preedit and candidate-area plumbing, portable
+   performance tracing, option/IME tests, and the `linux-sdl` preset.
+   Hardware/display and native IME frontend verification still belong on
+   representative Linux Wayland/X11 machines.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
 4. **Embedded Linux** (`wayland` first, then `drm`) for appliances - no Java,

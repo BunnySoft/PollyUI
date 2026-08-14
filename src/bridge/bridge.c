@@ -370,9 +370,10 @@ static int js_event_flag(JSContext *ctx, JSValueConst ev, const char *name)
 
 /* Dispatch `type` to `target`. With bubble, walk up to the root invoking
  * matching listeners; stopPropagation/stopImmediatePropagation cut the walk.
- * `key` (keyboard) and px,py (pointer) are attached when provided. Returns 1 if
- * a listener called preventDefault(). */
+ * Optional keyboard, composition, pointer, and wheel fields are attached when
+ * provided. Returns 1 if a listener called preventDefault(). */
 static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key,
+                         const char *data, int edit_start, int edit_length,
                          int has_pos, float px, float py, int bubble, double delta_y)
 {
     if (!b || !target || !type) return 0;
@@ -383,6 +384,11 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
     if (key) JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key));
+    if (data) {
+        JS_SetPropertyStr(ctx, ev, "data", JS_NewString(ctx, data));
+        JS_SetPropertyStr(ctx, ev, "start", JS_NewInt32(ctx, edit_start));
+        JS_SetPropertyStr(ctx, ev, "length", JS_NewInt32(ctx, edit_length));
+    }
     if (has_pos) {
         JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, px));
         JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, py));
@@ -422,12 +428,41 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
 
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
 {
-    dispatch_impl(b, target, type, NULL, 0, 0, 0, 1, 0);
+    dispatch_impl(b, target, type, NULL, NULL, 0, 0, 0, 0, 0, 1, 0);
 }
 
 void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
 {
-    if (b && b->focused) dispatch_impl(b, b->focused, type, key, 0, 0, 0, 1, 0);
+    if (b && b->focused)
+        dispatch_impl(b, b->focused, type, key, NULL, 0, 0, 0, 0, 0, 1, 0);
+}
+
+void pu_bridge_dispatch_text(PuBridge *b, const char *text)
+{
+    pu_bridge_dispatch_text_to(b, b ? b->focused : NULL, text);
+}
+
+void pu_bridge_dispatch_text_to(PuBridge *b, PuNode *target, const char *text)
+{
+    if (b && target && text)
+        dispatch_impl(b, target, "keydown", text, text,
+                      0, 0, 0, 0, 0, 1, 0);
+}
+
+void pu_bridge_dispatch_composition(PuBridge *b, const char *type,
+                                    const char *data, int start, int length)
+{
+    pu_bridge_dispatch_composition_to(b, b ? b->focused : NULL,
+                                      type, data, start, length);
+}
+
+void pu_bridge_dispatch_composition_to(PuBridge *b, PuNode *target,
+                                       const char *type, const char *data,
+                                       int start, int length)
+{
+    if (b && target)
+        dispatch_impl(b, target, type, NULL, data ? data : "",
+                      start, length, 0, 0, 0, 1, 0);
 }
 
 /* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
@@ -445,11 +480,11 @@ int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, fl
         b->hovered = target;
         if (old) node_set_state(old, PU_STATE_HOVER, 0, 1);       /* clear old hover path */
         if (target) { pu_node_ref(target); node_set_state(target, PU_STATE_HOVER, 1, 1); } /* mark new path */
-        if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0, 0); pu_node_unref(old); }
-        if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0, 0);
+        if (old) { dispatch_impl(b, old, "mouseleave", NULL, NULL, 0, 0, 1, x, y, 0, 0); pu_node_unref(old); }
+        if (target) dispatch_impl(b, target, "mouseenter", NULL, NULL, 0, 0, 1, x, y, 0, 0);
         hover_changed = 1; /* hover:* overrides changed -> the host should repaint */
     }
-    if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1, 0);
+    if (target) dispatch_impl(b, target, type, NULL, NULL, 0, 0, 1, x, y, 1, 0);
     return hover_changed;
 }
 
@@ -458,7 +493,7 @@ int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, fl
 int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
 {
     if (!b) return 0;
-    if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1, dy);
+    if (target) dispatch_impl(b, target, "wheel", NULL, NULL, 0, 0, 1, x, y, 1, dy);
 
     PuNode *sc = NULL;
     for (PuNode *p = target; p; p = p->parent) {
@@ -490,6 +525,36 @@ int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, floa
 
 PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
 
+int pu_bridge_text_input_area(PuBridge *b, float *x, float *y,
+                              float *width, float *height, float *cursor)
+{
+    PuNode *n = b ? b->focused : NULL;
+    const char *enabled = n ? pu_style_get(&n->attrs, "textInput") : NULL;
+    if (!n || !enabled || strcmp(enabled, "true") != 0) return 0;
+
+    float px = n->layout_x;
+    float py = n->layout_y;
+    for (PuNode *p = n->parent; p; p = p->parent) {
+        const char *sl = pu_style_get(&p->style, "scrollLeft");
+        const char *st = pu_style_get(&p->style, "scrollTop");
+        if (sl) px -= (float)atof(sl);
+        if (st) py -= (float)atof(st);
+    }
+
+    float pc = 0;
+    const char *cursor_attr = pu_style_get(&n->attrs, "textInputCursor");
+    if (cursor_attr) pc = (float)atof(cursor_attr);
+    if (pc < 0) pc = 0;
+    if (pc > n->layout_w) pc = n->layout_w;
+
+    if (x) *x = px;
+    if (y) *y = py;
+    if (width) *width = n->layout_w;
+    if (height) *height = n->layout_h;
+    if (cursor) *cursor = pc;
+    return n->layout_w > 0 && n->layout_h > 0;
+}
+
 /* Set/clear a state flag on a node, or up the whole ancestor chain to the root.
  * Hover marks the path (CSS :hover applies to ancestors); focus marks one node. */
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
@@ -508,14 +573,14 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
         PuNode *old = b->focused;
         node_set_state(old, PU_STATE_FOCUS, 0, 0);
         b->focused = NULL;
-        dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0, 0);
+        dispatch_impl(b, old, "blur", NULL, NULL, 0, 0, 0, 0, 0, 0, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
     b->focused = node;
     if (node) {
         pu_node_ref(node);            /* keep the focused node alive */
         node_set_state(node, PU_STATE_FOCUS, 1, 0);
-        dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0, 0);
+        dispatch_impl(b, node, "focus", NULL, NULL, 0, 0, 0, 0, 0, 0, 0);
     }
     return 1; /* focus changed -> the host should repaint */
 }

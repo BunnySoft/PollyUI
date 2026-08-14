@@ -19,7 +19,10 @@ export function createTextInput(opts = {}) {
   const color    = opts.color ?? '#0f172a';
   const selColor = opts.selectionColor ?? '#93c5fd';
 
-  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false };
+  const st = {
+    value: String(opts.value ?? ''), caret: 0, anchor: null,
+    focused: false, dragging: false, composition: null,
+  };
   st.caret = st.value.length;
 
   const root = el('view', {
@@ -39,15 +42,28 @@ export function createTextInput(opts = {}) {
   root.appendChild(textEl);
   root.appendChild(caret);
 
-  const xOf = (i) => measureText(st.value.slice(0, i), fontSize);
+  const xOf = (text, i) => measureText(text.slice(0, i), fontSize);
+  const utf16Index = (text, characters) =>
+    Array.from(text).slice(0, Math.max(0, characters)).join('').length;
+  const prevIndex = (text, i) => {
+    if (i <= 0) return 0;
+    const low = text.charCodeAt(i - 1);
+    return low >= 0xdc00 && low <= 0xdfff && i >= 2 ? i - 2 : i - 1;
+  };
+  const nextIndex = (text, i) => {
+    if (i >= text.length) return text.length;
+    const high = text.charCodeAt(i);
+    return high >= 0xd800 && high <= 0xdbff && i + 1 < text.length ? i + 2 : i + 1;
+  };
 
   // Map a text-local x (px from the text start) to the nearest caret index.
   function indexAtX(localX) {
     const v = st.value;
     let best = 0, bestD = Infinity;
-    for (let i = 0; i <= v.length; i++) {
+    for (let i = 0; i <= v.length; i = nextIndex(v, i)) {
       const d = Math.abs(measureText(v.slice(0, i), fontSize) - localX);
       if (d < bestD) { bestD = d; best = i; }
+      if (i === v.length) break;
     }
     return best;
   }
@@ -58,13 +74,35 @@ export function createTextInput(opts = {}) {
   }
 
   function render() {
-    textNode.textContent = st.value;
-    caret.style.left = String(padding + xOf(st.caret));
+    let shown = st.value;
+    let shownCaret = st.caret;
+    const comp = st.composition;
+    if (comp) {
+      shown = st.value.slice(0, comp.baseStart) + comp.data +
+              st.value.slice(comp.baseEnd);
+      shownCaret = comp.baseStart +
+                   utf16Index(comp.data, comp.start);
+    }
+    textNode.textContent = shown;
+    const cursorX = padding + xOf(shown, shownCaret);
+    caret.style.left = String(cursorX);
     caret.style.backgroundColor = st.focused ? color : 'transparent';
+    root.setAttribute('textInputCursor', String(cursorX));
     const r = selRange();
-    if (r && st.focused) {
-      highlight.style.left = String(padding + xOf(r[0]));
-      highlight.style.width = String(xOf(r[1]) - xOf(r[0]));
+    if (comp && st.focused) {
+      const selectedStart = comp.baseStart + utf16Index(comp.data, comp.start);
+      const selectedEnd = comp.baseStart +
+                          utf16Index(comp.data, comp.start + comp.length);
+      const visualStart = comp.length > 0 ? selectedStart : comp.baseStart;
+      const visualEnd = comp.length > 0 ? selectedEnd :
+                        comp.baseStart + comp.data.length;
+      highlight.style.left = String(padding + xOf(shown, visualStart));
+      highlight.style.width = String(Math.max(
+        1, xOf(shown, visualEnd) - xOf(shown, visualStart)));
+      highlight.style.backgroundColor = selColor;
+    } else if (r && st.focused) {
+      highlight.style.left = String(padding + xOf(st.value, r[0]));
+      highlight.style.width = String(xOf(st.value, r[1]) - xOf(st.value, r[0]));
       highlight.style.backgroundColor = selColor;
     } else {
       highlight.style.width = '0';
@@ -91,7 +129,29 @@ export function createTextInput(opts = {}) {
     render();
   });
   root.addEventListener('focus', () => { st.focused = true; render(); });
-  root.addEventListener('blur',  () => { st.focused = false; render(); });
+  root.addEventListener('blur',  () => { st.focused = false; st.composition = null; render(); });
+
+  root.addEventListener('compositionstart', () => {
+    const r = selRange();
+    const [baseStart, baseEnd] = r || [st.caret, st.caret];
+    st.composition = { data: '', start: 0, length: 0, baseStart, baseEnd };
+    render();
+  });
+  root.addEventListener('compositionupdate', (e) => {
+    if (!st.composition) {
+      const r = selRange();
+      const [baseStart, baseEnd] = r || [st.caret, st.caret];
+      st.composition = { data: '', start: 0, length: 0, baseStart, baseEnd };
+    }
+    st.composition.data = e.data || '';
+    st.composition.start = e.start || 0;
+    st.composition.length = e.length || 0;
+    render();
+  });
+  root.addEventListener('compositionend', () => {
+    st.composition = null;
+    render();
+  });
 
   function replaceSelection(insert) {
     const r = selRange();
@@ -103,26 +163,27 @@ export function createTextInput(opts = {}) {
 
   root.addEventListener('keydown', (e) => {
     const k = e.key;
-    if (k === 'ArrowLeft')       { st.caret = Math.max(0, st.caret - 1); st.anchor = null; }
-    else if (k === 'ArrowRight') { st.caret = Math.min(st.value.length, st.caret + 1); st.anchor = null; }
+    if (k === 'ArrowLeft')       { st.caret = prevIndex(st.value, st.caret); st.anchor = null; }
+    else if (k === 'ArrowRight') { st.caret = nextIndex(st.value, st.caret); st.anchor = null; }
     else if (k === 'Home')       { st.caret = 0; st.anchor = null; }
     else if (k === 'End')        { st.caret = st.value.length; st.anchor = null; }
     else if (k === 'Backspace') {
       const r = selRange();
       if (r) { st.value = st.value.slice(0, r[0]) + st.value.slice(r[1]); st.caret = r[0]; st.anchor = null; }
-      else if (st.caret > 0) { st.value = st.value.slice(0, st.caret - 1) + st.value.slice(st.caret); st.caret--; }
+      else if (st.caret > 0) { const p = prevIndex(st.value, st.caret); st.value = st.value.slice(0, p) + st.value.slice(st.caret); st.caret = p; }
     }
     else if (k === 'Delete') {
       const r = selRange();
       if (r) { st.value = st.value.slice(0, r[0]) + st.value.slice(r[1]); st.caret = r[0]; st.anchor = null; }
-      else if (st.caret < st.value.length) { st.value = st.value.slice(0, st.caret) + st.value.slice(st.caret + 1); }
+      else if (st.caret < st.value.length) { const n = nextIndex(st.value, st.caret); st.value = st.value.slice(0, st.caret) + st.value.slice(n); }
     }
-    else if (k.length === 1) { replaceSelection(k); }   // printable character
+    else if (e.data != null || k.length === 1) { replaceSelection(k); }
     else return;
     render();
   });
 
   render();
+  root.setAttribute('textInput', 'true');
 
   return {
     root,

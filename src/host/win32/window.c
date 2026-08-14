@@ -35,6 +35,11 @@ struct PuWindow {
     void       *pointer_user;
     PuKeyFn     key_fn;       /* optional keyboard callback */
     void       *key_user;
+    PuTextFn    text_fn;
+    void       *text_user;
+    PuTextAreaFn text_area_fn;
+    void       *text_area_user;
+    wchar_t     pending_high_surrogate;
     PuWheelFn   wheel_fn;     /* optional wheel callback */
     void       *wheel_user;
     PuAsyncFn   async_fn;     /* optional async pump callback */
@@ -286,12 +291,34 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     }
 
     case WM_CHAR:
-        if (w && w->key_fn) {
+        if (w && (w->text_fn || w->key_fn)) {
             wchar_t c = (wchar_t)wp;
             if (c >= 0x20 && c != 0x7F) { /* printable; control keys come via WM_KEYDOWN */
+                if (c >= 0xD800 && c <= 0xDBFF) {
+                    w->pending_high_surrogate = c;
+                    return 0;
+                }
+                wchar_t utf16[2];
+                int utf16_len = 1;
+                utf16[0] = c;
+                if (c >= 0xDC00 && c <= 0xDFFF &&
+                    w->pending_high_surrogate) {
+                    utf16[0] = w->pending_high_surrogate;
+                    utf16[1] = c;
+                    utf16_len = 2;
+                }
+                w->pending_high_surrogate = 0;
                 char utf8[8] = { 0 };
-                WideCharToMultiByte(CP_UTF8, 0, &c, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
-                if (w->key_fn(utf8, 1, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
+                int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS,
+                                                utf16, utf16_len, utf8,
+                                                sizeof(utf8) - 1, NULL, NULL);
+                int changed = 0;
+                if (bytes > 0) {
+                    changed = w->text_fn
+                            ? w->text_fn(PU_TEXT_COMMIT, utf8, 0, 0, w->text_user)
+                            : w->key_fn(utf8, 1, w->key_user);
+                }
+                if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
             }
         }
         return 0;
@@ -433,6 +460,20 @@ void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user)
     if (!w) return;
     w->key_fn = fn;
     w->key_user = user;
+}
+
+void pu_window_set_text(PuWindow *w, PuTextFn fn, void *user)
+{
+    if (!w) return;
+    w->text_fn = fn;
+    w->text_user = user;
+}
+
+void pu_window_set_text_area(PuWindow *w, PuTextAreaFn fn, void *user)
+{
+    if (!w) return;
+    w->text_area_fn = fn;
+    w->text_area_user = user;
 }
 
 void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user)

@@ -199,10 +199,25 @@ first when only `DISPLAY` is set, then falls back to the other Linux desktop
 driver. Only `auto` may fall back. The selected backend, SDL video driver, and
 renderer are logged.
 
+Linux text input handles committed UTF-8 plus SDL composition/preedit events.
+Focused PollyUI text inputs expose their current caret rectangle through the
+platform-neutral Host contract, and the SDL host passes it to
+`SDL_SetTextInputArea` so native CJK candidate UI can follow the caret.
+Controlled `NInput` components require a stable `id` for persistent caret,
+selection, and preedit state.
+`PU_PERF=1` reports portable layout/render timing plus SDL upload/Skia/swap and
+input-queue latency, which is useful for identifying software-rendered WSLg
+sessions. Native IME frontend behavior and hardware Mesa rendering still need
+verification on representative Linux desktops.
+
+On the current WSLg validation machine Mesa selects `llvmpipe`: sampled steady
+gallery frames were about 53 ms on Wayland GL and 58–94 ms on X11 GL, while
+input dispatch remained below the 8 ms slow-event threshold. These numbers
+identify software rendering as the bottleneck; they are not native-GPU targets.
+
 Known Linux limitations: accessibility and multi-window support are not
-implemented; SDL committed UTF-8 text input works, but PollyUI does not yet
-expose IME preedit/composition state or position the CJK candidate window at the
-caret; packaging is distribution-specific; direct DRM/KMS remains deferred.
+implemented; packaging is distribution-specific; direct DRM/KMS remains
+deferred.
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 
