@@ -2,8 +2,17 @@
 set -eu
 ui=${1:?Pass the PollyUI executable}
 wm=${2:?Pass the PollyWM executable}
-parent=${WAYLAND_DISPLAY:?Run inside a Wayland session}
-case "$parent" in /*) ;; *) parent="${XDG_RUNTIME_DIR:?}/$parent" ;; esac
+backend=wayland
+parent=
+if [ "$#" -eq 3 ] && [ "$3" = --headless ]; then
+    backend=headless
+elif [ "$#" -eq 2 ]; then
+    parent=${WAYLAND_DISPLAY:?Run inside a Wayland session, or pass --headless}
+    case "$parent" in /*) ;; *) parent="${XDG_RUNTIME_DIR:?}/$parent" ;; esac
+else
+    echo "Usage: runtime-wayland.sh pollyui pollywm [--headless]" >&2
+    exit 2
+fi
 runtime=$(mktemp -d)
 pid=
 cleanup() {
@@ -30,10 +39,12 @@ run_ui() {
         exit 1
     fi
 }
-run_ui "$parent"
-sh desktop/tests/runtime-render.sh "$ui" "$parent"
-echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
-WAYLAND_DISPLAY="$parent" WLR_BACKENDS=wayland WLR_RENDERER=pixman \
+if [ "$backend" = wayland ]; then
+    run_ui "$parent"
+    sh desktop/tests/runtime-render.sh "$ui" "$parent"
+    echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
+fi
+WAYLAND_DISPLAY="$parent" WLR_BACKENDS="$backend" WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman \
     "$wm" --socket pollyui-runtime >"$runtime/server.log" 2>&1 &
 pid=$!
 i=0

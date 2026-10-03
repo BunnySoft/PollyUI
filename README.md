@@ -54,6 +54,8 @@ Linux) in **[docs/PORTING.md](./docs/PORTING.md)**; full feature matrix in
 
 Windows, with CMake ≥ 3.25, Ninja, and LLVM/clang-cl (against an installed
 MSVC + Windows SDK).
+The Windows driver discovers the latest installed C++ toolchain through
+`vswhere`, including Community/Professional/Enterprise installations.
 
 ```powershell
 ./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
@@ -218,6 +220,42 @@ The headless harness accepts `PU_TEST_STORAGE` for isolated test data; its defau
 is `build/_localstorage.dat`.
 `-Sanitize` instruments PollyUI, QuickJS and Yoga with ASan/UBSan while reusing
 the Release Skia dependency. It is not a sanitizer build of Skia itself.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` defines Windows native, macOS CPU-raster, and Alpine
+runtime/compositor jobs for pushes and pull requests. Actions are pinned by
+commit, repository permissions are read-only, and checkout credentials are not
+persisted. The Alpine image caches the native Skia build; runtime sources are
+compiled separately in ordinary and ASan/UBSan builds.
+
+Linux checks include real Wayland clients connected to headless PollyWM, with
+raster/GLES pixel checks using software Mesa. No WSLg, physical GPU or privileged
+container is needed. This is not DRM, Metal or ANGLE hardware qualification.
+The workflow must be pushed with an authorized account to execute on GitHub;
+local checks do not establish that the macOS or hosted-runner jobs passed.
+
+The Windows/macOS core test runners share `tools/core-tests.txt`; the repeated
+storage test intentionally checks persistence across processes:
+
+```powershell
+.\tools\test-core.ps1
+```
+
+```sh
+sh tools/test-core.sh "$PWD/build/mac-sdl/pollyui"
+```
+
+`desktop/tools/check-linux-runtime.sh build/linux-ci [--sanitize]` runs the
+Alpine build and headless engine/compositor checks **inside the runtime image**.
+The WSL runtime helper also exercises real clients on headless PollyWM by
+default; `-Nested` additionally covers the parent WSLg display. To run the same
+display-independent client checks directly inside the image:
+
+```sh
+sh desktop/tests/runtime-wayland.sh "$PWD/build/linux-ci/pollyui" \
+    "$PWD/build/linux-ci/desktop/pollywm" --headless
+```
 
 ### Input event contract
 

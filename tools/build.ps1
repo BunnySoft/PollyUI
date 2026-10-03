@@ -15,7 +15,11 @@ $ErrorActionPreference = 'Stop'
 $repo    = Split-Path $PSScriptRoot -Parent
 $llvmBin = 'C:\Program Files\LLVM\bin'
 $cmake   = 'C:\Program Files\CMake\bin\cmake.exe'
-$vcvars  = 'C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvars64.bat'
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+if (-not (Test-Path $vswhere)) { throw "Required tool not found: $vswhere" }
+$installation = & $vswhere -latest -prerelease -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if ($LASTEXITCODE -ne 0 -or -not $installation) { throw 'No Visual Studio C++ toolchain found' }
+$vcvars = Join-Path $installation.Trim() 'VC\Auxiliary\Build\vcvars64.bat'
 
 foreach ($p in @($llvmBin, $cmake, $vcvars)) {
     if (-not (Test-Path $p)) { throw "Required tool not found: $p" }

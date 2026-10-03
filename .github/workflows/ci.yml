@@ -1,0 +1,89 @@
+name: Native runtime
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Alpine runtime and compositor
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: desktop
+          file: desktop/Containerfile
+          target: runtime
+          load: true
+          tags: pollyui-linux-ci:latest
+          cache-from: type=gha,scope=pollyui-linux-runtime
+          cache-to: type=gha,mode=max,scope=pollyui-linux-runtime
+      - name: Build and check native runtime
+        run: |
+          docker run --rm --init -v "$GITHUB_WORKSPACE:/workspace" pollyui-linux-ci \
+            sh desktop/tools/check-linux-runtime.sh build/linux-ci
+      - name: Real Wayland clients without a display server
+        run: |
+          docker run --rm --init -v "$GITHUB_WORKSPACE:/workspace" pollyui-linux-ci \
+            sh desktop/tests/runtime-wayland.sh /workspace/build/linux-ci/pollyui \
+            /workspace/build/linux-ci/desktop/pollywm --headless
+      - name: Sanitized runtime and compositor
+        run: |
+          docker run --rm --init -v "$GITHUB_WORKSPACE:/workspace" pollyui-linux-ci \
+            sh desktop/tools/check-linux-runtime.sh build/linux-ci-asan --sanitize
+          docker run --rm --init -v "$GITHUB_WORKSPACE:/workspace" pollyui-linux-ci \
+            sh desktop/tests/runtime-wayland.sh /workspace/build/linux-ci-asan/pollyui \
+            /workspace/build/linux-ci-asan/desktop/pollywm --headless
+
+  windows:
+    name: Windows native runtime
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Fetch pinned Skia and build
+        run: |
+          .\tools\fetch_skia.ps1
+          .\tools\build.ps1
+      - name: Core UI and WinHTTP
+        run: |
+          .\tools\test-core.ps1
+          node .\desktop\tests\http-fixture.mjs .\build\win-clang\pollyui.exe --http-only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  macos:
+    name: macOS raster runtime
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: brew install cmake ninja sdl3
+      - name: Fetch pinned Skia
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/fetch_skia.sh
+      - name: Build and check CPU runtime
+        run: |
+          bash tools/build.sh
+          sh tools/test-core.sh "$PWD/build/mac-sdl/pollyui"

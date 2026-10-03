@@ -8,10 +8,7 @@ $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $image = "localhost/pollyui-linux-runtime"
 $buildDir = if ($Sanitize) { "build/linux-sdl-asan" } else { "build/linux-sdl" }
-$flags = if ($Sanitize) {
-    "-DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ " +
-    "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -DCMAKE_CXX_FLAGS=-fsanitize=address,undefined"
-} else { "" }
+$flags = if ($Sanitize) { '--sanitize' } else { '' }
 
 function Invoke-Wsl([string]$Command) {
     & wsl -d $Distro --cd $repo -- sh -lc $Command
@@ -20,11 +17,8 @@ function Invoke-Wsl([string]$Command) {
 
 # The first build compiles pinned Skia; subsequent runs reuse the image layer.
 Invoke-Wsl "podman build -q --target runtime -t $image -f desktop/Containerfile desktop"
-$build = "cmake -S . -B $buildDir -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo " +
-         "-DPU_HOST=sdl -DSKIA_ROOT=/opt/pollyui-skia -DPU_BUILD_DESKTOP=ON $flags"
-$checks = "$build; cmake --build $buildDir -j 2"
-$checks += "; sh desktop/tests/runtime-headless.sh /workspace/$buildDir/pollyui"
-$checks += "; ctest --test-dir $buildDir --output-on-failure"
+$checks = "sh desktop/tools/check-linux-runtime.sh $buildDir $flags"
+$checks += "; sh desktop/tests/runtime-wayland.sh /workspace/$buildDir/pollyui /workspace/$buildDir/desktop/pollywm --headless"
 Invoke-Wsl ('podman run --rm -v "$PWD:/workspace" ' + $image + " sh -ec '$checks'")
 
 if ($Nested) {
