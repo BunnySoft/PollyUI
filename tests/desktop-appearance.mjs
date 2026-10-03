@@ -17,10 +17,32 @@ function get(id) {
   check(id + ' exists', !!element);
   return element;
 }
+function screenPosition(element) {
+  let x = element.offsetLeft, y = element.offsetTop;
+  for (let parent = element.parentNode; parent; parent = parent.parentNode) {
+    x -= Number(parent.scrollLeft) || 0;
+    y -= Number(parent.scrollTop) || 0;
+  }
+  return { x, y };
+}
+function reveal(element) {
+  for (let parent = element.parentNode; parent; parent = parent.parentNode) {
+    if (!parent.style || !['scroll', 'auto'].includes(parent.style.overflow)) continue;
+    const item = screenPosition(element), viewport = screenPosition(parent);
+    if (item.y < viewport.y)
+      parent.scrollTop = Math.max(0, Number(parent.scrollTop) + item.y - viewport.y - 4);
+    else if (item.y + element.offsetHeight > viewport.y + parent.offsetHeight)
+      parent.scrollTop = Number(parent.scrollTop) + item.y + element.offsetHeight -
+        viewport.y - parent.offsetHeight + 4;
+    host.render();
+  }
+}
 function click(id) {
   const element = get(id);
-  const x = element.offsetLeft + element.offsetWidth / 2;
-  const y = element.offsetTop + element.offsetHeight / 2;
+  reveal(element);
+  const position = screenPosition(element);
+  const x = position.x + element.offsetWidth / 2;
+  const y = position.y + element.offsetHeight / 2;
   check(id + ' has a visible hit target', element.offsetWidth > 0 && element.offsetHeight > 0 &&
     x >= 0 && y >= 0 && x < host.width && y < host.height);
   host.click(x, y);
@@ -32,7 +54,7 @@ function inside(element, parent, name) {
     element.offsetTop + element.offsetHeight <= parent.offsetTop + parent.offsetHeight + 1);
 }
 
-check('four stable appearance IDs', DESKTOP_THEMES.map(t => t.id).join(',') === 'xp,server2003,aqua,lion');
+check('five stable appearance IDs', DESKTOP_THEMES.map(t => t.id).join(',') === 'xp,server2003,aqua,lion,bigsur');
 check('XP is the initial preview, not an OS preference', DEFAULT_DESKTOP_THEME === 'xp');
 throws('unknown theme is rejected', () => getDesktopTheme('not-a-theme'));
 throws('invalid initial theme is rejected', () => createAppearancePreview({ themeId: 'not-a-theme' }));
@@ -61,6 +83,8 @@ host.render();
 const captures = [];
 for (const theme of DESKTOP_THEMES) {
   click('appearance-theme-' + theme.id);
+  get('appearance-files').scrollTop = 0;
+  host.render();
   check(theme.id + ' selected by pointer', preview.getState().themeId === theme.id);
   check(theme.id + ' selection is exposed', get('appearance-theme-' + theme.id).getAttribute('aria-pressed') === 'true');
   const stage = get('appearance-desktop');
@@ -77,9 +101,27 @@ for (const theme of DESKTOP_THEMES) {
   check(theme.id + ' corner radius is applied', Number(frame.style.borderRadius) === theme.window.radius);
   check(theme.id + ' dock and menu bar agree', !!document.getElementById('appearance-menubar') === (theme.panel.kind === 'dock'));
   const accent = get('appearance-accent');
-  check(theme.id + ' accent pixels are real', host.pixel(accent.offsetLeft + 6, accent.offsetTop + 5) === theme.colors.accent.toUpperCase());
+  reveal(accent);
+  const accentPosition = screenPosition(accent);
+  check(theme.id + ' accent pixels are real',
+    host.pixel(accentPosition.x + 6, accentPosition.y + 5) === theme.colors.accent.toUpperCase());
+  get('appearance-files').scrollTop = 0;
+  host.render();
   const title = get('appearance-titlebar');
   captures.push(host.pixel(title.offsetLeft + title.offsetWidth * 0.65, title.offsetTop + 4));
+  if (theme.id === 'bigsur') {
+    const toolbar = get('appearance-toolbar'), dock = get('appearance-panel');
+    check('Big Sur uses larger window corners', theme.window.radius > getDesktopTheme('lion').window.radius);
+    check('Big Sur toolbar joins the title color',
+      host.pixel(title.offsetLeft + title.offsetWidth * 0.85, title.offsetTop + 4) ===
+      host.pixel(toolbar.offsetLeft + toolbar.offsetWidth * 0.85, toolbar.offsetTop + 4));
+    check('Big Sur uses rounded dock tiles', Number(get('appearance-dock-icon').style.borderRadius) === 12);
+    check('Big Sur floating dock geometry is applied',
+      dock.offsetHeight === theme.panel.height && Number(dock.style.borderRadius) === theme.panel.radius);
+    check('Big Sur dock leaves a desktop margin',
+      stage.offsetTop + stage.offsetHeight - dock.offsetTop - dock.offsetHeight === theme.panel.inset);
+    check('Big Sur window does not overlap its dock', frame.offsetTop + frame.offsetHeight <= dock.offsetTop);
+  }
   host.mouse('mousemove', 0, 0);
   check(theme.id + ' snapshot saved',
     host.save('build/appearance-' + theme.id + '-' + host.width + 'x' + host.height + '.png'));
@@ -92,6 +134,8 @@ for (const theme of DESKTOP_THEMES) {
   check('sample window maximizes', preview.getState().maximized);
   check('maximized preview grows', get('appearance-window').offsetWidth > normalWidth);
   inside(get('appearance-window'), get('appearance-desktop'), 'maximized preview stays inside desktop');
+  check('maximized sample reserves panel space',
+    get('appearance-window').offsetTop + get('appearance-window').offsetHeight <= get('appearance-panel').offsetTop);
   click('appearance-minimize');
   check('minimized preview is hidden', preview.getState().minimized && !document.getElementById('appearance-window'));
   click('appearance-open');
@@ -103,15 +147,18 @@ for (const theme of DESKTOP_THEMES) {
   click('appearance-open');
   check('closed sample can be opened again', preview.getState().open && !preview.getState().maximized);
 }
-check('four title treatments render distinct pixels', new Set(captures).size === 4);
+check('all five title treatments render distinct pixels', new Set(captures).size === DESKTOP_THEMES.length);
 
 const state = preview.getState();
 throws('invalid theme selection is rejected', () => preview.selectTheme('bad'));
 check('invalid theme does not change state', preview.getState().themeId === state.themeId);
 state.themeId = 'bad';
-check('state snapshots cannot mutate the preview', preview.getState().themeId === 'lion');
+check('state snapshots cannot mutate the preview', preview.getState().themeId === 'bigsur');
 click('appearance-launcher');
 check('launcher opens the theme menu', !!document.getElementById('appearance-menu'));
+click('appearance-menu-bigsur');
+check('Big Sur is selectable from the menu', preview.getState().themeId === 'bigsur' && !preview.getState().menuOpen);
+click('appearance-launcher');
 click('appearance-menu-aqua');
 check('menu changes theme and closes', preview.getState().themeId === 'aqua' && !document.getElementById('appearance-menu'));
 get('appearance-theme-server2003').focus();
@@ -120,6 +167,9 @@ check('theme selection works with keyboard', preview.getState().themeId === 'ser
 get('appearance-theme-xp').focus();
 host.key(' ');
 check('Space activates focused theme', preview.getState().themeId === 'xp');
+get('appearance-theme-bigsur').focus();
+host.key('Enter');
+check('Big Sur is selectable by keyboard', preview.getState().themeId === 'bigsur');
 click('appearance-maximize');
 preview.selectTheme('lion');
 host.render();
@@ -132,7 +182,7 @@ check('theme switch does not reopen a minimized window', preview.getState().mini
 click('appearance-open');
 check('new taskbar restores the same maximized sample', preview.getState().maximized);
 click('appearance-close');
-preview.selectTheme('aqua');
+preview.selectTheme('bigsur');
 host.render();
 check('theme switch does not reopen a closed window', !preview.getState().open);
 click('appearance-info');

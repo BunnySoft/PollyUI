@@ -43,9 +43,9 @@ function surfaceDetail(theme) {
   return null;
 }
 
-function fileIcon(theme, label, size = 32) {
-  return h('view', { style: {
-    width: size, height: size, borderRadius: theme.window.radius > 0 ? 5 : 0,
+function fileIcon(theme, label, size = theme.icons.size, id) {
+  return h('view', { id, style: {
+    width: size, height: size, borderRadius: theme.icons.radius,
     borderWidth: 1, borderColor: theme.colors.border,
     ...gradient('#ffffff', theme.colors.selection), ...center,
   } }, text(label, theme.colors.accent, Math.round(size / 2), { fontWeight: 'bold' }));
@@ -79,6 +79,17 @@ function wallpaper(theme) {
         backgroundColor: '#171d26', opacity: 0.17,
       } })),
     ];
+  } else if (theme.desktop.motif === 'bands') {
+    art = [
+      { left: '-18%', top: '-58%', width: '150%', height: '125%',
+        from: '#facdb0', to: '#ed8797' },
+      { left: '-22%', top: '34%', width: '150%', height: '125%',
+        from: detail, to: '#aa306c' },
+      { left: '-18%', top: '65%', width: '155%', height: '115%',
+        from: '#65aceb', to: '#174a8c' },
+    ].map(({ from, to, ...geometry }) => h('view', { style: {
+      position: 'absolute', ...geometry, borderRadius: 380, rotate: -16, ...gradient(from, to),
+    } }));
   }
   return h('view', { id: 'appearance-wallpaper',
     style: { ...fill, ...gradient(theme.desktop.from, theme.desktop.to), overflow: 'hidden' } }, art);
@@ -125,7 +136,7 @@ function titlebar(theme, active, dispatch, interactive = true) {
         } })) : null,
     chrome.controls === 'right' ? caption : null,
     chrome.controls === 'right' ? h('view', { style: { flexGrow: 1 } }) : null,
-    h('view', { style: { ...row, gap: 4 } },
+    h('view', { style: { ...row, gap: chrome.unifiedToolbar ? 8 : 4 } },
       controls.map(command => captionButton(theme, command, active, dispatch, interactive))),
     chrome.controls === 'left'
       ? h('view', { style: { flexGrow: 1, ...center, paddingRight: 62 } }, caption) : null);
@@ -145,7 +156,9 @@ function content(theme, state, dispatch) {
   return h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, flexDirection: 'column' } },
     h('view', { id: 'appearance-toolbar', style: {
       ...row, height: 32, flexShrink: 0, gap: 8, paddingLeft: 12,
-      ...gradient(theme.button.from, theme.colors.body),
+      ...(theme.window.unifiedToolbar
+        ? gradient(theme.window.titleTo, theme.window.titleTo)
+        : gradient(theme.button.from, theme.colors.body)),
     } }, text('Folder: ' + state.folder, c.text),
       text(' / preview only', c.muted, 11)),
     h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, flexDirection: 'row' } },
@@ -181,9 +194,12 @@ function content(theme, state, dispatch) {
 
 function desktopWindows(theme, state, dispatch) {
   if (!state.open || state.minimized) return null;
-  const normal = { left: '13%', top: '17%', width: '74%', height: '64%' };
+  const dock = theme.panel.kind === 'dock';
+  const panelTop = theme.panel.height + theme.panel.inset;
+  const normal = { left: '13%', top: '17%', width: '74%',
+    ...(dock ? { bottom: panelTop + 18 } : { height: '64%' }) };
   const maximized = { left: 6, right: 6, top: theme.panel.kind === 'dock' ? 30 : 6,
-    bottom: theme.panel.kind === 'dock' ? 70 : 44 };
+    bottom: panelTop + 8 };
   return [
     !state.maximized && h('view', { style: frameStyle(theme,
       { left: '18%', top: '8%', width: '69%', height: '55%' }) },
@@ -214,17 +230,21 @@ function launcher(theme, state, dispatch) {
 
 function panels(theme, state, dispatch) {
   const panel = theme.panel, c = theme.colors;
+  const tiles = theme.icons.dockTiles;
   const launch = button('appearance-launcher', 'Toggle appearance menu',
     { width: 72, height: panel.kind === 'dock' ? 24 : 28, borderRadius: theme.button.radius,
       ...gradient(panel.launcherFrom, panel.launcherTo), borderColor: c.border },
     () => dispatch('menu'), [surfaceDetail(theme),
       text('Polly', panel.launcherText, 13, { fontWeight: 'bold' })], state.menuOpen);
   const open = button('appearance-open', 'Open preview window',
-    { height: panel.kind === 'dock' ? 46 : 28, width: panel.kind === 'dock' ? 76 : 160,
-      ...panelSurface(theme), borderColor: c.border },
+    { height: tiles ? 52 : panel.kind === 'dock' ? 46 : 28,
+      width: tiles ? 56 : panel.kind === 'dock' ? 76 : 160,
+      ...(tiles ? { backgroundColor: 'transparent', borderColor: 'transparent' }
+        : panelSurface(theme)) },
     () => dispatch('open'), [
       surfaceDetail(theme),
-      text('Appearance', c.text, 11),
+      tiles ? fileIcon(theme, 'P', theme.icons.size, 'appearance-dock-icon')
+        : text('Appearance', c.text, 11),
       panel.kind === 'dock' ? h('view', { style: {
         width: 5, height: 3, borderRadius: 2, marginTop: 3,
         backgroundColor: state.open && !state.minimized ? c.accent : c.border,
@@ -232,7 +252,7 @@ function panels(theme, state, dispatch) {
     ]);
   if (panel.kind === 'taskbar') {
     return h('view', { id: 'appearance-panel', style: {
-      position: 'absolute', left: 0, right: 0, bottom: 0, height: 36,
+      position: 'absolute', left: 0, right: 0, bottom: panel.inset, height: panel.height,
       ...row, gap: 8, paddingLeft: 5, paddingRight: 10, ...gradient(panel.from, panel.to),
       borderWidth: 1, borderColor: c.light,
     } }, launch, open, h('view', { style: { flexGrow: 1 } }),
@@ -246,13 +266,15 @@ function panels(theme, state, dispatch) {
       text('Preview', panel.text, 11), h('view', { style: { flexGrow: 1 } }),
       text('Polly Desktop', panel.text, 11)),
     h('view', { id: 'appearance-panel', style: {
-      position: 'absolute', bottom: 8, left: '30%', width: '40%', height: 54,
+      position: 'absolute', bottom: panel.inset, left: '30%', width: '40%', height: panel.height,
       ...row, justifyContent: 'center', gap: 10, borderWidth: 1, borderColor: c.light,
-      ...gradient(panel.from, panel.to), borderRadius: 10,
+      ...gradient(panel.from, panel.to), borderRadius: panel.radius,
     } }, open,
       button('appearance-info', 'Explain preview scope', {
-        width: 48, height: 42, ...panelSurface(theme),
-      }, () => dispatch('info'), text('Info', c.text, 11))),
+        width: tiles ? 56 : 48, height: tiles ? 52 : 42,
+        ...(tiles ? { backgroundColor: 'transparent', borderColor: 'transparent' }
+          : panelSurface(theme)),
+      }, () => dispatch('info'), tiles ? fileIcon(theme, 'i') : text('Info', c.text, 11))),
   ];
 }
 

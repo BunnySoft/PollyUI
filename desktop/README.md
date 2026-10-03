@@ -26,7 +26,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
 | 2b - remaining window policy | Workspaces, chosen tiling/floating rules and client-decoration policy; user-facing output configuration and real-hardware hotplug qualification. |
-| Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua and Lion-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
+| Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
 | 3 - PollyUI shell | First finish PollyUI's Linux fonts/GPU/input/build paths. Then implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -49,9 +49,10 @@ visual styles.
 | `server2003` | Windows Server 2003 / Classic | Square gray frames, horizontal blue title gradient, beveled buttons, solid desktop |
 | `aqua` | OS X / Aqua | Pinstriped chrome, glossy pill controls, left-side circular captions, menu bar and dock |
 | `lion` | OS X / Lion | Gray chrome, graphite woven-grid background, left-side captions, compact gray dock |
+| `bigsur` | macOS / Big Sur | Larger rounded frames, unified light title/toolbar, blue accents, rounded-square dock tiles and original colorful bands |
 
 `shell/themes.mjs` contains deeply immutable, dependency-free token objects.
-Every preset has the same desktop, color, window, button and panel groups.
+Every preset has the same desktop, color, window, icon, button and panel groups.
 `getDesktopTheme(id)` rejects unknown IDs rather than silently choosing a
 different appearance. The Server 2003 preset intentionally represents its
 Classic look, not another Luna color variant.
@@ -66,11 +67,14 @@ normal host decorations.
 
 The window-frame, taskbar/dock and menu designs are original implementations
 inspired by these eras. No Microsoft/Apple logos, wallpaper photographs, OS
-fonts, copied assets or system binaries are bundled. Aqua's glass-like gradients
+fonts, copied assets or system binaries are bundled. Aqua and Big Sur's glass-like gradients
 are opaque drawing, not compositor transparency/blur. The preview is explicitly
 labeled **SIMULATED SHELL**; it does not launch applications, modify files or
 OS settings, provide real window decorations, or communicate with PollyWM.
 Theme selection currently lasts for the preview process only.
+Big Sur currently provides the light appearance; a dark variant, actual
+transparency and live background blur are not implemented. The larger floating
+dock has reserved space in both normal and maximized sample-window layouts.
 
 Run from the repository root with an already built PollyUI runtime:
 
