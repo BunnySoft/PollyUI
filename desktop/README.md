@@ -30,8 +30,9 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
 | Runtime services - implemented | Linux HTTP/HTTPS with certificate checks, XDG app namespaces, atomic storage and joined request/worker/task shutdown. No sandbox, secret store or full browser Fetch API is implied. |
 | CI - definitions and local checks | Alpine ordinary/sanitizer builds with real clients on headless PollyWM, Windows core/WinHTTP and macOS raster jobs. Hosted execution requires pushing the workflow; local Linux/Windows results do not verify macOS. |
-| Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. Real layer-shell surfaces and a supervised full desktop session remain next steps. |
-| 3 - PollyUI shell | Implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. Linux GPU and richer input remain separate work items. |
+| Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. A supervised full desktop session remains a separate step. |
+| 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
+| 3b - PollyUI shell | Add layer-shell surfaces to the PollyUI host, then implement the real wallpaper, panel/dock and launcher. The current appearance preview still uses an ordinary xdg toplevel. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
@@ -56,9 +57,9 @@ This still displays the **simulated preview**, not an actual panel. PollyWM
 passes one socketpair endpoint as `WAYLAND_SOCKET=3`, and sets the child's
 `WAYLAND_DISPLAY` to its own public socket instead of the parent compositor.
 Only that exact live `wl_client` receives reserved shell globals. The
-`zwlr_layer_shell_v1` access rule is already enforced, but the production
-layer-shell implementation is not present yet; a fixture-only placeholder
-verifies both registry hiding and rejection of forced binds using known IDs.
+`zwlr_layer_shell_v1` version 4 global is filtered on both advertisement and
+binding. Fixtures verify that guessing a known global ID does not bypass the
+filter; ordinary xdg clients do not receive layer-shell privilege.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -117,7 +118,7 @@ inspired by these eras. No Microsoft/Apple logos, wallpaper photographs, OS
 fonts, copied assets or system binaries are bundled. Aqua and Big Sur's glass-like gradients
 are opaque drawing, not compositor transparency/blur. The preview is explicitly
 labeled **SIMULATED SHELL**; it does not launch applications, modify files or
-OS settings, provide real window decorations, or communicate with PollyWM.
+OS settings, provide real window decorations, or manage PollyWM's other windows.
 Theme selection currently lasts for the preview process only.
 Big Sur currently provides the light appearance; a dark variant, actual
 transparency and live background blur are not implemented. The larger floating
@@ -144,7 +145,7 @@ include PollyUI. See the root README's Linux build instructions or run:
 
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
 Linux has a Skia GLES path and structured input with separate text commits;
-IME preedit and real `layer-shell` integration are still pending.
+IME preedit and the PollyUI host's `layer-shell` surface support are still pending.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -153,7 +154,7 @@ state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
 `PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
 These appearance tests run separately from the WSL compositor suite.
 
-Next integration steps are layer-shell surfaces for
+Next integration steps are PollyUI-host layer-shell surfaces for
 real panels/docks, an application launcher and a shared decoration policy.
 Window-manager state remains owned by PollyWM; theme code must not become an
 alternate window manager.
@@ -209,9 +210,50 @@ states or while a state/placement configure is outstanding. State requests durin
 an existing interactive drag end that drag. Maximized/fullscreen sizes follow the
 output rather than floating min/max size hints. Floating windows whose minimum
 size exceeds an output may extend beyond it, but their top-left remains reachable.
-Without layer-shell panels, maximized and fullscreen use the same output bounds.
+Maximized windows use the output's unreserved work area; fullscreen windows use
+the full output. Without panels these bounds are identical.
 
-Not implemented: layer-shell, workspaces/tiling, Xwayland, window lists/control
+### Layer-shell policy
+
+Only the explicitly spawned trusted shell connection can create layer surfaces.
+This is intentionally not permission for arbitrary same-user clients such as
+third-party panel programs connected to the public socket.
+
+- Scene order is background, bottom, ordinary windows, top, overlay. Within a
+  layer, newly created or reassigned surfaces are above older ones. A focused fullscreen
+  window hides top surfaces on its output; overlay surfaces remain visible.
+  Switching back to an ordinary window restores that output's top surfaces.
+- An omitted output selects the enabled output nearest the pointer. Explicit
+  output requests are honored. Disable/removal sends `closed` and destroys the
+  affected layer surfaces/popups; the shell must recreate them on a suitable
+  output. Layers are not silently migrated to a different monitor.
+- Positive exclusive zones are applied in overlay-to-background order, newest
+  first within a layer, and only while mapped. Anchors and edge margins determine
+  the reserved edge. Zone zero uses the remaining area; zone -1 uses the entire
+  output. Even if zones exhaust an output, the work area retains one logical
+  pixel in each dimension so xdg size hints never ambiguously become zero.
+- New sizes are configured once, and placement waits for the corresponding
+  configure **and buffer commit**. Old/skipped acknowledgements do not acquire a
+  newer placement; a first map awaiting a newer configure stays hidden. Unmap
+  releases reserved space and resets initial-configure state. Calculations use
+  wide intermediates; unusable/overflowing geometry closes the surface with a
+  diagnostic rather than wrapping dimensions.
+- Keyboard `none` leaves application focus unchanged. `on_demand` focuses on
+  pointer click. Mapped, visible top/overlay `exclusive` surfaces take priority,
+  with application focus restored when they close, unmap, or relinquish focus.
+  WM shortcuts other than the development Alt+Escape escape hatch are forwarded
+  while a layer owns keyboard focus. This is **not** a secure session-lock API.
+- Layer popups may extend outside the panel, are constrained to its output, and
+  support nested/repositioned/reactive xdg popups. Layer content is clipped to
+  the output separately from the popup tree. A shell crash releases its layer
+  surfaces, popups, focus and reservations without destroying ordinary windows.
+
+Layer geometry is compositor-owned policy, not a second PollyUI window manager.
+The scene helper's eager placement/unconditional configure behavior is not used:
+size deduplication and commit-matched placement follow the existing xdg policy.
+The generic wlroots subsurface scene helper still owns buffer rendering.
+
+Not implemented: PollyUI layer surfaces, workspaces/tiling, Xwayland, window lists/control
 IPC, drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.
@@ -230,7 +272,7 @@ Other wlroots API series need an explicit port, not an unbounded dependency chan
 
 ```sh
 # Alpine 3.24, as root only for package installation:
-apk add build-base cmake ninja pkgconf wlroots0.19-dev wayland-dev \
+apk add build-base cmake ninja pkgconf wlroots0.19-dev wlr-protocols wayland-dev \
     wayland-protocols libxkbcommon-dev xkeyboard-config capitaine-cursors
 
 # From the repository root, as a normal user:

@@ -10,7 +10,13 @@ enum TestCommand {
     TEST_MOVE, TEST_RESIZE, TEST_MAXIMIZE, TEST_FULLSCREEN,
     TEST_POPUP, TEST_DESTROY_POPUP, TEST_DESTROY_ROLE, TEST_QUIT,
     TEST_UNMAXIMIZE, TEST_UNFULLSCREEN, TEST_HOLD, TEST_APPLY_FIRST, TEST_RELEASE,
-    TEST_SMALL_FULLSCREEN, TEST_CHILD_POPUP, TEST_REPOSITION_POPUP
+    TEST_SMALL_FULLSCREEN, TEST_CHILD_POPUP, TEST_REPOSITION_POPUP,
+    TEST_LAYER_MAP, TEST_LAYER_CONFIGURE
+};
+
+struct TestLayer {
+    uint32_t layer, anchor, keyboard;
+    int width, height, zone, top, right, bottom, left, output;
 };
 
 struct TestRequest {
@@ -18,6 +24,7 @@ struct TestRequest {
     int id;
     uint32_t serial;
     uint32_t edges;
+    struct TestLayer layer;
 };
 
 struct TestReply {
@@ -25,6 +32,7 @@ struct TestReply {
     int configured, frames, closed, keys, buttons, popups;
     int maximized, fullscreen, max_capability, full_capability;
     int pending, output_count, popup_x, popup_y, popup_w, popup_h, repositioned;
+    int layer_capability;
     uint32_t serial;
 };
 

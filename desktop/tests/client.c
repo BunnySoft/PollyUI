@@ -1,5 +1,6 @@
 #include "wire.h"
 #include "xdg-shell-client-protocol.h"
+#include "layer-shell-client-protocol.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -25,6 +26,7 @@ struct Window {
     struct xdg_surface *xdg;
     struct xdg_toplevel *toplevel;
     struct xdg_popup *popup;
+    struct zwlr_layer_surface_v1 *layer;
     struct wl_callback *frame;
     int width, height;
     bool maximized, fullscreen, hold, small_fullscreen;
@@ -44,11 +46,12 @@ struct Client {
     struct wl_compositor *compositor;
     struct wl_shm *shm;
     struct xdg_wm_base *wm;
+    struct zwlr_layer_shell_v1 *layer_shell;
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
     struct wl_list buffers;
-    struct Window window, popup, child;
+    struct Window window, popup, child, extra;
     struct { uint32_t name; struct wl_output *output; } outputs[8];
     struct TestReply reply;
 };
@@ -106,20 +109,25 @@ static const struct wl_callback_listener frame_listener = { .done = frame_done }
 
 static void apply_configure(struct Window *window, struct Configure config)
 {
-    xdg_surface_ack_configure(window->xdg, config.serial);
+    if (window->layer) zwlr_layer_surface_v1_ack_configure(window->layer, config.serial);
+    else xdg_surface_ack_configure(window->xdg, config.serial);
     int width = config.width, height = config.height;
     if (window->small_fullscreen && config.fullscreen) { width = 240; height = 160; }
-    if (window->toplevel) {
+    if (window == &window->client->window) {
         window->client->reply.maximized = config.maximized;
         window->client->reply.fullscreen = config.fullscreen;
         window->client->reply.width = width;
         window->client->reply.height = height;
     }
     /* Nonzero geometry offsets exercise the distinction from the buffer origin. */
-    xdg_surface_set_window_geometry(window->xdg, 8, 12, width, height);
-    struct wl_buffer *buffer = make_buffer(window->client, width + 16, height + 24);
+    if (!window->layer) {
+        xdg_surface_set_window_geometry(window->xdg, 8, 12, width, height);
+        width += 16;
+        height += 24;
+    }
+    struct wl_buffer *buffer = make_buffer(window->client, width, height);
     wl_surface_attach(window->surface, buffer, 0, 0);
-    wl_surface_damage_buffer(window->surface, 0, 0, width + 16, height + 24);
+    wl_surface_damage_buffer(window->surface, 0, 0, width, height);
     if (!window->frame) {
         window->frame = wl_surface_frame(window->surface);
         wl_callback_add_listener(window->frame, &frame_listener, window);
@@ -144,6 +152,34 @@ static void configure_surface(void *data, struct xdg_surface *xdg, uint32_t seri
     }
 }
 static const struct xdg_surface_listener surface_listener = { .configure = configure_surface };
+
+static void configure_layer(void *data, struct zwlr_layer_surface_v1 *layer,
+                            uint32_t serial, uint32_t width, uint32_t height)
+{
+    (void)layer;
+    struct Window *window = data;
+    if (!width || !height || width > 4096 || height > 4096) die("invalid layer dimensions");
+    window->width = (int)width;
+    window->height = (int)height;
+    window->client->reply.configured++;
+    struct Configure config = { .width = (int)width, .height = (int)height, .serial = serial };
+    if (window->hold) {
+        if (window->pending_count == 32) die("too many pending layer configures");
+        window->pending[window->pending_count++] = config;
+    } else {
+        apply_configure(window, config);
+    }
+}
+
+static void close_layer(void *data, struct zwlr_layer_surface_v1 *layer)
+{
+    (void)layer;
+    ((struct Window *)data)->client->reply.closed++;
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_listener = {
+    .configure = configure_layer, .closed = close_layer,
+};
 
 static void configure_toplevel(void *data, struct xdg_toplevel *toplevel,
     int32_t width, int32_t height, struct wl_array *states)
@@ -298,6 +334,10 @@ static void global(void *data, struct wl_registry *registry,
         client->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     else if (strcmp(interface, wl_shm_interface.name) == 0)
         client->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+    else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
+        client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
+        client->reply.layer_capability = 1;
+    }
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         client->wm = wl_registry_bind(registry, name, &xdg_wm_base_interface, 5);
         xdg_wm_base_add_listener(client->wm, &wm_listener, client);
@@ -379,6 +419,7 @@ static void create_popup(struct Client *client, bool child, int corner)
     xdg_surface_add_listener(popup->xdg, &surface_listener, popup);
     struct xdg_positioner *position = popup_position(client, parent, corner);
     popup->popup = xdg_surface_get_popup(popup->xdg, parent->xdg, position);
+    if (parent->layer) zwlr_layer_surface_v1_get_popup(parent->layer, popup->popup);
     xdg_popup_add_listener(popup->popup, &popup_listener, popup);
     xdg_positioner_destroy(position);
     wl_surface_commit(popup->surface);
@@ -389,9 +430,38 @@ static void destroy_window(struct Window *window)
     if (window->frame) wl_callback_destroy(window->frame);
     if (window->popup) xdg_popup_destroy(window->popup);
     if (window->toplevel) xdg_toplevel_destroy(window->toplevel);
+    if (window->layer) zwlr_layer_surface_v1_destroy(window->layer);
     if (window->xdg) xdg_surface_destroy(window->xdg);
     if (window->surface) wl_surface_destroy(window->surface);
     memset(window, 0, sizeof(*window));
+}
+
+static void layer_state(struct Window *window, const struct TestLayer *state)
+{
+    zwlr_layer_surface_v1_set_layer(window->layer, state->layer);
+    zwlr_layer_surface_v1_set_size(window->layer, state->width, state->height);
+    zwlr_layer_surface_v1_set_anchor(window->layer, state->anchor);
+    zwlr_layer_surface_v1_set_margin(window->layer, state->top, state->right, state->bottom, state->left);
+    zwlr_layer_surface_v1_set_exclusive_zone(window->layer, state->zone);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(window->layer, state->keyboard);
+    wl_surface_commit(window->surface);
+}
+
+static void create_layer(struct Client *client, int id, const struct TestLayer *state)
+{
+    struct Window *window = id == 4 ? &client->extra : &client->window;
+    if (!client->layer_shell || window->surface) die("layer creation state");
+    window->client = client;
+    if (id != 4) client->reply.id = id;
+    window->surface = wl_compositor_create_surface(client->compositor);
+    char name[64];
+    snprintf(name, sizeof(name), "org.pollywm.layer.%d", id);
+    struct wl_output *output = state->output > 0 && state->output <= 8 ?
+        client->outputs[state->output - 1].output : NULL;
+    window->layer = zwlr_layer_shell_v1_get_layer_surface(
+        client->layer_shell, window->surface, output, state->layer, name);
+    zwlr_layer_surface_v1_add_listener(window->layer, &layer_listener, window);
+    layer_state(window, state);
 }
 
 int main(int argc, char **argv)
@@ -400,7 +470,7 @@ int main(int argc, char **argv)
     int control = atoi(argv[2]);
     struct Client client = {0};
     wl_list_init(&client.buffers);
-    client.display = wl_display_connect(argv[1]);
+    client.display = wl_display_connect(strcmp(argv[1], "--trusted") == 0 ? NULL : argv[1]);
     if (!client.display) die("connect");
     struct wl_registry *registry = wl_display_get_registry(client.display);
     wl_registry_add_listener(registry, &registry_listener, &client);
@@ -424,12 +494,17 @@ int main(int argc, char **argv)
         struct Window *window = &client.window;
         switch (request.command) {
         case TEST_QUERY: break;
+        case TEST_LAYER_MAP: create_layer(&client, request.id, &request.layer); break;
+        case TEST_LAYER_CONFIGURE:
+            layer_state(request.id == 4 ? &client.extra : window, &request.layer);
+            break;
         case TEST_MAP: create_window(&client, request.id, request.edges); break;
         case TEST_UNMAP:
             wl_surface_attach(window->surface, NULL, 0, 0);
             wl_surface_commit(window->surface);
             break;
         case TEST_REMAP: {
+            if (window->layer) { wl_surface_commit(window->surface); break; }
             char name[64];
             snprintf(name, sizeof(name), "org.pollywm.test.%d", client.reply.id);
             xdg_toplevel_set_app_id(window->toplevel, name);
@@ -440,7 +515,10 @@ int main(int argc, char **argv)
             break;
         }
         case TEST_DESTROY:
+            if (request.id == 4) { destroy_window(&client.extra); break; }
+            destroy_window(&client.extra);
             destroy_window(&client.child);
+            destroy_window(&client.extra);
             destroy_window(&client.popup);
             destroy_window(window);
             break;
@@ -504,6 +582,7 @@ int main(int argc, char **argv)
     if (client.keyboard) wl_keyboard_destroy(client.keyboard);
     if (client.seat) wl_seat_destroy(client.seat);
     xdg_wm_base_destroy(client.wm);
+    if (client.layer_shell) zwlr_layer_shell_v1_destroy(client.layer_shell);
     wl_shm_destroy(client.shm);
     wl_compositor_destroy(client.compositor);
     for (size_t i = 0; i < 8; i++)

@@ -1,4 +1,4 @@
-FROM docker.io/library/alpine:3.24 AS compositor
+FROM docker.io/library/alpine:3.24 AS compositor-base
 
 RUN apk add --no-cache \
     build-base cmake ninja pkgconf clang compiler-rt gdb valgrind \
@@ -8,7 +8,11 @@ RUN apk add --no-cache \
 
 WORKDIR /workspace
 
-FROM compositor AS runtime
+FROM compositor-base AS compositor
+
+RUN apk add --no-cache wlr-protocols
+
+FROM compositor-base AS runtime
 
 RUN apk add --no-cache \
     git python3 gn clang18 sdl3-dev fontconfig-dev freetype-dev \
@@ -18,4 +22,4 @@ RUN apk add --no-cache \
 COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
 RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
 
-RUN apk add --no-cache bash mesa-egl mesa-gles mesa-dri-gallium py3-pillow curl-dev openssl nodejs
+RUN apk add --no-cache bash mesa-egl mesa-gles mesa-dri-gallium py3-pillow curl-dev openssl nodejs wlr-protocols

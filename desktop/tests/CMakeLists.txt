@@ -6,7 +6,15 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${XDG_SHELL_XML}"
             "${PROTOCOL_DIR}/xdg-shell-protocol.c"
     DEPENDS "${XDG_SHELL_XML}" VERBATIM)
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${LAYER_SHELL_XML}"
+            "${PROTOCOL_DIR}/layer-shell-client-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${LAYER_SHELL_XML}"
+            "${PROTOCOL_DIR}/layer-shell-protocol.c"
+    DEPENDS "${LAYER_SHELL_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c
+    "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
     "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c")
 target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-test-client PRIVATE _POSIX_C_SOURCE=200809L)

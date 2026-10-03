@@ -8,6 +8,22 @@
 #include <wlr/util/box.h>
 
 struct PuDesktop;
+struct PuDesktopOwner {
+    struct PuDesktopView *view;
+    struct PuDesktopLayer *layer;
+};
+
+struct PuDesktopLayer {
+    struct PuDesktop *desktop;
+    struct PuDesktopOwner owner;
+    struct wlr_layer_surface_v1 *surface;
+    struct wlr_scene_tree *tree, *content, *popups;
+    struct wl_list link;
+    struct wl_listener map, unmap, commit, destroy;
+    struct wlr_box pending_box;
+    uint32_t serial;
+    bool ready, positioned, presented;
+};
 
 enum PuDesktopMode {
     PU_DESKTOP_FLOATING,
@@ -17,6 +33,7 @@ enum PuDesktopMode {
 
 struct PuDesktopView {
     struct PuDesktop *desktop;
+    struct PuDesktopOwner owner;
     struct wlr_xdg_toplevel *toplevel;
     struct wlr_scene_tree *tree;
     struct wlr_scene_tree *content, *popups;
@@ -49,13 +66,17 @@ struct PuDesktop {
     struct wlr_renderer *renderer;
     struct wlr_allocator *allocator;
     struct wlr_scene *scene;
+    struct wlr_scene_tree *windows, *layer_trees[4];
     struct wlr_scene_output_layout *scene_layout;
     struct wlr_output_layout *layout;
     struct wlr_cursor *cursor;
     struct wlr_xcursor_manager *cursor_theme;
     struct wlr_seat *seat;
     struct wlr_xdg_shell *shell;
-    struct wl_list views, all_views, keyboards, pointers;
+    struct wlr_layer_shell_v1 *layer_shell;
+    struct wl_list views, all_views, keyboards, pointers, layers;
+    struct PuDesktopLayer *focused_layer;
+    bool arranging_layers;
     struct PuDesktopView *focused, *grabbed;
     enum PuDesktopGrab grab;
     double grab_x, grab_y;
@@ -72,6 +93,7 @@ struct PuDesktop {
     int shell_status;
     bool shell_exited;
     struct wl_listener new_output, new_input, new_toplevel, new_popup;
+    struct wl_listener new_layer;
     struct wl_listener motion, motion_absolute, button, axis, frame;
     struct wl_listener request_cursor, request_selection;
     struct wl_listener layout_change;

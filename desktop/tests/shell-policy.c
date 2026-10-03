@@ -18,8 +18,7 @@
 } while (0)
 
 static struct PuDesktop desktop;
-static int bindings;
-/* Only the fixture advertises this request-free placeholder. */
+/* No methods are needed to test binding the real production global. */
 static const struct wl_interface restricted_interface = {
     .name = "zwlr_layer_shell_v1", .version = 1,
 };
@@ -101,12 +100,11 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     return true;
 }
 
-static void bind_restricted(struct wl_client *client, void *data, uint32_t version, uint32_t id)
+static enum wl_iterator_result count_binding(struct wl_resource *resource, void *data)
 {
-    (void)data;
-    if (!wl_resource_create(client, &restricted_interface, (int)version, id))
-        wl_client_post_no_memory(client);
-    else bindings++;
+    int *count = data;
+    if (strcmp(wl_resource_get_class(resource), restricted_interface.name) == 0) (*count)++;
+    return WL_ITERATOR_CONTINUE;
 }
 
 static bool pump(void)
@@ -124,16 +122,19 @@ static bool wait_shell(void)
     return true;
 }
 
-static bool wait_binding(int before)
+static bool wait_binding(void)
 {
-    for (int i = 0; i < 1000 && bindings == before; i++) CHECK(pump());
-    CHECK(bindings == before + 1 && desktop.shell_pid && desktop.shell_client);
+    int count = 0;
+    for (int i = 0; i < 1000 && !count; i++) {
+        CHECK(pump());
+        if (desktop.shell_client) wl_client_for_each_resource(desktop.shell_client, count_binding, &count);
+    }
+    CHECK(count == 1 && desktop.shell_pid && desktop.shell_client);
     return true;
 }
 
 static bool suite(char *self)
 {
-    CHECK(wl_global_create(desktop.display, &restricted_interface, 1, NULL, bind_restricted));
     CHECK(setenv("WAYLAND_DISPLAY", "not-the-compositor", 1) == 0);
     CHECK(setenv("WAYLAND_SOCKET", "2147483647", 1) == 0);
     char *missing[] = { "/pollywm-test/nonexistent-shell", NULL };
@@ -141,31 +142,26 @@ static bool suite(char *self)
     CHECK(!desktop.shell_pid && !desktop.shell_client && !desktop.failed);
     char *args[] = { self, "--probe", (char *)desktop.socket_name, (char *)literal, NULL };
     for (int i = 0; i < 8; i++) {
-        int before = bindings;
         CHECK(pu_desktop_spawn_shell(&desktop, args));
         CHECK(!pu_desktop_spawn_shell(&desktop, args));
         CHECK(wait_shell());
         CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
-        CHECK(bindings == before + 1);
     }
     args[1] = "--wait";
-    int before = bindings;
     CHECK(pu_desktop_spawn_shell(&desktop, args));
-    CHECK(wait_binding(before));
+    CHECK(wait_binding());
     CHECK(kill(desktop.shell_pid, SIGKILL) == 0);
     CHECK(wait_shell());
     CHECK(WIFSIGNALED(desktop.shell_status) && WTERMSIG(desktop.shell_status) == SIGKILL);
 
-    before = bindings;
     CHECK(pu_desktop_spawn_shell(&desktop, args));
-    CHECK(wait_binding(before));
+    CHECK(wait_binding());
     pu_desktop_stop_shell(&desktop);
     CHECK(!desktop.shell_pid && !desktop.shell_client);
     CHECK(WIFSIGNALED(desktop.shell_status) && WTERMSIG(desktop.shell_status) == SIGTERM);
     args[1] = "--ignore-term";
-    before = bindings;
     CHECK(pu_desktop_spawn_shell(&desktop, args));
-    CHECK(wait_binding(before));
+    CHECK(wait_binding());
     pu_desktop_stop_shell(&desktop);
     CHECK(!desktop.shell_pid && !desktop.shell_client);
     CHECK(WIFSIGNALED(desktop.shell_status) && WTERMSIG(desktop.shell_status) == SIGKILL);

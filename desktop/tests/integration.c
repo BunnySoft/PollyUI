@@ -5,6 +5,7 @@
 #include <drm_fourcc.h>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_scene.h>
@@ -46,6 +48,7 @@ static struct PuDesktop desktop;
 static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
 static struct TestClient clients[2];
+static struct TestClient shell_client = { .control = -1 };
 static int checks;
 static uint32_t time_msec;
 static bool nested;
@@ -87,19 +90,30 @@ static bool spawn_client(struct TestClient *client, const char *path)
     return true;
 }
 
-static bool command(struct TestClient *client, enum TestCommand type, int id,
-                    uint32_t serial, uint32_t edges)
+static bool exchange(struct TestClient *client, const struct TestRequest *request)
 {
-    struct TestRequest request = { .command = type, .id = id, .serial = serial, .edges = edges };
-    CHECK(send(client->control, &request, sizeof(request), MSG_NOSIGNAL) == sizeof(request));
+    CHECK(send(client->control, request, sizeof(*request), MSG_NOSIGNAL) == sizeof(*request));
     for (int i = 0; i < 1000; i++) {
         ssize_t n = recv(client->control, &client->reply, sizeof(client->reply), MSG_DONTWAIT);
         if (n == sizeof(client->reply)) return true;
         CHECK(n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK));
         CHECK(pump());
     }
-    fprintf(stderr, "Timed out waiting for test client command %d\n", type);
+    fprintf(stderr, "Timed out waiting for test client command %d\n", request->command);
     return false;
+}
+
+static bool command(struct TestClient *client, enum TestCommand type, int id,
+                    uint32_t serial, uint32_t edges)
+{
+    struct TestRequest request = { .command = type, .id = id, .serial = serial, .edges = edges };
+    return exchange(client, &request);
+}
+
+static bool layer_command(enum TestCommand type, int id, struct TestLayer layer)
+{
+    struct TestRequest request = { .command = type, .id = id, .layer = layer };
+    return exchange(&shell_client, &request);
 }
 
 static struct PuDesktopView *find_view(int id)
@@ -183,6 +197,244 @@ static bool fullscreen_pixels(struct PuDesktopView *view)
     CHECK(valid_format);
     CHECK((corner & 0xffffff) == 0);
     CHECK((center & 0xffffff) == 0x10b981);
+    return true;
+}
+
+static bool scene_pixel(struct wlr_output *target, uint32_t expected)
+{
+    struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, target);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_lock_attach_render(target, true);
+    CHECK(wlr_scene_output_build_state(output, &state, NULL) && state.buffer);
+    void *data;
+    uint32_t format, pixel;
+    size_t stride;
+    CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+                                           &data, &format, &stride));
+    memcpy(&pixel, (char *)data + 10 * stride + 10 * 4, sizeof(pixel));
+    wlr_buffer_end_data_ptr_access(state.buffer);
+    wlr_output_state_finish(&state);
+    wlr_output_lock_attach_render(target, false);
+    CHECK(format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888);
+    if ((pixel & 0xffffff) != expected)
+        fprintf(stderr, "Scene pixel: actual %06x, expected %06x\n", pixel & 0xffffff, expected);
+    CHECK((pixel & 0xffffff) == expected);
+    return true;
+}
+
+static bool layer_output_suite(struct TestLayer options);
+
+static struct PuDesktopLayer *find_layer(int id)
+{
+    char name[64];
+    snprintf(name, sizeof(name), "org.pollywm.layer.%d", id);
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link)
+        if (strcmp(layer->surface->namespace, name) == 0) return layer;
+    return NULL;
+}
+
+static bool layer_suite(const char *path)
+{
+    int sockets[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0);
+    CHECK(fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == 0);
+    int inherited = fcntl(sockets[1], F_DUPFD, 4);
+    close(sockets[1]);
+    CHECK(inherited >= 4);
+    char fd[32];
+    snprintf(fd, sizeof(fd), "%d", inherited);
+    char *args[] = { (char *)path, "--trusted", fd, NULL };
+    bool started = pu_desktop_spawn_shell(&desktop, args);
+    close(inherited);
+    shell_client.control = sockets[0];
+    CHECK(started);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.layer_capability == 1);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(!clients[1].reply.layer_capability);
+    struct PuDesktopView *view = find_view(2);
+    struct wlr_box full;
+    wlr_output_layout_get_box(desktop.layout, view->output, &full);
+    struct TestLayer top = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        .height = 32, .zone = 32,
+    };
+    CHECK(layer_command(TEST_LAYER_MAP, 3, top));
+    struct PuDesktopLayer *layer = find_layer(3);
+    CHECK(layer && layer->surface->surface->mapped);
+    CHECK(layer->tree->node.x == full.x && layer->tree->node.y == full.y);
+    CHECK(shell_client.reply.width == full.width && shell_client.reply.height == 32);
+    CHECK(desktop.focused == view && !desktop.focused_layer);
+    CHECK(command(&clients[1], TEST_MAXIMIZE, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 32));
+    struct TestLayer dock = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
+        .width = 120, .height = 40, .zone = 40,
+    };
+    CHECK(layer_command(TEST_LAYER_MAP, 4, dock));
+    struct PuDesktopLayer *extra = find_layer(4);
+    CHECK(extra && extra->tree->node.y == full.y + full.height - 40);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 72));
+    dock.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 4, dock));
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(desktop.focused_layer == extra);
+    top.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(desktop.focused_layer == layer);
+    top.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(desktop.focused_layer == layer);
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(desktop.focused_layer == extra);
+    CHECK(command(&shell_client, TEST_DESTROY, 4, 0, 0));
+    CHECK(!find_layer(4) && !desktop.focused_layer);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 32));
+
+    CHECK(command(&clients[1], TEST_FULLSCREEN, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y, full.width, full.height));
+    CHECK(!layer->tree->node.enabled);
+    top.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(layer->tree->node.enabled);
+    top.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(!layer->tree->node.enabled);
+    CHECK(command(&clients[1], TEST_UNFULLSCREEN, 0, 0, 0));
+    CHECK(layer->tree->node.enabled);
+    CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 32));
+
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(!desktop.focused_layer);
+    motion(full.x + 10, full.y + 10);
+    button(BTN_LEFT, true);
+    button(BTN_LEFT, false);
+    CHECK(desktop.focused_layer == layer);
+    int keys = shell_client.reply.keys;
+    key(KEY_A, true);
+    key(KEY_A, false);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.focused == 3 && shell_client.reply.keys == keys + 2);
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(!desktop.focused_layer && desktop.focused == view);
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(desktop.focused_layer == layer);
+    motion(full.x + 10, full.y + 80);
+    button(BTN_LEFT, true);
+    button(BTN_LEFT, false);
+    CHECK(desktop.focused_layer == layer);
+    CHECK(desktop.seat->keyboard_state.focused_surface == layer->surface->surface);
+
+    CHECK(command(&shell_client, TEST_POPUP, 1, 0, 0));
+    CHECK(shell_client.reply.popups > 0 && shell_client.reply.popup_y + 40 > top.height);
+    CHECK(command(&shell_client, TEST_CHILD_POPUP, 1, 0, 0));
+    CHECK(shell_client.reply.popups > 1);
+    CHECK(command(&shell_client, TEST_DESTROY_POPUP, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_HOLD, 0, 0, 0));
+    top.top = 5;
+    top.height = top.zone = 48;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(shell_client.reply.pending > 0 && layer->tree->node.y == full.y);
+    CHECK(command(&shell_client, TEST_RELEASE, 0, 0, 0));
+    CHECK(layer->tree->node.y == full.y + 5 && shell_client.reply.height == 48);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y + 53, full.width, full.height - 53));
+    int configured = shell_client.reply.configured;
+    for (int i = 0; i < 20; i++) CHECK(pump());
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.configured == configured);
+
+    CHECK(command(&shell_client, TEST_UNMAP, 0, 0, 0));
+    CHECK(!layer->tree->node.enabled && !desktop.focused_layer);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y, full.width, full.height));
+    CHECK(command(&shell_client, TEST_REMAP, 0, 0, 0));
+    CHECK(layer->surface->surface->mapped && desktop.focused_layer == layer);
+    CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
+    CHECK(wl_list_empty(&desktop.layers) && !desktop.focused_layer);
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    top.top = 0;
+    top.height = top.zone = 32;
+    CHECK(command(&shell_client, TEST_HOLD, 0, 0, 0));
+    CHECK(layer_command(TEST_LAYER_MAP, 3, top));
+    layer = find_layer(3);
+    CHECK(layer && !layer->tree->node.enabled && shell_client.reply.pending == 1);
+    top.height = top.zone = 48;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(shell_client.reply.pending == 2);
+    CHECK(command(&shell_client, TEST_APPLY_FIRST, 0, 0, 0));
+    CHECK(layer->surface->surface->mapped && !layer->tree->node.enabled);
+    CHECK(command(&shell_client, TEST_RELEASE, 0, 0, 0));
+    CHECK(layer->tree->node.enabled && shell_client.reply.height == 48);
+    top.zone = INT_MAX;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, full.x, full.y + full.height - 1, full.width, 1));
+    top.left = INT_MAX;
+    int closed = shell_client.reply.closed;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    CHECK(shell_client.reply.closed == closed + 1 && !find_layer(3));
+    CHECK(!desktop.failed);
+    CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
+    struct TestLayer background = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND, .zone = -1,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+    };
+    CHECK(layer_command(TEST_LAYER_MAP, 3, background));
+    CHECK(command(&clients[0], TEST_MAXIMIZE, 0, 0, 0));
+    key(KEY_LEFTALT, true); key(KEY_TAB, true); key(KEY_TAB, false); key(KEY_LEFTALT, false);
+    CHECK(desktop.focused == find_view(1));
+    CHECK(command(&clients[0], TEST_QUERY, 0, 0, 0));
+    CHECK(scene_pixel(view->output, 0x3b82f6));
+    background.layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, background));
+    CHECK(scene_pixel(view->output, 0x3b82f6));
+    background.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, background));
+    CHECK(scene_pixel(view->output, 0x10b981));
+    background.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, background));
+    CHECK(command(&clients[0], TEST_FULLSCREEN, 0, 0, 0));
+    CHECK(scene_pixel(view->output, 0x10b981));
+    background.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, background));
+    CHECK(scene_pixel(view->output, 0x3b82f6));
+    CHECK(command(&clients[0], TEST_UNFULLSCREEN, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
+    CHECK(command(&clients[0], TEST_UNMAXIMIZE, 0, 0, 0));
+    key(KEY_LEFTALT, true); key(KEY_TAB, true); key(KEY_TAB, false); key(KEY_LEFTALT, false);
+    CHECK(desktop.focused == view);
+    top.left = 0;
+    top.height = top.zone = 32;
+    CHECK(layer_output_suite(top));
+    top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+    CHECK(layer_command(TEST_LAYER_MAP, 3, top));
+    CHECK(command(&shell_client, TEST_POPUP, 1, 0, 0));
+    CHECK(command(&shell_client, TEST_CHILD_POPUP, 1, 0, 0));
+    CHECK(kill(desktop.shell_pid, SIGKILL) == 0);
+    close(shell_client.control);
+    shell_client.control = -1;
+    for (int i = 0; i < 1000 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && desktop.shell_exited && WIFSIGNALED(desktop.shell_status) &&
+          WTERMSIG(desktop.shell_status) == SIGKILL);
+    CHECK(wl_list_empty(&desktop.layers) && !desktop.focused_layer && desktop.focused == view);
+    CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
+    wlr_output_layout_get_box(desktop.layout, view->output, &full);
+    CHECK(geometry_is(view, full.x, full.y, full.width, full.height));
+    CHECK(command(&clients[1], TEST_UNMAXIMIZE, 0, 0, 0));
     return true;
 }
 
@@ -354,6 +606,58 @@ static bool resize_output(struct wlr_output *output, int width, int height, floa
     bool ok = wlr_output_commit_state(output, &state);
     wlr_output_state_finish(&state);
     CHECK(ok);
+    return true;
+}
+
+static bool layer_output_suite(struct TestLayer options)
+{
+    if (nested) return true;
+    struct wlr_backend *backend = NULL;
+    wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+    CHECK(backend);
+    struct wlr_output *extra = wlr_headless_add_output(backend, 800, 600);
+    CHECK(extra && wlr_output_layout_add(desktop.layout, extra, -900, -100));
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.output_count == 2);
+    options.output = 2;
+    CHECK(layer_command(TEST_LAYER_MAP, 3, options));
+    struct PuDesktopLayer *layer = find_layer(3);
+    CHECK(layer && layer->surface->output == extra);
+    CHECK(layer->tree->node.x == -900 && layer->tree->node.y == -100);
+    CHECK(shell_client.reply.width == 800 && shell_client.reply.height == 32);
+    CHECK(resize_output(extra, 1200, 1000, 2));
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.width == 600 && shell_client.reply.height == 32);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
+    CHECK(wlr_output_commit_state(extra, &state));
+    wlr_output_state_finish(&state);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.width == 500);
+    CHECK(command(&shell_client, TEST_POPUP, 1, 0, 0));
+    CHECK(shell_client.reply.popup_x >= 0 && shell_client.reply.popup_x + 80 <= 500);
+    CHECK(command(&shell_client, TEST_CHILD_POPUP, 1, 0, 0));
+    int closed = shell_client.reply.closed;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, false);
+    CHECK(wlr_output_commit_state(extra, &state));
+    wlr_output_state_finish(&state);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.closed == closed + 1 && !find_layer(3));
+    CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+    CHECK(wlr_output_commit_state(extra, &state));
+    wlr_output_state_finish(&state);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(layer_command(TEST_LAYER_MAP, 3, options));
+    CHECK(find_layer(3));
+    closed = shell_client.reply.closed;
+    wlr_output_destroy(extra);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.closed == closed + 1 && !find_layer(3));
+    CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
     return true;
 }
 
@@ -597,6 +901,7 @@ static bool suite(const char *client_path)
     CHECK(command(b, TEST_QUERY, 0, 0, 0));
     CHECK(a->reply.frames > 0 && b->reply.frames > 0);
 
+    CHECK(layer_suite(client_path));
     CHECK(state_suite(b, second));
     second = find_view(2);
     CHECK(popup_suite(b, second));
@@ -706,6 +1011,7 @@ int main(int argc, char **argv)
         wlr_keyboard_finish(&keyboard);
         if (!nested && desktop.seat->capabilities != 0) passed = false;
     }
+    if (shell_client.control >= 0) close(shell_client.control);
     pu_desktop_finish(&desktop);
     if (rmdir(runtime) < 0) { perror("runtime cleanup"); passed = false; }
     if (passed) printf("PASS: %s Wayland integration (%d checks)\n", nested ? "nested" : "headless", checks);

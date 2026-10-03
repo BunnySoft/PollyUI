@@ -16,9 +16,12 @@ pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+pkg_check_modules(WLR_PROTOCOLS REQUIRED wlr-protocols)
+pkg_get_variable(WLR_PROTOCOLS_DIR wlr-protocols pkgdatadir)
 find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
 
 set(XDG_SHELL_XML "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
+set(LAYER_SHELL_XML "${WLR_PROTOCOLS_DIR}/unstable/wlr-layer-shell-unstable-v1.xml")
 set(PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/protocols")
 file(MAKE_DIRECTORY "${PROTOCOL_DIR}")
 add_custom_command(
@@ -26,10 +29,16 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" server-header "${XDG_SHELL_XML}"
             "${PROTOCOL_DIR}/xdg-shell-protocol.h"
     DEPENDS "${XDG_SHELL_XML}" VERBATIM)
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${LAYER_SHELL_XML}"
+            "${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1-protocol.h"
+    DEPENDS "${LAYER_SHELL_XML}" VERBATIM)
 
 add_library(pollywm-core STATIC
     compositor/server.c
     compositor/shell_process.c
+    "${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1-protocol.h"
     "${PROTOCOL_DIR}/xdg-shell-protocol.h")
 target_include_directories(pollywm-core PUBLIC compositor "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-core PUBLIC WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)

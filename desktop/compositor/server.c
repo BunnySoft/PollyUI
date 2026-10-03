@@ -2,6 +2,7 @@
 #include "server.h"
 
 #include <linux/input-event-codes.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,7 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_keyboard.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
@@ -28,6 +30,7 @@
 struct PuDesktopOutput {
     struct PuDesktop *desktop;
     struct wlr_output *output;
+    struct wlr_box usable;
     struct wl_listener frame, request_state, commit, destroy;
 };
 
@@ -58,6 +61,11 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
 static void constrain_popups(struct PuDesktopView *view);
 static void popup_reposition(struct wl_listener *listener, void *data);
 static void process_motion(struct PuDesktop *desktop, uint32_t time);
+static void arrange_layers(struct PuDesktop *desktop);
+static void update_layer_focus(struct PuDesktop *desktop);
+static void refresh_views(struct PuDesktop *desktop);
+static bool attach_popup(struct PuDesktopPopup *entry);
+static void constrain_layer_popups(struct PuDesktopLayer *layer);
 
 static void refresh_pointer(struct PuDesktop *desktop)
 {
@@ -91,7 +99,13 @@ static void fail(struct PuDesktop *desktop, const char *message)
 
 static void enter_keyboard(struct PuDesktop *desktop)
 {
-    if (!desktop->focused) return;
+    struct wlr_surface *surface = desktop->focused_layer ?
+        desktop->focused_layer->surface->surface :
+        desktop->focused ? desktop->focused->toplevel->base->surface : NULL;
+    if (!surface) {
+        wlr_seat_keyboard_notify_clear_focus(desktop->seat);
+        return;
+    }
     struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(desktop->seat);
     if (!keyboard) return;
     struct PuDesktopKeyboard *entry;
@@ -106,25 +120,44 @@ static void enter_keyboard(struct PuDesktop *desktop)
         break;
     }
     wlr_seat_keyboard_notify_enter(desktop->seat,
-        desktop->focused->toplevel->base->surface, keys, count, &keyboard->modifiers);
+        surface, keys, count, &keyboard->modifiers);
+}
+
+static bool exclusive_layer(struct PuDesktopLayer *layer)
+{
+    return layer && layer->surface->current.layer >= ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
+        layer->surface->current.keyboard_interactive ==
+            ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+}
+
+static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
+{
+    if (desktop->focused_layer == layer) return;
+    desktop->focused_layer = layer;
+    if (desktop->focused)
+        wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, !layer);
+    enter_keyboard(desktop);
 }
 
 static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
 {
     if (view && !view->mapped) return;
+    if (!exclusive_layer(desktop->focused_layer)) desktop->focused_layer = NULL;
     if (desktop->focused != view) {
         if (desktop->focused)
             wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, false);
         desktop->focused = view;
     }
     if (!view) {
-        wlr_seat_keyboard_notify_clear_focus(desktop->seat);
+        update_layer_focus(desktop);
+        enter_keyboard(desktop);
         return;
     }
     wlr_scene_node_raise_to_top(&view->tree->node);
     wl_list_remove(&view->link);
     wl_list_insert(&desktop->views, &view->link);
-    wlr_xdg_toplevel_set_activated(view->toplevel, true);
+    wlr_xdg_toplevel_set_activated(view->toplevel, !desktop->focused_layer);
+    update_layer_focus(desktop);
     enter_keyboard(desktop);
 }
 
@@ -146,6 +179,7 @@ static void keyboard_modifiers(struct wl_listener *listener, void *data)
 
 static bool keybinding(struct PuDesktop *desktop, xkb_keysym_t sym)
 {
+    if (desktop->focused_layer && sym != XKB_KEY_Escape) return false;
     switch (sym) {
     case XKB_KEY_Escape:
         wl_display_terminate(desktop->display);
@@ -296,11 +330,13 @@ static void new_input(struct wl_listener *listener, void *data)
 }
 
 static struct PuDesktopView *view_at(struct PuDesktop *desktop,
-    double x, double y, struct wlr_surface **surface, double *sx, double *sy)
+    double x, double y, struct wlr_surface **surface, double *sx, double *sy,
+    struct PuDesktopLayer **layer)
 {
     struct wlr_scene_node *node =
         wlr_scene_node_at(&desktop->scene->tree.node, x, y, sx, sy);
     *surface = NULL;
+    if (layer) *layer = NULL;
     if (!node) return NULL;
     if (node->type == WLR_SCENE_NODE_BUFFER) {
         struct wlr_scene_surface *scene_surface =
@@ -308,8 +344,12 @@ static struct PuDesktopView *view_at(struct PuDesktop *desktop,
         if (!scene_surface) return NULL;
         *surface = scene_surface->surface;
     }
-    for (struct wlr_scene_tree *tree = node->parent; tree; tree = tree->node.parent)
-        if (tree->node.data) return tree->node.data;
+    for (struct wlr_scene_tree *tree = node->parent; tree; tree = tree->node.parent) {
+        if (!tree->node.data) continue;
+        struct PuDesktopOwner *owner = tree->node.data;
+        if (layer) *layer = owner->layer;
+        return owner->view;
+    }
     return NULL;
 }
 
@@ -341,6 +381,12 @@ static struct wlr_box view_box(struct PuDesktopView *view)
     box.x = view->tree->node.x;
     box.y = view->tree->node.y;
     return box;
+}
+
+static void use_work_area(struct wlr_output *output, struct wlr_box *box)
+{
+    struct PuDesktopOutput *entry = output->data;
+    if (entry) *box = entry->usable;
 }
 
 static struct wlr_output *output_for_box(struct PuDesktop *desktop, const struct wlr_box *box)
@@ -431,6 +477,7 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
         wlr_xdg_surface_schedule_configure(view->toplevel->base);
         return;
     }
+    if (!fullscreen) use_work_area(output, &bounds);
     if ((maximized || fullscreen) && !view->maximized && !view->fullscreen)
         view->restore_box = box;
     if (maximized || fullscreen) {
@@ -460,7 +507,10 @@ static void present_view(struct PuDesktopView *view)
             box.width = view->toplevel->base->geometry.width;
             box.height = view->toplevel->base->geometry.height;
             struct wlr_box bounds;
-            if (output_box(view->desktop, view->output, &bounds)) keep_visible(&box, &bounds);
+            if (output_box(view->desktop, view->output, &bounds)) {
+                use_work_area(view->output, &bounds);
+                keep_visible(&box, &bounds);
+            }
         }
         wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
     }
@@ -479,12 +529,11 @@ static void present_view(struct PuDesktopView *view)
     };
     wlr_scene_subsurface_tree_set_clip(&view->content->node,
         view->mode != PU_DESKTOP_FLOATING ? &clip : NULL);
+    update_layer_focus(view->desktop);
 }
 
-static void layout_changed(struct wl_listener *listener, void *data)
+static void refresh_views(struct PuDesktop *desktop)
 {
-    (void)data;
-    struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
     if (desktop->stopping) return;
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop->all_views, all_link) {
@@ -496,10 +545,256 @@ static void layout_changed(struct wl_listener *listener, void *data)
             output = output_for_box(desktop, &box);
         view->output = output;
         if (!output_box(desktop, output, &bounds)) continue;
+        if (!view->fullscreen) use_work_area(output, &bounds);
         if (view->fullscreen || view->maximized) box = bounds;
         else fit_floating(view, &box, &bounds);
         configure_view(view, box, &bounds);
     }
+}
+
+static void layout_changed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
+    arrange_layers(desktop);
+    refresh_views(desktop);
+}
+
+static void update_layer_focus(struct PuDesktop *desktop)
+{
+    if (desktop->stopping) return;
+    struct PuDesktopLayer *layer, *exclusive = NULL;
+    wl_list_for_each(layer, &desktop->layers, link) {
+        bool hidden = layer->surface->current.layer == ZWLR_LAYER_SHELL_V1_LAYER_TOP &&
+            desktop->focused && desktop->focused->mode == PU_DESKTOP_FULLSCREEN &&
+            desktop->focused->output == layer->surface->output;
+        bool visible = layer->ready && layer->presented && layer->surface->surface->mapped && !hidden;
+        wlr_scene_node_set_enabled(&layer->tree->node, visible);
+        if (visible && exclusive_layer(layer) &&
+            (!exclusive || layer->surface->current.layer > exclusive->surface->current.layer))
+            exclusive = layer;
+    }
+    if (exclusive) {
+        focus_layer(desktop, exclusive);
+    } else if (desktop->focused_layer) {
+        layer = desktop->focused_layer;
+        if (!layer->tree->node.enabled ||
+            layer->surface->current.keyboard_interactive !=
+                ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND)
+            focus_layer(desktop, NULL);
+    }
+}
+
+static bool layer_axis(int origin, int length, uint32_t desired, int before, int after,
+                       bool start, bool end, int *position, int *size)
+{
+    int64_t extent = desired ? desired : (int64_t)length - before - after;
+    int64_t offset;
+    if (!desired || (start && !end)) offset = (int64_t)origin + before;
+    else if (end && !start) offset = (int64_t)origin + length - extent - after;
+    else offset = (int64_t)origin + length / 2 - extent / 2;
+    if (extent < 1 || extent > INT_MAX || offset < INT_MIN || offset > INT_MAX ||
+        offset + extent > INT_MAX || (int64_t)origin - offset < INT_MIN ||
+        (int64_t)origin + length - offset > INT_MAX) return false;
+    *position = (int)offset;
+    *size = (int)extent;
+    return true;
+}
+
+static void present_layer(struct PuDesktopLayer *layer)
+{
+    if (!layer->ready || !layer->surface->surface->mapped) return;
+    if ((int32_t)(layer->surface->current.configure_serial - layer->serial) < 0) return;
+    struct wlr_box full;
+    if (!output_box(layer->desktop, layer->surface->output, &full)) return;
+    wlr_scene_node_set_position(&layer->tree->node, layer->pending_box.x, layer->pending_box.y);
+    layer->presented = true;
+    struct wlr_box clip = {
+        .x = full.x - layer->pending_box.x, .y = full.y - layer->pending_box.y,
+        .width = full.width, .height = full.height,
+    };
+    wlr_scene_subsurface_tree_set_clip(&layer->content->node, &clip);
+    constrain_layer_popups(layer);
+}
+
+static bool configure_layer(struct PuDesktopLayer *layer, const struct wlr_box *full,
+                            struct wlr_box *usable)
+{
+    /* Unlike the scene helper, deduplicate size hints and present placement only
+     * after the matching configure is committed. Use wide arithmetic for margins. */
+    const struct wlr_layer_surface_v1_state *state = &layer->surface->current;
+    const struct wlr_box *bounds = state->exclusive_zone == -1 ? full : usable;
+    struct wlr_box box;
+    uint32_t anchor = state->anchor;
+    if (!layer_axis(bounds->x, bounds->width, state->desired_width,
+            state->margin.left, state->margin.right,
+            anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT,
+            anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT, &box.x, &box.width) ||
+        !layer_axis(bounds->y, bounds->height, state->desired_height,
+            state->margin.top, state->margin.bottom,
+            anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP,
+            anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM, &box.y, &box.height) ||
+        (int64_t)full->x - box.x < INT_MIN || (int64_t)full->x - box.x > INT_MAX ||
+        (int64_t)full->y - box.y < INT_MIN || (int64_t)full->y - box.y > INT_MAX) {
+        wlr_log(WLR_ERROR, "Closing layer %s: unusable or overflowing geometry", layer->surface->namespace);
+        wlr_layer_surface_v1_destroy(layer->surface);
+        return false;
+    }
+    bool resized = !layer->positioned || box.width != layer->pending_box.width ||
+        box.height != layer->pending_box.height;
+    layer->pending_box = box;
+    if (resized) {
+        layer->serial = wlr_layer_surface_v1_configure(layer->surface, box.width, box.height);
+        layer->positioned = true;
+    }
+    wlr_scene_node_reparent(&layer->tree->node, layer->desktop->layer_trees[state->layer]);
+    present_layer(layer);
+    if (!layer->surface->surface->mapped || state->exclusive_zone <= 0) return true;
+    enum wlr_edges edge = wlr_layer_surface_v1_get_exclusive_edge(layer->surface);
+    if (edge == WLR_EDGE_NONE) return true;
+    int margin = edge == WLR_EDGE_TOP ? state->margin.top :
+        edge == WLR_EDGE_BOTTOM ? state->margin.bottom :
+        edge == WLR_EDGE_LEFT ? state->margin.left : state->margin.right;
+    int64_t reserve = (int64_t)state->exclusive_zone + margin;
+    if (reserve <= 0) return true;
+    int available = edge == WLR_EDGE_TOP || edge == WLR_EDGE_BOTTOM ?
+        usable->height : usable->width;
+    /* A nonzero work area keeps xdg size hints unambiguous when panels exhaust it. */
+    if (reserve >= available) reserve = available - 1;
+    if (edge == WLR_EDGE_TOP) usable->y += (int)reserve;
+    if (edge == WLR_EDGE_LEFT) usable->x += (int)reserve;
+    if (edge == WLR_EDGE_TOP || edge == WLR_EDGE_BOTTOM) usable->height -= (int)reserve;
+    if (edge == WLR_EDGE_LEFT || edge == WLR_EDGE_RIGHT) usable->width -= (int)reserve;
+    return true;
+}
+
+static void arrange_layers(struct PuDesktop *desktop)
+{
+    if (desktop->stopping || desktop->arranging_layers) return;
+    desktop->arranging_layers = true;
+    struct PuDesktopLayer *layer, *tmp;
+    wl_list_for_each_safe(layer, tmp, &desktop->layers, link) {
+        struct wlr_box full;
+        if (!output_box(desktop, layer->surface->output, &full))
+            wlr_layer_surface_v1_destroy(layer->surface);
+    }
+    bool changed = false;
+    struct wlr_output_layout_output *output;
+    wl_list_for_each(output, &desktop->layout->outputs, link) {
+        struct wlr_box full;
+        if (!output_box(desktop, output->output, &full)) continue;
+        struct wlr_box usable = full;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int level = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+                 level >= ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND; level--) {
+                wl_list_for_each_safe(layer, tmp, &desktop->layers, link) {
+                    struct wlr_layer_surface_v1 *surface = layer->surface;
+                    if (!layer->ready || surface->output != output->output ||
+                        (int)surface->current.layer != level ||
+                        (surface->current.exclusive_zone > 0) != (pass == 0)) continue;
+                    configure_layer(layer, &full, &usable);
+                }
+            }
+        }
+        struct PuDesktopOutput *entry = output->output->data;
+        if (entry && (entry->usable.x != usable.x || entry->usable.y != usable.y ||
+            entry->usable.width != usable.width || entry->usable.height != usable.height)) {
+            entry->usable = usable;
+            changed = true;
+        }
+    }
+    desktop->arranging_layers = false;
+    if (changed) refresh_views(desktop);
+    update_layer_focus(desktop);
+    refresh_pointer(desktop);
+}
+
+static void layer_map(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopLayer *layer = wl_container_of(listener, layer, map);
+    arrange_layers(layer->desktop);
+}
+
+static void layer_unmap(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopLayer *layer = wl_container_of(listener, layer, unmap);
+    layer->ready = layer->positioned = layer->presented = false;
+    arrange_layers(layer->desktop);
+}
+
+static void layer_commit(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopLayer *layer = wl_container_of(listener, layer, commit);
+    if (layer->surface->initial_commit) layer->ready = true;
+    if (layer->tree->node.parent != layer->desktop->layer_trees[layer->surface->current.layer]) {
+        wl_list_remove(&layer->link);
+        wl_list_insert(&layer->desktop->layers, &layer->link);
+    }
+    if (layer->surface->initial_commit || layer->surface->current.committed)
+        arrange_layers(layer->desktop);
+    else {
+        present_layer(layer);
+        update_layer_focus(layer->desktop);
+        refresh_pointer(layer->desktop);
+    }
+}
+
+static void layer_destroy(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopLayer *layer = wl_container_of(listener, layer, destroy);
+    struct PuDesktop *desktop = layer->desktop;
+    wl_list_remove(&layer->link);
+    wl_list_remove(&layer->map.link);
+    wl_list_remove(&layer->unmap.link);
+    wl_list_remove(&layer->commit.link);
+    wl_list_remove(&layer->destroy.link);
+    if (desktop->focused_layer == layer) focus_layer(desktop, NULL);
+    layer->surface->data = NULL;
+    wlr_scene_node_destroy(&layer->tree->node);
+    free(layer);
+    arrange_layers(desktop);
+}
+
+static void new_layer(struct wl_listener *listener, void *data)
+{
+    struct PuDesktop *desktop = wl_container_of(listener, desktop, new_layer);
+    struct wlr_layer_surface_v1 *surface = data;
+    struct wlr_box full;
+    if (!surface->output) surface->output = initial_output(desktop);
+    if (wl_resource_get_client(surface->resource) != desktop->shell_client ||
+        !output_box(desktop, surface->output, &full)) {
+        wlr_log(WLR_ERROR, "Closing layer without shell capability or a live output");
+        wlr_layer_surface_v1_destroy(surface);
+        return;
+    }
+    struct PuDesktopLayer *layer = calloc(1, sizeof(*layer));
+    if (!layer) { wl_resource_post_no_memory(surface->resource); return; }
+    layer->tree = wlr_scene_tree_create(desktop->layer_trees[surface->pending.layer]);
+    if (layer->tree) {
+        layer->content = wlr_scene_subsurface_tree_create(layer->tree, surface->surface);
+        layer->popups = wlr_scene_tree_create(layer->tree);
+    }
+    if (!layer->tree || !layer->content || !layer->popups) {
+        if (layer->tree) wlr_scene_node_destroy(&layer->tree->node);
+        free(layer);
+        wl_resource_post_no_memory(surface->resource);
+        return;
+    }
+    layer->desktop = desktop;
+    layer->surface = surface;
+    layer->owner.layer = layer;
+    layer->tree->node.data = &layer->owner;
+    surface->data = layer;
+    wlr_scene_node_set_enabled(&layer->tree->node, false);
+    wl_list_insert(&desktop->layers, &layer->link);
+    listen(&surface->surface->events.map, &layer->map, layer_map);
+    listen(&surface->surface->events.unmap, &layer->unmap, layer_unmap);
+    listen(&surface->surface->events.commit, &layer->commit, layer_commit);
+    listen(&surface->events.destroy, &layer->destroy, layer_destroy);
 }
 
 struct SurfacePosition {
@@ -561,7 +856,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     }
     double sx = 0, sy = 0;
     struct wlr_surface *surface;
-    view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy);
+    view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, NULL);
     if (surface) {
         wlr_seat_pointer_notify_enter(desktop->seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(desktop->seat, time, sx, sy);
@@ -631,13 +926,22 @@ static void cursor_button(struct wl_listener *listener, void *data)
         desktop->seat->pointer_state.button_count == 0) {
         double sx = 0, sy = 0;
         struct wlr_surface *surface;
+        struct PuDesktopLayer *layer;
         struct PuDesktopView *view = view_at(desktop, desktop->cursor->x,
-                                             desktop->cursor->y, &surface, &sx, &sy);
-        focus_view(desktop, view);
+                                             desktop->cursor->y, &surface, &sx, &sy, &layer);
+        if (layer) {
+            if (!exclusive_layer(desktop->focused_layer) &&
+                layer->surface->current.keyboard_interactive ==
+                    ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND)
+                focus_layer(desktop, layer);
+        } else {
+            focus_view(desktop, view);
+        }
         refresh_pointer(desktop);
         struct wlr_keyboard *keyboard = wlr_seat_get_keyboard(desktop->seat);
         bool alt = keyboard && (wlr_keyboard_get_modifiers(keyboard) & WLR_MODIFIER_ALT);
-        if (view && alt && !view->geometry_pending && view->mode == PU_DESKTOP_FLOATING &&
+        if (view && alt && !desktop->focused_layer &&
+            !view->geometry_pending && view->mode == PU_DESKTOP_FLOATING &&
             desktop->seat->pointer_state.button_count == 0 &&
             (event->button == BTN_LEFT || event->button == BTN_RIGHT)) {
             desktop->suppressed_button = event->button;
@@ -735,6 +1039,7 @@ static void output_commit(struct wl_listener *listener, void *data)
         if (!wlr_output_layout_get(entry->desktop->layout, entry->output)) attach_output(entry);
     } else {
         wlr_output_layout_remove(entry->desktop->layout, entry->output);
+        entry->output->data = NULL;
     }
 }
 
@@ -773,6 +1078,7 @@ static void new_output(struct wl_listener *listener, void *data)
     if (!entry) { fail(desktop, "Cannot allocate output state"); return; }
     entry->desktop = desktop;
     entry->output = output;
+    output->data = entry;
     listen(&output->events.frame, &entry->frame, output_frame);
     listen(&output->events.request_state, &entry->request_state, output_request_state);
     listen(&output->events.commit, &entry->commit, output_commit);
@@ -812,11 +1118,14 @@ static void view_unmap(struct wl_listener *listener, void *data)
     wl_list_remove(&view->link);
     wl_list_init(&view->link);
     if (desktop->focused == view) {
-        focus_view(desktop, NULL);
+        desktop->focused = NULL;
         if (!desktop->stopping && !wl_list_empty(&desktop->views)) {
             struct PuDesktopView *next = wl_container_of(desktop->views.next, next, link);
-            focus_view(desktop, next);
+            desktop->focused = next;
+            wlr_xdg_toplevel_set_activated(next->toplevel, !desktop->focused_layer);
         }
+        update_layer_focus(desktop);
+        enter_keyboard(desktop);
     }
     refresh_pointer(desktop);
 }
@@ -929,7 +1238,7 @@ static void new_toplevel(struct wl_listener *listener, void *data)
     if (!view) { wl_resource_post_no_memory(toplevel->resource); return; }
     view->desktop = desktop;
     view->toplevel = toplevel;
-    view->tree = wlr_scene_tree_create(&desktop->scene->tree);
+    view->tree = wlr_scene_tree_create(desktop->windows);
     if (!view->tree) {
         free(view);
         wl_resource_post_no_memory(toplevel->resource);
@@ -947,7 +1256,8 @@ static void new_toplevel(struct wl_listener *listener, void *data)
     wlr_scene_node_set_enabled(&view->backdrop->node, false);
     wl_list_init(&view->link);
     wl_list_insert(&desktop->all_views, &view->all_link);
-    view->tree->node.data = view;
+    view->owner.view = view;
+    view->tree->node.data = &view->owner;
     toplevel->base->data = view->popups;
     wlr_scene_node_set_enabled(&view->tree->node, false);
     listen(&toplevel->base->surface->events.map, &view->map, view_map);
@@ -966,15 +1276,23 @@ static void constrain_popup(struct PuDesktopPopup *entry)
     struct wlr_scene_tree *tree = entry->tree;
     while (tree && !tree->node.data) tree = tree->node.parent;
     if (!tree) return;
-    struct PuDesktopView *view = tree->node.data;
-    struct wlr_box box = view_box(view), bounds;
-    struct wlr_output *output = view->mode != PU_DESKTOP_FLOATING ? view->output : NULL;
-    if (!output_box(entry->desktop, output, &bounds)) output = output_for_box(entry->desktop, &box);
-    if (!output_box(entry->desktop, output, &bounds)) return;
-    /* The wlroots helper expects the root surface's coordinates, including
-     * its window-geometry offset, even for a popup nested below another popup. */
-    bounds.x -= view->tree->node.x + view->popups->node.x - view->toplevel->base->geometry.x;
-    bounds.y -= view->tree->node.y + view->popups->node.y - view->toplevel->base->geometry.y;
+    struct PuDesktopOwner *owner = tree->node.data;
+    struct wlr_box bounds;
+    if (owner->view) {
+        struct PuDesktopView *view = owner->view;
+        struct wlr_box box = view_box(view);
+        struct wlr_output *output = view->mode != PU_DESKTOP_FLOATING ? view->output : NULL;
+        if (!output_box(entry->desktop, output, &bounds)) output = output_for_box(entry->desktop, &box);
+        if (!output_box(entry->desktop, output, &bounds)) return;
+        /* Constraints are root-surface-local, including xdg window geometry. */
+        bounds.x -= view->tree->node.x + view->popups->node.x - view->toplevel->base->geometry.x;
+        bounds.y -= view->tree->node.y + view->popups->node.y - view->toplevel->base->geometry.y;
+    } else {
+        struct PuDesktopLayer *layer = owner->layer;
+        if (!output_box(entry->desktop, layer->surface->output, &bounds)) return;
+        bounds.x -= layer->tree->node.x;
+        bounds.y -= layer->tree->node.y;
+    }
     struct wlr_box old = entry->popup->scheduled.geometry;
     struct wlr_box adjusted = old;
     int sx, sy;
@@ -1008,11 +1326,29 @@ static void constrain_popups(struct PuDesktopView *view)
     constrain_popup_tree(view->toplevel->base);
 }
 
+static void constrain_layer_popups(struct PuDesktopLayer *layer)
+{
+    struct wlr_xdg_popup *popup;
+    wl_list_for_each(popup, &layer->surface->popups, link) {
+        struct wl_listener *listener = wl_signal_get(&popup->events.reposition, popup_reposition);
+        if (listener && popup->scheduled.rules.reactive) {
+            struct PuDesktopPopup *entry = wl_container_of(listener, entry, reposition);
+            constrain_popup(entry);
+        }
+        constrain_popup_tree(popup->base);
+    }
+}
+
 static void popup_commit(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopPopup *entry = wl_container_of(listener, entry, commit);
     if (entry->popup->base->initial_commit) {
+        if (!entry->tree && !attach_popup(entry)) {
+            wlr_log(WLR_DEBUG, "Dismissing popup without a managed parent");
+            wlr_xdg_popup_destroy(entry->popup);
+            return;
+        }
         constrain_popup(entry);
         wlr_xdg_surface_schedule_configure(entry->popup->base);
     }
@@ -1046,30 +1382,36 @@ static void popup_tree_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&entry->tree_destroy.link);
 }
 
+static bool attach_popup(struct PuDesktopPopup *entry)
+{
+    struct wlr_xdg_popup *popup = entry->popup;
+    struct wlr_xdg_surface *parent = popup->parent ?
+        wlr_xdg_surface_try_from_wlr_surface(popup->parent) : NULL;
+    struct wlr_layer_surface_v1 *layer_surface = popup->parent ?
+        wlr_layer_surface_v1_try_from_wlr_surface(popup->parent) : NULL;
+    struct PuDesktopLayer *layer = layer_surface ? layer_surface->data : NULL;
+    struct wlr_scene_tree *parent_tree = parent ? parent->data : layer ? layer->popups : NULL;
+    if (!parent_tree) return false;
+    struct wlr_scene_tree *tree = wlr_scene_xdg_surface_create(parent_tree, popup->base);
+    if (!tree) {
+        wl_resource_post_no_memory(popup->resource);
+        return false;
+    }
+    popup->base->data = tree;
+    entry->tree = tree;
+    listen(&tree->node.events.destroy, &entry->tree_destroy, popup_tree_destroy);
+    return true;
+}
+
 static void new_popup(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, new_popup);
     struct wlr_xdg_popup *popup = data;
-    struct wlr_xdg_surface *parent = popup->parent ?
-        wlr_xdg_surface_try_from_wlr_surface(popup->parent) : NULL;
-    if (!parent || !parent->data) {
-        wlr_log(WLR_DEBUG, "Dismissing popup without a managed xdg parent");
-        wlr_xdg_popup_destroy(popup);
-        return;
-    }
     struct PuDesktopPopup *entry = calloc(1, sizeof(*entry));
     if (!entry) { wl_resource_post_no_memory(popup->resource); return; }
-    struct wlr_scene_tree *tree = wlr_scene_xdg_surface_create(parent->data, popup->base);
-    if (!tree) {
-        free(entry);
-        wl_resource_post_no_memory(popup->resource);
-        return;
-    }
-    popup->base->data = tree;
     entry->popup = popup;
     entry->desktop = desktop;
-    entry->tree = tree;
-    listen(&tree->node.events.destroy, &entry->tree_destroy, popup_tree_destroy);
+    attach_popup(entry);
     listen(&popup->base->surface->events.commit, &entry->commit, popup_commit);
     listen(&popup->events.destroy, &entry->destroy, popup_destroy);
     listen(&popup->events.reposition, &entry->reposition, popup_reposition);
@@ -1090,6 +1432,7 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->all_views);
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
+    wl_list_init(&desktop->layers);
     desktop->display = wl_display_create();
     if (!desktop->display) { fail(desktop, "Cannot create Wayland display"); return false; }
     wl_display_set_global_filter(desktop->display, pu_desktop_global_filter, desktop);
@@ -1113,13 +1456,23 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!desktop->layout || !desktop->scene) {
         fail(desktop, "Cannot create output layout or scene"); return false;
     }
+    for (int level = 0; level < 4; level++) {
+        if (level == ZWLR_LAYER_SHELL_V1_LAYER_TOP)
+            desktop->windows = wlr_scene_tree_create(&desktop->scene->tree);
+        desktop->layer_trees[level] = wlr_scene_tree_create(&desktop->scene->tree);
+        if (!desktop->layer_trees[level]) {
+            fail(desktop, "Cannot create layer scene trees"); return false;
+        }
+    }
+    if (!desktop->windows) { fail(desktop, "Cannot create window scene tree"); return false; }
     desktop->scene_layout = wlr_scene_attach_output_layout(desktop->scene, desktop->layout);
     desktop->cursor = wlr_cursor_create();
     desktop->cursor_theme = wlr_xcursor_manager_create(NULL, 24);
     desktop->seat = wlr_seat_create(desktop->display, "seat0");
     desktop->shell = wlr_xdg_shell_create(desktop->display, 5);
+    desktop->layer_shell = wlr_layer_shell_v1_create(desktop->display, 4);
     if (!desktop->scene_layout || !desktop->cursor || !desktop->cursor_theme ||
-        !desktop->seat || !desktop->shell) {
+        !desktop->seat || !desktop->shell || !desktop->layer_shell) {
         fail(desktop, "Cannot create cursor, seat or xdg-shell"); return false;
     }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
@@ -1130,6 +1483,7 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     listen(&desktop->backend->events.new_input, &desktop->new_input, new_input);
     listen(&desktop->shell->events.new_toplevel, &desktop->new_toplevel, new_toplevel);
     listen(&desktop->shell->events.new_popup, &desktop->new_popup, new_popup);
+    listen(&desktop->layer_shell->events.new_surface, &desktop->new_layer, new_layer);
     listen(&desktop->cursor->events.motion, &desktop->motion, cursor_motion);
     listen(&desktop->cursor->events.motion_absolute, &desktop->motion_absolute, cursor_absolute);
     listen(&desktop->cursor->events.button, &desktop->button, cursor_button);
@@ -1179,6 +1533,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     unlisten(&desktop->new_output);
     unlisten(&desktop->new_toplevel);
     unlisten(&desktop->new_popup);
+    unlisten(&desktop->new_layer);
     unlisten(&desktop->motion);
     unlisten(&desktop->motion_absolute);
     unlisten(&desktop->button);
