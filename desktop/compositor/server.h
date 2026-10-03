@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include <wayland-server-core.h>
 #include <wlr/util/box.h>
 
@@ -64,6 +65,12 @@ struct PuDesktop {
     bool failed, stopping;
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
+    struct wl_event_source *shell_exit;
+    struct wl_client *shell_client;
+    struct wl_listener shell_client_destroy;
+    pid_t shell_pid;
+    int shell_status;
+    bool shell_exited;
     struct wl_listener new_output, new_input, new_toplevel, new_popup;
     struct wl_listener motion, motion_absolute, button, axis, frame;
     struct wl_listener request_cursor, request_selection;
@@ -74,5 +81,9 @@ struct PuDesktop {
 bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name);
 bool pu_desktop_start(struct PuDesktop *desktop);
 void pu_desktop_finish(struct PuDesktop *desktop);
+bool pu_desktop_spawn_shell(struct PuDesktop *desktop, char *const argv[]);
+void pu_desktop_stop_shell(struct PuDesktop *desktop);
+bool pu_desktop_global_filter(const struct wl_client *client,
+                              const struct wl_global *global, void *data);
 
 #endif

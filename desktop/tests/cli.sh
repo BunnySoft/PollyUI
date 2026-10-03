@@ -27,6 +27,10 @@ expect_status() {
 expect_status 2 "$wm" --unknown
 expect_status 2 "$wm" --socket
 expect_status 2 "$wm" --socket ../unsafe
+expect_status 2 "$wm" --shell
+expect_status 2 "$wm" --shell ''
+expect_status 1 "$wm" --shell /pollywm-test/nonexistent-shell
+grep -q 'Cannot start shell' "$runtime/error.log"
 chmod 0755 "$runtime"
 expect_status 1 "$wm"
 grep -q 'mode 0700' "$runtime/error.log"

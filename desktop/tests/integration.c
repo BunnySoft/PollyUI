@@ -586,6 +586,17 @@ static bool suite(const char *client_path)
     CHECK(b->reply.closed == 1 && b->reply.keys == other_keys);
     key(KEY_LEFTALT, false);
 
+    char *shell[] = { "/bin/sh", "-c", "exit 19", NULL };
+    CHECK(pu_desktop_spawn_shell(&desktop, shell));
+    for (int i = 0; i < 1000 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && !desktop.shell_client && desktop.shell_exited);
+    CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 19);
+    CHECK(!desktop.failed && find_view(1) == first && find_view(2) == second);
+    CHECK(desktop.focused == second);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(a->reply.frames > 0 && b->reply.frames > 0);
+
     CHECK(state_suite(b, second));
     second = find_view(2);
     CHECK(popup_suite(b, second));

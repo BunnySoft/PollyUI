@@ -29,6 +29,7 @@ add_custom_command(
 
 add_library(pollywm-core STATIC
     compositor/server.c
+    compositor/shell_process.c
     "${PROTOCOL_DIR}/xdg-shell-protocol.h")
 target_include_directories(pollywm-core PUBLIC compositor "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-core PUBLIC WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)

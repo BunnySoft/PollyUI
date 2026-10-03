@@ -30,6 +30,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
 | Runtime services - implemented | Linux HTTP/HTTPS with certificate checks, XDG app namespaces, atomic storage and joined request/worker/task shutdown. No sandbox, secret store or full browser Fetch API is implied. |
 | CI - definitions and local checks | Alpine ordinary/sanitizer builds with real clients on headless PollyWM, Windows core/WinHTTP and macOS raster jobs. Hosted execution requires pushing the workflow; local Linux/Windows results do not verify macOS. |
+| Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. Real layer-shell surfaces and a supervised full desktop session remain next steps. |
 | 3 - PollyUI shell | Implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. Linux GPU and richer input remain separate work items. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -38,6 +39,49 @@ Prefer standard Wayland protocols. Workspaces/window management may later
 require a narrowly scoped private protocol or socket, with an explicit trust
 boundary. **There is no custom management socket, virtual-input global, or
 test-control protocol in the production compositor.**
+
+### Trusted shell connection
+
+`pollywm --shell PROGRAM [ARG...]` starts exactly the chosen executable without
+an intermediate command shell. This must be the last compositor option; later
+arguments belong to the child. Nothing is started implicitly. For example,
+with a private runtime directory and backend configured as below:
+
+```sh
+./build/desktop/pollywm --socket pollywm-0 --shell \
+    ./build/linux-sdl/pollyui --app-id org.pollyui.shell desktop/shell/preview.mjs
+```
+
+This still displays the **simulated preview**, not an actual panel. PollyWM
+passes one socketpair endpoint as `WAYLAND_SOCKET=3`, and sets the child's
+`WAYLAND_DISPLAY` to its own public socket instead of the parent compositor.
+Only that exact live `wl_client` receives reserved shell globals. The
+`zwlr_layer_shell_v1` access rule is already enforced, but the production
+layer-shell implementation is not present yet; a fixture-only placeholder
+verifies both registry hiding and rejection of forced binds using known IDs.
+
+Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
+environment values. Even a new public connection from the shell's own process
+has no shell privilege. libwayland consumes/unsets `WAYLAND_SOCKET` and marks
+its connected descriptor close-on-exec. Shell code must use that connection for
+its privileged surfaces; it must not deliberately copy the descriptor or
+`WAYLAND_SOCKET` into launched applications. New application processes use the
+public `WAYLAND_DISPLAY` connection.
+
+On disconnect or shell process exit, the capability is revoked. Existing
+ordinary windows retain their geometry, focus and connections. A nonzero exit
+is reported without stopping PollyWM; initial exec failure instead fails
+startup. The compositor reaps only its own shell child. Shutdown disconnects it,
+tries SIGTERM, then escalates to SIGKILL after a bounded grace period. Child
+signal masks are reset rather than inheriting the compositor's blocked signals.
+There is no automatic respawn, process tree supervisor, login/authentication
+service or production restart command yet.
+
+This is a compositor protocol boundary, **not an OS sandbox**: hostile processes
+with ptrace/root access, a compromised trusted shell, or deliberate capability
+delegation are outside it. Future privileged protocols must extend this filter
+and validate the ownership and arguments of their requests. No management
+protocol is promised by reserving a connection.
 
 ## Appearance direction and native preview
 

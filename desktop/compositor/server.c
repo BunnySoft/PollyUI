@@ -1092,6 +1092,7 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->pointers);
     desktop->display = wl_display_create();
     if (!desktop->display) { fail(desktop, "Cannot create Wayland display"); return false; }
+    wl_display_set_global_filter(desktop->display, pu_desktop_global_filter, desktop);
     struct wl_event_loop *loop = wl_display_get_event_loop(desktop->display);
     desktop->backend = wlr_backend_autocreate(loop, NULL);
     if (!desktop->backend) { fail(desktop, "Cannot create wlroots backend"); return false; }
@@ -1170,6 +1171,7 @@ bool pu_desktop_start(struct PuDesktop *desktop)
 void pu_desktop_finish(struct PuDesktop *desktop)
 {
     desktop->stopping = true;
+    pu_desktop_stop_shell(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
     if (desktop->sigint) wl_event_source_remove(desktop->sigint);
     if (desktop->sigterm) wl_event_source_remove(desktop->sigterm);

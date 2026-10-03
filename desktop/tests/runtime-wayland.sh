@@ -45,7 +45,8 @@ if [ "$backend" = wayland ]; then
     echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
 fi
 WAYLAND_DISPLAY="$parent" WLR_BACKENDS="$backend" WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman \
-    "$wm" --socket pollyui-runtime >"$runtime/server.log" 2>&1 &
+    "$wm" --socket pollyui-runtime --shell "$ui" desktop/tests/runtime-window.mjs \
+    >"$runtime/server.log" 2>&1 &
 pid=$!
 i=0
 while ! grep -q 'PollyWM ready' "$runtime/server.log"; do
@@ -56,6 +57,22 @@ while ! grep -q 'PollyWM ready' "$runtime/server.log"; do
     sleep 0.02
     i=$((i + 1))
 done
+i=0
+while ! grep -q 'Shell exited with status 0' "$runtime/server.log"; do
+    if ! kill -0 "$pid" 2>/dev/null || [ "$i" -ge 1000 ]; then
+        cat "$runtime/server.log"
+        echo "Trusted PollyUI shell did not finish successfully" >&2
+        exit 1
+    fi
+    sleep 0.02
+    i=$((i + 1))
+done
+if ! grep -q 'PollyUI frame presented:.*driver=wayland, Skia=raster' "$runtime/server.log" ||
+   ! grep -q 'PollyUI runtime theme cycle complete' "$runtime/server.log"; then
+    cat "$runtime/server.log"
+    echo "Trusted PollyUI shell did not render the expected theme cycle" >&2
+    exit 1
+fi
 run_ui pollyui-runtime
 sh desktop/tests/runtime-render.sh "$ui" pollyui-runtime
 if ! grep -q 'Mapped org.pollyui.runtime' "$runtime/server.log"; then
@@ -66,4 +83,4 @@ fi
 kill -TERM "$pid"
 wait "$pid"
 pid=
-echo "PASS: PollyWM hosted an actual PollyUI client; frame presentation and clean exit confirmed"
+echo "PASS: PollyWM hosted private-shell and ordinary PollyUI clients; frames and clean exits confirmed"
