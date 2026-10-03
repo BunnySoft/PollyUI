@@ -146,6 +146,16 @@ host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 
+## Experimental Linux desktop
+
+**[PollyDesktop](./desktop/README.md)** is a separately buildable Linux subproject:
+our own wlroots-based Wayland compositor, without labwc or a GNOME/KDE desktop.
+It implements native client windows, focus, interactive move/resize,
+maximize/fullscreen/restore, output-aware placement and popup constraints.
+PollyUI shell integration and an Alpine system image
+are later stages, not implemented desktop features. See the desktop guide for
+the architecture, roadmap, standalone build and WSL/WSLg checks.
+
 ## License
 
 TBD.

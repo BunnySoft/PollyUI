@@ -10,6 +10,12 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17)            # Skia requires C++17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(PU_BUILD_DESKTOP "Build the experimental Linux Wayland compositor" OFF)
+if (PU_BUILD_DESKTOP)
+    include(CTest)
+    add_subdirectory(desktop)
+endif()
+
 # Match the prebuilt Skia (Release, STATIC CRT /MT) so the CRT / iterator-debug
 # levels agree across the link. (MSVC/Windows only.)
 if (MSVC)

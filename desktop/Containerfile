@@ -1,0 +1,9 @@
+FROM docker.io/library/alpine:3.24
+
+RUN apk add --no-cache \
+    build-base cmake ninja pkgconf clang compiler-rt gdb valgrind \
+    wlroots0.19-dev wlroots0.19-dbg wayland-dev wayland-protocols libxkbcommon-dev \
+    xkeyboard-config capitaine-cursors \
+    foot font-dejavu
+
+WORKDIR /workspace

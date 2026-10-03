@@ -9,6 +9,11 @@ Two deployment tiers, one codebase:
 
 The raw Win32 host stays as an opt-in backend (zero deps, hand-tuned).
 
+For building our own desktop rather than a client application, see
+**[PollyDesktop](../desktop/README.md)**. Its independently buildable wlroots
+compositor lives in `desktop/`; it does not replace the Linux client host,
+font and GPU work described here. PollyUI shell integration is a later stage.
+
 ---
 
 ## 0. The portability boundary
