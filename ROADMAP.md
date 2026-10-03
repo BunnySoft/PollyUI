@@ -14,7 +14,8 @@ One view of what's built and what's planned. For the architecture, see
 
 Platform column: **Win** = Windows. Windows and macOS hosts are available;
 Linux has an experimental SDL3 EGL/GLES/raster path with Fontconfig fonts and a native
-Alpine/musl build. Physical GPU qualification, full IME and native HTTP are still pending.
+Alpine/musl build, libcurl HTTP and XDG app data. Physical GPU qualification,
+full IME and the macOS HTTP backend are still pending.
 See README and `desktop/README.md` for current platform boundaries.
 
 The headless test suite (`pollyui --test tests/<name>`) currently covers **283
@@ -148,7 +149,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 | **`requestAnimationFrame` / `cancelAnimationFrame`** | ✅ | per-frame, ms timestamp |
 | **ES modules** (`import`/`export`, `.mjs`) | ✅ | loader + normalize |
 | **`localStorage`** (persistent key/value) | ✅ | file-backed, survives restarts |
-| **`fetch`** (Promise; http/https + file://) | ✅ | WinHTTP on a thread; Response text()/json() |
+| **`fetch`** (Promise; http/https + file://) | ✅ | WinHTTP / Linux libcurl; method/body/headers, text()/json(), bounded request shutdown |
 
 ## Concurrency
 

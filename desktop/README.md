@@ -28,6 +28,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2b - remaining window policy | Workspaces, chosen tiling/floating rules and client-decoration policy; user-facing output configuration and real-hardware hotplug qualification. |
 | Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
+| Runtime services - implemented | Linux HTTP/HTTPS with certificate checks, XDG app namespaces, atomic storage and joined request/worker/task shutdown. No sandbox, secret store or full browser Fetch API is implied. |
 | 3 - PollyUI shell | Implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. Linux GPU and richer input remain separate work items. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -277,7 +278,9 @@ cases, keyboard/text/pointer/wheel contracts and detached DOM callback teardown.
 The SDL adapter fixture exercises actual host translation with synthetic SDL
 events, including modifier/repeat/code fields, text suppression, right-click
 mapping and fractional two-axis scroll. `-Nested` checks a real SDL3 Wayland
-client on WSLg and inside PollyWM; add `-Sanitize` for ASan/UBSan in PollyUI,
+client on WSLg and inside PollyWM; local HTTP/TLS fixtures also exercise headers,
+redirect policy, request cancellation alongside busy workers/compute, and XDG
+persistence/error handling. Add `-Sanitize` for ASan/UBSan in PollyUI,
 QuickJS, Yoga and the compositor (not the prebuilt Skia/wlroots libraries).
 All nested processes are bounded and cleaned up. Nested rendering checks run
 raster, required GLES and automatic selection through resize/restore. PNG

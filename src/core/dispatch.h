@@ -14,8 +14,11 @@ typedef void (*PuDeliverFn)(void *ctx);
 PuDispatch *pu_dispatch_new(void);
 void        pu_dispatch_free(PuDispatch *d);
 
-/* Post a delivery from any thread; runs on the UI thread at the next drain. */
-void pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx);
+/* Post a delivery from any thread; returns 0 on allocation failure.
+ * Successful deliveries run on the UI thread at the next drain. */
+int pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx);
+/* Remove an undelivered callback after its producer has been joined. */
+int pu_dispatch_remove(PuDispatch *d, PuDeliverFn fn, void *ctx);
 
 /* UI thread: run all queued deliveries now. Returns how many ran. */
 int  pu_dispatch_drain(PuDispatch *d);

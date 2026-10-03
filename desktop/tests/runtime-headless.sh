@@ -10,7 +10,7 @@ trap cleanup EXIT
 export PU_TEST_STORAGE="$temporary/storage.dat"
 for test in smoke.js text.js textwrap.js linux-fonts.mjs visual.js \
     style.js dom.js events.js keyboard.js scroll.js modules.mjs \
-    runtime.js workers.js fetch.js storage.js storage.js input-events.mjs pointer-events.mjs \
+    runtime.js workers.js fetch.js storage.js storage.js storage-values.mjs input-events.mjs pointer-events.mjs \
     reconciler.mjs vue.mjs teardown.mjs desktop-appearance.mjs; do
     if ! timeout 45 "$ui" --test "tests/$test" >"$temporary/output.log" 2>&1; then
         cat "$temporary/output.log"
@@ -58,3 +58,5 @@ expect_log 'Linux requires a native Skia build'
 expect_failure bash tools/build.sh --skia-root "$temporary/missing-skia"
 expect_log 'Native Linux Skia missing'
 echo "PASS: Linux font, video and presentation startup errors are explicit"
+node desktop/tests/http-fixture.mjs "$ui"
+node desktop/tests/xdg-fixture.mjs "$ui"

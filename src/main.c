@@ -7,6 +7,7 @@
 #include "render/render.h"
 #include "model/node.h"
 #include "core/dispatch.h"
+#include "core/app_paths.h"
 #include "concurrency/async.h"
 
 #include <stdint.h>
@@ -584,8 +585,12 @@ static int run_test(const char *path)
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
     const char *test_storage = getenv("PU_TEST_STORAGE");
-    pu_storage_install(pu_script_jsctx(s), test_storage ? test_storage : "build/_localstorage.dat");
-    pu_fetch_install(pu_script_jsctx(s), disp);
+    if (!pu_storage_install(pu_script_jsctx(s), test_storage ? test_storage : "build/_localstorage.dat") ||
+        !pu_fetch_install(pu_script_jsctx(s), disp)) {
+        pu_async_shutdown(); pu_storage_shutdown();
+        pu_bridge_free(b); pu_script_destroy(s); pu_dispatch_free(disp);
+        return 1;
+    }
 
     PuTestHost host;
     host.script = s;
@@ -606,6 +611,7 @@ static int run_test(const char *path)
 
     g_test = NULL;
     pu_async_shutdown();
+    pu_fetch_shutdown();
     pu_storage_shutdown();
     if (host.surface) pu_surface_destroy(host.surface);
     pu_bridge_free(b);
@@ -614,22 +620,54 @@ static int run_test(const char *path)
     return rc;
 }
 
-static int run_app(const char *path)
+static void install_application(JSContext *ctx, const PuAppPaths *paths, int argc, char **argv)
+{
+    JSValue application = JS_NewObject(ctx), arguments = JS_NewArray(ctx);
+    JS_SetPropertyStr(ctx, application, "id", JS_NewString(ctx, paths->id));
+    if (paths->config) JS_SetPropertyStr(ctx, application, "configDir", JS_NewString(ctx, paths->config));
+    if (paths->data) JS_SetPropertyStr(ctx, application, "dataDir", JS_NewString(ctx, paths->data));
+    if (paths->cache) JS_SetPropertyStr(ctx, application, "cacheDir", JS_NewString(ctx, paths->cache));
+    for (int i = 0; i < argc; i++) JS_SetPropertyUint32(ctx, arguments, (uint32_t)i, JS_NewString(ctx, argv[i]));
+    JS_SetPropertyStr(ctx, application, "arguments", arguments);
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "application", application);
+    JS_FreeValue(ctx, global);
+}
+
+static int run_app(const char *path, const char *app_id, int argc, char **argv)
 {
     if (!pu_font_system_init()) return 1;
-    PuScript *s = pu_script_create();
-    if (!s)
+    PuAppPaths paths;
+    if (!pu_app_paths_init(&paths, path, app_id)) return 1;
+#if defined(__linux__)
+    const char *sdl_id = getenv("SDL_APP_ID");
+    if ((!sdl_id || !*sdl_id) && setenv("SDL_APP_ID", paths.id, 1) < 0) {
+        perror("[paths] Cannot set application identity");
+        pu_app_paths_free(&paths);
         return 1;
+    }
+#endif
+    PuScript *s = pu_script_create();
+    if (!s) {
+        pu_app_paths_free(&paths);
+        return 1;
+    }
 
     PuBridge *bridge = pu_bridge_install(pu_script_jsctx(s));
-    if (!bridge) { pu_script_destroy(s); return 1; }
+    if (!bridge) { pu_script_destroy(s); pu_app_paths_free(&paths); return 1; }
 
     PuDispatch *disp = pu_dispatch_new();
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
-    pu_storage_install(pu_script_jsctx(s), "pollyui_localstorage.dat");
-    pu_fetch_install(pu_script_jsctx(s), disp);
+    if (!pu_storage_install(pu_script_jsctx(s), paths.storage) ||
+        !pu_fetch_install(pu_script_jsctx(s), disp)) {
+        pu_async_shutdown(); pu_storage_shutdown();
+        pu_bridge_free(bridge); pu_script_destroy(s); pu_dispatch_free(disp);
+        pu_app_paths_free(&paths);
+        return 1;
+    }
     install_window_api(pu_script_jsctx(s)); /* global `window` controls */
+    install_application(pu_script_jsctx(s), &paths, argc, argv);
 
     int rc = pu_script_run_file(s, path);
     if (rc == 0)
@@ -662,6 +700,8 @@ static int run_app(const char *path)
             if (g_pending_titlebar >= 0)  pu_window_set_titlebar_style(win, g_pending_titlebar);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
             rc = pu_window_run(win);
+            pu_async_shutdown();
+            pu_fetch_shutdown();
             pu_dispatch_set_waker(disp, NULL, NULL);
             g_app_window = NULL;
             pu_window_destroy(win);
@@ -672,10 +712,12 @@ static int run_app(const char *path)
     }
 
     pu_async_shutdown();    /* terminate workers before tearing down the context */
+    pu_fetch_shutdown();
     pu_storage_shutdown();
     pu_bridge_free(bridge); /* release native JS callbacks before destroying their VM */
     pu_script_destroy(s);
     pu_dispatch_free(disp);
+    pu_app_paths_free(&paths);
     return rc;
 }
 
@@ -700,10 +742,25 @@ int main(int argc, char **argv)
     SetUnhandledExceptionFilter(pu_crash_handler);
 #endif
     int rc;
-    if (argc >= 3 && strcmp(argv[1], "--test") == 0)
-        rc = run_test(argv[2]);
-    else if (argc >= 2)
-        rc = run_app(argv[1]);
+    const char *app_id = NULL;
+    int index = 1;
+    if (index < argc && !strcmp(argv[index], "--app-id")) {
+        if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
+        app_id = argv[index + 1]; index += 2;
+    }
+    if (index < argc && !strcmp(argv[index], "--help")) {
+        puts("Usage: pollyui [--app-id ID] app.js [arguments...]\n"
+             "       pollyui --test test.js\n"
+             "--app-id selects a stable Linux XDG storage namespace.");
+        return 0;
+    }
+    if (index < argc && !strcmp(argv[index], "--test")) {
+        if (app_id || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept --app-id\n"); return 2; }
+        rc = run_test(argv[index + 1]);
+    } else if (index < argc && argv[index][0] == '-') {
+        fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
+    } else if (index < argc)
+        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1);
     else
         rc = run_demo();
     pu_render_shutdown();

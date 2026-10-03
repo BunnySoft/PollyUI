@@ -33,7 +33,7 @@ is shared C/C++ and **100% of the app/JS is shared**.
 | **HostEngine** | ❌ | window + event loop + input + present (§1) — the only new C per platform |
 
 Porting includes a host, surface creation, font discovery and any platform
-services used by the app (for example the still Windows-only native HTTP path).
+services used by the app (for example WinHTTP versus Linux libcurl).
 The UI/DOM/layout logic remains shared.
 
 ---
@@ -335,7 +335,8 @@ endif()
    runs PollyUI as a real Wayland client on WSLg and PollyWM. An SDL-owned
    EGL/GLES path now supports auto/gl/raster selection and framebuffer readback;
    software llvmpipe coverage is not physical GPU validation. Hardware qualification,
-   complete input/IME, native HTTP and XDG app storage remain pending.
+   complete IME remains pending. Linux libcurl and XDG app storage are available;
+   macOS HTTP and native app-directory integration remain separate work.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
 4. **Embedded Linux** (`wayland` first, then `drm`) for appliances — no Java, no SDL.

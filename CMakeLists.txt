@@ -80,6 +80,7 @@ add_executable(pollyui
     src/layout/layout.c
     src/core/thread.c
     src/core/dispatch.c
+    src/core/app_paths.c
     src/concurrency/async.c
     src/net/fetch.c
 )
@@ -123,6 +124,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     pkg_check_modules(SKIA_SYSTEM REQUIRED IMPORTED_TARGET
         fontconfig freetype2 libpng libjpeg libwebp libwebpdemux libwebpmux zlib)
     target_link_libraries(pollyui PRIVATE PkgConfig::SKIA_SYSTEM)
+    pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.85)
+    target_link_libraries(pollyui PRIVATE PkgConfig::CURL)
     # Match the official Release Skia ABI even when the host is a Debug build.
     target_compile_definitions(pollyui PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
 endif()

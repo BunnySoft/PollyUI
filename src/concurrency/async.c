@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 /* ---- shared UI-thread state ------------------------------------------------*/
 
@@ -74,6 +75,7 @@ static JSValue from_json(JSContext *ctx, const char *json)
 /* Invoke obj.onmessage({data: value}); consumes `value`. */
 static void call_onmessage(JSContext *ctx, JSValueConst obj, JSValue value)
 {
+    JSValue held = JS_DupValue(ctx, obj);
     JSValue onmsg = JS_GetPropertyStr(ctx, obj, "onmessage");
     if (JS_IsFunction(ctx, onmsg)) {
         JSValue ev = JS_NewObject(ctx);
@@ -86,11 +88,13 @@ static void call_onmessage(JSContext *ctx, JSValueConst obj, JSValue value)
         JS_FreeValue(ctx, value);
     }
     JS_FreeValue(ctx, onmsg);
+    JS_FreeValue(ctx, held);
 }
 
 /* ---- (A) Worker ------------------------------------------------------------*/
 
 typedef struct WMsg { char *json; struct WMsg *next; } WMsg;
+typedef struct UiMsg UiMsg;
 
 typedef struct PuWorker {
     PuThread *thread;
@@ -101,17 +105,27 @@ typedef struct PuWorker {
     int       terminated;
     JSValue   ui_obj;            /* UI-side wrapper (duped: keep-alive) */
     char     *path;
+    UiMsg    *out_head;
     struct PuWorker *next;       /* global list */
 } PuWorker;
 
 static PuWorker *g_workers;
 
 /* worker -> UI message delivery (runs on the UI thread). */
-typedef struct { PuWorker *w; char *json; } UiMsg;
+struct UiMsg { PuWorker *w; char *json; UiMsg *next, *previous; };
+
+static void unlink_ui_message(UiMsg *m)
+{
+    if (m->previous) m->previous->next = m->next; else m->w->out_head = m->next;
+    if (m->next) m->next->previous = m->previous;
+}
 
 static void deliver_worker_to_ui(void *ctx)
 {
     UiMsg *m = (UiMsg *)ctx;
+    pu_mutex_lock(m->w->in_mtx);
+    unlink_ui_message(m);
+    pu_mutex_unlock(m->w->in_mtx);
     if (!m->w->terminated) {
         JSValue val = from_json(g_ui_ctx, m->json);
         call_onmessage(g_ui_ctx, m->w->ui_obj, val);
@@ -125,11 +139,20 @@ static JSValue jsw_worker_post(JSContext *ctx, JSValueConst this_val, int argc, 
 {
     (void)this_val;
     PuWorker *w = (PuWorker *)JS_GetContextOpaque(ctx);
-    UiMsg *m = (UiMsg *)malloc(sizeof(UiMsg));
-    if (!m) return JS_UNDEFINED;
+    UiMsg *m = (UiMsg *)calloc(1, sizeof(UiMsg));
+    if (!m) return JS_ThrowOutOfMemory(ctx);
     m->w = w;
     m->json = to_json(ctx, argc >= 1 ? argv[0] : JS_UNDEFINED);
-    pu_dispatch_post(g_disp, deliver_worker_to_ui, m);
+    if (!m->json) { free(m); return JS_ThrowOutOfMemory(ctx); }
+    pu_mutex_lock(w->in_mtx);
+    m->next = w->out_head;
+    if (w->out_head) w->out_head->previous = m;
+    w->out_head = m;
+    pu_mutex_unlock(w->in_mtx);
+    if (!pu_dispatch_post(g_disp, deliver_worker_to_ui, m)) {
+        pu_mutex_lock(w->in_mtx); unlink_ui_message(m); pu_mutex_unlock(w->in_mtx);
+        free(m->json); free(m); return JS_ThrowOutOfMemory(ctx);
+    }
     return JS_UNDEFINED;
 }
 
@@ -146,12 +169,23 @@ static JSValue jsw_worker_log(JSContext *ctx, JSValueConst this_val, int argc, J
     return JS_UNDEFINED;
 }
 
+static int worker_interrupt(JSRuntime *rt, void *user)
+{
+    (void)rt;
+    PuWorker *worker = user;
+    pu_mutex_lock(worker->in_mtx);
+    int stop = !worker->running;
+    pu_mutex_unlock(worker->in_mtx);
+    return stop;
+}
+
 static void worker_thread_main(void *arg)
 {
     PuWorker *w = (PuWorker *)arg;
     JSRuntime *rt = JS_NewRuntime();
     JSContext *ctx = rt ? JS_NewContext(rt) : NULL;
     if (!ctx) { if (rt) JS_FreeRuntime(rt); return; }
+    JS_SetInterruptHandler(rt, worker_interrupt, w);
     JS_SetContextOpaque(ctx, w);
 
     /* worker globals: postMessage, console.log, self */
@@ -167,18 +201,21 @@ static void worker_thread_main(void *arg)
     char *src = read_file(w->path, &len);
     if (src) {
         JSValue r = JS_Eval(ctx, src, len, w->path, JS_EVAL_TYPE_GLOBAL);
-        if (JS_IsException(r)) report(ctx, "worker");
+        if (JS_IsException(r)) {
+            if (worker_interrupt(rt, w)) JS_FreeValue(ctx, JS_GetException(ctx));
+            else report(ctx, "worker");
+        }
         JS_FreeValue(ctx, r);
         free(src);
     } else {
         fprintf(stderr, "[worker] cannot read %s\n", w->path);
     }
-    drain_jobs(rt);
+    if (!worker_interrupt(rt, w)) drain_jobs(rt);
 
     for (;;) {
         pu_mutex_lock(w->in_mtx);
         while (!w->in_head && w->running) pu_cond_wait(w->in_cond, w->in_mtx);
-        if (!w->running && !w->in_head) { pu_mutex_unlock(w->in_mtx); break; }
+        if (!w->running) { pu_mutex_unlock(w->in_mtx); break; }
         WMsg *msg = w->in_head;
         w->in_head = msg->next;
         if (!w->in_head) w->in_tail = NULL;
@@ -194,6 +231,7 @@ static void worker_thread_main(void *arg)
 
     WMsg *m = w->in_head;
     while (m) { WMsg *n = m->next; free(m->json); free(m); m = n; }
+    w->in_head = w->in_tail = NULL;
     JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
 }
@@ -201,6 +239,7 @@ static void worker_thread_main(void *arg)
 /* worker.postMessage() on the UI side (UI -> worker). */
 static JSValue jsw_ui_post(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
+    if (ctx != g_ui_ctx || !g_disp) return JS_ThrowInternalError(ctx, "worker service is not running");
     PuWorker *w = (PuWorker *)JS_GetOpaque(this_val, g_worker_class);
     if (!w || w->terminated) return JS_UNDEFINED;
     WMsg *m = (WMsg *)malloc(sizeof(WMsg));
@@ -224,8 +263,7 @@ static void worker_terminate(PuWorker *w)
     pu_cond_signal(w->in_cond);
     pu_mutex_unlock(w->in_mtx);
     pu_thread_join(w->thread);
-    pu_mutex_free(w->in_mtx);
-    pu_cond_free(w->in_cond);
+    w->thread = NULL;
     free(w->path);
     w->path = NULL;
     if (!JS_IsUndefined(w->ui_obj)) { JS_FreeValue(g_ui_ctx, w->ui_obj); w->ui_obj = JS_UNDEFINED; }
@@ -234,6 +272,7 @@ static void worker_terminate(PuWorker *w)
 
 static JSValue jsw_ui_terminate(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
+    if (ctx != g_ui_ctx || !g_disp) return JS_ThrowInternalError(ctx, "worker service is not running");
     (void)ctx; (void)argc; (void)argv;
     PuWorker *w = (PuWorker *)JS_GetOpaque(this_val, g_worker_class);
     if (w) worker_terminate(w);
@@ -244,6 +283,7 @@ static void worker_finalizer(JSRuntime *rt, JSValueConst val) { (void)rt; (void)
 
 static JSValue js_worker_ctor(JSContext *ctx, JSValueConst new_target, int argc, JSValueConst *argv)
 {
+    if (ctx != g_ui_ctx || !g_disp) return JS_ThrowInternalError(ctx, "worker service is not running");
     (void)new_target;
     const char *path = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
     if (!path) return JS_ThrowTypeError(ctx, "Worker(path) requires a path");
@@ -254,6 +294,10 @@ static JSValue js_worker_ctor(JSContext *ctx, JSValueConst new_target, int argc,
     JS_FreeCString(ctx, path);
     w->in_mtx = pu_mutex_new();
     w->in_cond = pu_cond_new();
+    if (!w->path || !w->in_mtx || !w->in_cond) {
+        free(w->path); pu_mutex_free(w->in_mtx); pu_cond_free(w->in_cond); free(w);
+        return JS_ThrowOutOfMemory(ctx);
+    }
     w->running = 1;
     w->ui_obj = JS_UNDEFINED;
 
@@ -262,11 +306,18 @@ static JSValue js_worker_ctor(JSContext *ctx, JSValueConst new_target, int argc,
     JS_SetOpaque(obj, w);
     w->ui_obj = JS_DupValue(ctx, obj);
 
-    w->next = g_workers;
-    g_workers = w;
     pu_dispatch_ref(g_disp);
 
     w->thread = pu_thread_start(worker_thread_main, w);
+    if (!w->thread) {
+        JS_SetOpaque(obj, NULL);
+        JS_FreeValue(ctx, w->ui_obj); JS_FreeValue(ctx, obj);
+        pu_mutex_free(w->in_mtx); pu_cond_free(w->in_cond); free(w->path); free(w);
+        pu_dispatch_unref(g_disp);
+        return JS_ThrowInternalError(ctx, "cannot start worker thread");
+    }
+    w->next = g_workers;
+    g_workers = w;
     return obj;
 }
 
@@ -276,14 +327,32 @@ typedef struct PuTask {
     long    n_in;
     long    n_out;
     JSValue cb;
+    PuThread *thread;
+    PuMutex *mutex;
+    int cancelled;
+    struct PuTask *next, *previous;
 } PuTask;
 
-static long count_primes(long n)
+static PuTask *g_tasks;
+
+static void unlink_task(PuTask *task)
+{
+    if (task->previous) task->previous->next = task->next; else g_tasks = task->next;
+    if (task->next) task->next->previous = task->previous;
+}
+
+static long count_primes(PuTask *task)
 {
     long count = 0;
-    for (long i = 2; i < n; i++) {
+    for (long i = 2; i < task->n_in; i++) {
+        if ((i & 1023) == 2) {
+            pu_mutex_lock(task->mutex);
+            int stop = task->cancelled;
+            pu_mutex_unlock(task->mutex);
+            if (stop) break;
+        }
         int prime = 1;
-        for (long j = 2; j * j <= i; j++) {
+        for (long j = 2; j <= i / j; j++) {
             if (i % j == 0) { prime = 0; break; }
         }
         if (prime) count++;
@@ -294,12 +363,15 @@ static long count_primes(long n)
 static void deliver_task(void *ctx)
 {
     PuTask *t = (PuTask *)ctx;
+    pu_thread_join(t->thread);
+    unlink_task(t);
     JSValue arg = JS_NewInt64(g_ui_ctx, t->n_out);
     JSValue r = JS_Call(g_ui_ctx, t->cb, JS_UNDEFINED, 1, &arg);
     if (JS_IsException(r)) report(g_ui_ctx, "computeAsync");
     JS_FreeValue(g_ui_ctx, r);
     JS_FreeValue(g_ui_ctx, arg);
     JS_FreeValue(g_ui_ctx, t->cb);
+    pu_mutex_free(t->mutex);
     free(t);
     pu_dispatch_unref(g_disp);
 }
@@ -307,24 +379,37 @@ static void deliver_task(void *ctx)
 static void task_thread(void *arg)
 {
     PuTask *t = (PuTask *)arg;
-    t->n_out = count_primes(t->n_in);
-    pu_dispatch_post(g_disp, deliver_task, t);
+    t->n_out = count_primes(t);
+    if (!pu_dispatch_post(g_disp, deliver_task, t)) {
+        fprintf(stderr, "[computeAsync] Fatal: cannot schedule task completion\n");
+        abort();
+    }
 }
 
 static JSValue js_compute_async(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
+    if (ctx != g_ui_ctx || !g_disp) return JS_ThrowInternalError(ctx, "task service is not running");
     (void)this_val;
     if (argc < 2 || !JS_IsFunction(ctx, argv[1]))
         return JS_ThrowTypeError(ctx, "computeAsync(n, callback)");
     int64_t n = 0;
-    JS_ToInt64(ctx, &n, argv[0]);
+    if (JS_ToInt64(ctx, &n, argv[0]) < 0) return JS_EXCEPTION;
+    if (n < 0 || n > LONG_MAX) return JS_ThrowRangeError(ctx, "computeAsync input is outside native range");
     PuTask *t = (PuTask *)calloc(1, sizeof(PuTask));
     if (!t) return JS_ThrowOutOfMemory(ctx);
+    t->mutex = pu_mutex_new();
+    if (!t->mutex) { free(t); return JS_ThrowOutOfMemory(ctx); }
     t->n_in = (long)n;
     t->cb = JS_DupValue(ctx, argv[1]);
     pu_dispatch_ref(g_disp);
-    PuThread *th = pu_thread_start(task_thread, t);
-    pu_thread_detach(th);
+    t->thread = pu_thread_start(task_thread, t);
+    if (!t->thread) {
+        pu_dispatch_unref(g_disp); JS_FreeValue(ctx, t->cb); pu_mutex_free(t->mutex); free(t);
+        return JS_ThrowInternalError(ctx, "cannot start compute thread");
+    }
+    t->next = g_tasks;
+    if (g_tasks) g_tasks->previous = t;
+    g_tasks = t;
     return JS_UNDEFINED;
 }
 
@@ -360,8 +445,30 @@ void pu_async_shutdown(void)
     while (w) {
         PuWorker *next = w->next;
         worker_terminate(w);
+        while (w->out_head) {
+            UiMsg *message = w->out_head;
+            unlink_ui_message(message);
+            pu_dispatch_remove(g_disp, deliver_worker_to_ui, message);
+            free(message->json); free(message);
+        }
+        pu_mutex_free(w->in_mtx);
+        pu_cond_free(w->in_cond);
         free(w);
         w = next;
     }
     g_workers = NULL;
+    for (PuTask *task = g_tasks; task; task = task->next) {
+        pu_mutex_lock(task->mutex); task->cancelled = 1; pu_mutex_unlock(task->mutex);
+    }
+    while (g_tasks) {
+        PuTask *task = g_tasks;
+        pu_thread_join(task->thread);
+        pu_dispatch_remove(g_disp, deliver_task, task);
+        unlink_task(task);
+        JS_FreeValue(g_ui_ctx, task->cb);
+        pu_mutex_free(task->mutex); free(task);
+        pu_dispatch_unref(g_disp);
+    }
+    g_ui_ctx = NULL;
+    g_disp = NULL;
 }

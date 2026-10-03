@@ -2,6 +2,7 @@
 #include "core/thread.h"
 
 #include <stdlib.h>
+#include <stdio.h>
 
 typedef struct Delivery {
     PuDeliverFn      fn;
@@ -31,6 +32,7 @@ PuDispatch *pu_dispatch_new(void)
 void pu_dispatch_free(PuDispatch *d)
 {
     if (!d) return;
+    if (!d) return;
     Delivery *n = d->head;
     while (n) { Delivery *next = n->next; free(n); n = next; }
     pu_mutex_free(d->mutex);
@@ -46,10 +48,10 @@ void pu_dispatch_set_waker(PuDispatch *d, void (*wake)(void *), void *wakectx)
     pu_mutex_unlock(d->mutex);
 }
 
-void pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx)
+int pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx)
 {
     Delivery *node = (Delivery *)malloc(sizeof(Delivery));
-    if (!node) return;
+    if (!node) { fprintf(stderr, "[dispatch] Cannot allocate callback delivery\n"); return 0; }
     node->fn = fn;
     node->ctx = ctx;
     node->next = NULL;
@@ -63,6 +65,22 @@ void pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx)
     pu_mutex_unlock(d->mutex);
 
     if (wake) wake(wctx); /* outside the lock */
+    return 1;
+}
+
+int pu_dispatch_remove(PuDispatch *d, PuDeliverFn fn, void *ctx)
+{
+    pu_mutex_lock(d->mutex);
+    Delivery *previous = NULL, *node = d->head;
+    while (node && (node->fn != fn || node->ctx != ctx)) { previous = node; node = node->next; }
+    if (node) {
+        if (previous) previous->next = node->next; else d->head = node->next;
+        if (d->tail == node) d->tail = previous;
+    }
+    pu_mutex_unlock(d->mutex);
+    int removed = node != NULL;
+    free(node);
+    return removed;
 }
 
 int pu_dispatch_drain(PuDispatch *d)

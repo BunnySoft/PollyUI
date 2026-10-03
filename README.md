@@ -174,8 +174,8 @@ For a native Alpine 3.24 development machine:
 
 ```sh
 apk add build-base cmake ninja pkgconf git python3 gn clang18 bash sdl3-dev \
-    fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev \
-    font-dejavu font-noto-cjk font-noto-emoji
+    fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev curl-dev \
+    font-dejavu font-noto-cjk font-noto-emoji nodejs openssl
 
 # Build as a normal user, from the repository root:
 sh desktop/tools/build-skia-linux.sh "$PWD/third_party/skia-linux"
@@ -205,8 +205,8 @@ pixels, which is distinct from Skia GLES drawing.
 The GLES implementation reports its renderer string. Automated WSL checks use
 Mesa **llvmpipe**, a software GL implementation, not proof of physical GPU
 acceleration. Physical GPU/DRM support still needs separate qualification.
-IME preedit/complex text, native HTTP and XDG per-application storage remain work
-items. Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame,
+IME preedit/complex text and physical-device qualification remain work items.
+Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame,
 or `PU_TRACE_FRAMES=1` for every frame. Linux-only `PU_CAPTURE_FRAME=<path.png>`
 writes the latest rendered frame (including GLES readback) for diagnostics;
 it is off by default and adds synchronous readback/file I/O when enabled.
@@ -249,6 +249,59 @@ string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
 `tests/input-events.mjs`, `tests/pointer-events.mjs` and the Linux SDL adapter
 test cover these contracts; the latter queues synthetic SDL events and is not
 physical-device or locale-layout qualification.
+
+### HTTP and application data
+
+`fetch(url, {method, body, headers})` uses libcurl on Linux and WinHTTP on Windows.
+It accepts HTTP(S) and the existing `file://` local-read form, returns status,
+2xx-only `ok`, final `url`, `text()` and `json()`, and preserves UTF-8/NUL in
+request/response strings. Request headers are a plain object: names are
+case-insensitive (last value wins), invalid fields and transport-managed framing
+headers are rejected. Body, when supplied, must be a string.
+
+Requests without custom headers follow up to ten redirects; requests with
+custom headers return the redirect response instead of forwarding headers to an
+unexpected destination. Linux HTTPS verifies certificates and hostnames;
+requests starting with HTTPS cannot redirect to HTTP. `PU_CA_BUNDLE` selects an explicit Linux trust bundle;
+it does not disable verification. Linux has a 10-second connection and 30-second
+total timeout; WinHTTP operations have 10-second timeouts.
+This is not a full browser Fetch implementation: response-header/stream/blob
+APIs and AbortController are not implemented, and unsupported `signal`,
+`redirect`, `credentials`, `mode` and `cache` options fail explicitly.
+
+Closing the application cancels/joins pending requests and compute tasks,
+interrupts CPU-bound JS workers, and removes queued deliveries before destroying
+the VM. OS-blocking operations may still wait for their OS/transport timeout.
+
+Linux apps use private per-application XDG directories:
+
+```sh
+./build/linux-sdl/pollyui --app-id org.pollyui.appearance desktop/shell/preview.mjs
+```
+
+Config/data/cache live below `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME` and
+`$XDG_CACHE_HOME` in `pollyui/<app-id>`; unset bases fall back to the standard
+locations under `$HOME`. Bases must be absolute, IDs cannot contain path
+separators, and app directories must be user-owned/private (0700).
+`localStorage` is stored in the data directory. Without `--app-id`, a stable
+non-cryptographic hash of the canonical script path supplies a namespace;
+installed apps should always supply a stable ID. This is data separation,
+**not a sandbox or encrypted secret store**. Windows/macOS retain the legacy
+working-directory store and currently reject `--app-id`.
+
+Windowed scripts receive `application.id`, `application.arguments`, and on Linux
+`application.configDir/dataDir/cacheDir`. Extra command-line arguments are passed
+as an array, not evaluated. The Linux ID also supplies SDL's app ID unless
+`SDL_APP_ID` was explicitly set. Config/cache directories are reserved for app
+services; this does not add an arbitrary filesystem-write API.
+
+Storage reads existing `PUST1` data, supports complete strings including NUL,
+and atomically replaces its file on mutation. Failed writes preserve the in-memory
+store and throw; malformed existing files stop startup instead of being treated
+as empty and overwritten. There is no concurrent multi-process synchronization
+or automatic migration of legacy working-directory data.
+Node/OpenSSL in the development image serve only local runtime fixtures;
+PollyUI itself still runs QuickJS, not Node.
 
 ## Experimental Linux desktop
 
