@@ -372,8 +372,14 @@ static int js_event_flag(JSContext *ctx, JSValueConst ev, const char *name)
  * matching listeners; stopPropagation/stopImmediatePropagation cut the walk.
  * `key` (keyboard) and px,py (pointer) are attached when provided. Returns 1 if
  * a listener called preventDefault(). */
-static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const char *key,
-                         int has_pos, float px, float py, int bubble, double delta_y)
+typedef struct PuEventData {
+    const PuKeyEvent *key;
+    const PuPointerEvent *pointer;
+    const PuWheelEvent *wheel;
+} PuEventData;
+
+static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const PuEventData *data,
+                         int bubble)
 {
     if (!b || !target || !type) return 0;
     JSContext *ctx = b->ctx;
@@ -382,12 +388,38 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
     JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
-    if (key) JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key));
-    if (has_pos) {
-        JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, px));
-        JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, py));
+    const PuKeyEvent *key = data ? data->key : NULL;
+    if (key) {
+        if (key->type == PU_KEY_TEXT) {
+            JS_SetPropertyStr(ctx, ev, "data", JS_NewString(ctx, key->text ? key->text : ""));
+        } else {
+            JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key->key ? key->key : "Unidentified"));
+            JS_SetPropertyStr(ctx, ev, "code", JS_NewString(ctx, key->code ? key->code : "Unidentified"));
+            JS_SetPropertyStr(ctx, ev, "repeat", JS_NewBool(ctx, key->repeat));
+        }
     }
-    if (strcmp(type, "wheel") == 0) JS_SetPropertyStr(ctx, ev, "deltaY", JS_NewFloat64(ctx, delta_y));
+    if (data) {
+        unsigned mods = key ? key->modifiers : data->pointer ? data->pointer->modifiers : data->wheel->modifiers;
+        JS_SetPropertyStr(ctx, ev, "shiftKey", JS_NewBool(ctx, mods & PU_MOD_SHIFT));
+        JS_SetPropertyStr(ctx, ev, "ctrlKey", JS_NewBool(ctx, mods & PU_MOD_CTRL));
+        JS_SetPropertyStr(ctx, ev, "altKey", JS_NewBool(ctx, mods & PU_MOD_ALT));
+        JS_SetPropertyStr(ctx, ev, "metaKey", JS_NewBool(ctx, mods & PU_MOD_META));
+        JS_SetPropertyStr(ctx, ev, "capsLock", JS_NewBool(ctx, mods & PU_MOD_CAPS));
+        JS_SetPropertyStr(ctx, ev, "numLock", JS_NewBool(ctx, mods & PU_MOD_NUM));
+        if (data->pointer || data->wheel) {
+            JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, data->pointer ? data->pointer->x : data->wheel->x));
+            JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, data->pointer ? data->pointer->y : data->wheel->y));
+        }
+        if (data->pointer) {
+            JS_SetPropertyStr(ctx, ev, "button", JS_NewInt32(ctx, data->pointer->button));
+            JS_SetPropertyStr(ctx, ev, "buttons", JS_NewUint32(ctx, data->pointer->buttons));
+        }
+        if (data->wheel) {
+            JS_SetPropertyStr(ctx, ev, "deltaX", JS_NewFloat64(ctx, data->wheel->delta_x));
+            JS_SetPropertyStr(ctx, ev, "deltaY", JS_NewFloat64(ctx, data->wheel->delta_y));
+            JS_SetPropertyStr(ctx, ev, "deltaMode", JS_NewInt32(ctx, 0));
+        }
+    }
     JS_SetPropertyStr(ctx, ev, "stopPropagation",
         JS_NewCFunction(ctx, js_event_stop, "stopPropagation", 0));
     JS_SetPropertyStr(ctx, ev, "stopImmediatePropagation",
@@ -422,12 +454,14 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const ch
 
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
 {
-    dispatch_impl(b, target, type, NULL, 0, 0, 0, 1, 0);
+    dispatch_impl(b, target, type, NULL, 1);
 }
 
-void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
+int pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event)
 {
-    if (b && b->focused) dispatch_impl(b, b->focused, type, key, 0, 0, 0, 1, 0);
+    const char *type = event->type == PU_KEY_TEXT ? "textinput" :
+                       event->type == PU_KEY_DOWN ? "keydown" : "keyup";
+    return b && b->focused ? dispatch_impl(b, b->focused, type, &(PuEventData){ .key = event }, 1) : 0;
 }
 
 /* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
@@ -435,9 +469,11 @@ void pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key)
  * mouseleave/mouseenter (non-bubbling) as the hovered element changes. */
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path); /* fwd */
 
-int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y)
+int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent *event)
 {
-    if (!b || !type) return 0;
+    if (!b) return 0;
+    const char *type = pu_pointer_name(event->type);
+    PuEventData data = { .pointer = event };
 
     int hover_changed = 0;
     if (strcmp(type, "mousemove") == 0 && target != b->hovered) {
@@ -445,47 +481,58 @@ int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, fl
         b->hovered = target;
         if (old) node_set_state(old, PU_STATE_HOVER, 0, 1);       /* clear old hover path */
         if (target) { pu_node_ref(target); node_set_state(target, PU_STATE_HOVER, 1, 1); } /* mark new path */
-        if (old) { dispatch_impl(b, old, "mouseleave", NULL, 1, x, y, 0, 0); pu_node_unref(old); }
-        if (target) dispatch_impl(b, target, "mouseenter", NULL, 1, x, y, 0, 0);
+        if (old) { dispatch_impl(b, old, "mouseleave", &data, 0); pu_node_unref(old); }
+        if (target) dispatch_impl(b, target, "mouseenter", &data, 0);
         hover_changed = 1; /* hover:* overrides changed -> the host should repaint */
     }
-    if (target) dispatch_impl(b, target, type, NULL, 1, x, y, 1, 0);
+    if (target) dispatch_impl(b, target, type, &data, 1);
     return hover_changed;
 }
 
 /* Wheel: dispatch a "wheel" event, then apply default scrolling to the nearest
  * overflow:scroll/auto ancestor (clamped to its content height). */
-int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy)
+static int scroll_axis(PuNode *sc, int horizontal, float delta)
 {
-    if (!b) return 0;
-    if (target) dispatch_impl(b, target, "wheel", NULL, 1, x, y, 1, dy);
-
-    PuNode *sc = NULL;
-    for (PuNode *p = target; p; p = p->parent) {
-        if (p->type != PU_NODE_ELEMENT) continue;
-        const char *ov = pu_style_get(&p->style, "overflow");
-        if (ov && (strcmp(ov, "scroll") == 0 || strcmp(ov, "auto") == 0)) { sc = p; break; }
-    }
-    if (!sc) return 0;
-
-    const char *cur_s = pu_style_get(&sc->style, "scrollTop");
+    const char *property = horizontal ? "scrollLeft" : "scrollTop";
+    const char *cur_s = pu_style_get(&sc->style, property);
     float cur = cur_s ? (float)atof(cur_s) : 0.0f;
 
     float content = 0; /* furthest child bottom, relative to the container top */
     for (PuNode *c = sc->first_child; c; c = c->next_sibling) {
-        float bottom = (c->layout_y + c->layout_h) - sc->layout_y;
+        float bottom = horizontal ? c->layout_x + c->layout_w - sc->layout_x :
+                                    c->layout_y + c->layout_h - sc->layout_y;
         if (bottom > content) content = bottom;
     }
-    float maxs = content - sc->layout_h;
+    float maxs = content - (horizontal ? sc->layout_w : sc->layout_h);
     if (maxs < 0) maxs = 0;
 
-    float next = cur + dy;
+    float next = cur + delta;
     if (next < 0) next = 0;
     if (next > maxs) next = maxs;
     char buf[32];
     snprintf(buf, sizeof(buf), "%g", next);
-    pu_style_set(&sc->style, "scrollTop", buf);
+    pu_style_set(&sc->style, property, buf);
     return next != cur; /* tell the host to repaint only if the offset moved */
+}
+
+int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, const PuWheelEvent *event)
+{
+    if (!b || !target) return 0;
+    pu_node_ref(target);
+    if (dispatch_impl(b, target, "wheel", &(PuEventData){ .wheel = event }, 1)) {
+        pu_node_unref(target);
+        return 0;
+    }
+    int moved = 0;
+    for (PuNode *p = target; p; p = p->parent) {
+        const char *overflow = pu_style_get(&p->style, "overflow");
+        if (overflow && (!strcmp(overflow, "scroll") || !strcmp(overflow, "auto"))) {
+            moved = scroll_axis(p, 1, event->delta_x) | scroll_axis(p, 0, event->delta_y);
+            break;
+        }
+    }
+    pu_node_unref(target);
+    return moved;
 }
 
 PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
@@ -508,27 +555,29 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
         PuNode *old = b->focused;
         node_set_state(old, PU_STATE_FOCUS, 0, 0);
         b->focused = NULL;
-        dispatch_impl(b, old, "blur", NULL, 0, 0, 0, 0, 0);
+        dispatch_impl(b, old, "blur", NULL, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
     b->focused = node;
     if (node) {
         pu_node_ref(node);            /* keep the focused node alive */
         node_set_state(node, PU_STATE_FOCUS, 1, 0);
-        dispatch_impl(b, node, "focus", NULL, 0, 0, 0, 0, 0);
+        dispatch_impl(b, node, "focus", NULL, 0);
     }
     return 1; /* focus changed -> the host should repaint */
 }
 
 static void collect_focusable(PuNode *n, PuNode **arr, int *count, int cap)
 {
+    const char *display = pu_style_get(&n->style, "display");
+    if (display && strcmp(display, "none") == 0) return;
     if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0 && *count < cap)
         arr[(*count)++] = n;
     for (PuNode *c = n->first_child; c; c = c->next_sibling)
         collect_focusable(c, arr, count, cap);
 }
 
-void pu_bridge_focus_next(PuBridge *b)
+void pu_bridge_focus_step(PuBridge *b, int backwards)
 {
     if (!b) return;
     PuNode *arr[256];
@@ -538,8 +587,12 @@ void pu_bridge_focus_next(PuBridge *b)
     int idx = -1;
     for (int i = 0; i < count; i++)
         if (arr[i] == b->focused) { idx = i; break; }
-    pu_bridge_set_focus(b, arr[(idx + 1) % count]);
+    int next = idx < 0 ? (backwards ? count - 1 : 0) :
+                        (idx + (backwards ? -1 : 1) + count) % count;
+    pu_bridge_set_focus(b, arr[next]);
 }
+
+void pu_bridge_focus_next(PuBridge *b) { pu_bridge_focus_step(b, 0); }
 
 /* ---- document --------------------------------------------------------------*/
 

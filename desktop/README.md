@@ -97,7 +97,8 @@ include PollyUI. See the root README's Linux build instructions or run:
 ```
 
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
-Linux has a Skia GLES path; IME and real `layer-shell` integration are still pending.
+Linux has a Skia GLES path and structured input with separate text commits;
+IME preedit and real `layer-shell` integration are still pending.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -272,7 +273,10 @@ native Clang 18 and system font/codec libraries. `test-linux-runtime.ps1` builds
 PollyUI and PollyWM together without replacing the Windows/macOS dependencies.
 Its headless suite covers text/font fallback, rendering, JS/DOM, workers,
 file-based fetch/storage and the five appearances, plus explicit startup failure
-cases and detached DOM callback teardown. `-Nested` checks a real SDL3 Wayland
+cases, keyboard/text/pointer/wheel contracts and detached DOM callback teardown.
+The SDL adapter fixture exercises actual host translation with synthetic SDL
+events, including modifier/repeat/code fields, text suppression, right-click
+mapping and fractional two-axis scroll. `-Nested` checks a real SDL3 Wayland
 client on WSLg and inside PollyWM; add `-Sanitize` for ASan/UBSan in PollyUI,
 QuickJS, Yoga and the compositor (not the prebuilt Skia/wlroots libraries).
 All nested processes are bounded and cleaned up. Nested rendering checks run

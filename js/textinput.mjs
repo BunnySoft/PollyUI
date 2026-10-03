@@ -6,6 +6,8 @@
 //   const input = createTextInput({ value: 'Hello', width: 280 });
 //   document.body.appendChild(input.root);
 
+import { previousTextIndex, nextTextIndex } from './js/textindex.mjs';
+
 const el = (tag, style) => {
   const n = document.createElement(tag);
   if (style) for (const k in style) n.style[k] = String(style[k]);
@@ -45,9 +47,10 @@ export function createTextInput(opts = {}) {
   function indexAtX(localX) {
     const v = st.value;
     let best = 0, bestD = Infinity;
-    for (let i = 0; i <= v.length; i++) {
+    for (let i = 0; ; i = nextTextIndex(v, i)) {
       const d = Math.abs(measureText(v.slice(0, i), fontSize) - localX);
       if (d < bestD) { bestD = d; best = i; }
+      if (i === v.length) break;
     }
     return best;
   }
@@ -103,24 +106,27 @@ export function createTextInput(opts = {}) {
 
   root.addEventListener('keydown', (e) => {
     const k = e.key;
-    if (k === 'ArrowLeft')       { st.caret = Math.max(0, st.caret - 1); st.anchor = null; }
-    else if (k === 'ArrowRight') { st.caret = Math.min(st.value.length, st.caret + 1); st.anchor = null; }
+    if (k === 'ArrowLeft')       { st.caret = previousTextIndex(st.value, st.caret); st.anchor = null; }
+    else if (k === 'ArrowRight') { st.caret = nextTextIndex(st.value, st.caret); st.anchor = null; }
     else if (k === 'Home')       { st.caret = 0; st.anchor = null; }
     else if (k === 'End')        { st.caret = st.value.length; st.anchor = null; }
     else if (k === 'Backspace') {
       const r = selRange();
       if (r) { st.value = st.value.slice(0, r[0]) + st.value.slice(r[1]); st.caret = r[0]; st.anchor = null; }
-      else if (st.caret > 0) { st.value = st.value.slice(0, st.caret - 1) + st.value.slice(st.caret); st.caret--; }
+      else if (st.caret > 0) {
+        const start = previousTextIndex(st.value, st.caret);
+        st.value = st.value.slice(0, start) + st.value.slice(st.caret); st.caret = start;
+      }
     }
     else if (k === 'Delete') {
       const r = selRange();
       if (r) { st.value = st.value.slice(0, r[0]) + st.value.slice(r[1]); st.caret = r[0]; st.anchor = null; }
-      else if (st.caret < st.value.length) { st.value = st.value.slice(0, st.caret) + st.value.slice(st.caret + 1); }
+      else if (st.caret < st.value.length) { st.value = st.value.slice(0, st.caret) + st.value.slice(nextTextIndex(st.value, st.caret)); }
     }
-    else if (k.length === 1) { replaceSelection(k); }   // printable character
     else return;
     render();
   });
+  root.addEventListener('textinput', e => { replaceSelection(e.data); render(); });
 
   render();
 

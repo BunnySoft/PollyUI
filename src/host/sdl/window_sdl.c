@@ -49,6 +49,8 @@ struct PuWindow {
     int           is_metal;
     int           exit_code;
     int           presented;
+    int           suppress_text;
+    unsigned      pressed_buttons;
 
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
@@ -86,8 +88,138 @@ static const char *sdl_key_name(SDL_Keycode k)
         case SDLK_END:       return "End";
         case SDLK_PAGEUP:    return "PageUp";
         case SDLK_PAGEDOWN:  return "PageDown";
+        case SDLK_INSERT:    return "Insert";
+        case SDLK_LSHIFT: case SDLK_RSHIFT: return "Shift";
+        case SDLK_LCTRL: case SDLK_RCTRL: return "Control";
+        case SDLK_LALT: case SDLK_RALT: return "Alt";
+        case SDLK_LGUI: case SDLK_RGUI: return "Meta";
+        case SDLK_CAPSLOCK: return "CapsLock";
+        case SDLK_NUMLOCKCLEAR: return "NumLock";
+        case SDLK_PRINTSCREEN: return "PrintScreen";
+        case SDLK_PAUSE: return "Pause";
         default:             return NULL;
     }
+}
+
+static unsigned key_modifiers(SDL_Keymod mods)
+{
+    return ((mods & SDL_KMOD_SHIFT) ? PU_MOD_SHIFT : 0) |
+           ((mods & SDL_KMOD_CTRL) ? PU_MOD_CTRL : 0) |
+           ((mods & SDL_KMOD_ALT) ? PU_MOD_ALT : 0) |
+           ((mods & SDL_KMOD_GUI) ? PU_MOD_META : 0) |
+           ((mods & SDL_KMOD_CAPS) ? PU_MOD_CAPS : 0) |
+           ((mods & SDL_KMOD_NUM) ? PU_MOD_NUM : 0);
+}
+
+static int mouse_button(Uint8 button)
+{
+    switch (button) {
+    case SDL_BUTTON_LEFT: return 0;
+    case SDL_BUTTON_MIDDLE: return 1;
+    case SDL_BUTTON_RIGHT: return 2;
+    case SDL_BUTTON_X1: return 3;
+    case SDL_BUTTON_X2: return 4;
+    default: return -1;
+    }
+}
+
+static unsigned mouse_buttons(SDL_MouseButtonFlags buttons)
+{
+    return ((buttons & SDL_BUTTON_LMASK) ? 1 : 0) |
+           ((buttons & SDL_BUTTON_RMASK) ? 2 : 0) |
+           ((buttons & SDL_BUTTON_MMASK) ? 4 : 0) |
+           ((buttons & SDL_BUTTON_X1MASK) ? 8 : 0) |
+           ((buttons & SDL_BUTTON_X2MASK) ? 16 : 0);
+}
+
+static const char *key_code(SDL_Scancode scancode, char *buffer, size_t size)
+{
+    if (scancode >= SDL_SCANCODE_A && scancode <= SDL_SCANCODE_Z) {
+        SDL_snprintf(buffer, size, "Key%c", 'A' + scancode - SDL_SCANCODE_A);
+        return buffer;
+    }
+    if (scancode >= SDL_SCANCODE_1 && scancode <= SDL_SCANCODE_0) {
+        SDL_snprintf(buffer, size, "Digit%c", "1234567890"[scancode - SDL_SCANCODE_1]);
+        return buffer;
+    }
+    if (scancode >= SDL_SCANCODE_F1 && scancode <= SDL_SCANCODE_F12) {
+        SDL_snprintf(buffer, size, "F%d", scancode - SDL_SCANCODE_F1 + 1); return buffer;
+    }
+    if (scancode >= SDL_SCANCODE_F13 && scancode <= SDL_SCANCODE_F24) {
+        SDL_snprintf(buffer, size, "F%d", scancode - SDL_SCANCODE_F13 + 13); return buffer;
+    }
+    if (scancode >= SDL_SCANCODE_KP_1 && scancode <= SDL_SCANCODE_KP_9) {
+        SDL_snprintf(buffer, size, "Numpad%d", scancode - SDL_SCANCODE_KP_1 + 1); return buffer;
+    }
+    switch (scancode) {
+        case SDL_SCANCODE_LSHIFT: return "ShiftLeft"; case SDL_SCANCODE_RSHIFT: return "ShiftRight";
+        case SDL_SCANCODE_LCTRL: return "ControlLeft"; case SDL_SCANCODE_RCTRL: return "ControlRight";
+        case SDL_SCANCODE_LALT: return "AltLeft"; case SDL_SCANCODE_RALT: return "AltRight";
+        case SDL_SCANCODE_LGUI: return "MetaLeft"; case SDL_SCANCODE_RGUI: return "MetaRight";
+        case SDL_SCANCODE_SPACE: return "Space";
+        case SDL_SCANCODE_KP_ENTER: return "NumpadEnter";
+        case SDL_SCANCODE_KP_0: return "Numpad0";
+        case SDL_SCANCODE_KP_PERIOD: return "NumpadDecimal";
+        case SDL_SCANCODE_KP_PLUS: return "NumpadAdd";
+        case SDL_SCANCODE_KP_MINUS: return "NumpadSubtract";
+        case SDL_SCANCODE_KP_MULTIPLY: return "NumpadMultiply";
+        case SDL_SCANCODE_KP_DIVIDE: return "NumpadDivide";
+        case SDL_SCANCODE_KP_EQUALS: return "NumpadEqual";
+        case SDL_SCANCODE_MINUS: return "Minus"; case SDL_SCANCODE_EQUALS: return "Equal";
+        case SDL_SCANCODE_LEFTBRACKET: return "BracketLeft"; case SDL_SCANCODE_RIGHTBRACKET: return "BracketRight";
+        case SDL_SCANCODE_SEMICOLON: return "Semicolon"; case SDL_SCANCODE_APOSTROPHE: return "Quote";
+        case SDL_SCANCODE_GRAVE: return "Backquote"; case SDL_SCANCODE_BACKSLASH: return "Backslash";
+        case SDL_SCANCODE_COMMA: return "Comma"; case SDL_SCANCODE_PERIOD: return "Period";
+        case SDL_SCANCODE_SLASH: return "Slash";
+        default: {
+            const char *name = sdl_key_name(SDL_GetKeyFromScancode(scancode, SDL_KMOD_NONE, true));
+            return name ? name : "Unidentified";
+        }
+    }
+}
+
+static const char *key_name(const SDL_KeyboardEvent *event, char *buffer, size_t size)
+{
+    const char *special = sdl_key_name(event->key);
+    if (special) return special;
+    if (event->scancode >= SDL_SCANCODE_KP_1 && event->scancode <= SDL_SCANCODE_KP_9) {
+        int digit = event->scancode - SDL_SCANCODE_KP_1;
+        const char *navigation[] = { "End", "ArrowDown", "PageDown", "ArrowLeft", "Clear",
+                                     "ArrowRight", "Home", "ArrowUp", "PageUp" };
+        if (!(event->mod & SDL_KMOD_NUM)) return navigation[digit];
+        buffer[0] = (char)('1' + digit); buffer[1] = 0; return buffer;
+    }
+    switch (event->scancode) {
+        case SDL_SCANCODE_KP_0: return event->mod & SDL_KMOD_NUM ? "0" : "Insert";
+        case SDL_SCANCODE_KP_PERIOD: return event->mod & SDL_KMOD_NUM ? "." : "Delete";
+        case SDL_SCANCODE_KP_PLUS: return "+";
+        case SDL_SCANCODE_KP_MINUS: return "-";
+        case SDL_SCANCODE_KP_MULTIPLY: return "*";
+        case SDL_SCANCODE_KP_DIVIDE: return "/";
+        case SDL_SCANCODE_KP_EQUALS: return "=";
+        default: break;
+    }
+    if (event->scancode >= SDL_SCANCODE_F1 && event->scancode <= SDL_SCANCODE_F24) {
+        const char *code = key_code(event->scancode, buffer, size);
+        if (code[0] == 'F') return code;
+    }
+    SDL_Keycode cp = SDL_GetKeyFromScancode(event->scancode, event->mod, false);
+    if (!cp) cp = event->key;
+    int length;
+    if (cp < 0x20 || cp == 0x7f || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff))
+        return "Unidentified";
+    if (cp < 0x80) { buffer[0] = (char)cp; length = 1; }
+    else if (cp < 0x800) {
+        buffer[0] = (char)(0xc0 | (cp >> 6)); buffer[1] = (char)(0x80 | (cp & 63)); length = 2;
+    } else if (cp < 0x10000) {
+        buffer[0] = (char)(0xe0 | (cp >> 12)); buffer[1] = (char)(0x80 | ((cp >> 6) & 63));
+        buffer[2] = (char)(0x80 | (cp & 63)); length = 3;
+    } else {
+        buffer[0] = (char)(0xf0 | (cp >> 18)); buffer[1] = (char)(0x80 | ((cp >> 12) & 63));
+        buffer[2] = (char)(0x80 | ((cp >> 6) & 63)); buffer[3] = (char)(0x80 | (cp & 63)); length = 4;
+    }
+    buffer[length] = 0;
+    return buffer;
 }
 
 static void recompute_scale(PuWindow *w)
@@ -420,38 +552,75 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             w->running = 0; break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            if (w->pointer_fn && w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_DOWN, w->pointer_user) > 0) w->dirty = 1;
-            break;
-        case SDL_EVENT_MOUSE_BUTTON_UP:
+        case SDL_EVENT_MOUSE_BUTTON_UP: {
+            int button = mouse_button(e->button.button);
+            if (button < 0) { SDL_Log("Unsupported mouse button %u", e->button.button); break; }
+            int down = e->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+            if (down) w->pressed_buttons |= pu_button_mask(button);
+            else w->pressed_buttons &= ~pu_button_mask(button);
+            PuPointerEvent event = {
+                .type = down ? PU_POINTER_DOWN : PU_POINTER_UP,
+                .x = e->button.x, .y = e->button.y, .button = button,
+                .buttons = w->pressed_buttons, .modifiers = key_modifiers(SDL_GetModState()),
+            };
             if (w->pointer_fn) {
-                int changed = w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_UP, w->pointer_user);
-                changed |= w->pointer_fn((int)e->button.x, (int)e->button.y, PU_POINTER_CLICK, w->pointer_user);
+                int changed = w->pointer_fn(&event, w->pointer_user);
+                if (!down) {
+                    event.type = button == 0 ? PU_POINTER_CLICK :
+                                 button == 2 ? PU_POINTER_CONTEXT_MENU : PU_POINTER_AUXCLICK;
+                    changed |= w->pointer_fn(&event, w->pointer_user);
+                }
                 if (changed > 0) w->dirty = 1;
             }
             break;
-        case SDL_EVENT_MOUSE_MOTION:
-            if (w->pointer_fn && w->pointer_fn((int)e->motion.x, (int)e->motion.y, PU_POINTER_MOVE, w->pointer_user) > 0) w->dirty = 1;
+        }
+        case SDL_EVENT_MOUSE_MOTION: {
+            w->pressed_buttons = mouse_buttons(e->motion.state);
+            PuPointerEvent event = {
+                .type = PU_POINTER_MOVE, .x = e->motion.x, .y = e->motion.y,
+                .button = -1, .buttons = w->pressed_buttons, .modifiers = key_modifiers(SDL_GetModState()),
+            };
+            if (w->pointer_fn && w->pointer_fn(&event, w->pointer_user) > 0) w->dirty = 1;
             break;
+        }
         case SDL_EVENT_MOUSE_WHEEL:
             /* SDL wheel.y > 0 scrolls up; DOM deltaY > 0 scrolls down -> negate. */
             if (w->wheel_fn) {
-                float mx = 0, my = 0; SDL_GetMouseState(&mx, &my);
-                if (w->wheel_fn((int)mx, (int)my, -e->wheel.y * 40.0f, w->wheel_user) > 0) w->dirty = 1;
+                PuWheelEvent event = {
+                    .x = e->wheel.mouse_x, .y = e->wheel.mouse_y,
+                    .delta_x = e->wheel.x * 40.0f, .delta_y = -e->wheel.y * 40.0f,
+                    .modifiers = key_modifiers(SDL_GetModState()),
+                };
+                if (w->wheel_fn(&event, w->wheel_user) > 0) w->dirty = 1;
             }
             break;
 
-        case SDL_EVENT_KEY_DOWN: {
-            const char *name = sdl_key_name(e->key.key);
-            if (name && w->key_fn && w->key_fn(name, 1, w->key_user) > 0) w->dirty = 1;
-            break;
-        }
+        case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP: {
-            const char *name = sdl_key_name(e->key.key);
-            if (name && w->key_fn && w->key_fn(name, 0, w->key_user) > 0) w->dirty = 1;
+            char name[32], code[32];
+            PuKeyEvent event = {
+                .type = e->type == SDL_EVENT_KEY_DOWN ? PU_KEY_DOWN : PU_KEY_UP,
+                .key = key_name(&e->key, name, sizeof(name)),
+                .code = key_code(e->key.scancode, code, sizeof(code)),
+                .modifiers = key_modifiers(e->key.mod),
+                .repeat = e->key.repeat,
+            };
+            int result = w->key_fn ? w->key_fn(&event, w->key_user) : 0;
+            w->suppress_text = event.type == PU_KEY_DOWN && (result & PU_INPUT_PREVENT_DEFAULT);
+            if (result & PU_INPUT_REDRAW) w->dirty = 1;
             break;
         }
-        case SDL_EVENT_TEXT_INPUT:
-            if (w->key_fn && w->key_fn(e->text.text, 1, w->key_user) > 0) w->dirty = 1;
+        case SDL_EVENT_TEXT_INPUT: {
+            PuKeyEvent event = { .type = PU_KEY_TEXT, .text = e->text.text,
+                                .modifiers = key_modifiers(SDL_GetModState()) };
+            if (!w->suppress_text && w->key_fn &&
+                (w->key_fn(&event, w->key_user) & PU_INPUT_REDRAW)) w->dirty = 1;
+            w->suppress_text = 0;
+            break;
+        }
+        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            w->suppress_text = 0;
+            w->pressed_buttons = 0;
             break;
 
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:

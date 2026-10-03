@@ -6,6 +6,7 @@
  * by a Skia raster surface blit in M0b. */
 
 #include "render/skia_c.h"
+#include "host/input.h"
 
 typedef struct PuWindow PuWindow;
 
@@ -22,18 +23,10 @@ typedef struct PuWindowConfig {
  * Model/Layout/Render layers. */
 typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, float scale, void *user);
 
-/* Pointer event types. */
-typedef enum PuPointerType {
-    PU_POINTER_CLICK = 0,
-    PU_POINTER_DOWN,
-    PU_POINTER_UP,
-    PU_POINTER_MOVE
-} PuPointerType;
-
 /* Pointer callback at LOGICAL (DPI-independent) client coords (x, y).
  * Returns > 0 if the handler mutated the DOM (so the host repaints); 0 lets the
  * host skip a needless repaint (e.g. a mousemove that changed nothing). */
-typedef int (*PuPointerFn)(int x, int y, PuPointerType type, void *user);
+typedef int (*PuPointerFn)(const PuPointerEvent *event, void *user);
 
 /* Create and show the window. Returns NULL on failure. */
 PuWindow *pu_window_create(const PuWindowConfig *cfg);
@@ -44,15 +37,14 @@ void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
 /* Install the pointer (mouse) callback. */
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
 
-/* Key callback: `key` is a DOM-style key name ("a", "Enter", "Backspace",
- * "Tab", "ArrowLeft", ...). is_down is 1 for key-down / character input, 0 for
- * key-up. After it returns the window repaints. */
-typedef int (*PuKeyFn)(const char *key, int is_down, void *user);
+/* Physical key and committed-text events are separate. Return PuInputResult
+ * flags; PREVENT_DEFAULT suppresses the key's following text submission. */
+typedef int (*PuKeyFn)(const PuKeyEvent *event, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 
-/* Wheel callback: vertical scroll by `dy` LOGICAL px at client (x, y).
- * dy > 0 scrolls content down (matches DOM deltaY sign). Returns > 0 to repaint. */
-typedef int (*PuWheelFn)(int x, int y, float dy, void *user);
+/* Wheel callback: two-axis logical-pixel scroll. Positive deltas mean right/down.
+ * Returns > 0 to repaint. */
+typedef int (*PuWheelFn)(const PuWheelEvent *event, void *user);
 void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
 
 /* Async pump callback: run pending UI-thread work (microtasks, worker/task

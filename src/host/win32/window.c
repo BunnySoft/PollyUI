@@ -34,6 +34,8 @@ struct PuWindow {
     void       *pointer_user;
     PuKeyFn     key_fn;       /* optional keyboard callback */
     void       *key_user;
+    int         suppress_text;
+    wchar_t     pending_surrogate;
     PuWheelFn   wheel_fn;     /* optional wheel callback */
     void       *wheel_user;
     PuAsyncFn   async_fn;     /* optional async pump callback */
@@ -61,8 +63,101 @@ static const char *pu_vk_name(WPARAM vk)
     case VK_DOWN:   return "ArrowDown";
     case VK_HOME:   return "Home";
     case VK_END:    return "End";
+    case VK_PRIOR: return "PageUp"; case VK_NEXT: return "PageDown";
+    case VK_INSERT: return "Insert";
+    case VK_SHIFT: case VK_LSHIFT: case VK_RSHIFT: return "Shift";
+    case VK_CONTROL: case VK_LCONTROL: case VK_RCONTROL: return "Control";
+    case VK_MENU: case VK_LMENU: case VK_RMENU: return "Alt";
+    case VK_LWIN: case VK_RWIN: return "Meta";
+    case VK_CAPITAL: return "CapsLock"; case VK_NUMLOCK: return "NumLock";
+    case VK_SNAPSHOT: return "PrintScreen"; case VK_PAUSE: return "Pause";
+    case VK_CLEAR: return "Clear"; case VK_APPS: return "ContextMenu";
     default:        return NULL;
     }
+}
+
+static unsigned key_modifiers(void)
+{
+    return ((GetKeyState(VK_SHIFT) & 0x8000) ? PU_MOD_SHIFT : 0) |
+           ((GetKeyState(VK_CONTROL) & 0x8000) ? PU_MOD_CTRL : 0) |
+           ((GetKeyState(VK_MENU) & 0x8000) ? PU_MOD_ALT : 0) |
+           (((GetKeyState(VK_LWIN) | GetKeyState(VK_RWIN)) & 0x8000) ? PU_MOD_META : 0) |
+           ((GetKeyState(VK_CAPITAL) & 1) ? PU_MOD_CAPS : 0) |
+           ((GetKeyState(VK_NUMLOCK) & 1) ? PU_MOD_NUM : 0);
+}
+
+static unsigned mouse_buttons(WPARAM state)
+{
+    return ((state & MK_LBUTTON) ? 1 : 0) | ((state & MK_RBUTTON) ? 2 : 0) |
+           ((state & MK_MBUTTON) ? 4 : 0) | ((state & MK_XBUTTON1) ? 8 : 0) |
+           ((state & MK_XBUTTON2) ? 16 : 0);
+}
+
+static const char *key_code(WPARAM vk, LPARAM lp, char *buffer, size_t size)
+{
+    unsigned scan = ((unsigned long)lp >> 16) & 255;
+    int extended = ((unsigned long)lp >> 24) & 1;
+    char letter = 0;
+    if (scan >= 0x10 && scan <= 0x19) letter = "QWERTYUIOP"[scan - 0x10];
+    if (scan >= 0x1e && scan <= 0x26) letter = "ASDFGHJKL"[scan - 0x1e];
+    if (scan >= 0x2c && scan <= 0x32) letter = "ZXCVBNM"[scan - 0x2c];
+    if (letter) { snprintf(buffer, size, "Key%c", letter); return buffer; }
+    if (scan >= 2 && scan <= 11) {
+        snprintf(buffer, size, "Digit%c", "1234567890"[scan - 2]); return buffer;
+    }
+    if (vk >= VK_F1 && vk <= VK_F24) { snprintf(buffer, size, "F%d", (int)(vk - VK_F1 + 1)); return buffer; }
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) {
+        snprintf(buffer, size, "Numpad%d", (int)(vk - VK_NUMPAD0)); return buffer;
+    }
+    if (!extended && scan >= 0x47 && scan <= 0x53) {
+        const char *keypad[] = { "Numpad7", "Numpad8", "Numpad9", "NumpadSubtract",
+            "Numpad4", "Numpad5", "Numpad6", "NumpadAdd", "Numpad1", "Numpad2",
+            "Numpad3", "Numpad0", "NumpadDecimal" };
+        return keypad[scan - 0x47];
+    }
+    switch (scan) {
+    case 0x2a: return "ShiftLeft"; case 0x36: return "ShiftRight";
+    case 0x1d: return extended ? "ControlRight" : "ControlLeft";
+    case 0x38: return extended ? "AltRight" : "AltLeft";
+    case 0x1c: return extended ? "NumpadEnter" : "Enter";
+    case 0x39: return "Space";
+    case 0x0c: return "Minus"; case 0x0d: return "Equal";
+    case 0x1a: return "BracketLeft"; case 0x1b: return "BracketRight";
+    case 0x27: return "Semicolon"; case 0x28: return "Quote";
+    case 0x29: return "Backquote"; case 0x2b: return "Backslash";
+    case 0x33: return "Comma"; case 0x34: return "Period";
+    case 0x35: return extended ? "NumpadDivide" : "Slash";
+    case 0x37: if (!extended) return "NumpadMultiply"; break;
+    default: break;
+    }
+    if (vk == VK_LWIN) return "MetaLeft";
+    if (vk == VK_RWIN) return "MetaRight";
+    const char *name = pu_vk_name(vk);
+    return name ? name : "Unidentified";
+}
+
+static const char *key_name(WPARAM vk, LPARAM lp, char *buffer, int size)
+{
+    const char *name = pu_vk_name(vk);
+    if (name) return name;
+    if (vk >= VK_F1 && vk <= VK_F24) {
+        snprintf(buffer, size, "F%d", (int)(vk - VK_F1 + 1)); return buffer;
+    }
+    BYTE state[256];
+    if (!GetKeyboardState(state)) return "Unidentified";
+    wchar_t chars[8];
+    int count = ToUnicodeEx((UINT)vk, ((UINT)lp >> 16) & 255, state, chars, 8,
+                            4 /* do not change dead-key state */, GetKeyboardLayout(0));
+    if (count < 0) return "Dead";
+    if (count > 0 && chars[0] < 0x20) {
+        state[VK_CONTROL] = state[VK_LCONTROL] = state[VK_RCONTROL] = 0;
+        count = ToUnicodeEx((UINT)vk, ((UINT)lp >> 16) & 255, state, chars, 8, 4, GetKeyboardLayout(0));
+    }
+    if (count > 0 && chars[0] >= 0x20) {
+        int length = WideCharToMultiByte(CP_UTF8, 0, chars, count, buffer, size - 1, NULL, NULL);
+        if (length) { buffer[length] = 0; return buffer; }
+    }
+    return "Unidentified";
 }
 
 static const wchar_t *kClassName = L"PollyUIWindowClass";
@@ -221,19 +316,37 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
+    case WM_XBUTTONDOWN:
+    case WM_XBUTTONUP:
     case WM_MOUSEMOVE:
         if (w && w->pointer_fn) {
             float scale = w->scale > 0 ? w->scale : 1.0f;
-            int x = (int)((short)LOWORD(lp) / scale); /* physical -> logical */
-            int y = (int)((short)HIWORD(lp) / scale);
+            PuPointerEvent event = {
+                .x = (short)LOWORD(lp) / scale, .y = (short)HIWORD(lp) / scale,
+                .button = -1, .buttons = mouse_buttons(wp), .modifiers = key_modifiers(),
+            };
             int changed = 0;
-            if (msg == WM_LBUTTONDOWN) {
-                changed = w->pointer_fn(x, y, PU_POINTER_DOWN, w->pointer_user);
-            } else if (msg == WM_MOUSEMOVE) {
-                changed = w->pointer_fn(x, y, PU_POINTER_MOVE, w->pointer_user);
-            } else { /* WM_LBUTTONUP: up then click */
-                changed  = w->pointer_fn(x, y, PU_POINTER_UP, w->pointer_user);
-                changed |= w->pointer_fn(x, y, PU_POINTER_CLICK, w->pointer_user);
+            if (msg == WM_MOUSEMOVE) {
+                event.type = PU_POINTER_MOVE;
+                changed = w->pointer_fn(&event, w->pointer_user);
+            } else {
+                event.button = (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) ? 0 :
+                    (msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP) ? 1 :
+                    (msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP) ? 2 :
+                    (GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? 3 : 4);
+                int down = msg == WM_LBUTTONDOWN || msg == WM_MBUTTONDOWN ||
+                           msg == WM_RBUTTONDOWN || msg == WM_XBUTTONDOWN;
+                event.type = down ? PU_POINTER_DOWN : PU_POINTER_UP;
+                changed = w->pointer_fn(&event, w->pointer_user);
+                if (!down) {
+                    event.type = event.button == 0 ? PU_POINTER_CLICK :
+                                 event.button == 2 ? PU_POINTER_CONTEXT_MENU : PU_POINTER_AUXCLICK;
+                    changed |= w->pointer_fn(&event, w->pointer_user);
+                }
             }
             /* Repaint only when the handler actually changed the DOM, and do it
              * SYNCHRONOUSLY (UpdateWindow) so feedback isn't deferred behind
@@ -242,16 +355,22 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
              * relayout+repaint, and a click paints immediately. */
             if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
-        return 0;
+        return (msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP) ? TRUE : 0;
 
     case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL:
         if (w && w->wheel_fn) {
             float scale = w->scale > 0 ? w->scale : 1.0f;
             POINT pt = { (short)LOWORD(lp), (short)HIWORD(lp) }; /* screen coords */
             ScreenToClient(hwnd, &pt);
-            int notches = GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA; /* +1 = wheel up */
-            float dy = -(float)notches * 40.0f;                    /* up -> scroll content up */
-            int changed = w->wheel_fn((int)(pt.x / scale), (int)(pt.y / scale), dy, w->wheel_user);
+            float delta = (float)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA * 40.0f;
+            PuWheelEvent event = {
+                .x = pt.x / scale, .y = pt.y / scale,
+                .delta_x = msg == WM_MOUSEHWHEEL ? delta : 0,
+                .delta_y = msg == WM_MOUSEWHEEL ? -delta : 0,
+                .modifiers = key_modifiers(),
+            };
+            int changed = w->wheel_fn(&event, w->wheel_user);
             if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
         return 0;
@@ -267,34 +386,50 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
 
-    case WM_KEYDOWN: {
-        const char *name = pu_vk_name(wp);
-        if (w && w->key_fn && name) {
-            if (w->key_fn(name, 1, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
-            return 0;
+    case WM_KEYDOWN: case WM_KEYUP:
+    case WM_SYSKEYDOWN: case WM_SYSKEYUP: {
+        if (w && w->key_fn) {
+            char name[40], code[32];
+            int down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
+            PuKeyEvent event = {
+                .type = down ? PU_KEY_DOWN : PU_KEY_UP,
+                .key = key_name(wp, lp, name, sizeof(name)),
+                .code = key_code(wp, lp, code, sizeof(code)),
+                .modifiers = key_modifiers(),
+                .repeat = down && ((unsigned long)lp & (1UL << 30)),
+            };
+            int result = w->key_fn(&event, w->key_user);
+            w->suppress_text = down && (result & PU_INPUT_PREVENT_DEFAULT);
+            if (result & PU_INPUT_REDRAW) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
+            if (msg == WM_KEYDOWN || msg == WM_KEYUP || (result & PU_INPUT_PREVENT_DEFAULT)) return 0;
         }
-        break; /* character keys -> WM_CHAR via TranslateMessage */
-    }
-
-    case WM_KEYUP: {
-        const char *name = pu_vk_name(wp);
-        if (w && w->key_fn && name) {
-            if (w->key_fn(name, 0, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
-        }
-        return 0;
+        break; /* Preserve native system-key handling, including Alt+F4. */
     }
 
     case WM_CHAR:
         if (w && w->key_fn) {
             wchar_t c = (wchar_t)wp;
-            if (c >= 0x20 && c != 0x7F) { /* printable; control keys come via WM_KEYDOWN */
-                char utf8[8] = { 0 };
-                WideCharToMultiByte(CP_UTF8, 0, &c, 1, utf8, sizeof(utf8) - 1, NULL, NULL);
-                if (w->key_fn(utf8, 1, w->key_user)) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
+            if (c >= 0xd800 && c <= 0xdbff) { w->pending_surrogate = c; return 0; }
+            wchar_t chars[2] = { c, 0 };
+            int count = 1;
+            if (c >= 0xdc00 && c <= 0xdfff) {
+                if (w->pending_surrogate) { chars[0] = w->pending_surrogate; chars[1] = c; count = 2; }
+                else chars[0] = 0xfffd;
             }
+            w->pending_surrogate = 0;
+            if (!w->suppress_text && c >= 0x20 && c != 0x7F) {
+                char utf8[12] = {0};
+                WideCharToMultiByte(CP_UTF8, 0, chars, count, utf8, sizeof(utf8) - 1, NULL, NULL);
+                PuKeyEvent event = { .type = PU_KEY_TEXT, .text = utf8, .modifiers = key_modifiers() };
+                if (w->key_fn(&event, w->key_user) & PU_INPUT_REDRAW) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
+            }
+            w->suppress_text = 0;
         }
         return 0;
 
+    case WM_KILLFOCUS:
+        if (w) { w->pending_surrogate = 0; w->suppress_text = 0; }
+        break;
     case PU_WM_WAKE:
     case WM_TIMER:
         if (w && w->async_fn) {

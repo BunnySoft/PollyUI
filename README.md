@@ -37,8 +37,9 @@ ANGLE/D3D11; macOS via SDL3 + Skia **Metal**). Implemented:
 - **Layout** — `flexDirection`, `flexGrow`, `flexWrap`, `justifyContent`/
   `alignItems`, px/%/auto sizes, per-edge `padding`/`margin`, `position:absolute`.
 - **Text** — Skia + DirectWrite, measured into layout; `measureText()`.
-- **Input** — clicks (hit-test + bubbling), keyboard + `tabIndex` focus + Tab,
-  a **text field with a blinking caret**.
+- **Input** — pointer buttons/modifiers, two-axis wheels, physical keyboard
+  events separate from committed text, `tabIndex` focus with Tab/Shift+Tab,
+  and text fields with a blinking caret.
 - **Concurrency** — `Worker` (JS on a worker thread) + `computeAsync` (native
   background work), results marshaled back to the UI thread.
 - **Tooling** — a deterministic **headless test harness** (`--test`), a
@@ -204,7 +205,7 @@ pixels, which is distinct from Skia GLES drawing.
 The GLES implementation reports its renderer string. Automated WSL checks use
 Mesa **llvmpipe**, a software GL implementation, not proof of physical GPU
 acceleration. Physical GPU/DRM support still needs separate qualification.
-Full input/IME support, native HTTP and XDG per-application storage remain work
+IME preedit/complex text, native HTTP and XDG per-application storage remain work
 items. Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame,
 or `PU_TRACE_FRAMES=1` for every frame. Linux-only `PU_CAPTURE_FRAME=<path.png>`
 writes the latest rendered frame (including GLES readback) for diagnostics;
@@ -217,6 +218,37 @@ The headless harness accepts `PU_TEST_STORAGE` for isolated test data; its defau
 is `build/_localstorage.dat`.
 `-Sanitize` instruments PollyUI, QuickJS and Yoga with ASan/UBSan while reusing
 the Release Skia dependency. It is not a sanitizer build of Skia itself.
+
+### Input event contract
+
+Native host callbacks now take the structs in `src/host/input.h` rather than
+positional key/pointer arguments. Both Win32 and SDL hosts use the same contract:
+`keydown`/`keyup` carry `key`, `code`, `repeat` and modifier booleans;
+`textinput` carries committed UTF-8 as `event.data`. Unknown physical codes are
+reported as `Unidentified`. Hosts suppress a key's following text commit when
+its keydown default action is prevented. Tab is dispatched before focus traversal;
+Shift+Tab reverses it, hidden nodes are skipped, and `preventDefault()` cancels it.
+
+Text editors should insert from `textinput`, not from `keydown`; keydown remains
+for navigation, deletion and shortcuts. The bundled inputs have been migrated.
+They preserve surrogate pairs when moving/deleting, but do not yet implement
+grapheme-cluster editing, IME preedit/candidate UI or full input-method protocols.
+
+Pointer events expose fractional `clientX/clientY`, `button`, `buttons` and
+modifiers. Only the primary button generates `click`; secondary release generates
+`contextmenu`, other buttons `auxclick`. `button` is -1 for motion, otherwise
+left/middle/right/back/forward = 0/1/2/3/4; `buttons` uses masks 1/4/2/8/16.
+Wheel deltas are logical pixels (`deltaMode=0`), with both `deltaX` and `deltaY`;
+`preventDefault()` cancels the nearest scroll container's default scrolling.
+
+The headless harness keeps `host.key('a')` as keydown plus a convenient text
+commit. `host.key('a', 'keydown', {code:'KeyA', ctrlKey:true, repeat:true,
+text:false})` sends a physical event only. `host.text('text')` submits a whole
+string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
+`host.scroll(x,y,deltaY,deltaX,{...modifiers})` expose richer pointer/wheel input.
+`tests/input-events.mjs`, `tests/pointer-events.mjs` and the Linux SDL adapter
+test cover these contracts; the latter queues synthetic SDL events and is not
+physical-device or locale-layout qualification.
 
 ## Experimental Linux desktop
 

@@ -8,6 +8,7 @@
 
 #include "quickjs.h"
 #include "model/node.h"
+#include "host/input.h"
 
 typedef struct PuBridge PuBridge;
 
@@ -29,14 +30,14 @@ void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
  * hovered element changes. Pass the hit-tested target (NULL = empty space). */
 /* Returns nonzero if the hovered element changed (so `hover:*` style overrides
  * differ and the host must repaint, independent of any JS re-render). */
-int pu_bridge_dispatch_pointer(PuBridge *b, const char *type, PuNode *target, float x, float y);
+int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent *event);
 
-/* Wheel at `target`: dispatch a "wheel" event, then scroll the nearest
- * overflow:scroll/auto ancestor by dy (logical px), clamped to its content.
+/* Wheel at `target`: dispatch a "wheel" event, then, unless prevented, scroll the
+ * nearest overflow:scroll/auto ancestor on both axes, clamped to its content.
  * Returns nonzero if the native scroll offset actually changed (this scroll is
  * applied directly to the C-side style, NOT via the JS reactive path, so the
  * host needs this signal to know it must repaint). */
-int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, float x, float y, float dy);
+int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, const PuWheelEvent *event);
 
 /* --- focus + keyboard --- */
 /* Move focus to `node` (NULL = blur), firing blur/focus events. Returns nonzero
@@ -45,7 +46,8 @@ int     pu_bridge_set_focus(PuBridge *b, PuNode *node);
 PuNode *pu_bridge_focused(PuBridge *b);
 /* Advance focus to the next focusable (tabIndex >= 0) element in tree order. */
 void    pu_bridge_focus_next(PuBridge *b);
-/* Dispatch a keyboard event (with a `key` field) to the focused element. */
-void    pu_bridge_dispatch_key(PuBridge *b, const char *type, const char *key);
+void    pu_bridge_focus_step(PuBridge *b, int backwards);
+/* Returns nonzero if the event was prevented. TEXT becomes textinput.data. */
+int     pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event);
 
 #endif /* POLLYUI_BRIDGE_BRIDGE_H */

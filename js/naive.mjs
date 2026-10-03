@@ -6,6 +6,7 @@
 //     from './js/naive.mjs';
 
 import { h, reactive } from './js/vue.mjs';
+import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint } from './js/textindex.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -80,7 +81,11 @@ function inputState(id, len) {
 }
 function indexAtX(value, fontSize, localX) {
   let best = 0, bestD = Infinity;
-  for (let i = 0; i <= value.length; i++) { const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX); if (d < bestD) { bestD = d; best = i; } }
+  for (let i = 0; ; i = nextTextIndex(value, i)) {
+    const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX);
+    if (d < bestD) { bestD = d; best = i; }
+    if (i === value.length) break;
+  }
   return best;
 }
 // A caret vnode for a focused input (or null). Place inside a position:relative box.
@@ -279,6 +284,10 @@ export function NInput(props = {}) {
   const pad = 12;
   const isPh = value.length === 0;
   const st = id ? inputState(id, value.length) : null;
+  if (st) {
+    st.caret = clampTextIndex(value, st.caret);
+    if (st.anchor != null) st.anchor = clampTextIndex(value, st.anchor);
+  }
   const focused = id && _caret.activeId === id;
   const xOf = (i) => pad + measureText(value.slice(0, i), fs);
   const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
@@ -301,16 +310,19 @@ export function NInput(props = {}) {
     onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e)); _caret.tick++; } },
     onMouseup: () => { if (st) { st.dragging = false; if (st.anchor === st.caret) st.anchor = null; _caret.tick++; } },
     onKeydown: (e) => {
-      if (!st) { if (onInput) { const k = e.key; if (k === 'Backspace') onInput(value.slice(0, -1)); else if (k.length === 1) onInput(value + k); } return; }
+      if (!st) { if (onInput && e.key === 'Backspace') onInput(removeLastCodePoint(value)); return; }
       const k = e.key;
-      if (k === 'ArrowLeft') { st.caret = Math.max(0, st.caret - 1); st.anchor = null; }
-      else if (k === 'ArrowRight') { st.caret = Math.min(value.length, st.caret + 1); st.anchor = null; }
+      if (k === 'ArrowLeft') { st.caret = previousTextIndex(value, st.caret); st.anchor = null; }
+      else if (k === 'ArrowRight') { st.caret = nextTextIndex(value, st.caret); st.anchor = null; }
       else if (k === 'Home') { st.caret = 0; st.anchor = null; }
       else if (k === 'End') { st.caret = value.length; st.anchor = null; }
-      else if (k === 'Backspace') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret > 0) { onInput && onInput(value.slice(0, st.caret - 1) + value.slice(st.caret)); st.caret--; } }
-      else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { onInput && onInput(value.slice(0, st.caret) + value.slice(st.caret + 1)); } }
-      else if (k.length === 1) replace(k);
+      else if (k === 'Backspace') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret > 0) { const start = previousTextIndex(value, st.caret); onInput && onInput(value.slice(0, start) + value.slice(st.caret)); st.caret = start; } }
+      else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { onInput && onInput(value.slice(0, st.caret) + value.slice(nextTextIndex(value, st.caret))); } }
       else return;
+      _caret.on = true; _caret.tick++;
+    },
+    onTextinput: e => {
+      if (st) replace(e.data); else if (onInput) onInput(value + e.data);
       _caret.on = true; _caret.tick++;
     },
   }, ...kids);
@@ -1062,7 +1074,8 @@ export function NDynamicInput(props = {}) {
   return h('view', { id, style: { flexDirection: 'column', gap: '8' } },
     ...value.map((v, i) => h('view', { style: { flexDirection: 'row', gap: '8', alignItems: 'center' } },
       h('view', { tabIndex: 0, style: clean({ flexGrow: 1, height: 34, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, justifyContent: 'center', backgroundColor: theme.card, overflow: 'hidden' }),
-        onKeydown: (e) => { const k = e.key; const nv = value.slice(); if (k === 'Backspace') nv[i] = v.slice(0, -1); else if (k.length === 1) nv[i] = v + k; else return; onChange && onChange(nv); } },
+        onKeydown: (e) => { if (e.key !== 'Backspace') return; const nv = value.slice(); nv[i] = removeLastCodePoint(v); onChange && onChange(nv); },
+        onTextinput: (e) => { const nv = value.slice(); nv[i] = v + e.data; onChange && onChange(nv); } },
         h('view', { style: { color: theme.text, fontSize: '14' } }, v || '')),
       h('view', { style: { color: theme.error, fontSize: '14' }, onClick: () => onChange && onChange(value.filter((_, j) => j !== i)) }, '✕'))),
     h('view', { style: clean({ height: 32, borderWidth: 1, borderColor: theme.border, borderRadius: 3, alignItems: 'center', justifyContent: 'center' }), onClick: () => onChange && onChange(value.concat('')) },
@@ -1409,7 +1422,8 @@ export function NAutoComplete(props = {}) {
   };
   return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onClick: open,
-    onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (!e.currentTarget.__ac) open(e); } },
+    onKeydown: (e) => { if (e.key !== 'Backspace') return; onInput && onInput(removeLastCodePoint(value)); if (!e.currentTarget.__ac) open(e); },
+    onTextinput: (e) => { onInput && onInput(value + e.data); if (!e.currentTarget.__ac) open(e); } },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || placeholder));
 }
 
@@ -1436,7 +1450,8 @@ export function NMention(props = {}) {
     inputNode.__m = pid;
   };
   return h('view', { id, tabIndex: 0, style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, justifyContent: 'center', overflow: 'hidden' }), hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
-    onKeydown: (e) => { const k = e.key; let nv = value; if (k === 'Backspace') nv = value.slice(0, -1); else if (k.length === 1) nv = value + k; else return; onInput && onInput(nv); if (nv.indexOf('@') >= 0 && !e.currentTarget.__m) open(e); } },
+    onKeydown: (e) => { if (e.key !== 'Backspace') return; const nv = removeLastCodePoint(value); onInput && onInput(nv); if (nv.indexOf('@') >= 0 && !e.currentTarget.__m) open(e); },
+    onTextinput: (e) => { const nv = value + e.data; onInput && onInput(nv); if (nv.indexOf('@') >= 0 && !e.currentTarget.__m) open(e); } },
     h('view', { style: { color: value ? theme.text : theme.textDisabled, fontSize: '14' } }, value || 'Type @ to mention'));
 }
 

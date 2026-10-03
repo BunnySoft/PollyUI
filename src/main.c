@@ -111,60 +111,66 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
 
 /* Pointer: hit-test against the last computed layout and dispatch the matching
  * DOM event (mousedown/mouseup/mousemove/click), then drain queued work. */
-static int app_pointer(int x, int y, PuPointerType type, void *user)
+static int app_pointer(const PuPointerEvent *event, void *user)
 {
     PuApp *app = (PuApp *)user;
-    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
+    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), event->x, event->y);
+    pu_node_ref(target);
 
     int state_changed = 0; /* hover/focus flag changes repaint natively (no re-render) */
-    if (type == PU_POINTER_DOWN) {
+    if (event->type == PU_POINTER_DOWN) {
         /* Click-to-focus on press: focus the nearest focusable ancestor (or blur). */
         PuNode *f = target;
         while (f && f->tab_index < 0) f = f->parent;
         state_changed |= pu_bridge_set_focus(app->bridge, f);
     }
 
-    const char *t = (type == PU_POINTER_DOWN) ? "mousedown"
-                  : (type == PU_POINTER_UP)   ? "mouseup"
-                  : (type == PU_POINTER_MOVE) ? "mousemove" : "click";
+    const char *t = pu_pointer_name(event->type);
+    int interaction = event->type != PU_POINTER_MOVE || event->buttons != 0;
     if (pu_perf_on()) {
         double t0 = pu_now_ms();
-        state_changed |= pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
+        state_changed |= pu_bridge_dispatch_pointer(app->bridge, target, event);
         double t1 = pu_now_ms();
         int worked = pu_script_pump(app->script);
         double t2 = pu_now_ms();
         fprintf(stderr, "[perf] pointer %-9s: dispatch %.2fms  js+rerender %.2fms (worked=%d state=%d)\n",
                 t, t1 - t0, t2 - t1, worked, state_changed);
-        return worked | state_changed;
+        pu_node_unref(target);
+        return worked | state_changed | interaction;
     }
-    state_changed |= pu_bridge_dispatch_pointer(app->bridge, t, target, (float)x, (float)y);
+    state_changed |= pu_bridge_dispatch_pointer(app->bridge, target, event);
     /* Repaint signal: a re-render (worked > 0) OR a native hover/focus state
      * change. A mousemove that stays within the same element returns 0 and the
      * host skips the repaint. */
-    return pu_script_pump(app->script) | state_changed;
+    int result = pu_script_pump(app->script) | state_changed | interaction;
+    pu_node_unref(target);
+    return result;
 }
 
 /* Wheel: hit-test, then dispatch + scroll the nearest scroll container. */
-static int app_wheel(int x, int y, float dy, void *user)
+static int app_wheel(const PuWheelEvent *event, void *user)
 {
     PuApp *app = (PuApp *)user;
-    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), (float)x, (float)y);
+    PuNode *target = pu_node_hit_test(pu_bridge_body(app->bridge), event->x, event->y);
     /* Native scroll is applied C-side (not reactive), so OR its "moved" signal
      * with the pump result; either alone is a reason to repaint. */
-    int scrolled = pu_bridge_dispatch_wheel(app->bridge, target, (float)x, (float)y, dy);
+    int scrolled = pu_bridge_dispatch_wheel(app->bridge, target, event);
     return scrolled | pu_script_pump(app->script);
 }
 
 /* Keyboard: Tab cycles focus; other keys dispatch keydown/keyup to the focused
  * element. Returns > 0 if the DOM changed (so the host repaints). */
-static int app_key(const char *key, int is_down, void *user)
+static int app_key(const PuKeyEvent *event, void *user)
 {
     PuApp *app = (PuApp *)user;
-    if (is_down && strcmp(key, "Tab") == 0)
-        pu_bridge_focus_next(app->bridge);
-    else
-        pu_bridge_dispatch_key(app->bridge, is_down ? "keydown" : "keyup", key);
-    return pu_script_pump(app->script);
+    int prevented = pu_bridge_dispatch_key(app->bridge, event);
+    if (!prevented && event->type == PU_KEY_DOWN && strcmp(event->key, "Tab") == 0 &&
+        !(event->modifiers & (PU_MOD_CTRL | PU_MOD_ALT | PU_MOD_META))) {
+        pu_bridge_focus_step(app->bridge, event->modifiers & PU_MOD_SHIFT);
+        prevented = 1;
+    }
+    pu_script_pump(app->script);
+    return PU_INPUT_REDRAW | (prevented ? PU_INPUT_PREVENT_DEFAULT : 0);
 }
 
 /* Monotonic millisecond clock for animation timestamps. */
@@ -308,6 +314,19 @@ static JSValue host_render(JSContext *ctx, JSValueConst this_val, int argc, JSVa
     return JS_UNDEFINED;
 }
 
+static int input_modifiers(JSContext *ctx, JSValueConst options, unsigned *modifiers)
+{
+    const char *names[] = { "shiftKey", "ctrlKey", "altKey", "metaKey", "capsLock", "numLock" };
+    unsigned flags[] = { PU_MOD_SHIFT, PU_MOD_CTRL, PU_MOD_ALT, PU_MOD_META, PU_MOD_CAPS, PU_MOD_NUM };
+    for (int i = 0; i < 6; i++) {
+        JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
+        if (JS_IsException(value)) return 0;
+        if (JS_ToBool(ctx, value)) *modifiers |= flags[i];
+        JS_FreeValue(ctx, value);
+    }
+    return 1;
+}
+
 static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
@@ -317,15 +336,20 @@ static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
+    pu_node_ref(target);
 
     PuNode *f = target;
     while (f && f->tab_index < 0) f = f->parent;
     pu_bridge_set_focus(g_test->bridge, f); /* click-to-focus */
 
     /* A real click is mousedown -> mouseup -> click. */
-    pu_bridge_dispatch_pointer(g_test->bridge, "mousedown", target, (float)x, (float)y);
-    pu_bridge_dispatch_pointer(g_test->bridge, "mouseup",   target, (float)x, (float)y);
-    pu_bridge_dispatch_pointer(g_test->bridge, "click",     target, (float)x, (float)y);
+    PuPointerEvent event = { .type = PU_POINTER_DOWN, .x = (float)x, .y = (float)y, .button = 0, .buttons = 1 };
+    pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
+    event.type = PU_POINTER_UP; event.buttons = 0;
+    pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
+    event.type = PU_POINTER_CLICK;
+    pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
+    pu_node_unref(target);
     pu_script_run_loop(g_test->script);
     test_render();
     return JS_NewBool(ctx, target != NULL);
@@ -336,19 +360,47 @@ static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSVal
 static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
+    if (argc < 3 || !JS_IsString(argv[0]) || (argc >= 4 && !JS_IsObject(argv[3])))
+        return JS_ThrowTypeError(ctx, "host.mouse requires type, x, y and optional options object");
     const char *type = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    if (!type) return JS_EXCEPTION;
     double x = 0, y = 0;
     if (argc >= 2) JS_ToFloat64(ctx, &x, argv[1]);
     if (argc >= 3) JS_ToFloat64(ctx, &y, argv[2]);
+    PuPointerEvent event = { .x = (float)x, .y = (float)y };
+    int found = 0;
+    for (int i = PU_POINTER_CLICK; i <= PU_POINTER_AUXCLICK; i++) {
+        if (!strcmp(type, pu_pointer_name((PuPointerType)i))) { event.type = (PuPointerType)i; found = 1; break; }
+    }
+    JS_FreeCString(ctx, type);
+    if (!found) return JS_ThrowTypeError(ctx, "Unsupported pointer event type");
+    event.button = event.type == PU_POINTER_MOVE ? -1 : event.type == PU_POINTER_CONTEXT_MENU ? 2 : 0;
+    if (argc >= 4) {
+        if (!input_modifiers(ctx, argv[3], &event.modifiers)) return JS_EXCEPTION;
+        JSValue value = JS_GetPropertyStr(ctx, argv[3], "button");
+        if (JS_IsException(value)) return JS_EXCEPTION;
+        int32_t button = event.button;
+        int result = JS_IsUndefined(value) ? 0 : JS_ToInt32(ctx, &button, value);
+        JS_FreeValue(ctx, value);
+        if (result < 0) return JS_EXCEPTION;
+        if (button < -1 || button > 4) return JS_ThrowRangeError(ctx, "button must be -1..4");
+        event.button = button;
+        event.buttons = event.type == PU_POINTER_DOWN ? pu_button_mask(button) : 0;
+        value = JS_GetPropertyStr(ctx, argv[3], "buttons");
+        if (JS_IsException(value)) return JS_EXCEPTION;
+        uint32_t buttons = event.buttons;
+        result = JS_IsUndefined(value) ? 0 : JS_ToUint32(ctx, &buttons, value);
+        JS_FreeValue(ctx, value);
+        if (result < 0) return JS_EXCEPTION;
+        if (buttons > 31) return JS_ThrowRangeError(ctx, "buttons must be a five-button bitmask");
+        event.buttons = buttons;
+    } else if (event.type == PU_POINTER_DOWN) event.buttons = 1;
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
-    if (type) {
-        pu_bridge_dispatch_pointer(g_test->bridge, type, target, (float)x, (float)y);
-        JS_FreeCString(ctx, type);
-        pu_script_run_loop(g_test->script);
-        test_render();
-    }
+    pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
+    pu_script_run_loop(g_test->script);
+    test_render();
     return JS_NewBool(ctx, target != NULL);
 }
 
@@ -364,35 +416,117 @@ static JSValue host_flush(JSContext *ctx, JSValueConst this_val, int argc, JSVal
 static JSValue host_scroll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
-    double x = 0, y = 0, dy = 0;
+    double x = 0, y = 0, dy = 0, dx = 0;
     if (argc >= 1) JS_ToFloat64(ctx, &x, argv[0]);
     if (argc >= 2) JS_ToFloat64(ctx, &y, argv[1]);
     if (argc >= 3) JS_ToFloat64(ctx, &dy, argv[2]);
+    if (argc >= 4) JS_ToFloat64(ctx, &dx, argv[3]);
+    PuWheelEvent event = { .x = (float)x, .y = (float)y, .delta_x = (float)dx, .delta_y = (float)dy };
+    if (argc >= 5) {
+        if (!JS_IsObject(argv[4])) return JS_ThrowTypeError(ctx, "wheel options must be an object");
+        if (!input_modifiers(ctx, argv[4], &event.modifiers)) return JS_EXCEPTION;
+    }
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
-    pu_bridge_dispatch_wheel(g_test->bridge, target, (float)x, (float)y, (float)dy);
+    pu_bridge_dispatch_wheel(g_test->bridge, target, &event);
     pu_script_run_loop(g_test->script);
     test_render();
     return JS_NewBool(ctx, target != NULL);
 }
 
+static int host_key_options(JSContext *ctx, JSValueConst options, PuKeyEvent *event,
+                            const char **code, int *text)
+{
+    if (!input_modifiers(ctx, options, &event->modifiers)) return 0;
+    const char *names[] = { "repeat", "text" };
+    for (int i = 0; i < 2; i++) {
+        JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
+        if (JS_IsException(value)) return 0;
+        int on = JS_ToBool(ctx, value);
+        if (i == 0) event->repeat = on;
+        else if (!JS_IsUndefined(value)) *text = on;
+        JS_FreeValue(ctx, value);
+    }
+    JSValue value = JS_GetPropertyStr(ctx, options, "code");
+    if (JS_IsException(value)) return 0;
+    if (!JS_IsUndefined(value)) {
+        *code = JS_ToCString(ctx, value);
+        JS_FreeValue(ctx, value);
+        if (!*code) return 0;
+    } else JS_FreeValue(ctx, value);
+    event->code = *code;
+    return 1;
+}
+
 static JSValue host_key(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
+    if (argc < 1 || !JS_IsString(argv[0]) ||
+        (argc >= 2 && !JS_IsUndefined(argv[1]) && !JS_IsString(argv[1])) ||
+        (argc >= 3 && !JS_IsObject(argv[2])))
+        return JS_ThrowTypeError(ctx, "host.key requires a key string, optional type string and options object");
     const char *key  = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
-    const char *type = argc >= 2 ? JS_ToCString(ctx, argv[1]) : NULL;
+    const char *type = argc >= 2 && !JS_IsUndefined(argv[1]) ? JS_ToCString(ctx, argv[1]) : NULL;
+    if (!key || (argc >= 2 && JS_IsString(argv[1]) && !type)) {
+        if (key) JS_FreeCString(ctx, key);
+        if (type) JS_FreeCString(ctx, type);
+        return JS_EXCEPTION;
+    }
     if (key) {
         const char *t = type ? type : "keydown";
-        if (strcmp(t, "keydown") == 0 && strcmp(key, "Tab") == 0)
-            pu_bridge_focus_next(g_test->bridge);
-        else
-            pu_bridge_dispatch_key(g_test->bridge, t, key);
+        if (strcmp(t, "keydown") && strcmp(t, "keyup")) {
+            JS_FreeCString(ctx, key);
+            if (type) JS_FreeCString(ctx, type);
+            return JS_ThrowTypeError(ctx, "host.key type must be keydown or keyup");
+        }
+        PuKeyEvent event = { .type = !strcmp(t, "keydown") ? PU_KEY_DOWN : PU_KEY_UP, .key = key };
+        const char *code = NULL;
+        int text = 1;
+        if (argc >= 3 && !host_key_options(ctx, argv[2], &event, &code, &text)) {
+            JS_FreeCString(ctx, key);
+            if (type) JS_FreeCString(ctx, type);
+            if (code) JS_FreeCString(ctx, code);
+            return JS_EXCEPTION;
+        }
+        PuApp app = { g_test->script, g_test->bridge };
+        int result = app_key(&event, &app);
+        /* Compatibility shortcut: host.key('a') also submits printable text.
+         * Native key adapters never synthesize text from hardware keys. */
+        unsigned char first = (unsigned char)key[0];
+        size_t length = strlen(key);
+        int printable = (length == 1 && first >= 0x20 && first != 0x7f) ||
+                        (length == 2 && first >= 0xc2 && first <= 0xdf) ||
+                        (length == 3 && first >= 0xe0 && first <= 0xef) ||
+                        (length == 4 && first >= 0xf0 && first <= 0xf4);
+        if (text && printable && event.type == PU_KEY_DOWN &&
+            !(result & PU_INPUT_PREVENT_DEFAULT) &&
+            !(event.modifiers & (PU_MOD_CTRL | PU_MOD_ALT | PU_MOD_META))) {
+            event.type = PU_KEY_TEXT;
+            event.text = key;
+            app_key(&event, &app);
+        }
+        if (code) JS_FreeCString(ctx, code);
         JS_FreeCString(ctx, key);
         if (type) JS_FreeCString(ctx, type);
         pu_script_run_loop(g_test->script);
         test_render();
     }
+    return JS_UNDEFINED;
+}
+
+static JSValue host_text(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    if (argc < 1 || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "host.text requires a string");
+    const char *text = JS_ToCString(ctx, argv[0]);
+    if (!text) return JS_EXCEPTION;
+    PuKeyEvent event = { .type = PU_KEY_TEXT, .text = text };
+    PuApp app = { g_test->script, g_test->bridge };
+    app_key(&event, &app);
+    JS_FreeCString(ctx, text);
+    pu_script_run_loop(g_test->script);
+    test_render();
     return JS_UNDEFINED;
 }
 
@@ -431,6 +565,7 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "scroll", JS_NewCFunction(ctx, host_scroll, "scroll", 3));
     JS_SetPropertyStr(ctx, host, "flush",  JS_NewCFunction(ctx, host_flush, "flush", 0));
     JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
+    JS_SetPropertyStr(ctx, host, "text",   JS_NewCFunction(ctx, host_text, "text", 1));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
     JS_SetPropertyStr(ctx, global, "host", host);

@@ -50,10 +50,10 @@ typedef struct PuWindowConfig { const char *title; int width, height; } PuWindow
 /* draw a frame; w/h are LOGICAL px, scale maps to physical px of `surface` */
 typedef void (*PuPaintFn)(PuSurface *surface, int width, int height, float scale, void *user);
 
-typedef enum { PU_POINTER_CLICK, PU_POINTER_DOWN, PU_POINTER_UP, PU_POINTER_MOVE } PuPointerType;
-typedef int  (*PuPointerFn)(int x, int y, PuPointerType type, void *user); /* >0 => repaint */
-typedef int  (*PuKeyFn)(const char *key, int is_down, void *user);        /* >0 => repaint */
-typedef int  (*PuWheelFn)(int x, int y, float dy, void *user);            /* >0 => repaint */
+#include "host/input.h"
+typedef int  (*PuPointerFn)(const PuPointerEvent *event, void *user); /* >0 => repaint */
+typedef int  (*PuKeyFn)(const PuKeyEvent *event, void *user);         /* PuInputResult flags */
+typedef int  (*PuWheelFn)(const PuWheelEvent *event, void *user);     /* >0 => repaint */
 typedef int  (*PuAsyncFn)(void *user);  /* pump microtasks/timers/rAF; >0 => repaint */
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg);
@@ -88,7 +88,7 @@ typedef void (*PuLifecycleFn)(PuAppEvent ev, void *user);
 /* text input / IME (also raises the soft keyboard on mobile) */
 void pu_window_start_text_input(PuWindow *, float caret_x, float caret_y);
 void pu_window_stop_text_input (PuWindow *);
-/* committed UTF-8 text arrives via PuKeyFn with is_down=1 and a multi-byte key */
+/* committed UTF-8 arrives as PuKeyEvent { .type=PU_KEY_TEXT, .text=... } */
 ```
 
 `safe-area insets` (notch/home-indicator) are reported by extending
@@ -174,75 +174,24 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 ## 4. Tier 1 — SDL3 backend  (`src/host/sdl/`)
 
-The following snippet is the architectural sketch, not the shipped backend.
-The implementation uses a classic event loop, Metal on Apple when enabled,
+The desktop implementation uses a classic event loop, Metal on Apple when enabled,
 and GLES or raster on Linux. Linux uses `pu_surface_create_current_gl` with an
 SDL procedure resolver; SDL owns context lifetime and swapping, while Skia
 owns drawing and wraps the default framebuffer. Keep the context current
 through drawing, resize and readback. `PU_RENDERER` controls auto/gl/raster.
 
-One file, all five targets. SDL3 is the right version (stable callback model,
-native Wayland, clean Metal-layer access, App Store-proven on iOS).
+The maintained implementation is `src/host/sdl/window_sdl.c`; use it rather than
+copying the earlier callback-model sketch. SDL3 supplies native Wayland and
+Metal access; mobile lifecycle work remains separate.
 
-```c
-// src/host/sdl/window_sdl.c — implements the §1 PuWindow contract via SDL3
-#define SDL_MAIN_USE_CALLBACKS
-#include <SDL3/SDL.h>
-#include "host/win32/window.h"   /* the shared contract (rename header later) */
-
-struct PuWindow { SDL_Window *win; PuSurface *surf; float scale;
-                  PuPaintFn paint; PuPointerFn pointer; PuKeyFn key;
-                  PuWheelFn wheel; PuAsyncFn async; void *u_paint, *u_ptr, *u_key, *u_wheel, *u_async; };
-
-PuWindow *pu_window_create(const PuWindowConfig *cfg) {
-    SDL_Init(SDL_INIT_VIDEO);
-    PuWindow *w = calloc(1, sizeof *w);
-    Uint32 flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
-#if defined(__APPLE__)
-    flags |= SDL_WINDOW_METAL;
-#else
-    flags |= SDL_WINDOW_OPENGL;
-#endif
-    w->win = SDL_CreateWindow(cfg->title?cfg->title:"PollyUI", cfg->width, cfg->height, flags);
-    w->scale = SDL_GetWindowDisplayScale(w->win);
-
-    int pw, ph; SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
-#if defined(__APPLE__)
-    SDL_MetalView mv = SDL_Metal_CreateView(w->win);
-    w->surf = pu_surface_create_metal(SDL_Metal_GetLayer(mv), pw, ph);   /* CAMetalLayer */
-#else
-    SDL_GL_CreateContext(w->win);
-    w->surf = pu_surface_create_gpu(/*native unused: ctx is current*/ NULL, pw, ph);
-#endif
-    return w;
-}
-
-/* setters store fn+user (identical shape to win32) … */
-
-/* input → the shared callbacks */
-SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *e) {
-    PuWindow *w = ((PuApp*)appstate)->win;
-    float s = w->scale;
-    switch (e->type) {
-      case SDL_EVENT_MOUSE_BUTTON_DOWN: w->pointer(e->button.x/s, e->button.y/s, PU_POINTER_DOWN, w->u_ptr); break;
-      case SDL_EVENT_MOUSE_BUTTON_UP:   w->pointer(e->button.x/s, e->button.y/s, PU_POINTER_UP,   w->u_ptr);
-                                        w->pointer(e->button.x/s, e->button.y/s, PU_POINTER_CLICK,w->u_ptr); break;
-      case SDL_EVENT_MOUSE_MOTION:      w->pointer(e->motion.x/s, e->motion.y/s, PU_POINTER_MOVE, w->u_ptr); break;
-      case SDL_EVENT_MOUSE_WHEEL:       w->wheel(/*x*/0,/*y*/0, -e->wheel.y*40.0f, w->u_wheel); break;
-      case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_UP: case SDL_EVENT_FINGER_MOTION:
-        /* touch → pointer (single) or PuTouchFn (multi) */ break;
-      case SDL_EVENT_KEY_DOWN: w->key(sdl_key_name(e->key.key), 1, w->u_key); break;  /* scancode→DOM name */
-      case SDL_EVENT_KEY_UP:   w->key(sdl_key_name(e->key.key), 0, w->u_key); break;
-      case SDL_EVENT_TEXT_INPUT: w->key(e->text.text, 1, w->u_key); break;            /* IME/committed UTF-8 */
-      case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: pu_surface_resize(w->surf, e->window.data1, e->window.data2); break;
-      case SDL_EVENT_WILL_ENTER_BACKGROUND: /* PU_APP_PAUSE: stop rAF, flush */ break;
-      case SDL_EVENT_DID_ENTER_FOREGROUND:  /* PU_APP_RESUME */ break;
-      case SDL_EVENT_QUIT: return SDL_APP_SUCCESS;
-    }
-    return SDL_APP_CONTINUE;
-}
-/* SDL_AppInit builds PuApp+window; SDL_AppIterate pumps (see §3); SDL_AppQuit tears down */
-```
+Input translation uses `src/host/input.h`: physical keys have logical `key`,
+physical `code`, modifiers and repeat; committed text is `PU_KEY_TEXT`. The
+application forwards commits as `textinput.data`, and editors insert only from
+that event. Win32 combines UTF-16 surrogate pairs before submitting UTF-8.
+Pointer callbacks include button identity, held-button masks and logical
+coordinates (SDL coordinates must not be divided by DPI again). Right release
+becomes `contextmenu`, not a primary `click`. Wheel callbacks carry both axes.
+The bridge handles cancellable default scrolling and forward/reverse Tab focus.
 
 **Per-platform specifics under SDL3:**
 

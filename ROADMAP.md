@@ -133,6 +133,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 | `mouseenter` / `mouseleave` (hover) | ✅ | non-bubbling |
 | `wheel` + default scrolling | ✅ | nearest scroll container |
 | Keyboard `keydown` + `keyup`, **Tab** focus cycling | ✅ | DOM key names |
+| Structured input + committed text | ✅ | key/code/modifiers/repeat, textinput.data, Shift+Tab, pointer buttons, two-axis wheels; physical device/IME qualification remains separate |
 | `focus` / `blur` events | ✅ | non-bubbling |
 | **`preventDefault` / `stopPropagation` / `stopImmediate`** | ✅ | + `defaultPrevented` |
 | `dblclick`, `contextmenu`, drag, touch | 🛠 | |
