@@ -17,7 +17,7 @@ function Invoke-Wsl([string]$Command) {
     if ($LASTEXITCODE -ne 0) { throw "WSL command failed with exit code $LASTEXITCODE" }
 }
 
-Invoke-Wsl "podman build -q -t $image -f desktop/Containerfile desktop"
+Invoke-Wsl "podman build -q --target compositor -t $image -f desktop/Containerfile desktop"
 $checks = "cmake -S desktop -B $build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON $flags"
 $checks += "; cmake --build $build; ctest --test-dir $build --output-on-failure"
 Invoke-Wsl ('podman run --rm -v "$PWD:/workspace" ' + $image + " sh -ec '$checks'")

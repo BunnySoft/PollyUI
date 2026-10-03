@@ -19,7 +19,7 @@ host.render();
 check('mounts a node tree', document.getElementById('label') !== null);
 check('text child renders the count', document.getElementById('label').textContent === '0');
 const label = document.getElementById('label');
-check('initial style applied (red)', host.pixel(label.offsetLeft + 5, label.offsetTop + 5) === '#FF0000');
+check('initial style applied (red)', host.pixel(label.offsetLeft + 80, label.offsetTop + 5) === '#FF0000');
 
 // --- event handler + minimal update ---
 const btn = document.getElementById('btn');
@@ -28,7 +28,7 @@ check('onClick handler ran (state updated)', app.state.count === 1);
 check('text updated in place', document.getElementById('label').textContent === '1');
 check('same label DOM node reused', document.getElementById('label') === label);
 host.render();
-check('style prop updated (now green)', host.pixel(label.offsetLeft + 5, label.offsetTop + 5) === '#00FF00');
+check('style prop updated (now green)', host.pixel(label.offsetLeft + 80, label.offsetTop + 5) === '#00FF00');
 
 // --- function component + conditional / list children ---
 const Item = ({ text }) => h('view', { className: 'item' }, text);

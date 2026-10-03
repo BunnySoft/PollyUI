@@ -45,6 +45,8 @@ struct PuWindow {
     int           frameless;
     int           custom_chrome;   /* 1 => app draws chrome: enable drag hit-test */
     int           is_metal;
+    int           exit_code;
+    int           presented;
 
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
@@ -55,6 +57,13 @@ struct PuWindow {
 };
 
 static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
+
+static void fail_window(PuWindow *w, const char *operation)
+{
+    SDL_Log("%s failed: %s", operation, SDL_GetError());
+    w->exit_code = 1;
+    w->running = 0;
+}
 
 /* Map an SDL keycode to a DOM-style key name for non-text keys. Printable
  * characters arrive separately via SDL_EVENT_TEXT_INPUT, so return NULL for
@@ -106,23 +115,36 @@ static void pu_sdl_paint(PuWindow *w)
 
     if (pu_surface_is_gl(w->surface)) {
         pu_surface_present(w->surface);   /* GPU: flush + present drawable/swap */
-        return;
-    }
-
-    /* Raster fallback: upload the BGRA buffer into an SDL texture and present. */
-    if (w->renderer && w->tex) {
+    } else {
+        /* Raster drawing is on the CPU even if SDL uses a GPU for presentation. */
         const void *pixels = pu_surface_pixels(w->surface);
         int row = pu_surface_row_bytes(w->surface);
-        if (pixels) SDL_UpdateTexture(w->tex, NULL, pixels, row);
-        SDL_RenderClear(w->renderer);
-        SDL_RenderTexture(w->renderer, w->tex, NULL, NULL);
-        SDL_RenderPresent(w->renderer);
+        if (!pixels || !w->renderer || !w->tex) {
+            fail_window(w, "Raster frame resources");
+            return;
+        }
+        if (!SDL_UpdateTexture(w->tex, NULL, pixels, row) ||
+            !SDL_RenderClear(w->renderer) ||
+            !SDL_RenderTexture(w->renderer, w->tex, NULL, NULL) ||
+            !SDL_RenderPresent(w->renderer)) {
+            fail_window(w, "SDL frame presentation");
+            return;
+        }
+    }
+    if (!w->presented) {
+        w->presented = 1;
+        if (getenv("PU_TRACE_STARTUP"))
+            SDL_Log("PollyUI frame presented: %dx%d, driver=%s, Skia=%s",
+                w->width, w->height, SDL_GetCurrentVideoDriver(),
+                pu_surface_is_gl(w->surface) ? "GPU" : "raster");
     }
 }
 
-static void create_surface(PuWindow *w)
+static int create_surface(PuWindow *w)
 {
-    SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height);
+    if (!SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height)) {
+        fail_window(w, "SDL_GetWindowSizeInPixels"); return 0;
+    }
     if (w->width  < 1) w->width  = 1;
     if (w->height < 1) w->height = 1;
 
@@ -131,29 +153,33 @@ static void create_surface(PuWindow *w)
     if (mv) {
         void *layer = SDL_Metal_GetLayer(mv);
         w->surface = pu_surface_create_metal(layer, w->width, w->height);
-        if (w->surface) { w->is_metal = 1; return; }
+        if (w->surface) { w->is_metal = 1; return 1; }
     }
 #else
     w->surface = pu_surface_create_gpu(NULL, w->width, w->height);
-    if (w->surface) return;
+    if (w->surface) return 1;
 #endif
 
     /* Raster fallback (CPU surface blitted via SDL_Renderer). */
     w->surface  = pu_surface_create(w->width, w->height);
-    w->renderer = SDL_CreateRenderer(w->win, NULL);
-    if (w->renderer) {
-        /* vsync the present so a mid-scanout swap can't tear the frame (the
-         * "rolling shutter" banding seen during live resize). */
-        SDL_SetRenderVSync(w->renderer, 1);
-        /* Match the render target's actual pixel size so the full-surface blit
-         * is 1:1 (never scaled/sheared while the window size is in flux). */
-        SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height);
-        if (w->width < 1) w->width = 1;
-        if (w->height < 1) w->height = 1;
-        pu_surface_resize(w->surface, w->width, w->height);
-        w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
-                                   SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
+    if (!w->surface) {
+        SDL_Log("Cannot allocate Skia raster surface"); return 0;
     }
+    w->renderer = SDL_CreateRenderer(w->win, NULL);
+    if (!w->renderer) { fail_window(w, "SDL_CreateRenderer"); return 0; }
+    if (!SDL_SetRenderVSync(w->renderer, 1))
+        SDL_Log("VSync unavailable for SDL presentation: %s", SDL_GetError());
+    /* Match the actual presentation size, not a potentially stale resize event. */
+    if (!SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height)) {
+        fail_window(w, "SDL_GetCurrentRenderOutputSize"); return 0;
+    }
+    if (w->width < 1) w->width = 1;
+    if (w->height < 1) w->height = 1;
+    pu_surface_resize(w->surface, w->width, w->height);
+    w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
+                               SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
+    if (!w->tex) { fail_window(w, "SDL_CreateTexture"); return 0; }
+    return 1;
 }
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
@@ -163,9 +189,15 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
         return NULL;
     }
     if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
+    if (g_wake_event == 0 || g_wake_event == (Uint32)-1) {
+        SDL_Log("SDL_RegisterEvents failed: %s", SDL_GetError());
+        SDL_Quit();
+        g_wake_event = (Uint32)-1;
+        return NULL;
+    }
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof *w);
-    if (!w) return NULL;
+    if (!w) { SDL_Log("Cannot allocate SDL window state"); SDL_Quit(); return NULL; }
     w->running = 1;
     w->dirty   = 1;
     w->scale   = 1.0f;
@@ -179,11 +211,10 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     flags |= SDL_WINDOW_METAL;
 #endif
     w->win = SDL_CreateWindow(title, cw, ch, flags);
-    if (!w->win) { SDL_Log("SDL_CreateWindow failed: %s", SDL_GetError()); free(w); return NULL; }
+    if (!w->win) { fail_window(w, "SDL_CreateWindow"); pu_window_destroy(w); return NULL; }
 
     recompute_scale(w);
-    create_surface(w);
-    if (!w->surface) { SDL_DestroyWindow(w->win); free(w); return NULL; }
+    if (!create_surface(w)) { pu_window_destroy(w); return NULL; }
 #if defined(__APPLE__)
     pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
                               SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
@@ -284,8 +315,9 @@ static void pu_sync_size(PuWindow *w)
 {
     recompute_scale(w);
     int pw = 0, ph = 0;
-    if (w->renderer) SDL_GetCurrentRenderOutputSize(w->renderer, &pw, &ph);
-    else             SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
+    bool sized = w->renderer ? SDL_GetCurrentRenderOutputSize(w->renderer, &pw, &ph) :
+                              SDL_GetWindowSizeInPixels(w->win, &pw, &ph);
+    if (!sized) { fail_window(w, "SDL resize dimensions"); return; }
     if (pw < 1) pw = 1;
     if (ph < 1) ph = 1;
     if (pw == w->width && ph == w->height) return;
@@ -295,6 +327,7 @@ static void pu_sync_size(PuWindow *w)
         SDL_DestroyTexture(w->tex);
         w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
                                    SDL_TEXTUREACCESS_STREAMING, pw, ph);
+        if (!w->tex) { fail_window(w, "SDL resize texture"); return; }
     }
     w->dirty = 1;
 }
@@ -383,8 +416,14 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 int pu_window_run(PuWindow *w)
 {
     if (!w) return 1;
-    SDL_StartTextInput(w->win);   /* enable SDL_EVENT_TEXT_INPUT */
-    SDL_AddEventWatch(pu_resize_watch, w);
+    if (!SDL_StartTextInput(w->win)) {
+        fail_window(w, "SDL_StartTextInput"); return w->exit_code;
+    }
+    if (!SDL_AddEventWatch(pu_resize_watch, w)) {
+        fail_window(w, "SDL_AddEventWatch");
+        SDL_StopTextInput(w->win);
+        return w->exit_code;
+    }
 
     while (w->running) {
         SDL_Event e;
@@ -393,12 +432,12 @@ int pu_window_run(PuWindow *w)
             while (SDL_PollEvent(&e)) handle_event(w, &e);
         }
         if (w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
-        if (w->dirty) { pu_sdl_paint(w); w->dirty = 0; }
+        if (w->dirty && w->running) { pu_sdl_paint(w); w->dirty = 0; }
     }
 
     SDL_RemoveEventWatch(pu_resize_watch, w);
     SDL_StopTextInput(w->win);
-    return 0;
+    return w->exit_code;
 }
 
 void pu_window_destroy(PuWindow *w)
@@ -410,4 +449,5 @@ void pu_window_destroy(PuWindow *w)
     if (w->win)      SDL_DestroyWindow(w->win);
     free(w);
     SDL_Quit();
+    g_wake_event = (Uint32)-1;
 }

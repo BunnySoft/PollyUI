@@ -1,0 +1,55 @@
+#!/bin/sh
+set -eu
+ui=${1:?Pass the PollyUI executable}
+wm=${2:?Pass the PollyWM executable}
+parent=${WAYLAND_DISPLAY:?Run inside a Wayland session}
+case "$parent" in /*) ;; *) parent="${XDG_RUNTIME_DIR:?}/$parent" ;; esac
+runtime=$(mktemp -d)
+pid=
+cleanup() {
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    fi
+    rm -f "$runtime/server.log" "$runtime/ui.log"
+    rmdir "$runtime"
+}
+trap cleanup EXIT
+export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland SDL_RENDER_DRIVER=software
+export SDL_APP_ID=org.pollyui.runtime PU_TRACE_STARTUP=1
+run_ui() {
+    if ! WAYLAND_DISPLAY="$1" timeout 20 "$ui" desktop/tests/runtime-window.mjs >"$runtime/ui.log" 2>&1; then
+        cat "$runtime/ui.log"
+        exit 1
+    fi
+    if ! grep -q 'PollyUI frame presented:.*driver=wayland, Skia=raster' "$runtime/ui.log" ||
+       ! grep -q 'PollyUI runtime theme cycle complete' "$runtime/ui.log"; then
+        cat "$runtime/ui.log"
+        echo "PollyUI did not complete the expected Wayland raster presentation cycle" >&2
+        exit 1
+    fi
+}
+run_ui "$parent"
+echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
+WAYLAND_DISPLAY="$parent" WLR_BACKENDS=wayland WLR_RENDERER=pixman \
+    "$wm" --socket pollyui-runtime >"$runtime/server.log" 2>&1 &
+pid=$!
+i=0
+while ! grep -q 'PollyWM ready' "$runtime/server.log"; do
+    if ! kill -0 "$pid" 2>/dev/null || [ "$i" -ge 100 ]; then
+        cat "$runtime/server.log"
+        exit 1
+    fi
+    sleep 0.02
+    i=$((i + 1))
+done
+run_ui pollyui-runtime
+if ! grep -q 'Mapped org.pollyui.runtime' "$runtime/server.log"; then
+    cat "$runtime/server.log"
+    echo "PollyWM did not map the native PollyUI client" >&2
+    exit 1
+fi
+kill -TERM "$pid"
+wait "$pid"
+pid=
+echo "PASS: PollyWM hosted an actual PollyUI client; frame presentation and clean exit confirmed"

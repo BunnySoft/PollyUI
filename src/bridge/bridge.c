@@ -1004,7 +1004,11 @@ PuNode *pu_bridge_body(PuBridge *b) { return b ? b->body : NULL; }
 void pu_bridge_free(PuBridge *b)
 {
     if (!b) return;
+    pu_node_clear_all_listeners();
+    JS_SetRuntimeOpaque(JS_GetRuntime(b->ctx), NULL);
+    if (b->focused) pu_node_unref(b->focused);
     if (b->hovered) pu_node_unref(b->hovered);
     if (b->body) pu_node_unref(b->body); /* releases the native tree */
+    pu_node_set_runtime(NULL);
     free(b);
 }

@@ -439,6 +439,7 @@ static void install_host(JSContext *ctx, int w, int h)
 
 static int run_test(const char *path)
 {
+    if (!pu_font_system_init()) return 1;
     PuScript *s = pu_script_create();
     if (!s) return 1;
     PuBridge *b = pu_bridge_install(pu_script_jsctx(s));
@@ -447,7 +448,8 @@ static int run_test(const char *path)
     PuDispatch *disp = pu_dispatch_new();
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
-    pu_storage_install(pu_script_jsctx(s), "build/win-clang/_localstorage.dat");
+    const char *test_storage = getenv("PU_TEST_STORAGE");
+    pu_storage_install(pu_script_jsctx(s), test_storage ? test_storage : "build/_localstorage.dat");
     pu_fetch_install(pu_script_jsctx(s), disp);
 
     PuTestHost host;
@@ -462,21 +464,24 @@ static int run_test(const char *path)
 
     install_host(pu_script_jsctx(s), host.width, host.height);
 
-    int rc = pu_script_run_file(s, path);
+    int rc = 1;
+    if (host.surface) rc = pu_script_run_file(s, path);
+    else fprintf(stderr, "[render] Failed to create headless surface\n");
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
 
     g_test = NULL;
     pu_async_shutdown();
     pu_storage_shutdown();
     if (host.surface) pu_surface_destroy(host.surface);
-    pu_script_destroy(s);
     pu_bridge_free(b);
+    pu_script_destroy(s);
     pu_dispatch_free(disp);
     return rc;
 }
 
 static int run_app(const char *path)
 {
+    if (!pu_font_system_init()) return 1;
     PuScript *s = pu_script_create();
     if (!s)
         return 1;
@@ -521,14 +526,20 @@ static int run_app(const char *path)
             if (g_pending_backdrop >= 0)  pu_window_set_backdrop(win, g_pending_backdrop);
             if (g_pending_titlebar >= 0)  pu_window_set_titlebar_style(win, g_pending_titlebar);
             pu_dispatch_set_waker(disp, app_wake, win); /* workers wake the window */
-            pu_window_run(win);
+            rc = pu_window_run(win);
+            pu_dispatch_set_waker(disp, NULL, NULL);
+            g_app_window = NULL;
             pu_window_destroy(win);
+        } else {
+            fprintf(stderr, "[host] Failed to create application window\n");
+            rc = 1;
         }
     }
 
     pu_async_shutdown();    /* terminate workers before tearing down the context */
-    pu_script_destroy(s);   /* GC finalizers; bridge ref keeps body alive */
-    pu_bridge_free(bridge); /* frees the native tree */
+    pu_storage_shutdown();
+    pu_bridge_free(bridge); /* release native JS callbacks before destroying their VM */
+    pu_script_destroy(s);
     pu_dispatch_free(disp);
     return rc;
 }
@@ -553,9 +564,13 @@ int main(int argc, char **argv)
 #ifdef _WIN32
     SetUnhandledExceptionFilter(pu_crash_handler);
 #endif
+    int rc;
     if (argc >= 3 && strcmp(argv[1], "--test") == 0)
-        return run_test(argv[2]);
-    if (argc >= 2)
-        return run_app(argv[1]);
-    return run_demo();
+        rc = run_test(argv[2]);
+    else if (argc >= 2)
+        rc = run_app(argv[1]);
+    else
+        rc = run_demo();
+    pu_render_shutdown();
+    return rc;
 }

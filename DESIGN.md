@@ -235,6 +235,14 @@ This is where these frameworks usually break, so we pin it down now.
 All bridge entry points are plain C functions (`static JSValue qjs_*`),
 registered as methods — this is the documented C ABI seam from §3.
 
+**Shutdown order:** stop event dispatch/workers, then call `pu_bridge_free`
+while the JS context/runtime is still alive, and only then `pu_script_destroy`.
+The bridge releases native-held callbacks across all live nodes (including
+detached trees), plus focus/hover/body references. A temporary native hold keeps
+the listener sweep safe against wrapper finalizers. Once all windows and scripts
+are gone, `pu_render_shutdown` releases image/font caches and Linux Fontconfig
+state. Releasing native callback values after destroying their VM is invalid.
+
 ---
 
 ## 7. Threading model

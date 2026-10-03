@@ -12,8 +12,8 @@
 typedef struct PuBridge PuBridge;
 
 /* Install the DOM bindings into `ctx`. Returns NULL on failure.
- * Free with pu_bridge_free AFTER the context is destroyed (it only frees the
- * native node tree, which outlives the JS wrappers). */
+ * Free with pu_bridge_free BEFORE destroying the context/runtime, after stopping
+ * event dispatch. Native-held listener callbacks must not outlive the VM. */
 PuBridge *pu_bridge_install(JSContext *ctx);
 void      pu_bridge_free(PuBridge *b);
 

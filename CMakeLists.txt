@@ -31,8 +31,13 @@ else()
 endif()
 set(PU_HOST "${PU_HOST_DEFAULT}" CACHE STRING "Host backend: win32 | sdl")
 
-# --- Skia (aseprite/skia m124 prebuilt) --------------------------------------
-set(SKIA_ROOT ${CMAKE_SOURCE_DIR}/third_party/skia)
+# --- Skia (aseprite/skia m124; native source build on Linux) -----------------
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(SKIA_ROOT_DEFAULT "${CMAKE_SOURCE_DIR}/third_party/skia-linux")
+else()
+    set(SKIA_ROOT_DEFAULT "${CMAKE_SOURCE_DIR}/third_party/skia")
+endif()
+set(SKIA_ROOT "${SKIA_ROOT_DEFAULT}" CACHE PATH "Skia headers/source root matching SKIA_LIB_DIR")
 # Per-platform/arch default output dir; override with -DSKIA_LIB_DIR=... (e.g. a
 # Metal-enabled Skia you built yourself).
 if (NOT DEFINED SKIA_LIB_DIR)
@@ -45,7 +50,7 @@ if (NOT DEFINED SKIA_LIB_DIR)
             set(SKIA_LIB_DIR ${SKIA_ROOT}/out/Release-x64)
         endif()
     else()
-        set(SKIA_LIB_DIR ${SKIA_ROOT}/out/Release-x64)
+        set(SKIA_LIB_DIR ${SKIA_ROOT}/out/Release-linux)
     endif()
 endif()
 
@@ -112,6 +117,16 @@ if (NOT WIN32)
     target_link_libraries(pollyui PRIVATE Threads::Threads)
 endif()
 
+# Linux builds use the native font/codec libraries selected by skia-linux.gn.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SKIA_SYSTEM REQUIRED IMPORTED_TARGET
+        fontconfig freetype2 libpng libjpeg libwebp libwebpdemux libwebpmux zlib)
+    target_link_libraries(pollyui PRIVATE PkgConfig::SKIA_SYSTEM)
+    # Match the official Release Skia ABI even when the host is a Debug build.
+    target_compile_definitions(pollyui PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
+endif()
+
 # macOS native title-bar helper (transparent titlebar + native traffic lights).
 # Always built on Apple (the SDL host calls into it); Cocoa is linked below.
 if (APPLE)
@@ -139,8 +154,14 @@ if (WIN32)
 else()
     file(GLOB SKIA_ARCHIVES "${SKIA_LIB_DIR}/*.a")
     if (NOT SKIA_ARCHIVES)
-        message(FATAL_ERROR "No Skia archives (*.a) in ${SKIA_LIB_DIR}. "
-                            "Run tools/fetch_skia.sh or set -DSKIA_LIB_DIR=...")
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            message(FATAL_ERROR "No native Linux Skia archives in ${SKIA_LIB_DIR}. "
+                "Run desktop/tools/build-skia-linux.sh with an absolute source directory, "
+                "then set SKIA_ROOT and SKIA_LIB_DIR to that build.")
+        else()
+            message(FATAL_ERROR "No Skia archives (*.a) in ${SKIA_LIB_DIR}. "
+                "Run tools/fetch_skia.sh or set -DSKIA_LIB_DIR=...")
+        endif()
     endif()
     if (APPLE)
         target_link_libraries(pollyui PRIVATE ${SKIA_ARCHIVES})
@@ -186,4 +207,3 @@ if (WIN32 AND PU_WINDOWED)
     target_compile_definitions(pollyui PRIVATE PU_WINDOWED)
     target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
 endif()
-

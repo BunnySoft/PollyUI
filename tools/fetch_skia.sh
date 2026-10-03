@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetches the prebuilt Skia used by PollyUI into third_party/skia (gitignored).
-# macOS / Linux counterpart of tools/fetch_skia.ps1. Run once after cloning.
+# macOS counterpart of tools/fetch_skia.ps1. Linux uses a native source build.
 #
 #   ./tools/fetch_skia.sh                 # auto-detect OS + arch
 #   ./tools/fetch_skia.sh x64             # force x64 (e.g. Rosetta)
@@ -21,7 +21,10 @@ dest="$repo_root/third_party/skia"
 # OS
 case "$(uname -s)" in
   Darwin) os="macOS" ;;
-  Linux)  os="Linux" ;;
+  Linux)
+    echo "Linux requires a native Skia build with Fontconfig; prebuilt libraries may require glibc." >&2
+    echo "Use: sh desktop/tools/build-skia-linux.sh /absolute/skia-source-directory" >&2
+    exit 1 ;;
   *) echo "Unsupported OS: $(uname -s) (use the .ps1 on Windows)"; exit 1 ;;
 esac
 
@@ -34,9 +37,6 @@ if [[ -z "$arch" ]]; then
     *) echo "Unsupported arch: $(uname -m)"; exit 1 ;;
   esac
 fi
-# aseprite ships only x64 for Linux.
-if [[ "$os" == "Linux" ]]; then arch="x64"; fi
-
 asset="Skia-${os}-Release-${arch}.zip"
 outdir="$dest/out/Release-${arch}"
 url="https://github.com/${REPO}/releases/download/${TAG}/${asset}"

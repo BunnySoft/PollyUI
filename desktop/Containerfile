@@ -1,4 +1,4 @@
-FROM docker.io/library/alpine:3.24
+FROM docker.io/library/alpine:3.24 AS compositor
 
 RUN apk add --no-cache \
     build-base cmake ninja pkgconf clang compiler-rt gdb valgrind \
@@ -7,3 +7,15 @@ RUN apk add --no-cache \
     foot font-dejavu
 
 WORKDIR /workspace
+
+FROM compositor AS runtime
+
+RUN apk add --no-cache \
+    git python3 gn clang18 sdl3-dev fontconfig-dev freetype-dev \
+    libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev \
+    font-noto-cjk font-noto-emoji
+
+COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
+RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
+
+RUN apk add --no-cache bash

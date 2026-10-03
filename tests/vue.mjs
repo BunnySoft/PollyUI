@@ -47,12 +47,12 @@ createApp(App).mount(document.body);
 host.render();
 check('app mounts with initial state', document.getElementById('cnt').textContent === '0');
 const cnt = document.getElementById('cnt');
-check('initial reactive style (red at 0)', host.pixel(cnt.offsetLeft + 5, cnt.offsetTop + 5) === '#FF0000');
+check('initial reactive style (red at 0)', host.pixel(cnt.offsetLeft + 60, cnt.offsetTop + 5) === '#FF0000');
 
 const inc = document.getElementById('inc');
 host.click(inc.offsetLeft + 5, inc.offsetTop + 5);   // count.value++ -> schedules re-render; run-loop flushes it
 check('ref mutation re-renders the app', document.getElementById('cnt').textContent === '1');
 host.render();
-check('reactive style updated (green after increment)', host.pixel(cnt.offsetLeft + 5, cnt.offsetTop + 5) === '#00FF00');
+check('reactive style updated (green after increment)', host.pixel(cnt.offsetLeft + 60, cnt.offsetTop + 5) === '#00FF00');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

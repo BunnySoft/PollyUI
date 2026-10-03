@@ -11,8 +11,10 @@ The raw Win32 host stays as an opt-in backend (zero deps, hand-tuned).
 
 For building our own desktop rather than a client application, see
 **[PollyDesktop](../desktop/README.md)**. Its independently buildable wlroots
-compositor lives in `desktop/`; it does not replace the Linux client host,
-font and GPU work described here. PollyUI shell integration is a later stage.
+compositor lives in `desktop/`; it does not replace the Linux client host.
+The native Alpine client build uses SDL3 raster presentation and Fontconfig
+fonts; see the root README for its source-build recipe and WSL helper.
+Linux Skia GPU support and PollyUI shell integration are later stages.
 
 ---
 
@@ -27,10 +29,12 @@ is shared C/C++ and **100% of the app/JS is shared**.
 | ScriptEngine (QuickJS-ng) | ✅ | pure C |
 | LayoutEngine (Yoga) | ✅ | pure C++ |
 | Model (DOM-like) | ✅ | pure C |
-| RenderEngine (Skia) | ✅ *logic* | only **surface creation** is per-platform (§2) |
+| RenderEngine (Skia) | ✅ *logic* | **surface creation and font discovery** are per-platform |
 | **HostEngine** | ❌ | window + event loop + input + present (§1) — the only new C per platform |
 
-So porting = **one new host file + one surface-creation path per GPU API.**
+Porting includes a host, surface creation, font discovery and any platform
+services used by the app (for example the still Windows-only native HTTP path).
+The UI/DOM/layout logic remains shared.
 
 ---
 
@@ -117,7 +121,7 @@ implementation lands in `src/render/skia_metal.mm` (defining `PU_METAL_BACKEND`)
 | Platform | Skia backend | Native handle passed | EGL/context source |
 |----------|--------------|----------------------|--------------------|
 | Windows  | GL (ANGLE→D3D11) *(current)* | `HWND` | ANGLE `libEGL`/`libGLESv2` |
-| Linux    | GL (Mesa) or Vulkan | `wl_egl_window*` / `Window` (X11) | Mesa `libEGL` (no ANGLE) |
+| Linux    | CPU raster today; GL (Mesa) or Vulkan planned | SDL window today; `wl_egl_window*` / X11 for future GPU path | Mesa `libEGL` planned (no ANGLE) |
 | macOS    | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | iOS      | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | Android  | GL (GLES) or Vulkan | `ANativeWindow*` | system EGL |
@@ -169,6 +173,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 ---
 
 ## 4. Tier 1 — SDL3 backend  (`src/host/sdl/`)
+
+The following snippet is the architectural sketch, not the shipped backend.
+The implementation uses a classic event loop, Metal on Apple when enabled,
+and CPU raster plus SDL presentation on Linux.
 
 One file, all five targets. SDL3 is the right version (stable callback model,
 native Wayland, clean Metal-layer access, App Store-proven on iOS).
@@ -325,7 +333,7 @@ endif()
 | Target | PU_HOST | PU_GPU | Toolchain | Artifact |
 |--------|---------|--------|-----------|----------|
 | Windows | `win32` *(or `sdl`)* | gl (ANGLE) | clang-cl / MSVC | `.exe` |
-| Linux desktop | `sdl` | gl (Mesa) | clang/gcc | ELF |
+| Linux desktop | `sdl` | raster (GL/Mesa pending) | clang/gcc, native musl build available | ELF |
 | macOS | `sdl` | metal | clang + Xcode SDK | `.app` |
 | iOS | `sdl` | metal | Xcode + iOS SDK | `.ipa` |
 | Android | `sdl` | gl (GLES) | NDK + SDL Java shell | `.apk` |
@@ -369,7 +377,11 @@ endif()
    `mac-sdl-metal` preset. **Verified on Apple Silicon**: GPU Metal rendering,
    native traffic-light title bar (`window.setTitleBarStyle('overlay')`), live
    input, and clean live resize. Also ported thread.c (pthreads), fetch.c, and
-   the CoreText font manager. Linux via the same host is next.
+   the CoreText font manager.
+   *Linux raster milestone:* SDL3 presentation, Fontconfig/FreeType discovery
+   and a pinned native Skia source build for Alpine/musl. The runtime helper
+   runs PollyUI as a real Wayland client on WSLg and PollyWM. GPU integration,
+   complete input/IME, native HTTP and XDG app storage remain pending.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).
 4. **Embedded Linux** (`wayland` first, then `drm`) for appliances — no Java, no SDL.

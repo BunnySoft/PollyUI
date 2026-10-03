@@ -1,0 +1,31 @@
+# Matches PollyUI's m124 headers. Build against the target Linux C library,
+# never downloaded GN/Skia binaries that may require glibc on Alpine.
+is_official_build = true
+is_debug = false
+is_trivial_abi = false
+# m124 still uses intrinsics removed by newer Clang releases.
+cc = "clang-18"
+cxx = "clang++-18"
+extra_cflags = [ "-fPIC" ]
+extra_cflags_cc = [ "-frtti" ]
+skia_enable_tools = false
+skia_enable_pdf = false
+skia_enable_skottie = false
+skia_enable_svg = false
+skia_enable_ganesh = true
+skia_use_gl = true
+skia_use_x11 = false
+skia_use_fontconfig = true
+skia_use_freetype = true
+skia_use_system_freetype2 = true
+skia_use_system_libpng = true
+skia_use_system_libjpeg_turbo = true
+skia_use_system_libwebp = true
+skia_use_system_zlib = true
+skia_use_harfbuzz = false
+skia_use_icu = false
+skia_use_expat = false
+skia_use_dng_sdk = false
+skia_use_piex = false
+skia_use_wuffs = false
+skia_use_perfetto = false

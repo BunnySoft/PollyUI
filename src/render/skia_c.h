@@ -16,6 +16,11 @@
 extern "C" {
 #endif
 
+/* Validate system font discovery before running UI scripts. Logs on failure. */
+int pu_font_system_init(void);
+/* Release process render/font caches after all windows and scripts have stopped. */
+void pu_render_shutdown(void);
+
 typedef struct PuSurface PuSurface;
 
 /* Create a raster (CPU) surface of the given pixel size (clamped to >= 1x1). */
@@ -24,6 +29,7 @@ PuSurface *pu_surface_create(int width, int height);
 /* Create a GPU surface bound to a platform-native window handle. The handle is
  * opaque so the same seam serves every host backend:
  *   Windows  -> HWND                    (GL via ANGLE/D3D11)
+ * Planned (currently return NULL, so the host must use raster):
  *   Wayland  -> struct wl_egl_window *   (GL via Mesa EGL)
  *   X11      -> Window                   (GL via Mesa EGL)
  *   Android  -> ANativeWindow *          (GLES)

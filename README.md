@@ -146,6 +146,68 @@ host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 
+### Linux (experimental - native Alpine/musl build, CPU raster)
+
+The Linux path uses SDL3, Skia CPU drawing, and Fontconfig/FreeType system fonts.
+The native source recipe pins Skia to
+`08a5439a6be726021c1c1905d23ce298a3edc5e4`, matching m124, and uses Clang 18
+(newer Clang removed intrinsics used by this Skia revision). GN, the compiler,
+font libraries and codecs all come from the target Linux distribution.
+No glibc Skia/GN binaries are downloaded for Alpine.
+
+The easiest Windows development path uses the existing WSL/Podman environment:
+
+```powershell
+.\desktop\tools\test-linux-runtime.ps1
+.\desktop\tools\test-linux-runtime.ps1 -Nested
+.\desktop\tools\test-linux-runtime.ps1 -Nested -Sanitize
+```
+
+The first invocation builds the `runtime` stage of `desktop/Containerfile`,
+including Skia; later invocations reuse that image layer. `-Nested` runs an
+actual PollyUI window on WSLg, then inside PollyWM, and checks successful frame
+presentation and clean shutdown. The normal compositor-only helper remains
+`desktop/tools/test-wsl.ps1` and builds only the lightweight `compositor` stage.
+
+For a native Alpine 3.24 development machine:
+
+```sh
+apk add build-base cmake ninja pkgconf git python3 gn clang18 bash sdl3-dev \
+    fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev \
+    font-dejavu font-noto-cjk font-noto-emoji
+
+# Build as a normal user, from the repository root:
+sh desktop/tools/build-skia-linux.sh "$PWD/third_party/skia-linux"
+bash tools/build.sh
+./build/linux-sdl/pollyui desktop/shell/preview.mjs
+sh desktop/tests/runtime-headless.sh "$PWD/build/linux-sdl/pollyui"
+```
+
+`PU_BUILD_JOBS` controls Skia compilation concurrency (default 2).
+`--skia-root` and `--skia-dir` select a matching source/header root and library
+directory when using `tools/build.sh`. These also map to CMake's `SKIA_ROOT`
+and `SKIA_LIB_DIR`. A missing Linux library is an error, not an automatic
+download of a potentially incompatible prebuilt. The checkout is revision-checked;
+the recipe does not promise bit-for-bit reproducibility of rolling distro packages.
+
+The Linux profile includes PNG, JPEG and WebP support through system libraries.
+It omits PDF, SVG, GIF/Wuffs, ICU and HarfBuzz integrations not used by the current
+PollyUI draw path. Font fallback includes installed CJK/emoji faces, but is not
+complex-script shaping or an IME implementation.
+
+**Rendering boundary:** Skia draws on the CPU. SDL may use a GPU to present the
+result, which does not make this a Skia GPU backend. Linux EGL/GLES integration,
+full input/IME support, native HTTP and XDG per-application storage remain work
+items. Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame
+and its video driver/rendering path. Missing fonts, failed window creation and
+failed SDL presentation return errors rather than reporting a working blank app.
+Native DOM callbacks and font/render caches are released explicitly at shutdown;
+the bridge must be freed before its JavaScript runtime.
+The headless harness accepts `PU_TEST_STORAGE` for isolated test data; its default
+is `build/_localstorage.dat`.
+`-Sanitize` instruments PollyUI, QuickJS and Yoga with ASan/UBSan while reusing
+the Release Skia dependency. It is not a sanitizer build of Skia itself.
+
 ## Experimental Linux desktop
 
 **[PollyDesktop](./desktop/README.md)** is a separately buildable Linux subproject:

@@ -20,6 +20,7 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkFontTypes.h"
+#include "include/core/SkGraphics.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkData.h"
@@ -27,6 +28,10 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/encode/SkPngEncoder.h"
+
+#if defined(__linux__)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#endif
 
 /* PuSurface struct, shared with the per-GPU-API backends (e.g. skia_metal.mm). */
 #include "render/skia_internal.h"
@@ -77,19 +82,28 @@ struct __CTFontCollection;   /* CTFontCollectionRef = const __CTFontCollection *
 extern sk_sp<SkFontMgr> SkFontMgr_New_CoreText(const __CTFontCollection *);
 #endif
 
-// Lazily-resolved system font manager (Windows -> DirectWrite, macOS -> CoreText).
+static sk_sp<SkFontMgr> g_font_mgr;
+static bool g_font_tried = false;
+
+// Lazily-resolved system font manager; explicitly released before process exit.
 static sk_sp<SkFontMgr> font_mgr() {
-    static sk_sp<SkFontMgr> mgr;
-    static bool tried = false;
-    if (!tried) {
-        tried = true;
+    auto &mgr = g_font_mgr;
+    if (!g_font_tried) {
+        g_font_tried = true;
 #if defined(_WIN32)
         mgr = SkFontMgr_New_DirectWrite(nullptr, nullptr, nullptr);
 #elif defined(__APPLE__)
         mgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(__linux__)
+        FcConfig *config = FcInitLoadConfigAndFonts();
+        if (config) mgr = SkFontMgr_New_FontConfig(config);
 #else
-        mgr = nullptr;   /* TODO: SkFontMgr_New_FontConfig on Linux */
+        mgr = nullptr;
 #endif
+        if (!mgr || mgr->countFamilies() == 0) {
+            std::fprintf(stderr, "[render] No system fonts available; install fonts and configure the platform font manager\n");
+            mgr = nullptr;
+        }
     }
     return mgr;
 }
@@ -104,8 +118,10 @@ static sk_sp<SkTypeface> typeface_for(int weight, int italic, const char *family
                       italic ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant);
     if (family && *family) {
         const char *fam = family;
+#if !defined(__linux__)
         if (strcmp(family, "monospace") == 0) fam = "Consolas";
         else if (strcmp(family, "serif") == 0) fam = "Georgia";
+#endif
         sk_sp<SkTypeface> tf = mgr->matchFamilyStyle(fam, style);
         if (tf) return tf;
     }
@@ -210,6 +226,10 @@ static void rewrap_gl(PuSurface *s, int w, int h) {
 #endif // _WIN32
 
 extern "C" {
+
+int pu_font_system_init(void) {
+    return font_mgr() ? 1 : 0;
+}
 
 PuSurface *pu_surface_create(int width, int height) {
     PuSurface *s = new (std::nothrow) PuSurface();
@@ -572,8 +592,13 @@ static SkUnichar pu_next_cp(const char *&p, const char *end) {
     return cp;
 }
 
-static SkTypeface *pu_fallback_face(SkUnichar cp) {
+static std::map<SkUnichar, sk_sp<SkTypeface>> &fallback_cache() {
     static std::map<SkUnichar, sk_sp<SkTypeface>> cache;
+    return cache;
+}
+
+static SkTypeface *pu_fallback_face(SkUnichar cp) {
+    auto &cache = fallback_cache();
     auto it = cache.find(cp);
     if (it != cache.end()) return it->second.get();
     sk_sp<SkTypeface> tf;
@@ -581,6 +606,17 @@ static SkTypeface *pu_fallback_face(SkUnichar cp) {
     if (mgr) tf = sk_sp<SkTypeface>(mgr->matchFamilyStyleCharacter(nullptr, SkFontStyle(), nullptr, 0, cp));
     cache[cp] = tf;
     return tf.get();
+}
+
+void pu_render_shutdown(void) {
+    image_cache().clear();
+    fallback_cache().clear();
+    SkGraphics::PurgeAllCaches();
+    g_font_mgr.reset();
+#if defined(__linux__)
+    if (g_font_tried) FcFini();
+#endif
+    g_font_tried = false;
 }
 
 struct PuRun { const char *start; size_t len; SkTypeface *tf; };

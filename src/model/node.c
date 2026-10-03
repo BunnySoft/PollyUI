@@ -7,6 +7,7 @@
 /* Runtime for releasing listener callbacks at node-free time (JS_FreeValueRT
  * needs only the runtime, not a context). Set by the bridge. */
 static JSRuntime *g_rt;
+static PuNode *g_nodes;
 void pu_node_set_runtime(JSRuntime *rt) { g_rt = rt; }
 
 static char *pu_strdup(const char *s)
@@ -96,6 +97,9 @@ PuNode *pu_node_new(PuNodeType type)
     n->tab_index = -1; /* not focusable by default */
     n->js_wrapper = JS_UNDEFINED;
     n->js_style   = JS_UNDEFINED;
+    n->runtime_next = g_nodes;
+    if (g_nodes) g_nodes->runtime_prev = n;
+    g_nodes = n;
     return n;
 }
 
@@ -104,8 +108,38 @@ void pu_node_ref(PuNode *n)
     if (n) n->ref++;
 }
 
+static void clear_listeners(PuNode *n)
+{
+    PuListener *listeners = n->listeners;
+    int count = n->listener_count;
+    n->listeners = NULL;
+    n->listener_count = n->listener_cap = 0;
+    for (int i = 0; i < count; i++) {
+        free(listeners[i].type);
+        if (g_rt) JS_FreeValueRT(g_rt, listeners[i].func);
+    }
+    free(listeners);
+}
+
+void pu_node_clear_all_listeners(void)
+{
+    /* Freeing a callback can finalize wrappers anywhere in the native forest.
+     * Hold every node until the sweep finishes so traversal cannot be invalidated. */
+    for (PuNode *n = g_nodes; n; n = n->runtime_next) pu_node_ref(n);
+    for (PuNode *n = g_nodes; n; n = n->runtime_next) clear_listeners(n);
+    PuNode *n = g_nodes;
+    while (n) {
+        PuNode *next = n->runtime_next;
+        pu_node_unref(n);
+        n = next;
+    }
+}
+
 static void pu_node_free(PuNode *n)
 {
+    if (n->runtime_prev) n->runtime_prev->runtime_next = n->runtime_next;
+    else g_nodes = n->runtime_next;
+    if (n->runtime_next) n->runtime_next->runtime_prev = n->runtime_prev;
     /* Detach children: each loses its parent (a tree ref). Children that still
      * have a wrapper survive as detached roots; the rest free recursively. */
     PuNode *c = n->first_child;
@@ -115,11 +149,7 @@ static void pu_node_free(PuNode *n)
         pu_node_unref(c);
         c = next;
     }
-    for (int i = 0; i < n->listener_count; i++) {
-        free(n->listeners[i].type);
-        if (g_rt) JS_FreeValueRT(g_rt, n->listeners[i].func);
-    }
-    free(n->listeners);
+    clear_listeners(n);
     free(n->tag);
     free(n->text);
     pu_style_free(&n->style);

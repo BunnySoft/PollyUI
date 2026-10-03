@@ -18,10 +18,10 @@ document.body.removeChild(g);
 // --- image: snapshot an all-green frame, then draw it back via backgroundImage ---
 const fill = el({ width: '100%', height: '100%', backgroundColor: '#00cc00' }, document.body);
 host.render();
-host.save('build/win-clang/_imgtest.png');
+host.save('build/_imgtest.png');
 document.body.removeChild(fill);
 
-const pic = el({ width: 200, height: 150, margin: 30, backgroundImage: 'build/win-clang/_imgtest.png' }, document.body);
+const pic = el({ width: 200, height: 150, margin: 30, backgroundImage: 'build/_imgtest.png' }, document.body);
 host.render();
 check('image draws into the box (shows the saved green)', host.pixel(130, 100) === '#00CC00');
 

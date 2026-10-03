@@ -12,8 +12,10 @@ One view of what's built and what's planned. For the architecture, see
 | 🛠 | Planned |
 | ⏸ | Deferred (deliberately not doing now) |
 
-Platform column: **Win** = Windows. macOS/Linux are 🛠 across the board (the
-Host layer is the only platform-specific code; everything above it is portable).
+Platform column: **Win** = Windows. Windows and macOS hosts are available;
+Linux has an experimental SDL3/raster path with Fontconfig fonts and a native
+Alpine/musl build. Linux Skia GPU, full IME and native HTTP are still pending.
+See README and `desktop/README.md` for current platform boundaries.
 
 The headless test suite (`pollyui --test tests/<name>`) currently covers **283
 assertions** across rendering, layout, DOM, events, runtime, networking,
@@ -49,6 +51,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 |---|---|---|
 | **GPU: Skia Ganesh → ANGLE → D3D11** | ✅ | the standard Windows GPU path |
 | Raster (CPU) surface + `StretchDIBits` fallback | ✅ | also used by headless tests |
+| Linux CPU raster + SDL3 presentation | ✅ | native Skia m124 build, Fontconfig/FreeType; not a Linux Skia GPU backend |
 | macOS GPU (Metal / ANGLE) | 🛠 | with the macOS host port |
 | Linux GPU (GL / ANGLE) | 🛠 | with the Linux host port |
 | Official ANGLE binaries for distribution | 🛠 | today staged from installed Chrome/Edge |

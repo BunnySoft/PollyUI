@@ -48,6 +48,8 @@ struct PuNode {
     PuNode *last_child;
     PuNode *prev_sibling;
     PuNode *next_sibling;
+    /* Live-node registry includes detached trees for pre-VM callback cleanup. */
+    PuNode *runtime_prev, *runtime_next;
     int     child_count;
 
     char   *tag;             /* element tag name (owned); NULL otherwise */
@@ -81,6 +83,8 @@ struct PuNode {
 /* The runtime used to release listener callbacks when a node is freed.
  * Set once by the bridge at install time. */
 void pu_node_set_runtime(JSRuntime *rt);
+/* Release native-held JS callbacks while their runtime is still alive. */
+void pu_node_clear_all_listeners(void);
 
 /* --- lifetime --- */
 PuNode *pu_node_new(PuNodeType type);
