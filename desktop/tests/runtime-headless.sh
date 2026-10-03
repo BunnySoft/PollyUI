@@ -41,8 +41,18 @@ expect_failure env FONTCONFIG_FILE="$PWD/desktop/tests/empty-fonts.conf" "$ui" -
 expect_log 'No system fonts available'
 expect_failure env SDL_VIDEODRIVER=pollyui-invalid "$ui" desktop/tests/runtime-window.mjs
 expect_log 'Failed to create application window'
-expect_failure env SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=pollyui-invalid "$ui" desktop/tests/runtime-window.mjs
+expect_failure env PU_RENDERER=raster SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=pollyui-invalid "$ui" desktop/tests/runtime-window.mjs
 expect_log 'SDL_CreateRenderer failed'
+expect_failure env PU_RENDERER=invalid "$ui" desktop/tests/runtime-window.mjs
+expect_log 'PU_RENDERER must be'
+expect_failure env PU_RENDERER=gl SDL_VIDEODRIVER=dummy "$ui" desktop/tests/runtime-window.mjs
+expect_log 'GLES initialization failed'
+if ! PU_RENDERER=auto SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software PU_TRACE_STARTUP=1 \
+    timeout 20 "$ui" desktop/tests/runtime-window.mjs >"$temporary/output.log" 2>&1; then
+    cat "$temporary/output.log"; exit 1
+fi
+expect_log 'falling back to Skia raster'
+expect_log 'driver=dummy, Skia=raster'
 expect_failure bash tools/fetch_skia.sh
 expect_log 'Linux requires a native Skia build'
 expect_failure bash tools/build.sh --skia-root "$temporary/missing-skia"

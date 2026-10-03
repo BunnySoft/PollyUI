@@ -17,6 +17,7 @@ cleanup() {
 trap cleanup EXIT
 export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland SDL_RENDER_DRIVER=software
 export SDL_APP_ID=org.pollyui.runtime PU_TRACE_STARTUP=1
+export PU_RENDERER=raster
 run_ui() {
     if ! WAYLAND_DISPLAY="$1" timeout 20 "$ui" desktop/tests/runtime-window.mjs >"$runtime/ui.log" 2>&1; then
         cat "$runtime/ui.log"
@@ -30,6 +31,7 @@ run_ui() {
     fi
 }
 run_ui "$parent"
+sh desktop/tests/runtime-render.sh "$ui" "$parent"
 echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
 WAYLAND_DISPLAY="$parent" WLR_BACKENDS=wayland WLR_RENDERER=pixman \
     "$wm" --socket pollyui-runtime >"$runtime/server.log" 2>&1 &
@@ -44,6 +46,7 @@ while ! grep -q 'PollyWM ready' "$runtime/server.log"; do
     i=$((i + 1))
 done
 run_ui pollyui-runtime
+sh desktop/tests/runtime-render.sh "$ui" pollyui-runtime
 if ! grep -q 'Mapped org.pollyui.runtime' "$runtime/server.log"; then
     cat "$runtime/server.log"
     echo "PollyWM did not map the native PollyUI client" >&2

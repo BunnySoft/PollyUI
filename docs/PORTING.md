@@ -12,9 +12,9 @@ The raw Win32 host stays as an opt-in backend (zero deps, hand-tuned).
 For building our own desktop rather than a client application, see
 **[PollyDesktop](../desktop/README.md)**. Its independently buildable wlroots
 compositor lives in `desktop/`; it does not replace the Linux client host.
-The native Alpine client build uses SDL3 raster presentation and Fontconfig
+The native Alpine client build uses SDL3 EGL/GLES or raster presentation and Fontconfig
 fonts; see the root README for its source-build recipe and WSL helper.
-Linux Skia GPU support and PollyUI shell integration are later stages.
+Physical GPU qualification and PollyUI shell integration are later stages.
 
 ---
 
@@ -121,7 +121,7 @@ implementation lands in `src/render/skia_metal.mm` (defining `PU_METAL_BACKEND`)
 | Platform | Skia backend | Native handle passed | EGL/context source |
 |----------|--------------|----------------------|--------------------|
 | Windows  | GL (ANGLE→D3D11) *(current)* | `HWND` | ANGLE `libEGL`/`libGLESv2` |
-| Linux    | CPU raster today; GL (Mesa) or Vulkan planned | SDL window today; `wl_egl_window*` / X11 for future GPU path | Mesa `libEGL` planned (no ANGLE) |
+| Linux    | Ganesh GLES or CPU raster; Vulkan pending | SDL-owned GLES context with framebuffer 0 | SDL + Mesa EGL (no ANGLE) |
 | macOS    | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | iOS      | **Metal** | `CAMetalLayer*` | Ganesh Metal / Graphite |
 | Android  | GL (GLES) or Vulkan | `ANativeWindow*` | system EGL |
@@ -176,7 +176,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 The following snippet is the architectural sketch, not the shipped backend.
 The implementation uses a classic event loop, Metal on Apple when enabled,
-and CPU raster plus SDL presentation on Linux.
+and GLES or raster on Linux. Linux uses `pu_surface_create_current_gl` with an
+SDL procedure resolver; SDL owns context lifetime and swapping, while Skia
+owns drawing and wraps the default framebuffer. Keep the context current
+through drawing, resize and readback. `PU_RENDERER` controls auto/gl/raster.
 
 One file, all five targets. SDL3 is the right version (stable callback model,
 native Wayland, clean Metal-layer access, App Store-proven on iOS).
@@ -333,7 +336,7 @@ endif()
 | Target | PU_HOST | PU_GPU | Toolchain | Artifact |
 |--------|---------|--------|-----------|----------|
 | Windows | `win32` *(or `sdl`)* | gl (ANGLE) | clang-cl / MSVC | `.exe` |
-| Linux desktop | `sdl` | raster (GL/Mesa pending) | clang/gcc, native musl build available | ELF |
+| Linux desktop | `sdl` | GLES or raster | clang/gcc, native musl build available | ELF |
 | macOS | `sdl` | metal | clang + Xcode SDK | `.app` |
 | iOS | `sdl` | metal | Xcode + iOS SDK | `.ipa` |
 | Android | `sdl` | gl (GLES) | NDK + SDL Java shell | `.apk` |
@@ -380,7 +383,9 @@ endif()
    the CoreText font manager.
    *Linux raster milestone:* SDL3 presentation, Fontconfig/FreeType discovery
    and a pinned native Skia source build for Alpine/musl. The runtime helper
-   runs PollyUI as a real Wayland client on WSLg and PollyWM. GPU integration,
+   runs PollyUI as a real Wayland client on WSLg and PollyWM. An SDL-owned
+   EGL/GLES path now supports auto/gl/raster selection and framebuffer readback;
+   software llvmpipe coverage is not physical GPU validation. Hardware qualification,
    complete input/IME, native HTTP and XDG app storage remain pending.
 3. **iOS + Android via the same SDL3 backend** (Metal already done; add the
    §1 touch/lifecycle/text-input extensions + APK/ipa packaging).

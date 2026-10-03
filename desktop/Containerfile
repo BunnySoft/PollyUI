@@ -18,4 +18,4 @@ RUN apk add --no-cache \
 COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
 RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
 
-RUN apk add --no-cache bash
+RUN apk add --no-cache bash mesa-egl mesa-gles mesa-dri-gallium py3-pillow

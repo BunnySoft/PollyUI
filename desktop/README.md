@@ -27,7 +27,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
 | 2b - remaining window policy | Workspaces, chosen tiling/floating rules and client-decoration policy; user-facing output configuration and real-hardware hotplug qualification. |
 | Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
-| Linux runtime - raster milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, real SDL3 Wayland application and runtime error handling. This is an ordinary client, not a shell surface or Linux Skia GPU backend. |
+| Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
 | 3 - PollyUI shell | Implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. Linux GPU and richer input remain separate work items. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -97,7 +97,7 @@ include PollyUI. See the root README's Linux build instructions or run:
 ```
 
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
-Linux Skia GPU rendering, IME and real `layer-shell` integration are still pending.
+Linux has a Skia GLES path; IME and real `layer-shell` integration are still pending.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -275,8 +275,11 @@ file-based fetch/storage and the five appearances, plus explicit startup failure
 cases and detached DOM callback teardown. `-Nested` checks a real SDL3 Wayland
 client on WSLg and inside PollyWM; add `-Sanitize` for ASan/UBSan in PollyUI,
 QuickJS, Yoga and the compositor (not the prebuilt Skia/wlroots libraries).
-All nested processes are bounded and cleaned up. This validates CPU raster
-presentation, not GPU/DRM, physical input, CJK composition or a bootable session.
+All nested processes are bounded and cleaned up. Nested rendering checks run
+raster, required GLES and automatic selection through resize/restore. PNG
+readback verifies fills, gradients, opacity, rounded clipping and text. CI forces
+Mesa llvmpipe; this validates GLES code, not physical GPU/DRM acceleration,
+physical input, CJK composition or a bootable session.
 
 For Linux-native nested validation after building (install `foot` first):
 

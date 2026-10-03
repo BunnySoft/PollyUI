@@ -4,6 +4,7 @@
 //
 // GPU surface per platform:
 //   Apple  -> Metal: SDL_Metal_CreateView -> CAMetalLayer -> pu_surface_create_metal
+//   Linux  -> SDL EGL/GLES context -> Skia Ganesh (auto, gl or raster policy)
 //   else   -> GL:    pu_surface_create_gpu (where available)
 //   any    -> raster fallback: pu_surface_create + SDL_Renderer streaming blit
 //
@@ -38,6 +39,7 @@ struct PuWindow {
     SDL_Renderer *renderer;   /* raster fallback only */
     SDL_Texture  *tex;        /* raster fallback only */
     PuSurface    *surface;
+    SDL_GLContext gl_context;
     int           width, height;   /* physical pixels */
     float         scale;           /* logical -> physical */
     int           running;
@@ -94,13 +96,25 @@ static void recompute_scale(PuWindow *w)
     w->scale = (s > 0.0f) ? s : 1.0f;
 }
 
+static int make_current(PuWindow *w)
+{
+    if (w->gl_context && !SDL_GL_MakeCurrent(w->win, w->gl_context)) {
+        fail_window(w, "SDL_GL_MakeCurrent"); return 0;
+    }
+    return 1;
+}
+
 /* Render one frame and present (GPU) or blit (raster). */
 static void pu_sdl_paint(PuWindow *w)
 {
-    if (!w->surface) return;
+    if (w->exit_code || !make_current(w)) return;
 #if defined(PU_METAL_BACKEND)
     if (w->is_metal) pu_metal_begin_frame(w->surface);
+    if (w->is_metal && !pu_surface_valid(w->surface)) return;
 #endif
+    if (!pu_surface_valid(w->surface)) {
+        fail_window(w, "Skia surface"); return;
+    }
     float scale = w->scale > 0 ? w->scale : 1.0f;
     if (w->paint_fn) {
         int lw = (int)(w->width / scale);
@@ -113,8 +127,18 @@ static void pu_sdl_paint(PuWindow *w)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
+#if defined(__linux__)
+    const char *capture = getenv("PU_CAPTURE_FRAME");
+    if (capture && *capture && !pu_surface_save_png(w->surface, capture)) {
+        SDL_Log("Cannot capture rendered frame to %s", capture);
+        w->exit_code = 1; w->running = 0; return;
+    }
+#endif
     if (pu_surface_is_gl(w->surface)) {
         pu_surface_present(w->surface);   /* GPU: flush + present drawable/swap */
+        if (w->gl_context && !SDL_GL_SwapWindow(w->win)) {
+            fail_window(w, "SDL_GL_SwapWindow"); return;
+        }
     } else {
         /* Raster drawing is on the CPU even if SDL uses a GPU for presentation. */
         const void *pixels = pu_surface_pixels(w->surface);
@@ -131,12 +155,12 @@ static void pu_sdl_paint(PuWindow *w)
             return;
         }
     }
-    if (!w->presented) {
+    if (!w->presented || getenv("PU_TRACE_FRAMES")) {
         w->presented = 1;
-        if (getenv("PU_TRACE_STARTUP"))
+        if (getenv("PU_TRACE_STARTUP") || getenv("PU_TRACE_FRAMES"))
             SDL_Log("PollyUI frame presented: %dx%d, driver=%s, Skia=%s",
                 w->width, w->height, SDL_GetCurrentVideoDriver(),
-                pu_surface_is_gl(w->surface) ? "GPU" : "raster");
+                w->gl_context ? "GLES" : pu_surface_is_gl(w->surface) ? "GPU" : "raster");
     }
 }
 
@@ -155,7 +179,7 @@ static int create_surface(PuWindow *w)
         w->surface = pu_surface_create_metal(layer, w->width, w->height);
         if (w->surface) { w->is_metal = 1; return 1; }
     }
-#else
+#elif !defined(__linux__)
     w->surface = pu_surface_create_gpu(NULL, w->width, w->height);
     if (w->surface) return 1;
 #endif
@@ -182,8 +206,46 @@ static int create_surface(PuWindow *w)
     return 1;
 }
 
+#if defined(__linux__)
+static PuGlProc gl_proc(void *user, const char *name)
+{
+    (void)user;
+    return SDL_GL_GetProcAddress(name);
+}
+
+static int create_gl(PuWindow *w, const char *title, int width, int height, SDL_WindowFlags flags)
+{
+    if (!SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES) ||
+        !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
+        !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0) ||
+        !SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8) ||
+        !SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8) ||
+        !SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8) ||
+        !SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8) ||
+        !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8) ||
+        !SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)) return 0;
+    w->win = SDL_CreateWindow(title, width, height, flags | SDL_WINDOW_OPENGL);
+    if (!w->win) return 0;
+    w->gl_context = SDL_GL_CreateContext(w->win);
+    if (!w->gl_context || !SDL_GL_MakeCurrent(w->win, w->gl_context)) return 0;
+    if (!SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height)) return 0;
+    w->surface = pu_surface_create_current_gl(gl_proc, NULL, w->width, w->height);
+    if (!w->surface) { SDL_SetError("Skia GLES surface initialization failed"); return 0; }
+    if (!SDL_GL_SetSwapInterval(1))
+        SDL_Log("GLES VSync unavailable: %s", SDL_GetError());
+    return 1;
+}
+#endif
+
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
+#if defined(__linux__)
+    const char *renderer = getenv("PU_RENDERER");
+    if (!renderer) renderer = "auto";
+    if (strcmp(renderer, "auto") && strcmp(renderer, "gl") && strcmp(renderer, "raster")) {
+        SDL_Log("PU_RENDERER must be auto, gl or raster"); return NULL;
+    }
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return NULL;
@@ -210,11 +272,23 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 #if defined(PU_METAL_BACKEND)
     flags |= SDL_WINDOW_METAL;
 #endif
-    w->win = SDL_CreateWindow(title, cw, ch, flags);
-    if (!w->win) { fail_window(w, "SDL_CreateWindow"); pu_window_destroy(w); return NULL; }
+#if defined(__linux__)
+    if (strcmp(renderer, "raster") != 0 && !create_gl(w, title, cw, ch, flags)) {
+        SDL_Log("GLES initialization failed: %s", SDL_GetError());
+        if (strcmp(renderer, "gl") == 0) { pu_window_destroy(w); return NULL; }
+        if (w->surface) { pu_surface_destroy(w->surface); w->surface = NULL; }
+        if (w->gl_context) { SDL_GL_DestroyContext(w->gl_context); w->gl_context = NULL; }
+        if (w->win) { SDL_DestroyWindow(w->win); w->win = NULL; }
+        SDL_Log("PU_RENDERER=auto: falling back to Skia raster");
+    }
+#endif
+    if (!w->win) {
+        w->win = SDL_CreateWindow(title, cw, ch, flags);
+        if (!w->win) { fail_window(w, "SDL_CreateWindow"); pu_window_destroy(w); return NULL; }
+    }
 
     recompute_scale(w);
-    if (!create_surface(w)) { pu_window_destroy(w); return NULL; }
+    if (!w->surface && !create_surface(w)) { pu_window_destroy(w); return NULL; }
 #if defined(__APPLE__)
     pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
                               SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
@@ -322,7 +396,9 @@ static void pu_sync_size(PuWindow *w)
     if (ph < 1) ph = 1;
     if (pw == w->width && ph == w->height) return;
     w->width = pw; w->height = ph;
+    if (!make_current(w)) return;
     pu_surface_resize(w->surface, pw, ph);
+    if (!w->is_metal && !pu_surface_valid(w->surface)) { fail_window(w, "Skia resize"); return; }
     if (w->tex) {
         SDL_DestroyTexture(w->tex);
         w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
@@ -399,6 +475,7 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
  * event watch is invoked synchronously as events are pumped, *including* from
  * inside that modal loop, so we relayout + repaint here to keep content correct
  * live. */
+#if !defined(__linux__)
 static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 {
     PuWindow *w = (PuWindow *)userdata;
@@ -412,6 +489,7 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
     }
     return true;             /* keep delivering the event to the main loop */
 }
+#endif
 
 int pu_window_run(PuWindow *w)
 {
@@ -419,12 +497,16 @@ int pu_window_run(PuWindow *w)
     if (!SDL_StartTextInput(w->win)) {
         fail_window(w, "SDL_StartTextInput"); return w->exit_code;
     }
+#if !defined(__linux__)
     if (!SDL_AddEventWatch(pu_resize_watch, w)) {
         fail_window(w, "SDL_AddEventWatch");
         SDL_StopTextInput(w->win);
         return w->exit_code;
     }
+#endif
 
+    /* Wayland must finish SDL's configure/ack processing before presenting.
+     * Rendering reentrantly from a resize watch can commit the wrong size. */
     while (w->running) {
         SDL_Event e;
         if (SDL_WaitEventTimeout(&e, 8)) {
@@ -435,7 +517,9 @@ int pu_window_run(PuWindow *w)
         if (w->dirty && w->running) { pu_sdl_paint(w); w->dirty = 0; }
     }
 
+#if !defined(__linux__)
     SDL_RemoveEventWatch(pu_resize_watch, w);
+#endif
     SDL_StopTextInput(w->win);
     return w->exit_code;
 }
@@ -443,7 +527,9 @@ int pu_window_run(PuWindow *w)
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
+    if (w->gl_context) SDL_GL_MakeCurrent(w->win, w->gl_context);
     if (w->surface)  pu_surface_destroy(w->surface);
+    if (w->gl_context) SDL_GL_DestroyContext(w->gl_context);
     if (w->tex)      SDL_DestroyTexture(w->tex);
     if (w->renderer) SDL_DestroyRenderer(w->renderer);
     if (w->win)      SDL_DestroyWindow(w->win);

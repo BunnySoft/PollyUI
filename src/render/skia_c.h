@@ -38,6 +38,14 @@ PuSurface *pu_surface_create(int width, int height);
  * pu_surface_create + blitting). width/height are physical pixels. */
 PuSurface *pu_surface_create_gpu(void *native_window, int width, int height);
 
+typedef void (*PuGlProc)(void);
+typedef PuGlProc (*PuGlGetProc)(void *user, const char *name);
+/* Linux: wrap framebuffer 0 of the caller's current GLES 3 RGBA8/stencil-8
+ * context. The host owns that context and swaps buffers after present().
+ * Keep it current during painting, resize, readback and destruction. */
+PuSurface *pu_surface_create_current_gl(PuGlGetProc get_proc, void *user, int width, int height);
+int pu_surface_valid(const PuSurface *s);
+
 /* Create a GPU surface backed by Skia's Metal backend, bound to a CAMetalLayer*
  * (macOS / iOS). Built only in the Apple render path (src/render/skia_metal.mm);
  * the default GL/raster build provides a stub that returns NULL. */
@@ -46,7 +54,7 @@ PuSurface *pu_surface_create_metal(void *ca_metal_layer, int width, int height);
 /* True if the surface is GPU-backed (present) vs raster (blit pixels). */
 int pu_surface_is_gl(const PuSurface *s);
 
-/* Present the current frame to the window (flush GPU + swap buffers). GL only. */
+/* Flush GPU drawing. Windows/Metal also present; a borrowed GL context does not. */
 void pu_surface_present(PuSurface *s);
 
 /* Destroy the surface. Safe with NULL. */

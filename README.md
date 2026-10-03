@@ -146,9 +146,9 @@ host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 
-### Linux (experimental - native Alpine/musl build, CPU raster)
+### Linux (experimental - native Alpine/musl build, EGL/GLES and raster)
 
-The Linux path uses SDL3, Skia CPU drawing, and Fontconfig/FreeType system fonts.
+The Linux path uses SDL3, Skia Ganesh GLES or CPU drawing, and Fontconfig/FreeType system fonts.
 The native source recipe pins Skia to
 `08a5439a6be726021c1c1905d23ce298a3edc5e4`, matching m124, and uses Clang 18
 (newer Clang removed intrinsics used by this Skia revision). GN, the compiler,
@@ -195,11 +195,21 @@ It omits PDF, SVG, GIF/Wuffs, ICU and HarfBuzz integrations not used by the curr
 PollyUI draw path. Font fallback includes installed CJK/emoji faces, but is not
 complex-script shaping or an IME implementation.
 
-**Rendering boundary:** Skia draws on the CPU. SDL may use a GPU to present the
-result, which does not make this a Skia GPU backend. Linux EGL/GLES integration,
-full input/IME support, native HTTP and XDG per-application storage remain work
-items. Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame
-and its video driver/rendering path. Missing fonts, failed window creation and
+**Renderer selection:** `PU_RENDERER=auto` (default) attempts an SDL-owned
+EGL/GLES 3 context and falls back to raster with a diagnostic if creation fails.
+`PU_RENDERER=gl` requires GLES and fails rather than silently falling back;
+`PU_RENDERER=raster` keeps CPU drawing. SDL may itself use a GPU to present raster
+pixels, which is distinct from Skia GLES drawing.
+
+The GLES implementation reports its renderer string. Automated WSL checks use
+Mesa **llvmpipe**, a software GL implementation, not proof of physical GPU
+acceleration. Physical GPU/DRM support still needs separate qualification.
+Full input/IME support, native HTTP and XDG per-application storage remain work
+items. Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame,
+or `PU_TRACE_FRAMES=1` for every frame. Linux-only `PU_CAPTURE_FRAME=<path.png>`
+writes the latest rendered frame (including GLES readback) for diagnostics;
+it is off by default and adds synchronous readback/file I/O when enabled.
+Missing fonts, failed window creation and
 failed SDL presentation return errors rather than reporting a working blank app.
 Native DOM callbacks and font/render caches are released explicitly at shutdown;
 the bridge must be freed before its JavaScript runtime.

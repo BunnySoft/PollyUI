@@ -5,6 +5,7 @@
 #include "render/skia_c.h"
 
 #include "include/core/SkSurface.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkImageInfo.h"
@@ -36,15 +37,17 @@
 /* PuSurface struct, shared with the per-GPU-API backends (e.g. skia_metal.mm). */
 #include "render/skia_internal.h"
 
-#if defined(_WIN32)
-/* GPU (Ganesh GL) backend — ANGLE/EGL, Windows only. */
+#if defined(_WIN32) || defined(__linux__)
+/* Ganesh GL: ANGLE on Windows, a host-owned GLES context on Linux. */
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"   /* GrDirectContexts::MakeGL */
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"  /* GrBackendRenderTargets::MakeGL */
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"        /* SkSurfaces::WrapBackendRenderTarget, FlushAndSubmit */
 #include "include/gpu/gl/GrGLAssembleInterface.h" /* GrGLMakeAssembledGLESInterface */
 #include "include/gpu/gl/GrGLTypes.h"                   /* GrGLFramebufferInfo, GrGLFuncPtr */
+#endif
 
+#if defined(_WIN32)
 #include <windows.h>   /* WGL + HWND/HDC for the GPU surface */
 #endif // _WIN32
 
@@ -208,7 +211,7 @@ static sk_sp<SkSurface> make_raster(int w, int h) {
 }
 
 /* Wrap the window's default framebuffer (FBO 0) as a Skia GPU surface. */
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
 static void rewrap_gl(PuSurface *s, int w, int h) {
     if (w < 1) w = 1;
     if (h < 1) h = 1;
@@ -223,7 +226,7 @@ static void rewrap_gl(PuSurface *s, int w, int h) {
     s->width = w;
     s->height = h;
 }
-#endif // _WIN32
+#endif
 
 extern "C" {
 
@@ -241,6 +244,34 @@ PuSurface *pu_surface_create(int width, int height) {
     s->width  = width;
     s->height = height;
     return s;
+}
+
+int pu_surface_valid(const PuSurface *s) { return s && s->surface ? 1 : 0; }
+
+PuSurface *pu_surface_create_current_gl(PuGlGetProc get_proc, void *user, int width, int height) {
+#if defined(__linux__)
+    if (!get_proc) { PU_GLLOG("Missing GL procedure resolver"); return nullptr; }
+    auto interface = GrGLMakeAssembledGLESInterface(user, get_proc);
+    if (!interface || !interface->validate()) {
+        PU_GLLOG("Cannot assemble a valid GLES interface"); return nullptr;
+    }
+    PuSurface *s = new (std::nothrow) PuSurface();
+    if (!s) { PU_GLLOG("Cannot allocate GL surface"); return nullptr; }
+    s->grctx = GrDirectContexts::MakeGL(interface);
+    if (!s->grctx) { PU_GLLOG("Cannot create Skia GLES context"); delete s; return nullptr; }
+    s->gl = true;
+    s->grctx->setResourceCacheLimit(64 * 1024 * 1024);
+    rewrap_gl(s, width, height);
+    if (!s->surface) { PU_GLLOG("Cannot wrap GLES framebuffer"); delete s; return nullptr; }
+    const auto *renderer = interface->fFunctions.fGetString(0x1F01 /* GL_RENDERER */);
+    std::fprintf(stderr, "[render] Skia GLES renderer: %s\n",
+                 renderer ? reinterpret_cast<const char *>(renderer) : "(unreported)");
+    return s;
+#else
+    (void)get_proc; (void)user; (void)width; (void)height;
+    PU_GLLOG("Borrowed GLES contexts are only enabled on Linux");
+    return nullptr;
+#endif
 }
 
 /* EGL constants (avoid needing the EGL headers). */
@@ -336,9 +367,8 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     return s;
 }
 #else // !_WIN32
-/* Non-Windows: the GL/ANGLE path is not built. Apple uses
- * pu_surface_create_metal (src/render/skia_metal.mm); a Linux EGL path will land
- * here later. Until then callers fall back to raster + blit. */
+/* Native-handle creation is Windows-only. Linux uses create_current_gl()
+ * with SDL's EGL/GLES context; Apple uses create_metal(). */
 PuSurface *pu_surface_create_gpu(void *native_window, int width, int height) {
     (void)native_window; (void)width; (void)height;
     PU_GLLOG("pu_surface_create_gpu: no GL backend on this platform - using raster/metal");
@@ -353,8 +383,10 @@ void pu_surface_present(PuSurface *s) {
 #if defined(PU_METAL_BACKEND)
     if (s->metal) { pu_metal_present(s); return; }
 #endif
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     if (s->surface) skgpu::ganesh::FlushAndSubmit(s->surface.get());
+#endif
+#if defined(_WIN32)
     if (g_egl.SwapBuffers) g_egl.SwapBuffers(s->egl_display, s->egl_surface);
 #endif
 }
@@ -372,6 +404,9 @@ void pu_surface_destroy(PuSurface *s) {
         if (g_egl.DestroyContext && s->egl_context) g_egl.DestroyContext(s->egl_display, s->egl_context);
         if (g_egl.DestroySurface && s->egl_surface) g_egl.DestroySurface(s->egl_display, s->egl_surface);
     }
+#endif
+#if defined(__linux__)
+    if (s->grctx) s->grctx->abandonContext();
 #endif
     delete s; // sk_sp releases the surface
 }
@@ -397,6 +432,8 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
          * top when growing taller (the bottom-left GL origin anchors content to
          * the bottom). Using the WM_SIZE size keeps render target == layout ==
          * window; the swapchain catches up on the swap pumped from WM_SIZE. */
+        rewrap_gl(s, width, height);
+#elif defined(__linux__)
         rewrap_gl(s, width, height);
 #endif
         return;
@@ -758,7 +795,13 @@ void pu_surface_read_pixel(const PuSurface *s, int x, int y, uint8_t *rgba) {
 int pu_surface_save_png(const PuSurface *s, const char *path) {
     if (!s || !s->surface || !path) return 0;
     SkPixmap pm;
-    if (!s->surface->peekPixels(&pm)) return 0;
+    SkBitmap readback;
+    if (!s->surface->peekPixels(&pm)) {
+        if (!readback.tryAllocPixels(SkImageInfo::Make(s->width, s->height,
+                kRGBA_8888_SkColorType, kPremul_SkAlphaType)) ||
+            !s->surface->readPixels(readback.pixmap(), 0, 0)) return 0;
+        pm = readback.pixmap();
+    }
     SkFILEWStream out(path);
     if (!out.isValid()) return 0;
     return SkPngEncoder::Encode(&out, pm, SkPngEncoder::Options{}) ? 1 : 0;
