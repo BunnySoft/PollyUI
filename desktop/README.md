@@ -11,8 +11,9 @@ Keep three boundaries:
 
 - `compositor/`: PollyWM owns outputs, seats, window geometry, focus and
   composition. wlroots supplies device/rendering/protocol infrastructure.
-- Future `shell/`: PollyUI renders panels, launcher, notifications and settings
-  in a separate process. A shell crash must not terminate other applications.
+- `shell/`: shared appearance presets and a native PollyUI **simulated-shell
+  preview**. Future real panels, launcher, notifications and settings will run
+  in a separate process; a shell crash must not terminate other applications.
 - Future session/system integration: application launching, D-Bus services,
   permissions, persistence and distribution packaging.
 
@@ -25,6 +26,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
 | 2b - remaining window policy | Workspaces, chosen tiling/floating rules and client-decoration policy; user-facing output configuration and real-hardware hotplug qualification. |
+| Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua and Lion-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
 | 3 - PollyUI shell | First finish PollyUI's Linux fonts/GPU/input/build paths. Then implement layer-shell on both sides, panel exclusive zones and output-specific shell surfaces. Start with a panel and launcher; restart the shell without disrupting application windows. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -33,6 +35,69 @@ Prefer standard Wayland protocols. Workspaces/window management may later
 require a narrowly scoped private protocol or socket, with an explicit trust
 boundary. **There is no custom management socket, virtual-input global, or
 test-control protocol in the production compositor.**
+
+## Appearance direction and native preview
+
+The desktop will offer multiple selectable appearances rather than hard-code a
+single era. Appearance is separate from window-management policy: the compositor
+remains floating, and no workspace/tiling policy was selected by choosing these
+visual styles.
+
+| Theme ID | Inspiration | Current visual treatment |
+|---|---|---|
+| `xp` | Windows XP / Luna | Blue rounded frames, green launcher, soft controls, original vector hills |
+| `server2003` | Windows Server 2003 / Classic | Square gray frames, horizontal blue title gradient, beveled buttons, solid desktop |
+| `aqua` | OS X / Aqua | Pinstriped chrome, glossy pill controls, left-side circular captions, menu bar and dock |
+| `lion` | OS X / Lion | Gray chrome, graphite woven-grid background, left-side captions, compact gray dock |
+
+`shell/themes.mjs` contains deeply immutable, dependency-free token objects.
+Every preset has the same desktop, color, window, button and panel groups.
+`getDesktopTheme(id)` rejects unknown IDs rather than silently choosing a
+different appearance. The Server 2003 preset intentionally represents its
+Classic look, not another Luna color variant.
+
+`shell/appearance.mjs` draws the preview using the **actual PollyUI reconciler
+and native renderer**, not browser HTML or screenshots of another desktop.
+The theme picker and launcher menu work with pointer, Enter and Space.
+Minimize/maximize/close/reopen operate on the **sample window inside the
+preview**; folder and sample-action controls update local demo state only.
+Switching themes preserves this state. The outer native window keeps its
+normal host decorations.
+
+The window-frame, taskbar/dock and menu designs are original implementations
+inspired by these eras. No Microsoft/Apple logos, wallpaper photographs, OS
+fonts, copied assets or system binaries are bundled. Aqua's glass-like gradients
+are opaque drawing, not compositor transparency/blur. The preview is explicitly
+labeled **SIMULATED SHELL**; it does not launch applications, modify files or
+OS settings, provide real window decorations, or communicate with PollyWM.
+Theme selection currently lasts for the preview process only.
+
+Run from the repository root with an already built PollyUI runtime:
+
+```powershell
+.\build\win-clang\pollyui.exe .\desktop\shell\preview.mjs
+
+# Native rendering, layout, input and pixel assertions; failures exit nonzero:
+.\build\win-clang\pollyui.exe --test .\tests\desktop-appearance.mjs
+```
+
+The existing root README describes the Windows/macOS runtime build. If Skia
+has not been fetched, use `tools/fetch_skia.ps1` before `tools/build.ps1`.
+The same `.mjs` entry is portable to the macOS runtime; Linux shell use still
+requires finishing PollyUI's Linux font/GPU/input paths. The WSL compositor
+test container does **not** contain a working PollyUI renderer.
+
+The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
+theme. It covers token shape/immutability, native layout and color rendering,
+caption positions, menus, keyboard activation, preview window lifecycle,
+state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
+`PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
+These appearance tests run separately from the WSL compositor suite.
+
+Next integration steps are the Linux PollyUI runtime, layer-shell surfaces for
+real panels/docks, an application launcher and a shared decoration policy.
+Window-manager state remains owned by PollyWM; theme code must not become an
+alternate window manager.
 
 ## Implemented behavior
 

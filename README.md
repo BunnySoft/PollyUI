@@ -152,6 +152,10 @@ Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 our own wlroots-based Wayland compositor, without labwc or a GNOME/KDE desktop.
 It implements native client windows, focus, interactive move/resize,
 maximize/fullscreen/restore, output-aware placement and popup constraints.
+The subproject also includes a native PollyUI appearance preview with selectable
+XP, Server 2003 Classic, OS X Aqua and Lion-inspired original themes:
+`pollyui desktop/shell/preview.mjs`. Its sample shell/windows are simulated;
+theme selection does not yet change PollyWM or other applications.
 PollyUI shell integration and an Alpine system image
 are later stages, not implemented desktop features. See the desktop guide for
 the architecture, roadmap, standalone build and WSL/WSLg checks.
