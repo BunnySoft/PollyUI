@@ -6,7 +6,7 @@
 
 typedef struct PuLayer PuLayer;
 struct wl_surface;
-PuLayer *pu_layer_prepare(PuWindow *owner);
+PuLayer *pu_layer_prepare(PuWindow *owner, int input_popup);
 struct wl_surface *pu_layer_surface(PuLayer *layer);
 int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *config);
 void pu_layer_unmap(PuLayer *layer);

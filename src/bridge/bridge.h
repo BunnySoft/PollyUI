@@ -23,6 +23,9 @@ void      pu_bridge_free(PuBridge *b);
 PuBridge *pu_bridge_new_document(PuBridge *main);
 JSValue   pu_bridge_document(PuBridge *b);
 void      pu_bridge_release_document(PuBridge *b);
+typedef int (*PuTextInputFn)(const PuTextInputState *state, int reset, void *user);
+int pu_bridge_set_text_input_callback(PuBridge *bridge, PuTextInputFn callback, void *user);
+int pu_bridge_sync_text_input(PuBridge *bridge);
 
 /* The document body element (root of the user's tree). */
 PuNode *pu_bridge_body(PuBridge *b);

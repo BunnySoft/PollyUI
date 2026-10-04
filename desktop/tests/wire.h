@@ -18,7 +18,9 @@ enum TestCommand {
     TEST_DECORATION, TEST_DECORATION_DESTROY, TEST_APPEARANCE,
     TEST_WORKSPACE_CREATE, TEST_WORKSPACE_ACTIVATE, TEST_WORKSPACE_REMOVE,
     TEST_WORKSPACE_MOVE, TEST_WORKSPACE_COMMIT, TEST_TRANSIENT,
-    TEST_DRAG, TEST_DRAG_SOURCE_DESTROY, TEST_DRAG_ICON_DESTROY
+    TEST_DRAG, TEST_DRAG_SOURCE_DESTROY, TEST_DRAG_ICON_DESTROY,
+    TEST_TEXT_ENABLE, TEST_TEXT_DISABLE, TEST_IME_CREATE, TEST_IME_COMMIT, TEST_IME_POPUP,
+    TEST_IME_FORCE_BIND, TEST_IME_FORWARD
 };
 
 struct TestLayer {
@@ -44,6 +46,9 @@ struct TestReply {
     int appearance_capability, decoration_mode;
     int workspace_capability, workspace_count, workspace_active, workspace_done, foreign_workspace;
     int drag_cancelled;
+    uint32_t ime_global, virtual_global, ime_serial;
+    int text_enter, text_leave, text_done, ime_active, ime_keys, ime_rect_x, ime_rect_y;
+    char text_preedit[128], text_commit[128];
     char foreign_title[128];
     uint32_t serial;
 };

@@ -29,7 +29,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
 | Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
-| IME engine foundation | Optional independent librime adapter with preedit/candidate snapshots, validated candidate selection, cancellation and ASCII passthrough. The compositor relay, IME process and PollyUI candidate windows are not connected yet. |
+| Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. Complex shaping/grapheme editing remain. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -42,13 +42,14 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Notifications, outgoing PollyUI drags, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Notifications, outgoing PollyUI drags, complex text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
 require a narrowly scoped private protocol or socket, with an explicit trust
-boundary. **There is no custom management socket, virtual-input global, or
-test-control protocol in the production compositor.**
+boundary. **There is no custom management socket or test-control protocol in
+the production compositor.** Virtual-keyboard access is limited to the
+separately spawned input-method connection, not public applications or the Shell.
 
 ### Trusted shell connection
 
@@ -241,7 +242,7 @@ include PollyUI. See the root README's Linux build instructions or run:
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
 Linux has a Skia GLES path and structured input with separate text commits;
 The native Shell uses separate layer windows rather than embedding this preview
-as its desktop. IME preedit remains pending.
+as its desktop. IME preedit now has a separate native service and editor path.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -389,18 +390,18 @@ cleared during the drag and restored on completion/cancellation. Touch drags
 are not implemented. Clipboard ownership is not persisted after the source exits.
 
 Not implemented: tiling/overview, Xwayland, full session recovery,
-PollyUI outgoing drag sources, screen capture/portals, IME
-integration, secure lock, full desktop services or installer. Display settings
+PollyUI outgoing drag sources, screen capture/portals, complex-script shaping,
+secure lock, full desktop services or installer. Display settings
 are available, but startup display profiles are not persisted yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
 forced clipping). Multi-output/HiDPI and DRM/seat access still need real-hardware
 qualification; **WSLg is not evidence of native GPU/DRM or boot readiness**.
 
-## Input-method direction and engine foundation
+## Native input-method service
 
 The input-method architecture deliberately avoids GLib/GIO and desktop-toolkit
-candidate windows: a custom service and PollyUI candidate UI will reuse an input
-engine library. The first engine adapter is `input-method/engine.c`, using the
+candidate windows: a custom service and PollyUI candidate UI reuse an input
+engine library. The adapter is `input-method/engine.c`, using the
 librime C API (`rime>=1.7`; Alpine 3.24's 1.17.0 is exercised). Its runtime
 dependency closure does not include GLib/GIO, GTK, Qt, GNOME or KDE.
 
@@ -414,16 +415,95 @@ thread/process handles the engine; maintenance is joined before use and exit.
 Snapshots copy preedit, commit and candidate text into bounded C storage and use
 UTF-8 byte offsets. They carry revisions so stale candidate clicks cannot act on
 changed composition. Reset discards preedit without committing; ASCII mode
-returns unhandled keys for the eventual service to forward. Learning follows
+returns unhandled keys for the service to forward. Learning follows
 the selected Rime schema, not an invented runtime privacy option. The small
 original test schema disables its user dictionary and uses isolated temporary
 data; it is not a distribution dictionary or a production configuration.
 
-This foundation is **not yet a usable system IME**. Public text-input-v3,
-restricted input-method-v2 integration, trusted process supervision, preedit
-rendering, candidate positioning, password/sensitive-field handling and complex
-text shaping/editing still need implementation. The library is not initialized
-by ordinary PollyUI applications and does not intercept user input.
+`pollywm --input-method PROGRAM` explicitly starts a separate trusted process;
+place this option before `--shell`. Its inherited `WAYLAND_SOCKET=3` connection
+alone may bind `zwp_input_method_manager_v2` and
+`zwp_virtual_keyboard_manager_v1`. It cannot bind Shell management globals;
+the Shell cannot bind the IME globals. Public text-input-v3 clients receive only
+their own focused input. Guessed global IDs do not bypass these checks.
+An IME crash does not close applications: preedit/popups are cleared and
+ordinary keyboard delivery resumes. Automatic IME restart is not implemented.
+
+The relay validates surrounding-text offsets and output bounds, rejects stale
+commits, and requires a valid commit in the current focus epoch before accepting
+virtual-keyboard forwarding. Background text-input requests do not invalidate
+the active context. Forwarded held keys are released when an input session
+changes. Password, PIN, hidden-text and sensitive-data contexts are not sent to
+the service. This is a connection-bound capability model, not a sandbox for
+an untrusted IME executable or schema/plugin.
+
+`pollyui --input-method --app-id org.pollyui.ime desktop/input-method/main.mjs`
+runs the candidate UI. It uses `inputMethod.start(sharedDirectory, userDirectory,
+schema)`, `state()`, `choose(revision, index)` and `onchange`. Revisions are
+strings; candidate indices are zero-based integers. `state()` includes active/
+ASCII state, preedit, selected candidate, last-page status, and candidate
+text/comments. This mode is exclusive with `--desktop`, keeps its event loop
+alive without visible windows, and does not initialize Rime in ordinary apps.
+Only an initialized, authorized service can create
+`window.create({inputPopup: true, width, height, title})`.
+
+Candidate surfaces use the standard input-popup role, not layer-shell or
+ordinary toplevels. PollyWM positions them at the editor caret, constrains them
+to the output, and preserves editor keyboard focus during clicks. Empty or
+cancelled composition closes the candidate surface. The current candidate UI
+has a fixed-size scrollable list and neutral appearance; theme following and
+other input engines remain future work.
+
+The runtime image includes Alpine's `rime-plum-data`; the default schema is
+`luna_pinyin_simp`. Its data and engine licenses remain separate dependencies
+for packaging review. Enable it in the development session with `--ime`:
+
+```sh
+sh desktop/tools/run-session.sh --nested --ime --restarts 3 \
+    ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/main.mjs
+```
+
+Set `POLLY_IME_DATA` to another absolute shared-data directory and
+`POLLY_IME_SCHEMA` to a configured schema ID. User deployment/learning data
+lives in the `org.pollyui.ime` XDG data namespace. The launcher checks service
+support and dictionary availability; a default session without `--ime` is
+unchanged. `run-input-method.sh` receives the chosen runtime via
+`POLLY_IME_RUNTIME`.
+
+The vendored input-method-v2 and virtual-keyboard-v1 XML files preserve their
+upstream notices and come from the `swaywm/wlroots` 0.14.1 source mirror; their
+version-1 wire interfaces are used with the supported wlroots 0.19.3 API.
+Text-input-v3 comes from installed `wayland-protocols`.
+
+Remaining text work includes shaping, grapheme-aware editing and broader
+engine/hardware qualification. SDL 3.4 exposes caret/purpose and preedit but no
+surrounding-text setter; PollyUI does not implement delete-surrounding edits.
+Numeric/phone purposes temporarily force the service into ASCII mode and
+restore the preceding mode on the next ordinary text field. Display settings
+mark their numeric inputs accordingly.
+
+### SDL disconnect hardening
+
+The runtime image builds SDL 3.4.10 at commit
+`8e37db5e797b6167f3a00d697d816a684bd259c7`, applying
+`patches/sdl-wayland-sync-lifetime.patch`. Stock SDL allocates an untracked
+show/hide `wl_callback` during window teardown even after its Wayland
+connection has failed; the callback can never receive its completion event.
+Valgrind traced the forced-session-exit leak to this path.
+
+The patch makes the window own its show/hide callback, clears the pointer on
+completion and destroys an outstanding callback during window teardown.
+It does not suppress leak reports, touch SDL internals from PollyUI, or
+replace the host event loop with polling. The source notices are retained,
+and this is an explicitly modified SDL build, not an upstream release fix.
+The build disables IBus/libdecor integration; input methods and decorations
+are supplied by PollyIME/PollyWM instead.
+
+`tools/build-sdl-linux.sh SOURCE_DIRECTORY [INSTALL_PREFIX]` reproduces the
+build; the default prefix is `/usr/local`. It checks the exact source revision
+and refuses mismatching patches. Configure PollyUI with
+`-DSDL3_DIR=INSTALL_PREFIX/lib/cmake/SDL3` when switching an existing build
+from system SDL. The runtime checker sets this to the image's patched build.
 
 ## Build independently on Linux
 
@@ -621,7 +701,9 @@ All nested processes are bounded and cleaned up. Nested rendering checks run
 raster, required GLES and automatic selection through resize/restore. PNG
 readback verifies fills, gradients, opacity, rounded clipping and text. CI forces
 Mesa llvmpipe; this validates GLES code, not physical GPU/DRM acceleration,
-physical input, CJK composition or a bootable session.
+physical keyboards/keymaps or a bootable session. Separate native IME fixtures
+exercise real Rime composition, inline preedit, candidate clicks, password
+bypass, cancellation and service-loss recovery in both raster and GLES modes.
 
 For Linux-native nested validation after building (install `foot` first):
 

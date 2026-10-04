@@ -3,6 +3,7 @@
 #include "decoration-themes.h"
 #include "workspace.h"
 #include "data-device.h"
+#include "input-method.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -24,6 +25,7 @@
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_input_method_v2.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -363,6 +365,32 @@ static bool data_drag(const char *mode)
     return true;
 }
 
+struct ImePopup {
+    struct wlr_surface *surface;
+    int x, y;
+};
+static void find_ime_popup(struct wlr_scene_buffer *buffer, int x, int y, void *data)
+{
+    struct ImePopup *result = data;
+    struct wlr_scene_surface *scene = wlr_scene_surface_try_from_buffer(buffer);
+    if (scene && wlr_input_popup_surface_v2_try_from_wlr_surface(scene->surface)) {
+        result->surface = scene->surface; result->x = x; result->y = y;
+    }
+}
+static bool ime_popup_ready(struct ImePopup *popup)
+{
+    if (!popup->surface || !popup->surface->buffer) return false;
+    struct wlr_buffer *buffer = popup->surface->buffer->source;
+    void *pixels;
+    uint32_t format, pixel;
+    size_t stride;
+    if (!wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride))
+        return false;
+    memcpy(&pixel, pixels, sizeof(pixel));
+    wlr_buffer_end_data_ptr_access(buffer);
+    return (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888) && (pixel & 0xffffff) == 0x20cc40;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
@@ -375,6 +403,47 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            if (!strcmp(name, "fixture-ime-start")) {
+                const char *data = getenv("POLLY_IME_TEST_DATA");
+                CHECK(data && data[0] == '/');
+                char *ime_args[] = { executable, "--input-method", "--app-id", "org.pollyui.ime-fixture",
+                    "desktop/tests/ime-service.mjs", (char *)data, "polly_test", NULL };
+                CHECK(pu_input_method_spawn(&desktop, ime_args));
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-ime-ready") || !strcmp(name, "fixture-ime-idle") ||
+                !strcmp(name, "fixture-ime-gone")) {
+                bool ready = !strcmp(name, "fixture-ime-ready") ? pu_input_method_active(&desktop) :
+                    !strcmp(name, "fixture-ime-idle") ? pu_input_method_ready(&desktop) && !pu_input_method_active(&desktop) :
+                    !pu_input_method_ready(&desktop);
+                if (ready) wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            int ime_x, ime_y;
+            bool ime_click = sscanf(name, "fixture-ime-click %d %d", &ime_x, &ime_y) == 2;
+            if (ime_click || !strcmp(name, "fixture-ime-popup") || !strcmp(name, "fixture-ime-no-popup")) {
+                struct ImePopup popup = {0};
+                wlr_scene_node_for_each_buffer(&desktop.scene->tree.node, find_ime_popup, &popup);
+                if (!strcmp(name, "fixture-ime-no-popup")) {
+                    if (!popup.surface) wlr_layer_surface_v1_destroy(marker->surface);
+                    continue;
+                }
+                if (!ime_popup_ready(&popup)) continue;
+                if (ime_click) {
+                    struct wlr_surface *focus = desktop.seat->keyboard_state.focused_surface;
+                    move_pointer(popup.x + ime_x, popup.y + ime_y);
+                    struct wlr_pointer_button_event button = { .pointer = &pointer, .time_msec = 61000,
+                        .button = BTN_LEFT, .state = WL_POINTER_BUTTON_STATE_PRESSED };
+                    wlr_pointer_notify_button(&pointer, &button);
+                    button.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                    wlr_pointer_notify_button(&pointer, &button);
+                    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+                    CHECK(desktop.seat->keyboard_state.focused_surface == focus);
+                }
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             if (!strncmp(name, "fixture-data-drag ", 18)) {
                 CHECK(data_drag(name + 18));
                 wlr_layer_surface_v1_destroy(marker->surface);

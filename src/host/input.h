@@ -16,7 +16,7 @@ enum PuInputResult {
     PU_INPUT_PREVENT_DEFAULT = 2,
 };
 
-typedef enum PuKeyType { PU_KEY_DOWN, PU_KEY_UP, PU_KEY_TEXT } PuKeyType;
+typedef enum PuKeyType { PU_KEY_DOWN, PU_KEY_UP, PU_KEY_TEXT, PU_KEY_PREEDIT } PuKeyType;
 
 /* String pointers are borrowed for the duration of the synchronous callback.
  * TEXT contains committed UTF-8, not key names or an IME preedit string. */
@@ -27,7 +27,14 @@ typedef struct PuKeyEvent {
     const char *text;
     unsigned modifiers;
     int repeat;
+    int start, length; /* PREEDIT selection in UTF-16 units; -1 hides the cursor. */
 } PuKeyEvent;
+
+typedef struct PuTextInputState {
+    int enabled;
+    int purpose; /* text, password, PIN, email, number, name */
+    float x, y, width, height;
+} PuTextInputState;
 
 typedef enum PuPointerType {
     PU_POINTER_CLICK, PU_POINTER_DOWN, PU_POINTER_UP, PU_POINTER_MOVE,

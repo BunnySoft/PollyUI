@@ -15,6 +15,7 @@
 #include "render/skia_c.h"
 
 #include <SDL3/SDL.h>
+#include <math.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -61,6 +62,10 @@ struct PuWindow {
     int           suppress_text;
     unsigned      pressed_buttons;
     int           registered, close_notified, text_started;
+    int           text_managed;
+    int           preedit_active;
+    Uint64        text_epoch;
+    PuTextInputState text_input;
     PuCloseFn     close_fn;
     void         *close_user;
 
@@ -462,14 +467,14 @@ static int create_surface(PuWindow *w)
 static int create_native(PuWindow *w, const PuWindowConfig *config,
                          const char *title, int width, int height, SDL_WindowFlags flags)
 {
-    if (config && config->layer) {
+    if (config && (config->layer || config->input_popup)) {
 #if defined(PU_LAYER_SHELL)
         if (strcmp(SDL_GetCurrentVideoDriver(), "wayland")) {
             SDL_SetError("Layer surfaces require the Wayland video driver");
             fail_window(w, "Layer creation");
             return 0;
         }
-        w->layer_surface = pu_layer_prepare(w);
+        w->layer_surface = pu_layer_prepare(w, config->input_popup);
         if (!w->layer_surface) { fail_window(w, "Layer preparation"); return 0; }
         if (!SDL_GetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH) &&
             !SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1")) {
@@ -482,7 +487,7 @@ static int create_native(PuWindow *w, const PuWindowConfig *config,
             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height) &&
             SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true) &&
-            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, config->layer->transparent != 0) &&
+            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, config->layer && config->layer->transparent != 0) &&
             SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WAYLAND_WL_SURFACE_POINTER,
                 pu_layer_surface(w->layer_surface)) &&
             SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
@@ -900,6 +905,8 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             break;
         }
         case SDL_EVENT_TEXT_INPUT: {
+            if ((w->text_managed && !w->text_input.enabled) || e->text.timestamp < w->text_epoch) break;
+            w->preedit_active = 0;
             PuKeyEvent event = { .type = PU_KEY_TEXT, .text = e->text.text,
                                 .modifiers = key_modifiers(SDL_GetModState()) };
             if (!w->suppress_text && w->key_fn &&
@@ -907,9 +914,38 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             w->suppress_text = 0;
             break;
         }
+        case SDL_EVENT_TEXT_EDITING: {
+            if ((w->text_managed && !w->text_input.enabled) || e->edit.timestamp < w->text_epoch) break;
+            const char *text = e->edit.text ? e->edit.text : "";
+            if (!*text && !w->preedit_active) break;
+            w->preedit_active = *text != 0;
+            int start = -1, end = -1, points = 0, units = 0;
+            const unsigned char *p = (const unsigned char *)text;
+            for (;;) {
+                if (points == e->edit.start) start = units;
+                if (e->edit.start >= 0 && e->edit.length >= 0 &&
+                    (int64_t)points == (int64_t)e->edit.start + e->edit.length) end = units;
+                if (!*p) break;
+                units += *p >= 0xf0 ? 2 : 1;
+                p++;
+                while ((*p & 0xc0) == 0x80) p++;
+                points++;
+            }
+            PuKeyEvent event = { .type = PU_KEY_PREEDIT, .text = text, .start = start,
+                .length = start >= 0 && end >= start ? end - start : -1 };
+            w->suppress_text = 0;
+            if (w->key_fn && (w->key_fn(&event, w->key_user) & PU_INPUT_REDRAW)) w->dirty = 1;
+            break;
+        }
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             w->suppress_text = 0;
             w->pressed_buttons = 0;
+            w->text_epoch = SDL_GetTicksNS();
+            if (w->key_fn && w->preedit_active) {
+                w->preedit_active = 0;
+                PuKeyEvent event = { .type = PU_KEY_PREEDIT, .text = "", .start = -1, .length = -1 };
+                if (w->key_fn(&event, w->key_user) & PU_INPUT_REDRAW) w->dirty = 1;
+            }
             break;
         case SDL_EVENT_WINDOW_MOUSE_LEAVE:
             if (w->pointer_fn) {
@@ -975,6 +1011,44 @@ static void route_event(const SDL_Event *e)
     }
 }
 
+static int keep_alive;
+void pu_window_keep_alive(int enabled) { keep_alive = enabled != 0; }
+
+int pu_window_set_text_input(PuWindow *w, const PuTextInputState *state, int reset)
+{
+    if (!w || !w->running) return 0;
+    if (w->text_managed && !reset && !memcmp(&w->text_input, state, sizeof(*state))) return 1;
+    static const SDL_TextInputType types[] = { SDL_TEXTINPUT_TYPE_TEXT, SDL_TEXTINPUT_TYPE_TEXT_PASSWORD_HIDDEN,
+        SDL_TEXTINPUT_TYPE_NUMBER_PASSWORD_HIDDEN, SDL_TEXTINPUT_TYPE_TEXT_EMAIL,
+        SDL_TEXTINPUT_TYPE_NUMBER, SDL_TEXTINPUT_TYPE_TEXT_NAME };
+    if (state->purpose < 0 || state->purpose >= (int)(sizeof(types) / sizeof(types[0])) ||
+        !isfinite(state->x) || !isfinite(state->y) || !isfinite(state->width) || !isfinite(state->height) ||
+        fabsf(state->x) > 100000000 || fabsf(state->y) > 100000000 || state->width > 1000000 || state->height > 1000000) {
+        SDL_SetError("Invalid native text-input configuration"); fail_window(w, "Text input"); return 0;
+    }
+    bool restart = reset || !w->text_managed || w->text_input.purpose != state->purpose;
+    w->text_managed = 1; w->text_input = *state;
+    if ((restart || !state->enabled) && w->text_started) {
+        if (!SDL_StopTextInput(w->win)) { fail_window(w, "SDL_StopTextInput"); return 0; }
+        w->text_started = 0; w->text_epoch = SDL_GetTicksNS();
+    }
+    if (!state->enabled) return 1;
+    SDL_Rect rect = { .x = (int)floorf(state->x), .y = (int)floorf(state->y),
+        .w = (int)ceilf(state->width), .h = (int)ceilf(state->height) };
+    if (!SDL_SetTextInputArea(w->win, &rect, 0)) { fail_window(w, "SDL_SetTextInputArea"); return 0; }
+    if (!w->text_started) {
+        SDL_PropertiesID properties = SDL_CreateProperties();
+        bool ok = properties && SDL_SetNumberProperty(properties, SDL_PROP_TEXTINPUT_TYPE_NUMBER, types[state->purpose]) &&
+            SDL_SetBooleanProperty(properties, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false) &&
+            SDL_SetBooleanProperty(properties, SDL_PROP_TEXTINPUT_MULTILINE_BOOLEAN, false) &&
+            SDL_StartTextInputWithProperties(w->win, properties);
+        if (properties) SDL_DestroyProperties(properties);
+        if (!ok) { fail_window(w, "SDL_StartTextInputWithProperties"); return 0; }
+        w->text_started = 1;
+    }
+    return 1;
+}
+
 int pu_window_run_all(PuAsyncFn frame, void *user)
 {
     if (g_loop_running || !g_initialized) {
@@ -995,7 +1069,7 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
      * Rendering reentrantly from a resize watch can commit the wrong size. */
     for (;;) {
         for (PuWindow *w = g_windows; w; w = w->next) {
-            if (w->running && !w->text_started) {
+            if (w->running && !w->text_started && !w->text_managed) {
                 if (!SDL_StartTextInput(w->win)) fail_window(w, "SDL_StartTextInput");
                 else w->text_started = 1;
             }
@@ -1013,7 +1087,7 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
         }
         PuWindow *live = g_windows;
         while (live && !live->running) live = live->next;
-        if (!live) break;
+        if (!live && !keep_alive) break;
         SDL_Event e;
         if (SDL_WaitEventTimeout(&e, 8)) {
             route_event(&e);

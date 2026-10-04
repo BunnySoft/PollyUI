@@ -7,7 +7,7 @@
 //   document.body.appendChild(input.root);
 // Pass document: handle.document when embedding in another native window.
 
-import { previousTextIndex, nextTextIndex } from './js/textindex.mjs';
+import { previousTextIndex, nextTextIndex, clampTextIndex } from './js/textindex.mjs';
 
 const el = (owner, tag, style) => {
   const n = owner.createElement(tag);
@@ -22,8 +22,11 @@ export function createTextInput(opts = {}) {
   const width    = opts.width ?? 240;
   const color    = opts.color ?? '#0f172a';
   const selColor = opts.selectionColor ?? '#93c5fd';
+  const purpose = opts.password ? 'password' : opts.purpose ?? 'text';
+  const secure = purpose === 'password' || purpose === 'pin';
+  const displayed = value => secure ? '\u2022'.repeat(Array.from(value).length) : value;
 
-  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false };
+  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false, composition: null };
   st.caret = st.value.length;
 
   const root = el(owner, 'view', {
@@ -35,22 +38,24 @@ export function createTextInput(opts = {}) {
 
   const highlight = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 0, height: fontSize, backgroundColor: 'transparent', borderRadius: 2 });
   const textEl = el(owner, 'view', { color, fontSize });
-  const textNode = owner.createTextNode(st.value);
+  const textNode = owner.createTextNode(displayed(st.value));
   textEl.appendChild(textNode);
   const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent' });
+  const underline = el(owner, 'view', { position: 'absolute', top: padding + fontSize, left: padding, width: 0, height: 1, backgroundColor: color });
 
   root.appendChild(highlight);  // behind the text
   root.appendChild(textEl);
   root.appendChild(caret);
+  root.appendChild(underline);
 
-  const xOf = (i) => measureText(st.value.slice(0, i), fontSize);
+  const xOf = (i, value = st.value) => measureText(displayed(value.slice(0, i)), fontSize);
 
   // Map a text-local x (px from the text start) to the nearest caret index.
   function indexAtX(localX) {
     const v = st.value;
     let best = 0, bestD = Infinity;
     for (let i = 0; ; i = nextTextIndex(v, i)) {
-      const d = Math.abs(measureText(v.slice(0, i), fontSize) - localX);
+      const d = Math.abs(xOf(i, v) - localX);
       if (d < bestD) { bestD = d; best = i; }
       if (i === v.length) break;
     }
@@ -63,10 +68,15 @@ export function createTextInput(opts = {}) {
   }
 
   function render() {
-    textNode.textContent = st.value;
-    caret.style.left = String(padding + xOf(st.caret));
-    caret.style.backgroundColor = st.focused ? color : 'transparent';
-    const r = selRange();
+    const composition = st.composition;
+    const value = composition ? st.value.slice(0, composition.start) + composition.text + st.value.slice(composition.end) : st.value;
+    const cursor = composition ? composition.start + (composition.cursor < 0 ? composition.text.length : composition.cursor) : st.caret;
+    textNode.textContent = displayed(value);
+    caret.style.left = String(padding + xOf(cursor, value));
+    caret.style.backgroundColor = st.focused && (!composition || composition.cursor >= 0) ? color : 'transparent';
+    underline.style.left = String(padding + xOf(composition ? composition.start : 0, value));
+    underline.style.width = String(composition ? xOf(composition.start + composition.text.length, value) - xOf(composition.start, value) : 0);
+    const r = composition ? null : selRange();
     if (r && st.focused) {
       highlight.style.left = String(padding + xOf(r[0]));
       highlight.style.width = String(xOf(r[1]) - xOf(r[0]));
@@ -75,12 +85,15 @@ export function createTextInput(opts = {}) {
       highlight.style.width = '0';
       highlight.style.backgroundColor = 'transparent';
     }
+    if (st.focused && owner.activeElement === root)
+      root.setInputMethod({ purpose, x: padding + xOf(cursor, value), y: padding, width: 2, height: fontSize });
   }
 
   const localXFrom = (clientX) => clientX - (root.offsetLeft + padding) + (parseFloat(root.scrollLeft) || 0);
 
   root.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
+    if (st.composition) root.cancelComposition();
     const i = indexAtX(localXFrom(e.clientX));
     st.caret = i; st.anchor = i; st.dragging = true; st.focused = true;
     root.focus();
@@ -96,13 +109,14 @@ export function createTextInput(opts = {}) {
     st.dragging = false;
     if (st.anchor === st.caret) st.anchor = null;
     const selection = selRange();
-    if (selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
+    if (!secure && selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
       clipboard.writePrimaryText(st.value.slice(selection[0], selection[1]));
     render();
   });
   root.addEventListener('auxclick', e => {
     if (e.button !== 1 || typeof clipboard === 'undefined' || !clipboard.supportsPrimary) return;
     e.preventDefault();
+    if (st.composition) root.cancelComposition();
     st.caret = indexAtX(localXFrom(e.clientX)); st.anchor = null;
     root.focus();
     replaceSelection(clipboard.readPrimaryText());
@@ -110,6 +124,23 @@ export function createTextInput(opts = {}) {
   });
   root.addEventListener('focus', () => { st.focused = true; render(); });
   root.addEventListener('blur',  () => { st.focused = false; render(); });
+  root.addEventListener('compositionstart', () => {
+    const [start, end] = selRange() || [st.caret, st.caret];
+    st.composition = { start, end, text: '', cursor: 0 };
+  });
+  root.addEventListener('compositionupdate', e => {
+    if (!st.composition) return;
+    st.composition.text = e.data;
+    st.composition.cursor = e.selectionStart < 0 ? -1 : clampTextIndex(e.data, e.selectionStart);
+    render();
+  });
+  root.addEventListener('compositionend', () => {
+    if (!st.composition) return;
+    st.anchor = st.composition.start; st.caret = st.composition.end;
+    if (st.anchor === st.caret) st.anchor = null;
+    st.composition = null;
+    render();
+  });
 
   function replaceSelection(insert) {
     const r = selRange();
@@ -121,11 +152,15 @@ export function createTextInput(opts = {}) {
 
   root.addEventListener('keydown', (e) => {
     const k = e.key;
+    if (st.composition && (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Backspace', 'Delete'].includes(k) ||
+      ((e.ctrlKey || e.metaKey) && !e.altKey && ['a', 'c', 'x', 'v'].includes(k.toLowerCase()))))
+      root.cancelComposition();
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const key = k.toLowerCase();
       if (key === 'a') { e.preventDefault(); st.anchor = 0; st.caret = st.value.length; render(); return; }
       if (key === 'c' || key === 'x' || key === 'v') {
         e.preventDefault();
+        if (secure && key !== 'v') return;
         if (typeof clipboard === 'undefined') throw new Error('Clipboard APIs are unavailable');
         const selected = selRange();
         if (key === 'v') replaceSelection(clipboard.readText());
@@ -164,7 +199,7 @@ export function createTextInput(opts = {}) {
   return {
     root,
     get value() { return st.value; },
-    set value(v) { st.value = String(v); st.caret = st.value.length; st.anchor = null; render(); },
+    set value(v) { if (st.composition) root.cancelComposition(); st.value = String(v); st.caret = st.value.length; st.anchor = null; render(); },
     getCaret: () => st.caret,
     getSelection: () => selRange(),
     selectAll: () => { st.anchor = 0; st.caret = st.value.length; st.focused = true; render(); },

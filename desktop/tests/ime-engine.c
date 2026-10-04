@@ -8,8 +8,22 @@
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) return 2;
+    if (argc != 3 && argc != 4) return 2;
     char error[256];
+    if (argc == 4) {
+        struct PuImeEngine *engine = pu_ime_open(argv[1], argv[2], argv[3], error, sizeof(error));
+        CHECK(engine);
+        struct PuImeSnapshot state;
+        const char *keys = "nihao";
+        for (size_t i = 0; keys[i]; i++) CHECK(pu_ime_key(engine, (unsigned char)keys[i], 0, false, &state) == 1);
+        size_t index = 0;
+        while (index < state.count && strcmp(state.candidates[index], "\xe4\xbd\xa0\xe5\xa5\xbd")) index++;
+        CHECK(index < state.count && pu_ime_choose(engine, state.revision, index, &state));
+        CHECK(!strcmp(state.commit, "\xe4\xbd\xa0\xe5\xa5\xbd"));
+        pu_ime_close(engine);
+        puts("PASS: installed Rime schema commits Chinese");
+        return 0;
+    }
     struct PuImeEngine *engine = pu_ime_open(argv[1], argv[1], "polly_test", error, sizeof(error));
     CHECK(!engine && strstr(error, "0700"));
     engine = pu_ime_open(argv[1], argv[2], "../invalid", error, sizeof(error));

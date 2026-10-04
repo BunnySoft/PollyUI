@@ -1,0 +1,67 @@
+diff --git a/src/video/wayland/SDL_waylandwindow.h b/src/video/wayland/SDL_waylandwindow.h
+--- a/src/video/wayland/SDL_waylandwindow.h
++++ b/src/video/wayland/SDL_waylandwindow.h
+@@ -41,6 +41,7 @@ struct SDL_WindowData
+     struct wl_event_queue *gles_swap_frame_event_queue;
+     struct wl_surface *gles_swap_frame_surface_wrapper;
+     struct wl_callback *surface_frame_callback;
++    struct wl_callback *show_hide_sync_callback;
+ 
+     union
+     {
+diff --git a/src/video/wayland/SDL_waylandwindow.c b/src/video/wayland/SDL_waylandwindow.c
+--- a/src/video/wayland/SDL_waylandwindow.c
++++ b/src/video/wayland/SDL_waylandwindow.c
+@@ -1856,13 +1856,11 @@
+ static void show_hide_sync_handler(void *data, struct wl_callback *callback, uint32_t callback_data)
+ {
+-    // Get the window from the ID as it may have been destroyed
+-    SDL_WindowID windowID = (SDL_WindowID)((uintptr_t)data);
+-    SDL_Window *window = SDL_GetWindowFromID(windowID);
+-
+-    if (window && window->internal) {
+-        SDL_WindowData *wind = window->internal;
++    // Window destruction cancels this callback before freeing the window data.
++    SDL_WindowData *wind = data;
++    if (wind->show_hide_sync_callback == callback) {
++        wind->show_hide_sync_callback = NULL;
+         wind->show_hide_sync_required = false;
+     }
+ 
+     wl_callback_destroy(callback);
+ }
+@@ -2160,6 +2158,9 @@ void Wayland_ShowWindow(SDL_VideoDevice *_this, SDL_Window *window)
+ 
++    if (data->show_hide_sync_callback) {
++        wl_callback_destroy(data->show_hide_sync_callback);
++    }
+     data->show_hide_sync_required = true;
+-    struct wl_callback *cb = wl_display_sync(_this->internal->display);
+-    wl_callback_add_listener(cb, &show_hide_sync_listener, (void *)((uintptr_t)window->id));
++    data->show_hide_sync_callback = wl_display_sync(_this->internal->display);
++    wl_callback_add_listener(data->show_hide_sync_callback, &show_hide_sync_listener, data);
+ 
+     data->showing_window = true;
+@@ -2278,6 +2279,9 @@ void Wayland_HideWindow(SDL_VideoDevice *_this, SDL_Window *window)
+     SDL_zero(wind->shell_surface);
++    if (wind->show_hide_sync_callback) {
++        wl_callback_destroy(wind->show_hide_sync_callback);
++    }
+     wind->show_hide_sync_required = true;
+-    struct wl_callback *cb = wl_display_sync(_this->internal->display);
+-    wl_callback_add_listener(cb, &show_hide_sync_listener, (void *)((uintptr_t)window->id));
++    wind->show_hide_sync_callback = wl_display_sync(_this->internal->display);
++    wl_callback_add_listener(wind->show_hide_sync_callback, &show_hide_sync_listener, wind);
+ }
+ 
+@@ -3302,6 +3306,10 @@ void Wayland_DestroyWindow(SDL_VideoDevice *_this, SDL_Window *window)
+         if (wind->show_hide_sync_required) {
+             WAYLAND_wl_display_roundtrip(data->display);
+         }
++        if (wind->show_hide_sync_callback) {
++            wl_callback_destroy(wind->show_hide_sync_callback);
++            wind->show_hide_sync_callback = NULL;
++        }
+ 
+         /* The compositor should have relinquished keyboard, pointer, touch, and tablet tool focus when the toplevel
+          * window was destroyed upon being hidden, but there is no guarantee of this, so ensure that all references

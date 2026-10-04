@@ -3,6 +3,7 @@
 #include "decoration-themes.h"
 #include "workspace.h"
 #include "data-device.h"
+#include "input-method.h"
 #include "wire.h"
 
 #include <errno.h>
@@ -1180,6 +1181,100 @@ static bool output_suite(struct TestClient *client)
     return true;
 }
 
+static bool input_method_suite(const char *path)
+{
+    struct TestClient ime = { .control = -1 };
+    int sockets[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0);
+    CHECK(fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == 0);
+    char fd[32];
+    snprintf(fd, sizeof(fd), "%d", sockets[1]);
+    char *args[] = { (char *)path, "--trusted", fd, NULL };
+    CHECK(pu_input_method_spawn(&desktop, args));
+    close(sockets[1]); ime.control = sockets[0];
+    CHECK(command(&ime, TEST_IME_CREATE, 0, 0, 0));
+    CHECK(ime.reply.ime_global && ime.reply.virtual_global && !ime.reply.layer_capability &&
+        !ime.reply.foreign_capability);
+    CHECK(command(&ime, TEST_IME_FORCE_BIND, 0, ime.reply.ime_global, 0));
+    CHECK(command(&ime, TEST_IME_FORCE_BIND, 1, ime.reply.virtual_global, 0));
+    struct TestClient *a = &clients[0], *b = &clients[1];
+    struct PuDesktopView *first = find_view(1), *second = find_view(2);
+    CHECK(first && second && !a->reply.ime_global && !b->reply.virtual_global);
+    wlr_scene_node_set_position(&first->tree->node, 30, 60);
+    wlr_scene_node_set_position(&second->tree->node, 700, 60);
+    motion(50, 80); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(command(a, TEST_TEXT_ENABLE, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_active == 1);
+    CHECK(a->reply.text_enter == 1);
+    int keys = a->reply.keys;
+    key(KEY_N, true);
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_keys == 1);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys);
+    CHECK(command(&ime, TEST_IME_COMMIT, 0, ime.reply.ime_serial, 0));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && !strcmp(a->reply.text_preedit, "ni"));
+    key(KEY_N, false);
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_keys == 2);
+    CHECK(command(&ime, TEST_IME_COMMIT, 1, ime.reply.ime_serial, 0));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && !strcmp(a->reply.text_commit, "\xe4\xbd\xa0"));
+    CHECK(command(&ime, TEST_IME_FORWARD, 0, ime.reply.ime_serial, KEY_A));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys + 2);
+    CHECK(command(&ime, TEST_IME_FORWARD, 1, ime.reply.ime_serial, KEY_B));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys + 3);
+    CHECK(command(a, TEST_TEXT_DISABLE, 0, 0, 0));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys + 4);
+    CHECK(command(a, TEST_TEXT_ENABLE, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0));
+    CHECK(command(&ime, TEST_IME_FORWARD, 2, ime.reply.ime_serial, KEY_B));
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys + 4);
+    CHECK(command(&ime, TEST_IME_POPUP, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0));
+    CHECK(ime.reply.ime_rect_x == 0 && ime.reply.ime_rect_y == -16);
+    struct wlr_box box;
+    struct PuDesktopOwner *owner;
+    CHECK(pu_desktop_surface_box(&desktop, first->toplevel->base->surface, &box, &owner));
+    motion(box.x + 25, box.y + 51); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(desktop.focused == first && desktop.seat->keyboard_state.focused_surface == first->toplevel->base->surface);
+    CHECK(desktop.seat->pointer_state.focused_surface != first->toplevel->base->surface);
+    key(KEY_N, true);
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0));
+    uint32_t stale = ime.reply.ime_serial;
+    motion(720, 80); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    key(KEY_N, false);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.text_leave == 1 && !a->reply.text_preedit[0]);
+    CHECK(command(b, TEST_TEXT_ENABLE, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_active == 1);
+    uint32_t active_serial = ime.reply.ime_serial;
+    CHECK(command(a, TEST_TEXT_ENABLE, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_serial == active_serial);
+    int commits = b->reply.text_done, second_keys = b->reply.keys;
+    CHECK(command(&ime, TEST_IME_COMMIT, 1, stale, 0));
+    CHECK(command(&ime, TEST_IME_FORWARD, 0, stale, KEY_B));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && b->reply.text_done == commits && b->reply.keys == second_keys);
+    CHECK(command(b, TEST_TEXT_ENABLE, 8, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_active == 0);
+    key(KEY_A, true); key(KEY_A, false);
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && b->reply.keys == second_keys + 2);
+    CHECK(command(&ime, TEST_IME_FORWARD, 0, ime.reply.ime_serial, KEY_B));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && b->reply.keys == second_keys + 2);
+    CHECK(command(b, TEST_TEXT_ENABLE, 0, 0, 128));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && !ime.reply.ime_active);
+    CHECK(command(b, TEST_TEXT_ENABLE, 0, 0, 0));
+    CHECK(command(&ime, TEST_QUERY, 0, 0, 0) && ime.reply.ime_active == 1);
+    CHECK(command(&ime, TEST_IME_COMMIT, 0, ime.reply.ime_serial, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && !strcmp(b->reply.text_preedit, "ni"));
+    CHECK(command(&ime, TEST_QUIT, 0, 0, 0));
+    for (int i = 0; i < 40; i++) CHECK(pump());
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && !b->reply.text_preedit[0]);
+    second_keys = b->reply.keys;
+    key(KEY_A, true); key(KEY_A, false);
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && b->reply.keys == second_keys + 2);
+    CHECK(command(a, TEST_TEXT_DISABLE, 0, 0, 0));
+    CHECK(command(b, TEST_TEXT_DISABLE, 0, 0, 0));
+    pu_input_method_stop(&desktop);
+    close(ime.control);
+    return true;
+}
+
 static bool drag_suite(void)
 {
     struct TestClient *a = &clients[0], *b = &clients[1];
@@ -1386,6 +1481,7 @@ static bool suite(const char *client_path)
 
     CHECK(drag_suite());
     first = find_view(1);
+    CHECK(input_method_suite(client_path));
     CHECK(layer_suite(client_path));
     CHECK(state_suite(b, second));
     second = find_view(2);

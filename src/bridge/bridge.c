@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* One class id per runtime; the standard QuickJS file-static idiom. */
 static JSClassID pu_node_class_id;
@@ -20,9 +21,16 @@ struct PuBridge {
     PuBridge  *root, *next;
     JSValue    document;
     bool       native_owned;
+    PuNode *input_owner, *composition;
+    PuTextInputState input;
+    bool input_configured;
+    PuTextInputFn input_callback;
+    void *input_user;
 };
 
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path);
+static int clear_input(PuBridge *b);
+static void end_composition(PuBridge *b, const char *text);
 
 static PuBridge *document_for_node(JSContext *ctx, PuNode *node)
 {
@@ -47,6 +55,7 @@ static void reset_detached_input(JSContext *ctx)
             PuNode *node = *slot;
             bool focus = slot == &b->focused;
             *slot = NULL;
+            if (focus) clear_input(b);
             node_set_state(node, focus ? PU_STATE_FOCUS : PU_STATE_HOVER, 0, !focus);
             pu_node_unref(node);
             JS_FreeValue(ctx, keep);
@@ -65,6 +74,8 @@ static bool document_root(JSContext *ctx, PuNode *node)
 
 static void free_document(PuBridge *b)
 {
+    pu_node_unref(b->input_owner);
+    pu_node_unref(b->composition);
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); }
     pu_node_unref(b->body);
@@ -242,6 +253,12 @@ static JSValue js_node_get_firstChild(JSContext *ctx, JSValueConst this_val)
 { PuNode *s = self_node(this_val); return s ? pu_node_wrapper(ctx, s->first_child) : JS_NULL; }
 static JSValue js_node_get_lastChild(JSContext *ctx, JSValueConst this_val)
 { PuNode *s = self_node(this_val); return s ? pu_node_wrapper(ctx, s->last_child) : JS_NULL; }
+static JSValue js_node_get_ownerDocument(JSContext *ctx, JSValueConst this_val)
+{
+    PuBridge *b = document_for_node(ctx, self_node(this_val));
+    return b ? JS_DupValue(ctx, b->document) : JS_NULL;
+}
+
 static JSValue js_node_get_parentNode(JSContext *ctx, JSValueConst this_val)
 { PuNode *s = self_node(this_val); return s ? pu_node_wrapper(ctx, s->parent) : JS_NULL; }
 static JSValue js_node_get_nextSibling(JSContext *ctx, JSValueConst this_val)
@@ -463,8 +480,12 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
     const PuKeyEvent *key = data ? data->key : NULL;
     if (key) {
-        if (key->type == PU_KEY_TEXT) {
+        if (key->type == PU_KEY_TEXT || key->type == PU_KEY_PREEDIT) {
             JS_SetPropertyStr(ctx, ev, "data", JS_NewString(ctx, key->text ? key->text : ""));
+            if (key->type == PU_KEY_PREEDIT) {
+                JS_SetPropertyStr(ctx, ev, "selectionStart", JS_NewInt32(ctx, key->start));
+                JS_SetPropertyStr(ctx, ev, "selectionLength", JS_NewInt32(ctx, key->length));
+            }
         } else {
             JS_SetPropertyStr(ctx, ev, "key", JS_NewString(ctx, key->key ? key->key : "Unidentified"));
             JS_SetPropertyStr(ctx, ev, "code", JS_NewString(ctx, key->code ? key->code : "Unidentified"));
@@ -560,11 +581,43 @@ int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *even
     return dispatch_impl(b, target, types[event->type], &(PuEventData){ .drop = event }, 1);
 }
 
+static void end_composition(PuBridge *b, const char *text)
+{
+    PuNode *target = b->composition;
+    b->composition = NULL;
+    if (!target) return;
+    PuKeyEvent event = { .type = PU_KEY_PREEDIT, .text = text, .start = -1, .length = -1 };
+    dispatch_impl(b, target, "compositionend", &(PuEventData){ .key = &event }, 1);
+    pu_node_unref(target);
+}
+
 int pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event)
 {
+    if (!b) return 0;
+    if (event->type == PU_KEY_PREEDIT) {
+        if (!event->text || !*event->text) { end_composition(b, ""); return 0; }
+        if (b->input.enabled && (b->input.purpose == 1 || b->input.purpose == 2)) return 0;
+        if (!b->focused) return 0;
+        PuNode *target = b->focused;
+        pu_node_ref(target);
+        if (!b->composition) {
+            b->composition = target; pu_node_ref(target);
+            PuKeyEvent start = { .type = PU_KEY_PREEDIT, .text = "", .start = 0 };
+            dispatch_impl(b, target, "compositionstart", &(PuEventData){ .key = &start }, 1);
+        }
+        int prevented = b->composition == target ?
+            dispatch_impl(b, target, "compositionupdate", &(PuEventData){ .key = event }, 1) : 0;
+        pu_node_unref(target);
+        return prevented;
+    }
+    PuNode *target = event->type == PU_KEY_TEXT && b->composition ? b->composition : b->focused;
+    pu_node_ref(target);
+    if (event->type == PU_KEY_TEXT && b->composition) end_composition(b, event->text ? event->text : "");
     const char *type = event->type == PU_KEY_TEXT ? "textinput" :
                        event->type == PU_KEY_DOWN ? "keydown" : "keyup";
-    return b && b->focused ? dispatch_impl(b, b->focused, type, &(PuEventData){ .key = event }, 1) : 0;
+    int result = target && b->focused == target ? dispatch_impl(b, target, type, &(PuEventData){ .key = event }, 1) : 0;
+    pu_node_unref(target);
+    return result;
 }
 
 /* Pointer events: dispatch `type` (mousedown/mouseup/mousemove/click) at the
@@ -662,6 +715,7 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
         PuNode *old = b->focused;
         node_set_state(old, PU_STATE_FOCUS, 0, 0);
         b->focused = NULL;
+        clear_input(b);
         dispatch_impl(b, old, "blur", NULL, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
@@ -834,21 +888,22 @@ static JSValue js_node_get_offsetTop(JSContext *ctx, JSValueConst t)    { PuNode
 static JSValue js_node_get_offsetWidth(JSContext *ctx, JSValueConst t)  { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_w : 0); }
 static JSValue js_node_get_offsetHeight(JSContext *ctx, JSValueConst t) { PuNode *n = self_node(t); return JS_NewFloat64(ctx, n ? n->layout_h : 0); }
 
+static void viewport_position(PuNode *n, float *x, float *y, bool content)
+{
+    *x = n ? n->layout_x : 0; *y = n ? n->layout_y : 0;
+    for (PuNode *p = content ? n : n ? n->parent : NULL; p; p = p->parent) {
+        const char *sl = pu_style_get(&p->style, "scrollLeft");
+        const char *st = pu_style_get(&p->style, "scrollTop");
+        if (sl) *x -= (float)atof(sl);
+        if (st) *y -= (float)atof(st);
+    }
+}
+
 static JSValue js_node_getBoundingClientRect(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     PuNode *n = self_node(this_val);
-    float x = n ? n->layout_x : 0, y = n ? n->layout_y : 0, w = n ? n->layout_w : 0, h = n ? n->layout_h : 0;
-    /* Convert layout coords to VIEWPORT coords by subtracting ancestor scroll
-     * offsets — the renderer paints scrolled children translated by -scroll, so
-     * an element's on-screen position is its layout position minus the scroll of
-     * every scroll-container above it. Popups positioned from this rect then land
-     * at the trigger's actual on-screen spot even when the page is scrolled. */
-    for (PuNode *p = n ? n->parent : NULL; p; p = p->parent) {
-        const char *sl = pu_style_get(&p->style, "scrollLeft");
-        const char *st = pu_style_get(&p->style, "scrollTop");
-        if (sl) x -= (float)atof(sl);
-        if (st) y -= (float)atof(st);
-    }
+    float x, y, w = n ? n->layout_w : 0, h = n ? n->layout_h : 0;
+    viewport_position(n, &x, &y, false);
     JSValue r = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, r, "x", JS_NewFloat64(ctx, x));
     JS_SetPropertyStr(ctx, r, "y", JS_NewFloat64(ctx, y));
@@ -859,6 +914,114 @@ static JSValue js_node_getBoundingClientRect(JSContext *ctx, JSValueConst this_v
     JS_SetPropertyStr(ctx, r, "right", JS_NewFloat64(ctx, x + w));
     JS_SetPropertyStr(ctx, r, "bottom", JS_NewFloat64(ctx, y + h));
     return r;
+}
+
+static int apply_input(PuBridge *b, int reset)
+{
+    if (!b->input_callback || !b->input_configured) return 1;
+    PuTextInputState state = b->input;
+    if (!b->input_owner || b->focused != b->input_owner ||
+        b->input_owner->layout_w <= 0 || b->input_owner->layout_h <= 0) state.enabled = 0;
+    if (!state.enabled && b->composition) {
+        end_composition(b, "");
+        return apply_input(b, reset);
+    }
+    if (state.enabled) {
+        float x, y;
+        viewport_position(b->input_owner, &x, &y, true);
+        state.x += x; state.y += y;
+    }
+    return b->input_callback(&state, reset, b->input_user);
+}
+int pu_bridge_sync_text_input(PuBridge *b) { return apply_input(b, 0); }
+int pu_bridge_set_text_input_callback(PuBridge *b, PuTextInputFn callback, void *user)
+{ b->input_callback = callback; b->input_user = user; return apply_input(b, 1); }
+static int clear_input(PuBridge *b)
+{
+    PuNode *owner = b->input_owner;
+    b->input_owner = NULL; b->input.enabled = 0;
+    int result = apply_input(b, 1);
+    end_composition(b, "");
+    pu_node_unref(owner);
+    return result;
+}
+static int input_number(JSContext *ctx, JSValueConst options, const char *name, double minimum, float *result)
+{
+    JSValue value = JS_GetPropertyStr(ctx, options, name);
+    if (JS_IsException(value)) return 0;
+    if (JS_IsUndefined(value)) { JS_FreeValue(ctx, value); return 1; }
+    double number;
+    bool ok = JS_IsNumber(value) && JS_ToFloat64(ctx, &number, value) == 0 &&
+        isfinite(number) && number >= minimum && number <= 1000000;
+    JS_FreeValue(ctx, value);
+    if (!ok) { JS_ThrowTypeError(ctx, "Invalid input-method %s", name); return 0; }
+    *result = (float)number;
+    return 1;
+}
+static JSValue js_node_setInputMethod(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    PuNode *node = self_node(self);
+    PuBridge *b = document_for_node(ctx, node);
+    if (!b) return JS_ThrowTypeError(ctx, "Input-method target is not in a document");
+    if (argc && JS_IsNull(argv[0])) {
+        if (b->input_owner == node && !clear_input(b))
+            return JS_ThrowInternalError(ctx, "Cannot disable native input method");
+        return JS_UNDEFINED;
+    }
+    if (argc != 1 || !JS_IsObject(argv[0]) || JS_IsArray(argv[0]) || b->focused != node)
+        return JS_ThrowTypeError(ctx, "setInputMethod requires options on the focused element");
+    PuTextInputState state = { .enabled = 1, .width = 1, .height = 16 };
+    JSPropertyEnum *properties = NULL;
+    uint32_t count = 0;
+    if (JS_GetOwnPropertyNames(ctx, &properties, &count, argv[0], JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK) < 0)
+        return JS_EXCEPTION;
+    bool valid = true;
+    for (uint32_t i = 0; valid && i < count; i++) {
+        const char *name = JS_AtomToCString(ctx, properties[i].atom);
+        valid = name && (!strcmp(name, "purpose") || !strcmp(name, "x") || !strcmp(name, "y") ||
+            !strcmp(name, "width") || !strcmp(name, "height"));
+        JS_FreeCString(ctx, name);
+    }
+    JS_FreePropertyEnum(ctx, properties, count);
+    if (JS_HasException(ctx)) return JS_EXCEPTION;
+    if (!valid) return JS_ThrowTypeError(ctx, "Unknown input-method option");
+    if (!input_number(ctx, argv[0], "x", -1000000, &state.x) ||
+        !input_number(ctx, argv[0], "y", -1000000, &state.y) ||
+        !input_number(ctx, argv[0], "width", 1, &state.width) ||
+        !input_number(ctx, argv[0], "height", 1, &state.height)) return JS_EXCEPTION;
+    JSValue purpose = JS_GetPropertyStr(ctx, argv[0], "purpose");
+    if (JS_IsException(purpose)) return purpose;
+    if (!JS_IsUndefined(purpose)) {
+        size_t length = 0;
+        const char *text = JS_IsString(purpose) ? JS_ToCStringLen(ctx, &length, purpose) : NULL;
+        const char *names[] = { "text", "password", "pin", "email", "number", "name" };
+        state.purpose = -1;
+        for (int i = 0; text && i < 6; i++)
+            if (length == strlen(names[i]) && !memcmp(text, names[i], length)) state.purpose = i;
+        JS_FreeCString(ctx, text);
+    }
+    JS_FreeValue(ctx, purpose);
+    if (JS_HasException(ctx)) return JS_EXCEPTION;
+    if (state.purpose < 0) return JS_ThrowTypeError(ctx, "Unknown input-method purpose");
+    int reset = b->input_owner != node || b->input.purpose != state.purpose;
+    if (reset) end_composition(b, "");
+    if (b->focused != node || document_for_node(ctx, node) != b)
+        return JS_ThrowTypeError(ctx, "Input-method focus changed while reading options");
+    if (b->input_owner != node) { pu_node_ref(node); pu_node_unref(b->input_owner); b->input_owner = node; }
+    b->input = state; b->input_configured = true;
+    if (!apply_input(b, reset)) return JS_ThrowInternalError(ctx, "Cannot configure native input method");
+    return JS_UNDEFINED;
+}
+static JSValue js_node_cancelComposition(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argc; (void)argv;
+    PuNode *node = self_node(self);
+    PuBridge *b = document_for_node(ctx, node);
+    if (!b || b->input_owner != node) return JS_UNDEFINED;
+    end_composition(b, "");
+    if (b->input_owner != node || b->focused != node) return JS_UNDEFINED;
+    if (!apply_input(b, 1)) return JS_ThrowInternalError(ctx, "Cannot cancel native composition");
+    return JS_UNDEFINED;
 }
 
 static JSValue js_node_get_scrollTop(JSContext *ctx, JSValueConst t)        { return js_scroll_get(ctx, t, "scrollTop"); }
@@ -1125,6 +1288,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_getset(ctx, node_proto, "scrollTop",  js_node_get_scrollTop,  js_node_set_scrollTop);
     def_getset(ctx, node_proto, "scrollLeft", js_node_get_scrollLeft, js_node_set_scrollLeft);
     def_get(ctx, node_proto, "offsetLeft",   js_node_get_offsetLeft);
+    def_method(ctx, node_proto, "setInputMethod", js_node_setInputMethod, 1);
+    def_method(ctx, node_proto, "cancelComposition", js_node_cancelComposition, 0);
     def_get(ctx, node_proto, "offsetTop",    js_node_get_offsetTop);
     def_get(ctx, node_proto, "offsetWidth",  js_node_get_offsetWidth);
     def_get(ctx, node_proto, "offsetHeight", js_node_get_offsetHeight);
@@ -1133,6 +1298,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
     def_get(ctx, node_proto, "lastChild",       js_node_get_lastChild);
     def_get(ctx, node_proto, "parentNode",      js_node_get_parentNode);
+    def_get(ctx, node_proto, "ownerDocument",   js_node_get_ownerDocument);
     def_get(ctx, node_proto, "nextSibling",     js_node_get_nextSibling);
     def_get(ctx, node_proto, "previousSibling", js_node_get_prevSibling);
     def_get(ctx, node_proto, "childNodes",      js_node_get_childNodes);
@@ -1225,6 +1391,9 @@ JSValue pu_bridge_document(PuBridge *b) { return JS_DupValue(b->ctx, b->document
 void pu_bridge_release_document(PuBridge *b)
 {
     if (!b || !b->native_owned) return;
+    b->input_callback = NULL; b->input_user = NULL;
+    pu_node_unref(b->input_owner); b->input_owner = NULL;
+    pu_node_unref(b->composition); b->composition = NULL;
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); b->focused = NULL; }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); b->hovered = NULL; }
     pu_node_clear_tree_listeners(b->body);

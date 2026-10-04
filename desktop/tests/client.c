@@ -7,6 +7,9 @@
 #include "decoration-themes.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
+#include "text-input-v3-client.h"
+#include "input-method-v2-client.h"
+#include "virtual-keyboard-v1-client.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -88,6 +91,15 @@ struct Client {
     size_t offer_count;
     struct wl_surface *drag_icon, *drag_child;
     struct wl_subsurface *drag_subsurface;
+    struct zwp_text_input_manager_v3 *text_manager;
+    struct zwp_text_input_v3 *text_input;
+    struct zwp_input_method_manager_v2 *ime_manager;
+    struct zwp_input_method_v2 *ime;
+    struct zwp_input_method_keyboard_grab_v2 *ime_grab;
+    struct zwp_virtual_keyboard_manager_v1 *virtual_manager;
+    struct zwp_virtual_keyboard_v1 *virtual_keyboard;
+    struct zwp_input_popup_surface_v2 *ime_popup;
+    struct wl_surface *ime_surface;
     struct wl_list buffers;
     struct Window window, popup, child, extra;
     struct { uint32_t name; struct wl_output *output; } outputs[8];
@@ -95,6 +107,63 @@ struct Client {
 };
 
 static void track_foreign(struct Foreign *foreign);
+
+static void text_enter(void *data, struct zwp_text_input_v3 *input, struct wl_surface *surface)
+{ (void)input; (void)surface; ((struct Client *)data)->reply.text_enter++; }
+static void text_leave(void *data, struct zwp_text_input_v3 *input, struct wl_surface *surface)
+{ (void)input; (void)surface; ((struct Client *)data)->reply.text_leave++; }
+static void text_preedit(void *data, struct zwp_text_input_v3 *input, const char *text, int32_t begin, int32_t end)
+{ (void)input; (void)begin; (void)end; snprintf(((struct Client *)data)->reply.text_preedit, 128, "%s", text ? text : ""); }
+static void text_commit(void *data, struct zwp_text_input_v3 *input, const char *text)
+{ (void)input; snprintf(((struct Client *)data)->reply.text_commit, 128, "%s", text ? text : ""); }
+static void text_delete(void *data, struct zwp_text_input_v3 *input, uint32_t before, uint32_t after)
+{ (void)data; (void)input; (void)before; (void)after; }
+static void text_done(void *data, struct zwp_text_input_v3 *input, uint32_t serial)
+{ (void)input; (void)serial; ((struct Client *)data)->reply.text_done++; }
+static const struct zwp_text_input_v3_listener text_listener = {
+    .enter = text_enter, .leave = text_leave, .preedit_string = text_preedit,
+    .commit_string = text_commit, .delete_surrounding_text = text_delete, .done = text_done,
+};
+static void ime_activate(void *data, struct zwp_input_method_v2 *ime)
+{ (void)ime; ((struct Client *)data)->reply.ime_active = 1; }
+static void ime_deactivate(void *data, struct zwp_input_method_v2 *ime)
+{ (void)ime; ((struct Client *)data)->reply.ime_active = 0; }
+static void ime_surrounding(void *data, struct zwp_input_method_v2 *ime, const char *text, uint32_t cursor, uint32_t anchor)
+{ (void)data; (void)ime; (void)text; (void)cursor; (void)anchor; }
+static void ime_cause(void *data, struct zwp_input_method_v2 *ime, uint32_t cause)
+{ (void)data; (void)ime; (void)cause; }
+static void ime_content(void *data, struct zwp_input_method_v2 *ime, uint32_t hint, uint32_t purpose)
+{ (void)data; (void)ime; (void)hint; (void)purpose; }
+static void ime_done(void *data, struct zwp_input_method_v2 *ime)
+{ (void)ime; ((struct Client *)data)->reply.ime_serial++; }
+static void ime_unavailable(void *data, struct zwp_input_method_v2 *ime)
+{ (void)ime; ((struct Client *)data)->reply.ime_active = -1; }
+static const struct zwp_input_method_v2_listener ime_listener = {
+    .activate = ime_activate, .deactivate = ime_deactivate, .surrounding_text = ime_surrounding,
+    .text_change_cause = ime_cause, .content_type = ime_content, .done = ime_done, .unavailable = ime_unavailable,
+};
+static void ime_keymap(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, uint32_t format, int32_t fd, uint32_t size)
+{
+    (void)grab;
+    struct Client *client = data;
+    zwp_virtual_keyboard_v1_keymap(client->virtual_keyboard, format, fd, size);
+    close(fd);
+}
+static void ime_key(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, uint32_t serial,
+    uint32_t time, uint32_t key, uint32_t state)
+{ (void)grab; (void)serial; (void)time; (void)key; (void)state; ((struct Client *)data)->reply.ime_keys++; }
+static void ime_modifiers(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, uint32_t serial,
+    uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group)
+{ (void)data; (void)grab; (void)serial; (void)depressed; (void)latched; (void)locked; (void)group; }
+static void ime_repeat(void *data, struct zwp_input_method_keyboard_grab_v2 *grab, int32_t rate, int32_t delay)
+{ (void)data; (void)grab; (void)rate; (void)delay; }
+static const struct zwp_input_method_keyboard_grab_v2_listener ime_grab_listener = {
+    .keymap = ime_keymap, .key = ime_key, .modifiers = ime_modifiers, .repeat_info = ime_repeat,
+};
+static void ime_rectangle(void *data, struct zwp_input_popup_surface_v2 *popup, int32_t x, int32_t y,
+    int32_t width, int32_t height)
+{ (void)popup; (void)width; (void)height; struct Client *client = data; client->reply.ime_rect_x = x; client->reply.ime_rect_y = y; }
+static const struct zwp_input_popup_surface_v2_listener ime_popup_listener = { .text_input_rectangle = ime_rectangle };
 
 static void die(const char *message)
 {
@@ -583,6 +652,15 @@ static void global(void *data, struct wl_registry *registry,
     struct Client *client = data;
     if (strcmp(interface, wl_compositor_interface.name) == 0)
         client->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+    else if (!strcmp(interface, zwp_text_input_manager_v3_interface.name))
+        client->text_manager = wl_registry_bind(registry, name, &zwp_text_input_manager_v3_interface, 1);
+    else if (!strcmp(interface, zwp_input_method_manager_v2_interface.name)) {
+        client->ime_manager = wl_registry_bind(registry, name, &zwp_input_method_manager_v2_interface, 1);
+        client->reply.ime_global = name;
+    } else if (!strcmp(interface, zwp_virtual_keyboard_manager_v1_interface.name)) {
+        client->virtual_manager = wl_registry_bind(registry, name, &zwp_virtual_keyboard_manager_v1_interface, 1);
+        client->reply.virtual_global = name;
+    }
     else if (strcmp(interface, wl_subcompositor_interface.name) == 0)
         client->subcompositor = wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
     else if (strcmp(interface, wl_data_device_manager_interface.name) == 0)
@@ -799,6 +877,58 @@ int main(int argc, char **argv)
             request.command == TEST_WORKSPACE_MOVE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_TEXT_ENABLE:
+            if (!client.text_input) {
+                client.text_input = zwp_text_input_manager_v3_get_text_input(client.text_manager, client.seat);
+                zwp_text_input_v3_add_listener(client.text_input, &text_listener, &client);
+                if (wl_display_roundtrip(client.display) < 0) die("text input enter");
+            }
+            zwp_text_input_v3_enable(client.text_input);
+            zwp_text_input_v3_set_surrounding_text(client.text_input, "prefix", 3, 3);
+            zwp_text_input_v3_set_content_type(client.text_input, request.edges, (uint32_t)request.id);
+            zwp_text_input_v3_set_cursor_rectangle(client.text_input, 20, 30, 1, 16);
+            zwp_text_input_v3_commit(client.text_input);
+            break;
+        case TEST_TEXT_DISABLE:
+            zwp_text_input_v3_disable(client.text_input);
+            zwp_text_input_v3_commit(client.text_input);
+            break;
+        case TEST_IME_CREATE:
+            if (!client.ime_manager || !client.virtual_manager) die("input method is not authorized");
+            client.virtual_keyboard = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(client.virtual_manager, client.seat);
+            client.ime = zwp_input_method_manager_v2_get_input_method(client.ime_manager, client.seat);
+            zwp_input_method_v2_add_listener(client.ime, &ime_listener, &client);
+            client.ime_grab = zwp_input_method_v2_grab_keyboard(client.ime);
+            zwp_input_method_keyboard_grab_v2_add_listener(client.ime_grab, &ime_grab_listener, &client);
+            break;
+        case TEST_IME_COMMIT:
+            if (request.id) zwp_input_method_v2_commit_string(client.ime, "\xe4\xbd\xa0");
+            else zwp_input_method_v2_set_preedit_string(client.ime, "ni", 2, 2);
+            zwp_input_method_v2_commit(client.ime, request.serial);
+            break;
+        case TEST_IME_FORWARD:
+            zwp_input_method_v2_commit(client.ime, request.serial);
+            if (request.id != 2) zwp_virtual_keyboard_v1_key(client.virtual_keyboard, 60000, request.edges, 1);
+            if (request.id != 1) zwp_virtual_keyboard_v1_key(client.virtual_keyboard, 60001, request.edges, 0);
+            break;
+        case TEST_IME_POPUP:
+            client.ime_surface = wl_compositor_create_surface(client.compositor);
+            client.ime_popup = zwp_input_method_v2_get_input_popup_surface(client.ime, client.ime_surface);
+            zwp_input_popup_surface_v2_add_listener(client.ime_popup, &ime_popup_listener, &client);
+            wl_surface_attach(client.ime_surface, make_buffer(&client, 96, 48), 0, 0);
+            wl_surface_commit(client.ime_surface);
+            break;
+        case TEST_IME_FORCE_BIND: {
+            struct wl_display *probe = wl_display_connect(getenv("WAYLAND_DISPLAY"));
+            if (!probe) die("public IME probe");
+            struct wl_registry *probe_registry = wl_display_get_registry(probe);
+            const struct wl_interface *interface = request.id ? &zwp_virtual_keyboard_manager_v1_interface :
+                &zwp_input_method_manager_v2_interface;
+            struct wl_proxy *forged = wl_registry_bind(probe_registry, request.serial, interface, 1);
+            if (wl_display_roundtrip(probe) >= 0 || wl_display_get_error(probe) != EPROTO) die("public IME binding accepted");
+            wl_proxy_destroy(forged); wl_registry_destroy(probe_registry); wl_display_disconnect(probe);
+            break;
+        }
         case TEST_DRAG:
             if (!client.data_device) {
                 client.data_device = wl_data_device_manager_get_data_device(client.data_manager, client.seat);
@@ -956,6 +1086,15 @@ int main(int argc, char **argv)
         if (send(control, &client.reply, sizeof(client.reply), MSG_NOSIGNAL) != sizeof(client.reply))
             die("control reply");
     }
+    if (client.ime_popup) zwp_input_popup_surface_v2_destroy(client.ime_popup);
+    if (client.ime_surface) wl_surface_destroy(client.ime_surface);
+    if (client.ime_grab) zwp_input_method_keyboard_grab_v2_release(client.ime_grab);
+    if (client.ime) zwp_input_method_v2_destroy(client.ime);
+    if (client.ime_manager) zwp_input_method_manager_v2_destroy(client.ime_manager);
+    if (client.virtual_keyboard) zwp_virtual_keyboard_v1_destroy(client.virtual_keyboard);
+    if (client.virtual_manager) zwp_virtual_keyboard_manager_v1_destroy(client.virtual_manager);
+    if (client.text_input) zwp_text_input_v3_destroy(client.text_input);
+    if (client.text_manager) zwp_text_input_manager_v3_destroy(client.text_manager);
     destroy_drag_icon(&client);
     if (client.data_source) wl_data_source_destroy(client.data_source);
     for (size_t i = 0; i < client.offer_count; i++) wl_data_offer_destroy(client.offers[i]);

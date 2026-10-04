@@ -1,18 +1,16 @@
 #include "server.h"
+#include "private-process.h"
+#include "input-method.h"
 
 #include <errno.h>
 #include <signal.h>
-#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <wlr/util/log.h>
-
-extern char **environ;
 
 static bool spawn_shell(struct PuDesktop *desktop, char *const argv[]);
 static void schedule_restart(struct PuDesktop *desktop);
@@ -22,6 +20,8 @@ bool pu_desktop_global_filter(const struct wl_client *client,
 {
     const struct PuDesktop *desktop = data;
     const char *name = wl_global_get_interface(global)->name;
+    if (!strcmp(name, "zwp_input_method_manager_v2") || !strcmp(name, "zwp_virtual_keyboard_manager_v1"))
+        return pu_input_method_allowed(desktop, client);
     if (strcmp(name, "zwlr_layer_shell_v1") == 0 ||
         strcmp(name, "zwlr_foreign_toplevel_manager_v1") == 0 ||
         strcmp(name, "polly_appearance_v1") == 0 ||
@@ -110,87 +110,10 @@ static bool spawn_shell(struct PuDesktop *desktop, char *const argv[])
             return false;
         }
     }
-    size_t count = 0;
-    while (environ[count]) count++;
-    char **environment = calloc(count + 3, sizeof(*environment));
-    size_t display_size = strlen(desktop->socket_name) + sizeof("WAYLAND_DISPLAY=");
-    char *display = malloc(display_size);
-    if (!environment || !display) {
-        free(environment);
-        free(display);
-        wlr_log(WLR_ERROR, "Cannot allocate shell environment");
-        return false;
-    }
-    size_t next = 0;
-    for (size_t i = 0; i < count; i++) {
-        if (strncmp(environ[i], "WAYLAND_SOCKET=", 15) &&
-            strncmp(environ[i], "WAYLAND_DISPLAY=", 16))
-            environment[next++] = environ[i];
-    }
-    snprintf(display, display_size, "WAYLAND_DISPLAY=%s", desktop->socket_name);
-    environment[next++] = display;
-    environment[next] = "WAYLAND_SOCKET=3";
-
-    int sockets[2];
-    if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sockets) < 0) {
-        wlr_log_errno(WLR_ERROR, "Cannot create shell connection");
-        free(environment);
-        free(display);
-        return false;
-    }
-    desktop->shell_client = wl_client_create(desktop->display, sockets[0]);
-    if (!desktop->shell_client) {
-        wlr_log(WLR_ERROR, "Cannot create trusted Wayland client");
-        close(sockets[0]);
-        close(sockets[1]);
-        free(environment);
-        free(display);
-        return false;
-    }
     desktop->shell_client_destroy.notify = shell_disconnected;
-    wl_client_add_destroy_listener(desktop->shell_client, &desktop->shell_client_destroy);
-
-    posix_spawn_file_actions_t actions;
-    posix_spawnattr_t attributes;
-    bool actions_ready = false, attributes_ready = false;
-    int error = posix_spawn_file_actions_init(&actions);
-    if (error) goto done;
-    actions_ready = true;
-    error = posix_spawnattr_init(&attributes);
-    if (error) goto done;
-    attributes_ready = true;
-    sigset_t mask, defaults;
-    sigemptyset(&mask);
-    sigemptyset(&defaults);
-    sigaddset(&defaults, SIGINT);
-    sigaddset(&defaults, SIGTERM);
-    sigaddset(&defaults, SIGCHLD);
-    sigaddset(&defaults, SIGPIPE);
-    if ((error = posix_spawnattr_setsigmask(&attributes, &mask)) ||
-        (error = posix_spawnattr_setsigdefault(&attributes, &defaults)) ||
-        (error = posix_spawnattr_setflags(&attributes,
-            POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF)) ||
-        (error = posix_spawn_file_actions_addclose(&actions, sockets[0])) ||
-        (error = posix_spawn_file_actions_adddup2(&actions, sockets[1], 3)) ||
-        (sockets[1] != 3 &&
-            (error = posix_spawn_file_actions_addclose(&actions, sockets[1]))))
-        goto done;
-    error = posix_spawnp(&desktop->shell_pid, argv[0], &actions, &attributes,
-                        argv, environment);
-done:
-    if (attributes_ready) posix_spawnattr_destroy(&attributes);
-    if (actions_ready) posix_spawn_file_actions_destroy(&actions);
-    close(sockets[1]);
-    free(environment);
-    free(display);
-    if (error) {
-        desktop->shell_pid = 0;
-        revoke_shell(desktop);
-        wlr_log(WLR_ERROR, "Cannot start shell %s: %s", argv[0], strerror(error));
-        return false;
-    }
+    if (!pu_spawn_private(desktop, argv, "shell", &desktop->shell_client,
+        &desktop->shell_pid, &desktop->shell_client_destroy)) return false;
     desktop->shell_exited = false;
-    wlr_log(WLR_INFO, "Started trusted shell (pid %ld)", (long)desktop->shell_pid);
     return true;
 }
 

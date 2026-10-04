@@ -7,7 +7,7 @@ export function displayField(owner, inputs, head, field, theme, width = 78) {
     let input = inputs.get(id);
     if (!input) {
       input = createTextInput({ document: owner, value: field === 'refresh' ? head[field] / 1000 : head[field],
-        width, fontSize: 12, padding: 7, color: theme.colors.text, background: theme.colors.surface });
+        width, fontSize: 12, padding: 7, purpose: 'number', color: theme.colors.text, background: theme.colors.surface });
       input.root.id = id;
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', head.name + ' ' + field);

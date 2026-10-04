@@ -381,7 +381,7 @@ CMake + Ninja + clang-cl.
 - **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
   the last big architectural piece; everything above Host is already portable.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-- **Text:** custom font families, **IME** (CJK/emoji), complex shaping.
+- **Text:** complex shaping, grapheme-aware editing and additional input engines.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.
 - **Perf** (persist + dirty-track the Yoga tree) and CSS units
   (`em`/`rem`/`vh`/`vw`) + pseudo-states.
@@ -404,6 +404,30 @@ not automatically authorized file access. Outgoing PollyUI drag sources,
 clipboard persistence and full browser DataTransfer are separate work.
 
 ### Native multi-window runtime
+
+Linux IME clients are separate processes with connection-bound input-method-v2
+and virtual-keyboard capabilities, distinct from Shell privileges. The
+compositor relays only eligible focused text-input-v3 state; sensitive fields
+are excluded. Candidate surfaces use input-popup roles, preserve the editor's
+keyboard focus and inherit compositor placement rather than managing windows.
+Rime callbacks update copied C snapshots; JavaScript UI callbacks run only from
+the normal runtime pump, never reentrantly inside SDL/Wayland dispatch.
+
+Each native document owns its editor configuration and composition target.
+Preedit is not committed application data. Ending composition and delivering
+the text commit are ordered operations, and a focus change during the end
+callback cannot redirect the commit to a different field. SDL input rectangles
+are refreshed from computed layout; explicit editor focus/purpose changes
+restart the native input session. SDL's current API does not expose surrounding
+text; full complex-text rendering remains separate from this protocol path.
+
+Module evaluation promises are retained until they settle. A rejected module
+or unfinished top-level await is a failed application/test, not a successful
+return merely because QuickJS returned a Promise instead of `JS_EXCEPTION`.
+
+The development SDL build tracks ownership of Wayland show/hide sync callbacks
+through window teardown, including failed display connections. PollyUI does
+not reach into opaque SDL structures or suppress that dependency's leaks.
 
 One application now shares its QuickJS context, dispatcher and background
 services across multiple native windows. Each window's `PuApp` binds a distinct

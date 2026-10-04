@@ -49,6 +49,8 @@ struct PuScript {
     int         rafcap;
     int         raf_id;
     PuDispatch *dispatch;   /* optional: async deliveries from worker threads */
+    JSValue entry;
+    int failed;
 };
 
 /* ---- error reporting -------------------------------------------------------*/
@@ -326,6 +328,7 @@ PuScript *pu_script_create(void)
 {
     PuScript *s = (PuScript *)calloc(1, sizeof(PuScript));
     if (!s) return NULL;
+    s->entry = JS_UNDEFINED;
 
     s->rt = JS_NewRuntime();
     if (!s->rt) { free(s); return NULL; }
@@ -355,6 +358,33 @@ static char *pu_read_file(const char *path, size_t *out_len)
     return buf;
 }
 
+int pu_script_failed(PuScript *s)
+{
+    if (!JS_IsUndefined(s->entry)) {
+        JSPromiseStateEnum state = JS_PromiseState(s->ctx, s->entry);
+        if (state == JS_PROMISE_REJECTED) {
+            JS_Throw(s->ctx, JS_PromiseResult(s->ctx, s->entry));
+            pu_dump_error(s->ctx);
+            s->failed = 1;
+        }
+        if (state != JS_PROMISE_PENDING) {
+            JS_FreeValue(s->ctx, s->entry);
+            s->entry = JS_UNDEFINED;
+        }
+    }
+    return s->failed;
+}
+
+int pu_script_finish(PuScript *s)
+{
+    pu_script_failed(s);
+    if (!JS_IsUndefined(s->entry)) {
+        fprintf(stderr, "Uncaught: module evaluation did not complete before exit\n");
+        s->failed = 1;
+    }
+    return s->failed;
+}
+
 int pu_script_run_file(PuScript *s, const char *path)
 {
     size_t len = 0;
@@ -373,7 +403,13 @@ int pu_script_run_file(PuScript *s, const char *path)
     if (JS_IsException(val)) {
         pu_dump_error(s->ctx);
         JS_FreeValue(s->ctx, val);
+        s->failed = 1;
         return 1;
+    }
+    if (is_module && JS_PromiseState(s->ctx, val) != JS_PROMISE_NOT_A_PROMISE) {
+        JS_FreeValue(s->ctx, s->entry);
+        s->entry = val;
+        return pu_script_failed(s);
     }
     JS_FreeValue(s->ctx, val);
     return 0;
@@ -429,6 +465,7 @@ int pu_script_pump(PuScript *s)
 
         total += did;
     } while (did > 0);
+    pu_script_failed(s);
     return total;
 }
 
@@ -436,6 +473,7 @@ void pu_script_run_loop(PuScript *s)
 {
     for (;;) {
         pu_script_pump(s);
+        if (pu_script_failed(s)) break;
 
         int idx = pu_next_timer(s);
         int pending = s->dispatch ? pu_dispatch_pending(s->dispatch) : 0;
@@ -464,6 +502,7 @@ void pu_script_destroy(PuScript *s)
     free(s->timers);
     for (int i = 0; i < s->nraf; i++) JS_FreeValue(s->ctx, s->rafs[i].func);
     free(s->rafs);
+    JS_FreeValue(s->ctx, s->entry);
     if (s->ctx) JS_FreeContext(s->ctx);
     if (s->rt)  JS_FreeRuntime(s->rt);
     free(s);

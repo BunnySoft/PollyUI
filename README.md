@@ -197,7 +197,8 @@ the recipe does not promise bit-for-bit reproducibility of rolling distro packag
 The Linux profile includes PNG, JPEG and WebP support through system libraries.
 It omits PDF, SVG, GIF/Wuffs, ICU and HarfBuzz integrations not used by the current
 PollyUI draw path. Font fallback includes installed CJK/emoji faces, but is not
-complex-script shaping or an IME implementation.
+complex-script shaping. The optional native input-method service is separate
+from Skia's text drawing path.
 
 **Renderer selection:** `PU_RENDERER=auto` (default) attempts an SDL-owned
 EGL/GLES 3 context and falls back to raster with a diagnostic if creation fails.
@@ -208,7 +209,11 @@ pixels, which is distinct from Skia GLES drawing.
 The GLES implementation reports its renderer string. Automated WSL checks use
 Mesa **llvmpipe**, a software GL implementation, not proof of physical GPU
 acceleration. Physical GPU/DRM support still needs separate qualification.
-IME preedit/complex text and physical-device qualification remain work items.
+Complex shaping, grapheme navigation and physical-device qualification remain
+work items. Linux now has native preedit and a separately trusted Rime service.
+The development image also builds pinned SDL 3.4.10 with a Wayland show/hide
+callback lifetime fix for forced disconnection. See the desktop guide's
+**SDL disconnect hardening** section when using system SDL or an existing cache.
 Set `PU_TRACE_STARTUP=1` to log the first successfully presented SDL frame,
 or `PU_TRACE_FRAMES=1` for every frame. Linux-only `PU_CAPTURE_FRAME=<path.png>`
 writes the latest rendered frame (including GLES readback) for diagnostics;
@@ -623,7 +628,33 @@ Shift+Tab reverses it, hidden nodes are skipped, and `preventDefault()` cancels 
 Text editors should insert from `textinput`, not from `keydown`; keydown remains
 for navigation, deletion and shortcuts. The bundled inputs have been migrated.
 They preserve surrogate pairs when moving/deleting, but do not yet implement
-grapheme-cluster editing, IME preedit/candidate UI or full input-method protocols.
+grapheme-cluster editing or complex-script shaping.
+
+Linux SDL translates preedit into `compositionstart`, `compositionupdate` and
+`compositionend`; `data` carries text and update events expose `selectionStart`
+and `selectionLength` in UTF-16 units. A commit ends composition before the
+single `textinput` event; cancellation ends it with empty data. Preedit is
+rendered separately from the editor's committed value. Focus changes, removal
+and external value replacement cancel it without inserting into another field.
+
+Focused nodes may call `setInputMethod({purpose, x, y, width, height})`; the
+rectangle is local to the node and is converted to viewport coordinates after
+layout, including scroll offsets. Purposes are `text`, `password`, `pin`,
+`email`, `number` and `name`. `cancelComposition()` resets composition;
+`setInputMethod(null)` disables that node's input session. Native focus loss
+and stale queued preedit are handled separately from DOM focus.
+`createTextInput` and stable-ID `NInput` use this contract automatically.
+Their `password: true` or `purpose: 'pin'` mode masks text, disables selection
+copy/cut and primary publication, and prevents preedit display. `ownerDocument`
+identifies the containing native document.
+Numeric purposes temporarily use ASCII in PollyIME instead of composing pinyin;
+input-value validation remains the application's responsibility.
+
+SDL 3.4 does not expose a surrounding-text setter through this host API.
+PollyUI therefore sends caret/purpose information, not surrounding text or
+delete-surrounding edits. The compositor relay supports those standard
+text-input-v3 operations for other clients; the current Rime client does not
+consume surrounding text.
 
 Pointer events expose fractional `clientX/clientY`, `button`, `buttons` and
 modifiers. Only the primary button generates `click`; secondary release generates
@@ -637,6 +668,9 @@ commit. `host.key('a', 'keydown', {code:'KeyA', ctrlKey:true, repeat:true,
 text:false})` sends a physical event only. `host.text('text')` submits a whole
 string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
 `host.scroll(x,y,deltaY,deltaX,{...modifiers})` expose richer pointer/wheel input.
+`host.compose(text, selectionStart, selectionLength)` submits preedit in tests.
+Top-level `.mjs` exceptions and rejected or unfinished top-level `await`
+evaluations now fail with a nonzero exit status rather than ending silently.
 `tests/input-events.mjs`, `tests/pointer-events.mjs` and the Linux SDL adapter
 test cover these contracts; the latter queues synthetic SDL events and is not
 physical-device or locale-layout qualification.
@@ -741,12 +775,13 @@ PollyUI itself still runs QuickJS, not Node.
 our own wlroots-based Wayland compositor, without labwc or a GNOME/KDE desktop.
 It implements native client windows, focus, interactive move/resize,
 maximize/fullscreen/restore, output-aware placement and popup constraints.
-The subproject also includes a native PollyUI appearance preview with selectable
-XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes:
-`pollyui desktop/shell/preview.mjs`. Its sample shell/windows are simulated;
-theme selection does not yet change PollyWM or other applications.
-PollyUI shell integration and an Alpine system image
-are later stages, not implemented desktop features. See the desktop guide for
+The real Shell provides per-output surfaces, an application launcher, window
+controls, manual global workspaces, display settings and five original themes,
+shared with negotiated compositor titlebars. `desktop/shell/preview.mjs` remains
+a separate simulated appearance preview. An opt-in Rime input-method service
+renders its own candidate windows with PollyUI, without GNOME/KDE or GLib/GIO.
+A bootable Alpine image and the remaining system services are still later
+stages. See the desktop guide for
 the architecture, roadmap, standalone build and WSL/WSLg checks.
 
 ## License

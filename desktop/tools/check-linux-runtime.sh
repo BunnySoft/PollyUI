@@ -7,7 +7,8 @@ if [ -n "$sanitize" ] && [ "$sanitize" != --sanitize ]; then
     exit 2
 fi
 set -- cmake -S . -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-    -DPU_HOST=sdl -DSKIA_ROOT=/opt/pollyui-skia -DPU_BUILD_DESKTOP=ON -DPU_BUILD_IME_ENGINE=ON
+    -DPU_HOST=sdl -DSKIA_ROOT=/opt/pollyui-skia -DPU_BUILD_DESKTOP=ON -DPU_BUILD_IME_ENGINE=ON \
+    -DSDL3_DIR=/usr/local/lib/cmake/SDL3
 if [ "$sanitize" = --sanitize ]; then
     set -- "$@" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
         -DCMAKE_C_FLAGS=-fsanitize=address,undefined -DCMAKE_CXX_FLAGS=-fsanitize=address,undefined

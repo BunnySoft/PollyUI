@@ -86,6 +86,7 @@ struct PuDesktop {
     struct PuShortcuts *shortcuts;
     struct PuOutputControl *output_control;
     struct PuDataDevice *data_device;
+    struct PuInputMethod *input_method;
     struct PuWorkspace *active_workspace, *visible_workspace;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;
@@ -129,5 +130,8 @@ bool pu_desktop_supervise_shell(struct PuDesktop *desktop, char *const argv[], u
 void pu_desktop_stop_shell(struct PuDesktop *desktop);
 bool pu_desktop_global_filter(const struct wl_client *client,
                               const struct wl_global *global, void *data);
+struct wlr_surface;
+bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
+    struct wlr_box *box, struct PuDesktopOwner **owner);
 
 #endif

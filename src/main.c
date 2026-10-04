@@ -4,6 +4,9 @@
 #include "net/fetch.h"
 #include "bridge/bridge.h"
 #include "bridge/clipboard.h"
+#if defined(PU_INPUT_METHOD)
+#include "desktop/input-method-client.h"
+#endif
 #include "layout/layout.h"
 #include "render/render.h"
 #include "model/node.h"
@@ -119,6 +122,7 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
     if (pu_perf_on()) {
         double t0 = pu_now_ms();
         pu_layout_calculate(body, (float)width, (float)height);
+        pu_bridge_sync_text_input(app->bridge);
         double t1 = pu_now_ms();
         if (app->transparent) pu_render_tree_transparent(surface, body, scale);
         else pu_render_tree(surface, body, scale);
@@ -128,6 +132,7 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
         return;
     }
     pu_layout_calculate(body, (float)width, (float)height);
+    pu_bridge_sync_text_input(app->bridge);
     if (app->transparent) pu_render_tree_transparent(surface, body, scale);
     else pu_render_tree(surface, body, scale);
 }
@@ -237,8 +242,24 @@ static int app_async(void *user)
 #if defined(PU_DESKTOP_SERVICES)
     n += pu_applications_pump();
 #endif
+#if defined(PU_INPUT_METHOD)
+    int ime = pu_input_client_pump();
+    if (ime < 0) {
+        g_app_error = g_app_quitting = 1;
+        pu_window_keep_alive(0);
+        for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+    } else n += ime;
+#endif
     n += pu_script_flush_raf(script, pu_frame_ms());
-    return n + pu_script_pump(script);
+    n += pu_script_pump(script);
+    if (pu_script_failed(script)) {
+        g_app_error = g_app_quitting = 1;
+#if defined(PU_INPUT_METHOD)
+        pu_window_keep_alive(0);
+#endif
+        for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+    }
+    return n;
 }
 
 /* Dispatcher waker (called from worker threads): nudge the window to drain. */
@@ -286,6 +307,7 @@ static void app_retire(PuApp *app, int notify)
     while (*link && *link != app) link = &(*link)->next;
     if (*link) *link = app->next;
     app->closed = 1;
+    pu_bridge_set_text_input_callback(app->bridge, NULL, NULL);
     pu_window_destroy(app->window);
     app->window = NULL;
     if (notify) {
@@ -343,9 +365,14 @@ static PuApp *new_app(PuBridge *bridge)
     return app;
 }
 
+#if defined(PU_CLIPBOARD_SDL)
+static int app_text_input(const PuTextInputState *state, int reset, void *user)
+{ PuApp *app = user; return pu_window_set_text_input(app->window, state, reset); }
+#endif
+
 static int open_app(PuApp *app, const PuWindowConfig *config)
 {
-    app->is_layer = config->layer != NULL;
+    app->is_layer = config->layer != NULL || config->input_popup;
     app->transparent = config->layer && config->layer->transparent;
     app->window = pu_window_create(config);
     if (!app->window) return 0;
@@ -353,6 +380,7 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
     pu_window_set_pointer(app->window, app_pointer, app);
     pu_window_set_key(app->window, app_key, app);
 #if defined(PU_CLIPBOARD_SDL)
+    if (!pu_bridge_set_text_input_callback(app->bridge, app_text_input, app)) return 0;
     pu_window_set_drop(app->window, app_drop, app);
 #endif
     pu_window_set_wheel(app->window, app_wheel, app);
@@ -498,19 +526,37 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
     if (g_app_quitting) return JS_ThrowTypeError(ctx, "Application is quitting");
     JSValue options = argc ? JS_DupValue(ctx, argv[0]) : JS_NewObject(ctx);
     const char *const names[] = { "title", "width", "height", "layer", "anchors",
-        "exclusiveZone", "keyboard", "output", "margins", "transparent", NULL };
+        "exclusiveZone", "keyboard", "output", "margins", "transparent", "inputPopup", NULL };
     if (!option_names(ctx, options, names)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
     PuWindowConfig config = { .width = 640, .height = 480, .title = "PollyUI" };
     PuLayerConfig layer = {0};
+    JSValue popup = JS_GetPropertyStr(ctx, options, "inputPopup");
+    if (JS_IsException(popup) || (!JS_IsUndefined(popup) && !JS_IsBool(popup))) {
+        if (!JS_IsException(popup)) JS_ThrowTypeError(ctx, "inputPopup must be a boolean");
+        JS_FreeValue(ctx, popup); JS_FreeValue(ctx, options); return JS_EXCEPTION;
+    }
+    config.input_popup = JS_IsBool(popup) && JS_ToBool(ctx, popup);
+    JS_FreeValue(ctx, popup);
+#if !defined(PU_INPUT_METHOD)
+    if (config.input_popup) {
+        JS_FreeValue(ctx, options);
+        return JS_ThrowTypeError(ctx, "Input-method surfaces are unavailable in this build");
+    }
+#endif
     JSValue layer_name = JS_GetPropertyStr(ctx, options, "layer");
     int valid = !JS_IsException(layer_name);
     if (valid && !JS_IsUndefined(layer_name)) {
+        if (config.input_popup) {
+            JS_FreeValue(ctx, layer_name); JS_FreeValue(ctx, options);
+            return JS_ThrowTypeError(ctx, "inputPopup cannot also have a layer role");
+        }
         const char *const levels[] = { "background", "bottom", "top", "overlay", NULL };
         layer.layer = choice(ctx, layer_name, "layer", levels);
         valid = layer.layer >= 0 && layer_options(ctx, options, &layer);
         config.layer = &layer;
     } else if (valid) {
         for (int i = 4; names[i]; i++) {
+            if (!strcmp(names[i], "inputPopup")) continue;
             JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
             if (JS_IsException(value)) valid = 0;
             else if (!JS_IsUndefined(value)) {
@@ -584,6 +630,9 @@ static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 static JSValue jswin_quit(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; if (!window_app(c,t,1)) return JS_EXCEPTION;
   g_app_quitting = 1;
+#if defined(PU_INPUT_METHOD)
+  pu_window_keep_alive(0);
+#endif
   for (PuApp *app = g_apps; app; app = app->next) { app->closed = 1; pu_window_close(app->window); }
   return JS_UNDEFINED; }
 static JSValue jswin_closed(JSContext *c, JSValueConst t)
@@ -963,6 +1012,23 @@ static JSValue host_text(JSContext *ctx, JSValueConst this_val, int argc, JSValu
     return JS_UNDEFINED;
 }
 
+static JSValue host_compose(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!argc || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "host.compose requires preedit text");
+    int32_t start = 0, length = 0;
+    if ((argc > 1 && JS_ToInt32(ctx, &start, argv[1]) < 0) ||
+        (argc > 2 && JS_ToInt32(ctx, &length, argv[2]) < 0)) return JS_EXCEPTION;
+    const char *text = JS_ToCString(ctx, argv[0]);
+    if (!text) return JS_EXCEPTION;
+    PuKeyEvent event = { .type = PU_KEY_PREEDIT, .text = text, .start = start, .length = length };
+    PuApp app = { .script = g_test->script, .bridge = g_test->bridge };
+    app_key(&event, &app);
+    JS_FreeCString(ctx, text);
+    pu_script_run_loop(g_test->script); test_render();
+    return JS_UNDEFINED;
+}
+
 static JSValue host_pixel(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)this_val;
@@ -999,6 +1065,7 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_SetPropertyStr(ctx, host, "flush",  JS_NewCFunction(ctx, host_flush, "flush", 0));
     JS_SetPropertyStr(ctx, host, "key",    JS_NewCFunction(ctx, host_key, "key", 2));
     JS_SetPropertyStr(ctx, host, "text",   JS_NewCFunction(ctx, host_text, "text", 1));
+    JS_SetPropertyStr(ctx, host, "compose", JS_NewCFunction(ctx, host_compose, "compose", 3));
     JS_SetPropertyStr(ctx, host, "pixel",  JS_NewCFunction(ctx, host_pixel, "pixel", 2));
     JS_SetPropertyStr(ctx, host, "save",   JS_NewCFunction(ctx, host_save, "save", 1));
     JS_SetPropertyStr(ctx, global, "host", host);
@@ -1041,6 +1108,7 @@ static int run_test(const char *path)
     if (host.surface) rc = pu_script_run_file(s, path);
     else fprintf(stderr, "[render] Failed to create headless surface\n");
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
+    if (pu_script_finish(s)) rc = 1;
 
     g_test = NULL;
     pu_clipboard_shutdown();
@@ -1068,7 +1136,7 @@ static void install_application(JSContext *ctx, const PuAppPaths *paths, int arg
     JS_FreeValue(ctx, global);
 }
 
-static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode)
+static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode, int input_method_mode)
 {
     if (!pu_font_system_init()) return 1;
     PuAppPaths paths;
@@ -1114,7 +1182,17 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
 #else
     (void)desktop_mode;
 #endif
-    int rc = primary && desktop_ready && clipboard_ready ? pu_script_run_file(s, path) : 1;
+    int input_ready = 1;
+#if defined(PU_INPUT_METHOD)
+    if (host_ready && input_method_mode) {
+        input_ready = pu_input_client_install(pu_script_jsctx(s));
+        pu_window_keep_alive(1);
+    }
+#else
+    (void)input_method_mode;
+#endif
+    int rc = primary && desktop_ready && clipboard_ready && input_ready ? pu_script_run_file(s, path) : 1;
+    if (!input_ready) fprintf(stderr, "[ime] Cannot install input-method APIs\n");
     if (!clipboard_ready) fprintf(stderr, "[host] Cannot initialize clipboard APIs\n");
     if (!desktop_ready) fprintf(stderr, "[desktop] Cannot install desktop application APIs\n");
     if (!primary) fprintf(stderr, "[host] Failed to create application window: window system initialization\n");
@@ -1135,12 +1213,13 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
             fprintf(stderr, "[host] Failed to create application window\n");
             rc = 1;
         }
-        if (rc == 0 && g_apps) {
+        if (rc == 0 && (g_apps || (input_method_mode && !g_app_quitting))) {
             pu_dispatch_set_waker(disp, app_wake, NULL);
             rc = pu_window_run_all(app_async, s);
         }
     }
 
+    if (pu_script_finish(s)) rc = 1;
     pu_async_shutdown();    /* terminate workers before tearing down the context */
     pu_fetch_shutdown();
 #if defined(PU_DESKTOP_SERVICES)
@@ -1149,6 +1228,10 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     pu_dispatch_set_waker(disp, NULL, NULL);
     g_app_quitting = 1;
     while (g_apps) app_retire(g_apps, 0);
+#if defined(PU_INPUT_METHOD)
+    pu_input_client_shutdown();
+    pu_window_keep_alive(0);
+#endif
     pu_clipboard_shutdown();
     if (host_ready) pu_window_system_shutdown();
     if (g_app_error) rc = 1;
@@ -1185,11 +1268,18 @@ int main(int argc, char **argv)
     int rc;
     const char *app_id = NULL;
     int desktop_mode = 0;
+    int input_method_mode = 0;
     int index = 1;
     while (index < argc) {
         if (!strcmp(argv[index], "--app-id")) {
             if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
             app_id = argv[index + 1]; index += 2;
+        } else if (!strcmp(argv[index], "--input-method")) {
+#if defined(PU_INPUT_METHOD)
+            input_method_mode = 1; index++;
+#else
+            fprintf(stderr, "Input-method APIs are unavailable in this build\n"); return 2;
+#endif
         } else if (!strcmp(argv[index], "--desktop")) {
 #if defined(PU_DESKTOP_SERVICES)
             desktop_mode = 1; index++;
@@ -1199,21 +1289,24 @@ int main(int argc, char **argv)
         } else break;
     }
     if (index < argc && !strcmp(argv[index], "--help")) {
-        puts("Usage: pollyui [--desktop] [--app-id ID] app.js [arguments...]\n"
+        puts("Usage: pollyui [--desktop | --input-method] [--app-id ID] app.js [arguments...]\n"
              "       pollyui --test test.js\n"
              "--app-id selects a stable Linux XDG storage namespace.\n"
-             "--desktop explicitly enables Linux application discovery and direct process launching.");
+             "--desktop explicitly enables Linux application discovery and direct process launching.\n"
+             "--input-method enables the separately authorized input-method service.");
         return 0;
     }
     if (index < argc && !strcmp(argv[index], "--test")) {
-        if (app_id || desktop_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
+        if (app_id || desktop_mode || input_method_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
         rc = run_test(argv[index + 1]);
     } else if (index < argc && argv[index][0] == '-') {
         fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
-    } else if (index < argc)
-        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode);
+    } else if (index < argc) {
+        if (desktop_mode && input_method_mode) { fprintf(stderr, "Desktop and input-method modes are mutually exclusive\n"); return 2; }
+        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode, input_method_mode);
+    }
     else
-        if (desktop_mode) { fprintf(stderr, "--desktop requires an application script\n"); return 2; }
+        if (desktop_mode || input_method_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
         else rc = run_demo();
     pu_render_shutdown();
     return rc;

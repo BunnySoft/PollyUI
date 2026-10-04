@@ -54,14 +54,29 @@ const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined &
 // reactive blink toggles re-renders. Inputs need a stable `id` for the caret.
 const _caret = reactive({ on: true, tick: 0, activeId: null });
 let _caretBlinking = false, _caretLast = 0;
-function caretFocus(id) {
+let _caretNode = null;
+function updateCaretInput() {
+  if (!_caretNode) return;
+  if (_caretNode.ownerDocument?.activeElement !== _caretNode) {
+    _caretNode = null; _caret.activeId = null; return;
+  }
+  const st = _inputs[_caret.activeId];
+  if (!st) return;
+  _caretNode.setInputMethod({ purpose: st.inputPurpose, x: st.inputPadding +
+    measureText(_caretNode.textContent.slice(0, st.visualCaret), st.inputFont),
+    y: (st.inputHeight - st.inputFont) / 2, width: 2, height: st.inputFont });
+}
+function caretFocus(id, node) {
   if (!id) return;
+  _caretNode = node;
   _caret.activeId = id; _caret.on = true; _caret.tick++;
+  updateCaretInput();
   if (_caretBlinking) return;
   // Blink via rAF (not setInterval): a perpetual interval would keep the
   // headless run-loop alive forever; rAF is driven by the frame pump instead.
   _caretBlinking = true; _caretLast = 0;
   const loop = (ts) => {
+    updateCaretInput();
     if (_caret.activeId === null) { _caretBlinking = false; return; }
     if (_caretLast === 0) _caretLast = ts;
     if (ts - _caretLast >= 530) { _caretLast = ts; _caret.on = !_caret.on; }
@@ -69,20 +84,21 @@ function caretFocus(id) {
   };
   requestAnimationFrame(loop);
 }
-function caretBlur(id) { if (_caret.activeId === id) { _caret.activeId = null; _caret.tick++; } }
+function caretBlur(id) { if (_caret.activeId === id) { _caretNode = null; _caret.activeId = null; _caret.tick++; } }
 
 // Per-input caret/selection state (the value is controlled; caret index is not).
 const _inputs = {};
 function inputState(id, len) {
-  const st = _inputs[id] || (_inputs[id] = reactive({ caret: 0, anchor: null, dragging: false }));
+  const st = _inputs[id] || (_inputs[id] = reactive({ caret: 0, anchor: null, dragging: false, composition: null }));
   if (st.caret > len) st.caret = len;
   if (st.anchor != null && st.anchor > len) st.anchor = len;
   return st;
 }
-function indexAtX(value, fontSize, localX) {
+function indexAtX(value, fontSize, localX, masked = false) {
   let best = 0, bestD = Infinity;
   for (let i = 0; ; i = nextTextIndex(value, i)) {
-    const d = Math.abs(measureText(value.slice(0, i), fontSize) - localX);
+    const prefix = value.slice(0, i);
+    const d = Math.abs(measureText(masked ? '\u2022'.repeat(Array.from(prefix).length) : prefix, fontSize) - localX);
     if (d < bestD) { bestD = d; best = i; }
     if (i === value.length) break;
   }
@@ -279,24 +295,42 @@ export function NCard(props = {}, ...children) {
 
 export function NInput(props = {}) {
   const { value = '', placeholder = '', onInput, width = 200, size = 'medium', id, selectionColor = '#93c5fd' } = props;
+  const purpose = props.password ? 'password' : props.purpose ?? 'text';
+  const secure = purpose === 'password' || purpose === 'pin';
+  const displayed = text => secure ? '\u2022'.repeat(Array.from(text).length) : text;
   const fs = size === 'large' ? 16 : 14;
   const h0 = BTN_SIZE[size] ? BTN_SIZE[size].h : 34;
   const pad = 12;
-  const isPh = value.length === 0;
   const st = id ? inputState(id, value.length) : null;
   if (st) {
+    if (st.composition && st.composition.value !== value) {
+      if (_caret.activeId === id && _caretNode) _caretNode.cancelComposition();
+      st.composition = null;
+    }
     st.caret = clampTextIndex(value, st.caret);
     if (st.anchor != null) st.anchor = clampTextIndex(value, st.anchor);
   }
   const focused = id && _caret.activeId === id;
-  const xOf = (i) => pad + measureText(value.slice(0, i), fs);
+  const composition = st?.composition;
+  const text = composition ? value.slice(0, composition.start) + composition.text + value.slice(composition.end) : value;
+  const cursor = composition ? composition.start + (composition.cursor < 0 ? composition.text.length : composition.cursor) : st ? st.caret : value.length;
+  const isPh = text.length === 0;
+  const xOf = (i, source = text) => pad + measureText(displayed(source.slice(0, i)), fs);
+  if (st) {
+    st.inputPurpose = purpose; st.inputPadding = pad; st.inputFont = fs; st.inputHeight = h0;
+    st.visualCaret = displayed(text.slice(0, cursor)).length;
+  }
   const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
   const sel = (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
 
   const kids = [];
-  if (focused && sel) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(sel[1]) - xOf(sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
-  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : value));
-  if (focused && _caret.on) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(st ? st.caret : value.length), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
+  if (focused && sel && !composition) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(sel[1]) - xOf(sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
+  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : displayed(text)));
+  if (focused && _caret.on && (!composition || composition.cursor >= 0))
+    kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(cursor), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
+  if (composition) kids.push(h('view', { style: { position: 'absolute',
+    left: xOf(composition.start), top: (h0 + fs) / 2,
+    width: xOf(composition.start + composition.text.length) - xOf(composition.start), height: 1, backgroundColor: theme.text } }));
 
   const curSel = () => (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
   const replace = (ins) => { const [s0, e0] = curSel() || [st.caret, st.caret]; onInput && onInput(value.slice(0, s0) + ins + value.slice(e0)); st.caret = s0 + ins.length; st.anchor = null; };
@@ -305,33 +339,49 @@ export function NInput(props = {}) {
     id, tabIndex: 0,
     style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: pad, paddingRight: pad, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
     hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
-    onFocus: () => caretFocus(id), onBlur: () => { caretBlur(id); if (st) st.anchor = null; },
-    onMousedown: (e) => { if (e.button !== 0) return; if (e.currentTarget.focus) e.currentTarget.focus(); if (!st) return; const i = indexAtX(value, fs, localX(e)); st.caret = i; st.anchor = i; st.dragging = true; _caret.on = true; _caret.tick++; },
-    onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e)); _caret.tick++; } },
+    onFocus: e => {
+      if (st) caretFocus(id, e.currentTarget);
+      else e.currentTarget.setInputMethod({ purpose, x: xOf(value.length, value), y: (h0 - fs) / 2, width: 2, height: fs });
+    },
+    onBlur: () => { caretBlur(id); if (st) st.anchor = null; },
+    onMousedown: (e) => {
+      if (e.button !== 0) return;
+      if (st?.composition) e.currentTarget.cancelComposition();
+      e.currentTarget.focus();
+      if (!st) return;
+      const i = indexAtX(value, fs, localX(e), secure);
+      st.caret = i; st.anchor = i; st.dragging = true; caretFocus(id, e.currentTarget);
+    },
+    onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e), secure); _caret.tick++; } },
     onMouseup: e => {
       if (e.button !== 0 || !st) return;
       st.dragging = false;
       if (st.anchor === st.caret) st.anchor = null;
       const selection = curSel();
-      if (selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
+      if (!secure && selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
         clipboard.writePrimaryText(value.slice(selection[0], selection[1]));
       _caret.tick++;
     },
     onAuxclick: e => {
       if (e.button !== 1 || !st || typeof clipboard === 'undefined' || !clipboard.supportsPrimary) return;
       e.preventDefault();
+      if (st.composition) e.currentTarget.cancelComposition();
       e.currentTarget.focus();
-      st.caret = indexAtX(value, fs, localX(e)); st.anchor = null;
+      st.caret = indexAtX(value, fs, localX(e), secure); st.anchor = null;
       replace(clipboard.readPrimaryText()); _caret.tick++;
     },
     onKeydown: (e) => {
       if (!st) { if (onInput && e.key === 'Backspace') onInput(removeLastCodePoint(value)); return; }
       const k = e.key;
+      if (st.composition && (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Backspace', 'Delete'].includes(k) ||
+        ((e.ctrlKey || e.metaKey) && !e.altKey && ['a', 'c', 'x', 'v'].includes(k.toLowerCase()))))
+        e.currentTarget.cancelComposition();
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
         const key = k.toLowerCase();
         if (key === 'a') { e.preventDefault(); st.anchor = 0; st.caret = value.length; _caret.tick++; return; }
         if (key === 'c' || key === 'x' || key === 'v') {
           e.preventDefault();
+          if (secure && key !== 'v') return;
           if (typeof clipboard === 'undefined') throw new Error('Clipboard APIs are unavailable');
           const selection = curSel();
           if (key === 'v') replace(clipboard.readText());
@@ -355,6 +405,23 @@ export function NInput(props = {}) {
     onTextinput: e => {
       if (st) replace(e.data); else if (onInput) onInput(value + e.data);
       _caret.on = true; _caret.tick++;
+    },
+    onCompositionstart: () => {
+      if (!st) return;
+      const [start, end] = curSel() || [st.caret, st.caret];
+      st.composition = { value, start, end, text: '', cursor: 0 };
+    },
+    onCompositionupdate: e => {
+      if (!st?.composition) return;
+      st.composition.text = e.data;
+      st.composition.cursor = e.selectionStart < 0 ? -1 : clampTextIndex(e.data, e.selectionStart);
+      _caret.on = true; _caret.tick++;
+    },
+    onCompositionend: () => {
+      if (!st?.composition) return;
+      st.anchor = st.composition.start; st.caret = st.composition.end;
+      if (st.anchor === st.caret) st.anchor = null;
+      st.composition = null; _caret.tick++;
     },
   }, ...kids);
 }

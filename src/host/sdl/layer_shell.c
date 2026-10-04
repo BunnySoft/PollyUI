@@ -1,5 +1,9 @@
 #include "host/sdl/layer_shell.h"
 #include "layer-shell-client.h"
+#if defined(PU_INPUT_METHOD)
+#include "desktop/input-method-client.h"
+#include "input-method-v2-client.h"
+#endif
 
 #include <limits.h>
 #include <errno.h>
@@ -15,6 +19,10 @@ struct PuLayer {
     struct zwlr_layer_shell_v1 *shell;
     struct zwlr_layer_surface_v1 *surface;
     int configured, closed, failed;
+    int input_popup;
+#if defined(PU_INPUT_METHOD)
+    struct zwp_input_popup_surface_v2 *popup;
+#endif
 };
 
 struct Registry {
@@ -94,11 +102,12 @@ static void closed(void *data, struct zwlr_layer_surface_v1 *surface)
 
 static const struct zwlr_layer_surface_v1_listener layer_listener = { configured, closed };
 
-PuLayer *pu_layer_prepare(PuWindow *owner)
+PuLayer *pu_layer_prepare(PuWindow *owner, int input_popup)
 {
     PuLayer *layer = calloc(1, sizeof(*layer));
     if (!layer) { SDL_SetError("Cannot allocate layer surface state"); return NULL; }
     layer->owner = owner;
+    layer->input_popup = input_popup;
     layer->display = SDL_GetPointerProperty(SDL_GetGlobalProperties(),
         SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
     if (!layer->display) {
@@ -121,7 +130,7 @@ PuLayer *pu_layer_prepare(PuWindow *owner)
     int ready = wait_for(layer, &synchronized, 0);
     wl_callback_destroy(sync);
     wl_registry_destroy(registry);
-    if (!ready || !state.shell || !state.compositor || !state.viewporter || !state.fractional_scale) {
+    if (!ready || (!input_popup && !state.shell) || !state.compositor || !state.viewporter || !state.fractional_scale) {
         if (state.shell) zwlr_layer_shell_v1_destroy(state.shell);
         if (state.compositor) wl_compositor_destroy(state.compositor);
         if (ready) SDL_SetError("Required layer-shell v4, viewporter or fractional-scale globals are unavailable or unauthorized");
@@ -148,6 +157,16 @@ int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *co
     if (SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL) != layer->native ||
         SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_XDG_SURFACE_POINTER, NULL))
         return SDL_SetError("SDL did not retain the external roleless surface");
+    if (layer->input_popup) {
+#if defined(PU_INPUT_METHOD)
+        layer->popup = pu_input_client_popup(layer->native);
+        if (!layer->popup) return 0;
+        wl_surface_commit(layer->native);
+        return 1;
+#else
+        return SDL_SetError("Input-method surfaces are unavailable in this build");
+#endif
+    }
     struct wl_output *output = NULL;
     if (config->layer->output) {
         output = SDL_GetPointerProperty(SDL_GetDisplayProperties(config->layer->output),
@@ -173,9 +192,17 @@ int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *co
 
 void pu_layer_unmap(PuLayer *layer)
 {
-    if (layer && layer->surface) {
-        zwlr_layer_surface_v1_destroy(layer->surface);
-        layer->surface = NULL;
+    if (!layer) return;
+    int unmapped = 0;
+    if (layer->surface) {
+        zwlr_layer_surface_v1_destroy(layer->surface); layer->surface = NULL; unmapped = 1;
+    }
+#if defined(PU_INPUT_METHOD)
+    if (layer->popup) {
+        zwp_input_popup_surface_v2_destroy(layer->popup); layer->popup = NULL; unmapped = 1;
+    }
+#endif
+    if (unmapped) {
         /* SDL drains input leave events for its own toplevels, not external
          * roles. Keep the imported surface alive until those events arrive. */
         if (layer->window && !wl_display_get_error(layer->display)) {

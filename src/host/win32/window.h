@@ -30,9 +30,11 @@ typedef struct PuWindowConfig {
     int         width;   /* client-area width  in pixels */
     int         height;  /* client-area height in pixels */
     const PuLayerConfig *layer; /* Linux Wayland only; borrowed during creation */
+    int input_popup; /* Dedicated trusted Wayland input-method surface. */
 } PuWindowConfig;
 
 int pu_window_system_init(void);
+void pu_window_keep_alive(int enabled); /* SDL service loop without visible windows. */
 void pu_window_system_shutdown(void);
 /* Caller frees the returned array. IDs are valid only in the current session. */
 PuDisplayInfo *pu_window_displays(int *count);
@@ -62,6 +64,7 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
  * flags; PREVENT_DEFAULT suppresses the key's following text submission. */
 typedef int (*PuKeyFn)(const PuKeyEvent *event, void *user);
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
+int pu_window_set_text_input(PuWindow *window, const PuTextInputState *state, int reset);
 
 /* Wheel callback: two-axis logical-pixel scroll. Positive deltas mean right/down.
  * Returns > 0 to repaint. */

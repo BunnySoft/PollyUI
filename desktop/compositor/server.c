@@ -5,6 +5,7 @@
 #include "shortcut-control.h"
 #include "output-control.h"
 #include "data-device.h"
+#include "input-method.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -48,6 +49,7 @@ struct PuDesktopKeyboard {
     struct wlr_keyboard *keyboard;
     struct wl_list link;
     bool consumed[KEY_CNT];
+    uint32_t ime_epoch[KEY_CNT];
     struct wl_listener key, modifiers, destroy;
 };
 
@@ -126,7 +128,7 @@ static void enter_keyboard(struct PuDesktop *desktop)
         if (entry->keyboard != keyboard) continue;
         for (size_t i = 0; i < keyboard->num_keycodes; i++) {
             uint32_t key = keyboard->keycodes[i];
-            if (key >= KEY_CNT || !entry->consumed[key]) keys[count++] = key;
+            if (key >= KEY_CNT || (!entry->consumed[key] && !entry->ime_epoch[key])) keys[count++] = key;
         }
         break;
     }
@@ -213,6 +215,7 @@ static void keyboard_modifiers(struct wl_listener *listener, void *data)
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, modifiers);
     wlr_seat_set_keyboard(entry->desktop->seat, entry->keyboard);
     pu_shortcuts_modifiers(entry->desktop, entry->keyboard);
+    pu_input_method_modifiers(entry->desktop, entry->keyboard);
     wlr_seat_keyboard_notify_modifiers(entry->desktop->seat, &entry->keyboard->modifiers);
 }
 
@@ -268,6 +271,8 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     wlr_seat_set_keyboard(desktop->seat, entry->keyboard);
     if (wlr_seat_keyboard_has_grab(desktop->seat)) pu_shortcuts_cancel(desktop);
     bool handled = event->keycode < KEY_CNT && entry->consumed[event->keycode];
+    if (event->keycode < KEY_CNT && entry->ime_epoch[event->keycode] &&
+        entry->ime_epoch[event->keycode] != pu_input_method_epoch(desktop)) handled = true;
     if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
         if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = false;
     } else if (!handled) {
@@ -285,6 +290,15 @@ static void keyboard_key(struct wl_listener *listener, void *data)
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = handled;
         }
     }
+    if (!handled && event->keycode < KEY_CNT &&
+        (event->state != WL_KEYBOARD_KEY_STATE_RELEASED || entry->ime_epoch[event->keycode]) &&
+        pu_input_method_key(desktop, entry->keyboard, event)) {
+        handled = true;
+        if (event->keycode < KEY_CNT && event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+            entry->ime_epoch[event->keycode] = pu_input_method_epoch(desktop);
+    }
+    if (event->keycode < KEY_CNT && event->state == WL_KEYBOARD_KEY_STATE_RELEASED)
+        entry->ime_epoch[event->keycode] = 0;
     if (!handled)
         wlr_seat_keyboard_notify_key(desktop->seat, event->time_msec,
                                      event->keycode, event->state);
@@ -995,6 +1009,7 @@ struct SurfacePosition {
     struct wlr_surface *surface;
     int x, y;
     bool found;
+    struct PuDesktopOwner *owner;
 };
 
 static void find_surface_position(struct wlr_scene_buffer *buffer, int x, int y, void *data)
@@ -1005,6 +1020,8 @@ static void find_surface_position(struct wlr_scene_buffer *buffer, int x, int y,
         position->x = x;
         position->y = y;
         position->found = true;
+        for (struct wlr_scene_tree *tree = buffer->node.parent; tree; tree = tree->node.parent)
+            if (tree->node.data) { position->owner = tree->node.data; break; }
     }
 }
 
@@ -1015,8 +1032,21 @@ bool pu_desktop_surface_visible(struct PuDesktop *desktop, struct wlr_surface *s
     return position.found;
 }
 
+bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
+    struct wlr_box *box, struct PuDesktopOwner **owner)
+{
+    struct SurfacePosition position = { .surface = surface };
+    wlr_scene_node_for_each_buffer(&desktop->scene->tree.node, find_surface_position, &position);
+    if (!position.found) return false;
+    *box = (struct wlr_box){ .x = position.x, .y = position.y,
+        .width = surface->current.width, .height = surface->current.height };
+    *owner = position.owner;
+    return true;
+}
+
 static void process_motion(struct PuDesktop *desktop, uint32_t time)
 {
+    pu_input_method_reposition(desktop);
     pu_data_device_motion(desktop);
     struct PuDesktopView *view = desktop->grabbed;
     if (view && desktop->grab == PU_DESKTOP_MOVE) {
@@ -1028,6 +1058,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
             (int)(desktop->cursor->y - desktop->grab_y));
         constrain_popups(view);
         sync_foreign(desktop);
+        pu_input_method_reposition(desktop);
         return;
     }
     if (view && desktop->grab == PU_DESKTOP_RESIZE) {
@@ -1868,6 +1899,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!pu_output_control_init(desktop)) {
         fail(desktop, "Cannot initialize output configuration"); return false;
     }
+    if (!pu_input_method_init(desktop)) {
+        fail(desktop, "Cannot initialize input-method relay"); return false;
+    }
     if (!pu_data_device_init(desktop)) {
         fail(desktop, "Cannot initialize data-device integration"); return false;
     }
@@ -1921,8 +1955,10 @@ bool pu_desktop_start(struct PuDesktop *desktop)
 void pu_desktop_finish(struct PuDesktop *desktop)
 {
     desktop->stopping = true;
+    pu_input_method_stop(desktop);
     pu_desktop_stop_shell(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
+    pu_input_method_finish(desktop);
     pu_data_device_finish(desktop);
     pu_output_control_finish(desktop);
     if (desktop->sigint) wl_event_source_remove(desktop->sigint);

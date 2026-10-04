@@ -8,8 +8,10 @@ const root = mkdtempSync(path.join(tmpdir(), 'polly-ime-engine-'));
 const shared = path.join(root, 'shared'), user = path.join(root, 'user');
 try {
   const binary = path.resolve(process.argv[2]);
-  const dependencies = execFileSync('ldd', [binary], { encoding: 'utf8', timeout: 5000 });
-  assert.doesNotMatch(dependencies, /lib(?:glib|gio|gobject)-2\.0/);
+  if (!process.argv[3]) {
+    const dependencies = execFileSync('ldd', [binary], { encoding: 'utf8', timeout: 5000 });
+    assert.doesNotMatch(dependencies, /lib(?:glib|gio|gobject)-2\.0/);
+  }
   mkdirSync(shared); mkdirSync(user, { mode: 0o700 });
   chmodSync(shared, 0o755);
   writeFileSync(path.join(shared, 'default.yaml'), `config_version: '1'
@@ -49,8 +51,12 @@ sort: by_weight
 \u4f60\tni\t100
 \u597d\thao\t100
 `);
-  const output = execFileSync(binary, [shared, user], { encoding: 'utf8', timeout: 25000 });
-  assert.match(output, /PASS: independent Rime engine/);
+  const output = process.argv[3] ?
+    execFileSync('sh', ['desktop/tests/runtime-client.sh', binary, path.resolve(process.argv[3]),
+      'desktop/tests/ime-shell.mjs', 'ime'], {
+      encoding: 'utf8', timeout: 90000, env: { ...process.env, POLLY_IME_TEST_DATA: shared },
+    }) : execFileSync(binary, [shared, user], { encoding: 'utf8', timeout: 25000 });
+  assert.match(output, process.argv[3] ? /PASS: real Rime, native candidate popup/ : /PASS: independent Rime engine/);
   process.stdout.write(output);
 } finally {
   rmSync(root, { recursive: true, force: true });

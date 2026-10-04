@@ -1,4 +1,18 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+foreach(protocol IN ITEMS text-input-v3 input-method-v2 virtual-keyboard-v1)
+    if (protocol STREQUAL "text-input-v3")
+        set(xml "${TEXT_INPUT_XML}")
+    elseif (protocol STREQUAL "input-method-v2")
+        set(xml "${INPUT_METHOD_XML}")
+    else()
+        set(xml "${VIRTUAL_KEYBOARD_XML}")
+    endif()
+    add_custom_command(OUTPUT "${PROTOCOL_DIR}/${protocol}-client.h" "${PROTOCOL_DIR}/${protocol}.c"
+        COMMAND "${WAYLAND_SCANNER}" client-header "${xml}" "${PROTOCOL_DIR}/${protocol}-client.h"
+        COMMAND "${WAYLAND_SCANNER}" private-code "${xml}" "${PROTOCOL_DIR}/${protocol}.c"
+        DEPENDS "${xml}" VERBATIM)
+    list(APPEND IME_TEST_PROTOCOLS "${PROTOCOL_DIR}/${protocol}-client.h" "${PROTOCOL_DIR}/${protocol}.c")
+endforeach()
 if (PU_BUILD_IME_ENGINE)
     find_program(NODE_EXECUTABLE node REQUIRED)
     add_executable(polly-ime-engine-test ime-engine.c)
@@ -7,6 +21,11 @@ if (PU_BUILD_IME_ENGINE)
     add_test(NAME desktop-ime-engine COMMAND "${NODE_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/ime-engine-fixture.mjs" $<TARGET_FILE:polly-ime-engine-test>)
     set_tests_properties(desktop-ime-engine PROPERTIES TIMEOUT 35)
+    if (EXISTS "/usr/share/rime-data/default.yaml")
+        add_test(NAME desktop-ime-installed COMMAND "${NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ime-installed.mjs" $<TARGET_FILE:polly-ime-engine-test>)
+        set_tests_properties(desktop-ime-installed PROPERTIES TIMEOUT 70)
+    endif()
 endif()
 add_executable(pollywm-shortcut-policy shortcut-policy.c)
 target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
@@ -48,6 +67,7 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c
+    ${IME_TEST_PROTOCOLS}
     "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/ext-workspace.c"
     "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"
     "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"

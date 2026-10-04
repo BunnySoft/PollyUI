@@ -164,6 +164,29 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(pollyui PRIVATE "${UI_PROTOCOL_DIR}")
         target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
         target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
+        if (PU_BUILD_IME_ENGINE)
+            pkg_check_modules(IME_KEYS REQUIRED IMPORTED_TARGET xkbcommon)
+            set(UI_TEXT_INPUT_XML "${WAYLAND_UI_PROTOCOLS}/unstable/text-input/text-input-unstable-v3.xml")
+            add_custom_command(OUTPUT "${UI_PROTOCOL_DIR}/text-input-v3-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_TEXT_INPUT_XML}" "${UI_PROTOCOL_DIR}/text-input-v3-client.h"
+                DEPENDS "${UI_TEXT_INPUT_XML}" VERBATIM)
+            target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/text-input-v3-client.h")
+            foreach(protocol IN ITEMS input-method-v2 virtual-keyboard-v1)
+                if (protocol STREQUAL "input-method-v2")
+                    set(xml "${CMAKE_SOURCE_DIR}/desktop/protocols/input-method-unstable-v2.xml")
+                else()
+                    set(xml "${CMAKE_SOURCE_DIR}/desktop/protocols/virtual-keyboard-unstable-v1.xml")
+                endif()
+                add_custom_command(OUTPUT "${UI_PROTOCOL_DIR}/${protocol}-client.h" "${UI_PROTOCOL_DIR}/${protocol}.c"
+                    COMMAND "${UI_WAYLAND_SCANNER}" client-header "${xml}" "${UI_PROTOCOL_DIR}/${protocol}-client.h"
+                    COMMAND "${UI_WAYLAND_SCANNER}" private-code "${xml}" "${UI_PROTOCOL_DIR}/${protocol}.c"
+                    DEPENDS "${xml}" VERBATIM)
+                target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/${protocol}-client.h" "${UI_PROTOCOL_DIR}/${protocol}.c")
+            endforeach()
+            target_sources(pollyui PRIVATE src/desktop/input-method-client.c)
+            target_compile_definitions(pollyui PRIVATE PU_INPUT_METHOD)
+            target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
+        endif()
         if (PU_DESKTOP_SERVICES)
             pkg_check_modules(SHORTCUT_KEYS REQUIRED IMPORTED_TARGET xkbcommon)
             target_link_libraries(pollyui PRIVATE PkgConfig::SHORTCUT_KEYS)
@@ -306,6 +329,8 @@ if (WIN32 AND PU_WINDOWED)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
+    add_test(NAME script-module-errors COMMAND node "${CMAKE_SOURCE_DIR}/tests/script-errors.mjs" $<TARGET_FILE:pollyui>)
+    set_tests_properties(script-module-errors PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     if (PU_DESKTOP_SERVICES)
         add_test(NAME desktop-decoration-tokens
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tools/generate-decoration-themes.mjs" --check)
@@ -335,6 +360,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
             "${CMAKE_SOURCE_DIR}/desktop/tests/session-client.mjs")
     set_tests_properties(desktop-session PROPERTIES TIMEOUT 25 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    if (PU_BUILD_IME_ENGINE AND EXISTS "/usr/share/rime-data/default.yaml")
+        add_test(NAME desktop-ime-session
+            COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/session.sh"
+                "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+                $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+                "${CMAKE_SOURCE_DIR}/desktop/tests/session-client.mjs" --ime)
+        set_tests_properties(desktop-ime-session PROPERTIES TIMEOUT 40 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
     function(pu_host_fixture target source)
         add_executable(${target} ${source} src/host/sdl/window_sdl.c src/render/skia_c.cpp)
         target_include_directories(${target} PRIVATE src "${SKIA_ROOT}")
@@ -354,6 +387,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
+            if (PU_BUILD_IME_ENGINE AND PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-ime-shell-${renderer} COMMAND node
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/ime-engine-fixture.mjs"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>)
+                set_tests_properties(desktop-ime-shell-${renderer} PROPERTIES TIMEOUT 100
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+            endif()
             if (PU_DESKTOP_SERVICES)
                 add_test(NAME desktop-data-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"

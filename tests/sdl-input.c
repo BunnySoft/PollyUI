@@ -7,6 +7,7 @@
 static PuWindow *window;
 static SDL_WindowID window_id;
 static int received, pointers, wheels, failed, ticks;
+static int preedits, cancellations;
 static int drop_enters, drop_motions, drops, drop_leaves, drop_errors;
 static char *large_drop;
 static const char committed[] = "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x98\x80";
@@ -19,6 +20,13 @@ static void check(int valid, const char *description)
 static int on_key(const PuKeyEvent *event, void *user)
 {
     (void)user;
+    if (event->type == PU_KEY_PREEDIT) {
+        if (event->text && *event->text) {
+            preedits++;
+            check(event->start == 2 && event->length == 1, "preedit character offsets become UTF-16 offsets");
+        } else cancellations++;
+        return PU_INPUT_REDRAW;
+    }
     switch (received++) {
     case 0:
         check(event->type == PU_KEY_DOWN && strcmp(event->code, "KeyA") == 0 &&
@@ -148,6 +156,14 @@ static int tick(void *user)
 {
     (void)user;
     if (ticks++ == 0) {
+        PuTextInputState input = { .enabled = 1, .purpose = 1, .x = 11, .y = 19, .width = 2, .height = 18 };
+        check(pu_window_set_text_input(window, &input, 1), "configure sensitive text input");
+        SDL_Rect rect;
+        int cursor;
+        check(SDL_GetTextInputArea(SDL_GetWindowFromID(window_id), &rect, &cursor) &&
+            rect.x == 11 && rect.y == 19 && rect.w == 2 && rect.h == 18 && cursor == 0, "native input-method caret rectangle");
+        input.purpose = 0;
+        check(pu_window_set_text_input(window, &input, 1), "restore ordinary text input");
         push_key(SDL_SCANCODE_A, SDLK_A, SDL_KMOD_CTRL | SDL_KMOD_SHIFT, 1, 1);
         push_text("A");
         push_key(SDL_SCANCODE_A, SDLK_A, SDL_KMOD_NONE, 0, 0);
@@ -159,6 +175,14 @@ static int tick(void *user)
         push_key(SDL_SCANCODE_KP_1, SDLK_KP_1, SDL_KMOD_NUM, 1, 0);
         push_key(SDL_SCANCODE_KP_1, SDLK_KP_1, SDL_KMOD_NUM, 0, 0);
         SDL_Event event;
+        SDL_zero(event);
+        event.type = SDL_EVENT_TEXT_EDITING;
+        event.edit.windowID = window_id;
+        event.edit.text = "\xf0\x9f\x99\x82\xe4\xb8\xad";
+        event.edit.start = 1; event.edit.length = 1;
+        check(SDL_PushEvent(&event), "queue Unicode preedit");
+        event.edit.text = ""; event.edit.start = event.edit.length = -1;
+        check(SDL_PushEvent(&event), "queue preedit cancellation");
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
         event.button.windowID = window_id;
@@ -229,6 +253,7 @@ int main(void)
     free(large_drop);
     pu_render_shutdown();
     check(received == 9, "exactly one event for each key or committed text");
+    check(preedits == 1 && cancellations == 1, "exact preedit and cancellation event sequence");
     check(pointers == 4 && wheels == 1, "exact pointer/wheel event sequence");
     check(drop_enters == 4 && drop_motions == 1 && drops == 1 && drop_leaves == 1 && drop_errors == 2,
           "exact drop sequence with bounded payload rejection");

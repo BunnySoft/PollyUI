@@ -25,6 +25,12 @@ set(XDG_SHELL_XML "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
 set(LAYER_SHELL_XML "${WLR_PROTOCOLS_DIR}/unstable/wlr-layer-shell-unstable-v1.xml")
 set(PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/protocols")
 file(MAKE_DIRECTORY "${PROTOCOL_DIR}")
+set(TEXT_INPUT_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml")
+set(INPUT_METHOD_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/input-method-unstable-v2.xml")
+set(VIRTUAL_KEYBOARD_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml")
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/text-input-v3-server.h"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${TEXT_INPUT_XML}" "${PROTOCOL_DIR}/text-input-v3-server.h"
+    DEPENDS "${TEXT_INPUT_XML}" VERBATIM)
 set(WORKSPACE_XML "${WAYLAND_PROTOCOLS_DIR}/staging/ext-workspace/ext-workspace-v1.xml")
 set(WORKSPACE_TOPLEVEL_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-workspace-toplevel-v1.xml")
 if (NOT EXISTS "${WORKSPACE_XML}")
@@ -75,6 +81,9 @@ add_library(pollywm-core STATIC
     compositor/shortcut-control.c
     compositor/output-control.c
     compositor/data-device.c
+    compositor/private-process.c
+    compositor/input-method.c
+    "${PROTOCOL_DIR}/text-input-v3-server.h"
     compositor/server.c
     compositor/decoration.c
     compositor/workspace.c

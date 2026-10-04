@@ -24,4 +24,9 @@ RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
 
 RUN apk add --no-cache bash mesa-egl mesa-gles mesa-dri-gallium py3-pillow curl-dev openssl nodejs wlr-protocols
 
-RUN apk add --no-cache librime-dev
+RUN apk add --no-cache librime-dev rime-plum-data
+
+RUN apk add --no-cache mesa-dev libxcursor-dev libxrandr-dev libxfixes-dev libxi-dev libxscrnsaver-dev libxtst-dev alsa-lib-dev
+COPY tools/build-sdl-linux.sh /opt/pollyui-build/tools/
+COPY patches/sdl-wayland-sync-lifetime.patch /opt/pollyui-build/patches/
+RUN sh /opt/pollyui-build/tools/build-sdl-linux.sh /opt/pollyui-sdl

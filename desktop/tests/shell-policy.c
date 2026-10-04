@@ -36,6 +36,7 @@ static const char literal[] = "argument with spaces; $HOME is not expanded";
 
 struct Registry {
     uint32_t restricted, foreign, appearance, workspace, workspace_toplevel, shortcuts, output, output_guard, compositor;
+    uint32_t input_method, virtual_keyboard;
 };
 
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
@@ -53,6 +54,8 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     if (strcmp(interface, output_interface.name) == 0) state->output = name;
     if (strcmp(interface, output_guard_interface.name) == 0) state->output_guard = name;
     if (strcmp(interface, "wl_compositor") == 0) state->compositor = name;
+    if (strcmp(interface, "zwp_input_method_manager_v2") == 0) state->input_method = name;
+    if (strcmp(interface, "zwp_virtual_keyboard_manager_v1") == 0) state->virtual_keyboard = name;
 }
 
 static void registry_remove(void *data, struct wl_registry *registry, uint32_t name)
@@ -86,6 +89,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(privileged.restricted && privileged.foreign && privileged.appearance && privileged.compositor);
     CHECK(privileged.workspace && privileged.workspace_toplevel && privileged.shortcuts);
     CHECK(privileged.output && privileged.output_guard);
+    CHECK(!privileged.input_method && !privileged.virtual_keyboard);
     if (strcmp(mode, "--ignore-term") == 0) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct wl_proxy *capability = wl_registry_bind(
         registry, privileged.restricted, &restricted_interface, 1);
@@ -104,6 +108,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
     CHECK(wl_display_roundtrip(ordinary) >= 0);
     CHECK(public.compositor && !public.restricted && !public.foreign && !public.appearance);
+    CHECK(!public.input_method && !public.virtual_keyboard);
     CHECK(!public.workspace && !public.workspace_toplevel && !public.shortcuts && !public.output && !public.output_guard);
     struct wl_proxy *forged = wl_registry_bind(
         public_registry, privileged.restricted, &restricted_interface, 1);

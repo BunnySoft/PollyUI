@@ -1,4 +1,5 @@
 #include "server.h"
+#include "input-method.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -15,6 +16,7 @@ static void usage(FILE *out)
         "Experimental wlroots 0.19 compositor. No shell is started by default.\n"
         "--shell-restarts N: retry failed shells at most N times, with backoff (default 0).\n"
         "--exit-with-shell: end the session on shell exit status 0 (not on a crash).\n"
+        "--input-method PROGRAM: start a separately trusted input-method service (before --shell).\n"
         "--shell must be last; its program receives a private trusted Wayland connection.\n"
         "Alt+Tab: cycle windows; Alt+F4: close; Alt+Escape: exit.\n"
         "Alt+F10: toggle maximize; Alt+F11: toggle fullscreen.\n"
@@ -27,11 +29,14 @@ int main(int argc, char **argv)
     const char *socket_name = NULL;
     bool debug = false;
     char **shell_argv = NULL;
+    char *input_method_argv[2] = {0};
     unsigned shell_restarts = 0;
     bool restart_option = false, exit_with_shell = false;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) { usage(stdout); return 0; }
         if (strcmp(argv[i], "--debug") == 0) { debug = true; continue; }
+        if (strcmp(argv[i], "--input-method") == 0 && i + 1 < argc && *argv[i + 1] &&
+            !input_method_argv[0]) { input_method_argv[0] = argv[++i]; continue; }
         if (strcmp(argv[i], "--exit-with-shell") == 0) { exit_with_shell = true; continue; }
         if (strcmp(argv[i], "--shell-restarts") == 0 && i + 1 < argc) {
             const char *value = argv[++i];
@@ -77,6 +82,7 @@ int main(int argc, char **argv)
     struct PuDesktop desktop;
     bool ready = pu_desktop_init(&desktop, socket_name) && pu_desktop_start(&desktop);
     desktop.exit_with_shell = exit_with_shell;
+    if (ready && input_method_argv[0]) ready = pu_input_method_spawn(&desktop, input_method_argv);
     if (ready && shell_argv) ready = pu_desktop_supervise_shell(&desktop, shell_argv, shell_restarts);
     if (ready) wl_display_run(desktop.display);
     int result = !ready || desktop.failed ? 1 : 0;
