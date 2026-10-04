@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <shellscalingapi.h>
 
 /* M0b: the window now paints by clearing a Skia raster surface and blitting its
  * BGRA pixels to the client area (replacing the M0a GDI FillRect). The host
@@ -56,6 +57,59 @@ static int g_loop_running, g_pumping, g_exit_code;
 static PuAsyncFn g_frame;
 static void *g_frame_user;
 static void pump_windows(void);
+
+int pu_window_system_init(void)
+{
+    if (g_windows && g_ui_thread != GetCurrentThreadId()) {
+        fprintf(stderr, "Window system belongs to another UI thread\n");
+        return 0;
+    }
+    g_ui_thread = GetCurrentThreadId();
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    return 1;
+}
+
+void pu_window_system_shutdown(void) { if (!g_windows) g_ui_thread = 0; }
+
+struct DisplayList { PuDisplayInfo *items; int count; };
+static BOOL CALLBACK display_info(HMONITOR monitor, HDC dc, LPRECT bounds, LPARAM data)
+{
+    (void)dc; (void)bounds;
+    struct DisplayList *list = (struct DisplayList *)data;
+    MONITORINFOEXW info;
+    memset(&info, 0, sizeof(info));
+    info.cbSize = sizeof(info);
+    UINT xdpi, ydpi;
+    if (!GetMonitorInfoW(monitor, (MONITORINFO *)&info) ||
+        FAILED(GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &xdpi, &ydpi))) return FALSE;
+    PuDisplayInfo *grown = realloc(list->items, ((size_t)list->count + 1) * sizeof(*grown));
+    if (!grown) return FALSE;
+    list->items = grown;
+    PuDisplayInfo *item = &grown[list->count];
+    memset(item, 0, sizeof(*item));
+    item->id = (uint32_t)list->count + 1;
+    item->x = info.rcMonitor.left; item->y = info.rcMonitor.top;
+    item->width = info.rcMonitor.right - info.rcMonitor.left;
+    item->height = info.rcMonitor.bottom - info.rcMonitor.top;
+    item->scale = xdpi / 96.0f;
+    if (!WideCharToMultiByte(CP_UTF8, 0, info.szDevice, -1, item->name, sizeof(item->name), NULL, NULL))
+        return FALSE;
+    list->count++;
+    return TRUE;
+}
+
+PuDisplayInfo *pu_window_displays(int *count)
+{
+    struct DisplayList list = {0};
+    *count = 0;
+    if (!EnumDisplayMonitors(NULL, NULL, display_info, (LPARAM)&list)) {
+        fprintf(stderr, "Cannot enumerate native display information\n");
+        free(list.items);
+        return NULL;
+    }
+    *count = list.count;
+    return list.items ? list.items : calloc(1, sizeof(PuDisplayInfo));
+}
 #define PU_WM_WAKE (WM_APP + 1)   /* posted by pu_window_wake */
 
 /* Map a non-character virtual key to a DOM key name, or NULL. */
@@ -173,10 +227,10 @@ static const char *key_name(WPARAM vk, LPARAM lp, char *buffer, int size)
 static const wchar_t *kClassName = L"PollyUIWindowClass";
 
 /* Render one frame into the Skia surface and blit it to hdc. */
-static void pu_paint(PuWindow *w, HDC hdc)
+static int pu_paint(PuWindow *w, HDC hdc, const char *capture_path)
 {
-    if (!w->surface || !w->running) return;
-    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return; }
+    if (!w->surface || !w->running) return 0;
+    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return 0; }
 
     float scale = w->scale > 0 ? w->scale : 1.0f;
     if (w->paint_fn) {
@@ -192,7 +246,9 @@ static void pu_paint(PuWindow *w, HDC hdc)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
-    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return; }
+    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return 0; }
+    int captured = !capture_path || pu_surface_save_png(w->surface, capture_path);
+    if (!captured) fprintf(stderr, "Cannot capture rendered frame to %s\n", capture_path);
     w->presented = 1;
     if (pu_surface_is_gl(w->surface)) {
         static int perf = -1;
@@ -205,14 +261,14 @@ static void pu_paint(PuWindow *w, HDC hdc)
         } else {
             pu_surface_present(w->surface); /* GPU: flush + swap buffers */
         }
-        return;
+        return captured;
     }
 
     /* Raster fallback: blit the pixel buffer to the window. */
     const void *pixels = pu_surface_pixels(w->surface);
     int sw = pu_surface_width(w->surface);
     int sh = pu_surface_height(w->surface);
-    if (!pixels || sw <= 0 || sh <= 0) return;
+    if (!pixels || sw <= 0 || sh <= 0) return 0;
 
     BITMAPINFO bmi;
     memset(&bmi, 0, sizeof(bmi));
@@ -227,6 +283,7 @@ static void pu_paint(PuWindow *w, HDC hdc)
                   0, 0, sw, sh,
                   0, 0, sw, sh,
                   pixels, &bmi, DIB_RGB_COLORS, SRCCOPY);
+    return captured;
 }
 
 static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -461,7 +518,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
-        if (w) pu_paint(w, hdc);
+        if (w) pu_paint(w, hdc, NULL);
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -478,6 +535,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
     if (!cfg) return NULL;
+    if (cfg->layer) { fprintf(stderr, "Layer surfaces require the Linux Wayland host\n"); return NULL; }
     if (g_windows && g_ui_thread != GetCurrentThreadId()) {
         fprintf(stderr, "All windows must be created on the same UI thread\n");
         return NULL;
@@ -624,7 +682,11 @@ int pu_window_save_frame(PuWindow *w, const char *path)
         fprintf(stderr, "Cannot capture a closed or not-yet-presented window\n");
         return 0;
     }
-    return pu_surface_save_png(w->surface, path);
+    HDC dc = GetDC(w->hwnd);
+    if (!dc) { fprintf(stderr, "Cannot acquire window capture DC\n"); return 0; }
+    int ok = pu_paint(w, dc, path);
+    ReleaseDC(w->hwnd, dc);
+    return ok;
 }
 
 /* Hide/show the OS title bar at runtime. The window keeps WS_THICKFRAME so it

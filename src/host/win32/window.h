@@ -8,11 +8,33 @@
 
 typedef struct PuWindow PuWindow;
 
+typedef struct PuLayerConfig {
+    int layer;                  /* background=0, bottom=1, top=2, overlay=3 */
+    unsigned anchors;           /* top=1, bottom=2, left=4, right=8 */
+    int exclusive_zone;
+    int keyboard;               /* none=0, exclusive=1, on-demand=2 */
+    uint32_t output;            /* current display ID, or 0 for compositor choice */
+    int margin_top, margin_right, margin_bottom, margin_left;
+} PuLayerConfig;
+
+typedef struct PuDisplayInfo {
+    uint32_t id;
+    int x, y, width, height;
+    float scale;
+    char name[128];
+} PuDisplayInfo;
+
 typedef struct PuWindowConfig {
     const char *title;   /* UTF-8; NULL -> "PollyUI" */
     int         width;   /* client-area width  in pixels */
     int         height;  /* client-area height in pixels */
+    const PuLayerConfig *layer; /* Linux Wayland only; borrowed during creation */
 } PuWindowConfig;
+
+int pu_window_system_init(void);
+void pu_window_system_shutdown(void);
+/* Caller frees the returned array. IDs are valid only in the current session. */
+PuDisplayInfo *pu_window_displays(int *count);
 
 /* Paint callback: draw a frame into `surface`. `width`/`height` are LOGICAL
  * (DPI-independent) pixels; `scale` maps them to the physical device pixels of

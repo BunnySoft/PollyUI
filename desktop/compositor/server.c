@@ -15,6 +15,7 @@
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_fractional_scale_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
@@ -23,6 +24,7 @@
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_viewporter.h>
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
@@ -1448,7 +1450,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!desktop->allocator) { fail(desktop, "Cannot create buffer allocator"); return false; }
     if (!wlr_compositor_create(desktop->display, 5, desktop->renderer) ||
         !wlr_subcompositor_create(desktop->display) ||
-        !wlr_data_device_manager_create(desktop->display)) {
+        !wlr_data_device_manager_create(desktop->display) ||
+        !wlr_viewporter_create(desktop->display) ||
+        !wlr_fractional_scale_manager_v1_create(desktop->display, 1)) {
         fail(desktop, "Cannot create core Wayland globals"); return false;
     }
     desktop->layout = wlr_output_layout_create(desktop->display);

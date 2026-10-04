@@ -22,8 +22,13 @@ const primary = window;
 let first, second;
 
 async function run() {
+    check(window.displays().every(output => output.id > 0 && output.scale > 0),
+        'display discovery is available before creating secondary windows');
     for (const options of [null, [], 4, { width: 0 }, { height: NaN },
-        { width: 1.5 }, { width: Infinity }, { title: 7 }, { title: 'bad\0title' }, { unknown: true }]) {
+        { width: 1.5 }, { width: Infinity }, { title: 7 }, { title: 'bad\0title' }, { unknown: true },
+        { anchors: [] }, { layer: 'invalid' }, { layer: 'top', anchors: ['top', 'top'] },
+        { layer: 'top', keyboard: 'invalid' }, { layer: 'top', output: -1 },
+        { layer: 'top', width: 0 }, { layer: 'top', margins: { unknown: 1 } }]) {
         rejects(() => window.create(options), 'invalid window options are rejected');
     }
     first = window.create({ title: 'PollyUI first', width: 480, height: 320 });

@@ -78,6 +78,8 @@ run_ui pollyui-runtime
 sh desktop/tests/runtime-render.sh "$ui" pollyui-runtime
 for renderer in raster gl; do
     WAYLAND_DISPLAY=pollyui-runtime PU_RENDERER="$renderer" node tools/test-multi-window.mjs "$ui"
+    WAYLAND_DISPLAY="$runtime/pollyui-runtime" PU_RENDERER="$renderer" \
+        sh desktop/tests/runtime-layer.sh "$ui" "$wm" --nested
 done
 if ! grep -q 'Mapped org.pollyui.runtime' "$runtime/server.log"; then
     cat "$runtime/server.log"

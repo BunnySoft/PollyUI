@@ -177,7 +177,8 @@ For a native Alpine 3.24 development machine:
 ```sh
 apk add build-base cmake ninja pkgconf git python3 gn clang18 bash sdl3-dev \
     fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev curl-dev \
-    font-dejavu font-noto-cjk font-noto-emoji nodejs openssl
+    font-dejavu font-noto-cjk font-noto-emoji nodejs openssl \
+    wayland-dev wayland-protocols wlr-protocols
 
 # Build as a normal user, from the repository root:
 sh desktop/tools/build-skia-linux.sh "$PWD/third_party/skia-linux"
@@ -294,8 +295,9 @@ not automatically cancelled by an individual close; dispose component-specific
 work in `onclose`. As before, detached native/JS listener cycles are swept at
 whole-runtime shutdown.
 
-`handle.capture('frame.png')` saves that window's **last presented frame**, not
-other applications or the screen. It rejects invalid paths and not-yet-presented
+`handle.capture('frame.png')` draws and saves that window at its current native
+size, before swapping the GPU buffer; it does not capture other applications or
+the screen. It rejects invalid paths and not-yet-presented
 or closed windows. Raster and Linux GLES readback are exercised; Metal capture
 is explicitly unsupported. Windows ANGLE code binds the owning EGL context
 before drawing/readback/destruction, but requires installed ANGLE runtime DLLs.
@@ -310,9 +312,73 @@ node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe
 node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe --require-gpu
 ```
 
-Multi-window support is a prerequisite for PollyShell, **not yet a real
-wallpaper/panel/Dock implementation**. Those need native layer-shell roles;
-ordinary PollyUI windows still use their normal platform/xdg toplevel roles.
+### Wayland shell surfaces
+
+The Linux SDL host now supports native `layer-shell` surfaces alongside ordinary
+xdg windows in the same process. The default Linux build enables
+`PU_LAYER_SHELL`; disable it with `-DPU_LAYER_SHELL=OFF` for an ordinary-window-only
+runtime. It needs Wayland client headers, `wayland-scanner`, `wayland-protocols`
+and `wlr-protocols`, not a link to wlroots or the compositor.
+
+The connection must expose layer-shell v4, viewporter and fractional-scale
+protocols. PollyWM supplies these, but permits layer-shell only on the private
+connection passed to an explicitly launched `--shell` program. A public
+connection, unsupported host/build, or missing protocol fails explicitly;
+it never substitutes an ordinary window for a requested layer.
+
+```js
+window.close(); // Do not create the default ordinary window.
+const output = window.displays()[0];
+const panel = window.create({
+  title: 'PollyUI panel',
+  layer: 'top',
+  output: output.id,
+  width: 0,
+  height: 32,
+  anchors: ['top', 'left', 'right'],
+  exclusiveZone: 32,
+  keyboard: 'on-demand',
+});
+panel.document.body.style.backgroundColor = '#254878';
+```
+
+`layer` is `background`, `bottom`, `top`, or `overlay`. Width/height and
+`margins: { top, right, bottom, left }` use integer logical pixels. A zero
+dimension requires both opposing anchors. `exclusiveZone` defaults to zero;
+positive values reserve workspace, and -1 uses the whole output.
+`keyboard` defaults to `none`; `on-demand` and `exclusive` follow the compositor's
+focus policy. Layer geometry options are creation-time settings: close/recreate
+the surface to change them. Minimize/maximize and title-bar controls are not
+applicable to layers and throw.
+
+`window.displays()` returns a snapshot of `{ id, name, x, y, width, height, scale }`.
+IDs are host-local and nonpersistent; use current IDs for `output` and re-query
+after display changes. Bounds use the host's desktop coordinates and `scale` is
+its content-scale hint, not a physical display-mode configuration API. Omitting
+`output` or using zero lets the compositor choose. Output removal/disable closes
+its layer windows through the normal one-shot `onclose` lifecycle.
+
+PollyUI owns each layer's `wl_surface`, which SDL imports for input/presentation.
+This prevents renderer initialization from replacing a surface with a different
+role. The initial configure is acknowledged before renderer creation, and SDL
+owns the viewport/fractional scaling. Role destruction precedes renderer/SDL
+teardown; the owned surface is destroyed last. Raster means **Skia CPU drawing**:
+the layer presenter still uses SDL/EGL, which may be software Mesa.
+
+The host, rather than SDL's visible-toplevel counter, owns application lifetime:
+closing the last ordinary window cannot implicitly quit surviving layer windows.
+Wayland presentation uses nonblocking swap/presentation intervals so an occluded
+surface cannot delay the shared UI loop waiting for its own frame callback.
+
+Creating an authorized layer enables SDL focus-click-through for that process
+unless explicitly configured already, so the activating click also operates a
+panel control. This applies to mixed ordinary/layer windows in that shell
+process; ordinary applications that never create layers keep their prior policy.
+
+The surface/runtime plumbing is implemented and exercised with actual panels,
+wallpaper and dock-shaped clients. **The production themed Shell, launcher,
+taskbar and session supervisor remain separate work items**; the existing
+five-theme preview is still labeled simulated.
 
 ### Input event contract
 

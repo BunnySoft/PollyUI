@@ -32,8 +32,9 @@ applications rather than importing their buffers into the PollyUI DOM.
 | CI - definitions and local checks | Alpine ordinary/sanitizer builds with real clients on headless PollyWM, Windows core/WinHTTP and macOS raster jobs. Hosted execution requires pushing the workflow; local Linux/Windows results do not verify macOS. |
 | Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. A supervised full desktop session remains a separate step. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
-| 3b - PollyUI shell | Add layer-shell surfaces to the PollyUI host, then implement the real wallpaper, panel/dock and launcher. The current appearance preview still uses an ordinary xdg toplevel. |
-| Multi-window runtime - implemented prerequisite | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface; layer roles are the next host integration. |
+| 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
+| 3c - production PollyShell | Implement the themed wallpaper, panel/dock, launcher and session supervision. The current appearance preview still uses an ordinary xdg toplevel. |
+| Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
@@ -146,7 +147,9 @@ include PollyUI. See the root README's Linux build instructions or run:
 
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
 Linux has a Skia GLES path and structured input with separate text commits;
-IME preedit and the PollyUI host's `layer-shell` surface support are still pending.
+The host also supports actual layer-shell windows; the appearance preview has
+not yet been converted into the production multi-surface Shell. IME preedit
+remains pending.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -155,14 +158,16 @@ state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
 `PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
 These appearance tests run separately from the WSL compositor suite.
 
-Next integration steps are PollyUI-host layer-shell surfaces for
-real panels/docks, an application launcher and a shared decoration policy.
+Next integration steps are production themed panels/docks, an application
+launcher and a shared decoration policy.
 Window-manager state remains owned by PollyWM; theme code must not become an
 alternate window manager.
 
 ## Implemented behavior
 
 - xdg-shell toplevels and parented popups; wl_shm clients and wlroots rendering.
+- Viewporter and fractional-scale globals, with wlroots scene-managed preferred
+  scale notifications for native clients.
 - Click-to-focus and raise; activation and keyboard/pointer event forwarding,
   including implicit pointer grabs for drags outside a window.
 - Cascaded initial placement on the output nearest the pointer, with the window
@@ -254,7 +259,12 @@ The scene helper's eager placement/unconditional configure behavior is not used:
 size deduplication and commit-matched placement follow the existing xdg policy.
 The generic wlroots subsurface scene helper still owns buffer rendering.
 
-Not implemented: PollyUI layer surfaces, workspaces/tiling, Xwayland, window lists/control
+The root README's **Wayland shell surfaces** section documents the native
+PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions and
+pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
+removal, reservations, role replacement and rejection on public connections.
+
+Not implemented: production themed Shell, workspaces/tiling, Xwayland, window lists/control
 IPC, drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.

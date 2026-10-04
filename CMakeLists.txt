@@ -128,6 +128,31 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(pollyui PRIVATE PkgConfig::CURL)
     # Match the official Release Skia ABI even when the host is a Debug build.
     target_compile_definitions(pollyui PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
+    option(PU_LAYER_SHELL "Support custom Wayland layer surfaces in the SDL host" ON)
+    if (PU_LAYER_SHELL AND PU_HOST STREQUAL "sdl")
+        pkg_check_modules(WAYLAND_UI REQUIRED IMPORTED_TARGET wayland-client)
+        pkg_check_modules(LAYER_PROTOCOLS REQUIRED wlr-protocols wayland-protocols)
+        pkg_get_variable(WLR_UI_PROTOCOLS wlr-protocols pkgdatadir)
+        pkg_get_variable(WAYLAND_UI_PROTOCOLS wayland-protocols pkgdatadir)
+        find_program(UI_WAYLAND_SCANNER wayland-scanner REQUIRED)
+        set(UI_PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-protocols")
+        file(MAKE_DIRECTORY "${UI_PROTOCOL_DIR}")
+        set(UI_LAYER_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-layer-shell-unstable-v1.xml")
+        set(UI_XDG_XML "${WAYLAND_UI_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml")
+        add_custom_command(
+            OUTPUT "${UI_PROTOCOL_DIR}/layer-shell-client.h" "${UI_PROTOCOL_DIR}/layer-shell.c"
+                   "${UI_PROTOCOL_DIR}/xdg-shell.c"
+            COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_LAYER_XML}" "${UI_PROTOCOL_DIR}/layer-shell-client.h"
+            COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_LAYER_XML}" "${UI_PROTOCOL_DIR}/layer-shell.c"
+            COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_XDG_XML}" "${UI_PROTOCOL_DIR}/xdg-shell.c"
+            DEPENDS "${UI_LAYER_XML}" "${UI_XDG_XML}" VERBATIM)
+        target_sources(pollyui PRIVATE src/host/sdl/layer_shell.c
+            "${UI_PROTOCOL_DIR}/layer-shell-client.h" "${UI_PROTOCOL_DIR}/layer-shell.c"
+            "${UI_PROTOCOL_DIR}/xdg-shell.c")
+        target_include_directories(pollyui PRIVATE "${UI_PROTOCOL_DIR}")
+        target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
+        target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
+    endif()
 endif()
 
 # macOS native title-bar helper (transparent titlebar + native traffic lights).
@@ -198,7 +223,7 @@ if (WIN32)
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
     # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
     target_link_libraries(pollyui PRIVATE
-        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp winhttp)
+        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp winhttp shcore)
 endif()
 
 # Release/GUI build: no console window (console.log mirrors to the debugger via
@@ -225,4 +250,22 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
     add_test(NAME sdl-multi-window COMMAND pollyui-multi-test)
     set_tests_properties(sdl-input-adapter sdl-multi-window PROPERTIES TIMEOUT 15
         ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;PU_RENDERER=raster")
+    if (PU_LAYER_SHELL)
+        add_executable(pollyui-layer-client-test desktop/tests/runtime-client.c)
+        target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core)
+        target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        foreach(renderer IN ITEMS raster gl)
+            add_test(NAME desktop-runtime-${renderer}
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.mjs")
+            set_tests_properties(desktop-runtime-${renderer} PROPERTIES TIMEOUT 35
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+            add_test(NAME desktop-layer-${renderer}
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-layer.sh"
+                    $<TARGET_FILE:pollyui> $<TARGET_FILE:pollywm>)
+            set_tests_properties(desktop-layer-${renderer} PROPERTIES TIMEOUT 35
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+        endforeach()
+    endif()
 endif()

@@ -412,6 +412,15 @@ For the desktop, PollyWM remains a separate process. The initial PollyShell can
 share several surfaces in one runtime; this does not require settings, file
 management or system services to share that process.
 
+Linux layer windows own their Wayland surface and import it into SDL. The
+connection is held across the whole application session, including creation
+failures before the first window and replacement of the last window. The role
+is configured before initializing its renderer, so even the first submitted
+buffer has the correct size. SDL handles fractional scaling through its own
+viewport objects; PollyWM advertises the corresponding standard protocols.
+Role destruction precedes renderer/SDL destruction, and the owned Wayland
+surface is released afterward. SDL's normal ordinary-window path is unchanged.
+
 ### Deferred ⏸
 
 - **JS on its own thread** (RN-old-bridge style). The industry moved away from

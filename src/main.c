@@ -93,7 +93,7 @@ typedef struct PuApp {
     struct PuApp *next;
     PuWindow *window;
     JSValue handle;
-    int closed, frameless, backdrop, titlebar;
+    int closed, frameless, backdrop, titlebar, is_layer;
 } PuApp;
 
 static PuApp *g_apps;
@@ -320,6 +320,7 @@ static PuApp *new_app(PuBridge *bridge)
 
 static int open_app(PuApp *app, const PuWindowConfig *config)
 {
+    app->is_layer = config->layer != NULL;
     app->window = pu_window_create(config);
     if (!app->window) return 0;
     pu_window_set_paint(app->window, app_paint, app);
@@ -334,17 +335,122 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
     return 1;
 }
 
-static int window_dimension(JSContext *ctx, JSValueConst options, const char *name, int *value)
+static int window_integer(JSContext *ctx, JSValueConst options, const char *name, int minimum, int *value)
 {
     JSValue input = JS_GetPropertyStr(ctx, options, name);
     if (JS_IsException(input)) return 0;
     if (JS_IsUndefined(input)) { JS_FreeValue(ctx, input); return 1; }
     double number;
     int ok = JS_IsNumber(input) && JS_ToFloat64(ctx, &number, input) == 0 &&
-        isfinite(number) && number >= 1 && number <= INT_MAX && floor(number) == number;
+        isfinite(number) && number >= minimum && number <= INT_MAX && floor(number) == number;
     JS_FreeValue(ctx, input);
-    if (!ok) { JS_ThrowTypeError(ctx, "%s must be a positive integer", name); return 0; }
+    if (!ok) { JS_ThrowTypeError(ctx, "%s must be an integer in [%d, %d]", name, minimum, INT_MAX); return 0; }
     *value = (int)number;
+    return 1;
+}
+
+static int option_names(JSContext *ctx, JSValueConst options, const char *const allowed[])
+{
+    if (!JS_IsObject(options) || JS_IsArray(options) || JS_IsFunction(ctx, options)) {
+        JS_ThrowTypeError(ctx, "Expected an options object");
+        return 0;
+    }
+    JSPropertyEnum *properties = NULL;
+    uint32_t count = 0;
+    if (JS_GetOwnPropertyNames(ctx, &properties, &count, options, JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK) < 0) {
+        return 0;
+    }
+    int valid = 1;
+    for (uint32_t i = 0; i < count; i++) {
+        const char *key = JS_AtomToCString(ctx, properties[i].atom);
+        if (!key) valid = 0;
+        else {
+            int found = 0;
+            for (int j = 0; allowed[j]; j++) if (!strcmp(key, allowed[j])) found = 1;
+            if (!found) {
+                JS_ThrowTypeError(ctx, "Unknown option: %s", key);
+                valid = 0;
+            }
+        }
+        JS_FreeCString(ctx, key);
+        if (!valid) break;
+    }
+    JS_FreePropertyEnum(ctx, properties, count);
+    return valid;
+}
+
+static int choice(JSContext *ctx, JSValueConst input, const char *name, const char *const choices[])
+{
+    if (JS_IsException(input)) return -1;
+    if (!JS_IsString(input)) { JS_ThrowTypeError(ctx, "%s must be a string", name); return -1; }
+    size_t length;
+    const char *text = JS_ToCStringLen(ctx, &length, input);
+    if (!text) return -1;
+    int result = -1;
+    for (int i = 0; choices[i]; i++)
+        if (strlen(choices[i]) == length && !memcmp(text, choices[i], length)) { result = i; break; }
+    JS_FreeCString(ctx, text);
+    if (result < 0) JS_ThrowTypeError(ctx, "Unknown %s value", name);
+    return result;
+}
+
+static int layer_options(JSContext *ctx, JSValueConst options, PuLayerConfig *layer)
+{
+    const char *const keyboards[] = { "none", "exclusive", "on-demand", NULL };
+    const char *const edges[] = { "top", "bottom", "left", "right", NULL };
+    const char *const margins[] = { "top", "right", "bottom", "left", NULL };
+    JSValue input = JS_GetPropertyStr(ctx, options, "keyboard");
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input)) layer->keyboard = choice(ctx, input, "keyboard", keyboards);
+    JS_FreeValue(ctx, input);
+    if (layer->keyboard < 0 || !window_integer(ctx, options, "exclusiveZone", -1, &layer->exclusive_zone)) return 0;
+    input = JS_GetPropertyStr(ctx, options, "anchors");
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input)) {
+        if (!JS_IsArray(input)) {
+            JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "anchors must be an array"); return 0;
+        }
+        JSValue length = JS_GetPropertyStr(ctx, input, "length");
+        uint32_t count = 0;
+        int ok = !JS_ToUint32(ctx, &count, length);
+        JS_FreeValue(ctx, length);
+        if (!ok || count > 4) {
+            JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "Too many anchors"); return 0;
+        }
+        for (uint32_t i = 0; i < count; i++) {
+            JSValue edge = JS_GetPropertyUint32(ctx, input, i);
+            int index = choice(ctx, edge, "anchor", edges);
+            JS_FreeValue(ctx, edge);
+            if (index < 0 || (layer->anchors & (1u << index))) {
+                JS_FreeValue(ctx, input);
+                if (index >= 0) JS_ThrowTypeError(ctx, "Duplicate anchor");
+                return 0;
+            }
+            layer->anchors |= 1u << index;
+        }
+    }
+    JS_FreeValue(ctx, input);
+    input = JS_GetPropertyStr(ctx, options, "output");
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input)) {
+        double id;
+        int ok = JS_IsNumber(input) && !JS_ToFloat64(ctx, &id, input) &&
+            isfinite(id) && id >= 0 && id <= UINT32_MAX && floor(id) == id;
+        if (!ok) { JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "Invalid output ID"); return 0; }
+        layer->output = (uint32_t)id;
+    }
+    JS_FreeValue(ctx, input);
+    input = JS_GetPropertyStr(ctx, options, "margins");
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input) &&
+        (!option_names(ctx, input, margins) ||
+         !window_integer(ctx, input, "top", INT_MIN, &layer->margin_top) ||
+         !window_integer(ctx, input, "right", INT_MIN, &layer->margin_right) ||
+         !window_integer(ctx, input, "bottom", INT_MIN, &layer->margin_bottom) ||
+         !window_integer(ctx, input, "left", INT_MIN, &layer->margin_left))) {
+        JS_FreeValue(ctx, input); return 0;
+    }
+    JS_FreeValue(ctx, input);
     return 1;
 }
 
@@ -353,31 +459,39 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
     if (!window_app(ctx, self, 1)) return JS_EXCEPTION;
     if (g_app_quitting) return JS_ThrowTypeError(ctx, "Application is quitting");
     JSValue options = argc ? JS_DupValue(ctx, argv[0]) : JS_NewObject(ctx);
-    if (!JS_IsObject(options) || JS_IsArray(options) || JS_IsFunction(ctx, options)) {
-        JS_FreeValue(ctx, options);
-        return JS_ThrowTypeError(ctx, "window.create requires an options object");
-    }
-    JSPropertyEnum *properties = NULL;
-    uint32_t count = 0;
-    if (JS_GetOwnPropertyNames(ctx, &properties, &count, options, JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK) < 0) {
-        JS_FreeValue(ctx, options); return JS_EXCEPTION;
-    }
-    int valid = 1;
-    for (uint32_t i = 0; i < count; i++) {
-        const char *key = JS_AtomToCString(ctx, properties[i].atom);
-        if (!key) valid = 0;
-        else if (strcmp(key, "title") && strcmp(key, "width") && strcmp(key, "height")) {
-            JS_ThrowTypeError(ctx, "Unknown window option: %s", key);
-            valid = 0;
-        }
-        JS_FreeCString(ctx, key);
-        if (!valid) break;
-    }
-    JS_FreePropertyEnum(ctx, properties, count);
+    const char *const names[] = { "title", "width", "height", "layer", "anchors",
+        "exclusiveZone", "keyboard", "output", "margins", NULL };
+    if (!option_names(ctx, options, names)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
     PuWindowConfig config = { .width = 640, .height = 480, .title = "PollyUI" };
-    if (!valid || !window_dimension(ctx, options, "width", &config.width) ||
-        !window_dimension(ctx, options, "height", &config.height)) {
+    PuLayerConfig layer = {0};
+    JSValue layer_name = JS_GetPropertyStr(ctx, options, "layer");
+    int valid = !JS_IsException(layer_name);
+    if (valid && !JS_IsUndefined(layer_name)) {
+        const char *const levels[] = { "background", "bottom", "top", "overlay", NULL };
+        layer.layer = choice(ctx, layer_name, "layer", levels);
+        valid = layer.layer >= 0 && layer_options(ctx, options, &layer);
+        config.layer = &layer;
+    } else if (valid) {
+        for (int i = 4; names[i]; i++) {
+            JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
+            if (JS_IsException(value)) valid = 0;
+            else if (!JS_IsUndefined(value)) {
+                JS_ThrowTypeError(ctx, "%s requires a layer surface", names[i]);
+                valid = 0;
+            }
+            JS_FreeValue(ctx, value);
+            if (!valid) break;
+        }
+    }
+    JS_FreeValue(ctx, layer_name);
+    if (!valid || !window_integer(ctx, options, "width", config.layer ? 0 : 1, &config.width) ||
+        !window_integer(ctx, options, "height", config.layer ? 0 : 1, &config.height)) {
         JS_FreeValue(ctx, options); return JS_EXCEPTION;
+    }
+    if (config.layer && ((!config.width && (layer.anchors & 12) != 12) ||
+                        (!config.height && (layer.anchors & 3) != 3))) {
+        JS_FreeValue(ctx, options);
+        return JS_ThrowTypeError(ctx, "Zero layer dimensions require opposite anchors");
     }
     JSValue title = JS_GetPropertyStr(ctx, options, "title");
     JS_FreeValue(ctx, options);
@@ -410,11 +524,21 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
     return JS_DupValue(ctx, app->handle);
 }
 
+static PuApp *toplevel_app(JSContext *ctx, JSValueConst value)
+{
+    PuApp *app = window_app(ctx, value, 0);
+    if (app && app->is_layer) {
+        JS_ThrowTypeError(ctx, "Toplevel window controls do not apply to layer surfaces");
+        return NULL;
+    }
+    return app;
+}
+
 static JSValue jswin_minimize(JSContext *c, JSValueConst t, int n, JSValueConst *a)
-{ (void)n;(void)a; PuApp *app = window_app(c,t,0); if (!app) return JS_EXCEPTION;
+{ (void)n;(void)a; PuApp *app = toplevel_app(c,t); if (!app) return JS_EXCEPTION;
   pu_window_minimize(app->window); return JS_UNDEFINED; }
 static JSValue jswin_maximize(JSContext *c, JSValueConst t, int n, JSValueConst *a)
-{ (void)n;(void)a; PuApp *app = window_app(c,t,0); if (!app) return JS_EXCEPTION;
+{ (void)n;(void)a; PuApp *app = toplevel_app(c,t); if (!app) return JS_EXCEPTION;
   pu_window_maximize_toggle(app->window); return JS_UNDEFINED; }
 static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; PuApp *app = window_app(c,t,1); if (!app) return JS_EXCEPTION;
@@ -428,19 +552,19 @@ static JSValue jswin_closed(JSContext *c, JSValueConst t)
 { PuApp *app = window_app(c,t,1); return app ? JS_NewBool(c, app->closed ||
     (app->window && !pu_window_is_open(app->window))) : JS_EXCEPTION; }
 static JSValue jswin_ismax(JSContext *c, JSValueConst t, int n, JSValueConst *a)
-{ (void)n;(void)a; PuApp *app = window_app(c,t,0); return app ?
+{ (void)n;(void)a; PuApp *app = toplevel_app(c,t); return app ?
     JS_NewBool(c, pu_window_is_maximized(app->window)) : JS_EXCEPTION; }
 static JSValue jswin_frameless(JSContext *c, JSValueConst t, int n, JSValueConst *a)
-{ PuApp *app = window_app(c,t,0); if (!app) return JS_EXCEPTION;
+{ PuApp *app = toplevel_app(c,t); if (!app) return JS_EXCEPTION;
   app->frameless = n ? JS_ToBool(c,a[0]) : 1;
   pu_window_set_frameless(app->window, app->frameless); return JS_UNDEFINED; }
 static JSValue jswin_backdrop(JSContext *c, JSValueConst t, int n, JSValueConst *a)
-{ PuApp *app = window_app(c,t,0); if (!app) return JS_EXCEPTION;
+{ PuApp *app = toplevel_app(c,t); if (!app) return JS_EXCEPTION;
   int32_t type = 2; if (n && JS_ToInt32(c,&type,a[0])) return JS_EXCEPTION;
   app->backdrop = type; pu_window_set_backdrop(app->window,type); return JS_UNDEFINED; }
 static JSValue jswin_titlebarstyle(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 {
-    PuApp *app = window_app(c,t,0);
+    PuApp *app = toplevel_app(c,t);
     if (!app) return JS_EXCEPTION;
     int32_t style = 0;
     if (n && JS_IsString(a[0])) {
@@ -473,6 +597,33 @@ static JSValue jswin_capture(JSContext *c, JSValueConst t, int n, JSValueConst *
     return ok ? JS_UNDEFINED : JS_ThrowInternalError(c,"Cannot capture this window's presented frame");
 }
 
+static JSValue jswin_displays(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argc; (void)argv;
+    if (!window_app(ctx, self, 1)) return JS_EXCEPTION;
+    int count = 0;
+    PuDisplayInfo *items = pu_window_displays(&count);
+    if (!items) return JS_ThrowInternalError(ctx, "Cannot query displays");
+    JSValue array = JS_NewArray(ctx);
+    if (JS_IsException(array)) { free(items); return array; }
+    for (int i = 0; i < count; i++) {
+        JSValue item = JS_NewObject(ctx);
+        if (JS_IsException(item)) { free(items); JS_FreeValue(ctx, array); return item; }
+        JS_SetPropertyStr(ctx, item, "id", JS_NewUint32(ctx, items[i].id));
+        JS_SetPropertyStr(ctx, item, "name", JS_NewString(ctx, items[i].name));
+        JS_SetPropertyStr(ctx, item, "x", JS_NewInt32(ctx, items[i].x));
+        JS_SetPropertyStr(ctx, item, "y", JS_NewInt32(ctx, items[i].y));
+        JS_SetPropertyStr(ctx, item, "width", JS_NewInt32(ctx, items[i].width));
+        JS_SetPropertyStr(ctx, item, "height", JS_NewInt32(ctx, items[i].height));
+        JS_SetPropertyStr(ctx, item, "scale", JS_NewFloat64(ctx, items[i].scale));
+        if (JS_SetPropertyUint32(ctx, array, (uint32_t)i, item) < 0) {
+            free(items); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+        }
+    }
+    free(items);
+    return array;
+}
+
 /* Install one shared realm; each native window has its own document and controls. */
 static PuApp *install_window_api(JSContext *ctx)
 {
@@ -484,6 +635,7 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "create", JS_NewCFunction(ctx, jswin_create, "create", 1));
     JS_SetPropertyStr(ctx, win, "quit", JS_NewCFunction(ctx, jswin_quit, "quit", 0));
     JS_SetPropertyStr(ctx, win, "capture", JS_NewCFunction(ctx, jswin_capture, "capture", 1));
+    JS_SetPropertyStr(ctx, win, "displays", JS_NewCFunction(ctx, jswin_displays, "displays", 0));
     JSAtom closed = JS_NewAtom(ctx, "closed");
     JS_DefinePropertyGetSet(ctx, win, closed,
         JS_NewCFunction2(ctx, (JSCFunction *)jswin_closed, "closed", 0, JS_CFUNC_getter, 0),
@@ -911,11 +1063,12 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv)
     g_app_script = s;
     g_app_bridge = bridge;
     g_app_quitting = g_app_error = 0;
-    PuApp *primary = install_window_api(pu_script_jsctx(s));
+    int host_ready = pu_window_system_init();
+    PuApp *primary = host_ready ? install_window_api(pu_script_jsctx(s)) : NULL;
     install_application(pu_script_jsctx(s), &paths, argc, argv);
 
     int rc = primary ? pu_script_run_file(s, path) : 1;
-    if (!primary) fprintf(stderr, "[host] Cannot install window API\n");
+    if (!primary) fprintf(stderr, "[host] Failed to create application window: window system initialization\n");
     if (rc == 0)
         pu_script_pump(s);   /* drain microtasks/timers/async from setup (non-blocking) */
 
@@ -944,6 +1097,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv)
     pu_dispatch_set_waker(disp, NULL, NULL);
     g_app_quitting = 1;
     while (g_apps) app_retire(g_apps, 0);
+    if (host_ready) pu_window_system_shutdown();
     if (g_app_error) rc = 1;
     g_app_script = NULL;
     g_app_bridge = NULL;
@@ -957,7 +1111,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv)
 
 static int run_demo(void)
 {
-    PuWindowConfig cfg;
+    PuWindowConfig cfg = {0};
     cfg.title  = "PollyUI \xE2\x80\x94 demo";
     cfg.width  = 960;
     cfg.height = 600;

@@ -1,0 +1,188 @@
+#include "host/sdl/layer_shell.h"
+#include "layer-shell-client.h"
+
+#include <limits.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wayland-client.h>
+
+struct PuLayer {
+    PuWindow *owner;
+    SDL_Window *window;
+    struct wl_display *display;
+    struct wl_surface *native;
+    struct zwlr_layer_shell_v1 *shell;
+    struct zwlr_layer_surface_v1 *surface;
+    int configured, closed, failed;
+};
+
+struct Registry {
+    struct wl_compositor *compositor;
+    struct zwlr_layer_shell_v1 *shell;
+    int viewporter, fractional_scale;
+};
+
+static void global(void *data, struct wl_registry *registry, uint32_t name,
+                   const char *interface, uint32_t version)
+{
+    struct Registry *state = data;
+    if (!state->shell && version >= 4 && strcmp(interface, "zwlr_layer_shell_v1") == 0)
+        state->shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
+    if (!state->compositor && version >= 4 && strcmp(interface, "wl_compositor") == 0)
+        state->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+    if (strcmp(interface, "wp_viewporter") == 0) state->viewporter = 1;
+    if (strcmp(interface, "wp_fractional_scale_manager_v1") == 0) state->fractional_scale = 1;
+}
+
+static void global_remove(void *data, struct wl_registry *registry, uint32_t name)
+{ (void)data; (void)registry; (void)name; }
+
+static const struct wl_registry_listener registry_listener = { global, global_remove };
+
+static void sync_done(void *data, struct wl_callback *callback, uint32_t serial)
+{ (void)callback; (void)serial; *(int *)data = 1; }
+static const struct wl_callback_listener sync_listener = { .done = sync_done };
+
+static int wait_for(PuLayer *layer, int *ready)
+{
+    Uint64 start = SDL_GetTicks();
+    while (!*ready && !layer->closed && !layer->failed) {
+        if (wl_display_flush(layer->display) < 0 && errno != EAGAIN && errno != EINTR)
+            return SDL_SetError("Cannot flush layer requests: %s", strerror(errno));
+        SDL_PumpEvents(); /* Queue native input without consuming another window's events. */
+        if (wl_display_get_error(layer->display))
+            return SDL_SetError("Wayland layer protocol connection failed");
+        if (SDL_GetTicks() - start >= 3000)
+            return SDL_SetError("Timed out waiting for the compositor's layer configuration");
+        if (!*ready) SDL_Delay(1);
+    }
+    if (layer->closed || layer->failed) return SDL_SetError("Layer closed or failed during configuration");
+    return 1;
+}
+
+static void configured(void *data, struct zwlr_layer_surface_v1 *surface,
+                       uint32_t serial, uint32_t width, uint32_t height)
+{
+    PuLayer *layer = data;
+    int current_width = 0, current_height = 0;
+    if (width > INT_MAX || height > INT_MAX ||
+        !SDL_GetWindowSize(layer->window, &current_width, &current_height)) {
+        SDL_SetError("Invalid layer surface dimensions");
+        layer->failed = 1;
+        pu_sdl_layer_failed(layer->owner, "Layer configure");
+        return;
+    }
+    zwlr_layer_surface_v1_ack_configure(surface, serial);
+    if (!SDL_SetWindowSize(layer->window, width ? (int)width : current_width,
+                           height ? (int)height : current_height)) {
+        layer->failed = 1;
+        pu_sdl_layer_failed(layer->owner, "Layer resize");
+        return;
+    }
+    layer->configured = 1;
+}
+
+static void closed(void *data, struct zwlr_layer_surface_v1 *surface)
+{
+    (void)surface;
+    PuLayer *layer = data;
+    layer->closed = 1;
+    pu_window_close(layer->owner);
+}
+
+static const struct zwlr_layer_surface_v1_listener layer_listener = { configured, closed };
+
+PuLayer *pu_layer_prepare(PuWindow *owner)
+{
+    PuLayer *layer = calloc(1, sizeof(*layer));
+    if (!layer) { SDL_SetError("Cannot allocate layer surface state"); return NULL; }
+    layer->owner = owner;
+    layer->display = SDL_GetPointerProperty(SDL_GetGlobalProperties(),
+        SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
+    if (!layer->display) {
+        SDL_SetError("Layer surfaces require the Wayland video driver");
+        free(layer);
+        return NULL;
+    }
+    struct Registry state = {0};
+    struct wl_registry *registry = wl_display_get_registry(layer->display);
+    int synchronized = 0;
+    struct wl_callback *sync = registry ? wl_display_sync(layer->display) : NULL;
+    if (!registry || !sync) {
+        if (registry) wl_registry_destroy(registry);
+        SDL_SetError("Cannot allocate Wayland registry sync");
+        free(layer);
+        return NULL;
+    }
+    wl_registry_add_listener(registry, &registry_listener, &state);
+    wl_callback_add_listener(sync, &sync_listener, &synchronized);
+    int ready = wait_for(layer, &synchronized);
+    wl_callback_destroy(sync);
+    wl_registry_destroy(registry);
+    if (!ready || !state.shell || !state.compositor || !state.viewporter || !state.fractional_scale) {
+        if (state.shell) zwlr_layer_shell_v1_destroy(state.shell);
+        if (state.compositor) wl_compositor_destroy(state.compositor);
+        if (ready) SDL_SetError("Required layer-shell v4, viewporter or fractional-scale globals are unavailable or unauthorized");
+        free(layer);
+        return NULL;
+    }
+    layer->shell = state.shell;
+    layer->native = wl_compositor_create_surface(state.compositor);
+    wl_compositor_destroy(state.compositor);
+    if (!layer->native) {
+        SDL_SetError("Cannot allocate owned Wayland surface");
+        pu_layer_destroy(layer);
+        return NULL;
+    }
+    return layer;
+}
+
+struct wl_surface *pu_layer_surface(PuLayer *layer) { return layer->native; }
+
+int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *config)
+{
+    layer->window = window;
+    SDL_PropertiesID properties = SDL_GetWindowProperties(window);
+    if (SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL) != layer->native ||
+        SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_XDG_SURFACE_POINTER, NULL))
+        return SDL_SetError("SDL did not retain the external roleless surface");
+    struct wl_output *output = NULL;
+    if (config->layer->output) {
+        output = SDL_GetPointerProperty(SDL_GetDisplayProperties(config->layer->output),
+            SDL_PROP_DISPLAY_WAYLAND_WL_OUTPUT_POINTER, NULL);
+        if (!output) return SDL_SetError("Unknown Wayland output ID");
+    }
+    const PuLayerConfig *options = config->layer;
+    layer->surface = zwlr_layer_shell_v1_get_layer_surface(layer->shell, layer->native, output,
+        options->layer, config->title ? config->title : "org.pollyui.shell");
+    zwlr_layer_shell_v1_destroy(layer->shell);
+    layer->shell = NULL;
+    if (!layer->surface) return SDL_SetError("Cannot create layer surface");
+    zwlr_layer_surface_v1_add_listener(layer->surface, &layer_listener, layer);
+    zwlr_layer_surface_v1_set_size(layer->surface, config->width, config->height);
+    zwlr_layer_surface_v1_set_anchor(layer->surface, options->anchors);
+    zwlr_layer_surface_v1_set_exclusive_zone(layer->surface, options->exclusive_zone);
+    zwlr_layer_surface_v1_set_keyboard_interactivity(layer->surface, options->keyboard);
+    zwlr_layer_surface_v1_set_margin(layer->surface, options->margin_top, options->margin_right,
+                                    options->margin_bottom, options->margin_left);
+    wl_surface_commit(layer->native);
+    return wait_for(layer, &layer->configured);
+}
+
+void pu_layer_unmap(PuLayer *layer)
+{
+    if (layer && layer->surface) {
+        zwlr_layer_surface_v1_destroy(layer->surface);
+        layer->surface = NULL;
+    }
+}
+
+void pu_layer_destroy(PuLayer *layer)
+{
+    if (!layer) return;
+    pu_layer_unmap(layer);
+    if (layer->shell) zwlr_layer_shell_v1_destroy(layer->shell);
+    if (layer->native) wl_surface_destroy(layer->native);
+    free(layer);
+}

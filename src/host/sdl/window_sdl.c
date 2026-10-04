@@ -18,6 +18,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#if defined(PU_LAYER_SHELL)
+#include "host/sdl/layer_shell.h"
+#endif
 
 #if defined(PU_METAL_BACKEND)
 /* Implemented in src/render/skia_metal.mm; acquires the next drawable + wraps
@@ -40,6 +43,9 @@ struct PuWindow {
     SDL_Texture  *tex;        /* raster fallback only */
     PuSurface    *surface;
     SDL_GLContext gl_context;
+#if defined(PU_LAYER_SHELL)
+    PuLayer *layer_surface;
+#endif
 #if defined(PU_METAL_BACKEND)
     SDL_MetalView metal_view;
 #endif
@@ -68,11 +74,12 @@ struct PuWindow {
 
 static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
 static PuWindow *g_windows;
-static int g_initialized, g_loop_running;
+static int g_initialized, g_loop_running, g_system_users;
+static void pu_sync_size(PuWindow *w);
 
 static void shutdown_video(void)
 {
-    if (g_initialized && !g_windows && !g_loop_running) {
+    if (g_initialized && !g_windows && !g_loop_running && !g_system_users) {
         SDL_Quit();
         g_initialized = 0;
         g_wake_event = (Uint32)-1;
@@ -84,6 +91,79 @@ static void fail_window(PuWindow *w, const char *operation)
     SDL_Log("%s failed: %s", operation, SDL_GetError());
     w->exit_code = 1;
     w->running = 0;
+}
+
+#if defined(PU_LAYER_SHELL)
+void pu_sdl_layer_failed(PuWindow *w, const char *operation) { fail_window(w, operation); }
+#endif
+
+static int ensure_video(void)
+{
+    if (!SDL_SetHintWithPriority(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0", SDL_HINT_OVERRIDE)) {
+        SDL_Log("Cannot select host-managed window lifetime: %s", SDL_GetError());
+        return 0;
+    }
+#if defined(__linux__)
+    const char *renderer = getenv("PU_RENDERER");
+    if (renderer && strcmp(renderer, "auto") && strcmp(renderer, "gl") && strcmp(renderer, "raster")) {
+        SDL_Log("PU_RENDERER must be auto, gl or raster");
+        return 0;
+    }
+#endif
+    if (!g_initialized && !SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("SDL_Init failed: %s", SDL_GetError());
+        return 0;
+    }
+    g_initialized = 1;
+    if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
+    if (!g_wake_event || g_wake_event == (Uint32)-1) {
+        SDL_Log("SDL_RegisterEvents failed: %s", SDL_GetError());
+        shutdown_video();
+        return 0;
+    }
+    return 1;
+}
+
+int pu_window_system_init(void)
+{
+    if (!ensure_video()) return 0;
+    g_system_users++;
+    return 1;
+}
+
+void pu_window_system_shutdown(void)
+{
+    if (g_system_users) g_system_users--;
+    shutdown_video();
+}
+
+PuDisplayInfo *pu_window_displays(int *count)
+{
+    *count = 0;
+    if (!ensure_video()) return NULL;
+    SDL_DisplayID *ids = SDL_GetDisplays(count);
+    if (!ids) { SDL_Log("Cannot enumerate displays: %s", SDL_GetError()); return NULL; }
+    PuDisplayInfo *items = calloc((size_t)*count + 1, sizeof(*items));
+    if (!items) { SDL_free(ids); SDL_Log("Cannot allocate display list"); return NULL; }
+    for (int i = 0; i < *count; i++) {
+        SDL_Rect bounds;
+        const char *name = SDL_GetDisplayName(ids[i]);
+        if (!name || !SDL_GetDisplayBounds(ids[i], &bounds)) {
+            SDL_Log("Cannot query display: %s", SDL_GetError());
+            free(items); SDL_free(ids); return NULL;
+        }
+        items[i].id = ids[i];
+        items[i].x = bounds.x; items[i].y = bounds.y;
+        items[i].width = bounds.w; items[i].height = bounds.h;
+        items[i].scale = SDL_GetDisplayContentScale(ids[i]);
+        if (items[i].scale <= 0) {
+            SDL_Log("Cannot query display scale: %s", SDL_GetError());
+            free(items); SDL_free(ids); return NULL;
+        }
+        SDL_utf8strlcpy(items[i].name, name, sizeof(items[i].name));
+    }
+    SDL_free(ids);
+    return items;
 }
 
 /* Map an SDL keycode to a DOM-style key name for non-text keys. Printable
@@ -253,16 +333,23 @@ static int make_current(PuWindow *w)
     return 1;
 }
 
-/* Render one frame and present (GPU) or blit (raster). */
-static void pu_sdl_paint(PuWindow *w)
+static int presentation_interval(void)
 {
-    if (w->exit_code || !make_current(w)) return;
+    /* An occluded Wayland surface may receive no frame callbacks. Never stall
+     * the shared UI thread waiting for one window while others need events. */
+    return strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0 ? 0 : 1;
+}
+
+/* Render one frame and present (GPU) or blit (raster). */
+static int pu_sdl_paint(PuWindow *w, const char *capture_path)
+{
+    if (w->exit_code || !make_current(w)) return 0;
 #if defined(PU_METAL_BACKEND)
     if (w->is_metal) pu_metal_begin_frame(w->surface);
-    if (w->is_metal && !pu_surface_valid(w->surface)) return;
+    if (w->is_metal && !pu_surface_valid(w->surface)) return 0;
 #endif
     if (!pu_surface_valid(w->surface)) {
-        fail_window(w, "Skia surface"); return;
+        fail_window(w, "Skia surface"); return 0;
     }
     float scale = w->scale > 0 ? w->scale : 1.0f;
     if (w->paint_fn) {
@@ -276,18 +363,21 @@ static void pu_sdl_paint(PuWindow *w)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
-    if (!make_current(w)) return;
+    if (!make_current(w)) return 0;
+    const char *capture = capture_path;
 #if defined(__linux__)
-    const char *capture = getenv("PU_CAPTURE_FRAME");
+    if (!capture) capture = getenv("PU_CAPTURE_FRAME");
+#endif
+    int capture_ok = 1;
     if (capture && *capture && !pu_surface_save_png(w->surface, capture)) {
         SDL_Log("Cannot capture rendered frame to %s", capture);
-        w->exit_code = 1; w->running = 0; return;
+        capture_ok = 0;
+        if (!capture_path) { w->exit_code = 1; w->running = 0; return 0; }
     }
-#endif
     if (pu_surface_is_gl(w->surface)) {
         pu_surface_present(w->surface);   /* GPU: flush + present drawable/swap */
         if (w->gl_context && !SDL_GL_SwapWindow(w->win)) {
-            fail_window(w, "SDL_GL_SwapWindow"); return;
+            fail_window(w, "SDL_GL_SwapWindow"); return 0;
         }
     } else {
         /* Raster drawing is on the CPU even if SDL uses a GPU for presentation. */
@@ -295,14 +385,14 @@ static void pu_sdl_paint(PuWindow *w)
         int row = pu_surface_row_bytes(w->surface);
         if (!pixels || !w->renderer || !w->tex) {
             fail_window(w, "Raster frame resources");
-            return;
+            return 0;
         }
         if (!SDL_UpdateTexture(w->tex, NULL, pixels, row) ||
             !SDL_RenderClear(w->renderer) ||
             !SDL_RenderTexture(w->renderer, w->tex, NULL, NULL) ||
             !SDL_RenderPresent(w->renderer)) {
             fail_window(w, "SDL frame presentation");
-            return;
+            return 0;
         }
     }
     if (!w->presented || getenv("PU_TRACE_FRAMES")) {
@@ -312,6 +402,7 @@ static void pu_sdl_paint(PuWindow *w)
                 w->width, w->height, SDL_GetCurrentVideoDriver(),
                 w->gl_context ? "GLES" : pu_surface_is_gl(w->surface) ? "GPU" : "raster");
     }
+    return capture_ok;
 }
 
 static int create_surface(PuWindow *w)
@@ -343,7 +434,7 @@ static int create_surface(PuWindow *w)
     }
     w->renderer = SDL_CreateRenderer(w->win, NULL);
     if (!w->renderer) { fail_window(w, "SDL_CreateRenderer"); return 0; }
-    if (!SDL_SetRenderVSync(w->renderer, 1))
+    if (!SDL_SetRenderVSync(w->renderer, presentation_interval()))
         SDL_Log("VSync unavailable for SDL presentation: %s", SDL_GetError());
     /* Match the actual presentation size, not a potentially stale resize event. */
     if (!SDL_GetCurrentRenderOutputSize(w->renderer, &w->width, &w->height)) {
@@ -358,6 +449,57 @@ static int create_surface(PuWindow *w)
     return 1;
 }
 
+static int create_native(PuWindow *w, const PuWindowConfig *config,
+                         const char *title, int width, int height, SDL_WindowFlags flags)
+{
+    if (config && config->layer) {
+#if defined(PU_LAYER_SHELL)
+        if (strcmp(SDL_GetCurrentVideoDriver(), "wayland")) {
+            SDL_SetError("Layer surfaces require the Wayland video driver");
+            fail_window(w, "Layer creation");
+            return 0;
+        }
+        w->layer_surface = pu_layer_prepare(w);
+        if (!w->layer_surface) { fail_window(w, "Layer preparation"); return 0; }
+        if (!SDL_GetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH) &&
+            !SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1")) {
+            fail_window(w, "Layer focus-click-through");
+            return 0;
+        }
+        SDL_PropertiesID props = SDL_CreateProperties();
+        bool ok = props &&
+            SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title) &&
+            SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
+            SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height) &&
+            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true) &&
+            SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WAYLAND_WL_SURFACE_POINTER,
+                pu_layer_surface(w->layer_surface)) &&
+            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+        if (ok) w->win = SDL_CreateWindowWithProperties(props);
+        if (props) SDL_DestroyProperties(props);
+        if (!w->win) {
+            if (!(flags & SDL_WINDOW_OPENGL)) fail_window(w, "Custom Wayland window");
+            return 0;
+        }
+        if (!pu_layer_attach(w->layer_surface, w->win, config)) {
+            fail_window(w, "Layer creation");
+            return 0;
+        }
+#else
+        SDL_SetError("Layer surfaces are not supported by this host build");
+        fail_window(w, "Layer creation");
+        return 0;
+#endif
+    } else {
+        w->win = SDL_CreateWindow(title, width, height, flags);
+        if (!w->win) {
+            if (!(flags & SDL_WINDOW_OPENGL)) fail_window(w, "SDL_CreateWindow");
+            return 0;
+        }
+    }
+    return 1;
+}
+
 #if defined(__linux__)
 static PuGlProc gl_proc(void *user, const char *name)
 {
@@ -365,7 +507,8 @@ static PuGlProc gl_proc(void *user, const char *name)
     return SDL_GL_GetProcAddress(name);
 }
 
-static int create_gl(PuWindow *w, const char *title, int width, int height, SDL_WindowFlags flags)
+static int create_gl(PuWindow *w, const PuWindowConfig *config, const char *title,
+                     int width, int height, SDL_WindowFlags flags)
 {
     if (!SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES) ||
         !SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
@@ -376,14 +519,13 @@ static int create_gl(PuWindow *w, const char *title, int width, int height, SDL_
         !SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8) ||
         !SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8) ||
         !SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1)) return 0;
-    w->win = SDL_CreateWindow(title, width, height, flags | SDL_WINDOW_OPENGL);
-    if (!w->win) return 0;
+    if (!create_native(w, config, title, width, height, flags | SDL_WINDOW_OPENGL)) return 0;
     w->gl_context = SDL_GL_CreateContext(w->win);
     if (!w->gl_context || !SDL_GL_MakeCurrent(w->win, w->gl_context)) return 0;
     if (!SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height)) return 0;
     w->surface = pu_surface_create_current_gl(gl_proc, NULL, w->width, w->height);
     if (!w->surface) { SDL_SetError("Skia GLES surface initialization failed"); return 0; }
-    if (!SDL_GL_SetSwapInterval(1))
+    if (!SDL_GL_SetSwapInterval(presentation_interval()))
         SDL_Log("GLES VSync unavailable: %s", SDL_GetError());
     return 1;
 }
@@ -391,6 +533,17 @@ static int create_gl(PuWindow *w, const char *title, int width, int height, SDL_
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
+    if (cfg && cfg->layer) {
+        const PuLayerConfig *layer = cfg->layer;
+        if (cfg->width < 0 || cfg->height < 0 || layer->layer < 0 || layer->layer > 3 ||
+            (layer->anchors & ~15u) || layer->exclusive_zone < -1 ||
+            layer->keyboard < 0 || layer->keyboard > 2 ||
+            (!cfg->width && (layer->anchors & 12) != 12) ||
+            (!cfg->height && (layer->anchors & 3) != 3)) {
+            SDL_Log("Invalid layer surface configuration");
+            return NULL;
+        }
+    }
 #if defined(__linux__)
     const char *renderer = getenv("PU_RENDERER");
     if (!renderer) renderer = "auto";
@@ -398,18 +551,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
         SDL_Log("PU_RENDERER must be auto, gl or raster"); return NULL;
     }
 #endif
-    if (!g_initialized && !SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("SDL_Init failed: %s", SDL_GetError());
-        return NULL;
-    }
-    g_initialized = 1;
-    if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
-    if (g_wake_event == 0 || g_wake_event == (Uint32)-1) {
-        SDL_Log("SDL_RegisterEvents failed: %s", SDL_GetError());
-        shutdown_video();
-        g_wake_event = (Uint32)-1;
-        return NULL;
-    }
+    if (!ensure_video()) return NULL;
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof *w);
     if (!w) { SDL_Log("Cannot allocate SDL window state"); shutdown_video(); return NULL; }
@@ -426,18 +568,24 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     flags |= SDL_WINDOW_METAL;
 #endif
 #if defined(__linux__)
-    if (strcmp(renderer, "raster") != 0 && !create_gl(w, title, cw, ch, flags)) {
+    if (strcmp(renderer, "raster") != 0 && !create_gl(w, cfg, title, cw, ch, flags)) {
         SDL_Log("GLES initialization failed: %s", SDL_GetError());
-        if (strcmp(renderer, "gl") == 0) { pu_window_destroy(w); return NULL; }
+        if (strcmp(renderer, "gl") == 0 || w->exit_code) { pu_window_destroy(w); return NULL; }
+#if defined(PU_LAYER_SHELL)
+        pu_layer_unmap(w->layer_surface);
+#endif
         if (w->surface) { pu_surface_destroy(w->surface); w->surface = NULL; }
         if (w->gl_context) { SDL_GL_DestroyContext(w->gl_context); w->gl_context = NULL; }
         if (w->win) { SDL_DestroyWindow(w->win); w->win = NULL; }
+#if defined(PU_LAYER_SHELL)
+        pu_layer_destroy(w->layer_surface);
+        w->layer_surface = NULL;
+#endif
         SDL_Log("PU_RENDERER=auto: falling back to Skia raster");
     }
 #endif
     if (!w->win) {
-        w->win = SDL_CreateWindow(title, cw, ch, flags);
-        if (!w->win) { fail_window(w, "SDL_CreateWindow"); pu_window_destroy(w); return NULL; }
+        if (!create_native(w, cfg, title, cw, ch, flags)) { pu_window_destroy(w); return NULL; }
     }
 
     recompute_scale(w);
@@ -468,7 +616,8 @@ int pu_window_save_frame(PuWindow *w, const char *path)
         SDL_Log("Cannot capture a closed or not-yet-presented window");
         return 0;
     }
-    return pu_surface_save_png(w->surface, path);
+    pu_sync_size(w);
+    return pu_sdl_paint(w, path);
 }
 
 /* Native hit-testing for frameless windows: ask the app (region_fn) whether a
@@ -697,7 +846,7 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
               e->type == SDL_EVENT_WINDOW_EXPOSED) &&
         e->window.windowID == SDL_GetWindowID(w->win)) {
         pu_sync_size(w);
-        pu_sdl_paint(w);     /* repaint live during the OS resize loop */
+        pu_sdl_paint(w, NULL);     /* repaint live during the OS resize loop */
         w->dirty = 0;
     }
     return true;             /* keep delivering the event to the main loop */
@@ -770,7 +919,7 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
             for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
         for (PuWindow *w = g_windows; w; w = w->next) {
             if (w->running && w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
-            if (w->dirty && w->running) { pu_sdl_paint(w); w->dirty = 0; }
+            if (w->dirty && w->running) { pu_sdl_paint(w, NULL); w->dirty = 0; }
         }
     }
 
@@ -790,6 +939,9 @@ void pu_window_destroy(PuWindow *w)
         while (*link && *link != w) link = &(*link)->next;
         if (*link) *link = w->next;
     }
+#if defined(PU_LAYER_SHELL)
+    pu_layer_unmap(w->layer_surface);
+#endif
     if (w->gl_context) SDL_GL_MakeCurrent(w->win, w->gl_context);
     if (w->surface)  pu_surface_destroy(w->surface);
     if (w->gl_context) SDL_GL_DestroyContext(w->gl_context);
@@ -799,6 +951,9 @@ void pu_window_destroy(PuWindow *w)
     if (w->metal_view) SDL_Metal_DestroyView(w->metal_view);
 #endif
     if (w->win)      SDL_DestroyWindow(w->win);
+#if defined(PU_LAYER_SHELL)
+    pu_layer_destroy(w->layer_surface);
+#endif
     free(w);
     shutdown_video();
 }
