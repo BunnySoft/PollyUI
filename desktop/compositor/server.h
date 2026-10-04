@@ -39,7 +39,8 @@ struct PuDesktopView {
     struct wlr_scene_tree *content, *popups;
     struct wlr_scene_rect *backdrop;
     struct wl_list link, all_link;
-    bool mapped;
+    bool mapped, minimized;
+    struct wlr_foreign_toplevel_handle_v1 *foreign;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending;
     enum PuDesktopMode mode;
@@ -51,6 +52,8 @@ struct PuDesktopView {
     uint32_t resize_edges;
     struct wl_listener map, unmap, commit, destroy;
     struct wl_listener move, resize, maximize, request_fullscreen;
+    struct wl_listener minimize, title, app_id, parent;
+    struct wl_listener foreign_activate, foreign_minimize, foreign_maximize, foreign_fullscreen, foreign_close;
 };
 
 enum PuDesktopGrab {
@@ -74,6 +77,7 @@ struct PuDesktop {
     struct wlr_seat *seat;
     struct wlr_xdg_shell *shell;
     struct wlr_layer_shell_v1 *layer_shell;
+    struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;
     bool arranging_layers;

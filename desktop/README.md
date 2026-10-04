@@ -63,6 +63,9 @@ Only that exact live `wl_client` receives reserved shell globals. The
 `zwlr_layer_shell_v1` version 4 global is filtered on both advertisement and
 binding. Fixtures verify that guessing a known global ID does not bypass the
 filter; ordinary xdg clients do not receive layer-shell privilege.
+The standard `zwlr_foreign_toplevel_manager_v1` window-management global is
+restricted to that same live shell connection. Public clients cannot enumerate
+or control other windows through it, even when they know its global ID.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -208,6 +211,15 @@ alternate window manager.
 - Client-side move/resize requests require a matching seat, client and pointer
   grab serial. Forged, cross-client and expired requests are ignored.
 - Focus falls back to another mapped window on unmap, close or disconnect.
+- Real minimized state hides a mapped window without destroying its surface or
+  saved maximize/fullscreen geometry. Focus falls back only to visible windows;
+  Alt+Tab restores its selected window, including when every window is minimized.
+  Minimize dismisses existing popups and rejects new popups from a minimized
+  parent. Clients may request minimization before their initial map.
+- Shell-only foreign-toplevel handles expose live titles/app IDs, state, parent
+  handles and output membership. Activate restores and focuses through the real
+  seat; minimize/restore, maximize/fullscreen and close use the compositor's normal
+  policy. Unmapping destroys the handle; close requests do not forcibly kill apps.
 - Basic selection forwarding through `wl_data_device_manager`.
 - XKB keymaps (standard `XKB_DEFAULT_*` environment settings), input-device
   lifecycle, frame scheduling via wlroots, signal-driven clean shutdown.
@@ -220,6 +232,7 @@ alternate window manager.
 | Alt + right-button drag | Resize from the bottom-right |
 | Alt + Tab | Cycle mapped windows |
 | Alt + F4 | Ask the focused client to close |
+| Alt + F9 | Minimize the focused window |
 | Alt + F10 | Toggle maximize |
 | Alt + F11 | Toggle fullscreen |
 | Alt + Escape | Exit PollyWM |
@@ -280,8 +293,8 @@ PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions an
 pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
 removal, reservations, role replacement and rejection on public connections.
 
-Not implemented: application launcher/window buttons, workspaces/tiling, Xwayland, window lists/control
-IPC, drag-and-drop policy, primary selection, screen capture/portals, IME
+Not implemented: application launcher/window buttons, workspaces/tiling, Xwayland,
+private workspace/session commands, drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary

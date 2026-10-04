@@ -11,7 +11,10 @@ enum TestCommand {
     TEST_POPUP, TEST_DESTROY_POPUP, TEST_DESTROY_ROLE, TEST_QUIT,
     TEST_UNMAXIMIZE, TEST_UNFULLSCREEN, TEST_HOLD, TEST_APPLY_FIRST, TEST_RELEASE,
     TEST_SMALL_FULLSCREEN, TEST_CHILD_POPUP, TEST_REPOSITION_POPUP,
-    TEST_LAYER_MAP, TEST_LAYER_CONFIGURE
+    TEST_LAYER_MAP, TEST_LAYER_CONFIGURE, TEST_MINIMIZE,
+    TEST_FOREIGN_QUERY, TEST_FOREIGN_MINIMIZE, TEST_FOREIGN_RESTORE, TEST_FOREIGN_ACTIVATE,
+    TEST_FOREIGN_MAXIMIZE, TEST_FOREIGN_UNMAXIMIZE, TEST_FOREIGN_FULLSCREEN,
+    TEST_FOREIGN_UNFULLSCREEN, TEST_FOREIGN_CLOSE, TEST_RENAME
 };
 
 struct TestLayer {
@@ -33,6 +36,8 @@ struct TestReply {
     int maximized, fullscreen, max_capability, full_capability;
     int pending, output_count, popup_x, popup_y, popup_w, popup_h, repositioned;
     int layer_capability;
+    int foreign_capability, foreign_count, foreign_state, foreign_outputs, foreign_done, minimize_capability;
+    char foreign_title[128];
     uint32_t serial;
 };
 

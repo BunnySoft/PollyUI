@@ -23,6 +23,7 @@
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_scene.h>
@@ -225,6 +226,82 @@ static bool scene_pixel(struct wlr_output *target, uint32_t expected)
 
 static bool layer_output_suite(struct TestLayer options);
 
+static bool foreign_suite(void)
+{
+    struct TestClient *a = &clients[0], *b = &clients[1], *shell = &shell_client;
+    struct PuDesktopView *first = find_view(1), *second = find_view(2);
+    CHECK(command(shell, TEST_QUERY, 0, 0, 0));
+    CHECK(shell->reply.foreign_capability && shell->reply.foreign_count == 2);
+    CHECK(!a->reply.foreign_capability && !b->reply.foreign_capability);
+    CHECK(b->reply.minimize_capability);
+    CHECK(command(b, TEST_MINIMIZE, 0, 0, 0));
+    CHECK(second->mapped && second->minimized && !second->tree->node.enabled && desktop.focused == first);
+    CHECK(command(shell, TEST_FOREIGN_QUERY, 2, 0, 0));
+    CHECK((shell->reply.foreign_state & WLR_FOREIGN_TOPLEVEL_HANDLE_V1_STATE_MINIMIZED) &&
+        !(shell->reply.foreign_state & WLR_FOREIGN_TOPLEVEL_HANDLE_V1_STATE_ACTIVATED));
+    CHECK(command(shell, TEST_FOREIGN_RESTORE, 2, 0, 0));
+    CHECK(!second->minimized && second->tree->node.enabled && desktop.focused == first);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(desktop.focused == second);
+    CHECK(command(b, TEST_POPUP, 0, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_MINIMIZE, 2, 0, 0));
+    CHECK(wl_list_empty(&second->toplevel->base->popups));
+    CHECK(command(b, TEST_DESTROY_POPUP, 0, 0, 0));
+    CHECK(command(b, TEST_POPUP, 0, 0, 0));
+    CHECK(wl_list_empty(&second->toplevel->base->popups));
+    CHECK(command(b, TEST_DESTROY_POPUP, 0, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(!second->minimized && desktop.focused == second);
+    struct wlr_box old = second->toplevel->base->geometry;
+    int x = second->tree->node.x, y = second->tree->node.y;
+    CHECK(command(shell, TEST_FOREIGN_MAXIMIZE, 2, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(second->mode == PU_DESKTOP_MAXIMIZED);
+    CHECK(command(shell, TEST_FOREIGN_MINIMIZE, 2, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(second->mode == PU_DESKTOP_MAXIMIZED && !second->minimized);
+    CHECK(command(shell, TEST_FOREIGN_UNMAXIMIZE, 2, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(second, x, y, old.width, old.height));
+    CHECK(command(shell, TEST_FOREIGN_FULLSCREEN, 2, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(second->mode == PU_DESKTOP_FULLSCREEN);
+    CHECK(command(shell, TEST_FOREIGN_MINIMIZE, 2, 0, 0));
+    CHECK(!second->tree->node.enabled);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_UNFULLSCREEN, 2, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(second, x, y, old.width, old.height));
+    CHECK(command(shell, TEST_FOREIGN_MINIMIZE, 1, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_MINIMIZE, 2, 0, 0));
+    CHECK(!desktop.focused);
+    key(KEY_LEFTALT, true); key(KEY_TAB, true); key(KEY_TAB, false); key(KEY_LEFTALT, false);
+    CHECK(desktop.focused && !desktop.focused->minimized);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 1, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(command(b, TEST_RENAME, 0, 0, 0));
+    CHECK(command(shell, TEST_FOREIGN_QUERY, 2, 0, 0));
+    CHECK(!strcmp(shell->reply.foreign_title, "Updated title") && shell->reply.foreign_outputs == 1);
+    int done = shell->reply.foreign_done;
+    for (int i = 0; i < 10; i++) CHECK(pump());
+    CHECK(command(shell, TEST_FOREIGN_QUERY, 2, 0, 0));
+    CHECK(shell->reply.foreign_done == done);
+    int closed = b->reply.closed;
+    CHECK(command(shell, TEST_FOREIGN_CLOSE, 2, 0, 0));
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(b->reply.closed == closed + 1);
+    CHECK(command(b, TEST_UNMAP, 0, 0, 0));
+    CHECK(command(shell, TEST_QUERY, 0, 0, 0));
+    CHECK(shell->reply.foreign_count == 1);
+    CHECK(command(b, TEST_REMAP, 0, 0, 4));
+    CHECK(second->mapped && second->minimized && desktop.focused == first);
+    CHECK(command(shell, TEST_QUERY, 0, 0, 0));
+    CHECK(shell->reply.foreign_count == 2);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(!second->minimized && desktop.focused == second);
+    return true;
+}
+
 static struct PuDesktopLayer *find_layer(int id)
 {
     char name[64];
@@ -254,6 +331,7 @@ static bool layer_suite(const char *path)
     CHECK(shell_client.reply.layer_capability == 1);
     CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
     CHECK(!clients[1].reply.layer_capability);
+    CHECK(foreign_suite());
     struct PuDesktopView *view = find_view(2);
     struct wlr_box full;
     wlr_output_layout_get_box(desktop.layout, view->output, &full);

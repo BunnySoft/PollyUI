@@ -23,10 +23,13 @@ static struct PuDesktop desktop;
 static const struct wl_interface restricted_interface = {
     .name = "zwlr_layer_shell_v1", .version = 1,
 };
+static const struct wl_interface foreign_interface = {
+    .name = "zwlr_foreign_toplevel_manager_v1", .version = 1,
+};
 static const char literal[] = "argument with spaces; $HOME is not expanded";
 
 struct Registry {
-    uint32_t restricted, compositor;
+    uint32_t restricted, foreign, compositor;
 };
 
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
@@ -36,6 +39,7 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     (void)version;
     struct Registry *state = data;
     if (strcmp(interface, restricted_interface.name) == 0) state->restricted = name;
+    if (strcmp(interface, foreign_interface.name) == 0) state->foreign = name;
     if (strcmp(interface, "wl_compositor") == 0) state->compositor = name;
 }
 
@@ -67,7 +71,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     struct wl_registry *registry = wl_display_get_registry(trusted);
     CHECK(wl_registry_add_listener(registry, &registry_listener, &privileged) == 0);
     CHECK(wl_display_roundtrip(trusted) >= 0);
-    CHECK(privileged.restricted && privileged.compositor);
+    CHECK(privileged.restricted && privileged.foreign && privileged.compositor);
     if (strcmp(mode, "--ignore-term") == 0) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct wl_proxy *capability = wl_registry_bind(
         registry, privileged.restricted, &restricted_interface, 1);
@@ -85,12 +89,23 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     struct wl_registry *public_registry = wl_display_get_registry(ordinary);
     CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
     CHECK(wl_display_roundtrip(ordinary) >= 0);
-    CHECK(public.compositor && !public.restricted);
+    CHECK(public.compositor && !public.restricted && !public.foreign);
     struct wl_proxy *forged = wl_registry_bind(
         public_registry, privileged.restricted, &restricted_interface, 1);
     CHECK(forged);
     CHECK(wl_display_roundtrip(ordinary) < 0);
     CHECK(wl_display_get_error(ordinary) == EPROTO);
+    wl_proxy_destroy(forged);
+    wl_registry_destroy(public_registry);
+    wl_display_disconnect(ordinary);
+    ordinary = wl_display_connect(socket_name);
+    CHECK(ordinary);
+    public_registry = wl_display_get_registry(ordinary);
+    CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
+    CHECK(wl_display_roundtrip(ordinary) >= 0);
+    CHECK(!public.foreign);
+    forged = wl_registry_bind(public_registry, privileged.foreign, &foreign_interface, 1);
+    CHECK(forged && wl_display_roundtrip(ordinary) < 0 && wl_display_get_error(ordinary) == EPROTO);
     wl_proxy_destroy(forged);
     wl_registry_destroy(public_registry);
     wl_display_disconnect(ordinary);

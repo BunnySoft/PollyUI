@@ -16,6 +16,7 @@
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_fractional_scale_v1.h>
+#include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_pointer.h>
@@ -68,6 +69,8 @@ static void update_layer_focus(struct PuDesktop *desktop);
 static void refresh_views(struct PuDesktop *desktop);
 static bool attach_popup(struct PuDesktopPopup *entry);
 static void constrain_layer_popups(struct PuDesktopLayer *layer);
+static void sync_foreign(struct PuDesktop *desktop);
+static void set_minimized(struct PuDesktopView *view, bool minimized);
 
 static void refresh_pointer(struct PuDesktop *desktop)
 {
@@ -139,11 +142,16 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
     if (desktop->focused)
         wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, !layer);
     enter_keyboard(desktop);
+    sync_foreign(desktop);
 }
 
 static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
 {
     if (view && !view->mapped) return;
+    if (view && view->minimized) {
+        view->minimized = false;
+        wlr_scene_node_set_enabled(&view->tree->node, true);
+    }
     if (!exclusive_layer(desktop->focused_layer)) desktop->focused_layer = NULL;
     if (desktop->focused != view) {
         if (desktop->focused)
@@ -153,6 +161,7 @@ static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
     if (!view) {
         update_layer_focus(desktop);
         enter_keyboard(desktop);
+        sync_foreign(desktop);
         return;
     }
     wlr_scene_node_raise_to_top(&view->tree->node);
@@ -161,6 +170,7 @@ static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
     wlr_xdg_toplevel_set_activated(view->toplevel, !desktop->focused_layer);
     update_layer_focus(desktop);
     enter_keyboard(desktop);
+    sync_foreign(desktop);
 }
 
 static void update_capabilities(struct PuDesktop *desktop)
@@ -187,11 +197,14 @@ static bool keybinding(struct PuDesktop *desktop, xkb_keysym_t sym)
         wl_display_terminate(desktop->display);
         return true;
     case XKB_KEY_Tab:
-        if (wl_list_length(&desktop->views) > 1) {
+        if (!wl_list_empty(&desktop->views)) {
             struct PuDesktopView *next =
                 wl_container_of(desktop->views.prev, next, link);
             focus_view(desktop, next);
         }
+        return true;
+    case XKB_KEY_F9:
+        if (desktop->focused) set_minimized(desktop->focused, true);
         return true;
     case XKB_KEY_F4:
         if (desktop->focused) wlr_xdg_toplevel_send_close(desktop->focused->toplevel);
@@ -385,6 +398,85 @@ static struct wlr_box view_box(struct PuDesktopView *view)
     return box;
 }
 
+static void sync_foreign(struct PuDesktop *desktop)
+{
+    if (!desktop->layout) return;
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->views, link) {
+        if (!view->foreign) continue;
+        struct wlr_foreign_toplevel_handle_v1 *handle = view->foreign;
+        const char *title = view->toplevel->title ? view->toplevel->title : "";
+        const char *app_id = view->toplevel->app_id ? view->toplevel->app_id : "";
+        if (!handle->title || strcmp(handle->title, title))
+            wlr_foreign_toplevel_handle_v1_set_title(handle, title);
+        if (!handle->app_id || strcmp(handle->app_id, app_id))
+            wlr_foreign_toplevel_handle_v1_set_app_id(handle, app_id);
+        wlr_foreign_toplevel_handle_v1_set_minimized(handle, view->minimized);
+        wlr_foreign_toplevel_handle_v1_set_maximized(handle, view->maximized);
+        wlr_foreign_toplevel_handle_v1_set_fullscreen(handle, view->fullscreen);
+        wlr_foreign_toplevel_handle_v1_set_activated(handle,
+            desktop->focused == view && !desktop->focused_layer && !view->minimized);
+        struct wlr_foreign_toplevel_handle_v1 *parent = NULL;
+        struct PuDesktopView *candidate;
+        wl_list_for_each(candidate, &desktop->views, link)
+            if (candidate->toplevel == view->toplevel->parent) parent = candidate->foreign;
+        wlr_foreign_toplevel_handle_v1_set_parent(handle, parent);
+        struct wlr_box box = view_box(view), bounds, overlap;
+        struct wlr_foreign_toplevel_handle_v1_output *old, *tmp;
+        wl_list_for_each_safe(old, tmp, &handle->outputs, link) {
+            if (!output_box(desktop, old->output, &bounds) ||
+                !wlr_box_intersection(&overlap, &box, &bounds))
+                wlr_foreign_toplevel_handle_v1_output_leave(handle, old->output);
+        }
+        struct wlr_output_layout_output *output;
+        wl_list_for_each(output, &desktop->layout->outputs, link) {
+            bool entered = false;
+            wl_list_for_each(old, &handle->outputs, link)
+                if (old->output == output->output) entered = true;
+            if (!entered && output_box(desktop, output->output, &bounds) &&
+                wlr_box_intersection(&overlap, &box, &bounds))
+                wlr_foreign_toplevel_handle_v1_output_enter(handle, output->output);
+        }
+    }
+}
+
+static void focus_fallback(struct PuDesktop *desktop)
+{
+    desktop->focused = NULL;
+    if (!desktop->stopping) {
+        struct PuDesktopView *next;
+        wl_list_for_each(next, &desktop->views, link) {
+            if (next->minimized) continue;
+            desktop->focused = next;
+            wlr_xdg_toplevel_set_activated(next->toplevel, !desktop->focused_layer);
+            break;
+        }
+    }
+    update_layer_focus(desktop);
+    enter_keyboard(desktop);
+    sync_foreign(desktop);
+}
+
+static void set_minimized(struct PuDesktopView *view, bool minimized)
+{
+    if (view->minimized == minimized) return;
+    view->minimized = minimized;
+    struct PuDesktop *desktop = view->desktop;
+    if (desktop->grabbed == view) end_grab(desktop);
+    if (minimized) {
+        struct wlr_xdg_popup *popup, *tmp;
+        wl_list_for_each_safe(popup, tmp, &view->toplevel->base->popups, link)
+            wlr_xdg_popup_destroy(popup);
+    }
+    wlr_scene_node_set_enabled(&view->tree->node, view->mapped && !minimized);
+    if (minimized && desktop->focused == view) {
+        wlr_xdg_toplevel_set_activated(view->toplevel, false);
+        focus_fallback(desktop);
+    }
+    sync_foreign(desktop);
+    refresh_pointer(desktop);
+}
+
 static void use_work_area(struct wlr_output *output, struct wlr_box *box)
 {
     struct PuDesktopOutput *entry = output->data;
@@ -492,6 +584,7 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     view->fullscreen = fullscreen;
     if (!maximized && !fullscreen) fit_floating(view, &box, &bounds);
     configure_view(view, box, &bounds);
+    sync_foreign(desktop);
 }
 
 static void present_view(struct PuDesktopView *view)
@@ -532,6 +625,7 @@ static void present_view(struct PuDesktopView *view)
     wlr_scene_subsurface_tree_set_clip(&view->content->node,
         view->mode != PU_DESKTOP_FLOATING ? &clip : NULL);
     update_layer_focus(view->desktop);
+    sync_foreign(view->desktop);
 }
 
 static void refresh_views(struct PuDesktop *desktop)
@@ -560,6 +654,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
     arrange_layers(desktop);
     refresh_views(desktop);
+    sync_foreign(desktop);
 }
 
 static void update_layer_focus(struct PuDesktop *desktop)
@@ -824,6 +919,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
             (int)(desktop->cursor->x - desktop->grab_x),
             (int)(desktop->cursor->y - desktop->grab_y));
         constrain_popups(view);
+        sync_foreign(desktop);
         return;
     }
     if (view && desktop->grab == PU_DESKTOP_RESIZE) {
@@ -888,7 +984,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
                        uint32_t edges, uint32_t button)
 {
     struct PuDesktop *desktop = view->desktop;
-    if (!view->mapped || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
+    if (!view->mapped || view->minimized || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
         view->geometry_pending || view->mode != PU_DESKTOP_FLOATING) return;
     desktop->grab = mode;
     desktop->grabbed = view;
@@ -1090,6 +1186,73 @@ static void new_output(struct wl_listener *listener, void *data)
     wlr_log(WLR_INFO, "Output %s: %dx%d", output->name, output->width, output->height);
 }
 
+static void foreign_activate(struct wl_listener *listener, void *data)
+{
+    struct PuDesktopView *view = wl_container_of(listener, view, foreign_activate);
+    struct wlr_foreign_toplevel_handle_v1_activated_event *event = data;
+    if (event->seat != view->desktop->seat) {
+        wlr_log(WLR_DEBUG, "Ignoring foreign activation for another seat");
+        return;
+    }
+    focus_view(view->desktop, view);
+}
+
+static void foreign_minimize(struct wl_listener *listener, void *data)
+{
+    struct PuDesktopView *view = wl_container_of(listener, view, foreign_minimize);
+    struct wlr_foreign_toplevel_handle_v1_minimized_event *event = data;
+    set_minimized(view, event->minimized);
+}
+
+static void foreign_maximize(struct wl_listener *listener, void *data)
+{
+    struct PuDesktopView *view = wl_container_of(listener, view, foreign_maximize);
+    struct wlr_foreign_toplevel_handle_v1_maximized_event *event = data;
+    set_view_state(view, event->maximized, view->fullscreen, NULL);
+}
+
+static void foreign_fullscreen(struct wl_listener *listener, void *data)
+{
+    struct PuDesktopView *view = wl_container_of(listener, view, foreign_fullscreen);
+    struct wlr_foreign_toplevel_handle_v1_fullscreen_event *event = data;
+    set_view_state(view, view->maximized, event->fullscreen, event->output);
+}
+
+static void foreign_close(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopView *view = wl_container_of(listener, view, foreign_close);
+    wlr_xdg_toplevel_send_close(view->toplevel);
+}
+
+static void view_minimize(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopView *view = wl_container_of(listener, view, minimize);
+    set_minimized(view, true);
+}
+
+static void view_title(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopView *view = wl_container_of(listener, view, title);
+    sync_foreign(view->desktop);
+}
+
+static void view_app_id(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopView *view = wl_container_of(listener, view, app_id);
+    sync_foreign(view->desktop);
+}
+
+static void view_parent(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopView *view = wl_container_of(listener, view, parent);
+    sync_foreign(view->desktop);
+}
+
 static void view_map(struct wl_listener *listener, void *data)
 {
     (void)data;
@@ -1098,9 +1261,17 @@ static void view_map(struct wl_listener *listener, void *data)
     view->mapped = true;
     view->resize_pending = false;
     present_view(view);
-    wlr_scene_node_set_enabled(&view->tree->node, true);
+    wlr_scene_node_set_enabled(&view->tree->node, !view->minimized);
     wl_list_insert(&desktop->views, &view->link);
-    focus_view(desktop, view);
+    view->foreign = wlr_foreign_toplevel_handle_v1_create(desktop->foreign_manager);
+    if (!view->foreign) { wl_resource_post_no_memory(view->toplevel->resource); return; }
+    listen(&view->foreign->events.request_activate, &view->foreign_activate, foreign_activate);
+    listen(&view->foreign->events.request_minimize, &view->foreign_minimize, foreign_minimize);
+    listen(&view->foreign->events.request_maximize, &view->foreign_maximize, foreign_maximize);
+    listen(&view->foreign->events.request_fullscreen, &view->foreign_fullscreen, foreign_fullscreen);
+    listen(&view->foreign->events.request_close, &view->foreign_close, foreign_close);
+    if (!view->minimized) focus_view(desktop, view);
+    sync_foreign(desktop);
     wlr_log(WLR_INFO, "Mapped %s", view->toplevel->app_id ? view->toplevel->app_id : "(unnamed)");
 }
 
@@ -1112,6 +1283,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     if (desktop->grabbed == view) end_grab(desktop);
     view->resize_pending = false;
     view->mapped = false;
+    view->minimized = false;
     view->geometry_pending = view->maximized = view->fullscreen = false;
     view->mode = PU_DESKTOP_FLOATING;
     view->output = NULL;
@@ -1119,16 +1291,19 @@ static void view_unmap(struct wl_listener *listener, void *data)
     wlr_scene_node_set_enabled(&view->tree->node, false);
     wl_list_remove(&view->link);
     wl_list_init(&view->link);
-    if (desktop->focused == view) {
-        desktop->focused = NULL;
-        if (!desktop->stopping && !wl_list_empty(&desktop->views)) {
-            struct PuDesktopView *next = wl_container_of(desktop->views.next, next, link);
-            desktop->focused = next;
-            wlr_xdg_toplevel_set_activated(next->toplevel, !desktop->focused_layer);
-        }
-        update_layer_focus(desktop);
-        enter_keyboard(desktop);
+    if (view->foreign) {
+        unlisten(&view->foreign_activate);
+        unlisten(&view->foreign_minimize);
+        unlisten(&view->foreign_maximize);
+        unlisten(&view->foreign_fullscreen);
+        unlisten(&view->foreign_close);
+        wlr_foreign_toplevel_handle_v1_destroy(view->foreign);
+        view->foreign = NULL;
     }
+    if (desktop->focused == view) {
+        focus_fallback(desktop);
+    }
+    sync_foreign(desktop);
     refresh_pointer(desktop);
 }
 
@@ -1147,7 +1322,9 @@ static void view_commit(struct wl_listener *listener, void *data)
         view->pending_box = (struct wlr_box){ .x = bounds.x + offset, .y = bounds.y + offset };
         view->geometry_pending = true;
         wlr_xdg_toplevel_set_wm_capabilities(view->toplevel,
-            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN);
+            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE | WLR_XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN |
+            WLR_XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE);
+        view->minimized = view->toplevel->requested.minimized;
         set_view_state(view, view->toplevel->requested.maximized, view->toplevel->requested.fullscreen,
             view->toplevel->requested.fullscreen ? view->toplevel->requested.fullscreen_output : view->output);
     }
@@ -1166,6 +1343,7 @@ static void view_commit(struct wl_listener *listener, void *data)
             view->desktop->grabbed != view) view->resize_pending = false;
     }
     constrain_popups(view);
+    sync_foreign(view->desktop);
     refresh_pointer(view->desktop);
 }
 
@@ -1185,6 +1363,10 @@ static void view_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&view->resize.link);
     wl_list_remove(&view->maximize.link);
     wl_list_remove(&view->request_fullscreen.link);
+    wl_list_remove(&view->minimize.link);
+    wl_list_remove(&view->title.link);
+    wl_list_remove(&view->app_id.link);
+    wl_list_remove(&view->parent.link);
     wl_list_remove(&view->all_link);
     free(view);
 }
@@ -1193,7 +1375,7 @@ static bool valid_grab(struct PuDesktopView *view, struct wlr_seat_client *clien
 {
     struct PuDesktop *desktop = view->desktop;
     struct wlr_surface *surface = view->toplevel->base->surface;
-    bool valid = view->mapped && client && client->seat == desktop->seat &&
+    bool valid = view->mapped && !view->minimized && client && client->seat == desktop->seat &&
         client->client == wl_resource_get_client(surface->resource) &&
         wlr_seat_validate_pointer_grab_serial(desktop->seat, surface, serial);
     if (!valid) wlr_log(WLR_DEBUG, "Ignoring move/resize without a matching pointer grab");
@@ -1270,6 +1452,10 @@ static void new_toplevel(struct wl_listener *listener, void *data)
     listen(&toplevel->events.request_resize, &view->resize, view_resize);
     listen(&toplevel->events.request_maximize, &view->maximize, view_maximize);
     listen(&toplevel->events.request_fullscreen, &view->request_fullscreen, view_fullscreen);
+    listen(&toplevel->events.request_minimize, &view->minimize, view_minimize);
+    listen(&toplevel->events.set_title, &view->title, view_title);
+    listen(&toplevel->events.set_app_id, &view->app_id, view_app_id);
+    listen(&toplevel->events.set_parent, &view->parent, view_parent);
 }
 
 static void constrain_popup(struct PuDesktopPopup *entry)
@@ -1394,6 +1580,10 @@ static bool attach_popup(struct PuDesktopPopup *entry)
     struct PuDesktopLayer *layer = layer_surface ? layer_surface->data : NULL;
     struct wlr_scene_tree *parent_tree = parent ? parent->data : layer ? layer->popups : NULL;
     if (!parent_tree) return false;
+    for (struct wlr_scene_tree *root = parent_tree; root; root = root->node.parent) {
+        struct PuDesktopOwner *owner = root->node.data;
+        if (owner && owner->view && owner->view->minimized) return false;
+    }
     struct wlr_scene_tree *tree = wlr_scene_xdg_surface_create(parent_tree, popup->base);
     if (!tree) {
         wl_resource_post_no_memory(popup->resource);
@@ -1417,6 +1607,10 @@ static void new_popup(struct wl_listener *listener, void *data)
     listen(&popup->base->surface->events.commit, &entry->commit, popup_commit);
     listen(&popup->events.destroy, &entry->destroy, popup_destroy);
     listen(&popup->events.reposition, &entry->reposition, popup_reposition);
+    if (popup->parent && !entry->tree) {
+        wlr_log(WLR_DEBUG, "Dismissing popup with an unavailable or minimized parent");
+        wlr_xdg_popup_destroy(popup);
+    }
 }
 
 static int stop_signal(int signal_number, void *data)
@@ -1475,8 +1669,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     desktop->seat = wlr_seat_create(desktop->display, "seat0");
     desktop->shell = wlr_xdg_shell_create(desktop->display, 5);
     desktop->layer_shell = wlr_layer_shell_v1_create(desktop->display, 4);
+    desktop->foreign_manager = wlr_foreign_toplevel_manager_v1_create(desktop->display);
     if (!desktop->scene_layout || !desktop->cursor || !desktop->cursor_theme ||
-        !desktop->seat || !desktop->shell || !desktop->layer_shell) {
+        !desktop->seat || !desktop->shell || !desktop->layer_shell || !desktop->foreign_manager) {
         fail(desktop, "Cannot create cursor, seat or xdg-shell"); return false;
     }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);

@@ -1,6 +1,7 @@
 #include "wire.h"
 #include "xdg-shell-client-protocol.h"
 #include "layer-shell-client-protocol.h"
+#include "foreign-toplevel-client.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -41,12 +42,22 @@ struct Buffer {
     size_t size;
 };
 
+struct Foreign {
+    struct Client *client;
+    struct zwlr_foreign_toplevel_handle_v1 *handle;
+    char app_id[128], title[128];
+    uint32_t state;
+    int outputs, done;
+};
+
 struct Client {
     struct wl_display *display;
     struct wl_compositor *compositor;
     struct wl_shm *shm;
     struct xdg_wm_base *wm;
     struct zwlr_layer_shell_v1 *layer_shell;
+    struct zwlr_foreign_toplevel_manager_v1 *foreign_manager;
+    struct Foreign foreign[16];
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
@@ -211,6 +222,7 @@ static void wm_capabilities(void *data, struct xdg_toplevel *toplevel, struct wl
     wl_array_for_each(cap, caps) {
         if (*cap == XDG_TOPLEVEL_WM_CAPABILITIES_MAXIMIZE) window->client->reply.max_capability = 1;
         if (*cap == XDG_TOPLEVEL_WM_CAPABILITIES_FULLSCREEN) window->client->reply.full_capability = 1;
+        if (*cap == XDG_TOPLEVEL_WM_CAPABILITIES_MINIMIZE) window->client->reply.minimize_capability = 1;
     }
 }
 static const struct xdg_toplevel_listener toplevel_listener = {
@@ -325,6 +337,69 @@ static const struct wl_output_listener output_listener = {
     .geometry = output_geometry, .mode = output_mode,
 };
 
+static void foreign_title(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle, const char *value)
+{ (void)handle; snprintf(((struct Foreign *)data)->title, 128, "%s", value); }
+static void foreign_app_id(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle, const char *value)
+{ (void)handle; snprintf(((struct Foreign *)data)->app_id, 128, "%s", value); }
+static void foreign_enter(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle, struct wl_output *output)
+{ (void)handle; (void)output; ((struct Foreign *)data)->outputs++; }
+static void foreign_leave(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle, struct wl_output *output)
+{ (void)handle; (void)output; ((struct Foreign *)data)->outputs--; }
+static void foreign_state(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle, struct wl_array *states)
+{
+    (void)handle;
+    struct Foreign *item = data;
+    item->state = 0;
+    uint32_t *state;
+    wl_array_for_each(state, states) if (*state < 4) item->state |= 1u << *state;
+}
+static void foreign_done(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
+{ (void)handle; ((struct Foreign *)data)->done++; }
+static void foreign_closed(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
+{
+    struct Foreign *item = data;
+    zwlr_foreign_toplevel_handle_v1_destroy(handle);
+    item->handle = NULL;
+    item->client->reply.foreign_count--;
+}
+static void foreign_parent(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle,
+                           struct zwlr_foreign_toplevel_handle_v1 *parent)
+{ (void)data; (void)handle; (void)parent; }
+static const struct zwlr_foreign_toplevel_handle_v1_listener foreign_listener = {
+    .title = foreign_title, .app_id = foreign_app_id, .output_enter = foreign_enter,
+    .output_leave = foreign_leave, .state = foreign_state, .done = foreign_done,
+    .closed = foreign_closed, .parent = foreign_parent,
+};
+static void foreign_toplevel(void *data, struct zwlr_foreign_toplevel_manager_v1 *manager,
+                             struct zwlr_foreign_toplevel_handle_v1 *handle)
+{
+    (void)manager;
+    struct Client *client = data;
+    for (size_t i = 0; i < 16; i++) {
+        if (client->foreign[i].handle) continue;
+        client->foreign[i] = (struct Foreign){ .client = client, .handle = handle };
+        zwlr_foreign_toplevel_handle_v1_add_listener(handle, &foreign_listener, &client->foreign[i]);
+        client->reply.foreign_count++;
+        return;
+    }
+    die("too many foreign toplevels");
+}
+static void foreign_finished(void *data, struct zwlr_foreign_toplevel_manager_v1 *manager)
+{ (void)data; (void)manager; }
+static const struct zwlr_foreign_toplevel_manager_v1_listener foreign_manager_listener = {
+    .toplevel = foreign_toplevel, .finished = foreign_finished,
+};
+
+static struct Foreign *find_foreign(struct Client *client, int id)
+{
+    char name[64];
+    snprintf(name, sizeof(name), "org.pollywm.test.%d", id);
+    for (size_t i = 0; i < 16; i++)
+        if (client->foreign[i].handle && !strcmp(client->foreign[i].app_id, name)) return &client->foreign[i];
+    die("foreign toplevel not found");
+    return NULL;
+}
+
 static void global(void *data, struct wl_registry *registry,
                    uint32_t name, const char *interface, uint32_t version)
 {
@@ -337,6 +412,11 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
         client->reply.layer_capability = 1;
+    }
+    else if (strcmp(interface, zwlr_foreign_toplevel_manager_v1_interface.name) == 0) {
+        client->foreign_manager = wl_registry_bind(registry, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
+        zwlr_foreign_toplevel_manager_v1_add_listener(client->foreign_manager, &foreign_manager_listener, client);
+        client->reply.foreign_capability = 1;
     }
     else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         client->wm = wl_registry_bind(registry, name, &xdg_wm_base_interface, 5);
@@ -389,6 +469,7 @@ static void create_window(struct Client *client, int id, uint32_t state)
     xdg_toplevel_set_max_size(window->toplevel, 600, 400);
     if (state & 1) xdg_toplevel_set_maximized(window->toplevel);
     if (state & 2) xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+    if (state & 4) xdg_toplevel_set_minimized(window->toplevel);
     wl_surface_commit(window->surface);
 }
 
@@ -492,8 +573,22 @@ int main(int argc, char **argv)
         struct TestRequest request;
         if (recv(control, &request, sizeof(request), 0) != sizeof(request)) die("control read");
         struct Window *window = &client.window;
+        struct Foreign *foreign = request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE ?
+            find_foreign(&client, request.id) : NULL;
         switch (request.command) {
         case TEST_QUERY: break;
+        case TEST_MINIMIZE: xdg_toplevel_set_minimized(window->toplevel); break;
+        case TEST_RENAME: xdg_toplevel_set_title(window->toplevel, "Updated title"); break;
+        case TEST_FOREIGN_QUERY: break;
+        case TEST_FOREIGN_MINIMIZE: zwlr_foreign_toplevel_handle_v1_set_minimized(foreign->handle); break;
+        case TEST_FOREIGN_RESTORE: zwlr_foreign_toplevel_handle_v1_unset_minimized(foreign->handle); break;
+        case TEST_FOREIGN_ACTIVATE: zwlr_foreign_toplevel_handle_v1_activate(foreign->handle, client.seat); break;
+        case TEST_FOREIGN_MAXIMIZE: zwlr_foreign_toplevel_handle_v1_set_maximized(foreign->handle); break;
+        case TEST_FOREIGN_UNMAXIMIZE: zwlr_foreign_toplevel_handle_v1_unset_maximized(foreign->handle); break;
+        case TEST_FOREIGN_FULLSCREEN: zwlr_foreign_toplevel_handle_v1_set_fullscreen(foreign->handle,
+            request.edges > 0 && request.edges <= 8 ? client.outputs[request.edges - 1].output : NULL); break;
+        case TEST_FOREIGN_UNFULLSCREEN: zwlr_foreign_toplevel_handle_v1_unset_fullscreen(foreign->handle); break;
+        case TEST_FOREIGN_CLOSE: zwlr_foreign_toplevel_handle_v1_close(foreign->handle); break;
         case TEST_LAYER_MAP: create_layer(&client, request.id, &request.layer); break;
         case TEST_LAYER_CONFIGURE:
             layer_state(request.id == 4 ? &client.extra : window, &request.layer);
@@ -511,6 +606,7 @@ int main(int argc, char **argv)
             xdg_toplevel_set_title(window->toplevel, name);
             xdg_toplevel_set_min_size(window->toplevel, 120, 80);
             xdg_toplevel_set_max_size(window->toplevel, 600, 400);
+            if (request.edges & 4) xdg_toplevel_set_minimized(window->toplevel);
             wl_surface_commit(window->surface);
             break;
         }
@@ -572,6 +668,12 @@ int main(int argc, char **argv)
         if (wl_display_roundtrip(client.display) < 0 ||
             wl_display_roundtrip(client.display) < 0) die("command roundtrip");
         client.reply.pending = (int)window->pending_count;
+        if (foreign) {
+            client.reply.foreign_state = (int)foreign->state;
+            client.reply.foreign_outputs = foreign->outputs;
+            client.reply.foreign_done = foreign->done;
+            snprintf(client.reply.foreign_title, sizeof(client.reply.foreign_title), "%s", foreign->title);
+        }
         if (send(control, &client.reply, sizeof(client.reply), MSG_NOSIGNAL) != sizeof(client.reply))
             die("control reply");
     }
@@ -583,6 +685,9 @@ int main(int argc, char **argv)
     if (client.seat) wl_seat_destroy(client.seat);
     xdg_wm_base_destroy(client.wm);
     if (client.layer_shell) zwlr_layer_shell_v1_destroy(client.layer_shell);
+    for (size_t i = 0; i < 16; i++)
+        if (client.foreign[i].handle) zwlr_foreign_toplevel_handle_v1_destroy(client.foreign[i].handle);
+    if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
     wl_shm_destroy(client.shm);
     wl_compositor_destroy(client.compositor);
     for (size_t i = 0; i < 8; i++)

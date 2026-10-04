@@ -13,7 +13,14 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${LAYER_SHELL_XML}"
             "${PROTOCOL_DIR}/layer-shell-protocol.c"
     DEPENDS "${LAYER_SHELL_XML}" VERBATIM)
+set(FOREIGN_XML "${WLR_PROTOCOLS_DIR}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml")
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel-client.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
+    DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c
+    "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"
     "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
     "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c")
 target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}")
