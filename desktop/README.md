@@ -26,7 +26,8 @@ applications rather than importing their buffers into the PollyUI DOM.
 |---|---|
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
-| 2b - remaining window policy | Tiling/overview and advanced window rules, user-facing output configuration and real-hardware hotplug qualification. |
+| 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
+| Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -79,6 +80,10 @@ adds window membership and moves that the standard protocol does not provide.
 `polly_shortcuts_v1` uses the same boundary for a fixed action catalog and
 switcher presentation. It cannot run arbitrary command strings, and recording
 suppression is only effective while a trusted Shell layer has keyboard focus.
+`zwlr_output_manager_v1` and `polly_output_guard_v1` are also restricted. The
+first carries standard output state/configuration; the second confirms or
+reverts the current provisional transaction. Ordinary clients still receive
+read-only `xdg-output` logical geometry.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -112,6 +117,28 @@ with ptrace/root access, a compromised trusted shell, or deliberate capability
 delegation are outside it. Future privileged protocols must extend this filter
 and validate the ownership and arguments of their requests. No management
 protocol is promised by reserving a connection.
+
+## Display configuration
+
+The native **Appearance > Displays** panel changes real output state. It offers
+advertised/custom resolutions, refresh rate, scale, rotation, logical placement
+and enable/disable controls. Native fields are owned by the panel's document;
+they do not use the original application's document accidentally.
+
+Every apply is backend-tested and requires all current heads. Disabling every
+output, stale snapshots and invalid geometry are rejected. Successful changes
+remain provisional for 15 seconds; Keep/Revert and Enter/Escape decide the result.
+The saved state and timer are in PollyWM, so a frozen or crashed Shell cannot
+leave an unconfirmed setting indefinitely. Output loss aborts confirmation and
+restores surviving outputs where possible. A failed recovery is an explicit
+error, not a claim that the previous state was restored.
+
+Logical geometry is advertised through `xdg-output`, which is necessary for
+SDL clients to agree with fractional scales and output positions. Temporarily
+disabled outputs regain their compositor work-area owner when re-enabled.
+Settings currently persist within the running compositor session; startup
+profiles remain a later persistence task. Physical GPU/DRM and HDR/VRR support
+still require dedicated hardware qualification.
 
 ## Server-side window decorations
 
@@ -352,8 +379,8 @@ removal, reservations, role replacement and rejection on public connections.
 
 Not implemented: tiling/overview, Xwayland, full session recovery,
 drag-and-drop policy, primary selection, screen capture/portals, IME
-integration, secure lock, desktop services or installer. Output changes are
-handled internally, but there is no user-facing display settings protocol/UI yet.
+integration, secure lock, full desktop services or installer. Display settings
+are available, but startup display profiles are not persisted yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
 forced clipping). Multi-output/HiDPI and DRM/seat access still need real-hardware
 qualification; **WSLg is not evidence of native GPU/DRM or boot readiness**.
@@ -514,6 +541,9 @@ Public clients cannot bind either workspace global even with a known global ID.
 Switcher coverage exercises modifier-held previews, release/click activation,
 reverse cycling, cancellation, stale candidates, workspace isolation, recorded
 and disabled bindings, conflicts, and settings restored into a fresh compositor.
+Output coverage changes actual headless modes, rotation, scale and positions,
+edits fields through native input, and exercises explicit keep/revert, watchdog
+timeout, Shell crash, output removal, stale snapshots and final-output safety.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

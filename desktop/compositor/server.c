@@ -3,6 +3,7 @@
 #include "decoration.h"
 #include "workspace.h"
 #include "shortcut-control.h"
+#include "output-control.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -28,6 +29,7 @@
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/util/edges.h>
 #include <wlr/util/log.h>
@@ -732,6 +734,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
     pu_shortcuts_cancel(desktop);
+    pu_output_control_changed(desktop);
     arrange_layers(desktop);
     refresh_views(desktop);
     sync_foreign(desktop);
@@ -1247,6 +1250,7 @@ static void output_request_state(struct wl_listener *listener, void *data)
 static void attach_output(struct PuDesktopOutput *entry)
 {
     struct PuDesktop *desktop = entry->desktop;
+    entry->output->data = entry;
     struct wlr_output_layout_output *layout_output =
         wlr_output_layout_add_auto(desktop->layout, entry->output);
     struct wlr_scene_output *scene_output = wlr_scene_get_scene_output(desktop->scene, entry->output);
@@ -1266,6 +1270,7 @@ static void output_commit(struct wl_listener *listener, void *data)
         if (!wlr_output_layout_get(entry->desktop->layout, entry->output)) attach_output(entry);
     } else {
         wlr_output_layout_remove(entry->desktop->layout, entry->output);
+        entry->output->data = NULL;
         entry->output->data = NULL;
     }
 }
@@ -1314,6 +1319,9 @@ static void new_output(struct wl_listener *listener, void *data)
     listen(&output->events.commit, &entry->commit, output_commit);
     listen(&output->events.destroy, &entry->destroy, output_destroy);
     desktop->output_count++;
+    if (!pu_output_control_add(desktop, output)) {
+        fail(desktop, "Cannot track output configuration"); return;
+    }
     attach_output(entry);
     wlr_log(WLR_INFO, "Output %s: %dx%d", output->name, output->width, output->height);
 }
@@ -1801,6 +1809,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!desktop->layout || !desktop->scene) {
         fail(desktop, "Cannot create output layout or scene"); return false;
     }
+    if (!wlr_xdg_output_manager_v1_create(desktop->display, desktop->layout)) {
+        fail(desktop, "Cannot advertise logical output geometry"); return false;
+    }
     for (int level = 0; level < 4; level++) {
         if (level == ZWLR_LAYER_SHELL_V1_LAYER_TOP)
             desktop->windows = wlr_scene_tree_create(&desktop->scene->tree);
@@ -1830,6 +1841,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     desktop->visible_workspace = desktop->active_workspace;
     if (!pu_shortcuts_init(desktop)) {
         fail(desktop, "Cannot initialize shortcuts"); return false;
+    }
+    if (!pu_output_control_init(desktop)) {
+        fail(desktop, "Cannot initialize output configuration"); return false;
     }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
     if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
@@ -1883,6 +1897,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     desktop->stopping = true;
     pu_desktop_stop_shell(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
+    pu_output_control_finish(desktop);
     if (desktop->sigint) wl_event_source_remove(desktop->sigint);
     if (desktop->sigterm) wl_event_source_remove(desktop->sigterm);
     unlisten(&desktop->new_input);

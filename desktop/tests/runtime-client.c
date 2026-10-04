@@ -5,6 +5,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
 #include <sys/wait.h>
 #include <string.h>
 #include <drm_fourcc.h>
@@ -250,18 +252,36 @@ static bool suite(char *executable, char *script)
     return true;
 }
 
+static void remove_fixture_output(void *data) { wlr_output_destroy(data); }
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
         script, mode, executable, script, NULL };
     CHECK(pu_desktop_spawn_shell(&desktop, args));
-    bool success = false;
+    bool success = false, crashed = false;
     for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
         CHECK(pump());
         struct PuDesktopLayer *marker, *tmp;
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            char output_name[96];
+            if (sscanf(name, "fixture-output-remove %95s", output_name) == 1) {
+                struct wlr_output_layout_output *entry;
+                struct wlr_output *target = NULL;
+                wl_list_for_each(entry, &desktop.layout->outputs, link)
+                    if (!strcmp(entry->output->name, output_name)) target = entry->output;
+                CHECK(target && wl_list_length(&desktop.layout->outputs) > 1);
+                CHECK(wl_event_loop_add_idle(wl_display_get_event_loop(desktop.display), remove_fixture_output, target));
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-output-crash")) {
+                success = crashed = true;
+                CHECK(kill(desktop.shell_pid, SIGKILL) == 0);
+                break;
+            }
             unsigned keycode, key_down;
             if (sscanf(name, "fixture-key %u %u", &keycode, &key_down) == 2) {
                 CHECK(keycode <= KEY_MAX && key_down <= 1);
@@ -364,7 +384,8 @@ static bool window_suite(char *executable, char *script, char *mode)
         }
     }
     CHECK(success && !desktop.shell_pid && desktop.shell_exited &&
-        WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
+        (crashed ? WIFSIGNALED(desktop.shell_status) && WTERMSIG(desktop.shell_status) == SIGKILL :
+        WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0));
     return true;
 }
 

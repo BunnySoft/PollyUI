@@ -30,10 +30,12 @@ static const struct wl_interface appearance_interface = { .name = "polly_appeara
 static const struct wl_interface workspace_interface = { .name = "ext_workspace_manager_v1", .version = 1 };
 static const struct wl_interface workspace_toplevel_interface = { .name = "polly_workspace_toplevel_manager_v1", .version = 1 };
 static const struct wl_interface shortcuts_interface = { .name = "polly_shortcuts_v1", .version = 1 };
+static const struct wl_interface output_interface = { .name = "zwlr_output_manager_v1", .version = 1 };
+static const struct wl_interface output_guard_interface = { .name = "polly_output_guard_v1", .version = 1 };
 static const char literal[] = "argument with spaces; $HOME is not expanded";
 
 struct Registry {
-    uint32_t restricted, foreign, appearance, workspace, workspace_toplevel, shortcuts, compositor;
+    uint32_t restricted, foreign, appearance, workspace, workspace_toplevel, shortcuts, output, output_guard, compositor;
 };
 
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
@@ -48,6 +50,8 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     if (strcmp(interface, workspace_interface.name) == 0) state->workspace = name;
     if (strcmp(interface, workspace_toplevel_interface.name) == 0) state->workspace_toplevel = name;
     if (strcmp(interface, shortcuts_interface.name) == 0) state->shortcuts = name;
+    if (strcmp(interface, output_interface.name) == 0) state->output = name;
+    if (strcmp(interface, output_guard_interface.name) == 0) state->output_guard = name;
     if (strcmp(interface, "wl_compositor") == 0) state->compositor = name;
 }
 
@@ -81,6 +85,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(wl_display_roundtrip(trusted) >= 0);
     CHECK(privileged.restricted && privileged.foreign && privileged.appearance && privileged.compositor);
     CHECK(privileged.workspace && privileged.workspace_toplevel && privileged.shortcuts);
+    CHECK(privileged.output && privileged.output_guard);
     if (strcmp(mode, "--ignore-term") == 0) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct wl_proxy *capability = wl_registry_bind(
         registry, privileged.restricted, &restricted_interface, 1);
@@ -99,7 +104,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
     CHECK(wl_display_roundtrip(ordinary) >= 0);
     CHECK(public.compositor && !public.restricted && !public.foreign && !public.appearance);
-    CHECK(!public.workspace && !public.workspace_toplevel && !public.shortcuts);
+    CHECK(!public.workspace && !public.workspace_toplevel && !public.shortcuts && !public.output && !public.output_guard);
     struct wl_proxy *forged = wl_registry_bind(
         public_registry, privileged.restricted, &restricted_interface, 1);
     CHECK(forged);
@@ -130,14 +135,17 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     wl_registry_destroy(public_registry);
     wl_display_disconnect(ordinary);
     CHECK(wl_display_roundtrip(trusted) >= 0);
-    const struct wl_interface *interfaces[] = { &workspace_interface, &workspace_toplevel_interface, &shortcuts_interface };
-    uint32_t globals[] = { privileged.workspace, privileged.workspace_toplevel, privileged.shortcuts };
-    for (size_t i = 0; i < 3; i++) {
+    const struct wl_interface *interfaces[] = { &workspace_interface, &workspace_toplevel_interface, &shortcuts_interface,
+        &output_interface, &output_guard_interface };
+    uint32_t globals[] = { privileged.workspace, privileged.workspace_toplevel, privileged.shortcuts,
+        privileged.output, privileged.output_guard };
+    for (size_t i = 0; i < 5; i++) {
         ordinary = wl_display_connect(socket_name);
         CHECK(ordinary);
         public_registry = wl_display_get_registry(ordinary);
         CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
-        CHECK(wl_display_roundtrip(ordinary) >= 0 && !public.workspace && !public.workspace_toplevel && !public.shortcuts);
+        CHECK(wl_display_roundtrip(ordinary) >= 0 && !public.workspace && !public.workspace_toplevel &&
+            !public.shortcuts && !public.output && !public.output_guard);
         forged = wl_registry_bind(public_registry, globals[i], interfaces[i], 1);
         CHECK(forged && wl_display_roundtrip(ordinary) < 0 && wl_display_get_error(ordinary) == EPROTO);
         wl_proxy_destroy(forged);

@@ -165,6 +165,16 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         if (PU_DESKTOP_SERVICES)
             pkg_check_modules(SHORTCUT_KEYS REQUIRED IMPORTED_TARGET xkbcommon)
             target_link_libraries(pollyui PRIVATE PkgConfig::SHORTCUT_KEYS)
+            set(UI_OUTPUT_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-output-management-unstable-v1.xml")
+            set(UI_OUTPUT_GUARD_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-output-guard-v1.xml")
+            add_custom_command(
+                OUTPUT "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
+                    "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_OUTPUT_XML}" "${UI_PROTOCOL_DIR}/output-management-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_OUTPUT_XML}" "${UI_PROTOCOL_DIR}/output-management.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_OUTPUT_GUARD_XML}" "${UI_PROTOCOL_DIR}/polly-output-guard-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_OUTPUT_GUARD_XML}" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
+                DEPENDS "${UI_OUTPUT_XML}" "${UI_OUTPUT_GUARD_XML}" VERBATIM)
             set(UI_SHORTCUTS_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-shortcuts-v1.xml")
             add_custom_command(
                 OUTPUT "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
@@ -197,6 +207,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
                 DEPENDS "${UI_FOREIGN_XML}" VERBATIM)
             target_sources(pollyui PRIVATE src/desktop/windows.c
+                src/desktop/output-client.c
+                "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
+                "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
                 src/desktop/shortcut-client.c desktop/shared/shortcuts.c
                 "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
                 "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
@@ -340,6 +353,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-output-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/output-shell.mjs" outputs)
+                set_tests_properties(desktop-output-shell-${renderer} PROPERTIES TIMEOUT 100
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-switcher-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

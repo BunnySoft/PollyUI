@@ -1,8 +1,9 @@
 import { render } from './js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
-import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView } from './desktop/shell/views.mjs';
+import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
+import { readDisplayDraft } from './desktop/shell/displays.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 
@@ -15,6 +16,14 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let timer = null;
   let menu = null;
   let switcher = null;
+  let displayConfirmation = null;
+  let pendingDisplayToken = 0;
+  let previousOutputsChanged = null, lastOutputMessage = '';
+  const outputsChanged = () => {
+    if (!running) return;
+    updateOutputs();
+    if (typeof previousOutputsChanged === 'function') previousOutputsChanged();
+  };
   let shortcutBindings = [];
   let recordingShortcut = null;
   let previousShortcutsChanged = null, previousSwitcherChanged = null;
@@ -98,6 +107,14 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         switcher = null;
         if (!surface.expectedClose && running) {
           try { native.cancelWindowSwitch(); } catch (failure) { shortcutFailure(failure); }
+        }
+        if (surface === displayConfirmation) {
+          displayConfirmation = null;
+          if (!surface.expectedClose && running) {
+            try {
+              if (native.outputConfiguration().pendingToken === surface.token) native.revertOutputConfiguration(surface.token);
+            } catch (failure) { outputFailure(failure); }
+          }
         }
       }
       if (!surface.expectedClose && running && kind !== 'settings') {
@@ -227,6 +244,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
+    if (menu.mode === 'displays') {
+      const current = menu;
+      render(displaysView(getDesktopTheme(themeId), current.window.document, current.displayDraft,
+        current.displayInputs, repaintMenu, () => applyDisplays(current), closeMenu, error), current.window.document.body);
+      return;
+    }
     if (menu.mode === 'shortcuts') {
       render(shortcutsView(getDesktopTheme(themeId), shortcutBindings, recordingShortcut, beginRecording,
         action => applyShortcuts(shortcutBindings.map(binding => binding.action === action ?
@@ -255,11 +278,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return;
     }
     render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu, () => refresh(true),
-      error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null),
+      error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null,
+      typeof native?.outputConfiguration === 'function' ? () => showDisplays(menu.output) : null),
       menu.window.document.body);
   }
 
-  function openMenu(outputId, mode, windowId = null) {
+  function openMenu(outputId, mode, windowId = null, initial = null) {
     if (!running) throw new Error('Shell is not running');
     const bundle = bundles.get(outputId);
     if (!bundle) throw new RangeError('Unknown shell output');
@@ -288,6 +312,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return null;
     }
     menu.mode = mode;
+    if (initial) Object.assign(menu, initial);
     menu.windowId = windowId;
     menu.about = mode === 'about';
     menu.query = '';
@@ -397,6 +422,93 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     } catch (failure) { shortcutFailure(failure); }
     try { native.enableWindowSwitcher(true); }
     catch (failure) { shortcutFailure(failure); }
+  }
+
+  function outputFailure(failure) {
+    error = 'Display settings: ' + String(failure);
+    errorKind = 'outputs';
+    report('[shell] ' + error);
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+  }
+
+  function showDisplays(outputId) {
+    try {
+      const snapshot = native.outputConfiguration();
+      if (snapshot.pendingToken) { paintDisplayConfirmation(snapshot); return displayConfirmation?.window || null; }
+      if (errorKind === 'outputs') { error = ''; errorKind = ''; }
+      return openMenu(outputId, 'displays', null, {
+        displayDraft: { serial: snapshot.serial, heads: snapshot.heads.map(head => ({ ...head })) },
+        displayInputs: new Map(),
+      });
+    } catch (failure) { outputFailure(failure); return null; }
+  }
+
+  function applyDisplays(source) {
+    try {
+      const draft = readDisplayDraft(source.displayDraft, source.displayInputs);
+      native.applyOutputConfiguration(draft);
+      if (errorKind === 'outputs') { error = ''; errorKind = ''; }
+      closeMenu();
+      updateOutputs();
+    } catch (failure) { outputFailure(failure); }
+  }
+
+  function finishDisplayChange(token, keep) {
+    try {
+      if (keep) native.confirmOutputConfiguration(token);
+      else native.revertOutputConfiguration(token);
+      if (keep && errorKind === 'outputs') { error = ''; errorKind = ''; }
+      updateOutputs();
+    } catch (failure) { outputFailure(failure); }
+  }
+
+  function paintDisplayConfirmation(snapshot = native.outputConfiguration()) {
+    pendingDisplayToken = snapshot.pendingToken;
+    if (!snapshot.pendingToken) {
+      closeSurface(displayConfirmation); displayConfirmation = null;
+      return;
+    }
+    const output = host.displays()[0];
+    if (!output) throw new Error('No display is available for confirmation; changes will revert automatically');
+    const token = snapshot.pendingToken;
+    if (!displayConfirmation || displayConfirmation.window.closed ||
+        displayConfirmation.token !== token || displayConfirmation.output !== output.id) {
+      closeSurface(displayConfirmation);
+      displayConfirmation = newSurface(output, 'display-confirmation', {
+        layer: 'overlay', width: Math.max(1, Math.min(360, output.width - 16)),
+        height: Math.max(1, Math.min(190, output.height - 16)), anchors: [],
+        exclusiveZone: -1, keyboard: 'exclusive', transparent: true,
+      });
+      displayConfirmation.token = token;
+      const body = displayConfirmation.window.document.body;
+      body.tabIndex = 0;
+      body.addEventListener('keydown', event => {
+        if (event.key === 'Escape' || event.key === 'Enter') {
+          event.preventDefault(); finishDisplayChange(token, event.key === 'Enter');
+        }
+      });
+      body.focus();
+    }
+    render(displayConfirmationView(getDesktopTheme(themeId), snapshot.remainingMs,
+      () => finishDisplayChange(token, true), () => finishDisplayChange(token, false)),
+      displayConfirmation.window.document.body);
+  }
+
+  function updateOutputs() {
+    try {
+      const snapshot = native.outputConfiguration();
+      if (menu?.mode === 'displays' && !snapshot.pendingToken && menu.displayDraft.serial !== snapshot.serial) {
+        closeMenu();
+        outputFailure('Outputs changed; reopen display settings before applying.');
+      }
+      if (snapshot.message && snapshot.message !== lastOutputMessage) {
+        if (snapshot.outcome === 3) outputFailure(snapshot.message);
+        else console.log('[shell] ' + snapshot.message);
+      }
+      lastOutputMessage = snapshot.message;
+      paintDisplayConfirmation(snapshot);
+    } catch (failure) { outputFailure(failure); }
   }
 
   function windowFailure(failure) {
@@ -509,6 +621,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function refresh(force = false) {
     if (!running) return;
+    if (pendingDisplayToken) {
+      try { paintDisplayConfirmation(); } catch (failure) { outputFailure(failure); }
+    }
     let signature = '';
     try {
       const outputs = host.displays();
@@ -551,6 +666,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         refreshWindows();
       }
       startShortcuts();
+      if (typeof native?.outputConfiguration === 'function') {
+        previousOutputsChanged = native.onOutputsChanged;
+        native.onOutputsChanged = outputsChanged;
+        updateOutputs();
+      }
       return this;
     },
     stop() {
@@ -562,6 +682,14 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (native && native.onWorkspacesChanged === workspacesChanged) native.onWorkspacesChanged = previousWorkspacesChanged;
       if (native && native.onShortcutsChanged === shortcutsChanged) native.onShortcutsChanged = previousShortcutsChanged;
       if (native && native.onWindowSwitcherChanged === switcherChanged) native.onWindowSwitcherChanged = previousSwitcherChanged;
+      if (native && native.onOutputsChanged === outputsChanged) native.onOutputsChanged = previousOutputsChanged;
+      if (typeof native?.outputConfiguration === 'function') {
+        try {
+          const token = native.outputConfiguration().pendingToken;
+          if (token) native.revertOutputConfiguration(token);
+        } catch (failure) { report('[shell] Cannot revert provisional displays on stop: ' + String(failure)); }
+      }
+      closeSurface(displayConfirmation); displayConfirmation = null;
       if (typeof native?.enableWindowSwitcher === 'function') {
         try { native.enableWindowSwitcher(false); } catch (failure) { report('[shell] Cannot stop switcher: ' + String(failure)); }
       }
@@ -571,7 +699,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
     },
-    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, refresh,
+    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays, refresh,
     getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };

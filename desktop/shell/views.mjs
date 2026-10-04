@@ -1,6 +1,7 @@
 import { h } from './js/reconciler.mjs';
 import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
 import { shortcutText } from './desktop/shell/shortcuts.mjs';
+import { displayField, setDisplayField } from './desktop/shell/displays.mjs';
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -93,7 +94,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null) {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null) {
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: 12, gap: 8, overflow: 'scroll',
     backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
@@ -122,6 +123,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Application-drawn headers keep their own style.', theme.colors.muted, 11),
       ],
   shortcuts ? button('shell-keyboard-settings', 'Keyboard shortcuts', theme, shortcuts) : null,
+  displays ? button('shell-display-settings', 'Displays', theme, displays) : null,
   error ? h('view', { role: 'alert', style: { gap: 6, padding: 8, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11),
     button('shell-retry', 'Retry display setup', theme, retry)) : null,
@@ -239,4 +241,60 @@ export function switcherView(theme, snapshot, accept, rows = 7) {
       () => accept(snapshot.serial, start + offset), snapshot.selected === start + offset,
       { height: 32, alignItems: 'flex-start', overflow: 'hidden' })),
   label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, 10));
+}
+
+export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '') {
+  const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width);
+  return h('view', { id: 'shell-displays', style: {
+    width: '100%', height: '100%', padding: 10, gap: 8, backgroundColor: theme.colors.body,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+  } },
+  h('view', { style: { ...row, gap: 6 } }, label('Displays', theme.colors.text, 16),
+    h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
+    button('shell-output-close', 'Close', theme, close)),
+  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 10 } },
+    draft.heads.map(head => h('view', { style: { padding: 7, gap: 7, flexShrink: 0,
+      borderWidth: 1, borderColor: theme.colors.border } },
+    h('view', { style: { ...row, gap: 6 } }, label(head.name, theme.colors.text, 12),
+      h('view', { style: { flexGrow: 1 } }),
+      button('shell-output-' + head.id + '-enabled', head.enabled ? 'On' : 'Off', theme,
+        () => { head.enabled = !head.enabled; repaint(); }, head.enabled)),
+    head.enabled ? [
+      h('view', { style: { ...row, gap: 5 } }, field(head, 'width'), label('x', theme.colors.text),
+        field(head, 'height'),
+        head.modes.length ? button('shell-output-' + head.id + '-mode', 'Mode', theme, () => {
+          const width = Number(inputs.get('shell-output-' + head.id + '-width')?.value);
+          const height = Number(inputs.get('shell-output-' + head.id + '-height')?.value);
+          const found = head.modes.findIndex(mode => mode.width === width && mode.height === height);
+          const mode = head.modes[(found + 1) % head.modes.length];
+          for (const name of ['width', 'height', 'refresh']) setDisplayField(inputs, head, name, mode[name]);
+        }) : null),
+      h('view', { style: { ...row, gap: 5 } }, label('Scale', theme.colors.text, 11), field(head, 'scale', 62),
+        button('shell-output-' + head.id + '-scale-up', '+', theme, () => {
+          const value = Number(inputs.get('shell-output-' + head.id + '-scale')?.value);
+          setDisplayField(inputs, head, 'scale', Math.min(4, (Number.isFinite(value) ? value : head.scale) + 0.25));
+        }),
+        button('shell-output-' + head.id + '-rotate', String((head.transform & 3) * 90) + ' deg', theme,
+          () => { head.transform = (head.transform & 4) | ((head.transform + 1) & 3); repaint(); })),
+      h('view', { style: { ...row, gap: 5 } }, label('X', theme.colors.text, 11), field(head, 'x'),
+        label('Y', theme.colors.text, 11), field(head, 'y')),
+      h('view', { style: { ...row, gap: 5 } }, label('Refresh Hz', theme.colors.text, 11), field(head, 'refresh'),
+        label('0 = auto', theme.colors.muted, 10)),
+    ] : label('Enable this display to edit its configuration.', theme.colors.muted, 10)))),
+  label('Keep changes within 15 seconds or they revert.', theme.colors.muted, 10),
+  label('Startup display profiles are not saved yet.', theme.colors.muted, 10),
+  error ? label(error, theme.colors.text, 11) : null);
+}
+
+export function displayConfirmationView(theme, remaining, keep, revert) {
+  return h('view', { id: 'shell-output-confirmation', style: {
+    width: '100%', height: '100%', padding: 12, gap: 12, backgroundColor: theme.colors.body,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+  } },
+  label('Keep these display settings?', theme.colors.text, 15),
+  label('Reverting in ' + Math.ceil(remaining / 1000) + ' seconds.', theme.colors.muted, 12),
+  h('view', { style: { ...row, gap: 10 } },
+    button('shell-output-keep', 'Keep', theme, keep),
+    button('shell-output-revert', 'Revert', theme, revert)),
+  label('Enter keeps changes. Escape reverts.', theme.colors.muted, 10));
 }

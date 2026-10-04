@@ -5,16 +5,18 @@
 //   import { createTextInput } from './js/textinput.mjs';
 //   const input = createTextInput({ value: 'Hello', width: 280 });
 //   document.body.appendChild(input.root);
+// Pass document: handle.document when embedding in another native window.
 
 import { previousTextIndex, nextTextIndex } from './js/textindex.mjs';
 
-const el = (tag, style) => {
-  const n = document.createElement(tag);
+const el = (owner, tag, style) => {
+  const n = owner.createElement(tag);
   if (style) for (const k in style) n.style[k] = String(style[k]);
   return n;
 };
 
 export function createTextInput(opts = {}) {
+  const owner = opts.document ?? document;
   const fontSize = opts.fontSize ?? 18;
   const padding  = opts.padding ?? 8;
   const width    = opts.width ?? 240;
@@ -24,18 +26,18 @@ export function createTextInput(opts = {}) {
   const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false };
   st.caret = st.value.length;
 
-  const root = el('view', {
+  const root = el(owner, 'view', {
     width, height: fontSize + padding * 2, backgroundColor: opts.background ?? '#ffffff',
     borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1',
     position: 'relative', overflow: 'hidden', paddingLeft: padding, paddingTop: padding,
   });
   root.tabIndex = 0;
 
-  const highlight = el('view', { position: 'absolute', top: padding, left: padding, width: 0, height: fontSize, backgroundColor: 'transparent', borderRadius: 2 });
-  const textEl = el('view', { color, fontSize });
-  const textNode = document.createTextNode(st.value);
+  const highlight = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 0, height: fontSize, backgroundColor: 'transparent', borderRadius: 2 });
+  const textEl = el(owner, 'view', { color, fontSize });
+  const textNode = owner.createTextNode(st.value);
   textEl.appendChild(textNode);
-  const caret = el('view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent' });
+  const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent' });
 
   root.appendChild(highlight);  // behind the text
   root.appendChild(textEl);

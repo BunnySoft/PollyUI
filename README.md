@@ -533,6 +533,41 @@ The initial picker is a themed text list on the first available display,
 not live application thumbnails or an app-icon grid. It displays a bounded
 slice around the selection; richer overview/icon behavior remains separate.
 
+### Display settings and guarded output changes
+
+**Appearance > Displays** edits actual compositor outputs: enable/disable,
+resolution, refresh rate, scale, rotation and logical X/Y placement. Mode
+selection uses advertised modes where available; custom sizes are checked by
+the backend. At least one output must remain enabled.
+
+Changes are provisional for 15 seconds. A native confirmation overlay offers
+Keep/Revert (Enter/Escape). The compositor, not a JavaScript timer, owns the
+saved configuration and deadline. Timeout, Shell connection loss or output
+topology changes trigger rollback on the remaining outputs. Failed/partial
+backend commits also attempt recovery; recovery failures are explicitly
+reported rather than described as restored. A removed physical display cannot
+be recreated by software.
+
+`desktop.outputConfiguration()` returns `{serial, heads, pendingToken,
+remainingMs, outcome, message}`. Each head has a runtime-local ID, name,
+enabled state, resolution/refresh, scale/transform, logical position, advertised
+modes and adaptive-sync state. `testOutputConfiguration(snapshot)` is
+non-mutating; `applyOutputConfiguration(snapshot)` requires a complete, current
+snapshot and returns a confirmation token. Use
+`confirmOutputConfiguration(token)` or `revertOutputConfiguration(token)`.
+`onOutputsChanged` announces coherent snapshots and guard state.
+
+Output state/configuration uses `wlr-output-management` v4 and the narrow
+`polly_output_guard_v1` confirmation interface, both restricted to the trusted
+Shell connection. Read-only `xdg-output` information is available to ordinary
+clients so fractional scaling, rotations and logical display coordinates agree
+with the compositor. Current safety bounds include scale 0.25–4, hardware
+dimensions up to 16384, 32 Mi pixels per output and bounded logical coordinates;
+backend support remains authoritative.
+
+Kept changes currently last for the compositor session. Startup display
+profiles and physical DRM/HDR/VRR qualification remain separate work.
+
 ### Linux manual workspaces
 
 PollyWM starts with four workspaces and one active workspace shared by all

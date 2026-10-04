@@ -84,6 +84,7 @@ struct PuDesktop {
     struct PuDecorations *decorations;
     struct PuWorkspaces *workspaces;
     struct PuShortcuts *shortcuts;
+    struct PuOutputControl *output_control;
     struct PuWorkspace *active_workspace, *visible_workspace;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;

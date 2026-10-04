@@ -464,6 +464,16 @@ by both the native client and compositor. A full configuration is validated
 before it is applied; the Shell persists only acknowledged maps and attempts
 live rollback if saving fails. The capability has no executable-command action.
 
+Output configuration uses `wlr-output-management` plus a restricted confirmation
+guard. Complete snapshots are validated and tested before backend commit.
+Since backend commits are not guaranteed atomic, failures attempt restoration
+from a compositor-owned snapshot. Successful changes retain that snapshot and
+a 15-second watchdog until the applying client confirms; client loss or output
+topology changes abort the transaction. Saved mode dimensions are resolved
+against live mode objects during restoration, avoiding stale mode pointers.
+Recovery failure is explicit. Output publication is coalesced outside commits,
+and `xdg-output` supplies logical geometry to ordinary clients.
+
 PollyWM's optional-per-client decorations negotiate through `xdg-decoration`.
 An explicit client-side preference is respected; non-negotiating clients are
 not guessed to be undecorated. Frame state and metrics become visible only with

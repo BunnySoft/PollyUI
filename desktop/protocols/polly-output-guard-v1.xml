@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="polly_output_guard_v1">
+  <interface name="polly_output_guard_v1" version="1">
+    <description summary="trusted confirmation of output-management changes">
+      Output state and configuration use wlr-output-management. Successful
+      applies remain provisional for 15 seconds. Only the applying Shell client
+      may confirm the current token. Timeout, client loss or output topology
+      changes restore the previous configuration where the backend permits.
+    </description>
+    <request name="destroy" type="destructor"/>
+    <request name="confirm">
+      <arg name="token" type="uint"/>
+    </request>
+    <request name="revert">
+      <arg name="token" type="uint"/>
+    </request>
+    <event name="state">
+      <arg name="token" type="uint" summary="zero when no confirmation is pending"/>
+      <arg name="remaining_ms" type="uint"/>
+      <arg name="outcome" type="uint" summary="0 pending/idle, 1 kept, 2 reverted, 3 recovery failed"/>
+      <arg name="message" type="string"/>
+    </event>
+  </interface>
+</protocol>

@@ -1,0 +1,39 @@
+import { createTextInput } from './js/textinput.mjs';
+import { h } from './js/reconciler.mjs';
+
+export function displayField(owner, inputs, head, field, theme, width = 78) {
+  const id = 'shell-output-' + head.id + '-' + field;
+  return h('view', { style: { width, height: 30, flexShrink: 0 }, onMount: node => {
+    let input = inputs.get(id);
+    if (!input) {
+      input = createTextInput({ document: owner, value: field === 'refresh' ? head[field] / 1000 : head[field],
+        width, fontSize: 12, padding: 7, color: theme.colors.text, background: theme.colors.surface });
+      input.root.id = id;
+      input.root.setAttribute('role', 'textbox');
+      input.root.setAttribute('aria-label', head.name + ' ' + field);
+      inputs.set(id, input);
+    }
+    node.appendChild(input.root);
+  } });
+}
+
+export function setDisplayField(inputs, head, field, value) {
+  head[field] = value;
+  const input = inputs.get('shell-output-' + head.id + '-' + field);
+  if (input) input.value = field === 'refresh' ? value / 1000 : value;
+}
+
+export function readDisplayDraft(draft, inputs) {
+  return { serial: draft.serial, heads: draft.heads.map(head => {
+    if (!head.enabled) return { ...head };
+    const result = { ...head };
+    for (const field of ['width', 'height', 'refresh', 'scale', 'x', 'y']) {
+      const input = inputs.get('shell-output-' + head.id + '-' + field);
+      if (!input || !String(input.value).trim()) throw new Error('Enter a value for ' + field);
+      const number = Number(input.value);
+      if (!Number.isFinite(number)) throw new Error('Invalid display value: ' + field);
+      result[field] = field === 'refresh' ? Math.round(number * 1000) : number;
+    }
+    return result;
+  }) };
+}
