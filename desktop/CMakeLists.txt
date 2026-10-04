@@ -42,6 +42,12 @@ add_custom_command(
     DEPENDS "${WORKSPACE_XML}" "${WORKSPACE_TOPLEVEL_XML}"
         "${WLR_PROTOCOLS_DIR}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml" VERBATIM)
 set(APPEARANCE_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-appearance-v1.xml")
+set(SHORTCUTS_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-shortcuts-v1.xml")
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/polly-shortcuts-server.h" "${PROTOCOL_DIR}/polly-shortcuts.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SHORTCUTS_XML}" "${PROTOCOL_DIR}/polly-shortcuts-server.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SHORTCUTS_XML}" "${PROTOCOL_DIR}/polly-shortcuts.c"
+    DEPENDS "${SHORTCUTS_XML}" VERBATIM)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/polly-appearance-server.h" "${PROTOCOL_DIR}/polly-appearance.c"
     COMMAND "${WAYLAND_SCANNER}" server-header "${APPEARANCE_XML}" "${PROTOCOL_DIR}/polly-appearance-server.h"
@@ -59,17 +65,20 @@ add_custom_command(
     DEPENDS "${LAYER_SHELL_XML}" VERBATIM)
 
 add_library(pollywm-core STATIC
+    shared/shortcuts.c
+    compositor/shortcut-control.c
     compositor/server.c
     compositor/decoration.c
     compositor/workspace.c
     compositor/shell_process.c
+    "${PROTOCOL_DIR}/polly-shortcuts-server.h" "${PROTOCOL_DIR}/polly-shortcuts.c"
     "${PROTOCOL_DIR}/polly-appearance-server.h" "${PROTOCOL_DIR}/polly-appearance.c"
     "${PROTOCOL_DIR}/ext-workspace-server.h" "${PROTOCOL_DIR}/ext-workspace.c"
     "${PROTOCOL_DIR}/polly-workspace-toplevel-server.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"
     "${PROTOCOL_DIR}/workspace-foreign.c"
     "${PROTOCOL_DIR}/wlr-layer-shell-unstable-v1-protocol.h"
     "${PROTOCOL_DIR}/xdg-shell-protocol.h")
-target_include_directories(pollywm-core PUBLIC compositor "${PROTOCOL_DIR}")
+target_include_directories(pollywm-core PUBLIC compositor shared "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-core PUBLIC WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)
 target_compile_options(pollywm-core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(pollywm-core PUBLIC

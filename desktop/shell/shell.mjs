@@ -1,7 +1,8 @@
 import { render } from './js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
-import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView } from './desktop/shell/views.mjs';
+import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
+import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 
@@ -13,6 +14,21 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let errorKind = '';
   let timer = null;
   let menu = null;
+  let switcher = null;
+  let shortcutBindings = [];
+  let recordingShortcut = null;
+  let previousShortcutsChanged = null, previousSwitcherChanged = null;
+  const shortcutsChanged = () => {
+    if (!running) return;
+    try { shortcutBindings = native.shortcuts(); repaintMenu(); }
+    catch (failure) { shortcutFailure(failure); }
+    if (typeof previousShortcutsChanged === 'function') previousShortcutsChanged();
+  };
+  const switcherChanged = () => {
+    if (!running) return;
+    paintSwitcher();
+    if (typeof previousSwitcherChanged === 'function') previousSwitcherChanged();
+  };
   let running = false;
   let lastFailure = '';
   let applications = [];
@@ -67,6 +83,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function closeMenu() {
     if (!menu) return;
+    stopRecording();
     const old = menu;
     menu = null;
     closeSurface(old);
@@ -76,7 +93,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const native = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
     const surface = { output: output.id, kind, window: native, signature: JSON.stringify(options), expectedClose: false };
     native.onclose = () => {
-      if (surface === menu) menu = null;
+      if (surface === menu) { stopRecording(); menu = null; }
+      if (surface === switcher) {
+        switcher = null;
+        if (!surface.expectedClose && running) {
+          try { native.cancelWindowSwitch(); } catch (failure) { shortcutFailure(failure); }
+        }
+      }
       if (!surface.expectedClose && running && kind !== 'settings') {
         lastFailure = '';
       }
@@ -204,6 +227,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
+    if (menu.mode === 'shortcuts') {
+      render(shortcutsView(getDesktopTheme(themeId), shortcutBindings, recordingShortcut, beginRecording,
+        action => applyShortcuts(shortcutBindings.map(binding => binding.action === action ?
+          { ...binding, modifiers: 0, key: '' } : binding)),
+        () => applyShortcuts(native.shortcutDefaults()), closeMenu, error), menu.window.document.body);
+      return;
+    }
     if (menu.mode === 'workspaces') {
       render(workspacesView(getDesktopTheme(themeId), workspaces,
         id => workspaceAction('activateWorkspace', id), id => workspaceAction('removeWorkspace', id),
@@ -225,7 +255,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return;
     }
     render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu, () => refresh(true),
-      error, menu.about), menu.window.document.body);
+      error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null),
+      menu.window.document.body);
   }
 
   function openMenu(outputId, mode, windowId = null) {
@@ -263,6 +294,19 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const body = menu.window.document.body;
     body.tabIndex = 0;
     body.addEventListener('keydown', event => {
+      if (recordingShortcut) {
+        event.preventDefault(); event.stopPropagation();
+        if (event.key === 'Escape' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+          stopRecording(); repaintMenu(); return;
+        }
+        const binding = shortcutFromEvent(event);
+        if (binding) {
+          const action = recordingShortcut;
+          stopRecording();
+          applyShortcuts(shortcutBindings.map(item => item.action === action ? { ...item, ...binding } : item));
+        }
+        return;
+      }
       if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
     });
     body.focus();
@@ -273,6 +317,86 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function showSettings(outputId, about = false) {
     return openMenu(outputId, about ? 'about' : 'appearance');
+  }
+
+  function shortcutFailure(failure) {
+    error = 'Shortcut settings: ' + String(failure);
+    errorKind = 'shortcuts';
+    report('[shell] ' + error);
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+  }
+
+  function showShortcuts(outputId) {
+    shortcutBindings = native.shortcuts();
+    return openMenu(outputId, 'shortcuts');
+  }
+
+  function stopRecording() {
+    if (!recordingShortcut) return;
+    recordingShortcut = null;
+    try { native.captureShortcuts(false); }
+    catch (failure) { report('[shell] Cannot end shortcut recording: ' + String(failure)); }
+  }
+
+  function beginRecording(action) {
+    try {
+      native.captureShortcuts(true);
+      recordingShortcut = action;
+      repaintMenu();
+      menu.window.document.body.focus();
+    } catch (failure) { shortcutFailure(failure); }
+  }
+
+  function applyShortcuts(bindings) {
+    stopRecording();
+    try {
+      shortcutBindings = saveShortcuts(native, storage, bindings);
+      if (errorKind === 'shortcuts') { error = ''; errorKind = ''; }
+      repaintMenu();
+      return true;
+    } catch (failure) {
+      try { shortcutBindings = native.shortcuts(); }
+      catch (refreshFailure) { report('[shell] Cannot refresh shortcuts: ' + String(refreshFailure)); }
+      shortcutFailure(failure);
+      return false;
+    }
+  }
+
+  function paintSwitcher() {
+    try {
+      const snapshot = native.windowSwitcher();
+      if (!snapshot.active) { closeSurface(switcher); switcher = null; return; }
+      const output = host.displays()[0];
+      if (!output) throw new Error('No display is available for the window switcher');
+      const height = Math.max(1, Math.min(360, output.height - 32));
+      if (!switcher || switcher.window.closed) switcher = newSurface(output, 'switcher', {
+        layer: 'overlay', width: Math.max(1, Math.min(620, output.width - 32)), height,
+        anchors: [], exclusiveZone: -1, keyboard: 'none', transparent: true,
+      });
+      render(switcherView(getDesktopTheme(themeId), snapshot, (serial, index) => {
+        try { native.acceptWindowSwitch(serial, index); } catch (failure) { shortcutFailure(failure); }
+      }, Math.max(1, Math.min(7, Math.floor((height - 70) / 38)))), switcher.window.document.body);
+    } catch (failure) {
+      closeSurface(switcher); switcher = null;
+      try { native.cancelWindowSwitch(); } catch (cancelFailure) { report('[shell] Cannot cancel switcher: ' + String(cancelFailure)); }
+      shortcutFailure(failure);
+    }
+  }
+
+  function startShortcuts() {
+    if (typeof native?.shortcuts !== 'function') return;
+    previousShortcutsChanged = native.onShortcutsChanged;
+    previousSwitcherChanged = native.onWindowSwitcherChanged;
+    native.onShortcutsChanged = shortcutsChanged;
+    native.onWindowSwitcherChanged = switcherChanged;
+    try {
+      shortcutBindings = native.shortcuts();
+      const stored = storage.getItem(SHORTCUTS_KEY);
+      if (stored !== null) { native.setShortcuts(JSON.parse(stored)); shortcutBindings = native.shortcuts(); }
+    } catch (failure) { shortcutFailure(failure); }
+    try { native.enableWindowSwitcher(true); }
+    catch (failure) { shortcutFailure(failure); }
   }
 
   function windowFailure(failure) {
@@ -426,6 +550,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         native.onWorkspacesChanged = workspacesChanged;
         refreshWindows();
       }
+      startShortcuts();
       return this;
     },
     stop() {
@@ -435,12 +560,18 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (native && native.onExit === exited) native.onExit = previousExit;
       if (native && native.onWindowsChanged === windowsChanged) native.onWindowsChanged = previousWindowsChanged;
       if (native && native.onWorkspacesChanged === workspacesChanged) native.onWorkspacesChanged = previousWorkspacesChanged;
+      if (native && native.onShortcutsChanged === shortcutsChanged) native.onShortcutsChanged = previousShortcutsChanged;
+      if (native && native.onWindowSwitcherChanged === switcherChanged) native.onWindowSwitcherChanged = previousSwitcherChanged;
+      if (typeof native?.enableWindowSwitcher === 'function') {
+        try { native.enableWindowSwitcher(false); } catch (failure) { report('[shell] Cannot stop switcher: ' + String(failure)); }
+      }
+      closeSurface(switcher); switcher = null;
       closeMenu();
       for (const bundle of bundles.values())
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
     },
-    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, refresh,
+    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, refresh,
     getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };

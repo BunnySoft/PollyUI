@@ -2,6 +2,7 @@ import { createDesktopShell, SHELL_THEME_KEY } from './desktop/shell/shell.mjs';
 import { settingsView, panelView, dockView, workspacesView } from './desktop/shell/views.mjs';
 import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 import { h, render } from './js/reconciler.mjs';
+import { saveShortcuts, shortcutFromEvent, shortcutText } from './desktop/shell/shortcuts.mjs';
 
 function check(value, message) {
   if (!value) throw new Error('FAIL: ' + message);
@@ -205,3 +206,19 @@ render(workspacesView(getDesktopTheme('xp'), [{ ...manualWorkspaces[0], canRemov
   () => {}, () => {}, () => {}, () => {}), document.body);
 check(!document.getElementById('shell-workspace-remove-7'), 'last-workspace removal is not offered');
 render(null, document.body);
+
+check(shortcutText({ modifiers: 10, key: 'Left' }) === 'Ctrl+Super+Left', 'shortcut labels describe the canonical chord');
+check(shortcutFromEvent({ key: 'Shift' }) === null, 'recording ignores modifier-only keys');
+check(shortcutFromEvent({ key: 'ArrowLeft', ctrlKey: true, metaKey: true }).key === 'Left',
+  'recording normalizes DOM arrow names');
+let currentShortcuts = [{ action: 'minimize-window', modifiers: 4, key: 'F9' }];
+const shortcutBackend = {
+  shortcuts() { return currentShortcuts.map(item => ({ ...item })); },
+  setShortcuts(items) { currentShortcuts = items.map(item => ({ ...item })); },
+};
+let failedSave = false;
+try {
+  saveShortcuts(shortcutBackend, { setItem() { throw new Error('disk full'); } },
+    [{ action: 'minimize-window', modifiers: 2, key: 'm' }]);
+} catch (error) { failedSave = String(error).includes('disk full'); }
+check(failedSave && currentShortcuts[0].key === 'F9', 'failed shortcut persistence restores the previous compositor bindings');

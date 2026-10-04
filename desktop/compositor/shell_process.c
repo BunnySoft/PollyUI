@@ -26,7 +26,8 @@ bool pu_desktop_global_filter(const struct wl_client *client,
         strcmp(name, "zwlr_foreign_toplevel_manager_v1") == 0 ||
         strcmp(name, "polly_appearance_v1") == 0 ||
         strcmp(name, "ext_workspace_manager_v1") == 0 ||
-        strcmp(name, "polly_workspace_toplevel_manager_v1") == 0)
+        strcmp(name, "polly_workspace_toplevel_manager_v1") == 0 ||
+        strcmp(name, "polly_shortcuts_v1") == 0)
         return desktop->shell_client && client == desktop->shell_client;
     return true;
 }

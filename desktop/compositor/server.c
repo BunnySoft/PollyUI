@@ -2,6 +2,7 @@
 #include "server.h"
 #include "decoration.h"
 #include "workspace.h"
+#include "shortcut-control.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -140,6 +141,7 @@ static bool exclusive_layer(struct PuDesktopLayer *layer)
 static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 {
     if (desktop->focused_layer == layer) return;
+    if (layer) pu_shortcuts_cancel(desktop);
     desktop->focused_layer = layer;
     if (desktop->focused)
         wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, !layer);
@@ -150,6 +152,7 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
 {
     if (view && !view->mapped) return;
+    pu_shortcuts_cancel(desktop);
     if (view && !pu_workspace_current(view)) {
         pu_workspace_activate(desktop, view->workspace, view);
         return;
@@ -187,58 +190,63 @@ static void update_capabilities(struct PuDesktop *desktop)
     wlr_seat_set_capabilities(desktop->seat, caps);
 }
 
+void pu_desktop_focus_mapped(struct PuDesktop *desktop, uint64_t id)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->views, link)
+        if (view->workspace_window == id) { focus_view(desktop, view); return; }
+}
+
 static void keyboard_modifiers(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, modifiers);
     wlr_seat_set_keyboard(entry->desktop->seat, entry->keyboard);
+    pu_shortcuts_modifiers(entry->desktop, entry->keyboard);
     wlr_seat_keyboard_notify_modifiers(entry->desktop->seat, &entry->keyboard->modifiers);
 }
 
-static bool keybinding(struct PuDesktop *desktop, xkb_keysym_t sym, uint32_t modifiers)
+void pu_desktop_shortcut_action(struct PuDesktop *desktop, int action, bool reverse)
 {
-    if (desktop->focused_layer && sym != XKB_KEY_Escape) return false;
-    if ((modifiers & (WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO)) == (WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO)) {
-        if (modifiers & (WLR_MODIFIER_SHIFT | WLR_MODIFIER_ALT)) return false;
-        if (sym != XKB_KEY_Left && sym != XKB_KEY_Right) return false;
-        pu_workspace_step(desktop, sym == XKB_KEY_Left ? -1 : 1);
-        return true;
-    }
-    if (!(modifiers & WLR_MODIFIER_ALT) || desktop->grab != PU_DESKTOP_PASSTHROUGH) return false;
-    switch (sym) {
-    case XKB_KEY_Escape:
-        wl_display_terminate(desktop->display);
-        return true;
-    case XKB_KEY_Tab:
+    switch (action) {
+    case PU_SHORTCUT_WORKSPACE_PREVIOUS: pu_workspace_step(desktop, -1); return;
+    case PU_SHORTCUT_WORKSPACE_NEXT: pu_workspace_step(desktop, 1); return;
+    case PU_SHORTCUT_SWITCH:
         {
             struct PuDesktopView *next;
+            if (reverse) {
+                wl_list_for_each(next, &desktop->views, link) {
+                    if (!pu_workspace_current(next) || next == desktop->focused) continue;
+                    focus_view(desktop, next);
+                    return;
+                }
+            }
             wl_list_for_each_reverse(next, &desktop->views, link) {
                 if (!pu_workspace_current(next)) continue;
                 focus_view(desktop, next);
                 break;
             }
         }
-        return true;
-    case XKB_KEY_F9:
+        return;
+    case PU_SHORTCUT_MINIMIZE:
         if (desktop->focused) set_minimized(desktop->focused, true);
-        return true;
-    case XKB_KEY_F4:
+        return;
+    case PU_SHORTCUT_CLOSE:
         if (desktop->focused) wlr_xdg_toplevel_send_close(desktop->focused->toplevel);
-        return true;
-    case XKB_KEY_F10:
+        return;
+    case PU_SHORTCUT_MAXIMIZE:
         if (desktop->focused) {
             struct PuDesktopView *view = desktop->focused;
             set_view_state(view, !view->maximized, view->fullscreen, NULL);
         }
-        return true;
-    case XKB_KEY_F11:
+        return;
+    case PU_SHORTCUT_FULLSCREEN:
         if (desktop->focused) {
             struct PuDesktopView *view = desktop->focused;
             set_view_state(view, view->maximized, !view->fullscreen, NULL);
         }
-        return true;
-    default:
-        return false;
+        return;
+    default: return;
     }
 }
 
@@ -248,6 +256,7 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     struct wlr_keyboard_key_event *event = data;
     struct PuDesktop *desktop = entry->desktop;
     wlr_seat_set_keyboard(desktop->seat, entry->keyboard);
+    if (wlr_seat_keyboard_has_grab(desktop->seat)) pu_shortcuts_cancel(desktop);
     bool handled = event->keycode < KEY_CNT && entry->consumed[event->keycode];
     if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
         if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = false;
@@ -258,7 +267,7 @@ static void keyboard_key(struct wl_listener *listener, void *data)
         for (int i = 0; i < count && !handled; i++) {
             /* Mark before changing focus so keyboard.enter excludes the shortcut. */
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = true;
-            handled = keybinding(desktop, syms[i], wlr_keyboard_get_modifiers(entry->keyboard));
+            handled = pu_shortcuts_key(desktop, entry->keyboard, syms[i]);
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = handled;
         }
     }
@@ -272,6 +281,7 @@ static void keyboard_destroy(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, destroy);
     struct PuDesktop *desktop = entry->desktop;
+    pu_shortcuts_keyboard_removed(desktop, entry->keyboard);
     bool active = wlr_seat_get_keyboard(desktop->seat) == entry->keyboard;
     wl_list_remove(&entry->key.link);
     wl_list_remove(&entry->modifiers.link);
@@ -494,6 +504,7 @@ static void set_minimized(struct PuDesktopView *view, bool minimized)
 void pu_desktop_workspaces_changed(struct PuDesktop *desktop, struct PuDesktopView *preferred)
 {
     if (desktop->stopping) return;
+    pu_shortcuts_cancel(desktop);
     bool switched = desktop->visible_workspace != desktop->active_workspace;
     desktop->visible_workspace = desktop->active_workspace;
     if (desktop->grabbed && (switched || !pu_workspace_current(desktop->grabbed))) end_grab(desktop);
@@ -720,6 +731,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
+    pu_shortcuts_cancel(desktop);
     arrange_layers(desktop);
     refresh_views(desktop);
     sync_foreign(desktop);
@@ -1356,6 +1368,7 @@ static void view_title(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopView *view = wl_container_of(listener, view, title);
+    pu_shortcuts_metadata(view);
     sync_foreign(view->desktop);
 }
 
@@ -1363,6 +1376,7 @@ static void view_app_id(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopView *view = wl_container_of(listener, view, app_id);
+    pu_shortcuts_metadata(view);
     sync_foreign(view->desktop);
 }
 
@@ -1393,7 +1407,7 @@ static void view_map(struct wl_listener *listener, void *data)
     listen(&view->foreign->events.request_maximize, &view->foreign_maximize, foreign_maximize);
     listen(&view->foreign->events.request_fullscreen, &view->foreign_fullscreen, foreign_fullscreen);
     listen(&view->foreign->events.request_close, &view->foreign_close, foreign_close);
-    if (!view->minimized && pu_workspace_current(view)) focus_view(desktop, view);
+    if (!view->minimized && pu_workspace_current(view) && !pu_shortcuts_switching(desktop)) focus_view(desktop, view);
     sync_foreign(desktop);
     wlr_log(WLR_INFO, "Mapped %s", view->toplevel->app_id ? view->toplevel->app_id : "(unnamed)");
 }
@@ -1406,6 +1420,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     if (desktop->grabbed == view) end_grab(desktop);
     if (desktop->decoration_pressed == view) desktop->decoration_pressed = NULL;
     if (desktop->last_title_click == view) desktop->last_title_click = NULL;
+    pu_shortcuts_unmap(view);
     pu_workspaces_view_unmap(view);
     view->resize_pending = false;
     view->mapped = false;
@@ -1813,6 +1828,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
         fail(desktop, "Cannot initialize workspaces"); return false;
     }
     desktop->visible_workspace = desktop->active_workspace;
+    if (!pu_shortcuts_init(desktop)) {
+        fail(desktop, "Cannot initialize shortcuts"); return false;
+    }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
     if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
         fail(desktop, "Cannot load cursor theme"); return false;
@@ -1882,6 +1900,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     unlisten(&desktop->layout_change);
     /* Release imported buffers before disconnecting the nested Wayland backend. */
     if (desktop->scene) wlr_scene_node_destroy(&desktop->scene->tree.node);
+    pu_shortcuts_finish(desktop);
     pu_workspaces_finish(desktop);
     pu_decorations_finish(desktop);
     if (desktop->cursor_theme) wlr_xcursor_manager_destroy(desktop->cursor_theme);

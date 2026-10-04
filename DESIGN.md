@@ -453,6 +453,17 @@ workspace or the next when deleting the first. At least one workspace remains.
 Shell reconnect rebuilds handles from compositor state. Full compositor/session
 restart persistence is deferred; no persistent protocol IDs are advertised.
 
+Window switching is a compositor-owned, modifier-held state machine. Its frozen
+candidate list uses mapped-instance IDs, so closed/remapped views cannot be
+activated through stale selections. The Shell opts into presentation and draws
+a read-only preview without keyboard focus; release or serial-checked pointer
+acceptance commits the selection. Presenter loss and workspace/focus changes
+cancel it. Labels are bounded and native callbacks publish complete snapshots.
+Shortcut defaults, key normalization and conflict rules are shared C code used
+by both the native client and compositor. A full configuration is validated
+before it is applied; the Shell persists only acknowledged maps and attempts
+live rollback if saving fails. The capability has no executable-command action.
+
 PollyWM's optional-per-client decorations negotiate through `xdg-decoration`.
 An explicit client-side preference is respected; non-negotiating clients are
 not guessed to be undecorated. Frame state and metrics become visible only with

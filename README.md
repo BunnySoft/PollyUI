@@ -494,6 +494,45 @@ Captions have basic Unicode font fallback, not complex shaping/bidi. Blur,
 frame shadows, fully rounded client-content clipping and polished animations
 remain separate appearance work.
 
+### Window switcher and shortcut settings
+
+The native Shell presents an Alt+Tab window list for the current workspace,
+including minimized windows. The list is frozen in recent-use order while the
+shortcut modifiers are held. Tab advances, Shift reverses, Escape cancels, and
+releasing a required modifier activates/restores the selection. Clicking a row
+also accepts it. Preview does not change application focus. Closed candidates
+are removed safely; workspace changes, external focus changes and presenter
+loss cancel the picker. Without a Shell presenter, switching remains immediate.
+
+Open **Appearance > Keyboard shortcuts** to record a new chord, disable an
+action, or restore defaults. The fixed catalog covers switching, closing,
+minimizing, maximizing, fullscreen and previous/next workspace. Chords require
+Ctrl, Alt or Super; Shift is reserved for reverse window switching. Conflicts
+(including that reverse alias) and attempts to replace Alt+Escape are rejected
+without partially changing the map. Alt+Escape remains the development exit
+outside switching/recording; Escape cancels those modes instead.
+
+`desktop.shortcuts()` and `shortcutDefaults()` return records containing
+`action`, `label`, `modifiers` and `key`. Modifier bits are Shift=1, Ctrl=2,
+Alt=4 and Super=8; keys use XKB names or a single basic character.
+`setShortcuts(records)` validates a complete map and waits for compositor
+acknowledgement. An empty key with modifiers=0 disables an action. Shell
+preferences use `desktop.shortcuts.v1` in app-scoped localStorage and are
+reapplied on a new compositor session; failed saving attempts roll back the
+live map and report any rollback failure.
+
+The connection-restricted `polly_shortcuts_v1` interface carries only this
+catalog and switcher presentation, not shell commands. A presenter must opt in
+with `enableWindowSwitcher(true)`. `windowSwitcher()` supplies a coherent,
+serial-tagged snapshot; `acceptWindowSwitch(serial, index)` rejects stale UI
+selections and `cancelWindowSwitch()` dismisses it. `captureShortcuts(true)`
+only suppresses global bindings while a Shell layer owns keyboard focus.
+All suppression ends when its connection/resource is destroyed.
+
+The initial picker is a themed text list on the first available display,
+not live application thumbnails or an app-icon grid. It displays a bounded
+slice around the selection; richer overview/icon behavior remains separate.
+
 ### Linux manual workspaces
 
 PollyWM starts with four workspaces and one active workspace shared by all

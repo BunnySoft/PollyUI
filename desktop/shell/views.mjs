@@ -1,5 +1,6 @@
 import { h } from './js/reconciler.mjs';
 import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
+import { shortcutText } from './desktop/shell/shortcuts.mjs';
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -92,7 +93,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false) {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null) {
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: 12, gap: 8, overflow: 'scroll',
     backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
@@ -120,6 +121,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Negotiated window frames follow this appearance.', theme.colors.muted, 11),
         label('Application-drawn headers keep their own style.', theme.colors.muted, 11),
       ],
+  shortcuts ? button('shell-keyboard-settings', 'Keyboard shortcuts', theme, shortcuts) : null,
   error ? h('view', { role: 'alert', style: { gap: 6, padding: 8, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11),
     button('shell-retry', 'Retry display setup', theme, retry)) : null,
@@ -201,4 +203,40 @@ export function workspacesView(theme, workspaces, activate, remove, create, clos
   label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, 10),
   label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, 10),
   error ? label(error, theme.colors.text, 11) : null);
+}
+
+export function shortcutsView(theme, bindings, recording, record, disable, reset, close, error = '') {
+  return h('view', { id: 'shell-shortcuts', style: {
+    width: '100%', height: '100%', padding: 10, gap: 8, backgroundColor: theme.colors.body,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+  } },
+  h('view', { style: { ...row, gap: 6 } }, label('Keyboard shortcuts', theme.colors.text, 15),
+    h('view', { style: { flexGrow: 1 } }), button('shell-shortcuts-close', 'Close', theme, close)),
+  button('shell-shortcuts-reset', 'Reset defaults', theme, reset),
+  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 8 } },
+    bindings.map(binding => h('view', { style: { padding: 6, gap: 4, flexShrink: 0,
+      borderWidth: 1, borderColor: theme.colors.border } },
+    label(binding.label, theme.colors.text, 12),
+    h('view', { style: { ...row, gap: 6 } },
+      h('view', { style: { flexGrow: 1, flexBasis: 0, overflow: 'hidden', color: theme.colors.text, fontSize: 11 } },
+        recording === binding.action ? 'Press a shortcut...' : shortcutText(binding)),
+      button('shell-shortcut-' + binding.action, 'Change', theme, () => record(binding.action)),
+      button('shell-shortcut-disable-' + binding.action, 'Off', theme, () => disable(binding.action)))))),
+  label('Shift reverses switching. Alt+Escape exits the session.', theme.colors.muted, 10),
+  recording ? label('Press Escape to cancel recording.', theme.colors.muted, 10) : null,
+  error ? label(error, theme.colors.text, 11) : null);
+}
+
+export function switcherView(theme, snapshot, accept, rows = 7) {
+  const start = Math.max(0, Math.min(snapshot.items.length - rows, snapshot.selected - Math.floor(rows / 2)));
+  return h('view', { id: 'shell-window-switcher', style: {
+    width: '100%', height: '100%', padding: 12, gap: 6, backgroundColor: theme.colors.body,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+  } },
+  label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length, theme.colors.text, 15),
+  snapshot.items.slice(start, start + rows).map((item, offset) =>
+    button('shell-switcher-item-' + (start + offset), item.title || item.appId || 'Untitled', theme,
+      () => accept(snapshot.serial, start + offset), snapshot.selected === start + offset,
+      { height: 32, alignItems: 'flex-start', overflow: 'hidden' })),
+  label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, 10));
 }

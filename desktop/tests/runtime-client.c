@@ -262,6 +262,16 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            unsigned keycode, key_down;
+            if (sscanf(name, "fixture-key %u %u", &keycode, &key_down) == 2) {
+                CHECK(keycode <= KEY_MAX && key_down <= 1);
+                static uint32_t key_time = 30000;
+                struct wlr_keyboard_key_event event = { .time_msec = ++key_time, .keycode = keycode,
+                    .update_state = true, .state = key_down ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED };
+                wlr_keyboard_notify_key(&keyboard, &event);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             unsigned workspace_index, visible_count;
             if (sscanf(name, "fixture-workspace-state %u %u", &workspace_index, &visible_count) == 2) {
                 CHECK(desktop.active_workspace == pu_workspace_at(&desktop, workspace_index));

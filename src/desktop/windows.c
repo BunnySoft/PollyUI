@@ -1,4 +1,5 @@
 #include "desktop/windows.h"
+#include "desktop/shortcut-client.h"
 #include "foreign-toplevel-client.h"
 #include "polly-appearance-client.h"
 #include "decoration-themes.h"
@@ -303,6 +304,7 @@ static const struct wl_seat_listener seat_listener = { .capabilities = capabilit
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
     (void)data;
+    if (pu_shortcut_client_bind(control.display, registry, name, interface)) return;
     if (!control.manager && version >= 3 && !strcmp(interface, "zwlr_foreign_toplevel_manager_v1")) {
         control.manager = wl_registry_bind(registry, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
         if (!control.manager ||
@@ -407,6 +409,9 @@ static int property(JSContext *ctx, JSValueConst object, const char *name, JSVal
 {
     return !JS_IsException(value) && JS_SetPropertyStr(ctx, object, name, value) >= 0;
 }
+
+int pu_desktop_windows_ready(JSContext *ctx) { return ensure_control(ctx); }
+int pu_desktop_windows_roundtrip(void) { return roundtrip(); }
 
 static int ensure_workspaces(JSContext *ctx)
 {
@@ -598,6 +603,7 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
 {
     control.ctx = ctx;
     control.api = JS_DupValue(ctx, api);
+    if (!pu_shortcut_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
     if (!property(ctx, api, "setAppearance", JS_NewCFunction(ctx, set_appearance, "setAppearance", 1))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
@@ -631,7 +637,8 @@ static void notify(const char *name)
 
 int pu_desktop_windows_pump(void)
 {
-    if (!control.ctx || (!control.changed && !control.workspaces_changed)) return 0;
+    int worked = pu_shortcut_client_pump();
+    if (!control.ctx || (!control.changed && !control.workspaces_changed)) return worked;
     int windows = control.changed, workspaces = control.workspaces_changed;
     control.changed = control.workspaces_changed = 0;
     if (workspaces) notify("onWorkspacesChanged");
@@ -641,6 +648,7 @@ int pu_desktop_windows_pump(void)
 
 void pu_desktop_windows_shutdown(void)
 {
+    pu_shortcut_client_shutdown();
     disconnect_control();
     if (control.ctx) JS_FreeValue(control.ctx, control.api);
     memset(&control, 0, sizeof(control));

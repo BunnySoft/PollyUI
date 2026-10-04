@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="polly_shortcuts_v1">
+  <interface name="polly_shortcuts_v1" version="1">
+    <description summary="trusted shortcut configuration and switcher presentation">
+      Only the compositor-owned Shell connection may bind this interface.
+      Actions are a fixed catalog, not commands or executable strings.
+      The compositor owns switcher selection and commits it when the trigger
+      modifiers are released. The Shell presents bounded display labels.
+    </description>
+    <request name="destroy" type="destructor"/>
+    <request name="set_binding">
+      <arg name="action" type="uint"/>
+      <arg name="modifiers" type="uint"/>
+      <arg name="key" type="string"/>
+    </request>
+    <request name="commit">
+      <description summary="validate and atomically apply staged bindings">
+        Validation failure leaves all existing bindings unchanged.
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+    <request name="presenter">
+      <arg name="enabled" type="uint"/>
+    </request>
+    <request name="recording">
+      <description summary="allow a focused Shell layer to record a chord">
+        Suppression applies only while a Shell layer has keyboard focus.
+        It ends with this resource's destruction.
+      </description>
+      <arg name="enabled" type="uint"/>
+    </request>
+    <request name="accept">
+      <arg name="serial" type="uint"/>
+      <arg name="index" type="uint"/>
+    </request>
+    <request name="cancel"/>
+    <event name="binding">
+      <arg name="action" type="uint"/>
+      <arg name="modifiers" type="uint"/>
+      <arg name="key" type="string"/>
+    </event>
+    <event name="bindings_done"/>
+    <event name="configured">
+      <arg name="serial" type="uint"/>
+      <arg name="error" type="string"/>
+    </event>
+    <event name="switcher_begin">
+      <arg name="serial" type="uint"/>
+      <arg name="count" type="uint"/>
+      <arg name="selected" type="uint"/>
+    </event>
+    <event name="switcher_item">
+      <arg name="index" type="uint"/>
+      <arg name="title" type="string"/>
+      <arg name="app_id" type="string"/>
+    </event>
+    <event name="switcher_done"/>
+    <event name="switcher_closed"/>
+  </interface>
+</protocol>

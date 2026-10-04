@@ -28,6 +28,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
 | 2b - remaining window policy | Tiling/overview and advanced window rules, user-facing output configuration and real-hardware hotplug qualification. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
+| Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
 | Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes. The preview remains simulated; the native Shell and negotiated PollyWM frames reuse the same tokens. |
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
@@ -75,6 +76,9 @@ Workspace globals `ext_workspace_manager_v1` and
 `polly_workspace_toplevel_manager_v1` have the same connection-bound restriction.
 The standard protocol handles workspace operations; the private extension only
 adds window membership and moves that the standard protocol does not provide.
+`polly_shortcuts_v1` uses the same boundary for a fixed action catalog and
+switcher presentation. It cannot run arbitrary command strings, and recording
+suppression is only effective while a trusted Shell layer has keyboard focus.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -269,7 +273,7 @@ alternate window manager.
 |---|---|
 | Alt + left-button drag | Move the window |
 | Alt + right-button drag | Resize from the bottom-right |
-| Alt + Tab | Cycle mapped windows |
+| Alt + Tab / Alt + Shift + Tab | Preview next/previous window; release Alt to activate |
 | Ctrl + Super + Left / Right | Switch to previous/next workspace without wrapping |
 | Alt + F4 | Ask the focused client to close |
 | Alt + F9 | Minimize the focused window |
@@ -279,6 +283,17 @@ alternate window manager.
 
 Alt+Tab is scoped to the current workspace, including restoration of minimized
 windows there. Inactive workspaces do not receive pointer/keyboard input.
+The real Shell displays a recent-use picker without activating previews.
+Escape cancels it, and clicking a row accepts it. Standalone PollyWM without
+an opted-in Shell presenter retains immediate switching. The picker uses text
+labels rather than live window thumbnails, and appears on the first display.
+
+**Appearance > Keyboard shortcuts** records, disables and resets the seven
+window/workspace bindings above, except the fixed development exit.
+Conflicting bindings are rejected as a whole, including collisions with reverse
+window switching. Preferences survive a full compositor restart through the
+Shell's app-scoped storage. Binding-recording mode and picker cancellation do
+not invoke the Alt+Escape session exit.
 The parent desktop may intercept shortcuts in nested mode. Negotiating clients
 can use PollyWM titlebars; clients requesting self-drawn headers retain them.
 Maximize/fullscreen capabilities are advertised. Restore a maximized/fullscreen
@@ -496,6 +511,9 @@ on both taskbars and Docks. It checks atomic commit, hidden-window input and
 popup isolation, transient families, stale map epochs, deletion migration,
 the final-workspace guard, fullscreen preservation and Shell reconnect.
 Public clients cannot bind either workspace global even with a known global ID.
+Switcher coverage exercises modifier-held previews, release/click activation,
+reverse cycling, cancellation, stale candidates, workspace isolation, recorded
+and disabled bindings, conflicts, and settings restored into a fresh compositor.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

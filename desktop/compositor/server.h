@@ -83,6 +83,7 @@ struct PuDesktop {
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct PuDecorations *decorations;
     struct PuWorkspaces *workspaces;
+    struct PuShortcuts *shortcuts;
     struct PuWorkspace *active_workspace, *visible_workspace;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;

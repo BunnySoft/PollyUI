@@ -1,4 +1,8 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+add_executable(pollywm-shortcut-policy shortcut-policy.c)
+target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
+add_test(NAME desktop-shortcut-policy COMMAND pollywm-shortcut-policy)
+set_tests_properties(desktop-shortcut-policy PROPERTIES TIMEOUT 10)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h"
     COMMAND "${WAYLAND_SCANNER}" client-header "${WORKSPACE_XML}" "${PROTOCOL_DIR}/ext-workspace-client.h"
