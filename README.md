@@ -351,6 +351,11 @@ focus policy. Layer geometry options are creation-time settings: close/recreate
 the surface to change them. Minimize/maximize and title-bar controls are not
 applicable to layers and throw.
 
+`transparent: true` opts a layer into alpha composition, including a transparent
+DOM viewport. Rounded docks can reveal the actual wallpaper at their corners;
+this is not background blur. Transparent pixels do not automatically define a
+click-through input shape: the native surface still has a rectangular input area.
+
 `window.displays()` returns a snapshot of `{ id, name, x, y, width, height, scale }`.
 IDs are host-local and nonpersistent; use current IDs for `output` and re-query
 after display changes. Bounds use the host's desktop coordinates and `scale` is
@@ -375,10 +380,25 @@ unless explicitly configured already, so the activating click also operates a
 panel control. This applies to mixed ordinary/layer windows in that shell
 process; ordinary applications that never create layers keep their prior policy.
 
-The surface/runtime plumbing is implemented and exercised with actual panels,
-wallpaper and dock-shaped clients. **The production themed Shell, launcher,
-taskbar and session supervisor remain separate work items**; the existing
-five-theme preview is still labeled simulated.
+The native development Shell is `desktop/shell/main.mjs`. It creates real
+wallpaper/panel/Dock surfaces for each output, offers all five appearances, and
+persists the choice under the explicit `org.pollyui.shell` application identity:
+
+```sh
+sh desktop/tools/run-session.sh --nested --restarts 3 \
+  ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/main.mjs
+```
+
+Its Polly menu and Dock appearance/about controls operate on actual Shell
+windows. XP/Classic use a bottom panel; Aqua/Lion/Big Sur use a menu bar and
+floating Dock. Theme changes reuse unchanged surface geometry and preserve
+wallpaper windows. Failure to create replacement surfaces or persist the choice
+keeps the prior selection, reports the error, and cleans up staged windows.
+
+This is still a **development desktop**, not the final system. Application
+launching, running-window buttons, system services, secure lock, and application
+decorations are not yet integrated. The original appearance preview remains
+available separately and is still labeled simulated.
 
 ### Input event contract
 

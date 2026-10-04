@@ -15,6 +15,7 @@ typedef struct PuLayerConfig {
     int keyboard;               /* none=0, exclusive=1, on-demand=2 */
     uint32_t output;            /* current display ID, or 0 for compositor choice */
     int margin_top, margin_right, margin_bottom, margin_left;
+    int transparent;
 } PuLayerConfig;
 
 typedef struct PuDisplayInfo {

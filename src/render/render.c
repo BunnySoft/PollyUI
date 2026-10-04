@@ -274,3 +274,10 @@ void pu_render_tree(PuSurface *surface, PuNode *root, float scale)
     pu_surface_clear(surface, 255, 255, 255, 255);  /* white viewport */
     if (root) render_node(surface, root);
 }
+
+void pu_render_tree_transparent(PuSurface *surface, PuNode *root, float scale)
+{
+    pu_surface_set_scale(surface, scale);
+    pu_surface_clear(surface, 0, 0, 0, 0);
+    if (root) render_node(surface, root);
+}

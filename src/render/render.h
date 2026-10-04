@@ -12,5 +12,6 @@
 /* Paint the laid-out tree. `scale` maps logical (layout) pixels to physical
  * device pixels for high-DPI displays (1.0 = no scaling). */
 void pu_render_tree(PuSurface *surface, PuNode *root, float scale);
+void pu_render_tree_transparent(PuSurface *surface, PuNode *root, float scale);
 
 #endif /* POLLYUI_RENDER_RENDER_H */

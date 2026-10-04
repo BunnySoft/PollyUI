@@ -39,10 +39,15 @@ async function run() {
         output: outputs[0].id });
     const panel = window.create(panelOptions);
     const dock = window.create({ title: 'PollyUI layer dock', layer: 'top', width: 160, height: 48,
-        anchors: ['bottom'], exclusiveZone: 48, margins: { bottom: 8 }, output: outputs[0].id });
+        anchors: ['bottom'], exclusiveZone: 48, margins: { bottom: 8 }, output: outputs[0].id, transparent: true });
     background.document.body.style.backgroundColor = '#112233';
     panel.document.body.style.backgroundColor = '#557799';
-    dock.document.body.style.backgroundColor = '#997744';
+    dock.document.body.style.backgroundColor = 'transparent';
+    const dockShape = dock.document.createElement('view');
+    dockShape.style.width = dockShape.style.height = '100%';
+    dockShape.style.borderRadius = 20;
+    dockShape.style.backgroundColor = '#997744';
+    dock.document.body.appendChild(dockShape);
     rejects(() => panel.maximize(), 'layer surfaces reject toplevel-only controls');
     const ordinary = window.create({ title: 'PollyUI layer companion', width: 420, height: 300 });
     ordinary.document.body.style.backgroundColor = '#228855';

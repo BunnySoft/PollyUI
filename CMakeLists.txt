@@ -258,9 +258,17 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;PU_RENDERER=raster")
     if (PU_LAYER_SHELL)
         add_executable(pollyui-layer-client-test desktop/tests/runtime-client.c)
-        target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core)
+        pkg_check_modules(PIXMAN_UI_TEST REQUIRED IMPORTED_TARGET pixman-1)
+        target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
+            add_test(NAME desktop-shell-${renderer}
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/native-shell.sh"
+                    "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+                    $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/native-shell-client.mjs")
+            set_tests_properties(desktop-shell-${renderer} PROPERTIES TIMEOUT 60
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
             add_test(NAME desktop-runtime-${renderer}
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

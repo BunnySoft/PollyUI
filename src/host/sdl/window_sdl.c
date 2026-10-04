@@ -446,6 +446,9 @@ static int create_surface(PuWindow *w)
     w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
                                SDL_TEXTUREACCESS_STREAMING, w->width, w->height);
     if (!w->tex) { fail_window(w, "SDL_CreateTexture"); return 0; }
+    if (!SDL_SetTextureBlendMode(w->tex, SDL_BLENDMODE_NONE)) {
+        fail_window(w, "SDL texture copy mode"); return 0;
+    }
     return 1;
 }
 
@@ -472,6 +475,7 @@ static int create_native(PuWindow *w, const PuWindowConfig *config,
             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height) &&
             SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true) &&
+            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, config->layer->transparent != 0) &&
             SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WAYLAND_WL_SURFACE_POINTER,
                 pu_layer_surface(w->layer_surface)) &&
             SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
@@ -721,6 +725,9 @@ static void pu_sync_size(PuWindow *w)
         w->tex = SDL_CreateTexture(w->renderer, SDL_PIXELFORMAT_BGRA32,
                                    SDL_TEXTUREACCESS_STREAMING, pw, ph);
         if (!w->tex) { fail_window(w, "SDL resize texture"); return; }
+        if (!SDL_SetTextureBlendMode(w->tex, SDL_BLENDMODE_NONE)) {
+            fail_window(w, "SDL resized texture copy mode"); return;
+        }
     }
     w->dirty = 1;
 }

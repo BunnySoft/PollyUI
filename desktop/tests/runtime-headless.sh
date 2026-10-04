@@ -11,7 +11,7 @@ export PU_TEST_STORAGE="$temporary/storage.dat"
 for test in smoke.js text.js textwrap.js linux-fonts.mjs visual.js \
     style.js dom.js events.js keyboard.js scroll.js modules.mjs \
     runtime.js workers.js fetch.js storage.js storage.js storage-values.mjs input-events.mjs pointer-events.mjs \
-    reconciler.mjs vue.mjs textinput.mjs inputcaret.mjs teardown.mjs desktop-appearance.mjs; do
+    reconciler.mjs vue.mjs textinput.mjs inputcaret.mjs teardown.mjs desktop-appearance.mjs native-shell.mjs; do
     if ! timeout 45 "$ui" --test "tests/$test" >"$temporary/output.log" 2>&1; then
         cat "$temporary/output.log"
         exit 1

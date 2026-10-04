@@ -93,7 +93,7 @@ typedef struct PuApp {
     struct PuApp *next;
     PuWindow *window;
     JSValue handle;
-    int closed, frameless, backdrop, titlebar, is_layer;
+    int closed, frameless, backdrop, titlebar, is_layer, transparent;
 } PuApp;
 
 static PuApp *g_apps;
@@ -116,14 +116,16 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
         double t0 = pu_now_ms();
         pu_layout_calculate(body, (float)width, (float)height);
         double t1 = pu_now_ms();
-        pu_render_tree(surface, body, scale);
+        if (app->transparent) pu_render_tree_transparent(surface, body, scale);
+        else pu_render_tree(surface, body, scale);
         double t2 = pu_now_ms();
         fprintf(stderr, "[perf] paint: layout %.2fms  render %.2fms  total %.2fms\n",
                 t1 - t0, t2 - t1, t2 - t0);
         return;
     }
     pu_layout_calculate(body, (float)width, (float)height);
-    pu_render_tree(surface, body, scale);
+    if (app->transparent) pu_render_tree_transparent(surface, body, scale);
+    else pu_render_tree(surface, body, scale);
 }
 
 /* Pointer: hit-test against the last computed layout and dispatch the matching
@@ -321,6 +323,7 @@ static PuApp *new_app(PuBridge *bridge)
 static int open_app(PuApp *app, const PuWindowConfig *config)
 {
     app->is_layer = config->layer != NULL;
+    app->transparent = config->layer && config->layer->transparent;
     app->window = pu_window_create(config);
     if (!app->window) return 0;
     pu_window_set_paint(app->window, app_paint, app);
@@ -399,7 +402,16 @@ static int layer_options(JSContext *ctx, JSValueConst options, PuLayerConfig *la
     const char *const keyboards[] = { "none", "exclusive", "on-demand", NULL };
     const char *const edges[] = { "top", "bottom", "left", "right", NULL };
     const char *const margins[] = { "top", "right", "bottom", "left", NULL };
-    JSValue input = JS_GetPropertyStr(ctx, options, "keyboard");
+    JSValue input = JS_GetPropertyStr(ctx, options, "transparent");
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input)) {
+        if (!JS_IsBool(input)) {
+            JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "transparent must be a boolean"); return 0;
+        }
+        layer->transparent = JS_ToBool(ctx, input);
+    }
+    JS_FreeValue(ctx, input);
+    input = JS_GetPropertyStr(ctx, options, "keyboard");
     if (JS_IsException(input)) return 0;
     if (!JS_IsUndefined(input)) layer->keyboard = choice(ctx, input, "keyboard", keyboards);
     JS_FreeValue(ctx, input);
@@ -460,7 +472,7 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
     if (g_app_quitting) return JS_ThrowTypeError(ctx, "Application is quitting");
     JSValue options = argc ? JS_DupValue(ctx, argv[0]) : JS_NewObject(ctx);
     const char *const names[] = { "title", "width", "height", "layer", "anchors",
-        "exclusiveZone", "keyboard", "output", "margins", NULL };
+        "exclusiveZone", "keyboard", "output", "margins", "transparent", NULL };
     if (!option_names(ctx, options, names)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
     PuWindowConfig config = { .width = 640, .height = 480, .title = "PollyUI" };
     PuLayerConfig layer = {0};

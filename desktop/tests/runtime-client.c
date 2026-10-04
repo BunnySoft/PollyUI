@@ -107,6 +107,28 @@ static bool wait_pixel(struct wlr_output *output, uint32_t color)
     return false;
 }
 
+static bool transparent_corner(struct wlr_output *output)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link) {
+        struct wlr_surface *surface = layer->surface->surface;
+        if (layer->surface->output != output ||
+            layer->surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_TOP) continue;
+        CHECK(!pixman_region32_contains_point(&surface->opaque_region, 0, 0, NULL));
+        void *pixels;
+        uint32_t format, value;
+        size_t stride;
+        CHECK(surface->buffer && surface->buffer->source);
+        CHECK(wlr_buffer_begin_data_ptr_access(surface->buffer->source, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+                                                &pixels, &format, &stride));
+        memcpy(&value, pixels, sizeof(value));
+        wlr_buffer_end_data_ptr_access(surface->buffer->source);
+        CHECK(format == DRM_FORMAT_ARGB8888 && (value >> 24) == 0);
+        return true;
+    }
+    CHECK(false);
+}
+
 static bool suite(char *executable, char *script)
 {
     char *args[] = { executable, "--app-id", "org.pollyui.layer-fixture", script, NULL };
@@ -118,6 +140,7 @@ static bool suite(char *executable, char *script)
     CHECK(wait_dimensions(output) && wait_dimensions(survivor));
     for (int i = 0; i < 1000 && wl_list_length(&desktop.views) != 1; i++) CHECK(pump());
     CHECK(wl_list_length(&desktop.layers) == 4 && wl_list_length(&desktop.views) == 1);
+    CHECK(transparent_corner(output) && transparent_corner(survivor));
     struct wlr_box all, target;
     wlr_output_layout_get_box(desktop.layout, NULL, &all);
     wlr_output_layout_get_box(desktop.layout, output, &target);

@@ -22,3 +22,4 @@ input-events.mjs
 pointer-events.mjs
 teardown.mjs
 desktop-appearance.mjs
+native-shell.mjs

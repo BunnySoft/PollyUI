@@ -394,6 +394,9 @@ services across multiple native windows. Each window's `PuApp` binds a distinct
 resolve the receiver's document; changing OS focus never swaps the global
 `document`. Layout validity is cached per root using a shared mutation version,
 so equally sized windows cannot accidentally reuse another root's geometry.
+Each document strongly retains its body wrapper, preserving reconciler mount
+state across repeated `document.body` reads. Other node wrappers retain their
+weak-cache behavior.
 
 Active windows retain their JavaScript handles. At a safe event-loop boundary,
 closing removes the native window, invokes `onclose` once, clears its attached

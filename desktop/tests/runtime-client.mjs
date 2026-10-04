@@ -12,17 +12,21 @@ for (const output of outputs) {
     const panel = window.create({
         title: 'Native panel ' + output.id, output: output.id,
         layer: 'top', width: 0, height: 28, exclusiveZone: 28,
-        anchors: ['top', 'left', 'right'], keyboard: 'on-demand',
+        anchors: ['top', 'left', 'right'], keyboard: 'on-demand', transparent: true,
     });
-    panel.document.body.style.backgroundColor = '#789abc';
+    const shape = panel.document.createElement('view');
+    shape.style.width = shape.style.height = '100%';
+    shape.style.borderRadius = 8;
+    shape.style.backgroundColor = '#789abc';
+    panel.document.body.appendChild(shape);
     panel.document.body.tabIndex = 0;
     panel.document.body.addEventListener('mousedown', () => {
-        panel.document.body.style.backgroundColor = '#c04020';
+        shape.style.backgroundColor = '#c04020';
         console.log('PASS: native layer pointer input');
     });
     panel.document.body.addEventListener('keydown', event => {
         if (event.code === 'KeyA') {
-            panel.document.body.style.backgroundColor = '#20c040';
+            shape.style.backgroundColor = '#20c040';
             console.log('PASS: native layer keyboard input');
         }
     });

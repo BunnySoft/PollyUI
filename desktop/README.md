@@ -2,8 +2,9 @@
 
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
 compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
-This is the window-management foundation, **not yet a PollyUI desktop shell
-or a bootable distribution**.
+It includes a native development **PollyShell** with themed wallpaper, panels,
+Dock and appearance settings. It is **not yet a complete desktop system or a
+bootable distribution**.
 
 ## Architecture and implementation plan
 
@@ -11,9 +12,9 @@ Keep three boundaries:
 
 - `compositor/`: PollyWM owns outputs, seats, window geometry, focus and
   composition. wlroots supplies device/rendering/protocol infrastructure.
-- `shell/`: shared appearance presets and a native PollyUI **simulated-shell
-  preview**. Future real panels, launcher, notifications and settings will run
-  in a separate process; a shell crash must not terminate other applications.
+- `shell/`: shared appearance presets, the native multi-surface PollyShell and
+  a separate simulated appearance preview. The real shell runs in its own
+  process; a shell crash must not terminate other applications.
 - Future session/system integration: application launching, D-Bus services,
   permissions, persistence and distribution packaging.
 
@@ -33,7 +34,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Shell boundary and development session | Optional explicitly spawned shell with a private Wayland connection, bounded opt-in restart/backoff, and an isolated session launcher. Login, authentication and production session policy remain separate. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
-| 3c - production PollyShell | Implement the themed wallpaper, panel/dock, launcher and session supervision. The current appearance preview still uses an ordinary xdg toplevel. |
+| 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays and persistent five-theme selection. Application launcher/window buttons and system services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -98,6 +99,12 @@ protocol is promised by reserving a connection.
 
 ## Appearance direction and native preview
 
+The native entry is `shell/main.mjs`. Run it through the development session
+launcher shown below. `shell/shell.mjs` owns the live surface set; `shell/views.mjs`
+renders its controls, reusing the preview's original wallpaper artwork and
+immutable theme tokens. The following preview documentation describes the
+separate `shell/preview.mjs`, not the native Shell.
+
 The desktop will offer multiple selectable appearances rather than hard-code a
 single era. Appearance is separate from window-management policy: the compositor
 remains floating, and no workspace/tiling policy was selected by choosing these
@@ -157,9 +164,8 @@ include PollyUI. See the root README's Linux build instructions or run:
 
 This runs the actual PollyUI appearance code under WSLg and then PollyWM.
 Linux has a Skia GLES path and structured input with separate text commits;
-The host also supports actual layer-shell windows; the appearance preview has
-not yet been converted into the production multi-surface Shell. IME preedit
-remains pending.
+The native Shell uses separate layer windows rather than embedding this preview
+as its desktop. IME preedit remains pending.
 
 The appearance test saves `build/appearance-<id>-<width>x<height>.png` for each
 theme. It covers token shape/immutability, native layout and color rendering,
@@ -168,8 +174,8 @@ state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
 `PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
 These appearance tests run separately from the WSL compositor suite.
 
-Next integration steps are production themed panels/docks, an application
-launcher and a shared decoration policy.
+Next integration steps are an application launcher, running-window buttons and
+a shared decoration policy.
 Window-manager state remains owned by PollyWM; theme code must not become an
 alternate window manager.
 
@@ -274,7 +280,7 @@ PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions an
 pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
 removal, reservations, role replacement and rejection on public connections.
 
-Not implemented: production themed Shell, workspaces/tiling, Xwayland, window lists/control
+Not implemented: application launcher/window buttons, workspaces/tiling, Xwayland, window lists/control
 IPC, drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.
@@ -317,15 +323,27 @@ loading. Paths supplied to it are resolved relative to the invoking directory.
 
 ```sh
 sh desktop/tools/run-session.sh --nested --restarts 3 \
-    ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/preview.mjs
+    ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/main.mjs
 ```
 
-This example still runs the simulated appearance preview. Substitute the actual
-shell entry when using native panels. `--headless` needs no parent display;
+This starts the real development Shell. `--headless` needs no parent display;
 omitting both flags preserves wlroots backend selection. Restart is opt-in
 (`--restarts` defaults to zero). The launcher uses `--exit-with-shell`, so closing
 the shell normally ends this development session. It prints the absolute public
 Wayland socket path for independently launched clients.
+
+PollyShell stores `desktop.theme` in its app-scoped localStorage. Unknown stored
+IDs produce a visible warning and a logged fallback without overwriting the
+saved value. Failed display setup is not retried on every timer tick for the
+same output configuration; the appearance menu offers an explicit retry.
+Output removal retires only its Shell surfaces. Geometry changes recreate the
+affected panel/Dock; unchanged surfaces are reused. Clock updates and menus
+share the one UI runtime. Menu overlays close with their Close button or Escape;
+click-outside dismissal is not implemented yet.
+
+Floating Dock corners use actual alpha composition. Blur, polished animation,
+dark variants and shaped click-through regions are still outstanding. The Dock
+currently exposes Appearance and About, not fake application/window buttons.
 
 Keep the parent's socket separate from the new compositor's socket:
 

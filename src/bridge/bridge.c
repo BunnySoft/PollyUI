@@ -1143,6 +1143,13 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     }
     b->native_owned = true;
     JS_SetOpaque(b->document, b);
+    JSValue body = pu_node_wrapper(ctx, b->body);
+    if (JS_IsException(body) ||
+        JS_DefinePropertyValueStr(ctx, b->document, "body", body, JS_PROP_ENUMERABLE) < 0) {
+        JS_FreeValue(ctx, global);
+        pu_bridge_free(b);
+        return NULL;
+    }
     JS_SetPropertyStr(ctx, global, "document", JS_DupValue(ctx, b->document));
     JS_SetPropertyStr(ctx, global, "measureText",
                       JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
@@ -1167,6 +1174,14 @@ PuBridge *pu_bridge_new_document(PuBridge *main)
     b->document = JS_NewObjectClass(b->ctx, pu_document_class_id);
     if (JS_IsException(b->document)) { free_document(b); return NULL; }
     JS_SetOpaque(b->document, b);
+    JSValue body = pu_node_wrapper(b->ctx, b->body);
+    if (JS_IsException(body) ||
+        JS_DefinePropertyValueStr(b->ctx, b->document, "body", body, JS_PROP_ENUMERABLE) < 0) {
+        JS_SetOpaque(b->document, NULL);
+        JS_FreeValue(b->ctx, b->document);
+        free_document(b);
+        return NULL;
+    }
     b->native_owned = true;
     b->next = b->root->next;
     b->root->next = b;

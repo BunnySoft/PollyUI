@@ -51,7 +51,7 @@ function fileIcon(theme, label, size = theme.icons.size, id) {
   } }, text(label, theme.colors.accent, Math.round(size / 2), { fontWeight: 'bold' }));
 }
 
-function wallpaper(theme) {
+export function wallpaper(theme, id = 'appearance-wallpaper') {
   const detail = theme.desktop.detail;
   let art = [];
   if (theme.desktop.motif === 'hills') {
@@ -91,7 +91,7 @@ function wallpaper(theme) {
       position: 'absolute', ...geometry, borderRadius: 380, rotate: -16, ...gradient(from, to),
     } }));
   }
-  return h('view', { id: 'appearance-wallpaper',
+  return h('view', { id,
     style: { ...fill, ...gradient(theme.desktop.from, theme.desktop.to), overflow: 'hidden' } }, art);
 }
 

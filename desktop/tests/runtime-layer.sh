@@ -68,8 +68,10 @@ expected = {
 }
 for name, (rgb, dimensions) in expected.items():
     with Image.open(root / f"frame-{name}.png") as image:
-        actual = image.convert("RGB").getpixel((5, 5))
+        actual = image.convert("RGB").getpixel((5, min(20, image.height // 2)))
         assert actual == rgb, (name, "pixel color", actual, rgb, image.size)
+        if name == "dock":
+            assert image.convert("RGBA").getpixel((0, 0))[3] == 0, "Dock corner must be transparent"
         if dimensions:
             assert all(wanted is None or actual == wanted for actual, wanted in zip(image.size, dimensions)), (name, image.size)
         print(f"PASS: actual {name} layer pixels and dimensions")
