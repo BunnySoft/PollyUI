@@ -135,6 +135,16 @@ void pu_node_clear_all_listeners(void)
     }
 }
 
+void pu_node_clear_tree_listeners(PuNode *root)
+{
+    if (!root) return;
+    pu_node_ref(root);
+    clear_listeners(root);
+    for (PuNode *child = root->first_child; child; child = child->next_sibling)
+        pu_node_clear_tree_listeners(child);
+    pu_node_unref(root);
+}
+
 static void pu_node_free(PuNode *n)
 {
     if (n->runtime_prev) n->runtime_prev->runtime_next = n->runtime_next;

@@ -45,6 +45,9 @@ typedef PuGlProc (*PuGlGetProc)(void *user, const char *name);
  * Keep it current during painting, resize, readback and destruction. */
 PuSurface *pu_surface_create_current_gl(PuGlGetProc get_proc, void *user, int width, int height);
 int pu_surface_valid(const PuSurface *s);
+/* Bind an owned Windows EGL context before drawing/readback. Other backends
+ * retain their host-owned context contract. Logs and returns zero on failure. */
+int pu_surface_make_current(PuSurface *s);
 
 /* Create a GPU surface backed by Skia's Metal backend, bound to a CAMetalLayer*
  * (macOS / iOS). Built only in the Apple render path (src/render/skia_metal.mm);

@@ -277,10 +277,9 @@ static void clear_yoga(PuNode *n)
  * text changes; render-only changes (color, opacity, scroll, transform, hover/
  * focus state) leave the cached layout valid, so a hover/scroll/fade repaint
  * skips the whole Yoga rebuild (~4ms -> ~0). */
-static int   g_layout_dirty = 1;
-static float g_last_w = -1.0f, g_last_h = -1.0f;
+static uint64_t g_layout_version = 1;
 
-void pu_layout_mark_dirty(void) { g_layout_dirty = 1; }
+void pu_layout_mark_dirty(void) { g_layout_version++; }
 
 /* 1 if changing `prop` can change layout; 0 for known render-only properties.
  * Conservative: anything unrecognised returns 1 (force a relayout). */
@@ -305,7 +304,8 @@ void pu_layout_calculate(PuNode *root, float width, float height)
 {
     if (!root) return;
     /* Cached: no layout-affecting mutation and the viewport size is unchanged. */
-    if (!g_layout_dirty && width == g_last_w && height == g_last_h) return;
+    if (root->layout_version == g_layout_version &&
+        width == root->layout_view_width && height == root->layout_view_height) return;
 
     YGNodeRef y = build_tree(root);
     /* Root always fills the viewport. */
@@ -318,7 +318,7 @@ void pu_layout_calculate(PuNode *root, float width, float height)
     YGNodeFreeRecursive(y);
     clear_yoga(root);
 
-    g_layout_dirty = 0;
-    g_last_w = width;
-    g_last_h = height;
+    root->layout_version = g_layout_version;
+    root->layout_view_width = width;
+    root->layout_view_height = height;
 }

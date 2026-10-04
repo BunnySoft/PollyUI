@@ -17,6 +17,12 @@ typedef struct PuBridge PuBridge;
  * event dispatch. Native-held listener callbacks must not outlive the VM. */
 PuBridge *pu_bridge_install(JSContext *ctx);
 void      pu_bridge_free(PuBridge *b);
+/* Additional documents share the main bridge's JS runtime, not its input state.
+ * Release the native ownership when the window closes; JS references may retain
+ * the document. Only pu_bridge_free(main) tears down the shared DOM runtime. */
+PuBridge *pu_bridge_new_document(PuBridge *main);
+JSValue   pu_bridge_document(PuBridge *b);
+void      pu_bridge_release_document(PuBridge *b);
 
 /* The document body element (root of the user's tree). */
 PuNode *pu_bridge_body(PuBridge *b);

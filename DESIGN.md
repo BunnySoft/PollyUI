@@ -26,7 +26,7 @@ the implemented-vs-planned feature list.
   network stack. Styling is imperative (`el.style.x = y`) at MVP.
 - No HTML/JSX bundler. Apps are plain `.js` files; a React-style layer can come
   later *on top of* the DOM API.
-- No multi-window, no accessibility tree, no animation timeline at MVP (planned,
+- No accessibility tree or animation timeline at MVP (planned,
   see §10).
 
 ---
@@ -383,8 +383,34 @@ CMake + Ninja + clang-cl.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
 - **Text:** custom font families, **IME** (CJK/emoji), clipboard.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.
-- **Perf** (persist + dirty-track the Yoga tree, multi-window) and CSS units
+- **Perf** (persist + dirty-track the Yoga tree) and CSS units
   (`em`/`rem`/`vh`/`vw`) + pseudo-states.
+
+### Native multi-window runtime
+
+One application now shares its QuickJS context, dispatcher and background
+services across multiple native windows. Each window's `PuApp` binds a distinct
+`PuBridge` document and input state to its native host callbacks. DOM methods
+resolve the receiver's document; changing OS focus never swaps the global
+`document`. Layout validity is cached per root using a shared mutation version,
+so equally sized windows cannot accidentally reuse another root's geometry.
+
+Active windows retain their JavaScript handles. At a safe event-loop boundary,
+closing removes the native window, invokes `onclose` once, clears its attached
+DOM listeners/input references and releases native document ownership. JavaScript
+references can retain a closed handle/document. Whole-runtime shutdown still
+stops producers and sweeps native-held callbacks before destroying QuickJS.
+
+SDL routes events by native window ID and retains its display connection while
+the shared loop is running, including last-window replacement callbacks. Win32
+uses each HWND's user data and one shared frame timer; destroying one HWND no
+longer posts process-wide WM_QUIT. Application animation/async work is pumped
+once per tick, not once per window. Each GPU window selects its own context
+before rendering or releasing resources.
+
+For the desktop, PollyWM remains a separate process. The initial PollyShell can
+share several surfaces in one runtime; this does not require settings, file
+management or system services to share that process.
 
 ### Deferred ⏸
 

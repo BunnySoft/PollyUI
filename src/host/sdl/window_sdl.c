@@ -8,9 +8,8 @@
 //   else   -> GL:    pu_surface_create_gpu (where available)
 //   any    -> raster fallback: pu_surface_create + SDL_Renderer streaming blit
 //
-// Loop model: the existing src/main.c owns the loop (it calls pu_window_run),
-// so this host runs a classic SDL_WaitEventTimeout/poll loop here rather than
-// SDL's main-callbacks. That keeps main.c byte-for-byte identical across hosts.
+// One SDL_WaitEventTimeout/poll loop routes events to all native windows.
+// Application-wide animation/async work is pumped once per loop tick.
 
 #include "host/win32/window.h"   /* the shared HostEngine contract */
 #include "render/skia_c.h"
@@ -35,11 +34,15 @@ extern void pu_macos_tune_live_resize(void *nswindow);
 #endif
 
 struct PuWindow {
+    struct PuWindow *next;
     SDL_Window   *win;
     SDL_Renderer *renderer;   /* raster fallback only */
     SDL_Texture  *tex;        /* raster fallback only */
     PuSurface    *surface;
     SDL_GLContext gl_context;
+#if defined(PU_METAL_BACKEND)
+    SDL_MetalView metal_view;
+#endif
     int           width, height;   /* physical pixels */
     float         scale;           /* logical -> physical */
     int           running;
@@ -51,6 +54,9 @@ struct PuWindow {
     int           presented;
     int           suppress_text;
     unsigned      pressed_buttons;
+    int           registered, close_notified, text_started;
+    PuCloseFn     close_fn;
+    void         *close_user;
 
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
@@ -61,6 +67,17 @@ struct PuWindow {
 };
 
 static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
+static PuWindow *g_windows;
+static int g_initialized, g_loop_running;
+
+static void shutdown_video(void)
+{
+    if (g_initialized && !g_windows && !g_loop_running) {
+        SDL_Quit();
+        g_initialized = 0;
+        g_wake_event = (Uint32)-1;
+    }
+}
 
 static void fail_window(PuWindow *w, const char *operation)
 {
@@ -259,6 +276,7 @@ static void pu_sdl_paint(PuWindow *w)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
+    if (!make_current(w)) return;
 #if defined(__linux__)
     const char *capture = getenv("PU_CAPTURE_FRAME");
     if (capture && *capture && !pu_surface_save_png(w->surface, capture)) {
@@ -305,11 +323,13 @@ static int create_surface(PuWindow *w)
     if (w->height < 1) w->height = 1;
 
 #if defined(PU_METAL_BACKEND)
-    SDL_MetalView mv = SDL_Metal_CreateView(w->win);
-    if (mv) {
-        void *layer = SDL_Metal_GetLayer(mv);
+    w->metal_view = SDL_Metal_CreateView(w->win);
+    if (w->metal_view) {
+        void *layer = SDL_Metal_GetLayer(w->metal_view);
         w->surface = pu_surface_create_metal(layer, w->width, w->height);
         if (w->surface) { w->is_metal = 1; return 1; }
+        SDL_Metal_DestroyView(w->metal_view);
+        w->metal_view = NULL;
     }
 #elif !defined(__linux__)
     w->surface = pu_surface_create_gpu(NULL, w->width, w->height);
@@ -378,20 +398,21 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
         SDL_Log("PU_RENDERER must be auto, gl or raster"); return NULL;
     }
 #endif
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!g_initialized && !SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return NULL;
     }
+    g_initialized = 1;
     if (g_wake_event == (Uint32)-1) g_wake_event = SDL_RegisterEvents(1);
     if (g_wake_event == 0 || g_wake_event == (Uint32)-1) {
         SDL_Log("SDL_RegisterEvents failed: %s", SDL_GetError());
-        SDL_Quit();
+        shutdown_video();
         g_wake_event = (Uint32)-1;
         return NULL;
     }
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof *w);
-    if (!w) { SDL_Log("Cannot allocate SDL window state"); SDL_Quit(); return NULL; }
+    if (!w) { SDL_Log("Cannot allocate SDL window state"); shutdown_video(); return NULL; }
     w->running = 1;
     w->dirty   = 1;
     w->scale   = 1.0f;
@@ -425,6 +446,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
                               SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
 #endif
+    w->next = g_windows;
+    g_windows = w;
+    w->registered = 1;
     return w;
 }
 
@@ -434,6 +458,18 @@ void pu_window_set_key    (PuWindow *w, PuKeyFn     fn, void *u){ if(w){w->key_f
 void pu_window_set_wheel  (PuWindow *w, PuWheelFn   fn, void *u){ if(w){w->wheel_fn=fn;   w->wheel_user=u;} }
 void pu_window_set_async  (PuWindow *w, PuAsyncFn   fn, void *u){ if(w){w->async_fn=fn;   w->async_user=u;} }
 void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->region_fn=fn;  w->region_user=u;} }
+void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *u) { if (w) { w->close_fn = fn; w->close_user = u; } }
+int pu_window_is_open(PuWindow *w) { return w && w->running; }
+void pu_window_redraw(PuWindow *w) { if (w && w->running) w->dirty = 1; }
+int pu_window_save_frame(PuWindow *w, const char *path)
+{
+    if (w && w->is_metal) { SDL_Log("Frame capture is not implemented for Metal windows"); return 0; }
+    if (!w || !w->running || !w->presented || !make_current(w)) {
+        SDL_Log("Cannot capture a closed or not-yet-presented window");
+        return 0;
+    }
+    return pu_surface_save_png(w->surface, path);
+}
 
 /* Native hit-testing for frameless windows: ask the app (region_fn) whether a
  * point is in the draggable custom title bar (-> DRAGGABLE, like CSS
@@ -622,6 +658,12 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             w->suppress_text = 0;
             w->pressed_buttons = 0;
             break;
+        case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            if (w->pointer_fn) {
+                PuPointerEvent event = { .type = PU_POINTER_MOVE, .x = -1, .y = -1, .button = -1 };
+                if (w->pointer_fn(&event, w->pointer_user)) w->dirty = 1;
+            }
+            break;
 
         case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         case SDL_EVENT_WINDOW_RESIZED:
@@ -647,7 +689,9 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
 #if !defined(__linux__)
 static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 {
-    PuWindow *w = (PuWindow *)userdata;
+    (void)userdata;
+    PuWindow *w = g_windows;
+    while (w && (!w->running || e->window.windowID != SDL_GetWindowID(w->win))) w = w->next;
     if (w && (e->type == SDL_EVENT_WINDOW_RESIZED ||
               e->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
               e->type == SDL_EVENT_WINDOW_EXPOSED) &&
@@ -662,47 +706,99 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
 
 int pu_window_run(PuWindow *w)
 {
-    if (!w) return 1;
-    if (!SDL_StartTextInput(w->win)) {
-        fail_window(w, "SDL_StartTextInput"); return w->exit_code;
+    return w ? pu_window_run_all(NULL, NULL) : 1;
+}
+
+static void route_event(const SDL_Event *e)
+{
+    if (e->type == SDL_EVENT_QUIT) {
+        for (PuWindow *w = g_windows; w; w = w->next) pu_window_close(w);
+        return;
     }
+    SDL_Window *target = SDL_GetWindowFromEvent(e);
+    if (!target) return;
+    for (PuWindow *w = g_windows; w; w = w->next) {
+        if (w->running && w->win == target) { handle_event(w, e); return; }
+    }
+}
+
+int pu_window_run_all(PuAsyncFn frame, void *user)
+{
+    if (g_loop_running || !g_initialized) {
+        SDL_Log("Cannot run an uninitialized or nested window loop");
+        return 1;
+    }
+    int result = 0;
+    g_loop_running = 1;
 #if !defined(__linux__)
-    if (!SDL_AddEventWatch(pu_resize_watch, w)) {
-        fail_window(w, "SDL_AddEventWatch");
-        SDL_StopTextInput(w->win);
-        return w->exit_code;
+    if (!SDL_AddEventWatch(pu_resize_watch, NULL)) {
+        SDL_Log("SDL_AddEventWatch failed: %s", SDL_GetError());
+        g_loop_running = 0;
+        return 1;
     }
 #endif
 
     /* Wayland must finish SDL's configure/ack processing before presenting.
      * Rendering reentrantly from a resize watch can commit the wrong size. */
-    while (w->running) {
+    for (;;) {
+        for (PuWindow *w = g_windows; w; w = w->next) {
+            if (w->running && !w->text_started) {
+                if (!SDL_StartTextInput(w->win)) fail_window(w, "SDL_StartTextInput");
+                else w->text_started = 1;
+            }
+        }
+        /* Closing callbacks may remove themselves or create replacement windows. */
+        for (;;) {
+            PuWindow *closed = g_windows;
+            while (closed && (closed->running || closed->close_notified)) closed = closed->next;
+            if (!closed) break;
+            if (closed->exit_code) result = closed->exit_code;
+            closed->close_notified = 1;
+            if (closed->text_started) SDL_StopTextInput(closed->win);
+            SDL_HideWindow(closed->win);
+            if (closed->close_fn) closed->close_fn(closed, closed->close_user);
+        }
+        PuWindow *live = g_windows;
+        while (live && !live->running) live = live->next;
+        if (!live) break;
         SDL_Event e;
         if (SDL_WaitEventTimeout(&e, 8)) {
-            handle_event(w, &e);
-            while (SDL_PollEvent(&e)) handle_event(w, &e);
+            route_event(&e);
+            while (SDL_PollEvent(&e)) route_event(&e);
         }
-        if (w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
-        if (w->dirty && w->running) { pu_sdl_paint(w); w->dirty = 0; }
+        if (frame && frame(user) > 0)
+            for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
+        for (PuWindow *w = g_windows; w; w = w->next) {
+            if (w->running && w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
+            if (w->dirty && w->running) { pu_sdl_paint(w); w->dirty = 0; }
+        }
     }
 
 #if !defined(__linux__)
-    SDL_RemoveEventWatch(pu_resize_watch, w);
+    SDL_RemoveEventWatch(pu_resize_watch, NULL);
 #endif
-    SDL_StopTextInput(w->win);
-    return w->exit_code;
+    g_loop_running = 0;
+    shutdown_video();
+    return result;
 }
 
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
+    if (w->registered) {
+        PuWindow **link = &g_windows;
+        while (*link && *link != w) link = &(*link)->next;
+        if (*link) *link = w->next;
+    }
     if (w->gl_context) SDL_GL_MakeCurrent(w->win, w->gl_context);
     if (w->surface)  pu_surface_destroy(w->surface);
     if (w->gl_context) SDL_GL_DestroyContext(w->gl_context);
     if (w->tex)      SDL_DestroyTexture(w->tex);
     if (w->renderer) SDL_DestroyRenderer(w->renderer);
+#if defined(PU_METAL_BACKEND)
+    if (w->metal_view) SDL_Metal_DestroyView(w->metal_view);
+#endif
     if (w->win)      SDL_DestroyWindow(w->win);
     free(w);
-    SDL_Quit();
-    g_wake_event = (Uint32)-1;
+    shutdown_video();
 }

@@ -10,13 +10,77 @@
 /* One class id per runtime; the standard QuickJS file-static idiom. */
 static JSClassID pu_node_class_id;
 static JSClassID pu_style_class_id;
+static JSClassID pu_document_class_id;
 
 struct PuBridge {
     JSContext *ctx;
     PuNode    *body;
     PuNode    *focused;   /* currently focused element, or NULL */
     PuNode    *hovered;   /* element under the pointer (for enter/leave), or NULL */
+    PuBridge  *root, *next;
+    JSValue    document;
+    bool       native_owned;
 };
+
+static void node_set_state(PuNode *n, unsigned flag, int on, int up_path);
+
+static PuBridge *document_for_node(JSContext *ctx, PuNode *node)
+{
+    if (!node) return NULL;
+    while (node->parent) node = node->parent;
+    PuBridge *root = JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    for (PuBridge *b = root; b; b = b->next)
+        if (b->body == node) return b;
+    return NULL;
+}
+
+static void reset_detached_input(JSContext *ctx)
+{
+    PuBridge *root = JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    for (;;) {
+        int changed = 0;
+        for (PuBridge *b = root; b; b = b->next) {
+            PuNode **slot = b->focused && document_for_node(ctx, b->focused) != b ?
+                &b->focused : b->hovered && document_for_node(ctx, b->hovered) != b ? &b->hovered : NULL;
+            if (!slot) continue;
+            JSValue keep = JS_DupValue(ctx, b->document);
+            PuNode *node = *slot;
+            bool focus = slot == &b->focused;
+            *slot = NULL;
+            node_set_state(node, focus ? PU_STATE_FOCUS : PU_STATE_HOVER, 0, !focus);
+            pu_node_unref(node);
+            JS_FreeValue(ctx, keep);
+            changed = 1;
+            break; /* Releasing a node can finalize a retired document. */
+        }
+        if (!changed) break;
+    }
+}
+
+static bool document_root(JSContext *ctx, PuNode *node)
+{
+    PuBridge *b = document_for_node(ctx, node);
+    return b && b->body == node;
+}
+
+static void free_document(PuBridge *b)
+{
+    if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); }
+    if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); }
+    pu_node_unref(b->body);
+    free(b);
+}
+
+static void document_finalizer(JSRuntime *rt, JSValueConst value)
+{
+    (void)rt;
+    PuBridge *b = JS_GetOpaque(value, pu_document_class_id);
+    if (!b) return;
+    PuBridge **link = &b->root->next;
+    while (*link && *link != b) link = &(*link)->next;
+    if (*link) *link = b->next;
+    free_document(b);
+}
 
 static char *pu_bstrdup(const char *s)
 {
@@ -125,6 +189,7 @@ static const JSClassDef pu_node_class_def  = { "Node", .finalizer = pu_node_fina
 static const JSClassDef pu_style_class_def = {
     "CSSStyleDeclaration", .finalizer = pu_style_finalizer, .exotic = &pu_style_exotic
 };
+static const JSClassDef pu_document_class_def = { "Document", .finalizer = document_finalizer };
 
 /* ---- element / node methods ------------------------------------------------*/
 
@@ -139,7 +204,9 @@ static JSValue js_node_appendChild(JSContext *ctx, JSValueConst this_val,
     PuNode *self  = self_node(this_val);
     PuNode *child = argc >= 1 ? (PuNode *)JS_GetOpaque(argv[0], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "appendChild: a Node is required");
+    if (document_root(ctx, child)) return JS_ThrowTypeError(ctx, "Cannot reparent a document body");
     pu_node_append(self, child);
+    reset_detached_input(ctx);
     pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
@@ -151,6 +218,7 @@ static JSValue js_node_removeChild(JSContext *ctx, JSValueConst this_val,
     PuNode *child = argc >= 1 ? (PuNode *)JS_GetOpaque(argv[0], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "removeChild: a Node is required");
     pu_node_remove(self, child);
+    reset_detached_input(ctx);
     pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
@@ -163,7 +231,9 @@ static JSValue js_node_insertBefore(JSContext *ctx, JSValueConst this_val,
     PuNode *ref   = (argc >= 2 && !JS_IsNull(argv[1]))
                         ? (PuNode *)JS_GetOpaque(argv[1], pu_node_class_id) : NULL;
     if (!self || !child) return JS_ThrowTypeError(ctx, "insertBefore: a Node is required");
+    if (document_root(ctx, child)) return JS_ThrowTypeError(ctx, "Cannot reparent a document body");
     pu_node_insert_before(self, child, ref);
+    reset_detached_input(ctx);
     pu_layout_mark_dirty();
     return JS_DupValue(ctx, argv[0]);
 }
@@ -261,6 +331,7 @@ static JSValue js_node_set_textContent(JSContext *ctx, JSValueConst this_val, JS
         }
     }
     if (str) JS_FreeCString(ctx, str);
+    reset_detached_input(ctx);
     pu_layout_mark_dirty(); /* text content changed -> re-measure */
     return JS_UNDEFINED;
 }
@@ -294,7 +365,7 @@ static JSValue js_node_focus(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
     PuNode *self = self_node(this_val);
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = document_for_node(ctx, self);
     if (self && b) pu_bridge_set_focus(b, self);
     return JS_UNDEFINED;
 }
@@ -303,7 +374,7 @@ static JSValue js_node_blur(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
     PuNode *self = self_node(this_val);
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = document_for_node(ctx, self);
     if (self && b && b->focused == self) pu_bridge_set_focus(b, NULL);
     return JS_UNDEFINED;
 }
@@ -323,7 +394,7 @@ static JSValue js_node_set_tabIndex(JSContext *ctx, JSValueConst this_val, JSVal
 
 static JSValue js_document_get_activeElement(JSContext *ctx, JSValueConst this_val)
 {
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = JS_GetOpaque(this_val, pu_document_class_id);
     return b ? pu_node_wrapper(ctx, b->focused) : JS_NULL;
 }
 
@@ -550,6 +621,10 @@ static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
 int pu_bridge_set_focus(PuBridge *b, PuNode *node)
 {
     if (!b || b->focused == node) return 0;
+    if (node && document_for_node(b->ctx, node) != b) return 0;
+    JSContext *ctx = b->ctx;
+    JSValue keep = JS_DupValue(ctx, b->document);
+    pu_node_ref(node);
 
     if (b->focused) {
         PuNode *old = b->focused;
@@ -558,12 +633,17 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
         dispatch_impl(b, old, "blur", NULL, 0);
         pu_node_unref(old);           /* release the focus ref */
     }
+    if (b->focused || (node && document_for_node(b->ctx, node) != b)) {
+        pu_node_unref(node);
+        JS_FreeValue(ctx, keep);
+        return 1;
+    }
     b->focused = node;
     if (node) {
-        pu_node_ref(node);            /* keep the focused node alive */
         node_set_state(node, PU_STATE_FOCUS, 1, 0);
         dispatch_impl(b, node, "focus", NULL, 0);
     }
+    JS_FreeValue(ctx, keep);
     return 1; /* focus changed -> the host should repaint */
 }
 
@@ -620,7 +700,7 @@ static JSValue js_document_createTextNode(JSContext *ctx, JSValueConst this_val,
 
 static JSValue js_document_get_body(JSContext *ctx, JSValueConst this_val)
 {
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = JS_GetOpaque(this_val, pu_document_class_id);
     return b ? pu_node_wrapper(ctx, b->body) : JS_NULL;
 }
 
@@ -903,7 +983,7 @@ static PuNode *query_root(JSContext *ctx, JSValueConst this_val)
 {
     PuNode *n = self_node(this_val);
     if (n) return n; /* element.querySelector searches descendants */
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = JS_GetOpaque(this_val, pu_document_class_id);
     return b ? b->body : NULL; /* document.querySelector searches the whole tree */
 }
 
@@ -930,7 +1010,7 @@ static JSValue js_querySelectorAll(JSContext *ctx, JSValueConst this_val, int ar
 
 static JSValue js_document_getElementById(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
-    PuBridge *b = (PuBridge *)JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    PuBridge *b = JS_GetOpaque(this_val, pu_document_class_id);
     if (!b || argc < 1) return JS_NULL;
     const char *id = JS_ToCString(ctx, argv[0]);
     char sel[256]; sel[0] = '#';
@@ -978,6 +1058,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     PuBridge *b = (PuBridge *)calloc(1, sizeof(PuBridge));
     if (!b) return NULL;
     b->ctx = ctx;
+    b->root = b;
+    b->document = JS_UNDEFINED;
 
     JSRuntime *rt = JS_GetRuntime(ctx);
     JS_SetRuntimeOpaque(rt, b);
@@ -985,8 +1067,10 @@ PuBridge *pu_bridge_install(JSContext *ctx)
 
     if (pu_node_class_id == 0)  JS_NewClassID(rt, &pu_node_class_id);
     if (pu_style_class_id == 0) JS_NewClassID(rt, &pu_style_class_id);
+    if (pu_document_class_id == 0) JS_NewClassID(rt, &pu_document_class_id);
     JS_NewClass(rt, pu_node_class_id,  &pu_node_class_def);
     JS_NewClass(rt, pu_style_class_id, &pu_style_class_def);
+    JS_NewClass(rt, pu_document_class_id, &pu_document_class_def);
 
     /* Shared Node prototype: methods + accessors. */
     JSValue node_proto = JS_NewObject(ctx);
@@ -1030,9 +1114,15 @@ PuBridge *pu_bridge_install(JSContext *ctx)
 
     /* document.body root element. */
     b->body = pu_node_new(PU_NODE_ELEMENT);
-    if (!b->body) { free(b); return NULL; }
+    if (!b->body) {
+        JS_SetRuntimeOpaque(rt, NULL);
+        pu_node_set_runtime(NULL);
+        free(b);
+        return NULL;
+    }
     b->body->tag = pu_bstrdup("body");
     pu_node_ref(b->body); /* bridge holds a ref so body persists across GC */
+    if (!b->body->tag) { pu_bridge_free(b); return NULL; }
 
     /* The `document` global. */
     JSValue global = JS_GetGlobalObject(ctx);
@@ -1044,7 +1134,16 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, document, "getElementById",   js_document_getElementById, 1);
     def_method(ctx, document, "querySelector",    js_querySelector,    1);
     def_method(ctx, document, "querySelectorAll", js_querySelectorAll, 1);
-    JS_SetPropertyStr(ctx, global, "document", document);
+    JS_SetClassProto(ctx, pu_document_class_id, document);
+    b->document = JS_NewObjectClass(ctx, pu_document_class_id);
+    if (JS_IsException(b->document)) {
+        JS_FreeValue(ctx, global);
+        pu_bridge_free(b);
+        return NULL;
+    }
+    b->native_owned = true;
+    JS_SetOpaque(b->document, b);
+    JS_SetPropertyStr(ctx, global, "document", JS_DupValue(ctx, b->document));
     JS_SetPropertyStr(ctx, global, "measureText",
                       JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
     JS_FreeValue(ctx, global);
@@ -1054,14 +1153,53 @@ PuBridge *pu_bridge_install(JSContext *ctx)
 
 PuNode *pu_bridge_body(PuBridge *b) { return b ? b->body : NULL; }
 
+PuBridge *pu_bridge_new_document(PuBridge *main)
+{
+    PuBridge *b = calloc(1, sizeof(*b));
+    if (!b) return NULL;
+    b->root = main->root;
+    b->ctx = main->ctx;
+    b->body = pu_node_new(PU_NODE_ELEMENT);
+    if (!b->body) { free(b); return NULL; }
+    pu_node_ref(b->body);
+    b->body->tag = pu_bstrdup("body");
+    if (!b->body->tag) { free_document(b); return NULL; }
+    b->document = JS_NewObjectClass(b->ctx, pu_document_class_id);
+    if (JS_IsException(b->document)) { free_document(b); return NULL; }
+    JS_SetOpaque(b->document, b);
+    b->native_owned = true;
+    b->next = b->root->next;
+    b->root->next = b;
+    return b;
+}
+
+JSValue pu_bridge_document(PuBridge *b) { return JS_DupValue(b->ctx, b->document); }
+
+void pu_bridge_release_document(PuBridge *b)
+{
+    if (!b || !b->native_owned) return;
+    if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); b->focused = NULL; }
+    if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); b->hovered = NULL; }
+    pu_node_clear_tree_listeners(b->body);
+    if (b == b->root) return; /* The global document belongs to the shared realm. */
+    b->native_owned = false;
+    JS_FreeValue(b->ctx, b->document);
+}
+
 void pu_bridge_free(PuBridge *b)
 {
     if (!b) return;
     pu_node_clear_all_listeners();
     JS_SetRuntimeOpaque(JS_GetRuntime(b->ctx), NULL);
-    if (b->focused) pu_node_unref(b->focused);
-    if (b->hovered) pu_node_unref(b->hovered);
-    if (b->body) pu_node_unref(b->body); /* releases the native tree */
+    while (b->next) {
+        PuBridge *child = b->next;
+        b->next = child->next;
+        JS_SetOpaque(child->document, NULL);
+        if (child->native_owned) JS_FreeValue(child->ctx, child->document);
+        free_document(child);
+    }
+    if (JS_IsObject(b->document)) JS_SetOpaque(b->document, NULL);
+    if (b->native_owned) JS_FreeValue(b->ctx, b->document);
     pu_node_set_runtime(NULL);
-    free(b);
+    free_document(b);
 }

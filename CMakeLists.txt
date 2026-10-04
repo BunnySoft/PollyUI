@@ -212,13 +212,17 @@ if (WIN32 AND PU_WINDOWED)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
-    add_executable(pollyui-input-test tests/sdl-input.c
-        src/host/sdl/window_sdl.c src/render/skia_c.cpp)
-    target_include_directories(pollyui-input-test PRIVATE src "${SKIA_ROOT}")
-    target_compile_definitions(pollyui-input-test PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
-    target_link_libraries(pollyui-input-test PRIVATE SDL3::SDL3 PkgConfig::SKIA_SYSTEM
-        -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group Threads::Threads)
+    function(pu_host_fixture target source)
+        add_executable(${target} ${source} src/host/sdl/window_sdl.c src/render/skia_c.cpp)
+        target_include_directories(${target} PRIVATE src "${SKIA_ROOT}")
+        target_compile_definitions(${target} PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
+        target_link_libraries(${target} PRIVATE SDL3::SDL3 PkgConfig::SKIA_SYSTEM
+            -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group Threads::Threads)
+    endfunction()
+    pu_host_fixture(pollyui-input-test tests/sdl-input.c)
+    pu_host_fixture(pollyui-multi-test tests/multi-window-native.c)
     add_test(NAME sdl-input-adapter COMMAND pollyui-input-test)
-    set_tests_properties(sdl-input-adapter PROPERTIES TIMEOUT 15
+    add_test(NAME sdl-multi-window COMMAND pollyui-multi-test)
+    set_tests_properties(sdl-input-adapter sdl-multi-window PROPERTIES TIMEOUT 15
         ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;PU_RENDERER=raster")
 endif()

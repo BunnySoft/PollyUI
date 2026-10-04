@@ -4,6 +4,7 @@
 #include <string.h>
 
 static PuWindow *window;
+static SDL_WindowID window_id;
 static int received, pointers, wheels, failed, ticks;
 static const char committed[] = "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x98\x80";
 
@@ -85,6 +86,7 @@ static void push_key(SDL_Scancode scan, SDL_Keycode key, SDL_Keymod mods, int do
     SDL_zero(event);
     event.type = down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
     event.key.scancode = scan;
+    event.key.windowID = window_id;
     event.key.key = key;
     event.key.mod = mods;
     event.key.repeat = repeat != 0;
@@ -96,6 +98,7 @@ static void push_text(const char *text)
     SDL_Event event;
     SDL_zero(event);
     event.type = SDL_EVENT_TEXT_INPUT;
+    event.text.windowID = window_id;
     event.text.text = text;
     check(SDL_PushEvent(&event), "queue SDL text event");
 }
@@ -117,21 +120,25 @@ static int tick(void *user)
         SDL_Event event;
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+        event.button.windowID = window_id;
         event.button.button = SDL_BUTTON_RIGHT;
         event.button.x = 10.5f; event.button.y = 20.25f;
         check(SDL_PushEvent(&event), "queue right button");
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_MOTION;
+        event.motion.windowID = window_id;
         event.motion.state = SDL_BUTTON_RMASK;
         event.motion.x = 12.5f; event.motion.y = 23.0f;
         check(SDL_PushEvent(&event), "queue drag motion");
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+        event.button.windowID = window_id;
         event.button.button = SDL_BUTTON_RIGHT;
         event.button.x = 12.5f; event.button.y = 23.0f;
         check(SDL_PushEvent(&event), "queue right release");
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_WHEEL;
+        event.wheel.windowID = window_id;
         event.wheel.x = 0.5f; event.wheel.y = -0.25f;
         event.wheel.mouse_x = 12.5f; event.wheel.mouse_y = 23.0f;
         check(SDL_PushEvent(&event), "queue wheel");
@@ -146,6 +153,11 @@ int main(void)
     PuWindowConfig config = { .title = "PollyUI input adapter test", .width = 360, .height = 280 };
     window = pu_window_create(&config);
     if (!window) return 1;
+    int count = 0;
+    SDL_Window **windows = SDL_GetWindows(&count);
+    if (!windows || count != 1) return 1;
+    window_id = SDL_GetWindowID(windows[0]);
+    SDL_free(windows);
     pu_window_set_key(window, on_key, NULL);
     pu_window_set_pointer(window, on_pointer, NULL);
     pu_window_set_wheel(window, on_wheel, NULL);

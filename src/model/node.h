@@ -14,6 +14,7 @@
 #include "quickjs.h"   /* JSValue: nodes cache their bridge wrappers (weak) */
 
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef enum PuNodeType {
     PU_NODE_DOCUMENT,
@@ -69,6 +70,8 @@ struct PuNode {
     float layout_x, layout_y, layout_w, layout_h;
     float text_wrap_width;   /* width text was wrapped to in measure (0 = none) */
     void *yoga;              /* transient YGNodeRef during a layout pass */
+    uint64_t layout_version;
+    float layout_view_width, layout_view_height;
 
     /* Event listeners (DESIGN.md §6). */
     PuListener *listeners;
@@ -85,6 +88,7 @@ struct PuNode {
 void pu_node_set_runtime(JSRuntime *rt);
 /* Release native-held JS callbacks while their runtime is still alive. */
 void pu_node_clear_all_listeners(void);
+void pu_node_clear_tree_listeners(PuNode *root);
 
 /* --- lifetime --- */
 PuNode *pu_node_new(PuNodeType type);

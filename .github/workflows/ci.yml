@@ -66,6 +66,8 @@ jobs:
       - name: Core UI and WinHTTP
         run: |
           .\tools\test-core.ps1
+          node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node .\desktop\tests\http-fixture.mjs .\build\win-clang\pollyui.exe --http-only
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -87,3 +89,5 @@ jobs:
         run: |
           bash tools/build.sh
           sh tools/test-core.sh "$PWD/build/mac-sdl/pollyui"
+          SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software \
+            node tools/test-multi-window.mjs "$PWD/build/mac-sdl/pollyui"

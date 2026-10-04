@@ -332,16 +332,16 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     void *config = nullptr;
     int nCfg = 0;
     if (!g_egl.ChooseConfig(disp, cfgAttr, &config, 1, &nCfg) || nCfg < 1) {
-        PU_GLLOG("eglChooseConfig failed"); delete s; return nullptr;
+        PU_GLLOG("eglChooseConfig failed"); pu_surface_destroy(s); return nullptr;
     }
     s->egl_surface = g_egl.CreateWindowSurface(disp, config, (void *)s->hwnd, nullptr);
-    if (!s->egl_surface) { PU_GLLOG("eglCreateWindowSurface failed"); delete s; return nullptr; }
+    if (!s->egl_surface) { PU_GLLOG("eglCreateWindowSurface failed"); pu_surface_destroy(s); return nullptr; }
 
     const int ctxAttr[] = { PU_EGL_CONTEXT_CLIENT_VERSION, 3, PU_EGL_NONE };
     s->egl_context = g_egl.CreateContext(disp, config, nullptr, ctxAttr);
-    if (!s->egl_context) { PU_GLLOG("eglCreateContext failed"); delete s; return nullptr; }
+    if (!s->egl_context) { PU_GLLOG("eglCreateContext failed"); pu_surface_destroy(s); return nullptr; }
     if (!g_egl.MakeCurrent(disp, s->egl_surface, s->egl_surface, s->egl_context)) {
-        PU_GLLOG("eglMakeCurrent failed"); delete s; return nullptr;
+        PU_GLLOG("eglMakeCurrent failed"); pu_surface_destroy(s); return nullptr;
     }
 
     /* Swap interval. Default 0 (no vsync wait): we present on-demand, only when
@@ -357,12 +357,12 @@ PuSurface *pu_surface_create_gpu(void *hwndv, int width, int height) {
     }
 
     s->grctx = GrDirectContexts::MakeGL(GrGLMakeAssembledGLESInterface(nullptr, pu_egl_get_proc));
-    if (!s->grctx) { PU_GLLOG("GrDirectContexts::MakeGL (GLES) failed"); delete s; return nullptr; }
+    if (!s->grctx) { PU_GLLOG("GrDirectContexts::MakeGL (GLES) failed"); pu_surface_destroy(s); return nullptr; }
     /* Cap the GPU resource cache (default budget is large). 64 MB is ample for
      * UI and keeps the resident set down. */
     s->grctx->setResourceCacheLimit(64 * 1024 * 1024);
     rewrap_gl(s, width, height);
-    if (!s->surface) { PU_GLLOG("WrapBackendRenderTarget failed"); delete s; return nullptr; }
+    if (!s->surface) { PU_GLLOG("WrapBackendRenderTarget failed"); pu_surface_destroy(s); return nullptr; }
     std::fprintf(stderr, "[render] GPU backend: ANGLE / D3D11 (EGL %d.%d)\n", maj, min);
     return s;
 }
@@ -377,6 +377,18 @@ PuSurface *pu_surface_create_gpu(void *native_window, int width, int height) {
 #endif // _WIN32
 
 int pu_surface_is_gl(const PuSurface *s) { return (s && s->gl) ? 1 : 0; }
+
+int pu_surface_make_current(PuSurface *s) {
+    if (!s) return 0;
+#if defined(_WIN32)
+    if (s->gl && (!g_egl.MakeCurrent ||
+        !g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context))) {
+        PU_GLLOG("Cannot make the window's EGL context current");
+        return 0;
+    }
+#endif
+    return 1;
+}
 
 void pu_surface_present(PuSurface *s) {
     if (!s || !s->gl) return;
@@ -398,6 +410,7 @@ void pu_surface_destroy(PuSurface *s) {
 #endif
 #if defined(_WIN32)
     if (s->gl) {
+        if (s->egl_context && !pu_surface_make_current(s) && s->grctx) s->grctx->abandonContext();
         s->surface.reset();
         if (s->grctx) { s->grctx->abandonContext(); s->grctx.reset(); }
         if (g_egl.MakeCurrent && s->egl_display) g_egl.MakeCurrent(s->egl_display, nullptr, nullptr, nullptr);
@@ -421,8 +434,7 @@ void pu_surface_resize(PuSurface *s, int width, int height) {
         if (s->metal) { pu_metal_resize(s, width, height); return; }
 #endif
 #if defined(_WIN32)
-        if (g_egl.MakeCurrent)
-            g_egl.MakeCurrent(s->egl_display, s->egl_surface, s->egl_surface, s->egl_context);
+        if (!pu_surface_make_current(s)) return;
         /* Wrap Skia's render target to the window's authoritative client size
          * (passed straight from WM_SIZE). We deliberately do NOT call
          * eglQuerySurface here: ANGLE resizes its D3D11 swapchain lazily, only at

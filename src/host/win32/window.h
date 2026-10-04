@@ -1,9 +1,7 @@
 #ifndef POLLYUI_HOST_WIN32_WINDOW_H
 #define POLLYUI_HOST_WIN32_WINDOW_H
 
-/* HostEngine (Windows) — owns the OS window and event loop (DESIGN.md §2, §3).
- * M0a: opens a window and clears it to a color via GDI. The clear is replaced
- * by a Skia raster surface blit in M0b. */
+/* Shared Win32/SDL HostEngine contract: UI-thread windows and one event loop. */
 
 #include "render/skia_c.h"
 #include "host/input.h"
@@ -52,6 +50,12 @@ void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
  * frame timer and whenever pu_window_wake is called. */
 typedef int (*PuAsyncFn)(void *user);
 void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user);
+/* Called once at a safe loop boundary after close; may destroy this window. */
+typedef void (*PuCloseFn)(PuWindow *w, void *user);
+void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *user);
+int  pu_window_is_open(PuWindow *w);
+void pu_window_redraw(PuWindow *w);
+int  pu_window_save_frame(PuWindow *w, const char *path);
 
 /* Custom title bar / frameless window. `region_fn` is asked, at LOGICAL client
  * coords, whether a point is in the draggable title-bar area (returns nonzero =
@@ -74,12 +78,14 @@ int  pu_window_is_maximized(PuWindow *w);
 void pu_window_close(PuWindow *w);
 
 /* Wake the window (thread-safe) so it drains async deliveries promptly. Used as
- * the dispatcher's waker from worker threads. */
+ * the dispatcher's waker from worker threads. NULL wakes the shared loop. */
 void pu_window_wake(PuWindow *w);
 
-/* Run the OS event loop until the window is closed.
- * Returns the process exit code (the WM_QUIT wParam). */
+/* Run the OS event loop until all windows are closed; nonzero indicates failure. */
 int pu_window_run(PuWindow *w);
+/* One UI-thread loop for all live windows. frame runs once per tick, regardless
+ * of window count, and may create or request closing windows. */
+int pu_window_run_all(PuAsyncFn frame, void *user);
 
 /* Destroy the window and free its resources. Safe to call with NULL. */
 void pu_window_destroy(PuWindow *w);

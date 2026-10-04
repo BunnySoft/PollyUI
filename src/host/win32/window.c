@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
 
 /* M0b: the window now paints by clearing a Skia raster surface and blitting its
  * BGRA pixels to the client area (replacing the M0a GDI FillRect). The host
@@ -23,6 +24,7 @@
 #endif
 
 struct PuWindow {
+    struct PuWindow *next;
     HWND       hwnd;
     PuSurface *surface;      /* Skia raster surface, sized to the client (physical px) */
     int        width;        /* client width  in PHYSICAL pixels */
@@ -43,10 +45,18 @@ struct PuWindow {
     int         frameless;    /* 1 = OS title bar hidden, app draws its own */
     PuRegionFn  region_fn;    /* hit-region query for the custom title bar drag area */
     void       *region_user;
+    PuCloseFn close_fn;
+    void *close_user;
+    int running, registered, close_notified, exit_code, presented;
 };
 
+static PuWindow *g_windows;
+static DWORD g_ui_thread;
+static int g_loop_running, g_pumping, g_exit_code;
+static PuAsyncFn g_frame;
+static void *g_frame_user;
+static void pump_windows(void);
 #define PU_WM_WAKE (WM_APP + 1)   /* posted by pu_window_wake */
-#define PU_FRAME_TIMER 1          /* periodic async/timer pump */
 
 /* Map a non-character virtual key to a DOM key name, or NULL. */
 static const char *pu_vk_name(WPARAM vk)
@@ -165,7 +175,8 @@ static const wchar_t *kClassName = L"PollyUIWindowClass";
 /* Render one frame into the Skia surface and blit it to hdc. */
 static void pu_paint(PuWindow *w, HDC hdc)
 {
-    if (!w->surface) return;
+    if (!w->surface || !w->running) return;
+    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return; }
 
     float scale = w->scale > 0 ? w->scale : 1.0f;
     if (w->paint_fn) {
@@ -181,6 +192,8 @@ static void pu_paint(PuWindow *w, HDC hdc)
                              0x3b, 0x82, 0xf6, 0xFF);
     }
 
+    if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return; }
+    w->presented = 1;
     if (pu_surface_is_gl(w->surface)) {
         static int perf = -1;
         if (perf < 0) { const char *p = getenv("PU_PERF"); perf = (p && p[0] && p[0] != '0') ? 1 : 0; }
@@ -331,6 +344,8 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             };
             int changed = 0;
             if (msg == WM_MOUSEMOVE) {
+                TRACKMOUSEEVENT track = { sizeof(track), TME_LEAVE, hwnd, 0 };
+                TrackMouseEvent(&track);
                 event.type = PU_POINTER_MOVE;
                 changed = w->pointer_fn(&event, w->pointer_user);
             } else {
@@ -430,12 +445,14 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KILLFOCUS:
         if (w) { w->pending_surrogate = 0; w->suppress_text = 0; }
         break;
-    case PU_WM_WAKE:
-    case WM_TIMER:
-        if (w && w->async_fn) {
-            int worked = w->async_fn(w->async_user);
-            if (worked > 0) InvalidateRect(hwnd, NULL, FALSE);
+    case WM_MOUSELEAVE:
+        if (w && w->pointer_fn) {
+            PuPointerEvent event = { .type = PU_POINTER_MOVE, .x = -1, .y = -1, .button = -1 };
+            if (w->pointer_fn(&event, w->pointer_user)) pu_window_redraw(w);
         }
+        return 0;
+    case PU_WM_WAKE:
+        pump_windows();
         return 0;
 
     case WM_ERASEBKGND:
@@ -448,8 +465,11 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         EndPaint(hwnd, &ps);
         return 0;
     }
+    case WM_CLOSE:
+        pu_window_close(w);
+        return 0;
     case WM_DESTROY:
-        PostQuitMessage(0);
+        if (w) { w->running = 0; w->hwnd = NULL; }
         return 0;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
@@ -458,6 +478,10 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
     if (!cfg) return NULL;
+    if (g_windows && g_ui_thread != GetCurrentThreadId()) {
+        fprintf(stderr, "All windows must be created on the same UI thread\n");
+        return NULL;
+    }
 
     /* Per-monitor DPI awareness: render crisply at physical resolution and do
      * the logical->physical scaling ourselves (see pu_paint). */
@@ -467,6 +491,8 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (!w) return NULL;
     w->width  = cfg->width;
     w->height = cfg->height;
+    w->running = 1;
+    g_ui_thread = GetCurrentThreadId();
 
     HINSTANCE hinst = GetModuleHandleW(NULL);
 
@@ -480,15 +506,26 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     wc.lpszClassName = kClassName;
     RegisterClassExW(&wc); /* harmless if already registered */
 
-    wchar_t wtitle[256];
     const char *title = cfg->title ? cfg->title : "PollyUI";
-    if (MultiByteToWideChar(CP_UTF8, 0, title, -1, wtitle, 256) == 0)
-        wcscpy_s(wtitle, 256, L"PollyUI");
+    int title_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, title, -1, NULL, 0);
+    wchar_t *wtitle = title_length ? malloc((size_t)title_length * sizeof(*wtitle)) : NULL;
+    if (!wtitle || !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, title, -1, wtitle, title_length)) {
+        fprintf(stderr, "Cannot create UTF-16 window title\n");
+        free(wtitle);
+        free(w);
+        return NULL;
+    }
 
     /* Treat the requested size as LOGICAL pixels; scale to physical for the
      * current system DPI so the window is the intended on-screen size. */
     float s0 = GetDpiForSystem() / 96.0f;
     if (s0 <= 0.0f) s0 = 1.0f;
+    if (cfg->width <= 0 || cfg->height <= 0 ||
+        (double)cfg->width * s0 > INT_MAX - 256 || (double)cfg->height * s0 > INT_MAX - 256) {
+        fprintf(stderr, "Window dimensions exceed the native coordinate range\n");
+        free(wtitle); free(w);
+        return NULL;
+    }
     RECT rc = { 0, 0, (int)(cfg->width * s0), (int)(cfg->height * s0) };
     DWORD style = WS_OVERLAPPEDWINDOW;
     AdjustWindowRect(&rc, style, FALSE);
@@ -498,6 +535,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
         CW_USEDEFAULT, CW_USEDEFAULT,
         rc.right - rc.left, rc.bottom - rc.top,
         NULL, NULL, hinst, w);
+    free(wtitle);
     if (!hwnd) {
         free(w);
         return NULL;
@@ -527,7 +565,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 
     ShowWindow(hwnd, SW_SHOW);
     UpdateWindow(hwnd);
-    SetTimer(hwnd, PU_FRAME_TIMER, 16, NULL); /* ~60Hz async/timer pump */
+    w->next = g_windows;
+    g_windows = w;
+    w->registered = 1;
     return w;
 }
 
@@ -574,6 +614,19 @@ void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user)
     w->region_user = user;
 }
 
+void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *user)
+{ if (w) { w->close_fn = fn; w->close_user = user; } }
+int pu_window_is_open(PuWindow *w) { return w && w->running; }
+void pu_window_redraw(PuWindow *w) { if (w && w->running && w->hwnd) InvalidateRect(w->hwnd, NULL, FALSE); }
+int pu_window_save_frame(PuWindow *w, const char *path)
+{
+    if (!w || !w->running || !w->presented || !pu_surface_make_current(w->surface)) {
+        fprintf(stderr, "Cannot capture a closed or not-yet-presented window\n");
+        return 0;
+    }
+    return pu_surface_save_png(w->surface, path);
+}
+
 /* Hide/show the OS title bar at runtime. The window keeps WS_THICKFRAME so it
  * stays resizable + snappable; the title bar removal is done by the WM_NCCALCSIZE
  * handler, which we re-trigger via SWP_FRAMECHANGED. */
@@ -605,7 +658,7 @@ void pu_window_set_backdrop(PuWindow *w, int type)
 void pu_window_set_titlebar_style(PuWindow *w, int style) { (void)w; (void)style; }
 
 void pu_window_minimize(PuWindow *w) { if (w && w->hwnd) ShowWindow(w->hwnd, SW_MINIMIZE); }
-void pu_window_close(PuWindow *w)    { if (w && w->hwnd) PostMessageW(w->hwnd, WM_CLOSE, 0, 0); }
+void pu_window_close(PuWindow *w) { if (w) { w->running = 0; pu_window_wake(NULL); } }
 void pu_window_maximize_toggle(PuWindow *w)
 {
     if (w && w->hwnd) ShowWindow(w->hwnd, IsZoomed(w->hwnd) ? SW_RESTORE : SW_MAXIMIZE);
@@ -615,24 +668,87 @@ int pu_window_is_maximized(PuWindow *w) { return (w && w->hwnd) ? IsZoomed(w->hw
 void pu_window_wake(PuWindow *w)
 {
     if (w && w->hwnd) PostMessageW(w->hwnd, PU_WM_WAKE, 0, 0);
+    else if (g_ui_thread) PostThreadMessageW(g_ui_thread, PU_WM_WAKE, 0, 0);
 }
 
-int pu_window_run(PuWindow *w)
+static void notify_closed(void)
 {
-    (void)w;
-    MSG msg;
-    memset(&msg, 0, sizeof(msg));
-    while (GetMessageW(&msg, NULL, 0, 0) > 0) {
+    for (;;) {
+        PuWindow *w = g_windows;
+        while (w && (w->running || w->close_notified)) w = w->next;
+        if (!w) break;
+        if (w->exit_code) g_exit_code = w->exit_code;
+        w->close_notified = 1;
+        if (w->hwnd) ShowWindow(w->hwnd, SW_HIDE);
+        if (w->close_fn) w->close_fn(w, w->close_user);
+    }
+}
+
+static void pump_windows(void)
+{
+    if (!g_loop_running || g_pumping) return;
+    g_pumping = 1;
+    if (g_frame && g_frame(g_frame_user) > 0)
+        for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
+    for (PuWindow *w = g_windows; w; w = w->next)
+        if (w->running && w->async_fn && w->async_fn(w->async_user) > 0) pu_window_redraw(w);
+    notify_closed();
+    g_pumping = 0;
+}
+
+static VOID CALLBACK frame_timer(HWND hwnd, UINT msg, UINT_PTR id, DWORD time)
+{
+    (void)hwnd; (void)msg; (void)id; (void)time;
+    pump_windows();
+}
+
+int pu_window_run(PuWindow *w) { return w ? pu_window_run_all(NULL, NULL) : 1; }
+
+int pu_window_run_all(PuAsyncFn frame, void *user)
+{
+    if (g_loop_running) { fprintf(stderr, "Cannot run a nested window loop\n"); return 1; }
+    UINT_PTR timer = SetTimer(NULL, 0, 16, frame_timer);
+    if (!timer) { fprintf(stderr, "Cannot start window frame timer: %lu\n", GetLastError()); return 1; }
+    g_loop_running = 1;
+    g_exit_code = 0;
+    g_frame = frame;
+    g_frame_user = user;
+    pump_windows();
+    for (;;) {
+        notify_closed();
+        PuWindow *live = g_windows;
+        while (live && !live->running) live = live->next;
+        if (!live) break;
+        MSG msg;
+        int result = GetMessageW(&msg, NULL, 0, 0);
+        if (result <= 0) {
+            if (result < 0) fprintf(stderr, "GetMessage failed: %lu\n", GetLastError());
+            g_exit_code = result < 0 ? 1 : (int)msg.wParam;
+            break;
+        }
+        if (msg.message == PU_WM_WAKE && !msg.hwnd) { pump_windows(); continue; }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
-    return (int)msg.wParam;
+    KillTimer(NULL, timer);
+    g_loop_running = 0;
+    g_frame = NULL;
+    g_frame_user = NULL;
+    return g_exit_code;
 }
 
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
-    if (w->surface) pu_surface_destroy(w->surface);
+    w->running = 0;
+    if (w->registered) {
+        PuWindow **link = &g_windows;
+        while (*link && *link != w) link = &(*link)->next;
+        if (*link) *link = w->next;
+    }
+    PuSurface *surface = w->surface;
+    w->surface = NULL;
+    pu_surface_destroy(surface);
     if (w->hwnd) DestroyWindow(w->hwnd);
     free(w);
 }

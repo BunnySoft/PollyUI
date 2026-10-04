@@ -44,6 +44,7 @@ if [ "$backend" = wayland ]; then
     sh desktop/tests/runtime-render.sh "$ui" "$parent"
     echo "PASS: native PollyUI rendered and cycled five themes on the parent Wayland compositor"
 fi
+: >"$runtime/server.log"
 WAYLAND_DISPLAY="$parent" WLR_BACKENDS="$backend" WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman \
     "$wm" --socket pollyui-runtime --shell "$ui" desktop/tests/runtime-window.mjs \
     >"$runtime/server.log" 2>&1 &
@@ -75,6 +76,9 @@ if ! grep -q 'PollyUI frame presented:.*driver=wayland, Skia=raster' "$runtime/s
 fi
 run_ui pollyui-runtime
 sh desktop/tests/runtime-render.sh "$ui" pollyui-runtime
+for renderer in raster gl; do
+    WAYLAND_DISPLAY=pollyui-runtime PU_RENDERER="$renderer" node tools/test-multi-window.mjs "$ui"
+done
 if ! grep -q 'Mapped org.pollyui.runtime' "$runtime/server.log"; then
     cat "$runtime/server.log"
     echo "PollyWM did not map the native PollyUI client" >&2

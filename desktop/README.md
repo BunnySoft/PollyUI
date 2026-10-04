@@ -33,6 +33,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. A supervised full desktop session remains a separate step. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
 | 3b - PollyUI shell | Add layer-shell surfaces to the PollyUI host, then implement the real wallpaper, panel/dock and launcher. The current appearance preview still uses an ordinary xdg toplevel. |
+| Multi-window runtime - implemented prerequisite | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface; layer roles are the next host integration. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 

@@ -257,6 +257,63 @@ sh desktop/tests/runtime-wayland.sh "$PWD/build/linux-ci/pollyui" \
     "$PWD/build/linux-ci/desktop/pollywm" --headless
 ```
 
+### Multiple native windows
+
+A windowed script can create additional native windows in the **same JavaScript
+realm**. Each has a separate document, layout cache, DOM focus/hover state,
+renderer and native event target. Timers, animation callbacks, workers, HTTP,
+application identity and storage remain application-wide.
+
+```js
+const inspector = window.create({ title: 'Inspector', width: 480, height: 320 });
+const label = inspector.document.createElement('text');
+label.textContent = 'Shared application state, independent window';
+inspector.document.body.appendChild(label);
+inspector.onclose = () => console.log('Inspector closed');
+```
+
+`window.document === document` for the original window. Use the returned handle's
+`document` for queries and its methods for window controls. The existing
+reconciler/Vue APIs accept a container from any document; global `document`
+always refers to the original document, not whichever window has OS focus.
+Duplicate element IDs in different documents do not collide. Moving a focused
+node between documents clears its old document's focus; document bodies cannot
+be reparented.
+
+`handle.close()` closes only that window. `handle.closed` reflects a pending or
+completed close, and `onclose` runs once after native teardown. Closing the
+original window does not stop the others. An `onclose` callback may create a
+replacement, even for the last window. `window.quit()` closes the entire
+application and prevents new windows. With no surviving/replacement windows,
+the loop exits and shared background services shut down.
+
+Retained closed-window handles/documents remain readable, but minimize/maximize,
+chrome and capture operations throw after close; closing again is harmless. Native ownership, input references
+and attached DOM listeners are released on close. Shared timers/workers are
+not automatically cancelled by an individual close; dispose component-specific
+work in `onclose`. As before, detached native/JS listener cycles are swept at
+whole-runtime shutdown.
+
+`handle.capture('frame.png')` saves that window's **last presented frame**, not
+other applications or the screen. It rejects invalid paths and not-yet-presented
+or closed windows. Raster and Linux GLES readback are exercised; Metal capture
+is explicitly unsupported. Windows ANGLE code binds the owning EGL context
+before drawing/readback/destruction, but requires installed ANGLE runtime DLLs.
+
+The common host loop supports Win32 and SDL3. Linux raster/GLES and Windows
+raster multi-window behavior have local coverage; macOS execution and Windows
+ANGLE execution require their corresponding environments/dependencies.
+
+```powershell
+node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe
+# Require GPU instead of accepting raster fallback:
+node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe --require-gpu
+```
+
+Multi-window support is a prerequisite for PollyShell, **not yet a real
+wallpaper/panel/Dock implementation**. Those need native layer-shell roles;
+ordinary PollyUI windows still use their normal platform/xdg toplevel roles.
+
 ### Input event contract
 
 Native host callbacks now take the structs in `src/host/input.h` rather than
