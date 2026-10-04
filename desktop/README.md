@@ -29,6 +29,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
 | Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
+| IME engine foundation | Optional independent librime adapter with preedit/candidate snapshots, validated candidate selection, cancellation and ASCII passthrough. The compositor relay, IME process and PollyUI candidate windows are not connected yet. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -394,6 +395,35 @@ are available, but startup display profiles are not persisted yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
 forced clipping). Multi-output/HiDPI and DRM/seat access still need real-hardware
 qualification; **WSLg is not evidence of native GPU/DRM or boot readiness**.
+
+## Input-method direction and engine foundation
+
+The input-method architecture deliberately avoids GLib/GIO and desktop-toolkit
+candidate windows: a custom service and PollyUI candidate UI will reuse an input
+engine library. The first engine adapter is `input-method/engine.c`, using the
+librime C API (`rime>=1.7`; Alpine 3.24's 1.17.0 is exercised). Its runtime
+dependency closure does not include GLib/GIO, GTK, Qt, GNOME or KDE.
+
+`-DPU_BUILD_IME_ENGINE=ON` builds `polly-ime-engine` independently of the
+compositor library. The Linux runtime checker enables it; the standalone
+compositor build leaves it off. The adapter accepts an absolute shared-data
+directory, an existing private user-owned 0700 directory, and a schema ID from
+the configured schema list. Deployment/schema errors are explicit. One owning
+thread/process handles the engine; maintenance is joined before use and exit.
+
+Snapshots copy preedit, commit and candidate text into bounded C storage and use
+UTF-8 byte offsets. They carry revisions so stale candidate clicks cannot act on
+changed composition. Reset discards preedit without committing; ASCII mode
+returns unhandled keys for the eventual service to forward. Learning follows
+the selected Rime schema, not an invented runtime privacy option. The small
+original test schema disables its user dictionary and uses isolated temporary
+data; it is not a distribution dictionary or a production configuration.
+
+This foundation is **not yet a usable system IME**. Public text-input-v3,
+restricted input-method-v2 integration, trusted process supervision, preedit
+rendering, candidate positioning, password/sensitive-field handling and complex
+text shaping/editing still need implementation. The library is not initialized
+by ordinary PollyUI applications and does not intercept user input.
 
 ## Build independently on Linux
 

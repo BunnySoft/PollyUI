@@ -1,4 +1,13 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+if (PU_BUILD_IME_ENGINE)
+    find_program(NODE_EXECUTABLE node REQUIRED)
+    add_executable(polly-ime-engine-test ime-engine.c)
+    target_link_libraries(polly-ime-engine-test PRIVATE polly-ime-engine)
+    target_compile_options(polly-ime-engine-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME desktop-ime-engine COMMAND "${NODE_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/ime-engine-fixture.mjs" $<TARGET_FILE:polly-ime-engine-test>)
+    set_tests_properties(desktop-ime-engine PROPERTIES TIMEOUT 35)
+endif()
 add_executable(pollywm-shortcut-policy shortcut-policy.c)
 target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
 add_test(NAME desktop-shortcut-policy COMMAND pollywm-shortcut-policy)

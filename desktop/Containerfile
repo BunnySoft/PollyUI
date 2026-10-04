@@ -23,3 +23,5 @@ COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
 RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
 
 RUN apk add --no-cache bash mesa-egl mesa-gles mesa-dri-gallium py3-pillow curl-dev openssl nodejs wlr-protocols
+
+RUN apk add --no-cache librime-dev
