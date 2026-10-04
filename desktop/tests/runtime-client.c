@@ -2,8 +2,10 @@
 #include "decoration.h"
 #include "decoration-themes.h"
 #include "workspace.h"
+#include "data-device.h"
 
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
@@ -21,6 +23,7 @@
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -254,6 +257,112 @@ static bool suite(char *executable, char *script)
 
 static void remove_fixture_output(void *data) { wlr_output_destroy(data); }
 
+struct FixtureSource {
+    struct wlr_data_source base;
+    const char *payload;
+};
+static unsigned destroyed_sources;
+static void source_send(struct wlr_data_source *base, const char *mime, int32_t fd)
+{
+    (void)mime;
+    struct FixtureSource *source = wl_container_of(base, source, base);
+    size_t offset = 0, size = strlen(source->payload);
+    while (offset < size) {
+        ssize_t count = write(fd, source->payload + offset, size - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) { fprintf(stderr, "FAIL: fixture drag pipe write\n"); desktop.failed = true; break; }
+        offset += (size_t)count;
+    }
+    close(fd);
+}
+static void source_destroy(struct wlr_data_source *base)
+{
+    struct FixtureSource *source = wl_container_of(base, source, base);
+    destroyed_sources++;
+    free(source);
+}
+static void source_finished(struct wlr_data_source *base) { (void)base; }
+static const struct wlr_data_source_impl source_impl = {
+    .send = source_send, .destroy = source_destroy, .dnd_finish = source_finished,
+};
+
+static void move_pointer(int x, int y)
+{
+    struct wlr_box all;
+    wlr_output_layout_get_box(desktop.layout, NULL, &all);
+    struct wlr_pointer_motion_absolute_event motion = { .pointer = &pointer, .time_msec = 50000,
+        .x = (double)(x - all.x) / all.width, .y = (double)(y - all.y) / all.height };
+    wl_signal_emit_mutable(&pointer.events.motion_absolute, &motion);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+}
+
+static bool data_drag(const char *mode)
+{
+    struct PuDesktopView *source = NULL, *target = NULL, *view;
+    wl_list_for_each(view, &desktop.views, link) {
+        if (view->toplevel->title && !strcmp(view->toplevel->title, "Data source")) source = view;
+        if (view->toplevel->title && !strcmp(view->toplevel->title, "Data receiver")) target = view;
+    }
+    CHECK(source && target && !desktop.seat->drag);
+    wlr_scene_node_set_position(&source->tree->node, 30, 60);
+    wlr_scene_node_set_position(&target->tree->node, 400, 60);
+    move_pointer(60, 100);
+    struct wlr_pointer_button_event button = { .pointer = &pointer, .time_msec = 50001,
+        .button = BTN_LEFT, .state = WL_POINTER_BUTTON_STATE_PRESSED };
+    wlr_pointer_notify_button(&pointer, &button);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+    struct wlr_surface *origin = source->toplevel->base->surface;
+    CHECK(desktop.seat->pointer_state.focused_surface == origin);
+    unsigned before = destroyed_sources;
+    struct FixtureSource *payload = NULL;
+    if (strcmp(mode, "source-less")) {
+        payload = calloc(1, sizeof(*payload));
+        CHECK(payload);
+        wlr_data_source_init(&payload->base, &source_impl);
+        char **mime = wl_array_add(&payload->base.mime_types, sizeof(*mime));
+        CHECK(mime);
+        bool files = !strcmp(mode, "files");
+        *mime = strdup(files ? "text/uri-list" : "text/plain;charset=utf-8");
+        CHECK(*mime);
+        payload->payload = files ? "file:///tmp/polly-one.txt\r\nfile:///tmp/polly%20two.txt\r\n" :
+            "Dropped \xe4\xb8\xad\xe6\x96\x87";
+        payload->base.actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
+    }
+    struct wlr_drag *drag = wlr_drag_create(wlr_seat_client_for_wl_client(desktop.seat,
+        wl_resource_get_client(origin->resource)), payload ? &payload->base : NULL, NULL);
+    CHECK(drag);
+    wlr_seat_request_start_drag(desktop.seat, drag, origin,
+        !strcmp(mode, "invalid") ? 0 : desktop.seat->pointer_state.grab_serial);
+    if (!strcmp(mode, "invalid")) CHECK(!desktop.seat->drag && destroyed_sources == before + 1);
+    else {
+        CHECK(pu_data_device_drag_active(&desktop) && desktop.seat->drag == drag);
+        CHECK(!desktop.seat->keyboard_state.focused_surface);
+        if (!strcmp(mode, "escape") || !strcmp(mode, "source-less")) {
+            struct wlr_keyboard_key_event key = { .time_msec = 50002, .keycode = KEY_ESC,
+                .update_state = true, .state = WL_KEYBOARD_KEY_STATE_PRESSED };
+            wlr_keyboard_notify_key(&keyboard, &key);
+            key.state = WL_KEYBOARD_KEY_STATE_RELEASED; wlr_keyboard_notify_key(&keyboard, &key);
+            CHECK(!desktop.seat->drag && !pu_data_device_drag_active(&desktop));
+        } else if (!strcmp(mode, "source-loss")) {
+            wlr_data_source_destroy(&payload->base);
+            CHECK(!desktop.seat->drag && destroyed_sources == before + 1);
+        } else {
+            move_pointer(430, 100);
+            for (int i = 0; i < 1000 && desktop.seat->drag &&
+                (!drag->source->accepted || !drag->source->current_dnd_action); i++) CHECK(pump());
+            CHECK(desktop.seat->drag == drag && drag->focus == target->toplevel->base->surface &&
+                drag->source->accepted && drag->source->current_dnd_action == WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY);
+        }
+    }
+    button.time_msec = 50003; button.state = WL_POINTER_BUTTON_STATE_RELEASED;
+    wlr_pointer_notify_button(&pointer, &button);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+    CHECK(!desktop.seat->drag && !pu_data_device_drag_active(&desktop));
+    CHECK(!wlr_seat_keyboard_has_grab(desktop.seat) && !wlr_seat_pointer_has_grab(desktop.seat));
+    CHECK(desktop.seat->keyboard_state.focused_surface == origin);
+    return true;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
@@ -266,6 +375,11 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            if (!strncmp(name, "fixture-data-drag ", 18)) {
+                CHECK(data_drag(name + 18));
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             char output_name[96];
             if (sscanf(name, "fixture-output-remove %95s", output_name) == 1) {
                 struct wlr_output_layout_output *entry;

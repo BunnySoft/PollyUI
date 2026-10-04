@@ -447,6 +447,7 @@ typedef struct PuEventData {
     const PuKeyEvent *key;
     const PuPointerEvent *pointer;
     const PuWheelEvent *wheel;
+    const PuDropEvent *drop;
 } PuEventData;
 
 static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const PuEventData *data,
@@ -456,6 +457,7 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     JSContext *ctx = b->ctx;
 
     JSValue ev = JS_NewObject(ctx);                       /* one event for the whole walk */
+    if (JS_IsException(ev)) { dispatch_report(ctx); return 0; }
     JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
@@ -470,7 +472,8 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         }
     }
     if (data) {
-        unsigned mods = key ? key->modifiers : data->pointer ? data->pointer->modifiers : data->wheel->modifiers;
+        unsigned mods = key ? key->modifiers : data->pointer ? data->pointer->modifiers :
+            data->wheel ? data->wheel->modifiers : 0;
         JS_SetPropertyStr(ctx, ev, "shiftKey", JS_NewBool(ctx, mods & PU_MOD_SHIFT));
         JS_SetPropertyStr(ctx, ev, "ctrlKey", JS_NewBool(ctx, mods & PU_MOD_CTRL));
         JS_SetPropertyStr(ctx, ev, "altKey", JS_NewBool(ctx, mods & PU_MOD_ALT));
@@ -490,6 +493,23 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
             JS_SetPropertyStr(ctx, ev, "deltaY", JS_NewFloat64(ctx, data->wheel->delta_y));
             JS_SetPropertyStr(ctx, ev, "deltaMode", JS_NewInt32(ctx, 0));
         }
+        if (data->drop) {
+            const PuDropEvent *drop = data->drop;
+            JS_SetPropertyStr(ctx, ev, "clientX", JS_NewFloat64(ctx, drop->x));
+            JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, drop->y));
+            JS_SetPropertyStr(ctx, ev, "text", drop->text ? JS_NewString(ctx, drop->text) : JS_NULL);
+            JS_SetPropertyStr(ctx, ev, "source", drop->source ? JS_NewString(ctx, drop->source) : JS_NULL);
+            JS_SetPropertyStr(ctx, ev, "error", drop->error ? JS_NewString(ctx, drop->error) : JS_NULL);
+            JSValue files = JS_NewArray(ctx);
+            if (JS_IsException(files)) goto failed;
+            for (size_t i = 0; i < drop->file_count; i++) {
+                if (JS_SetPropertyUint32(ctx, files, (uint32_t)i, JS_NewString(ctx, drop->files[i])) < 0 ||
+                    JS_HasException(ctx)) {
+                    JS_FreeValue(ctx, files); goto failed;
+                }
+            }
+            if (JS_SetPropertyStr(ctx, ev, "files", files) < 0) goto failed;
+        }
     }
     JS_SetPropertyStr(ctx, ev, "stopPropagation",
         JS_NewCFunction(ctx, js_event_stop, "stopPropagation", 0));
@@ -497,6 +517,7 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         JS_NewCFunction(ctx, js_event_stop_immediate, "stopImmediatePropagation", 0));
     JS_SetPropertyStr(ctx, ev, "preventDefault",
         JS_NewCFunction(ctx, js_event_prevent, "preventDefault", 0));
+    if (JS_HasException(ctx)) goto failed;
 
     for (PuNode *n = target; n; n = n->parent) {
         JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
@@ -521,11 +542,22 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     int prevented = js_event_flag(ctx, ev, "defaultPrevented");
     JS_FreeValue(ctx, ev);
     return prevented;
+failed:
+    dispatch_report(ctx);
+    JS_FreeValue(ctx, ev);
+    return 0;
 }
 
 void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
 {
     dispatch_impl(b, target, type, NULL, 1);
+}
+
+int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event)
+{
+    const char *types[] = { "dragenter", "dragover", "drop", "dragleave", "droperror" };
+    if (!event || event->type < PU_DROP_ENTER || event->type > PU_DROP_ERROR) return 0;
+    return dispatch_impl(b, target, types[event->type], &(PuEventData){ .drop = event }, 1);
 }
 
 int pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event)

@@ -4,6 +4,7 @@
 #include "workspace.h"
 #include "shortcut-control.h"
 #include "output-control.h"
+#include "data-device.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -140,6 +141,13 @@ static bool exclusive_layer(struct PuDesktopLayer *layer)
             ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
 }
 
+void pu_desktop_restore_input(struct PuDesktop *desktop)
+{
+    if (desktop->stopping) return;
+    enter_keyboard(desktop);
+    refresh_pointer(desktop);
+}
+
 static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 {
     if (desktop->focused_layer == layer) return;
@@ -262,14 +270,18 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     bool handled = event->keycode < KEY_CNT && entry->consumed[event->keycode];
     if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
         if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = false;
-    } else if (!handled && !wlr_seat_keyboard_has_grab(desktop->seat)) {
+    } else if (!handled) {
         const xkb_keysym_t *syms;
         int count = xkb_state_key_get_syms(entry->keyboard->xkb_state,
                                           event->keycode + 8, &syms);
         for (int i = 0; i < count && !handled; i++) {
             /* Mark before changing focus so keyboard.enter excludes the shortcut. */
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = true;
-            handled = pu_shortcuts_key(desktop, entry->keyboard, syms[i]);
+            if (pu_data_device_drag_active(desktop) && syms[i] == XKB_KEY_Escape) {
+                pu_data_device_cancel_drag(desktop);
+                handled = true;
+            } else if (!wlr_seat_keyboard_has_grab(desktop->seat))
+                handled = pu_shortcuts_key(desktop, entry->keyboard, syms[i]);
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = handled;
         }
     }
@@ -506,6 +518,7 @@ static void set_minimized(struct PuDesktopView *view, bool minimized)
 void pu_desktop_workspaces_changed(struct PuDesktop *desktop, struct PuDesktopView *preferred)
 {
     if (desktop->stopping) return;
+    pu_data_device_cancel_drag(desktop);
     pu_shortcuts_cancel(desktop);
     bool switched = desktop->visible_workspace != desktop->active_workspace;
     desktop->visible_workspace = desktop->active_workspace;
@@ -733,6 +746,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
+    pu_data_device_cancel_drag(desktop);
     pu_shortcuts_cancel(desktop);
     pu_output_control_changed(desktop);
     arrange_layers(desktop);
@@ -994,8 +1008,16 @@ static void find_surface_position(struct wlr_scene_buffer *buffer, int x, int y,
     }
 }
 
+bool pu_desktop_surface_visible(struct PuDesktop *desktop, struct wlr_surface *surface)
+{
+    struct SurfacePosition position = { .surface = surface };
+    wlr_scene_node_for_each_buffer(&desktop->scene->tree.node, find_surface_position, &position);
+    return position.found;
+}
+
 static void process_motion(struct PuDesktop *desktop, uint32_t time)
 {
+    pu_data_device_motion(desktop);
     struct PuDesktopView *view = desktop->grabbed;
     if (view && desktop->grab == PU_DESKTOP_MOVE) {
         double dx = desktop->cursor->x - desktop->last_title_x;
@@ -1211,7 +1233,8 @@ static void request_cursor(struct wl_listener *listener, void *data)
     struct PuDesktop *desktop = wl_container_of(listener, desktop, request_cursor);
     struct wlr_seat_pointer_request_set_cursor_event *event = data;
     if (desktop->grab == PU_DESKTOP_PASSTHROUGH &&
-        event->seat_client == desktop->seat->pointer_state.focused_client)
+        (event->seat_client == desktop->seat->pointer_state.focused_client ||
+         (desktop->seat->drag && event->seat_client == desktop->seat->drag->seat_client)))
         wlr_cursor_set_surface(desktop->cursor, event->surface,
                                event->hotspot_x, event->hotspot_y);
 }
@@ -1845,6 +1868,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!pu_output_control_init(desktop)) {
         fail(desktop, "Cannot initialize output configuration"); return false;
     }
+    if (!pu_data_device_init(desktop)) {
+        fail(desktop, "Cannot initialize data-device integration"); return false;
+    }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
     if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
         fail(desktop, "Cannot load cursor theme"); return false;
@@ -1897,6 +1923,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     desktop->stopping = true;
     pu_desktop_stop_shell(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
+    pu_data_device_finish(desktop);
     pu_output_control_finish(desktop);
     if (desktop->sigint) wl_event_source_remove(desktop->sigint);
     if (desktop->sigterm) wl_event_source_remove(desktop->sigterm);

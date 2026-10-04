@@ -1,5 +1,6 @@
 #ifndef POLLYUI_HOST_INPUT_H
 #define POLLYUI_HOST_INPUT_H
+#include <stddef.h>
 
 enum PuModifiers {
     PU_MOD_SHIFT = 1u << 0,
@@ -46,6 +47,16 @@ typedef struct PuWheelEvent {
     float delta_x, delta_y; /* logical pixels, positive right/down */
     unsigned modifiers;
 } PuWheelEvent;
+
+typedef enum PuDropType { PU_DROP_ENTER, PU_DROP_MOTION, PU_DROP_DATA, PU_DROP_LEAVE, PU_DROP_ERROR } PuDropType;
+/* All strings and file entries are borrowed until the callback returns. */
+typedef struct PuDropEvent {
+    PuDropType type;
+    float x, y;
+    const char *text, *source, *error;
+    const char *const *files;
+    size_t file_count;
+} PuDropEvent;
 
 static inline const char *pu_pointer_name(PuPointerType type)
 {

@@ -306,12 +306,42 @@ export function NInput(props = {}) {
     style: clean({ width, height: h0, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: pad, paddingRight: pad, justifyContent: 'center', overflow: 'hidden', position: 'relative' }),
     hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
     onFocus: () => caretFocus(id), onBlur: () => { caretBlur(id); if (st) st.anchor = null; },
-    onMousedown: (e) => { if (e.currentTarget.focus) e.currentTarget.focus(); if (!st) return; const i = indexAtX(value, fs, localX(e)); st.caret = i; st.anchor = i; st.dragging = true; _caret.on = true; _caret.tick++; },
+    onMousedown: (e) => { if (e.button !== 0) return; if (e.currentTarget.focus) e.currentTarget.focus(); if (!st) return; const i = indexAtX(value, fs, localX(e)); st.caret = i; st.anchor = i; st.dragging = true; _caret.on = true; _caret.tick++; },
     onMousemove: (e) => { if (st && st.dragging) { st.caret = indexAtX(value, fs, localX(e)); _caret.tick++; } },
-    onMouseup: () => { if (st) { st.dragging = false; if (st.anchor === st.caret) st.anchor = null; _caret.tick++; } },
+    onMouseup: e => {
+      if (e.button !== 0 || !st) return;
+      st.dragging = false;
+      if (st.anchor === st.caret) st.anchor = null;
+      const selection = curSel();
+      if (selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
+        clipboard.writePrimaryText(value.slice(selection[0], selection[1]));
+      _caret.tick++;
+    },
+    onAuxclick: e => {
+      if (e.button !== 1 || !st || typeof clipboard === 'undefined' || !clipboard.supportsPrimary) return;
+      e.preventDefault();
+      e.currentTarget.focus();
+      st.caret = indexAtX(value, fs, localX(e)); st.anchor = null;
+      replace(clipboard.readPrimaryText()); _caret.tick++;
+    },
     onKeydown: (e) => {
       if (!st) { if (onInput && e.key === 'Backspace') onInput(removeLastCodePoint(value)); return; }
       const k = e.key;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const key = k.toLowerCase();
+        if (key === 'a') { e.preventDefault(); st.anchor = 0; st.caret = value.length; _caret.tick++; return; }
+        if (key === 'c' || key === 'x' || key === 'v') {
+          e.preventDefault();
+          if (typeof clipboard === 'undefined') throw new Error('Clipboard APIs are unavailable');
+          const selection = curSel();
+          if (key === 'v') replace(clipboard.readText());
+          else if (selection) {
+            clipboard.writeText(value.slice(selection[0], selection[1]));
+            if (key === 'x') replace('');
+          }
+          _caret.on = true; _caret.tick++; return;
+        }
+      }
       if (k === 'ArrowLeft') { st.caret = previousTextIndex(value, st.caret); st.anchor = null; }
       else if (k === 'ArrowRight') { st.caret = nextTextIndex(value, st.caret); st.anchor = null; }
       else if (k === 'Home') { st.caret = 0; st.anchor = null; }
@@ -320,6 +350,7 @@ export function NInput(props = {}) {
       else if (k === 'Delete') { const s = curSel(); if (s) { onInput && onInput(value.slice(0, s[0]) + value.slice(s[1])); st.caret = s[0]; st.anchor = null; } else if (st.caret < value.length) { onInput && onInput(value.slice(0, st.caret) + value.slice(nextTextIndex(value, st.caret))); } }
       else return;
       _caret.on = true; _caret.tick++;
+      e.preventDefault();
     },
     onTextinput: e => {
       if (st) replace(e.data); else if (onInput) onInput(value + e.data);

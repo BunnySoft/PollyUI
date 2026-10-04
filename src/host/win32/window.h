@@ -68,6 +68,10 @@ void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user);
 typedef int (*PuWheelFn)(const PuWheelEvent *event, void *user);
 void pu_window_set_wheel(PuWindow *w, PuWheelFn fn, void *user);
 
+/* SDL native file/text drop delivery. Data is borrowed during the callback. */
+typedef int (*PuDropFn)(const PuDropEvent *event, void *user);
+void pu_window_set_drop(PuWindow *w, PuDropFn fn, void *user);
+
 /* Async pump callback: run pending UI-thread work (microtasks, worker/task
  * deliveries, due timers). Returns > 0 if a repaint is warranted. Invoked on a
  * frame timer and whenever pu_window_wake is called. */

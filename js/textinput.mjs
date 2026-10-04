@@ -80,6 +80,7 @@ export function createTextInput(opts = {}) {
   const localXFrom = (clientX) => clientX - (root.offsetLeft + padding) + (parseFloat(root.scrollLeft) || 0);
 
   root.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
     const i = indexAtX(localXFrom(e.clientX));
     st.caret = i; st.anchor = i; st.dragging = true; st.focused = true;
     root.focus();
@@ -90,9 +91,21 @@ export function createTextInput(opts = {}) {
     st.caret = indexAtX(localXFrom(e.clientX));
     render();
   });
-  root.addEventListener('mouseup', () => {
+  root.addEventListener('mouseup', e => {
+    if (e.button !== 0) return;
     st.dragging = false;
     if (st.anchor === st.caret) st.anchor = null;
+    const selection = selRange();
+    if (selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
+      clipboard.writePrimaryText(st.value.slice(selection[0], selection[1]));
+    render();
+  });
+  root.addEventListener('auxclick', e => {
+    if (e.button !== 1 || typeof clipboard === 'undefined' || !clipboard.supportsPrimary) return;
+    e.preventDefault();
+    st.caret = indexAtX(localXFrom(e.clientX)); st.anchor = null;
+    root.focus();
+    replaceSelection(clipboard.readPrimaryText());
     render();
   });
   root.addEventListener('focus', () => { st.focused = true; render(); });
@@ -108,6 +121,21 @@ export function createTextInput(opts = {}) {
 
   root.addEventListener('keydown', (e) => {
     const k = e.key;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const key = k.toLowerCase();
+      if (key === 'a') { e.preventDefault(); st.anchor = 0; st.caret = st.value.length; render(); return; }
+      if (key === 'c' || key === 'x' || key === 'v') {
+        e.preventDefault();
+        if (typeof clipboard === 'undefined') throw new Error('Clipboard APIs are unavailable');
+        const selected = selRange();
+        if (key === 'v') replaceSelection(clipboard.readText());
+        else if (selected) {
+          clipboard.writeText(st.value.slice(selected[0], selected[1]));
+          if (key === 'x') replaceSelection('');
+        }
+        render(); return;
+      }
+    }
     if (k === 'ArrowLeft')       { st.caret = previousTextIndex(st.value, st.caret); st.anchor = null; }
     else if (k === 'ArrowRight') { st.caret = nextTextIndex(st.value, st.caret); st.anchor = null; }
     else if (k === 'Home')       { st.caret = 0; st.anchor = null; }
@@ -126,6 +154,7 @@ export function createTextInput(opts = {}) {
       else if (st.caret < st.value.length) { st.value = st.value.slice(0, st.caret) + st.value.slice(nextTextIndex(st.value, st.caret)); }
     }
     else return;
+    e.preventDefault();
     render();
   });
   root.addEventListener('textinput', e => { replaceSelection(e.data); render(); });

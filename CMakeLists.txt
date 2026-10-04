@@ -77,6 +77,7 @@ add_executable(pollyui
     src/script/storage.c
     src/model/node.c
     src/bridge/bridge.c
+    src/bridge/clipboard.c
     src/layout/layout.c
     src/core/thread.c
     src/core/dispatch.c
@@ -90,6 +91,7 @@ if (PU_HOST STREQUAL "win32")
     target_sources(pollyui PRIVATE src/host/win32/window.c)
 elseif (PU_HOST STREQUAL "sdl")
     target_sources(pollyui PRIVATE src/host/sdl/window_sdl.c)
+    target_compile_definitions(pollyui PRIVATE PU_CLIPBOARD_SDL)
     find_package(SDL3 REQUIRED)
     target_link_libraries(pollyui PRIVATE SDL3::SDL3)
 else()
@@ -353,6 +355,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-data-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/data-shell.mjs" data)
+                set_tests_properties(desktop-data-shell-${renderer} PROPERTIES TIMEOUT 120
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-output-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

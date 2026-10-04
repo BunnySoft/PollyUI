@@ -2,6 +2,7 @@
 #include "decoration.h"
 #include "decoration-themes.h"
 #include "workspace.h"
+#include "data-device.h"
 #include "wire.h"
 
 #include <errno.h>
@@ -23,6 +24,7 @@
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
@@ -1178,6 +1180,74 @@ static bool output_suite(struct TestClient *client)
     return true;
 }
 
+static bool drag_suite(void)
+{
+    struct TestClient *a = &clients[0], *b = &clients[1];
+    struct PuDesktopView *first = find_view(1), *second = find_view(2);
+    CHECK(first && second);
+    wlr_scene_node_set_position(&first->tree->node, 30, 60);
+    wlr_scene_node_set_position(&second->tree->node, 700, 60);
+    for (int scenario = 0; scenario < 5; scenario++) {
+        motion(50, 80); button(BTN_LEFT, true);
+        CHECK(command(a, TEST_QUERY, 0, 0, 0));
+        uint32_t serial = a->reply.serial;
+        if (!scenario) {
+            int cancelled = b->reply.drag_cancelled;
+            CHECK(command(b, TEST_DRAG, 0, serial, 0));
+            CHECK(!desktop.seat->drag && b->reply.drag_cancelled == cancelled + 1);
+            CHECK(command(a, TEST_DRAG, 1, 0, 0));
+            CHECK(!desktop.seat->drag);
+        }
+        CHECK(command(a, TEST_DRAG, 0, serial, 1));
+        CHECK(pu_data_device_drag_active(&desktop) && desktop.seat->drag->icon);
+        CHECK(!desktop.seat->keyboard_state.focused_surface);
+        motion(720, 80);
+        CHECK(desktop.seat->drag->focus == second->toplevel->base->surface);
+        struct wlr_scene_node *icon_tree = desktop.scene->tree.children.prev ?
+            wl_container_of(desktop.scene->tree.children.prev, icon_tree, link) : NULL;
+        CHECK(icon_tree && icon_tree->type == WLR_SCENE_NODE_TREE);
+        struct wlr_scene_tree *icons = wlr_scene_tree_from_node(icon_tree);
+        CHECK(!wl_list_empty(&icons->children));
+        struct wlr_scene_node *icon = wl_container_of(icons->children.next, icon, link);
+        CHECK(icon->x == 720 && icon->y == 80);
+        if (scenario == 0) {
+            CHECK(command(a, TEST_DRAG_ICON_DESTROY, 0, 0, 0));
+            CHECK(pu_data_device_drag_active(&desktop) && !desktop.seat->drag->icon);
+            key(KEY_ESC, true); key(KEY_ESC, false);
+        } else if (scenario == 1) {
+            CHECK(command(a, TEST_DRAG_SOURCE_DESTROY, 0, 0, 0));
+        } else if (scenario == 2) {
+            struct PuWorkspace *previous = desktop.active_workspace;
+            pu_workspace_step(&desktop, 1);
+            CHECK(!pu_data_device_drag_active(&desktop));
+            pu_workspace_activate(&desktop, previous, first);
+        } else if (scenario == 3) {
+            CHECK(command(a, TEST_UNMAP, 0, 0, 0));
+            CHECK(!pu_data_device_drag_active(&desktop));
+        } else {
+            CHECK(command(a, TEST_MINIMIZE, 0, 0, 0));
+            CHECK(!pu_data_device_drag_active(&desktop));
+        }
+        CHECK(!desktop.seat->drag && !pu_data_device_drag_active(&desktop));
+        CHECK(!wlr_seat_keyboard_has_grab(desktop.seat) && !wlr_seat_pointer_has_grab(desktop.seat));
+        button(BTN_LEFT, false);
+        CHECK(command(a, TEST_DRAG_ICON_DESTROY, 0, 0, 0));
+        if (scenario == 3) {
+            CHECK(command(a, TEST_REMAP, 0, 0, 0));
+            first = find_view(1);
+            CHECK(first);
+            wlr_scene_node_set_position(&first->tree->node, 30, 60);
+        }
+    }
+    CHECK(command(a, TEST_UNMAP, 0, 0, 0));
+    CHECK(command(a, TEST_REMAP, 0, 0, 0));
+    first = find_view(1);
+    CHECK(first);
+    CHECK(!first->minimized);
+    motion(720, 80); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    return true;
+}
+
 static bool suite(const char *client_path)
 {
     CHECK(desktop.output_count > 0);
@@ -1314,6 +1384,8 @@ static bool suite(const char *client_path)
     CHECK(command(b, TEST_QUERY, 0, 0, 0));
     CHECK(a->reply.frames > 0 && b->reply.frames > 0);
 
+    CHECK(drag_suite());
+    first = find_view(1);
     CHECK(layer_suite(client_path));
     CHECK(state_suite(b, second));
     second = find_view(2);

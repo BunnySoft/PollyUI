@@ -641,6 +641,47 @@ string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
 test cover these contracts; the latter queues synthetic SDL events and is not
 physical-device or locale-layout qualification.
 
+### Clipboard and incoming drops
+
+`clipboard.writeText(text)` / `readText()` use the native application clipboard.
+The SDL host also provides `write([{type, data}, ...])`, `read(type)` and
+`formats()` for MIME data; `data` is an ArrayBuffer or typed-array view whose
+selected bytes are copied, and `read` returns an ArrayBuffer or `null` for an
+absent format. `write([])` clears the clipboard. Writes accept at most 16
+distinct formats and 16 MiB of bytes in total. MIME names must be nonempty,
+printable ASCII strings of at most 127 bytes. Text writes reject embedded NUL.
+`supportsFormats` distinguishes the SDL implementation from the raw Win32
+host's UTF-8 text-only implementation.
+
+On Linux SDL, `supportsPrimary` is true and `writePrimaryText` /
+`readPrimaryText` expose the independent primary selection. Native calls require
+a focused application window and report errors; `--test` instead uses a
+process-local memory clipboard without touching the host clipboard.
+Reads reject results over 16 MiB **after SDL has received them**; this is not
+a transport-level memory limit. There is no clipboard history, persistence,
+background clipboard manager or payload logging.
+
+`createTextInput` and `NInput` with a stable `id` support Ctrl/Meta+A/C/X/V,
+publish mouse-selected text to primary selection, and paste primary selection
+on middle click. A failed clipboard write does not delete the selected text.
+Anonymous `NInput` retains its existing basic append/backspace editing path;
+use a stable `id` for selection and clipboard shortcuts.
+
+SDL windows receive bubbling `dragenter`, `dragover`, `drop`, `dragleave` and
+`droperror` events. A completed `drop` carries `text` (or null), `files` (UTF-8
+path strings, not File objects), `source` metadata and logical `clientX/Y`.
+`droperror.error` describes rejected payloads. The adapter aggregates up to
+1024 paths and 16 MiB of strings including separators/terminators; source
+metadata is capped at 1024 bytes. SDL has already received individual chunks
+before these limits are applied. Paths are untrusted data: nothing is opened,
+executed, moved or deleted automatically.
+
+This is an incoming native-drop API, **not** browser DataTransfer: SDL controls
+protocol acceptance, `preventDefault()` does not negotiate native actions, and
+no PollyUI outgoing drag-source API or automatic text-input drop insertion is
+implemented yet. `dragenter` announces a window-level transfer; SDL provides
+no distinct leave notification, so an empty completion becomes `dragleave`.
+
 ### HTTP and application data
 
 `fetch(url, {method, body, headers})` uses libcurl on Linux and WinHTTP on Windows.

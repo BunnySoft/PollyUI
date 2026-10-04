@@ -80,6 +80,14 @@ struct Client {
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
+    struct wl_subcompositor *subcompositor;
+    struct wl_data_device_manager *data_manager;
+    struct wl_data_device *data_device;
+    struct wl_data_source *data_source;
+    struct wl_data_offer *offers[32];
+    size_t offer_count;
+    struct wl_surface *drag_icon, *drag_child;
+    struct wl_subsurface *drag_subsurface;
     struct wl_list buffers;
     struct Window window, popup, child, extra;
     struct { uint32_t name; struct wl_output *output; } outputs[8];
@@ -103,6 +111,47 @@ static void buffer_release(void *data, struct wl_buffer *buffer)
     free(entry);
 }
 static const struct wl_buffer_listener buffer_listener = { .release = buffer_release };
+
+static void source_target(void *data, struct wl_data_source *source, const char *mime)
+{ (void)data; (void)source; (void)mime; }
+static void source_send(void *data, struct wl_data_source *source, const char *mime, int32_t fd)
+{ (void)data; (void)source; (void)mime; close(fd); }
+static void source_cancelled(void *data, struct wl_data_source *source)
+{ (void)source; ((struct Client *)data)->reply.drag_cancelled++; }
+static const struct wl_data_source_listener source_listener = {
+    .target = source_target, .send = source_send, .cancelled = source_cancelled,
+};
+static void offer_mime(void *data, struct wl_data_offer *offer, const char *mime)
+{ (void)data; (void)offer; (void)mime; }
+static const struct wl_data_offer_listener offer_listener = { .offer = offer_mime };
+static void device_offer(void *data, struct wl_data_device *device, struct wl_data_offer *offer)
+{
+    (void)device;
+    struct Client *client = data;
+    if (client->offer_count == 32) die("too many drag offers");
+    client->offers[client->offer_count++] = offer;
+    wl_data_offer_add_listener(offer, &offer_listener, NULL);
+}
+static void device_enter(void *data, struct wl_data_device *device, uint32_t serial,
+    struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *offer)
+{ (void)data; (void)device; (void)serial; (void)surface; (void)x; (void)y; (void)offer; }
+static void device_leave(void *data, struct wl_data_device *device) { (void)data; (void)device; }
+static void device_motion(void *data, struct wl_data_device *device, uint32_t time, wl_fixed_t x, wl_fixed_t y)
+{ (void)data; (void)device; (void)time; (void)x; (void)y; }
+static void device_selection(void *data, struct wl_data_device *device, struct wl_data_offer *offer)
+{ (void)data; (void)device; (void)offer; }
+static const struct wl_data_device_listener device_listener = {
+    .data_offer = device_offer, .enter = device_enter, .leave = device_leave,
+    .motion = device_motion, .drop = device_leave, .selection = device_selection,
+};
+
+static void destroy_drag_icon(struct Client *client)
+{
+    if (client->drag_subsurface) wl_subsurface_destroy(client->drag_subsurface);
+    if (client->drag_child) wl_surface_destroy(client->drag_child);
+    if (client->drag_icon) wl_surface_destroy(client->drag_icon);
+    client->drag_subsurface = NULL; client->drag_child = client->drag_icon = NULL;
+}
 
 static struct wl_buffer *make_buffer(struct Client *client, int width, int height)
 {
@@ -534,6 +583,10 @@ static void global(void *data, struct wl_registry *registry,
     struct Client *client = data;
     if (strcmp(interface, wl_compositor_interface.name) == 0)
         client->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+    else if (strcmp(interface, wl_subcompositor_interface.name) == 0)
+        client->subcompositor = wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
+    else if (strcmp(interface, wl_data_device_manager_interface.name) == 0)
+        client->data_manager = wl_registry_bind(registry, name, &wl_data_device_manager_interface, 1);
     else if (strcmp(interface, wl_shm_interface.name) == 0)
         client->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
@@ -746,6 +799,37 @@ int main(int argc, char **argv)
             request.command == TEST_WORKSPACE_MOVE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_DRAG:
+            if (!client.data_device) {
+                client.data_device = wl_data_device_manager_get_data_device(client.data_manager, client.seat);
+                wl_data_device_add_listener(client.data_device, &device_listener, &client);
+            }
+            if (client.data_source) wl_data_source_destroy(client.data_source);
+            client.data_source = NULL;
+            if (!request.id) {
+                client.data_source = wl_data_device_manager_create_data_source(client.data_manager);
+                wl_data_source_add_listener(client.data_source, &source_listener, &client);
+                wl_data_source_offer(client.data_source, "text/plain");
+            }
+            destroy_drag_icon(&client);
+            if (request.edges) client.drag_icon = wl_compositor_create_surface(client.compositor);
+            wl_data_device_start_drag(client.data_device, client.data_source, window->surface,
+                                      client.drag_icon, request.serial);
+            if (client.drag_icon) {
+                client.drag_child = wl_compositor_create_surface(client.compositor);
+                client.drag_subsurface = wl_subcompositor_get_subsurface(client.subcompositor,
+                    client.drag_child, client.drag_icon);
+                wl_surface_attach(client.drag_child, make_buffer(&client, 48, 48), 0, 0);
+                wl_surface_commit(client.drag_child);
+                wl_surface_attach(client.drag_icon, make_buffer(&client, 32, 32), 0, 0);
+                wl_surface_commit(client.drag_icon);
+            }
+            break;
+        case TEST_DRAG_SOURCE_DESTROY:
+            if (client.data_source) wl_data_source_destroy(client.data_source);
+            client.data_source = NULL;
+            break;
+        case TEST_DRAG_ICON_DESTROY: destroy_drag_icon(&client); break;
         case TEST_TRANSIENT: create_transient(&client, request.id == 0); break;
         case TEST_WORKSPACE_CREATE: ext_workspace_group_handle_v1_create_workspace(client.workspace_group, ""); break;
         case TEST_WORKSPACE_ACTIVATE: ext_workspace_handle_v1_activate(find_workspace(&client, (uint32_t)request.id)->handle); break;
@@ -872,6 +956,12 @@ int main(int argc, char **argv)
         if (send(control, &client.reply, sizeof(client.reply), MSG_NOSIGNAL) != sizeof(client.reply))
             die("control reply");
     }
+    destroy_drag_icon(&client);
+    if (client.data_source) wl_data_source_destroy(client.data_source);
+    for (size_t i = 0; i < client.offer_count; i++) wl_data_offer_destroy(client.offers[i]);
+    if (client.data_device) wl_data_device_destroy(client.data_device);
+    if (client.data_manager) wl_data_device_manager_destroy(client.data_manager);
+    if (client.subcompositor) wl_subcompositor_destroy(client.subcompositor);
     destroy_window(&client.child);
     destroy_window(&client.popup);
     destroy_window(&client.window);

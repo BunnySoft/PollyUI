@@ -28,6 +28,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
 | 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
 | Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
+| Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -40,7 +41,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Notifications, outgoing PollyUI drags, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -377,8 +378,17 @@ PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions an
 pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
 removal, reservations, role replacement and rejection on public connections.
 
+PollyWM routes the public `wl_data_device_manager` clipboard and pointer-drag
+protocol and `zwp_primary_selection_device_manager_v1` primary selection.
+Drag requests require a visible origin and the owning client's current pointer
+grab serial. Icons and their subsurfaces render above Shell layers without
+intercepting input. Escape, source destruction, a hidden/unmapped origin,
+workspace changes and output-layout changes cancel the drag. Keyboard focus is
+cleared during the drag and restored on completion/cancellation. Touch drags
+are not implemented. Clipboard ownership is not persisted after the source exits.
+
 Not implemented: tiling/overview, Xwayland, full session recovery,
-drag-and-drop policy, primary selection, screen capture/portals, IME
+PollyUI outgoing drag sources, screen capture/portals, IME
 integration, secure lock, full desktop services or installer. Display settings
 are available, but startup display profiles are not persisted yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
@@ -544,6 +554,13 @@ and disabled bindings, conflicts, and settings restored into a fresh compositor.
 Output coverage changes actual headless modes, rotation, scale and positions,
 edits fields through native input, and exercises explicit keep/revert, watchdog
 timeout, Shell crash, output removal, stale snapshots and final-output safety.
+Data-device coverage uses independent clients for invalid/foreign serials,
+source-less cancellation, drag-icon/subsurface hit testing, icon/source loss,
+workspace switching, origin unmap and minimize. Native raster/GLES peers transfer
+Unicode, empty text, MIME bytes and independent primary selection; fixture
+data sources deliver real Wayland text and URI-list drops into the recipient
+document. SDL adapter tests cover aggregation, cancellation and limit errors;
+headless tests use an isolated clipboard and exercise input shortcuts.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

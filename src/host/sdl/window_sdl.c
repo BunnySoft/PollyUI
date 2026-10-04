@@ -68,6 +68,13 @@ struct PuWindow {
     PuPointerFn pointer_fn; void *pointer_user;
     PuKeyFn     key_fn;     void *key_user;
     PuWheelFn   wheel_fn;   void *wheel_user;
+    PuDropFn    drop_fn;    void *drop_user;
+    char **drop_files;
+    char *drop_text, *drop_source;
+    const char *drop_error;
+    size_t drop_count, drop_bytes, drop_text_size;
+    int drop_active, drop_has_text;
+    float drop_x, drop_y;
     PuAsyncFn   async_fn;   void *async_user;
     PuRegionFn  region_fn;  void *region_user;
 };
@@ -608,6 +615,18 @@ void pu_window_set_paint  (PuWindow *w, PuPaintFn   fn, void *u){ if(w){w->paint
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *u){ if(w){w->pointer_fn=fn; w->pointer_user=u;} }
 void pu_window_set_key    (PuWindow *w, PuKeyFn     fn, void *u){ if(w){w->key_fn=fn;     w->key_user=u;} }
 void pu_window_set_wheel  (PuWindow *w, PuWheelFn   fn, void *u){ if(w){w->wheel_fn=fn;   w->wheel_user=u;} }
+void pu_window_set_drop(PuWindow *w, PuDropFn fn, void *u)
+{
+    if (!w) return;
+    w->drop_fn = fn; w->drop_user = u;
+    if (fn) {
+        SDL_SetEventEnabled(SDL_EVENT_DROP_BEGIN, true);
+        SDL_SetEventEnabled(SDL_EVENT_DROP_POSITION, true);
+        SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
+        SDL_SetEventEnabled(SDL_EVENT_DROP_TEXT, true);
+        SDL_SetEventEnabled(SDL_EVENT_DROP_COMPLETE, true);
+    }
+}
 void pu_window_set_async  (PuWindow *w, PuAsyncFn   fn, void *u){ if(w){w->async_fn=fn;   w->async_user=u;} }
 void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->region_fn=fn;  w->region_user=u;} }
 void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *u) { if (w) { w->close_fn = fn; w->close_user = u; } }
@@ -732,6 +751,77 @@ static void pu_sync_size(PuWindow *w)
     w->dirty = 1;
 }
 
+static void clear_drop(PuWindow *w)
+{
+    for (size_t i = 0; i < w->drop_count; i++) free(w->drop_files[i]);
+    free(w->drop_files); free(w->drop_text); free(w->drop_source);
+    w->drop_files = NULL; w->drop_text = w->drop_source = NULL;
+    w->drop_count = w->drop_bytes = w->drop_text_size = 0;
+    w->drop_has_text = w->drop_active = 0; w->drop_error = NULL;
+}
+
+static void deliver_drop(PuWindow *w, PuDropType type)
+{
+    if (!w->drop_fn) return;
+    PuDropEvent event = { .type = type, .x = w->drop_x, .y = w->drop_y,
+        .files = (const char *const *)w->drop_files, .file_count = w->drop_count,
+        .text = w->drop_has_text ? w->drop_text : NULL, .source = w->drop_source, .error = w->drop_error };
+    if (w->drop_fn(&event, w->drop_user)) w->dirty = 1;
+}
+
+static void receive_drop(PuWindow *w, const SDL_DropEvent *event)
+{
+    bool entering = event->type == SDL_EVENT_DROP_BEGIN || !w->drop_active;
+    if (entering) {
+        clear_drop(w); w->drop_active = 1;
+    }
+    w->drop_x = event->x; w->drop_y = event->y;
+    if (!w->drop_source && event->source) {
+        if (strlen(event->source) > 1024) w->drop_error = "Drop source metadata exceeds supported limits";
+        else {
+            w->drop_source = strdup(event->source);
+            if (!w->drop_source) w->drop_error = "Cannot allocate drop metadata";
+        }
+    }
+    if (entering) deliver_drop(w, PU_DROP_ENTER);
+    if (!w->drop_error && event->data &&
+        (event->type == SDL_EVENT_DROP_FILE || event->type == SDL_EVENT_DROP_TEXT)) {
+        size_t size = strlen(event->data);
+        size_t extra = 1;
+        if (w->drop_bytes > 16u * 1024u * 1024u || extra > 16u * 1024u * 1024u - w->drop_bytes ||
+            size > 16u * 1024u * 1024u - w->drop_bytes - extra ||
+            (event->type == SDL_EVENT_DROP_FILE && w->drop_count >= 1024))
+            w->drop_error = "Drop payload exceeds supported limits";
+        else if (event->type == SDL_EVENT_DROP_FILE) {
+            char **files = realloc(w->drop_files, (w->drop_count + 1) * sizeof(*files));
+            if (!files) w->drop_error = "Cannot allocate dropped file list";
+            else {
+                w->drop_files = files;
+                files[w->drop_count] = strdup(event->data);
+                if (!files[w->drop_count]) w->drop_error = "Cannot allocate dropped file name";
+                else { w->drop_count++; w->drop_bytes += size + 1; }
+            }
+        } else {
+            size_t previous = w->drop_text_size;
+            char *text = realloc(w->drop_text, previous + size + 2);
+            if (!text) w->drop_error = "Cannot allocate dropped text";
+            else {
+                w->drop_text = text;
+                if (w->drop_has_text) text[previous++] = '\n';
+                memcpy(text + previous, event->data, size + 1);
+                w->drop_text_size = previous + size;
+                w->drop_bytes += size + 1; w->drop_has_text = 1;
+            }
+        }
+    }
+    if (event->type == SDL_EVENT_DROP_POSITION) deliver_drop(w, PU_DROP_MOTION);
+    if (event->type == SDL_EVENT_DROP_COMPLETE) {
+        if (w->drop_error) { SDL_Log("%s", w->drop_error); deliver_drop(w, PU_DROP_ERROR); }
+        else deliver_drop(w, w->drop_count || w->drop_has_text ? PU_DROP_DATA : PU_DROP_LEAVE);
+        clear_drop(w);
+    }
+}
+
 static void handle_event(PuWindow *w, const SDL_Event *e)
 {
     /* SDL3 reports mouse/touch coordinates in logical window points (the same
@@ -739,6 +829,13 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
      * points). So pass them straight through — do NOT divide by the DPI scale,
      * or clicks land at a fraction of their position on HiDPI displays. */
     switch (e->type) {
+        case SDL_EVENT_DROP_BEGIN:
+        case SDL_EVENT_DROP_POSITION:
+        case SDL_EVENT_DROP_FILE:
+        case SDL_EVENT_DROP_TEXT:
+        case SDL_EVENT_DROP_COMPLETE:
+            receive_drop(w, &e->drop);
+            break;
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
             w->running = 0; break;
@@ -961,6 +1058,7 @@ void pu_window_destroy(PuWindow *w)
 #if defined(PU_LAYER_SHELL)
     pu_layer_destroy(w->layer_surface);
 #endif
+    clear_drop(w);
     free(w);
     shutdown_video();
 }

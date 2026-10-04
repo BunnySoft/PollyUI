@@ -3,6 +3,7 @@
 #include "script/storage.h"
 #include "net/fetch.h"
 #include "bridge/bridge.h"
+#include "bridge/clipboard.h"
 #include "layout/layout.h"
 #include "render/render.h"
 #include "model/node.h"
@@ -200,6 +201,21 @@ static int app_key(const PuKeyEvent *event, void *user)
     return PU_INPUT_REDRAW | (prevented ? PU_INPUT_PREVENT_DEFAULT : 0);
 }
 
+static int app_drop(const PuDropEvent *event, void *user)
+{
+    PuApp *app = user;
+    PuNode *body = pu_bridge_body(app->bridge);
+    PuNode *target = event->type == PU_DROP_ENTER || event->type == PU_DROP_ERROR ? body :
+        pu_node_hit_test(body, event->x, event->y);
+    if (!target) target = body;
+    pu_node_ref(target);
+    int prevented = pu_bridge_dispatch_drop(app->bridge, target, event);
+    pu_script_pump(app->script);
+    app_redraw_all();
+    pu_node_unref(target);
+    return PU_INPUT_REDRAW | (prevented ? PU_INPUT_PREVENT_DEFAULT : 0);
+}
+
 /* Monotonic millisecond clock for animation timestamps. */
 static double pu_frame_ms(void)
 {
@@ -336,6 +352,9 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
     pu_window_set_paint(app->window, app_paint, app);
     pu_window_set_pointer(app->window, app_pointer, app);
     pu_window_set_key(app->window, app_key, app);
+#if defined(PU_CLIPBOARD_SDL)
+    pu_window_set_drop(app->window, app_drop, app);
+#endif
     pu_window_set_wheel(app->window, app_wheel, app);
     pu_window_set_region(app->window, app_region, app);
     pu_window_set_close(app->window, app_closed, app);
@@ -998,9 +1017,10 @@ static int run_test(const char *path)
     pu_script_set_dispatch(s, disp);
     pu_async_install(pu_script_jsctx(s), disp);
     const char *test_storage = getenv("PU_TEST_STORAGE");
-    if (!pu_storage_install(pu_script_jsctx(s), test_storage ? test_storage : "build/_localstorage.dat") ||
+    if (!pu_clipboard_install(pu_script_jsctx(s), 1) ||
+        !pu_storage_install(pu_script_jsctx(s), test_storage ? test_storage : "build/_localstorage.dat") ||
         !pu_fetch_install(pu_script_jsctx(s), disp)) {
-        pu_async_shutdown(); pu_storage_shutdown();
+        pu_async_shutdown(); pu_storage_shutdown(); pu_clipboard_shutdown();
         pu_bridge_free(b); pu_script_destroy(s); pu_dispatch_free(disp);
         return 1;
     }
@@ -1023,6 +1043,7 @@ static int run_test(const char *path)
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
 
     g_test = NULL;
+    pu_clipboard_shutdown();
     pu_async_shutdown();
     pu_fetch_shutdown();
     pu_storage_shutdown();
@@ -1083,6 +1104,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     g_app_bridge = bridge;
     g_app_quitting = g_app_error = 0;
     int host_ready = pu_window_system_init();
+    int clipboard_ready = host_ready && pu_clipboard_install(pu_script_jsctx(s), 0);
     PuApp *primary = host_ready ? install_window_api(pu_script_jsctx(s)) : NULL;
     install_application(pu_script_jsctx(s), &paths, argc, argv);
 
@@ -1092,7 +1114,8 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
 #else
     (void)desktop_mode;
 #endif
-    int rc = primary && desktop_ready ? pu_script_run_file(s, path) : 1;
+    int rc = primary && desktop_ready && clipboard_ready ? pu_script_run_file(s, path) : 1;
+    if (!clipboard_ready) fprintf(stderr, "[host] Cannot initialize clipboard APIs\n");
     if (!desktop_ready) fprintf(stderr, "[desktop] Cannot install desktop application APIs\n");
     if (!primary) fprintf(stderr, "[host] Failed to create application window: window system initialization\n");
     if (rc == 0)
@@ -1126,6 +1149,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     pu_dispatch_set_waker(disp, NULL, NULL);
     g_app_quitting = 1;
     while (g_apps) app_retire(g_apps, 0);
+    pu_clipboard_shutdown();
     if (host_ready) pu_window_system_shutdown();
     if (g_app_error) rc = 1;
     g_app_script = NULL;

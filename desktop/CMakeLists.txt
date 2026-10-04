@@ -74,6 +74,7 @@ add_library(pollywm-core STATIC
     shared/shortcuts.c
     compositor/shortcut-control.c
     compositor/output-control.c
+    compositor/data-device.c
     compositor/server.c
     compositor/decoration.c
     compositor/workspace.c

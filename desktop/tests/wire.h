@@ -17,7 +17,8 @@ enum TestCommand {
     TEST_FOREIGN_UNFULLSCREEN, TEST_FOREIGN_CLOSE, TEST_RENAME,
     TEST_DECORATION, TEST_DECORATION_DESTROY, TEST_APPEARANCE,
     TEST_WORKSPACE_CREATE, TEST_WORKSPACE_ACTIVATE, TEST_WORKSPACE_REMOVE,
-    TEST_WORKSPACE_MOVE, TEST_WORKSPACE_COMMIT, TEST_TRANSIENT
+    TEST_WORKSPACE_MOVE, TEST_WORKSPACE_COMMIT, TEST_TRANSIENT,
+    TEST_DRAG, TEST_DRAG_SOURCE_DESTROY, TEST_DRAG_ICON_DESTROY
 };
 
 struct TestLayer {
@@ -42,6 +43,7 @@ struct TestReply {
     int foreign_capability, foreign_count, foreign_state, foreign_outputs, foreign_done, minimize_capability;
     int appearance_capability, decoration_mode;
     int workspace_capability, workspace_count, workspace_active, workspace_done, foreign_workspace;
+    int drag_cancelled;
     char foreign_title[128];
     uint32_t serial;
 };

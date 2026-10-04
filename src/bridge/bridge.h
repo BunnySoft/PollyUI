@@ -44,6 +44,7 @@ int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent
  * applied directly to the C-side style, NOT via the JS reactive path, so the
  * host needs this signal to know it must repaint). */
 int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, const PuWheelEvent *event);
+int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event);
 
 /* --- focus + keyboard --- */
 /* Move focus to `node` (NULL = blur), firing blur/focus events. Returns nonzero

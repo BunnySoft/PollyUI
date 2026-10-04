@@ -1,11 +1,14 @@
 #include "host/win32/window.h"
 #include <SDL3/SDL.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 static PuWindow *window;
 static SDL_WindowID window_id;
 static int received, pointers, wheels, failed, ticks;
+static int drop_enters, drop_motions, drops, drop_leaves, drop_errors;
+static char *large_drop;
 static const char committed[] = "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x98\x80";
 
 static void check(int valid, const char *description)
@@ -76,8 +79,46 @@ static int on_wheel(const PuWheelEvent *event, void *user)
     wheels++;
     check(event->x == 12.5f && event->y == 23.0f &&
           event->delta_x == 20.0f && event->delta_y == 10.0f, "fractional two-axis wheel metadata");
-    pu_window_close(window);
     return PU_INPUT_REDRAW;
+}
+
+static int on_drop(const PuDropEvent *event, void *user)
+{
+    (void)user;
+    switch (event->type) {
+    case PU_DROP_ENTER:
+        drop_enters++;
+        check(event->x == 12.5f && event->y == 23.0f && event->file_count == 0 && !event->text,
+              "drop entry coordinates and clean payload");
+        break;
+    case PU_DROP_MOTION: drop_motions++; break;
+    case PU_DROP_DATA:
+        drops++;
+        check(event->file_count == 2 && !strcmp(event->files[0], "/tmp/one") &&
+              !strcmp(event->files[1], "/tmp/two"), "dropped files are aggregated");
+        check(event->text && !strcmp(event->text, "first\nsecond") &&
+              event->source && !strcmp(event->source, "fixture"), "dropped text and source are retained");
+        break;
+    case PU_DROP_LEAVE:
+        drop_leaves++;
+        check(!event->file_count && !event->text, "cancelled drop does not reuse prior payload");
+        break;
+    case PU_DROP_ERROR:
+        check(event->error != NULL, "drop limit failures are explicit");
+        if (++drop_errors == 2) pu_window_close(window);
+        break;
+    }
+    return PU_INPUT_REDRAW;
+}
+
+static void push_drop(SDL_EventType type, const char *data)
+{
+    SDL_Event event;
+    SDL_zero(event);
+    event.type = type; event.drop.windowID = window_id;
+    event.drop.x = 12.5f; event.drop.y = 23.0f;
+    event.drop.source = "fixture"; event.drop.data = data;
+    check(SDL_PushEvent(&event), "queue SDL drop event");
 }
 
 static void push_key(SDL_Scancode scan, SDL_Keycode key, SDL_Keymod mods, int down, int repeat)
@@ -142,6 +183,22 @@ static int tick(void *user)
         event.wheel.x = 0.5f; event.wheel.y = -0.25f;
         event.wheel.mouse_x = 12.5f; event.wheel.mouse_y = 23.0f;
         check(SDL_PushEvent(&event), "queue wheel");
+        push_drop(SDL_EVENT_DROP_BEGIN, NULL);
+        push_drop(SDL_EVENT_DROP_POSITION, NULL);
+        push_drop(SDL_EVENT_DROP_FILE, "/tmp/one");
+        push_drop(SDL_EVENT_DROP_FILE, "/tmp/two");
+        push_drop(SDL_EVENT_DROP_TEXT, "first");
+        push_drop(SDL_EVENT_DROP_TEXT, "second");
+        push_drop(SDL_EVENT_DROP_COMPLETE, NULL);
+        push_drop(SDL_EVENT_DROP_BEGIN, NULL);
+        push_drop(SDL_EVENT_DROP_COMPLETE, NULL);
+        push_drop(SDL_EVENT_DROP_BEGIN, NULL);
+        push_drop(SDL_EVENT_DROP_TEXT, large_drop);
+        push_drop(SDL_EVENT_DROP_TEXT, "overflow");
+        push_drop(SDL_EVENT_DROP_COMPLETE, NULL);
+        push_drop(SDL_EVENT_DROP_BEGIN, NULL);
+        for (int i = 0; i < 1025; i++) push_drop(SDL_EVENT_DROP_FILE, "/tmp/limit");
+        push_drop(SDL_EVENT_DROP_COMPLETE, NULL);
     } else if (ticks > 500) {
         check(0, "SDL input fixture timed out"); pu_window_close(window);
     }
@@ -153,6 +210,10 @@ int main(void)
     PuWindowConfig config = { .title = "PollyUI input adapter test", .width = 360, .height = 280 };
     window = pu_window_create(&config);
     if (!window) return 1;
+    large_drop = malloc(16u * 1024u * 1024u + 1);
+    if (!large_drop) { pu_window_destroy(window); return 1; }
+    memset(large_drop, 'x', 16u * 1024u * 1024u);
+    large_drop[16u * 1024u * 1024u] = 0;
     int count = 0;
     SDL_Window **windows = SDL_GetWindows(&count);
     if (!windows || count != 1) return 1;
@@ -161,12 +222,16 @@ int main(void)
     pu_window_set_key(window, on_key, NULL);
     pu_window_set_pointer(window, on_pointer, NULL);
     pu_window_set_wheel(window, on_wheel, NULL);
+    pu_window_set_drop(window, on_drop, NULL);
     pu_window_set_async(window, tick, NULL);
     int result = pu_window_run(window);
     pu_window_destroy(window);
+    free(large_drop);
     pu_render_shutdown();
     check(received == 9, "exactly one event for each key or committed text");
     check(pointers == 4 && wheels == 1, "exact pointer/wheel event sequence");
+    check(drop_enters == 4 && drop_motions == 1 && drops == 1 && drop_leaves == 1 && drop_errors == 2,
+          "exact drop sequence with bounded payload rejection");
     if (!result && !failed) puts("PASS: SDL native keyboard/text adapter");
     return result || failed;
 }

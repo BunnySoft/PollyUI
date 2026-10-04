@@ -381,10 +381,27 @@ CMake + Ninja + clang-cl.
 - **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
   the last big architectural piece; everything above Host is already portable.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-- **Text:** custom font families, **IME** (CJK/emoji), clipboard.
+- **Text:** custom font families, **IME** (CJK/emoji), complex shaping.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.
 - **Perf** (persist + dirty-track the Yoga tree) and CSS units
   (`em`/`rem`/`vh`/`vw`) + pseudo-states.
+
+### Clipboard ownership and data devices
+
+Clipboard callbacks retain copied C buffers, not JavaScript references. SDL
+owns each valid offered payload and its cleanup callback, including a backend
+setter failure after ownership transfer. Shutdown stops the host before
+destroying the JS realm; callbacks cannot reenter a destroyed context.
+The test harness substitutes process-local memory instead of the user's
+clipboard. Native access requires application keyboard focus; this is an API
+guard, not a sandbox or an OS-wide clipboard confidentiality guarantee.
+
+PollyWM validates standard pointer-drag origins and serials, owns icon scene
+nodes and restores input when the wlroots drag ends. The SDL adapter copies
+drop chunks into per-window bounded aggregates and synchronously dispatches
+completed payloads into that window's DOM. Incoming files remain path strings,
+not automatically authorized file access. Outgoing PollyUI drag sources,
+clipboard persistence and full browser DataTransfer are separate work.
 
 ### Native multi-window runtime
 
