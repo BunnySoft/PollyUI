@@ -891,10 +891,12 @@ static bool suite(const char *client_path)
     key(KEY_LEFTALT, false);
 
     char *shell[] = { "/bin/sh", "-c", "exit 19", NULL };
-    CHECK(pu_desktop_spawn_shell(&desktop, shell));
-    for (int i = 0; i < 1000 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(pu_desktop_supervise_shell(&desktop, shell, 1));
+    for (int i = 0; i < 1000 && (desktop.shell_pid || desktop.shell_restart_pending); i++) CHECK(pump());
     CHECK(!desktop.shell_pid && !desktop.shell_client && desktop.shell_exited);
     CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 19);
+    CHECK(desktop.shell_restarts_used == 1 && !desktop.shell_restart_pending);
+    pu_desktop_stop_shell(&desktop);
     CHECK(!desktop.failed && find_view(1) == first && find_view(2) == second);
     CHECK(desktop.focused == second);
     CHECK(command(a, TEST_QUERY, 0, 0, 0));

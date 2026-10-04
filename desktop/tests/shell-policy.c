@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <limits.h>
 #include <wayland-client.h>
 #include <wlr/util/log.h>
 
@@ -165,11 +166,53 @@ static bool suite(char *self)
     pu_desktop_stop_shell(&desktop);
     CHECK(!desktop.shell_pid && !desktop.shell_client);
     CHECK(WIFSIGNALED(desktop.shell_status) && WTERMSIG(desktop.shell_status) == SIGKILL);
+    char *failure[] = { self, "--exit-failure", NULL };
+    CHECK(pu_desktop_supervise_shell(&desktop, failure, 2));
+    for (int i = 0; i < 2000 && (desktop.shell_pid || desktop.shell_restart_pending); i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && !desktop.shell_restart_pending && !desktop.shell_client);
+    CHECK(desktop.shell_restarts_used == 2 && desktop.shell_restarts_left == 0);
+    CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 23);
+    CHECK(!desktop.failed);
+    pu_desktop_stop_shell(&desktop);
+
+    args[1] = "--probe";
+    CHECK(pu_desktop_supervise_shell(&desktop, args, 2));
+    CHECK(wait_shell());
+    for (int i = 0; i < 30; i++) CHECK(pump());
+    CHECK(desktop.shell_restarts_used == 0 && !desktop.shell_restart_pending);
+    CHECK(WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
+    pu_desktop_stop_shell(&desktop);
+
+    char command_path[PATH_MAX];
+    CHECK(strlen(self) < sizeof(command_path));
+    strcpy(command_path, self);
+    args[0] = command_path;
+    args[1] = "--wait";
+    CHECK(pu_desktop_supervise_shell(&desktop, args, 2));
+    command_path[0] = '\0';
+    CHECK(wait_binding());
+    pid_t original = desktop.shell_pid;
+    CHECK(kill(original, SIGKILL) == 0);
+    for (int i = 0; i < 1000 && (!desktop.shell_pid || desktop.shell_pid == original); i++) CHECK(pump());
+    CHECK(desktop.shell_pid && desktop.shell_pid != original);
+    CHECK(wait_binding());
+    CHECK(desktop.shell_restarts_used == 1 && desktop.shell_restarts_left == 1);
+    pu_desktop_stop_shell(&desktop);
+    for (int i = 0; i < 30; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && !desktop.shell_command && !desktop.shell_restart_pending);
+
+    CHECK(pu_desktop_supervise_shell(&desktop, failure, 2));
+    CHECK(wait_shell());
+    CHECK(desktop.shell_restart_pending);
+    pu_desktop_stop_shell(&desktop);
+    for (int i = 0; i < 50; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid && !desktop.shell_restart_pending && !desktop.shell_command);
     return true;
 }
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--exit-failure") == 0) return 23;
     if (argc == 4) return probe(argv[2], argv[1], argv[3]) ? 0 : 1;
     if (argc != 1) return 2;
     char runtime[] = "/tmp/pollywm-shell-XXXXXX";

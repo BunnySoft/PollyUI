@@ -87,6 +87,10 @@ struct PuDesktop {
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
     struct wl_event_source *shell_exit;
+    struct wl_event_source *shell_restart_timer;
+    char **shell_command;
+    unsigned shell_restarts_left, shell_restarts_used;
+    bool shell_restart_pending, exit_with_shell;
     struct wl_client *shell_client;
     struct wl_listener shell_client_destroy;
     pid_t shell_pid;
@@ -104,6 +108,7 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name);
 bool pu_desktop_start(struct PuDesktop *desktop);
 void pu_desktop_finish(struct PuDesktop *desktop);
 bool pu_desktop_spawn_shell(struct PuDesktop *desktop, char *const argv[]);
+bool pu_desktop_supervise_shell(struct PuDesktop *desktop, char *const argv[], unsigned restarts);
 void pu_desktop_stop_shell(struct PuDesktop *desktop);
 bool pu_desktop_global_filter(const struct wl_client *client,
                               const struct wl_global *global, void *data);

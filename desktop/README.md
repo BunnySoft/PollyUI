@@ -30,7 +30,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
 | Runtime services - implemented | Linux HTTP/HTTPS with certificate checks, XDG app namespaces, atomic storage and joined request/worker/task shutdown. No sandbox, secret store or full browser Fetch API is implied. |
 | CI - definitions and local checks | Alpine ordinary/sanitizer builds with real clients on headless PollyWM, Windows core/WinHTTP and macOS raster jobs. Hosted execution requires pushing the workflow; local Linux/Windows results do not verify macOS. |
-| Shell boundary - implemented | Optional explicitly spawned shell with a private Wayland connection; connection-bound privilege, crash revocation and bounded child shutdown. A supervised full desktop session remains a separate step. |
+| Shell boundary and development session | Optional explicitly spawned shell with a private Wayland connection, bounded opt-in restart/backoff, and an isolated session launcher. Login, authentication and production session policy remain separate. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - production PollyShell | Implement the themed wallpaper, panel/dock, launcher and session supervision. The current appearance preview still uses an ordinary xdg toplevel. |
@@ -77,8 +77,18 @@ is reported without stopping PollyWM; initial exec failure instead fails
 startup. The compositor reaps only its own shell child. Shutdown disconnects it,
 tries SIGTERM, then escalates to SIGKILL after a bounded grace period. Child
 signal masks are reset rather than inheriting the compositor's blocked signals.
-There is no automatic respawn, process tree supervisor, login/authentication
-service or production restart command yet.
+Plain `--shell` still does not respawn automatically. `--shell-restarts N`
+explicitly allows at most N additional attempts after nonzero exit or a signal,
+with exponential backoff from 100 ms to 1600 ms. The lifetime budget is not reset
+automatically. Normal exit status zero is never retried; exhausting the budget
+leaves ordinary applications running and logs the failure. A new connection is
+created for every attempt. Pending restarts are cancelled on shutdown.
+
+`--exit-with-shell` additionally terminates PollyWM when the shell exits normally.
+It does not terminate the session on a shell crash. Use this only when the shell's
+normal exit is intended to end the session: remaining clients will disconnect.
+There is no process-tree supervisor, login/authentication service, or production
+logout/save protocol yet.
 
 This is a compositor protocol boundary, **not an OS sandbox**: hostile processes
 with ptrace/root access, a compromised trusted shell, or deliberate capability
@@ -299,6 +309,23 @@ Linux dependencies. A combined build still needs the normal PollyUI dependencies
 Use `-DBUILD_TESTING=OFF` when only the compositor is needed.
 
 ## Run nested in an existing Wayland session
+
+The development launcher provides a private runtime directory, shell identity,
+signal forwarding and cleanup. It keeps application configuration/data outside
+the temporary runtime directory and changes to the repository root for module
+loading. Paths supplied to it are resolved relative to the invoking directory.
+
+```sh
+sh desktop/tools/run-session.sh --nested --restarts 3 \
+    ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/preview.mjs
+```
+
+This example still runs the simulated appearance preview. Substitute the actual
+shell entry when using native panels. `--headless` needs no parent display;
+omitting both flags preserves wlroots backend selection. Restart is opt-in
+(`--restarts` defaults to zero). The launcher uses `--exit-with-shell`, so closing
+the shell normally ends this development session. It prints the absolute public
+Wayland socket path for independently launched clients.
 
 Keep the parent's socket separate from the new compositor's socket:
 

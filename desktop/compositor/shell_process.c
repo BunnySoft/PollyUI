@@ -14,6 +14,9 @@
 
 extern char **environ;
 
+static bool spawn_shell(struct PuDesktop *desktop, char *const argv[]);
+static void schedule_restart(struct PuDesktop *desktop);
+
 bool pu_desktop_global_filter(const struct wl_client *client,
                               const struct wl_global *global, void *data)
 {
@@ -64,6 +67,16 @@ static bool reap_shell(struct PuDesktop *desktop, int options)
     }
     desktop->shell_pid = 0;
     revoke_shell(desktop);
+    if (result > 0 && !desktop->stopping) {
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            if (desktop->exit_with_shell) {
+                wlr_log(WLR_INFO, "Shell exited normally; ending the requested session");
+                wl_display_terminate(desktop->display);
+            }
+        } else {
+            schedule_restart(desktop);
+        }
+    }
     return true;
 }
 
@@ -74,7 +87,7 @@ static int shell_exited(int signal_number, void *data)
     return 0;
 }
 
-bool pu_desktop_spawn_shell(struct PuDesktop *desktop, char *const argv[])
+static bool spawn_shell(struct PuDesktop *desktop, char *const argv[])
 {
     if (!desktop->display || !desktop->socket_name || desktop->stopping ||
         desktop->shell_pid || !argv || !argv[0] || !*argv[0]) {
@@ -173,8 +186,97 @@ done:
     return true;
 }
 
+static void clear_supervision(struct PuDesktop *desktop)
+{
+    if (desktop->shell_restart_timer) wl_event_source_remove(desktop->shell_restart_timer);
+    desktop->shell_restart_timer = NULL;
+    desktop->shell_restart_pending = false;
+    if (desktop->shell_command) {
+        for (size_t i = 0; desktop->shell_command[i]; i++) free(desktop->shell_command[i]);
+        free(desktop->shell_command);
+    }
+    desktop->shell_command = NULL;
+    desktop->shell_restarts_left = desktop->shell_restarts_used = 0;
+}
+
+static void schedule_restart(struct PuDesktop *desktop)
+{
+    if (desktop->stopping || !desktop->shell_command || desktop->shell_restart_pending) return;
+    if (!desktop->shell_restarts_left) {
+        wlr_log(WLR_ERROR, "Shell restart budget exhausted; ordinary clients remain running");
+        return;
+    }
+    unsigned shift = desktop->shell_restarts_used < 4 ? desktop->shell_restarts_used : 4;
+    int delay = 100 << shift;
+    if (wl_event_source_timer_update(desktop->shell_restart_timer, delay) < 0) {
+        wlr_log_errno(WLR_ERROR, "Cannot schedule shell restart");
+        return;
+    }
+    desktop->shell_restart_pending = true;
+    wlr_log(WLR_INFO, "Shell restart %u scheduled in %d ms", desktop->shell_restarts_used + 1, delay);
+}
+
+static int restart_shell(void *data)
+{
+    struct PuDesktop *desktop = data;
+    desktop->shell_restart_pending = false;
+    if (desktop->stopping || !desktop->shell_command || !desktop->shell_restarts_left) return 0;
+    desktop->shell_restarts_left--;
+    desktop->shell_restarts_used++;
+    if (!spawn_shell(desktop, desktop->shell_command)) schedule_restart(desktop);
+    return 0;
+}
+
+bool pu_desktop_spawn_shell(struct PuDesktop *desktop, char *const argv[])
+{
+    if (desktop->shell_command) {
+        wlr_log(WLR_ERROR, "Shell supervision is already configured");
+        return false;
+    }
+    return spawn_shell(desktop, argv);
+}
+
+bool pu_desktop_supervise_shell(struct PuDesktop *desktop, char *const argv[], unsigned restarts)
+{
+    if (!restarts) return pu_desktop_spawn_shell(desktop, argv);
+    if (!desktop->display || desktop->stopping || desktop->shell_pid || desktop->shell_command ||
+        !argv || !argv[0] || !*argv[0]) {
+        wlr_log(WLR_ERROR, "Cannot configure shell supervision in the current state");
+        return false;
+    }
+    size_t count = 0;
+    while (argv[count]) count++;
+    desktop->shell_command = calloc(count + 1, sizeof(*desktop->shell_command));
+    if (!desktop->shell_command) {
+        wlr_log(WLR_ERROR, "Cannot allocate shell command");
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        desktop->shell_command[i] = strdup(argv[i]);
+        if (!desktop->shell_command[i]) {
+            clear_supervision(desktop);
+            wlr_log(WLR_ERROR, "Cannot copy shell command");
+            return false;
+        }
+    }
+    desktop->shell_restart_timer = wl_event_loop_add_timer(
+        wl_display_get_event_loop(desktop->display), restart_shell, desktop);
+    if (!desktop->shell_restart_timer) {
+        clear_supervision(desktop);
+        wlr_log_errno(WLR_ERROR, "Cannot allocate shell restart timer");
+        return false;
+    }
+    desktop->shell_restarts_left = restarts;
+    if (!spawn_shell(desktop, desktop->shell_command)) {
+        clear_supervision(desktop);
+        return false;
+    }
+    return true;
+}
+
 void pu_desktop_stop_shell(struct PuDesktop *desktop)
 {
+    clear_supervision(desktop);
     revoke_shell(desktop);
     if (!reap_shell(desktop, WNOHANG)) {
         if (kill(desktop->shell_pid, SIGTERM) < 0 && errno != ESRCH)

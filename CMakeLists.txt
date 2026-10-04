@@ -237,6 +237,12 @@ if (WIN32 AND PU_WINDOWED)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
+    add_test(NAME desktop-session
+        COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/session.sh"
+            "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+            $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+            "${CMAKE_SOURCE_DIR}/desktop/tests/session-client.mjs")
+    set_tests_properties(desktop-session PROPERTIES TIMEOUT 25 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     function(pu_host_fixture target source)
         add_executable(${target} ${source} src/host/sdl/window_sdl.c src/render/skia_c.cpp)
         target_include_directories(${target} PRIVATE src "${SKIA_ROOT}")
