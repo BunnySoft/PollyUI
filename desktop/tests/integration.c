@@ -1,6 +1,7 @@
 #include "server.h"
 #include "decoration.h"
 #include "decoration-themes.h"
+#include "workspace.h"
 #include "wire.h"
 
 #include <errno.h>
@@ -545,6 +546,103 @@ static bool decoration_suite(const char *path)
     return true;
 }
 
+static bool workspace_suite(void)
+{
+    struct TestClient *shell = &shell_client, *a = &clients[0], *b = &clients[1];
+    struct PuDesktopView *first = find_view(1), *second = find_view(2);
+    CHECK(command(shell, TEST_QUERY, 0, 0, 0));
+    CHECK(shell->reply.workspace_capability && shell->reply.workspace_count == 4 && shell->reply.workspace_active == 0);
+    CHECK(!a->reply.workspace_capability && !b->reply.workspace_capability);
+    struct PuWorkspace *original = desktop.active_workspace;
+    struct wlr_foreign_toplevel_handle_v1 *handle = second->foreign;
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 1, 0, 0));
+    motion(first->tree->node.x + 10, first->tree->node.y + 10);
+    button(BTN_LEFT, true);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    int keys = a->reply.keys;
+    int done = shell->reply.workspace_done;
+    CHECK(command(shell, TEST_WORKSPACE_ACTIVATE, 1, 0, 0));
+    CHECK(desktop.active_workspace == original && shell->reply.workspace_done == done);
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(desktop.active_workspace == pu_workspace_at(&desktop, 1));
+    CHECK(first->mapped && second->mapped && !first->minimized && !second->minimized);
+    CHECK(!first->tree->node.enabled && !second->tree->node.enabled && !desktop.focused);
+    CHECK(second->foreign == handle && shell->reply.workspace_done == done + 1);
+    key(KEY_A, true); key(KEY_A, false);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0) && a->reply.keys == keys);
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    int buttons = b->reply.buttons;
+    CHECK(command(b, TEST_TRANSIENT, 1, 0, 0));
+    struct PuDesktopView *extra = find_view(8);
+    CHECK(extra && pu_workspace_current(extra) && desktop.focused == extra);
+    motion(extra->tree->node.x + 20, extra->tree->node.y + 20);
+    button(BTN_LEFT, false);
+    CHECK(command(b, TEST_QUERY, 0, 0, 0) && b->reply.buttons == buttons);
+    CHECK(command(b, TEST_DESTROY, 4, 0, 0));
+    key(KEY_LEFTALT, true); key(KEY_TAB, true); key(KEY_TAB, false); key(KEY_LEFTALT, false);
+    CHECK(!desktop.focused && desktop.active_workspace != original);
+    key(KEY_LEFTCTRL, true); key(KEY_LEFTMETA, true); key(KEY_LEFT, true);
+    key(KEY_LEFT, false); key(KEY_LEFTMETA, false); key(KEY_LEFTCTRL, false);
+    CHECK(desktop.active_workspace == original && desktop.focused == first);
+    CHECK(command(shell, TEST_WORKSPACE_MOVE, 2, 0, 1));
+    CHECK(second->workspace == original);
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(second->workspace == pu_workspace_at(&desktop, 1) && !second->tree->node.enabled);
+    CHECK(command(shell, TEST_FOREIGN_QUERY, 2, 0, 0) && shell->reply.foreign_workspace == 1);
+    CHECK(command(shell, TEST_FOREIGN_RESTORE, 2, 0, 0));
+    CHECK(!second->tree->node.enabled && desktop.active_workspace == original);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    CHECK(pu_workspace_current(second) && desktop.focused == second);
+    CHECK(command(b, TEST_POPUP, 0, 0, 0));
+    CHECK(!wl_list_empty(&second->toplevel->base->popups));
+    CHECK(command(shell, TEST_WORKSPACE_ACTIVATE, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(wl_list_empty(&second->toplevel->base->popups));
+    CHECK(command(b, TEST_DESTROY_POPUP, 0, 0, 0));
+    CHECK(command(b, TEST_POPUP, 0, 0, 0));
+    CHECK(wl_list_empty(&second->toplevel->base->popups));
+    CHECK(command(b, TEST_DESTROY_POPUP, 0, 0, 0));
+    CHECK(command(b, TEST_TRANSIENT, 0, 0, 0));
+    extra = find_view(8);
+    CHECK(extra && extra->workspace == second->workspace && !extra->tree->node.enabled && desktop.focused == first);
+    CHECK(command(shell, TEST_WORKSPACE_MOVE, 8, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(extra->workspace == original && second->workspace == original && desktop.focused == first);
+    CHECK(command(b, TEST_DESTROY, 4, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_MOVE, 2, 0, 1));
+    CHECK(command(b, TEST_UNMAP, 0, 0, 0));
+    CHECK(command(b, TEST_REMAP, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(second->workspace == original && pu_workspace_current(second));
+    CHECK(command(shell, TEST_QUERY, 0, 0, 0));
+    done = shell->reply.workspace_done;
+    CHECK(command(shell, TEST_WORKSPACE_CREATE, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_ACTIVATE, 1, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_MOVE, 2, 0, 1));
+    CHECK(desktop.active_workspace == original && shell->reply.workspace_count == 4);
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(shell->reply.workspace_count == 5 && shell->reply.workspace_done == done + 1);
+    CHECK(pu_workspace_current(second) && !pu_workspace_current(first));
+    CHECK(command(shell, TEST_WORKSPACE_REMOVE, 1, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(desktop.active_workspace == original && second->workspace == original);
+    CHECK(command(shell, TEST_WORKSPACE_REMOVE, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(desktop.active_workspace == pu_workspace_at(&desktop, 0));
+    CHECK(pu_workspace_current(first) && pu_workspace_current(second) && first->mapped && second->mapped);
+    while (shell->reply.workspace_count > 1) {
+        CHECK(command(shell, TEST_WORKSPACE_REMOVE, shell->reply.workspace_count - 1, 0, 0));
+        CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    }
+    CHECK(command(shell, TEST_WORKSPACE_REMOVE, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0));
+    CHECK(shell->reply.workspace_count == 1);
+    for (int i = 0; i < 3; i++) CHECK(command(shell, TEST_WORKSPACE_CREATE, 0, 0, 0));
+    CHECK(command(shell, TEST_WORKSPACE_COMMIT, 0, 0, 0) && shell->reply.workspace_count == 4);
+    CHECK(command(shell, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    return true;
+}
+
 static bool layer_suite(const char *path)
 {
     int sockets[2];
@@ -566,6 +664,7 @@ static bool layer_suite(const char *path)
     CHECK(!clients[1].reply.layer_capability);
     CHECK(foreign_suite());
     CHECK(decoration_suite(path));
+    CHECK(workspace_suite());
     struct PuDesktopView *view = find_view(2);
     struct wlr_box full;
     wlr_output_layout_get_box(desktop.layout, view->output, &full);

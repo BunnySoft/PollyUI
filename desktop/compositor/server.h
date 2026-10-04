@@ -42,6 +42,8 @@ struct PuDesktopView {
     bool mapped, minimized;
     struct wlr_foreign_toplevel_handle_v1 *foreign;
     struct PuDecoration *decoration;
+    struct PuWorkspace *workspace;
+    uint64_t workspace_window;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending;
     enum PuDesktopMode mode;
@@ -80,6 +82,8 @@ struct PuDesktop {
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct PuDecorations *decorations;
+    struct PuWorkspaces *workspaces;
+    struct PuWorkspace *active_workspace, *visible_workspace;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;
     bool arranging_layers;

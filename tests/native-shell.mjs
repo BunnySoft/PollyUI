@@ -1,5 +1,5 @@
 import { createDesktopShell, SHELL_THEME_KEY } from './desktop/shell/shell.mjs';
-import { settingsView, panelView, dockView } from './desktop/shell/views.mjs';
+import { settingsView, panelView, dockView, workspacesView } from './desktop/shell/views.mjs';
 import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 import { h, render } from './js/reconciler.mjs';
 
@@ -182,3 +182,26 @@ native.onWindowsChanged();
 check(!windowShell.getState().error && notifications === 4, 'window-list recovery chains the previous callback');
 windowShell.stop();
 check(native.onWindowsChanged === originalWindowsChanged, 'stopping the shell restores the previous subscription');
+
+let workspaceActivated = 0, workspaceRemoved = 0, workspaceCreated = 0;
+const manualWorkspaces = [
+  { id: 7, name: 'Workspace 7', active: true, canRemove: true },
+  { id: 9, name: 'Workspace 9', active: false, canRemove: true },
+];
+render(workspacesView(getDesktopTheme('xp'), manualWorkspaces,
+  id => { workspaceActivated = id; }, id => { workspaceRemoved = id; },
+  () => { workspaceCreated++; }, () => {}), document.body);
+host.render();
+let target = document.getElementById('shell-workspace-9');
+host.click(target.offsetLeft + 10, target.offsetTop + 10);
+check(workspaceActivated === 9, 'workspace selection uses stable IDs rather than display indices');
+target = document.getElementById('shell-workspace-remove-7');
+host.click(target.offsetLeft + 10, target.offsetTop + 10);
+check(workspaceRemoved === 7, 'workspace removal does not activate another row');
+target = document.getElementById('shell-workspace-add');
+host.click(target.offsetLeft + 10, target.offsetTop + 10);
+check(workspaceCreated === 1, 'workspace creation is explicit');
+render(workspacesView(getDesktopTheme('xp'), [{ ...manualWorkspaces[0], canRemove: false }],
+  () => {}, () => {}, () => {}, () => {}), document.body);
+check(!document.getElementById('shell-workspace-remove-7'), 'last-workspace removal is not offered');
+render(null, document.body);

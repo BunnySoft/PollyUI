@@ -1,6 +1,7 @@
 #include "server.h"
 #include "decoration.h"
 #include "decoration-themes.h"
+#include "workspace.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -261,6 +262,35 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            unsigned workspace_index, visible_count;
+            if (sscanf(name, "fixture-workspace-state %u %u", &workspace_index, &visible_count) == 2) {
+                CHECK(desktop.active_workspace == pu_workspace_at(&desktop, workspace_index));
+                unsigned count = 0;
+                struct PuDesktopView *view;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->toplevel->app_id || strcmp(view->toplevel->app_id, "org.pollyui.workspace-fixture")) continue;
+                    CHECK(view->mapped && view->toplevel->base->surface->mapped && view->foreign);
+                    CHECK(view->tree->node.enabled == (!view->minimized && pu_workspace_current(view)));
+                    if (view->tree->node.enabled) count++;
+                }
+                CHECK(count == visible_count);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-workspace-left") || !strcmp(name, "fixture-workspace-right")) {
+                if (desktop.focused_layer) continue;
+                struct wlr_keyboard_key_event key = { .time_msec = 10000, .update_state = true,
+                    .keycode = KEY_LEFTCTRL, .state = WL_KEYBOARD_KEY_STATE_PRESSED };
+                wlr_keyboard_notify_key(&keyboard, &key);
+                key.time_msec++; key.keycode = KEY_LEFTMETA; wlr_keyboard_notify_key(&keyboard, &key);
+                key.time_msec++; key.keycode = !strcmp(name, "fixture-workspace-left") ? KEY_LEFT : KEY_RIGHT;
+                wlr_keyboard_notify_key(&keyboard, &key);
+                key.time_msec++; key.state = WL_KEYBOARD_KEY_STATE_RELEASED; wlr_keyboard_notify_key(&keyboard, &key);
+                key.time_msec++; key.keycode = KEY_LEFTMETA; wlr_keyboard_notify_key(&keyboard, &key);
+                key.time_msec++; key.keycode = KEY_LEFTCTRL; wlr_keyboard_notify_key(&keyboard, &key);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             if (!strncmp(name, "fixture-frame-theme ", 20)) {
                 struct PuDesktopView *view;
                 bool ready = false;
@@ -305,6 +335,8 @@ static bool window_suite(char *executable, char *script, char *mode)
                     .y = (double)(sy + y - all.y) / all.height,
                 };
                 wl_signal_emit_mutable(&pointer.events.motion_absolute, &motion);
+                /* SDL applies buffered motion at the end of its pointer frame. */
+                wl_signal_emit_mutable(&pointer.events.frame, NULL);
                 struct wlr_pointer_button_event click = {
                     .pointer = &pointer, .time_msec = serial * 3 + 1,
                     .button = button == 2 ? BTN_RIGHT : BTN_LEFT,
@@ -348,7 +380,7 @@ int main(int argc, char **argv)
         wlr_keyboard_finish(&keyboard);
     }
     pu_desktop_finish(&desktop);
-    if (passed) puts(argc == 4 ? "PASS: native taskbar/Dock window management and Shell reconnect" :
+    if (passed) puts(argc == 4 ? "PASS: native Shell window/workspace controls and reconnect" :
         "PASS: actual PollyUI layers, input, two outputs, fractional scale, rotation, removal and close");
     return passed ? 0 : 1;
 }

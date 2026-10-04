@@ -56,7 +56,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null) {
   const panel = theme.panel;
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: 10, paddingLeft: 5, paddingRight: 12,
@@ -67,7 +67,9 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     ...gradient(panel.launcherFrom, panel.launcherTo),
   }),
   button('shell-panel-settings', 'Appearance', theme, openSettings, false, { height: 24 }),
-  label('PollyDesktop', panel.text, 12),
+  workspace ? button('shell-workspaces', Array.from(workspace.name).slice(0, 18).join(''),
+    theme, workspace.open, false, { height: 24, maxWidth: 160, overflow: 'hidden' }) :
+    label('PollyDesktop', panel.text, 12),
   panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
@@ -158,7 +160,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label(error, theme.colors.text, 11)) : null);
 }
 
-export function windowActionsView(theme, window, action, close, error = '') {
+export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
   return h('view', { id: 'shell-window-actions', style: {
     width: '100%', height: '100%', padding: 12, gap: 8, overflow: 'scroll',
     backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
@@ -173,6 +175,30 @@ export function windowActionsView(theme, window, action, close, error = '') {
   button('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen', theme,
     () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
   button('shell-window-close', 'Close application window', theme, () => action('closeWindow')),
+  workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, 11) : null,
+  workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>
+    button('shell-window-workspace-' + workspace.id, workspace.name, theme, () => move(workspace.id))),
   button('shell-window-menu-close', 'Close menu', theme, close),
+  error ? label(error, theme.colors.text, 11) : null);
+}
+
+export function workspacesView(theme, workspaces, activate, remove, create, close, error = '') {
+  return h('view', { id: 'shell-workspace-menu', style: {
+    width: '100%', height: '100%', padding: 10, gap: 8,
+    backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: theme.window.radius,
+  } },
+  h('view', { style: { ...row, gap: 8 } }, label('Workspaces', theme.colors.text, 16),
+    h('view', { style: { flexGrow: 1 } }), button('shell-workspace-add', 'Add', theme, create),
+    button('shell-workspace-close', 'Close', theme, close)),
+  label('All displays switch together. Empty workspaces stay.', theme.colors.muted, 10),
+  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 6 } },
+    workspaces.map(workspace => h('view', { style: { ...row, gap: 6, flexShrink: 0 } },
+      button('shell-workspace-' + workspace.id, workspace.name, theme, () => activate(workspace.id),
+        workspace.active, { flexGrow: 1, flexBasis: 0, minWidth: 0, overflow: 'hidden' }),
+      workspace.canRemove ? button('shell-workspace-remove-' + workspace.id, 'Remove', theme,
+        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, 10)))),
+  label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, 10),
+  label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, 10),
   error ? label(error, theme.colors.text, 11) : null);
 }

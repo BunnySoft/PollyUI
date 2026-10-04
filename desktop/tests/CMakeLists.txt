@@ -1,4 +1,9 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${WORKSPACE_XML}" "${PROTOCOL_DIR}/ext-workspace-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${WORKSPACE_TOPLEVEL_XML}" "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h"
+    DEPENDS "${WORKSPACE_XML}" "${WORKSPACE_TOPLEVEL_XML}" VERBATIM)
 set(DECORATION_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
@@ -30,6 +35,8 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c
+    "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/ext-workspace.c"
+    "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"
     "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
     "${PROTOCOL_DIR}/polly-appearance-client.h" "${PROTOCOL_DIR}/polly-appearance.c"
     "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"

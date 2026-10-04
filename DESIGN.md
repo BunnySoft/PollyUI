@@ -433,8 +433,25 @@ that same SDL connection, without an extra public connection or GLib/GIO.
 Native handles stage metadata until `done`, publish snapshots with runtime-local
 monotonic IDs, and notify JavaScript once per UI pump. Protocol proxies and
 callbacks are released before SDL disconnects and before QuickJS destruction.
-The Shell renders one global window list per output; management requests are
-asynchronous and do not invent a workspace policy.
+The Shell renders the current workspace's window list on each output.
+Management requests are asynchronous.
+
+The chosen workspace model is deliberately one global group: four initial
+workspaces, manual append/remove, persistent empty workspaces within a session,
+and no automatic reordering or special fullscreen Spaces. Listing and workspace
+operations use `ext-workspace-v1`; a restricted private extension associates
+foreign-toplevel resources with workspace handles and queues window-family
+moves on the same manager's `commit`. Requests are applied before one visibility/
+focus reconciliation and a coherent event batch. Closed/remapped windows have
+distinct map epochs so a queued move cannot target a later incarnation.
+
+Workspace membership is independent of minimize/fullscreen state. Inactive
+views remain mapped but scene-disabled, focus traversal is workspace-local,
+and their popups are dismissed. Explicit activation switches workspace; moving
+does not. Deletion migrates all views, including unmapped ones, to the previous
+workspace or the next when deleting the first. At least one workspace remains.
+Shell reconnect rebuilds handles from compositor state. Full compositor/session
+restart persistence is deferred; no persistent protocol IDs are advertised.
 
 PollyWM's optional-per-client decorations negotiate through `xdg-decoration`.
 An explicit client-side preference is respected; non-negotiating clients are

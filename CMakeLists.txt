@@ -164,6 +164,19 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
         if (PU_DESKTOP_SERVICES)
             set(UI_APPEARANCE_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-appearance-v1.xml")
+            set(UI_WORKSPACE_XML "${WAYLAND_UI_PROTOCOLS}/staging/ext-workspace/ext-workspace-v1.xml")
+            set(UI_WORKSPACE_TOPLEVEL_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-workspace-toplevel-v1.xml")
+            if (NOT EXISTS "${UI_WORKSPACE_XML}")
+                message(FATAL_ERROR "wayland-protocols must provide staging/ext-workspace/ext-workspace-v1.xml")
+            endif()
+            add_custom_command(
+                OUTPUT "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
+                    "${UI_PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_WORKSPACE_XML}" "${UI_PROTOCOL_DIR}/ext-workspace-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_WORKSPACE_XML}" "${UI_PROTOCOL_DIR}/ext-workspace.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_WORKSPACE_TOPLEVEL_XML}" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_WORKSPACE_TOPLEVEL_XML}" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel.c"
+                DEPENDS "${UI_WORKSPACE_XML}" "${UI_WORKSPACE_TOPLEVEL_XML}" VERBATIM)
             add_custom_command(
                 OUTPUT "${UI_PROTOCOL_DIR}/polly-appearance-client.h" "${UI_PROTOCOL_DIR}/polly-appearance.c"
                 COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_APPEARANCE_XML}" "${UI_PROTOCOL_DIR}/polly-appearance-client.h"
@@ -176,6 +189,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
                 DEPENDS "${UI_FOREIGN_XML}" VERBATIM)
             target_sources(pollyui PRIVATE src/desktop/windows.c
+                "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
+                "${UI_PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel.c"
                 "${UI_PROTOCOL_DIR}/polly-appearance-client.h" "${UI_PROTOCOL_DIR}/polly-appearance.c"
                 "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/compositor")
@@ -306,6 +321,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-workspace-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/workspace-shell.mjs" workspaces)
+                set_tests_properties(desktop-workspace-shell-${renderer} PROPERTIES TIMEOUT 100
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-window-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

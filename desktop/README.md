@@ -26,7 +26,8 @@ applications rather than importing their buffers into the PollyUI DOM.
 |---|---|
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
-| 2b - remaining window policy | Workspaces, chosen tiling/floating rules, user-facing output configuration and real-hardware hotplug qualification. |
+| 2b - remaining window policy | Tiling/overview and advanced window rules, user-facing output configuration and real-hardware hotplug qualification. |
+| Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
 | Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes. The preview remains simulated; the native Shell and negotiated PollyWM frames reuse the same tokens. |
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
@@ -70,6 +71,10 @@ or control other windows through it, even when they know its global ID.
 `polly_appearance_v1` is similarly restricted: its only non-destructor request
 selects a known decoration theme. It is not a general window-management socket,
 input-injection interface or arbitrary rendering API.
+Workspace globals `ext_workspace_manager_v1` and
+`polly_workspace_toplevel_manager_v1` have the same connection-bound restriction.
+The standard protocol handles workspace operations; the private extension only
+adds window membership and moves that the standard protocol does not provide.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -265,12 +270,15 @@ alternate window manager.
 | Alt + left-button drag | Move the window |
 | Alt + right-button drag | Resize from the bottom-right |
 | Alt + Tab | Cycle mapped windows |
+| Ctrl + Super + Left / Right | Switch to previous/next workspace without wrapping |
 | Alt + F4 | Ask the focused client to close |
 | Alt + F9 | Minimize the focused window |
 | Alt + F10 | Toggle maximize |
 | Alt + F11 | Toggle fullscreen |
 | Alt + Escape | Exit PollyWM |
 
+Alt+Tab is scoped to the current workspace, including restoration of minimized
+windows there. Inactive workspaces do not receive pointer/keyboard input.
 The parent desktop may intercept shortcuts in nested mode. Negotiating clients
 can use PollyWM titlebars; clients requesting self-drawn headers retain them.
 Maximize/fullscreen capabilities are advertised. Restore a maximized/fullscreen
@@ -327,8 +335,8 @@ PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions an
 pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
 removal, reservations, role replacement and rejection on public connections.
 
-Not implemented: running-window buttons, workspaces/tiling, Xwayland,
-private workspace/session commands, drag-and-drop policy, primary selection, screen capture/portals, IME
+Not implemented: tiling/overview, Xwayland, full session recovery,
+drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
@@ -343,6 +351,8 @@ versions omit `wlr_buffer_finish()` in the SHM allocator destructor, causing
 use-after-free during nested/Pixman teardown. Upstream 0.19.3 fixes this; do not
 lower the minimum or work around it by changing teardown timing.
 Other wlroots API series need an explicit port, not an unbounded dependency change.
+The installed `wayland-protocols` must also include
+`staging/ext-workspace/ext-workspace-v1.xml`; the Alpine development image does.
 
 ```sh
 # Alpine 3.24, as root only for package installation:
@@ -396,12 +406,28 @@ scope and intentionally unavailable D-Bus/X11 paths.
 Floating Dock corners use actual alpha composition. Blur, polished animation,
 dark variants and shaped click-through regions are still outstanding. The Dock
 exposes Apps, Appearance, About and real running-window buttons driven by
-foreign-toplevel state. Taskbars and Docks list all windows on every output;
-there is no implied workspace or per-output window filtering. Click an active
+foreign-toplevel state. Taskbars and Docks list current-workspace windows on
+every output, rather than filtering by a window's physical output. Click an active
 window to minimize, or another/minimized window to activate and restore. Right
 click opens maximize, fullscreen and graceful-close controls. Window-list
 overflow scrolls horizontally with the wheel. Buttons are currently text-based,
 without app grouping, icons or pinning.
+
+The workspace menu manually adds/removes workspaces and switches every output
+together. Four are created at compositor startup. Empty workspaces are never
+automatically removed, fullscreen does not create a new Space, and themes do
+not change workspace behavior. New workspaces append; moving a window does not
+follow it. Window activation explicitly switches to its owning workspace.
+Transient families stay together, including when a child appears on an inactive
+parent's workspace.
+
+Deleting a workspace moves its windows to the previous workspace, or the next
+when deleting the first; the final workspace cannot be removed. These operations
+do not close applications or discard their minimize/maximize/fullscreen state.
+The compositor owns this session state independently of Shell restart.
+Cross-login persistence, renaming/reordering UI and full session restoration are
+not included in this milestone; compositor restart recreates the initial four.
+The root README documents the native workspace API and ID lifetime.
 
 Keep the parent's socket separate from the new compositor's socket:
 
@@ -465,6 +491,11 @@ Decoration coverage includes explicit/default negotiation, deferred mode and
 theme commits, title/palette pixel changes, controls and drag cancellation,
 floating drag/resize, fullscreen, fractional scale and destruction during a
 pressed control. Public forced-bind attempts cannot change appearance.
+Workspace coverage uses standard protocol transactions and real Shell clicks
+on both taskbars and Docks. It checks atomic commit, hidden-window input and
+popup isolation, transient families, stale map epochs, deletion migration,
+the final-workspace guard, fullscreen preservation and Shell reconnect.
+Public clients cannot bind either workspace global even with a known global ID.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

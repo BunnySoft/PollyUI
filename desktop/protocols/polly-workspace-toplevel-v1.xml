@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="polly_workspace_toplevel_v1">
+  <interface name="polly_workspace_toplevel_manager_v1" version="1">
+    <description summary="trusted workspace membership for foreign toplevels">
+      Workspace listing, creation, removal and activation use ext-workspace-v1.
+      This restricted extension only associates foreign toplevels with those
+      workspaces and lets the Shell move a toplevel family between them.
+    </description>
+    <enum name="error">
+      <entry name="invalid_manager" value="0" summary="workspace manager is not owned by this compositor"/>
+      <entry name="invalid_workspace" value="1" summary="workspace belongs to another manager binding"/>
+    </enum>
+    <request name="destroy" type="destructor"/>
+    <request name="get_toplevel">
+      <arg name="id" type="new_id" interface="polly_workspace_toplevel_v1"/>
+      <arg name="toplevel" type="object" interface="zwlr_foreign_toplevel_handle_v1"/>
+      <arg name="workspaces" type="object" interface="ext_workspace_manager_v1"/>
+    </request>
+  </interface>
+  <interface name="polly_workspace_toplevel_v1" version="1">
+    <request name="destroy" type="destructor"/>
+    <request name="move_to">
+      <description summary="move the toplevel family without activating it">
+        The target must belong to the workspace manager binding passed to
+        get_toplevel. The move is applied with that manager's next commit.
+        Transient parents and descendants move together. A closed toplevel or
+        removed workspace is ignored. Destroying this object does not cancel a
+        previously queued move.
+      </description>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
+    </request>
+    <event name="workspace">
+      <description summary="current workspace membership">
+        This event precedes the associated ext_workspace_manager_v1.done.
+        Null means that the client no longer has a handle for the workspace.
+        Handles are scoped to the manager binding passed to get_toplevel.
+      </description>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1" allow-null="true"/>
+    </event>
+    <event name="closed">
+      <description summary="toplevel or workspace-manager binding is gone">
+        No more events will be sent. The object is inert except for destroy.
+      </description>
+    </event>
+  </interface>
+</protocol>

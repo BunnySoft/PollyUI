@@ -453,7 +453,7 @@ also exposes `windows()` and `onWindowsChanged`. These require the trusted Shell
 shared Wayland connection and foreign-toplevel management v3; a public connection
 cannot enumerate or control other applications merely by passing `--desktop`.
 
-`windows()` returns snapshots containing `id`, `title`, `appId`, `active`,
+`windows()` returns snapshots containing `id`, `title`, `appId`, `workspaceId`, `active`,
 `minimized`, `maximized` and `fullscreen`. Metadata is published at protocol
 `done` boundaries. IDs are process-local handles, never reused within the
 runtime, not PIDs or persistent application identities. A coalesced
@@ -463,15 +463,16 @@ runtime, not PIDs or persistent application identities. A coalesced
 `maximizeWindow(id)`, `unmaximizeWindow(id)`, `fullscreenWindow(id)`,
 `unfullscreenWindow(id)` and `closeWindow(id)` send asynchronous requests.
 Observe subsequent snapshots for resulting state. Activation also restores
-minimized windows; `restoreWindow` alone does not force focus. Close requests a
+minimized windows and switches to their workspace; `restoreWindow` alone does
+not force focus or switch workspaces. Close requests a
 graceful application-window close, not process termination. Invalid/stale handles
 and unavailable connections throw; callback failures are logged.
 
-The native taskbar/Dock shows one text button per running window, globally on
-each output. Clicking an active window minimizes it; other windows are restored
+The native taskbar/Dock shows one text button per running window on the current
+workspace, on each output. Clicking an active window minimizes it; other windows are restored
 and activated. Right click opens window actions. The window list scrolls
 horizontally with the wheel and resets when its membership or viewport changes.
-App grouping, icons/pinning, workspace filtering and complete desktop keyboard
+App grouping, icons/pinning and complete desktop keyboard
 navigation remain future work.
 
 PollyWM supplies titlebars and borders through `xdg-decoration` negotiation.
@@ -492,6 +493,48 @@ Fontconfig/FreeType but still do not link SDL, Skia, QuickJS, Yoga or GLib/GIO.
 Captions have basic Unicode font fallback, not complex shaping/bidi. Blur,
 frame shadows, fully rounded client-content clipping and polished animations
 remain separate appearance work.
+
+### Linux manual workspaces
+
+PollyWM starts with four workspaces and one active workspace shared by all
+outputs. Creation and removal are manual: empty workspaces remain, new ones
+append without activating, and existing names/order do not change automatically.
+Fullscreen stays within the existing workspace, not a separate Space.
+Appearance selection does not change this behavior.
+
+Use the panel/menu-bar workspace button to switch, add or remove workspaces.
+`Ctrl+Super+Left/Right` switches to the previous/next workspace without wrapping;
+`Alt+Tab` cycles only windows in the current workspace. Window menus can move a
+window to another workspace without following it. Transient parents and their
+descendants move together. New toplevels use the workspace active at creation,
+while transients inherit their parent's workspace without stealing focus.
+
+Removing a populated workspace migrates its windows to the preceding workspace,
+or the following one when removing the first. Applications are not closed;
+minimized, maximized and fullscreen state is retained. At least one workspace
+must remain. Inactive-workspace windows stay mapped with stable foreign handles
+but have disabled scene trees, no input focus, and dismissed popups.
+
+The opt-in `desktop` APIs expose `workspaces()` snapshots with `id`, `name`,
+`order`, `active` and `canRemove`, plus `onWorkspacesChanged`.
+`createWorkspace(name?)`, `activateWorkspace(id)`, `removeWorkspace(id)` and
+`moveWindowToWorkspace(windowId, workspaceId)` send asynchronous requests.
+Names may contain at most 128 UTF-8 bytes without NUL; an omitted/empty name
+gets an automatic label. Observe subsequent snapshots for results.
+
+Listing, creation, removal and activation use standard `ext-workspace-v1`
+with one workspace group for all outputs. The narrow
+`polly_workspace_toplevel_manager_v1` extension adds foreign-window membership
+and moves; both globals are restricted to the exact trusted Shell connection.
+Standard requests are staged until `commit`, and snapshots are published at
+`done` boundaries.
+
+Workspace layout survives Shell restart, but **compositor restart currently
+starts a new four-workspace session**. Cross-login configuration/session
+restoration remains a later task. Native IDs are runtime-local handles and must
+not be persisted; the standard protocol deliberately does not advertise
+persistent workspace IDs yet. No dynamic workspace creation/removal, per-output
+switching, automatic reordering or speculative settings for these are included.
 
 ### Input event contract
 

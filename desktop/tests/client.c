@@ -5,6 +5,8 @@
 #include "xdg-decoration-client.h"
 #include "polly-appearance-client.h"
 #include "decoration-themes.h"
+#include "ext-workspace-client.h"
+#include "polly-workspace-toplevel-client.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -52,6 +54,13 @@ struct Foreign {
     char app_id[128], title[128];
     uint32_t state;
     int outputs, done;
+    struct polly_workspace_toplevel_v1 *workspace_handle;
+    struct Workspace *workspace;
+};
+struct Workspace {
+    struct Client *client;
+    struct ext_workspace_handle_v1 *handle;
+    uint32_t order, state;
 };
 
 struct Client {
@@ -64,6 +73,10 @@ struct Client {
     struct zxdg_decoration_manager_v1 *decoration_manager;
     struct polly_appearance_v1 *appearance;
     struct Foreign foreign[16];
+    struct ext_workspace_manager_v1 *workspaces;
+    struct ext_workspace_group_handle_v1 *workspace_group;
+    struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
+    struct Workspace workspace[32];
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
@@ -72,6 +85,8 @@ struct Client {
     struct { uint32_t name; struct wl_output *output; } outputs[8];
     struct TestReply reply;
 };
+
+static void track_foreign(struct Foreign *foreign);
 
 static void die(const char *message)
 {
@@ -364,6 +379,8 @@ static void foreign_done(void *data, struct zwlr_foreign_toplevel_handle_v1 *han
 static void foreign_closed(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 {
     struct Foreign *item = data;
+    if (item->workspace_handle) polly_workspace_toplevel_v1_destroy(item->workspace_handle);
+    item->workspace_handle = NULL; item->workspace = NULL;
     zwlr_foreign_toplevel_handle_v1_destroy(handle);
     item->handle = NULL;
     item->client->reply.foreign_count--;
@@ -385,6 +402,7 @@ static void foreign_toplevel(void *data, struct zwlr_foreign_toplevel_manager_v1
         if (client->foreign[i].handle) continue;
         client->foreign[i] = (struct Foreign){ .client = client, .handle = handle };
         zwlr_foreign_toplevel_handle_v1_add_listener(handle, &foreign_listener, &client->foreign[i]);
+        track_foreign(&client->foreign[i]);
         client->reply.foreign_count++;
         return;
     }
@@ -406,6 +424,109 @@ static struct Foreign *find_foreign(struct Client *client, int id)
     return NULL;
 }
 
+static void membership(void *data, struct polly_workspace_toplevel_v1 *handle, struct ext_workspace_handle_v1 *workspace)
+{
+    (void)handle;
+    ((struct Foreign *)data)->workspace = workspace ? ext_workspace_handle_v1_get_user_data(workspace) : NULL;
+}
+static void membership_closed(void *data, struct polly_workspace_toplevel_v1 *handle)
+{
+    struct Foreign *foreign = data;
+    polly_workspace_toplevel_v1_destroy(handle);
+    foreign->workspace_handle = NULL; foreign->workspace = NULL;
+}
+static const struct polly_workspace_toplevel_v1_listener membership_listener = {
+    .workspace = membership, .closed = membership_closed,
+};
+static void track_foreign(struct Foreign *foreign)
+{
+    struct Client *client = foreign->client;
+    if (!foreign->handle || foreign->workspace_handle || !client->workspaces || !client->workspace_toplevels) return;
+    foreign->workspace_handle = polly_workspace_toplevel_manager_v1_get_toplevel(
+        client->workspace_toplevels, foreign->handle, client->workspaces);
+    polly_workspace_toplevel_v1_add_listener(foreign->workspace_handle, &membership_listener, foreign);
+}
+static void workspace_id(void *data, struct ext_workspace_handle_v1 *handle, const char *id)
+{ (void)data; (void)handle; (void)id; }
+static void workspace_coordinates(void *data, struct ext_workspace_handle_v1 *handle, struct wl_array *coordinates)
+{
+    (void)handle;
+    if (coordinates->size != sizeof(uint32_t)) die("workspace coordinates");
+    memcpy(&((struct Workspace *)data)->order, coordinates->data, sizeof(uint32_t));
+}
+static void workspace_state(void *data, struct ext_workspace_handle_v1 *handle, uint32_t state)
+{ (void)handle; ((struct Workspace *)data)->state = state; }
+static void workspace_caps(void *data, struct ext_workspace_handle_v1 *handle, uint32_t capabilities)
+{ (void)data; (void)handle; (void)capabilities; }
+static void workspace_removed(void *data, struct ext_workspace_handle_v1 *handle)
+{
+    struct Workspace *workspace = data;
+    for (size_t i = 0; i < 16; i++)
+        if (workspace->client->foreign[i].workspace == workspace) workspace->client->foreign[i].workspace = NULL;
+    ext_workspace_handle_v1_destroy(handle);
+    workspace->handle = NULL;
+    workspace->client->reply.workspace_count--;
+}
+static const struct ext_workspace_handle_v1_listener workspace_listener = {
+    .id = workspace_id, .name = workspace_id, .coordinates = workspace_coordinates,
+    .state = workspace_state, .capabilities = workspace_caps, .removed = workspace_removed,
+};
+static void workspace_new(void *data, struct ext_workspace_manager_v1 *manager, struct ext_workspace_handle_v1 *handle)
+{
+    (void)manager;
+    struct Client *client = data;
+    for (size_t i = 0; i < 32; i++) {
+        if (client->workspace[i].handle) continue;
+        client->workspace[i] = (struct Workspace){ .client = client, .handle = handle };
+        ext_workspace_handle_v1_add_listener(handle, &workspace_listener, &client->workspace[i]);
+        client->reply.workspace_count++;
+        return;
+    }
+    die("too many workspaces");
+}
+static void group_caps(void *data, struct ext_workspace_group_handle_v1 *group, uint32_t capabilities)
+{ (void)data; (void)group; (void)capabilities; }
+static void group_output(void *data, struct ext_workspace_group_handle_v1 *group, struct wl_output *output)
+{ (void)data; (void)group; (void)output; }
+static void group_workspace(void *data, struct ext_workspace_group_handle_v1 *group, struct ext_workspace_handle_v1 *workspace)
+{ (void)data; (void)group; (void)workspace; }
+static void group_removed(void *data, struct ext_workspace_group_handle_v1 *group)
+{ (void)data; (void)group; die("workspace group removed"); }
+static const struct ext_workspace_group_handle_v1_listener group_listener = {
+    .capabilities = group_caps, .output_enter = group_output, .output_leave = group_output,
+    .workspace_enter = group_workspace, .workspace_leave = group_workspace, .removed = group_removed,
+};
+static void group_new(void *data, struct ext_workspace_manager_v1 *manager, struct ext_workspace_group_handle_v1 *group)
+{
+    (void)manager;
+    struct Client *client = data;
+    if (client->workspace_group) die("more than one workspace group");
+    client->workspace_group = group;
+    ext_workspace_group_handle_v1_add_listener(group, &group_listener, client);
+}
+static void workspaces_done(void *data, struct ext_workspace_manager_v1 *manager)
+{
+    (void)manager;
+    struct Client *client = data;
+    client->reply.workspace_active = -1;
+    for (size_t i = 0; i < 32; i++)
+        if (client->workspace[i].handle && (client->workspace[i].state & EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE))
+            client->reply.workspace_active = (int)client->workspace[i].order;
+    client->reply.workspace_done++;
+}
+static void workspaces_finished(void *data, struct ext_workspace_manager_v1 *manager)
+{ (void)data; (void)manager; }
+static const struct ext_workspace_manager_v1_listener workspaces_listener = {
+    .workspace_group = group_new, .workspace = workspace_new, .done = workspaces_done, .finished = workspaces_finished,
+};
+static struct Workspace *find_workspace(struct Client *client, uint32_t order)
+{
+    for (size_t i = 0; i < 32; i++)
+        if (client->workspace[i].handle && client->workspace[i].order == order) return &client->workspace[i];
+    die("workspace not found");
+    return NULL;
+}
+
 static void global(void *data, struct wl_registry *registry,
                    uint32_t name, const char *interface, uint32_t version)
 {
@@ -420,6 +541,12 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
         client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 1);
         client->reply.appearance_capability = 1;
+    } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
+        client->workspaces = wl_registry_bind(registry, name, &ext_workspace_manager_v1_interface, 1);
+        ext_workspace_manager_v1_add_listener(client->workspaces, &workspaces_listener, client);
+        client->reply.workspace_capability = 1;
+    } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
+        client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface, 1);
     }
     else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
@@ -545,6 +672,20 @@ static void destroy_window(struct Window *window)
     memset(window, 0, sizeof(*window));
 }
 
+static void create_transient(struct Client *client, bool parented)
+{
+    struct Window *window = &client->extra;
+    window->client = client; window->width = 160; window->height = 100;
+    window->surface = wl_compositor_create_surface(client->compositor);
+    window->xdg = xdg_wm_base_get_xdg_surface(client->wm, window->surface);
+    xdg_surface_add_listener(window->xdg, &surface_listener, window);
+    window->toplevel = xdg_surface_get_toplevel(window->xdg);
+    xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+    xdg_toplevel_set_app_id(window->toplevel, "org.pollywm.test.8");
+    if (parented) xdg_toplevel_set_parent(window->toplevel, client->window.toplevel);
+    wl_surface_commit(window->surface);
+}
+
 static void layer_state(struct Window *window, const struct TestLayer *state)
 {
     zwlr_layer_surface_v1_set_layer(window->layer, state->layer);
@@ -601,9 +742,19 @@ int main(int argc, char **argv)
         struct TestRequest request;
         if (recv(control, &request, sizeof(request), 0) != sizeof(request)) die("control read");
         struct Window *window = &client.window;
-        struct Foreign *foreign = request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE ?
+        struct Foreign *foreign = (request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE) ||
+            request.command == TEST_WORKSPACE_MOVE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_TRANSIENT: create_transient(&client, request.id == 0); break;
+        case TEST_WORKSPACE_CREATE: ext_workspace_group_handle_v1_create_workspace(client.workspace_group, ""); break;
+        case TEST_WORKSPACE_ACTIVATE: ext_workspace_handle_v1_activate(find_workspace(&client, (uint32_t)request.id)->handle); break;
+        case TEST_WORKSPACE_REMOVE: ext_workspace_handle_v1_remove(find_workspace(&client, (uint32_t)request.id)->handle); break;
+        case TEST_WORKSPACE_COMMIT: ext_workspace_manager_v1_commit(client.workspaces); break;
+        case TEST_WORKSPACE_MOVE:
+            if (!foreign->workspace_handle) die("window workspace handle missing");
+            polly_workspace_toplevel_v1_move_to(foreign->workspace_handle, find_workspace(&client, request.edges)->handle);
+            break;
         case TEST_APPEARANCE:
             if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_THEME_COUNT)
                 die("invalid appearance request");
@@ -712,6 +863,7 @@ int main(int argc, char **argv)
             wl_display_roundtrip(client.display) < 0) die("command roundtrip");
         client.reply.pending = (int)window->pending_count;
         if (foreign) {
+            client.reply.foreign_workspace = foreign->workspace ? (int)foreign->workspace->order : -1;
             client.reply.foreign_state = (int)foreign->state;
             client.reply.foreign_outputs = foreign->outputs;
             client.reply.foreign_done = foreign->done;
@@ -729,7 +881,15 @@ int main(int argc, char **argv)
     xdg_wm_base_destroy(client.wm);
     if (client.layer_shell) zwlr_layer_shell_v1_destroy(client.layer_shell);
     for (size_t i = 0; i < 16; i++)
-        if (client.foreign[i].handle) zwlr_foreign_toplevel_handle_v1_destroy(client.foreign[i].handle);
+        if (client.foreign[i].handle) {
+            if (client.foreign[i].workspace_handle) polly_workspace_toplevel_v1_destroy(client.foreign[i].workspace_handle);
+            zwlr_foreign_toplevel_handle_v1_destroy(client.foreign[i].handle);
+        }
+    for (size_t i = 0; i < 32; i++)
+        if (client.workspace[i].handle) ext_workspace_handle_v1_destroy(client.workspace[i].handle);
+    if (client.workspace_group) ext_workspace_group_handle_v1_destroy(client.workspace_group);
+    if (client.workspaces) { ext_workspace_manager_v1_stop(client.workspaces); ext_workspace_manager_v1_destroy(client.workspaces); }
+    if (client.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(client.workspace_toplevels);
     if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
     if (client.appearance) polly_appearance_v1_destroy(client.appearance);
     if (client.decoration_manager) zxdg_decoration_manager_v1_destroy(client.decoration_manager);

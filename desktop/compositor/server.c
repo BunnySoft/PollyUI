@@ -1,6 +1,7 @@
 /* Wayland lifecycle patterns informed by wlroots tinywl; see ../LICENSE.wlroots. */
 #include "server.h"
 #include "decoration.h"
+#include "workspace.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -149,6 +150,10 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
 {
     if (view && !view->mapped) return;
+    if (view && !pu_workspace_current(view)) {
+        pu_workspace_activate(desktop, view->workspace, view);
+        return;
+    }
     if (view && view->minimized) {
         view->minimized = false;
         wlr_scene_node_set_enabled(&view->tree->node, true);
@@ -190,18 +195,28 @@ static void keyboard_modifiers(struct wl_listener *listener, void *data)
     wlr_seat_keyboard_notify_modifiers(entry->desktop->seat, &entry->keyboard->modifiers);
 }
 
-static bool keybinding(struct PuDesktop *desktop, xkb_keysym_t sym)
+static bool keybinding(struct PuDesktop *desktop, xkb_keysym_t sym, uint32_t modifiers)
 {
     if (desktop->focused_layer && sym != XKB_KEY_Escape) return false;
+    if ((modifiers & (WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO)) == (WLR_MODIFIER_CTRL | WLR_MODIFIER_LOGO)) {
+        if (modifiers & (WLR_MODIFIER_SHIFT | WLR_MODIFIER_ALT)) return false;
+        if (sym != XKB_KEY_Left && sym != XKB_KEY_Right) return false;
+        pu_workspace_step(desktop, sym == XKB_KEY_Left ? -1 : 1);
+        return true;
+    }
+    if (!(modifiers & WLR_MODIFIER_ALT) || desktop->grab != PU_DESKTOP_PASSTHROUGH) return false;
     switch (sym) {
     case XKB_KEY_Escape:
         wl_display_terminate(desktop->display);
         return true;
     case XKB_KEY_Tab:
-        if (!wl_list_empty(&desktop->views)) {
-            struct PuDesktopView *next =
-                wl_container_of(desktop->views.prev, next, link);
-            focus_view(desktop, next);
+        {
+            struct PuDesktopView *next;
+            wl_list_for_each_reverse(next, &desktop->views, link) {
+                if (!pu_workspace_current(next)) continue;
+                focus_view(desktop, next);
+                break;
+            }
         }
         return true;
     case XKB_KEY_F9:
@@ -236,16 +251,14 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     bool handled = event->keycode < KEY_CNT && entry->consumed[event->keycode];
     if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED) {
         if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = false;
-    } else if (!handled && desktop->grab == PU_DESKTOP_PASSTHROUGH &&
-               !wlr_seat_keyboard_has_grab(desktop->seat) &&
-               (wlr_keyboard_get_modifiers(entry->keyboard) & WLR_MODIFIER_ALT)) {
+    } else if (!handled && !wlr_seat_keyboard_has_grab(desktop->seat)) {
         const xkb_keysym_t *syms;
         int count = xkb_state_key_get_syms(entry->keyboard->xkb_state,
                                           event->keycode + 8, &syms);
         for (int i = 0; i < count && !handled; i++) {
             /* Mark before changing focus so keyboard.enter excludes the shortcut. */
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = true;
-            handled = keybinding(desktop, syms[i]);
+            handled = keybinding(desktop, syms[i], wlr_keyboard_get_modifiers(entry->keyboard));
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = handled;
         }
     }
@@ -447,7 +460,7 @@ static void focus_fallback(struct PuDesktop *desktop)
     if (!desktop->stopping) {
         struct PuDesktopView *next;
         wl_list_for_each(next, &desktop->views, link) {
-            if (next->minimized) continue;
+            if (next->minimized || !pu_workspace_current(next)) continue;
             desktop->focused = next;
             wlr_xdg_toplevel_set_activated(next->toplevel, !desktop->focused_layer);
             break;
@@ -469,12 +482,44 @@ static void set_minimized(struct PuDesktopView *view, bool minimized)
         wl_list_for_each_safe(popup, tmp, &view->toplevel->base->popups, link)
             wlr_xdg_popup_destroy(popup);
     }
-    wlr_scene_node_set_enabled(&view->tree->node, view->mapped && !minimized);
+    wlr_scene_node_set_enabled(&view->tree->node, view->mapped && !minimized && pu_workspace_current(view));
     if (minimized && desktop->focused == view) {
         wlr_xdg_toplevel_set_activated(view->toplevel, false);
         focus_fallback(desktop);
     }
     sync_foreign(desktop);
+    refresh_pointer(desktop);
+}
+
+void pu_desktop_workspaces_changed(struct PuDesktop *desktop, struct PuDesktopView *preferred)
+{
+    if (desktop->stopping) return;
+    bool switched = desktop->visible_workspace != desktop->active_workspace;
+    desktop->visible_workspace = desktop->active_workspace;
+    if (desktop->grabbed && (switched || !pu_workspace_current(desktop->grabbed))) end_grab(desktop);
+    if (switched || (desktop->decoration_pressed && !pu_workspace_current(desktop->decoration_pressed)))
+        desktop->decoration_pressed = NULL;
+    if (switched) desktop->last_title_click = NULL;
+    bool clear_pointer = switched;
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->all_views, all_link) {
+        bool visible = view->mapped && !view->minimized && pu_workspace_current(view);
+        if (view->tree->node.enabled && !visible) clear_pointer = true;
+        if (!pu_workspace_current(view)) {
+            struct wlr_xdg_popup *popup, *tmp;
+            wl_list_for_each_safe(popup, tmp, &view->toplevel->base->popups, link)
+                wlr_xdg_popup_destroy(popup);
+        }
+        wlr_scene_node_set_enabled(&view->tree->node, visible);
+    }
+    if (clear_pointer) wlr_seat_pointer_notify_clear_focus(desktop->seat);
+    if (desktop->focused && (!pu_workspace_current(desktop->focused) || desktop->focused->minimized)) {
+        wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, false);
+        desktop->focused = NULL;
+    }
+    if (preferred && preferred->mapped && pu_workspace_current(preferred)) focus_view(desktop, preferred);
+    else if (!desktop->focused) focus_fallback(desktop);
+    else { update_layer_focus(desktop); enter_keyboard(desktop); sync_foreign(desktop); }
     refresh_pointer(desktop);
 }
 
@@ -977,6 +1022,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
             return;
         }
         wlr_seat_pointer_notify_clear_focus(desktop->seat);
+        return;
     }
     double sx = 0, sy = 0;
     struct wlr_surface *surface;
@@ -1013,7 +1059,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
                        uint32_t edges, uint32_t button)
 {
     struct PuDesktop *desktop = view->desktop;
-    if (!view->mapped || view->minimized || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
+    if (!view->mapped || view->minimized || !pu_workspace_current(view) || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
         view->geometry_pending || view->mode != PU_DESKTOP_FLOATING) return;
     desktop->grab = mode;
     desktop->grabbed = view;
@@ -1243,6 +1289,9 @@ static void new_output(struct wl_listener *listener, void *data)
     wlr_output_state_finish(&state);
     if (!ok) { fail(desktop, "Cannot enable output"); return; }
 
+    if (!pu_workspaces_output_add(desktop, output)) {
+        fail(desktop, "Cannot track workspace output"); return;
+    }
     struct PuDesktopOutput *entry = calloc(1, sizeof(*entry));
     if (!entry) { fail(desktop, "Cannot allocate output state"); return; }
     entry->desktop = desktop;
@@ -1321,6 +1370,7 @@ static void view_parent(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopView *view = wl_container_of(listener, view, parent);
+    pu_workspaces_adopt_parent(view);
     sync_foreign(view->desktop);
 }
 
@@ -1329,10 +1379,12 @@ static void view_map(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktopView *view = wl_container_of(listener, view, map);
     struct PuDesktop *desktop = view->desktop;
+    pu_workspaces_adopt_parent(view);
     view->mapped = true;
+    pu_workspaces_view_map(view);
     view->resize_pending = false;
     present_view(view);
-    wlr_scene_node_set_enabled(&view->tree->node, !view->minimized);
+    wlr_scene_node_set_enabled(&view->tree->node, !view->minimized && pu_workspace_current(view));
     wl_list_insert(&desktop->views, &view->link);
     view->foreign = wlr_foreign_toplevel_handle_v1_create(desktop->foreign_manager);
     if (!view->foreign) { wl_resource_post_no_memory(view->toplevel->resource); return; }
@@ -1341,7 +1393,7 @@ static void view_map(struct wl_listener *listener, void *data)
     listen(&view->foreign->events.request_maximize, &view->foreign_maximize, foreign_maximize);
     listen(&view->foreign->events.request_fullscreen, &view->foreign_fullscreen, foreign_fullscreen);
     listen(&view->foreign->events.request_close, &view->foreign_close, foreign_close);
-    if (!view->minimized) focus_view(desktop, view);
+    if (!view->minimized && pu_workspace_current(view)) focus_view(desktop, view);
     sync_foreign(desktop);
     wlr_log(WLR_INFO, "Mapped %s", view->toplevel->app_id ? view->toplevel->app_id : "(unnamed)");
 }
@@ -1354,6 +1406,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     if (desktop->grabbed == view) end_grab(desktop);
     if (desktop->decoration_pressed == view) desktop->decoration_pressed = NULL;
     if (desktop->last_title_click == view) desktop->last_title_click = NULL;
+    pu_workspaces_view_unmap(view);
     view->resize_pending = false;
     view->mapped = false;
     view->minimized = false;
@@ -1450,7 +1503,8 @@ static bool valid_grab(struct PuDesktopView *view, struct wlr_seat_client *clien
 {
     struct PuDesktop *desktop = view->desktop;
     struct wlr_surface *surface = view->toplevel->base->surface;
-    bool valid = view->mapped && !view->minimized && client && client->seat == desktop->seat &&
+    bool valid = view->mapped && !view->minimized && pu_workspace_current(view) &&
+        client && client->seat == desktop->seat &&
         client->client == wl_resource_get_client(surface->resource) &&
         wlr_seat_validate_pointer_grab_serial(desktop->seat, surface, serial);
     if (!valid) wlr_log(WLR_DEBUG, "Ignoring move/resize without a matching pointer grab");
@@ -1496,6 +1550,7 @@ static void new_toplevel(struct wl_listener *listener, void *data)
     struct PuDesktopView *view = calloc(1, sizeof(*view));
     if (!view) { wl_resource_post_no_memory(toplevel->resource); return; }
     view->desktop = desktop;
+    view->workspace = desktop->active_workspace;
     view->toplevel = toplevel;
     view->tree = wlr_scene_tree_create(desktop->windows);
     if (!view->tree) {
@@ -1659,7 +1714,7 @@ static bool attach_popup(struct PuDesktopPopup *entry)
     if (!parent_tree) return false;
     for (struct wlr_scene_tree *root = parent_tree; root; root = root->node.parent) {
         struct PuDesktopOwner *owner = root->node.data;
-        if (owner && owner->view && owner->view->minimized) return false;
+        if (owner && owner->view && (owner->view->minimized || !pu_workspace_current(owner->view))) return false;
     }
     struct wlr_scene_tree *tree = wlr_scene_xdg_surface_create(parent_tree, popup->base);
     if (!tree) {
@@ -1685,7 +1740,7 @@ static void new_popup(struct wl_listener *listener, void *data)
     listen(&popup->events.destroy, &entry->destroy, popup_destroy);
     listen(&popup->events.reposition, &entry->reposition, popup_reposition);
     if (popup->parent && !entry->tree) {
-        wlr_log(WLR_DEBUG, "Dismissing popup with an unavailable or minimized parent");
+        wlr_log(WLR_DEBUG, "Dismissing popup with an unavailable, minimized or inactive parent");
         wlr_xdg_popup_destroy(popup);
     }
 }
@@ -1754,6 +1809,10 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!pu_decorations_init(desktop)) {
         fail(desktop, "Cannot initialize window decorations or fonts"); return false;
     }
+    if (!pu_workspaces_init(desktop)) {
+        fail(desktop, "Cannot initialize workspaces"); return false;
+    }
+    desktop->visible_workspace = desktop->active_workspace;
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
     if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
         fail(desktop, "Cannot load cursor theme"); return false;
@@ -1823,6 +1882,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     unlisten(&desktop->layout_change);
     /* Release imported buffers before disconnecting the nested Wayland backend. */
     if (desktop->scene) wlr_scene_node_destroy(&desktop->scene->tree.node);
+    pu_workspaces_finish(desktop);
     pu_decorations_finish(desktop);
     if (desktop->cursor_theme) wlr_xcursor_manager_destroy(desktop->cursor_theme);
     if (desktop->cursor) wlr_cursor_destroy(desktop->cursor);
