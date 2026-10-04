@@ -44,20 +44,21 @@ static void sync_done(void *data, struct wl_callback *callback, uint32_t serial)
 { (void)callback; (void)serial; *(int *)data = 1; }
 static const struct wl_callback_listener sync_listener = { .done = sync_done };
 
-static int wait_for(PuLayer *layer, int *ready)
+static int wait_for(PuLayer *layer, int *ready, int teardown)
 {
     Uint64 start = SDL_GetTicks();
-    while (!*ready && !layer->closed && !layer->failed) {
+    while (!*ready && (teardown || (!layer->closed && !layer->failed))) {
         if (wl_display_flush(layer->display) < 0 && errno != EAGAIN && errno != EINTR)
             return SDL_SetError("Cannot flush layer requests: %s", strerror(errno));
         SDL_PumpEvents(); /* Queue native input without consuming another window's events. */
         if (wl_display_get_error(layer->display))
             return SDL_SetError("Wayland layer protocol connection failed");
         if (SDL_GetTicks() - start >= 3000)
-            return SDL_SetError("Timed out waiting for the compositor's layer configuration");
+            return SDL_SetError("Timed out waiting for the compositor's layer response");
         if (!*ready) SDL_Delay(1);
     }
-    if (layer->closed || layer->failed) return SDL_SetError("Layer closed or failed during configuration");
+    if (!teardown && (layer->closed || layer->failed))
+        return SDL_SetError("Layer closed or failed during configuration");
     return 1;
 }
 
@@ -117,7 +118,7 @@ PuLayer *pu_layer_prepare(PuWindow *owner)
     }
     wl_registry_add_listener(registry, &registry_listener, &state);
     wl_callback_add_listener(sync, &sync_listener, &synchronized);
-    int ready = wait_for(layer, &synchronized);
+    int ready = wait_for(layer, &synchronized, 0);
     wl_callback_destroy(sync);
     wl_registry_destroy(registry);
     if (!ready || !state.shell || !state.compositor || !state.viewporter || !state.fractional_scale) {
@@ -167,7 +168,7 @@ int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *co
     zwlr_layer_surface_v1_set_margin(layer->surface, options->margin_top, options->margin_right,
                                     options->margin_bottom, options->margin_left);
     wl_surface_commit(layer->native);
-    return wait_for(layer, &layer->configured);
+    return wait_for(layer, &layer->configured, 0);
 }
 
 void pu_layer_unmap(PuLayer *layer)
@@ -175,6 +176,17 @@ void pu_layer_unmap(PuLayer *layer)
     if (layer && layer->surface) {
         zwlr_layer_surface_v1_destroy(layer->surface);
         layer->surface = NULL;
+        /* SDL drains input leave events for its own toplevels, not external
+         * roles. Keep the imported surface alive until those events arrive. */
+        if (layer->window && !wl_display_get_error(layer->display)) {
+            int synchronized = 0;
+            struct wl_callback *sync = wl_display_sync(layer->display);
+            int ok = sync && wl_callback_add_listener(sync, &sync_listener, &synchronized) >= 0;
+            if (!ok) SDL_SetError("Cannot allocate Wayland layer unmap sync");
+            else ok = wait_for(layer, &synchronized, 1);
+            if (sync) wl_callback_destroy(sync);
+            if (!ok) pu_sdl_layer_failed(layer->owner, "Layer unmap");
+        }
     }
 }
 

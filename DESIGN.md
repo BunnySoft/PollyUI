@@ -423,6 +423,18 @@ buffer has the correct size. SDL handles fractional scaling through its own
 viewport objects; PollyWM advertises the corresponding standard protocols.
 Role destruction precedes renderer/SDL destruction, and the owned Wayland
 surface is released afterward. SDL's normal ordinary-window path is unchanged.
+External-role teardown performs a bounded sync before SDL/surface destruction,
+so queued input-leave events can release references while the surface is live.
+This also avoids the destroyed-object reference leak in libwayland-client 1.25.0
+exposed by repeatedly closing keyboard-focused overlays.
+
+The opt-in Linux desktop-services module binds foreign-toplevel management on
+that same SDL connection, without an extra public connection or GLib/GIO.
+Native handles stage metadata until `done`, publish snapshots with runtime-local
+monotonic IDs, and notify JavaScript once per UI pump. Protocol proxies and
+callbacks are released before SDL disconnects and before QuickJS destruction.
+The Shell renders one global window list per output; management requests are
+asynchronous and do not invent a workspace policy.
 
 ### Deferred ⏸
 

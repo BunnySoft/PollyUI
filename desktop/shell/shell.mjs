@@ -1,6 +1,6 @@
 import { render } from './js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
-import { wallpaper, panelView, dockView, settingsView, applicationsView } from './desktop/shell/views.mjs';
+import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
@@ -16,6 +16,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let running = false;
   let lastFailure = '';
   let applications = [];
+  let windows = [];
+  let previousWindowsChanged = null;
+  const windowsChanged = () => {
+    if (!running) return;
+    refreshWindows();
+    if (typeof previousWindowsChanged === 'function') previousWindowsChanged();
+  };
   const launcher = native ? createApplicationLauncher(native, report) : null;
   let previousExit = null;
   const exited = event => {
@@ -78,7 +85,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? 26 : theme.panel.height },
     };
     if (dock) result.dock = {
-      layer: 'top', width: Math.max(1, Math.min(320, output.width - 16)), height: theme.panel.height,
+      layer: 'top', width: Math.max(1, Math.min(320 + windows.length * 69, output.width - 16)), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
       transparent: true,
     };
@@ -89,10 +96,22 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const { wallpaper: background, panel, dock } = bundle.surfaces;
     if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper'), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error, () => showSettings(bundle.output.id)),
+      error, () => showSettings(bundle.output.id), windows, toggleWindow,
+      id => showWindowActions(bundle.output.id, id)),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSettings(bundle.output.id),
-      () => showSettings(bundle.output.id, true), () => showApplications(bundle.output.id)), dock.window.document.body);
+      () => showSettings(bundle.output.id, true), () => showApplications(bundle.output.id), windows, toggleWindow,
+      id => showWindowActions(bundle.output.id, id)), dock.window.document.body);
+    for (const surface of [panel, dock]) {
+      if (!surface || surface.window.closed) continue;
+      const body = surface.window.document.body;
+      const signature = body.offsetWidth + ':' + windows.map(window => window.id).join(',');
+      if (surface.windowListSignature !== signature) {
+        const list = body.firstChild?.childNodes.find(node => node.id === 'shell-window-list');
+        if (list) list.scrollLeft = 0;
+        surface.windowListSignature = signature;
+      }
+    }
   }
 
   function reconcile(nextTheme, persist) {
@@ -149,6 +168,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
+    if (menu.mode === 'windows') {
+      const selected = windows.find(window => window.id === menu.windowId);
+      if (!selected) { closeMenu(); return; }
+      render(windowActionsView(getDesktopTheme(themeId), selected,
+        action => windowAction(selected.id, action), closeMenu, error), menu.window.document.body);
+      return;
+    }
     if (menu.mode === 'applications') {
       render(applicationsView(getDesktopTheme(themeId), applications, menu.query,
         value => { if (menu) { menu.query = value; repaintMenu(); } },
@@ -159,11 +185,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       error, menu.about), menu.window.document.body);
   }
 
-  function openMenu(outputId, mode) {
+  function openMenu(outputId, mode, windowId = null) {
     if (!running) throw new Error('Shell is not running');
     const bundle = bundles.get(outputId);
     if (!bundle) throw new RangeError('Unknown shell output');
-    if (menu && menu.output === outputId && menu.mode === mode) { closeMenu(); return null; }
+    if (menu && menu.output === outputId && menu.mode === mode && menu.windowId === windowId) {
+      closeMenu(); return null;
+    }
     closeMenu();
     const theme = getDesktopTheme(themeId);
     const root = bundle.surfaces.wallpaper.window.document.body;
@@ -186,6 +214,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return null;
     }
     menu.mode = mode;
+    menu.windowId = windowId;
     menu.about = mode === 'about';
     menu.query = '';
     const body = menu.window.document.body;
@@ -201,6 +230,46 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function showSettings(outputId, about = false) {
     return openMenu(outputId, about ? 'about' : 'appearance');
+  }
+
+  function windowFailure(failure) {
+    error = 'Window management failed: ' + String(failure);
+    errorKind = 'windows';
+    report('[shell] ' + error);
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+  }
+
+  function refreshWindows() {
+    try {
+      windows = native.windows().sort((a, b) => a.id - b.id);
+      if (errorKind === 'windows') { error = ''; errorKind = ''; }
+      repaintMenu();
+      refresh(true);
+    } catch (failure) { windowFailure(failure); }
+  }
+
+  function windowAction(id, action) {
+    try {
+      native[action](id);
+      if (!['closeWindow', 'minimizeWindow', 'activateWindow'].includes(action))
+        native.activateWindow(id);
+      closeMenu();
+      return true;
+    } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function toggleWindow(id) {
+    try {
+      const selected = native.windows().find(window => window.id === id);
+      if (!selected) throw new Error('Window no longer exists');
+      return windowAction(id, selected.active && !selected.minimized ? 'minimizeWindow' : 'activateWindow');
+    } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function showWindowActions(outputId, id) {
+    if (!windows.some(window => window.id === id)) throw new RangeError('Unknown window');
+    return openMenu(outputId, 'windows', id);
   }
 
   function reloadApplications() {
@@ -279,6 +348,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       catch (failure) { running = false; throw failure; }
       timer = setInterval(refresh, 1000);
       if (native) { previousExit = native.onExit; native.onExit = exited; }
+      if (typeof native?.windows === 'function') {
+        previousWindowsChanged = native.onWindowsChanged;
+        native.onWindowsChanged = windowsChanged;
+        refreshWindows();
+      }
       return this;
     },
     stop() {
@@ -286,12 +360,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
+      if (native && native.onWindowsChanged === windowsChanged) native.onWindowsChanged = previousWindowsChanged;
       closeMenu();
       for (const bundle of bundles.values())
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
     },
-    selectTheme, showSettings, showApplications, launchApplication, refresh,
+    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, refresh,
     getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };

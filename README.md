@@ -445,6 +445,34 @@ the launcher validates up to 256 argv strings. The vendored QuickJS normalizatio
 paths use their existing correctly typed allocator adapter rather than casting
 allocator function pointers, fixing the UBSan failure exposed by Unicode sorting.
 
+### Linux window management
+
+With `PU_DESKTOP_SERVICES`, `PU_LAYER_SHELL` and `--desktop`, the `desktop` object
+also exposes `windows()` and `onWindowsChanged`. These require the trusted Shell's
+shared Wayland connection and foreign-toplevel management v3; a public connection
+cannot enumerate or control other applications merely by passing `--desktop`.
+
+`windows()` returns snapshots containing `id`, `title`, `appId`, `active`,
+`minimized`, `maximized` and `fullscreen`. Metadata is published at protocol
+`done` boundaries. IDs are process-local handles, never reused within the
+runtime, not PIDs or persistent application identities. A coalesced
+`onWindowsChanged()` callback tells the UI to read a fresh snapshot.
+
+`activateWindow(id)`, `minimizeWindow(id)`, `restoreWindow(id)`,
+`maximizeWindow(id)`, `unmaximizeWindow(id)`, `fullscreenWindow(id)`,
+`unfullscreenWindow(id)` and `closeWindow(id)` send asynchronous requests.
+Observe subsequent snapshots for resulting state. Activation also restores
+minimized windows; `restoreWindow` alone does not force focus. Close requests a
+graceful application-window close, not process termination. Invalid/stale handles
+and unavailable connections throw; callback failures are logged.
+
+The native taskbar/Dock shows one text button per running window, globally on
+each output. Clicking an active window minimizes it; other windows are restored
+and activated. Right click opens window actions. The window list scrolls
+horizontally with the wheel and resets when its membership or viewport changes.
+App grouping, icons/pinning, workspace filtering and complete desktop keyboard
+navigation remain future work.
+
 ### Input event contract
 
 Native host callbacks now take the structs in `src/host/input.h` rather than

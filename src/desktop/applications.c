@@ -1,6 +1,9 @@
 #define _GNU_SOURCE
 #include "desktop/applications.h"
 #include "core/thread.h"
+#if defined(PU_LAYER_SHELL)
+#include "desktop/windows.h"
+#endif
 
 #include <dirent.h>
 #include <errno.h>
@@ -357,6 +360,9 @@ int pu_applications_install(JSContext *ctx)
     const char *terminal = getenv("POLLY_TERMINAL");
     JS_SetPropertyStr(ctx, desktop_api, "terminal", JS_NewString(ctx, terminal && *terminal ? terminal : "foot"));
     JS_SetPropertyStr(ctx, desktop_api, "onExit", JS_NULL);
+#if defined(PU_LAYER_SHELL)
+    if (!pu_desktop_windows_install(ctx, desktop_api)) return 0;
+#endif
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, desktop_api));
     JS_FreeValue(ctx, global);
@@ -394,11 +400,17 @@ int pu_applications_pump(void)
         free(process->id); free(process);
         worked++;
     }
+#if defined(PU_LAYER_SHELL)
+    worked += pu_desktop_windows_pump();
+#endif
     return worked;
 }
 
 void pu_applications_shutdown(void)
 {
+#if defined(PU_LAYER_SHELL)
+    pu_desktop_windows_shutdown();
+#endif
     if (context) JS_FreeValue(context, desktop_api);
     context = NULL;
     desktop_api = JS_UNDEFINED;

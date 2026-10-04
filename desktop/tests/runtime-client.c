@@ -10,6 +10,7 @@
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_input_device.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_scene.h>
@@ -29,6 +30,13 @@ static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
 static const struct wlr_keyboard_impl keyboard_impl = { .name = "runtime-fixture-keyboard" };
 static const struct wlr_pointer_impl pointer_impl = { .name = "runtime-fixture-pointer" };
+static wl_notify_func_t input_listener;
+
+static void synthetic_input(struct wl_listener *listener, void *data)
+{
+    struct wlr_input_device *device = data;
+    if (device->name && !strncmp(device->name, "runtime-fixture-", 16)) input_listener(listener, data);
+}
 
 static bool pump(void)
 {
@@ -239,22 +247,87 @@ static bool suite(char *executable, char *script)
     return true;
 }
 
+static bool window_suite(char *executable, char *script, char *mode)
+{
+    char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
+        script, mode, executable, script, NULL };
+    CHECK(pu_desktop_spawn_shell(&desktop, args));
+    bool success = false;
+    for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
+        CHECK(pump());
+        struct PuDesktopLayer *marker, *tmp;
+        wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
+            if (!marker->surface->surface->mapped) continue;
+            const char *name = marker->surface->namespace;
+            if (!strcmp(name, "fixture-success")) {
+                success = true;
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            unsigned serial, button;
+            int x, y;
+            char target[96];
+            if (sscanf(name, "fixture-click %u %d %d %u %95s", &serial, &x, &y, &button, target) != 5)
+                continue;
+            struct PuDesktopLayer *layer;
+            bool clicked = false;
+            wl_list_for_each(layer, &desktop.layers, link) {
+                if (strcmp(layer->surface->namespace, target) || !layer->surface->surface->mapped ||
+                    !layer->presented) continue;
+                int sx, sy;
+                CHECK(wlr_scene_node_coords(&layer->tree->node, &sx, &sy));
+                struct wlr_box all;
+                wlr_output_layout_get_box(desktop.layout, NULL, &all);
+                struct wlr_pointer_motion_absolute_event motion = {
+                    .pointer = &pointer, .time_msec = serial * 3,
+                    .x = (double)(sx + x - all.x) / all.width,
+                    .y = (double)(sy + y - all.y) / all.height,
+                };
+                wl_signal_emit_mutable(&pointer.events.motion_absolute, &motion);
+                struct wlr_pointer_button_event click = {
+                    .pointer = &pointer, .time_msec = serial * 3 + 1,
+                    .button = button == 2 ? BTN_RIGHT : BTN_LEFT,
+                    .state = WL_POINTER_BUTTON_STATE_PRESSED,
+                };
+                wlr_pointer_notify_button(&pointer, &click);
+                click.time_msec++; click.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                wlr_pointer_notify_button(&pointer, &click);
+                wl_signal_emit_mutable(&pointer.events.frame, NULL);
+                clicked = true;
+                break;
+            }
+            CHECK(clicked);
+            wlr_layer_surface_v1_destroy(marker->surface);
+        }
+    }
+    CHECK(success && !desktop.shell_pid && desktop.shell_exited &&
+        WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0);
+    return true;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc != 3) return 2;
+    if (argc != 3 && argc != 4) return 2;
     wlr_log_init(WLR_INFO, NULL);
-    bool ready = pu_desktop_init(&desktop, "runtime-client") && pu_desktop_start(&desktop);
+    bool ready = pu_desktop_init(&desktop, "runtime-client");
+    if (ready) {
+        input_listener = desktop.new_input.notify;
+        desktop.new_input.notify = synthetic_input;
+        ready = pu_desktop_start(&desktop);
+    }
     bool passed = false;
     if (ready) {
         wlr_keyboard_init(&keyboard, &keyboard_impl, "runtime-fixture-keyboard");
         wlr_pointer_init(&pointer, &pointer_impl, "runtime-fixture-pointer");
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
-        passed = suite(argv[1], argv[2]);
+        passed = argc == 4 ? window_suite(argv[1], argv[2], "initial") &&
+            window_suite(argv[1], argv[2], "reload") : suite(argv[1], argv[2]);
         wlr_pointer_finish(&pointer);
         wlr_keyboard_finish(&keyboard);
     }
     pu_desktop_finish(&desktop);
-    if (passed) puts("PASS: actual PollyUI layers, input, two outputs, fractional scale, rotation, removal and close");
+    if (passed) puts(argc == 4 ? "PASS: native taskbar/Dock window management and Shell reconnect" :
+        "PASS: actual PollyUI layers, input, two outputs, fractional scale, rotation, removal and close");
     return passed ? 0 : 1;
 }

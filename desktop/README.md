@@ -34,7 +34,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Shell boundary and development session | Optional explicitly spawned shell with a private Wayland connection, bounded opt-in restart/backoff, and an isolated session launcher. Login, authentication and production session policy remain separate. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
-| 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher and persistent five-theme selection. Running-window buttons and system services remain separate steps. |
+| 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -360,8 +360,13 @@ scope and intentionally unavailable D-Bus/X11 paths.
 
 Floating Dock corners use actual alpha composition. Blur, polished animation,
 dark variants and shaped click-through regions are still outstanding. The Dock
-currently exposes Apps, Appearance and About; running-window buttons are not
-simulated and remain to be connected to foreign-toplevel state.
+exposes Apps, Appearance, About and real running-window buttons driven by
+foreign-toplevel state. Taskbars and Docks list all windows on every output;
+there is no implied workspace or per-output window filtering. Click an active
+window to minimize, or another/minimized window to activate and restore. Right
+click opens maximize, fullscreen and graceful-close controls. Window-list
+overflow scrolls horizontally with the wheel. Buttons are currently text-based,
+without app grouping, icons or pinning.
 
 Keep the parent's socket separate from the new compositor's socket:
 
@@ -417,6 +422,10 @@ consumption, invalid/cross-client/stale grab serials, popup lifecycle, unmap/rem
 client crashes and destruction of a role before its surface. Synthetic input is
 injected in the **test process**, not through a production protocol; nested
 tests exclude physical input to avoid racing the fixture or the user's mouse.
+The native window-Shell fixture injects real pointer events into taskbar, Dock
+and context-menu surfaces and observes independent `foot` clients. It also
+checks metadata, stale IDs, public-client rejection and a fresh Shell connection
+enumerating an application that survived the previous Shell's exit.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

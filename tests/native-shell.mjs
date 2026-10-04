@@ -1,5 +1,5 @@
 import { createDesktopShell, SHELL_THEME_KEY } from './desktop/shell/shell.mjs';
-import { settingsView } from './desktop/shell/views.mjs';
+import { settingsView, panelView, dockView } from './desktop/shell/views.mjs';
 import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 import { h, render } from './js/reconciler.mjs';
 
@@ -11,6 +11,37 @@ render(h('view', { id: 'first-root' }), document.body);
 render(h('view', { id: 'replacement-root' }), document.body);
 check(document.body.childNodes.length === 1 && document.body.firstChild.id === 'replacement-root',
   'document retains the reconciler mount state between body getter calls');
+render(null, document.body);
+
+const liveWindows = Array.from({ length: 12 }, (_, index) => ({
+  id: index + 1, title: 'Window ' + (index + 1), appId: 'org.pollyui.test',
+  active: index === 0, minimized: index === 1, maximized: false, fullscreen: false,
+}));
+let toggled = 0, actions = 0;
+render(panelView(getDesktopTheme('xp'), '12:00', () => {}, '', () => {},
+  liveWindows, id => { toggled = id; }, id => { actions = id; }), document.body);
+host.render();
+const liveButton = document.getElementById('shell-window-1');
+host.click(liveButton.offsetLeft + 5, liveButton.offsetTop + 5);
+check(toggled === 1 && liveButton.getAttribute('aria-pressed') === 'true',
+  'running-window button dispatches the live ID and exposes active state');
+host.mouse('contextmenu', liveButton.offsetLeft + 5, liveButton.offsetTop + 5);
+check(actions === 1, 'right click opens window actions rather than toggling it');
+liveButton.focus();
+actions = 0;
+host.key('ContextMenu');
+check(actions === 1, 'window actions also support the context-menu key');
+const list = document.getElementById('shell-window-list');
+host.scroll(list.offsetLeft + 10, list.offsetTop + 10, 10000);
+check(list.scrollLeft > 0, 'vertical wheel reaches overflowed window buttons horizontally');
+host.scroll(list.offsetLeft + 10, list.offsetTop + 10, -10000);
+check(list.scrollLeft === 0, 'window-list scrolling clamps at the start');
+render(dockView(getDesktopTheme('bigsur'), () => {}, () => {}, () => {}, liveWindows,
+  id => { toggled = id; }, id => { actions = id; }), document.body);
+host.render();
+const dockButton = document.getElementById('shell-window-1');
+check(dockButton.offsetWidth === 64 && dockButton.getAttribute('aria-label') === 'Window 1',
+  'Dock uses compact buttons with the full accessible title');
 render(null, document.body);
 const created = [];
 let displays = [{ id: 1, width: 1280, height: 720 }, { id: 2, width: 800, height: 600 }];
@@ -109,3 +140,34 @@ const close = document.getElementById('shell-settings-close');
 host.click(close.offsetLeft + close.offsetWidth / 2, close.offsetTop + close.offsetHeight / 2);
 check(closed, 'settings close button is functional');
 render(null, document.body);
+
+saved = 'xp';
+let snapshots = liveWindows.map(item => ({ ...item }));
+let failWindows = false, notifications = 0;
+const originalWindowsChanged = () => { notifications++; };
+const native = {
+  windows() { if (failWindows) throw new Error('lost connection'); return snapshots.map(item => ({ ...item })); },
+  onWindowsChanged: originalWindowsChanged,
+};
+const windowShell = createDesktopShell({ host: fakeHost, storage, native,
+  report: message => warnings.push(message) }).start();
+const panelList = () => windowShell.getSurfaces().find(surface => surface.kind === 'panel')
+  .window.document.body.firstChild.childNodes.find(node => node.id === 'shell-window-list');
+panelList().scrollLeft = 500;
+snapshots[0].title = 'Renamed application';
+native.onWindowsChanged();
+check(panelList().scrollLeft === 500, 'metadata updates preserve taskbar scroll position');
+const windowMenu = windowShell.showWindowActions(1, 1);
+check(windowMenu && !windowMenu.closed, 'window action menu opens for a live ID');
+snapshots = [];
+native.onWindowsChanged();
+check(windowMenu.closed && panelList().scrollLeft === 0,
+  'removing windows closes stale menus and resets overflow scrolling');
+failWindows = true;
+native.onWindowsChanged();
+check(windowShell.getState().error.includes('lost connection'), 'window-list failures are visible');
+failWindows = false;
+native.onWindowsChanged();
+check(!windowShell.getState().error && notifications === 4, 'window-list recovery chains the previous callback');
+windowShell.stop();
+check(native.onWindowsChanged === originalWindowsChanged, 'stopping the shell restores the previous subscription');

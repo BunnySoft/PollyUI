@@ -23,7 +23,40 @@ function button(id, text, theme, action, selected = false, extra = {}) {
   }, label(text, theme.colors.text));
 }
 
-export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu) {
+function windowButtons(theme, windows, toggle, actions, compact = false) {
+  return h('view', { id: 'shell-window-list', style: {
+    ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, gap: 5, overflow: 'scroll',
+  }, onWheel: event => {
+    event.preventDefault();
+    const node = event.currentTarget;
+    const extent = node.childNodes.reduce((maximum, child) =>
+      Math.max(maximum, child.offsetLeft + child.offsetWidth - node.offsetLeft), 0);
+    node.scrollLeft = Math.max(0, Math.min(extent - node.offsetWidth,
+      Number(node.scrollLeft) + (event.deltaX || event.deltaY)));
+  } }, windows.map(window => {
+    const title = window.title || window.appId || 'Untitled';
+    const short = Array.from(title).slice(0, compact ? 5 : 20).join('');
+    const node = button('shell-window-' + window.id,
+      (window.minimized ? '[min] ' : '') + short, theme, () => toggle(window.id), window.active,
+      { width: compact ? 64 : 150, height: compact ? theme.panel.height - 12 : 28,
+        overflow: 'hidden', ...(window.active ? gradient(theme.colors.selection, theme.colors.selection) : {}) });
+    node.props['aria-label'] = title;
+    node.props.onClick = event => {
+      if (event.button === 0) { event.stopPropagation(); toggle(window.id); }
+    };
+    node.props.onContextmenu = event => { event.preventDefault(); event.stopPropagation(); actions(window.id); };
+    const activate = node.props.onKeydown;
+    node.props.onKeydown = event => {
+      if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+        event.preventDefault(); actions(window.id);
+      } else activate(event);
+    };
+    return node;
+  }));
+}
+
+export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
+  windows = [], toggle = () => {}, actions = () => {}) {
   const panel = theme.panel;
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: 10, paddingLeft: 5, paddingRight: 12,
@@ -35,12 +68,14 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   }),
   button('shell-panel-settings', 'Appearance', theme, openSettings, false, { height: 24 }),
   label('PollyDesktop', panel.text, 12),
-  h('view', { style: { flexGrow: 1 } }),
-  error ? label('Settings need attention', panel.text, 11) : null,
+  panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
+    h('view', { style: { flexGrow: 1 } }),
+  error ? label('Desktop needs attention', panel.text, 11) : null,
   label(clock, panel.text, 12));
 }
 
-export function dockView(theme, openSettings, openAbout, openApplications = openSettings) {
+export function dockView(theme, openSettings, openAbout, openApplications = openSettings,
+  windows = [], toggle = () => {}, actions = () => {}) {
   const panel = theme.panel;
   const tile = { height: panel.height - 12, width: theme.icons.dockTiles ? 84 : 90,
     borderRadius: theme.icons.dockTiles ? theme.icons.radius : theme.button.radius };
@@ -51,7 +86,8 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   } },
   button('shell-dock-applications', 'Apps', theme, openApplications, false, tile),
   button('shell-dock-settings', 'Appearance', theme, openSettings, false, tile),
-  button('shell-dock-about', 'About', theme, openAbout, false, tile));
+  button('shell-dock-about', 'About', theme, openAbout, false, tile),
+  windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
 export function settingsView(theme, select, close, retry, error = '', about = false) {
@@ -72,7 +108,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Alt+F9 minimizes. Alt+F10 maximizes.', theme.colors.muted, 11),
         label('Alt+F11 toggles fullscreen.', theme.colors.muted, 11),
         label('Alt+Escape ends the development session.', theme.colors.muted, 11),
-        label('Window-list buttons are not connected yet.', theme.colors.muted, 10),
+        label('Window buttons reflect live compositor state.', theme.colors.muted, 10),
         label('No login, secure lock or background blur yet.', theme.colors.muted, 10),
       ]
     : [
@@ -119,4 +155,23 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   error ? h('view', { role: 'alert', style: { padding: 6, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11)) : null);
+}
+
+export function windowActionsView(theme, window, action, close, error = '') {
+  return h('view', { id: 'shell-window-actions', style: {
+    width: '100%', height: '100%', padding: 12, gap: 8, overflow: 'scroll',
+    backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: theme.window.radius,
+  } },
+  label(window.title || window.appId || 'Untitled', theme.colors.text, 14),
+  button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
+  button('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize', theme,
+    () => action(window.minimized ? 'restoreWindow' : 'minimizeWindow')),
+  button('shell-window-maximize', window.maximized ? 'Unmaximize' : 'Maximize', theme,
+    () => action(window.maximized ? 'unmaximizeWindow' : 'maximizeWindow')),
+  button('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen', theme,
+    () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
+  button('shell-window-close', 'Close application window', theme, () => action('closeWindow')),
+  button('shell-window-menu-close', 'Close menu', theme, close),
+  error ? label(error, theme.colors.text, 11) : null);
 }

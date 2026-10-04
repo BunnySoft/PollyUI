@@ -162,6 +162,16 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(pollyui PRIVATE "${UI_PROTOCOL_DIR}")
         target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
         target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
+        if (PU_DESKTOP_SERVICES)
+            set(UI_FOREIGN_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml")
+            add_custom_command(
+                OUTPUT "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
+                DEPENDS "${UI_FOREIGN_XML}" VERBATIM)
+            target_sources(pollyui PRIVATE src/desktop/windows.c
+                "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c")
+        endif()
     endif()
 endif()
 
@@ -285,6 +295,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
+            if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-window-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/window-shell.mjs" windows)
+                set_tests_properties(desktop-window-shell-${renderer} PROPERTIES TIMEOUT 90
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+            endif()
             add_test(NAME desktop-shell-${renderer}
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/native-shell.sh"
                     "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
