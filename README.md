@@ -175,13 +175,15 @@ presentation and clean shutdown. The normal compositor-only helper remains
 For a native Alpine 3.24 development machine:
 
 ```sh
-apk add build-base cmake ninja pkgconf git python3 gn clang18 bash sdl3-dev \
+apk add build-base cmake ninja pkgconf git python3 gn clang18 bash meson sdl3-dev icu-dev \
     fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev curl-dev \
     font-dejavu font-noto-cjk font-noto-emoji nodejs openssl \
     wayland-dev wayland-protocols wlr-protocols
 
 # Build as a normal user, from the repository root:
 sh desktop/tools/build-skia-linux.sh "$PWD/third_party/skia-linux"
+sh desktop/tools/build-harfbuzz-linux.sh "$PWD/third_party/harfbuzz-linux" "$PWD/third_party/text-libs"
+export PKG_CONFIG_PATH="$PWD/third_party/text-libs/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 bash tools/build.sh
 ./build/linux-sdl/pollyui desktop/shell/preview.mjs
 sh desktop/tests/runtime-headless.sh "$PWD/build/linux-sdl/pollyui"
@@ -195,10 +197,11 @@ download of a potentially incompatible prebuilt. The checkout is revision-checke
 the recipe does not promise bit-for-bit reproducibility of rolling distro packages.
 
 The Linux profile includes PNG, JPEG and WebP support through system libraries.
-It omits PDF, SVG, GIF/Wuffs, ICU and HarfBuzz integrations not used by the current
-PollyUI draw path. Font fallback includes installed CJK/emoji faces, but is not
-complex-script shaping. The optional native input-method service is separate
-from Skia's text drawing path.
+It omits PDF, SVG and GIF/Wuffs. Skia itself is built without its optional ICU
+and HarfBuzz modules; PollyUI's Linux shim calls those libraries directly for
+text shaping and Unicode segmentation. Font fallback includes installed
+CJK/emoji faces, and the optional native input-method service remains separate
+from the text drawing path.
 
 **Renderer selection:** `PU_RENDERER=auto` (default) attempts an SDL-owned
 EGL/GLES 3 context and falls back to raster with a diagnostic if creation fails.
@@ -209,8 +212,9 @@ pixels, which is distinct from Skia GLES drawing.
 The GLES implementation reports its renderer string. Automated WSL checks use
 Mesa **llvmpipe**, a software GL implementation, not proof of physical GPU
 acceleration. Physical GPU/DRM support still needs separate qualification.
-Complex shaping, grapheme navigation and physical-device qualification remain
-work items. Linux now has native preedit and a separately trusted Rime service.
+Linux supports HarfBuzz shaping, ICU bidi/grapheme/line boundaries, native
+preedit and a separately trusted Rime service. Physical-device qualification
+and typography extensions such as explicit paragraph direction remain work.
 The development image also builds pinned SDL 3.4.10 with a Wayland show/hide
 callback lifetime fix for forced disconnection. See the desktop guide's
 **SDL disconnect hardening** section when using system SDL or an existing cache.
@@ -627,8 +631,48 @@ Shift+Tab reverses it, hidden nodes are skipped, and `preventDefault()` cancels 
 
 Text editors should insert from `textinput`, not from `keydown`; keydown remains
 for navigation, deletion and shortcuts. The bundled inputs have been migrated.
-They preserve surrogate pairs when moving/deleting, but do not yet implement
-grapheme-cluster editing or complex-script shaping.
+On Linux, editors move/delete whole Unicode graphemes, including combining
+marks, emoji modifiers/ZWJ sequences, flags and Indic conjuncts. Other hosts
+retain their existing code-point editing and draw path.
+
+### Linux Unicode text layout
+
+The Linux renderer uses HarfBuzz glyph substitution/positioning over Skia
+typeface tables, ICU bidi analysis and ICU grapheme/line boundaries. Measurement,
+plain drawing, gradients and editor hit testing share shaped advances.
+Fallback attempts to keep an entire grapheme in one font; installed fonts still
+determine which scripts and emoji can be displayed. Missing glyphs retain the
+font's normal missing-glyph behavior.
+
+`textBoundaries(text)` returns UTF-16 grapheme boundaries. `layoutText(text,
+fontSize = 16, weight = 400)` returns a single-line `{width, clusters}` snapshot;
+each cluster has `{start, end, x, width, rtl}`. Its indices are UTF-16, including
+correct indexing for lone surrogates; coordinates are logical pixels.
+`js/textgeometry.mjs` uses these snapshots for caret placement, nearest-boundary
+hit testing and potentially disjoint bidi selection rectangles.
+Logical arrow navigation follows grapheme order; visual bidi caret affinity and
+explicit paragraph direction/locale settings are not implemented.
+Ligature advance is evenly divided between its constituent graphemes for
+caret placement, rather than using font-specific ligature caret tables.
+
+Wrapping recognizes Unicode line opportunities (including CJK without spaces)
+and preserves the existing behavior of allowing an unbreakable word to overflow
+rather than inserting arbitrary breaks. Direction is inferred per shaped line;
+full paragraph-style bidi configuration and advanced line breaking/hyphenation
+remain outside this implementation. Native caches are bounded by entry counts
+and aggregate text size; JavaScript editor caches avoid retaining large values.
+
+The development image builds HarfBuzz 13.2.1 at
+`6f4c5cec306d31e6822303f5ba248a14293d588e` with GLib/GObject/Cairo integrations
+disabled, plus system ICU. `desktop/tools/build-harfbuzz-linux.sh` reproduces it.
+Alpine's stock HarfBuzz links GLib and is not used by this profile. Runtime
+dependency checks enforce the no-GLib/GIO boundary. This is a private static
+library at `/opt/pollyui-text`, not a replacement for the system HarfBuzz:
+other applications retain the complete ABI from their distribution package.
+System SDL users also need
+the disconnect fix described in the desktop guide.
+
+### Composition events
 
 Linux SDL translates preedit into `compositionstart`, `compositionupdate` and
 `compositionend`; `data` carries text and update events expose `selectionStart`

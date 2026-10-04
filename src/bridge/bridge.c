@@ -795,16 +795,83 @@ static JSValue js_document_get_body(JSContext *ctx, JSValueConst this_val)
 static JSValue js_measure_text(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv)
 {
+    (void)this_val;
     const char *s = argc >= 1 ? JS_ToCString(ctx, argv[0]) : NULL;
+    if (argc && !s) return JS_EXCEPTION;
     double fs = 16.0;
-    if (argc >= 2) JS_ToFloat64(ctx, &fs, argv[1]);
+    if (argc >= 2 && JS_ToFloat64(ctx, &fs, argv[1]) < 0) { JS_FreeCString(ctx, s); return JS_EXCEPTION; }
     int32_t weight = 400;
-    if (argc >= 3) JS_ToInt32(ctx, &weight, argv[2]);
+    if (argc >= 3 && JS_ToInt32(ctx, &weight, argv[2]) < 0) { JS_FreeCString(ctx, s); return JS_EXCEPTION; }
+    if (!isfinite(fs) || fs <= 0 || fs > 4096 || weight < 1 || weight > 1000) {
+        JS_FreeCString(ctx, s);
+        return JS_ThrowRangeError(ctx, "Invalid measurement font size or weight");
+    }
     float w = 0, h = 0;
     pu_text_measure(s ? s : "", (float)fs, weight, 0, NULL, 0, &w, &h);
     if (s) JS_FreeCString(ctx, s);
     return JS_NewFloat64(ctx, w);
 }
+
+#if defined(PU_COMPLEX_TEXT)
+static JSValue js_text_boundaries(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!argc || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "textBoundaries requires a string");
+    size_t length;
+    const char *text = JS_ToCStringLen(ctx, &length, argv[0]);
+    if (!text) return JS_EXCEPTION;
+    int *positions;
+    size_t count;
+    int ok = pu_text_graphemes(text, length, &positions, &count);
+    JS_FreeCString(ctx, text);
+    if (!ok) return JS_ThrowInternalError(ctx, "Cannot segment text");
+    JSValue result = JS_NewArray(ctx);
+    if (JS_IsException(result)) { free(positions); return JS_EXCEPTION; }
+    for (size_t i = 0; !JS_HasException(ctx) && i < count; i++)
+        JS_SetPropertyUint32(ctx, result, (uint32_t)i, JS_NewInt32(ctx, positions[i]));
+    free(positions);
+    if (JS_HasException(ctx)) { JS_FreeValue(ctx, result); return JS_EXCEPTION; }
+    return result;
+}
+static JSValue js_layout_text(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!argc || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "layoutText requires a string");
+    double size = 16;
+    int32_t weight = 400;
+    if (argc > 1 && JS_ToFloat64(ctx, &size, argv[1]) < 0) return JS_EXCEPTION;
+    if (argc > 2 && JS_ToInt32(ctx, &weight, argv[2]) < 0) return JS_EXCEPTION;
+    if (!isfinite(size) || size <= 0 || size > 4096 || weight < 1 || weight > 1000)
+        return JS_ThrowRangeError(ctx, "Invalid text layout size or weight");
+    size_t length;
+    const char *text = JS_ToCStringLen(ctx, &length, argv[0]);
+    if (!text) return JS_EXCEPTION;
+    PuTextLayout layout;
+    int ok = pu_text_layout(text, length, (float)size, weight, 0, NULL, &layout);
+    JS_FreeCString(ctx, text);
+    if (!ok) return JS_ThrowInternalError(ctx, "Cannot shape text");
+    JSValue result = JS_NewObject(ctx), clusters = JS_NewArray(ctx);
+    if (JS_IsException(result) || JS_IsException(clusters)) {
+        JS_FreeValue(ctx, result); JS_FreeValue(ctx, clusters); pu_text_layout_dispose(&layout); return JS_EXCEPTION;
+    }
+    for (size_t i = 0; !JS_HasException(ctx) && i < layout.count; i++) {
+        PuTextCluster *cluster = &layout.clusters[i];
+        JSValue item = JS_NewObject(ctx);
+        if (JS_IsException(item)) break;
+        JS_SetPropertyStr(ctx, item, "start", JS_NewInt32(ctx, cluster->start));
+        JS_SetPropertyStr(ctx, item, "end", JS_NewInt32(ctx, cluster->end));
+        JS_SetPropertyStr(ctx, item, "x", JS_NewFloat64(ctx, cluster->x));
+        JS_SetPropertyStr(ctx, item, "width", JS_NewFloat64(ctx, cluster->width));
+        JS_SetPropertyStr(ctx, item, "rtl", JS_NewBool(ctx, cluster->rtl));
+        JS_SetPropertyUint32(ctx, clusters, (uint32_t)i, item);
+    }
+    JS_SetPropertyStr(ctx, result, "width", JS_NewFloat64(ctx, layout.width));
+    JS_SetPropertyStr(ctx, result, "clusters", clusters);
+    pu_text_layout_dispose(&layout);
+    if (JS_HasException(ctx)) { JS_FreeValue(ctx, result); return JS_EXCEPTION; }
+    return result;
+}
+#endif
 
 /* ---- attributes / id / class / queries ------------------------------------*/
 
@@ -1351,6 +1418,10 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     JS_SetPropertyStr(ctx, global, "document", JS_DupValue(ctx, b->document));
     JS_SetPropertyStr(ctx, global, "measureText",
                       JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
+#if defined(PU_COMPLEX_TEXT)
+    JS_SetPropertyStr(ctx, global, "textBoundaries", JS_NewCFunction(ctx, js_text_boundaries, "textBoundaries", 1));
+    JS_SetPropertyStr(ctx, global, "layoutText", JS_NewCFunction(ctx, js_layout_text, "layoutText", 2));
+#endif
     JS_FreeValue(ctx, global);
 
     return b;

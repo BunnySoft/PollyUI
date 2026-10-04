@@ -8,6 +8,7 @@
 // Pass document: handle.document when embedding in another native window.
 
 import { previousTextIndex, nextTextIndex, clampTextIndex } from './js/textindex.mjs';
+import { textGeometry } from './js/textgeometry.mjs';
 
 const el = (owner, tag, style) => {
   const n = owner.createElement(tag);
@@ -36,30 +37,25 @@ export function createTextInput(opts = {}) {
   });
   root.tabIndex = 0;
 
-  const highlight = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 0, height: fontSize, backgroundColor: 'transparent', borderRadius: 2 });
+  const highlight = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2 });
   const textEl = el(owner, 'view', { color, fontSize });
   const textNode = owner.createTextNode(displayed(st.value));
   textEl.appendChild(textNode);
   const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent' });
-  const underline = el(owner, 'view', { position: 'absolute', top: padding + fontSize, left: padding, width: 0, height: 1, backgroundColor: color });
+  const underline = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2 });
 
   root.appendChild(highlight);  // behind the text
   root.appendChild(textEl);
   root.appendChild(caret);
   root.appendChild(underline);
 
-  const xOf = (i, value = st.value) => measureText(displayed(value.slice(0, i)), fontSize);
+  const displayIndex = (value, i) => displayed(value.slice(0, i)).length;
+  const xOf = (i, value = st.value) => textGeometry(displayed(value), fontSize).caret(displayIndex(value, i));
 
   // Map a text-local x (px from the text start) to the nearest caret index.
   function indexAtX(localX) {
-    const v = st.value;
-    let best = 0, bestD = Infinity;
-    for (let i = 0; ; i = nextTextIndex(v, i)) {
-      const d = Math.abs(xOf(i, v) - localX);
-      if (d < bestD) { bestD = d; best = i; }
-      if (i === v.length) break;
-    }
-    return best;
+    const index = textGeometry(displayed(st.value), fontSize).nearest(localX);
+    return secure ? clampTextIndex(st.value, Array.from(st.value).slice(0, index).join('').length) : index;
   }
 
   function selRange() {
@@ -67,6 +63,13 @@ export function createTextInput(opts = {}) {
     return st.anchor < st.caret ? [st.anchor, st.caret] : [st.caret, st.anchor];
   }
 
+  function paintRanges(container, ranges, y, height, color) {
+    while (container.childNodes.length > ranges.length) container.removeChild(container.lastChild);
+    while (container.childNodes.length < ranges.length) container.appendChild(el(owner, 'view', { position: 'absolute' }));
+    ranges.forEach((range, index) => Object.assign(container.childNodes[index].style, {
+      left: padding + range.x, top: y, width: range.width, height, backgroundColor: color,
+    }));
+  }
   function render() {
     const composition = st.composition;
     const value = composition ? st.value.slice(0, composition.start) + composition.text + st.value.slice(composition.end) : st.value;
@@ -74,17 +77,12 @@ export function createTextInput(opts = {}) {
     textNode.textContent = displayed(value);
     caret.style.left = String(padding + xOf(cursor, value));
     caret.style.backgroundColor = st.focused && (!composition || composition.cursor >= 0) ? color : 'transparent';
-    underline.style.left = String(padding + xOf(composition ? composition.start : 0, value));
-    underline.style.width = String(composition ? xOf(composition.start + composition.text.length, value) - xOf(composition.start, value) : 0);
+    const geometry = textGeometry(displayed(value), fontSize);
+    paintRanges(underline, composition ? geometry.ranges(displayIndex(value, composition.start),
+      displayIndex(value, composition.start + composition.text.length)) : [], padding + fontSize, 1, color);
     const r = composition ? null : selRange();
-    if (r && st.focused) {
-      highlight.style.left = String(padding + xOf(r[0]));
-      highlight.style.width = String(xOf(r[1]) - xOf(r[0]));
-      highlight.style.backgroundColor = selColor;
-    } else {
-      highlight.style.width = '0';
-      highlight.style.backgroundColor = 'transparent';
-    }
+    paintRanges(highlight, r && st.focused ? geometry.ranges(displayIndex(value, r[0]), displayIndex(value, r[1])) : [],
+      padding, fontSize, selColor);
     if (st.focused && owner.activeElement === root)
       root.setInputMethod({ purpose, x: padding + xOf(cursor, value), y: padding, width: 2, height: fontSize });
   }

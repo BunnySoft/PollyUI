@@ -7,6 +7,7 @@
 
 import { h, reactive } from './js/vue.mjs';
 import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint } from './js/textindex.mjs';
+import { textGeometry } from './js/textgeometry.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -63,7 +64,7 @@ function updateCaretInput() {
   const st = _inputs[_caret.activeId];
   if (!st) return;
   _caretNode.setInputMethod({ purpose: st.inputPurpose, x: st.inputPadding +
-    measureText(_caretNode.textContent.slice(0, st.visualCaret), st.inputFont),
+    textGeometry(_caretNode.textContent, st.inputFont).caret(st.visualCaret),
     y: (st.inputHeight - st.inputFont) / 2, width: 2, height: st.inputFont });
 }
 function caretFocus(id, node) {
@@ -95,14 +96,9 @@ function inputState(id, len) {
   return st;
 }
 function indexAtX(value, fontSize, localX, masked = false) {
-  let best = 0, bestD = Infinity;
-  for (let i = 0; ; i = nextTextIndex(value, i)) {
-    const prefix = value.slice(0, i);
-    const d = Math.abs(measureText(masked ? '\u2022'.repeat(Array.from(prefix).length) : prefix, fontSize) - localX);
-    if (d < bestD) { bestD = d; best = i; }
-    if (i === value.length) break;
-  }
-  return best;
+  const display = masked ? '\u2022'.repeat(Array.from(value).length) : value;
+  const index = textGeometry(display, fontSize).nearest(localX);
+  return masked ? clampTextIndex(value, Array.from(value).slice(0, index).join('').length) : index;
 }
 // A caret vnode for a focused input (or null). Place inside a position:relative box.
 function textCaret(id, value, fontSize, padLeft, color, boxHeight) {
@@ -315,7 +311,9 @@ export function NInput(props = {}) {
   const text = composition ? value.slice(0, composition.start) + composition.text + value.slice(composition.end) : value;
   const cursor = composition ? composition.start + (composition.cursor < 0 ? composition.text.length : composition.cursor) : st ? st.caret : value.length;
   const isPh = text.length === 0;
-  const xOf = (i, source = text) => pad + measureText(displayed(source.slice(0, i)), fs);
+  const geometry = textGeometry(displayed(text), fs);
+  const displayIndex = i => displayed(text.slice(0, i)).length;
+  const xOf = (i, source = text) => pad + textGeometry(displayed(source), fs).caret(displayed(source.slice(0, i)).length);
   if (st) {
     st.inputPurpose = purpose; st.inputPadding = pad; st.inputFont = fs; st.inputHeight = h0;
     st.visualCaret = displayed(text.slice(0, cursor)).length;
@@ -324,13 +322,17 @@ export function NInput(props = {}) {
   const sel = (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
 
   const kids = [];
-  if (focused && sel && !composition) kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(sel[0]), top: (h0 - fs) / 2 - 1, width: xOf(sel[1]) - xOf(sel[0]), height: fs + 2, backgroundColor: selectionColor }) }));
+  if (focused && sel && !composition)
+    for (const range of geometry.ranges(displayIndex(sel[0]), displayIndex(sel[1])))
+      kids.push(h('view', { style: clean({ position: 'absolute', left: pad + range.x, top: (h0 - fs) / 2 - 1,
+        width: range.width, height: fs + 2, backgroundColor: selectionColor }) }));
   kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : displayed(text)));
   if (focused && _caret.on && (!composition || composition.cursor >= 0))
     kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(cursor), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
-  if (composition) kids.push(h('view', { style: { position: 'absolute',
-    left: xOf(composition.start), top: (h0 + fs) / 2,
-    width: xOf(composition.start + composition.text.length) - xOf(composition.start), height: 1, backgroundColor: theme.text } }));
+  if (composition)
+    for (const range of geometry.ranges(displayIndex(composition.start), displayIndex(composition.start + composition.text.length)))
+      kids.push(h('view', { style: { position: 'absolute',
+        left: pad + range.x, top: (h0 + fs) / 2, width: range.width, height: 1, backgroundColor: theme.text } }));
 
   const curSel = () => (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
   const replace = (ins) => { const [s0, e0] = curSel() || [st.caret, st.caret]; onInput && onInput(value.slice(0, s0) + ins + value.slice(e0)); st.caret = s0 + ins.length; st.anchor = null; };

@@ -11,6 +11,7 @@
  * a Windows top-down DIB), plus clear + fill-rect. Grown per milestone. */
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -117,6 +118,22 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
  * the text is word-wrapped to that width (height grows with the line count). */
 void pu_text_measure(const char *utf8, float font_size, int weight, int italic,
                      const char *family, float max_width, float *out_w, float *out_h);
+
+typedef struct PuTextCluster {
+    int start, end; /* UTF-16 indices */
+    float x, width;
+    int rtl;
+} PuTextCluster;
+typedef struct PuTextLayout {
+    PuTextCluster *clusters;
+    size_t count;
+    float width;
+} PuTextLayout;
+/* Linux HarfBuzz/ICU single-line layout; output is owned until dispose. */
+int pu_text_layout(const char *utf8, size_t length, float size, int weight, int italic,
+    const char *family, PuTextLayout *out);
+void pu_text_layout_dispose(PuTextLayout *layout);
+int pu_text_graphemes(const char *utf8, size_t length, int **boundaries, size_t *count);
 
 /* Draw a UTF-8 string with its top-left at (x, y), in the given size, weight,
  * slant, font `family`, and color. '\n'/word-wrap start new lines.

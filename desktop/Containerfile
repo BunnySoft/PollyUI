@@ -30,3 +30,8 @@ RUN apk add --no-cache mesa-dev libxcursor-dev libxrandr-dev libxfixes-dev libxi
 COPY tools/build-sdl-linux.sh /opt/pollyui-build/tools/
 COPY patches/sdl-wayland-sync-lifetime.patch /opt/pollyui-build/patches/
 RUN sh /opt/pollyui-build/tools/build-sdl-linux.sh /opt/pollyui-sdl
+
+RUN apk add --no-cache meson icu-dev font-noto-arabic font-noto-devanagari
+COPY tools/build-harfbuzz-linux.sh /opt/pollyui-build/tools/
+RUN sh /opt/pollyui-build/tools/build-harfbuzz-linux.sh /opt/pollyui-harfbuzz
+ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig

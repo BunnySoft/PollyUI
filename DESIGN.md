@@ -381,7 +381,7 @@ CMake + Ninja + clang-cl.
 - **macOS / Linux host ports** (Cocoa/Metal, X11/Wayland + ANGLE-or-native GL) —
   the last big architectural piece; everything above Host is already portable.
 - **Accessibility** — semantic tree → UI Automation / AT-SPI / NSAccessibility.
-- **Text:** complex shaping, grapheme-aware editing and additional input engines.
+- **Text:** explicit paragraph-direction/locale policy, advanced typography and additional input engines.
 - **Reconciler hooks** (`useState`-style state) + a packaged component library.
 - **Perf** (persist + dirty-track the Yoga tree) and CSS units
   (`em`/`rem`/`vh`/`vw`) + pseudo-states.
@@ -419,7 +419,16 @@ the text commit are ordered operations, and a focus change during the end
 callback cannot redirect the commit to a different field. SDL input rectangles
 are refreshed from computed layout; explicit editor focus/purpose changes
 restart the native input session. SDL's current API does not expose surrounding
-text; full complex-text rendering remains separate from this protocol path.
+text; complex-text rendering remains separate from this protocol path.
+
+Linux shapes directly with HarfBuzz over the Skia typeface's OpenType tables.
+ICU resolves bidi runs and grapheme/line opportunities; fallback selects a font
+for each grapheme, then contiguous font/script spans are shaped in visual order.
+Glyph positions and cluster advances are reused by measurement, drawing and
+editor geometry. Logical editing indices remain UTF-16, with cached ICU
+boundaries preventing partial deletion of combining/emoji/Indic sequences.
+Skia's own optional text modules remain disabled; the direct HarfBuzz build
+also disables GLib/GObject/Cairo. Other platform renderers are unchanged.
 
 Module evaluation promises are retained until they settle. A rejected module
 or unfinished top-level await is a failed application/test, not a successful

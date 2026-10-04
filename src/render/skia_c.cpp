@@ -66,6 +66,18 @@ extern "C" void pu_metal_destroy(PuSurface *s);
 #include <map>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <cmath>
+#include <climits>
+#include <memory>
+#if defined(PU_COMPLEX_TEXT)
+#include <hb.h>
+#include <hb-ot.h>
+#include <unicode/ubidi.h>
+#include <unicode/ubrk.h>
+#include <unicode/uchar.h>
+#include <unicode/utf16.h>
+#endif
 
 #define PU_GL_RGBA8 0x8058
 #define PU_GLLOG(msg) std::fprintf(stderr, "[gl] %s\n", msg)
@@ -594,10 +606,18 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
 
 // Break text into display lines (honoring '\n', and word-wrapping to max_width
 // when > 0), calling emit(ctx, start, byteLen, lineWidth) for each one.
+static float pu_measure_runs(const SkFont &base, const char *s, size_t n);
+#if defined(PU_COMPLEX_TEXT)
+static void wrap_unicode(const SkFont &font, const char *text, float width,
+    void (*emit)(void *, const char *, size_t, float), void *ctx);
+#endif
 static void wrap_text(const SkFont &font, const char *utf8, float max_width,
                       void (*emit)(void *, const char *, size_t, float), void *ctx) {
+#if defined(PU_COMPLEX_TEXT)
+    if (max_width > 0) { wrap_unicode(font, utf8 ? utf8 : "", max_width, emit, ctx); return; }
+#endif
     auto mw = [&](const char *a, const char *b) {
-        return font.measureText(a, (size_t)(b - a), SkTextEncoding::kUTF8, nullptr);
+        return pu_measure_runs(font, a, (size_t)(b - a));
     };
     const char *p = utf8 ? utf8 : "";
     for (;;) {
@@ -633,11 +653,19 @@ static SkUnichar pu_next_cp(const char *&p, const char *end) {
     unsigned char c = (unsigned char)*p++;
     if (c < 0x80) return c;
     int extra; SkUnichar cp;
-    if ((c & 0xE0) == 0xC0)      { extra = 1; cp = c & 0x1F; }
+    if (c >= 0xc2 && c <= 0xdf) { extra = 1; cp = c & 0x1F; }
     else if ((c & 0xF0) == 0xE0) { extra = 2; cp = c & 0x0F; }
-    else if ((c & 0xF8) == 0xF0) { extra = 3; cp = c & 0x07; }
+    else if (c >= 0xf0 && c <= 0xf4) { extra = 3; cp = c & 0x07; }
     else return 0xFFFD;
-    while (extra-- > 0 && p < end) cp = (cp << 6) | ((unsigned char)(*p++) & 0x3F);
+    if (end - p < extra) return 0xfffd;
+    for (int i = 0; i < extra; i++) {
+        unsigned char next = (unsigned char)p[i];
+        if ((next & 0xc0) != 0x80) return 0xfffd;
+        cp = (cp << 6) | (next & 0x3f);
+    }
+    if ((extra == 1 && cp < 0x80) || (extra == 2 && cp < 0x800) ||
+        (extra == 3 && (cp < 0x10000 || cp > 0x10ffff))) return 0xfffd;
+    p += extra;
     return cp;
 }
 
@@ -657,8 +685,282 @@ static SkTypeface *pu_fallback_face(SkUnichar cp) {
     return tf.get();
 }
 
+#if defined(PU_COMPLEX_TEXT)
+using BreakIterator = std::unique_ptr<UBreakIterator, decltype(&ubrk_close)>;
+using Bidi = std::unique_ptr<UBiDi, decltype(&ubidi_close)>;
+using HbFace = std::unique_ptr<hb_face_t, decltype(&hb_face_destroy)>;
+using HbFont = std::unique_ptr<hb_font_t, decltype(&hb_font_destroy)>;
+using HbBuffer = std::unique_ptr<hb_buffer_t, decltype(&hb_buffer_destroy)>;
+
+static bool utf16(const char *text, size_t length, std::vector<UChar> &out) {
+    if (length > INT_MAX) {
+        std::fprintf(stderr, "[text] Text exceeds ICU length limits\n"); return false;
+    }
+    out.reserve(length);
+    const char *p = text, *end = text + length;
+    while (p < end) {
+        SkUnichar cp = pu_next_cp(p, end);
+        // QuickJS permits lone UTF-16 surrogates and exports them as WTF-8.
+        // Preserve one code unit rather than replacing each encoded byte.
+        if (cp <= 0xffff) out.push_back((UChar)cp);
+        else {
+            out.push_back((UChar)U16_LEAD(cp));
+            out.push_back((UChar)U16_TRAIL(cp));
+        }
+    }
+    return true;
+}
+static bool break_positions(const std::vector<UChar> &text, UBreakIteratorType kind, std::vector<int> &out) {
+    UErrorCode error = U_ZERO_ERROR;
+    BreakIterator iterator(ubrk_open(kind, "root", text.data(), (int32_t)text.size(), &error), ubrk_close);
+    if (U_FAILURE(error) || !iterator) {
+        std::fprintf(stderr, "[text] Unicode break iterator failed: %s\n", u_errorName(error)); return false;
+    }
+    for (int32_t i = ubrk_first(iterator.get()); i != UBRK_DONE; i = ubrk_next(iterator.get())) out.push_back(i);
+    return true;
+}
+
+struct ShapedRun {
+    SkFont font;
+    std::vector<SkGlyphID> glyphs;
+    std::vector<SkPoint> positions;
+};
+struct ShapedText {
+    std::vector<ShapedRun> runs;
+    std::vector<PuTextCluster> clusters;
+    float width = 0;
+};
+struct ShapeCacheEntry {
+    std::string text;
+    SkTypefaceID typeface;
+    float size;
+    ShapedText shape;
+};
+static std::vector<ShapeCacheEntry> &shape_cache() {
+    static std::vector<ShapeCacheEntry> cache;
+    return cache;
+}
+static std::map<SkTypefaceID, HbFace> &shaping_faces() {
+    static std::map<SkTypefaceID, HbFace> faces;
+    return faces;
+}
+
+static hb_blob_t *font_table(hb_face_t *, hb_tag_t tag, void *user) {
+    auto *face = static_cast<SkTypeface *>(user);
+    size_t size = face->getTableSize(tag);
+    if (!size || size > UINT_MAX) return hb_blob_get_empty();
+    void *bytes = std::malloc(size);
+    if (!bytes) { std::fprintf(stderr, "[text] Cannot allocate font table\n"); return hb_blob_get_empty(); }
+    if (face->getTableData(tag, 0, size, bytes) != size) {
+        std::fprintf(stderr, "[text] Cannot read font table\n");
+        std::free(bytes); return hb_blob_get_empty();
+    }
+    return hb_blob_create(static_cast<const char *>(bytes), (unsigned)size, HB_MEMORY_MODE_READONLY, bytes, std::free);
+}
+static hb_face_t *shaping_face(SkTypeface *face) {
+    auto &faces = shaping_faces();
+    auto found = faces.find(face->uniqueID());
+    if (found != faces.end()) return found->second.get();
+    if (faces.size() >= 32) faces.clear();
+    face->ref();
+    HbFace shaped(hb_face_create_for_tables(font_table, face,
+        [](void *value) { static_cast<SkTypeface *>(value)->unref(); }), hb_face_destroy);
+    return faces.emplace(face->uniqueID(), std::move(shaped)).first->second.get();
+}
+static bool visible_codepoint(UChar32 cp) {
+    return cp > 0x20 && !u_hasBinaryProperty(cp, UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
+}
+static SkTypeface *cluster_face(const SkFont &base, const std::vector<UChar> &text, int start, int end) {
+    SkTypeface *face = base.getTypeface();
+    auto covers = [&](SkTypeface *candidate) {
+        for (int32_t i = start; i < end;) {
+            UChar32 cp; U16_NEXT(text.data(), i, end, cp);
+            if (visible_codepoint(cp) && !candidate->unicharToGlyph(cp)) return false;
+        }
+        return true;
+    };
+    if (covers(face)) return face;
+    SkTypeface *fallback = nullptr;
+    for (int32_t i = start; i < end;) {
+        UChar32 cp; U16_NEXT(text.data(), i, end, cp);
+        if (!visible_codepoint(cp)) continue;
+        SkTypeface *candidate = pu_fallback_face(cp);
+        if (!candidate) continue;
+        if (covers(candidate)) return candidate;
+        if (!fallback && candidate->unicharToGlyph(cp)) fallback = candidate;
+    }
+    return fallback ? fallback : face;
+}
+static hb_script_t cluster_script(const std::vector<UChar> &text, int start, int end) {
+    for (int32_t i = start; i < end;) {
+        UChar32 cp; U16_NEXT(text.data(), i, end, cp);
+        hb_script_t script = hb_unicode_script(hb_unicode_funcs_get_default(), (hb_codepoint_t)cp);
+        if (script != HB_SCRIPT_COMMON && script != HB_SCRIPT_INHERITED && script != HB_SCRIPT_UNKNOWN) return script;
+    }
+    return HB_SCRIPT_COMMON;
+}
+struct FontSpan {
+    int start, end;
+    SkTypeface *face;
+    hb_script_t script;
+};
+
+static bool shape_span(const SkFont &base, const std::vector<UChar> &text, const std::vector<int> &graphemes,
+    const FontSpan &span, bool rtl, ShapedText &out) {
+    HbFont font(hb_font_create(shaping_face(span.face)), hb_font_destroy);
+    hb_ot_font_set_funcs(font.get());
+    int scale = (int)std::lround(base.getSize() * 64);
+    hb_font_set_scale(font.get(), scale, scale);
+    HbBuffer buffer(hb_buffer_create(), hb_buffer_destroy);
+    hb_buffer_set_direction(buffer.get(), rtl ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
+    hb_buffer_set_script(buffer.get(), span.script);
+    hb_buffer_set_language(buffer.get(), hb_language_from_string("und", -1));
+    hb_buffer_set_cluster_level(buffer.get(), HB_BUFFER_CLUSTER_LEVEL_MONOTONE_GRAPHEMES);
+    static_assert(sizeof(UChar) == sizeof(uint16_t), "ICU and HarfBuzz UTF-16 units must match");
+    hb_buffer_add_utf16(buffer.get(), reinterpret_cast<const uint16_t *>(text.data()),
+        (int)text.size(), (unsigned)span.start, span.end - span.start);
+    hb_shape(font.get(), buffer.get(), nullptr, 0);
+    if (!hb_buffer_allocation_successful(buffer.get())) {
+        std::fprintf(stderr, "[text] HarfBuzz allocation failed\n"); return false;
+    }
+    unsigned count = 0;
+    hb_glyph_info_t *glyphs = hb_buffer_get_glyph_infos(buffer.get(), &count);
+    hb_glyph_position_t *positions = hb_buffer_get_glyph_positions(buffer.get(), &count);
+    ShapedRun run;
+    run.font = base; run.font.setTypeface(sk_ref_sp(span.face));
+    run.glyphs.reserve(count); run.positions.reserve(count);
+    std::map<int, std::pair<float, float>> clusters;
+    float x = out.width;
+    for (unsigned i = 0; i < count; i++) {
+        float advance = positions[i].x_advance / 64.0f;
+        run.glyphs.push_back((SkGlyphID)glyphs[i].codepoint);
+        run.positions.push_back(SkPoint::Make(x + positions[i].x_offset / 64.0f, -positions[i].y_offset / 64.0f));
+        auto entry = clusters.emplace((int)glyphs[i].cluster, std::make_pair(x, x));
+        entry.first->second.first = std::min(entry.first->second.first, x);
+        entry.first->second.second = std::max(entry.first->second.second, x + advance);
+        x += advance;
+    }
+    for (auto it = clusters.begin(); it != clusters.end(); ++it) {
+        auto next = std::next(it);
+        int end = next != clusters.end() ? next->first : span.end;
+        auto first = std::lower_bound(graphemes.begin(), graphemes.end(), it->first);
+        auto last = std::lower_bound(graphemes.begin(), graphemes.end(), end);
+        size_t parts = (size_t)std::distance(first, last);
+        if (!parts) continue;
+        float width = (it->second.second - it->second.first) / (float)parts;
+        for (size_t i = 0; i < parts; i++)
+            out.clusters.push_back({ first[i], first[i + 1],
+                it->second.first + (float)(rtl ? parts - i - 1 : i) * width, width, rtl ? 1 : 0 });
+    }
+    out.width = x;
+    out.runs.push_back(std::move(run));
+    return true;
+}
+static bool shape_text(const SkFont &base, const char *bytes, size_t length, ShapedText &out) {
+    if (!length) return true;
+    std::vector<UChar> text;
+    std::vector<int> graphemes;
+    if (!utf16(bytes, length, text) || !break_positions(text, UBRK_CHARACTER, graphemes)) return false;
+    UErrorCode error = U_ZERO_ERROR;
+    Bidi bidi(ubidi_open(), ubidi_close);
+    if (!bidi) { std::fprintf(stderr, "[text] Cannot allocate bidi state\n"); return false; }
+    ubidi_setPara(bidi.get(), text.data(), (int32_t)text.size(), UBIDI_DEFAULT_LTR, nullptr, &error);
+    int32_t runs = ubidi_countRuns(bidi.get(), &error);
+    if (U_FAILURE(error)) { std::fprintf(stderr, "[text] Bidi analysis failed: %s\n", u_errorName(error)); return false; }
+    for (int i = 0; i < runs; i++) {
+        int32_t start, size;
+        bool rtl = ubidi_getVisualRun(bidi.get(), i, &start, &size) == UBIDI_RTL;
+        int end = start + size;
+        std::vector<FontSpan> spans;
+        auto boundary = std::upper_bound(graphemes.begin(), graphemes.end(), start);
+        for (int at = start; at < end;) {
+            int next = boundary == graphemes.end() ? end : std::min(*boundary, end);
+            SkTypeface *face = cluster_face(base, text, at, next);
+            hb_script_t script = cluster_script(text, at, next);
+            if (script == HB_SCRIPT_COMMON && !spans.empty()) script = spans.back().script;
+            if (!spans.empty() && spans.back().script == HB_SCRIPT_COMMON && spans.back().face == face)
+                spans.back().script = script;
+            if (!spans.empty() && spans.back().face == face && spans.back().script == script) spans.back().end = next;
+            else spans.push_back({at, next, face, script});
+            at = next;
+            if (boundary != graphemes.end()) ++boundary;
+        }
+        if (rtl) std::reverse(spans.begin(), spans.end());
+        for (const auto &span : spans)
+            if (!shape_span(base, text, graphemes, span, rtl, out)) return false;
+    }
+    std::sort(out.clusters.begin(), out.clusters.end(),
+        [](const PuTextCluster &a, const PuTextCluster &b) { return a.start < b.start; });
+    return true;
+}
+static const ShapedText *shaped(const SkFont &font, const char *text, size_t length) {
+    if (!font.getTypeface()) { std::fprintf(stderr, "[text] No typeface available\n"); return nullptr; }
+    if (!std::isfinite(font.getSize()) || font.getSize() <= 0 || font.getSize() > 4096) {
+        std::fprintf(stderr, "[text] Invalid shaping font size\n"); return nullptr;
+    }
+    try {
+    auto &cache = shape_cache();
+    SkTypefaceID id = font.getTypeface()->uniqueID();
+    for (auto &entry : cache)
+        if (entry.typeface == id && entry.size == font.getSize() && entry.text.size() == length &&
+            !std::memcmp(entry.text.data(), text, length)) return &entry.shape;
+    ShapeCacheEntry entry;
+    entry.text.assign(text, length); entry.typeface = id; entry.size = font.getSize();
+    if (!shape_text(font, text, length, entry.shape)) return nullptr;
+    size_t total = length;
+    for (const auto &item : cache) total += item.text.size();
+    if (cache.size() >= 128 || total > 256 * 1024) cache.clear();
+    cache.push_back(std::move(entry));
+    return &cache.back().shape;
+    } catch (const std::bad_alloc &) { std::fprintf(stderr, "[text] Shaping allocation failed\n"); return nullptr; }
+}
+
+static void wrap_unicode(const SkFont &font, const char *bytes, float width,
+    void (*emit)(void *, const char *, size_t, float), void *ctx) {
+    const char *start = bytes;
+    for (;;) {
+        const char *newline = std::strchr(start, '\n');
+        size_t length = newline ? (size_t)(newline - start) : std::strlen(start);
+        std::vector<UChar> text;
+        std::vector<int> breaks;
+        if (!utf16(start, length, text) || !break_positions(text, UBRK_LINE, breaks)) return;
+        std::vector<size_t> offsets(text.size() + 1, 0);
+        const char *p = start, *end = start + length;
+        int units = 0;
+        while (p < end) {
+            const char *old = p;
+            SkUnichar cp = pu_next_cp(p, end);
+            if (cp > 0xffff) offsets[(size_t)++units] = (size_t)(old - start);
+            offsets[(size_t)++units] = (size_t)(p - start);
+        }
+        size_t line = 0, previous = 0;
+        for (size_t i = 1; i < breaks.size(); i++) {
+            size_t next = offsets[(size_t)breaks[i]], trim = next;
+            while (trim > line && start[trim - 1] == ' ') trim--;
+            float measured = pu_measure_runs(font, start + line, trim - line);
+            if (measured > width && previous > line) {
+                size_t end = previous;
+                while (end > line && start[end - 1] == ' ') end--;
+                emit(ctx, start + line, end - line, pu_measure_runs(font, start + line, end - line));
+                line = previous;
+            }
+            previous = next;
+        }
+        size_t end_line = length;
+        while (end_line > line && start[end_line - 1] == ' ') end_line--;
+        emit(ctx, start + line, end_line - line, pu_measure_runs(font, start + line, end_line - line));
+        if (!newline) break;
+        start = newline + 1;
+    }
+}
+#endif
+
 void pu_render_shutdown(void) {
     image_cache().clear();
+#if defined(PU_COMPLEX_TEXT)
+    shape_cache().clear();
+    shaping_faces().clear();
+#endif
     fallback_cache().clear();
     SkGraphics::PurgeAllCaches();
     g_font_mgr.reset();
@@ -693,6 +995,10 @@ static void pu_runs(const SkFont &base, const char *s, size_t n, std::vector<PuR
 
 static float pu_measure_runs(const SkFont &base, const char *s, size_t n) {
     if (n == 0) return 0;
+#if defined(PU_COMPLEX_TEXT)
+    const ShapedText *text = shaped(base, s, n);
+    return text ? text->width : 0;
+#else
     std::vector<PuRun> runs;
     pu_runs(base, s, n, runs);
     float w = 0;
@@ -701,10 +1007,18 @@ static float pu_measure_runs(const SkFont &base, const char *s, size_t n) {
         w += f.measureText(r.start, r.len, SkTextEncoding::kUTF8, nullptr);
     }
     return w;
+#endif
 }
 
 static void pu_draw_runs(SkCanvas *canvas, const SkFont &base, const SkPaint &paint,
                          const char *s, size_t n, float x, float baseline) {
+#if defined(PU_COMPLEX_TEXT)
+    const ShapedText *text = shaped(base, s, n);
+    if (!text) return;
+    for (const auto &run : text->runs)
+        canvas->drawGlyphs((int)run.glyphs.size(), run.glyphs.data(), run.positions.data(),
+            SkPoint::Make(x, baseline), run.font, paint);
+#else
     std::vector<PuRun> runs;
     pu_runs(base, s, n, runs);
     for (auto &r : runs) {
@@ -712,6 +1026,56 @@ static void pu_draw_runs(SkCanvas *canvas, const SkFont &base, const SkPaint &pa
         canvas->drawSimpleText(r.start, r.len, SkTextEncoding::kUTF8, x, baseline, f, paint);
         x += f.measureText(r.start, r.len, SkTextEncoding::kUTF8, nullptr);
     }
+#endif
+}
+
+int pu_text_graphemes(const char *utf8, size_t length, int **boundaries, size_t *count) {
+    *boundaries = nullptr; *count = 0;
+#if defined(PU_COMPLEX_TEXT)
+    try {
+        std::vector<UChar> text;
+        std::vector<int> positions;
+        if (!utf16(utf8, length, text) || !break_positions(text, UBRK_CHARACTER, positions)) return 0;
+        *boundaries = static_cast<int *>(std::malloc(positions.size() * sizeof(int)));
+        if (!*boundaries) { std::fprintf(stderr, "[text] Cannot allocate grapheme boundaries\n"); return 0; }
+        std::copy(positions.begin(), positions.end(), *boundaries);
+        *count = positions.size();
+        return 1;
+    } catch (const std::bad_alloc &) { std::fprintf(stderr, "[text] Grapheme allocation failed\n"); return 0; }
+#else
+    (void)utf8; (void)length;
+    std::fprintf(stderr, "[text] Unicode grapheme segmentation is unavailable on this build\n");
+    return 0;
+#endif
+}
+int pu_text_layout(const char *utf8, size_t length, float size, int weight, int italic,
+    const char *family, PuTextLayout *out) {
+    *out = {};
+#if defined(PU_COMPLEX_TEXT)
+    if (!std::isfinite(size) || size <= 0 || size > 4096) {
+        std::fprintf(stderr, "[text] Invalid layout font size\n"); return 0;
+    }
+    try {
+        SkFont font = make_font(size, weight, italic, family);
+        const ShapedText *text = shaped(font, utf8, length);
+        if (!text) return 0;
+        out->count = text->clusters.size(); out->width = text->width;
+        if (out->count) {
+            out->clusters = static_cast<PuTextCluster *>(std::malloc(out->count * sizeof(PuTextCluster)));
+            if (!out->clusters) { *out = {}; std::fprintf(stderr, "[text] Cannot allocate layout clusters\n"); return 0; }
+            std::copy(text->clusters.begin(), text->clusters.end(), out->clusters);
+        }
+        return 1;
+    } catch (const std::bad_alloc &) { std::fprintf(stderr, "[text] Layout allocation failed\n"); return 0; }
+#else
+    (void)utf8; (void)length; (void)size; (void)weight; (void)italic; (void)family;
+    std::fprintf(stderr, "[text] Complex text layout is unavailable on this build\n");
+    return 0;
+#endif
+}
+void pu_text_layout_dispose(PuTextLayout *layout) {
+    if (!layout) return;
+    std::free(layout->clusters); *layout = {};
 }
 
 struct WrapMeasure { const SkFont *font; float maxw; int lines; };

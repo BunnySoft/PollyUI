@@ -29,7 +29,8 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
 | Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
-| Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. Complex shaping/grapheme editing remain. |
+| Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. |
+| Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -390,7 +391,7 @@ cleared during the drag and restored on completion/cancellation. Touch drags
 are not implemented. Clipboard ownership is not persisted after the source exits.
 
 Not implemented: tiling/overview, Xwayland, full session recovery,
-PollyUI outgoing drag sources, screen capture/portals, complex-script shaping,
+PollyUI outgoing drag sources, screen capture/portals, advanced typography,
 secure lock, full desktop services or installer. Display settings
 are available, but startup display profiles are not persisted yet.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
@@ -475,8 +476,15 @@ upstream notices and come from the `swaywm/wlroots` 0.14.1 source mirror; their
 version-1 wire interfaces are used with the supported wlroots 0.19.3 API.
 Text-input-v3 comes from installed `wayland-protocols`.
 
-Remaining text work includes shaping, grapheme-aware editing and broader
-engine/hardware qualification. SDL 3.4 exposes caret/purpose and preedit but no
+The Linux text shim now includes direct HarfBuzz shaping and ICU bidi,
+grapheme segmentation and line opportunities. Editor pointer geometry and
+selection share the shaped text. The HarfBuzz build deliberately disables
+GLib/GObject/Cairo rather than using Alpine's GLib-linked binary; the full
+runtime dependency closure is checked. See the root README's Unicode layout
+contract for ligature-caret and paragraph-direction limitations.
+
+Remaining text work includes broader engine/hardware qualification and
+advanced typography. SDL 3.4 exposes caret/purpose and preedit but no
 surrounding-text setter; PollyUI does not implement delete-surrounding edits.
 Numeric/phone purposes temporarily force the service into ASCII mode and
 restore the preceding mode on the next ordinary text field. Display settings
@@ -504,6 +512,10 @@ build; the default prefix is `/usr/local`. It checks the exact source revision
 and refuses mismatching patches. Configure PollyUI with
 `-DSDL3_DIR=INSTALL_PREFIX/lib/cmake/SDL3` when switching an existing build
 from system SDL. The runtime checker sets this to the image's patched build.
+HarfBuzz's toolkit-free source build is installed separately as a static library
+at `/opt/pollyui-text`; the image sets `PKG_CONFIG_PATH` for its `harfbuzz.pc`.
+It must not replace the distribution's shared HarfBuzz, whose optional ABI is
+required by independent applications such as `foot`/libfcft.
 
 ## Build independently on Linux
 
