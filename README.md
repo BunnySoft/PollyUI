@@ -396,8 +396,9 @@ wallpaper windows. Failure to create replacement surfaces or persist the choice
 keeps the prior selection, reports the error, and cleans up staged windows.
 
 This is still a **development desktop**, not the final system. Application
-discovery/Exec launching is implemented; running-window buttons, system services, secure lock, and application
-decorations are not yet integrated. The original appearance preview remains
+discovery/Exec launching, live window buttons and negotiated server-side
+decorations are implemented; system services and secure lock remain incomplete.
+The original appearance preview remains
 available separately and is still labeled simulated.
 
 ### Linux application launcher
@@ -472,6 +473,25 @@ and activated. Right click opens window actions. The window list scrolls
 horizontally with the wheel and resets when its membership or viewport changes.
 App grouping, icons/pinning, workspace filtering and complete desktop keyboard
 navigation remain future work.
+
+PollyWM supplies titlebars and borders through `xdg-decoration` negotiation.
+Server-side decoration is the default for negotiating clients without an
+explicit preference; an explicit client-side request is honored. Clients that
+do not negotiate keep their existing headers. Titlebars support drag, double
+click to toggle maximize, minimize/maximize/close buttons, active/inactive
+colors, and edge/corner resizing. Fullscreen hides decorations; maximized
+content respects both panel reservations and frame extents.
+
+`desktop.setAppearance(themeId)` selects a known decoration theme on the trusted
+Shell connection through the restricted `polly_appearance_v1` global. Shell
+appearance selection calls it automatically. The compositor's C tokens are
+generated from the existing JavaScript themes, not maintained as a second
+palette. Regenerate with `node desktop/tools/generate-decoration-themes.mjs`;
+`--check` verifies the committed header. Standalone compositor builds require
+Fontconfig/FreeType but still do not link SDL, Skia, QuickJS, Yoga or GLib/GIO.
+Captions have basic Unicode font fallback, not complex shaping/bidi. Blur,
+frame shadows, fully rounded client-content clipping and polished animations
+remain separate appearance work.
 
 ### Input event contract
 

@@ -10,7 +10,7 @@ WORKDIR /workspace
 
 FROM compositor-base AS compositor
 
-RUN apk add --no-cache wlr-protocols
+RUN apk add --no-cache wlr-protocols fontconfig-dev freetype-dev
 
 FROM compositor-base AS runtime
 

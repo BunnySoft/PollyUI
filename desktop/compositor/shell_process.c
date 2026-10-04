@@ -23,7 +23,8 @@ bool pu_desktop_global_filter(const struct wl_client *client,
     const struct PuDesktop *desktop = data;
     const char *name = wl_global_get_interface(global)->name;
     if (strcmp(name, "zwlr_layer_shell_v1") == 0 ||
-        strcmp(name, "zwlr_foreign_toplevel_manager_v1") == 0)
+        strcmp(name, "zwlr_foreign_toplevel_manager_v1") == 0 ||
+        strcmp(name, "polly_appearance_v1") == 0)
         return desktop->shell_client && client == desktop->shell_client;
     return true;
 }

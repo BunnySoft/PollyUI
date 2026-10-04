@@ -144,13 +144,24 @@ render(null, document.body);
 saved = 'xp';
 let snapshots = liveWindows.map(item => ({ ...item }));
 let failWindows = false, notifications = 0;
+let failAppearance = false;
+const appliedAppearances = [];
 const originalWindowsChanged = () => { notifications++; };
 const native = {
   windows() { if (failWindows) throw new Error('lost connection'); return snapshots.map(item => ({ ...item })); },
   onWindowsChanged: originalWindowsChanged,
+  setAppearance(id) { if (failAppearance) throw new Error('appearance unavailable'); appliedAppearances.push(id); },
 };
 const windowShell = createDesktopShell({ host: fakeHost, storage, native,
   report: message => warnings.push(message) }).start();
+check(appliedAppearances.join(',') === 'xp', 'initial Shell appearance is sent to the compositor');
+failAppearance = true;
+check(!windowShell.selectTheme('bigsur') && saved === 'xp' && windowShell.getState().themeId === 'xp',
+  'failed compositor appearance restores persistence and keeps live surfaces');
+failAppearance = false;
+check(windowShell.selectTheme('bigsur') && appliedAppearances.at(-1) === 'bigsur',
+  'successful theme selection updates compositor decorations');
+check(windowShell.selectTheme('xp'), 'restore taskbar for window-list checks');
 const panelList = () => windowShell.getSurfaces().find(surface => surface.kind === 'panel')
   .window.document.body.firstChild.childNodes.find(node => node.id === 'shell-window-list');
 panelList().scrollLeft = 500;

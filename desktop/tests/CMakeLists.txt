@@ -1,4 +1,14 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+set(DECORATION_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${DECORATION_XML}" "${PROTOCOL_DIR}/xdg-decoration-client.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${DECORATION_XML}" "${PROTOCOL_DIR}/xdg-decoration.c"
+    DEPENDS "${DECORATION_XML}" VERBATIM)
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/polly-appearance-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${APPEARANCE_XML}" "${PROTOCOL_DIR}/polly-appearance-client.h"
+    DEPENDS "${APPEARANCE_XML}" VERBATIM)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c"
     COMMAND "${WAYLAND_SCANNER}" client-header "${XDG_SHELL_XML}"
@@ -20,10 +30,12 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c
+    "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
+    "${PROTOCOL_DIR}/polly-appearance-client.h" "${PROTOCOL_DIR}/polly-appearance.c"
     "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"
     "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
     "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c")
-target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}")
+target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../compositor")
 target_compile_definitions(pollywm-test-client PRIVATE _POSIX_C_SOURCE=200809L)
 target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
 

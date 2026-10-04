@@ -1,4 +1,6 @@
 #include "server.h"
+#include "decoration.h"
+#include "decoration-themes.h"
 #include "wire.h"
 
 #include <errno.h>
@@ -48,7 +50,7 @@ struct TestClient {
 static struct PuDesktop desktop;
 static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
-static struct TestClient clients[2];
+static struct TestClient clients[3];
 static struct TestClient shell_client = { .control = -1 };
 static int checks;
 static uint32_t time_msec;
@@ -225,6 +227,7 @@ static bool scene_pixel(struct wlr_output *target, uint32_t expected)
 }
 
 static bool layer_output_suite(struct TestLayer options);
+static void find_headless(struct wlr_backend *backend, void *data);
 
 static bool foreign_suite(void)
 {
@@ -312,6 +315,236 @@ static struct PuDesktopLayer *find_layer(int id)
     return NULL;
 }
 
+static bool decoration_click(struct TestClient *client, struct PuDesktopView *view, int part)
+{
+    struct wlr_box box;
+    CHECK(pu_decoration_button_box(view, part, &box));
+    motion(view->tree->node.x + box.x + box.width / 2.0,
+           view->tree->node.y + box.y + box.height / 2.0);
+    CHECK(desktop.seat->pointer_state.focused_surface == NULL);
+    button(BTN_LEFT, true);
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    return true;
+}
+
+static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uint64_t *hash)
+{
+    const struct PuDecorationTheme *theme = &pu_decoration_themes[theme_id];
+    struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, view->output);
+    struct wlr_box bounds;
+    wlr_output_layout_get_box(desktop.layout, view->output, &bounds);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_lock_attach_render(view->output, true);
+    CHECK(wlr_scene_output_build_state(output, &state, NULL) && state.buffer);
+    void *pixels;
+    uint32_t format;
+    size_t stride;
+    CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+                                           &pixels, &format, &stride));
+    double scale = view->output->scale;
+    int left = (int)((view->tree->node.x - bounds.x) * scale);
+    int top = (int)((view->tree->node.y - theme->title_height - bounds.y) * scale);
+    int width = (int)(view->toplevel->base->geometry.width * scale);
+    int height = (int)(theme->title_height * scale);
+    bool inside = left >= 0 && top >= 0 && left + width <= state.buffer->width &&
+        top + height <= state.buffer->height;
+    uint32_t sample = 0;
+    *hash = 1469598103934665603ull;
+    if (inside) {
+        memcpy(&sample, (char *)pixels + (top + height / 2) * stride + (left + width / 2) * 4, 4);
+        for (int y = top; y < top + height; y++)
+            for (int x = left; x < left + width; x++) {
+                uint32_t color;
+                memcpy(&color, (char *)pixels + y * stride + x * 4, 4);
+                *hash = (*hash ^ color) * 1099511628211ull;
+            }
+    }
+    wlr_buffer_end_data_ptr_access(state.buffer);
+    wlr_output_state_finish(&state);
+    wlr_output_lock_attach_render(view->output, false);
+    CHECK(inside && (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888));
+    for (int shift = 0; shift <= 16; shift += 8) {
+        int from = (theme->titleFrom >> shift) & 255, to = (theme->titleTo >> shift) & 255;
+        int expected = from + (int)((to - from) * ((height / 2 + 0.5) / scale / theme->title_height));
+        int actual = (sample >> shift) & 255;
+        if (theme->pinstripe) CHECK(abs(actual - expected) < 20);
+        else CHECK(abs(actual - expected) <= 3);
+    }
+    return true;
+}
+
+static bool decoration_suite(const char *path)
+{
+    struct TestClient *client = &clients[2];
+    CHECK(spawn_client(client, path));
+    CHECK(command(client, TEST_MAP, 7, 0, 8));
+    struct PuDesktopView *view = find_view(7);
+    CHECK(view && client->reply.decoration_mode == 2 && !client->reply.appearance_capability);
+    CHECK(shell_client.reply.appearance_capability);
+    struct wlr_box box;
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(pu_decoration_hit(view, 80, -16) == PU_DECORATION_TITLE);
+    int x = view->tree->node.x, y = view->tree->node.y;
+    int buttons_before = client->reply.buttons;
+    motion(x + 80, y - 16);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_MOVE);
+    motion(x + 110, y + 4);
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(view->tree->node.x == x + 30 && view->tree->node.y == y + 20);
+    x = view->tree->node.x; y = view->tree->node.y;
+    int width = client->reply.width, height = client->reply.height;
+    motion(x + width + 1, y + height + 1);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_RESIZE);
+    motion(x + width + 31, y + height + 26);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(client->reply.width == width + 30 && client->reply.height == height + 25);
+    CHECK(client->reply.buttons == buttons_before);
+    motion(x - 1, y - 31);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_RESIZE && desktop.grab_edges == (WLR_EDGE_TOP | WLR_EDGE_LEFT));
+    motion(x + 9, y - 23);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, x + 10, y + 8, width + 20, height + 17));
+    motion(x - 1, y - 31);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(geometry_is(view, x, y, width + 30, height + 25));
+    CHECK(decoration_click(client, view, PU_DECORATION_MINIMIZE));
+    CHECK(view->minimized && !view->tree->node.enabled);
+    CHECK(command(&shell_client, TEST_FOREIGN_ACTIVATE, 7, 0, 0));
+    CHECK(!view->minimized && desktop.focused == view);
+    CHECK(command(client, TEST_HOLD, 0, 0, 0));
+    CHECK(command(client, TEST_DECORATION, 1, 0, 0));
+    CHECK(view->geometry_pending && pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_RELEASE, 0, 0, 0));
+    CHECK(client->reply.decoration_mode == 1 && !pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_DECORATION, 0, 0, 0));
+    CHECK(client->reply.decoration_mode == 2 && pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
+    CHECK(view->mode == PU_DESKTOP_MAXIMIZED);
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    motion(view->tree->node.x + box.x + box.width / 2.0, view->tree->node.y + box.y + box.height / 2.0);
+    button(BTN_LEFT, true);
+    motion(view->tree->node.x + 50, view->tree->node.y + 50);
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && client->reply.closed == 0);
+    struct wlr_box full, content;
+    CHECK(command(&clients[0], TEST_QUERY, 0, 0, 0));
+    int csd_configures = clients[0].reply.configured;
+    for (unsigned theme = 0; theme < PU_DECORATION_THEME_COUNT; theme++) {
+        CHECK(command(&shell_client, TEST_APPEARANCE, (int)theme, 0, 0));
+        CHECK(command(client, TEST_QUERY, 0, 0, 0));
+        wlr_output_layout_get_box(desktop.layout, view->output, &full);
+        content = full;
+        pu_decoration_inset(view, &content, false);
+        CHECK(content.y == full.y + pu_decoration_themes[theme].title_height);
+        CHECK(geometry_is(view, content.x, content.y, content.width, content.height));
+        CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+        CHECK(pu_decoration_themes[theme].left_controls ? box.x < 20 : box.x > content.width / 2);
+        uint64_t before, after;
+        CHECK(decoration_pixels(view, theme, &before));
+        if (!theme) {
+            CHECK(command(client, TEST_RENAME, 0, 0, 0));
+            CHECK(decoration_pixels(view, theme, &after) && before != after);
+        }
+    }
+    CHECK(command(&clients[0], TEST_QUERY, 0, 0, 0));
+    CHECK(clients[0].reply.configured == csd_configures);
+    if (!nested) {
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_scale(&state, 1.25f);
+        CHECK(wlr_output_commit_state(view->output, &state));
+        wlr_output_state_finish(&state);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0));
+        uint64_t hash;
+        CHECK(decoration_pixels(view, 4, &hash));
+        wlr_output_state_init(&state);
+        wlr_output_state_set_scale(&state, 1);
+        CHECK(wlr_output_commit_state(view->output, &state));
+        wlr_output_state_finish(&state);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0));
+        struct wlr_backend *backend = NULL;
+        wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+        CHECK(backend);
+        struct wlr_output *extra = wlr_headless_add_output(backend, 800, 600);
+        CHECK(extra);
+        wlr_output_state_init(&state);
+        wlr_output_state_set_scale(&state, 1.25f);
+        CHECK(wlr_output_commit_state(extra, &state));
+        wlr_output_state_finish(&state);
+        CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
+        struct wlr_box destination;
+        wlr_output_layout_get_box(desktop.layout, extra, &destination);
+        motion(view->tree->node.x + 80, view->tree->node.y - 20);
+        button(BTN_LEFT, true);
+        CHECK(desktop.grab == PU_DESKTOP_MOVE);
+        motion(destination.x + 180, destination.y + 60);
+        button(BTN_LEFT, false);
+        CHECK(pu_desktop_view_scale(view) == 1.25);
+        CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
+        CHECK(view->output == extra && decoration_pixels(view, 4, &hash));
+        wlr_output_destroy(extra);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0));
+        CHECK(pu_desktop_view_scale(view) == 1 && decoration_pixels(view, 4, &hash));
+        CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
+        motion(view->tree->node.x + 80, view->tree->node.y - 20);
+        button(BTN_LEFT, true);
+        CHECK(desktop.grab == PU_DESKTOP_MOVE);
+        motion(x + 80, y - 20);
+        button(BTN_LEFT, false);
+        CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
+    }
+    CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0));
+    CHECK(view->mode == PU_DESKTOP_FULLSCREEN && !pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_UNFULLSCREEN, 0, 0, 0));
+    CHECK(view->mode == PU_DESKTOP_MAXIMIZED && pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_HOLD, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_APPEARANCE, 0, 0, 0));
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    content = full; pu_decoration_inset(view, &content, false);
+    CHECK(content.y == full.y + 40);
+    CHECK(command(client, TEST_RELEASE, 0, 0, 0));
+    content = full; pu_decoration_inset(view, &content, false);
+    CHECK(content.y == full.y + 32);
+    CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
+    CHECK(view->mode == PU_DESKTOP_FLOATING);
+    CHECK(geometry_is(view, x, y, width + 30, height + 25));
+    time_msec += 500;
+    motion(view->tree->node.x + 80, view->tree->node.y - 16);
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(view->mode == PU_DESKTOP_MAXIMIZED);
+    CHECK(decoration_click(client, view, PU_DECORATION_CLOSE));
+    CHECK(client->reply.closed == 1 && find_view(7) == view);
+    CHECK(command(client, TEST_DECORATION_DESTROY, 0, 0, 0));
+    CHECK(!pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_DESTROY, 0, 0, 0));
+    CHECK(command(client, TEST_MAP, 7, 0, 8 | 16));
+    view = find_view(7);
+    CHECK(view && client->reply.decoration_mode == 1 && !pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(command(client, TEST_DECORATION, 2, 0, 0));
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    motion(view->tree->node.x + box.x + box.width / 2.0, view->tree->node.y + box.y + box.height / 2.0);
+    button(BTN_LEFT, true);
+    CHECK(desktop.decoration_pressed == view);
+    CHECK(command(client, TEST_DESTROY, 0, 0, 0));
+    CHECK(desktop.decoration_pressed == NULL);
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUIT, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_FOREIGN_ACTIVATE, 2, 0, 0));
+    return true;
+}
+
 static bool layer_suite(const char *path)
 {
     int sockets[2];
@@ -332,6 +565,7 @@ static bool layer_suite(const char *path)
     CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
     CHECK(!clients[1].reply.layer_capability);
     CHECK(foreign_suite());
+    CHECK(decoration_suite(path));
     struct PuDesktopView *view = find_view(2);
     struct wlr_box full;
     wlr_output_layout_get_box(desktop.layout, view->output, &full);
@@ -1033,7 +1267,7 @@ static bool suite(const char *client_path)
 static bool stop_clients(bool expect_success)
 {
     bool passed = true;
-    for (size_t i = 0; i < 2; i++) {
+    for (size_t i = 0; i < 3; i++) {
         struct TestClient *client = &clients[i];
         if (client->pid <= 0) continue;
         close(client->control);

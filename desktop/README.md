@@ -26,8 +26,9 @@ applications rather than importing their buffers into the PollyUI DOM.
 |---|---|
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
-| 2b - remaining window policy | Workspaces, chosen tiling/floating rules and client-decoration policy; user-facing output configuration and real-hardware hotplug qualification. |
-| Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes, exercised with real PollyUI layout/input/rendering. These do not yet style PollyWM or other applications. |
+| 2b - remaining window policy | Workspaces, chosen tiling/floating rules, user-facing output configuration and real-hardware hotplug qualification. |
+| Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
+| Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes. The preview remains simulated; the native Shell and negotiated PollyWM frames reuse the same tokens. |
 | Linux runtime - raster/GLES milestone | Native Alpine/musl Skia build, Fontconfig/FreeType fonts, SDL3 EGL/GLES with explicit raster fallback and runtime error handling. Software GL is validated; physical GPU acceleration is not yet qualified. |
 | Runtime services - implemented | Linux HTTP/HTTPS with certificate checks, XDG app namespaces, atomic storage and joined request/worker/task shutdown. No sandbox, secret store or full browser Fetch API is implied. |
 | CI - definitions and local checks | Alpine ordinary/sanitizer builds with real clients on headless PollyWM, Windows core/WinHTTP and macOS raster jobs. Hosted execution requires pushing the workflow; local Linux/Windows results do not verify macOS. |
@@ -66,6 +67,9 @@ filter; ordinary xdg clients do not receive layer-shell privilege.
 The standard `zwlr_foreign_toplevel_manager_v1` window-management global is
 restricted to that same live shell connection. Public clients cannot enumerate
 or control other windows through it, even when they know its global ID.
+`polly_appearance_v1` is similarly restricted: its only non-destructor request
+selects a known decoration theme. It is not a general window-management socket,
+input-injection interface or arbitrary rendering API.
 
 Trust is **not** derived from UID, PID, `app_id`, executable name, or arbitrary
 environment values. Even a new public connection from the shell's own process
@@ -99,6 +103,37 @@ with ptrace/root access, a compromised trusted shell, or deliberate capability
 delegation are outside it. Future privileged protocols must extend this filter
 and validate the ownership and arguments of their requests. No management
 protocol is promised by reserving a connection.
+
+## Server-side window decorations
+
+PollyWM supports `zxdg_decoration_manager_v1` and prefers server-side decoration
+when a negotiating client has no explicit preference. Explicit client-side
+requests are honored. A client which does not implement this protocol retains
+its own header; PollyWM does not guess whether an application has painted one
+or place a second titlebar over it.
+
+The compositor draws caption text, active/inactive titlebars, borders and
+minimize/maximize/close controls. Titlebar double-click toggles maximize; drag
+moves floating windows and edges/corners resize them. Releases outside the
+pressed control cancel the action. Fullscreen hides the frame, and maximized
+client geometry excludes both Shell reservations and decoration extents.
+Negotiation and theme geometry changes use the normal configure/ack/commit
+path, so an older client buffer does not acquire a newer frame layout.
+
+Shell appearance selection also calls `desktop.setAppearance(id)` on the
+private connection. XP/Classic have right-side controls; Aqua/Lion/Big Sur have
+left-side controls. C palettes/metrics are generated from `shell/themes.mjs`
+by `node desktop/tools/generate-decoration-themes.mjs`; the checked-in header
+keeps standalone builds independent of Node, and the combined suite checks it
+for drift.
+
+Caption rasterization uses Fontconfig and FreeType with a bounded face cache
+and scale-aware CPU buffers. This adds neither Skia/SDL/QuickJS/Yoga nor
+GLib/GIO to PollyWM. Basic Unicode fallback is supported; shaping, bidi,
+grapheme-aware ellipsis and complete accessibility remain later work.
+The current frames have rounded titlebar tops, not rounded clipping of client
+content, blur or shadows. Input bounds remain rectangular. Restore a maximized
+window before dragging it; drag-to-restore and tiling gestures remain deferred.
 
 ## Appearance direction and native preview
 
@@ -177,8 +212,7 @@ state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
 `PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
 These appearance tests run separately from the WSL compositor suite.
 
-Next integration steps are running-window buttons and
-a shared decoration policy.
+The real Shell now has running-window buttons and a shared decoration policy.
 Window-manager state remains owned by PollyWM; theme code must not become an
 alternate window manager.
 
@@ -237,8 +271,8 @@ alternate window manager.
 | Alt + F11 | Toggle fullscreen |
 | Alt + Escape | Exit PollyWM |
 
-The parent desktop may intercept shortcuts in nested mode. Running clients may
-draw their own title bars; PollyWM does not yet draw server-side decorations.
+The parent desktop may intercept shortcuts in nested mode. Negotiating clients
+can use PollyWM titlebars; clients requesting self-drawn headers retain them.
 Maximize/fullscreen capabilities are advertised. Restore a maximized/fullscreen
 window before dragging it; interactive move/resize is ignored while in those
 states or while a state/placement configure is outstanding. State requests during
@@ -313,7 +347,8 @@ Other wlroots API series need an explicit port, not an unbounded dependency chan
 ```sh
 # Alpine 3.24, as root only for package installation:
 apk add build-base cmake ninja pkgconf wlroots0.19-dev wlr-protocols wayland-dev \
-    wayland-protocols libxkbcommon-dev xkeyboard-config capitaine-cursors
+    wayland-protocols libxkbcommon-dev xkeyboard-config capitaine-cursors \
+    fontconfig-dev freetype-dev font-dejavu
 
 # From the repository root, as a normal user:
 cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -426,6 +461,10 @@ The native window-Shell fixture injects real pointer events into taskbar, Dock
 and context-menu surfaces and observes independent `foot` clients. It also
 checks metadata, stale IDs, public-client rejection and a fresh Shell connection
 enumerating an application that survived the previous Shell's exit.
+Decoration coverage includes explicit/default negotiation, deferred mode and
+theme commits, title/palette pixel changes, controls and drag cancellation,
+floating drag/resize, fullscreen, fractional scale and destruction during a
+pressed control. Public forced-bind attempts cannot change appearance.
 Non-sanitized `-Nested` runs the fixture under Valgrind to cover library-level
 buffer lifetime errors; `-Sanitize` uses ASan/UBSan instead, not simultaneously.
 CLI tests cover invalid arguments, runtime permissions, socket collisions,

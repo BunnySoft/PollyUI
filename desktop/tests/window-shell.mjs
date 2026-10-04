@@ -54,6 +54,7 @@ async function run() {
     window.create({ title: 'Public window-management rejection', width: 160, height: 100 });
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
     rejects(() => desktop.activateWindow(1), 'public connection cannot activate a guessed handle');
+    rejects(() => desktop.setAppearance('xp'), 'public connection cannot change compositor appearance');
     window.quit();
     return;
   }
@@ -73,6 +74,10 @@ async function run() {
   }
   await until(() => find()?.active, 'live independent application');
   const id = find().id;
+  rejects(() => desktop.setAppearance('missing'), 'unknown appearance is rejected without losing Shell privilege');
+  rejects(() => desktop.setAppearance('xp\0invalid'), 'appearance identifiers cannot contain embedded NUL');
+  const initialFrame = marker('fixture-frame-theme xp');
+  await until(() => initialFrame.closed, 'Shell theme reaches real application decorations');
   if (mode === 'initial') await until(() => find()?.title === 'Updated title', 'metadata update');
   check(Number.isInteger(id) && ['active', 'minimized', 'maximized', 'fullscreen']
     .every(key => typeof find()[key] === 'boolean'), 'window snapshot has typed metadata and flags');
@@ -98,6 +103,8 @@ async function run() {
     desktop.activateWindow(id);
     await until(() => find()?.active, 'native activate');
     check(shell.selectTheme('bigsur'), 'Big Sur Dock selected');
+    const bigSurFrame = marker('fixture-frame-theme bigsur');
+    await until(() => bigSurFrame.closed, 'live Big Sur application frame geometry');
     await click(bar(), 'shell-window-' + id);
     await until(() => find()?.minimized, 'real Dock button minimizes');
     await click(bar(), 'shell-window-' + id);

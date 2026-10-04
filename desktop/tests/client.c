@@ -2,6 +2,9 @@
 #include "xdg-shell-client-protocol.h"
 #include "layer-shell-client-protocol.h"
 #include "foreign-toplevel-client.h"
+#include "xdg-decoration-client.h"
+#include "polly-appearance-client.h"
+#include "decoration-themes.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -26,6 +29,7 @@ struct Window {
     struct wl_surface *surface;
     struct xdg_surface *xdg;
     struct xdg_toplevel *toplevel;
+    struct zxdg_toplevel_decoration_v1 *decoration;
     struct xdg_popup *popup;
     struct zwlr_layer_surface_v1 *layer;
     struct wl_callback *frame;
@@ -57,6 +61,8 @@ struct Client {
     struct xdg_wm_base *wm;
     struct zwlr_layer_shell_v1 *layer_shell;
     struct zwlr_foreign_toplevel_manager_v1 *foreign_manager;
+    struct zxdg_decoration_manager_v1 *decoration_manager;
+    struct polly_appearance_v1 *appearance;
     struct Foreign foreign[16];
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
@@ -409,6 +415,12 @@ static void global(void *data, struct wl_registry *registry,
         client->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
     else if (strcmp(interface, wl_shm_interface.name) == 0)
         client->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+    else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
+        client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
+    else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 1);
+        client->reply.appearance_capability = 1;
+    }
     else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
         client->reply.layer_capability = 1;
@@ -449,6 +461,13 @@ static void global_remove(void *data, struct wl_registry *registry, uint32_t nam
 }
 static const struct wl_registry_listener registry_listener = { .global = global, .global_remove = global_remove };
 
+static void decoration_configure(void *data, struct zxdg_toplevel_decoration_v1 *decoration, uint32_t mode)
+{
+    (void)decoration;
+    ((struct Window *)data)->client->reply.decoration_mode = (int)mode;
+}
+static const struct zxdg_toplevel_decoration_v1_listener decoration_listener = { .configure = decoration_configure };
+
 static void create_window(struct Client *client, int id, uint32_t state)
 {
     struct Window *window = &client->window;
@@ -461,6 +480,14 @@ static void create_window(struct Client *client, int id, uint32_t state)
     xdg_surface_add_listener(window->xdg, &surface_listener, window);
     window->toplevel = xdg_surface_get_toplevel(window->xdg);
     xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+    if (state & 8) {
+        if (!client->decoration_manager) die("no decoration manager");
+        window->decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(client->decoration_manager,
+                                                                              window->toplevel);
+        zxdg_toplevel_decoration_v1_add_listener(window->decoration, &decoration_listener, window);
+        if (state & 16) zxdg_toplevel_decoration_v1_set_mode(window->decoration,
+            ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
+    }
     char name[64];
     snprintf(name, sizeof(name), "org.pollywm.test.%d", id);
     xdg_toplevel_set_app_id(window->toplevel, name);
@@ -510,6 +537,7 @@ static void destroy_window(struct Window *window)
 {
     if (window->frame) wl_callback_destroy(window->frame);
     if (window->popup) xdg_popup_destroy(window->popup);
+    if (window->decoration) zxdg_toplevel_decoration_v1_destroy(window->decoration);
     if (window->toplevel) xdg_toplevel_destroy(window->toplevel);
     if (window->layer) zwlr_layer_surface_v1_destroy(window->layer);
     if (window->xdg) xdg_surface_destroy(window->xdg);
@@ -576,6 +604,21 @@ int main(int argc, char **argv)
         struct Foreign *foreign = request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_APPEARANCE:
+            if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_THEME_COUNT)
+                die("invalid appearance request");
+            polly_appearance_v1_set_theme(client.appearance, pu_decoration_themes[request.id].id);
+            break;
+        case TEST_DECORATION:
+            if (!window->decoration) die("no decoration");
+            if (!request.id) zxdg_toplevel_decoration_v1_unset_mode(window->decoration);
+            else zxdg_toplevel_decoration_v1_set_mode(window->decoration, (uint32_t)request.id);
+            break;
+        case TEST_DECORATION_DESTROY:
+            if (!window->decoration) die("no decoration to destroy");
+            zxdg_toplevel_decoration_v1_destroy(window->decoration);
+            window->decoration = NULL;
+            break;
         case TEST_QUERY: break;
         case TEST_MINIMIZE: xdg_toplevel_set_minimized(window->toplevel); break;
         case TEST_RENAME: xdg_toplevel_set_title(window->toplevel, "Updated title"); break;
@@ -688,6 +731,8 @@ int main(int argc, char **argv)
     for (size_t i = 0; i < 16; i++)
         if (client.foreign[i].handle) zwlr_foreign_toplevel_handle_v1_destroy(client.foreign[i].handle);
     if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
+    if (client.appearance) polly_appearance_v1_destroy(client.appearance);
+    if (client.decoration_manager) zxdg_decoration_manager_v1_destroy(client.decoration_manager);
     wl_shm_destroy(client.shm);
     wl_compositor_destroy(client.compositor);
     for (size_t i = 0; i < 8; i++)

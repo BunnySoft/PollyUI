@@ -163,6 +163,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
         target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
         if (PU_DESKTOP_SERVICES)
+            set(UI_APPEARANCE_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-appearance-v1.xml")
+            add_custom_command(
+                OUTPUT "${UI_PROTOCOL_DIR}/polly-appearance-client.h" "${UI_PROTOCOL_DIR}/polly-appearance.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_APPEARANCE_XML}" "${UI_PROTOCOL_DIR}/polly-appearance-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_APPEARANCE_XML}" "${UI_PROTOCOL_DIR}/polly-appearance.c"
+                DEPENDS "${UI_APPEARANCE_XML}" VERBATIM)
             set(UI_FOREIGN_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-foreign-toplevel-management-unstable-v1.xml")
             add_custom_command(
                 OUTPUT "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
@@ -170,7 +176,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
                 DEPENDS "${UI_FOREIGN_XML}" VERBATIM)
             target_sources(pollyui PRIVATE src/desktop/windows.c
+                "${UI_PROTOCOL_DIR}/polly-appearance-client.h" "${UI_PROTOCOL_DIR}/polly-appearance.c"
                 "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c")
+            target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/compositor")
         endif()
     endif()
 endif()
@@ -258,6 +266,8 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
     if (PU_DESKTOP_SERVICES)
+        add_test(NAME desktop-decoration-tokens
+            COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tools/generate-decoration-themes.mjs" --check)
         add_executable(pollyui-application-process-test desktop/tests/application-process.c)
         add_test(NAME desktop-application-launch
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-fixture.mjs"

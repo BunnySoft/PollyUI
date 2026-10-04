@@ -1,4 +1,6 @@
 #include "server.h"
+#include "decoration.h"
+#include "decoration-themes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -259,6 +261,25 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            if (!strncmp(name, "fixture-frame-theme ", 20)) {
+                struct PuDesktopView *view;
+                bool ready = false;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->toplevel->app_id || strcmp(view->toplevel->app_id, "org.pollyui.window-fixture") ||
+                        view->geometry_pending) continue;
+                    for (unsigned theme = 0; theme < PU_DECORATION_THEME_COUNT; theme++) {
+                        if (strcmp(name + 20, pu_decoration_themes[theme].id)) continue;
+                        struct wlr_box inset = { .width = 1280, .height = 720 }, button;
+                        pu_decoration_inset(view, &inset, false);
+                        CHECK(inset.y == pu_decoration_themes[theme].title_height &&
+                              inset.x == pu_decoration_themes[theme].border_width);
+                        CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &button));
+                        ready = true;
+                    }
+                }
+                if (ready) wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             if (!strcmp(name, "fixture-success")) {
                 success = true;
                 wlr_layer_surface_v1_destroy(marker->surface);

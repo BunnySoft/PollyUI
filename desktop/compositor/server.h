@@ -41,6 +41,7 @@ struct PuDesktopView {
     struct wl_list link, all_link;
     bool mapped, minimized;
     struct wlr_foreign_toplevel_handle_v1 *foreign;
+    struct PuDecoration *decoration;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending;
     enum PuDesktopMode mode;
@@ -78,10 +79,15 @@ struct PuDesktop {
     struct wlr_xdg_shell *shell;
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
+    struct PuDecorations *decorations;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;
     bool arranging_layers;
     struct PuDesktopView *focused, *grabbed;
+    struct PuDesktopView *decoration_pressed, *last_title_click;
+    int decoration_part;
+    uint32_t last_title_time;
+    double last_title_x, last_title_y;
     enum PuDesktopGrab grab;
     double grab_x, grab_y;
     struct wlr_box grab_box;

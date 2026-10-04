@@ -436,6 +436,23 @@ callbacks are released before SDL disconnects and before QuickJS destruction.
 The Shell renders one global window list per output; management requests are
 asynchronous and do not invent a workspace policy.
 
+PollyWM's optional-per-client decorations negotiate through `xdg-decoration`.
+An explicit client-side preference is respected; non-negotiating clients are
+not guessed to be undecorated. Frame state and metrics become visible only with
+the matching xdg configure commit. Content coordinates remain the existing
+window-geometry origin, with frame extents outside it; work areas are inset
+before maximizing/fitting content. Fullscreen disables the frame.
+
+Titlebars are bounded CPU buffers with Fontconfig/FreeType captions, separate
+from application buffers, and retain wlroots buffer ownership semantics.
+The compositor still does not link the UI engine. The five C theme presets are
+generated from the Shell's canonical tokens. A restricted `polly_appearance_v1`
+global accepts only known theme IDs from the exact trusted Shell connection.
+The Shell stages its surfaces, persists selection, then sends appearance;
+if the native request throws, it attempts to restore the previous stored value
+and reports rollback failure explicitly. Rendering/geometry application remains
+asynchronous, not a distributed atomic transaction.
+
 ### Deferred ⏸
 
 - **JS on its own thread** (RN-old-bridge style). The industry moved away from

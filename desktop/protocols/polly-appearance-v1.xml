@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="polly_appearance_v1">
+  <interface name="polly_appearance_v1" version="1">
+    <description summary="trusted Shell appearance selection">
+      This private global is restricted to the compositor-owned Shell connection.
+      It selects a known decoration theme; it does not expose window geometry,
+      input injection, filesystem access or arbitrary rendering commands.
+    </description>
+    <enum name="error">
+      <entry name="unknown_theme" value="0" summary="unknown appearance identifier"/>
+      <entry name="unauthorized" value="1" summary="connection is not the trusted Shell"/>
+    </enum>
+    <request name="destroy" type="destructor"/>
+    <request name="set_theme">
+      <arg name="theme" type="string" summary="known PollyDesktop theme ID"/>
+    </request>
+  </interface>
+</protocol>

@@ -14,7 +14,8 @@ enum TestCommand {
     TEST_LAYER_MAP, TEST_LAYER_CONFIGURE, TEST_MINIMIZE,
     TEST_FOREIGN_QUERY, TEST_FOREIGN_MINIMIZE, TEST_FOREIGN_RESTORE, TEST_FOREIGN_ACTIVATE,
     TEST_FOREIGN_MAXIMIZE, TEST_FOREIGN_UNMAXIMIZE, TEST_FOREIGN_FULLSCREEN,
-    TEST_FOREIGN_UNFULLSCREEN, TEST_FOREIGN_CLOSE, TEST_RENAME
+    TEST_FOREIGN_UNFULLSCREEN, TEST_FOREIGN_CLOSE, TEST_RENAME,
+    TEST_DECORATION, TEST_DECORATION_DESTROY, TEST_APPEARANCE
 };
 
 struct TestLayer {
@@ -37,6 +38,7 @@ struct TestReply {
     int pending, output_count, popup_x, popup_y, popup_w, popup_h, repositioned;
     int layer_capability;
     int foreign_capability, foreign_count, foreign_state, foreign_outputs, foreign_done, minimize_capability;
+    int appearance_capability, decoration_mode;
     char foreign_title[128];
     uint32_t serial;
 };

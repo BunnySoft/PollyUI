@@ -17,6 +17,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let lastFailure = '';
   let applications = [];
   let windows = [];
+  let compositorAppearance = null;
   let previousWindowsChanged = null;
   const windowsChanged = () => {
     if (!running) return;
@@ -119,6 +120,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const outputs = host.displays();
     const staged = [];
     const plans = [];
+    let previousStored, saved = false;
     try {
       for (const output of outputs) {
         const previous = bundles.get(output.id);
@@ -133,9 +135,25 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         }
         plans.push({ output, surfaces });
       }
-      if (persist) storage.setItem(SHELL_THEME_KEY, nextTheme);
+      if (persist) {
+        previousStored = storage.getItem(SHELL_THEME_KEY);
+        storage.setItem(SHELL_THEME_KEY, nextTheme);
+        saved = true;
+      }
+      if (typeof native?.setAppearance === 'function' && compositorAppearance !== nextTheme) {
+        native.setAppearance(nextTheme);
+        compositorAppearance = nextTheme;
+      }
     } catch (failure) {
       for (const surface of staged) closeSurface(surface);
+      if (saved) {
+        try {
+          if (previousStored === null) storage.removeItem(SHELL_THEME_KEY);
+          else storage.setItem(SHELL_THEME_KEY, previousStored);
+        } catch (rollback) {
+          throw new Error(String(failure) + '; could not restore saved appearance: ' + String(rollback));
+        }
+      }
       throw failure;
     }
     const retained = new Set(plans.flatMap(plan => Object.values(plan.surfaces)));

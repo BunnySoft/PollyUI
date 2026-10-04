@@ -1,5 +1,7 @@
 #include "desktop/windows.h"
 #include "foreign-toplevel-client.h"
+#include "polly-appearance-client.h"
+#include "decoration-themes.h"
 
 #include <SDL3/SDL.h>
 #include <errno.h>
@@ -24,6 +26,7 @@ static struct {
     struct wl_display *display;
     struct zwlr_foreign_toplevel_manager_v1 *manager;
     struct wl_seat *seat;
+    struct polly_appearance_v1 *appearance;
     struct DesktopWindow *windows;
     uint32_t next_id;
     int changed, failed, ready;
@@ -123,6 +126,9 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
         if (!control.manager ||
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
+    } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 1);
+        if (!control.appearance) control.failed = control.changed = 1;
     } else if (!control.seat && !strcmp(interface, "wl_seat")) {
         control.seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
         if (!control.seat || wl_seat_add_listener(control.seat, &seat_listener, NULL) < 0)
@@ -164,6 +170,8 @@ static void disconnect_control(void)
         zwlr_foreign_toplevel_manager_v1_destroy(control.manager);
     }
     if (control.seat) wl_seat_destroy(control.seat);
+    if (control.appearance) polly_appearance_v1_destroy(control.appearance);
+    control.appearance = NULL;
     control.manager = NULL; control.seat = NULL; control.display = NULL;
     control.ready = control.changed = 0;
 }
@@ -248,11 +256,33 @@ static JSValue action(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     return JS_UNDEFINED;
 }
 
+static JSValue set_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!argc || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "An appearance ID is required");
+    size_t length;
+    const char *name = JS_ToCStringLen(ctx, &length, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    const char *selected = NULL;
+    for (size_t i = 0; i < PU_DECORATION_THEME_COUNT; i++)
+        if (strlen(pu_decoration_themes[i].id) == length && !strcmp(name, pu_decoration_themes[i].id))
+            selected = pu_decoration_themes[i].id;
+    JS_FreeCString(ctx, name);
+    if (!selected) return JS_ThrowRangeError(ctx, "Unknown decoration appearance");
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    if (!control.appearance) return JS_ThrowTypeError(ctx, "Appearance selection requires a trusted PollyWM connection");
+    polly_appearance_v1_set_theme(control.appearance, selected);
+    if (wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
+        return JS_ThrowInternalError(ctx, "Cannot send decoration appearance");
+    return JS_UNDEFINED;
+}
+
 int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
 {
     control.ctx = ctx;
     control.api = JS_DupValue(ctx, api);
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
+    if (!property(ctx, api, "setAppearance", JS_NewCFunction(ctx, set_appearance, "setAppearance", 1))) return 0;
     const char *names[] = { "activateWindow", "minimizeWindow", "restoreWindow", "closeWindow",
         "maximizeWindow", "unmaximizeWindow", "fullscreenWindow", "unfullscreenWindow" };
     for (int i = 0; i < 8; i++)
