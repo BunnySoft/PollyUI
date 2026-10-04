@@ -120,6 +120,16 @@ endif()
 
 # Linux builds use the native font/codec libraries selected by skia-linux.gn.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(PU_DESKTOP_SERVICES "Enable explicit Linux desktop application APIs" ${PU_BUILD_DESKTOP})
+    if (PU_DESKTOP_SERVICES)
+        target_sources(pollyui PRIVATE src/desktop/applications.c)
+        target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
+        add_executable(pollyui-app-launcher src/desktop/exec.c)
+        target_compile_options(pollyui-app-launcher PRIVATE -fno-sanitize=all -Wall -Wextra -Werror)
+        target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
+        add_dependencies(pollyui pollyui-app-launcher)
+        install(TARGETS pollyui-app-launcher RUNTIME DESTINATION bin)
+    endif()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SKIA_SYSTEM REQUIRED IMPORTED_TARGET
         fontconfig freetype2 libpng libjpeg libwebp libwebpdemux libwebpmux zlib)
@@ -237,6 +247,19 @@ if (WIN32 AND PU_WINDOWED)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
+    if (PU_DESKTOP_SERVICES)
+        add_executable(pollyui-application-process-test desktop/tests/application-process.c)
+        add_test(NAME desktop-application-launch
+            COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-fixture.mjs"
+                $<TARGET_FILE:pollyui> $<TARGET_FILE:pollyui-application-process-test>)
+        set_tests_properties(desktop-application-launch PROPERTIES TIMEOUT 35 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-launcher-shell
+            COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"
+                "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+                $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+                "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.mjs")
+        set_tests_properties(desktop-launcher-shell PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
     add_test(NAME desktop-session
         COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/session.sh"
             "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"

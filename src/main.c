@@ -9,6 +9,9 @@
 #include "core/dispatch.h"
 #include "core/app_paths.h"
 #include "concurrency/async.h"
+#if defined(PU_DESKTOP_SERVICES)
+#include "desktop/applications.h"
+#endif
 
 #include <stdint.h>
 #include <stdio.h>
@@ -214,7 +217,11 @@ static double pu_frame_ms(void)
 static int app_async(void *user)
 {
     PuScript *script = user;
-    int n = pu_script_flush_raf(script, pu_frame_ms());
+    int n = 0;
+#if defined(PU_DESKTOP_SERVICES)
+    n += pu_applications_pump();
+#endif
+    n += pu_script_flush_raf(script, pu_frame_ms());
     return n + pu_script_pump(script);
 }
 
@@ -1040,7 +1047,7 @@ static void install_application(JSContext *ctx, const PuAppPaths *paths, int arg
     JS_FreeValue(ctx, global);
 }
 
-static int run_app(const char *path, const char *app_id, int argc, char **argv)
+static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode)
 {
     if (!pu_font_system_init()) return 1;
     PuAppPaths paths;
@@ -1079,7 +1086,14 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv)
     PuApp *primary = host_ready ? install_window_api(pu_script_jsctx(s)) : NULL;
     install_application(pu_script_jsctx(s), &paths, argc, argv);
 
-    int rc = primary ? pu_script_run_file(s, path) : 1;
+    int desktop_ready = 1;
+#if defined(PU_DESKTOP_SERVICES)
+    if (desktop_mode) desktop_ready = pu_applications_install(pu_script_jsctx(s));
+#else
+    (void)desktop_mode;
+#endif
+    int rc = primary && desktop_ready ? pu_script_run_file(s, path) : 1;
+    if (!desktop_ready) fprintf(stderr, "[desktop] Cannot install desktop application APIs\n");
     if (!primary) fprintf(stderr, "[host] Failed to create application window: window system initialization\n");
     if (rc == 0)
         pu_script_pump(s);   /* drain microtasks/timers/async from setup (non-blocking) */
@@ -1106,6 +1120,9 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv)
 
     pu_async_shutdown();    /* terminate workers before tearing down the context */
     pu_fetch_shutdown();
+#if defined(PU_DESKTOP_SERVICES)
+    pu_applications_shutdown();
+#endif
     pu_dispatch_set_waker(disp, NULL, NULL);
     g_app_quitting = 1;
     while (g_apps) app_retire(g_apps, 0);
@@ -1143,26 +1160,37 @@ int main(int argc, char **argv)
 #endif
     int rc;
     const char *app_id = NULL;
+    int desktop_mode = 0;
     int index = 1;
-    if (index < argc && !strcmp(argv[index], "--app-id")) {
-        if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
-        app_id = argv[index + 1]; index += 2;
+    while (index < argc) {
+        if (!strcmp(argv[index], "--app-id")) {
+            if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
+            app_id = argv[index + 1]; index += 2;
+        } else if (!strcmp(argv[index], "--desktop")) {
+#if defined(PU_DESKTOP_SERVICES)
+            desktop_mode = 1; index++;
+#else
+            fprintf(stderr, "Desktop application APIs are unavailable in this build\n"); return 2;
+#endif
+        } else break;
     }
     if (index < argc && !strcmp(argv[index], "--help")) {
-        puts("Usage: pollyui [--app-id ID] app.js [arguments...]\n"
+        puts("Usage: pollyui [--desktop] [--app-id ID] app.js [arguments...]\n"
              "       pollyui --test test.js\n"
-             "--app-id selects a stable Linux XDG storage namespace.");
+             "--app-id selects a stable Linux XDG storage namespace.\n"
+             "--desktop explicitly enables Linux application discovery and direct process launching.");
         return 0;
     }
     if (index < argc && !strcmp(argv[index], "--test")) {
-        if (app_id || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept --app-id\n"); return 2; }
+        if (app_id || desktop_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
         rc = run_test(argv[index + 1]);
     } else if (index < argc && argv[index][0] == '-') {
         fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
     } else if (index < argc)
-        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1);
+        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode);
     else
-        rc = run_demo();
+        if (desktop_mode) { fprintf(stderr, "--desktop requires an application script\n"); return 2; }
+        else rc = run_demo();
     pu_render_shutdown();
     return rc;
 }

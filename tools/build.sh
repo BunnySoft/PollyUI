@@ -5,6 +5,7 @@
 #   ./tools/build.sh                 # configure + build (CPU raster, default)
 #   ./tools/build.sh --clean         # wipe the build dir first
 #   ./tools/build.sh --metal         # macOS: GPU Metal backend (-DPU_METAL=ON)
+#   ./tools/build.sh --desktop-services # Linux: native application launcher APIs
 #   ./tools/build.sh --skia-dir DIR  # use a specific Skia out/ dir
 #   ./tools/build.sh --skia-root DIR # matching Skia source/header directory
 #   ./tools/build.sh --run           # launch the demo afterward
@@ -17,6 +18,7 @@ repo="$(cd "$here/.." && pwd)"
 clean=0
 run=0
 metal=0
+desktop_services=0
 skia_dir=""
 skia_root="${SKIA_ROOT:-}"
 run_args=()
@@ -25,6 +27,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --clean)    clean=1; shift ;;
     --metal)    metal=1; shift ;;
+    --desktop-services) desktop_services=1; shift ;;
     --run)      run=1; shift; run_args=("$@"); break ;;
     --skia-dir) skia_dir="${2:?--skia-dir needs a path}"; shift 2 ;;
     --skia-root) skia_root="${2:?--skia-root needs a path}"; shift 2 ;;
@@ -47,6 +50,10 @@ esac
 
 if [[ "$os" == "linux" && "$metal" == 1 ]]; then
   echo "--metal is only supported on macOS" >&2
+  exit 2
+fi
+if [[ "$os" != "linux" && "$desktop_services" == 1 ]]; then
+  echo "--desktop-services is only supported on Linux" >&2
   exit 2
 fi
 
@@ -80,6 +87,7 @@ cd "$repo"
 # --- configure ---------------------------------------------------------------
 cmake_args=(-DSKIA_LIB_DIR="$skia_dir" -DSKIA_ROOT="$skia_root")
 [[ "$metal" == 1 ]] && cmake_args+=(-DPU_METAL=ON)
+[[ "$desktop_services" == 1 ]] && cmake_args+=(-DPU_DESKTOP_SERVICES=ON)
 
 echo "==> configure"
 if [[ -n "$preset" ]]; then

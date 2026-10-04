@@ -15,7 +15,7 @@ Keep three boundaries:
 - `shell/`: shared appearance presets, the native multi-surface PollyShell and
   a separate simulated appearance preview. The real shell runs in its own
   process; a shell crash must not terminate other applications.
-- Future session/system integration: application launching, D-Bus services,
+- Session/system integration: native application launching; future D-Bus services,
   permissions, persistence and distribution packaging.
 
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
@@ -34,7 +34,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Shell boundary and development session | Optional explicitly spawned shell with a private Wayland connection, bounded opt-in restart/backoff, and an isolated session launcher. Login, authentication and production session policy remain separate. |
 | 3a - compositor layer-shell | Four layers, committed placement, exclusive work areas, keyboard modes, per-output lifecycle and nested popups. Real protocol clients exercise rendering and shell-crash isolation. |
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
-| 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays and persistent five-theme selection. Application launcher/window buttons and system services remain separate steps. |
+| 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher and persistent five-theme selection. Running-window buttons and system services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Desktop entries, notifications, clipboard/drag-and-drop coverage, IME, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
@@ -177,7 +177,7 @@ state-preserving theme switches and mount/unmount. Use `PU_TEST_W` and
 `PU_TEST_H` for different viewports; 640x480 is the preview's minimum target.
 These appearance tests run separately from the WSL compositor suite.
 
-Next integration steps are an application launcher, running-window buttons and
+Next integration steps are running-window buttons and
 a shared decoration policy.
 Window-manager state remains owned by PollyWM; theme code must not become an
 alternate window manager.
@@ -293,7 +293,7 @@ PollyUI API. Its raster/GLES fixtures verify actual Wayland buffer dimensions an
 pixels, pointer/keyboard delivery, two outputs, 125%/200% scaling, mode/rotation,
 removal, reservations, role replacement and rejection on public connections.
 
-Not implemented: application launcher/window buttons, workspaces/tiling, Xwayland,
+Not implemented: running-window buttons, workspaces/tiling, Xwayland,
 private workspace/session commands, drag-and-drop policy, primary selection, screen capture/portals, IME
 integration, secure lock, desktop services or installer. Output changes are
 handled internally, but there is no user-facing display settings protocol/UI yet.
@@ -354,9 +354,14 @@ affected panel/Dock; unchanged surfaces are reused. Clock updates and menus
 share the one UI runtime. Menu overlays close with their Close button or Escape;
 click-outside dismissal is not implemented yet.
 
+The session enables the in-house `.desktop` launcher with `--desktop`; no
+GLib/GIO dependency is introduced. The root README documents its compatibility
+scope and intentionally unavailable D-Bus/X11 paths.
+
 Floating Dock corners use actual alpha composition. Blur, polished animation,
 dark variants and shaped click-through regions are still outstanding. The Dock
-currently exposes Appearance and About, not fake application/window buttons.
+currently exposes Apps, Appearance and About; running-window buttons are not
+simulated and remain to be connected to foreign-toplevel state.
 
 Keep the parent's socket separate from the new compositor's socket:
 

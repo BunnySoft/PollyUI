@@ -58,10 +58,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo"
-export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland
+export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland XDG_CURRENT_DESKTOP=Polly XDG_SESSION_TYPE=wayland
 printf 'PollyDesktop runtime: %s\nClient display: %s/pollywm-0\n' "$runtime" "$runtime"
 WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
-    --exit-with-shell --shell "$ui" --app-id org.pollyui.shell "$script" "$@" &
+    --exit-with-shell --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 pid=$!
 if wait "$pid"; then result=0; else result=$?; fi
 pid=

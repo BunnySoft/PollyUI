@@ -396,9 +396,54 @@ wallpaper windows. Failure to create replacement surfaces or persist the choice
 keeps the prior selection, reports the error, and cleans up staged windows.
 
 This is still a **development desktop**, not the final system. Application
-launching, running-window buttons, system services, secure lock, and application
+discovery/Exec launching is implemented; running-window buttons, system services, secure lock, and application
 decorations are not yet integrated. The original appearance preview remains
 available separately and is still labeled simulated.
+
+### Linux application launcher
+
+The real Shell's Polly menu and Apps Dock button discover `.desktop` entries,
+filter/search them, and launch selected applications. The implementation uses
+existing dependencies only: an in-house JavaScript compatibility layer and a
+small libc-only exec helper, not GLib/GIO.
+
+Build with `PU_DESKTOP_SERVICES=ON` (default for combined desktop builds), or
+`bash tools/build.sh --desktop-services`, and enable the APIs explicitly with
+`pollyui --desktop`. The development session launcher passes this flag.
+`pollyui-app-launcher` must remain beside `pollyui`; it is not a standalone
+user-facing application.
+
+Discovery follows `XDG_DATA_HOME` then `XDG_DATA_DIRS`, with recursive desktop IDs
+and higher-priority masking. It handles localized names/comments/keywords,
+`Hidden`, `NoDisplay`, `OnlyShowIn`, `NotShowIn`, `TryExec`, working directories,
+terminal entries, quoted `Exec` arguments and standard field codes. File/URL
+placeholders are removed when launching without files. Invalid entries are
+logged; unsupported D-Bus-only entries are visibly disabled. Search accepts
+committed text, Backspace and Enter; Refresh rescans installed entries.
+
+Applications execute an argument vector directly, without an implicit command
+shell. Entry authors can explicitly name interpreters in `Exec`; desktop files
+are executable application definitions, not sandboxed content. The helper
+closes inherited descriptors, reports exec errors over a close-on-exec pipe and
+starts applications in separate process groups. Application exits are reaped
+and reported while the Shell runs; closing/restarting the Shell does not kill
+its launched application processes.
+
+Launch environments retain the current public Wayland display but remove the
+private `WAYLAND_SOCKET`, inherited `DISPLAY`, activation tokens and Shell app
+identity/debug variables. **A private D-Bus session is not implemented yet**:
+the parent session bus is deliberately not reused. Entries with an `Exec` path
+use that path; D-Bus-only activation and bus-dependent apps may remain unavailable.
+X11 apps need future Xwayland integration. Apps that independently reuse an
+existing process/profile can still require a dedicated test account/profile.
+Terminal entries use `foot -e` by default; `POLLY_TERMINAL` selects a terminal
+executable supporting `-e`, not an arbitrary shell command string.
+
+The desktop APIs are explicitly opt-in and are not a security sandbox. Discovery
+limits files to 1 MiB, nesting to 32 levels and the catalog to 10,000 entries;
+the launcher validates up to 256 argv strings. The vendored QuickJS normalization
+paths use their existing correctly typed allocator adapter rather than casting
+allocator function pointers, fixing the UBSan failure exposed by Unicode sorting.
 
 ### Input event contract
 
