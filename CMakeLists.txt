@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 # C for the engine; CXX only for the Skia shim, skia_c.cpp (DESIGN.md §3).
 project(PollyUI LANGUAGES C CXX)
+include(GNUInstallDirs)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -133,8 +134,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_compile_options(pollyui-app-launcher PRIVATE -fno-sanitize=all -Wall -Wextra -Werror)
         target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
         add_dependencies(pollyui pollyui-app-launcher)
-        install(TARGETS pollyui-app-launcher RUNTIME DESTINATION bin)
+        install(TARGETS pollyui-app-launcher RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
     endif()
+
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SKIA_SYSTEM REQUIRED IMPORTED_TARGET
         fontconfig freetype2 libpng libjpeg libwebp libwebpdemux libwebpmux zlib harfbuzz icu-uc icu-i18n)
@@ -520,4 +522,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
         endforeach()
     endif()
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND PU_LAYER_SHELL)
+    include(desktop/install.cmake)
 endif()

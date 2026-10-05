@@ -48,6 +48,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| Runtime packaging | Relocatable Alpine x86_64 installation, private patched SDL, pinned runtime package list, dependency inventory, licenses and SHA-256 checksums. This is a development runtime bundle, not an ISO or a qualified distribution release. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -549,6 +550,65 @@ The root project also exposes `-DPU_BUILD_DESKTOP=ON` for a combined build;
 it remains **OFF by default**, so normal Windows/macOS builds do not acquire
 Linux dependencies. A combined build still needs the normal PollyUI dependencies.
 Use `-DBUILD_TESTING=OFF` when only the compositor is needed.
+
+## Install and package the development runtime
+
+A combined desktop build installs the `PollyDesktop` CMake component:
+
+```sh
+cmake --build build/linux-sdl -j 2
+DESTDIR="$PWD/build/install-root" cmake --install build/linux-sdl \
+    --prefix /usr --component PollyDesktop
+build/install-root/usr/bin/polly-desktop --headless --audio --ime --check
+```
+
+The installation includes PollyWM, PollyUI, its adjacent application-launch
+helper, runtime JS modules and session scripts. `polly-desktop` locates its
+resources relative to its installed binary directory, not the source checkout.
+The patched SDL is private under `lib/pollyui`; the installed executable uses
+an origin-relative loader path and does not replace the system SDL.
+`--check` starts the real session and exits after its Shell/audio startup check,
+with an outer 30-second deadline and termination cleanup. It is not hardware,
+input-method candidate interaction or complete desktop acceptance testing.
+Normal operation omits `--check`; `--help` lists wrapper options.
+
+On Alpine 3.24 x86_64, create a versioned package with the matching SDK sources:
+
+```sh
+node desktop/tools/package-linux.mjs build/linux-sdl dist/pollydesktop \
+    /opt/pollyui-sdl /opt/pollyui-harfbuzz
+podman build -t localhost/pollydesktop-alpha \
+    -f dist/pollydesktop/Containerfile dist/pollydesktop
+podman run --rm --network=none localhost/pollydesktop-alpha
+```
+
+The packager refuses existing output directories, sanitizer builds, incomplete
+desktop builds and mismatched pinned dependency sources. It resolves both ELF
+dependencies and explicitly required dynamically loaded Wayland/Mesa modules.
+The clean runtime image runs as an unprivileged user without the checkout, SDK,
+build tools or a host audio server. This does not add a production seat/login
+policy or grant host device access.
+
+Outputs include the installable `.tar.gz`, `rootfs/`, exact Alpine runtime
+package versions, a file/hash/source manifest, an SPDX 2.3 dependency inventory,
+license notices, the SDL patch and `SHA256SUMS`. Libraries normally supplied by
+Alpine are not bundled in the tarball; the supplied Containerfile installs them.
+The package list can contain dependencies of independent applications such as
+foot, including distro HarfBuzz/GLib; our own ELF dependency check still rejects
+GLib/GIO/GObject and shared HarfBuzz. Artifact checksums are not update signatures.
+
+The source revision and dirty-worktree flag are recorded. A Windows worktree
+whose Git metadata is unreadable inside the container must supply
+`POLLY_SOURCE_REVISION` and `POLLY_SOURCE_DIRTY=0` or `1` from the host; the tool
+never assumes that such a checkout is clean. Exact package versions depend on
+their continued availability in Alpine repositories: an archived APK mirror
+and bit-for-bit reproducible build are not provided yet.
+
+This artifact is explicitly a **development runtime bundle, not a bootable
+distribution**. Bootloader/kernel/live-root integration, non-root DRM/VT seats,
+login/authentication, secure lock, installer/persistence/recovery, update trust
+and hardware qualification remain separate release gates. The dependency
+inventory is not a completed third-party source/license-compliance audit.
 
 ## Run nested in an existing Wayland session
 

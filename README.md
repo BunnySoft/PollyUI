@@ -1007,8 +1007,10 @@ controls, manual global workspaces, display settings and five original themes,
 shared with negotiated compositor titlebars. `desktop/shell/preview.mjs` remains
 a separate simulated appearance preview. An opt-in Rime input-method service
 renders its own candidate windows with PollyUI, without GNOME/KDE or GLib/GIO.
-A bootable Alpine image and the remaining system services are still later
-stages. See the desktop guide for
+A relocatable Alpine runtime bundle now includes a private patched SDL,
+dependency inventory, license notices and checksums; it can start in a clean,
+non-root container without the source checkout or SDK. A bootable Alpine image
+and the remaining system services are still later stages. See the desktop guide for
 the architecture, roadmap, standalone build and WSL/WSLg checks.
 
 ## License

@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+
+const root = path.resolve(process.argv[2]);
+const read = name => readFileSync(path.join(root, name), 'utf8');
+const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
+const manifest = JSON.parse(read('manifest.json'));
+assert.equal(manifest.bootable, false);
+assert.equal(manifest.stage, 'development-runtime-bundle');
+assert.match(manifest.revision, /^[0-9a-f]{40}$/);
+assert.equal(typeof manifest.dirty, 'boolean');
+assert.ok(manifest.files.length > 30);
+for (const file of manifest.files) {
+  assert.ok(!path.isAbsolute(file.path) && !file.path.split('/').includes('..'));
+  const payload = path.join(root, 'rootfs', file.path);
+  assert.equal(statSync(payload).size, file.size, file.path);
+  assert.equal(digest(payload), file.sha256, file.path);
+}
+for (const line of read('SHA256SUMS').trim().split('\n')) {
+  const match = line.match(/^([0-9a-f]{64})  ([A-Za-z0-9._-]+)$/);
+  assert.ok(match, line);
+  assert.equal(digest(path.join(root, match[2])), match[1], match[2]);
+}
+const packages = read('runtime-packages.txt');
+for (const name of ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data'])
+  assert.ok(packages.split('\n').some(line => line.startsWith(name + '=')), name);
+for (const line of packages.trim().split('\n'))
+  assert.match(line, /^[a-z0-9][a-z0-9+_.-]*=[A-Za-z0-9._+~:-]+$/);
+const sbom = JSON.parse(read('sbom.spdx.json'));
+assert.equal(sbom.spdxVersion, 'SPDX-2.3');
+assert.match(sbom.creationInfo.created, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+const ids = new Set([sbom.SPDXID, ...sbom.packages.map(pkg => pkg.SPDXID)]);
+assert.equal(ids.size, sbom.packages.length + 1);
+for (const relationship of sbom.relationships)
+  assert.ok(ids.has(relationship.spdxElementId) && ids.has(relationship.relatedSpdxElement));
+const before = digest(path.join(root, 'manifest.json'));
+const refused = spawnSync(process.execPath, ['desktop/tools/package-linux.mjs', '/unused-build',
+  root, '/unused-sdl', '/unused-harfbuzz'], { encoding: 'utf8' });
+assert.notEqual(refused.status, 0);
+assert.match(refused.stderr, /Refusing to overwrite/);
+assert.equal(digest(path.join(root, 'manifest.json')), before);
+console.log('PASS: package payload hashes, artifact checksums, runtime dependencies, inventory and overwrite guard');

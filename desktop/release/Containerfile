@@ -1,0 +1,10 @@
+FROM docker.io/library/alpine:3.24
+COPY runtime-packages.txt /tmp/runtime-packages.txt
+RUN apk add --no-cache $(cat /tmp/runtime-packages.txt) && \
+    rm /tmp/runtime-packages.txt && adduser -D -u 1000 polly
+COPY rootfs/ /
+USER polly
+WORKDIR /home/polly
+ENV PU_RENDERER=raster SDL_RENDER_DRIVER=software
+ENTRYPOINT ["/usr/bin/polly-desktop"]
+CMD ["--headless", "--ime", "--audio", "--check"]

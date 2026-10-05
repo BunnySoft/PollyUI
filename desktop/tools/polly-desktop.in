@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+data=$(CDPATH= cd -- "$bindir/@PU_DATA_FROM_BIN@" && pwd)
+script="$data/desktop/shell/main.mjs"
+check=0
+for argument in "$@"; do
+    case "$argument" in
+        --check) check=1 ;;
+        --help)
+            echo "Usage: polly-desktop [--nested | --headless] [--ime] [--audio] [--restarts COUNT] [--check]"
+            echo "--check verifies session startup, then exits; its deadline is 30 seconds."
+            exit 0 ;;
+    esac
+done
+if [ "$check" -eq 1 ]; then
+    script="$data/desktop/shell/check.mjs"
+    # Remove only the diagnostic flag; retain all launcher arguments verbatim.
+    count=$#
+    while [ "$count" -gt 0 ]; do
+        argument=$1; shift; count=$((count - 1))
+        if [ "$argument" != --check ]; then set -- "$@" "$argument"; fi
+    done
+fi
+set -- sh "$data/desktop/tools/run-session.sh" "$@" "$bindir/pollywm" "$bindir/pollyui" "$script"
+if [ "$check" -eq 1 ]; then exec timeout -s TERM -k 5 30 "$@"; fi
+exec "$@"
