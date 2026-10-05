@@ -597,6 +597,47 @@ real hardware hotplug. Hidden-network provisioning, editing static-IP/EAP
 profiles, saved networks absent from scans, wired networking and VPN management
 remain separate system-service work.
 
+### Private PipeWire audio
+
+Add `--audio` to `desktop/tools/run-session.sh` to start a session-owned PipeWire
+core. PollyShell supplies its own routing policy and native **Audio** settings:
+endpoint/stream discovery, volume, mute and default playback/recording devices.
+There is no WirePlumber, GNOME/KDE or GLib/GIO dependency in this implementation.
+
+The Shell connects through a validated Unix socket FD in its owned 0700 runtime,
+checking socket ownership and the peer UID. It does not fall back to a parent's
+PipeWire socket. Public Wayland clients cannot acquire the Shell policy APIs;
+ordinary applications can still use the session's PipeWire server. This is
+**not** per-application microphone consent, a portal or an audio sandbox.
+
+Own policy honors autoconnect, explicit target names/serials and manually
+managed links. It adapts raw streams to supported endpoint channel maps,
+reconciles managed routes on default-device changes, and falls back after
+device removal. Explicitly targeted streams do not silently select a different
+device when their target is absent. Lingering managed links survive policy
+reconnection. Preferred names are distinct from currently available defaults.
+Preferences survive a Shell restart within the same PipeWire session, not a
+full logout/login.
+
+APIs are `startAudio()`, `stopAudio()`, `audioState()`, `onAudioChanged`,
+`setAudioVolume(id,revision,value)`, `setAudioMute(id,revision,boolean)` and
+`setDefaultAudio(id,revision)`. State includes `ready`, `revision`, `error`,
+`defaultSink`, `defaultSource`, `preferredSink`, `preferredSource`, `nodes`,
+`routes` and `connections`. Node revisions reject stale controls; unsupported
+volume/mute values are null. Volume requests are limited to 0-1 and preserve
+existing channel ratios. Native models are bounded to 256 nodes, 1024 ports
+and 1024 links, with at most 256 pending route creations.
+
+Real private-daemon fixtures exercise playback, nonzero synthetic capture,
+mono adaptation, controls, explicit/manual routing, reconnection and output
+loss without accessing host sound devices. The production configuration uses
+PipeWire's ALSA/ACP infrastructure; physical cards, profiles, jack detection,
+Bluetooth and latency still require qualification. PulseAudio emulation and
+ALSA-client redirection are not started/configured; audio mode explicitly sets
+`PULSE_SERVER=disabled:`. Unsupported multichannel maps are reported rather than
+treated as working audio. Daemon loss ends the development session with an
+error; ordinary exit and signals clean up only its owned service and sockets.
+
 ### Linux window management
 
 With `PU_DESKTOP_SERVICES`, `PU_LAYER_SHELL` and `--desktop`, the `desktop` object
@@ -972,4 +1013,6 @@ the architecture, roadmap, standalone build and WSL/WSLg checks.
 
 ## License
 
-TBD.
+Project-owned code is licensed under the [MIT License](./LICENSE).
+Third-party code, libraries, fonts and input-method data retain their own
+licenses; this grant does not replace their copyright notices or obligations.

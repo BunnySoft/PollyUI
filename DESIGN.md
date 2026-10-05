@@ -425,6 +425,30 @@ The daemon's property snapshots, not method return alone, determine displayed
 connection state. System-service testing uses an isolated API fixture rather
 than mutating the execution host's network.
 
+### Private audio policy
+
+An opt-in session-owned PipeWire core replaces dependence on an ambient audio
+server. The Shell validates its runtime/socket ownership and peer UID before
+connecting via an already-open FD. Its native client uses a nonblocking
+PipeWire main-loop iteration in the ordinary runtime pump; protocol callbacks
+update bounded C-owned state, and JavaScript receives changes afterward.
+There is no WirePlumber or GLib/GIO event-loop dependency.
+
+Policy tracks nodes, ports, default metadata and links. It honors autoconnect,
+explicit endpoint targets and manual routes; negotiated raw DSP adapters handle
+supported channel layouts. Tagged lingering links survive policy reconnection.
+Only obsolete tagged routes are removed. Preferred endpoint names remain in
+metadata when a device disappears, while the actual default can fall back.
+Node revisions protect UI writes; volume requests preserve channel balance and
+cannot request amplification above one.
+
+The launcher owns daemon startup and failure/exit cleanup. Real fixtures
+exercise virtual playback and nonzero capture, not physical devices. The
+ALSA/ACP configuration still needs hardware qualification. Metadata currently
+lasts for a PipeWire session rather than across logins. PulseAudio compatibility,
+Bluetooth policy, application capture consent and portals are not implied by
+this audio service.
+
 ### Clipboard ownership and data devices
 
 Clipboard callbacks retain copied C buffers, not JavaScript references. SDL

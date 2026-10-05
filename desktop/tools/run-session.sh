@@ -1,13 +1,17 @@
 #!/bin/sh
 set -eu
 usage() {
-    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--restarts COUNT] pollywm pollyui shell-script [ARG...]" >&2
+    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--audio] [--restarts COUNT] pollywm pollyui shell-script [ARG...]" >&2
 }
 mode=auto
 restarts=0
 ime=0
+audio=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --audio)
+            if [ "$audio" -ne 0 ]; then usage; exit 2; fi
+            audio=1; shift ;;
         --ime)
             if [ "$ime" -ne 0 ]; then usage; exit 2; fi
             ime=1; shift ;;
@@ -50,13 +54,16 @@ case "$base" in /*) ;; *) echo "Runtime base must be an absolute directory" >&2;
 runtime=$(mktemp -d "$base/polly-session.XXXXXX")
 bus_helper=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/session-bus.sh
 . "$bus_helper"
+. "$(dirname -- "$bus_helper")/session-audio.sh"
 pid=
 bus_pid=
+audio_pid=
 cleanup() {
     if [ -n "$pid" ]; then
         kill -TERM "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
+    stop_private_audio
     stop_private_bus
     rm -f "$runtime/pollywm-0" "$runtime/pollywm-0.lock"
     rmdir "$runtime"
@@ -82,6 +89,8 @@ if [ "$ime" -eq 1 ]; then
 fi
 export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland XDG_CURRENT_DESKTOP=Polly XDG_SESSION_TYPE=wayland
 start_private_bus
+unset POLLY_AUDIO_REMOTE
+if [ "$audio" -eq 1 ]; then start_private_audio; fi
 printf 'PollyDesktop runtime: %s\nClient display: %s/pollywm-0\n' "$runtime" "$runtime"
 printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
@@ -94,6 +103,13 @@ else
 fi
 pid=$!
 while kill -0 "$pid" 2>/dev/null; do
+    if [ "$audio" -eq 1 ] && ! kill -0 "$audio_pid" 2>/dev/null; then
+        echo "Private audio core exited; ending the development session" >&2
+        cat "$runtime/audio.log" >&2
+        wait "$audio_pid" 2>/dev/null || true
+        audio_pid=
+        exit 1
+    fi
     if ! kill -0 "$bus_pid" 2>/dev/null; then
         echo "Private session bus exited; ending the development session" >&2
         cat "$runtime/bus.error" >&2

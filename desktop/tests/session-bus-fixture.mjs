@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const [wm, ui, helper] = process.argv.slice(2).map(value => path.resolve(value));
+const [wm, ui, helper] = process.argv.slice(2, 5).map(value => path.resolve(value));
+const audio = process.argv[5] === '--audio';
 const root = await mkdtemp(path.join(tmpdir(), 'polly bus,'));
 const children = [];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -14,7 +15,7 @@ async function until(predicate, description) {
   throw new Error('Timed out: ' + description);
 }
 function start(index, hold = true) {
-  const child = spawn('sh', ['desktop/tools/run-session.sh', '--headless', wm, ui,
+  const child = spawn('sh', ['desktop/tools/run-session.sh', '--headless', ...(audio ? ['--audio'] : []), wm, ui,
     'desktop/tests/session-bus-client.mjs', helper, ...(hold ? ['hold'] : [])], {
     env: { ...process.env, XDG_RUNTIME_DIR: path.join(root, 'run'), XDG_CONFIG_HOME: path.join(root, 'config' + index),
       XDG_DATA_HOME: path.join(root, 'data' + index), XDG_CACHE_HOME: path.join(root, 'cache' + index),
@@ -45,18 +46,20 @@ try {
   await until(() => first.finished, 'signal cleanup');
   assert.equal(first.code, 143, first.output);
   assert.equal(second.finished, false, 'stopping one session leaves the other running');
-  const busPid = Number(second.output.match(/Private session bus ready \(pid (\d+)\)/)[1]);
+  const busPid = Number(second.output.match(audio ? /Private PipeWire core ready \(pid (\d+)\)/ :
+    /Private session bus ready \(pid (\d+)\)/)[1]);
   assert.ok(Number.isSafeInteger(busPid) && busPid > 1);
   process.kill(busPid, 'SIGTERM');
   await until(() => second.finished, 'bus loss cleanup');
   assert.equal(second.code, 1, second.output);
-  assert.match(second.output, /Private session bus exited/);
+  assert.match(second.output, audio ? /Private audio core exited/ : /Private session bus exited/);
   const normal = start(3, false);
   await until(() => normal.finished, 'normal session exit');
   assert.equal(normal.code, 0, normal.output);
   for (const state of children) assert.doesNotMatch(state.output, /FAIL:|AddressSanitizer|LeakSanitizer/);
   assert.deepEqual(await readdir(path.join(root, 'run')), [], 'all owned sockets and runtimes are removed');
-  console.log('PASS: private D-Bus sessions, application inheritance, parent isolation, parallelism and failure cleanup');
+  console.log(audio ? 'PASS: private PipeWire session startup, parallelism, signal and daemon-loss cleanup' :
+    'PASS: private D-Bus sessions, application inheritance, parent isolation, parallelism and failure cleanup');
 } catch (error) {
   for (const state of children) console.error(state.output);
   throw error;

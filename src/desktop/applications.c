@@ -7,6 +7,7 @@
 #include "desktop/notifications.h"
 #include "desktop/tray.h"
 #include "desktop/network.h"
+#include "desktop/audio.h"
 #endif
 
 #include <dirent.h>
@@ -375,6 +376,7 @@ int pu_applications_install(JSContext *ctx)
     if (!pu_notifications_install(ctx, desktop_api)) return 0;
     if (!pu_tray_install(ctx, desktop_api)) return 0;
     if (!pu_network_install(ctx, desktop_api)) return 0;
+    if (!pu_audio_install(ctx, desktop_api)) return 0;
 #endif
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, desktop_api));
@@ -418,6 +420,7 @@ int pu_applications_pump(void)
     worked += pu_notifications_pump();
     worked += pu_tray_pump();
     worked += pu_network_pump();
+    worked += pu_audio_pump();
 #endif
     return worked;
 }
@@ -425,6 +428,7 @@ int pu_applications_pump(void)
 void pu_applications_shutdown(void)
 {
 #if defined(PU_LAYER_SHELL)
+    pu_audio_shutdown();
     pu_network_shutdown();
     pu_tray_shutdown();
     pu_notifications_shutdown();

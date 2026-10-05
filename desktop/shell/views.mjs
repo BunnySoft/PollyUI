@@ -98,7 +98,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null) {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null) {
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: 12, gap: 8, overflow: 'scroll',
     backgroundColor: theme.colors.body, borderWidth: 1, borderColor: theme.colors.border,
@@ -129,6 +129,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   shortcuts ? button('shell-keyboard-settings', 'Keyboard shortcuts', theme, shortcuts) : null,
   displays ? button('shell-display-settings', 'Displays', theme, displays) : null,
   network ? button('shell-network-settings-open', 'Wi-Fi', theme, network) : null,
+  audio ? button('shell-audio-settings-open', 'Audio', theme, audio) : null,
   error ? h('view', { role: 'alert', style: { gap: 6, padding: 8, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11),
     button('shell-retry', 'Retry display setup', theme, retry)) : null,

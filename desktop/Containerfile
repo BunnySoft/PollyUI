@@ -37,3 +37,5 @@ RUN sh /opt/pollyui-build/tools/build-harfbuzz-linux.sh /opt/pollyui-harfbuzz
 ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig
 
 RUN apk add --no-cache dbus dbus-dev
+
+RUN apk add --no-cache pipewire pipewire-dev pipewire-tools

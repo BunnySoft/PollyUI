@@ -152,6 +152,9 @@ export function createNetworkSettings({ native, host, theme, report }) {
         height: Math.max(1, Math.min(580, output.height - 48)), anchors: ['top', 'right'],
         margins: { top: 32, right: 12 }, exclusiveZone: -1 });
       surface = { window, output: output.id };
+      window.document.body.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); close(); }
+      });
       window.onclose = () => { if (surface?.window === window) close(); };
       if (!started) {
         previous = native.onNetworkChanged; native.onNetworkChanged = onChanged; started = true;

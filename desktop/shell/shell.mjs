@@ -7,6 +7,7 @@ import { readDisplayDraft } from './desktop/shell/displays.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
 import { createNetworkSettings } from './desktop/shell/network.mjs';
+import { createAudioSettings } from './desktop/shell/audio.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 
@@ -65,6 +66,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const network = createNetworkSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
+  const audio = createAudioSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
   let previousExit = null;
   const exited = event => {
     if (!running) return;
@@ -292,7 +294,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu, () => refresh(true),
       error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null,
       typeof native?.outputConfiguration === 'function' ? () => showDisplays(menu.output) : null,
-      typeof native?.startNetwork === 'function' ? () => showNetwork(menu.output) : null),
+      typeof native?.startNetwork === 'function' ? () => showNetwork(menu.output) : null,
+      typeof native?.startAudio === 'function' ? () => showAudio(menu.output) : null),
       menu.window.document.body);
   }
 
@@ -636,6 +639,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     closeMenu();
     return network.show(output);
   }
+  function showAudio(output) {
+    closeMenu();
+    return audio.show(output);
+  }
 
   function refresh(force = false) {
     if (!running) return;
@@ -689,6 +696,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       startShortcuts();
       notifications.start();
       tray.start();
+      audio.start();
       if (typeof native?.outputConfiguration === 'function') {
         previousOutputsChanged = native.onOutputsChanged;
         native.onOutputsChanged = outputsChanged;
@@ -701,6 +709,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       notifications.stop();
       tray.stop();
       network.stop();
+      audio.stop();
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
@@ -726,7 +735,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       bundles.clear();
     },
     selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
-    showNotifications: notifications.show, showNetwork, refresh,
+    showNotifications: notifications.show, showNetwork, showAudio, refresh,
     getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };

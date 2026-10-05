@@ -192,8 +192,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
         endif()
         if (PU_DESKTOP_SERVICES)
-            target_sources(pollyui PRIVATE src/desktop/notifications.c src/desktop/tray.c src/desktop/dbus-menu.c src/desktop/network.c)
+            pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET "libpipewire-0.3>=1.4")
+            target_link_libraries(pollyui PRIVATE PkgConfig::PIPEWIRE)
+            target_sources(pollyui PRIVATE src/desktop/notifications.c src/desktop/tray.c src/desktop/dbus-menu.c
+                src/desktop/network.c src/desktop/audio.c)
             if (BUILD_TESTING)
+                add_executable(polly-audio-stream-test desktop/tests/audio-stream.c)
+                target_link_libraries(polly-audio-stream-test PRIVATE PkgConfig::PIPEWIRE)
+                target_compile_definitions(polly-audio-stream-test PRIVATE _POSIX_C_SOURCE=200809L)
                 add_executable(polly-iwd-test desktop/tests/iwd-service.c src/desktop/session-bus.c)
                 target_include_directories(polly-iwd-test PRIVATE src)
                 target_compile_definitions(polly-iwd-test PRIVATE _POSIX_C_SOURCE=200809L)
@@ -367,6 +373,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             "${CMAKE_SOURCE_DIR}/desktop/tests/session-bus-fixture.mjs" $<TARGET_FILE:pollywm>
             $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-session-bus-test>)
         set_tests_properties(desktop-private-session-bus PROPERTIES TIMEOUT 70 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        if (PU_LAYER_SHELL)
+            add_test(NAME desktop-private-audio-session COMMAND node
+                "${CMAKE_SOURCE_DIR}/desktop/tests/session-bus-fixture.mjs" $<TARGET_FILE:pollywm>
+                $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-session-bus-test> --audio)
+            set_tests_properties(desktop-private-audio-session PROPERTIES TIMEOUT 80 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
         add_test(NAME desktop-decoration-tokens
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tools/generate-decoration-themes.mjs" --check)
         if (PU_LAYER_SHELL)
@@ -424,6 +436,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-audio-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --audio
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/audio-shell.mjs" audio)
+                set_tests_properties(desktop-audio-shell-${renderer} PROPERTIES TIMEOUT 110
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-network-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --iwd
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

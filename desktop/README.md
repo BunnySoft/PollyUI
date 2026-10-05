@@ -34,6 +34,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. |
 | Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
 | Wi-Fi client | Native iwd settings for discovery/RSSI, scanning, radio power, connection, bounded interactive authentication and forgetting profiles, with root-owner verification and service-restart recovery. Isolated protocol/UI fixtures pass; real radios and DHCP/DNS need hardware qualification. |
+| Audio policy and controls | Opt-in private PipeWire core, own routing/default-device policy, volume/mute UI and validated socket connection, without WirePlumber. Real virtual playback/capture, manual routing and device-loss coverage; physical audio and Pulse/ALSA client compatibility remain separate. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -46,7 +47,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Outgoing PollyUI drags, advanced text, audio/power and remaining network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -580,7 +581,8 @@ Concurrent sessions have separate bus IDs and namespaces. Bus loss terminates
 the development session with an explicit error; compositor exit/signals stop
 and reap only its owned daemon and remove known runtime socket/activation
 directories. `dbus-daemon` is a required launcher dependency; this does not
-start a system bus, audio/network/power daemons, or a production login manager.
+start a system bus, network/power daemons or a production login manager. Audio
+is a separate opt-in service described below.
 
 PollyShell acquires the standard Notifications name only on this private bus,
 never on an ambient parent session. Native toasts and a panel-accessible center
@@ -613,6 +615,43 @@ click all three pointer actions, send scrolling, toggle passive/active/attention
 status, reject registration by a different owner and verify owner-loss cleanup.
 They also exercise hung providers, live submenu changes, disabled/stale menu
 rejection and exact clicked-event delivery in raster and GLES modes.
+
+### PipeWire audio backend
+
+The selected backend is PipeWire core with our own native policy and PollyUI
+controls, not WirePlumber. Enable it explicitly:
+
+```sh
+sh desktop/tools/run-session.sh --nested --ime --audio \
+    ./build/desktop/pollywm ./build/linux-sdl/pollyui ./desktop/shell/main.mjs
+```
+
+`session-audio.sh` starts the daemon from `system/pipewire.conf`, waits for its
+private `polly-audio` socket and exports the session remote to child apps.
+It never starts a host audio service. The Shell validates the owned runtime,
+socket and peer UID, then passes the connected FD to PipeWire rather than
+allowing ambient runtime-directory/socket fallback. Concurrent sessions use
+separate cores. Daemon loss, normal exit and termination signals have explicit
+owned-process cleanup.
+
+The native main loop discovers bounded nodes/ports/links and default metadata.
+Policy respects stream autoconnect and explicit targets, preserves manual links,
+negotiates raw DSP ports and manages only its tagged routes. A supported mono
+stream can be adapted to a stereo endpoint. Missing explicit targets remain
+unrouted; default-device loss selects a fallback without discarding the preferred
+name. Lingering links and metadata survive a policy/Shell reconnect, but
+cross-login settings are not yet persisted. Audio settings expose native
+volume/mute/default controls and unavailable-device errors.
+
+The default config uses ALSA enumeration and ACP auto-profile/auto-port support.
+Actual cards, jack changes, profiles and realtime latency need hardware
+qualification. The tests use their own virtual sinks and synthetic source,
+check nonzero captured samples and exact route endpoints, and cover manual/
+missing-target behavior, stale controls, public-API denial and service cleanup.
+They do not access speakers or microphones. PulseAudio emulation, ALSA-client
+redirection, Bluetooth audio and portal capture permissions remain separate.
+Setting up a private server and restricting Shell APIs is not an application
+audio sandbox. See the root README for the API and model limits.
 
 ### iwd network backend
 
@@ -830,5 +869,6 @@ sh desktop/tests/nested.sh "$PWD/build/desktop/pollywm"
 ## Attribution
 
 The wlroots tinywl example informed the Wayland lifecycle and scene integration.
-Its MIT license notice is retained in `LICENSE.wlroots`. This notice does not
-choose a license for the rest of PollyUI, whose project license is still TBD.
+Its MIT license notice is retained in `LICENSE.wlroots`. Project-owned PollyUI
+and PollyDesktop code uses the root `LICENSE` (MIT); dependencies, fonts and
+input-method data retain their separate licenses.
