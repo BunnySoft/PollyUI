@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="1">
+  <interface name="polly_appearance_v1" version="2">
     <description summary="trusted Shell appearance selection">
       This private global is restricted to the compositor-owned Shell connection.
-      It selects a known decoration theme; it does not expose window geometry,
+      Version 1 selects a known decoration theme. Version 2 stages and commits
+      bounded runtime decoration data; neither version exposes window geometry,
       input injection, filesystem access or arbitrary rendering commands.
     </description>
     <enum name="error">
@@ -14,5 +15,76 @@
     <request name="set_theme">
       <arg name="theme" type="string" summary="known PollyDesktop theme ID"/>
     </request>
+    <request name="prepare" since="2">
+      <description summary="validate a runtime decoration snapshot without applying it">
+        Configuration is an array of native-endian uint32 words: schema 1,
+        flags, scaled metrics, then opaque ARGB colors. The exact field order,
+        bounds and fixed-point scales are specified by appearance-fields.h.
+        Flags encode left controls (1), round controls (2), pinstripes (4),
+        horizontal gradients (8), generic font family (bits 4-5),
+        hover-only glyphs (64), and text alignment (bits 7-8).
+        Name is a bounded identifier. Document is a readable, immutable memfd
+        sealed against writes, growth, shrinkage and further seal changes.
+        Its exact size is 1-32768 bytes. Data is owned and validated by the
+        Shell; the compositor does not parse JSON. Passing an FD avoids the
+        connection's small individual-message limit.
+        Only one staged snapshot is kept per resource. Invalid configuration is
+        rejected through prepared, not a fatal protocol error.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="name" type="string"/>
+      <arg name="configuration" type="array"/>
+      <arg name="document" type="fd"/>
+      <arg name="length" type="uint"/>
+    </request>
+    <request name="commit" since="2">
+      <arg name="serial" type="uint"/>
+    </request>
+    <request name="cancel" since="2">
+      <description summary="discard a staged snapshot">
+        Cancellation is idempotent; it never changes the committed appearance.
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+    <event name="prepared" since="2">
+      <arg name="serial" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="applied" since="2">
+      <arg name="serial" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+  </interface>
+  <interface name="polly_theme_manager_v1" version="1">
+    <description summary="read-only appearance subscription for opt-in applications">
+      Public clients may observe the bounded theme document published by the
+      trusted Shell. This interface grants no management or file access.
+      Changes coalesce until the client requests the latest snapshot.
+      Revisions are opaque uint identifiers, not timestamps.
+    </description>
+    <enum name="error">
+      <entry name="unexpected_request" value="0" summary="snapshot requested without a change notification"/>
+    </enum>
+    <request name="destroy" type="destructor"/>
+    <request name="get_snapshot">
+      <description summary="consume one change notification">
+        Exactly one request is allowed after changed. The snapshot may be
+        newer than that notification. The unavailable event means that the
+        Shell has not published a runtime theme, or selected legacy decorations.
+      </description>
+    </request>
+    <event name="changed">
+      <arg name="revision" type="uint"/>
+    </event>
+    <event name="snapshot">
+      <arg name="revision" type="uint"/>
+      <arg name="document" type="fd"/>
+      <arg name="length" type="uint"/>
+    </event>
+    <event name="unavailable">
+      <arg name="revision" type="uint"/>
+    </event>
   </interface>
 </protocol>

@@ -27,6 +27,12 @@ if (PU_BUILD_IME_ENGINE)
         set_tests_properties(desktop-ime-installed PROPERTIES TIMEOUT 70)
     endif()
 endif()
+add_executable(polly-appearance-document-test appearance-document.c ../shared/appearance-document.c)
+target_include_directories(polly-appearance-document-test PRIVATE ../shared)
+target_compile_options(polly-appearance-document-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME desktop-appearance-document COMMAND polly-appearance-document-test)
+set_tests_properties(desktop-appearance-document PROPERTIES TIMEOUT 10)
+
 add_executable(pollywm-shortcut-policy shortcut-policy.c)
 target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
 add_test(NAME desktop-shortcut-policy COMMAND pollywm-shortcut-policy)
@@ -75,7 +81,8 @@ add_executable(pollywm-test-client client.c
     "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"
     "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
     "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c")
-target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../compositor")
+target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../compositor" "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 target_compile_definitions(pollywm-test-client PRIVATE _POSIX_C_SOURCE=200809L)
 target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
 

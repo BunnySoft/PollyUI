@@ -51,66 +51,34 @@ function fileIcon(theme, label, size = theme.icons.size, id) {
   } }, text(label, theme.colors.accent, Math.round(size / 2), { fontWeight: 'bold' }));
 }
 
-export function wallpaper(theme, id = 'appearance-wallpaper') {
-  const detail = theme.desktop.detail;
-  let art = [];
-  if (theme.desktop.motif === 'hills') {
-    art = [
-      h('view', { style: { position: 'absolute', left: '-12%', top: '60%', width: '90%',
-        height: '85%', borderRadius: 400, ...gradient('#6cba48', detail) } }),
-      h('view', { style: { position: 'absolute', left: '42%', top: '72%', width: '80%',
-        height: '75%', borderRadius: 400, ...gradient('#7fc44c', '#2d762c') } }),
-    ];
-  } else if (theme.desktop.motif === 'ribbons') {
-    art = [0, 1, 2].map(i => h('view', { style: {
-      position: 'absolute', left: (40 + i * 9) + '%', top: (-28 + i * 12) + '%',
-      width: '75%', height: '155%', borderRadius: 380,
-      borderWidth: 20 - i * 4, borderColor: detail, opacity: 0.18,
-      rotate: -25, backgroundColor: 'transparent',
+export function wallpaper(theme, id = 'appearance-wallpaper', asset = '') {
+  const art = asset ? [h('view', { style: { ...fill, backgroundImage: asset } })] :
+    theme.desktop.layers.map(layer => h('view', { style: {
+      position: 'absolute', left: layer.left, top: layer.top, width: layer.width, height: layer.height,
+      borderRadius: layer.radius, rotate: layer.rotation, opacity: layer.opacity,
+      borderWidth: layer.borderWidth, borderColor: layer.borderColor, ...gradient(layer.from, layer.to),
     } }));
-  } else if (theme.desktop.motif === 'linen') {
-    art = [
-      ...Array.from({ length: 32 }, (_, i) => h('view', { style: {
-        position: 'absolute', left: 0, top: (i * 3.2) + '%', width: '100%', height: 1,
-        backgroundColor: detail, opacity: 0.24,
-      } })),
-      ...Array.from({ length: 44 }, (_, i) => h('view', { style: {
-        position: 'absolute', top: 0, left: (i * 2.3) + '%', height: '100%', width: 1,
-        backgroundColor: '#171d26', opacity: 0.17,
-      } })),
-    ];
-  } else if (theme.desktop.motif === 'bands') {
-    art = [
-      { left: '-18%', top: '-58%', width: '150%', height: '125%',
-        from: '#facdb0', to: '#ed8797' },
-      { left: '-22%', top: '34%', width: '150%', height: '125%',
-        from: detail, to: '#aa306c' },
-      { left: '-18%', top: '65%', width: '155%', height: '115%',
-        from: '#65aceb', to: '#174a8c' },
-    ].map(({ from, to, ...geometry }) => h('view', { style: {
-      position: 'absolute', ...geometry, borderRadius: 380, rotate: -16, ...gradient(from, to),
-    } }));
-  }
   return h('view', { id,
     style: { ...fill, ...gradient(theme.desktop.from, theme.desktop.to), overflow: 'hidden' } }, art);
 }
 
 function captionButton(theme, command, active, dispatch, interactive) {
-  const round = theme.window.controlShape === 'round';
+  const chrome = theme.window;
+  const round = chrome.controlShape === 'round';
   const close = command === 'close';
   let from = close ? theme.window.closeFrom : theme.window.controlFrom;
   let to = close ? theme.window.closeTo : theme.window.controlTo;
-  if (round && command === 'minimize') { from = '#fff1a0'; to = '#d8a43c'; }
-  if (round && command === 'maximize') { from = '#b6efa5'; to = '#55a742'; }
+  if (command === 'minimize') { from = chrome.minimizeFrom; to = chrome.minimizeTo; }
+  if (command === 'maximize') { from = chrome.maximizeFrom; to = chrome.maximizeTo; }
   if (!active) { from = theme.window.inactiveFrom; to = theme.window.inactiveTo; }
   const style = {
-    width: round ? 16 : 23, height: round ? 16 : 21,
-    ...gradient(from, to), borderRadius: theme.window.controlRadius,
+    width: chrome.controlSize, height: chrome.controlSize,
+    ...gradient(from, to), borderRadius: round ? chrome.controlSize / 2 : chrome.controlRadius,
     borderColor: active ? theme.colors.dark : theme.colors.border,
   };
   const glyph = command === 'close' ? 'x' : command === 'minimize' ? '-' : '+';
   const content = [surfaceDetail(theme),
-    text(glyph, round ? '#502d26' : theme.window.controlText, round ? 10 : 14)];
+    text(glyph, chrome.controlText, Math.max(8, chrome.glyphRadius * 3))];
   return interactive
     ? button('appearance-' + command, command + ' preview window', style,
         () => dispatch(command), content)
@@ -122,24 +90,28 @@ function titlebar(theme, active, dispatch, interactive = true) {
   const controls = chrome.controls === 'left'
     ? ['close', 'minimize', 'maximize'] : ['minimize', 'maximize', 'close'];
   const caption = text(active ? 'Appearance sample' : 'Notes - inactive sample',
-    active ? chrome.titleText : chrome.inactiveText, 12, { fontWeight: 'bold' });
+    active ? chrome.titleText : chrome.inactiveText, chrome.fontSize,
+    { fontWeight: chrome.fontWeight, fontFamily: chrome.fontFamily });
   return h('view', { id: active ? 'appearance-titlebar' : 'appearance-inactive-titlebar', style: {
-    ...row, height: chrome.titleHeight, flexShrink: 0, paddingLeft: 8, paddingRight: 6, gap: 8,
+    ...row, height: chrome.titleHeight, flexShrink: 0,
+    paddingLeft: chrome.controlInset, paddingRight: chrome.controlInset, gap: chrome.textGap,
     ...gradient(active ? chrome.titleFrom : chrome.inactiveFrom,
                 active ? chrome.titleTo : chrome.inactiveTo),
-    gradientDir: theme.id === 'server2003' ? 'horizontal' : 'vertical',
+    gradientDir: chrome.gradientDir,
   } },
     chrome.texture === 'pinstripe'
-      ? Array.from({ length: 8 }, (_, i) => h('view', { style: {
-          position: 'absolute', left: 0, right: 0, top: i * 4, height: 1,
-          backgroundColor: '#adc3d2', opacity: 0.32,
+      ? Array.from({ length: Math.ceil(chrome.titleHeight / chrome.stripeSpacing) }, (_, i) => h('view', { style: {
+          position: 'absolute', left: 0, right: 0, top: i * chrome.stripeSpacing, height: chrome.stripeWidth,
+          backgroundColor: chrome.stripeColor, opacity: chrome.stripeOpacity,
         } })) : null,
     chrome.controls === 'right' ? caption : null,
     chrome.controls === 'right' ? h('view', { style: { flexGrow: 1 } }) : null,
-    h('view', { style: { ...row, gap: chrome.unifiedToolbar ? 8 : 4 } },
+    h('view', { style: { ...row, gap: chrome.controlGap } },
       controls.map(command => captionButton(theme, command, active, dispatch, interactive))),
     chrome.controls === 'left'
-      ? h('view', { style: { flexGrow: 1, ...center, paddingRight: 62 } }, caption) : null);
+      ? h('view', { style: { flexGrow: 1, justifyContent: 'center',
+        alignItems: chrome.textAlign === 'center' ? 'center' : chrome.textAlign === 'right' ? 'flex-end' : 'flex-start',
+        paddingRight: chrome.textInset } }, caption) : null);
 }
 
 function frameStyle(theme, geometry) {

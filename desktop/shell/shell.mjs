@@ -1,5 +1,7 @@
 import { render } from './js/reconciler.mjs';
-import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
+import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
+  BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
+import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
@@ -10,13 +12,16 @@ import { createNetworkSettings } from './desktop/shell/network.mjs';
 import { createAudioSettings } from './desktop/shell/audio.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
+export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
 
 export function createDesktopShell({ host = window, storage = localStorage, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop } = {}) {
   const bundles = new Map();
   let themeId = DEFAULT_DESKTOP_THEME;
-  let error = '';
-  let errorKind = '';
+  let themeAsset = '';
+  let themeAssetSource = '';
+  let error = THEME_LOAD_ERROR;
+  let errorKind = error ? 'settings' : '';
   let timer = null;
   let menu = null;
   let switcher = null;
@@ -79,6 +84,17 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
     if (typeof previousExit === 'function') previousExit(event);
   };
+  let themeFilesEnabled = true;
+  if (typeof native?.readThemeFiles === 'function') {
+    themeFilesEnabled = storage.getItem(SHELL_THEME_FILES_KEY) !== 'disabled';
+    try { installThemeCatalog(themeFilesEnabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG); }
+    catch (failure) {
+      installThemeCatalog(BUILTIN_THEME_CATALOG);
+      error = 'Cannot load user theme files; using packaged themes. ' + String(failure);
+      errorKind = 'theme-files';
+      report('[shell] ' + error);
+    }
+  }
   const stored = storage.getItem(SHELL_THEME_KEY);
   if (stored !== null) {
     try { getDesktopTheme(stored); themeId = stored; }
@@ -142,14 +158,16 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function definitions(theme, output) {
     const dock = theme.panel.kind === 'dock';
+    const layout = theme.layout;
     const result = {
       wallpaper: { layer: 'background', width: 0, height: 0,
         anchors: ['top', 'bottom', 'left', 'right'], exclusiveZone: -1 },
-      panel: { layer: 'top', width: 0, height: dock ? 26 : theme.panel.height,
-        anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? 26 : theme.panel.height },
+      panel: { layer: 'top', width: 0, height: dock ? layout.menuBarHeight : theme.panel.height,
+        anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height },
     };
     if (dock) result.dock = {
-      layer: 'top', width: Math.max(1, Math.min(320 + visibleWindows().length * 69, output.width - 16)), height: theme.panel.height,
+      layer: 'top', width: Math.max(1, Math.min(layout.dockBaseWidth +
+        visibleWindows().length * (layout.dockWindowWidth + layout.windowGap), output.width - layout.screenInset * 2)), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
       transparent: true,
     };
@@ -163,7 +181,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const workspaceControl = typeof native?.workspaces === 'function' ? {
       name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
     } : null;
-    if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper'), background.window.document.body);
+    if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper', themeAsset), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error, () => showSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
@@ -193,7 +211,18 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const staged = [];
     const plans = [];
     let previousStored, saved = false;
+    const appearance = nextTheme + ':' + THEME_REVISION;
+    const assetSource = nextTheme + '/' + theme.desktop.asset;
+    let asset = themeAsset, loadedAsset = false;
     try {
+      if (themeAssetSource !== assetSource || persist) {
+        asset = '';
+        if (theme.desktop.asset) {
+          if (typeof native?.loadThemeAsset !== 'function') throw new Error('Native theme resources are unavailable');
+          asset = native.loadThemeAsset(theme.id, theme.desktop.asset);
+          loadedAsset = true;
+        }
+      }
       for (const output of outputs) {
         const previous = bundles.get(output.id);
         const surfaces = {};
@@ -212,11 +241,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         storage.setItem(SHELL_THEME_KEY, nextTheme);
         saved = true;
       }
-      if (typeof native?.setAppearance === 'function' && compositorAppearance !== nextTheme) {
+      if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
+        native.configureAppearance(theme);
+        compositorAppearance = appearance;
+      } else if (compositorAppearance !== appearance && typeof native?.setAppearance === 'function') {
         native.setAppearance(nextTheme);
-        compositorAppearance = nextTheme;
+        compositorAppearance = appearance;
       }
     } catch (failure) {
+      if (loadedAsset) releaseThemeAsset(asset);
       for (const surface of staged) closeSurface(surface);
       if (saved) {
         try {
@@ -233,19 +266,42 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
     themeId = nextTheme;
-    for (const plan of plans) { bundles.set(plan.output.id, plan); paint(plan, theme); }
+    const previousAsset = themeAsset;
+    themeAsset = asset;
+    themeAssetSource = assetSource;
+    try {
+      for (const plan of plans) { bundles.set(plan.output.id, plan); paint(plan, theme); }
+    } finally {
+      if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
+    }
     lastFailure = '';
+  }
+
+  function releaseThemeAsset(asset) {
+    if (!asset) return;
+    try { native.releaseThemeAsset(asset); }
+    catch (failure) { report('[shell] Cannot release theme resource: ' + String(failure)); }
+  }
+
+  function applySelectedTheme(id) {
+    reconcile(id, true);
+    error = '';
+    errorKind = '';
+    closeMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+    notifications.paint();
+    tray.paint();
+    network.refresh();
+    audio.paint();
+    if (switcher) switcherChanged();
+    if (pendingDisplayToken) paintDisplayConfirmation();
   }
 
   function selectTheme(id) {
     if (!running) throw new Error('Shell is not running');
     getDesktopTheme(id);
     try {
-      reconcile(id, true);
-      error = '';
-      errorKind = '';
-      closeMenu();
-      for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+      applySelectedTheme(id);
       return true;
     } catch (failure) {
       error = 'Could not apply/save appearance: ' + String(failure);
@@ -255,6 +311,47 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return false;
     }
   }
+
+  function replaceThemes(catalog, enabled) {
+    if (!running) throw new Error('Shell is not running');
+    const previous = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
+    const stored = storage.getItem(SHELL_THEME_FILES_KEY);
+    const selected = catalog.themes.some(theme => theme.id === themeId) ? themeId : enabled ? null : DEFAULT_DESKTOP_THEME;
+    if (!selected) throw new Error('The active theme is missing; restore a packaged theme before removing it');
+    let installed = false, saved = false;
+    try {
+      installThemeCatalog(catalog); installed = true;
+      storage.setItem(SHELL_THEME_FILES_KEY, enabled ? 'enabled' : 'disabled'); saved = true;
+      applySelectedTheme(selected);
+      themeFilesEnabled = enabled;
+    } catch (failure) {
+      if (installed) installThemeCatalog(previous);
+      if (saved) {
+        try {
+          if (stored === null) storage.removeItem(SHELL_THEME_FILES_KEY);
+          else storage.setItem(SHELL_THEME_FILES_KEY, stored);
+        } catch (rollback) {
+          throw new Error(String(failure) + '; cannot restore theme-file preference: ' + String(rollback));
+        }
+      }
+      throw failure;
+    }
+  }
+
+  function changeThemeFiles(enabled) {
+    try {
+      replaceThemes(enabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG, enabled);
+      return true;
+    } catch (failure) {
+      error = 'Could not apply theme files: ' + String(failure);
+      errorKind = 'theme-files';
+      report('[shell] ' + error);
+      repaintMenu();
+      return false;
+    }
+  }
+  function reloadThemes() { return changeThemeFiles(true); }
+  function restoreThemes() { return changeThemeFiles(false); }
 
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
@@ -291,11 +388,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         launchApplication, reloadApplications, closeMenu, error), menu.window.document.body);
       return;
     }
-    render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu, () => refresh(true),
+    render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu,
+      () => errorKind === 'theme-files' ? reloadThemes() : refresh(true),
       error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null,
       typeof native?.outputConfiguration === 'function' ? () => showDisplays(menu.output) : null,
       typeof native?.startNetwork === 'function' ? () => showNetwork(menu.output) : null,
-      typeof native?.startAudio === 'function' ? () => showAudio(menu.output) : null),
+      typeof native?.startAudio === 'function' ? () => showAudio(menu.output) : null,
+      typeof native?.readThemeFiles === 'function' ? { reload: reloadThemes, restore: restoreThemes, enabled: themeFilesEnabled } : null),
       menu.window.document.body);
   }
 
@@ -308,16 +407,18 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
     closeMenu();
     const theme = getDesktopTheme(themeId);
+    const layout = theme.layout;
     const root = bundle.surfaces.wallpaper.window.document.body;
     const width = root.offsetWidth || bundle.output.width;
     const height = root.offsetHeight || bundle.output.height;
     const mac = theme.panel.kind === 'dock';
     try {
       menu = newSurface(bundle.output, 'settings', {
-        layer: 'overlay', width: Math.max(1, Math.min(340, width - 16)),
-        height: Math.max(1, Math.min(390, height - theme.panel.height - 24)),
+        layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
+        height: Math.max(1, Math.min(layout.menuHeight, height - theme.panel.height - layout.overlayInset * 2)),
         anchors: [mac ? 'top' : 'bottom', 'left'],
-        margins: { left: 8, [mac ? 'top' : 'bottom']: mac ? 30 : theme.panel.height + 6 },
+        margins: { left: layout.screenInset, [mac ? 'top' : 'bottom']:
+          mac ? layout.menuBarHeight + layout.menuTopGap : theme.panel.height + layout.menuGap },
         keyboard: 'exclusive', transparent: true,
       });
     } catch (failure) {
@@ -410,14 +511,16 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (!snapshot.active) { closeSurface(switcher); switcher = null; return; }
       const output = host.displays()[0];
       if (!output) throw new Error('No display is available for the window switcher');
-      const height = Math.max(1, Math.min(360, output.height - 32));
+      const layout = getDesktopTheme(themeId).layout;
+      const height = Math.max(1, Math.min(layout.switcherHeight, output.height - layout.switcherInset * 2));
       if (!switcher || switcher.window.closed) switcher = newSurface(output, 'switcher', {
-        layer: 'overlay', width: Math.max(1, Math.min(620, output.width - 32)), height,
+        layer: 'overlay', width: Math.max(1, Math.min(layout.switcherWidth, output.width - layout.switcherInset * 2)), height,
         anchors: [], exclusiveZone: -1, keyboard: 'none', transparent: true,
       });
       render(switcherView(getDesktopTheme(themeId), snapshot, (serial, index) => {
         try { native.acceptWindowSwitch(serial, index); } catch (failure) { shortcutFailure(failure); }
-      }, Math.max(1, Math.min(7, Math.floor((height - 70) / 38)))), switcher.window.document.body);
+      }, Math.max(1, Math.min(layout.switcherMaxRows,
+        Math.floor((height - layout.switcherChromeHeight) / layout.switcherRowHeight)))), switcher.window.document.body);
     } catch (failure) {
       closeSurface(switcher); switcher = null;
       try { native.cancelWindowSwitch(); } catch (cancelFailure) { report('[shell] Cannot cancel switcher: ' + String(cancelFailure)); }
@@ -733,10 +836,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       for (const bundle of bundles.values())
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
+      releaseThemeAsset(themeAsset); themeAsset = ''; themeAssetSource = '';
     },
-    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    selectTheme, reloadThemes, restoreThemes, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
     showNotifications: notifications.show, showNetwork, showAudio, refresh,
-    getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
+    getState() { return { themeId, error, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };
 }

@@ -1,5 +1,6 @@
 #include "decoration.h"
 #include "decoration-themes.h"
+#include "appearance-document.h"
 #include "server.h"
 #include "polly-appearance-server.h"
 
@@ -10,6 +11,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -28,7 +30,32 @@ struct PuDecorations {
     FcConfig *fonts;
     FT_Face faces[16];
     int face_count;
-    unsigned theme;
+    int font_family, font_weight;
+    struct PuDecorationTheme theme;
+    uint64_t generation;
+    int document_fd;
+    uint32_t document_size;
+    struct wl_list appearance_clients;
+    struct wl_global *theme_feed;
+    struct wl_list theme_watchers;
+    uint32_t theme_revision;
+};
+
+struct AppearanceClient {
+    struct PuDecorations *state;
+    struct wl_resource *resource;
+    struct wl_list link;
+    struct PuDecorationTheme staged;
+    uint32_t serial;
+    int document_fd;
+    uint32_t document_size;
+};
+
+struct ThemeWatcher {
+    struct PuDecorations *state;
+    struct wl_resource *resource;
+    struct wl_list link;
+    bool notified;
 };
 
 struct PuDecoration {
@@ -38,7 +65,8 @@ struct PuDecoration {
     struct wlr_scene_tree *tree;
     struct wlr_scene_buffer *title;
     struct wlr_scene_rect *left, *right, *bottom;
-    unsigned theme, pending_theme;
+    struct PuDecorationTheme theme, pending_theme;
+    uint64_t generation, pending_generation;
     bool decorated, last_active, last_maximized;
     int width, height, hover, last_hover;
     double scale;
@@ -76,7 +104,7 @@ static const struct wlr_buffer_impl buffer_impl = {
 
 static const struct PuDecorationTheme *theme_for(struct PuDesktopView *view, bool pending)
 {
-    return &pu_decoration_themes[pending ? view->desktop->decorations->theme : view->decoration->theme];
+    return pending ? &view->desktop->decorations->theme : &view->decoration->theme;
 }
 
 static bool server_side(struct PuDecoration *decoration, bool pending)
@@ -99,7 +127,10 @@ void pu_decoration_inset(struct PuDesktopView *view, struct wlr_box *bounds, boo
 
 void pu_decoration_schedule(struct PuDesktopView *view)
 {
-    if (view->decoration) view->decoration->pending_theme = view->desktop->decorations->theme;
+    if (view->decoration) {
+        view->decoration->pending_theme = view->desktop->decorations->theme;
+        view->decoration->pending_generation = view->desktop->decorations->generation;
+    }
 }
 
 void pu_decoration_present(struct PuDesktopView *view)
@@ -108,8 +139,9 @@ void pu_decoration_present(struct PuDesktopView *view)
     if (!d) return;
     d->decorated = d->protocol && d->protocol->current.mode ==
         WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
-    if (d->theme != d->pending_theme) {
+    if (d->generation != d->pending_generation) {
         d->theme = d->pending_theme;
+        d->generation = d->pending_generation;
         d->width = 0;
     }
 }
@@ -122,14 +154,14 @@ bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_b
     const struct PuDecorationTheme *theme = theme_for(view, false);
     if (view->toplevel->base->geometry.width < 1 || view->toplevel->base->geometry.width > 32700) return false;
     int width = view->toplevel->base->geometry.width + 2 * theme->border_width;
-    int size = theme->round_controls ? 14 : theme->title_height - 8;
+    int size = theme->control_size;
     int index = part == PU_DECORATION_CLOSE ? 0 :
         part == PU_DECORATION_MINIMIZE && theme->left_controls ? 1 :
         part == PU_DECORATION_MAXIMIZE && !theme->left_controls ? 1 : 2;
-    if (width < (index + 1) * (size + 4) + 8) return false;
+    if (width < (index + 1) * size + index * theme->control_gap + 2 * theme->control_inset) return false;
     *box = (struct wlr_box) {
-        .x = -theme->border_width + (theme->left_controls ? 6 + index * (size + 4) :
-            width - 6 - size - index * (size + 4)),
+        .x = -theme->border_width + (theme->left_controls ? theme->control_inset + index * (size + theme->control_gap) :
+            width - theme->control_inset - size - index * (size + theme->control_gap)),
         .y = -theme->title_height + (theme->title_height - size) / 2,
         .width = size, .height = size,
     };
@@ -216,8 +248,13 @@ static uint32_t codepoint(const unsigned char **text)
     return value;
 }
 
-static FT_Face face_for(struct PuDecorations *state, uint32_t character)
+static FT_Face face_for(struct PuDecorations *state, uint32_t character, const struct PuDecorationTheme *theme)
 {
+    if (state->font_family != theme->font_family || state->font_weight != theme->font_weight) {
+        for (int i = 0; i < state->face_count; i++) FT_Done_Face(state->faces[i]);
+        state->face_count = 0;
+        state->font_family = theme->font_family; state->font_weight = theme->font_weight;
+    }
     for (int i = 0; i < state->face_count; i++)
         if (FT_Get_Char_Index(state->faces[i], character)) return state->faces[i];
     if (state->face_count == 16) return state->faces[0];
@@ -228,8 +265,10 @@ static FT_Face face_for(struct PuDecorations *state, uint32_t character)
         if (charset) FcCharSetDestroy(charset);
         return NULL;
     }
+    const char *families[] = {"sans-serif", "serif", "monospace"};
     bool ok = FcCharSetAddChar(charset, character) &&
-        FcPatternAddString(pattern, FC_FAMILY, (const FcChar8 *)"sans-serif") &&
+        FcPatternAddString(pattern, FC_FAMILY, (const FcChar8 *)families[theme->font_family]) &&
+        FcPatternAddInteger(pattern, FC_WEIGHT, FcWeightFromOpenType(theme->font_weight)) &&
         FcPatternAddCharSet(pattern, FC_CHARSET, charset) &&
         FcConfigSubstitute(state->fonts, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
@@ -249,21 +288,41 @@ static FT_Face face_for(struct PuDecorations *state, uint32_t character)
     return face;
 }
 
+static FT_Face title_glyph(struct PuDecoration *decoration, uint32_t character, int size, int flags)
+{
+    const struct PuDecorationTheme *theme = &decoration->theme;
+    if (character < 32 || character == 127) character = ' ';
+    struct PuDecorations *state = decoration->view->desktop->decorations;
+    FT_Face face = face_for(state, character, theme);
+    if (!face) return NULL;
+    if (FT_Set_Pixel_Sizes(face, 0, size) || FT_Load_Char(face, character, flags)) {
+        face = state->faces[0];
+        if (FT_Set_Pixel_Sizes(face, 0, size) || FT_Load_Glyph(face, 0, flags)) return NULL;
+    }
+    return face;
+}
+
 static bool draw_text(struct PuDecoration *d, struct TitleBuffer *buffer, const char *title,
                        int left, int right, double scale, uint32_t color)
 {
     const unsigned char *text = (const unsigned char *)title;
+    const struct PuDecorationTheme *theme = &d->theme;
     int pen = (int)ceil(left * scale);
-    const int end = (int)floor(right * scale), size = (int)ceil(13 * scale);
+    const int end = (int)floor(right * scale), size = (int)ceil(theme->font_size * scale);
+    if (theme->text_align) {
+        const unsigned char *scan = text;
+        int width = 0;
+        for (int count = 0; *scan && count < 512; count++) {
+            FT_Face face = title_glyph(d, codepoint(&scan), size, FT_LOAD_DEFAULT);
+            if (!face) return false;
+            width += (int)(face->glyph->advance.x >> 6);
+        }
+        pen += (end - pen - width) / (theme->text_align == 1 ? 2 : 1);
+    }
     for (int count = 0; *text && count < 512 && pen < end; count++) {
         uint32_t character = codepoint(&text);
-        if (character < 32 || character == 127) character = ' ';
-        FT_Face face = face_for(d->view->desktop->decorations, character);
+        FT_Face face = title_glyph(d, character, size, FT_LOAD_RENDER);
         if (!face) return false;
-        if (FT_Set_Pixel_Sizes(face, 0, size) || FT_Load_Char(face, character, FT_LOAD_RENDER)) {
-            face = d->view->desktop->decorations->faces[0];
-            if (FT_Set_Pixel_Sizes(face, 0, size) || FT_Load_Glyph(face, 0, FT_LOAD_RENDER)) return false;
-        }
         FT_GlyphSlot glyph = face->glyph;
         int advance = (int)(glyph->advance.x >> 6);
         if (pen + advance > end) break;
@@ -305,11 +364,18 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
     if (radius > logical_height / 2) radius = logical_height / 2;
     for (int y = 0; y < buffer->base.height; y++) {
         double ly = (y + 0.5) / scale;
-        uint32_t color = mix(active ? theme->titleFrom : theme->inactiveFrom,
+        bool striped = theme->pinstripe && (int)ly % theme->stripe_spacing < theme->stripe_width;
+        uint32_t vertical = mix(active ? theme->titleFrom : theme->inactiveFrom,
             active ? theme->titleTo : theme->inactiveTo, ly / logical_height);
-        if (theme->pinstripe && (int)ly % 3 == 0) color = mix(color, 0xffaabbcc, 0.12);
+        if (striped) vertical = mix(vertical, theme->stripeColor, theme->stripe_opacity);
         for (int x = 0; x < buffer->base.width; x++) {
             double lx = (x + 0.5) / scale;
+            uint32_t color = vertical;
+            if (theme->horizontal) {
+                color = mix(active ? theme->titleFrom : theme->inactiveFrom,
+                    active ? theme->titleTo : theme->inactiveTo, lx / logical_width);
+                if (striped) color = mix(color, theme->stripeColor, theme->stripe_opacity);
+            }
             double cx = lx < radius ? radius : lx > logical_width - radius ? logical_width - radius : lx;
             double cy = ly < radius ? radius : ly;
             if ((lx - cx) * (lx - cx) + (ly - cy) * (ly - cy) > radius * radius) continue;
@@ -318,33 +384,43 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
                 ly < theme->border_width ? theme->border : color;
         }
     }
-    int text_left = 10, text_right = logical_width - 10;
+    int text_left = theme->text_inset, text_right = logical_width - theme->text_inset;
     for (int part = PU_DECORATION_CLOSE; part <= PU_DECORATION_MINIMIZE; part++) {
         struct wlr_box box;
         if (!pu_decoration_button_box(d->view, part, &box)) continue;
         box.x += theme->border_width; box.y += theme->title_height;
-        if (theme->left_controls && text_left < box.x + box.width + 8) text_left = box.x + box.width + 8;
-        if (!theme->left_controls && text_right > box.x - 8) text_right = box.x - 8;
+        if (theme->left_controls && text_left < box.x + box.width + theme->text_gap)
+            text_left = box.x + box.width + theme->text_gap;
+        if (!theme->left_controls && text_right > box.x - theme->text_gap) text_right = box.x - theme->text_gap;
         uint32_t from = part == PU_DECORATION_CLOSE ? theme->closeFrom : theme->controlFrom;
         uint32_t to = part == PU_DECORATION_CLOSE ? theme->closeTo : theme->controlTo;
-        if (theme->round_controls && part == PU_DECORATION_MINIMIZE) { from = 0xffffdc76; to = 0xffeab63d; }
-        if (theme->round_controls && part == PU_DECORATION_MAXIMIZE) { from = 0xff83dc93; to = 0xff42b964; }
+        if (part == PU_DECORATION_MINIMIZE) { from = theme->minimizeFrom; to = theme->minimizeTo; }
+        if (part == PU_DECORATION_MAXIMIZE) { from = theme->maximizeFrom; to = theme->maximizeTo; }
         for (int y = (int)floor(box.y * scale); y < (int)ceil((box.y + box.height) * scale); y++) {
             for (int x = (int)floor(box.x * scale); x < (int)ceil((box.x + box.width) * scale); x++) {
                 double rx = (x + 0.5) / scale - box.x, ry = (y + 0.5) / scale - box.y;
                 double half = box.width / 2.0;
                 if (theme->round_controls && (rx - half) * (rx - half) + (ry - half) * (ry - half) > half * half)
                     continue;
+                if (!theme->round_controls && theme->control_radius > 0) {
+                    double radius = theme->control_radius < half ? theme->control_radius : half;
+                    double cx = fmax(radius, fmin(box.width - radius, rx));
+                    double cy = fmax(radius, fmin(box.height - radius, ry));
+                    if ((rx - cx) * (rx - cx) + (ry - cy) * (ry - cy) > radius * radius) continue;
+                }
                 uint32_t color = mix(from, to, ry / box.height);
-                if (!active) color = mix(color, theme->inactiveTo, 0.55);
-                if (d->hover == part) color = mix(color, 0xffffffff, 0.25);
+                if (!active) color = mix(color, theme->inactiveTo, theme->inactive_opacity);
+                if (d->hover == part) color = mix(color, theme->hoverColor, theme->hover_opacity);
                 blend(buffer, x, y, color, 255);
                 double gx = rx - half, gy = ry - half;
-                bool mark = part == PU_DECORATION_CLOSE ? fabs(fabs(gx) - fabs(gy)) < 0.8 && fabs(gx) < 4 :
-                    part == PU_DECORATION_MINIMIZE ? fabs(gy - 2) < 0.7 && fabs(gx) < 4 :
-                    ((fabs(fabs(gx) - 3) < 0.7 && fabs(gy) <= 3) ||
-                     (fabs(fabs(gy) - 3) < 0.7 && fabs(gx) <= 3));
-                if (mark && (!theme->round_controls || d->hover == part))
+                double extent = theme->glyph_radius * 0.75;
+                bool mark = part == PU_DECORATION_CLOSE ?
+                    fabs(fabs(gx) - fabs(gy)) < theme->close_thickness && fabs(gx) < theme->glyph_radius :
+                    part == PU_DECORATION_MINIMIZE ?
+                    fabs(gy - theme->glyph_radius / 2) < theme->glyph_thickness && fabs(gx) < theme->glyph_radius :
+                    ((fabs(fabs(gx) - extent) < theme->glyph_thickness && fabs(gy) <= extent) ||
+                     (fabs(fabs(gy) - extent) < theme->glyph_thickness && fabs(gx) <= extent));
+                if (mark && (!theme->glyphs_hover || d->hover == part))
                     blend(buffer, x, y, theme->controlText, 255);
             }
         }
@@ -426,6 +502,7 @@ bool pu_decoration_create(struct PuDesktopView *view)
     if (!d) return false;
     d->view = view;
     d->theme = d->pending_theme = view->desktop->decorations->theme;
+    d->generation = d->pending_generation = view->desktop->decorations->generation;
     d->tree = wlr_scene_tree_create(view->tree);
     if (!d->tree) { free(d); return false; }
     d->title = wlr_scene_buffer_create(d->tree, NULL);
@@ -507,28 +584,163 @@ static void new_decoration(struct wl_listener *listener, void *data)
 static void appearance_destroy(struct wl_client *client, struct wl_resource *resource)
 { (void)client; wl_resource_destroy(resource); }
 
+static void appearance_released(struct wl_resource *resource)
+{
+    struct AppearanceClient *client = wl_resource_get_user_data(resource);
+    wl_list_remove(&client->link);
+    if (client->document_fd >= 0) close(client->document_fd);
+    free(client);
+}
+
+static void notify_theme(struct PuDecorations *state)
+{
+    if (!++state->theme_revision) ++state->theme_revision;
+    struct ThemeWatcher *watcher;
+    wl_list_for_each(watcher, &state->theme_watchers, link) {
+        if (watcher->notified) continue;
+        watcher->notified = true;
+        polly_theme_manager_v1_send_changed(watcher->resource, state->theme_revision);
+    }
+}
+
+static void repaint_decorations(struct PuDecorations *state)
+{
+    state->generation++;
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &state->desktop->all_views, all_link)
+        if (view->decoration && (server_side(view->decoration, true) || view->decoration->decorated))
+            pu_desktop_redecorate(view);
+    notify_theme(state);
+}
+
+static void theme_watcher_released(struct wl_resource *resource)
+{
+    struct ThemeWatcher *watcher = wl_resource_get_user_data(resource);
+    wl_list_remove(&watcher->link);
+    free(watcher);
+}
+
+static void theme_snapshot(struct wl_client *client, struct wl_resource *resource)
+{
+    (void)client;
+    struct ThemeWatcher *watcher = wl_resource_get_user_data(resource);
+    if (!watcher->notified) {
+        wl_resource_post_error(resource, POLLY_THEME_MANAGER_V1_ERROR_UNEXPECTED_REQUEST,
+            "Request a theme snapshot only after a change notification");
+        return;
+    }
+    watcher->notified = false;
+    if (watcher->state->document_fd >= 0)
+        polly_theme_manager_v1_send_snapshot(resource, watcher->state->theme_revision,
+            watcher->state->document_fd, watcher->state->document_size);
+    else polly_theme_manager_v1_send_unavailable(resource, watcher->state->theme_revision);
+}
+
+static const struct polly_theme_manager_v1_interface theme_feed_impl = {
+    .destroy = appearance_destroy, .get_snapshot = theme_snapshot,
+};
+
+static void theme_feed_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
+{
+    struct PuDecorations *state = data;
+    unsigned same_client = 0;
+    struct ThemeWatcher *item;
+    wl_list_for_each(item, &state->theme_watchers, link)
+        if (wl_resource_get_client(item->resource) == client) same_client++;
+    if (same_client >= 4 || wl_list_length(&state->theme_watchers) >= 128) {
+        wl_client_post_implementation_error(client, "Theme subscription limit reached");
+        return;
+    }
+    struct ThemeWatcher *watcher = calloc(1, sizeof(*watcher));
+    if (!watcher) { wl_client_post_no_memory(client); return; }
+    struct wl_resource *resource = wl_resource_create(client, &polly_theme_manager_v1_interface, version, id);
+    if (!resource) { free(watcher); wl_client_post_no_memory(client); return; }
+    watcher->state = state; watcher->resource = resource; watcher->notified = true;
+    wl_list_insert(&state->theme_watchers, &watcher->link);
+    wl_resource_set_implementation(resource, &theme_feed_impl, watcher, theme_watcher_released);
+    polly_theme_manager_v1_send_changed(resource, state->theme_revision);
+}
+
 static void set_theme(struct wl_client *client, struct wl_resource *resource, const char *name)
 {
-    struct PuDecorations *state = wl_resource_get_user_data(resource);
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    struct PuDecorations *state = owner->state;
     if (client != state->desktop->shell_client) {
         wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Shell authorization was revoked");
         return;
     }
     for (unsigned i = 0; i < PU_DECORATION_THEME_COUNT; i++) {
         if (strcmp(name, pu_decoration_themes[i].id)) continue;
-        if (state->theme == i) return;
-        state->theme = i;
-        struct PuDesktopView *view;
-        wl_list_for_each(view, &state->desktop->all_views, all_link)
-            if (view->decoration && (server_side(view->decoration, true) || view->decoration->decorated))
-                pu_desktop_redecorate(view);
+        if (state->theme.id == pu_decoration_themes[i].id) return;
+        state->theme = pu_decoration_themes[i];
+        if (state->document_fd >= 0) close(state->document_fd);
+        state->document_fd = -1; state->document_size = 0;
+        repaint_decorations(state);
         return;
     }
     wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNKNOWN_THEME, "Unknown decoration theme");
 }
 
+static void prepare_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+                          const char *name, struct wl_array *configuration, int32_t document, uint32_t length)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (client != owner->state->desktop->shell_client) {
+        close(document);
+        wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Shell authorization was revoked");
+        return;
+    }
+    if (owner->document_fd >= 0) close(owner->document_fd);
+    owner->document_fd = -1; owner->document_size = 0; owner->serial = 0;
+    uint32_t words[PU_APPEARANCE_WORDS];
+    bool valid = serial && pu_appearance_identifier(name) && configuration->size == sizeof(words) &&
+        pu_appearance_document_valid(document, length);
+    if (valid) {
+        memcpy(words, configuration->data, sizeof(words));
+        valid = pu_appearance_decode(&owner->staged, words);
+    }
+    if (!valid) {
+        close(document);
+        polly_appearance_v1_send_prepared(resource, serial, 0, "Unsupported or out-of-range appearance data");
+        return;
+    }
+    owner->document_fd = document; owner->document_size = length;
+    owner->serial = serial;
+    polly_appearance_v1_send_prepared(resource, serial, 1, "");
+}
+
+static void commit_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    struct PuDecorations *state = owner->state;
+    if (client != state->desktop->shell_client) {
+        wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Shell authorization was revoked");
+        return;
+    }
+    if (!serial || owner->serial != serial || owner->document_fd < 0 || state->generation == UINT64_MAX) {
+        polly_appearance_v1_send_applied(resource, serial, 0, "No matching prepared appearance");
+        return;
+    }
+    state->theme = owner->staged;
+    if (state->document_fd >= 0) close(state->document_fd);
+    state->document_fd = owner->document_fd; state->document_size = owner->document_size;
+    owner->document_fd = -1; owner->document_size = 0; owner->serial = 0;
+    repaint_decorations(state);
+    polly_appearance_v1_send_applied(resource, serial, 1, "");
+}
+
+static void cancel_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
+{
+    (void)client;
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (owner->serial != serial) return;
+    if (owner->document_fd >= 0) close(owner->document_fd);
+    owner->document_fd = -1; owner->document_size = 0; owner->serial = 0;
+}
+
 static const struct polly_appearance_v1_interface appearance_impl = {
     .destroy = appearance_destroy, .set_theme = set_theme,
+    .prepare = prepare_theme, .commit = commit_theme, .cancel = cancel_theme,
 };
 
 static void appearance_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
@@ -538,24 +750,39 @@ static void appearance_bind(struct wl_client *client, void *data, uint32_t versi
         wl_client_post_implementation_error(client, "Appearance control requires the trusted Shell connection");
         return;
     }
+    if (wl_list_length(&state->appearance_clients) >= 8) {
+        wl_client_post_implementation_error(client, "Appearance binding limit reached");
+        return;
+    }
+    struct AppearanceClient *owner = calloc(1, sizeof(*owner));
+    if (!owner) { wl_client_post_no_memory(client); return; }
+    owner->document_fd = -1;
     struct wl_resource *resource = wl_resource_create(client, &polly_appearance_v1_interface, version, id);
-    if (!resource) { wl_client_post_no_memory(client); return; }
-    wl_resource_set_implementation(resource, &appearance_impl, state, NULL);
+    if (!resource) { free(owner); wl_client_post_no_memory(client); return; }
+    owner->state = state; owner->resource = resource;
+    wl_list_insert(&state->appearance_clients, &owner->link);
+    wl_resource_set_implementation(resource, &appearance_impl, owner, appearance_released);
 }
 
 bool pu_decorations_init(struct PuDesktop *desktop)
 {
     struct PuDecorations *state = calloc(1, sizeof(*state));
     if (!state) return false;
+    state->document_fd = -1;
     desktop->decorations = state;
     state->desktop = desktop;
-    state->theme = PU_DECORATION_DEFAULT_THEME;
+    state->theme = pu_decoration_themes[PU_DECORATION_DEFAULT_THEME];
+    state->generation = 1;
+    wl_list_init(&state->appearance_clients);
+    wl_list_init(&state->theme_watchers);
+    state->theme_revision = 1;
     if (FT_Init_FreeType(&state->freetype)) return false;
     state->fonts = FcInitLoadConfigAndFonts();
-    if (!state->fonts || !face_for(state, 'A')) return false;
+    if (!state->fonts || !face_for(state, 'A', &state->theme)) return false;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 1, state, appearance_bind);
-    if (!state->manager || !state->appearance) return false;
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 2, state, appearance_bind);
+    state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
+    if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;
     wl_signal_add(&state->manager->events.new_toplevel_decoration, &state->new_decoration);
     return true;
@@ -567,6 +794,12 @@ void pu_decorations_finish(struct PuDesktop *desktop)
     if (!state) return;
     if (state->new_decoration.link.next) wl_list_remove(&state->new_decoration.link);
     if (state->appearance) wl_global_destroy(state->appearance);
+    if (state->theme_feed) wl_global_destroy(state->theme_feed);
+    struct AppearanceClient *client, *next;
+    wl_list_for_each_safe(client, next, &state->appearance_clients, link) wl_resource_destroy(client->resource);
+    struct ThemeWatcher *watcher, *following;
+    wl_list_for_each_safe(watcher, following, &state->theme_watchers, link) wl_resource_destroy(watcher->resource);
+    if (state->document_fd >= 0) close(state->document_fd);
     for (int i = 0; i < state->face_count; i++) FT_Done_Face(state->faces[i]);
     if (state->freetype) FT_Done_FreeType(state->freetype);
     if (state->fonts) FcConfigDestroy(state->fonts);

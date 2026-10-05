@@ -1,14 +1,16 @@
 import { h, render } from './js/reconciler.mjs';
 import { createTextInput } from './js/textinput.mjs';
+import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
   let prompt = 0, password = null, username = null;
+  let credentialTheme = null;
   function failure(value) { error = String(value); report('[shell] Network: ' + error); paint(); }
   function clearCredentials() {
     if (password) password.value = '';
     if (username) username.value = '';
-    prompt = 0; password = username = null;
+    prompt = 0; password = username = null; credentialTheme = null;
   }
   function close() {
     if (state?.authentication) {
@@ -23,16 +25,17 @@ export function createNetworkSettings({ native, host, theme, report }) {
   function button(id, label, callback, enabled = true) {
     const current = theme();
     return h('view', { id, role: 'button', tabIndex: enabled ? 0 : -1, 'aria-disabled': String(!enabled),
-      style: { padding: 8, borderWidth: 1, borderColor: current.colors.border,
+      style: { padding: current.layout.serviceButtonPadding, borderWidth: current.layout.borderWidth, borderColor: current.colors.border,
         borderRadius: current.button.radius, backgroundColor: current.colors.surface,
-        color: enabled ? current.colors.text : current.colors.muted, fontSize: 12, flexShrink: 0 },
+        color: enabled ? current.colors.text : current.colors.muted, fontSize: current.layout.fontSize, flexShrink: 0 },
       onClick: () => { if (enabled) callback(); },
       onKeydown: event => {
         if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); callback(); }
       },
     }, label);
   }
-  const label = (value, size = 12) => h('view', { style: { fontSize: size, color: theme().colors.text, flexShrink: 0 } }, value);
+  const label = (value, size = 12) => h('view', { style: {
+    fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0 } }, value);
   function perform(action, target, revision = state.revision) {
     try {
       error = ''; confirmation = null;
@@ -59,23 +62,33 @@ export function createNetworkSettings({ native, host, theme, report }) {
       if (auth) {
         focusCredentials = true;
         prompt = auth.id;
-        password = createTextInput({ document: owner, password: true, width: 420, fontSize: 14 });
+        password = createTextInput({ document: owner, password: true, width: 420, fontSize: current.layout.sectionFontSize });
         password.root.id = 'shell-network-password';
         if (auth.kind === 'username-password') {
-          username = createTextInput({ document: owner, value: auth.username, width: 420, fontSize: 14 });
+          username = createTextInput({ document: owner, value: auth.username, width: 420, fontSize: current.layout.sectionFontSize });
           username.root.id = 'shell-network-username';
         }
       }
+    }
+    if (credentialTheme !== current) {
+      for (const field of [username, password]) if (field) field.setAppearance({
+        color: current.colors.text, background: current.colors.surface,
+        selectionColor: current.colors.selection, borderColor: current.colors.border, borderRadius: current.button.radius,
+        fontSize: current.layout.sectionFontSize,
+      });
+      credentialTheme = current;
     }
     const content = [];
     if (auth) {
       const name = state.networks.find(item => item.id === auth.network)?.name || 'Wi-Fi network';
       content.push(label('Authenticate: ' + name, 16));
       content.push(label('iwd may save these credentials in its system network profile.'));
-      if (username) content.push(label('Username'), h('view', { key: 'username-' + auth.id, style: { height: 32 }, onMount: node => node.appendChild(username.root) }));
+      if (username) content.push(label('Username'), h('view', { key: 'username-' + auth.id,
+        style: { height: Number(username.root.style.height) + 2 }, onMount: node => node.appendChild(username.root) }));
       else if (auth.username) content.push(label('User: ' + auth.username));
       content.push(label(auth.kind === 'private-key' ? 'Private key passphrase' : 'Password'),
-        h('view', { key: 'password-' + auth.id, style: { height: 32 }, onMount: node => node.appendChild(password.root) }));
+        h('view', { key: 'password-' + auth.id, style: { height: Number(password.root.style.height) + 2 },
+          onMount: node => node.appendChild(password.root) }));
       content.push(button('shell-network-auth-submit', 'Send credentials to iwd', () => submitAuthentication(false, auth.id)),
         button('shell-network-auth-cancel', 'Cancel', () => submitAuthentication(true, auth.id)));
     } else if (confirmation) {
@@ -115,7 +128,8 @@ export function createNetworkSettings({ native, host, theme, report }) {
         }
       }
     }
-    render(h('view', { id: 'shell-network-settings', style: { flex: 1, padding: 12, gap: 8,
+    render(h('view', { id: 'shell-network-settings', style: { flex: 1,
+      padding: current.layout.contentPadding, gap: current.layout.contentGap,
       overflow: 'scroll', backgroundColor: current.colors.body } },
       h('view', { style: { flexDirection: 'row', gap: 8, flexShrink: 0 } }, label('Wi-Fi (iwd)', 18),
         button('shell-network-retry', 'Refresh / retry', retry, !state.operation),
@@ -147,10 +161,11 @@ export function createNetworkSettings({ native, host, theme, report }) {
       if (surface && !surface.window.closed) { paint(); return surface.window; }
       const output = host.displays().find(item => item.id === outputId) || host.displays()[0];
       if (!output) throw new Error('No output available for network settings');
+      const layout = theme().layout;
       const window = host.create({ title: 'PollyShell.network.' + output.id, output: output.id,
-        layer: 'overlay', keyboard: 'exclusive', width: Math.max(1, Math.min(500, output.width - 24)),
-        height: Math.max(1, Math.min(580, output.height - 48)), anchors: ['top', 'right'],
-        margins: { top: 32, right: 12 }, exclusiveZone: -1 });
+        layer: 'overlay', keyboard: 'exclusive', width: Math.max(1, Math.min(layout.networkWidth, output.width - layout.overlayInset * 2)),
+        height: Math.max(1, Math.min(layout.networkHeight, output.height - layout.overlayVerticalInset * 2)), anchors: ['top', 'right'],
+        margins: { top: layout.overlayTopMargin, right: layout.overlayRightMargin }, exclusiveZone: -1 });
       surface = { window, output: output.id };
       window.document.body.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.preventDefault(); close(); }

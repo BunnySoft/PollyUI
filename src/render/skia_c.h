@@ -113,6 +113,8 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius);
 /* Native owned in-memory icons; keys must use the polly-memory: namespace. */
 int pu_image_set_argb(const char *key, int width, int height, const uint8_t *bytes, size_t length);
+int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
+                        size_t pixel_limit, int *width, int *height);
 void pu_image_remove(const char *key);
 
 /* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700), slant, and

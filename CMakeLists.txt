@@ -265,7 +265,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 src/desktop/output-client.c
                 "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
                 "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
-                src/desktop/shortcut-client.c desktop/shared/shortcuts.c
+                src/desktop/shortcut-client.c src/desktop/theme-files.c src/desktop/theme-client.c
+                desktop/shared/shortcuts.c desktop/shared/appearance-document.c
                 "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
                 "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
                 "${UI_PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel.c"
@@ -438,6 +439,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-theme-files-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/theme-files-shell.mjs" themes)
+                set_tests_properties(desktop-theme-files-${renderer} PROPERTIES TIMEOUT 100
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-audio-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --audio
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

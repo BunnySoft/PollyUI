@@ -18,11 +18,11 @@ const el = (owner, tag, style) => {
 
 export function createTextInput(opts = {}) {
   const owner = opts.document ?? document;
-  const fontSize = opts.fontSize ?? 18;
+  let fontSize = opts.fontSize ?? 18;
   const padding  = opts.padding ?? 8;
   const width    = opts.width ?? 240;
-  const color    = opts.color ?? '#0f172a';
-  const selColor = opts.selectionColor ?? '#93c5fd';
+  let color    = opts.color ?? '#0f172a';
+  let selColor = opts.selectionColor ?? '#93c5fd';
   const purpose = opts.password ? 'password' : opts.purpose ?? 'text';
   const secure = purpose === 'password' || purpose === 'pin';
   const displayed = value => secure ? '\u2022'.repeat(Array.from(value).length) : value;
@@ -201,5 +201,30 @@ export function createTextInput(opts = {}) {
     getCaret: () => st.caret,
     getSelection: () => selRange(),
     selectAll: () => { st.anchor = 0; st.caret = st.value.length; st.focused = true; render(); },
+    setAppearance(values) {
+      if (!values || typeof values !== 'object' || Array.isArray(values))
+        throw new TypeError('Input appearance must be an object');
+      for (const [key, value] of Object.entries(values)) {
+        if (key === 'borderRadius' || key === 'fontSize') {
+          if (!Number.isFinite(value) || value < (key === 'fontSize' ? 8 : 0) ||
+            value > (key === 'fontSize' ? 64 : 256))
+            throw new RangeError('Invalid input appearance metric: ' + key);
+        } else if (!['color', 'selectionColor', 'background', 'borderColor'].includes(key) ||
+          typeof value !== 'string' || !value.length || value.length > 64)
+          throw new TypeError('Invalid input appearance field: ' + key);
+      }
+      if (Object.hasOwn(values, 'color')) { color = values.color; textEl.style.color = color; }
+      if (Object.hasOwn(values, 'selectionColor')) selColor = values.selectionColor;
+      if (Object.hasOwn(values, 'background')) root.style.backgroundColor = values.background;
+      if (Object.hasOwn(values, 'borderColor')) root.style.borderColor = values.borderColor;
+      if (Object.hasOwn(values, 'borderRadius')) root.style.borderRadius = values.borderRadius;
+      if (Object.hasOwn(values, 'fontSize')) {
+        fontSize = values.fontSize;
+        textEl.style.fontSize = fontSize;
+        root.style.height = highlight.style.height = underline.style.height = fontSize + padding * 2;
+        caret.style.height = fontSize;
+      }
+      render();
+    },
   };
 }

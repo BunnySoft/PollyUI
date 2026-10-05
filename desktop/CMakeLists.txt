@@ -78,6 +78,7 @@ add_custom_command(
     DEPENDS "${LAYER_SHELL_XML}" VERBATIM)
 
 add_library(pollywm-core STATIC
+    shared/appearance-document.c
     shared/shortcuts.c
     compositor/shortcut-control.c
     compositor/output-control.c

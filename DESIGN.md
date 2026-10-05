@@ -596,13 +596,25 @@ before maximizing/fitting content. Fullscreen disables the frame.
 
 Titlebars are bounded CPU buffers with Fontconfig/FreeType captions, separate
 from application buffers, and retain wlroots buffer ownership semantics.
-The compositor still does not link the UI engine. The five C theme presets are
-generated from the Shell's canonical tokens. A restricted `polly_appearance_v1`
-global accepts only known theme IDs from the exact trusted Shell connection.
-The Shell stages its surfaces, persists selection, then sends appearance;
-if the native request throws, it attempts to restore the previous stored value
-and reports rollback failure explicitly. Rendering/geometry application remains
-asynchronous, not a distributed atomic transaction.
+The compositor still does not link the UI engine. Shell JS loads and validates
+versioned JSON and merges bounded user overrides. Private appearance protocol
+v2 stages numeric decoration snapshots before committing them; per-view
+current/pending value copies keep old configure state alive independently.
+The generated C presets remain for bootstrap and legacy v1 callers, not as a
+restriction on runtime theme IDs.
+
+The full visual document travels through a size-checked sealed memfd instead of
+a large Wayland string. PollyWM checks descriptor invariants and numeric bounds
+without parsing JSON. Public opt-in observers receive coalesced notifications
+and request a read-only snapshot; no management or filesystem authority is
+granted. Apps validate the versioned document and may retain local overrides.
+
+The Shell stages surfaces and decoded bitmap resources, persists selection and
+requests native application. Rejection retires staged resources and restores
+prior settings/catalog state, reporting any rollback failure explicitly.
+Transport timeouts can leave commit acknowledgment uncertain and are reported
+as such; rendering remains asynchronous, not a distributed atomic transaction.
+See `desktop/THEMES.md` for the file layout, limits and application API.
 
 ### Deferred ⏸
 

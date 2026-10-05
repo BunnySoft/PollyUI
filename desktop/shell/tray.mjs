@@ -2,7 +2,8 @@ import { h, render } from './js/reconciler.mjs';
 
 export function trayView(theme, items, activate, scroll) {
   return h('view', { id: 'shell-tray', role: 'toolbar',
-    style: { flexDirection: 'row', alignItems: 'center', flexShrink: 1, maxWidth: 240, gap: 4, overflow: 'scroll' } },
+    style: { flexDirection: 'row', alignItems: 'center', flexShrink: 1,
+      maxWidth: theme.layout.trayWidth, gap: theme.layout.trayGap, overflow: 'scroll' } },
   ...items.filter(item => item.status !== 'Passive').map(item => {
     const act = (event, kind) => {
       event.stopPropagation();
@@ -10,10 +11,11 @@ export function trayView(theme, items, activate, scroll) {
       activate(item, kind, Math.round(event.clientX ?? rect.x), Math.round(event.clientY ?? rect.y));
     };
     return h('view', { id: 'shell-tray-' + item.id, role: 'button', tabIndex: 0, 'aria-label': item.title,
-      style: { width: item.icon ? 28 : 64, height: 24, flexShrink: 0, padding: 2, overflow: 'hidden',
+      style: { width: item.icon ? theme.layout.trayIconWidth : theme.layout.trayTextWidth,
+        height: theme.layout.trayItemHeight, flexShrink: 0, padding: theme.layout.trayPadding, overflow: 'hidden',
         alignItems: 'center', justifyContent: 'center', borderRadius: theme.button.radius,
-        borderWidth: 1, borderColor: item.status === 'NeedsAttention' || item.error ? theme.colors.accent : theme.colors.border },
-      focusStyle: { borderColor: '#ffb62b' },
+        borderWidth: theme.layout.borderWidth, borderColor: item.status === 'NeedsAttention' || item.error ? theme.colors.accent : theme.colors.border },
+      focusStyle: { borderColor: theme.colors.focus },
       onClick: event => act(event, 'activate'),
       onAuxclick: event => { if (event.button === 1) act(event, 'secondary'); },
       onContextmenu: event => { event.preventDefault(); act(event, 'menu'); },
@@ -28,8 +30,8 @@ export function trayView(theme, items, activate, scroll) {
         const horizontal = Math.abs(event.deltaX) > Math.abs(event.deltaY);
         scroll(item, Math.round(-(horizontal ? event.deltaX : event.deltaY) * 3), horizontal);
       },
-    }, item.icon ? h('view', { style: { width: 20, height: 20, backgroundImage: item.icon } }) :
-      h('view', { style: { fontSize: 10, color: theme.colors.text } }, item.title));
+    }, item.icon ? h('view', { style: { width: theme.layout.trayIconSize, height: theme.layout.trayIconSize, backgroundImage: item.icon } }) :
+      h('view', { style: { fontSize: theme.layout.smallFontSize, color: theme.colors.text } }, item.title));
   }));
 }
 
@@ -45,8 +47,9 @@ export function createTray({ native, report, changed, host, theme }) {
   function menuButton(id, label, callback, enabled = true) {
     const current = theme();
     return h('view', { id, className: 'tray-menu-entry', role: 'menuitem', 'aria-disabled': String(!enabled), tabIndex: enabled ? 0 : -1,
-      style: { padding: 8, minHeight: 30, flexShrink: 0, color: enabled ? current.colors.text : current.colors.muted,
-        fontSize: 12, borderRadius: current.button.radius, backgroundColor: current.colors.surface },
+      style: { padding: current.layout.serviceButtonPadding, minHeight: current.layout.trayMenuRowHeight,
+        flexShrink: 0, color: enabled ? current.colors.text : current.colors.muted,
+        fontSize: current.layout.fontSize, borderRadius: current.button.radius, backgroundColor: current.colors.surface },
       hoverStyle: enabled ? { backgroundColor: current.colors.selection } : {},
       focusStyle: enabled ? { backgroundColor: current.colors.selection } : {},
       onClick: () => { if (enabled) callback(); },
@@ -64,15 +67,18 @@ export function createTray({ native, report, changed, host, theme }) {
     const output = host.displays().find(output => position && position.x >= output.x && position.x < output.x + output.width &&
       position.y >= output.y && position.y < output.y + output.height) || host.displays()[0];
     if (!output) { closeMenu(); return; }
-    const width = Math.max(1, Math.min(320, output.width - 16)), height = Math.max(1, Math.min(420, output.height - 16));
-    const geometry = [output.id, output.x, output.y, output.width, output.height].join(':');
+    const layout = theme().layout;
+    const width = Math.max(1, Math.min(layout.trayMenuWidth, output.width - layout.screenInset * 2));
+    const height = Math.max(1, Math.min(layout.trayMenuHeight, output.height - layout.screenInset * 2));
+    const geometry = [output.id, output.x, output.y, output.width, output.height, width, height, layout.screenInset].join(':');
     if (menu && (menu.window.closed || menu.geometry !== geometry)) {
-      if (!menu.window.closed) menu.window.close();
+      const retired = menu;
       menu = null;
+      if (!retired.window.closed) retired.window.close();
     }
     if (!menu) {
-      const x = Math.max(8, Math.min((position?.x ?? output.x) - output.x, output.width - width - 8));
-      const y = Math.max(8, Math.min((position?.y ?? output.y) - output.y, output.height - height - 8));
+      const x = Math.max(layout.screenInset, Math.min((position?.x ?? output.x) - output.x, output.width - width - layout.screenInset));
+      const y = Math.max(layout.screenInset, Math.min((position?.y ?? output.y) - output.y, output.height - height - layout.screenInset));
       const window = host.create({ title: 'PollyShell.tray-menu.' + output.id, output: output.id,
         layer: 'overlay', keyboard: 'exclusive', anchors: ['top', 'left'], width, height,
         margins: { left: x, top: y }, exclusiveZone: -1, transparent: true });
@@ -91,9 +97,9 @@ export function createTray({ native, report, changed, host, theme }) {
     }
     const current = theme(), target = items.find(item => item.id === state.itemId);
     if (!target) { closeMenu(); return; }
-    Object.assign(menu.window.document.body.style, { backgroundColor: current.colors.body, padding: 8 });
+    Object.assign(menu.window.document.body.style, { backgroundColor: current.colors.body, padding: current.layout.serviceButtonPadding });
     const label = text => text.replace(/__|_/g, match => match === '__' ? '_' : '');
-    const entries = state.items.map(entry => entry.separator ? h('view', { style: { height: 1, backgroundColor: current.colors.border } }) :
+    const entries = state.items.map(entry => entry.separator ? h('view', { style: { height: current.layout.borderWidth, backgroundColor: current.colors.border } }) :
       menuButton('shell-tray-menu-item-' + entry.id,
         (entry.toggle ? entry.toggleState === 1 ? '[x] ' : entry.toggleState === 0 ? '[ ] ' : '[-] ' : '') +
           label(entry.label) + (entry.submenu ? ' >' : ''),
@@ -104,11 +110,11 @@ export function createTray({ native, report, changed, host, theme }) {
             catch (error) { report('[shell] Tray menu action failed: ' + String(error)); paintMenu(); }
           }
         }, entry.enabled));
-    render(h('view', { id: 'shell-tray-menu', role: 'menu', style: { flex: 1, gap: 4, overflow: 'scroll' } },
+    render(h('view', { id: 'shell-tray-menu', role: 'menu', style: { flex: 1, gap: current.layout.trayGap, overflow: 'scroll' } },
       menuButton('shell-tray-menu-close', 'Close', closeMenu),
       state.root ? menuButton('shell-tray-menu-root', 'Main menu', () => openMenu(target, 0)) : null,
-      state.pending ? h('view', { style: { color: current.colors.text, fontSize: 12 } }, 'Loading menu...') :
-        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: 12 } }, state.error) : entries),
+      state.pending ? h('view', { style: { color: current.colors.text, fontSize: current.layout.fontSize } }, 'Loading menu...') :
+        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: current.layout.fontSize } }, state.error) : entries),
     menu.window.document.body);
     if (!menu.window.document.activeElement)
       menu.window.document.querySelectorAll('.tray-menu-entry').find(node => node.tabIndex >= 0)?.focus();

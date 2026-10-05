@@ -1,4 +1,5 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { BUILTIN_THEME_CATALOG, getDesktopTheme, installThemeCatalog } from './desktop/shell/themes.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,6 +56,7 @@ async function run() {
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
     rejects(() => desktop.activateWindow(1), 'public connection cannot activate a guessed handle');
     rejects(() => desktop.setAppearance('xp'), 'public connection cannot change compositor appearance');
+    rejects(() => desktop.configureAppearance(getDesktopTheme('xp')), 'public connection cannot submit decoration data');
     window.quit();
     return;
   }
@@ -109,6 +111,28 @@ async function run() {
     await until(() => find()?.minimized, 'real Dock button minimizes');
     await click(bar(), 'shell-window-' + id);
     await until(() => find()?.active, 'real Dock button activates');
+    const custom = JSON.parse(JSON.stringify(getDesktopTheme('bigsur')));
+    custom.id = 'external-config';
+    custom.name = 'External configuration';
+    Object.assign(custom.window, { titleHeight: 52, borderWidth: 2, texture: 'none',
+      titleFrom: '#6e3ba7', titleTo: '#6e3ba7' });
+    installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, custom] });
+    check(shell.selectTheme(custom.id), 'custom theme does not require a compiled appearance ID');
+    let configured = marker('fixture-frame-style 2 52 6e3ba7');
+    await until(() => configured.closed, 'runtime configuration changes real decoration metrics and pixels');
+    const changed = JSON.parse(JSON.stringify(custom));
+    Object.assign(changed.window, { titleHeight: 44, borderWidth: 3, titleFrom: '#325788', titleTo: '#325788' });
+    installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, changed] });
+    check(shell.selectTheme(changed.id), 'same-ID data revision reaches the compositor');
+    configured = marker('fixture-frame-style 3 44 325788');
+    await until(() => configured.closed, 'updated same-ID appearance is displayed');
+    const invalid = JSON.parse(JSON.stringify(changed));
+    invalid.window.titleHeight = 10000;
+    rejects(() => desktop.configureAppearance(invalid), 'native boundary rejects unsafe geometry');
+    configured = marker('fixture-frame-style 3 44 325788');
+    await until(() => configured.closed, 'rejected configuration preserves committed appearance');
+    installThemeCatalog(BUILTIN_THEME_CATALOG);
+    check(shell.selectTheme('bigsur'), 'builtin appearance can be restored after runtime configuration');
     const child = desktop.spawnApplication([executable, '--desktop', script, 'denied'], '', 'public-check');
     await until(() => exitCodes.has(child), 'public-client rejection check');
     check(exitCodes.get(child) === 0, 'public window-management requests are rejected without crashing');

@@ -171,7 +171,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 | **CSS-ish stylesheets + selectors** (`js/css.mjs`) | ✅ | tag/.class/#id/*, descendant, specificity |
 | **Engine-level `:hover` / `:focus`** (`hoverStyle`/`focusStyle`) | ✅ | `PU_STATE_*` flags; per-property override; repaint-only (no relayout) |
 | **Light & dark themes** (`useTheme`) | ✅ | runtime theme switch |
-| Desktop theme configuration packages | ⏸ | After the initial Linux distribution: validated external configuration for colors, control states, dimensions, spacing, wallpaper details and window decorations; share configuration between Shell and compositor without recompiling theme data. Keep the current built-in themes for now; move theme-specific hardcodes into configuration, not application behavior. Investigation and review decisions: `docs/desktop-theme-review.md`. |
+| Desktop theme configuration | ✅ | Versioned JSON, bounded local bitmaps, user overrides, explicit reload/restore, runtime decoration snapshots and opt-in app subscriptions. See `desktop/THEMES.md`. Existing layout parameters are configurable; arbitrary templates, automatic file watching and new compositor effects remain separate work. |
 | Units beyond px/% (`em`/`rem`/`vh`/`vw`) | 🛠 | |
 | `:active`, full theme-variable system | 🛠 | |
 

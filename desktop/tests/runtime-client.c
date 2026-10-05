@@ -504,6 +504,60 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
+            int expected_border, expected_title;
+            unsigned expected_color;
+            int control_size, control_gap, control_inset;
+            if (sscanf(name, "fixture-frame-controls %d %d %d", &control_size, &control_gap, &control_inset) == 3) {
+                bool ready = false;
+                struct PuDesktopView *view;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->toplevel->app_id || strcmp(view->toplevel->app_id, "org.pollyui.window-fixture") ||
+                        view->geometry_pending) continue;
+                    struct wlr_box close, minimize, maximize, inset = { .width = 1280, .height = 720 };
+                    pu_decoration_inset(view, &inset, false);
+                    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &close));
+                    CHECK(pu_decoration_button_box(view, PU_DECORATION_MINIMIZE, &minimize));
+                    CHECK(pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, &maximize));
+                    CHECK(close.width == control_size && close.height == control_size);
+                    CHECK(close.x == control_inset - inset.x);
+                    CHECK(minimize.x - close.x == control_size + control_gap);
+                    CHECK(maximize.x - minimize.x == control_size + control_gap);
+                    ready = true;
+                }
+                if (ready) wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (sscanf(name, "fixture-frame-style %d %d %x", &expected_border, &expected_title, &expected_color) == 3) {
+                bool ready = false;
+                struct PuDesktopView *view;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->toplevel->app_id || strcmp(view->toplevel->app_id, "org.pollyui.window-fixture") ||
+                        view->geometry_pending) continue;
+                    struct wlr_box inset = { .width = 1280, .height = 720 };
+                    pu_decoration_inset(view, &inset, false);
+                    CHECK(inset.x == expected_border && inset.y == expected_title);
+                    int vx, vy;
+                    CHECK(wlr_scene_node_coords(&view->tree->node, &vx, &vy));
+                    double sx, sy;
+                    struct wlr_scene_node *hit = wlr_scene_node_at(&desktop.scene->tree.node,
+                        vx + view->toplevel->base->geometry.width / 2, vy - expected_title + expected_border + 1, &sx, &sy);
+                    CHECK(hit && hit->type == WLR_SCENE_NODE_BUFFER);
+                    struct wlr_scene_buffer *scene = wlr_scene_buffer_from_node(hit);
+                    struct wlr_buffer *buffer = scene->buffer;
+                    void *pixels; uint32_t format, pixel; size_t stride;
+                    CHECK(buffer && wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+                        &pixels, &format, &stride));
+                    int x = (int)(sx * buffer->width / (view->toplevel->base->geometry.width + 2 * expected_border));
+                    int y = (int)(sy * buffer->height / expected_title);
+                    CHECK(x >= 0 && y >= 0 && x < buffer->width && y < buffer->height);
+                    memcpy(&pixel, (char *)pixels + (size_t)y * stride + (size_t)x * 4, sizeof(pixel));
+                    wlr_buffer_end_data_ptr_access(buffer);
+                    CHECK((pixel & 0xffffff) == expected_color);
+                    ready = true;
+                }
+                if (ready) wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             if (!strncmp(name, "fixture-frame-theme ", 20)) {
                 struct PuDesktopView *view;
                 bool ready = false;
@@ -531,7 +585,8 @@ static bool window_suite(char *executable, char *script, char *mode)
             unsigned serial, button;
             int x, y;
             char target[96];
-            if (sscanf(name, "fixture-tray-pixel %d %d %95s", &x, &y, target) == 3) {
+            if (sscanf(name, "fixture-tray-pixel %d %d %95s", &x, &y, target) == 3 ||
+                sscanf(name, "fixture-bitmap-pixel %d %d %95s", &x, &y, target) == 3) {
                 bool found = false;
                 struct PuDesktopLayer *layer;
                 wl_list_for_each(layer, &desktop.layers, link) {

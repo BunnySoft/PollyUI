@@ -1,4 +1,5 @@
 import { h, render } from './js/reconciler.mjs';
+import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 
 export function createAudioSettings({ native, host, theme, report }) {
   let started = false, previous, window = null, state = null, error = '';
@@ -6,9 +7,9 @@ export function createAudioSettings({ native, host, theme, report }) {
   function button(id, label, callback, enabled = true) {
     const current = theme();
     return h('view', { id, role: 'button', tabIndex: enabled ? 0 : -1, 'aria-disabled': String(!enabled),
-      style: { padding: 8, flexShrink: 0, backgroundColor: current.colors.surface,
-        borderWidth: 1, borderColor: current.colors.border, borderRadius: current.button.radius,
-        color: enabled ? current.colors.text : current.colors.muted, fontSize: 12 },
+      style: { padding: current.layout.serviceButtonPadding, flexShrink: 0, backgroundColor: current.colors.surface,
+        borderWidth: current.layout.borderWidth, borderColor: current.colors.border, borderRadius: current.button.radius,
+        color: enabled ? current.colors.text : current.colors.muted, fontSize: current.layout.fontSize },
       onClick: () => { if (enabled) callback(); },
       onKeydown: event => { if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); callback(); } },
     }, label);
@@ -22,8 +23,9 @@ export function createAudioSettings({ native, host, theme, report }) {
   function paint() {
     if (!window || window.closed || !state) return;
     const current = theme();
-    const label = (text, size = 12) => h('view', { style: { color: current.colors.text, fontSize: size, flexShrink: 0 } }, text);
-    render(h('view', { id: 'shell-audio-settings', style: { flex: 1, padding: 12, gap: 8,
+    const label = (text, size = 12) => h('view', { style: { color: current.colors.text,
+      fontSize: themeTextSize(current, size), flexShrink: 0 } }, text);
+    render(h('view', { id: 'shell-audio-settings', style: { flex: 1, padding: current.layout.contentPadding, gap: current.layout.contentGap,
       overflow: 'scroll', backgroundColor: current.colors.body } },
       h('view', { style: { flexDirection: 'row', gap: 8 } }, label('Audio (PipeWire)', 18),
         button('shell-audio-close', 'Close', close)),
@@ -37,7 +39,7 @@ export function createAudioSettings({ native, host, theme, report }) {
       state.preferredSource && !state.nodes.some(node => node.name === state.preferredSource) ?
         label('Preferred input is unavailable; using an available fallback.') : null,
       ...state.nodes.map(node => h('view', { style: { padding: 8, gap: 6, flexShrink: 0,
-        borderWidth: 1, borderColor: current.colors.border } },
+        borderWidth: current.layout.borderWidth, borderColor: current.colors.border } },
         label(node.description, 14),
         label(node.class + ' - ' + node.state),
         label(node.volume === null ? 'Volume control unavailable' : 'Volume: ' + Math.round(node.volume * 100) + '%'),
@@ -71,14 +73,16 @@ export function createAudioSettings({ native, host, theme, report }) {
   }
   return {
     start,
+    paint,
     show(outputId) {
       if (window && !window.closed) return window;
       const output = host.displays().find(item => item.id === outputId) || host.displays()[0];
       if (!output) throw new Error('No output available for audio settings');
+      const layout = theme().layout;
       window = host.create({ title: 'PollyShell.audio.' + output.id, output: output.id, layer: 'overlay',
-        keyboard: 'on-demand', width: Math.max(1, Math.min(480, output.width - 24)),
-        height: Math.max(1, Math.min(560, output.height - 48)), anchors: ['top', 'right'],
-        margins: { top: 32, right: 12 }, exclusiveZone: -1 });
+        keyboard: 'on-demand', width: Math.max(1, Math.min(layout.audioWidth, output.width - layout.overlayInset * 2)),
+        height: Math.max(1, Math.min(layout.audioHeight, output.height - layout.overlayVerticalInset * 2)), anchors: ['top', 'right'],
+        margins: { top: layout.overlayTopMargin, right: layout.overlayRightMargin }, exclusiveZone: -1 });
       window.document.body.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.preventDefault(); close(); }
       });

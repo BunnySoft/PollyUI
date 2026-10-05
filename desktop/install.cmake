@@ -16,6 +16,12 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/js" DESTINATION "${CMAKE_INSTALL_DATADIR}
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/client"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/themes"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.json")
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/input-method/main.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/input-method/view.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/input-method" COMPONENT PollyDesktop)
@@ -33,6 +39,8 @@ install(FILES "${CMAKE_SOURCE_DIR}/third_party/quickjs/LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pollyui/quickjs" COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/third_party/yoga/LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pollyui/yoga" COMPONENT PollyDesktop)
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/THEMES.md"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
 
 if (BUILD_TESTING)
     add_test(NAME desktop-installed-session COMMAND node

@@ -29,6 +29,8 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/codec/SkCodec.h"
+#include "include/codec/SkEncodedImageFormat.h"
 
 #if defined(__linux__)
 #include "include/ports/SkFontMgr_fontconfig.h"
@@ -596,6 +598,39 @@ int pu_image_set_argb(const char *key, int width, int height, const uint8_t *byt
         return 1;
     } catch (const std::bad_alloc &) { std::fprintf(stderr, "[render] Cannot allocate native icon\n"); return 0; }
 }
+int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
+                        size_t pixel_limit, int *width, int *height) {
+    if (!key || std::strncmp(key, "polly-memory:", 13) || !bytes || !length ||
+        length > 4 * 1024 * 1024 || !width || !height) {
+        std::fprintf(stderr, "[render] Invalid theme bitmap request\n"); return 0;
+    }
+    try {
+        auto codec = SkCodec::MakeFromData(SkData::MakeWithCopy(bytes, length));
+        if (!codec || (codec->getEncodedFormat() != SkEncodedImageFormat::kPNG &&
+            codec->getEncodedFormat() != SkEncodedImageFormat::kJPEG)) {
+            std::fprintf(stderr, "[render] Theme resources require PNG or JPEG data\n"); return 0;
+        }
+        auto info = codec->getInfo().makeColorType(kN32_SkColorType).makeAlphaType(kPremul_SkAlphaType);
+        if (info.width() < 1 || info.height() < 1 || info.width() > 4096 || info.height() > 4096 ||
+            (size_t)info.width() * (size_t)info.height() > std::min(pixel_limit, (size_t)8 * 1024 * 1024)) {
+            std::fprintf(stderr, "[render] Theme bitmap exceeds its pixel budget\n"); return 0;
+        }
+        SkBitmap bitmap;
+        if (!bitmap.tryAllocPixels(info) ||
+            codec->getPixels(info, bitmap.getPixels(), bitmap.rowBytes()) != SkCodec::kSuccess) {
+            std::fprintf(stderr, "[render] Cannot decode complete theme bitmap\n"); return 0;
+        }
+        bitmap.setImmutable();
+        auto image = SkImages::RasterFromBitmap(bitmap);
+        if (!image) { std::fprintf(stderr, "[render] Cannot retain theme bitmap\n"); return 0; }
+        image_cache()[key] = std::move(image);
+        *width = info.width(); *height = info.height();
+        return 1;
+    } catch (const std::bad_alloc &) {
+        std::fprintf(stderr, "[render] Cannot allocate theme bitmap\n"); return 0;
+    }
+}
+
 void pu_image_remove(const char *key) {
     if (key && !std::strncmp(key, "polly-memory:", 13)) image_cache().erase(key);
 }

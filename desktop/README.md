@@ -79,8 +79,10 @@ filter; ordinary xdg clients do not receive layer-shell privilege.
 The standard `zwlr_foreign_toplevel_manager_v1` window-management global is
 restricted to that same live shell connection. Public clients cannot enumerate
 or control other windows through it, even when they know its global ID.
-`polly_appearance_v1` is similarly restricted: its only non-destructor request
-selects a known decoration theme. It is not a general window-management socket,
+`polly_appearance_v1` is similarly restricted: v1 selects a known decoration
+theme; v2 validates and commits bounded runtime decoration snapshots. Its
+read-only companion, `polly_theme_manager_v1`, is public but grants no management
+or filesystem access. Neither is a general window-management socket,
 input-injection interface or arbitrary rendering API.
 Workspace globals `ext_workspace_manager_v1` and
 `polly_workspace_toplevel_manager_v1` have the same connection-bound restriction.
@@ -165,12 +167,13 @@ client geometry excludes both Shell reservations and decoration extents.
 Negotiation and theme geometry changes use the normal configure/ack/commit
 path, so an older client buffer does not acquire a newer frame layout.
 
-Shell appearance selection also calls `desktop.setAppearance(id)` on the
-private connection. XP/Classic have right-side controls; Aqua/Lion/Big Sur have
-left-side controls. C palettes/metrics are generated from `shell/themes.mjs`
-by `node desktop/tools/generate-decoration-themes.mjs`; the checked-in header
-keeps standalone builds independent of Node, and the combined suite checks it
-for drift.
+Shell appearance selection calls `desktop.configureAppearance(theme)` on the
+private connection. JS reads and validates versioned JSON, then prepares and
+commits bounded numeric decoration data and a sealed snapshot descriptor.
+Custom IDs and same-ID edits apply without rebuilding the compositor.
+`desktop.setAppearance(id)` remains a legacy compatibility API. The generated
+C presets are retained for legacy/bootstrap use; generated schema fields keep
+native bounds consistent with the JS validator.
 
 Caption rasterization uses Fontconfig and FreeType with a bounded face cache
 and scale-aware CPU buffers. This adds neither Skia/SDL/QuickJS/Yoga nor
@@ -196,16 +199,21 @@ visual styles.
 | Theme ID | Inspiration | Current visual treatment |
 |---|---|---|
 | `xp` | Windows XP / Luna | Blue rounded frames, green launcher, soft controls, original vector hills |
-| `server2003` | Windows Server 2003 / Classic | Square gray frames, horizontal blue title gradient, beveled buttons, solid desktop |
+| `server2003` | Windows Server 2003 / Classic | Square gray frames, configurable blue title gradient, beveled buttons, solid desktop |
 | `aqua` | OS X / Aqua | Pinstriped chrome, glossy pill controls, left-side circular captions, menu bar and dock |
 | `lion` | OS X / Lion | Gray chrome, graphite woven-grid background, left-side captions, compact gray dock |
 | `bigsur` | macOS / Big Sur | Larger rounded frames, unified light title/toolbar, blue accents, rounded-square dock tiles and original colorful bands |
 
-`shell/themes.mjs` contains deeply immutable, dependency-free token objects.
-Every preset has the same desktop, color, window, icon, button and panel groups.
+`shell/themes.mjs` loads deeply immutable data from `themes/builtin.json`.
+Every preset has the same desktop, color, window, icon, button, panel and layout groups.
 `getDesktopTheme(id)` rejects unknown IDs rather than silently choosing a
 different appearance. The Server 2003 preset intentionally represents its
 Classic look, not another Luna color variant.
+
+User JSON themes, limited overrides, local PNG/JPEG wallpaper resources,
+explicit reload/restore and opt-in application subscriptions are described in
+**[Runtime desktop themes](./THEMES.md)**. Layout and wallpaper parameters are
+data-driven; configuration still cannot alter window-management behavior.
 
 `shell/appearance.mjs` draws the preview using the **actual PollyUI reconciler
 and native renderer**, not browser HTML or screenshots of another desktop.
