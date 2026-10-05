@@ -402,6 +402,18 @@ then notifies JavaScript outside D-Bus callbacks. Rendering treats content as
 plain text and sends action signals instead of executing sender-provided
 commands. Shutdown releases the bus before destroying the JS realm.
 
+The StatusNotifier host uses a separate libdbus connection with bounded
+asynchronous requests. Registration resolves a well-known service to its
+actual sender, and subsequent calls pin that unique owner so a name replacement
+cannot inherit an old UI action. Native monotonic deadlines cover requests even
+when the libdbus main-loop timeout hooks are not integrated.
+
+Pixmap payloads become process-local Skia images under reserved memory keys;
+no temporary icon files or client-selected image paths are opened. DBusMenu
+trees are parsed into bounded flat records, validating types, IDs and depth
+before exposing a snapshot. Only visible enabled current entries can send the
+fixed clicked event; layout changes and owner loss invalidate prior revisions.
+
 ### Clipboard ownership and data devices
 
 Clipboard callbacks retain copied C buffers, not JavaScript references. SDL

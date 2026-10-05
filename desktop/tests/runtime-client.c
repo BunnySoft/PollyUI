@@ -531,6 +531,24 @@ static bool window_suite(char *executable, char *script, char *mode)
             unsigned serial, button;
             int x, y;
             char target[96];
+            if (sscanf(name, "fixture-tray-pixel %d %d %95s", &x, &y, target) == 3) {
+                bool found = false;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link) {
+                    struct wlr_surface *surface = layer->surface->surface;
+                    if (strcmp(layer->surface->namespace, target) || !surface->mapped || !surface->buffer) continue;
+                    void *pixels; uint32_t format, pixel; size_t stride;
+                    struct wlr_buffer *buffer = surface->buffer->source;
+                    CHECK(x >= 0 && y >= 0 && x < buffer->width && y < buffer->height);
+                    CHECK(wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride));
+                    memcpy(&pixel, (char *)pixels + (size_t)y * stride + (size_t)x * 4, sizeof(pixel));
+                    wlr_buffer_end_data_ptr_access(buffer);
+                    CHECK((pixel & 0xffffff) == 0x2090e0);
+                    found = true;
+                }
+                CHECK(found);
+                wlr_layer_surface_v1_destroy(marker->surface); continue;
+            }
             if (sscanf(name, "fixture-click %u %d %d %u %95s", &serial, &x, &y, &button, target) != 5)
                 continue;
             struct PuDesktopLayer *layer;
@@ -552,7 +570,7 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wl_signal_emit_mutable(&pointer.events.frame, NULL);
                 struct wlr_pointer_button_event click = {
                     .pointer = &pointer, .time_msec = serial * 3 + 1,
-                    .button = button == 2 ? BTN_RIGHT : BTN_LEFT,
+                    .button = button == 2 ? BTN_RIGHT : button == 1 ? BTN_MIDDLE : BTN_LEFT,
                     .state = WL_POINTER_BUTTON_STATE_PRESSED,
                 };
                 wlr_pointer_notify_button(&pointer, &click);

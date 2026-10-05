@@ -5,6 +5,7 @@
 #if defined(PU_LAYER_SHELL)
 #include "desktop/windows.h"
 #include "desktop/notifications.h"
+#include "desktop/tray.h"
 #endif
 
 #include <dirent.h>
@@ -371,6 +372,7 @@ int pu_applications_install(JSContext *ctx)
 #if defined(PU_LAYER_SHELL)
     if (!pu_desktop_windows_install(ctx, desktop_api)) return 0;
     if (!pu_notifications_install(ctx, desktop_api)) return 0;
+    if (!pu_tray_install(ctx, desktop_api)) return 0;
 #endif
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, desktop_api));
@@ -412,6 +414,7 @@ int pu_applications_pump(void)
 #if defined(PU_LAYER_SHELL)
     worked += pu_desktop_windows_pump();
     worked += pu_notifications_pump();
+    worked += pu_tray_pump();
 #endif
     return worked;
 }
@@ -419,6 +422,7 @@ int pu_applications_pump(void)
 void pu_applications_shutdown(void)
 {
 #if defined(PU_LAYER_SHELL)
+    pu_tray_shutdown();
     pu_notifications_shutdown();
     pu_desktop_windows_shutdown();
 #endif

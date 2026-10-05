@@ -2,6 +2,7 @@ import { h } from './js/reconciler.mjs';
 import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
 import { shortcutText } from './desktop/shell/shortcuts.mjs';
 import { displayField, setDisplayField } from './desktop/shell/displays.mjs';
+import { trayView } from './desktop/shell/tray.mjs';
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -58,7 +59,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null) {
   const panel = theme.panel;
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: 10, paddingLeft: 5, paddingRight: 12,
@@ -75,6 +76,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
+  tray?.items.length ? trayView(theme, tray.items, tray.activate, tray.scroll) : null,
   notifications ? button('shell-notifications', 'Notifications ' + notifications.count, theme,
     notifications.open, false, { height: 24 }) : null,
   label(clock, panel.text, 12));

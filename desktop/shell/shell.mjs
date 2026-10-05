@@ -5,6 +5,7 @@ import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 import { readDisplayDraft } from './desktop/shell/displays.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
+import { createTray } from './desktop/shell/tray.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 
@@ -59,6 +60,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   };
   const launcher = native ? createApplicationLauncher(native, report) : null;
   const notifications = createNotificationSurfaces({ host, native, theme: () => getDesktopTheme(themeId), report,
+    changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
+  const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   let previousExit = null;
   const exited = event => {
@@ -160,7 +163,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error, () => showSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
-      notifications.count() ? { count: notifications.count(), open: notifications.show } : null),
+      notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
+      { items: tray.items(), activate: (item, kind, x, y) => tray.activate(item, kind,
+        x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
+          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSettings(bundle.output.id),
       () => showSettings(bundle.output.id, true), () => showApplications(bundle.output.id), listed, toggleWindow,
@@ -626,6 +632,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function refresh(force = false) {
     if (!running) return;
     notifications.paint();
+    tray.paint();
     if (pendingDisplayToken) {
       try { paintDisplayConfirmation(); } catch (failure) { outputFailure(failure); }
     }
@@ -672,6 +679,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       }
       startShortcuts();
       notifications.start();
+      tray.start();
       if (typeof native?.outputConfiguration === 'function') {
         previousOutputsChanged = native.onOutputsChanged;
         native.onOutputsChanged = outputsChanged;
@@ -682,6 +690,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     stop() {
       running = false;
       notifications.stop();
+      tray.stop();
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;

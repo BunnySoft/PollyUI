@@ -31,7 +31,8 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
 | Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. |
 | Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
-| Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. Tray remains separate. |
+| Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. |
+| Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -44,7 +45,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Tray, outgoing PollyUI drags, advanced text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Outgoing PollyUI drags, advanced text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -586,8 +587,31 @@ share the current theme; actions are unicast back to their sender and never
 executed as commands by the Shell. Sender ownership, stale UI revisions,
 expiry/close reasons and queue limits are enforced natively. Markup, external
 images, sound and persisted history are not advertised or implemented. See the
-root README for exact API fields and limits. StatusNotifier/tray and desktop-
-entry D-Bus-only activation are still separate tasks.
+root README for exact API fields and limits. The separate StatusNotifier
+watcher/host also runs on this bus. Desktop-entry D-Bus-only activation remains
+unsupported.
+
+Tray item registration verifies well-known-name ownership asynchronously;
+requests are pinned to the sender's unique bus name and object path.
+Name-owner changes remove stale items and in-flight registrations. Icons are
+copied ARGB pixmaps in process-local Skia assets, never remote-supplied file
+paths. Passive items are hidden and attention status is emphasized.
+Icon-name-only items currently use a readable label fallback.
+
+For exported application menus, the Shell requests bounded DBusMenu layouts
+and AboutToShow lazily, tracks revisions and invalidates old UI actions on
+updates. Native menus include submenus, separators, visibility/enabled state
+and check/radio indicators; a click sends a fixed DBusMenu Event rather than
+executing arbitrary text. Providers without an exported menu receive
+ContextMenu requests. All item/menu requests have native two-second deadlines.
+No Qt/KDE/GLib library is used by these implementations; `org.kde` is a protocol
+namespace, not a desktop dependency.
+
+Native fixtures register independent providers, inspect rendered icon pixels,
+click all three pointer actions, send scrolling, toggle passive/active/attention
+status, reject registration by a different owner and verify owner-loss cleanup.
+They also exercise hung providers, live submenu changes, disabled/stale menu
+rejection and exact clicked-event delivery in raster and GLES modes.
 
 PollyShell stores `desktop.theme` in its app-scoped localStorage. Unknown stored
 IDs produce a visible warning and a logged fallback without overwriting the

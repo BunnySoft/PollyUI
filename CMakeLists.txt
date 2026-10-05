@@ -192,8 +192,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
         endif()
         if (PU_DESKTOP_SERVICES)
-            target_sources(pollyui PRIVATE src/desktop/notifications.c)
+            target_sources(pollyui PRIVATE src/desktop/notifications.c src/desktop/tray.c src/desktop/dbus-menu.c)
             if (BUILD_TESTING)
+                add_executable(polly-tray-test desktop/tests/tray.c src/desktop/session-bus.c)
+                target_include_directories(polly-tray-test PRIVATE src)
+                target_compile_definitions(polly-tray-test PRIVATE _POSIX_C_SOURCE=200809L)
+                target_compile_options(polly-tray-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+                target_link_libraries(polly-tray-test PRIVATE PkgConfig::SESSION_DBUS)
                 add_executable(polly-notification-test desktop/tests/notifications.c src/desktop/session-bus.c)
                 target_include_directories(polly-notification-test PRIVATE src)
                 target_compile_definitions(polly-notification-test PRIVATE _POSIX_C_SOURCE=200809L)
@@ -414,6 +419,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-tray-shell-${renderer}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --bus
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/tray-shell.mjs" tray)
+                set_tests_properties(desktop-tray-shell-${renderer} PROPERTIES TIMEOUT 90
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-notification-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --bus
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

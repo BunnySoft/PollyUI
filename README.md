@@ -493,8 +493,51 @@ connections cannot start this server merely by selecting `--desktop`.
 This is not a D-Bus sandbox: another same-user process on the private bus can
 use standard D-Bus APIs, subject to name ownership and sender checks.
 
-System tray/StatusNotifier support is not implemented by the notification
-service and remains a separate milestone.
+### Native status tray and application menus
+
+A separate private-session libdbus watcher/host handles
+`org.kde.StatusNotifierWatcher` and the `org.freedesktop` alias. Applications
+register their own bus name or object path. Well-known names are resolved
+asynchronously and must belong to the registering sender; later calls target
+that unique owner, never a replacement process which acquires the same name.
+Owner loss unregisters items, cancels requests and releases icon assets.
+
+The panel shows Active items, hides Passive items and marks NeedsAttention.
+ARGB icon pixmaps are copied into bounded native memory assets and rendered by
+Skia; attention pixmaps replace the ordinary icon when supplied. Icon paths and
+`IconName` are never opened as arbitrary files. An item with no usable pixmap
+has a title-label fallback; themed icon-name lookup, overlay/movie icons and
+rich tooltips are not yet implemented.
+
+Left/middle/right clicks and wheel input map to Activate/SecondaryActivate/
+ContextMenu/Scroll, with real screen-coordinate hints. If the item exports a
+`com.canonical.dbusmenu` path, menu activation instead opens a native themed
+Shell menu. It supports lazy submenus, AboutToShow, live layout/property
+updates, separators, hidden/disabled entries, check/radio state and clicked
+events. Labels are plain text with DBusMenu underscore escaping, not markup.
+Escape, Tab and arrow navigation work within the menu. Client-requested
+automatic menu opening, menu icons and shortcut visualization are deferred.
+
+Discovery, property reads, menu loading and actions are asynchronous, with a
+two-second native deadline; a hung provider cannot block the UI. Limits include
+64 tray items, eight per sender, bounded registration/request queues, 16
+pixmaps per property (each at most 256x256), 128 menu nodes, eight nesting levels
+and bounded text/properties. Invalid data produces an explicit item/menu error.
+
+Trusted-Shell APIs are `startTray()`, `stopTray()`, `trayItems()` and
+`onTrayChanged`; `trayAvailable` indicates a private bus. Item snapshots contain
+`{id, revision, title, status, icon, iconName, menu, menuOnly, error}`.
+`trayAction(id, revision, kind, x, y)` accepts `activate`, `secondary` or `menu`;
+`trayScroll(id, revision, delta, horizontal)` forwards scrolling.
+`openTrayMenu(id, revision, rootId)` starts at root 0 or a current enabled submenu.
+`trayMenu()` returns `{itemId, revision, root, pending, error, items}`, with
+entry fields `{id, label, enabled, separator, submenu, toggle, toggleState}`.
+`invokeTrayMenu(itemId, menuRevision, entryId)` rejects stale/disabled entries;
+`closeTrayMenu()` invalidates outstanding UI state.
+
+The renderer's `polly-memory:` keys are process-local owned assets, not paths
+or network URLs. Closing/replacing the provider releases/replaces those pixels.
+Legacy XEmbed trays still require future Xwayland compatibility.
 
 ### Linux window management
 

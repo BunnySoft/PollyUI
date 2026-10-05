@@ -111,6 +111,9 @@ void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
  * to the corner radius. Returns 1 if drawn, 0 if the image couldn't load. */
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius);
+/* Native owned in-memory icons; keys must use the polly-memory: namespace. */
+int pu_image_set_argb(const char *key, int width, int height, const uint8_t *bytes, size_t length);
+void pu_image_remove(const char *key);
 
 /* Measure a UTF-8 string at `font_size` (px), weight (e.g. 400/700), slant, and
  * font `family` (NULL/"" = default UI font; "monospace"/"serif" or a face name).

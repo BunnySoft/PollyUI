@@ -577,6 +577,29 @@ static std::map<std::string, sk_sp<SkImage>> &image_cache() {
     return c;
 }
 
+int pu_image_set_argb(const char *key, int width, int height, const uint8_t *bytes, size_t length) {
+    if (!key || std::strncmp(key, "polly-memory:", 13) || !bytes ||
+        width < 1 || height < 1 || width > 256 || height > 256 ||
+        length != (size_t)width * (size_t)height * 4) {
+        std::fprintf(stderr, "[render] Invalid native memory icon\n"); return 0;
+    }
+    try {
+        std::vector<uint8_t> rgba(length);
+        for (size_t i = 0; i < length; i += 4) {
+            rgba[i] = bytes[i + 1]; rgba[i + 1] = bytes[i + 2]; rgba[i + 2] = bytes[i + 3]; rgba[i + 3] = bytes[i];
+        }
+        SkPixmap pixmap(SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType),
+            rgba.data(), (size_t)width * 4);
+        sk_sp<SkImage> image = SkImages::RasterFromPixmapCopy(pixmap);
+        if (!image) { std::fprintf(stderr, "[render] Cannot copy native memory icon\n"); return 0; }
+        image_cache()[key] = std::move(image);
+        return 1;
+    } catch (const std::bad_alloc &) { std::fprintf(stderr, "[render] Cannot allocate native icon\n"); return 0; }
+}
+void pu_image_remove(const char *key) {
+    if (key && !std::strncmp(key, "polly-memory:", 13)) image_cache().erase(key);
+}
+
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius) {
     if (!s || !s->surface || !path) return 0;
@@ -586,6 +609,9 @@ int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
     if (it != cache.end()) {
         img = it->second;
     } else {
+        if (!std::strncmp(path, "polly-memory:", 13)) {
+            std::fprintf(stderr, "[render] Native memory icon is no longer available\n"); return 0;
+        }
         sk_sp<SkData> data = SkData::MakeFromFileName(path);
         if (data) img = SkImages::DeferredFromEncodedData(data);
         cache[path] = img; // cache even null results to avoid re-hitting the disk
