@@ -3,7 +3,9 @@ set -eu
 runtime=$(mktemp -d)
 bus=0
 bus_pid=
-if [ "${1:-}" = --bus ]; then
+system_bus=0
+if [ "${1:-}" = --iwd ]; then system_bus=1; fi
+if [ "${1:-}" = --bus ] || [ "$system_bus" -eq 1 ]; then
     bus=1; shift
     . "$(dirname -- "$0")/../tools/session-bus.sh"
 fi
@@ -17,6 +19,7 @@ trap cleanup EXIT
 export XDG_RUNTIME_DIR="$runtime" XDG_CONFIG_HOME="$runtime/config"
 export XDG_DATA_HOME="$runtime/data" XDG_CACHE_HOME="$runtime/cache"
 if [ "$bus" -eq 1 ]; then POLLY_BUS_DISPLAY=runtime-client; start_private_bus; fi
+if [ "$system_bus" -eq 1 ]; then export DBUS_SYSTEM_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS"; fi
 export SDL_VIDEODRIVER=wayland SDL_RENDER_DRIVER=software
 unset SDL_MOUSE_FOCUS_CLICKTHROUGH
 export WLR_RENDERER=pixman

@@ -34,6 +34,26 @@ invalid:
     fprintf(stderr, "[session] Private D-Bus address or runtime socket is invalid\n");
     return NULL;
 }
+static void configure(DBusConnection *connection)
+{
+    dbus_connection_set_exit_on_disconnect(connection, false);
+    dbus_connection_set_max_received_size(connection, 4 * 1024 * 1024);
+    dbus_connection_set_max_message_size(connection, 2 * 1024 * 1024);
+    dbus_connection_set_max_received_unix_fds(connection, 16);
+    dbus_connection_set_max_message_unix_fds(connection, 0);
+}
+DBusConnection *pu_system_bus_connect(char *error, size_t error_size)
+{
+    DBusError failure = DBUS_ERROR_INIT;
+    DBusConnection *connection = dbus_bus_get_private(DBUS_BUS_SYSTEM, &failure);
+    if (!connection) {
+        snprintf(error, error_size, "System bus unavailable: %s", failure.message ? failure.message : "unknown error");
+        dbus_error_free(&failure);
+        return NULL;
+    }
+    configure(connection);
+    return connection;
+}
 DBusConnection *pu_session_bus_connect(char *error, size_t error_size)
 {
     char *address = pu_session_bus_address();
@@ -50,10 +70,8 @@ DBusConnection *pu_session_bus_connect(char *error, size_t error_size)
         if (connection) { dbus_connection_close(connection); dbus_connection_unref(connection); }
         return NULL;
     }
-    dbus_connection_set_exit_on_disconnect(connection, false);
+    configure(connection);
     dbus_connection_set_max_received_size(connection, 2 * 1024 * 1024);
     dbus_connection_set_max_message_size(connection, 256 * 1024);
-    dbus_connection_set_max_received_unix_fds(connection, 16);
-    dbus_connection_set_max_message_unix_fds(connection, 0);
     return connection;
 }

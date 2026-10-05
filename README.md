@@ -539,6 +539,64 @@ The renderer's `polly-memory:` keys are process-local owned assets, not paths
 or network URLs. Closing/replacing the provider releases/replaces those pixels.
 Legacy XEmbed trays still require future Xwayland compatibility.
 
+### Wi-Fi settings with iwd
+
+The appearance/settings menu's **Wi-Fi** entry opens a native settings surface
+backed by `net.connman.iwd` on the **system bus**, separate from the private
+session bus used for notifications/tray. It discovers station devices, ordered
+networks and RSSI; supports scan, radio power, connect/disconnect and forgetting
+a discovered saved network. iwd owns association, DHCP/address configuration
+and profile storage. No NetworkManager, GNOME/KDE or GLib/GIO integration is used.
+
+The client resolves iwd's unique owner and verifies its bus-reported Unix UID
+is root before registering its agent or forwarding requests. Calls and agent
+prompts remain pinned to that owner. Agent requests are accepted only from it
+and only for the currently user-requested connection. A service restart clears
+old devices, actions and credential prompts, then re-verifies the new owner.
+Discovery and operations are asynchronous with native deadlines and bounded
+queues/models; a missing system bus, denied policy or missing daemon is an
+explicit unavailable/error state, not a successful empty connection.
+
+Connect confirmation warns that **iwd can save credentials and enable automatic
+reconnection**. Authentication fields are masked, automatically focused and
+excluded from clipboard copying/IME preedit. Submitted passwords are not
+included in state snapshots, application storage or logs; UI values are cleared
+after submission/cancellation. This is not a claim of guaranteed zeroization of
+JavaScript/DBus allocator memory. Agent requests support PSK passphrases and
+credentials for already-provisioned EAP profiles; the UI does not create EAP
+certificate policies or bypass certificate validation. WEP is unsupported.
+Forgetting requires its own confirmation and may disconnect the network.
+
+Shell APIs are `startNetwork()`, `stopNetwork()`, `refreshNetworks()`,
+`networkState()` and `onNetworkChanged`. State includes `ready`, `registered`,
+`refreshing`, `revision`, `error`, `operation`, `target`, tri-state
+`networkConfiguration`, `devices`, `networks` and an optional
+`authentication:{id,kind,network,username}` prompt. Devices contain
+`{id,name,address,mode,state,powered,scanning,station,connectedNetwork}`;
+networks contain `{id,device,name,type,known,connected,signal,order}`.
+Signal is dBm or null. `networkAction(revision,id,action)` accepts `scan`,
+`connect`, `disconnect`, `forget`, `power-on` or `power-off` only for current
+model objects. `replyNetworkAuthentication(id,username,password)` submits to the
+current prompt; two null fields cancel. `cancelNetworkConnection()` aborts an
+interactive connection by requesting station disconnect. Stale revisions and
+prompt tokens are rejected.
+
+The development process does **not** start iwd, alter the host's networking,
+grant itself system-bus permissions or install network profiles.
+`desktop/system/iwd-main.conf` is a proposed Alpine image configuration using
+iwd's built-in network configuration plus `resolvconf`; deploying it requires
+the system iwd/OpenRC service, `openresolv` and appropriate distribution
+permissions. The UI reports disabled/unknown IP configuration rather than
+assuming an association provides Internet access.
+
+Native raster/GLES fixtures use an isolated fake iwd service and actual
+pointer/keyboard input, including password masking, cancellation, sender
+verification, stale-token rejection, saved-profile deletion and owner restart.
+They do **not** qualify physical Wi-Fi, DHCP/DNS, enterprise certificates or
+real hardware hotplug. Hidden-network provisioning, editing static-IP/EAP
+profiles, saved networks absent from scans, wired networking and VPN management
+remain separate system-service work.
+
 ### Linux window management
 
 With `PU_DESKTOP_SERVICES`, `PU_LAYER_SHELL` and `--desktop`, the `desktop` object

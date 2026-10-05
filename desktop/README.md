@@ -33,6 +33,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
 | Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. |
 | Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
+| Wi-Fi client | Native iwd settings for discovery/RSSI, scanning, radio power, connection, bounded interactive authentication and forgetting profiles, with root-owner verification and service-restart recovery. Isolated protocol/UI fixtures pass; real radios and DHCP/DNS need hardware qualification. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -45,7 +46,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Outgoing PollyUI drags, advanced text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Outgoing PollyUI drags, advanced text, audio/power and remaining network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -612,6 +613,53 @@ click all three pointer actions, send scrolling, toggle passive/active/attention
 status, reject registration by a different owner and verify owner-loss cleanup.
 They also exercise hung providers, live submenu changes, disabled/stale menu
 rejection and exact clicked-event delivery in raster and GLES modes.
+
+### iwd network backend
+
+The selected Wi-Fi backend is iwd, with its own built-in network configuration
+and PollyUI-owned UI. The Shell opens the system-bus client only when Wi-Fi
+settings are requested. It never treats the private session bus as a production
+system bus, starts iwd implicitly, edits `/etc`, or changes group/policy rights.
+
+Before use, the bus must resolve `net.connman.iwd` to a root-owned unique
+connection. All replies, signals and credential requests are associated with
+that owner and an epoch; a replacement daemon cannot inherit stale actions or
+prompts. Only the trusted Wayland Shell can start these APIs. Unknown/removed
+object paths and stale snapshot revisions are rejected. Limits are 16 devices,
+256 networks, bounded object/property/message sizes and 32 outstanding requests.
+Connect/authentication have 120-second limits; ordinary operations and discovery
+have shorter deadlines. Only one interactive mutation is outstanding at a time.
+
+The UI provides radio power, scan, ordered SSIDs/RSSI, connect/disconnect, and
+confirmed forgetting of discovered saved networks. It warns that iwd may save
+credentials and enable autoconnection; there is no false "never save" checkbox.
+PSK and pre-provisioned EAP agent prompts use native masked fields. EAP
+certificate policy stays with iwd's administrator-provisioned profile, not a
+Shell certificate-bypass dialog. Neither password snapshots nor payload logs
+are produced. On daemon loss, credentials and stale models are discarded.
+
+`system/iwd-main.conf` is an image template, not an installed host change:
+
+```ini
+[General]
+EnableNetworkConfiguration=true
+
+[Network]
+NameResolvingService=resolvconf
+```
+
+An Alpine deployment needs iwd, its OpenRC integration, the system D-Bus daemon,
+openresolv and the distribution's authorized access policy. Do not run the
+desktop as root to work around permissions. `Daemon.GetInfo` is experimental
+in iwd; an unavailable configuration-status query is represented as unknown,
+and disabled configuration is visibly distinguished from Internet connectivity.
+
+The test runner's `--iwd` mode points `DBUS_SYSTEM_BUS_ADDRESS` at its own
+temporary test bus and starts an independent API fixture. This checks real
+native UI/control flow without touching the host network. It does not certify
+wireless hardware, real DHCP/DNS, static-IP provisioning, hidden networks,
+enterprise certificate configuration, Ethernet or VPNs. Those remain explicit
+follow-up/qualification work.
 
 PollyShell stores `desktop.theme` in its app-scoped localStorage. Unknown stored
 IDs produce a visible warning and a logged fallback without overwriting the

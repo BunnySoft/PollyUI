@@ -414,6 +414,17 @@ trees are parsed into bounded flat records, validating types, IDs and depth
 before exposing a snapshot. Only visible enabled current entries can send the
 fixed clicked event; layout changes and owner loss invalidate prior revisions.
 
+iwd uses a separate system-bus connection. Discovery first verifies the
+service's unique owner and root UID; only then can that owner call the
+interactive agent. Current-model revisions constrain actions, and prompt
+tokens constrain credential replies. A connection initiated by the user owns
+the only allowed authentication target; unrelated or stale agent calls are
+rejected. Password values stay outside model snapshots and storage, while
+explicit UI confirmation explains iwd's own persistent profile behavior.
+The daemon's property snapshots, not method return alone, determine displayed
+connection state. System-service testing uses an isolated API fixture rather
+than mutating the execution host's network.
+
 ### Clipboard ownership and data devices
 
 Clipboard callbacks retain copied C buffers, not JavaScript references. SDL

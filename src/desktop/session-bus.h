@@ -7,4 +7,5 @@
  * launcher, or NULL for an explicitly configured invalid session. */
 char *pu_session_bus_address(void);
 DBusConnection *pu_session_bus_connect(char *error, size_t error_size);
+DBusConnection *pu_system_bus_connect(char *error, size_t error_size);
 #endif
