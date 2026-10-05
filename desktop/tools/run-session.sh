@@ -48,12 +48,16 @@ fi
 base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
 case "$base" in /*) ;; *) echo "Runtime base must be an absolute directory" >&2; exit 1 ;; esac
 runtime=$(mktemp -d "$base/polly-session.XXXXXX")
+bus_helper=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/session-bus.sh
+. "$bus_helper"
 pid=
+bus_pid=
 cleanup() {
     if [ -n "$pid" ]; then
         kill -TERM "$pid" 2>/dev/null || true
         wait "$pid" 2>/dev/null || true
     fi
+    stop_private_bus
     rm -f "$runtime/pollywm-0" "$runtime/pollywm-0.lock"
     rmdir "$runtime"
 }
@@ -77,7 +81,9 @@ if [ "$ime" -eq 1 ]; then
     export POLLY_IME_RUNTIME="$ui" POLLY_IME_DATA="$data"
 fi
 export XDG_RUNTIME_DIR="$runtime" SDL_VIDEODRIVER=wayland XDG_CURRENT_DESKTOP=Polly XDG_SESSION_TYPE=wayland
+start_private_bus
 printf 'PollyDesktop runtime: %s\nClient display: %s/pollywm-0\n' "$runtime" "$runtime"
+printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
         --input-method "$repo/desktop/tools/run-input-method.sh" \
@@ -87,6 +93,16 @@ else
         --exit-with-shell --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 fi
 pid=$!
+while kill -0 "$pid" 2>/dev/null; do
+    if ! kill -0 "$bus_pid" 2>/dev/null; then
+        echo "Private session bus exited; ending the development session" >&2
+        cat "$runtime/bus.error" >&2
+        wait "$bus_pid" 2>/dev/null || true
+        bus_pid=
+        exit 1
+    fi
+    sleep 0.1
+done
 if wait "$pid"; then result=0; else result=$?; fi
 pid=
 exit "$result"

@@ -58,7 +58,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}, workspace = null) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null) {
   const panel = theme.panel;
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: 10, paddingLeft: 5, paddingRight: 12,
@@ -75,6 +75,8 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
+  notifications ? button('shell-notifications', 'Notifications ' + notifications.count, theme,
+    notifications.open, false, { height: 24 }) : null,
   label(clock, panel.text, 12));
 }
 

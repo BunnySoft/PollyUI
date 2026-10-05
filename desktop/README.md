@@ -15,7 +15,7 @@ Keep three boundaries:
 - `shell/`: shared appearance presets, the native multi-surface PollyShell and
   a separate simulated appearance preview. The real shell runs in its own
   process; a shell crash must not terminate other applications.
-- Session/system integration: native application launching; future D-Bus services,
+- Session/system integration: native application launching, private D-Bus session and notifications; future system services,
   permissions, persistence and distribution packaging.
 
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
@@ -31,6 +31,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
 | Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. |
 | Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
+| Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. Tray remains separate. |
 | Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -43,7 +44,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3b - PollyUI layer host | Native layer roles on a shared trusted connection, output selection, raster/GLES rendering, input, fractional scaling and output-loss cleanup. Actual native clients cover these paths. |
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
-| 4 - usable session | Notifications, outgoing PollyUI drags, complex text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
+| 4 - usable session | Tray, outgoing PollyUI drags, advanced text, audio/network/power integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -549,7 +550,7 @@ Use `-DBUILD_TESTING=OFF` when only the compositor is needed.
 ## Run nested in an existing Wayland session
 
 The development launcher provides a private runtime directory, shell identity,
-signal forwarding and cleanup. It keeps application configuration/data outside
+an owned D-Bus daemon, signal forwarding and cleanup. It keeps application configuration/data outside
 the temporary runtime directory and changes to the repository root for module
 loading. Paths supplied to it are resolved relative to the invoking directory.
 
@@ -564,6 +565,30 @@ omitting both flags preserves wlroots backend selection. Restart is opt-in
 the shell normally ends this development session. It prints the absolute public
 Wayland socket path for independently launched clients.
 
+The bus socket is `bus` inside that same owned 0700 runtime directory.
+`session-bus.sh` percent-encodes the socket path, waits for actual readiness and
+publishes `DBUS_SESSION_BUS_ADDRESS` plus the matching
+`POLLY_SESSION_BUS_ADDRESS` marker. The marker is not a security capability;
+native code also validates the address, runtime directory and socket ownership.
+The parent bus and starter variables are removed. D-Bus service activation
+receives this session's public Wayland display, not the parent's X11 display,
+Shell private socket or capture/debug variables.
+
+Concurrent sessions have separate bus IDs and namespaces. Bus loss terminates
+the development session with an explicit error; compositor exit/signals stop
+and reap only its owned daemon and remove known runtime socket/activation
+directories. `dbus-daemon` is a required launcher dependency; this does not
+start a system bus, audio/network/power daemons, or a production login manager.
+
+PollyShell acquires the standard Notifications name only on this private bus,
+never on an ambient parent session. Native toasts and a panel-accessible center
+share the current theme; actions are unicast back to their sender and never
+executed as commands by the Shell. Sender ownership, stale UI revisions,
+expiry/close reasons and queue limits are enforced natively. Markup, external
+images, sound and persisted history are not advertised or implemented. See the
+root README for exact API fields and limits. StatusNotifier/tray and desktop-
+entry D-Bus-only activation are still separate tasks.
+
 PollyShell stores `desktop.theme` in its app-scoped localStorage. Unknown stored
 IDs produce a visible warning and a logged fallback without overwriting the
 saved value. Failed display setup is not retried on every timer tick for the
@@ -575,7 +600,8 @@ click-outside dismissal is not implemented yet.
 
 The session enables the in-house `.desktop` launcher with `--desktop`; no
 GLib/GIO dependency is introduced. The root README documents its compatibility
-scope and intentionally unavailable D-Bus/X11 paths.
+scope, private bus inheritance, and intentionally unavailable D-Bus-only
+desktop-entry/X11 paths.
 
 Floating Dock corners use actual alpha composition. Blur, polished animation,
 dark variants and shaped click-through regions are still outstanding. The Dock

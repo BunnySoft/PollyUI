@@ -1,8 +1,10 @@
 #define _GNU_SOURCE
 #include "desktop/applications.h"
+#include "desktop/session-bus.h"
 #include "core/thread.h"
 #if defined(PU_LAYER_SHELL)
 #include "desktop/windows.h"
+#include "desktop/notifications.h"
 #endif
 
 #include <dirent.h>
@@ -243,6 +245,7 @@ static JSValue spawn_application(JSContext *ctx, JSValueConst self, int argc, JS
     struct AppProcess *process = calloc(1, sizeof(*process));
     const char *cwd = NULL, *id = NULL;
     char **environment = NULL;
+    char *bus_environment = NULL;
     int pipefd[2] = { -1, -1 }, error = 0;
     JSValue result = JS_EXCEPTION;
     if (!helper || !argv || !process) { JS_ThrowOutOfMemory(ctx); goto cleanup; }
@@ -278,8 +281,12 @@ static JSValue spawn_application(JSContext *ctx, JSValueConst self, int argc, JS
         if (!discard_env(environ[i])) environment[next++] = environ[i];
     environment[next++] = "XDG_CURRENT_DESKTOP=Polly";
     environment[next++] = "XDG_SESSION_TYPE=wayland";
-    /* No session bus integration yet: do not activate applications on the parent bus. */
-    environment[next] = "DBUS_SESSION_BUS_ADDRESS=disabled:";
+    char *bus = pu_session_bus_address();
+    if (!bus) { JS_ThrowInternalError(ctx, "Invalid private session bus"); goto cleanup; }
+    if (asprintf(&bus_environment, "DBUS_SESSION_BUS_ADDRESS=%s", bus) < 0) bus_environment = NULL;
+    free(bus);
+    if (!bus_environment) { JS_ThrowOutOfMemory(ctx); goto cleanup; }
+    environment[next] = bus_environment;
     if (pipe2(pipefd, O_CLOEXEC) < 0) { error = errno; goto failed; }
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attributes;
@@ -342,6 +349,7 @@ cleanup:
     JS_FreeCString(ctx, cwd); JS_FreeCString(ctx, id);
     if (process) { free(process->id); free(process); }
     free(argv); free(helper); free(program); free(environment);
+    free(bus_environment);
     return result;
 }
 
@@ -362,6 +370,7 @@ int pu_applications_install(JSContext *ctx)
     JS_SetPropertyStr(ctx, desktop_api, "onExit", JS_NULL);
 #if defined(PU_LAYER_SHELL)
     if (!pu_desktop_windows_install(ctx, desktop_api)) return 0;
+    if (!pu_notifications_install(ctx, desktop_api)) return 0;
 #endif
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, desktop_api));
@@ -402,6 +411,7 @@ int pu_applications_pump(void)
     }
 #if defined(PU_LAYER_SHELL)
     worked += pu_desktop_windows_pump();
+    worked += pu_notifications_pump();
 #endif
     return worked;
 }
@@ -409,6 +419,7 @@ int pu_applications_pump(void)
 void pu_applications_shutdown(void)
 {
 #if defined(PU_LAYER_SHELL)
+    pu_notifications_shutdown();
     pu_desktop_windows_shutdown();
 #endif
     if (context) JS_FreeValue(context, desktop_api);

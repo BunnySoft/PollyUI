@@ -4,6 +4,7 @@ import { wallpaper, panelView, dockView, settingsView, applicationsView, windowA
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 import { readDisplayDraft } from './desktop/shell/displays.mjs';
+import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 
@@ -57,6 +58,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (typeof previousWindowsChanged === 'function') previousWindowsChanged();
   };
   const launcher = native ? createApplicationLauncher(native, report) : null;
+  const notifications = createNotificationSurfaces({ host, native, theme: () => getDesktopTheme(themeId), report,
+    changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   let previousExit = null;
   const exited = event => {
     if (!running) return;
@@ -156,7 +159,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper'), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error, () => showSettings(bundle.output.id), listed, toggleWindow,
-      id => showWindowActions(bundle.output.id, id), workspaceControl),
+      id => showWindowActions(bundle.output.id, id), workspaceControl,
+      notifications.count() ? { count: notifications.count(), open: notifications.show } : null),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSettings(bundle.output.id),
       () => showSettings(bundle.output.id, true), () => showApplications(bundle.output.id), listed, toggleWindow,
@@ -621,6 +625,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function refresh(force = false) {
     if (!running) return;
+    notifications.paint();
     if (pendingDisplayToken) {
       try { paintDisplayConfirmation(); } catch (failure) { outputFailure(failure); }
     }
@@ -666,6 +671,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         refreshWindows();
       }
       startShortcuts();
+      notifications.start();
       if (typeof native?.outputConfiguration === 'function') {
         previousOutputsChanged = native.onOutputsChanged;
         native.onOutputsChanged = outputsChanged;
@@ -675,6 +681,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     },
     stop() {
       running = false;
+      notifications.stop();
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
@@ -699,7 +706,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
     },
-    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays, refresh,
+    selectTheme, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    showNotifications: notifications.show, refresh,
     getState() { return { themeId, error, outputs: [...bundles.keys()], running }; },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };

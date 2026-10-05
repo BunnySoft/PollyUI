@@ -35,3 +35,5 @@ RUN apk add --no-cache meson icu-dev font-noto-arabic font-noto-devanagari
 COPY tools/build-harfbuzz-linux.sh /opt/pollyui-build/tools/
 RUN sh /opt/pollyui-build/tools/build-harfbuzz-linux.sh /opt/pollyui-harfbuzz
 ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig
+
+RUN apk add --no-cache dbus dbus-dev

@@ -386,6 +386,22 @@ CMake + Ninja + clang-cl.
 - **Perf** (persist + dirty-track the Yoga tree) and CSS units
   (`em`/`rem`/`vh`/`vw`) + pseudo-states.
 
+### Private session bus and notifications
+
+The development session owns a private D-Bus daemon with the compositor's
+lifetime. Parent bus addresses never become application defaults; native
+launching validates the private marker/address and user-owned runtime socket.
+Session-bus connections use libdbus directly, with bounded message/receive
+queues and no GLib event loop.
+
+The Shell notification server parses protocol requests into copied C-owned
+records, not retained D-Bus messages or JavaScript values. Sender unique names
+own their IDs; revisions guard native UI actions against replacements.
+The main pump dispatches a bounded batch, expires notices by monotonic time,
+then notifies JavaScript outside D-Bus callbacks. Rendering treats content as
+plain text and sends action signals instead of executing sender-provided
+commands. Shutdown releases the bus before destroying the JS realm.
+
 ### Clipboard ownership and data devices
 
 Clipboard callbacks retain copied C buffers, not JavaScript references. SDL

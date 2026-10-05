@@ -441,9 +441,13 @@ its launched application processes.
 
 Launch environments retain the current public Wayland display but remove the
 private `WAYLAND_SOCKET`, inherited `DISPLAY`, activation tokens and Shell app
-identity/debug variables. **A private D-Bus session is not implemented yet**:
-the parent session bus is deliberately not reused. Entries with an `Exec` path
-use that path; D-Bus-only activation and bus-dependent apps may remain unavailable.
+identity/debug variables. The development launcher now owns a **private D-Bus
+session**; it never reuses the parent bus. Launched apps receive its address only
+after the runtime checks the matching address marker, owned 0700 runtime and
+owned Unix socket. Outside that launcher, the previous `disabled:` address
+remains the explicit fallback. Invalid configured sessions fail rather than
+falling back to the parent's bus. Entries with an `Exec` path use that path;
+D-Bus-only desktop-entry activation is still unsupported.
 X11 apps need future Xwayland integration. Apps that independently reuse an
 existing process/profile can still require a dedicated test account/profile.
 Terminal entries use `foot -e` by default; `POLLY_TERMINAL` selects a terminal
@@ -454,6 +458,43 @@ limits files to 1 MiB, nesting to 32 levels and the catalog to 10,000 entries;
 the launcher validates up to 256 argv strings. The vendored QuickJS normalization
 paths use their existing correctly typed allocator adapter rather than casting
 allocator function pointers, fixing the UBSan failure exposed by Unicode sorting.
+
+### Native desktop notifications
+
+The real Shell registers `org.freedesktop.Notifications` on its private session
+bus using libdbus, without GLib/GIO. It implements notification creation,
+same-sender replacement, actions, dismissal, application-requested closure,
+expiry, capabilities, server information and introspection. Capabilities are
+`actions` and `body`: content is plain text, not HTML/markup, and supplied icon,
+image and sound paths are not opened. No notification history is persisted.
+
+The newest three notices appear on a non-keyboard-grabbing top-right surface on
+the first output. A panel button opens the full current list; overflow and long
+bodies scroll. Display removal/geometry changes recreate affected surfaces, and
+rendering follows the selected theme. A sender's normal exit does not discard
+its notice; stopping/restarting the Shell does discard its in-memory queue.
+
+The bounded model accepts 64 active notices globally and 16 per sender, at
+most eight actions, 256-byte application/action strings, a nonempty 1024-byte
+summary and an 8192-byte body. Malformed or oversized requests receive D-Bus
+errors. Default expiry is five seconds, or no timeout for critical urgency;
+explicit zero means no automatic expiry. A resident notice remains after an
+action. Signals are addressed to the originating bus connection, and one sender
+cannot replace or close another's notice.
+
+On the trusted Shell's `desktop` API, `notificationsAvailable` indicates a
+configured private bus. `startNotifications()` acquires the standard name
+without replacing an incumbent; `stopNotifications()` releases it.
+`notifications()` returns `{id, revision, application, summary, body, urgency,
+resident, actions:[{key,label}]}` entries. `dismissNotification(id, revision)`
+and `invokeNotificationAction(id, revision, key)` reject stale UI actions.
+`onNotificationsChanged` signals model/error changes. Public Wayland
+connections cannot start this server merely by selecting `--desktop`.
+This is not a D-Bus sandbox: another same-user process on the private bus can
+use standard D-Bus APIs, subject to name ownership and sender checks.
+
+System tray/StatusNotifier support is not implemented by the notification
+service and remains a separate milestone.
 
 ### Linux window management
 
