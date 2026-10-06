@@ -56,12 +56,18 @@ def main():
         total = 0
 
         with tarfile.open(args.export, "r:") as archive:
-            kernel = archive.extractfile("boot/vmlinuz-virt")
+            kernel = archive.extractfile("boot/vmlinuz-lts")
             if kernel is None:
-                raise ValueError("Export does not contain the Alpine virt kernel")
+                raise ValueError("Export does not contain the Alpine hardware-capable LTS kernel")
             with (boot / "vmlinuz").open("wb") as target:
                 shutil.copyfileobj(kernel, target)
             kernel.close()
+            microcode = archive.extractfile("boot/intel-ucode.img")
+            if microcode is None:
+                raise ValueError("Export does not contain the Intel early microcode archive")
+            with (boot / "intel-ucode.img").open("wb") as target:
+                shutil.copyfileobj(microcode, target)
+            microcode.close()
             packages = archive.extractfile("lib/apk/db/installed")
             if packages is None:
                 raise ValueError("Export does not contain its APK inventory")
@@ -151,13 +157,41 @@ def main():
             subprocess.run(["xorriso", "-abort_on", "WARNING", "-as", "mkisofs", "-R", "-J", "-V", "POLLYLIVE",
                             "-e", "boot/efiboot.img", "-no-emul-boot", "-o", str(iso), str(image)],
                            check=True, timeout=180, stdout=log, stderr=subprocess.STDOUT)
+        # Build only regular image files; never attach a loop device or open a physical disk.
+        usb = staging / f"pollydesktop-{version}-x86_64-uefi-usb.img"
+        payload = sum(file.stat().st_size for file in (efi, boot / "vmlinuz", boot / "intel-ucode.img", boot / "initramfs.gz"))
+        partition_mib = max(128, (payload + 64 * 1024 * 1024 + 1024 * 1024 - 1) // (1024 * 1024))
+        sectors = partition_mib * 2048
+        with usb.open("wb") as target:
+            target.truncate((partition_mib + 2) * 1024 * 1024)
+        subprocess.run(["sfdisk", str(usb)], input=f"label: gpt\nunit: sectors\n\nstart=2048,size={sectors},type=U\n",
+                       text=True, check=True, timeout=30, stdout=subprocess.DEVNULL)
+        filesystem = staging / "usb-fat.img"
+        with filesystem.open("wb") as target:
+            target.truncate(partition_mib * 1024 * 1024)
+        run("mkfs.fat", "-F", "32", "-n", "POLLYLIVE", str(filesystem))
+        run("mmd", "-i", str(filesystem), "::/EFI", "::/EFI/BOOT", "::/boot")
+        run("mcopy", "-i", str(filesystem), str(efi), "::/EFI/BOOT/BOOTX64.EFI")
+        run("mcopy", "-i", str(filesystem), str(image / "polly-live.marker"), "::/")
+        for file in (boot / "vmlinuz", boot / "intel-ucode.img", boot / "initramfs.gz"):
+            if file.stat().st_size >= 2 ** 32:
+                raise ValueError("Boot payload exceeds FAT32 individual-file limit")
+            run("mcopy", "-i", str(filesystem), str(file), "::/boot/")
+        with usb.open("r+b") as target, filesystem.open("rb") as source:
+            target.seek(1024 * 1024)
+            shutil.copyfileobj(source, target, length=1024 * 1024)
+        filesystem.unlink()
+        run("sfdisk", "--verify", str(usb))
         manifest = {
             "version": version, "architecture": "x86_64", "firmware": "UEFI (unsigned)",
             "stage": "development-live-image", "sourceRevision": args.source_revision,
             "sourceDirty": args.source_dirty == "1", "runtimeImage": args.runtime_image,
             "root": "initramfs, memory only", "automaticLogin": "temporary uid 1000 polly",
-            "minimumGuestMemoryMiB": 3072, "files": files, "uncompressedPayloadBytes": total,
+            "minimumGuestMemoryMiB": 4096, "files": files, "uncompressedPayloadBytes": total,
             "iso": {"name": iso.name, "sha256": digest(iso), "size": iso.stat().st_size},
+            "usb": {"name": usb.name, "sha256": digest(usb), "size": usb.stat().st_size,
+                    "layout": "GPT with one FAT32 EFI System Partition; no persistence"},
+            "hardwareTarget": "i7-13700K / B760-G / UHD770 + RTX4070Ti + RTX4060Ti / I226-V / AX211",
             "packages": sorted(inventory, key=lambda item: item["name"]),
             "buildInputs": [
                 {"path": str(file.relative_to(repo)), "sha256": digest(file)}
@@ -166,23 +200,23 @@ def main():
                     repo / "desktop/tools/build-live-image.py", repo / "desktop/tools/build-live.sh",
                     repo / "desktop/release/Containerfile.live",
                     repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
-                    repo / "desktop/system/elogind-polly.conf",
+                    repo / "desktop/system/elogind-polly.conf", repo / "desktop/system/iwd-main.conf",
                 ]) if file.is_file()
             ],
             "limitations": ["No installer or block-device persistence", "No secure lock or protected login",
-                            "No network provisioning", "Unsigned development boot chain",
+                            "Wired DHCP; Wi-Fi configured interactively in the memory-only guest", "Unsigned development boot chain",
                             "Physical hardware and third-party distribution compliance not qualified"],
         }
         (staging / "live-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
         with (staging / "boot-layout.txt").open("w") as report:
             subprocess.run(["xorriso", "-indev", str(iso), "-report_el_torito", "plain"],
                            check=True, timeout=30, stdout=report, stderr=subprocess.STDOUT)
-        sums = [f"{digest(file)}  {file.name}" for file in (iso, staging / "live-manifest.json")]
+        sums = [f"{digest(file)}  {file.name}" for file in (iso, usb, staging / "live-manifest.json")]
         (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n")
         shutil.rmtree(image)
         efi.unlink()
         staging.rename(output)
-        print("Created memory-only UEFI development image:", output / iso.name)
+        print("Created memory-only UEFI ISO and USB image:", output / iso.name, output / usb.name)
     except BaseException:
         log = staging / "image-build.log"
         if log.exists():

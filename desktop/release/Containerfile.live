@@ -1,39 +1,51 @@
-ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.3
+ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.4
 FROM ${RUNTIME_IMAGE} AS live-base
 USER root
 WORKDIR /
-RUN apk add --no-cache openrc busybox-openrc linux-virt eudev eudev-openrc \
-    elogind elogind-openrc dbus-openrc agetty util-linux-login kmod
+RUN apk add --no-cache openrc busybox-openrc \
+    linux-firmware-i915 linux-firmware-intel linux-firmware-nvidia sof-firmware intel-ucode linux-lts \
+    mesa-dri-gallium mesa-vulkan-nouveau eudev eudev-openrc \
+    elogind elogind-openrc dbus-openrc agetty util-linux-login kmod \
+    iwd iwd-openrc wireless-regdb dhcpcd dhcpcd-openrc openresolv \
+    alsa-utils pciutils usbutils iw ethtool
 COPY release/live/init /init
 COPY release/live/inittab /etc/inittab
 COPY release/live/session /usr/bin/polly-live-session
 COPY release/live/shell.mjs /usr/share/pollyui/desktop/shell/live.mjs
+COPY release/live/diagnostics /usr/bin/polly-live-diagnostics
+COPY release/live/session-mode /usr/share/pollyui/desktop/tools/live-session-mode.sh
+COPY release/live/dhcpcd.conf /etc/dhcpcd.conf
+COPY release/live/hardware-log.openrc /etc/init.d/polly-hardware-log
+COPY system/iwd-main.conf /etc/iwd/main.conf
 COPY system/login.pam /etc/pam.d/login
 COPY system/polly-lock.pam /etc/pam.d/polly-lock
 COPY system/elogind-polly.conf /etc/elogind/logind.conf.d/50-polly.conf
-RUN chmod 755 /init /usr/bin/polly-live-session && \
+RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /etc/init.d/polly-hardware-log && \
     chmod 644 /etc/inittab /etc/pam.d/login /etc/pam.d/polly-lock \
-        /etc/elogind/logind.conf.d/50-polly.conf /usr/share/pollyui/desktop/shell/live.mjs && \
+        /etc/elogind/logind.conf.d/50-polly.conf /usr/share/pollyui/desktop/shell/live.mjs \
+        /usr/share/pollyui/desktop/tools/live-session-mode.sh /etc/dhcpcd.conf /etc/iwd/main.conf && \
+    (getent group netdev >/dev/null || addgroup -S netdev) && addgroup polly netdev && \
     addgroup polly audio && \
     sed -i 's|^polly:\(.*\):/bin/sh$|polly:\1:/usr/bin/polly-live-session|' /etc/passwd && \
     printf '/usr/bin/polly-live-session\n' >> /etc/shells && \
     printf 'polly-live\n' > /etc/hostname && \
     printf 'hostname="polly-live"\n' > /etc/conf.d/hostname && \
     printf '# Memory-only Live root. No block devices are mounted.\n' > /etc/fstab && \
-    printf 'SYSLOGD_OPTS="-O /dev/ttyS0"\n' > /etc/conf.d/syslog && \
+    printf 'SYSLOGD_OPTS="-O /var/log/messages -s 4096 -b 1"\n' > /etc/conf.d/syslog && \
     printf 'virtio_gpu\nvirtio_input\nevdev\n' > /etc/modules && \
     rc-update add devfs sysinit && rc-update add procfs sysinit && rc-update add sysfs sysinit && \
     rc-update add modules boot && rc-update add bootmisc boot && rc-update add hostname boot && \
     rc-update add localmount boot && rc-update add udev sysinit && rc-update add udev-trigger sysinit && \
     rc-update add udev-settle sysinit && rc-update add syslog default && rc-update add dbus default && \
     rc-update add cgroups boot && rc-update add elogind default && \
+    rc-update add iwd default && rc-update add dhcpcd default && rc-update add polly-hardware-log default && \
     rm -f /etc/machine-id /var/lib/dbus/machine-id && \
     grep -q '^polly:.*:/usr/bin/polly-live-session$' /etc/passwd
 ENTRYPOINT []
 CMD ["/bin/sh"]
 
 FROM docker.io/library/alpine:3.24 AS image-tools
-RUN apk add --no-cache python3 cpio gzip grub-efi xorriso mtools dosfstools \
+RUN apk add --no-cache python3 cpio gzip grub-efi xorriso mtools dosfstools sfdisk \
     qemu-system-x86_64 qemu-hw-display-virtio-vga ovmf
 WORKDIR /work
 ENTRYPOINT []

@@ -1,0 +1,55 @@
+#!/bin/sh
+set -u
+if [ "$(id -u)" -ne 1000 ]; then
+    echo "Run diagnostics as the ordinary Polly Live user." >&2
+    exit 1
+fi
+case "${XDG_RUNTIME_DIR:-}" in
+    /run/user/1000|/run/user/1000/polly-session.*) ;;
+    *) echo "Diagnostics require the Live login or its private desktop session." >&2; exit 1 ;;
+esac
+umask 077
+directory=$(mktemp -d "$HOME/polly-diagnostics.XXXXXX") || exit 1
+report="$directory/report.txt"
+capture() {
+    printf '\n===== %s =====\n' "$*" >>"$report"
+    "$@" >>"$report" 2>&1
+    result=$?
+    if [ "$result" -ne 0 ]; then printf '[unavailable or failed: exit %s]\n' "$result" >>"$report"; fi
+}
+printf 'PollyDesktop Live hardware report. Local only; review before sharing.\n' >"$report"
+printf 'Mode=%s GPU-selection=%s\n' "${POLLY_LIVE_MODE:-unknown}" "${POLLY_LIVE_GPU:-unknown}" >>"$report"
+capture uname -a
+capture cat /proc/cmdline
+capture cat /proc/meminfo
+capture lspci -nnk
+capture lsusb
+capture lsmod
+capture sh -c 'for card in /sys/class/drm/card[0-9]*; do
+    [ -e "$card" ] || continue
+    printf "\n%s\n" "$card"
+    for field in status enabled modes device/vendor device/device; do
+        [ ! -f "$card/$field" ] || { printf "%s: " "$field"; cat "$card/$field"; }
+    done
+    [ ! -L "$card/device/driver" ] || readlink "$card/device/driver"
+done'
+capture sh -c 'cat /proc/asound/cards /proc/asound/pcm'
+capture aplay -l
+capture arecord -l
+capture ip -brief address
+capture ip route
+capture cat /etc/resolv.conf
+capture rfkill list
+capture rc-status -a
+capture iw dev
+capture loginctl show-session "${XDG_SESSION_ID:-}" --property=Active --property=User --property=Seat --property=Type
+capture findmnt -rn -o TARGET,SOURCE,FSTYPE,OPTIONS
+capture dmesg
+capture sh -c 'for log in /run/polly-live/boot-hardware.log /var/log/messages; do
+    [ ! -r "$log" ] || { printf "\n%s\n" "$log"; tail -c 4194304 "$log"; }
+done'
+for log in "$HOME"/polly-session-*; do
+    [ -f "$log" ] || continue
+    capture tail -c 4194304 "$log"
+done
+printf 'Saved local diagnostics: %s\nContains device identifiers, addresses and logs; review before sharing.\n' "$directory"

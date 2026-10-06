@@ -1,0 +1,27 @@
+#!/sbin/openrc-run
+description="Capture read-only boot hardware diagnostics for the memory-only Live user"
+depend() {
+    need localmount
+    after udev-settle modules
+}
+start() {
+    ebegin "Recording Live hardware diagnostics"
+    checkpath --directory --mode 0750 --owner root:polly /run/polly-live || return 1
+    (
+        umask 027
+        {
+            uname -a
+            printf '\nKernel command line:\n'
+            cat /proc/cmdline
+            printf '\nPCI drivers:\n'
+            lspci -nnk
+            printf '\nBoot kernel messages:\n'
+            dmesg
+        } > /run/polly-live/boot-hardware.log
+        result=$?
+        chown root:polly /run/polly-live/boot-hardware.log
+        chmod 0640 /run/polly-live/boot-hardware.log
+        exit "$result"
+    )
+    eend $?
+}

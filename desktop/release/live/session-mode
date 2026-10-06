@@ -1,0 +1,39 @@
+# Sourced only by the memory-only Live session.
+live_mode=baseline
+live_gpu=auto
+for argument in $(cat /proc/cmdline); do
+    case "$argument" in
+        polly.mode=baseline) live_mode=baseline ;;
+        polly.mode=gpu) live_mode=gpu ;;
+        polly.mode=console) live_mode=console ;;
+        polly.gpu=intel) live_gpu=intel ;;
+    esac
+done
+export WLR_RENDERER=pixman PU_RENDERER=raster SDL_RENDER_DRIVER=software
+unset WLR_DRM_DEVICES
+if [ "$live_mode" = gpu ]; then
+    export WLR_RENDERER=gles2 PU_RENDERER=gl
+fi
+if [ "$live_gpu" = intel ]; then
+    selected=
+    for card in /sys/class/drm/card[0-9]*; do
+        case "${card##*/}" in *-*) continue ;; esac
+        [ -f "$card/device/vendor" ] || continue
+        [ "$(cat "$card/device/vendor")" = 0x8086 ] || continue
+        device="/dev/dri/${card##*/}"
+        [ -c "$device" ] || continue
+        if [ -n "$selected" ]; then
+            echo "More than one Intel DRM device; use the automatic entry and inspect diagnostics." >&2
+            live_mode=console
+            break
+        fi
+        selected=$device
+    done
+    if [ -n "$selected" ] && [ "$live_mode" != console ]; then
+        export WLR_DRM_DEVICES="$selected"
+    else
+        echo "Intel-only mode has no unique usable DRM card; keeping the diagnostic console." >&2
+        live_mode=console
+    fi
+fi
+export POLLY_LIVE_MODE="$live_mode" POLLY_LIVE_GPU="$live_gpu"
