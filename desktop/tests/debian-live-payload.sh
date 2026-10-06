@@ -35,6 +35,9 @@ for file in /etc/pam.d/login /etc/pam.d/polly-lock /etc/iwd/main.conf /etc/dhcpc
     test "$(stat -c '%a:%u:%g' "$file")" = 644:0:0
     if grep -q "$(printf '\r')" "$file"; then echo "CRLF configuration: $file" >&2; exit 1; fi
 done
+for file in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/backports.sources; do
+    test "$(stat -c '%a:%u:%g' "$file")" = 644:0:0
+done
 for file in /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics \
     /usr/bin/polly-boot-hardware /usr/share/pollyui/desktop/tools/live-session-mode.sh; do
     sh -n "$file"

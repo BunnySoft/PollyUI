@@ -3,7 +3,8 @@ FROM ${RUNTIME_IMAGE} AS live-base
 USER root
 WORKDIR /
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
-RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
+    apt-get update -qq && apt-get install -y --no-install-recommends \
     systemd-sysv udev dbus libpam-systemd kmod linux-image-amd64 \
     firmware-intel-graphics firmware-nvidia-graphics firmware-iwlwifi firmware-sof-signed intel-microcode iucode-tool \
     iwd dhcpcd openresolv wireless-regdb iproute2 iw rfkill ethtool \

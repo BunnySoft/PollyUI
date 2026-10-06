@@ -6,6 +6,7 @@ test "$VERSION_CODENAME" = trixie
 test "$(dpkg --print-architecture)" = amd64
 getconf GNU_LIBC_VERSION
 test -s /usr/share/polly-minbase-packages.txt
+test "$(stat -c '%a:%u:%g' /etc/apt/sources.list.d/debian.sources)" = 644:0:0
 test ! -f /etc/apt/sources.list
 grep -q '^Suites: trixie trixie-updates[[:space:]]*$' /etc/apt/sources.list.d/debian.sources
 grep -q '^Suites: trixie-security[[:space:]]*$' /etc/apt/sources.list.d/debian.sources

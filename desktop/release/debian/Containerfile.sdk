@@ -28,11 +28,13 @@ RUN sh /opt/pollyui-build/tools/build-sdl-linux.sh /opt/pollyui-sdl && \
 ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
 COPY release/debian/source-packages.sources /etc/apt/sources.list.d/source-packages.sources
 COPY release/debian/build-libinput.sh release/debian/libinput.json /opt/pollyui-build/debian/
-RUN apt-get update -qq && apt-get install -y --no-install-recommends libevdev-dev libmtdev-dev patchelf && \
+RUN chmod 644 /etc/apt/sources.list.d/source-packages.sources && \
+    apt-get update -qq && apt-get install -y --no-install-recommends libevdev-dev libmtdev-dev patchelf && \
     sh /opt/pollyui-build/debian/build-libinput.sh
 ENV PKG_CONFIG_PATH=/opt/pollyui-input/lib/pkgconfig:/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
-RUN apt-get update -qq && apt-get install -y --no-install-recommends llvm-19 \
+RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
+    apt-get update -qq && apt-get install -y --no-install-recommends llvm-19 \
     libegl-mesa0/trixie-backports libgl1-mesa-dri/trixie-backports \
     libglx-mesa0/trixie-backports libgbm1/trixie-backports libgbm-dev/trixie-backports \
     mesa-vulkan-drivers/trixie-backports pipewire-bin/trixie-backports \
