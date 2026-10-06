@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Equivalent-function Debian migration, not additional desktop features",
+  "source": "4ae38ed99a803004abf136a6934881b3165ab704",
+  "version": "0.1.0-alpha.4",
+  "distribution": "Alpine 3.24 x86_64",
+  "physicalAcceptance": {
+    "reportedBy": "user",
+    "date": "2026-10-06",
+    "target": "i7-13700K / B760-G / UHD770 + RTX4070Ti + RTX4060Ti / I226-V / AX211",
+    "limits": "No independently supplied per-GPU, connector or performance measurements"
+  },
+  "artifacts": [
+    {
+      "name": "pollydesktop-0.1.0-alpha.4-x86_64-uefi-live.iso",
+      "bytes": 721213440,
+      "sha256": "dea6b74e9f5455aa6060f874e68d36444206c4bf99397b3c958d7a4b91932668"
+    },
+    {
+      "name": "pollydesktop-0.1.0-alpha.4-x86_64-uefi-usb.img",
+      "bytes": 773849088,
+      "sha256": "2eeeb5ef91bbd74340f1db0c50177b031e5e2cdb1400a241e33e7983655d7169"
+    }
+  ],
+  "acceptance": [
+    "Memory-only unsigned UEFI optical and GPT/FAT32 USB boot without internal disk writes",
+    "Ordinary-user PAM/login1 session with DRM and libinput",
+    "Raster and GLES paths identified separately; no hidden acceleration claims",
+    "Native application launch, window operations, focus and manual global workspaces",
+    "Theme configuration and guarded display-setting behavior",
+    "Rime Chinese commit and native clipboard copy/paste",
+    "iwd controls and wired DHCP/DNS; private PipeWire policy and audio controls",
+    "Safe session exit, bounded failures and useful local diagnostics",
+    "Power authorization, protected locking and suspend remain deferred/disabled in Live"
+  ],
+  "preserve": [
+    "Existing Alpine build recipes and accepted artifacts",
+    "Own wlroots compositor and PollyUI Shell, not GNOME/KDE/labwc",
+    "No GLib/GIO/GObject dependency in our own runtime/service ELF closure",
+    "No persistence, installer or automatic update service during base migration"
+  ]
+}

@@ -1,0 +1,24 @@
+FROM docker.io/library/debian:trixie-slim AS bootstrap-tools
+ENV DEBIAN_FRONTEND=noninteractive
+COPY release/debian/debian.sources /etc/apt/sources.list.d/debian.sources
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    debootstrap ca-certificates
+
+FROM bootstrap-tools AS bootstrap
+RUN debootstrap --arch=amd64 --variant=minbase --include=ca-certificates \
+        trixie /opt/polly-minbase http://deb.debian.org/debian && \
+    chroot /opt/polly-minbase dpkg-query -W -f='${binary:Package}\t${Version}\n' \
+        > /opt/polly-minbase-packages.txt
+
+FROM scratch AS minbase
+COPY --from=bootstrap /opt/polly-minbase/ /
+COPY --from=bootstrap /opt/polly-minbase-packages.txt /usr/share/polly-minbase-packages.txt
+COPY release/debian/debian.sources /etc/apt/sources.list.d/debian.sources
+RUN rm -f /etc/apt/sources.list && \
+    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod 755 /usr/sbin/policy-rc.d && \
+    apt-get update -qq && apt-get upgrade -y --no-install-recommends && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-minbase-packages.txt && \
+    rm -f /etc/machine-id /var/lib/dbus/machine-id && \
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+WORKDIR /workspace
+CMD ["/bin/sh"]
