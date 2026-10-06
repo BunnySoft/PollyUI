@@ -3,14 +3,16 @@ FROM ${RUNTIME_IMAGE} AS live-base
 USER root
 WORKDIR /
 RUN apk add --no-cache openrc busybox-openrc linux-virt eudev eudev-openrc \
-    seatd seatd-openrc dbus-openrc agetty util-linux-login kmod
-COPY live/init /init
-COPY live/inittab /etc/inittab
-COPY live/session /usr/bin/polly-live-session
-COPY live/runtime.openrc /etc/init.d/polly-live-runtime
-COPY live/shell.mjs /usr/share/pollyui/desktop/shell/live.mjs
-RUN chmod 755 /init /usr/bin/polly-live-session /etc/init.d/polly-live-runtime && \
-    addgroup polly seat && addgroup polly audio && addgroup polly video && \
+    elogind elogind-openrc dbus-openrc agetty util-linux-login kmod
+COPY release/live/init /init
+COPY release/live/inittab /etc/inittab
+COPY release/live/session /usr/bin/polly-live-session
+COPY release/live/shell.mjs /usr/share/pollyui/desktop/shell/live.mjs
+COPY system/login.pam /etc/pam.d/login
+COPY system/polly-lock.pam /etc/pam.d/polly-lock
+COPY system/elogind-polly.conf /etc/elogind/logind.conf.d/50-polly.conf
+RUN chmod 755 /init /usr/bin/polly-live-session && \
+    addgroup polly audio && \
     sed -i 's|^polly:\(.*\):/bin/sh$|polly:\1:/usr/bin/polly-live-session|' /etc/passwd && \
     printf '/usr/bin/polly-live-session\n' >> /etc/shells && \
     printf 'polly-live\n' > /etc/hostname && \
@@ -22,7 +24,7 @@ RUN chmod 755 /init /usr/bin/polly-live-session /etc/init.d/polly-live-runtime &
     rc-update add modules boot && rc-update add bootmisc boot && rc-update add hostname boot && \
     rc-update add localmount boot && rc-update add udev sysinit && rc-update add udev-trigger sysinit && \
     rc-update add udev-settle sysinit && rc-update add syslog default && rc-update add dbus default && \
-    rc-update add polly-live-runtime default && rc-update add seatd default && \
+    rc-update add cgroups boot && rc-update add elogind default && \
     rm -f /etc/machine-id /var/lib/dbus/machine-id && \
     grep -q '^polly:.*:/usr/bin/polly-live-session$' /etc/passwd
 ENTRYPOINT []

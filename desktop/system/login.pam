@@ -1,0 +1,10 @@
+#%PAM-1.0
+# The development Live getty explicitly skips auth for its temporary user.
+# Manual logins still require a nonempty password.
+auth required pam_unix.so
+auth required pam_nologin.so
+account required pam_unix.so
+account required pam_nologin.so
+session required pam_loginuid.so
+session optional pam_keyinit.so force revoke
+session required pam_elogind.so

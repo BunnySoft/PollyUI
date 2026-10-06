@@ -162,6 +162,8 @@ def main():
                     *(repo / "desktop/release/live").iterdir(),
                     repo / "desktop/tools/build-live-image.py", repo / "desktop/tools/build-live.sh",
                     repo / "desktop/release/Containerfile.live",
+                    repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
+                    repo / "desktop/system/elogind-polly.conf",
                 ]) if file.is_file()
             ],
             "limitations": ["No installer or block-device persistence", "No secure lock or protected login",

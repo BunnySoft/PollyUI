@@ -4,6 +4,8 @@
 
 发行进展：R1/R3 的内存型 x86_64 UEFI Live 镜像已实现；R2 按用户确认采用 Alpine/OpenRC + seatd、临时普通用户自动登录。来宾启动和键盘工作区切换已验证，见 `desktop\LIVE.md`。这不等同于保护型登录、磁盘安装或其它发行门槛完成。
 
+后续确认：用户选择 Linux-PAM + elogind 作为认证/会话/电源后端，Live 会话已从 seatd 迁移并验证注册。保留无密码自动登录，密码锁默认禁用；先实现并验证锁屏机制，不新增临时密码设置启动项。独立非 root PAM 助手说明见 `desktop\SESSION.md`。
+
 ## 当前主题进展
 
 - Shell JS 负责读取 JSON、校验、合并有限用户覆盖和消费界面参数。

@@ -2,13 +2,15 @@
 
 The Live builder produces an **unsigned x86_64 UEFI ISO**, not an installer.
 It combines the already packaged PollyDesktop runtime with Alpine 3.24's
-`linux-virt` kernel, OpenRC, eudev and seatd. GRUB loads the kernel and an
+`linux-virt` kernel, OpenRC, eudev and elogind. GRUB loads the kernel and an
 initramfs containing the entire runtime; there is no writable block-device root.
 
 This image is for development in a disposable virtual machine. The initial
 configuration automatically logs in the temporary `polly` user (UID 1000) on
 tty1. Root owns system services, while PollyWM, PollyShell, Rime and the private
-D-Bus/PipeWire session run as the ordinary user. The image deliberately contains
+D-Bus/PipeWire session run as the ordinary user. PAM registers the user's active
+elogind session, and libseat uses its logind backend for device access. This
+does not make automatic login password-protected. The image deliberately contains
 no disk installer, automatic disk mounting, swap configuration or network
 provisioning. Files and settings disappear when the guest stops.
 
@@ -71,7 +73,8 @@ guest DRM/libinput backend, and sends virtual keyboard shortcuts to switch to
 workspace 2 and back. It stops only its own QEMU process afterward. Existing
 evidence is never overwritten.
 
-The verified baseline is OVMF/KVM, virtio-vga, 1280x800, Pixman compositor and
+The original seatd baseline and its PAM/elogind successor were both verified with
+OVMF/KVM, virtio-vga, 1280x800, Pixman compositor and
 raster PollyUI. Rime and private audio start with the desktop, but this boot
 test does not qualify microphone/speaker signal quality, physical Wi-Fi,
 DHCP/DNS, Bluetooth, suspend/resume or actual hardware VT handoff.

@@ -26,13 +26,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime" \
-    -t localhost/polly-live-base -f desktop/release/Containerfile.live desktop/release
+    -t localhost/polly-live-base -f desktop/release/Containerfile.live desktop
 if [ "$(podman image inspect --format '{{.Id}}' "$runtime")" != "$runtime_id" ]; then
     echo "Runtime image changed during the build; refusing ambiguous provenance" >&2
     exit 1
 fi
 podman build --quiet --target image-tools \
-    -t localhost/polly-live-tools -f desktop/release/Containerfile.live desktop/release
+    -t localhost/polly-live-tools -f desktop/release/Containerfile.live desktop
 container=$(podman create localhost/polly-live-base)
 podman export --output "$temporary/root.tar" "$container"
 podman rm "$container" >/dev/null

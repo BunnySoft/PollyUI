@@ -39,3 +39,5 @@ ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig
 RUN apk add --no-cache dbus dbus-dev
 
 RUN apk add --no-cache pipewire pipewire-dev pipewire-tools
+
+RUN apk add --no-cache linux-pam-dev

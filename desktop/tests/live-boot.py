@@ -84,6 +84,8 @@ def main():
                     raise RuntimeError("Desktop readiness did not prove ordinary-user session startup")
                 if "WLR_BACKENDS: drm,libinput" not in text:
                     raise RuntimeError("Desktop did not use guest DRM/input devices")
+                if "POLLY_SESSION_REGISTERED uid=1000" not in text or "Active=yes" not in text:
+                    raise RuntimeError("PAM did not register an active ordinary-user elogind session")
                 if any(message in text for message in ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"]):
                     raise RuntimeError("Boot reported a fatal error:\n" + text[-8000:])
                 time.sleep(2)
@@ -109,6 +111,7 @@ def main():
                     "memoryMiB": 3072, "vcpus": 2, "disks": [], "network": False,
                     "graphics": "virtio-vga", "hostAudio": False, "ordinaryUser": 1000,
                     "keyboardWorkspaceSwitch": True,
+                    "pamSessionRegistered": True,
                     "iso": iso.name, "serialLog": "serial.log", "screenshot": "desktop.ppm",
                 }
                 with iso.open("rb") as source:
