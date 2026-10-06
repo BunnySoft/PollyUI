@@ -13,6 +13,7 @@ import { createAudioSettings } from './desktop/shell/audio.mjs';
 import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './js/textinput.mjs';
+import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
@@ -31,6 +32,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
   let previousOutputsChanged = null, lastOutputMessage = '';
+  const displayPersistence = createDisplayPersistence({ native, storage, failure: outputFailure });
   const outputsChanged = () => {
     if (!running) return;
     updateOutputs();
@@ -133,22 +135,22 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   }
 
   function newSurface(output, kind, options) {
-    const native = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
-    const surface = { output: output.id, kind, window: native, signature: JSON.stringify(options), expectedClose: false };
-    native.onclose = () => {
+    const nativeWindow = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
+    const surface = { output: output.id, kind, window: nativeWindow, signature: JSON.stringify(options), expectedClose: false };
+    nativeWindow.onclose = () => {
       if (surface === menu) { stopRecording(); workspaceEditor = null; menu = null; }
       if (surface === switcher) {
         switcher = null;
         if (!surface.expectedClose && running) {
           try { native.cancelWindowSwitch(); } catch (failure) { shortcutFailure(failure); }
         }
-        if (surface === displayConfirmation) {
-          displayConfirmation = null;
-          if (!surface.expectedClose && running) {
-            try {
-              if (native.outputConfiguration().pendingToken === surface.token) native.revertOutputConfiguration(surface.token);
-            } catch (failure) { outputFailure(failure); }
-          }
+      }
+      if (surface === displayConfirmation) {
+        displayConfirmation = null;
+        if (!surface.expectedClose && running) {
+          try {
+            if (native.outputConfiguration().pendingToken === surface.token) native.revertOutputConfiguration(surface.token);
+          } catch (failure) { outputFailure(failure); }
         }
       }
       if (!surface.expectedClose && running && kind !== 'settings') {
@@ -367,7 +369,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (menu.mode === 'displays') {
       const current = menu;
       render(displaysView(getDesktopTheme(themeId), current.window.document, current.displayDraft,
-        current.displayInputs, repaintMenu, () => applyDisplays(current), closeMenu, error), current.window.document.body);
+        current.displayInputs, repaintMenu, () => applyDisplays(current), closeMenu, error,
+        { status: displayPersistence.status, forget: forgetDisplayProfile }), current.window.document.body);
       return;
     }
     if (menu.mode === 'shortcuts') {
@@ -593,7 +596,19 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (keep) native.confirmOutputConfiguration(token);
       else native.revertOutputConfiguration(token);
       if (keep && errorKind === 'outputs') { error = ''; errorKind = ''; }
+      if (keep) {
+        try { displayPersistence.save(native.outputConfiguration()); }
+        catch (failure) { outputFailure('Changes were kept, but the startup profile was not saved: ' + String(failure)); }
+      }
       updateOutputs();
+    } catch (failure) { outputFailure(failure); }
+  }
+
+  function forgetDisplayProfile() {
+    try {
+      displayPersistence.forget();
+      if (errorKind === 'outputs') { error = ''; errorKind = ''; }
+      repaintMenu();
     } catch (failure) { outputFailure(failure); }
   }
 
@@ -632,6 +647,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function updateOutputs() {
     try {
       const snapshot = native.outputConfiguration();
+      displayPersistence.observe(snapshot);
       if (menu?.mode === 'displays' && !snapshot.pendingToken && menu.displayDraft.serial !== snapshot.serial) {
         closeMenu();
         outputFailure('Outputs changed; reopen display settings before applying.');
@@ -880,6 +896,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (typeof native?.outputConfiguration === 'function') {
         previousOutputsChanged = native.onOutputsChanged;
         native.onOutputsChanged = outputsChanged;
+        displayPersistence.start();
         updateOutputs();
       }
       return this;

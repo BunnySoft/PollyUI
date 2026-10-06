@@ -519,6 +519,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                         "${CMAKE_SOURCE_DIR}/desktop/tests/output-shell.mjs" outputs)
                 set_tests_properties(desktop-output-shell-${renderer} PROPERTIES TIMEOUT 100
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+                add_test(NAME desktop-display-persistence-${renderer}
+                    COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/display-persistence.py"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/display-persistence.mjs")
+                set_tests_properties(desktop-display-persistence-${renderer} PROPERTIES TIMEOUT 180
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-switcher-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

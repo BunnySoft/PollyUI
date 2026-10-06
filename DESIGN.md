@@ -585,6 +585,13 @@ live rollback if saving fails. The capability has no executable-command action.
 
 Output configuration uses `wlr-output-management` plus a restricted confirmation
 guard. Complete snapshots are validated and tested before backend commit.
+PollyShell owns bounded JSON startup profiles containing hardware identity and
+geometry, not live protocol IDs. Exact unambiguous connector/make/model/serial
+matching is required. The guard's one-shot startup claim survives Shell loss;
+automatic restoration therefore cannot loop within one compositor session.
+Only user-confirmed snapshots are persisted, and restored changes still require
+the normal watchdog confirmation. Missing identities and corrupt profiles never
+silently override the current output layout.
 Since backend commits are not guaranteed atomic, failures attempt restoration
 from a compositor-owned snapshot. Successful changes retain that snapshot and
 a 15-second watchdog until the applying client confirms; client loss or output

@@ -98,7 +98,7 @@ is explicitly deferred, with no polkit or privileged proxy added. Suspend,
 hibernate and automatic lid/power-key actions remain disabled. See `SESSION.md`.
 
 Remaining release gates include protected login/lock, power authorization,
-file/default-app workflows, persistent storage, display/audio profiles, portals/accessibility,
+file/default-app workflows, persistent storage, audio profiles, portals/accessibility,
 installation/recovery, production signing and rollback, hardware qualification
 and redistribution compliance. The ISO demonstrates a bootable development
 desktop, not completion of those requirements.

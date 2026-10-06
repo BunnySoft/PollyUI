@@ -48,6 +48,7 @@ async function run() {
   if (mode === 'denied') {
     window.create({ title: 'Public display rejection', width: 100, height: 100 });
     rejects(() => desktop.outputConfiguration(), 'public clients cannot enumerate managed outputs');
+    rejects(() => desktop.claimOutputStartup(), 'public clients cannot claim display startup restoration');
     rejects(() => desktop.applyOutputConfiguration({ serial: 0, heads: [] }), 'public clients cannot configure outputs');
     rejects(() => desktop.confirmOutputConfiguration(1), 'public clients cannot confirm display changes');
     window.quit(); return;
@@ -84,6 +85,9 @@ async function run() {
     desktop.revertOutputConfiguration(token);
     await until(() => desktop.outputConfiguration().heads.find(head => head.id === target).width === 1280,
       'explicit revert restores the previous mode');
+    desktop.applyOutputConfiguration({ ...desktop.outputConfiguration(), heads: changed.heads });
+    (await confirmation()).window.close();
+    await until(() => !desktop.outputConfiguration().pendingToken, 'closing the confirmation surface reverts immediately');
     const menuWindow = shell.showDisplays(shell.getState().outputs[0]);
     const menu = created.find(item => item.window === menuWindow);
     await click(menu, 'shell-output-' + target + '-width');

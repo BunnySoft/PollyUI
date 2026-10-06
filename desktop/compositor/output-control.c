@@ -41,7 +41,7 @@ struct PuOutputControl {
     struct wlr_output_configuration_v1 *saved;
     uint32_t token, sequence, outcome;
     uint64_t deadline;
-    bool applying;
+    bool applying, startup_claimed;
     const char *rollback_reason, *message;
 };
 
@@ -134,6 +134,7 @@ static bool apply_config(struct PuOutputControl *state, struct wlr_output_config
     if (!states) return false;
     bool ok = wlr_backend_test(state->desktop->backend, states, count);
     if (ok && !test_only) {
+        state->startup_claimed = true;
         state->applying = true;
         ok = wlr_backend_commit(state->desktop->backend, states, count);
         if (ok) {
@@ -315,8 +316,20 @@ static void revert(struct wl_client *client, struct wl_resource *resource, uint3
     }
     rollback(state, "Display changes reverted");
 }
+static void claim_startup(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
+{
+    struct Guard *guard = wl_resource_get_user_data(resource);
+    struct PuOutputControl *state = guard->state;
+    if (client != state->desktop->shell_client) {
+        wl_client_post_implementation_error(client, "Display startup authorization was revoked");
+        return;
+    }
+    bool accepted = !state->startup_claimed && !state->saved && !pu_session_lock_active(state->desktop);
+    state->startup_claimed = true;
+    polly_output_guard_v1_send_startup_claimed(resource, serial, accepted);
+}
 static const struct polly_output_guard_v1_interface guard_impl = {
-    .destroy = destroy_guard, .confirm = confirm, .revert = revert,
+    .destroy = destroy_guard, .confirm = confirm, .revert = revert, .claim_startup = claim_startup,
 };
 static void guard_destroyed(struct wl_resource *resource)
 {
@@ -400,7 +413,7 @@ bool pu_output_control_init(struct PuDesktop *desktop)
     desktop->output_control = state; state->desktop = desktop;
     wl_list_init(&state->outputs); wl_list_init(&state->guards); wl_list_init(&state->owner_destroy.link);
     state->manager = wlr_output_manager_v1_create(desktop->display);
-    state->guard = wl_global_create(desktop->display, &polly_output_guard_v1_interface, 1, state, bind_guard);
+    state->guard = wl_global_create(desktop->display, &polly_output_guard_v1_interface, 2, state, bind_guard);
     state->timer = wl_event_loop_add_timer(wl_display_get_event_loop(desktop->display), expired, state);
     if (!state->manager || !state->guard || !state->timer) return false;
     state->apply.notify = apply_request; wl_signal_add(&state->manager->events.apply, &state->apply);

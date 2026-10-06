@@ -24,6 +24,7 @@ struct Head {
     struct Mode *modes, *pending_mode;
     struct Geometry current, pending;
     char *name, *description, *pending_name, *pending_description;
+    char *identity[3], *pending_identity[3];
     uint32_t id;
     int ready, removed;
 };
@@ -35,6 +36,7 @@ static struct {
     struct polly_output_guard_v1 *guard;
     struct Head *heads;
     uint32_t next_head, serial, token, outcome;
+    uint32_t startup_serial, startup_reply, startup_accepted;
     Uint64 deadline;
     char *message;
     int ready, changed, failed;
@@ -63,8 +65,12 @@ static void head_description(void *data, struct zwlr_output_head_v1 *head, const
 { (void)head; copy_string(&((struct Head *)data)->pending_description, description); }
 static void physical_size(void *data, struct zwlr_output_head_v1 *head, int32_t width, int32_t height)
 { (void)data; (void)head; (void)width; (void)height; }
-static void identity(void *data, struct zwlr_output_head_v1 *head, const char *value)
-{ (void)data; (void)head; (void)value; }
+static void make(void *data, struct zwlr_output_head_v1 *head, const char *value)
+{ (void)head; copy_string(&((struct Head *)data)->pending_identity[0], value); }
+static void model(void *data, struct zwlr_output_head_v1 *head, const char *value)
+{ (void)head; copy_string(&((struct Head *)data)->pending_identity[1], value); }
+static void serial_number(void *data, struct zwlr_output_head_v1 *head, const char *value)
+{ (void)head; copy_string(&((struct Head *)data)->pending_identity[2], value); }
 static void new_mode(void *data, struct zwlr_output_head_v1 *head, struct zwlr_output_mode_v1 *proxy)
 {
     (void)head;
@@ -95,8 +101,8 @@ static void head_finished(void *data, struct zwlr_output_head_v1 *head)
 static const struct zwlr_output_head_v1_listener head_listener = {
     .name = head_name, .description = head_description, .physical_size = physical_size, .mode = new_mode,
     .enabled = enabled, .current_mode = current_mode, .position = position, .transform = transform,
-    .scale = scale, .finished = head_finished, .make = identity, .model = identity,
-    .serial_number = identity, .adaptive_sync = adaptive,
+    .scale = scale, .finished = head_finished, .make = make, .model = model,
+    .serial_number = serial_number, .adaptive_sync = adaptive,
 };
 static void new_head(void *data, struct zwlr_output_manager_v1 *manager, struct zwlr_output_head_v1 *proxy)
 {
@@ -116,6 +122,7 @@ static void free_head(struct Head *head)
 {
     while (head->modes) { struct Mode *next = head->modes->next; free_mode(head->modes); head->modes = next; }
     zwlr_output_head_v1_release(head->proxy);
+    for (unsigned i = 0; i < 3; i++) { free(head->identity[i]); free(head->pending_identity[i]); }
     free(head->name); free(head->description); free(head->pending_name); free(head->pending_description); free(head);
 }
 static void done(void *data, struct zwlr_output_manager_v1 *manager, uint32_t serial)
@@ -128,6 +135,9 @@ static void done(void *data, struct zwlr_output_manager_v1 *manager, uint32_t se
         if (head->pending_name) { free(head->name); head->name = head->pending_name; head->pending_name = NULL; }
         if (head->pending_description) {
             free(head->description); head->description = head->pending_description; head->pending_description = NULL;
+        }
+        for (unsigned i = 0; i < 3; i++) if (head->pending_identity[i]) {
+            free(head->identity[i]); head->identity[i] = head->pending_identity[i]; head->pending_identity[i] = NULL;
         }
         struct Mode **mode_link = &head->modes;
         while (*mode_link) {
@@ -167,7 +177,16 @@ static void guard_state(void *data, struct polly_output_guard_v1 *guard, uint32_
     copy_string(&output.message, message);
     output.changed = 1;
 }
-static const struct polly_output_guard_v1_listener guard_listener = { .state = guard_state };
+static void startup_claimed(void *data, struct polly_output_guard_v1 *guard, uint32_t serial, uint32_t accepted)
+{
+    (void)data; (void)guard;
+    if (serial != output.startup_serial) return;
+    output.startup_reply = serial;
+    output.startup_accepted = accepted;
+}
+static const struct polly_output_guard_v1_listener guard_listener = {
+    .state = guard_state, .startup_claimed = startup_claimed,
+};
 
 int pu_output_client_bind(struct wl_display *display, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
@@ -183,7 +202,7 @@ int pu_output_client_bind(struct wl_display *display, struct wl_registry *regist
     if (!strcmp(interface, "polly_output_guard_v1")) {
         if (output.guard) return 1;
         output.display = display;
-        output.guard = wl_registry_bind(registry, name, &polly_output_guard_v1_interface, 1);
+        output.guard = wl_registry_bind(registry, name, &polly_output_guard_v1_interface, version < 2 ? version : 2);
         if (!output.guard || polly_output_guard_v1_add_listener(output.guard, &guard_listener, NULL) < 0)
             output.failed = output.changed = 1;
         return 1;
@@ -220,6 +239,9 @@ static JSValue configuration(JSContext *ctx, JSValueConst self, int argc, JSValu
         int ok = property(ctx, item, "id", JS_NewUint32(ctx, head->id)) &&
             property(ctx, item, "name", JS_NewString(ctx, head->name ? head->name : "")) &&
             property(ctx, item, "description", JS_NewString(ctx, head->description ? head->description : "")) &&
+            property(ctx, item, "make", JS_NewString(ctx, head->identity[0] ? head->identity[0] : "")) &&
+            property(ctx, item, "model", JS_NewString(ctx, head->identity[1] ? head->identity[1] : "")) &&
+            property(ctx, item, "serialNumber", JS_NewString(ctx, head->identity[2] ? head->identity[2] : "")) &&
             property(ctx, item, "enabled", JS_NewBool(ctx, g->enabled)) &&
             property(ctx, item, "width", JS_NewInt32(ctx, g->width)) &&
             property(ctx, item, "height", JS_NewInt32(ctx, g->height)) &&
@@ -378,10 +400,26 @@ static JSValue confirm(JSContext *ctx, JSValueConst self, int argc, JSValueConst
     return JS_UNDEFINED;
 }
 
+static JSValue claim_profile_startup(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure(ctx)) return JS_EXCEPTION;
+    if (polly_output_guard_v1_get_version(output.guard) < 2)
+        return JS_ThrowTypeError(ctx, "Startup display profiles require output guard version 2");
+    if (!++output.startup_serial) ++output.startup_serial;
+    output.startup_reply = 0;
+    polly_output_guard_v1_claim_startup(output.guard, output.startup_serial);
+    if (!pu_desktop_windows_roundtrip() || output.startup_reply != output.startup_serial ||
+        output.startup_accepted > 1)
+        return JS_ThrowInternalError(ctx, "Display startup claim was not acknowledged");
+    return JS_NewBool(ctx, output.startup_accepted == 1);
+}
+
 int pu_output_client_install(JSContext *ctx, JSValueConst api)
 {
     output.ctx = ctx; output.api = JS_DupValue(ctx, api);
     return property(ctx, api, "outputConfiguration", JS_NewCFunction(ctx, configuration, "outputConfiguration", 0)) &&
+        property(ctx, api, "claimOutputStartup", JS_NewCFunction(ctx, claim_profile_startup, "claimOutputStartup", 0)) &&
         property(ctx, api, "applyOutputConfiguration", JS_NewCFunctionMagic(ctx, apply, "applyOutputConfiguration", 1, JS_CFUNC_generic_magic, 0)) &&
         property(ctx, api, "testOutputConfiguration", JS_NewCFunctionMagic(ctx, apply, "testOutputConfiguration", 1, JS_CFUNC_generic_magic, 1)) &&
         property(ctx, api, "confirmOutputConfiguration", JS_NewCFunctionMagic(ctx, confirm, "confirmOutputConfiguration", 1, JS_CFUNC_generic_magic, 0)) &&

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_output_guard_v1">
-  <interface name="polly_output_guard_v1" version="1">
+  <interface name="polly_output_guard_v1" version="2">
     <description summary="trusted confirmation of output-management changes">
       Output state and configuration use wlr-output-management. Successful
       applies remain provisional for 15 seconds. Only the applying Shell client
@@ -19,6 +19,19 @@
       <arg name="remaining_ms" type="uint"/>
       <arg name="outcome" type="uint" summary="0 pending/idle, 1 kept, 2 reverted, 3 recovery failed"/>
       <arg name="message" type="string"/>
+    </event>
+    <request name="claim_startup" since="2">
+      <description summary="claim the session's single automatic profile restore attempt">
+        Only the first trusted claim before any applied display configuration
+        succeeds. The claim remains consumed after rejection, timeout or Shell
+        restart, preventing automatic retry loops. It never applies a profile
+        or bypasses the ordinary output-management confirmation policy.
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+    <event name="startup_claimed" since="2">
+      <arg name="serial" type="uint"/>
+      <arg name="accepted" type="uint"/>
     </event>
   </interface>
 </protocol>

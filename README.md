@@ -742,7 +742,8 @@ be recreated by software.
 
 `desktop.outputConfiguration()` returns `{serial, heads, pendingToken,
 remainingMs, outcome, message}`. Each head has a runtime-local ID, name,
-enabled state, resolution/refresh, scale/transform, logical position, advertised
+manufacturer (`make`), model and `serialNumber`, enabled state,
+resolution/refresh, scale/transform, logical position, advertised
 modes and adaptive-sync state. `testOutputConfiguration(snapshot)` is
 non-mutating; `applyOutputConfiguration(snapshot)` requires a complete, current
 snapshot and returns a confirmation token. Use
@@ -757,8 +758,28 @@ with the compositor. Current safety bounds include scale 0.25–4, hardware
 dimensions up to 16384, 32 Mi pixels per output and bounded logical coordinates;
 backend support remains authoritative.
 
-Kept changes currently last for the compositor session. Startup display
-profiles and physical DRM/HDR/VRR qualification remain separate work.
+PollyShell saves only confirmed layouts as a versioned JSON document under
+`desktop.displays.v1` in its existing `localStorage`. This first stage remembers
+one last-confirmed display combination, not application/window placement.
+Connection-local IDs and protocol serials are never persisted. On fresh startup,
+connector, manufacturer, model and device serial must match the complete saved
+combination. Missing/placeholder serials, duplicate hardware identities or
+missing/replaced displays prevent automatic restoration; the safe current layout
+is retained. EDID identity is a matching aid, not a hardware-authentication claim.
+
+If the matching layout actually differs, it is applied provisionally with the
+same 15-second Keep/Revert watchdog. Unchanged layouts need no confirmation.
+Output-guard version 2 provides the trusted `claimOutputStartup()` one-shot
+claim, so Shell reconnect cannot repeatedly reapply an unconfirmed or rejected
+startup profile. Closing a confirmation overlay reverts immediately; a frozen
+Shell still falls back to the compositor's timer.
+
+Invalid profiles are reported without overwriting them. Forget saved layout
+removes only the preference, leaving current outputs unchanged. If saving fails
+after Keep, the display change remains kept and the storage failure is reported.
+Profile data is limited to 64 KiB with validated geometry and bounded identity
+strings. Physical DRM/HDR/VRR qualification and automatic hotplug profile switching
+remain separate work. Memory-only Live sessions still lose settings at shutdown.
 
 ### Linux manual workspaces
 

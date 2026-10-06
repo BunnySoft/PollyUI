@@ -41,6 +41,19 @@ static struct wlr_pointer pointer;
 static const struct wlr_keyboard_impl keyboard_impl = { .name = "runtime-fixture-keyboard" };
 static const struct wlr_pointer_impl pointer_impl = { .name = "runtime-fixture-pointer" };
 static wl_notify_func_t input_listener;
+static wl_notify_func_t output_listener;
+static bool missing_display_identity;
+
+static void identified_output(struct wl_listener *listener, void *data)
+{
+    struct wlr_output *output = data;
+    free(output->make); free(output->model); free(output->serial);
+    output->make = strdup("Polly fixture");
+    output->model = strdup("Virtual display");
+    output->serial = strdup(missing_display_identity ? "" : output->name);
+    if (!output->make || !output->model || !output->serial) { desktop.failed = true; return; }
+    output_listener(listener, data);
+}
 
 static void synthetic_input(struct wl_listener *listener, void *data)
 {
@@ -647,12 +660,15 @@ static bool window_suite(char *executable, char *script, char *mode)
 
 int main(int argc, char **argv)
 {
-    if (argc != 3 && argc != 4) return 2;
+    if (argc != 3 && argc != 4 && argc != 5) return 2;
+    missing_display_identity = argc == 5 && !strcmp(argv[4], "unknown");
     wlr_log_init(WLR_INFO, NULL);
     bool ready = pu_desktop_init(&desktop, "runtime-client");
     if (ready) {
         input_listener = desktop.new_input.notify;
         desktop.new_input.notify = synthetic_input;
+        output_listener = desktop.new_output.notify;
+        desktop.new_output.notify = identified_output;
         ready = pu_desktop_start(&desktop);
     }
     bool passed = false;
@@ -661,13 +677,13 @@ int main(int argc, char **argv)
         wlr_pointer_init(&pointer, &pointer_impl, "runtime-fixture-pointer");
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
-        passed = argc == 4 ? window_suite(argv[1], argv[2], "initial") &&
+        passed = argc == 5 ? window_suite(argv[1], argv[2], argv[4]) : argc == 4 ? window_suite(argv[1], argv[2], "initial") &&
             window_suite(argv[1], argv[2], "reload") : suite(argv[1], argv[2]);
         wlr_pointer_finish(&pointer);
         wlr_keyboard_finish(&keyboard);
     }
     pu_desktop_finish(&desktop);
-    if (passed) puts(argc == 4 ? "PASS: native Shell window/workspace controls and reconnect" :
+    if (passed) puts(argc >= 4 ? "PASS: native Shell window/workspace controls and reconnect" :
         "PASS: actual PollyUI layers, input, two outputs, fractional scale, rotation, removal and close");
     return passed ? 0 : 1;
 }

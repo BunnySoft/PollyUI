@@ -27,8 +27,8 @@ applications rather than importing their buffers into the PollyUI DOM.
 |---|---|
 | 1 - implemented here | Standalone compositor, two real xdg-shell clients, rendering/frame callbacks, focus, move/resize, close, lifecycle and nested WSLg execution. |
 | 2a - implemented here | Maximize/fullscreen/restore, output-aware placement and migration, logical output geometry, and popup constraints. Independent clients exercise delayed/skipped configures, nested menus and simulated output changes. |
-| 2b - remaining window policy | Tiling/overview and advanced window rules, startup display profiles and real-hardware hotplug qualification. |
-| Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls, complete-snapshot validation, and compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
+| 2b - remaining window policy | Tiling/overview, advanced window rules and real-hardware hotplug qualification. |
+| Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls; confirmed layout persistence with exact-identity startup restoration; compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
 | Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. |
 | Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
@@ -151,9 +151,15 @@ error, not a claim that the previous state was restored.
 Logical geometry is advertised through `xdg-output`, which is necessary for
 SDL clients to agree with fractional scales and output positions. Temporarily
 disabled outputs regain their compositor work-area owner when re-enabled.
-Settings currently persist within the running compositor session; startup
-profiles remain a later persistence task. Physical GPU/DRM and HDR/VRR support
-still require dedicated hardware qualification.
+PollyShell saves the last confirmed display combination in its own validated
+JSON preferences. Startup restoration requires exact connector/make/model/serial
+matching and unambiguous hardware identities; missing or replaced displays retain
+safe defaults. A differing layout still needs 15-second confirmation, while an
+unchanged layout does nothing. A compositor-owned one-shot startup claim prevents
+Shell reconnect from retrying rejected profiles. Corrupt data is reported and
+preserved, and Forget saved layout changes no live outputs. This does not add
+disk persistence to the Live image or automatically switch profiles on hotplug.
+Physical GPU/DRM and HDR/VRR support still require dedicated hardware qualification.
 
 ## Server-side window decorations
 
@@ -409,8 +415,8 @@ are not implemented. Clipboard ownership is not persisted after the source exits
 
 Not implemented: tiling/overview, Xwayland, full session recovery,
 PollyUI outgoing drag sources, screen capture/portals, advanced typography,
-secure lock, full desktop services or installer. Display settings
-are available, but startup display profiles are not persisted yet.
+secure lock, full desktop services or installer. Display settings and
+guarded startup profiles are available; physical-device qualification remains.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
 forced clipping). Multi-output/HiDPI and DRM/seat access still need real-hardware
 qualification; **WSLg is not evidence of native GPU/DRM or boot readiness**.
@@ -819,8 +825,8 @@ PollyShell owns the JSON preference parsing and persistence; the compositor
 accepts a bounded startup transaction only before ordinary applications or
 workspace operations. Shell reconnect never overwrites current live workspaces.
 Invalid preferences remain untouched with an error and an explicit Save current
-layout recovery action. Full application/window session restoration, startup
-display profiles and persistent audio policy remain separate work. The Live
+layout recovery action. Full application/window session restoration and
+persistent audio policy remain separate work. The Live
 root is still memory-only, so guest shutdown discards saved preferences.
 The root README documents the native workspace API and ID lifetime.
 

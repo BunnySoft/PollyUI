@@ -28,4 +28,5 @@ theme-configuration.mjs
 desktop-theme-client.mjs
 native-shell.mjs
 workspace-preferences.mjs
+display-profiles.mjs
 desktop-applications.mjs

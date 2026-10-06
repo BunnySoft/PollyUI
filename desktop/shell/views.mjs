@@ -282,7 +282,7 @@ export function switcherView(theme, snapshot, accept, rows = theme.layout.switch
   label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, 10));
 }
 
-export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '') {
+export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null) {
   const label = labelFor(theme);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width);
   return h('view', { id: 'shell-displays', style: {
@@ -322,7 +322,8 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
         label('0 = auto', theme.colors.muted, 10)),
     ] : label('Enable this display to edit its configuration.', theme.colors.muted, 10)))),
   label('Keep changes within 15 seconds or they revert.', theme.colors.muted, 10),
-  label('Startup display profiles are not saved yet.', theme.colors.muted, 10),
+  profile ? label(profile.status, theme.colors.muted, 10) : null,
+  profile ? button('shell-output-forget-profile', 'Forget saved layout', theme, profile.forget) : null,
   error ? label(error, theme.colors.text, 11) : null);
 }
 
