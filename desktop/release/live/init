@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mkdir -p /proc /sys /dev /run /tmp
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts /dev/shm
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o mode=1777 tmpfs /dev/shm
+mount -t tmpfs -o mode=0755 tmpfs /run
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+echo "PollyDesktop Live: memory-only root; no block-device installation." >/dev/console
+exec /sbin/init

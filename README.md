@@ -1009,8 +1009,10 @@ a separate simulated appearance preview. An opt-in Rime input-method service
 renders its own candidate windows with PollyUI, without GNOME/KDE or GLib/GIO.
 A relocatable Alpine runtime bundle now includes a private patched SDL,
 dependency inventory, license notices and checksums; it can start in a clean,
-non-root container without the source checkout or SDK. A bootable Alpine image
-and the remaining system services are still later stages. See the desktop guide for
+non-root container without the source checkout or SDK. A separate memory-only
+x86_64 UEFI development ISO boots the ordinary-user desktop with OpenRC/seatd
+in a disposable VM. It is not an installer or a production-qualified release;
+protected login, secure lock, updates and hardware qualification remain. See the desktop guide for
 the architecture, roadmap, standalone build and WSL/WSLg checks.
 
 ## License

@@ -3,8 +3,9 @@
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
 compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
 It includes a native development **PollyShell** with themed wallpaper, panels,
-Dock and appearance settings. It is **not yet a complete desktop system or a
-bootable distribution**.
+Dock and appearance settings. An unsigned, memory-only x86_64 UEFI development
+ISO now boots this desktop in a disposable VM. It is **not yet a complete,
+production-qualified desktop distribution**; see **[Live image](./LIVE.md)**.
 
 ## Architecture and implementation plan
 
@@ -49,6 +50,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | Runtime packaging | Relocatable Alpine x86_64 installation, private patched SDL, pinned runtime package list, dependency inventory, licenses and SHA-256 checksums. This is a development runtime bundle, not an ISO or a qualified distribution release. |
+| UEFI Live development image | Memory-only root, Alpine/OpenRC + seatd, temporary ordinary-user automatic login, guest DRM/libinput desktop and keyboard workspace switching. OVMF/KVM verified; no disk installer, protected login, secure lock, signing trust or physical hardware qualification. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -612,10 +614,11 @@ never assumes that such a checkout is clean. Exact package versions depend on
 their continued availability in Alpine repositories: an archived APK mirror
 and bit-for-bit reproducible build are not provided yet.
 
-This artifact is explicitly a **development runtime bundle, not a bootable
-distribution**. Bootloader/kernel/live-root integration, non-root DRM/VT seats,
-login/authentication, secure lock, installer/persistence/recovery, update trust
-and hardware qualification remain separate release gates. The dependency
+This artifact is explicitly a **development runtime bundle, not itself an ISO**.
+The separate [Live image builder](./LIVE.md) adds a kernel, UEFI boot and
+temporary ordinary-user seatd session. Protected login/authentication, secure
+lock, installer/persistence/recovery, update trust and hardware qualification
+remain separate release gates. The dependency
 inventory is not a completed third-party source/license-compliance audit.
 
 ## Run nested in an existing Wayland session

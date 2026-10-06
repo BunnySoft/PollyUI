@@ -1,0 +1,10 @@
+#!/sbin/openrc-run
+description="Prepare the ephemeral PollyDesktop user's runtime"
+depend() {
+    need localmount
+    before seatd
+}
+start() {
+    checkpath --directory --mode 0755 /run/user
+    checkpath --directory --owner polly:polly --mode 0700 /run/user/1000
+}
