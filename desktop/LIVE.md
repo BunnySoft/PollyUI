@@ -138,6 +138,12 @@ hibernate and automatic lid/power-key actions remain disabled. See `SESSION.md`.
 
 ## First physical target and acceptance
 
+On 2026-10-06 the user reported that alpha.4 passed validation on the selected
+physical machine. This is user-reported first-stage acceptance, not separately
+collected per-GPU/connector measurements or qualification of a wider hardware
+matrix. These Alpine artifacts remain the fallback baseline while the planned
+[Debian minbase migration](../docs/desktop-base-maintenance.md) is evaluated.
+
 The selected machine is an i7-13700K on ASUS ROG STRIX B760-G GAMING WIFI,
 with Intel UHD770, RTX4070Ti and RTX4060Ti, Intel I226-V Ethernet and AX211 Wi-Fi.
 Samsung 990 PRO 4TB, SanDisk SDSSDXPS480G and WD_BLACK SN770 2TB are **internal

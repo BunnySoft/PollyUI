@@ -2,6 +2,13 @@
 
 状态：用户已要求按顺序实施。T1–T5 的首阶段主题机制已实现，使用说明见 `desktop\THEMES.md`；发行部分尚未完成。
 
+2026-10-06 更新：用户已报告 alpha.4 在选定实体机上验证通过。
+后续底座方向确定为 Debian 13 trixie amd64 的 `debootstrap --variant=minbase`
+最小 rootfs，不采用 KDE/GNOME Live 或直接使用 slim 容器作为实机系统。
+原则、上游维护同步与第二阶段实施顺序以
+[底座选择与维护同步计划](./desktop-base-maintenance.md)为准。
+下文的 alpha.3/alpha.4“待验证”描述保留为当时的阶段记录，不表示当前仍未收到实机反馈。
+
 ## 首次发版目标：实体机基础功能验证
 
 用户最新明确：首次发版不是完成大而全的桌面发行版，而是把已有的

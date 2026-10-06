@@ -7,6 +7,15 @@ Dock and appearance settings. An unsigned, memory-only x86_64 UEFI development
 ISO now boots this desktop in a disposable VM. It is **not yet a complete,
 production-qualified desktop distribution**; see **[Live image](./LIVE.md)**.
 
+The user reported successful first-target physical validation of Alpine alpha.4
+on 2026-10-06; this is not a comprehensive hardware matrix or independent
+per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,
+built from a debootstrap minbase rootfs**, not a GNOME/KDE Live image or a
+bootable use of the slim container image. Migration and maintenance automation
+are not implemented yet. The existing Alpine build remains the verified baseline;
+see [base selection and maintenance plan](../docs/desktop-base-maintenance.md)
+for version pinning, upstream synchronization, acceptance and rollback policy.
+
 ## Architecture and implementation plan
 
 Keep three boundaries:
