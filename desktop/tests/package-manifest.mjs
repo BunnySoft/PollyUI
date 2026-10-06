@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const root = path.resolve(process.argv[2]);
+execFileSync('python3', ['desktop/tests/package-modes.py', root], { stdio: 'inherit' });
 const read = name => readFileSync(path.join(root, name), 'utf8');
 const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const manifest = JSON.parse(read('manifest.json'));

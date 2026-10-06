@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -36,6 +37,8 @@ def main():
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     version = (repo / "desktop/VERSION").read_text().strip()
+    if not re.fullmatch(r"\d+\.\d+\.\d+-alpha\.\d+", version):
+        raise ValueError("Invalid Live development version")
     if len(args.source_revision) != 40 or any(c not in "0123456789abcdef" for c in args.source_revision):
         raise ValueError("Expected a full source revision")
     output = args.output.resolve()

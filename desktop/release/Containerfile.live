@@ -1,4 +1,4 @@
-ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.2
+ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.3
 FROM ${RUNTIME_IMAGE} AS live-base
 USER root
 WORKDIR /
@@ -12,6 +12,8 @@ COPY system/login.pam /etc/pam.d/login
 COPY system/polly-lock.pam /etc/pam.d/polly-lock
 COPY system/elogind-polly.conf /etc/elogind/logind.conf.d/50-polly.conf
 RUN chmod 755 /init /usr/bin/polly-live-session && \
+    chmod 644 /etc/inittab /etc/pam.d/login /etc/pam.d/polly-lock \
+        /etc/elogind/logind.conf.d/50-polly.conf /usr/share/pollyui/desktop/shell/live.mjs && \
     addgroup polly audio && \
     sed -i 's|^polly:\(.*\):/bin/sh$|polly:\1:/usr/bin/polly-live-session|' /etc/passwd && \
     printf '/usr/bin/polly-live-session\n' >> /etc/shells && \

@@ -104,7 +104,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null) {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null) {
   const label = labelFor(theme);
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
@@ -140,6 +140,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   displays ? button('shell-display-settings', 'Displays', theme, displays) : null,
   network ? button('shell-network-settings-open', 'Wi-Fi', theme, network) : null,
   audio ? button('shell-audio-settings-open', 'Audio', theme, audio) : null,
+  power ? button('shell-power-settings-open', 'Power', theme, power) : null,
   error ? h('view', { role: 'alert', style: { gap: theme.layout.controlGap, padding: theme.layout.serviceButtonPadding, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11),
     button('shell-retry', 'Retry', theme, retry)) : null,

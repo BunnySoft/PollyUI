@@ -18,6 +18,27 @@ until lock-before-suspend behavior is implemented. It does not grant additional
 power privileges or bypass elogind authorization. A successful D-Bus method
 allow rule is not proof that the daemon authorizes an action.
 
+## Capability-gated power controls
+
+PollyShell's Power panel offers shutdown/restart only when the root-owned
+login1 service reports `yes` for the current PID's active, local, same-user
+seat session. Opening the confirmation or cancelling it performs no action.
+Confirmation rechecks the session and capability before making a noninteractive
+request; stale state, service loss and `challenge` authorization do not bypass
+the daemon. Suspend and hibernate remain unsupported.
+
+**Actual Live power authorization is deferred.** In the PAM/elogind UEFI guest,
+`CanPowerOff` and `CanReboot` return `Access denied`; the panel reports the
+failure and keeps both actions disabled. No real shutdown/restart is claimed.
+The project does not install polkit, grant new power privileges or add a
+privileged authorization proxy. This is an explicit scope decision, not a
+silent fallback to a different power command.
+
+The isolated `desktop-power-shell-raster` and `desktop-power-shell-gl` fixtures
+exercise native pointer confirmation/cancellation, capability gating and service
+loss against a test-only login1 provider. They never control the host's daemon
+and are not evidence that the Live guest has power authorization.
+
 ## Independent authentication helper
 
 Build the opt-in target:

@@ -21,12 +21,12 @@ hardware compatibility.
 
 ## Build
 
-First generate and verify the `0.1.0-alpha.2` runtime package and its runtime
+First generate and verify the `0.1.0-alpha.3` runtime package and its runtime
 container as described in `README.md`. Then, from the repository root in Linux:
 
 ```sh
-POLLY_RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.2 \
-    sh desktop/tools/build-live.sh dist/pollydesktop-0.1.0-alpha.2-live
+POLLY_RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.3 \
+    sh desktop/tools/build-live.sh dist/pollydesktop-0.1.0-alpha.3-live
 ```
 
 The script builds two scoped Podman images: `localhost/polly-live-base` and
@@ -62,7 +62,7 @@ TCG without changing host permissions.
 podman run --rm --network=none --device /dev/kvm --user 1000:1000 \
     -v "$PWD:/workspace" localhost/polly-live-tools \
     python3 /workspace/desktop/tests/live-boot.py \
-    /workspace/dist/pollydesktop-0.1.0-alpha.2-live/pollydesktop-0.1.0-alpha.2-x86_64-uefi-live.iso \
+    /workspace/dist/pollydesktop-0.1.0-alpha.3-live/pollydesktop-0.1.0-alpha.3-x86_64-uefi-live.iso \
     /workspace/build/live-boot
 ```
 
@@ -91,6 +91,11 @@ After boot, the ordinary user's desktop opens a welcome window. The Polly menu
 launches applications; Appearance exposes JSON themes and settings. Workspaces
 remain global/manual. Alt+Escape ends the desktop and leaves an ordinary-user
 shell on tty1 rather than repeatedly crashing/restarting the GUI.
+
+Power settings show the actual elogind capability failure and disable shutdown
+and restart. The current guest returns `Access denied`; authorization integration
+is explicitly deferred, with no polkit or privileged proxy added. Suspend,
+hibernate and automatic lid/power-key actions remain disabled. See `SESSION.md`.
 
 Remaining release gates include protected login/lock, power authorization,
 file/default-app workflows, cross-login persistence, portals/accessibility,

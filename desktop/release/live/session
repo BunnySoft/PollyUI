@@ -15,6 +15,13 @@ cd "$HOME"
 logger -t polly-live "Starting ordinary user desktop, uid=$(id -u), tty=$(tty)"
 loginctl show-session "$XDG_SESSION_ID" --property=Active --property=User --property=Seat | logger -t polly-login
 logger -t polly-live "POLLY_SESSION_REGISTERED uid=$(id -u) id=$XDG_SESSION_ID"
+for capability in CanPowerOff CanReboot; do
+    if value=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "$capability"); then
+        logger -t polly-live "POLLY_POWER_CAPABILITY $capability=$value"
+    else
+        logger -t polly-live "POLLY_POWER_CAPABILITY $capability=unavailable"
+    fi
+done
 {
     if sh /usr/share/pollyui/desktop/tools/run-session.sh --ime --audio \
         /usr/bin/pollywm /usr/bin/pollyui /usr/share/pollyui/desktop/shell/live.mjs; then

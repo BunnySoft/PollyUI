@@ -24,6 +24,16 @@ for (const [text, size] of [
   Object.assign(label.style, { fontSize: size, color: '#20304a', flexShrink: 0 });
   body.appendChild(label);
 }
+const power = guide.document.createElement('view');
+power.textContent = 'Power settings';
+power.tabIndex = 0;
+power.setAttribute('role', 'button');
+Object.assign(power.style, { padding: 10, color: '#ffffff', backgroundColor: '#245dc9', fontSize: 14, borderRadius: 6 });
+power.addEventListener('click', () => shell.showPower(shell.getState().outputs[0]));
+power.addEventListener('keydown', event => {
+  if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); shell.showPower(shell.getState().outputs[0]); }
+});
+body.appendChild(power);
 setTimeout(() => {
   if (!shell.getState().outputs.length || shell.getState().error) {
     console.error('Polly Live startup failed: ' + shell.getState().error);

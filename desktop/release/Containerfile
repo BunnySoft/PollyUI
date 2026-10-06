@@ -2,7 +2,7 @@ FROM docker.io/library/alpine:3.24
 COPY runtime-packages.txt /tmp/runtime-packages.txt
 RUN apk add --no-cache $(cat /tmp/runtime-packages.txt) && \
     rm /tmp/runtime-packages.txt && adduser -D -u 1000 polly
-COPY rootfs/ /
+ADD pollydesktop-*-alpine3.24-x86_64.tar.gz /
 USER polly
 WORKDIR /home/polly
 ENV PU_RENDERER=raster SDL_RENDER_DRIVER=software

@@ -155,7 +155,8 @@ try {
     for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const file = path.join(directory, entry.name), name = path.posix.join(relative, entry.name);
       if (entry.isDirectory()) inventory(file, name);
-      else if (entry.isFile()) manifest.files.push({ path: name, sha256: hash(file), size: lstatSync(file).size });
+      else if (entry.isFile()) manifest.files.push({ path: name, sha256: hash(file), size: lstatSync(file).size,
+        mode: name.startsWith('usr/bin/') || (name.startsWith('usr/share/pollyui/desktop/tools/') && name.endsWith('.sh')) ? '0755' : '0644' });
       else throw new Error('Unexpected non-regular package payload: ' + file);
     }
   }
@@ -163,7 +164,7 @@ try {
   writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(path.join(staging, 'sbom.spdx.json'), JSON.stringify(sbom, null, 2) + '\n');
   const archive = 'pollydesktop-' + version + '-alpine3.24-x86_64.tar.gz';
-  run('tar', ['-czf', path.join(staging, archive), '-C', root, '.']);
+  run('python3', [path.join(repo, 'desktop/tools/package-tar.py'), root, path.join(staging, archive)]);
   const artifacts = [archive, 'manifest.json', 'sbom.spdx.json', 'runtime-packages.txt', 'Containerfile'];
   writeFileSync(path.join(staging, 'SHA256SUMS'), artifacts.map(file => hash(path.join(staging, file)) + '  ' + file).join('\n') + '\n');
   renameSync(staging, output);

@@ -52,6 +52,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Runtime packaging | Relocatable Alpine x86_64 installation, private patched SDL, pinned runtime package list, dependency inventory, licenses and SHA-256 checksums. This is a development runtime bundle, not an ISO or a qualified distribution release. |
 | UEFI Live development image | Memory-only root, Alpine/OpenRC + PAM/elogind session, temporary ordinary-user automatic login, guest DRM/libinput desktop and keyboard workspace switching. OVMF/KVM verified; no disk installer, protected login, secure lock, signing trust or physical hardware qualification. |
 | Authentication and lock mechanism | Ordinary-user PAM helper, separately trusted standard session-lock client, native password UI and crash/output-loss black-cover protection. Real masked typing/PAM unlock verified; protected-session/power integration remains incomplete and the passwordless Live keeps locking disabled. See `SESSION.md`. |
+| Power controls - authorization deferred | Native login1 capability checks and themed confirmation/cancellation; actual Live elogind denies shutdown/restart, so both remain disabled. No polkit or privileged authorization proxy. Suspend/hibernate remain unavailable. See `SESSION.md`. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
@@ -604,6 +605,11 @@ Outputs include the installable `.tar.gz`, `rootfs/`, exact Alpine runtime
 package versions, a file/hash/source manifest, an SPDX 2.3 dependency inventory,
 license notices, the SDL patch and `SHA256SUMS`. Libraries normally supplied by
 Alpine are not bundled in the tarball; the supplied Containerfile installs them.
+The tarball explicitly records root ownership, 0755 directories/executables and
+0644 data/configuration. The runtime Containerfile extracts this archive instead
+of copying a Windows-backed staging tree, whose mode bits may not preserve POSIX
+permissions. Treat `rootfs/` as inspection/staging data; deploy the archive or
+perform a native CMake install.
 The package list can contain dependencies of independent applications such as
 foot, including distro HarfBuzz/GLib; our own ELF dependency check still rejects
 GLib/GIO/GObject and shared HarfBuzz. Artifact checksums are not update signatures.

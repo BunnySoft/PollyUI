@@ -13,7 +13,9 @@ else
     dirty=0
     if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then dirty=1; fi
 fi
-runtime=${POLLY_RUNTIME_IMAGE:-localhost/pollydesktop-alpha:0.1.0-alpha.2}
+version=$(tr -d '\r' < desktop/VERSION)
+case "$version" in ''|*[!a-zA-Z0-9.+_-]*) echo "Invalid Live version" >&2; exit 2 ;; esac
+runtime=${POLLY_RUNTIME_IMAGE:-localhost/pollydesktop-alpha:$version}
 runtime_id=$(podman image inspect --format '{{.Id}}' "$runtime")
 temporary=$(mktemp -d)
 container=
