@@ -61,7 +61,22 @@ static struct {
     uint32_t appearance_serial, appearance_reply;
     int appearance_phase, appearance_accepted;
     char appearance_error[192];
+    uint32_t restore_serial, restore_reply, restore_result;
+    char restore_error[192];
 } control;
+
+static void workspace_restored(void *data, struct polly_workspace_toplevel_manager_v1 *manager,
+                               uint32_t serial, uint32_t result, const char *message)
+{
+    (void)data; (void)manager;
+    if (serial != control.restore_serial) return;
+    control.restore_reply = serial;
+    control.restore_result = result;
+    snprintf(control.restore_error, sizeof(control.restore_error), "%s", message);
+}
+static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
+    .restored = workspace_restored,
+};
 
 static void appearance_prepared(void *data, struct polly_appearance_v1 *appearance,
                                 uint32_t serial, uint32_t accepted, const char *message)
@@ -352,8 +367,11 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             ext_workspace_manager_v1_add_listener(control.workspace_manager, &workspace_manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
-        control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface, 1);
-        if (!control.workspace_toplevels) control.failed = control.changed = 1;
+        control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
+            version < 2 ? version : 2);
+        if (!control.workspace_toplevels ||
+            polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
+                &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
     } else if (!control.seat && !strcmp(interface, "wl_seat")) {
         control.seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
         if (!control.seat || wl_seat_add_listener(control.seat, &seat_listener, NULL) < 0)
@@ -542,6 +560,113 @@ static JSValue create_workspace(JSContext *ctx, JSValueConst self, int argc, JSV
     ext_workspace_group_handle_v1_create_workspace(control.workspace_group, name ? name : "");
     JS_FreeCString(ctx, name);
     return workspace_commit(ctx);
+}
+
+static int ensure_workspace_settings(JSContext *ctx)
+{
+    if (!ensure_workspaces(ctx)) return 0;
+    if (polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 2) {
+        JS_ThrowTypeError(ctx, "Workspace preferences require PollyWM workspace protocol version 2");
+        return 0;
+    }
+    return 1;
+}
+
+static const char *workspace_setting_name(JSContext *ctx, JSValueConst value, size_t *length)
+{
+    if (!JS_IsString(value)) { JS_ThrowTypeError(ctx, "Workspace name must be a string"); return NULL; }
+    const char *name = JS_ToCStringLen(ctx, length, value);
+    if (!name) return NULL;
+    if (!*length || *length > 128 || memchr(name, 0, *length)) {
+        JS_FreeCString(ctx, name);
+        JS_ThrowRangeError(ctx, "Workspace name must contain 1 to 128 UTF-8 bytes without NUL");
+        return NULL;
+    }
+    return name;
+}
+
+static JSValue rename_workspace(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!ensure_workspace_settings(ctx)) return JS_EXCEPTION;
+    if (argc != 2) return JS_ThrowTypeError(ctx, "Workspace ID and name are required");
+    struct DesktopWorkspace *workspace = find_workspace(ctx, argv[0]);
+    if (!workspace) return JS_EXCEPTION;
+    size_t length;
+    const char *name = workspace_setting_name(ctx, argv[1], &length);
+    if (!name) return JS_EXCEPTION;
+    polly_workspace_toplevel_manager_v1_rename(control.workspace_toplevels,
+        control.workspace_manager, workspace->handle, name);
+    JS_FreeCString(ctx, name);
+    return workspace_commit(ctx);
+}
+
+static JSValue reorder_workspace(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!ensure_workspace_settings(ctx)) return JS_EXCEPTION;
+    if (argc != 2) return JS_ThrowTypeError(ctx, "Workspace ID and position are required");
+    struct DesktopWorkspace *workspace = find_workspace(ctx, argv[0]);
+    if (!workspace) return JS_EXCEPTION;
+    double position;
+    if (!JS_IsNumber(argv[1]) || JS_ToFloat64(ctx, &position, argv[1]) < 0 ||
+        !isfinite(position) || position < 0 || position > UINT32_MAX || position != (uint32_t)position)
+        return JS_ThrowRangeError(ctx, "Workspace position must be a nonnegative integer");
+    polly_workspace_toplevel_manager_v1_reorder(control.workspace_toplevels,
+        control.workspace_manager, workspace->handle, (uint32_t)position);
+    return workspace_commit(ctx);
+}
+
+static JSValue restore_workspaces(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (!ensure_workspace_settings(ctx)) return JS_EXCEPTION;
+    if (argc != 2 || !JS_IsArray(argv[0]) || !JS_IsNumber(argv[1]))
+        return JS_ThrowTypeError(ctx, "Workspace names and active position are required");
+    JSValue count_value = JS_GetPropertyStr(ctx, argv[0], "length");
+    uint32_t count;
+    int ok = !JS_IsException(count_value) && JS_ToUint32(ctx, &count, count_value) >= 0;
+    JS_FreeValue(ctx, count_value);
+    if (!ok) return JS_EXCEPTION;
+    double active;
+    if (!count || count > 1024 * 1024 / 2 ||
+        JS_ToFloat64(ctx, &active, argv[1]) < 0 || !isfinite(active) ||
+        active < 0 || active >= count || active != (uint32_t)active)
+        return JS_ThrowRangeError(ctx, "Invalid workspace preference size or active position");
+    const char **names = calloc(count, sizeof(*names));
+    if (!names) return JS_ThrowOutOfMemory(ctx);
+    size_t bytes = 0;
+    uint32_t index = 0;
+    for (; index < count; index++) {
+        JSValue value = JS_GetPropertyUint32(ctx, argv[0], index);
+        size_t length = 0;
+        names[index] = JS_IsException(value) ? NULL : workspace_setting_name(ctx, value, &length);
+        JS_FreeValue(ctx, value);
+        if (!names[index]) break;
+        bytes += length + 1;
+        if (bytes > 1024 * 1024) {
+            JS_ThrowRangeError(ctx, "Workspace restore exceeds 1 MiB");
+            break;
+        }
+    }
+    JSValue result = JS_EXCEPTION;
+    if (index == count) {
+        if (!++control.restore_serial) ++control.restore_serial;
+        control.restore_reply = 0;
+        polly_workspace_toplevel_manager_v1_restore_begin(control.workspace_toplevels,
+            control.workspace_manager, control.restore_serial, (uint32_t)active);
+        for (index = 0; index < count; index++)
+            ext_workspace_group_handle_v1_create_workspace(control.workspace_group, names[index]);
+        ext_workspace_manager_v1_commit(control.workspace_manager);
+        if (!roundtrip() || control.restore_reply != control.restore_serial)
+            result = JS_ThrowInternalError(ctx, "Workspace restore acknowledgment failed");
+        else if (control.restore_result > 1)
+            result = JS_ThrowTypeError(ctx, "Workspace restore rejected: %s", control.restore_error);
+        else result = JS_NewBool(ctx, control.restore_result == 1);
+    }
+    for (index = 0; index < count; index++) JS_FreeCString(ctx, names[index]);
+    free(names);
+    return result;
 }
 
 static JSValue move_workspace(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
@@ -803,6 +928,9 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!property(ctx, api, "setAppearance", JS_NewCFunction(ctx, set_appearance, "setAppearance", 1))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 1))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
+        !property(ctx, api, "restoreWorkspaces", JS_NewCFunction(ctx, restore_workspaces, "restoreWorkspaces", 2)) ||
+        !property(ctx, api, "renameWorkspace", JS_NewCFunction(ctx, rename_workspace, "renameWorkspace", 2)) ||
+        !property(ctx, api, "reorderWorkspace", JS_NewCFunction(ctx, reorder_workspace, "reorderWorkspace", 2)) ||
         !property(ctx, api, "createWorkspace", JS_NewCFunction(ctx, create_workspace, "createWorkspace", 0)) ||
         !property(ctx, api, "activateWorkspace", JS_NewCFunctionMagic(ctx, workspace_action, "activateWorkspace", 1, JS_CFUNC_generic_magic, 0)) ||
         !property(ctx, api, "removeWorkspace", JS_NewCFunctionMagic(ctx, workspace_action, "removeWorkspace", 1, JS_CFUNC_generic_magic, 1)) ||

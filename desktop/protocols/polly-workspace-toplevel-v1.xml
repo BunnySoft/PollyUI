@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_workspace_toplevel_v1">
-  <interface name="polly_workspace_toplevel_manager_v1" version="1">
+  <interface name="polly_workspace_toplevel_manager_v1" version="2">
     <description summary="trusted workspace membership for foreign toplevels">
       Workspace listing, creation, removal and activation use ext-workspace-v1.
-      This restricted extension only associates foreign toplevels with those
-      workspaces and lets the Shell move a toplevel family between them.
+      This restricted extension associates foreign toplevels with workspaces.
+      Version 2 adds names, order and startup-only preference restoration.
     </description>
     <enum name="error">
       <entry name="invalid_manager" value="0" summary="workspace manager is not owned by this compositor"/>
@@ -16,6 +16,50 @@
       <arg name="toplevel" type="object" interface="zwlr_foreign_toplevel_handle_v1"/>
       <arg name="workspaces" type="object" interface="ext_workspace_manager_v1"/>
     </request>
+    <request name="rename" since="2">
+      <description summary="rename at the next workspace-manager commit">
+        The nonempty name is at most 128 UTF-8 bytes. The workspace must belong
+        to the supplied manager binding.
+      </description>
+      <arg name="workspaces" type="object" interface="ext_workspace_manager_v1"/>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
+      <arg name="name" type="string"/>
+    </request>
+    <request name="reorder" since="2">
+      <description summary="move to a zero-based position at the next commit">
+        Reordering does not change workspace identity, activation or membership.
+        Positions beyond the end append; removed workspaces are ignored.
+      </description>
+      <arg name="workspaces" type="object" interface="ext_workspace_manager_v1"/>
+      <arg name="workspace" type="object" interface="ext_workspace_handle_v1"/>
+      <arg name="position" type="uint"/>
+    </request>
+    <request name="restore_begin" since="2">
+      <description summary="stage a startup-only replacement of initial workspaces">
+        Subsequent create_workspace requests on this manager form the ordered
+        replacement, applied atomically at commit. Only creates may be staged.
+        Names including their NUL terminators total at most 1 MiB.
+        The active argument is a zero-based index in the replacement.
+        A compositor that has mapped an application, changed workspaces or
+        already restored preferences leaves live state untouched. No ordinary
+        application windows are moved or destroyed. Only the trusted Shell's
+        bootstrap toplevels can be rebound to the restored active workspace.
+        Destroying either manager before
+        commit discards this transaction.
+      </description>
+      <arg name="workspaces" type="object" interface="ext_workspace_manager_v1"/>
+      <arg name="serial" type="uint"/>
+      <arg name="active" type="uint"/>
+    </request>
+    <event name="restored" since="2">
+      <description summary="startup restore result after workspace done">
+        Result 0 retains live state; 1 applied the replacement; 2 rejected an
+        invalid transaction. Rejection leaves the current layout unchanged.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="result" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
   </interface>
   <interface name="polly_workspace_toplevel_v1" version="1">
     <request name="destroy" type="destructor"/>

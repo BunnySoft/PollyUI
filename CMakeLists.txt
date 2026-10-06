@@ -408,6 +408,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                     $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
                     "${CMAKE_SOURCE_DIR}/desktop/tests/shortcut-persistence.mjs")
             set_tests_properties(desktop-shortcut-persistence PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+            add_test(NAME desktop-workspace-persistence
+                COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/workspace-persistence.py"
+                    "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+                    $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/workspace-persistence.mjs")
+            set_tests_properties(desktop-workspace-persistence PROPERTIES TIMEOUT 110 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         endif()
         add_executable(pollyui-application-process-test desktop/tests/application-process.c)
         add_test(NAME desktop-application-launch

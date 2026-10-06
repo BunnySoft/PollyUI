@@ -11,6 +11,8 @@ import { createTray } from './desktop/shell/tray.mjs';
 import { createNetworkSettings } from './desktop/shell/network.mjs';
 import { createAudioSettings } from './desktop/shell/audio.mjs';
 import { createPowerSettings } from './desktop/shell/power.mjs';
+import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
+import { createTextInput } from './js/textinput.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
@@ -53,6 +55,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let applications = [];
   let windows = [];
   let workspaces = [];
+  let workspaceEditor = null;
+  const workspacePersistence = createWorkspacePersistence({ native, storage, failure: workspaceSettingsFailure });
   let previousWorkspacesChanged = null;
   const workspacesChanged = () => {
     if (!running) return;
@@ -120,6 +124,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function closeMenu() {
     if (!menu) return;
+    workspaceEditor?.input.root.blur();
+    workspaceEditor = null;
     stopRecording();
     const old = menu;
     menu = null;
@@ -130,7 +136,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const native = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
     const surface = { output: output.id, kind, window: native, signature: JSON.stringify(options), expectedClose: false };
     native.onclose = () => {
-      if (surface === menu) { stopRecording(); menu = null; }
+      if (surface === menu) { stopRecording(); workspaceEditor = null; menu = null; }
       if (surface === switcher) {
         switcher = null;
         if (!surface.expectedClose && running) {
@@ -374,7 +380,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (menu.mode === 'workspaces') {
       render(workspacesView(getDesktopTheme(themeId), workspaces,
         id => workspaceAction('activateWorkspace', id), id => workspaceAction('removeWorkspace', id),
-        () => workspaceAction('createWorkspace'), closeMenu, error), menu.window.document.body);
+        () => workspaceAction('createWorkspace'), closeMenu, error,
+        typeof native?.renameWorkspace === 'function' ? {
+          rename: editWorkspace, reorder: reorderWorkspace, editor: workspaceEditor,
+          save: saveWorkspaceName, cancel: () => { workspaceEditor?.input.root.blur(); workspaceEditor = null; repaintMenu(); },
+          saveCurrent: saveCurrentWorkspaces,
+        } : null), menu.window.document.body);
       return;
     }
     if (menu.mode === 'windows') {
@@ -642,6 +653,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
   }
 
+  function workspaceSettingsFailure(failure) {
+    const message = 'Workspace settings were not saved/restored: ' + String(failure);
+    if (error !== message) report('[shell] ' + message);
+    error = message;
+    errorKind = 'workspace-settings';
+  }
+
   function refreshWindows() {
     try {
       const previous = workspaces.find(workspace => workspace.active)?.id;
@@ -650,6 +668,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       const nextWindows = native.windows().sort((a, b) => a.id - b.id);
       workspaces = nextWorkspaces;
       windows = nextWindows;
+      workspacePersistence.sync(workspaces);
+      if (workspaceEditor && !workspaces.some(workspace => workspace.id === workspaceEditor.id)) {
+        workspaceEditor.input.root.blur();
+        workspaceEditor = null;
+      }
       if (previous && previous !== workspaces.find(workspace => workspace.active)?.id) closeMenu();
       if (errorKind === 'windows') { error = ''; errorKind = ''; }
       repaintMenu();
@@ -692,6 +715,51 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (action === 'activateWorkspace') closeMenu();
       return true;
     } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function editWorkspace(id) {
+    try {
+      const selected = workspaces.find(workspace => workspace.id === id);
+      if (!selected || menu?.mode !== 'workspaces') throw new Error('Workspace is no longer available');
+      workspaceEditor?.input.root.blur();
+      const theme = getDesktopTheme(themeId);
+      const input = workspaceEditor?.input || createTextInput({ document: menu.window.document, value: selected.name,
+        width: Math.max(1, menu.window.document.body.offsetWidth - theme.layout.compactPadding * 2),
+        fontSize: theme.layout.fontSize, color: theme.colors.text, background: theme.colors.surface });
+      input.root.id = 'shell-workspace-name';
+      input.root.setAttribute('role', 'textbox');
+      input.root.setAttribute('aria-label', 'Workspace name');
+      if (!workspaceEditor) input.root.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); saveWorkspaceName(); }
+      });
+      input.value = selected.name;
+      workspaceEditor = { id, input };
+      repaintMenu();
+      input.root.focus();
+    } catch (failure) { windowFailure(failure); }
+  }
+
+  function saveWorkspaceName() {
+    try {
+      if (!workspaceEditor) return;
+      native.renameWorkspace(workspaceEditor.id, workspaceName(workspaceEditor.input.value));
+      workspaceEditor.input.root.blur();
+      workspaceEditor = null;
+      repaintMenu();
+    } catch (failure) { windowFailure(failure); }
+  }
+
+  function reorderWorkspace(id, position) {
+    try { native.reorderWorkspace(id, position); }
+    catch (failure) { windowFailure(failure); }
+  }
+
+  function saveCurrentWorkspaces() {
+    try {
+      workspacePersistence.saveCurrent();
+      if (errorKind === 'workspace-settings') { error = ''; errorKind = ''; }
+    } catch (failure) { workspaceSettingsFailure(failure); }
+    repaintMenu();
   }
 
   function moveWindow(id, workspaceId) {
@@ -798,6 +866,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       timer = setInterval(refresh, 1000);
       if (native) { previousExit = native.onExit; native.onExit = exited; }
       if (typeof native?.windows === 'function') {
+        workspacePersistence.start();
         previousWindowsChanged = native.onWindowsChanged;
         native.onWindowsChanged = windowsChanged;
         previousWorkspacesChanged = native.onWorkspacesChanged;

@@ -72,6 +72,9 @@ async function run() {
     window.create({ title: 'Public workspace rejection', width: 160, height: 100 });
     rejects(() => desktop.workspaces(), 'public connection cannot list workspaces');
     rejects(() => desktop.createWorkspace(), 'public connection cannot create workspaces');
+    rejects(() => desktop.restoreWorkspaces(['Private'], 0), 'public connection cannot restore workspace preferences');
+    rejects(() => desktop.renameWorkspace(1, 'Private'), 'public connection cannot rename workspaces');
+    rejects(() => desktop.reorderWorkspace(1, 1), 'public connection cannot reorder workspaces');
     rejects(() => desktop.activateWorkspace(1), 'public connection cannot switch workspaces');
     rejects(() => desktop.moveWindowToWorkspace(1, 1), 'public connection cannot move foreign windows');
     window.quit();
@@ -96,6 +99,28 @@ async function run() {
     await until(() => applicationWindow()?.active, 'independent application');
     const id = applicationWindow().id;
     check(applicationWindow().workspaceId === initial[0].id, 'new window belongs to its creation workspace');
+    check(!desktop.restoreWorkspaces(['Stale saved layout'], 0) &&
+      workspaces()[0].id === initial[0].id && applicationWindow().workspaceId === initial[0].id,
+      'restoration never replaces workspaces after an ordinary application is mapped');
+    let editing = await openWorkspaces();
+    await click(editing, 'shell-workspace-rename-' + initial[0].id);
+    await until(() => editing.window.document.getElementById('shell-workspace-name'), 'workspace name input');
+    await acknowledge('fixture-key 29 1');
+    await acknowledge('fixture-key 30 1');
+    await acknowledge('fixture-key 30 0');
+    await acknowledge('fixture-key 29 0');
+    await acknowledge('fixture-key 45 1');
+    await acknowledge('fixture-key 45 0');
+    await click(editing, 'shell-workspace-name-save');
+    await until(() => workspaces()[0].name === 'x', 'native typing and save rename the workspace');
+    check(current().id === initial[0].id && applicationWindow().workspaceId === initial[0].id,
+      'renaming preserves workspace identity and window membership');
+    await click(editing, 'shell-workspace-later-' + initial[0].id);
+    await until(() => workspaces()[1].id === initial[0].id, 'native pointer reorders a workspace');
+    check(current().id === initial[0].id, 'reordering does not activate a different workspace');
+    await click(editing, 'shell-workspace-earlier-' + initial[0].id);
+    await until(() => workspaces()[0].id === initial[0].id, 'restore order for workspace policy checks');
+    await click(editing, 'shell-workspace-close');
     await acknowledge('fixture-workspace-state 0 1');
     await click(await openWorkspaces(), 'shell-workspace-' + initial[1].id);
     await until(() => current().id === initial[1].id && hasTaskButton(id, false), 'taskbar filters inactive windows');

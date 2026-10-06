@@ -762,13 +762,14 @@ profiles and physical DRM/HDR/VRR qualification remain separate work.
 
 ### Linux manual workspaces
 
-PollyWM starts with four workspaces and one active workspace shared by all
+PollyWM defaults to four workspaces and one active workspace shared by all
 outputs. Creation and removal are manual: empty workspaces remain, new ones
 append without activating, and existing names/order do not change automatically.
 Fullscreen stays within the existing workspace, not a separate Space.
 Appearance selection does not change this behavior.
 
-Use the panel/menu-bar workspace button to switch, add or remove workspaces.
+Use the panel/menu-bar workspace button to switch, add, remove, rename or
+manually reorder workspaces.
 `Ctrl+Super+Left/Right` switches to the previous/next workspace without wrapping;
 `Alt+Tab` cycles only windows in the current workspace. Window menus can move a
 window to another workspace without following it. Transient parents and their
@@ -785,21 +786,39 @@ The opt-in `desktop` APIs expose `workspaces()` snapshots with `id`, `name`,
 `order`, `active` and `canRemove`, plus `onWorkspacesChanged`.
 `createWorkspace(name?)`, `activateWorkspace(id)`, `removeWorkspace(id)` and
 `moveWindowToWorkspace(windowId, workspaceId)` send asynchronous requests.
+`renameWorkspace(id, name)` and `reorderWorkspace(id, position)` edit a live
+workspace without changing its identity, activation or window membership.
+Positions are zero-based; a position beyond the end appends.
 Names may contain at most 128 UTF-8 bytes without NUL; an omitted/empty name
-gets an automatic label. Observe subsequent snapshots for results.
+gets an automatic label. Renaming requires a nonempty name. Observe subsequent
+snapshots for results.
 
 Listing, creation, removal and activation use standard `ext-workspace-v1`
 with one workspace group for all outputs. The narrow
 `polly_workspace_toplevel_manager_v1` extension adds foreign-window membership
-and moves; both globals are restricted to the exact trusted Shell connection.
+and moves; version 2 adds rename/reorder and an atomic startup restore
+transaction. Both globals are restricted to the exact trusted Shell connection.
 Standard requests are staged until `commit`, and snapshots are published at
 `done` boundaries.
 
-Workspace layout survives Shell restart, but **compositor restart currently
-starts a new four-workspace session**. Cross-login configuration/session
-restoration remains a later task. Native IDs are runtime-local handles and must
-not be persisted; the standard protocol deliberately does not advertise
-persistent workspace IDs yet. No dynamic workspace creation/removal, per-output
+PollyShell validates and persists `{version: 1, names: [...], active: index}` in
+its existing `localStorage` under `desktop.workspaces.v1`. Names/order and the
+current choice survive compositor/session restart when the user's configuration
+directory is retained. Native IDs are runtime-local and never persisted.
+`restoreWorkspaces(names, activeIndex)` applies the staged layout synchronously
+only to an unused compositor, returning `true` when restored or `false` when live
+state must be retained. An ordinary application (even an unmapped toplevel),
+prior workspace operation or completed restore prevents replacement. The trusted
+Shell's bootstrap window can be rebound before its deferred SDL teardown.
+Individual protocol messages carry one bounded name, not an oversized JSON
+string; the restore payload is limited to 1 MiB.
+
+Shell reconnect retains live state rather than overwriting it with older
+preferences. Invalid settings produce a visible warning and are not overwritten;
+the workspace menu's explicit **Save current layout** recovers by replacing them.
+Write errors are reported and retried on subsequent snapshots. No application
+processes, window positions or persistent Wayland IDs are restored. The memory-only
+Live ISO still loses these settings at guest shutdown. No dynamic workspaces, per-output
 switching, automatic reordering or speculative settings for these are included.
 
 ### Input event contract

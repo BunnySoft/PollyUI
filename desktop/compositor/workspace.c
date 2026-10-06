@@ -18,18 +18,25 @@ struct WorkspaceRef {
     struct PuWorkspace *workspace;
     struct wl_resource *resource;
 };
-enum Operation { CREATE, ACTIVATE, REMOVE, MOVE };
+enum Operation { CREATE, ACTIVATE, REMOVE, MOVE, RENAME, REORDER };
 struct Pending {
     struct wl_list link;
     enum Operation kind;
     uint32_t workspace;
     uint64_t window;
     struct PuWorkspace *created;
+    char *name;
+    uint32_t position;
 };
 struct Binding {
     struct wl_list link, refs, pending;
     struct PuWorkspaces *state;
     struct wl_resource *manager, *group;
+    struct wl_resource *restore_reply;
+    struct wl_listener restore_destroy;
+    uint32_t restore_serial, restore_active;
+    size_t restore_bytes;
+    const char *restore_error;
 };
 struct Tracked {
     struct wl_list link;
@@ -51,6 +58,7 @@ struct PuWorkspaces {
     struct wl_list workspaces, bindings, tracked, outputs;
     uint32_t next_workspace;
     uint64_t next_window;
+    bool used;
 };
 
 static const struct ext_workspace_manager_v1_interface manager_impl;
@@ -154,6 +162,7 @@ static void close_tracked(struct Tracked *tracked)
 void pu_workspaces_view_map(struct PuDesktopView *view)
 {
     struct PuWorkspaces *state = view->desktop->workspaces;
+    if (wl_resource_get_client(view->toplevel->resource) != state->desktop->shell_client) state->used = true;
     if (state->next_window == UINT64_MAX) {
         wl_resource_post_no_memory(view->toplevel->resource);
         return;
@@ -186,20 +195,20 @@ static struct PuWorkspace *new_workspace(struct PuWorkspaces *state, const char 
     return workspace;
 }
 
-static bool queue(struct Binding *binding, enum Operation kind, uint32_t workspace,
+static struct Pending *queue(struct Binding *binding, enum Operation kind, uint32_t workspace,
                   uint64_t window, struct PuWorkspace *created)
 {
-    if (!binding->manager) { if (created) free_workspace(created); return false; }
+    if (!binding->manager) { if (created) free_workspace(created); return NULL; }
     struct Pending *pending = calloc(1, sizeof(*pending));
     if (!pending) {
         if (created) free_workspace(created);
         wl_resource_post_no_memory(binding->manager);
-        return false;
+        return NULL;
     }
     pending->kind = kind; pending->workspace = workspace; pending->window = window;
     pending->created = created;
     wl_list_insert(binding->pending.prev, &pending->link);
-    return true;
+    return pending;
 }
 
 static void clear_pending(struct Binding *binding)
@@ -208,8 +217,13 @@ static void clear_pending(struct Binding *binding)
     wl_list_for_each_safe(pending, tmp, &binding->pending, link) {
         wl_list_remove(&pending->link);
         if (pending->created) free_workspace(pending->created);
+        free(pending->name);
         free(pending);
     }
+    if (binding->restore_reply) wl_list_remove(&binding->restore_destroy.link);
+    binding->restore_reply = NULL;
+    binding->restore_bytes = 0;
+    binding->restore_error = NULL;
 }
 
 static void maybe_free_binding(struct Binding *binding)
@@ -263,6 +277,7 @@ static void send_workspace(struct WorkspaceRef *ref, uint32_t index)
 {
     struct PuWorkspaces *state = ref->binding->state;
     struct wl_array coordinates = { .size = sizeof(index), .alloc = 0, .data = &index };
+    ext_workspace_handle_v1_send_name(ref->resource, ref->workspace->name);
     ext_workspace_handle_v1_send_coordinates(ref->resource, &coordinates);
     ext_workspace_handle_v1_send_state(ref->resource,
         ref->workspace == state->desktop->active_workspace ? EXT_WORKSPACE_HANDLE_V1_STATE_ACTIVE : 0);
@@ -328,6 +343,7 @@ static void broadcast(struct PuWorkspaces *state, struct wl_list *removed)
 void pu_workspace_activate(struct PuDesktop *desktop, struct PuWorkspace *workspace, struct PuDesktopView *preferred)
 {
     if (!workspace || desktop->active_workspace == workspace) return;
+    desktop->workspaces->used = true;
     desktop->active_workspace = workspace;
     pu_desktop_workspaces_changed(desktop, preferred);
     broadcast(desktop->workspaces, NULL);
@@ -352,6 +368,46 @@ static void commit_request(struct wl_client *client, struct wl_resource *resourc
     struct wl_list removed;
     wl_list_init(&removed);
     struct Pending *pending;
+    if (binding->restore_reply) {
+        uint32_t count = 0, result = 0;
+        const char *error = binding->restore_error;
+        bool application_exists = false;
+        struct PuDesktopView *view;
+        wl_list_for_each(view, &state->desktop->all_views, all_link)
+            if (wl_resource_get_client(view->toplevel->resource) != state->desktop->shell_client)
+                application_exists = true;
+        wl_list_for_each(pending, &binding->pending, link) {
+            if (pending->kind != CREATE) error = "Restore transaction must contain only workspace creation";
+            count++;
+        }
+        if (!count || binding->restore_active >= count) error = "Invalid restored active workspace";
+        if (error) result = 2;
+        else if (!state->used && !application_exists) {
+            struct PuWorkspace *workspace, *next;
+            wl_list_for_each_safe(workspace, next, &state->workspaces, link) {
+                wl_list_remove(&workspace->link);
+                wl_list_insert(removed.prev, &workspace->link);
+            }
+            uint32_t index = 0;
+            wl_list_for_each(pending, &binding->pending, link) {
+                wl_list_insert(state->workspaces.prev, &pending->created->link);
+                if (index++ == binding->restore_active) state->desktop->active_workspace = pending->created;
+                pending->created = NULL;
+            }
+            state->used = true;
+            result = 1;
+            /* SDL retires the trusted Shell's bootstrap toplevel after JS startup. */
+            wl_list_for_each(view, &state->desktop->all_views, all_link)
+                view->workspace = state->desktop->active_workspace;
+            pu_desktop_workspaces_changed(state->desktop, NULL);
+            broadcast(state, &removed);
+        }
+        polly_workspace_toplevel_manager_v1_send_restored(binding->restore_reply,
+            binding->restore_serial, result, error ? error : "");
+        clear_pending(binding);
+        return;
+    }
+    if (!wl_list_empty(&binding->pending)) state->used = true;
     wl_list_for_each(pending, &binding->pending, link) {
         struct PuWorkspace *workspace = lookup(state, pending->workspace);
         if (pending->kind == CREATE) {
@@ -365,6 +421,16 @@ static void commit_request(struct wl_client *client, struct wl_resource *resourc
             struct PuDesktopView *view = window_for(state, pending->window);
             if (view) move_family(view, workspace);
             else wlr_log(WLR_DEBUG, "Ignoring workspace move for a closed window");
+        } else if (pending->kind == RENAME) {
+            free(workspace->name);
+            workspace->name = pending->name;
+            pending->name = NULL;
+        } else if (pending->kind == REORDER) {
+            wl_list_remove(&workspace->link);
+            struct wl_list *before = state->workspaces.next;
+            uint32_t position = pending->position;
+            while (position-- && before != &state->workspaces) before = before->next;
+            wl_list_insert(before->prev, &workspace->link);
         } else if (wl_list_length(&state->workspaces) > 1) {
             struct wl_list *link = workspace->link.prev != &state->workspaces ?
                 workspace->link.prev : workspace->link.next;
@@ -415,7 +481,18 @@ static void create_request(struct wl_client *client, struct wl_resource *resourc
     (void)client;
     struct Binding *binding = wl_resource_get_user_data(resource);
     if (!binding->manager) return;
-    if (strlen(name) > 128) { wlr_log(WLR_ERROR, "Workspace name exceeds 128 bytes"); return; }
+    if (strlen(name) > 128 || (binding->restore_reply && !*name)) {
+        if (binding->restore_reply) binding->restore_error = "Invalid restored workspace name";
+        wlr_log(WLR_ERROR, "Invalid workspace name");
+        return;
+    }
+    if (binding->restore_reply) {
+        binding->restore_bytes += strlen(name) + 1;
+        if (binding->restore_bytes > 1024 * 1024) {
+            binding->restore_error = "Workspace restore exceeds 1 MiB";
+            return;
+        }
+    }
     struct PuWorkspace *workspace = new_workspace(binding->state, name);
     if (!workspace) { wl_resource_post_no_memory(resource); return; }
     queue(binding, CREATE, 0, 0, workspace);
@@ -520,8 +597,81 @@ static void get_toplevel(struct wl_client *client, struct wl_resource *resource,
     }
     ext_workspace_manager_v1_send_done(manager);
 }
+static struct Binding *manager_binding(struct wl_client *client, struct wl_resource *resource,
+                                      struct wl_resource *manager)
+{
+    struct PuWorkspaces *state = wl_resource_get_user_data(resource);
+    if (client != state->desktop->shell_client ||
+        !wl_resource_instance_of(manager, &ext_workspace_manager_v1_interface, &manager_impl)) {
+        wl_resource_post_error(resource, POLLY_WORKSPACE_TOPLEVEL_MANAGER_V1_ERROR_INVALID_MANAGER,
+            "Invalid workspace manager binding");
+        return NULL;
+    }
+    return wl_resource_get_user_data(manager);
+}
+
+static struct WorkspaceRef *managed_workspace(struct wl_resource *resource,
+                                              struct Binding *binding, struct wl_resource *workspace)
+{
+    struct WorkspaceRef *ref = wl_resource_get_user_data(workspace);
+    if (!wl_resource_instance_of(workspace, &ext_workspace_handle_v1_interface, &workspace_impl) ||
+        ref->binding != binding) {
+        wl_resource_post_error(resource, POLLY_WORKSPACE_TOPLEVEL_MANAGER_V1_ERROR_INVALID_WORKSPACE,
+            "Workspace belongs to another manager binding");
+        return NULL;
+    }
+    return ref;
+}
+
+static void rename_request(struct wl_client *client, struct wl_resource *resource,
+                           struct wl_resource *manager, struct wl_resource *workspace, const char *name)
+{
+    struct Binding *binding = manager_binding(client, resource, manager);
+    if (!binding) return;
+    struct WorkspaceRef *ref = managed_workspace(resource, binding, workspace);
+    if (!ref || !ref->workspace) return;
+    if (!*name || strlen(name) > 128) { wlr_log(WLR_ERROR, "Invalid workspace name"); return; }
+    char *copy = strdup(name);
+    if (!copy) { wl_resource_post_no_memory(resource); return; }
+    struct Pending *pending = queue(binding, RENAME, ref->workspace->id, 0, NULL);
+    if (pending) pending->name = copy;
+    else free(copy);
+}
+
+static void reorder_request(struct wl_client *client, struct wl_resource *resource,
+                            struct wl_resource *manager, struct wl_resource *workspace, uint32_t position)
+{
+    struct Binding *binding = manager_binding(client, resource, manager);
+    if (!binding) return;
+    struct WorkspaceRef *ref = managed_workspace(resource, binding, workspace);
+    if (!ref || !ref->workspace) return;
+    struct Pending *pending = queue(binding, REORDER, ref->workspace->id, 0, NULL);
+    if (pending) pending->position = position;
+}
+
+static void restore_destroyed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct Binding *binding = wl_container_of(listener, binding, restore_destroy);
+    clear_pending(binding);
+}
+
+static void restore_begin(struct wl_client *client, struct wl_resource *resource,
+                          struct wl_resource *manager, uint32_t serial, uint32_t active)
+{
+    struct Binding *binding = manager_binding(client, resource, manager);
+    if (!binding) return;
+    clear_pending(binding);
+    binding->restore_reply = resource;
+    binding->restore_serial = serial;
+    binding->restore_active = active;
+    binding->restore_destroy.notify = restore_destroyed;
+    wl_resource_add_destroy_listener(resource, &binding->restore_destroy);
+}
+
 static const struct polly_workspace_toplevel_manager_v1_interface toplevel_impl = {
     .destroy = destroy_request, .get_toplevel = get_toplevel,
+    .rename = rename_request, .reorder = reorder_request, .restore_begin = restore_begin,
 };
 
 static void bind_toplevels(struct wl_client *client, void *data, uint32_t version, uint32_t id)
@@ -592,7 +742,7 @@ bool pu_workspaces_init(struct PuDesktop *desktop)
         if (!desktop->active_workspace) desktop->active_workspace = workspace;
     }
     state->manager = wl_global_create(desktop->display, &ext_workspace_manager_v1_interface, 1, state, bind_manager);
-    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 1, state, bind_toplevels);
+    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 2, state, bind_toplevels);
     return state->manager && state->toplevel_manager;
 }
 

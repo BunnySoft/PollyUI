@@ -36,7 +36,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
 | Wi-Fi client | Native iwd settings for discovery/RSSI, scanning, radio power, connection, bounded interactive authentication and forgetting profiles, with root-owner verification and service-restart recovery. Isolated protocol/UI fixtures pass; real radios and DHCP/DNS need hardware qualification. |
 | Audio policy and controls | Opt-in private PipeWire core, own routing/default-device policy, volume/mute UI and validated socket connection, without WirePlumber. Real virtual playback/capture, manual routing and device-loss coverage; physical audio and Pulse/ALSA client compatibility remain separate. |
-| Workspaces - implemented | Four initial, globally synchronized manual workspaces; create/switch/remove, safe window-family migration, current-workspace taskbar/Dock filtering, keyboard switching and Shell reconnect. Empty workspaces remain; cross-login restoration is deferred. |
+| Workspaces - implemented | Four first-run, globally synchronized manual workspaces; create/switch/remove/rename/reorder, safe window-family migration, current-workspace taskbar/Dock filtering and keyboard switching. Names/order/current selection persist across sessions; Shell reconnect preserves live state. Empty workspaces remain. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
 | Appearance - implemented preview | Switchable XP, Server 2003 Classic, OS X Aqua, Lion and Big Sur-inspired original themes. The preview remains simulated; the native Shell and negotiated PollyWM frames reuse the same tokens. |
@@ -802,8 +802,9 @@ click opens maximize, fullscreen and graceful-close controls. Window-list
 overflow scrolls horizontally with the wheel. Buttons are currently text-based,
 without app grouping, icons or pinning.
 
-The workspace menu manually adds/removes workspaces and switches every output
-together. Four are created at compositor startup. Empty workspaces are never
+The workspace menu manually adds/removes/renames/reorders workspaces and switches every output
+together. Four are created on first use, or validated saved preferences restore
+the ordered names and active choice at startup. Empty workspaces are never
 automatically removed, fullscreen does not create a new Space, and themes do
 not change workspace behavior. New workspaces append; moving a window does not
 follow it. Window activation explicitly switches to its owning workspace.
@@ -814,8 +815,13 @@ Deleting a workspace moves its windows to the previous workspace, or the next
 when deleting the first; the final workspace cannot be removed. These operations
 do not close applications or discard their minimize/maximize/fullscreen state.
 The compositor owns this session state independently of Shell restart.
-Cross-login persistence, renaming/reordering UI and full session restoration are
-not included in this milestone; compositor restart recreates the initial four.
+PollyShell owns the JSON preference parsing and persistence; the compositor
+accepts a bounded startup transaction only before ordinary applications or
+workspace operations. Shell reconnect never overwrites current live workspaces.
+Invalid preferences remain untouched with an error and an explicit Save current
+layout recovery action. Full application/window session restoration, startup
+display profiles and persistent audio policy remain separate work. The Live
+root is still memory-only, so guest shutdown discards saved preferences.
 The root README documents the native workspace API and ID lifetime.
 
 Keep the parent's socket separate from the new compositor's socket:

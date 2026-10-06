@@ -205,7 +205,7 @@ export function windowActionsView(theme, window, action, close, error = '', work
   error ? label(error, theme.colors.text, 11) : null);
 }
 
-export function workspacesView(theme, workspaces, activate, remove, create, close, error = '') {
+export function workspacesView(theme, workspaces, activate, remove, create, close, error = '', settings = null) {
   const label = labelFor(theme);
   return h('view', { id: 'shell-workspace-menu', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap,
@@ -216,14 +216,31 @@ export function workspacesView(theme, workspaces, activate, remove, create, clos
     h('view', { style: { flexGrow: 1 } }), button('shell-workspace-add', 'Add', theme, create),
     button('shell-workspace-close', 'Close', theme, close)),
   label('All displays switch together. Empty workspaces stay.', theme.colors.muted, 10),
+  h('view', { style: { gap: theme.layout.controlGap, display: settings?.editor ? 'flex' : 'none' } },
+    settings?.editor ? [
+    h('view', { style: { height: Number(settings.editor.input.root.style.height) },
+      onMount: node => node.appendChild(settings.editor.input.root) }),
+    h('view', { style: { ...row, gap: theme.layout.controlGap } },
+      button('shell-workspace-name-save', 'Save name', theme, settings.save),
+      button('shell-workspace-name-cancel', 'Cancel', theme, settings.cancel))] : []),
   h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.controlGap } },
-    workspaces.map(workspace => h('view', { style: { ...row, gap: theme.layout.controlGap, flexShrink: 0 } },
+    workspaces.map((workspace, index) => h('view', { key: workspace.id,
+      style: { gap: theme.layout.controlGap, flexShrink: 0 } },
+      h('view', { style: { ...row, gap: theme.layout.controlGap } },
       button('shell-workspace-' + workspace.id, workspace.name, theme, () => activate(workspace.id),
         workspace.active, { flexGrow: 1, flexBasis: 0, minWidth: 0, overflow: 'hidden' }),
       workspace.canRemove ? button('shell-workspace-remove-' + workspace.id, 'Remove', theme,
-        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, 10)))),
+        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, 10)),
+      settings ? h('view', { style: { ...row, gap: theme.layout.controlGap } },
+        button('shell-workspace-rename-' + workspace.id, 'Rename', theme, () => settings.rename(workspace.id),
+          false, { height: theme.layout.compactButtonHeight }),
+        index ? button('shell-workspace-earlier-' + workspace.id, 'Earlier', theme,
+          () => settings.reorder(workspace.id, index - 1), false, { height: theme.layout.compactButtonHeight }) : null,
+        index + 1 < workspaces.length ? button('shell-workspace-later-' + workspace.id, 'Later', theme,
+          () => settings.reorder(workspace.id, index + 1), false, { height: theme.layout.compactButtonHeight }) : null) : null))),
   label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, 10),
   label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, 10),
+  settings && error ? button('shell-workspace-save-current', 'Save current layout', theme, settings.saveCurrent) : null,
   error ? label(error, theme.colors.text, 11) : null);
 }
 

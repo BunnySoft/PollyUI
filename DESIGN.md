@@ -563,8 +563,14 @@ views remain mapped but scene-disabled, focus traversal is workspace-local,
 and their popups are dismissed. Explicit activation switches workspace; moving
 does not. Deletion migrates all views, including unmapped ones, to the previous
 workspace or the next when deleting the first. At least one workspace remains.
-Shell reconnect rebuilds handles from compositor state. Full compositor/session
-restart persistence is deferred; no persistent protocol IDs are advertised.
+Shell reconnect rebuilds handles from compositor state. PollyShell validates
+and persists ordered names and active index, never protocol IDs. A version-2
+private transaction stages bounded name messages and restores them atomically
+only before ordinary applications or workspace changes. The trusted Shell's
+deferred bootstrap toplevel is rebound before old workspace objects are freed.
+Renaming/reordering retain identities and window membership. Invalid preference
+documents are reported and preserved until explicit recovery; application/window
+restoration and persistent protocol IDs remain outside this feature.
 
 Window switching is a compositor-owned, modifier-held state machine. Its frozen
 candidate list uses mapped-instance IDs, so closed/remapped views cannot be
