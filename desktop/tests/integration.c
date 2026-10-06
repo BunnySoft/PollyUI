@@ -1275,6 +1275,16 @@ static bool input_method_suite(const char *path)
     return true;
 }
 
+struct DragIconPosition { struct wlr_surface *surface; int x, y; bool found; };
+static void drag_icon_position(struct wlr_scene_buffer *buffer, int x, int y, void *data)
+{
+    struct DragIconPosition *position = data;
+    struct wlr_scene_surface *surface = wlr_scene_surface_try_from_buffer(buffer);
+    if (surface && surface->surface == position->surface) {
+        position->x = x; position->y = y; position->found = true;
+    }
+}
+
 static bool drag_suite(void)
 {
     struct TestClient *a = &clients[0], *b = &clients[1];
@@ -1298,13 +1308,9 @@ static bool drag_suite(void)
         CHECK(!desktop.seat->keyboard_state.focused_surface);
         motion(720, 80);
         CHECK(desktop.seat->drag->focus == second->toplevel->base->surface);
-        struct wlr_scene_node *icon_tree = desktop.scene->tree.children.prev ?
-            wl_container_of(desktop.scene->tree.children.prev, icon_tree, link) : NULL;
-        CHECK(icon_tree && icon_tree->type == WLR_SCENE_NODE_TREE);
-        struct wlr_scene_tree *icons = wlr_scene_tree_from_node(icon_tree);
-        CHECK(!wl_list_empty(&icons->children));
-        struct wlr_scene_node *icon = wl_container_of(icons->children.next, icon, link);
-        CHECK(icon->x == 720 && icon->y == 80);
+        struct DragIconPosition position = {.surface = desktop.seat->drag->icon->surface};
+        wlr_scene_node_for_each_buffer(&desktop.scene->tree.node, drag_icon_position, &position);
+        CHECK(position.found && position.x == 720 && position.y == 80);
         if (scenario == 0) {
             CHECK(command(a, TEST_DRAG_ICON_DESTROY, 0, 0, 0));
             CHECK(pu_data_device_drag_active(&desktop) && !desktop.seat->drag->icon);

@@ -101,7 +101,9 @@ try {
   copy(path.join(repo, 'desktop/patches/sdl-wayland-sync-lifetime.patch'),
     path.join(licenseRoot, 'sdl/patches/sdl-wayland-sync-lifetime.patch'));
   copy(path.join(repo, 'desktop/release/Containerfile'), path.join(staging, 'Containerfile'));
-  for (const binary of ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher']) {
+  const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher'];
+  if (existsSync(path.join(root, 'usr/bin/polly-auth-check'))) binaries.push('usr/bin/polly-auth-check');
+  for (const binary of binaries) {
     const libraries = run('ldd', [path.join(root, binary)]);
     if (/not found|lib(?:glib|gio|gobject)-2\.0|libharfbuzz/.test(libraries))
       throw new Error('Unexpected or missing desktop runtime dependency:\n' + libraries);

@@ -3,6 +3,7 @@
 #include "decoration.h"
 #include "workspace.h"
 #include "shortcut-control.h"
+#include "session-lock.h"
 #include "output-control.h"
 #include "data-device.h"
 #include "input-method.h"
@@ -112,6 +113,7 @@ static void fail(struct PuDesktop *desktop, const char *message)
 
 static void enter_keyboard(struct PuDesktop *desktop)
 {
+    if (pu_session_lock_active(desktop)) { pu_session_lock_focus(desktop); return; }
     struct wlr_surface *surface = desktop->focused_layer ?
         desktop->focused_layer->surface->surface :
         desktop->focused ? desktop->focused->toplevel->base->surface : NULL;
@@ -150,8 +152,34 @@ void pu_desktop_restore_input(struct PuDesktop *desktop)
     refresh_pointer(desktop);
 }
 
+void pu_desktop_isolate_input(struct PuDesktop *desktop)
+{
+    pu_shortcuts_cancel(desktop);
+    pu_data_device_cancel_drag(desktop);
+    end_grab(desktop);
+    desktop->decoration_pressed = desktop->last_title_click = NULL;
+    desktop->decoration_part = 0;
+    struct PuDesktopKeyboard *entry;
+    wl_list_for_each(entry, &desktop->keyboards, link) {
+        for (size_t i = 0; i < entry->keyboard->num_keycodes; i++) {
+            uint32_t key = entry->keyboard->keycodes[i];
+            if (key < KEY_CNT) entry->consumed[key] = true;
+        }
+    }
+    wlr_seat_keyboard_end_grab(desktop->seat);
+    wlr_seat_pointer_end_grab(desktop->seat);
+    while (desktop->seat->pointer_state.button_count) {
+        uint32_t button = desktop->seat->pointer_state.buttons[desktop->seat->pointer_state.button_count - 1].button;
+        wlr_seat_pointer_notify_button(desktop->seat, 0, button, WL_POINTER_BUTTON_STATE_RELEASED);
+    }
+    wlr_seat_keyboard_notify_clear_focus(desktop->seat);
+    wlr_seat_pointer_notify_clear_focus(desktop->seat);
+    wlr_cursor_set_xcursor(desktop->cursor, desktop->cursor_theme, "default");
+}
+
 static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 {
+    if (pu_session_lock_active(desktop)) { pu_session_lock_focus(desktop); return; }
     if (desktop->focused_layer == layer) return;
     if (layer) pu_shortcuts_cancel(desktop);
     desktop->focused_layer = layer;
@@ -163,6 +191,7 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 
 static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
 {
+    if (pu_session_lock_active(desktop)) { pu_session_lock_focus(desktop); return; }
     if (view && !view->mapped) return;
     pu_shortcuts_cancel(desktop);
     if (view && !pu_workspace_current(view)) {
@@ -214,6 +243,11 @@ static void keyboard_modifiers(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, modifiers);
     wlr_seat_set_keyboard(entry->desktop->seat, entry->keyboard);
+    if (pu_session_lock_active(entry->desktop)) {
+        pu_session_lock_focus(entry->desktop);
+        wlr_seat_keyboard_notify_modifiers(entry->desktop->seat, &entry->keyboard->modifiers);
+        return;
+    }
     pu_shortcuts_modifiers(entry->desktop, entry->keyboard);
     pu_input_method_modifiers(entry->desktop, entry->keyboard);
     wlr_seat_keyboard_notify_modifiers(entry->desktop->seat, &entry->keyboard->modifiers);
@@ -221,6 +255,7 @@ static void keyboard_modifiers(struct wl_listener *listener, void *data)
 
 void pu_desktop_shortcut_action(struct PuDesktop *desktop, int action, bool reverse)
 {
+    if (pu_session_lock_active(desktop)) return;
     switch (action) {
     case PU_SHORTCUT_WORKSPACE_PREVIOUS: pu_workspace_step(desktop, -1); return;
     case PU_SHORTCUT_WORKSPACE_NEXT: pu_workspace_step(desktop, 1); return;
@@ -269,6 +304,17 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     struct wlr_keyboard_key_event *event = data;
     struct PuDesktop *desktop = entry->desktop;
     wlr_seat_set_keyboard(desktop->seat, entry->keyboard);
+    if (pu_session_lock_active(desktop)) {
+        bool consumed = event->keycode < KEY_CNT && entry->consumed[event->keycode];
+        if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED && event->keycode < KEY_CNT)
+            entry->consumed[event->keycode] = false;
+        pu_session_lock_focus(desktop);
+        if (!consumed && pu_session_lock_surface(desktop, desktop->seat->keyboard_state.focused_surface))
+            wlr_seat_keyboard_notify_key(desktop->seat, event->time_msec, event->keycode, event->state);
+        else if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && event->keycode < KEY_CNT)
+            entry->consumed[event->keycode] = true;
+        return;
+    }
     if (wlr_seat_keyboard_has_grab(desktop->seat)) pu_shortcuts_cancel(desktop);
     bool handled = event->keycode < KEY_CNT && entry->consumed[event->keycode];
     if (event->keycode < KEY_CNT && entry->ime_epoch[event->keycode] &&
@@ -760,6 +806,7 @@ static void layout_changed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, layout_change);
+    pu_session_lock_arrange(desktop);
     pu_data_device_cancel_drag(desktop);
     pu_shortcuts_cancel(desktop);
     pu_output_control_changed(desktop);
@@ -1027,6 +1074,7 @@ static void find_surface_position(struct wlr_scene_buffer *buffer, int x, int y,
 
 bool pu_desktop_surface_visible(struct PuDesktop *desktop, struct wlr_surface *surface)
 {
+    if (pu_session_lock_active(desktop) && !pu_session_lock_surface(desktop, surface)) return false;
     struct SurfacePosition position = { .surface = surface };
     wlr_scene_node_for_each_buffer(&desktop->scene->tree.node, find_surface_position, &position);
     return position.found;
@@ -1046,6 +1094,7 @@ bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surfa
 
 static void process_motion(struct PuDesktop *desktop, uint32_t time)
 {
+    if (pu_session_lock_active(desktop)) { pu_session_lock_motion(desktop, time); return; }
     pu_input_method_reposition(desktop);
     pu_data_device_motion(desktop);
     struct PuDesktopView *view = desktop->grabbed;
@@ -1127,6 +1176,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
                        uint32_t edges, uint32_t button)
 {
     struct PuDesktop *desktop = view->desktop;
+    if (pu_session_lock_active(desktop)) return;
     if (!view->mapped || view->minimized || !pu_workspace_current(view) || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
         view->geometry_pending || view->mode != PU_DESKTOP_FLOATING) return;
     desktop->grab = mode;
@@ -1156,6 +1206,13 @@ static void cursor_button(struct wl_listener *listener, void *data)
     struct PuDesktop *desktop = wl_container_of(listener, desktop, button);
     struct wlr_pointer_button_event *event = data;
     bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
+    if (pu_session_lock_active(desktop)) {
+        if (!pressed && desktop->suppressed_button == event->button) { desktop->suppressed_button = 0; return; }
+        pu_session_lock_motion(desktop, event->time_msec);
+        if (pu_session_lock_surface(desktop, desktop->seat->pointer_state.focused_surface))
+            wlr_seat_pointer_notify_button(desktop->seat, event->time_msec, event->button, event->state);
+        return;
+    }
     if (!pressed && desktop->suppressed_button == event->button) {
         desktop->suppressed_button = 0;
         struct PuDesktopView *view = desktop->decoration_pressed;
@@ -1247,6 +1304,8 @@ static void cursor_axis(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, axis);
     struct wlr_pointer_axis_event *event = data;
+    if (pu_session_lock_active(desktop) &&
+        !pu_session_lock_surface(desktop, desktop->seat->pointer_state.focused_surface)) return;
     if (desktop->grab != PU_DESKTOP_PASSTHROUGH) return;
     wlr_seat_pointer_notify_axis(desktop->seat, event->time_msec, event->orientation,
         event->delta, event->delta_discrete, event->source, event->relative_direction);
@@ -1274,6 +1333,7 @@ static void request_selection(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, request_selection);
     struct wlr_seat_request_set_selection_event *event = data;
+    if (pu_session_lock_active(desktop)) return;
     wlr_seat_set_selection(desktop->seat, event->source, event->serial);
 }
 
@@ -1284,6 +1344,7 @@ static void output_frame(struct wl_listener *listener, void *data)
     if (!entry->output->enabled) return;
     struct wlr_scene_output *output =
         wlr_scene_get_scene_output(entry->desktop->scene, entry->output);
+    pu_session_lock_prepare_frame(entry->desktop, entry->output);
     if (!output || !wlr_scene_output_commit(output, NULL)) {
         fail(entry->desktop, "Cannot commit output frame");
         return;
@@ -1339,7 +1400,7 @@ static void output_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&entry->destroy.link);
     wlr_output_layout_remove(entry->desktop->layout, entry->output);
     entry->desktop->output_count--;
-    if (!entry->desktop->stopping && entry->desktop->output_count == 0)
+    if (!entry->desktop->stopping && entry->desktop->output_count == 0 && !pu_session_lock_active(entry->desktop))
         wl_display_terminate(entry->desktop->display);
     free(entry);
 }
@@ -1377,6 +1438,9 @@ static void new_output(struct wl_listener *listener, void *data)
         fail(desktop, "Cannot track output configuration"); return;
     }
     attach_output(entry);
+    if (!pu_session_lock_output(desktop, output)) {
+        fail(desktop, "Cannot prepare output lock protection"); return;
+    }
     wlr_log(WLR_INFO, "Output %s: %dx%d", output->name, output->width, output->height);
 }
 
@@ -1808,6 +1872,11 @@ static void new_popup(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, new_popup);
     struct wlr_xdg_popup *popup = data;
+    if (pu_session_lock_active(desktop)) {
+        wlr_log(WLR_DEBUG, "Dismissing ordinary popup while the session is locked");
+        wlr_xdg_popup_destroy(popup);
+        return;
+    }
     struct PuDesktopPopup *entry = calloc(1, sizeof(*entry));
     if (!entry) { wl_resource_post_no_memory(popup->resource); return; }
     entry->popup = popup;
@@ -1905,6 +1974,9 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!pu_data_device_init(desktop)) {
         fail(desktop, "Cannot initialize data-device integration"); return false;
     }
+    if (!pu_session_lock_init(desktop)) {
+        fail(desktop, "Cannot initialize session locking"); return false;
+    }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
     if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
         fail(desktop, "Cannot load cursor theme"); return false;
@@ -1956,6 +2028,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
 {
     desktop->stopping = true;
     pu_input_method_stop(desktop);
+    pu_session_lock_finish(desktop);
     pu_desktop_stop_shell(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
     pu_input_method_finish(desktop);

@@ -87,6 +87,7 @@ struct PuDesktop {
     struct PuOutputControl *output_control;
     struct PuDataDevice *data_device;
     struct PuInputMethod *input_method;
+    struct PuSessionLock *session_lock;
     struct PuWorkspace *active_workspace, *visible_workspace;
     struct wl_list views, all_views, keyboards, pointers, layers;
     struct PuDesktopLayer *focused_layer;

@@ -4,6 +4,9 @@
 #include "net/fetch.h"
 #include "bridge/bridge.h"
 #include "bridge/clipboard.h"
+#if defined(PU_SESSION_LOCK)
+#include "desktop/lock-client.h"
+#endif
 #if defined(PU_INPUT_METHOD)
 #include "desktop/input-method-client.h"
 #endif
@@ -250,11 +253,19 @@ static int app_async(void *user)
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
     } else n += ime;
 #endif
+#if defined(PU_SESSION_LOCK)
+    int lock = pu_lock_client_pump();
+    if (lock < 0) {
+        g_app_error = g_app_quitting = 1;
+        pu_window_keep_alive(0);
+        for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+    } else n += lock;
+#endif
     n += pu_script_flush_raf(script, pu_frame_ms());
     n += pu_script_pump(script);
     if (pu_script_failed(script)) {
         g_app_error = g_app_quitting = 1;
-#if defined(PU_INPUT_METHOD)
+#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK)
         pu_window_keep_alive(0);
 #endif
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
@@ -372,7 +383,7 @@ static int app_text_input(const PuTextInputState *state, int reset, void *user)
 
 static int open_app(PuApp *app, const PuWindowConfig *config)
 {
-    app->is_layer = config->layer != NULL || config->input_popup;
+    app->is_layer = config->layer != NULL || config->input_popup || config->lock_output;
     app->transparent = config->layer && config->layer->transparent;
     app->window = pu_window_create(config);
     if (!app->window) return 0;
@@ -526,7 +537,7 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
     if (g_app_quitting) return JS_ThrowTypeError(ctx, "Application is quitting");
     JSValue options = argc ? JS_DupValue(ctx, argv[0]) : JS_NewObject(ctx);
     const char *const names[] = { "title", "width", "height", "layer", "anchors",
-        "exclusiveZone", "keyboard", "output", "margins", "transparent", "inputPopup", NULL };
+        "exclusiveZone", "keyboard", "output", "margins", "transparent", "inputPopup", "sessionLockOutput", NULL };
     if (!option_names(ctx, options, names)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
     PuWindowConfig config = { .width = 640, .height = 480, .title = "PollyUI" };
     PuLayerConfig layer = {0};
@@ -543,12 +554,29 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
         return JS_ThrowTypeError(ctx, "Input-method surfaces are unavailable in this build");
     }
 #endif
+    JSValue lock_output = JS_GetPropertyStr(ctx, options, "sessionLockOutput");
+    if (JS_IsException(lock_output)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
+    if (!JS_IsUndefined(lock_output)) {
+#if defined(PU_SESSION_LOCK)
+        double output;
+        if (!JS_IsNumber(lock_output) || JS_ToFloat64(ctx, &output, lock_output) < 0 ||
+            !isfinite(output) || output < 1 || output > UINT32_MAX || floor(output) != output || config.input_popup) {
+            JS_FreeValue(ctx, lock_output); JS_FreeValue(ctx, options);
+            return JS_ThrowTypeError(ctx, "sessionLockOutput requires a valid display ID and exclusive role");
+        }
+        config.lock_output = (uint32_t)output;
+#else
+        JS_FreeValue(ctx, lock_output); JS_FreeValue(ctx, options);
+        return JS_ThrowTypeError(ctx, "Session-lock surfaces are unavailable in this build");
+#endif
+    }
+    JS_FreeValue(ctx, lock_output);
     JSValue layer_name = JS_GetPropertyStr(ctx, options, "layer");
     int valid = !JS_IsException(layer_name);
     if (valid && !JS_IsUndefined(layer_name)) {
-        if (config.input_popup) {
+        if (config.input_popup || config.lock_output) {
             JS_FreeValue(ctx, layer_name); JS_FreeValue(ctx, options);
-            return JS_ThrowTypeError(ctx, "inputPopup cannot also have a layer role");
+            return JS_ThrowTypeError(ctx, "Service surfaces cannot also have a layer role");
         }
         const char *const levels[] = { "background", "bottom", "top", "overlay", NULL };
         layer.layer = choice(ctx, layer_name, "layer", levels);
@@ -556,7 +584,7 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
         config.layer = &layer;
     } else if (valid) {
         for (int i = 4; names[i]; i++) {
-            if (!strcmp(names[i], "inputPopup")) continue;
+            if (!strcmp(names[i], "inputPopup") || !strcmp(names[i], "sessionLockOutput")) continue;
             JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
             if (JS_IsException(value)) valid = 0;
             else if (!JS_IsUndefined(value)) {
@@ -630,7 +658,7 @@ static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 static JSValue jswin_quit(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; if (!window_app(c,t,1)) return JS_EXCEPTION;
   g_app_quitting = 1;
-#if defined(PU_INPUT_METHOD)
+#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK)
   pu_window_keep_alive(0);
 #endif
   for (PuApp *app = g_apps; app; app = app->next) { app->closed = 1; pu_window_close(app->window); }
@@ -1136,7 +1164,7 @@ static void install_application(JSContext *ctx, const PuAppPaths *paths, int arg
     JS_FreeValue(ctx, global);
 }
 
-static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode, int input_method_mode)
+static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode, int input_method_mode, int lock_mode)
 {
     if (!pu_font_system_init()) return 1;
     PuAppPaths paths;
@@ -1191,7 +1219,17 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
 #else
     (void)input_method_mode;
 #endif
-    int rc = primary && desktop_ready && clipboard_ready && input_ready ? pu_script_run_file(s, path) : 1;
+    int lock_ready = 1;
+#if defined(PU_SESSION_LOCK)
+    if (host_ready && lock_mode) {
+        lock_ready = pu_lock_client_install(pu_script_jsctx(s));
+        pu_window_keep_alive(1);
+    }
+#else
+    (void)lock_mode;
+#endif
+    int rc = primary && desktop_ready && clipboard_ready && input_ready && lock_ready ? pu_script_run_file(s, path) : 1;
+    if (!lock_ready) fprintf(stderr, "[lock] Cannot initialize dedicated lock APIs\n");
     if (!input_ready) fprintf(stderr, "[ime] Cannot install input-method APIs\n");
     if (!clipboard_ready) fprintf(stderr, "[host] Cannot initialize clipboard APIs\n");
     if (!desktop_ready) fprintf(stderr, "[desktop] Cannot install desktop application APIs\n");
@@ -1213,7 +1251,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
             fprintf(stderr, "[host] Failed to create application window\n");
             rc = 1;
         }
-        if (rc == 0 && (g_apps || (input_method_mode && !g_app_quitting))) {
+        if (rc == 0 && (g_apps || ((input_method_mode || lock_mode) && !g_app_quitting))) {
             pu_dispatch_set_waker(disp, app_wake, NULL);
             rc = pu_window_run_all(app_async, s);
         }
@@ -1230,6 +1268,10 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     while (g_apps) app_retire(g_apps, 0);
 #if defined(PU_INPUT_METHOD)
     pu_input_client_shutdown();
+    pu_window_keep_alive(0);
+#endif
+#if defined(PU_SESSION_LOCK)
+    pu_lock_client_shutdown();
     pu_window_keep_alive(0);
 #endif
     pu_clipboard_shutdown();
@@ -1269,11 +1311,18 @@ int main(int argc, char **argv)
     const char *app_id = NULL;
     int desktop_mode = 0;
     int input_method_mode = 0;
+    int lock_mode = 0;
     int index = 1;
     while (index < argc) {
         if (!strcmp(argv[index], "--app-id")) {
             if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
             app_id = argv[index + 1]; index += 2;
+        } else if (!strcmp(argv[index], "--session-lock")) {
+#if defined(PU_SESSION_LOCK)
+            lock_mode = 1; index++;
+#else
+            fprintf(stderr, "Session-lock service is unavailable in this build\n"); return 2;
+#endif
         } else if (!strcmp(argv[index], "--input-method")) {
 #if defined(PU_INPUT_METHOD)
             input_method_mode = 1; index++;
@@ -1293,20 +1342,21 @@ int main(int argc, char **argv)
              "       pollyui --test test.js\n"
              "--app-id selects a stable Linux XDG storage namespace.\n"
              "--desktop explicitly enables Linux application discovery and direct process launching.\n"
-             "--input-method enables the separately authorized input-method service.");
+             "--input-method enables the separately authorized input-method service.\n"
+             "--session-lock enables the separately authorized lock service.");
         return 0;
     }
     if (index < argc && !strcmp(argv[index], "--test")) {
-        if (app_id || desktop_mode || input_method_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
+        if (app_id || desktop_mode || input_method_mode || lock_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
         rc = run_test(argv[index + 1]);
     } else if (index < argc && argv[index][0] == '-') {
         fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
     } else if (index < argc) {
-        if (desktop_mode && input_method_mode) { fprintf(stderr, "Desktop and input-method modes are mutually exclusive\n"); return 2; }
-        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode, input_method_mode);
+        if (desktop_mode + input_method_mode + lock_mode > 1) { fprintf(stderr, "Service modes are mutually exclusive\n"); return 2; }
+        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode, input_method_mode, lock_mode);
     }
     else
-        if (desktop_mode || input_method_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
+        if (desktop_mode || input_method_mode || lock_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
         else rc = run_demo();
     pu_render_shutdown();
     return rc;

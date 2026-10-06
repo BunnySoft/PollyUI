@@ -85,6 +85,7 @@ add_library(pollywm-core STATIC
     compositor/data-device.c
     compositor/private-process.c
     compositor/input-method.c
+    compositor/session-lock.c
     "${PROTOCOL_DIR}/text-input-v3-server.h"
     compositor/server.c
     compositor/decoration.c
@@ -127,6 +128,7 @@ if (PU_BUILD_SESSION_AUTH)
     find_path(PAM_INCLUDE_DIR security/pam_appl.h REQUIRED)
     find_library(PAM_LIBRARY pam REQUIRED)
     add_executable(polly-auth-check session/auth-check.c)
+    set_target_properties(polly-auth-check PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
     target_include_directories(polly-auth-check PRIVATE "${PAM_INCLUDE_DIR}")
     target_link_libraries(polly-auth-check PRIVATE "${PAM_LIBRARY}")
     target_compile_options(polly-auth-check PRIVATE -fno-sanitize=all -Wall -Wextra -Wpedantic -Werror)

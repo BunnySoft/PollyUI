@@ -51,7 +51,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | Runtime packaging | Relocatable Alpine x86_64 installation, private patched SDL, pinned runtime package list, dependency inventory, licenses and SHA-256 checksums. This is a development runtime bundle, not an ISO or a qualified distribution release. |
 | UEFI Live development image | Memory-only root, Alpine/OpenRC + PAM/elogind session, temporary ordinary-user automatic login, guest DRM/libinput desktop and keyboard workspace switching. OVMF/KVM verified; no disk installer, protected login, secure lock, signing trust or physical hardware qualification. |
-| Authentication foundation | Optional ordinary-user PAM helper with bounded private IPC and fixed current-UID service. Actual PAM success/denial checked in disposable containers. Lock protocol/UI and default-disabled Live password locking remain separate work; see `SESSION.md`. |
+| Authentication and lock mechanism | Ordinary-user PAM helper, separately trusted standard session-lock client, native password UI and crash/output-loss black-cover protection. Real masked typing/PAM unlock verified; protected-session/power integration remains incomplete and the passwordless Live keeps locking disabled. See `SESSION.md`. |
 | 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later

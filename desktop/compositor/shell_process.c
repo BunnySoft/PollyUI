@@ -1,5 +1,6 @@
 #include "server.h"
 #include "private-process.h"
+#include "session-lock.h"
 #include "input-method.h"
 
 #include <errno.h>
@@ -20,6 +21,8 @@ bool pu_desktop_global_filter(const struct wl_client *client,
 {
     const struct PuDesktop *desktop = data;
     const char *name = wl_global_get_interface(global)->name;
+    if (!strcmp(name, "ext_session_lock_manager_v1"))
+        return pu_session_lock_allowed(desktop, client);
     if (!strcmp(name, "zwp_input_method_manager_v2") || !strcmp(name, "zwp_virtual_keyboard_manager_v1"))
         return pu_input_method_allowed(desktop, client);
     if (strcmp(name, "zwlr_layer_shell_v1") == 0 ||
@@ -77,7 +80,7 @@ static bool reap_shell(struct PuDesktop *desktop, int options)
     revoke_shell(desktop);
     if (result > 0 && !desktop->stopping) {
         if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
-            if (desktop->exit_with_shell) {
+            if (desktop->exit_with_shell && !pu_session_lock_active(desktop)) {
                 wlr_log(WLR_INFO, "Shell exited normally; ending the requested session");
                 wl_display_terminate(desktop->display);
             }

@@ -1,5 +1,9 @@
 #include "host/sdl/layer_shell.h"
 #include "layer-shell-client.h"
+#if defined(PU_SESSION_LOCK)
+#include "desktop/lock-client.h"
+#include "session-lock-client.h"
+#endif
 #if defined(PU_INPUT_METHOD)
 #include "desktop/input-method-client.h"
 #include "input-method-v2-client.h"
@@ -20,6 +24,9 @@ struct PuLayer {
     struct zwlr_layer_surface_v1 *surface;
     int configured, closed, failed;
     int input_popup;
+#if defined(PU_SESSION_LOCK)
+    struct ext_session_lock_surface_v1 *lock_surface;
+#endif
 #if defined(PU_INPUT_METHOD)
     struct zwp_input_popup_surface_v2 *popup;
 #endif
@@ -102,6 +109,28 @@ static void closed(void *data, struct zwlr_layer_surface_v1 *surface)
 
 static const struct zwlr_layer_surface_v1_listener layer_listener = { configured, closed };
 
+#if defined(PU_SESSION_LOCK)
+static void lock_configured(void *data, struct ext_session_lock_surface_v1 *surface,
+                            uint32_t serial, uint32_t width, uint32_t height)
+{
+    PuLayer *layer = data;
+    if (!width || !height || width > INT_MAX || height > INT_MAX) {
+        layer->failed = 1;
+        SDL_SetError("Invalid session-lock surface size");
+        pu_sdl_layer_failed(layer->owner, "Lock configure");
+        return;
+    }
+    ext_session_lock_surface_v1_ack_configure(surface, serial);
+    if (!SDL_SetWindowSize(layer->window, (int)width, (int)height)) {
+        layer->failed = 1;
+        pu_sdl_layer_failed(layer->owner, "Lock resize");
+        return;
+    }
+    layer->configured = 1;
+}
+static const struct ext_session_lock_surface_v1_listener lock_surface_listener = {.configure = lock_configured};
+#endif
+
 PuLayer *pu_layer_prepare(PuWindow *owner, int input_popup)
 {
     PuLayer *layer = calloc(1, sizeof(*layer));
@@ -157,6 +186,18 @@ int pu_layer_attach(PuLayer *layer, SDL_Window *window, const PuWindowConfig *co
     if (SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL) != layer->native ||
         SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_XDG_SURFACE_POINTER, NULL))
         return SDL_SetError("SDL did not retain the external roleless surface");
+    if (config->lock_output) {
+#if defined(PU_SESSION_LOCK)
+        struct wl_output *output = SDL_GetPointerProperty(SDL_GetDisplayProperties(config->lock_output),
+            SDL_PROP_DISPLAY_WAYLAND_WL_OUTPUT_POINTER, NULL);
+        layer->lock_surface = pu_lock_client_surface(layer->native, output);
+        if (!layer->lock_surface) return 0;
+        ext_session_lock_surface_v1_add_listener(layer->lock_surface, &lock_surface_listener, layer);
+        return wait_for(layer, &layer->configured, 0);
+#else
+        return SDL_SetError("Session-lock surfaces are unavailable in this build");
+#endif
+    }
     if (layer->input_popup) {
 #if defined(PU_INPUT_METHOD)
         layer->popup = pu_input_client_popup(layer->native);
@@ -194,6 +235,11 @@ void pu_layer_unmap(PuLayer *layer)
 {
     if (!layer) return;
     int unmapped = 0;
+#if defined(PU_SESSION_LOCK)
+    if (layer->lock_surface) {
+        ext_session_lock_surface_v1_destroy(layer->lock_surface); layer->lock_surface = NULL; unmapped = 1;
+    }
+#endif
     if (layer->surface) {
         zwlr_layer_surface_v1_destroy(layer->surface); layer->surface = NULL; unmapped = 1;
     }

@@ -1,5 +1,6 @@
 #include "output-control.h"
 #include "server.h"
+#include "session-lock.h"
 #include "polly-output-guard-server.h"
 
 #include <math.h>
@@ -243,7 +244,7 @@ static void requested(struct PuOutputControl *state, struct wlr_output_configura
 {
     bool authorized = config->resource &&
         wl_resource_get_client(config->resource) == state->desktop->shell_client;
-    bool ok = authorized && !state->saved && validate(state, config);
+    bool ok = authorized && !pu_session_lock_active(state->desktop) && !state->saved && validate(state, config);
     struct wlr_output_configuration_v1 *saved = ok && !test_only ? snapshot(state, true) : NULL;
     if (ok && !test_only && !saved) ok = false;
     if (ok) ok = apply_config(state, config, test_only);
@@ -384,6 +385,12 @@ void pu_output_control_changed(struct PuDesktop *desktop)
 {
     if (desktop->output_control && !desktop->stopping)
         schedule(desktop->output_control, "Display changes reverted after output layout changed");
+}
+
+void pu_output_control_locking(struct PuDesktop *desktop)
+{
+    if (desktop->output_control && desktop->output_control->saved)
+        rollback(desktop->output_control, "Unconfirmed display changes reverted before session lock");
 }
 
 bool pu_output_control_init(struct PuDesktop *desktop)

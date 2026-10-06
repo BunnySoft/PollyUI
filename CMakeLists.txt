@@ -170,6 +170,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(pollyui PRIVATE "${UI_PROTOCOL_DIR}")
         target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
         target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
+        if (PU_BUILD_SESSION_AUTH)
+            set(UI_LOCK_XML "${WAYLAND_UI_PROTOCOLS}/staging/ext-session-lock/ext-session-lock-v1.xml")
+            add_custom_command(OUTPUT "${UI_PROTOCOL_DIR}/session-lock-client.h" "${UI_PROTOCOL_DIR}/session-lock.c"
+                COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_LOCK_XML}" "${UI_PROTOCOL_DIR}/session-lock-client.h"
+                COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_LOCK_XML}" "${UI_PROTOCOL_DIR}/session-lock.c"
+                DEPENDS "${UI_LOCK_XML}" VERBATIM)
+            target_sources(pollyui PRIVATE src/desktop/lock-client.c
+                "${UI_PROTOCOL_DIR}/session-lock-client.h" "${UI_PROTOCOL_DIR}/session-lock.c")
+            target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/session")
+            target_compile_definitions(pollyui PRIVATE PU_SESSION_LOCK)
+            add_dependencies(pollyui polly-auth-check)
+        endif()
         if (PU_BUILD_IME_ENGINE)
             pkg_check_modules(IME_KEYS REQUIRED IMPORTED_TARGET xkbcommon)
             set(UI_TEXT_INPUT_XML "${WAYLAND_UI_PROTOCOLS}/unstable/text-input/text-input-unstable-v3.xml")
@@ -533,4 +545,14 @@ endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND PU_LAYER_SHELL)
     include(desktop/install.cmake)
+    if (BUILD_TESTING AND PU_BUILD_SESSION_AUTH)
+        foreach(renderer IN ITEMS raster gl)
+            add_test(NAME desktop-native-lock-${renderer}
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/session-lock.sh"
+                    $<TARGET_FILE:polly-lock-test> $<TARGET_FILE:polly-lock-test-client>
+                    $<TARGET_FILE:pollyui> "${CMAKE_SOURCE_DIR}/desktop/session/lock.mjs")
+            set_tests_properties(desktop-native-lock-${renderer} PROPERTIES TIMEOUT 45
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+        endforeach()
+    endif()
 endif()

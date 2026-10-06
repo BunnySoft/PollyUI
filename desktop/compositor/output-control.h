@@ -7,4 +7,5 @@ bool pu_output_control_init(struct PuDesktop *desktop);
 void pu_output_control_finish(struct PuDesktop *desktop);
 bool pu_output_control_add(struct PuDesktop *desktop, struct wlr_output *output);
 void pu_output_control_changed(struct PuDesktop *desktop);
+void pu_output_control_locking(struct PuDesktop *desktop);
 #endif

@@ -33,6 +33,24 @@ target_compile_options(polly-appearance-document-test PRIVATE -Wall -Wextra -Wpe
 add_test(NAME desktop-appearance-document COMMAND polly-appearance-document-test)
 set_tests_properties(desktop-appearance-document PROPERTIES TIMEOUT 10)
 
+set(SESSION_LOCK_XML "${WAYLAND_PROTOCOLS_DIR}/staging/ext-session-lock/ext-session-lock-v1.xml")
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/session-lock-client.h" "${PROTOCOL_DIR}/session-lock.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${SESSION_LOCK_XML}" "${PROTOCOL_DIR}/session-lock-client.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SESSION_LOCK_XML}" "${PROTOCOL_DIR}/session-lock.c"
+    DEPENDS "${SESSION_LOCK_XML}" VERBATIM)
+add_executable(polly-lock-test-client session-lock-client.c
+    "${PROTOCOL_DIR}/session-lock-client.h" "${PROTOCOL_DIR}/session-lock.c")
+target_include_directories(polly-lock-test-client PRIVATE "${PROTOCOL_DIR}")
+target_compile_definitions(polly-lock-test-client PRIVATE _POSIX_C_SOURCE=200809L)
+target_link_libraries(polly-lock-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
+target_compile_options(polly-lock-test-client PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_executable(polly-lock-test session-lock.c)
+target_link_libraries(polly-lock-test PRIVATE pollywm-core)
+target_compile_options(polly-lock-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME desktop-session-lock COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/session-lock.sh"
+    $<TARGET_FILE:polly-lock-test> $<TARGET_FILE:polly-lock-test-client>)
+set_tests_properties(desktop-session-lock PROPERTIES TIMEOUT 30)
+
 add_executable(pollywm-shortcut-policy shortcut-policy.c)
 target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
 add_test(NAME desktop-shortcut-policy COMMAND pollywm-shortcut-policy)

@@ -467,14 +467,14 @@ static int create_surface(PuWindow *w)
 static int create_native(PuWindow *w, const PuWindowConfig *config,
                          const char *title, int width, int height, SDL_WindowFlags flags)
 {
-    if (config && (config->layer || config->input_popup)) {
+    if (config && (config->layer || config->input_popup || config->lock_output)) {
 #if defined(PU_LAYER_SHELL)
         if (strcmp(SDL_GetCurrentVideoDriver(), "wayland")) {
             SDL_SetError("Layer surfaces require the Wayland video driver");
             fail_window(w, "Layer creation");
             return 0;
         }
-        w->layer_surface = pu_layer_prepare(w, config->input_popup);
+        w->layer_surface = pu_layer_prepare(w, config->input_popup || config->lock_output);
         if (!w->layer_surface) { fail_window(w, "Layer preparation"); return 0; }
         if (!SDL_GetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH) &&
             !SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1")) {

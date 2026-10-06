@@ -1,5 +1,6 @@
 #include "server.h"
 #include "input-method.h"
+#include "session-lock.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -17,6 +18,7 @@ static void usage(FILE *out)
         "--shell-restarts N: retry failed shells at most N times, with backoff (default 0).\n"
         "--exit-with-shell: end the session on shell exit status 0 (not on a crash).\n"
         "--input-method PROGRAM: start a separately trusted input-method service (before --shell).\n"
+        "--lock-on-start PROGRAM: explicitly start a trusted lock client; no password lock is enabled by default.\n"
         "--shell must be last; its program receives a private trusted Wayland connection.\n"
         "Alt+Tab: cycle windows; Alt+F4: close; Alt+Escape: exit.\n"
         "Alt+F10: toggle maximize; Alt+F11: toggle fullscreen.\n"
@@ -30,6 +32,7 @@ int main(int argc, char **argv)
     bool debug = false;
     char **shell_argv = NULL;
     char *input_method_argv[2] = {0};
+    char *lock_argv[2] = {0};
     unsigned shell_restarts = 0;
     bool restart_option = false, exit_with_shell = false;
     for (int i = 1; i < argc; i++) {
@@ -37,6 +40,8 @@ int main(int argc, char **argv)
         if (strcmp(argv[i], "--debug") == 0) { debug = true; continue; }
         if (strcmp(argv[i], "--input-method") == 0 && i + 1 < argc && *argv[i + 1] &&
             !input_method_argv[0]) { input_method_argv[0] = argv[++i]; continue; }
+        if (strcmp(argv[i], "--lock-on-start") == 0 && i + 1 < argc && *argv[i + 1] &&
+            !lock_argv[0]) { lock_argv[0] = argv[++i]; continue; }
         if (strcmp(argv[i], "--exit-with-shell") == 0) { exit_with_shell = true; continue; }
         if (strcmp(argv[i], "--shell-restarts") == 0 && i + 1 < argc) {
             const char *value = argv[++i];
@@ -84,6 +89,7 @@ int main(int argc, char **argv)
     desktop.exit_with_shell = exit_with_shell;
     if (ready && input_method_argv[0]) ready = pu_input_method_spawn(&desktop, input_method_argv);
     if (ready && shell_argv) ready = pu_desktop_supervise_shell(&desktop, shell_argv, shell_restarts);
+    if (ready && lock_argv[0]) ready = pu_session_lock_spawn(&desktop, lock_argv);
     if (ready) wl_display_run(desktop.display);
     int result = !ready || desktop.failed ? 1 : 0;
     pu_desktop_finish(&desktop);

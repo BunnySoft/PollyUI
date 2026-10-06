@@ -31,6 +31,7 @@ typedef struct PuWindowConfig {
     int         height;  /* client-area height in pixels */
     const PuLayerConfig *layer; /* Linux Wayland only; borrowed during creation */
     int input_popup; /* Dedicated trusted Wayland input-method surface. */
+    uint32_t lock_output; /* Dedicated session-lock role on this output, or zero. */
 } PuWindowConfig;
 
 int pu_window_system_init(void);
