@@ -78,7 +78,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const network = createNetworkSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
-  const audio = createAudioSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
+  const audio = createAudioSettings({ native, report, host, storage, theme: () => getDesktopTheme(themeId) });
   const power = createPowerSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
   let previousExit = null;
   const exited = event => {

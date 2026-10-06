@@ -616,15 +616,32 @@ reconciles managed routes on default-device changes, and falls back after
 device removal. Explicitly targeted streams do not silently select a different
 device when their target is absent. Lingering managed links survive policy
 reconnection. Preferred names are distinct from currently available defaults.
-Preferences survive a Shell restart within the same PipeWire session, not a
-full logout/login.
+PollyShell persists acknowledged endpoint volume/mute changes and selected
+devices under `desktop.audio.v1` in its existing localStorage. This includes the
+explicitly chosen microphone mute **and unmute** state across logins. It restores
+by unique node name and media class, not runtime node IDs, object serials or
+revisions. Those names are matching keys, not authenticated hardware identities.
+Missing devices keep the existing fallback and their saved preferences are
+retained for when they return. Duplicate names are reported rather than guessed.
+
+Only changes made through these settings controls are recorded; transient stream
+controls and external applications' changes are not automatically persisted.
+Requests must be reflected in actual PipeWire state before saving, with a
+five-second acknowledgment deadline. Restore attempts are not repeatedly replayed
+for a live node. Invalid saved data and storage failures are reported; Forget
+saved audio settings clears preferences without changing current device controls.
+Data is bounded to 64 KiB and 256 endpoints. The memory-only Live image still
+discards settings at shutdown; this does not add disk persistence or capture
+permission isolation.
 
 APIs are `startAudio()`, `stopAudio()`, `audioState()`, `onAudioChanged`,
 `setAudioVolume(id,revision,value)`, `setAudioMute(id,revision,boolean)` and
-`setDefaultAudio(id,revision)`. State includes `ready`, `revision`, `error`,
+`setDefaultAudio(id,revision)`. State includes `ready`, `revision`, `generation`, `error`,
 `defaultSink`, `defaultSource`, `preferredSink`, `preferredSource`, `nodes`,
 `routes` and `connections`. Node revisions reject stale controls; unsupported
-volume/mute values are null. Volume requests are limited to 0-1 and preserve
+volume/mute values are null. Node `instance` plus the connection `generation`
+identify pending runtime acknowledgments and are never persisted.
+Volume requests are limited to 0-1 and preserve
 existing channel ratios. Native models are bounded to 256 nodes, 1024 ports
 and 1024 links, with at most 256 pending route creations.
 

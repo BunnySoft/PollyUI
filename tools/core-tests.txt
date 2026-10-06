@@ -29,4 +29,5 @@ desktop-theme-client.mjs
 native-shell.mjs
 workspace-preferences.mjs
 display-profiles.mjs
+audio-preferences.mjs
 desktop-applications.mjs

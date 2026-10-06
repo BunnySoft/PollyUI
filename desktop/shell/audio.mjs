@@ -1,8 +1,13 @@
 import { h, render } from './js/reconciler.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
+import { createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
 
-export function createAudioSettings({ native, host, theme, report }) {
+export function createAudioSettings({ native, host, theme, report, storage }) {
   let started = false, previous, window = null, state = null, error = '';
+  let timer = null;
+  const preferences = createAudioPersistence({ native, storage, failure: failure => {
+    error = 'Audio settings: ' + String(failure); report('[shell] ' + error);
+  } });
   function close() { if (window && !window.closed) window.close(); window = null; }
   function button(id, label, callback, enabled = true) {
     const current = theme();
@@ -17,7 +22,7 @@ export function createAudioSettings({ native, host, theme, report }) {
   function change(node, operation, value) {
     try {
       error = '';
-      native[operation](node.id, node.revision, ...(value === undefined ? [] : [value]));
+      preferences.change(node, operation, value);
     } catch (failure) { error = String(failure); report('[shell] Audio: ' + error); paint(); }
   }
   function paint() {
@@ -30,6 +35,11 @@ export function createAudioSettings({ native, host, theme, report }) {
       h('view', { style: { flexDirection: 'row', gap: 8 } }, label('Audio (PipeWire)', 18),
         button('shell-audio-close', 'Close', close)),
       error || state.error ? h('view', { role: 'alert' }, label(error || state.error)) : null,
+      label(preferences.status, 10),
+      button('shell-audio-forget-settings', 'Forget saved audio settings', () => {
+        try { preferences.forget(); error = ''; paint(); }
+        catch (failure) { error = String(failure); report('[shell] Audio: ' + error); paint(); }
+      }),
       !state.ready ? label(native.audioAvailable ? 'Waiting for the private audio service...' : 'Start the desktop with --audio to enable its own audio service.') : null,
       state.ready && !state.nodes.length ? label('No audio endpoints are available.') : null,
       state.ready && state.nodes.length && state.defaultSink === null ? label('No playback output is available.') : null,
@@ -56,6 +66,7 @@ export function createAudioSettings({ native, host, theme, report }) {
   function refresh() {
     try {
       state = native.audioState();
+      preferences.refresh(state);
       const rank = node => node.class === 'Audio/Sink' ? 0 : node.class.startsWith('Audio/Source') ? 1 : 2;
       state.nodes.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
       paint();
@@ -67,7 +78,9 @@ export function createAudioSettings({ native, host, theme, report }) {
     if (started || !native?.audioAvailable) return;
     try {
       native.startAudio();
+      preferences.start();
       started = true; previous = native.onAudioChanged; native.onAudioChanged = onChanged;
+      timer = setInterval(() => { if (preferences.busy) refresh(); }, 200);
       refresh();
     } catch (failure) { error = String(failure); report('[shell] Cannot start audio policy: ' + error); }
   }
@@ -92,6 +105,8 @@ export function createAudioSettings({ native, host, theme, report }) {
       close();
       if (!started) return;
       started = false;
+      if (timer !== null) clearInterval(timer);
+      timer = null; preferences.stop();
       if (native.onAudioChanged === onChanged) native.onAudioChanged = previous;
       try { native.stopAudio(); } catch (failure) { report('[shell] Cannot stop audio policy: ' + String(failure)); }
     },

@@ -480,6 +480,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                         "${CMAKE_SOURCE_DIR}/desktop/tests/audio-shell.mjs" audio)
                 set_tests_properties(desktop-audio-shell-${renderer} PROPERTIES TIMEOUT 110
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+                add_test(NAME desktop-audio-persistence-${renderer}
+                    COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/audio-persistence.py"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        "${CMAKE_SOURCE_DIR}/desktop/tests/audio-persistence.mjs")
+                set_tests_properties(desktop-audio-persistence-${renderer} PROPERTIES TIMEOUT 180
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-network-shell-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh" --iwd
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

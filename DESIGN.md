@@ -444,8 +444,13 @@ cannot request amplification above one.
 
 The launcher owns daemon startup and failure/exit cleanup. Real fixtures
 exercise virtual playback and nonzero capture, not physical devices. The
-ALSA/ACP configuration still needs hardware qualification. Metadata currently
-lasts for a PipeWire session rather than across logins. PulseAudio compatibility,
+ALSA/ACP configuration still needs hardware qualification. PollyShell persists
+acknowledged user setting changes in bounded JSON, restoring unique endpoint
+names/classes into fresh runtime IDs. Runtime connection generations and node
+instances distinguish stale acknowledgments. Missing-device fallback does not
+overwrite saved choices; microphone mute/unmute follows the saved preference.
+Invalid data, duplicate names, missing acknowledgments and failed writes are
+reported instead of silently treated as saved. PulseAudio compatibility,
 Bluetooth policy, application capture consent and portals are not implied by
 this audio service.
 

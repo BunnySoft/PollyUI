@@ -73,7 +73,7 @@ static struct {
     struct AudioPort *ports;
     struct AudioLink *links;
     struct PendingLink *pending;
-    uint32_t revision, sink, source;
+    uint32_t revision, sink, source, generation;
     unsigned node_count, port_count, link_count;
     bool initialized, entered, ready, changed, route, failed;
     int sync;
@@ -576,6 +576,7 @@ static JSValue start(JSContext *ctx, JSValueConst self, int argc, JSValueConst *
     if (!pu_desktop_windows_ready(ctx)) return JS_EXCEPTION;
     if (audio.core && !audio.failed) return JS_UNDEFINED;
     stop();
+    advance(&audio.generation);
     int fd = private_audio();
     if (fd < 0) return JS_ThrowTypeError(ctx, "Audio requires this desktop's private PipeWire session (--audio)");
     audio.error[0] = 0;
@@ -609,6 +610,7 @@ static JSValue snapshot(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     }
     JS_SetPropertyStr(ctx, result, "ready", JS_NewBool(ctx, audio.ready && !audio.failed));
     JS_SetPropertyStr(ctx, result, "revision", JS_NewUint32(ctx, audio.revision));
+    JS_SetPropertyStr(ctx, result, "generation", JS_NewUint32(ctx, audio.generation));
     JS_SetPropertyStr(ctx, result, "error", JS_NewString(ctx, audio.error));
     JS_SetPropertyStr(ctx, result, "defaultSink", audio.sink == PW_ID_ANY ? JS_NULL : JS_NewUint32(ctx, audio.sink));
     JS_SetPropertyStr(ctx, result, "defaultSource", audio.source == PW_ID_ANY ? JS_NULL : JS_NewUint32(ctx, audio.source));
@@ -631,6 +633,7 @@ static JSValue snapshot(JSContext *ctx, JSValueConst self, int argc, JSValueCons
         if (JS_IsException(item)) break;
         JS_SetPropertyStr(ctx, item, "id", JS_NewUint32(ctx, node->id));
         JS_SetPropertyStr(ctx, item, "revision", JS_NewUint32(ctx, node->revision));
+        JS_SetPropertyStr(ctx, item, "instance", JS_NewString(ctx, node->serial));
         JS_SetPropertyStr(ctx, item, "name", JS_NewString(ctx, node->name));
         JS_SetPropertyStr(ctx, item, "description", JS_NewString(ctx, *node->description ? node->description : node->name));
         JS_SetPropertyStr(ctx, item, "class", JS_NewString(ctx, node->media_class));

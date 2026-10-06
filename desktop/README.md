@@ -35,7 +35,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. |
 | Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
 | Wi-Fi client | Native iwd settings for discovery/RSSI, scanning, radio power, connection, bounded interactive authentication and forgetting profiles, with root-owner verification and service-restart recovery. Isolated protocol/UI fixtures pass; real radios and DHCP/DNS need hardware qualification. |
-| Audio policy and controls | Opt-in private PipeWire core, own routing/default-device policy, volume/mute UI and validated socket connection, without WirePlumber. Real virtual playback/capture, manual routing and device-loss coverage; physical audio and Pulse/ALSA client compatibility remain separate. |
+| Audio policy and controls | Opt-in private PipeWire core, own routing/default-device policy, acknowledged volume/mute/device preference persistence and validated socket connection, without WirePlumber. Real virtual playback/capture, manual routing and device-loss coverage; physical audio and Pulse/ALSA client compatibility remain separate. |
 | Workspaces - implemented | Four first-run, globally synchronized manual workspaces; create/switch/remove/rename/reorder, safe window-family migration, current-workspace taskbar/Dock filtering and keyboard switching. Names/order/current selection persist across sessions; Shell reconnect preserves live state. Empty workspaces remain. |
 | Switcher and shortcuts - implemented | Native recent-use window list with forward/reverse cycling, cancellation and release/click acceptance; editable, conflict-checked, disableable shortcuts with restart persistence. |
 | Window decorations - implemented | Negotiated server-side titlebars/borders, title text, controls, drag/resize, maximize/fullscreen geometry and live five-theme integration, while honoring client-side decoration requests. |
@@ -723,9 +723,13 @@ Policy respects stream autoconnect and explicit targets, preserves manual links,
 negotiates raw DSP ports and manages only its tagged routes. A supported mono
 stream can be adapted to a stereo endpoint. Missing explicit targets remain
 unrouted; default-device loss selects a fallback without discarding the preferred
-name. Lingering links and metadata survive a policy/Shell reconnect, but
-cross-login settings are not yet persisted. Audio settings expose native
-volume/mute/default controls and unavailable-device errors.
+name. Lingering links and metadata survive a policy/Shell reconnect. PollyShell
+also saves acknowledged settings-control changes across logins: endpoint volume,
+mute/unmute (including microphone state) and selected device names. Preferences
+are bounded/versioned JSON; missing devices retain fallback without overwriting
+the saved choice, and ambiguous names are not automatically restored. Runtime
+IDs are never saved. Corrupt preferences and write/acknowledgment failures are
+explicit, with a Forget saved audio settings recovery action.
 
 The default config uses ALSA enumeration and ACP auto-profile/auto-port support.
 Actual cards, jack changes, profiles and realtime latency need hardware
@@ -825,8 +829,8 @@ PollyShell owns the JSON preference parsing and persistence; the compositor
 accepts a bounded startup transaction only before ordinary applications or
 workspace operations. Shell reconnect never overwrites current live workspaces.
 Invalid preferences remain untouched with an error and an explicit Save current
-layout recovery action. Full application/window session restoration and
-persistent audio policy remain separate work. The Live
+layout recovery action. Full application/window session restoration remains
+separate work. The Live
 root is still memory-only, so guest shutdown discards saved preferences.
 The root README documents the native workspace API and ID lifetime.
 
