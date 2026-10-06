@@ -11,10 +11,13 @@ The user reported successful first-target physical validation of Alpine alpha.4
 on 2026-10-06; this is not a comprehensive hardware matrix or independent
 per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,
 built from a debootstrap minbase rootfs**, not a GNOME/KDE Live image or a
-bootable use of the slim container image. Migration and maintenance automation
-are not implemented yet. The existing Alpine build remains the verified baseline;
+bootable use of the slim container image. Debian minbase, glibc runtime and
+systemd/logind Live candidates are implemented, but graphical sanitizer and
+Debian physical acceptance remain open; maintenance automation is not enabled.
+The existing Alpine build remains the user-verified baseline;
 see [base selection and maintenance plan](../docs/desktop-base-maintenance.md)
-for version pinning, upstream synchronization, acceptance and rollback policy.
+for version pinning, upstream synchronization, acceptance and rollback policy,
+and [Debian build status](./release/debian/README.md) for commands and known gaps.
 
 ## Architecture and implementation plan
 

@@ -1072,9 +1072,11 @@ in a disposable VM. It is not an installer or a production-qualified release;
 protected login, secure lock, updates and hardware qualification remain. See the desktop guide for
 the architecture, roadmap, standalone build and WSL/WSLg checks.
 
-The next desktop base is planned as **Debian 13 trixie amd64 minbase** while
-retaining our own compositor and Shell. The current implementation and images
-remain Alpine-based. See the [base and maintenance plan](./docs/desktop-base-maintenance.md)
+The next desktop base is **Debian 13 trixie amd64 minbase** while retaining
+our own compositor and Shell. A Debian build/Live candidate exists; Alpine
+remains the accepted physical baseline until the outstanding Debian acceptance
+gates pass. See the [Debian build status](./desktop/release/debian/README.md)
+and [base and maintenance plan](./docs/desktop-base-maintenance.md)
 for the confirmed build principle, dependency ownership, update cadence and
 required acceptance before replacing the user-validated Alpine baseline.
 

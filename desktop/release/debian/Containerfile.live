@@ -1,0 +1,72 @@
+ARG RUNTIME_IMAGE=localhost/polly-debian-runtime
+FROM ${RUNTIME_IMAGE} AS live-base
+USER root
+WORKDIR /
+COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    systemd-sysv udev dbus libpam-systemd kmod linux-image-amd64 \
+    firmware-intel-graphics firmware-nvidia-graphics firmware-iwlwifi firmware-sof-signed intel-microcode iucode-tool \
+    iwd dhcpcd openresolv wireless-regdb iproute2 iw rfkill ethtool \
+    pciutils usbutils alsa-utils util-linux && \
+    apt-get install -y --no-install-recommends \
+        libegl-mesa0/trixie-backports libgl1-mesa-dri/trixie-backports \
+        libglx-mesa0/trixie-backports libgbm1/trixie-backports mesa-vulkan-drivers/trixie-backports && \
+    iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode
+COPY release/live/init /init
+COPY release/live/session /usr/bin/polly-live-session
+COPY release/live/diagnostics /usr/bin/polly-live-diagnostics
+COPY release/live/session-mode /usr/share/pollyui/desktop/tools/live-session-mode.sh
+COPY release/live/shell.mjs /usr/share/pollyui/desktop/shell/live.mjs
+COPY release/live/dhcpcd.conf /etc/dhcpcd.conf
+COPY system/iwd-main.conf /etc/iwd/main.conf
+COPY system/polly-lock.pam /etc/pam.d/polly-lock
+COPY system/elogind-polly.conf /etc/systemd/logind.conf.d/50-polly.conf
+COPY release/debian/login.pam /etc/pam.d/login
+COPY release/debian/getty.conf /etc/systemd/system/getty@tty1.service.d/polly.conf
+COPY release/debian/journald.conf /etc/systemd/journald.conf.d/polly.conf
+COPY release/debian/live-power.conf /etc/dbus-1/system.d/polly-live-power.conf
+COPY release/debian/polly-hardware-log.service /etc/systemd/system/polly-hardware-log.service
+COPY release/debian/boot-hardware /usr/bin/polly-boot-hardware
+COPY release/debian/resolvconf.conf /etc/resolvconf.conf
+COPY release/debian/network-runtime.conf /etc/systemd/system/iwd.service.d/polly-network.conf
+COPY release/debian/network-runtime.conf /etc/systemd/system/dhcpcd.service.d/polly-network.conf
+COPY release/debian/network-tmpfiles.conf /etc/tmpfiles.d/polly-network.conf
+RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware && \
+    sed -i 's/\r$//' /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware \
+        /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
+        /etc/systemd/logind.conf.d/50-polly.conf /etc/systemd/journald.conf.d/polly.conf \
+        /etc/systemd/system/getty@tty1.service.d/polly.conf /etc/systemd/system/polly-hardware-log.service \
+        /etc/dbus-1/system.d/polly-live-power.conf /usr/share/pollyui/desktop/tools/live-session-mode.sh \
+        /etc/resolvconf.conf /etc/systemd/system/iwd.service.d/polly-network.conf \
+        /etc/systemd/system/dhcpcd.service.d/polly-network.conf /etc/tmpfiles.d/polly-network.conf && \
+    chmod 644 /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
+        /etc/systemd/logind.conf.d/50-polly.conf /etc/systemd/journald.conf.d/polly.conf \
+        /etc/systemd/system/getty@tty1.service.d/polly.conf /etc/systemd/system/polly-hardware-log.service \
+        /etc/dbus-1/system.d/polly-live-power.conf /usr/share/pollyui/desktop/tools/live-session-mode.sh \
+        /usr/share/pollyui/desktop/shell/live.mjs /etc/resolvconf.conf \
+        /etc/systemd/system/iwd.service.d/polly-network.conf \
+        /etc/systemd/system/dhcpcd.service.d/polly-network.conf /etc/tmpfiles.d/polly-network.conf && \
+    (getent group netdev >/dev/null || groupadd --system netdev) && \
+    usermod -aG audio,netdev,systemd-journal -s /usr/bin/polly-live-session polly && \
+    printf '/usr/bin/polly-live-session\n' >> /etc/shells && \
+    printf 'polly-live\n' > /etc/hostname && \
+    printf '# Memory-only Live root. No block devices are mounted.\n' > /etc/fstab && \
+    systemctl enable getty@tty1.service iwd.service dhcpcd.service && \
+    systemctl mask apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service \
+        fstrim.timer fstrim.service && \
+    systemctl set-default multi-user.target && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
+    rm -f /usr/sbin/policy-rc.d /etc/machine-id /var/lib/dbus/machine-id && \
+    apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+ENTRYPOINT []
+CMD ["/bin/sh"]
+
+FROM docker.io/library/debian:trixie-slim AS image-tools
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    python3 cpio gzip grub-efi-amd64-bin xorriso mtools dosfstools fdisk \
+    qemu-system-x86 ovmf
+WORKDIR /work
+ENTRYPOINT []
+CMD ["/bin/sh"]

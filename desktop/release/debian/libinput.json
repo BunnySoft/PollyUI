@@ -1,0 +1,6 @@
+{
+  "version": "1.28.1-1+deb13u1",
+  "source": "Debian trixie signed deb-src metadata",
+  "configuration": "Private shared library without libwacom; Debian quirks from matching libinput-bin",
+  "limitation": "libwacom tablet model metadata is unavailable; advanced tablet qualification is outside this migration"
+}

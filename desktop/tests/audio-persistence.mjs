@@ -18,12 +18,14 @@ async function click(id) {
   const node = surface?.window.document.getElementById(id);
   check(node?.offsetWidth > 0, 'audio preference control laid out: ' + id);
   const body = surface.window.document.body.firstChild;
-  let rect = node.getBoundingClientRect(), bounds = body.getBoundingClientRect();
+  let rect = node.getBoundingClientRect(), bounds = surface.window.document.body.getBoundingClientRect();
   if (rect.y + rect.height > bounds.y + bounds.height || rect.y < bounds.y) {
     body.scrollTop = Math.max(0, Number(body.scrollTop) + rect.y - bounds.y);
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     rect = node.getBoundingClientRect();
   }
+  check(rect.y + rect.height / 2 >= bounds.y && rect.y + rect.height / 2 < bounds.y + bounds.height,
+    'audio preference control is inside its scroll viewport: ' + id);
   await signal(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
 }
 const node = name => desktop.audioState().nodes.find(node => node.name === name);

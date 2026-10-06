@@ -1,0 +1,16 @@
+ARG MINBASE_IMAGE=localhost/polly-debian-minbase
+FROM ${MINBASE_IMAGE}
+ENV DEBIAN_FRONTEND=noninteractive
+COPY debian.sources /etc/apt/sources.list.d/debian.sources
+COPY backports.sources /etc/apt/sources.list.d/backports.sources
+COPY runtime-packages.txt /tmp/runtime-packages.txt
+RUN apt-get update -qq && apt-get install -y --no-install-recommends $(cat /tmp/runtime-packages.txt) && \
+    rm /tmp/runtime-packages.txt && useradd --create-home --uid 1000 --shell /bin/sh polly && \
+    apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+ADD pollydesktop-*-debian13-x86_64.tar.gz /
+USER polly
+WORKDIR /home/polly
+ENV PU_RENDERER=raster SDL_RENDER_DRIVER=software
+ENTRYPOINT ["/usr/bin/polly-desktop"]
+CMD ["--headless", "--ime", "--audio", "--check"]

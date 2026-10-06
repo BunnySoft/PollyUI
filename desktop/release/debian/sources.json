@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "wlroots": {
+    "version": "0.19.3",
+    "archive": "wlroots-0.19.3.tar.gz",
+    "url": "https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.3/wlroots-0.19.3.tar.gz",
+    "sha512": "0de8e27eba656b5893792273f995ee8303738f68478828ee9fcb00fbf3479f928476f4616ae1cf2396cdd85e39360919c3ea8a583df5768e653f75d6b347ea71"
+  },
+  "wlr-protocols": {
+    "version": "a5028afbe4a1cf0daf020c4104c1565a09d6e58a",
+    "archive": "wlr-protocols-a5028afbe4a1cf0daf020c4104c1565a09d6e58a.tar.gz",
+    "url": "https://gitlab.freedesktop.org/wlroots/wlr-protocols/-/archive/a5028afbe4a1cf0daf020c4104c1565a09d6e58a/wlr-protocols-a5028afbe4a1cf0daf020c4104c1565a09d6e58a.tar.gz",
+    "sha512": "b5684516fa7c8acdf37d5b24edf231629fd81502d6586c3e3433470c61cc4e949d275b0c348353cd124f270d07ae448a5cdef01496ff95e947d04a29a684dd8f"
+  },
+  "sharedBuildPins": {
+    "skia": "08a5439a6be726021c1c1905d23ce298a3edc5e4",
+    "sdl": "8e37db5e797b6167f3a00d697d816a684bd259c7",
+    "harfbuzz": "6f4c5cec306d31e6822303f5ba248a14293d588e",
+    "authority": "desktop/tools/build-{skia,sdl,harfbuzz}-linux.sh"
+  }
+}

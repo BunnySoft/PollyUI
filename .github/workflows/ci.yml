@@ -48,6 +48,40 @@ jobs:
             sh desktop/tests/runtime-wayland.sh /workspace/build/linux-ci-asan/pollyui \
             /workspace/build/linux-ci-asan/desktop/pollywm --headless
 
+  debian:
+    name: Debian candidate runtime and compositor
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install isolated build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends podman uidmap catatonit
+      - name: Build signed minbase and native SDK
+        run: sh desktop/tools/build-debian-sdk.sh
+      - name: Verify the minimal base
+        run: |
+          podman run --rm --network=none -v "$GITHUB_WORKSPACE:/workspace:ro" \
+            localhost/polly-debian-minbase sh desktop/tests/debian-minbase.sh
+      - name: Native runtime and installed behavior
+        run: |
+          podman run --rm --init --network=none -v "$GITHUB_WORKSPACE:/workspace" \
+            -v polly-debian-ci:/build localhost/polly-debian-sdk \
+            sh desktop/tools/check-debian-runtime.sh /build/normal
+          podman run --rm --network=none -v "$GITHUB_WORKSPACE:/workspace" \
+            -v polly-debian-ci:/build localhost/polly-debian-sdk \
+            python3 desktop/tests/auth-helper.py /build/normal/polly-auth-check \
+            /build/normal/desktop/tests/polly-lock-test \
+            /build/normal/desktop/tests/polly-lock-test-client /build/normal/pollyui
+      - name: Sanitized runtime and compositor
+        run: |
+          podman run --rm --init --network=none -v "$GITHUB_WORKSPACE:/workspace" \
+            -v polly-debian-ci:/build localhost/polly-debian-sdk \
+            sh desktop/tools/check-debian-runtime.sh /build/asan --sanitize
+
   windows:
     name: Windows native runtime
     runs-on: windows-latest

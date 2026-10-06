@@ -13,7 +13,12 @@ mount -t tmpfs -o mode=1777 tmpfs /tmp
 echo "PollyDesktop Live: memory-only root; no block-device installation." >/dev/console
 case " $(cat /proc/cmdline) " in
     *" polly.serial=1 "*)
-        sed -i 's|SYSLOGD_OPTS=.*|SYSLOGD_OPTS="-O /dev/ttyS0"|' /etc/conf.d/syslog
+        if [ -f /etc/conf.d/syslog ]; then
+            sed -i 's|SYSLOGD_OPTS=.*|SYSLOGD_OPTS="-O /dev/ttyS0"|' /etc/conf.d/syslog
+        else
+            mkdir -p /run/systemd/journald.conf.d
+            printf '[Journal]\nForwardToConsole=yes\nTTYPath=/dev/ttyS0\n' > /run/systemd/journald.conf.d/polly-serial.conf
+        fi
         ;;
 esac
 exec /sbin/init

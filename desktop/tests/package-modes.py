@@ -7,7 +7,7 @@ import tarfile
 directory = Path(sys.argv[1])
 manifest = json.loads((directory / "manifest.json").read_text())
 expected = {entry["path"]: entry for entry in manifest["files"]}
-archives = list(directory.glob("pollydesktop-*-alpine3.24-x86_64.tar.gz"))
+archives = list(directory.glob("pollydesktop-*-x86_64.tar.gz"))
 assert len(archives) == 1
 with tarfile.open(archives[0], "r:gz") as archive:
     seen = set()

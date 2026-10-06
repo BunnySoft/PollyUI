@@ -1,0 +1,45 @@
+ARG MINBASE_IMAGE=localhost/polly-debian-minbase
+FROM ${MINBASE_IMAGE}
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build pkg-config meson git python3 python3-pil \
+    clang clang-18 libclang-rt-dev generate-ninja gdb valgrind nodejs openssl curl \
+    libwayland-dev wayland-protocols libxkbcommon-dev libdrm-dev libpixman-1-dev \
+    libinput-dev libseat-dev libudev-dev libcap-dev libdisplay-info-dev libliftoff-dev \
+    liblcms2-dev libegl-dev libgles-dev libgbm-dev hwdata \
+    libfontconfig-dev libfreetype-dev libpng-dev libjpeg-dev libwebp-dev zlib1g-dev \
+    libxcursor-dev libxrandr-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libasound2-dev \
+    libicu-dev libcurl4-openssl-dev libdbus-1-dev dbus \
+    libpipewire-0.3-dev pipewire-bin libspa-0.2-modules libpam0g-dev \
+    librime-dev librime-data rime-data-luna-pinyin rime-data-stroke \
+    fonts-dejavu-core fonts-noto-core fonts-noto-cjk fonts-noto-color-emoji \
+    libgl1-mesa-dri libegl-mesa0 libglx-mesa0 libgles2 xkb-data adwaita-icon-theme foot \
+    ca-certificates && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-sdk-packages.txt
+COPY release/debian/build-wlroots.py release/debian/sources.json /opt/pollyui-build/debian/
+RUN python3 /opt/pollyui-build/debian/build-wlroots.py && \
+    printf '/opt/pollyui-wlroots/lib\n/usr/local/lib\n' > /etc/ld.so.conf.d/polly-sdk.conf && ldconfig
+COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
+RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
+COPY tools/build-sdl-linux.sh tools/build-harfbuzz-linux.sh /opt/pollyui-build/tools/
+COPY patches/sdl-wayland-sync-lifetime.patch /opt/pollyui-build/patches/
+RUN sh /opt/pollyui-build/tools/build-sdl-linux.sh /opt/pollyui-sdl && \
+    sh /opt/pollyui-build/tools/build-harfbuzz-linux.sh /opt/pollyui-harfbuzz && ldconfig
+ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
+COPY release/debian/source-packages.sources /etc/apt/sources.list.d/source-packages.sources
+COPY release/debian/build-libinput.sh release/debian/libinput.json /opt/pollyui-build/debian/
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libevdev-dev libmtdev-dev patchelf && \
+    sh /opt/pollyui-build/debian/build-libinput.sh
+ENV PKG_CONFIG_PATH=/opt/pollyui-input/lib/pkgconfig:/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
+COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
+RUN apt-get update -qq && apt-get install -y --no-install-recommends llvm-19 \
+    libegl-mesa0/trixie-backports libgl1-mesa-dri/trixie-backports \
+    libglx-mesa0/trixie-backports libgbm1/trixie-backports libgbm-dev/trixie-backports \
+    mesa-vulkan-drivers/trixie-backports pipewire-bin/trixie-backports \
+    libpipewire-0.3-dev/trixie-backports libpipewire-0.3-modules/trixie-backports \
+    libspa-0.2-dev/trixie-backports libspa-0.2-modules/trixie-backports && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-sdk-packages.txt
+ENV ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer-19
+COPY release/debian/rime-default.custom.yaml /usr/share/rime-data/default.custom.yaml
+WORKDIR /workspace
+CMD ["/bin/sh"]

@@ -30,7 +30,131 @@ change was needed. SDK builds and runtime checks do not require that capability.
 `policy-rc.d` prevents package installation from starting services in the build
 container. The minbase check rejects desktop task packages and development tools.
 
-Application/SDK, service and Live-media work is still under validation.
-Keep source revisions, exact package inventories and known failures with each
-candidate. See the [maintenance policy](../../../docs/desktop-base-maintenance.md)
-for the migration gates and limits.
+## Native SDK and runtime checks
+
+```sh
+sh desktop/tools/build-debian-sdk.sh
+podman volume create polly-debian-build
+podman run --rm --network=none -v "$PWD:/workspace" \
+    -v polly-debian-build:/build localhost/polly-debian-sdk \
+    sh desktop/tools/check-debian-runtime.sh /build/normal
+podman run --rm --network=none -v "$PWD:/workspace" \
+    -v polly-debian-build:/build localhost/polly-debian-sdk \
+    sh desktop/tools/check-debian-runtime.sh /build/asan --sanitize
+```
+
+Generated build files should live on a native Linux filesystem. Debian Ninja's
+IPO probe repeatedly returned `EIO` on the Windows-backed checkout; a dedicated
+Podman volume fixes this without disabling compiler checks. Source stays mounted
+at `/workspace`, and independent normal/sanitized build directories share no
+generated objects. None of these checks need bootstrap mount capabilities.
+
+The SDK rebuilds the existing pinned Skia, SDL and static toolkit-free HarfBuzz
+for glibc. `sources.json` pins wlroots 0.19.3 and wlr-protocols; stable Debian's
+wlroots 0.18 is not a compatible substitute. Source archives are verified before
+building. Debian's libinput links libwacom and therefore GLib/GObject: a private
+build of the matching Debian source disables optional libwacom model metadata,
+without replacing the system library or its quirks data. Its scope and source
+version are recorded in `libinput.json`; advanced tablet qualification is not
+implied. The runtime uses origin-relative private libraries, not SDK paths.
+
+Only selected Mesa and PipeWire packages come from `trixie-backports`.
+Mesa 26 provides the intended recent NVIDIA NVK/Zink path. PipeWire 1.4 did not
+acknowledge virtual endpoint volume changes in the equivalent fixture; the
+1.6 backport passes those controls. This is not a claim that every PipeWire 1.4
+device is unsupported. Runtime packages and their installed dependency closure
+are pinned to the actual versions resolved in the SDK.
+
+`librime-data` lists optional schemas whose packages are not installed in a
+minimal system. `rime-default.custom.yaml` explicitly selects the intended
+`luna_pinyin_simp` schema rather than ignoring deployment errors or installing
+unrelated dictionaries. The upstream `default.yaml` is not overwritten.
+
+## Runtime bundle and Live candidate
+
+```sh
+podman run --rm --network=none -v "$PWD:/workspace" \
+    -v polly-debian-build:/build localhost/polly-debian-sdk \
+    node desktop/tools/package-linux.mjs /build/normal dist/polly-debian-runtime \
+    /opt/pollyui-sdl /opt/pollyui-harfbuzz
+podman run --rm --network=none -v "$PWD:/workspace" localhost/polly-debian-sdk \
+    node desktop/tests/package-manifest.mjs dist/polly-debian-runtime
+podman build -t localhost/polly-debian-runtime \
+    -f dist/polly-debian-runtime/Containerfile dist/polly-debian-runtime
+sh desktop/tools/build-live.sh --debian dist/polly-debian-live
+```
+
+On a Windows worktree whose Git metadata is not readable inside containers,
+provide `POLLY_SOURCE_REVISION` and `POLLY_SOURCE_DIRTY=0|1` from the host,
+including forwarding those variables with `podman run -e`. Do not claim a dirty
+candidate is a clean-source release. Existing output directories are refused.
+
+The Debian Live recipe uses systemd/udev/logind and Linux-PAM, ordinary-user
+temporary auto-login, iwd, wired-only dhcpcd/openresolv, and our private PipeWire
+policy. A Live-only D-Bus policy keeps power capabilities/actions denied; no
+polkit or privilege proxy is added. No password locking, suspend, disk installer
+or persistence is enabled. Package scripts cannot start services in containers;
+systemd itself only runs when the completed image boots in a guest.
+Automatic APT update/upgrade and filesystem-trim units are masked in this
+development Live image. DNS state lives under `/run/polly-network` with narrowly
+scoped write access for iwd/dhcpcd, not a writable system root exception.
+Downloaded `.deb` files and APT binary caches are removed from the runtime/Live
+payload. The payload check rejects accidentally retained installation caches.
+
+The shared builder packages one installed kernel and Intel microcode, retains
+the exact Debian package inventory, and generates separately named
+`*-debian13-x86_64-uefi-live.iso` and `*-debian13-x86_64-uefi-usb.img` files.
+Payload permissions, PAM/script line endings and essential services are checked
+before export. Image assembly uses a native temporary filesystem, then publishes
+completed artifacts to the destination so Windows mount I/O does not stall ISO
+creation. No physical disk, host service or firmware setting is changed.
+
+## Current acceptance limits
+
+The Debian normal build passes all 59 native tests, the shared core suite and
+the disposable-user real PAM fixture. The shared core also passes ASan/UBSan.
+This does **not** mean full graphical sanitizer acceptance has passed:
+
+- Raw graphical LeakSanitizer runs still report Mesa process-global allocations
+  after driver DSO unload. Matching official Debian debug information maps them
+  to `get_cpu_topology` in `src/util/u_cpu_detect.c` and `u_mmInit` in
+  `src/util/u_mm.c` (the runtime executable-memory pool).
+- Mesa 26 reduced, but did not eliminate, the reports. Forcing software rendering
+  does not resolve them. A trial SDL EGL-thread cleanup patch had no effect and
+  was removed; it is not a shipped workaround.
+- No leak suppression, changed sanitizer exit code or `continue-on-error` is
+  used. The Debian CI job retains this failing gate rather than reporting a
+  false clean result. A normal minimal-window Valgrind run reporting zero
+  definite/indirect/possible loss does not invalidate the LSan evidence.
+
+The Debian candidate boots both read-only USB and optical media under OVMF/KVM:
+ordinary PAM/logind session, real guest DRM, Rime Chinese input, clipboard
+copy/paste and keyboard workspace switching passed. Removing approximately
+528 MiB of APT installation caches allowed the revised USB image to pass the
+same acceptance with a **4 GiB** guest. A previous cache-heavy 4 GiB trial
+reported an initramfs unpack write error and remains explicitly a failed result.
+
+The measured cache-free candidate ISO is approximately 644 MiB and the USB image
+694 MiB, versus the accepted Alpine baseline's 688/738 MiB. Installed payload
+sizes and compressed image sizes are different measurements. This comparison
+uses the required feature scope, but does not establish a performance win or
+physical-hardware equivalence; firmware coverage and package splits differ.
+
+For local boot verification, use the distro-specific tool image:
+
+```sh
+podman run --rm --network=none --device /dev/kvm --user 1000:1000 \
+    -v "$PWD:/workspace" -w /workspace localhost/polly-debian-live-tools \
+    python3 desktop/tests/live-boot.py \
+    dist/polly-debian-live/pollydesktop-0.1.0-alpha.4-debian13-x86_64-uefi-usb.img \
+    build/debian-usb-evidence --usb
+```
+
+Use a new evidence directory per run.
+Omit `--device /dev/kvm` to use TCG without changing host permissions.
+
+Physical-machine and complete graphical-memory acceptance remain open gates.
+The Alpine user report does not qualify this Debian image. Keep exact
+candidate revisions, package inventories and known failures with results.
+See the [maintenance policy](../../../docs/desktop-base-maintenance.md) for
+promotion, data and rollback limits.

@@ -40,7 +40,12 @@ capture ip -brief address
 capture ip route
 capture cat /etc/resolv.conf
 capture rfkill list
-capture rc-status -a
+if command -v rc-status >/dev/null 2>&1; then
+    capture rc-status -a
+else
+    capture systemctl --failed --no-pager
+    capture journalctl -b -n 3000 --no-pager
+fi
 capture iw dev
 capture loginctl show-session "${XDG_SESSION_ID:-}" --property=Active --property=User --property=Seat --property=Type
 capture findmnt -rn -o TARGET,SOURCE,FSTYPE,OPTIONS

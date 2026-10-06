@@ -17,6 +17,7 @@ def main():
     parser.add_argument("iso", type=Path)
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--usb", action="store_true")
+    parser.add_argument("--memory-mib", type=int, choices=[4096, 8192], default=4096)
     args = parser.parse_args()
     iso = args.iso.resolve()
     evidence = args.evidence.resolve()
@@ -26,15 +27,18 @@ def main():
     with tempfile.TemporaryDirectory(prefix="polly-vm-") as temporary:
         temporary = Path(temporary)
         firmware = Path("/usr/share/OVMF")
+        code_name, vars_name = "OVMF_CODE.fd", "OVMF_VARS.fd"
+        if not (firmware / code_name).exists():
+            code_name, vars_name = "OVMF_CODE_4M.fd", "OVMF_VARS_4M.fd"
         variables = temporary / "vars.fd"
-        shutil.copyfile(firmware / "OVMF_VARS.fd", variables)
+        shutil.copyfile(firmware / vars_name, variables)
         qmp_path = temporary / "qmp.sock"
         serial = evidence / "serial.log"
         acceleration = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
         command = [
             "qemu-system-x86_64", "-nodefaults", "-machine", "q35", "-accel", acceleration,
-            "-cpu", "host" if acceleration == "kvm" else "qemu64", "-m", "4096", "-smp", "2",
-            "-drive", f"if=pflash,format=raw,readonly=on,file={firmware / 'OVMF_CODE.fd'}",
+            "-cpu", "host" if acceleration == "kvm" else "qemu64", "-m", str(args.memory_mib), "-smp", "2",
+            "-drive", f"if=pflash,format=raw,readonly=on,file={firmware / code_name}",
             "-drive", f"if=pflash,format=raw,file={variables}",
             "-device", "virtio-vga", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet",
             "-audiodev", "none,id=silent", "-device", "intel-hda", "-device", "hda-duplex,audiodev=silent",
@@ -88,6 +92,9 @@ def main():
                 deadline = time.monotonic() + 240
                 while True:
                     text = serial.read_text(errors="replace") if serial.exists() else ""
+                    if "Initramfs unpacking failed" in text:
+                        execute("screendump", {"filename": str(evidence / "failed-guest.ppm")})
+                        raise RuntimeError("The memory-only root did not unpack completely; do not accept partial startup:\n" + text[-8000:])
                     if "POLLY_LIVE_DESKTOP_READY" in text:
                         break
                     if text.count("POLLY_SESSION_REGISTERED uid=1000") > 1:
@@ -147,7 +154,7 @@ def main():
                     raise RuntimeError("Guest is no longer running")
                 result = {
                     "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,
-                    "memoryMiB": 4096, "vcpus": 2, "disks": [], "network": False,
+                    "memoryMiB": args.memory_mib, "vcpus": 2, "disks": [], "network": False,
                     "bootMedia": "read-only USB" if args.usb else "read-only optical",
                     "graphics": "virtio-vga", "hostAudio": False, "ordinaryUser": 1000,
                     "keyboardWorkspaceSwitch": True,

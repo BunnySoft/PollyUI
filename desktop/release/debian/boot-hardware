@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+install -d -m 0750 -o root -g polly /run/polly-live
+umask 027
+{
+    uname -a
+    cat /proc/cmdline
+    lspci -nnk
+    dmesg
+} > /run/polly-live/boot-hardware.log
+chown root:polly /run/polly-live/boot-hardware.log
+chmod 0640 /run/polly-live/boot-hardware.log

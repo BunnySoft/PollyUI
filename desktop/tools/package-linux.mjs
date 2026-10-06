@@ -1,14 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
-  readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+  readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
 if (process.platform !== 'linux' || args.length !== 4) {
-  throw new Error('Usage (Alpine Linux): node package-linux.mjs BUILD OUTPUT SDL_SOURCE HARFBUZZ_SOURCE');
+  throw new Error('Usage (Alpine/Debian Linux): node package-linux.mjs BUILD OUTPUT SDL_SOURCE HARFBUZZ_SOURCE');
 }
 const [build, output, sdl, harfbuzz] = args.map(value => path.resolve(value));
 if (existsSync(output)) throw new Error('Refusing to overwrite an existing package directory: ' + output);
@@ -16,9 +16,12 @@ const run = (program, argv, options = {}) => execFileSync(program, argv, {
   cwd: repo, encoding: 'utf8', timeout: 180000, maxBuffer: 32 * 1024 * 1024, ...options,
 }).trim();
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
-const alpine = readFileSync('/etc/alpine-release', 'utf8').trim();
-if (!alpine.startsWith('3.24.') || run('uname', ['-m']) !== 'x86_64')
-  throw new Error('This initial runtime package targets Alpine 3.24 x86_64');
+const alpine = existsSync('/etc/alpine-release') ? readFileSync('/etc/alpine-release', 'utf8').trim() : null;
+const debian = !alpine && existsSync('/etc/debian_version') &&
+  /^VERSION_CODENAME=trixie$/m.test(readFileSync('/etc/os-release', 'utf8'));
+if ((!alpine?.startsWith('3.24.') && !debian) || run('uname', ['-m']) !== 'x86_64')
+  throw new Error('Runtime packaging supports Alpine 3.24 or Debian trixie on x86_64');
+const distribution = debian ? 'debian13' : 'alpine3.24';
 const version = readFileSync(path.join(repo, 'desktop/VERSION'), 'utf8').trim();
 if (!/^\d+\.\d+\.\d+-alpha\.\d+$/.test(version)) throw new Error('Invalid development package version');
 const revision = process.env.POLLY_SOURCE_REVISION || run('git', ['rev-parse', 'HEAD']);
@@ -49,7 +52,17 @@ for (const [source, expected] of [[skia, '08a5439a6be726021c1c1905d23ce298a3edc5
   if (run('git', ['-C', source, 'rev-parse', 'HEAD']) !== expected)
     throw new Error('Packaging source does not match the pinned dependency: ' + source);
 const packages = new Map(), providers = new Map();
-for (const record of readFileSync('/lib/apk/db/installed', 'utf8').split('\n\n')) {
+if (debian) {
+  for (const row of run('dpkg-query', ['-W', '-f=${binary:Package}\t${Version}\t${Homepage}\t${Depends}\t${Pre-Depends}\t${Provides}\n']).split('\n')) {
+    const [P, V, U, depends, preDepends, provides] = row.split('\t');
+    packages.set(P, { P, V, U, D: [depends, preDepends].filter(Boolean).join(', '), L: 'See /usr/share/doc/' + P.split(':')[0] + '/copyright' });
+    providers.set(P, P); providers.set(P.split(':')[0], P);
+    for (const provided of (provides || '').split(',')) {
+      const name = provided.trim().split(/\s/)[0];
+      if (name && !providers.has(name)) providers.set(name, P);
+    }
+  }
+} else for (const record of readFileSync('/lib/apk/db/installed', 'utf8').split('\n\n')) {
   const fields = Object.fromEntries(record.split('\n').filter(line => /^[PVLDUp]:/.test(line))
     .map(line => [line[0], line.slice(2)]));
   if (!fields.P) continue;
@@ -61,16 +74,25 @@ for (const record of readFileSync('/lib/apk/db/installed', 'utf8').split('\n\n')
 const needed = new Set();
 function dependency(spec) {
   if (!spec || spec.startsWith('!')) return;
-  const name = providers.get(spec.split(/[<>=~]/)[0]);
+  const name = debian ? spec.split('|').map(alternative =>
+    providers.get(alternative.trim().split(/\s/)[0].replace(/:(any|native)$/, ''))).find(Boolean) :
+    providers.get(spec.split(/[<>=~]/)[0]);
   if (!name) throw new Error('Missing installed runtime dependency: ' + spec);
   if (needed.has(name)) return;
   needed.add(name);
-  for (const child of (packages.get(name).D || '').split(' ')) dependency(child);
+  for (const child of (packages.get(name).D || '').split(debian ? ',' : ' ')) dependency(child.trim());
 }
-for (const name of ['dbus', 'pipewire', 'pipewire-tools', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
+const runtimePackages = debian ? [
+  'dbus-daemon', 'dbus-bin', 'pipewire-bin', 'libspa-0.2-modules',
+  'libegl1', 'libegl-mesa0', 'libgl1', 'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'libgles2', 'libwayland-client0',
+  'libwayland-cursor0', 'libwayland-egl1', 'libxkbcommon0', 'xkb-data', 'adwaita-icon-theme',
+  'fonts-dejavu-core', 'fonts-noto-core', 'fonts-noto-cjk', 'fonts-noto-color-emoji',
+  'librime-data', 'rime-data-luna-pinyin', 'libinput-bin', 'foot', 'ca-certificates',
+] : ['dbus', 'pipewire', 'pipewire-tools', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
   'wayland-libs-client', 'wayland-libs-cursor', 'wayland-libs-egl', 'libxkbcommon',
   'xkeyboard-config', 'capitaine-cursors', 'font-dejavu', 'font-noto-cjk', 'font-noto-emoji',
-  'font-noto-arabic', 'font-noto-devanagari', 'rime-plum-data', 'foot', 'ca-certificates']) dependency(name);
+  'font-noto-arabic', 'font-noto-devanagari', 'rime-plum-data', 'foot', 'ca-certificates'];
+for (const name of runtimePackages) dependency(name);
 
 mkdirSync(path.dirname(output), { recursive: true });
 const staging = mkdtempSync(path.join(path.dirname(output), '.polly-package-'));
@@ -100,7 +122,22 @@ try {
   notices(skia);
   copy(path.join(repo, 'desktop/patches/sdl-wayland-sync-lifetime.patch'),
     path.join(licenseRoot, 'sdl/patches/sdl-wayland-sync-lifetime.patch'));
-  copy(path.join(repo, 'desktop/release/Containerfile'), path.join(staging, 'Containerfile'));
+  if (debian) {
+    copy(path.join(repo, 'desktop/release/debian/rime-default.custom.yaml'),
+      path.join(root, 'usr/share/rime-data/default.custom.yaml'));
+    copy('/opt/pollyui-wlroots/lib/libwlroots-0.19.so', path.join(root, 'usr/lib/pollyui/libwlroots-0.19.so'));
+    copy(realpathSync('/opt/pollyui-input/lib/libinput.so.10'), path.join(root, 'usr/lib/pollyui/libinput.so.10'));
+    run('patchelf', ['--set-rpath', '$ORIGIN', path.join(root, 'usr/lib/pollyui/libwlroots-0.19.so')]);
+    copy('/opt/wlroots-0.19.3/LICENSE', path.join(licenseRoot, 'wlroots/LICENSE'));
+    copy('/opt/pollyui-input-source/libinput-1.28.1/COPYING', path.join(licenseRoot, 'libinput/COPYING'));
+    copy('/opt/pollyui-input-source/libinput-1.28.1/debian/copyright', path.join(licenseRoot, 'libinput/debian-copyright'));
+    copy(path.join(repo, 'desktop/release/debian/sources.json'), path.join(staging, 'sources.json'));
+    copy(path.join(repo, 'desktop/release/debian/libinput.json'), path.join(staging, 'libinput.json'));
+    copy(path.join(repo, 'desktop/release/debian/debian.sources'), path.join(staging, 'debian.sources'));
+    copy(path.join(repo, 'desktop/release/debian/backports.sources'), path.join(staging, 'backports.sources'));
+  }
+  copy(path.join(repo, debian ? 'desktop/release/debian/Containerfile.runtime' : 'desktop/release/Containerfile'),
+    path.join(staging, 'Containerfile'));
   const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher'];
   if (existsSync(path.join(root, 'usr/bin/polly-auth-check'))) binaries.push('usr/bin/polly-auth-check');
   for (const binary of binaries) {
@@ -110,8 +147,9 @@ try {
     for (const line of libraries.split('\n')) {
       const library = line.match(/(?:=>\s+|^\s*)(\/.*?)\s+\(/)?.[1];
       if (!library || library.startsWith(root + '/')) continue;
-      const owner = run('apk', ['info', '--who-owns', library]).match(/ is owned by (.+)$/)?.[1];
-      const pkg = [...packages.values()].find(item => item.P + '-' + item.V === owner);
+      const owner = debian ? run('dpkg-query', ['-S', realpathSync(library)]).split(': /')[0] :
+        run('apk', ['info', '--who-owns', library]).match(/ is owned by (.+)$/)?.[1];
+      const pkg = debian ? packages.get(owner) : [...packages.values()].find(item => item.P + '-' + item.V === owner);
       if (!pkg) throw new Error('Cannot identify runtime library owner: ' + library);
       dependency(pkg.P);
     }
@@ -129,9 +167,14 @@ try {
     { name: 'SDL', versionInfo: '3.4.10-polly-sync-lifetime', licenseDeclared: 'Zlib',
       downloadLocation: 'https://github.com/libsdl-org/SDL/tree/8e37db5e797b6167f3a00d697d816a684bd259c7' },
   ];
+  if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: '0.19.3', licenseDeclared: 'MIT',
+    downloadLocation: 'https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.3/wlroots-0.19.3.tar.gz' });
+  if (debian) sourceComponents.push({ name: 'libinput-private', versionInfo: '1.28.1-1+deb13u1',
+    licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION',
+    licenseComments: 'Debian source package; private build without libwacom; packaged COPYING and debian/copyright.' });
   const entries = [...sourceComponents, ...resolved.map(pkg => ({
     name: pkg.P, versionInfo: pkg.V, licenseDeclared: 'NOASSERTION',
-    licenseComments: 'Alpine package metadata: ' + (pkg.L || 'unspecified'),
+    licenseComments: (debian ? 'Debian package: ' : 'Alpine package metadata: ') + (pkg.L || 'unspecified'),
     downloadLocation: 'NOASSERTION', homepage: pkg.U || 'NOASSERTION',
   }))].map((entry, index) => ({ ...entry, SPDXID: 'SPDXRef-Package-' + index,
     filesAnalyzed: false, licenseConcluded: 'NOASSERTION', copyrightText: 'NOASSERTION' }));
@@ -146,7 +189,7 @@ try {
         relatedSpdxElement: entry.SPDXID })),
     ] };
   const manifest = { version, stage: 'development-runtime-bundle', bootable: false,
-    architecture: 'x86_64', alpine, revision, dirty,
+    architecture: 'x86_64', ...(debian ? { debian: 'trixie' } : { alpine }), revision, dirty,
     limits: ['No installer, login manager, secure lock, update signature or hardware qualification.',
       'Runtime inventory is not a completed third-party license/source-compliance audit.',
       'System-service access and iwd deployment require separate machine policy.'],
@@ -163,9 +206,10 @@ try {
   inventory(root);
   writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(path.join(staging, 'sbom.spdx.json'), JSON.stringify(sbom, null, 2) + '\n');
-  const archive = 'pollydesktop-' + version + '-alpine3.24-x86_64.tar.gz';
+  const archive = 'pollydesktop-' + version + '-' + distribution + '-x86_64.tar.gz';
   run('python3', [path.join(repo, 'desktop/tools/package-tar.py'), root, path.join(staging, archive)]);
   const artifacts = [archive, 'manifest.json', 'sbom.spdx.json', 'runtime-packages.txt', 'Containerfile'];
+  if (debian) artifacts.push('sources.json', 'libinput.json', 'debian.sources', 'backports.sources');
   writeFileSync(path.join(staging, 'SHA256SUMS'), artifacts.map(file => hash(path.join(staging, file)) + '  ' + file).join('\n') + '\n');
   renameSync(staging, output);
   console.log('Created development runtime bundle: ' + output);

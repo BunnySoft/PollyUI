@@ -18,8 +18,10 @@ Alpine/musl build, libcurl HTTP and XDG app data. Physical GPU qualification,
 full IME and the macOS HTTP backend are still pending.
 See README and `desktop/README.md` for current platform boundaries.
 
-**Next desktop base (planned, not implemented):** Debian 13 trixie amd64 from a
-debootstrap minbase rootfs. Keep the Alpine physical-validation baseline until
+**Next desktop base (candidate implemented, not yet accepted):** Debian 13 trixie
+amd64 from a debootstrap minbase rootfs. Normal native/core/PAM and initial VM
+boot checks pass; graphical LeakSanitizer and Debian physical acceptance remain
+open. Keep the Alpine physical-validation baseline until
 Debian passes equivalent acceptance; do not expand the release into a full
 desktop feature checklist. See [base selection and maintenance](./docs/desktop-base-maintenance.md).
 

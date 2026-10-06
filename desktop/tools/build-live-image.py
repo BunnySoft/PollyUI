@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a memory-only UEFI ISO from an exported Alpine runtime container."""
+"""Build memory-only UEFI media from an exported Alpine or Debian runtime."""
 import argparse
 import gzip
 import hashlib
@@ -34,9 +34,12 @@ def main():
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--source-dirty", choices=["0", "1"], required=True)
     parser.add_argument("--runtime-image", required=True)
+    parser.add_argument("--distribution", choices=["alpine3.24", "debian13"], default="alpine3.24")
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[2]
     version = (repo / "desktop/VERSION").read_text().strip()
+    debian = args.distribution == "debian13"
+    image_name = f"pollydesktop-{version}" + ("-debian13" if debian else "")
     if not re.fullmatch(r"\d+\.\d+\.\d+-alpha\.\d+", version):
         raise ValueError("Invalid Live development version")
     if len(args.source_revision) != 40 or any(c not in "0123456789abcdef" for c in args.source_revision):
@@ -45,7 +48,8 @@ def main():
     if output.exists():
         raise ValueError("Refusing to replace existing image output")
     output.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".polly-live-", dir=output.parent))
+    staging = Path(tempfile.mkdtemp(prefix="polly-live-build-"))
+    publication = None
     try:
         image = staging / "iso"
         boot = image / "boot"
@@ -56,9 +60,19 @@ def main():
         total = 0
 
         with tarfile.open(args.export, "r:") as archive:
-            kernel = archive.extractfile("boot/vmlinuz-lts")
+            kernel_name = "boot/vmlinuz-lts"
+            if debian:
+                with archive.extractfile("usr/lib/os-release") as release:
+                    if "ID=debian" not in release.read().decode():
+                        raise ValueError("Debian image export has an unexpected distribution")
+                kernels = [member.name for member in archive.getmembers()
+                           if member.isfile() and member.name.startswith("boot/vmlinuz-")]
+                if len(kernels) != 1:
+                    raise ValueError("Expected exactly one installed Debian kernel")
+                kernel_name = kernels[0]
+            kernel = archive.extractfile(kernel_name)
             if kernel is None:
-                raise ValueError("Export does not contain the Alpine hardware-capable LTS kernel")
+                raise ValueError("Export does not contain its hardware-capable kernel")
             with (boot / "vmlinuz").open("wb") as target:
                 shutil.copyfileobj(kernel, target)
             kernel.close()
@@ -68,11 +82,17 @@ def main():
             with (boot / "intel-ucode.img").open("wb") as target:
                 shutil.copyfileobj(microcode, target)
             microcode.close()
-            packages = archive.extractfile("lib/apk/db/installed")
+            packages = archive.extractfile("usr/share/polly-live-packages.tsv" if debian else "lib/apk/db/installed")
             if packages is None:
-                raise ValueError("Export does not contain its APK inventory")
+                raise ValueError("Export does not contain its package inventory")
             inventory = []
-            for record in packages.read().decode().split("\n\n"):
+            package_data = packages.read().decode()
+            if debian:
+                for record in package_data.splitlines():
+                    name, package_version, homepage = record.split("\t", 2)
+                    inventory.append({"name": name, "version": package_version, "url": homepage,
+                                      "license": "See Debian /usr/share/doc package copyright files"})
+            for record in ([] if debian else package_data.split("\n\n")):
                 fields = {}
                 for line in record.splitlines():
                     if len(line) > 2 and line[1] == ":" and line[0] in "PVLU":
@@ -114,7 +134,7 @@ def main():
                         if path.parts[0] in {"boot", "dev", "proc", "sys", "run", "tmp"}:
                             continue
                         if name in {".dockerenv", "etc/machine-id", "var/lib/dbus/machine-id",
-                                    "etc/hosts", "etc/resolv.conf"}:
+                                    "etc/hosts", "etc/hostname", "etc/resolv.conf"}:
                             continue
                         if member.isdir():
                             entry(name, stat.S_IFDIR | member.mode, member.uid, member.gid)
@@ -136,6 +156,11 @@ def main():
                     entry("dev/null", stat.S_IFCHR | 0o666, major=1, minor=3)
                     hosts = b"127.0.0.1 localhost polly-live\n::1 localhost\n"
                     entry("etc/hosts", stat.S_IFREG | 0o644, size=len(hosts), data=io.BytesIO(hosts))
+                    hostname = b"polly-live\n"
+                    entry("etc/hostname", stat.S_IFREG | 0o644, size=len(hostname), data=io.BytesIO(hostname))
+                    resolver = b"/run/polly-network/resolv.conf" if debian else b"# Populated by guest-only DHCP or iwd/openresolv in memory.\n"
+                    entry("etc/resolv.conf", (stat.S_IFLNK | 0o777) if debian else (stat.S_IFREG | 0o644),
+                          size=len(resolver), data=io.BytesIO(resolver))
                     entry("TRAILER!!!", 0)
 
         efi = staging / "BOOTX64.EFI"
@@ -151,14 +176,14 @@ def main():
         run("mcopy", "-i", str(fat), str(efi), "::/EFI/BOOT/BOOTX64.EFI")
         (image / "EFI/BOOT").mkdir(parents=True)
         shutil.copyfile(efi, image / "EFI/BOOT/BOOTX64.EFI")
-        iso = staging / f"pollydesktop-{version}-x86_64-uefi-live.iso"
+        iso = staging / f"{image_name}-x86_64-uefi-live.iso"
         build_log = staging / "image-build.log"
         with build_log.open("w") as log:
             subprocess.run(["xorriso", "-abort_on", "WARNING", "-as", "mkisofs", "-R", "-J", "-V", "POLLYLIVE",
                             "-e", "boot/efiboot.img", "-no-emul-boot", "-o", str(iso), str(image)],
                            check=True, timeout=180, stdout=log, stderr=subprocess.STDOUT)
         # Build only regular image files; never attach a loop device or open a physical disk.
-        usb = staging / f"pollydesktop-{version}-x86_64-uefi-usb.img"
+        usb = staging / f"{image_name}-x86_64-uefi-usb.img"
         payload = sum(file.stat().st_size for file in (efi, boot / "vmlinuz", boot / "intel-ucode.img", boot / "initramfs.gz"))
         partition_mib = max(128, (payload + 64 * 1024 * 1024 + 1024 * 1024 - 1) // (1024 * 1024))
         sectors = partition_mib * 2048
@@ -184,6 +209,7 @@ def main():
         run("sfdisk", "--verify", str(usb))
         manifest = {
             "version": version, "architecture": "x86_64", "firmware": "UEFI (unsigned)",
+            "distribution": args.distribution, "kernel": kernel_name,
             "stage": "development-live-image", "sourceRevision": args.source_revision,
             "sourceDirty": args.source_dirty == "1", "runtimeImage": args.runtime_image,
             "root": "initramfs, memory only", "automaticLogin": "temporary uid 1000 polly",
@@ -201,6 +227,7 @@ def main():
                     repo / "desktop/release/Containerfile.live",
                     repo / "desktop/system/login.pam", repo / "desktop/system/polly-lock.pam",
                     repo / "desktop/system/elogind-polly.conf", repo / "desktop/system/iwd-main.conf",
+                    *((repo / "desktop/release/debian").iterdir() if debian else []),
                 ]) if file.is_file()
             ],
             "limitations": ["No installer or block-device persistence", "No secure lock or protected login",
@@ -215,13 +242,22 @@ def main():
         (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n")
         shutil.rmtree(image)
         efi.unlink()
-        staging.rename(output)
+        publication = Path(tempfile.mkdtemp(prefix=".polly-live-", dir=output.parent))
+        for file in staging.iterdir():
+            if not file.is_file():
+                raise ValueError("Unexpected final image artifact: " + file.name)
+            shutil.copyfile(file, publication / file.name)
+        publication.rename(output)
+        publication = None
+        shutil.rmtree(staging)
         print("Created memory-only UEFI ISO and USB image:", output / iso.name, output / usb.name)
     except BaseException:
         log = staging / "image-build.log"
         if log.exists():
             print(log.read_text()[-8000:])
         shutil.rmtree(staging)
+        if publication is not None:
+            shutil.rmtree(publication)
         raise
 
 

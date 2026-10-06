@@ -187,9 +187,14 @@ static void node_param(void *data, int seq, uint32_t id, uint32_t index, uint32_
     }
     prop = spa_pod_find_prop(param, NULL, SPA_PROP_channelVolumes);
     if (prop) {
-        uint32_t count, size, type;
-        const float *values = spa_pod_get_array_full(&prop->value, &count, &size, &type);
-        if (!values || count > 64 || size != sizeof(float) || type != SPA_TYPE_Float) {
+        if (!spa_pod_is_array(&prop->value) || SPA_POD_ARRAY_VALUE_SIZE(&prop->value) != sizeof(float) ||
+            SPA_POD_ARRAY_VALUE_TYPE(&prop->value) != SPA_TYPE_Float ||
+            (SPA_POD_BODY_SIZE(&prop->value) - sizeof(struct spa_pod_array_body)) % sizeof(float)) {
+            error("Audio node returned invalid channel volumes"); return;
+        }
+        uint32_t count;
+        const float *values = spa_pod_get_array(&prop->value, &count);
+        if (!values || count > 64) {
             error("Audio node returned invalid channel volumes"); return;
         }
         float volume = 0;

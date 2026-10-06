@@ -1,0 +1,10 @@
+[Unit]
+Description=Read-only Polly Live hardware diagnostics
+Wants=systemd-udev-settle.service
+After=systemd-udev-settle.service
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/polly-boot-hardware
+RemainAfterExit=yes

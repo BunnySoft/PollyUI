@@ -1,0 +1,9 @@
+#%PAM-1.0
+# Live getty skips authentication explicitly; manual logins still require a password.
+auth required pam_unix.so
+auth required pam_nologin.so
+account required pam_unix.so
+account required pam_nologin.so
+session required pam_loginuid.so
+session optional pam_keyinit.so force revoke
+session required pam_systemd.so

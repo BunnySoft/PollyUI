@@ -30,7 +30,8 @@ export function createAudioSettings({ native, host, theme, report, storage }) {
     const current = theme();
     const label = (text, size = 12) => h('view', { style: { color: current.colors.text,
       fontSize: themeTextSize(current, size), flexShrink: 0 } }, text);
-    render(h('view', { id: 'shell-audio-settings', style: { flex: 1, padding: current.layout.contentPadding, gap: current.layout.contentGap,
+    render(h('view', { id: 'shell-audio-settings', style: { width: '100%', height: '100%', minHeight: 0,
+      padding: current.layout.contentPadding, gap: current.layout.contentGap,
       overflow: 'scroll', backgroundColor: current.colors.body } },
       h('view', { style: { flexDirection: 'row', gap: 8 } }, label('Audio (PipeWire)', 18),
         button('shell-audio-close', 'Close', close)),

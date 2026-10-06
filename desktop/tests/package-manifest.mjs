@@ -26,10 +26,11 @@ for (const line of read('SHA256SUMS').trim().split('\n')) {
   assert.equal(digest(path.join(root, match[2])), match[1], match[2]);
 }
 const packages = read('runtime-packages.txt');
-for (const name of ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data'])
-  assert.ok(packages.split('\n').some(line => line.startsWith(name + '=')), name);
+for (const name of manifest.debian ? ['libwayland-egl1', 'libegl-mesa0', 'libgl1', 'libgles2', 'pipewire-bin', 'rime-data-luna-pinyin'] :
+  ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data'])
+  assert.ok(packages.split('\n').some(line => line.split('=')[0].split(':')[0] === name), name);
 for (const line of packages.trim().split('\n'))
-  assert.match(line, /^[a-z0-9][a-z0-9+_.-]*=[A-Za-z0-9._+~:-]+$/);
+  assert.match(line, /^[a-z0-9][a-z0-9+_.-]*(?::[a-z0-9-]+)?=[A-Za-z0-9._+~:-]+$/);
 const sbom = JSON.parse(read('sbom.spdx.json'));
 assert.equal(sbom.spdxVersion, 'SPDX-2.3');
 assert.match(sbom.creationInfo.created, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);

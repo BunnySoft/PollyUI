@@ -66,7 +66,9 @@ def main():
         pass
     else:
         raise RuntimeError("Refusing to modify an existing account")
-    subprocess.run(["adduser", "-D", "-H", "-s", "/sbin/nologin", name], check=True)
+    command = ["useradd", "--no-create-home", "--shell", "/usr/sbin/nologin", name] if Path("/etc/debian_version").exists() else \
+        ["adduser", "-D", "-H", "-s", "/sbin/nologin", name]
+    subprocess.run(command, check=True)
     password = secrets.token_hex(24)
     subprocess.run(["chpasswd"], input=f"{name}:{password}\n", text=True,
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
