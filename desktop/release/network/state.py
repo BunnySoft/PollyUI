@@ -206,6 +206,20 @@ class NetworkState:
                 raise ValueError("Installed iwd working state requires its private tmpfs")
         self.trusted(self.iwd)
 
+    def memory_runtime(self, mode):
+        run = self.path("/run")
+        self.trusted(run, mode=0o755)
+        self.trusted(self.runtime)
+        flags = {"rw", "nodev", "nosuid"} if mode == "installed" else {"rw"}
+        for option, path in (("-M", run), ("-T", self.runtime)):
+            record = self.storage_module.command(
+                "/usr/bin/findmnt", "-rn", option, str(path), "-o", "FSTYPE,OPTIONS").split()
+            if len(record) != 2 or record[0] != "tmpfs" or \
+                    not flags.issubset(record[1].split(",")):
+                raise ValueError("Network handoff requires writable private RAM runtime")
+        if self.runtime.stat().st_dev != run.stat().st_dev:
+            raise ValueError("Network handoff runtime is not on the run tmpfs")
+
     def writable(self, path, required):
         info = os.statvfs(path)
         if info.f_flag & os.ST_RDONLY:
@@ -315,8 +329,7 @@ class NetworkState:
         self.snapshot(network, persistent_uuid)
         return value
 
-    def load(self, invocation):
-        mode = self.profile()
+    def load(self, invocation, mode):
         self.stopped()
         self.volatile(live=mode == "live")
         if mode == "live":
@@ -339,8 +352,7 @@ class NetworkState:
         return {"schemaVersion": SCHEMA, "mode": mode, "operation": "load",
                 "persistent": True, "checkpoint": "loaded", "profileCount": len(profiles)}
 
-    def save(self, invocation, service_result):
-        mode = self.profile()
+    def save(self, invocation, service_result, mode):
         self.stopped()
         self.volatile(live=mode == "live")
         if mode == "live":
@@ -355,8 +367,6 @@ class NetworkState:
             raise ValueError("Network authority changed during the service invocation")
         profiles = self.working()
         self.publish(self.network, storage.volumes["PERSISTENT"], profiles)
-        (self.runtime / "lease.json").unlink()
-        self.sync(self.runtime)
         return {"schemaVersion": SCHEMA, "mode": mode, "operation": "save",
                 "persistent": True, "checkpoint": "committed", "profileCount": len(profiles)}
 
@@ -367,9 +377,17 @@ class NetworkState:
                 not isinstance(invocation, str) or not re.fullmatch(r"[0-9a-f]{32}", invocation):
             raise ValueError("Invalid network service operation or invocation")
         self.trusted(self.runtime)
+        mode = self.profile()
+        self.memory_runtime(mode)
         with self.accounts.state_lock(root=self.runtime, timeout=0):
             self.trusted(self.runtime / ".state.lock", directory=False, mode=0o600)
-            return self.load(invocation) if operation == "load" else self.save(invocation, service_result)
+            result = self.load(invocation, mode) if operation == "load" else \
+                self.save(invocation, service_result, mode)
+        if operation == "save" and result["persistent"]:
+            # The durable commit, read-back and lock close have all completed.
+            # RAM guard release is last: no fallible checkpoint work follows it.
+            (self.runtime / "lease.json").unlink()
+        return result
 
 
 def initialize_empty(network, persistent_uuid, storage, accounts, assembly_root, *, image_root):

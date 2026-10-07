@@ -123,14 +123,42 @@ cannot start iwd; it fails on retry rather than using a partial/empty fallback.
 and the matching lease. The main process must be gone before inspection: iwd and
 the helper are never simultaneous credential writers. Concurrent hooks fail the
 bounded account lock. A failed start, unclean exit, lost mount, changed authority,
-unsafe profile, EROFS, ENOSPC or I/O error produces nonzero exit, journal/console
+unsafe profile, EROFS, ENOSPC or checkpoint I/O error produces nonzero exit, journal/console
 `POLLY_NETWORK_STATE_FAILED` and a redacted journal error record. systemd records hook
 failure; this is not a successful checkpoint even if the earlier connection
-succeeded. The lease remains on failure and `RuntimeDirectoryPreserve=yes`
+succeeded. The lease remains on checkpoint failure and `RuntimeDirectoryPreserve=yes`
 keeps it through service restarts. Explicit root recovery is required; no root
 command or arbitrary path API is exposed to a UI. Runtime state disappears at
 reboot, so unsaved working changes can be lost, but the last valid snapshot is
 not reinitialized.
+
+Guard release is a separate, terminal **RAM-only** operation. Before creating a
+lock or writing any handoff, the helper requires an actual `/run` tmpfs mount and
+checks that the private runtime is on that same device with an effective tmpfs
+mount. Installed mounts must be rw,nodev,nosuid; Live requires rw, preserving
+the existing memory-only Live init's `/run` flags. Disk-backed runtime, a missing
+`/run` mount, a read-only view or a bind from the persistent volume refuse; a
+same-`/run` RAM bind is not rejected merely for being a bind.
+
+Saving first completes the durable snapshot/index fsyncs, read-back qualification,
+result construction **and lock-context close**, while the lease still guards
+restart. Only then does `run()` unlink the lease as its last checkpoint action.
+It performs no runtime fsync, revalidation or descriptor close after that unlink:
+the runtime is proven volatile, so persisting the deletion is neither needed
+nor a condition of success. Unlink failure keeps the lease and returns nonzero/
+not-confirmed. A lock-close or earlier failure also keeps the lease, even if
+the new snapshot has already durably committed. Such a retained guard does not
+mean the persistent commit was rolled back; explicit recovery must inspect it.
+No best-effort guard restoration or silent cleanup failure is used.
+
+The gap between closing the lock and the terminal unlink stays guarded: another
+load cannot create a new lease while the old one exists; a duplicate save sees
+the old lease generation disagree with the newly published index and refuses.
+The service manager serializes legitimate hooks. Receipt/stdout delivery happens
+after the checkpoint and is not transactionally coupled to it; interruption or
+output transport loss after terminal release cannot undo the already confirmed
+commit. The helper never labels such a receipt loss `checkpoint:not-confirmed`.
+This does not establish PID1 delivery, crash or cold-boot acceptance.
 
 The `+` prefix is intentional: these **fixed root-only hooks** skip the
 iwd main process's configured filesystem namespace/capability restrictions. Otherwise
@@ -229,3 +257,8 @@ the actual required-mount checker, substituting only synthetic filesystem
 identities; no ext4 image/disk is written. It validates fixed service-unit
 composition and a synthetic stopped-owner handoff, not a physical iwd
 connection or a real init boot. No real SSID/password/key discovery is used.
+The follow-up regression also covers the old post-unlink runtime fsync EIO,
+terminal release ordering, unlink and lock-close failures retaining a guard,
+and `/run` RAM qualification. The private fixture now mounts its own `/run`
+tmpfs and rejects a foreign persistent-volume runtime bind; host `/run` is
+never changed.

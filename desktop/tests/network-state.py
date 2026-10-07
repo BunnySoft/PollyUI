@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic root metadata/checkpoint tests; no radio, bus, host mount or credentials."""
 import argparse
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import errno
 import io
 import json
@@ -74,6 +74,7 @@ class Checkpoints(unittest.TestCase):
         self.checked = self.stack.enter_context(patch.object(self.storage.Storage, "check"))
         self.stopped = self.stack.enter_context(patch.object(self.state, "stopped"))
         self.volatile = self.stack.enter_context(patch.object(self.state, "volatile"))
+        self.memory = self.stack.enter_context(patch.object(self.state, "memory_runtime"))
         self.process = self.stack.enter_context(patch.object(
             self.net.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)))
         self.initialize()
@@ -392,6 +393,182 @@ class Checkpoints(unittest.TestCase):
         self.assertTrue((self.state.runtime / "lease.json").exists())
         with self.assertRaises(ValueError):
             self.run_state("load")
+
+    def test_ram_release_has_no_post_unlink_runtime_sync(self):
+        self.run_state("load")
+        self.working()
+        real_sync = self.state.sync
+
+        def runtime_eio(path):
+            if path == self.state.runtime:
+                raise OSError(errno.EIO, "synthetic post-unlink runtime sync failure")
+            return real_sync(path)
+
+        with patch.object(self.state, "sync", side_effect=runtime_eio) as sync:
+            self.assertEqual(self.run_state("save")["checkpoint"], "committed")
+        self.assertNotIn(self.state.runtime, [call.args[0] for call in sync.call_args_list])
+        self.assertFalse((self.state.runtime / "lease.json").exists())
+        self.assertEqual(self.run_state("load", "2" * 32)["checkpoint"], "loaded")
+
+    def test_lease_unlink_failure_keeps_guard_after_durable_commit(self):
+        self.run_state("load")
+        self.working()
+        before = self.record()
+        lease = self.state.runtime / "lease.json"
+        real_unlink = Path.unlink
+
+        def unlink(path, *args, **kwargs):
+            if path == lease:
+                raise OSError(errno.EIO, "synthetic lease unlink failure")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", unlink):
+            with self.assertRaises(OSError):
+                self.run_state("save")
+        self.assertNotEqual(self.record()["generation"], before["generation"])
+        self.assertTrue(lease.exists())
+        with self.assertRaises(ValueError):
+            self.run_state("load", "2" * 32)
+
+    def test_lock_cleanup_failure_keeps_guard_after_durable_commit(self):
+        self.run_state("load")
+        self.working()
+        before = self.record()
+        real_lock = self.accounts.state_lock
+
+        @contextmanager
+        def lock_close_eio(*args, **kwargs):
+            with real_lock(*args, **kwargs):
+                yield
+            raise OSError(errno.EIO, "synthetic lock close failure")
+
+        with patch.object(self.accounts, "state_lock", lock_close_eio):
+            with self.assertRaises(OSError):
+                self.run_state("save")
+        self.assertNotEqual(self.record()["generation"], before["generation"])
+        self.assertTrue((self.state.runtime / "lease.json").exists())
+        with self.assertRaises(ValueError):
+            self.run_state("load", "2" * 32)
+
+    def test_guard_release_is_after_all_checkpoint_and_lock_work(self):
+        self.run_state("load")
+        self.working()
+        events = []
+        real_lock, real_sync, real_unlink = self.accounts.state_lock, self.state.sync, Path.unlink
+
+        @contextmanager
+        def lock(*args, **kwargs):
+            with real_lock(*args, **kwargs):
+                yield
+            events.append("lock-closed")
+
+        def sync(path):
+            events.append("sync")
+            return real_sync(path)
+
+        def unlink(path, *args, **kwargs):
+            if path == self.state.runtime / "lease.json":
+                events.append("guard-release")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(self.accounts, "state_lock", lock), \
+                patch.object(self.state, "sync", sync), patch.object(Path, "unlink", unlink):
+            self.assertEqual(self.run_state("save")["checkpoint"], "committed")
+        self.assertEqual(events[-2:], ["lock-closed", "guard-release"])
+
+    def test_ram_runtime_qualification(self):
+        run = self.state.path("/run")
+        for record in ("ext4 rw,nodev,nosuid", "tmpfs ro,nodev,nosuid",
+                       "tmpfs rw,nosuid", "tmpfs rw,nodev"):
+            with patch.object(self.storage, "command", return_value=record):
+                with self.assertRaises(ValueError):
+                    self.net.NetworkState.memory_runtime(self.state, "installed")
+        with patch.object(self.storage, "command", return_value="tmpfs rw,nodev,nosuid") as query:
+            self.net.NetworkState.memory_runtime(self.state, "installed")
+        self.assertEqual([call.args[2:4] for call in query.call_args_list],
+                         [("-M", str(run)), ("-T", str(self.state.runtime))])
+        with patch.object(self.storage, "command", side_effect=RuntimeError("missing run mount")):
+            with self.assertRaises(RuntimeError):
+                self.net.NetworkState.memory_runtime(self.state, "installed")
+        with patch.object(self.storage, "command", return_value="tmpfs rw"):
+            self.net.NetworkState.memory_runtime(self.state, "live")
+        real_stat = Path.stat
+
+        def foreign_device(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            if path == self.state.runtime and kwargs.get("follow_symlinks", True):
+                values = list(info)
+                values[2] = real_stat(run).st_dev + 1
+                return os.stat_result(values)
+            return info
+
+        with patch.object(self.storage, "command", return_value="tmpfs rw,nodev,nosuid"), \
+                patch.object(Path, "stat", foreign_device):
+            with self.assertRaises(ValueError):
+                self.net.NetworkState.memory_runtime(self.state, "installed")
+
+    def test_runtime_inspection_failure_retains_existing_guard(self):
+        self.run_state("load")
+        self.working()
+        before = self.record()
+        self.memory.side_effect = OSError(errno.EIO, "synthetic runtime qualification failure")
+        with self.assertRaises(OSError):
+            self.run_state("save")
+        self.assertEqual(self.record(), before)
+        self.assertTrue((self.state.runtime / "lease.json").exists())
+        self.memory.side_effect = None
+        with self.assertRaises(ValueError):
+            self.run_state("load", "2" * 32)
+
+    def test_load_between_lock_close_and_release_still_sees_guard(self):
+        self.run_state("load")
+        self.working()
+        real_lock = self.accounts.state_lock
+        interleaved = False
+
+        @contextmanager
+        def lock(*args, **kwargs):
+            nonlocal interleaved
+            with real_lock(*args, **kwargs):
+                yield
+            if not interleaved:
+                interleaved = True
+                self.assertTrue((self.state.runtime / "lease.json").exists())
+                with self.assertRaises(ValueError):
+                    self.run_state("load", "2" * 32)
+                self.assertEqual((self.state.iwd / "Fixture Network.psk").read_bytes(), FAKE)
+
+        with patch.object(self.accounts, "state_lock", lock):
+            self.assertEqual(self.run_state("save")["checkpoint"], "committed")
+        self.assertTrue(interleaved)
+        self.assertFalse((self.state.runtime / "lease.json").exists())
+
+    def test_cli_guard_unlink_failure_is_not_confirmed_and_blocks_reload(self):
+        self.run_state("load")
+        self.working()
+        real_unlink = Path.unlink
+        stderr, stdout = io.StringIO(), io.StringIO()
+
+        def unlink(path, *args, **kwargs):
+            if path == self.state.runtime / "lease.json":
+                raise OSError(errno.EIO, "synthetic final unlink failure")
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(sys, "argv", ["state.py", "save"]), \
+                patch.dict(os.environ, {"INVOCATION_ID": INVOCATION, "SERVICE_RESULT": "success"}), \
+                patch.object(self.net, "deployment"), patch.object(self.net, "no_new_privileges"), \
+                patch.object(self.net, "module", side_effect=[self.storage, self.accounts]), \
+                patch.object(self.net, "NetworkState", return_value=self.state), \
+                patch.object(Path, "unlink", unlink), \
+                patch.object(self.net.sys, "stderr", stderr), patch.object(self.net.sys, "stdout", stdout), \
+                patch.object(self.net.syslog, "syslog"):
+            self.assertEqual(self.net.main(), 1)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn('"checkpoint":"not-confirmed"', stderr.getvalue())
+        self.assertNotIn("SyntheticOnly", stderr.getvalue())
+        self.assertTrue((self.state.runtime / "lease.json").exists())
+        with self.assertRaises(ValueError):
+            self.run_state("load", "2" * 32)
 
     def test_changed_authority_and_unowned_runtime_are_refused(self):
         self.run_state("load")

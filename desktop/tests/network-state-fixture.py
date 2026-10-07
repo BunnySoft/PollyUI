@@ -64,6 +64,10 @@ def main():
             manifest.parent.mkdir()
             manifest.write_text(json.dumps(contract))
             manifest.chmod(0o644)
+            run_root = root / "run"
+            run_root.mkdir(mode=0o755)
+            run("mount", "-t", "tmpfs", "-o", "mode=755,nodev,nosuid,size=32m",
+                "tmpfs", str(run_root))
             state = storage.Storage(root)
             persistent = state.persistent
             persistent.mkdir(parents=True)
@@ -122,6 +126,16 @@ def main():
                         os.chown(path, 0, 42)
                 network.initialize_empty(persistent / "SystemData/Network",
                                          volumes["PERSISTENT"], storage, accounts, root, image_root=root)
+                run("mount", "--bind", str(persistent / "SystemData/Network"), str(net.runtime))
+                refused(lambda: net.memory_runtime("installed"))
+                run("umount", str(net.runtime))
+                net.memory_runtime("installed")
+                run("mount", "--bind", str(net.runtime), str(net.runtime))
+                net.memory_runtime("installed")
+                run("mount", "-o", "remount,bind,ro", str(net.runtime))
+                refused(lambda: net.memory_runtime("installed"))
+                run("umount", str(net.runtime))
+                net.memory_runtime("installed")
                 guard = Path("/usr/lib/polly-account-profile-check")
                 shutil.copyfile(args.repo / "desktop/release/debian/profile-check", guard)
                 guard.chmod(0o755)
@@ -166,8 +180,17 @@ def main():
                         if owner.poll() is None:
                             owner.terminate()
                             owner.wait(timeout=10)
-                    saved = net.run("save", invocation, "success")
+                    real_sync = net.sync
+
+                    def forbid_runtime_sync(path):
+                        if path == net.runtime:
+                            raise OSError(errno.EIO, "synthetic post-release runtime sync failure")
+                        return real_sync(path)
+
+                    with patch.object(net, "sync", side_effect=forbid_runtime_sync):
+                        saved = net.run("save", invocation, "success")
                     assert saved["profileCount"] == 1
+                    assert not (net.runtime / "lease.json").exists()
                     pointer = (net.network / "state.json").read_bytes()
                     value = json.loads(pointer)
                     profile = net.network / value["generation"] / "Fixture.psk"
@@ -204,8 +227,22 @@ def main():
                     assert (net.network / "state.json").read_bytes() == pointer
                     assert (net.runtime / "lease.json").exists()
                     assert net.run("save", "2" * 32, "success")["checkpoint"] == "committed"
+                    net.run("load", "3" * 32)
+                    before = (net.network / "state.json").read_bytes()
+                    real_unlink = Path.unlink
+
+                    def fail_release(path, *arguments, **keywords):
+                        if path == net.runtime / "lease.json":
+                            raise OSError(errno.EIO, "synthetic RAM lease unlink failure")
+                        return real_unlink(path, *arguments, **keywords)
+
+                    with patch.object(Path, "unlink", fail_release):
+                        refused(lambda: net.run("save", "3" * 32, "success"))
+                    assert (net.network / "state.json").read_bytes() != before
+                    assert (net.runtime / "lease.json").exists()
+                    refused(lambda: net.run("load", "4" * 32))
                     run("umount", str(persistent))
-                    refused(lambda: net.run("load", "3" * 32),
+                    refused(lambda: net.run("load", "4" * 32),
                             (OSError, ValueError, RuntimeError))
                     assert not (persistent / "SystemData/Network/state.json").exists()
         finally:
@@ -270,6 +307,9 @@ def main():
               "unitCompositionVerified": True, "cliFailureRedacted": True,
               "sandboxReadOnlyViewRefused": True,
               "fixedDeploymentVerified": True, "helperNoNewPrivilegesVerified": True,
+              "ramRuntimeVerified": True, "foreignRuntimeBindRefused": True,
+              "sameRamRuntimeBindAccepted": True, "readOnlyRuntimeBindRefused": True,
+              "terminalGuardReleaseVerified": True, "unlinkFailureBlocksReload": True,
               "systemdExecutionVerified": False, "physicalNetworkVerified": False,
               "coldBootVerified": False, "filesystemIdentities": "synthetic-tmpfs-not-ext4"}
     if args.report:
