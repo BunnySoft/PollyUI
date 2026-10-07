@@ -125,24 +125,66 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function closeSurface(surface) {
     if (!surface) return;
     surface.expectedClose = true;
-    surface.window.close();
+    releaseSurface(surface);
+    if (!surface.window.closed) surface.window.close();
   }
 
-  function closeMenu() {
-    if (!menu) return;
-    workspaceEditor?.input.root.blur();
-    workspaceEditor = null;
-    stopRecording();
-    const old = menu;
+  function releaseSurface(surface) {
+    for (const remove of surface.listeners.splice(0)) remove();
+    surface.window.document.activeElement?.blur();
+    surface.displayInputs?.clear();
+  }
+
+  function releaseMenu(surface) {
+    if (!surface || surface !== menu) return false;
     menu = null;
-    closeSurface(old);
+    const editor = workspaceEditor;
+    workspaceEditor = null;
+    editor?.input.root.blur();
+    stopRecording();
+    return true;
+  }
+
+  function closeMenu(surface = menu) {
+    if (releaseMenu(surface)) closeSurface(surface);
+  }
+
+  function currentMenu(surface) {
+    return running && surface === menu && !surface.window.closed;
+  }
+
+  function listen(surface, type, callback) {
+    const body = surface.window.document.body;
+    body.addEventListener(type, callback);
+    surface.listeners.push(() => body.removeEventListener(type, callback));
+  }
+
+  function menuOpener(surface, event) {
+    if (surface.output !== menu.output) return false;
+    const ids = event.button === 2 && menu.mode === 'windows' ? ['shell-window-' + menu.windowId] :
+      event.button === 0 ? {
+        applications: ['shell-menu', 'shell-dock-applications'],
+        appearance: ['shell-panel-settings', 'shell-dock-settings'],
+        about: ['shell-dock-about'], workspaces: ['shell-workspaces'],
+      }[menu.mode] || [] : [];
+    for (let node = event.target; node; node = node.parentNode)
+      if (ids.includes(node.id)) return true;
+    return false;
   }
 
   function newSurface(output, kind, options) {
     const nativeWindow = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
-    const surface = { output: output.id, kind, window: nativeWindow, signature: JSON.stringify(options), expectedClose: false };
+    const surface = { output: output.id, kind, window: nativeWindow, signature: JSON.stringify(options),
+      expectedClose: false, listeners: [] };
+    if (['wallpaper', 'panel', 'dock'].includes(kind)) listen(surface, 'mousedown', event => {
+      if (!running || surface.expectedClose || nativeWindow.closed ||
+          bundles.get(output.id)?.surfaces[kind] !== surface || !menu) return;
+      // Only these owned documents deliver this event; foreign application presses need a native popup API.
+      if (!menuOpener(surface, event)) closeMenu();
+    });
     nativeWindow.onclose = () => {
-      if (surface === menu) { stopRecording(); workspaceEditor = null; menu = null; }
+      releaseMenu(surface);
+      releaseSurface(surface);
       if (surface === switcher) {
         switcher = null;
         if (!surface.expectedClose && running) {
@@ -370,54 +412,61 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
-    if (menu.mode === 'displays') {
-      const current = menu;
+    const current = menu;
+    const scoped = action => (...args) => {
+      if (currentMenu(current)) return action(...args);
+    };
+    const close = scoped(() => closeMenu(current));
+    if (current.mode === 'displays') {
       render(displaysView(getDesktopTheme(themeId), current.window.document, current.displayDraft,
-        current.displayInputs, repaintMenu, () => applyDisplays(current), closeMenu, error,
-        { status: displayPersistence.status, forget: forgetDisplayProfile }), current.window.document.body);
+        current.displayInputs, scoped(repaintMenu), scoped(() => applyDisplays(current)), close, error,
+        { status: displayPersistence.status, forget: scoped(forgetDisplayProfile) }), current.window.document.body);
       return;
     }
-    if (menu.mode === 'shortcuts') {
-      render(shortcutsView(getDesktopTheme(themeId), shortcutBindings, recordingShortcut, beginRecording,
-        action => applyShortcuts(shortcutBindings.map(binding => binding.action === action ?
-          { ...binding, modifiers: 0, key: '' } : binding)),
-        () => applyShortcuts(native.shortcutDefaults()), closeMenu, error), menu.window.document.body);
+    if (current.mode === 'shortcuts') {
+      render(shortcutsView(getDesktopTheme(themeId), shortcutBindings, recordingShortcut, scoped(beginRecording),
+        scoped(action => applyShortcuts(shortcutBindings.map(binding => binding.action === action ?
+          { ...binding, modifiers: 0, key: '' } : binding))),
+        scoped(() => applyShortcuts(native.shortcutDefaults())), close, error), current.window.document.body);
       return;
     }
-    if (menu.mode === 'workspaces') {
+    if (current.mode === 'workspaces') {
       render(workspacesView(getDesktopTheme(themeId), workspaces,
-        id => workspaceAction('activateWorkspace', id), id => workspaceAction('removeWorkspace', id),
-        () => workspaceAction('createWorkspace'), closeMenu, error,
+        scoped(id => workspaceAction('activateWorkspace', id)), scoped(id => workspaceAction('removeWorkspace', id)),
+        scoped(() => workspaceAction('createWorkspace')), close, error,
         typeof native?.renameWorkspace === 'function' ? {
-          rename: editWorkspace, reorder: reorderWorkspace, editor: workspaceEditor,
-          save: saveWorkspaceName, cancel: () => { workspaceEditor?.input.root.blur(); workspaceEditor = null; repaintMenu(); },
-          saveCurrent: saveCurrentWorkspaces,
-        } : null), menu.window.document.body);
+          rename: scoped(editWorkspace), reorder: scoped(reorderWorkspace), editor: workspaceEditor,
+          save: scoped(saveWorkspaceName),
+          cancel: scoped(() => { workspaceEditor?.input.root.blur(); workspaceEditor = null; repaintMenu(); }),
+          saveCurrent: scoped(saveCurrentWorkspaces),
+        } : null), current.window.document.body);
       return;
     }
-    if (menu.mode === 'windows') {
-      const selected = visibleWindows().find(window => window.id === menu.windowId);
+    if (current.mode === 'windows') {
+      const selected = visibleWindows().find(window => window.id === current.windowId);
       if (!selected) { closeMenu(); return; }
       render(windowActionsView(getDesktopTheme(themeId), selected,
-        action => windowAction(selected.id, action), closeMenu, error, workspaces,
-        id => moveWindow(selected.id, id)), menu.window.document.body);
+        scoped(action => windowAction(selected.id, action)), close, error, workspaces,
+        scoped(id => moveWindow(selected.id, id))), current.window.document.body);
       return;
     }
-    if (menu.mode === 'applications') {
-      render(applicationsView(getDesktopTheme(themeId), applications, menu.query,
-        value => { if (menu) { menu.query = value; repaintMenu(); } },
-        launchApplication, reloadApplications, closeMenu, error), menu.window.document.body);
+    if (current.mode === 'applications') {
+      render(applicationsView(getDesktopTheme(themeId), applications, current.query,
+        scoped(value => { current.query = value; repaintMenu(); }),
+        scoped(launchApplication), scoped(reloadApplications), close, error), current.window.document.body);
       return;
     }
-    render(settingsView(getDesktopTheme(themeId), selectTheme, closeMenu,
-      () => errorKind === 'theme-files' ? reloadThemes() : refresh(true),
-      error, menu.about, typeof native?.shortcuts === 'function' ? () => showShortcuts(menu.output) : null,
-      typeof native?.outputConfiguration === 'function' ? () => showDisplays(menu.output) : null,
-      typeof native?.startNetwork === 'function' ? () => showNetwork(menu.output) : null,
-      typeof native?.startAudio === 'function' ? () => showAudio(menu.output) : null,
-      typeof native?.readThemeFiles === 'function' ? { reload: reloadThemes, restore: restoreThemes, enabled: themeFilesEnabled } : null,
-      typeof native?.startPower === 'function' ? () => showPower(menu.output) : null),
-      menu.window.document.body);
+    render(settingsView(getDesktopTheme(themeId), scoped(selectTheme), close,
+      scoped(() => errorKind === 'theme-files' ? reloadThemes() : refresh(true)),
+      error, current.about, typeof native?.shortcuts === 'function' ? scoped(() => showShortcuts(current.output)) : null,
+      typeof native?.outputConfiguration === 'function' ? scoped(() => showDisplays(current.output)) : null,
+      typeof native?.startNetwork === 'function' ? scoped(() => showNetwork(current.output)) : null,
+      typeof native?.startAudio === 'function' ? scoped(() => showAudio(current.output)) : null,
+      typeof native?.readThemeFiles === 'function' ? {
+        reload: scoped(reloadThemes), restore: scoped(restoreThemes), enabled: themeFilesEnabled,
+      } : null,
+      typeof native?.startPower === 'function' ? scoped(() => showPower(current.output)) : null),
+      current.window.document.body);
   }
 
   function openMenu(outputId, mode, windowId = null, initial = null) {
@@ -455,9 +504,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     menu.windowId = windowId;
     menu.about = mode === 'about';
     menu.query = '';
-    const body = menu.window.document.body;
+    const current = menu;
+    const body = current.window.document.body;
     body.tabIndex = 0;
-    body.addEventListener('keydown', event => {
+    listen(current, 'keydown', event => {
+      if (!currentMenu(current)) return;
       if (recordingShortcut) {
         event.preventDefault(); event.stopPropagation();
         if (event.key === 'Escape' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
@@ -471,12 +522,14 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         }
         return;
       }
-      if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
+      if (event.defaultPrevented) return;
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenu(current); }
     });
     body.focus();
     repaintMenu();
-    if (mode === 'applications') menu.window.document.getElementById('shell-app-search').focus();
-    return menu.window;
+    if (mode === 'applications' && currentMenu(current))
+      current.window.document.getElementById('shell-app-search').focus();
+    return current.window;
   }
 
   function showSettings(outputId, about = false) {
@@ -634,17 +687,24 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         exclusiveZone: -1, keyboard: 'exclusive', transparent: true,
       });
       displayConfirmation.token = token;
+      const current = displayConfirmation;
       const body = displayConfirmation.window.document.body;
       body.tabIndex = 0;
-      body.addEventListener('keydown', event => {
+      listen(current, 'keydown', event => {
+        if (!running || displayConfirmation !== current || current.window.closed || pendingDisplayToken !== token) return;
         if (event.key === 'Escape' || event.key === 'Enter') {
           event.preventDefault(); finishDisplayChange(token, event.key === 'Enter');
         }
       });
       body.focus();
     }
+    const current = displayConfirmation;
+    const finish = keep => {
+      if (running && displayConfirmation === current && !current.window.closed && pendingDisplayToken === token)
+        finishDisplayChange(token, keep);
+    };
     render(displayConfirmationView(getDesktopTheme(themeId), snapshot.remainingMs,
-      () => finishDisplayChange(token, true), () => finishDisplayChange(token, false)),
+      () => finish(true), () => finish(false)),
       displayConfirmation.window.document.body);
   }
 
@@ -749,7 +809,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       input.root.id = 'shell-workspace-name';
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', 'Workspace name');
+      const current = menu;
       if (!workspaceEditor) input.root.addEventListener('keydown', event => {
+        if (!currentMenu(current) || workspaceEditor?.input !== input) return;
         if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); saveWorkspaceName(); }
       });
       input.value = selected.name;
