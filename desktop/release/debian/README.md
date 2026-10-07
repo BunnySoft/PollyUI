@@ -109,6 +109,55 @@ before export. Image assembly uses a native temporary filesystem, then publishes
 completed artifacts to the destination so Windows mount I/O does not stall ISO
 creation. No physical disk, host service or firmware setting is changed.
 
+## Offline release verification and comparison
+
+The packager includes `build-inputs.json` with the source revision/dirty state,
+targeted build settings, recipe hashes and pinned Skia/SDL/HarfBuzz source/diff
+fingerprints. These are packaging-time observations, not proof that an existing
+SDK cache was built with identical recipe files. They do not bundle every source
+archive or guarantee future upstream availability.
+
+```sh
+node desktop/tests/package-manifest.mjs dist/polly-debian-runtime
+node desktop/tools/release-report.mjs dist/polly-debian-runtime
+node desktop/tools/release-report.mjs dist/new-debian-live --compare dist/previous-debian-live
+```
+
+The report streams artifact hashes and validates source provenance, media
+sizes/checksums, runtime payload bytes, pinned package inventory and SBOM coverage.
+`package-manifest.mjs` also invokes the tar inventory check, which verifies
+ownership, modes, unique safe file paths and actual per-file archive hashes
+without extracting anything. Comparisons list package additions/removals/version
+changes, payload size differences, and build-input changes when both packages
+contain that metadata. Old accepted artifacts without the new metadata remain
+readable; their missing historical build fingerprints are not fabricated.
+
+This command is offline/read-only except for a caller-requested output redirect.
+It does not refresh APT, install updates, access a network, publish artifacts or
+turn an integrity pass into physical/sanitizer acceptance. Cross-distribution
+package names are not proof of equivalent functionality, and a version change
+is not automatically an upgrade or security fix.
+
+For explicit upstream version discovery, run:
+
+```sh
+sh desktop/tools/check-debian-updates.sh dist/polly-debian-runtime > build/debian-update-report.json
+```
+
+This wrapper starts a disposable SDK container, mounts the repository read-only
+and refreshes signed APT metadata there. Repository refresh failures stop the
+report rather than silently using stale lists. The source allowlist is limited
+to official Debian `trixie`, updates/security and explicit backports in `main`
+or `non-free-firmware`. `apt-cache` source records are checked but not offered as
+binary upgrades. Stable packages are never automatically moved to backports;
+existing `~bpo13` pins are compared only within that selected channel.
+
+The JSON identifies newer candidate versions, packages not found in the approved
+channel and exact pinned versions no longer listed. It does not download package
+payloads, solve a proposed transaction, claim security fixes, perform upgrades or
+create recurring jobs. Persisted old sources remain necessary for reproducible
+rebuilds; registry version listings alone do not satisfy that requirement.
+
 ## Current acceptance limits
 
 The Debian normal build passes all 59 native tests, the shared core suite and

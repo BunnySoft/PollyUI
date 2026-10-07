@@ -46,11 +46,24 @@ for (const [name, expected] of [['CMAKE_INSTALL_BINDIR', 'bin'], ['CMAKE_INSTALL
 }
 const skia = setting('SKIA_ROOT');
 if (!skia) throw new Error('Build does not record its Skia source');
-for (const [source, expected] of [[skia, '08a5439a6be726021c1c1905d23ce298a3edc5e4'],
-  [sdl, '8e37db5e797b6167f3a00d697d816a684bd259c7'],
-  [harfbuzz, '6f4c5cec306d31e6822303f5ba248a14293d588e']])
+const sourceInputs = [];
+for (const [name, source, expected] of [
+  ['skia', skia, '08a5439a6be726021c1c1905d23ce298a3edc5e4'],
+  ['sdl', sdl, '8e37db5e797b6167f3a00d697d816a684bd259c7'],
+  ['harfbuzz', harfbuzz, '6f4c5cec306d31e6822303f5ba248a14293d588e']]) {
   if (run('git', ['-C', source, 'rev-parse', 'HEAD']) !== expected)
     throw new Error('Packaging source does not match the pinned dependency: ' + source);
+  const diff = run('git', ['-C', source, 'diff', '--binary', 'HEAD', '--']);
+  if (name !== 'sdl' && diff) throw new Error('Unexpected tracked dependency edits: ' + name);
+  if (name === 'sdl') {
+    run('git', ['-C', source, 'apply', '--reverse', '--check', path.join(repo, 'desktop/patches/sdl-wayland-sync-lifetime.patch')]);
+    const changed = run('git', ['-C', source, 'diff', '--name-only', 'HEAD', '--']).split('\n').filter(Boolean);
+    if (changed.some(file => !['src/video/wayland/SDL_waylandwindow.c', 'src/video/wayland/SDL_waylandwindow.h'].includes(file)))
+      throw new Error('Unexpected SDL modified files: ' + changed.join(', '));
+  }
+  sourceInputs.push({ name, revision: expected, trackedDiffSha256: createHash('sha256').update(diff).digest('hex'),
+    trackedChanges: Boolean(diff) });
+}
 const packages = new Map(), providers = new Map();
 if (debian) {
   for (const row of run('dpkg-query', ['-W', '-f=${binary:Package}\t${Version}\t${Homepage}\t${Depends}\t${Pre-Depends}\t${Provides}\n']).split('\n')) {
@@ -206,9 +219,27 @@ try {
   inventory(root);
   writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(path.join(staging, 'sbom.spdx.json'), JSON.stringify(sbom, null, 2) + '\n');
+  const recipes = ['CMakeLists.txt', 'desktop/CMakeLists.txt', 'desktop/install.cmake',
+    'desktop/tools/package-linux.mjs', 'desktop/tools/package-tar.py',
+    'desktop/tools/build-skia-linux.sh', 'desktop/tools/skia-linux.gn', 'desktop/tools/build-sdl-linux.sh',
+    'desktop/tools/build-harfbuzz-linux.sh', 'desktop/patches/sdl-wayland-sync-lifetime.patch',
+    ...(debian ? ['desktop/release/debian/Containerfile', 'desktop/release/debian/Containerfile.sdk',
+      'desktop/release/debian/Containerfile.runtime', 'desktop/release/debian/sources.json',
+      'desktop/release/debian/libinput.json', 'desktop/release/debian/build-libinput.sh',
+      'desktop/release/debian/build-wlroots.py', 'desktop/release/debian/rime-default.custom.yaml',
+      'desktop/release/debian/debian.sources', 'desktop/release/debian/backports.sources'] : ['desktop/Containerfile', 'desktop/release/Containerfile'])];
+  const inputs = { schemaVersion: 1, revision, dirty, architecture: 'x86_64', distribution,
+    dependencies: sourceInputs,
+    recipes: recipes.map(file => ({ path: file, sha256: hash(path.join(repo, file)) })),
+    configuration: Object.fromEntries(['CMAKE_BUILD_TYPE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER',
+      'PU_HOST', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE',
+      'PU_BUILD_SESSION_AUTH', 'CMAKE_INSTALL_BINDIR', 'CMAKE_INSTALL_LIBDIR'].map(name => [name, setting(name) || null])),
+    limits: ['Recipe hashes identify current packaging inputs, not proof that a cached SDK was built with identical recipes.',
+      'Sources and distro package archives are not bundled here; availability and byte-for-byte reproducibility are not guaranteed.'] };
+  writeFileSync(path.join(staging, 'build-inputs.json'), JSON.stringify(inputs, null, 2) + '\n');
   const archive = 'pollydesktop-' + version + '-' + distribution + '-x86_64.tar.gz';
   run('python3', [path.join(repo, 'desktop/tools/package-tar.py'), root, path.join(staging, archive)]);
-  const artifacts = [archive, 'manifest.json', 'sbom.spdx.json', 'runtime-packages.txt', 'Containerfile'];
+  const artifacts = [archive, 'manifest.json', 'sbom.spdx.json', 'runtime-packages.txt', 'Containerfile', 'build-inputs.json'];
   if (debian) artifacts.push('sources.json', 'libinput.json', 'debian.sources', 'backports.sources');
   writeFileSync(path.join(staging, 'SHA256SUMS'), artifacts.map(file => hash(path.join(staging, file)) + '  ' + file).join('\n') + '\n');
   renameSync(staging, output);

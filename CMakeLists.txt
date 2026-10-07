@@ -449,6 +449,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/bundle-manager.py"
                 $<TARGET_FILE:polly-app> $<TARGET_FILE:pollyui>)
         set_tests_properties(desktop-bundle-manager PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-release-report COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/release-report.mjs")
+        set_tests_properties(desktop-release-report PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-package-archive-validation COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/package-archive-validation.py")
+        set_tests_properties(desktop-package-archive-validation PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-debian-update-report COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/debian-update-report.mjs")
+        set_tests_properties(desktop-debian-update-report PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-launcher-shell
             COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"
                 "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "org.example.packaged",
+  "name": "Packaged runtime check",
+  "version": "1.0.0",
+  "target": {"os": "linux", "architecture": "x86_64", "libc": "glibc"},
+  "launch": {"kind": "pollyui", "entry": "main.mjs", "arguments": []},
+  "data": {"layout": "pollyui", "schema": 1}
+}

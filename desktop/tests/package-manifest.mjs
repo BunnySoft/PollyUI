@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -9,6 +9,18 @@ execFileSync('python3', ['desktop/tests/package-modes.py', root], { stdio: 'inhe
 const read = name => readFileSync(path.join(root, name), 'utf8');
 const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const manifest = JSON.parse(read('manifest.json'));
+if (existsSync(path.join(root, 'build-inputs.json'))) {
+  const inputs = JSON.parse(read('build-inputs.json'));
+  assert.equal(inputs.schemaVersion, 1);
+  assert.equal(inputs.revision, manifest.revision);
+  assert.equal(inputs.dirty, manifest.dirty);
+  assert.ok(inputs.recipes.length > 5 && inputs.dependencies.length === 3);
+  for (const item of inputs.recipes) assert.match(item.sha256, /^[0-9a-f]{64}$/);
+  for (const item of inputs.dependencies) {
+    assert.match(item.revision, /^[0-9a-f]{40}$/);
+    assert.match(item.trackedDiffSha256, /^[0-9a-f]{64}$/);
+  }
+}
 assert.equal(manifest.bootable, false);
 assert.equal(manifest.stage, 'development-runtime-bundle');
 assert.match(manifest.revision, /^[0-9a-f]{40}$/);
