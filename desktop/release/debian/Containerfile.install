@@ -7,9 +7,11 @@ RUN cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
 FROM ${PLATFORM_IMAGE}
 USER root
 COPY release/debian/account-profile /tmp/polly-account-profile
+COPY release/install/roles.py /usr/lib/polly-account-roles.py
 COPY --from=account-tools /tmp/polly-passwd /usr/lib/polly-passwd
 RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
     sh /tmp/polly-account-profile installed && rm /tmp/polly-account-profile && \
+    sed -i 's/\r$//' /usr/lib/polly-account-roles.py && chmod 644 /usr/lib/polly-account-roles.py && \
     apt-get update -qq && apt-get install -y --no-install-recommends e2fsprogs python3 libnss-extrausers && \
     dpkg-divert --local --rename --add /usr/bin/passwd && \
     dpkg-statoverride --add --update root root 0755 /usr/bin/passwd.distrib && \

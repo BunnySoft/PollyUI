@@ -290,6 +290,40 @@ class InstalledAccounts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 accounts.atomic(path, "unsafe")
 
+    @unittest.skipUnless(os.geteuid() == 0, "disposable root SDK required")
+    def test_fresh_administrator_policy_is_private_and_not_an_initialized_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "etc").mkdir()
+            accounts.atomic(root / "etc/passwd",
+                "root:x:0:0:root:/root:/bin/sh\npolly:x:1000:1000::/home/polly:/bin/sh\n")
+            accounts.atomic(root / "config.json", json.dumps({
+                "schemaVersion": 3, "persistentUuid": UUID, "initialized": False, "automaticLogin": False}))
+            with patch.object(accounts, "passwords"):
+                policy = accounts.bootstrap_administrator(root)
+                self.assertEqual(policy, {"schemaVersion": 1, "administratorUids": [1000]})
+                self.assertEqual((root / "roles.json").stat().st_mode & 0o777, 0o600)
+                self.assertEqual(accounts.bootstrap_administrator(root), policy)
+            (root / "roles.json").chmod(0o644)
+            with self.assertRaises(ValueError):
+                accounts.administrator_policy(root)
+            (root / "roles.json").unlink()
+            accounts.atomic(root / "config.json", json.dumps({
+                "schemaVersion": 3, "persistentUuid": UUID, "initialized": True, "automaticLogin": False}))
+            with self.assertRaisesRegex(ValueError, "explicit role migration"):
+                accounts.bootstrap_administrator(root)
+            self.assertFalse((root / "roles.json").exists())
+
+    @unittest.skipUnless(os.geteuid() == 0, "disposable root SDK required")
+    def test_role_bootstrap_failure_does_not_complete_setup(self):
+        with patch.object(accounts, "require_ready"), patch.object(accounts, "passwords"), \
+                patch.object(accounts, "config", return_value={"initialized": False}), \
+                patch.object(accounts, "bootstrap_administrator", side_effect=OSError(errno.ENOSPC, "full")), \
+                patch.object(accounts, "atomic") as save:
+            with self.assertRaises(OSError):
+                accounts.finish()
+            save.assert_not_called()
+
     @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
     def test_automatic_login_is_once_and_boot_scoped(self):
         with tempfile.TemporaryDirectory() as temporary:

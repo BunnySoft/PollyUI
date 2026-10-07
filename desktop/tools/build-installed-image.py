@@ -155,6 +155,8 @@ def configure_accounts(root, account_root, identifier, repo, storage=False):
     }, sort_keys=True) + "\n")
     write(root, "usr/sbin/polly-accounts",
           (repo / "desktop/release/install/accounts.py").read_text(), 0o755)
+    write(root, "usr/lib/polly-account-roles.py",
+          (repo / "desktop/release/install/roles.py").read_text(), 0o644)
     nss = (root / "etc/nsswitch.conf").read_text()
     if not re.search(r"^shadow:\s+files\s*$", nss, re.M):
         raise ValueError("Unexpected base shadow NSS policy")
@@ -390,6 +392,7 @@ def build(args):
                 repo / "desktop/release/debian/profile-check",
                 repo / "desktop/release/install/session", repo / "desktop/release/install/shell.mjs",
                 repo / "desktop/release/install/accounts.py", repo / "desktop/release/install/passwd-proxy.c",
+                repo / "desktop/release/install/roles.py",
                 *fixture_files,
             ]],
             "limitations": ["Virtual-disk development candidate, not a physical-disk installer",

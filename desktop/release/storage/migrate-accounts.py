@@ -29,7 +29,7 @@ identities = migration.identity_module
 SCHEMA_VERSION = 1
 AUTHORITY_FILES = {"config.json", "etc/passwd", "etc/shadow", "etc/group", "etc/nsswitch.conf"}
 OPTIONAL_FILES = {"setup-complete", ".state.lock", "etc/.pwd.lock", "etc/passwd-",
-                  "etc/shadow-", "etc/group-", "etc/login.defs"}
+                  "etc/shadow-", "etc/group-", "etc/login.defs", "roles.json"}
 EMPTY_DIRECTORIES = {"usr", "dev", "lib", "lib64", "bin", "sbin", "etc/pam.d"}
 TOOL_LINKS = {"lib": "usr/lib", "lib64": "usr/lib64", "bin": "usr/bin", "sbin": "usr/sbin"}
 NSS_POLICY = "passwd: files\ngroup: files\nshadow: files\n"
@@ -138,6 +138,8 @@ def source_snapshot(source):
                 any(not re.fullmatch(r"(?:|-1|[0-9]{1,10})", field) for field in fields[2:8]) or fields[8]:
             raise ValueError("Unsupported private password record; credentials withheld")
     initialized = accounts.completed(source)
+    if (source / "roles.json").exists() or (source / "roles.json").is_symlink():
+        accounts.administrator_policy(source)
     if settings["automaticLogin"] and not initialized:
         raise ValueError("Uninitialized accounts cannot request automatic login")
     required = {".", "etc", *AUTHORITY_FILES}
@@ -169,7 +171,7 @@ def source_snapshot(source):
                 raise ValueError("Unsupported private account migration file")
             if name in {"etc/shadow", "etc/shadow-"} and info.st_mode & 0o007:
                 raise ValueError("Private password records are world-accessible")
-            if name in AUTHORITY_FILES | {"setup-complete"} and \
+            if name in AUTHORITY_FILES | {"setup-complete", "roles.json"} and \
                     info.st_gid != (gid if name == "etc/shadow" else 0):
                 raise ValueError("Account authority has an unqualified group identity")
             if name == ".state.lock" and stat.S_IMODE(info.st_mode) != 0o600:
@@ -195,6 +197,9 @@ def write_stage(stage, backup, settings, target):
         accounts.atomic(stage / "etc" / name, text)
     accounts.atomic(stage / "etc/shadow", accounts.read(backup / "etc/shadow", secret=True), 0o640)
     os.chown(stage / "etc/shadow", 0, target["shadowGid"])
+    if (backup / "roles.json").exists():
+        accounts.atomic(stage / "roles.json", accounts.read(backup / "roles.json", secret=True), 0o600)
+        accounts.administrator_policy(stage)
     if settings["initialized"]:
         accounts.atomic(stage / "setup-complete", "1\n")
     accounts.state_volume(accounts.config(stage), target["persistentUuid"], 3)

@@ -114,6 +114,16 @@ class AccountMigration(unittest.TestCase):
         self.migrate()
         self.assertEqual(accounts.read(self.persistent / "SystemData/Accounts/etc/shadow", secret=True), locked)
 
+    def test_existing_role_authority_is_preserved_not_recreated(self):
+        policy = '{"schemaVersion":1,"administratorUids":[1000]}\n'
+        accounts.atomic(self.source / "roles.json", policy, 0o600)
+        transaction = self.migrate()
+        self.assertEqual(accounts.read(transaction / "backup/roles.json", secret=True), policy)
+        destination = self.persistent / "SystemData/Accounts"
+        self.assertEqual(accounts.read(destination / "roles.json", secret=True), policy)
+        self.assertEqual(accounts.administrator_policy(destination)["administratorUids"], [1000])
+        self.assertTrue(importer.status(transaction)["backupVerified"])
+
     def test_existing_target_even_blank_or_dangling_is_never_overwritten(self):
         destination = self.persistent / "SystemData/Accounts"
         destination.symlink_to("absent")

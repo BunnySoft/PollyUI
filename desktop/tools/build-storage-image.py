@@ -225,6 +225,7 @@ def build(args):
                   REPO / "desktop/release/debian/account-profile",
                   REPO / "desktop/release/debian/profile-check",
                   REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
+                  REPO / "desktop/release/install/roles.py",
                   REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs"]
         manifest = {
             "schemaVersion": 1, "stage": "development-single-system-normal-boot",

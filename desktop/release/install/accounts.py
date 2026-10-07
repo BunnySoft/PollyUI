@@ -26,6 +26,7 @@ STORAGE_MANIFEST = Path("/etc/polly-storage.json")
 STORAGE_PROGRAM = Path("/usr/lib/polly-storage/storage.py")
 PROFILE_FILE = Path("/etc/polly-account-profile")
 PROFILE_CHECK = Path("/usr/lib/polly-account-profile-check")
+ROLE_MODEL = Path("/usr/lib/polly-account-roles.py")
 
 
 def trusted(path, directory=False, secret=False):
@@ -197,6 +198,40 @@ def completed(root=ROOT):
     return initialized
 
 
+def roles_model():
+    path = Path(__file__).resolve()
+    program = path.with_name("roles.py") if path.name == "accounts.py" else ROLE_MODEL
+    if path.name != "accounts.py":
+        trusted(program.parent, directory=True)
+        trusted(program)
+    spec = importlib.util.spec_from_file_location("polly_account_roles", program)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def administrator_policy(root=ROOT):
+    identities(read(root / "etc/passwd"))
+    path = root / "roles.json"
+    info = trusted(path, secret=True)
+    if stat.S_IMODE(info.st_mode) != 0o600 or info.st_gid != 0 or info.st_nlink != 1:
+        raise ValueError("Unsafe administrator policy")
+    return roles_model().parse(read(path, secret=True), [0, 1000])
+
+
+def bootstrap_administrator(root=ROOT):
+    if config(root)["initialized"]:
+        raise ValueError("Initialized accounts require explicit role migration, not bootstrap")
+    path = root / "roles.json"
+    if path.exists() or path.is_symlink():
+        return administrator_policy(root)
+    identities(read(root / "etc/passwd"))
+    passwords(root, usable=True)
+    policy = roles_model().initial([0, 1000])
+    atomic(path, json.dumps(policy, sort_keys=True) + "\n", 0o600)
+    return administrator_policy(root)
+
+
 def require_ready(require_complete=True):
     data, volume, expected, version = backing_store()
     for path in (volume, data.parent, data, ROOT, ROOT / "etc", RUNTIME):
@@ -266,6 +301,7 @@ def finish():
     require_ready(False)
     passwords(usable=True)
     settings = config()
+    bootstrap_administrator(ROOT)
     settings["initialized"] = True
     atomic(ROOT / "config.json", json.dumps(settings, sort_keys=True) + "\n")
     atomic(ROOT / "setup-complete", "1\n")

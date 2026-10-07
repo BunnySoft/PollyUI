@@ -122,6 +122,9 @@ def seed_container(repo):
     Path("/usr/sbin/polly-accounts").write_text(
         (repo / "desktop/release/install/accounts.py").read_text(), encoding="utf8", newline="\n")
     Path("/usr/sbin/polly-accounts").chmod(0o755)
+    Path("/usr/lib/polly-account-roles.py").write_text(
+        (repo / "desktop/release/install/roles.py").read_text(), encoding="utf8", newline="\n")
+    Path("/usr/lib/polly-account-roles.py").chmod(0o644)
     accounts = load_accounts()
     root = accounts.DATA
     (root / "etc").mkdir(parents=True)
@@ -180,6 +183,8 @@ def verify(accounts, guest):
         success(["/usr/bin/passwd", "root"], [root_first, root_first])
         success(["/usr/sbin/polly-accounts", "setup"])
     accounts.require_ready()
+    if not guest and accounts.administrator_policy()["administratorUids"] != [1000]:
+        raise RuntimeError("First setup did not establish the qualified primary administrator")
     root_su(password(), False)
     root_su(root_first)
     success(["/usr/bin/passwd"], [first, second, second], 1000)

@@ -747,7 +747,7 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "live-login",
         "live-remote"
@@ -1030,8 +1030,9 @@
       "sources": [
         "M01.1"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "done",
+      "requires": [],
+      "evidence": "已明确 config v2/v3、passwd/shadow、私有 roles v1 与派生 marker 的权威/版本边界；缺角色不重开初始化、不替换版本服务表。相关控制器/角色/迁移单测与既有真实 PAM 组件回归通过；不等于完整管理后端或新镜像验收。"
     },
     {
       "id": "role-model",
@@ -1049,10 +1050,11 @@
         "M01.1",
         "M04.3"
       ],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "account-model"
-      ]
+      ],
+      "evidence": "roles.py 的独立 schema/UID/重复字段/服务身份/操作白名单校验通过；role eligibility 明确不是 PAM、会话身份或特权执行授权，真实后端仍为 T14.6。"
     },
     {
       "id": "account-private",
@@ -1263,11 +1265,12 @@
       "sources": [
         "M02.3"
       ],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "role-model",
         "first-entry"
-      ]
+      ],
+      "evidence": "控制台首启在两套密码有效后、initialized 提交前原子建立 root:root 0600 roles.json；缺/坏策略显式拒绝，已初始化旧账户不自动猜角色。组件单测通过；原有策略精确迁移和实际 PAM 联合回归继续验收，非图形 Setup 完成。"
     },
     {
       "id": "initial-config",

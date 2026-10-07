@@ -24,12 +24,14 @@ def main():
     started = time.monotonic()
     python_files = [
         "desktop/release/install/accounts.py", "desktop/release/storage/layout.py",
+        "desktop/release/install/roles.py",
         "desktop/release/storage/homes.py",
         "desktop/release/storage/identities.py",
         "desktop/release/storage/migrate-home.py",
         "desktop/release/storage/migrate-accounts.py",
         "desktop/release/storage/storage.py", "desktop/tools/build-installed-image.py",
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
+        "desktop/tools/build-live-image.py",
         "desktop/tools/check-storage.py",
         "desktop/tools/polly-plan.py",
         "desktop/tests/account-auth-fixture.py",
@@ -47,6 +49,7 @@ def main():
                      "desktop/tools/check-storage.sh", "desktop/release/debian/account-profile",
                      "desktop/release/debian/profile-check",
                      "desktop/release/live/session", "desktop/tools/build-live.sh",
+                     "desktop/release/live/init",
                      "desktop/tools/build-installed.sh"):
             script = temporary / "syntax-check"
             script.write_text((repo / name).read_text(), encoding="utf8", newline="\n")
@@ -56,7 +59,7 @@ def main():
             "-o", str(temporary / "polly-passwd"),
             str(repo / "desktop/release/install/passwd-proxy.c"),
         ])
-    for name in ("installed-image", "installed-accounts", "storage-layout",
+    for name in ("installed-image", "installed-accounts", "installed-roles", "storage-layout",
                  "storage-mappings", "storage-image", "storage-homes", "storage-home-migration",
                  "storage-identities", "storage-account-migration", "polly-plan", "account-profiles"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])

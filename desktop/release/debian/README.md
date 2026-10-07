@@ -44,6 +44,14 @@ Installed builds use `POLLY_PLATFORM_IMAGE` (that tag by default), not
 resetting or copying public credentials. Keep the locked platform image available
 before `build-installed.sh`. Storage assembly continues to consume the installed base.
 
+For a no-network profile-stage check, `Containerfile.profiles` accepts an explicitly
+pinned `LOCKED_BASE_IMAGE` with the already-qualified kernel/runtime payload. It
+refuses an existing profile or configured root/polly credentials before marking
+the common template, then applies presets only in its final Live target. It installs
+no packages and cannot silently convert a configured Live/installed system. Record
+the pinned base ID and rerun `debian-live-payload.sh template|live`; this is cached
+payload reuse, not a fresh package reconstruction or a Live boot result.
+
 ## Fast storage development checks
 
 Run the cached SDK's syntax, targeted unit suites and strict passwd-proxy
@@ -491,6 +499,28 @@ installed-system defaults, subtasks and acceptance boundaries. These future
 requirements do not change existing D1 artifacts or passwordless Live policy.
 
 ## Installed console accounts (development follow-up)
+
+Installed account authority is explicit and separate from the system's
+version-related service tables:
+
+| Authority | Contract |
+| --- | --- |
+| `config.json` | Exact schema v2/homeUuid or v3/persistentUuid, boolean initialization/automatic-login state; missing or malformed state is not a fresh-install signal |
+| `etc/passwd` / `etc/shadow` / `etc/group` | Qualified persistent root/polly identity and private current credentials; system service identities remain version-related |
+| `roles.json` | Root-owned, singly linked `0600` schema-v1 policy with sorted unique qualified `administratorUids`; ordinary administrators cannot be root/service/unknown UIDs |
+| Derived setup marker | Does not override authoritative initialized state or reopen setup when lost |
+
+First setup creates the primary administrator policy only after both passwords
+are usable, before committing initialization. Existing initialized accounts do
+not silently receive a guessed missing policy or reopen setup: role upgrade is
+explicit migration. Existing valid policy is retained, and the offline account
+importer preserves its exact bytes. The current persistent runtime qualifies only
+root/polly; additional-user lifecycle remains a separate task.
+
+The role model's management-operation allowlist provides **eligibility only**,
+not PAM authentication, an active-seat assertion or a privileged executor.
+Management backends must independently verify the kernel-proven caller, session,
+credentials and narrow action. No general root command/path/hook operation exists.
 
 The current builder adds local console setup, real PAM password login,
 everyday `su -`, and standard `passwd` persistence for the fixed `polly`/root
