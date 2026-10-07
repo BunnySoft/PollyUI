@@ -14,16 +14,24 @@ One view of what's built and what's planned. For the architecture, see
 
 Platform column: **Win** = Windows. Windows and macOS hosts are available;
 Linux has an experimental SDL3 EGL/GLES/raster path with Fontconfig fonts and a native
-Alpine/musl build, libcurl HTTP and XDG app data. Physical GPU qualification,
-full IME and the macOS HTTP backend are still pending.
+Alpine/musl build, libcurl HTTP and XDG app data. Native Rime and complex Linux
+text are implemented; detailed GPU qualification, advanced IME/text extensions
+and the macOS HTTP backend remain separate.
 See README and `desktop/README.md` for current platform boundaries.
 
-**Next desktop base (candidate implemented, not yet accepted):** Debian 13 trixie
-amd64 from a debootstrap minbase rootfs. Normal native/core/PAM and initial VM
-boot checks pass; graphical LeakSanitizer and Debian physical acceptance remain
-open. Keep the Alpine physical-validation baseline until
-Debian passes equivalent acceptance; do not expand the release into a full
-desktop feature checklist. See [base selection and maintenance](./docs/desktop-base-maintenance.md).
+**Current desktop candidate:** Debian 13 trixie amd64 from a debootstrap minbase
+rootfs. Corrected Mesa passes the graphical memory gate; alpha.5-r2 has passed
+UEFI VM preflight and user-reported physical boot/basic operation. Detailed
+per-device and endurance evidence is separate. Keep the Alpine fallback and do
+not turn all future features into current release gates.
+See [base selection and maintenance](./docs/desktop-base-maintenance.md).
+
+For PollyOS, use the [technical overview](./docs/POLLYOS.md) and the
+**[historical deferred-work ledger](./docs/POLLYOS-BACKLOG.md)**. The ledger maps
+the original 45 desktop milestones, theme/release review and second-stage A–G
+to explicit remaining subitems, decisions and subsequently completed work.
+This file also contains broader PollyUI framework work, which is not automatically
+a PollyOS release requirement.
 
 The headless test suite (`pollyui --test tests/<name>`) currently covers **283
 assertions** across rendering, layout, DOM, events, runtime, networking,

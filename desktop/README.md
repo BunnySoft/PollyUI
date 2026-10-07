@@ -3,6 +3,9 @@
 For the current system-level introduction, principles, capability matrix and
 handoff, start with **[PollyOS 技术简介与交接指南](../docs/POLLYOS.md)**.
 PollyOS is the system name; existing subproject/tool/artifact names remain unchanged.
+The **[historical deferred-work ledger](../docs/POLLYOS-BACKLOG.md)** tracks
+unfinished subfeatures across the original 45 milestones, theme/release decisions
+and the second-stage plan; a completed milestone does not close all future extensions.
 
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
 compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
@@ -451,8 +454,9 @@ cleared during the drag and restored on completion/cancellation. Touch drags
 are not implemented. Clipboard ownership is not persisted after the source exits.
 
 Not implemented: tiling/overview, Xwayland, full session recovery,
-PollyUI outgoing drag sources, screen capture/portals, advanced typography,
-secure lock, full desktop services or installer. Display settings and
+PollyUI outgoing drag sources, screen capture/portals, remaining advanced typography,
+complete protected-session integration, full desktop services or installer.
+The opt-in PAM/session-lock mechanism itself is implemented. Display settings and
 guarded startup profiles are available; physical-device qualification remains.
 Popup constraints follow the adjustments allowed by the client (not arbitrary
 forced clipping). Multi-output/HiDPI and DRM/seat access still need real-hardware
