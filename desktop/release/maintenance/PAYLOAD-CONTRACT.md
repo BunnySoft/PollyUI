@@ -3,6 +3,8 @@
 `payload.py` implements **v1, development-unsigned** evidence for a writable
 single SYSTEM and its matching classified package state. It is not an updater,
 installer, backup archive, signature verifier or recovery implementation.
+The separate T08.2 `signature.py` envelope below authenticates only an explicitly
+trusted **test identity**, without changing this payload's trust or qualification.
 Only Debian 13/trixie, Debian architecture `amd64`, storage layout v1 and
 `major.minor.patch[-alpha.number]` payload versions are qualified. The existing
 image manifest's `x86_64` architecture spelling is unchanged.
@@ -167,3 +169,129 @@ Central integration is intentionally left to the owner: register
 include `desktop/release/maintenance/payload.py` in source syntax checks.
 Run `python3 -I -B desktop/tests/system-payload.py` on Linux. No SDK rebuild,
 network, image build, mounts, block writes or VM are required.
+
+## T08.2 test identity envelope (not a production trust root)
+
+`signature.py` uses the existing external **OpenSSL Ed25519** implementation
+(`pkey` and `pkeyutl -rawin`, qualified with OpenSSL 3.5.7). Python's standard
+library handles framing, SHA256, JSON and base64; no Python crypto dependency,
+custom cryptography, GLib/GIO runtime or algorithm negotiation is introduced.
+An unavailable/unsupported/failed/timed-out backend refuses the operation.
+The executable must come from the caller's trusted local environment, not a
+payload-supplied path or hook. This is an offline development/test tool.
+
+The envelope has exactly these fields:
+
+| Key | v1 value |
+| --- | --- |
+| `schemaVersion` | integer `1`, not boolean |
+| `kind` | `"polly-system-payload-test-signature"` |
+| `algorithm` | `"Ed25519"` |
+| `trustContext` | `"test-only"` |
+| `payload` | complete unchanged validated T07.1 schema1 object, including `"trust":"development-unsigned"` |
+| `payloadBytes` | exact byte length of `payload.encode(payload).encode("ascii")` |
+| `payloadSha256` | lowercase SHA256 of those exact canonical bytes |
+| `publicKeySha256` | lowercase SHA256 of the exact 44-byte trusted public-key DER |
+| `signature` | canonical RFC 4648 base64 of the 64-byte Ed25519 signature (88 ASCII characters, ending `==`) |
+
+Canonical payload bytes use the existing encoder: sorted object keys, compact
+`,`/`:` separators, ASCII JSON escaping, unchanged array order and **one trailing
+LF**. The digest here equals T07.1 preflight's `contractSha256`, not its internal
+tree-inventory checksum and not the hash of the original input's whitespace.
+Noncanonical input whitespace/key order may decode to the same identity; no
+body/material fields are omitted or silently normalized to another schema.
+
+The exact signed message is the ASCII domain prefix
+`PollyOS payload test signature v1\n`, followed by canonical JSON of **all
+envelope fields except `signature`**, followed by one LF. The same sorted keys,
+compact separators and ASCII escaping apply. Ed25519 signs this full message
+directly, not a homegrown digest-only signature or Ed25519ph. Envelope version,
+kind, algorithm, trust context, key fingerprint, body length/digest and complete
+payload (version, architecture, SYSTEM/Dpkg/Apt identities, capacity and
+compatibility included) are bound. Correcting a tampered body's public digest
+and length does not repair its signature.
+
+Public keys are **exact RFC 8410 Ed25519 SubjectPublicKeyInfo DER**, 44 bytes:
+hex prefix `302a300506032b6570032100` followed by the 32 public-key bytes.
+Test private keys are exact unencrypted PKCS#8 DER, 48 bytes:
+hex prefix `302e020100300506032b657004220420` followed by the 32 seed bytes.
+Algorithm parameters are absent. PEM, raw keys, encrypted/extended PKCS#8,
+other algorithms and trailing material are rejected, not guessed. No public
+key is accepted from the envelope; the verifier requires an independently
+supplied trusted test public-key file and checks both its fingerprint and the
+cryptographic signature. Keys are snapshotted into private temporary files
+before invoking OpenSSL, then removed. The module does not generate keys.
+Tests generate ephemeral keys only inside their disposable private fixtures;
+no private key, production identity or user secret is checked into source.
+
+### API and command boundaries
+
+- `validate(envelope)`, `encode(envelope)`, `decode(text)` validate/round-trip
+  structure only. They **do not verify** the signature.
+- `signing_bytes(envelope) -> bytes` exposes the exact domain-separated message.
+- `sign(payload, test_private_key, *, trust_context) -> envelope`.
+  The required context must equal `"test-only"`.
+- `verify(envelope, trusted_test_public_key, *, trust_context, expected_version,
+  distribution, architecture) -> evidence`. Every keyword is required; context
+  must equal `"test-only"`, distribution must match the existing Debian 13 object,
+  and architecture must match `amd64`. No default trust or unsigned bypass exists.
+
+Linux CLI examples (files are explicit test fixtures, not production keys):
+
+```sh
+python3 -I -B desktop/release/maintenance/signature.py sign-test system-payload.json \
+  --test-private-key ephemeral-test-private.der --trust-context test-only
+python3 -I -B desktop/release/maintenance/signature.py verify-test test-envelope.json \
+  --trusted-test-public-key ephemeral-test-public.der --trust-context test-only \
+  --expected-version 0.1.0-alpha.1 --distribution debian13 --architecture amd64
+```
+
+Signing emits only the canonical envelope plus LF to stdout. Verification emits
+only canonical JSON evidence plus LF with exactly:
+`{schemaVersion,kind,algorithm,trustContext,publicKeySha256,contractSha256,
+contractBytes,version,architecture,payloadTrust,signatureVerified,materialVerified,
+preflightRequired,productionTrusted,writeAuthorized,readOnly,authenticated,
+bootVerified}`. Kind is `polly-system-payload-test-verification`;
+`signatureVerified`, `preflightRequired`, `readOnly` are `true`;
+`materialVerified`, `productionTrusted`, `writeAuthorized`, `authenticated`,
+`bootVerified` are `false`; `payloadTrust` stays `development-unsigned`.
+Failures emit stderr and nonzero status, with no successful evidence or fallback.
+
+Source payload JSON is capped at 1 MiB; envelope JSON at 1 MiB + 4096 bytes
+(UTF-8 source bytes, including whitespace); canonical payload/envelope encoding
+must also fit their respective limits. Keys have the exact lengths above.
+CLI accepts at most 32 arguments of at most 4096 UTF-8 bytes each, disables
+option abbreviation and accepts only fixed commands/options. Inputs must be
+regular Linux files with real ancestors: symlinks, `..` traversal, directories
+and special nodes fail through the existing no-follow bounded reader. Caller
+paths never become OpenSSL arguments: only owned temporary snapshots do.
+OpenSSL runs as an argument vector without a shell, with closed stdin and a
+10-second timeout per operation. Duplicate fields, booleans in integer slots,
+non-finite/malformed/deep JSON, unsupported versions/architectures, bad digest/
+length, noncanonical base64 and incorrect keys/signatures all refuse.
+
+### What verification does not establish
+
+**A valid test signature is not production trust, actual material correctness,
+an authenticated Debian package origin, ABI/conffile qualification, bootability
+or write permission.** `sign` validates the declarative shape; it does not capture
+or qualify the source. Use T07.1 `capture` on independently qualified offline
+trees first. After `verify`, the consumer must still run the unchanged
+`payload.preflight` on that exact envelope's `payload`, actual offline SYSTEM/
+PERSISTENT trees, available capacity and independently established current data
+schemas. Check `contractSha256` equality between the two evidence records.
+Verification never flips the old preflight's `authenticated:false` flag.
+Preflight still refuses mismatched material, package state, capacity and schemas.
+
+This unit includes no updater, replacement, apt execution, rollback/recovery,
+root deployment, key enrollment/rotation/revocation/publishing or real device
+operation. Production identity/promotion policy remains separately authorized
+work. Old installed/image manifests and builder outputs retain their exact
+interpretation and are not silently signed or treated as trusted.
+
+Run `python3 -I -B desktop/tests/system-payload-signature.py` on Linux with
+OpenSSL available. Synthetic tests measure exact body/source bounds and output
+shapes, deterministic signatures/canonical framing, independent OpenSSL
+interoperation, repaired-digest/body tampering, wrong keys/signatures, strict
+parsing/CLI refusal and separate actual-material preflight rejection. Central
+runner/source-check registration remains the integration owner's task.
