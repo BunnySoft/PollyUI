@@ -117,6 +117,104 @@ def account_templates(passwd, shadow):
     return identities, shadows
 
 
+def configure_accounts(root, account_root, identifier, repo, storage=False):
+    passwd = (root / "etc/passwd").read_text()
+    if not re.search(r"^polly:[^:]*:1000:1000:", passwd, re.M):
+        raise ValueError("Unexpected development user identity")
+    write(root, "usr/bin/polly-installed-session",
+          (repo / "desktop/release/install/session").read_text(), 0o755)
+    write(root, "usr/share/pollyui/desktop/shell/installed.mjs",
+          (repo / "desktop/release/install/shell.mjs").read_text())
+    write(root, "etc/passwd", re.sub(r"^(polly:[^\n]*:)/[^:\n]+$", r"\1/usr/bin/polly-installed-session",
+                                    passwd, flags=re.M))
+    write(root, "etc/shells", (root / "etc/shells").read_text() + "/usr/bin/polly-installed-session\n")
+    for name in ("usr/bin/passwd", "usr/bin/passwd.distrib",
+                 "etc/group", "etc/shadow", "etc/nsswitch.conf"):
+        if not (root / name).is_file() or (root / name).is_symlink():
+            raise ValueError("Missing installed account input: " + name)
+    shadow_group = [line.split(":")[2] for line in (root / "etc/group").read_text().splitlines()
+                    if line.startswith("shadow:")]
+    if len(shadow_group) != 1 or not shadow_group[0].isdigit():
+        raise ValueError("Missing shadow helper group")
+    account_root.mkdir(parents=True, exist_ok=True)
+    if not storage:
+        account_root.parent.chmod(0o700)
+    account_root.chmod(0o755)
+    (account_root / "etc").mkdir(mode=0o755)
+    identities, shadows = account_templates((root / "etc/passwd").read_text(),
+                                            (root / "etc/shadow").read_text())
+    write(account_root, "etc/passwd", "\n".join(identities) + "\n")
+    write(account_root, "etc/shadow", "\n".join(shadows) + "\n", 0o640)
+    os.chown(account_root / "etc/shadow", 0, int(shadow_group[0]))
+    write(account_root, "etc/nsswitch.conf", "passwd: files\ngroup: files\nshadow: files\n")
+    write(account_root, "etc/group", "root:x:0:\npolly:x:1000:\nshadow:x:" + shadow_group[0] + ":\n")
+    write(account_root, "config.json", json.dumps({
+        "schemaVersion": 3 if storage else 2,
+        "persistentUuid" if storage else "homeUuid": identifier,
+        "automaticLogin": False, "initialized": False,
+    }, sort_keys=True) + "\n")
+    write(root, "usr/sbin/polly-accounts",
+          (repo / "desktop/release/install/accounts.py").read_text(), 0o755)
+    nss = (root / "etc/nsswitch.conf").read_text()
+    if not re.search(r"^shadow:\s+files\s*$", nss, re.M):
+        raise ValueError("Unexpected base shadow NSS policy")
+    write(root, "etc/nsswitch.conf", re.sub(r"^shadow:\s+files\s*$",
+          "shadow: extrausers files", nss, flags=re.M))
+    write(root, "etc/pam.d/common-auth",
+          "#%PAM-1.0\n"
+          "auth requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts check\n"
+          "auth required pam_unix.so\n")
+    write(root, "etc/pam.d/common-password",
+          "password requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts password-scope\n" +
+          (root / "etc/pam.d/common-password").read_text())
+    write(root, "etc/pam.d/login",
+          "#%PAM-1.0\n"
+          "auth requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts check\n"
+          "auth required pam_unix.so\n"
+          "auth required pam_nologin.so\n"
+          "account required pam_unix.so\n"
+          "account required pam_nologin.so\n"
+          "session required pam_loginuid.so\n"
+          "session optional pam_keyinit.so force revoke\n"
+          "session required pam_systemd.so\n")
+    prerequisite = "Requires=polly-storage.service\n" if storage else "RequiresMountsFor=/home\n"
+    write(root, "etc/systemd/system/polly-accounts.service",
+          "[Unit]\n" + prerequisite + "Wants=polly-installed-serial.service\n"
+          "After=local-fs.target polly-installed-serial.service" +
+          (" polly-storage.service" if storage else "") + "\n"
+          "Before=systemd-user-sessions.service getty@tty1.service polly-firstboot.service\n"
+          "[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/polly-accounts prepare\n"
+          "[Install]\nWantedBy=multi-user.target\n")
+    write(root, "etc/systemd/system/polly-firstboot.service",
+          "[Unit]\nRequires=polly-accounts.service\nAfter=polly-accounts.service\n"
+          "Before=getty@tty1.service\n"
+          "[Service]\nType=oneshot\nRemainAfterExit=yes\n"
+          "ExecStart=/usr/sbin/polly-accounts setup\n"
+          "StandardInput=tty-force\nStandardOutput=tty\nStandardError=tty\n"
+          "TTYPath=/dev/tty1\nTTYReset=yes\nTTYVHangup=yes\nTimeoutStartSec=infinity\n")
+    (root / "etc/systemd/system/multi-user.target.wants/polly-accounts.service").symlink_to(
+        "../polly-accounts.service")
+    write(root, GETTY_DROPIN,
+          "[Unit]\n" + ("" if storage else "RequiresMountsFor=/home/polly\n") +
+          "Requires=polly-accounts.service polly-firstboot.service\n"
+          "After=polly-accounts.service polly-firstboot.service\n"
+          "[Service]\nExecStart=\nExecStart=/usr/sbin/polly-accounts getty %I\n")
+    serial_getty = root / "etc/systemd/system/serial-getty@ttyS0.service"
+    if serial_getty.exists() or serial_getty.is_symlink():
+        raise ValueError("Unexpected preexisting installed serial console policy")
+    serial_getty.symlink_to("/dev/null")
+    write(root, "usr/bin/polly-installed-serial",
+          "#!/bin/sh\nset -eu\nmkdir -p /run/systemd/journald.conf.d\n"
+          "printf '[Journal]\\nForwardToConsole=yes\\nTTYPath=/dev/ttyS0\\n' "
+          "> /run/systemd/journald.conf.d/polly-serial.conf\nsystemctl restart systemd-journald\n", 0o755)
+    write(root, "etc/systemd/system/polly-installed-serial.service",
+          "[Unit]\nConditionKernelCommandLine=polly.serial=1\nBefore=getty@tty1.service\n"
+          "[Service]\nType=oneshot\nExecStart=/usr/bin/polly-installed-serial\n"
+          "[Install]\nWantedBy=multi-user.target\n")
+    (root / "etc/systemd/system/multi-user.target.wants/polly-installed-serial.service").symlink_to(
+        "../polly-installed-serial.service")
+
+
 def build(args):
     repo = Path(__file__).resolve().parents[2]
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_revision):
@@ -184,98 +282,7 @@ def build(args):
         write(root, "etc/machine-id", uuid.uuid4().hex + "\n")
         (root / "etc/resolv.conf").symlink_to("/run/polly-network/resolv.conf")
         write(root, "etc/polly-home-uuid", parts[3]["uuid"] + "\n")
-        write(root, "usr/bin/polly-installed-session",
-              (repo / "desktop/release/install/session").read_text(), 0o755)
-        write(root, "usr/share/pollyui/desktop/shell/installed.mjs",
-              (repo / "desktop/release/install/shell.mjs").read_text())
-        passwd = (root / "etc/passwd").read_text()
-        if not re.search(r"^polly:[^:]*:1000:1000:", passwd, re.M):
-            raise ValueError("Unexpected development user identity")
-        write(root, "etc/passwd", re.sub(r"^(polly:[^\n]*:)/[^:\n]+$", r"\1/usr/bin/polly-installed-session",
-                                        passwd, flags=re.M))
-        write(root, "etc/shells", (root / "etc/shells").read_text() + "/usr/bin/polly-installed-session\n")
-        for name in ("usr/bin/passwd", "usr/bin/passwd.distrib",
-                     "etc/group", "etc/shadow", "etc/nsswitch.conf"):
-            if not (root / name).is_file() or (root / name).is_symlink():
-                raise ValueError("Missing installed account input: " + name)
-        shadow_group = [line.split(":")[2] for line in (root / "etc/group").read_text().splitlines()
-                        if line.startswith("shadow:")]
-        if len(shadow_group) != 1 or not shadow_group[0].isdigit():
-            raise ValueError("Missing shadow helper group")
-        account_root = data / ".polly-system/accounts"
-        account_root.mkdir(parents=True)
-        account_root.parent.chmod(0o700)
-        account_root.chmod(0o755)
-        account_etc = account_root / "etc"
-        account_etc.mkdir(mode=0o755)
-        identities, shadows = account_templates((root / "etc/passwd").read_text(),
-                                                (root / "etc/shadow").read_text())
-        write(account_root, "etc/passwd", "\n".join(identities) + "\n")
-        write(account_root, "etc/shadow", "\n".join(shadows) + "\n", 0o640)
-        os.chown(account_etc / "shadow", 0, int(shadow_group[0]))
-        write(account_root, "etc/nsswitch.conf", "passwd: files\ngroup: files\nshadow: files\n")
-        write(account_root, "etc/group", "root:x:0:\npolly:x:1000:\nshadow:x:" + shadow_group[0] + ":\n")
-        write(account_root, "config.json", json.dumps({
-            "schemaVersion": 2, "homeUuid": parts[3]["uuid"], "automaticLogin": False, "initialized": False,
-        }, sort_keys=True) + "\n")
-        write(root, "usr/sbin/polly-accounts",
-              (repo / "desktop/release/install/accounts.py").read_text(), 0o755)
-        nss = (root / "etc/nsswitch.conf").read_text()
-        if not re.search(r"^shadow:\s+files\s*$", nss, re.M):
-            raise ValueError("Unexpected base shadow NSS policy")
-        write(root, "etc/nsswitch.conf", re.sub(r"^shadow:\s+files\s*$",
-              "shadow: extrausers files", nss, flags=re.M))
-        write(root, "etc/pam.d/common-auth",
-              "#%PAM-1.0\n"
-              "auth requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts check\n"
-              "auth required pam_unix.so\n")
-        write(root, "etc/pam.d/common-password",
-              "password requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts password-scope\n" +
-              (root / "etc/pam.d/common-password").read_text())
-        write(root, "etc/pam.d/login",
-              "#%PAM-1.0\n"
-              "auth requisite pam_exec.so quiet seteuid /usr/sbin/polly-accounts check\n"
-              "auth required pam_unix.so\n"
-              "auth required pam_nologin.so\n"
-              "account required pam_unix.so\n"
-              "account required pam_nologin.so\n"
-              "session required pam_loginuid.so\n"
-              "session optional pam_keyinit.so force revoke\n"
-              "session required pam_systemd.so\n")
-        write(root, "etc/systemd/system/polly-accounts.service",
-              "[Unit]\nRequiresMountsFor=/home\nWants=polly-installed-serial.service\n"
-              "After=local-fs.target polly-installed-serial.service\n"
-              "Before=systemd-user-sessions.service getty@tty1.service polly-firstboot.service\n"
-              "[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/polly-accounts prepare\n"
-              "[Install]\nWantedBy=multi-user.target\n")
-        write(root, "etc/systemd/system/polly-firstboot.service",
-              "[Unit]\nRequires=polly-accounts.service\nAfter=polly-accounts.service\n"
-              "Before=getty@tty1.service\n"
-              "[Service]\nType=oneshot\nRemainAfterExit=yes\n"
-              "ExecStart=/usr/sbin/polly-accounts setup\n"
-              "StandardInput=tty-force\nStandardOutput=tty\nStandardError=tty\n"
-              "TTYPath=/dev/tty1\nTTYReset=yes\nTTYVHangup=yes\nTimeoutStartSec=infinity\n")
-        (root / "etc/systemd/system/multi-user.target.wants/polly-accounts.service").symlink_to(
-            "../polly-accounts.service")
-        write(root, GETTY_DROPIN,
-              "[Unit]\nRequiresMountsFor=/home/polly\n"
-              "Requires=polly-accounts.service polly-firstboot.service\n"
-              "After=polly-accounts.service polly-firstboot.service\n"
-              "[Service]\nExecStart=\nExecStart=/usr/sbin/polly-accounts getty %I\n")
-        serial_getty = root / "etc/systemd/system/serial-getty@ttyS0.service"
-        if serial_getty.exists() or serial_getty.is_symlink():
-            raise ValueError("Unexpected preexisting installed serial console policy")
-        serial_getty.symlink_to("/dev/null")
-        write(root, "usr/bin/polly-installed-serial",
-              "#!/bin/sh\nset -eu\nmkdir -p /run/systemd/journald.conf.d\n"
-              "printf '[Journal]\\nForwardToConsole=yes\\nTTYPath=/dev/ttyS0\\n' "
-              "> /run/systemd/journald.conf.d/polly-serial.conf\nsystemctl restart systemd-journald\n", 0o755)
-        write(root, "etc/systemd/system/polly-installed-serial.service",
-              "[Unit]\nConditionKernelCommandLine=polly.serial=1\nBefore=getty@tty1.service\n"
-              "[Service]\nType=oneshot\nExecStart=/usr/bin/polly-installed-serial\n"
-              "[Install]\nWantedBy=multi-user.target\n")
-        (root / "etc/systemd/system/multi-user.target.wants/polly-installed-serial.service").symlink_to(
-            "../polly-installed-serial.service")
+        configure_accounts(root, data / ".polly-system/accounts", parts[3]["uuid"], repo)
         # iwd profiles stay volatile; the shared home is not a shared system /var.
         (root / "var/lib/iwd").mkdir(parents=True, exist_ok=True)
         if any((root / "var/lib/iwd").iterdir()):

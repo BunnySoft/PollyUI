@@ -13,6 +13,31 @@ are implemented; the complete single-system image, shared Apps and independent
 recovery are **not yet validated**.
 Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
 
+## Fast storage development checks
+
+Run the cached SDK's syntax, five targeted unit suites and strict passwd-proxy
+compilation without building a container/image, configuring CMake or starting QEMU:
+
+```powershell
+.\desktop\tools\check-storage.ps1
+.\desktop\tools\check-storage.ps1 -Mode mounts
+.\desktop\tools\check-storage.ps1 -Mode initramfs
+```
+
+The equivalent Linux entry is `sh desktop/tools/check-storage.sh [fast|mounts|initramfs]`.
+`fast` is the default (about 1.5 seconds inside the cached SDK in this environment).
+`mounts` adds actual bind/permission/failure fixtures in a disposable mount namespace;
+it needs only the cached storage base and no disk image or VM. `initramfs` checks the
+already-packed hook, tools and ordering; a stale cached hook is rejected, not silently
+treated as matching current source. None of these modes automatically builds an image,
+pulls dependencies, writes host block devices or enables network access.
+
+Use fast checks for each edit and mounts for mapping/identity changes. Actual
+image/cold-boot acceptance is still required for boot/partition/kernel changes and
+stage handoff, but not after each small edit. Fast checks are not boot evidence.
+
+## Storage overlay and current candidate
+
 The separate `Containerfile.storage` extends the installed base without changing
 the historical D1 recipe. Its `local-bottom` hook binds `/System/Resources` before
 main-system init. GNU tools use distinct initramfs names because Debian's existing
@@ -56,6 +81,21 @@ required storage before entering its private password namespace, still retaining
 the real caller UID. An unconfigured ordinary-user invocation is refused.
 These adapters and the D1 real PAM/passwd/su regression are checked; new-layout
 setup/login/password persistence still require the separately assembled VM image.
+
+`sh desktop/tools/build-storage.sh OUTPUT_DIRECTORY` assembles a separate ordinary
+single-system candidate from cached inputs, using measured payload and explicit
+reserves. It never changes D1 artifacts. The current prototype's Recovery partition
+is **reserved but not bootable**, clearly marked in the manifest and omitted from
+the boot menu; independent authenticated recovery remains M10. The first candidate
+reached real early `/usr` and systemd but failed required-storage preparation, so
+normal setup/login has not yet passed and it is not a usable-system handoff.
+Reusing that candidate with matching cached kernel/initrd and console journaling
+identified a `/var/tmp` compatibility-directory mode of `1755` instead of `1777`
+due to the builder's umask. Explicit chmod and restrictive-umask regression tests
+fix the assembly code; the existing r1 image remains unchanged and failed.
+The optional smoke harness `--diagnostic-inputs` directory (`vmlinuz`, combined
+`initrd`) bypasses firmware only for diagnosis and records `uefiBoot=false`;
+it must not be used as UEFI acceptance evidence.
 
 ## Minimal root filesystem
 

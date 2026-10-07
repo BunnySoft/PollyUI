@@ -9,6 +9,8 @@ Before=local-fs.target sysinit.target polly-accounts.service systemd-user-sessio
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/lib/polly-storage/storage.py prepare
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 RequiredBy=sysinit.target

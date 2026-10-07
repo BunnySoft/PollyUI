@@ -21,14 +21,40 @@ def digest(path):
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def diagnostic_kernel_arguments(manifest, directory):
+    if manifest.get("layout") != "single-system-independent-recovery":
+        raise ValueError("Direct-kernel diagnostics require the single-system layout")
+    for name in ("vmlinuz", "initrd"):
+        file = directory / name
+        if not stat.S_ISREG(file.lstat().st_mode) or file.stat().st_size == 0:
+            raise ValueError("Expected a nonempty regular diagnostic input: " + name)
+    system = [volume["uuid"] for volume in manifest["storageContract"]["volumes"]
+              if volume["role"] == "SYSTEM"]
+    if len(system) != 1 or not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", system[0]):
+        raise ValueError("Invalid diagnostic root UUID")
+    return ["-kernel", str(directory / "vmlinuz"), "-initrd", str(directory / "initrd"),
+            "-append", f"root=UUID={system[0]} ro rootwait panic=0 console=tty0 "
+            "console=ttyS0,115200 polly.mode=baseline polly.serial=1 "
+            "systemd.journald.forward_to_console=yes"]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("artifact", type=Path)
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--smoke", action="store_true", help="Check a regular image without test helpers")
+    parser.add_argument("--diagnostic-inputs", type=Path,
+                        help="Direct kernel/initrd directory for diagnosis only; NOT UEFI acceptance")
     args = parser.parse_args()
     artifact = args.artifact.resolve()
     manifest = json.loads((artifact / "installed-manifest.json").read_text())
+    single_system = manifest.get("layout") == "single-system-independent-recovery"
+    if single_system and not args.smoke:
+        raise ValueError("Single-system persistence needs its own acceptance flow, not A/A/B/A")
+    if args.diagnostic_inputs and not args.smoke:
+        raise ValueError("Direct-kernel diagnostics cannot be persistence acceptance")
+    kernel_arguments = diagnostic_kernel_arguments(manifest, args.diagnostic_inputs.resolve()) \
+        if args.diagnostic_inputs else []
     name = manifest["image"]["name"]
     if Path(name).name != name or not name.endswith(".img"):
         raise ValueError("Unsafe image name")
@@ -51,7 +77,8 @@ def main():
         temporary = Path(temporary)
         variables = temporary / "vars.fd"
         shutil.copyfile(firmware / f"OVMF_VARS{suffix}.fd", variables)
-        for count, slot in enumerate(["A"] if args.smoke else ["A", "A", "B", "A"], 1):
+        sequence = ["SYSTEM"] if single_system else (["A"] if args.smoke else ["A", "A", "B", "A"])
+        for count, slot in enumerate(sequence, 1):
             boot = evidence / f"boot-{count}-{slot}"
             boot.mkdir()
             serial = boot / "serial.log"
@@ -65,8 +92,9 @@ def main():
             command = [
                 "qemu-system-x86_64", "-nodefaults", "-machine", "q35", "-accel", acceleration,
                 "-cpu", "host" if acceleration == "kvm" else "qemu64", "-m", "4096", "-smp", "2",
-                "-drive", f"if=pflash,format=raw,readonly=on,file={firmware / f'OVMF_CODE{suffix}.fd'}",
-                "-drive", f"if=pflash,format=raw,file={variables}",
+                *(kernel_arguments or [
+                    "-drive", f"if=pflash,format=raw,readonly=on,file={firmware / f'OVMF_CODE{suffix}.fd'}",
+                    "-drive", f"if=pflash,format=raw,file={variables}"]),
                 "-drive", f"if=none,id=installed,format=qcow2,file={disk}",
                 "-device", "virtio-blk-pci,drive=installed,bootindex=1",
                 "-device", "virtio-vga", "-device", "qemu-xhci", "-device", "usb-kbd",
@@ -146,13 +174,17 @@ def main():
                         serial.write_text(safe)
                         return safe
 
-                    while "serial VM baseline" not in transcript():
-                        if process.poll() is not None or time.monotonic() > deadline:
-                            raise RuntimeError("Installed UEFI menu did not appear; see " + str(boot))
-                        time.sleep(0.1)
-                    for key in ["home", *(["down"] * (4 if slot == "A" else 5)), "ret"]:
-                        execute("send-key", {"keys": [{"type": "qcode", "data": key}]})
-                        time.sleep(0.15)
+                    if not kernel_arguments:
+                        while "serial VM baseline" not in transcript():
+                            if process.poll() is not None or time.monotonic() > deadline:
+                                raise RuntimeError("Installed UEFI menu did not appear; see " + str(boot))
+                            time.sleep(0.1)
+                        menu_index = manifest["serialMenuIndex"] if single_system else (4 if slot == "A" else 5)
+                        if type(menu_index) is not int or not 0 <= menu_index <= 10:
+                            raise ValueError("Invalid serial boot menu index")
+                        for key in ["home", *(["down"] * menu_index), "ret"]:
+                            execute("send-key", {"keys": [{"type": "qcode", "data": key}]})
+                            time.sleep(0.15)
                     deadline = time.monotonic() + 240
                     captured = False
                     while process.poll() is None:
@@ -165,6 +197,7 @@ def main():
                             login_sent = True
                         if any(message in text for message in [
                             "POLLY_PERSISTENCE_FAILED", "Kernel panic", "PollyDesktop session failed",
+                            "POLLY_STORAGE_FAILED", "POLLY_STORAGE_EARLY_FAILED",
                         ]):
                             raise RuntimeError("Installed guest reported a failure:\n" + text[-8000:])
                         if "POLLY_INSTALLED_DESKTOP_READY" in text and not captured:
@@ -198,6 +231,7 @@ def main():
                     if process.returncode != 0:
                         raise RuntimeError("QEMU exited unsuccessfully")
                     rounds.append({"count": count, "slot": slot, "cleanShutdown": not args.smoke,
+                                   "uefiBoot": not bool(kernel_arguments),
                                    "settings": not args.smoke, "managedAppData": not args.smoke,
                                    "document": not args.smoke,
                                    "nativeDesktop": True, "serialLog": str(serial.relative_to(evidence))})
@@ -221,12 +255,17 @@ def main():
     if digest(image) != original_hash:
         raise RuntimeError("The original image changed during verification")
     (evidence / "result.json").write_text(json.dumps({
-        "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,
-        "mode": "native-desktop-smoke" if args.smoke else "persistence",
+        "ready": True, "firmware": "direct kernel diagnostic" if kernel_arguments else "OVMF UEFI",
+        "acceleration": acceleration,
+        "mode": "diagnostic-native-desktop-smoke" if kernel_arguments else
+                ("native-desktop-smoke" if args.smoke else "persistence"),
+        "layout": manifest.get("layout", "historical-D1-A/B"),
         "memoryMiB": 4096, "network": False, "hostDevices": False, "rounds": rounds,
         "originalImageUnchanged": True, "imageSha256": original_hash,
         "disk": "disposable qcow2 overlay with read-only raw backing",
-        "limits": ["Not physical-device qualification", "No actual system update or migration"],
+        "limits": ["Not physical-device qualification", "No actual system update or migration",
+                   *(["Not UEFI acceptance; diagnostic kernel/initrd supplied separately"]
+                     if kernel_arguments else [])],
     }, indent=2) + "\n")
 
 

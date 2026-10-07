@@ -177,11 +177,19 @@ def validate(value):
     return copy.deepcopy(expected)
 
 
-def partition_plan(payload_bytes, headroom_mib):
+def new_volume_uuids():
+    serial = uuid.uuid4().hex[:8].upper()
+    return {"EFI": serial[:4] + "-" + serial[4:],
+            **{role: str(uuid.uuid4()) for role in VOLUME_ROLES if role != "EFI"}}
+
+
+def partition_plan(payload_bytes, headroom_mib, identifiers=None):
     """Size each filesystem from measured payload plus explicit reserved capacity."""
     if not isinstance(payload_bytes, dict) or set(payload_bytes) != set(VOLUME_ROLES) or \
             not isinstance(headroom_mib, dict) or set(headroom_mib) != set(VOLUME_ROLES):
         raise ValueError("All four payload measurements and reserves are required")
+    identifiers = new_volume_uuids() if identifiers is None else identifiers
+    contract(identifiers)
     parts, start = [], 2048
     for role in VOLUME_ROLES:
         payload = _integer(payload_bytes[role], 1, 64 * 1024 * MIB, "measured " + role + " payload")
@@ -190,12 +198,10 @@ def partition_plan(payload_bytes, headroom_mib):
         overhead = max(16, (measured + 9) // 10)
         size = measured + overhead + reserve
         _integer(size, 33, 128 * 1024, role + " filesystem MiB")
-        serial = uuid.uuid4().hex[:8].upper()
-        identifier = serial[:4] + "-" + serial[4:] if role == "EFI" else str(uuid.uuid4())
         parts.append({"name": role, "startSector": start, "sectors": size * 2048,
                       "sizeMiB": size, "payloadBytes": payload,
                       "filesystemOverheadMiB": overhead, "reserveMiB": reserve,
-                      "type": "U" if role == "EFI" else "L", "uuid": identifier,
+                      "type": "U" if role == "EFI" else "L", "uuid": identifiers[role],
                       "filesystem": "FAT32" if role == "EFI" else "ext4"})
         start += size * 2048
     return parts, (start + 2048) * 512

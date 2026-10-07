@@ -20,6 +20,14 @@ VOLUMES = {
 
 
 class StorageLayout(unittest.TestCase):
+    def test_capacity_plan_preserves_seeded_filesystem_identities(self):
+        parts, _ = layout.partition_plan({role: 4096 for role in layout.VOLUME_ROLES},
+                                        {role: 64 for role in layout.VOLUME_ROLES}, VOLUMES)
+        self.assertEqual({part["name"]: part["uuid"] for part in parts}, VOLUMES)
+        with self.assertRaises(ValueError):
+            layout.partition_plan({role: 4096 for role in layout.VOLUME_ROLES},
+                                  {role: 64 for role in layout.VOLUME_ROLES},
+                                  {**VOLUMES, "SYSTEM": "invalid"})
     def test_contract_round_trip(self):
         value = layout.contract(VOLUMES)
         self.assertEqual(layout.validate(json.loads(json.dumps(value))), value)
