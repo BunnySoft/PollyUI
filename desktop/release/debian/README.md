@@ -193,6 +193,30 @@ reconstruction. Existing source fingerprints, publisher verification and
 license/source-retention work remain distinct responsibilities. The binary input
 cache is not copied into the Live image.
 
+Custom upstream source inputs can also be retained without network access:
+
+```sh
+podman run --rm --network=none -v "$PWD:/workspace" -w /workspace localhost/polly-debian-sdk \
+    python3 -B desktop/tools/retain-build-sources.py dist/polly-custom-source-inputs
+python3 -B desktop/tools/retain-build-sources.py dist/polly-custom-source-inputs --verify
+```
+
+This records pristine tracked Skia/SDL/HarfBuzz trees at their exact revisions,
+the SDL patch, pinned wlroots/wlr-protocols release archives, and the Debian
+libinput source descriptor with its checksum-verified original/packaging archives.
+Recipe files and all retained source artifacts have per-file SHA-256 records.
+Before retention, SDL's actual tracked modifications must exactly match the
+declared patch; unrelated edits are rejected. No source archive is executed or
+extracted during retention or verification.
+
+The Git source exports are not full Git repositories. Rehydrating an SDK from
+these exports requires a separate restore path that respects the recorded
+revision/archive checksums; the existing network-oriented build scripts do not
+magically obtain missing Git metadata from them. This is source retention,
+not a claim that a complete toolchain can already be rebuilt offline. The
+project's own source remains separately versioned in Git, and redistribution
+obligations for all distro packages are not covered by this custom-source set.
+
 ## Current acceptance limits
 
 The Debian normal build passes all 59 native tests, the shared core suite and
