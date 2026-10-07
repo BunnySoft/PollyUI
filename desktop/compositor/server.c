@@ -1219,6 +1219,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
         int part = desktop->decoration_part;
         desktop->decoration_pressed = NULL;
         desktop->decoration_part = 0;
+        if (view) pu_decoration_update(view);
         end_grab(desktop);
         struct wlr_surface *surface;
         double sx, sy;
@@ -1275,6 +1276,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
             } else {
                 desktop->decoration_pressed = view;
                 desktop->decoration_part = part;
+                pu_decoration_update(view);
             }
             return;
         }

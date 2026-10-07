@@ -17,12 +17,16 @@
     </request>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
-        Configuration is an array of native-endian uint32 words: schema 1,
+        Configuration is an array of native-endian uint32 words: schema 1 or 2,
         flags, scaled metrics, then opaque ARGB colors. The exact field order,
         bounds and fixed-point scales are specified by appearance-fields.h.
         Flags encode left controls (1), round controls (2), pinstripes (4),
         horizontal gradients (8), generic font family (bits 4-5),
         hover-only glyphs (64), and text alignment (bits 7-8).
+        Numeric schema 2 has the same word count and bounds, and additionally
+        permits the bounded Luna painter (512). Schema 1 retains its original
+        flags and generic rendering. Older compositors reject schema 2 through
+        prepared; the Shell must keep the last committed appearance visible.
         Name is a bounded identifier. Document is a readable, immutable memfd
         sealed against writes, growth, shrinkage and further seal changes.
         Its exact size is 1-32768 bytes. Data is owned and validated by the

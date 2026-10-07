@@ -1,5 +1,6 @@
 #include "decoration.h"
 #include "decoration-themes.h"
+#include "decoration-paint.h"
 #include "appearance-document.h"
 #include "server.h"
 #include "polly-appearance-server.h"
@@ -67,7 +68,7 @@ struct PuDecoration {
     struct wlr_scene_rect *left, *right, *bottom;
     struct PuDecorationTheme theme, pending_theme;
     uint64_t generation, pending_generation;
-    bool decorated, last_active, last_maximized;
+    bool decorated, last_active, last_maximized, last_pressed;
     int width, height, hover, last_hover;
     double scale;
     char *last_title;
@@ -162,7 +163,7 @@ bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_b
     *box = (struct wlr_box) {
         .x = -theme->border_width + (theme->left_controls ? theme->control_inset + index * (size + theme->control_gap) :
             width - theme->control_inset - size - index * (size + theme->control_gap)),
-        .y = -theme->title_height + (theme->title_height - size) / 2,
+        .y = -theme->title_height + (theme->title_height - size) / 2 + (theme->luna ? 2 : 0),
         .width = size, .height = size,
     };
     return true;
@@ -339,8 +340,12 @@ static bool draw_text(struct PuDecoration *d, struct TitleBuffer *buffer, const 
                 else if (bitmap->pixel_mode == FT_PIXEL_MODE_BGRA) alpha = row[x * 4 + 3];
                 else return false;
                 int px = pen + glyph->bitmap_left + (int)x;
-                if (px >= left * scale && px < end)
+                if (px >= left * scale && px < end) {
+                    if (theme->luna)
+                        blend(buffer, px + (int)ceil(scale), baseline - glyph->bitmap_top + (int)y +
+                            (int)ceil(scale), pu_chrome_mix(color, 0xff000000, 0.7), alpha);
                     blend(buffer, px, baseline - glyph->bitmap_top + (int)y, color, alpha);
+                }
             }
         }
         pen += advance;
@@ -365,8 +370,7 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
     for (int y = 0; y < buffer->base.height; y++) {
         double ly = (y + 0.5) / scale;
         bool striped = theme->pinstripe && (int)ly % theme->stripe_spacing < theme->stripe_width;
-        uint32_t vertical = mix(active ? theme->titleFrom : theme->inactiveFrom,
-            active ? theme->titleTo : theme->inactiveTo, ly / logical_height);
+        uint32_t vertical = pu_chrome_title(theme, ly, active);
         if (striped) vertical = mix(vertical, theme->stripeColor, theme->stripe_opacity);
         for (int x = 0; x < buffer->base.width; x++) {
             double lx = (x + 0.5) / scale;
@@ -379,9 +383,15 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
             double cx = lx < radius ? radius : lx > logical_width - radius ? logical_width - radius : lx;
             double cy = ly < radius ? radius : ly;
             if ((lx - cx) * (lx - cx) + (ly - cy) * (ly - cy) > radius * radius) continue;
-            buffer->pixels[(size_t)y * buffer->base.width + x] =
-                lx < theme->border_width || lx >= logical_width - theme->border_width ||
-                ly < theme->border_width ? theme->border : color;
+            bool edge = lx < theme->border_width || lx >= logical_width - theme->border_width ||
+                ly < theme->border_width;
+            if (theme->luna) {
+                if (lx < 1 || lx >= logical_width - 1)
+                    color = active ? theme->border : pu_chrome_mix(theme->inactiveFrom, 0xff000000, 0.3);
+                else if (lx < 2 || lx >= logical_width - 2)
+                    color = pu_chrome_mix(color, 0xffffffff, 0.25);
+            } else if (edge) color = theme->border;
+            buffer->pixels[(size_t)y * buffer->base.width + x] = color;
         }
     }
     int text_left = theme->text_inset, text_right = logical_width - theme->text_inset;
@@ -396,6 +406,8 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
         uint32_t to = part == PU_DECORATION_CLOSE ? theme->closeTo : theme->controlTo;
         if (part == PU_DECORATION_MINIMIZE) { from = theme->minimizeFrom; to = theme->minimizeTo; }
         if (part == PU_DECORATION_MAXIMIZE) { from = theme->maximizeFrom; to = theme->maximizeTo; }
+        bool pressed = theme->luna && d->view->desktop->decoration_pressed == d->view &&
+            d->view->desktop->decoration_part == part && d->hover == part;
         for (int y = (int)floor(box.y * scale); y < (int)ceil((box.y + box.height) * scale); y++) {
             for (int x = (int)floor(box.x * scale); x < (int)ceil((box.x + box.width) * scale); x++) {
                 double rx = (x + 0.5) / scale - box.x, ry = (y + 0.5) / scale - box.y;
@@ -408,22 +420,27 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
                     double cy = fmax(radius, fmin(box.height - radius, ry));
                     if ((rx - cx) * (rx - cx) + (ry - cy) * (ry - cy) > radius * radius) continue;
                 }
-                uint32_t color = mix(from, to, ry / box.height);
-                if (!active) color = mix(color, theme->inactiveTo, theme->inactive_opacity);
-                if (d->hover == part) color = mix(color, theme->hoverColor, theme->hover_opacity);
+                uint32_t color = pu_chrome_control(theme, from, to, rx, ry, active, d->hover == part, pressed);
                 blend(buffer, x, y, color, 255);
-                double gx = rx - half, gy = ry - half;
-                double extent = theme->glyph_radius * 0.75;
-                bool mark = part == PU_DECORATION_CLOSE ?
-                    fabs(fabs(gx) - fabs(gy)) < theme->close_thickness && fabs(gx) < theme->glyph_radius :
-                    part == PU_DECORATION_MINIMIZE ?
-                    fabs(gy - theme->glyph_radius / 2) < theme->glyph_thickness && fabs(gx) < theme->glyph_radius :
-                    ((fabs(fabs(gx) - extent) < theme->glyph_thickness && fabs(gy) <= extent) ||
-                     (fabs(fabs(gy) - extent) < theme->glyph_thickness && fabs(gx) <= extent));
+                bool mark = pu_chrome_glyph(theme, part - PU_DECORATION_CLOSE, rx, ry,
+                    d->view->mode == PU_DESKTOP_MAXIMIZED, pressed);
                 if (mark && (!theme->glyphs_hover || d->hover == part))
                     blend(buffer, x, y, theme->controlText, 255);
             }
         }
+    }
+    if (theme->luna && !theme->left_controls && text_left >= 24) {
+        /* Original generic document mark; never a client's proprietary icon. */
+        for (int y = (int)ceil(8 * scale); y < (int)ceil(23 * scale); y++)
+            for (int x = (int)ceil(7 * scale); x < (int)ceil(19 * scale) && x < text_right * scale; x++) {
+                double lx = (x + 0.5) / scale, ly = (y + 0.5) / scale;
+                if (lx > 15 && ly < 12 && lx - 15 > ly - 8) continue;
+                uint32_t ink = lx < 8 || lx >= 18 || ly < 9 || ly >= 22 ?
+                    pu_chrome_mix(theme->controlTo, 0xff000000, 0.4) : theme->controlText;
+                if (lx >= 9 && lx < 16 && ((ly >= 14 && ly < 15) || (ly >= 17 && ly < 18)))
+                    ink = theme->controlFrom;
+                blend(buffer, x, y, ink, active ? 255 : 160);
+            }
     }
     bool ok = draw_text(d, buffer, text, text_left, text_right, scale,
                         active ? theme->titleText : theme->inactiveText);
@@ -453,8 +470,11 @@ void pu_decoration_update(struct PuDesktopView *view)
     double scale = pu_desktop_view_scale(view);
     const struct PuDecorationTheme *theme = theme_for(view, false);
     int border = theme->border_width;
-    float color[4] = { ((theme->border >> 16) & 255) / 255.0f,
-        ((theme->border >> 8) & 255) / 255.0f, (theme->border & 255) / 255.0f, 1 };
+    bool active = view->desktop->focused == view && !view->desktop->focused_layer;
+    uint32_t frame = theme->luna && !active ?
+        pu_chrome_mix(theme->inactiveFrom, 0xff000000, 0.3) : theme->border;
+    float color[4] = { ((frame >> 16) & 255) / 255.0f,
+        ((frame >> 8) & 255) / 255.0f, (frame & 255) / 255.0f, 1 };
     wlr_scene_node_set_position(&d->title->node, -border, -theme->title_height);
     wlr_scene_node_set_position(&d->left->node, -border, 0);
     wlr_scene_node_set_position(&d->right->node, geometry.width, 0);
@@ -467,10 +487,10 @@ void pu_decoration_update(struct PuDesktopView *view)
     wlr_scene_rect_set_color(d->bottom, color);
     const char *title = view->toplevel->title && *view->toplevel->title ? view->toplevel->title :
         view->toplevel->app_id && *view->toplevel->app_id ? view->toplevel->app_id : "Untitled";
-    bool active = view->desktop->focused == view && !view->desktop->focused_layer;
     bool maximized = view->mode == PU_DESKTOP_MAXIMIZED;
+    bool pressed = theme->luna && view->desktop->decoration_pressed == view;
     if (d->width == geometry.width && d->height == geometry.height && d->scale == scale &&
-        d->last_active == active && d->last_maximized == maximized && d->last_hover == d->hover &&
+        d->last_active == active && d->last_maximized == maximized && d->last_pressed == pressed && d->last_hover == d->hover &&
         d->last_title && !strcmp(d->last_title, title)) return;
     char *copy = strdup(title);
     if (!copy || !draw_title(d, title, geometry.width, scale, active)) {
@@ -481,7 +501,7 @@ void pu_decoration_update(struct PuDesktopView *view)
     }
     free(d->last_title); d->last_title = copy;
     d->width = geometry.width; d->height = geometry.height; d->scale = scale;
-    d->last_active = active; d->last_maximized = maximized; d->last_hover = d->hover;
+    d->last_active = active; d->last_maximized = maximized; d->last_pressed = pressed; d->last_hover = d->hover;
 }
 
 void pu_decoration_hover(struct PuDesktop *desktop, struct PuDesktopView *view, int part)

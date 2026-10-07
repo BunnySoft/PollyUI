@@ -65,7 +65,8 @@ for (const theme of DESKTOP_THEMES) {
   for (const [name, group] of Object.entries(theme)) {
     if (typeof group !== 'object') continue;
     check(theme.id + '.' + name + ' has a complete token shape',
-      JSON.stringify(Object.keys(group).sort()) === JSON.stringify(Object.keys(DESKTOP_THEMES[0][name]).sort()));
+      JSON.stringify(Object.keys(group).filter(key => key !== 'surfaceStyle').sort()) ===
+      JSON.stringify(Object.keys(DESKTOP_THEMES[0][name]).filter(key => key !== 'surfaceStyle').sort()));
     check(theme.id + '.' + name + ' is immutable', Object.isFrozen(group));
     for (const [key, value] of Object.entries(group)) {
       if (typeof value === 'string' && value.startsWith('#'))

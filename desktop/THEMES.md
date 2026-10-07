@@ -93,6 +93,15 @@ a visible warning rather than claiming that the requested files were applied.
 - `colors`, `button`, `icons`, `panel`: shared palette and component treatments.
   Actions, focus policy, keyboard bindings and workspaces remain code-owned.
 
+`window`, `button` and `panel` optionally accept `surfaceStyle: "generic"` or
+`"luna"`. Absence preserves the original generic path. Luna is a bounded built-in
+painter, not an executable hook or arbitrary layout template. XP opts in; the
+other presets do not. Native Luna captions use numeric decoration schema 2
+(same word count/bounds, one additional flag); older compositors explicitly
+reject it and retain the last committed theme. Reference scope, original-art
+rights and outstanding native acceptance are documented in
+[Blue Luna](themes/XP-LUNA.md).
+
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing
 credential controls preserves their values, selection and focus. Theme data does

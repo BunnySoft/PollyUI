@@ -33,7 +33,7 @@ from PIL import Image
 
 directory = pathlib.Path(sys.argv[1])
 palettes = {
-    "xp": ("4384ef", "1549b9", 36), "server2003": ("e9e6df", "d4d0c8", 36),
+    "xp": ("245edb", "2663e0", 30), "server2003": ("e9e6df", "d4d0c8", 36),
     "aqua": ("f9fdff", "b4d5e5", 26), "lion": ("d4d9df", "7c8592", 26),
     "bigsur": ("f7edf3", "d7e2f3", 26),
 }

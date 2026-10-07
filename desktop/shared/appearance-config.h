@@ -10,7 +10,7 @@ struct PuDecorationTheme {
 #define PU_METRIC_FIELD(type, field, token, minimum, maximum, scale) type field;
     PU_APPEARANCE_METRICS(PU_METRIC_FIELD)
 #undef PU_METRIC_FIELD
-    bool left_controls, round_controls, pinstripe, horizontal, glyphs_hover;
+    bool left_controls, round_controls, pinstripe, horizontal, glyphs_hover, luna;
     int font_family, text_align;
 #define PU_COLOR_FIELD(name) uint32_t name;
     PU_APPEARANCE_COLORS(PU_COLOR_FIELD)
@@ -36,7 +36,8 @@ static inline bool pu_appearance_identifier(const char *name)
 
 static inline bool pu_appearance_decode(struct PuDecorationTheme *theme, const uint32_t *words)
 {
-    if (words[0] != 1 || (words[1] & ~511u) || ((words[1] >> 4) & 3) == 3 ||
+    if ((words[0] != 1 && words[0] != 2) ||
+        (words[1] & ~(words[0] == 1 ? 511u : 1023u)) || ((words[1] >> 4) & 3) == 3 ||
         ((words[1] >> 7) & 3) == 3) return false;
     memset(theme, 0, sizeof(*theme));
     theme->left_controls = words[1] & 1;
@@ -46,6 +47,7 @@ static inline bool pu_appearance_decode(struct PuDecorationTheme *theme, const u
     theme->font_family = (int)((words[1] >> 4) & 3);
     theme->glyphs_hover = words[1] & 64;
     theme->text_align = (int)((words[1] >> 7) & 3);
+    theme->luna = words[1] & 512;
     unsigned index = 2;
 #define PU_DECODE_METRIC(type, field, token, minimum, maximum, scale) \
     { double value = (double)words[index++] / (scale); \
@@ -56,7 +58,8 @@ static inline bool pu_appearance_decode(struct PuDecorationTheme *theme, const u
     theme->name = words[index++]; if ((theme->name >> 24) != 255) return false;
     PU_APPEARANCE_COLORS(PU_DECODE_COLOR)
 #undef PU_DECODE_COLOR
-    return theme->control_size + theme->border_width * 2 <= theme->title_height &&
+    return (!theme->luna || theme->control_size + 4 <= theme->title_height) &&
+        theme->control_size + theme->border_width * 2 <= theme->title_height &&
         theme->font_size + theme->border_width * 2 <= theme->title_height &&
         theme->stripe_width <= theme->stripe_spacing &&
         theme->glyph_radius + (theme->glyph_thickness > theme->close_thickness ?

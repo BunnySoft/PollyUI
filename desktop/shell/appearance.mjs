@@ -1,5 +1,7 @@
 import { h, render } from './js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
+import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents,
+  lunaSymbol, lunaCaptionGlyph } from './desktop/shell/luna-primitives.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
 const center = { alignItems: 'center', justifyContent: 'center' };
@@ -79,6 +81,21 @@ function captionButton(theme, command, active, dispatch, interactive) {
   const glyph = command === 'close' ? 'x' : command === 'minimize' ? '-' : '+';
   const content = [surfaceDetail(theme),
     text(glyph, chrome.controlText, Math.max(8, chrome.glyphRadius * 3))];
+  if (isLuna(theme, 'window')) {
+    const sample = { ...theme, button: { ...theme.button, from, to, radius: chrome.controlRadius },
+      colors: { ...theme.colors, border: chrome.controlText } };
+    const node = interactive ? button('appearance-' + command, command + ' preview window',
+      { ...style, ...lunaButtonPaint(sample), position: 'relative', overflow: 'hidden' },
+      () => dispatch(command), [lunaButtonDetail(sample), lunaCaptionGlyph(theme, command)]) :
+      h('view', { style: { ...style, ...lunaButtonPaint(sample), position: 'relative', borderWidth: 1 } },
+        lunaButtonDetail(sample), lunaCaptionGlyph(theme, command));
+    if (interactive) {
+      node.props.hoverStyle = {};
+      node.props.focusStyle = {};
+      Object.assign(node.props, lunaVisualEvents(sample));
+    }
+    return node;
+  }
   return interactive
     ? button('appearance-' + command, command + ' preview window', style,
         () => dispatch(command), content)
@@ -94,19 +111,23 @@ function titlebar(theme, active, dispatch, interactive = true) {
     { fontWeight: chrome.fontWeight, fontFamily: chrome.fontFamily });
   return h('view', { id: active ? 'appearance-titlebar' : 'appearance-inactive-titlebar', style: {
     ...row, height: chrome.titleHeight, flexShrink: 0,
-    paddingLeft: chrome.controlInset, paddingRight: chrome.controlInset, gap: chrome.textGap,
+    paddingLeft: isLuna(theme, 'window') ? Math.max(0, chrome.textInset - 16 - chrome.textGap) : chrome.controlInset,
+    paddingRight: chrome.controlInset, gap: chrome.textGap,
     ...gradient(active ? chrome.titleFrom : chrome.inactiveFrom,
                 active ? chrome.titleTo : chrome.inactiveTo),
     gradientDir: chrome.gradientDir,
   } },
+    isLuna(theme, 'window') ? lunaBands(theme, active ? 'title' : 'inactive-title', chrome.titleHeight) : null,
     chrome.texture === 'pinstripe'
       ? Array.from({ length: Math.ceil(chrome.titleHeight / chrome.stripeSpacing) }, (_, i) => h('view', { style: {
           position: 'absolute', left: 0, right: 0, top: i * chrome.stripeSpacing, height: chrome.stripeWidth,
           backgroundColor: chrome.stripeColor, opacity: chrome.stripeOpacity,
         } })) : null,
+    isLuna(theme, 'window') && chrome.controls === 'right' ? lunaSymbol('document') : null,
     chrome.controls === 'right' ? caption : null,
     chrome.controls === 'right' ? h('view', { style: { flexGrow: 1 } }) : null,
-    h('view', { style: { ...row, gap: chrome.controlGap } },
+    h('view', { style: { ...row, gap: chrome.controlGap,
+      ...(isLuna(theme, 'window') ? { translateY: 2 } : {}) } },
       controls.map(command => captionButton(theme, command, active, dispatch, interactive))),
     chrome.controls === 'left'
       ? h('view', { style: { flexGrow: 1, justifyContent: 'center',
@@ -117,7 +138,7 @@ function titlebar(theme, active, dispatch, interactive = true) {
 function frameStyle(theme, geometry) {
   return {
     position: 'absolute', ...geometry, flexDirection: 'column', overflow: 'hidden',
-    borderRadius: theme.window.radius, borderWidth: theme.window.borderWidth,
+    borderRadius: theme.window.radius, borderWidth: isLuna(theme, 'window') ? 0 : theme.window.borderWidth,
     borderColor: theme.window.border, backgroundColor: theme.colors.body,
     shadowColor: '#192638', shadowBlur: theme.window.shadow, shadowY: 5,
   };
@@ -125,7 +146,10 @@ function frameStyle(theme, geometry) {
 
 function content(theme, state, dispatch) {
   const c = theme.colors;
-  return h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, flexDirection: 'column' } },
+  return h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, flexDirection: 'column',
+    ...(isLuna(theme, 'window') ? { borderLeftWidth: theme.window.borderWidth,
+      borderRightWidth: theme.window.borderWidth, borderBottomWidth: theme.window.borderWidth,
+      borderColor: theme.window.border } : {}) } },
     h('view', { id: 'appearance-toolbar', style: {
       ...row, height: 32, flexShrink: 0, gap: 8, paddingLeft: 12,
       ...(theme.window.unifiedToolbar
@@ -203,6 +227,28 @@ function launcher(theme, state, dispatch) {
 function panels(theme, state, dispatch) {
   const panel = theme.panel, c = theme.colors;
   const tiles = theme.icons.dockTiles;
+  if (isLuna(theme, 'panel') && panel.kind === 'taskbar') {
+    const launch = button('appearance-launcher', 'Toggle appearance menu',
+      { width: 97, height: panel.height, borderWidth: 0, position: 'relative',
+        flexDirection: 'row', gap: 5, ...lunaButtonPaint(theme, { variant: 'launcher' }) },
+      () => dispatch('menu'), [lunaButtonDetail(theme, 'launcher'), lunaSymbol('polly', panel.launcherText, 22),
+        text('Polly', panel.launcherText, 18, { fontWeight: 700, fontStyle: 'italic' })], state.menuOpen);
+    launch.props.hoverStyle = {}; launch.props.focusStyle = {};
+    Object.assign(launch.props, lunaVisualEvents(theme, { variant: 'launcher' }));
+    const task = button('appearance-open', 'Open preview window',
+      { width: theme.layout.windowButtonWidth, height: panel.height - theme.layout.panelItemInset,
+        position: 'relative', flexDirection: 'row', gap: 5,
+        ...lunaButtonPaint(theme, { variant: 'task', selected: state.open && !state.minimized }) },
+      () => dispatch('open'), [lunaButtonDetail(theme, 'task'), lunaSymbol('document'), text('Appearance', panel.text, 11)]);
+    task.props.hoverStyle = {}; task.props.focusStyle = {};
+    Object.assign(task.props, lunaVisualEvents(theme, { variant: 'task', selected: state.open && !state.minimized }));
+    return h('view', { id: 'appearance-panel', style: {
+      position: 'absolute', left: 0, right: 0, bottom: panel.inset, height: panel.height,
+      ...row, gap: theme.layout.panelGap, ...gradient(panel.from, panel.to),
+    } }, lunaBands(theme, 'panel', panel.height), launch, task, h('view', { style: { flexGrow: 1 } }),
+      h('view', { style: { ...row, height: panel.height, paddingLeft: 12, paddingRight: 12, position: 'relative' } },
+        lunaBands(theme, 'tray', panel.height), text('10:31 AM', panel.text, theme.layout.fontSize)));
+  }
   const launch = button('appearance-launcher', 'Toggle appearance menu',
     { width: 72, height: panel.kind === 'dock' ? 24 : 28, borderRadius: theme.button.radius,
       ...gradient(panel.launcherFrom, panel.launcherTo), borderColor: c.border },

@@ -4,6 +4,7 @@ import { shortcutText } from './desktop/shell/shortcuts.mjs';
 import { displayField, setDisplayField } from './desktop/shell/displays.mjs';
 import { trayView } from './desktop/shell/tray.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
+import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -14,19 +15,24 @@ const labelFor = theme => (value, color, size = 12) =>
 
 function button(id, text, theme, action, selected = false, extra = {}) {
   const activate = event => { event.stopPropagation(); action(); };
+  const luna = isLuna(theme);
+  const label = labelFor(theme)(text, theme.colors.text);
+  if (luna) label.props.style.pointerEvents = 'none';
   return h('view', {
     id, role: 'button', 'aria-label': text, 'aria-pressed': String(selected), tabIndex: 0,
     style: { ...center, height: theme.layout.buttonHeight,
       paddingLeft: theme.layout.buttonPaddingX, paddingRight: theme.layout.buttonPaddingX, flexShrink: 0,
       borderWidth: theme.layout.borderWidth, borderColor: selected ? theme.colors.accent : theme.colors.border,
-      borderRadius: theme.button.radius, ...gradient(theme.button.from, theme.button.to), ...extra },
-    hoverStyle: { borderColor: theme.colors.accent },
-    focusStyle: { borderColor: theme.colors.focus },
+      borderRadius: theme.button.radius, ...gradient(theme.button.from, theme.button.to),
+      ...(luna ? { ...lunaButtonPaint(theme, { selected }), overflow: 'hidden', position: 'relative' } : {}), ...extra },
+    hoverStyle: luna ? {} : { borderColor: theme.colors.accent },
+    focusStyle: luna ? {} : { borderColor: theme.colors.focus },
+    ...(luna ? lunaVisualEvents(theme, { selected }) : {}),
     onClick: activate,
     onKeydown: event => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); }
     },
-  }, labelFor(theme)(text, theme.colors.text));
+  }, luna ? lunaButtonDetail(theme) : null, label);
 }
 
 function windowButtons(theme, windows, toggle, actions, compact = false) {
@@ -47,6 +53,18 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       { width: compact ? theme.layout.dockWindowWidth : theme.layout.windowButtonWidth,
         height: compact ? theme.panel.height - theme.layout.panelItemInset : theme.layout.buttonHeight,
         overflow: 'hidden', ...(window.active ? gradient(theme.colors.selection, theme.colors.selection) : {}) });
+    if (!compact && isLuna(theme, 'panel')) {
+      Object.assign(node.props.style, lunaButtonPaint(theme, { selected: window.active, variant: 'task' }),
+        { height: theme.panel.height - theme.layout.panelItemInset, alignItems: 'center',
+          justifyContent: 'flex-start', flexDirection: 'row', gap: 5, paddingLeft: 7 });
+      Object.assign(node.props, lunaVisualEvents(theme, { selected: window.active, variant: 'task' }));
+      const caption = labelFor(theme)(short, theme.panel.text);
+      caption.props.style.pointerEvents = 'none';
+      node.children = [
+        lunaButtonDetail(theme, 'task'), lunaSymbol('document'),
+        caption,
+      ];
+    }
     node.props['aria-label'] = title;
     node.props.onClick = event => {
       if (event.button === 0) { event.stopPropagation(); toggle(window.id); }
@@ -66,6 +84,44 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null) {
   const panel = theme.panel;
   const label = labelFor(theme);
+  if (isLuna(theme, 'panel') && panel.kind === 'taskbar') {
+    const tool = (id, name, symbol, callback) => {
+      const node = button(id, name, theme, callback, false, {
+        height: theme.layout.compactButtonHeight, width: 24, paddingLeft: 0, paddingRight: 0,
+        ...lunaButtonPaint(theme, { variant: 'tool' }),
+      });
+      Object.assign(node.props, lunaVisualEvents(theme, { variant: 'tool' }));
+      node.children = [lunaButtonDetail(theme, 'tool'), lunaSymbol(symbol)];
+      return node;
+    };
+    const launcher = button('shell-menu', 'Polly', theme, openMenu, false, {
+      height: panel.height, width: 97, borderWidth: 0, borderRadius: 0,
+      paddingLeft: 7, paddingRight: 10, flexDirection: 'row', gap: 5,
+      ...lunaButtonPaint(theme, { variant: 'launcher' }),
+    });
+    Object.assign(launcher.props, lunaVisualEvents(theme, { variant: 'launcher' }));
+    launcher.children = [lunaButtonDetail(theme, 'launcher'), lunaSymbol('polly', panel.launcherText, 22),
+      h('view', { style: { color: panel.launcherText, fontSize: 18, fontWeight: 700,
+        fontStyle: 'italic', pointerEvents: 'none' } }, 'Polly')];
+    return h('view', { id: 'shell-panel', style: {
+      ...row, width: '100%', height: '100%', gap: theme.layout.panelGap,
+      paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
+      ...gradient(panel.from, panel.to), position: 'relative',
+    } }, lunaBands(theme, 'panel', panel.height), launcher,
+      tool('shell-panel-settings', 'Appearance', 'appearance', openSettings),
+      workspace ? tool('shell-workspaces', workspace.name, 'workspace', workspace.open) : null,
+      windowButtons(theme, windows, toggle, actions),
+      error ? label('Desktop needs attention', panel.text, 11) : null,
+      h('view', { id: 'shell-notification-area', style: {
+        ...row, flexShrink: 0, height: panel.height, position: 'relative',
+        paddingLeft: 8, paddingRight: 10, gap: theme.layout.trayGap,
+        borderLeftWidth: 1, borderColor: '#095bc9', backgroundColor: '#1285e1',
+      } }, lunaBands(theme, 'tray', panel.height),
+        tray?.items.length ? trayView(theme, tray.items, tray.activate, tray.scroll) : null,
+        notifications ? tool('shell-notifications', 'Notifications ' + notifications.count, 'notification', notifications.open) : null,
+        h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: theme.layout.fontSize,
+          paddingLeft: 5, flexShrink: 0 } }, clock)));
+  }
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: theme.layout.panelGap,
     paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
@@ -154,14 +210,18 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
       entry.keywords.join(' ')).toLowerCase().includes(query.toLowerCase()));
   return h('view', { id: 'shell-applications', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
-    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
+    borderRadius: isLuna(theme) ? 0 : theme.window.radius,
   } },
-  h('view', { style: { ...row, gap: theme.layout.contentGap } }, label('Applications', theme.colors.text, 16),
+  h('view', { style: { ...row, gap: theme.layout.contentGap,
+    ...(isLuna(theme) ? { padding: 6, ...gradient(theme.window.titleFrom, theme.window.titleTo) } : {}) } },
+    label('Applications', isLuna(theme) ? theme.window.titleText : theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }), button('shell-app-refresh', 'Refresh', theme, refresh),
     button('shell-app-close', 'Close', theme, close)),
   h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
     style: { padding: theme.layout.serviceButtonPadding, height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, backgroundColor: theme.colors.surface,
-      borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.button.radius },
+      borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
+      borderRadius: isLuna(theme) ? 0 : theme.button.radius },
     focusStyle: { borderColor: theme.colors.accent },
     onTextinput: event => changeQuery(Array.from(query + event.data).slice(0, 128).join('')),
     onKeydown: event => {
@@ -173,7 +233,8 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     filtered.slice(0, 100).map(entry => entry.unavailable
       ? h('view', { id: 'shell-app-' + entry.id, 'aria-disabled': 'true', style: {
           padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
-        } }, label(entry.name, theme.colors.text), label(entry.unavailable, theme.colors.muted, 10))
+        } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
+          label(entry.unavailable, theme.colors.muted, 10))
       : button('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id), false,
           { height: theme.layout.choiceHeight, alignItems: 'flex-start' })),
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),

@@ -25,7 +25,7 @@ const overridden = applyThemeOverrides(BUILTIN_THEME_CATALOG,
   encodeOverride({ xp: { colors: { accent: '#123456' }, panel: { height: 44 } } }));
 check(overridden.themes[0].panel.height === 44 && overridden.themes[0].colors.accent === '#123456',
   'bounded user overrides replace only selected visual tokens');
-check(JSON.stringify(BUILTIN_THEME_CATALOG) === original && DESKTOP_THEMES[0].panel.height === 36,
+check(JSON.stringify(BUILTIN_THEME_CATALOG) === original && DESKTOP_THEMES[0].panel.height === 30,
   'override merging cannot mutate the active or builtin catalog');
 check(overridden.themes[1] === BUILTIN_THEME_CATALOG.themes[1], 'unchanged immutable themes can be shared');
 

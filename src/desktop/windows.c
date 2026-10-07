@@ -888,8 +888,15 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     }
     int glyphs_hover = JS_ToBool(ctx, hover);
     JS_FreeValue(ctx, hover);
+    JSValue surface_style = JS_GetPropertyStr(ctx, window, "surfaceStyle");
+    if (JS_IsException(surface_style)) goto invalid;
+    bool has_surface_style = !JS_IsUndefined(surface_style);
+    JS_FreeValue(ctx, surface_style);
+    int luna = has_surface_style ? appearance_option(ctx, window, "surfaceStyle", "luna", "generic") : 0;
+    if (luna < 0) goto invalid;
+    if (luna) words[0] = 2;
     words[1] = (uint32_t)(left | round << 1 | stripes << 2 | horizontal << 3 |
-        family << 4 | glyphs_hover << 6 | alignment << 7);
+        family << 4 | glyphs_hover << 6 | alignment << 7 | luna << 9);
     unsigned index = 2;
 #define PU_ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
     if (!appearance_word(ctx, window, #token, &words[index++], 0, minimum, maximum, scale)) goto invalid;

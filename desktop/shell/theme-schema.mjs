@@ -77,17 +77,22 @@ const options = {
   panel: { kind: ['taskbar', 'dock'] },
   layout: {},
 };
+const optionalOptions = {
+  window: { surfaceStyle: ['generic', 'luna'] },
+  button: { surfaceStyle: ['generic', 'luna'] },
+  panel: { surfaceStyle: ['generic', 'luna'] },
+};
 
 function object(value, context) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
     ![Object.prototype, null].includes(Object.getPrototypeOf(value)))
     throw new TypeError(context + ' must be an object');
 }
-function keys(value, allowed, context, complete = true) {
+function keys(value, allowed, context, complete = true, optional = []) {
   object(value, context);
   for (const key of Object.keys(value))
     if (!allowed.includes(key)) throw new TypeError(context + ': unsupported field ' + key);
-  if (complete) for (const key of allowed)
+  if (complete) for (const key of allowed.filter(key => !optional.includes(key)))
     if (!Object.hasOwn(value, key)) throw new TypeError(context + ': missing field ' + key);
 }
 function text(value, maximum, context) {
@@ -132,8 +137,9 @@ export function validateTheme(value) {
   text(value.era, 240, 'Theme description');
   for (const group of groups) {
     const prefix = value.id + '.' + group;
+    const optional = Object.keys(optionalOptions[group] || {});
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
-      ...(group === 'desktop' ? ['asset', 'layers'] : [])], prefix);
+      ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : [])], prefix, true, optional);
     for (const key of colors[group])
       if (typeof value[group][key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(value[group][key]))
         throw new TypeError(prefix + '.' + key + ' must be an RGB color');
@@ -151,13 +157,17 @@ export function validateTheme(value) {
       (value.panel.kind === 'taskbar' && value.layout.buttonHeight > value.panel.height))
       throw new RangeError('Shell controls do not fit the configured panel geometry');
     const window = value.window;
-    if (window.controlSize + window.borderWidth * 2 > window.titleHeight ||
+    if ((window.surfaceStyle === 'luna' && window.controlSize + 4 > window.titleHeight) ||
+      window.controlSize + window.borderWidth * 2 > window.titleHeight ||
       window.fontSize + window.borderWidth * 2 > window.titleHeight ||
       window.stripeWidth > window.stripeSpacing ||
       window.glyphRadius + Math.max(window.glyphThickness, window.closeThickness) > window.controlSize / 2)
       throw new RangeError('Decoration controls, text or strokes do not fit their geometry');
     for (const [key, allowed] of Object.entries(options[group]))
       if (!allowed.includes(value[group][key])) throw new TypeError(prefix + '.' + key + ' is unsupported');
+    for (const [key, allowed] of Object.entries(optionalOptions[group] || {}))
+      if (Object.hasOwn(value[group], key) && !allowed.includes(value[group][key]))
+        throw new TypeError(prefix + '.' + key + ' is unsupported');
   }
   const asset = value.desktop.asset;
   if (typeof asset !== 'string' || asset.length > 192 || (asset &&
@@ -203,7 +213,8 @@ export function applyThemeOverrides(catalog, text) {
     const result = { ...theme };
     for (const group of groups) {
       if (!Object.hasOwn(override, group)) continue;
-      keys(override[group], Object.keys(theme[group]), theme.id + '.' + group, false);
+      keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {})],
+        theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }
     return validateTheme(result);

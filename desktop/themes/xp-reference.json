@@ -1,0 +1,49 @@
+{
+  "target": "Windows XP SP3, default blue Luna, normal font size, 96 DPI",
+  "viewport": [800, 600],
+  "referenceDpi": "Inferred from unscaled 30 px taskbar and 21 px caption controls; not metadata-certified",
+  "servicePackVerified": false,
+  "rights": "Public original-system screenshots are analysis references only. No screenshot, Microsoft wallpaper, logo, font, icon pack or msstyles binary is shipped. Polly glyphs and all painter code are original project work.",
+  "references": [
+    {
+      "id": "desktop",
+      "page": "https://guidebookgallery.org/screenshots/winxppro/",
+      "image": "https://guidebookgallery.org/pics/gui/desktop/full/winxppro.png",
+      "sha256": "b4dd336b826de9887894c818c1ee67e2e66dc3276facb0e4a690fda5f38ac8f2",
+      "size": [800, 600],
+      "taskbar": [0, 570, 800, 30],
+      "taskbarColorStrip": [700, 570, 1, 30],
+      "launcher": [0, 570, 97, 30],
+      "activeWindow": [124, 333, 410, 182],
+      "inactiveWindow": [314, 12, 477, 444]
+    },
+    {
+      "id": "notepad",
+      "page": "https://guidebookgallery.org/screenshots/winxppro/",
+      "image": "https://guidebookgallery.org/pics/gui/applications/office/notepad/winxppro.png",
+      "sha256": "5182ed1649b74972013b797e202cefa3a3a8c247ab8bf990c602f45256b03ecf",
+      "size": [600, 404],
+      "titleColorStrip": [300, 0, 1, 30],
+      "captionControls": [[527, 6, 21, 21], [550, 6, 21, 21], [573, 6, 21, 21]],
+      "frameBorder": 3
+    },
+    {
+      "id": "display-properties",
+      "page": "https://guidebookgallery.org/screenshots/winxppro/",
+      "image": "https://guidebookgallery.org/pics/gui/settings/appearance/winxppro-1-1.png",
+      "sha256": "d42827b8918c8a7c50d6d54a9bc2d12beccc4cab323bf4728d55d7b3c80abece",
+      "size": [404, 455],
+      "bodyColor": "#ece9d8",
+      "normalButton": [240, 423, 73, 21],
+      "focusedButton": [159, 423, 73, 21],
+      "disabledButton": [321, 423, 73, 21]
+    }
+  ],
+  "comparison": {
+    "titleStrip": "Native painter-only 2x30 PPM column 0 is the fixed-source old title; column 1 is the new helper. Compare with notepad x=300, y=0..29 without resampling.",
+    "imageDifference": "Mean absolute RGB channel difference, maximum absolute channel difference and changed pixel count; report numbers, not an invented pass threshold.",
+    "exclusions": "The one-pixel title/taskbar strips intentionally contain no text, icons or antialiasing. Full component crops must include all pixels; font and glyph differences are not masked. No full-desktop score until native screenshots exist.",
+    "unobservedStates": ["caption hover", "caption pressed", "caption disabled", "launcher hover", "launcher pressed"]
+  },
+  "unchangedPanelHeights": { "server2003": 36, "aqua": 54, "lion": 54, "bigsur": 66 }
+}

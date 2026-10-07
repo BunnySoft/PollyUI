@@ -1,4 +1,5 @@
 import { h, render } from './js/reconciler.mjs';
+import { isLuna } from './desktop/shell/luna-primitives.mjs';
 
 export function trayView(theme, items, activate, scroll) {
   return h('view', { id: 'shell-tray', role: 'toolbar',
@@ -14,7 +15,8 @@ export function trayView(theme, items, activate, scroll) {
       style: { width: item.icon ? theme.layout.trayIconWidth : theme.layout.trayTextWidth,
         height: theme.layout.trayItemHeight, flexShrink: 0, padding: theme.layout.trayPadding, overflow: 'hidden',
         alignItems: 'center', justifyContent: 'center', borderRadius: theme.button.radius,
-        borderWidth: theme.layout.borderWidth, borderColor: item.status === 'NeedsAttention' || item.error ? theme.colors.accent : theme.colors.border },
+        borderWidth: theme.layout.borderWidth, borderColor: item.status === 'NeedsAttention' || item.error ?
+          theme.colors.accent : isLuna(theme, 'panel') ? 'transparent' : theme.colors.border },
       focusStyle: { borderColor: theme.colors.focus },
       onClick: event => act(event, 'activate'),
       onAuxclick: event => { if (event.button === 1) act(event, 'secondary'); },
@@ -31,7 +33,8 @@ export function trayView(theme, items, activate, scroll) {
         scroll(item, Math.round(-(horizontal ? event.deltaX : event.deltaY) * 3), horizontal);
       },
     }, item.icon ? h('view', { style: { width: theme.layout.trayIconSize, height: theme.layout.trayIconSize, backgroundImage: item.icon } }) :
-      h('view', { style: { fontSize: theme.layout.smallFontSize, color: theme.colors.text } }, item.title));
+      h('view', { style: { fontSize: theme.layout.smallFontSize,
+        color: isLuna(theme, 'panel') ? theme.panel.text : theme.colors.text } }, item.title));
   }));
 }
 

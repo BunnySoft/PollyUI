@@ -35,6 +35,7 @@ ${DESKTOP_THEMES.map(theme => {
       .left_controls = ${w.controls === 'left'}, .round_controls = ${w.controlShape === 'round'},
       .pinstripe = ${w.texture === 'pinstripe'}, .horizontal = ${w.gradientDir === 'horizontal'},
       .glyphs_hover = ${w.glyphsOnHoverOnly},
+      .luna = ${w.surfaceStyle === 'luna'},
       .font_family = ${['sans-serif', 'serif', 'monospace'].indexOf(w.fontFamily)},
       .text_align = ${['left', 'center', 'right'].indexOf(w.textAlign)},
       ${DECORATION_COLORS.map(key => `.${key} = ${color(w[key])}`).join(', ')} },`;
