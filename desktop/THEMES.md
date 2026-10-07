@@ -97,8 +97,13 @@ a visible warning rather than claiming that the requested files were applied.
 `"luna"`. Absence preserves the original generic path. Luna is a bounded built-in
 painter, not an executable hook or arbitrary layout template. XP opts in; the
 other presets do not. Native Luna captions use numeric decoration schema 2
-(same word count/bounds, one additional flag); older compositors explicitly
-reject it and retain the last committed theme. Reference scope, original-art
+(same word count/bounds, one additional flag). A confirmed unsupported prepare
+reply on cold startup, before any committed Shell appearance, allows one
+schema 1 generic compatibility attempt. Only an acknowledged generic commit
+starts the fallback, with a visible warning and unchanged saved preference.
+Subsequent selections still reject unsupported Luna and retain the live snapshot.
+Missing replies, transport loss, commit rejection/uncertainty and unrelated
+prepare failures do not trigger this fallback. Reference scope, original-art
 rights and outstanding native acceptance are documented in
 [Blue Luna](themes/XP-LUNA.md).
 

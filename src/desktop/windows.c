@@ -894,7 +894,7 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     JS_FreeValue(ctx, surface_style);
     int luna = has_surface_style ? appearance_option(ctx, window, "surfaceStyle", "luna", "generic") : 0;
     if (luna < 0) goto invalid;
-    if (luna) words[0] = 2;
+    words[0] = pu_appearance_schema(luna);
     words[1] = (uint32_t)(left | round << 1 | stripes << 2 | horizontal << 3 |
         family << 4 | glyphs_hover << 6 | alignment << 7 | luna << 9);
     unsigned index = 2;
@@ -937,12 +937,24 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     struct wl_array configuration = { .size = sizeof(words), .alloc = sizeof(words), .data = words };
     polly_appearance_v1_prepare(control.appearance, serial, name, &configuration, document_fd, (uint32_t)length);
     close(document_fd); document_fd = -1;
-    if (!roundtrip() || control.appearance_reply != serial || control.appearance_phase != 1 ||
-        !control.appearance_accepted) {
+    bool acknowledged = roundtrip() && control.appearance_reply == serial && control.appearance_phase == 1;
+    if (!acknowledged || !control.appearance_accepted) {
         polly_appearance_v1_cancel(control.appearance, serial);
-        wl_display_flush(control.display);
+        int flushed = wl_display_flush(control.display);
+        bool transport_ok = flushed >= 0 || errno == EAGAIN || errno == EINTR;
         JS_ThrowInternalError(ctx, "Appearance preparation failed: %s",
             *control.appearance_error ? control.appearance_error : "no compositor acknowledgment");
+        if (pu_appearance_schema_rejected(words[0], acknowledged && transport_ok,
+                                         control.appearance_accepted, control.appearance_error)) {
+            JSValue failure = JS_GetException(ctx);
+            if (!property(ctx, failure, "code", JS_NewString(ctx, "ERR_APPEARANCE_SCHEMA_REJECTED")) ||
+                !property(ctx, failure, "appearanceSchema", JS_NewUint32(ctx, words[0])) ||
+                !property(ctx, failure, "compositorMessage", JS_NewString(ctx, control.appearance_error))) {
+                JS_FreeValue(ctx, failure);
+                goto invalid;
+            }
+            JS_Throw(ctx, failure);
+        }
         goto invalid;
     }
     control.appearance_phase = 0;

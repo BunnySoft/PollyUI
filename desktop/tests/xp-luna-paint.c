@@ -6,6 +6,14 @@
 int main(int argc, char **argv)
 {
     const struct PuDecorationTheme *xp = &pu_decoration_themes[0];
+    assert(pu_appearance_schema(true) == 2 && pu_appearance_schema(false) == 1);
+    assert(pu_appearance_schema_rejected(2, true, false, "Unsupported or out-of-range appearance data"));
+    assert(pu_appearance_schema_rejected(2, true, false, "Unsupported appearance schema"));
+    assert(!pu_appearance_schema_rejected(2, false, false, "Unsupported appearance schema"));
+    assert(!pu_appearance_schema_rejected(2, true, true, "Unsupported appearance schema"));
+    assert(!pu_appearance_schema_rejected(1, true, false, "Unsupported appearance schema"));
+    assert(!pu_appearance_schema_rejected(2, true, false, "Appearance descriptor is not sealed"));
+    assert(!pu_appearance_schema_rejected(2, true, false, NULL));
     uint32_t words[PU_APPEARANCE_WORDS] = {1};
     unsigned index = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) words[index++] = (uint32_t)round(xp->field * scale);

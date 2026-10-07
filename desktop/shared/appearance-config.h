@@ -24,6 +24,19 @@ enum { PU_APPEARANCE_WORDS = 2 PU_APPEARANCE_METRICS(PU_COUNT_METRIC) PU_APPEARA
 #undef PU_COUNT_COLOR
 #define PU_APPEARANCE_DOCUMENT_LIMIT 32768
 
+static inline uint32_t pu_appearance_schema(bool luna)
+{
+    return luna ? 2u : 1u;
+}
+
+static inline bool pu_appearance_schema_rejected(uint32_t schema, bool acknowledged,
+                                                 bool accepted, const char *message)
+{
+    return schema == 2 && acknowledged && !accepted && message &&
+        (!strcmp(message, "Unsupported appearance schema") ||
+         !strcmp(message, "Unsupported or out-of-range appearance data"));
+}
+
 static inline bool pu_appearance_identifier(const char *name)
 {
     size_t length = name ? strlen(name) : 0;

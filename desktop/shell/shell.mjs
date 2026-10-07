@@ -1,5 +1,5 @@
 import { render } from './js/reconciler.mjs';
-import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
+import { DEFAULT_DESKTOP_THEME, getDesktopTheme as getCatalogTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView } from './desktop/shell/views.mjs';
@@ -15,6 +15,7 @@ import { createWorkspacePersistence, workspaceName } from './desktop/shell/works
 import { createTextInput } from './js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
+import { genericAppearance, isLunaSchemaRejection } from './desktop/shell/appearance-compatibility.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
@@ -70,6 +71,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (typeof previousWorkspacesChanged === 'function') previousWorkspacesChanged();
   };
   let compositorAppearance = null;
+  let compatibilityTheme = null, appearanceWarning = '';
+  function getDesktopTheme(id) {
+    return compatibilityTheme?.id === id ? compatibilityTheme : getCatalogTheme(id);
+  }
   let previousWindowsChanged = null;
   const windowsChanged = () => {
     if (!running) return;
@@ -239,7 +244,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     } : null;
     if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper', themeAsset), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error || serviceError, () => showSettings(bundle.output.id), listed, toggleWindow,
+      error || appearanceWarning || serviceError, () => showSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), activate: (item, kind, x, y) => tray.activate(item, kind,
@@ -261,13 +266,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
   }
 
-  function reconcile(nextTheme, persist) {
-    const theme = getDesktopTheme(nextTheme);
+  function reconcile(nextTheme, persist, startupGeneric = false) {
+    const requested = getCatalogTheme(nextTheme);
+    const theme = startupGeneric ? genericAppearance(requested) :
+      persist ? requested : getDesktopTheme(nextTheme);
     const outputs = host.displays();
     const staged = [];
     const plans = [];
     let previousStored, saved = false;
-    const appearance = nextTheme + ':' + THEME_REVISION;
+    const appearance = nextTheme + ':' + THEME_REVISION + (theme !== requested ? ':generic' : '');
     const assetSource = nextTheme + '/' + theme.desktop.asset;
     let asset = themeAsset, loadedAsset = false;
     try {
@@ -322,6 +329,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
     themeId = nextTheme;
+    compatibilityTheme = theme !== requested ? theme : null;
+    if (!compatibilityTheme) appearanceWarning = '';
     const previousAsset = themeAsset;
     themeAsset = asset;
     themeAssetSource = assetSource;
@@ -458,7 +467,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
     render(settingsView(getDesktopTheme(themeId), scoped(selectTheme), close,
       scoped(() => errorKind === 'theme-files' ? reloadThemes() : refresh(true)),
-      error, current.about, typeof native?.shortcuts === 'function' ? scoped(() => showShortcuts(current.output)) : null,
+      error || appearanceWarning, current.about, typeof native?.shortcuts === 'function' ? scoped(() => showShortcuts(current.output)) : null,
       typeof native?.outputConfiguration === 'function' ? scoped(() => showDisplays(current.output)) : null,
       typeof native?.startNetwork === 'function' ? scoped(() => showNetwork(current.output)) : null,
       typeof native?.startAudio === 'function' ? scoped(() => showAudio(current.output)) : null,
@@ -954,7 +963,17 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       running = true;
       lastServicePoll = 0;
       try { reconcile(themeId, false); }
-      catch (failure) { running = false; throw failure; }
+      catch (failure) {
+        if (compositorAppearance !== null || getCatalogTheme(themeId).window.surfaceStyle !== 'luna' ||
+            !isLunaSchemaRejection(failure)) {
+          running = false; throw failure;
+        }
+        try { reconcile(themeId, false, true); }
+        catch (fallbackFailure) { running = false; throw fallbackFailure; }
+        appearanceWarning = 'Compositor rejected Luna decoration data. Using a schema 1 generic appearance for this session; saved theme preference is unchanged.';
+        report('[shell] ' + appearanceWarning + ' ' + String(failure));
+        for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+      }
       timer = setInterval(refresh, 1000);
       if (native) { previousExit = native.onExit; native.onExit = exited; }
       if (typeof native?.windows === 'function') {
@@ -1014,7 +1033,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     showNotifications: notifications.show, showNetwork, showAudio, showPower, refresh,
     getState() {
       const services = serviceMonitor.snapshot();
-      return { themeId, error: error || services.error,
+      return { themeId, error: error || services.error, warning: appearanceWarning, appearanceFallback: !!compatibilityTheme,
         services, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION };
     },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },

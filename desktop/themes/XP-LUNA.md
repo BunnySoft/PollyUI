@@ -15,7 +15,16 @@ Missing options mean the original generic renderer. JSON schema 1 remains
 backwards compatible. Numeric decoration schema 2 adds a bounded Luna flag,
 without changing word counts, metrics, sealed documents or transaction rules.
 An older compositor explicitly rejects that numeric schema rather than
-silently drawing generic chrome. Other four presets retain their original data
+silently drawing generic chrome. If that specific prepare rejection is confirmed
+before the first committed Shell appearance, Shell tries one immutable generic
+snapshot with real schema 1 and no Luna flag. It starts only after a confirmed
+generic commit, displays a compatibility warning in the panel/settings, and
+reports `warning`/`appearanceFallback` without rewriting the saved theme.
+The legacy rejection message combines unsupported and out-of-range data;
+the generic acceptance is required, never assumed. Other prepare failures,
+lost acknowledgments and uncertain/rejected commits still fail explicitly.
+Later theme requests never use the startup exception; unsupported Luna keeps
+the prior snapshot and user preference. Other four presets retain their original data
 and rendering path.
 
 This batch adds a multi-band active/inactive title gradient, light caption
@@ -45,6 +54,7 @@ Small tests, without building a desktop:
 
 ```text
 node desktop/tests/xp-luna-unit.mjs
+node --test desktop/tests/xp-startup-compatibility.mjs
 node desktop/tools/generate-decoration-themes.mjs --check
 cc -std=c11 -Wall -Wextra -Wpedantic -Werror -Idesktop/shared desktop/tests/xp-luna-paint.c -lm -o /tmp/xp-luna-paint
 /tmp/xp-luna-paint
@@ -78,6 +88,10 @@ then run existing `desktop-integration`, `desktop-runtime-raster`/`-gl`,
 checks in its isolated source/build environment. Test names depend on the
 existing CMake options. Also run `pollyui --test tests/xp-luna-render.mjs` for
 actual PollyUI primitive state pixels (not compositor decoration acceptance).
+For the startup fix, rerun `xp-startup-compatibility.mjs` against the combined
+source and rebuild the native bridge. Its structured rejection marker is emitted
+only for a matching, negative prepare reply with intact transport; ordinary
+string lookalikes and schema 1 rejections are not compatibility signals.
 Capture an 800 x 600 desktop with active and inactive
 server-decorated windows, normal/hover/held-left-button captions, restored and
 maximized windows, Shell menu/settings buttons and tray/clock. Repeat at 1.25,
