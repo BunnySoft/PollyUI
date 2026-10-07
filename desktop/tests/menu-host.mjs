@@ -51,6 +51,12 @@ class Node {
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   getAttribute(key) { return this.attributes.get(key) ?? null; }
   removeAttribute(key) { this.attributes.delete(key); }
+  querySelector(selector) {
+    assert.match(selector, /^\.[a-zA-Z][\w-]*$/);
+    const name = selector.slice(1);
+    return descendants(this).slice(1).find(node =>
+      (node.className || '').split(/\s+/).includes(name)) || null;
+  }
   addEventListener(type, callback) {
     const callbacks = this.listeners.get(type) || [];
     callbacks.push(callback);
