@@ -483,6 +483,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-system-payload-signature PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-install-targets COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/install-targets.py")
         set_tests_properties(desktop-install-targets PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-install-target-ui COMMAND node --test
+            "${CMAKE_SOURCE_DIR}/desktop/installer/target-tests.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/installer/host-tests.mjs")
+        set_tests_properties(desktop-install-target-ui PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-menu-host COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/menu-host.mjs")
         set_tests_properties(desktop-menu-host PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-xp-luna-unit COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/xp-luna-unit.mjs")

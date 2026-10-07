@@ -11,8 +11,10 @@ no target-write permission.
 ## Source-checkout launches
 
 Run from the repository root with an already built PollyUI runtime, as an
-ordinary user. These files are not registered or deployed by CMake/package
-scripts. Do not copy `targets.py` away from its source-adjacent
+ordinary user. Application entry points are not deployed by CMake/package
+scripts. The two Node suites are registered as the CTest
+`desktop-install-target-ui` test; this does not deploy a native provider or
+qualify native rendering. Do not copy `targets.py` away from its source-adjacent
 `release/storage/layout.py` and claim a functional deployed helper.
 
 ```powershell
