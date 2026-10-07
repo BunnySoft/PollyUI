@@ -102,6 +102,37 @@ with tempfile.TemporaryDirectory(prefix="polly-restore-test-") as temporary:
     assert (output / "pollyui-input-source/libinput-1.0/source.c").read_text() == "libinput source"
     for recipe in restore.source_retention.RECIPE_PATHS:
         assert (output / recipe).read_bytes() == (pack / "recipes" / Path(recipe).name).read_bytes()
+    mesa_original = pack / "sources/mesa_1.0.orig.tar.gz"
+    mesa_debian = pack / "sources/mesa_1.0-1.debian.tar.gz"
+    archive(mesa_original, {"mesa-1.0/source.c": "mesa source"})
+    archive(mesa_debian, {"debian/source/format": "3.0 (quilt)\n"})
+    mesa_descriptor = pack / "sources/mesa_1.0-1.dsc"
+    mesa_descriptor.write_text(
+        "Format: 3.0 (quilt)\nSource: mesa\nBinary: mesa-test\nArchitecture: any\n"
+        "Version: 1.0-1\nMaintainer: Source Test <source-test@example.invalid>\nChecksums-Sha256:\n"
+        + "".join(f" {restore.source_retention.digest(path)} {path.stat().st_size} {path.name}\n"
+                  for path in (mesa_original, mesa_debian))
+        + "Files:\n"
+        + "".join(f" {hashlib.md5(path.read_bytes()).hexdigest()} {path.stat().st_size} {path.name}\n"
+                  for path in (mesa_original, mesa_debian)))
+    for recipe in restore.source_retention.MESA_RECIPE_PATHS:
+        (pack / "recipes" / Path(recipe).name).write_text("mesa fixture recipe")
+    (pack / "recipes/mesa.json").write_text(json.dumps({
+        "sourceVersion": "1.0-1", "rebuiltVersion": "1.0-1+polly1",
+        "sourceFiles": {path.name: restore.source_retention.digest(path)
+                        for path in (mesa_descriptor, mesa_original, mesa_debian)},
+    }))
+    records.append({"name": "mesa", "version": "1.0-1", "rebuiltVersion": "1.0-1+polly1",
+                    "file": "sources/" + mesa_descriptor.name, "patch": "recipes/mesa-lifetime.patch"})
+    publish(pack, records)
+    restore.restore(pack, base / "with-mesa")
+    assert (base / "with-mesa/pollyui-mesa-source/source.c").read_text() == "mesa source"
+    saved_mesa = mesa_original.read_bytes()
+    mesa_original.write_bytes(b"changed mesa")
+    publish(pack, records)
+    rejects(pack, base / "bad-mesa")
+    mesa_original.write_bytes(saved_mesa)
+    publish(pack, records)
     try:
         restore.restore(pack, output)
     except ValueError:

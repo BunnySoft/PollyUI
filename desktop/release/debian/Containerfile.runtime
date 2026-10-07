@@ -4,8 +4,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 COPY debian.sources /etc/apt/sources.list.d/debian.sources
 COPY backports.sources /etc/apt/sources.list.d/backports.sources
 COPY runtime-packages.txt /tmp/runtime-packages.txt
+COPY local-*.deb /tmp/polly-debs/
+COPY local-package-SHA256SUMS /tmp/polly-debs/SHA256SUMS
 RUN chmod 644 /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/backports.sources && \
-    apt-get update -qq && apt-get install -y --no-install-recommends $(cat /tmp/runtime-packages.txt) && \
+    cd /tmp/polly-debs && sha256sum -c SHA256SUMS && \
+    apt-get update -qq && apt-get install -y --no-install-recommends $(cat /tmp/runtime-packages.txt) $(awk '{print "/tmp/polly-debs/" $2}' SHA256SUMS) && \
+    cd / && rm -rf /tmp/polly-debs && \
     rm /tmp/runtime-packages.txt && useradd --create-home --uid 1000 --shell /bin/sh polly && \
     apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
     rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial

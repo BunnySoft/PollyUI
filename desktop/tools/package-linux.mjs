@@ -168,6 +168,43 @@ try {
     }
   }
   const resolved = [...needed].sort().map(name => packages.get(name));
+  let localPackages;
+  const localArtifacts = [];
+  if (debian) {
+    const localRoot = '/opt/pollyui-local-debs/mesa';
+    if (!existsSync(path.join(localRoot, 'local-packages.json')))
+      throw new Error('Rebuild the Debian SDK: the required corrected Mesa package cache is missing');
+    const local = JSON.parse(run('python3', [path.join(repo, 'desktop/tools/local-debian-packages.py'), localRoot]));
+    const mesaPin = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/mesa.json'), 'utf8'));
+    if (local.sourceVersion !== mesaPin.sourceVersion || local.patchSha256 !== hash(path.join(repo, mesaPin.patch)))
+      throw new Error('Cached SDK Mesa build does not match the declared source correction');
+    const available = new Map(local.packages.map(pkg => [pkg.name.replace(/:amd64$/, ''), pkg]));
+    const selected = [];
+    for (const pkg of resolved) {
+      const rebuilt = available.get(pkg.P.replace(/:amd64$/, ''));
+      if (!rebuilt) continue;
+      if (rebuilt.version !== pkg.V || pkg.V !== mesaPin.rebuiltVersion)
+        throw new Error('Runtime would mix patched and unpatched Mesa packages: ' + pkg.P);
+      const file = 'local-' + rebuilt.sha256 + '.deb';
+      copy(path.join(localRoot, rebuilt.file), path.join(staging, file));
+      selected.push({ ...rebuilt, name: pkg.P, file });
+      localArtifacts.push(file);
+    }
+    if (!selected.some(pkg => pkg.name.replace(/:amd64$/, '') === 'mesa-libgallium') ||
+        !selected.some(pkg => pkg.name.replace(/:amd64$/, '') === 'mesa-vulkan-drivers'))
+      throw new Error('Runtime is missing the corrected Gallium/Vulkan driver packages');
+    localPackages = { ...local, packages: selected };
+    writeFileSync(path.join(staging, 'local-packages.json'), JSON.stringify(localPackages, null, 2) + '\n');
+    writeFileSync(path.join(staging, 'local-package-SHA256SUMS'),
+      selected.map(pkg => pkg.sha256 + '  ' + pkg.file).join('\n') + '\n');
+    copy(path.join(localRoot, 'source-inputs.json'), path.join(staging, 'mesa-source-inputs.json'));
+    copy(path.join(repo, mesaPin.patch), path.join(staging, 'mesa-lifetime.patch'));
+    copy(path.join(localRoot, 'source-inputs.json'), path.join(licenseRoot, 'mesa/source-inputs.json'));
+    copy(path.join(repo, mesaPin.patch), path.join(licenseRoot, 'mesa/mesa-lifetime.patch'));
+    writeFileSync(path.join(licenseRoot, 'mesa/runtime-packages.txt'),
+      selected.map(pkg => pkg.name + '=' + pkg.version).join('\n') + '\n');
+    localArtifacts.push('local-packages.json', 'local-package-SHA256SUMS', 'mesa-source-inputs.json', 'mesa-lifetime.patch');
+  }
   writeFileSync(path.join(staging, 'runtime-packages.txt'), resolved.map(pkg => pkg.P + '=' + pkg.V).join('\n') + '\n');
   const sourceComponents = [
     { name: 'PollyDesktop', versionInfo: version, licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION' },
@@ -187,7 +224,8 @@ try {
     licenseComments: 'Debian source package; private build without libwacom; packaged COPYING and debian/copyright.' });
   const entries = [...sourceComponents, ...resolved.map(pkg => ({
     name: pkg.P, versionInfo: pkg.V, licenseDeclared: 'NOASSERTION',
-    licenseComments: (debian ? 'Debian package: ' : 'Alpine package metadata: ') + (pkg.L || 'unspecified'),
+    licenseComments: (localPackages?.packages.some(local => local.name === pkg.P) ? 'Locally rebuilt Debian package: ' :
+      debian ? 'Debian package: ' : 'Alpine package metadata: ') + (pkg.L || 'unspecified'),
     downloadLocation: 'NOASSERTION', homepage: pkg.U || 'NOASSERTION',
   }))].map((entry, index) => ({ ...entry, SPDXID: 'SPDXRef-Package-' + index,
     filesAnalyzed: false, licenseConcluded: 'NOASSERTION', copyrightText: 'NOASSERTION' }));
@@ -225,7 +263,10 @@ try {
     'desktop/tools/build-harfbuzz-linux.sh', 'desktop/patches/sdl-wayland-sync-lifetime.patch',
     ...(debian ? ['desktop/release/debian/Containerfile', 'desktop/release/debian/Containerfile.sdk',
       'desktop/release/debian/Containerfile.runtime', 'desktop/release/debian/sources.json',
+      'desktop/release/debian/Containerfile.live',
       'desktop/release/debian/libinput.json', 'desktop/release/debian/build-libinput.sh',
+      'desktop/release/debian/mesa.json', 'desktop/release/debian/build-mesa.py',
+      'desktop/patches/mesa-lifetime.patch', 'desktop/tools/local-debian-packages.py',
       'desktop/release/debian/build-wlroots.py', 'desktop/release/debian/rime-default.custom.yaml',
       'desktop/release/debian/debian.sources', 'desktop/release/debian/backports.sources'] : ['desktop/Containerfile', 'desktop/release/Containerfile'])];
   const inputs = { schemaVersion: 1, revision, dirty, architecture: 'x86_64', distribution,
@@ -241,6 +282,7 @@ try {
   run('python3', [path.join(repo, 'desktop/tools/package-tar.py'), root, path.join(staging, archive)]);
   const artifacts = [archive, 'manifest.json', 'sbom.spdx.json', 'runtime-packages.txt', 'Containerfile', 'build-inputs.json'];
   if (debian) artifacts.push('sources.json', 'libinput.json', 'debian.sources', 'backports.sources');
+  artifacts.push(...localArtifacts);
   writeFileSync(path.join(staging, 'SHA256SUMS'), artifacts.map(file => hash(path.join(staging, file)) + '  ' + file).join('\n') + '\n');
   renameSync(staging, output);
   console.log('Created development runtime bundle: ' + output);

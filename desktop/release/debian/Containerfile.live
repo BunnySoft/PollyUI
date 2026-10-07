@@ -9,9 +9,6 @@ RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
     firmware-intel-graphics firmware-nvidia-graphics firmware-iwlwifi firmware-sof-signed intel-microcode iucode-tool \
     iwd dhcpcd openresolv wireless-regdb iproute2 iw rfkill ethtool \
     pciutils usbutils alsa-utils util-linux && \
-    apt-get install -y --no-install-recommends \
-        libegl-mesa0/trixie-backports libgl1-mesa-dri/trixie-backports \
-        libglx-mesa0/trixie-backports libgbm1/trixie-backports mesa-vulkan-drivers/trixie-backports && \
     iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode
 COPY release/live/init /init
 COPY release/live/session /usr/bin/polly-live-session

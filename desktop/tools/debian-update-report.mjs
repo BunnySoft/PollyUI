@@ -53,17 +53,25 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       if (result.error || ![0, 1].includes(result.status)) throw new Error('Debian version comparison failed');
       return result.status === 0;
     };
-    const packages = planUpdates(release.packages, parseCandidates(text), newer);
+    const candidates = parseCandidates(text);
+    const localNames = new Set(release.localPackages?.packages.map(pkg => pkg.name) || []);
+    const packages = planUpdates(release.packages, candidates, newer).map(pkg => localNames.has(pkg.name) ? {
+      ...pkg, binaryOrigin: 'polly-local-rebuild', upstreamSourceVersion: release.localPackages.sourceVersion,
+      upstreamVersionStillListed: (candidates.get(pkg.name.replace(/:amd64$/, '')) || [])
+        .some(item => item.version === release.localPackages.sourceVersion),
+    } : pkg);
     console.log(JSON.stringify({ schemaVersion: 1, checkedAt: new Date().toISOString(),
       source: release.source, distribution: release.distribution, packages,
       summary: { total: packages.length, newer: packages.filter(pkg => pkg.newerThanPinned).length,
         unavailable: packages.filter(pkg => !pkg.available).length,
-        pinsNoLongerListed: packages.filter(pkg => !pkg.pinnedVersionStillListed).length },
+        pinsNoLongerListed: packages.filter(pkg => !pkg.pinnedVersionStillListed && !localNames.has(pkg.name)).length,
+        localRebuilds: localNames.size },
       limits: [
         'Read-only candidate report; no package installation, upgrade, repository promotion or scheduled automation.',
         'Stable packages do not automatically move to backports; existing bpo13 pins are checked in their explicit channel.',
         'A newer version is not proof of a security fix. Advisory triage, dependency solving, builds and hardware acceptance remain separate.',
         'APT metadata reflects the last refresh in this disposable container. Upstream source/payload retention is not guaranteed.',
+        'Explicit local rebuilds are not official archive binaries; upstream replacement must include or revalidate the local correction.',
       ] }, null, 2));
   } catch (error) {
     console.error('[debian-update-report] ' + String(error));

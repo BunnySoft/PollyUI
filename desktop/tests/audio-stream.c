@@ -1,4 +1,5 @@
 #include <pipewire/pipewire.h>
+#include <dbus/dbus.h>
 #include <spa/param/audio/format-utils.h>
 #include <stdio.h>
 #include <string.h>
@@ -72,7 +73,7 @@ int main(int argc, char **argv)
     if (capture || channels == 1) target_buffers = 100;
     pw_init(NULL, NULL);
     loop = pw_main_loop_new(NULL);
-    if (!loop) return 1;
+    if (!loop) { pw_deinit(); dbus_shutdown(); return 1; }
     struct spa_source *timer = pw_loop_add_timer(pw_main_loop_get_loop(loop), timed_out, NULL);
     struct timespec timeout = { .tv_sec = manual || missing ? 2 : 35 };
     pw_loop_update_timer(pw_main_loop_get_loop(loop), timer, &timeout, NULL, false);
@@ -83,7 +84,10 @@ int main(int argc, char **argv)
         PW_KEY_APP_NAME, "Polly audio stream fixture", NULL);
     if (missing) pw_properties_set(props, PW_KEY_TARGET_OBJECT, "Polly-Test-B");
     stream = pw_stream_new_simple(pw_main_loop_get_loop(loop), "Polly test playback", props, &events, NULL);
-    if (!stream) { pw_main_loop_destroy(loop); pw_deinit(); return 1; }
+    if (!stream) {
+        pw_loop_destroy_source(pw_main_loop_get_loop(loop), timer);
+        pw_main_loop_destroy(loop); pw_deinit(); dbus_shutdown(); return 1;
+    }
     uint8_t buffer[512];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     struct spa_audio_info_raw info = { .format = SPA_AUDIO_FORMAT_F32, .rate = 48000, .channels = channels,
@@ -96,6 +100,8 @@ int main(int argc, char **argv)
     pw_stream_destroy(stream);
     pw_loop_destroy_source(pw_main_loop_get_loop(loop), timer);
     pw_main_loop_destroy(loop); pw_deinit();
+    /* The standalone fixture owns all users of libdbus, including PipeWire's RT module. */
+    dbus_shutdown();
     if (manual || missing) {
         if (!failed && result >= 0 && !buffers && !activated) {
             puts("PASS: policy respects manual routing and unavailable explicit targets");

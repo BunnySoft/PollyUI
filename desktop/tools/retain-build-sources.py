@@ -18,6 +18,10 @@ RECIPE_PATHS = (
     "desktop/tools/skia-linux.gn", "desktop/tools/build-sdl-linux.sh", "desktop/tools/build-harfbuzz-linux.sh",
     "desktop/patches/sdl-wayland-sync-lifetime.patch",
 )
+MESA_RECIPE_PATHS = (
+    "desktop/release/debian/mesa.json", "desktop/release/debian/build-mesa.py",
+    "desktop/patches/mesa-lifetime.patch", "desktop/tools/local-debian-packages.py",
+)
 
 
 def digest(path, algorithm="sha256"):
@@ -146,7 +150,17 @@ def retain(output):
         shutil.copyfile(descriptor, sources / descriptor.name)
         records.append({"name": "libinput", "version": version, "file": "sources/" + descriptor.name,
                         "format": "Debian source descriptor and verified referenced archives"})
-        for file in RECIPE_PATHS:
+        mesa_pin = json.loads((REPO / "desktop/release/debian/mesa.json").read_text())
+        for name, expected in mesa_pin["sourceFiles"].items():
+            source = Path("/opt/pollyui-mesa-source") / name
+            if source.is_symlink() or not source.is_file() or digest(source) != expected:
+                raise ValueError("SDK Mesa source differs from the declared input: " + name)
+            shutil.copyfile(source, sources / name)
+        records.append({"name": "mesa", "version": mesa_pin["sourceVersion"],
+                        "rebuiltVersion": mesa_pin["rebuiltVersion"],
+                        "file": "sources/mesa_" + mesa_pin["sourceVersion"] + ".dsc",
+                        "patch": "recipes/mesa-lifetime.patch"})
+        for file in RECIPE_PATHS + MESA_RECIPE_PATHS:
             shutil.copyfile(REPO / file, recipes / Path(file).name)
         inventory = [{"path": str(file.relative_to(stage)), "bytes": file.stat().st_size, "sha256": digest(file)}
                      for directory in (sources, recipes) for file in sorted(directory.iterdir())]

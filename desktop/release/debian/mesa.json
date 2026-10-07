@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "sourceVersion": "26.1.6-1~bpo13+1",
+  "rebuiltVersion": "26.1.6-1~bpo13+1+polly1",
+  "patch": "desktop/patches/mesa-lifetime.patch",
+  "sourceFiles": {
+    "mesa_26.1.6-1~bpo13+1.dsc": "e5441f12555341fa6060d99a0d111b96a4850dd13ab2847afca26a1a33cbffb2",
+    "mesa_26.1.6.orig.tar.xz": "5296b88a0f1e012e2cb9ada150a2bbadf728ca81e5a4fb2ab43c83a4d2158606",
+    "mesa_26.1.6.orig.tar.xz.asc": "680b45e090d41ce6f60d0804a909109097721c6037466c9813f8fea255726a9e",
+    "mesa_26.1.6-1~bpo13+1.debian.tar.xz": "6755cfa7c03f7589826f60f8ac323c10f1799412ae214dbea76a549ecca69ce4"
+  }
+}

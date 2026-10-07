@@ -219,7 +219,7 @@ static void node_param(void *data, int seq, uint32_t id, uint32_t index, uint32_
 static void node_info(void *data, const struct pw_node_info *info)
 {
     struct AudioNode *node = data;
-    if (info->props) {
+    if (info->props && info->props->n_items > 0) {
         const char *description = spa_dict_lookup(info->props, PW_KEY_NODE_DESCRIPTION);
         if (!description) description = spa_dict_lookup(info->props, PW_KEY_NODE_NICK);
         if (description) copy(node->description, sizeof(node->description), description);
@@ -289,7 +289,7 @@ static const struct pw_metadata_events metadata_events = { PW_VERSION_METADATA_E
 static void global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props)
 {
     (void)data; (void)permissions;
-    if (!props) return;
+    if (!props || props->n_items == 0) return;
     if (!strcmp(type, PW_TYPE_INTERFACE_Node)) {
         const char *media_class = spa_dict_lookup(props, PW_KEY_MEDIA_CLASS);
         if (!media_class || (strcmp(media_class, "Audio/Sink") && strcmp(media_class, "Audio/Source") &&

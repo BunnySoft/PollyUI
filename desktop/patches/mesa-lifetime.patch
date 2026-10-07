@@ -1,0 +1,96 @@
+diff --git a/src/util/u_cpu_detect.c b/src/util/u_cpu_detect.c
+--- a/src/util/u_cpu_detect.c
++++ b/src/util/u_cpu_detect.c
+@@ -111,6 +111,12 @@
+ static
+ struct util_cpu_caps_t util_cpu_caps;
+ 
++static void
++free_cpu_caps(void)
++{
++   free(util_cpu_caps.L3_affinity_mask);
++}
++
+ /* Do not try to access _util_cpu_caps_state directly, call to util_get_cpu_caps instead */
+ struct _util_cpu_caps_state_t _util_cpu_caps_state = {
+    .once_flag = ONCE_FLAG_INIT,
+@@ -770,6 +776,11 @@
+    int total_cpus = 0;
+    bool zen = false;
+ 
++   if (atexit(free_cpu_caps) != 0) {
++      fputs("Mesa: cannot register CPU topology cleanup\n", stderr);
++      abort();
++   }
++
+    memset(&util_cpu_caps, 0, sizeof util_cpu_caps);
+ 
+    /* Count the number of CPUs in system */
+diff --git a/src/gallium/auxiliary/rtasm/rtasm_execmem.c b/src/gallium/auxiliary/rtasm/rtasm_execmem.c
+--- a/src/gallium/auxiliary/rtasm/rtasm_execmem.c
++++ b/src/gallium/auxiliary/rtasm/rtasm_execmem.c
+@@ -71,12 +71,29 @@
+ static unsigned char *exec_mem = NULL;
+ 
+ 
++static void
++release_empty_heap(void)
++{
++   if (exec_heap && exec_heap->next->free &&
++       exec_heap->next->next == exec_heap) {
++      u_mmDestroy(exec_heap);
++      exec_heap = NULL;
++      if (exec_mem && exec_mem != MAP_FAILED)
++         munmap(exec_mem, EXEC_HEAP_SIZE);
++      exec_mem = NULL;
++   }
++}
++
++
+ static int
+ init_heap(void)
+ {
+    if (!exec_heap)
+       exec_heap = u_mmInit( 0, EXEC_HEAP_SIZE );
+ 
++   if (!exec_heap)
++      return 0;
++
+    if (!exec_mem)
+       exec_mem = (unsigned char *) mmap(NULL, EXEC_HEAP_SIZE,
+          PROT_EXEC | PROT_READ | PROT_WRITE,
+@@ -84,6 +101,11 @@
+          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+ 
+-   return (exec_mem != MAP_FAILED);
++   if (exec_mem == MAP_FAILED) {
++      release_empty_heap();
++      return 0;
++   }
++
++   return 1;
+ }
+ 
+ 
+@@ -106,7 +128,9 @@
+    if (block)
+       addr = exec_mem + block->ofs;
+-   else
++   else {
+       debug_printf("rtasm_exec_malloc failed\n");
++      release_empty_heap();
++   }
+ 
+ bail:
+    simple_mtx_unlock(&exec_mutex);
+@@ -126,8 +150,8 @@
+    if (exec_heap) {
+       struct mem_block *block = u_mmFindBlock(exec_heap, (unsigned char *)addr - exec_mem);
+ 
+-      if (block)
+-         u_mmFreeMem(block);
++      if (block && u_mmFreeMem(block) == 0)
++         release_empty_heap();
+    }
+ 
+    simple_mtx_unlock(&exec_mutex);

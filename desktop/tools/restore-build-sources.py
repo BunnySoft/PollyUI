@@ -29,9 +29,11 @@ def restore(source, target):
         raise ValueError("Refusing to replace existing restored sources")
     files = {entry["path"] for entry in manifest["files"]}
     records = {entry["name"]: entry for entry in manifest["components"]}
-    if len(records) != len(manifest["components"]) or set(records) != {"skia", "sdl", "harfbuzz", "wlroots", "wlr-protocols", "libinput"}:
+    required = {"skia", "sdl", "harfbuzz", "wlroots", "wlr-protocols", "libinput"}
+    if len(records) != len(manifest["components"]) or set(records) not in (required, required | {"mesa"}):
         raise ValueError("Unexpected custom dependency set")
-    for path in source_retention.RECIPE_PATHS:
+    recipes = source_retention.RECIPE_PATHS + (source_retention.MESA_RECIPE_PATHS if "mesa" in records else ())
+    for path in recipes:
         if "recipes/" + Path(path).name not in files:
             raise ValueError("Missing verified recipe: " + path)
     pins = json.loads((source / "recipes/sources.json").read_text())
@@ -97,7 +99,20 @@ def restore(source, target):
         source_directory.mkdir()
         extracted = source_directory / ("libinput-" + version.rsplit("-", 1)[0])
         print(run("dpkg-source", "-x", str(descriptor), str(extracted)).decode(), end="")
-        for path in source_retention.RECIPE_PATHS:
+        if "mesa" in records:
+            mesa = records["mesa"]
+            mesa_pin = json.loads((source / "recipes/mesa.json").read_text())
+            if (mesa["version"] != mesa_pin["sourceVersion"] or mesa["rebuiltVersion"] != mesa_pin["rebuiltVersion"]
+                    or mesa.get("patch") != "recipes/mesa-lifetime.patch"):
+                raise ValueError("Mesa source and retained recipe differ")
+            for name, expected in mesa_pin["sourceFiles"].items():
+                if "sources/" + name not in files or source_retention.digest(source / "sources" / name) != expected:
+                    raise ValueError("Mesa source archive differs from its retained pin")
+            descriptor_name = "sources/mesa_" + mesa_pin["sourceVersion"] + ".dsc"
+            if mesa["file"] != descriptor_name or descriptor_name not in files:
+                raise ValueError("Mesa source descriptor mismatch")
+            print(run("dpkg-source", "-x", str(source / descriptor_name), str(staging / "pollyui-mesa-source")).decode(), end="")
+        for path in recipes:
             destination = staging / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / "recipes" / Path(path).name, destination)

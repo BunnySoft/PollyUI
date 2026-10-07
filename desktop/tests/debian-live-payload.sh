@@ -12,6 +12,14 @@ done
 test -r /boot/intel-ucode.img
 test -r /lib/firmware/regulatory.db
 test -s /usr/share/polly-live-packages.tsv
+test -s /usr/share/licenses/pollyui/mesa/runtime-packages.txt
+while IFS='=' read -r package version; do
+    test "$(dpkg-query -W -f='${Version}' "$package")" = "$version" || {
+        echo "Live assembly changed the corrected Mesa package: $package" >&2; exit 1;
+    }
+done < /usr/share/licenses/pollyui/mesa/runtime-packages.txt
+test -s /usr/share/licenses/pollyui/mesa/mesa-lifetime.patch
+test -s /usr/share/licenses/pollyui/mesa/source-inputs.json
 test -z "$(find /var/cache/apt/archives -name '*.deb' -print -quit)"
 test ! -f /var/cache/apt/pkgcache.bin
 test ! -f /var/cache/apt/srcpkgcache.bin

@@ -203,7 +203,8 @@ python3 -B desktop/tools/retain-build-sources.py dist/polly-custom-source-inputs
 
 This records pristine tracked Skia/SDL/HarfBuzz trees at their exact revisions,
 the SDL patch, pinned wlroots/wlr-protocols release archives, and the Debian
-libinput source descriptor with its checksum-verified original/packaging archives.
+libinput/Mesa source descriptors with their checksum-verified original/packaging
+archives and the local Mesa correction.
 Recipe files and all retained source artifacts have per-file SHA-256 records.
 Before retention, SDL's actual tracked modifications must exactly match the
 declared patch; unrelated edits are rejected. No source archive is executed or
@@ -227,13 +228,14 @@ podman run --rm --network=none -v "$PWD:/workspace:ro" -w /workspace \
 ```
 
 Restoration verifies the retained inventory before use, cross-checks the saved
-recipe pins, extracts wlroots/wlr-protocols and the Debian libinput source, and
+recipe pins, extracts wlroots/wlr-protocols and the Debian libinput/Mesa sources, and
 reconstructs the original relative recipe/patch paths. SDL remains pristine until
 its existing build recipe applies the retained patch. Git configuration/hooks and
 SDK build outputs are not imported. Failed restoration removes only its own
 temporary staging directory; existing destination directories are not replaced.
 Older packs without bundles are rejected by restoration, but remain valid for
-source-archive verification.
+source-archive verification. Existing six-component Git-bundle packs remain
+restorable; their inventories do not claim to contain the newer Mesa source input.
 
 The libinput descriptor/archive checksums are verified, but maintainer signature
 authentication is a separate guarantee. `dpkg-source` retains its normal signature
@@ -248,21 +250,65 @@ obligations for all distro packages are not covered by this custom-source set.
 
 ## Current acceptance limits
 
-The Debian normal build passes all 59 native tests, the shared core suite and
-the disposable-user real PAM fixture. The shared core also passes ASan/UBSan.
-This does **not** mean full graphical sanitizer acceptance has passed:
+### Mesa lifetime correction
 
-- Raw graphical LeakSanitizer runs still report Mesa process-global allocations
-  after driver DSO unload. Matching official Debian debug information maps them
-  to `get_cpu_topology` in `src/util/u_cpu_detect.c` and `u_mmInit` in
-  `src/util/u_mm.c` (the runtime executable-memory pool).
-- Mesa 26 reduced, but did not eliminate, the reports. Forcing software rendering
-  does not resolve them. A trial SDL EGL-thread cleanup patch had no effect and
-  was removed; it is not a shipped workaround.
-- No leak suppression, changed sanitizer exit code or `continue-on-error` is
-  used. The Debian CI job retains this failing gate rather than reporting a
-  false clean result. A normal minimal-window Valgrind run reporting zero
-  definite/indirect/possible loss does not invalidate the LSan evidence.
+The SDK rebuilds the exact Debian Mesa `26.1.6-1~bpo13+1` source as
+`26.1.6-1~bpo13+1+polly1`. `mesa.json` pins the original descriptor/archive
+hashes; `build-mesa.py` applies `desktop/patches/mesa-lifetime.patch` and uses
+Debian's unchanged driver selection and package rules. This is a locally rebuilt
+package set, **not a new official Debian binary or a Mesa version upgrade**.
+The only additional explicitly selected backported build dependency is
+`directx-headers-dev`, required by that exact source's Debian control file.
+Build tools and development dependencies stay in the SDK.
+
+The correction registers CPU-topology storage cleanup at initialization and
+releases the executable mapping/allocator when its last block is freed. The
+heap stays alive while another allocation is in use; failed heap initialization
+and failed allocation into an empty heap also release their resources. No
+sanitizer suppressions, loader `NODELETE` flags or forced rendering fallback
+are used. `sdl-gl-lifecycle` draws and checks actual GLES pixels with two live
+contexts, destroys one while continuing to use the other, and repeats complete
+SDL initialization/shutdown ten times. On glibc it also rejects anonymous
+executable mappings left behind after shutdown, since LeakSanitizer alone
+does not account for the 10 MiB executable `mmap` pool.
+
+The SDK preserves the rebuilt DEBs, their byte/control identities, original
+source hashes and patch hash under `/opt/pollyui-local-debs/mesa`. Packaging
+rejects stale SDKs or a mixture of corrected and uncorrected Mesa versions.
+Runtime artifacts contain only the rebuilt DEBs required by their exact
+dependency closure. The runtime recipe verifies and installs the explicitly
+listed local files, alongside signed-index Debian dependencies, then removes
+the installation cache. Live construction inherits that runtime.
+
+Release reports and retained binary input packs identify these as local
+rebuilds rather than pretending their hashes came from Debian's package index.
+Custom source retention includes the original Mesa source and correction.
+The `+polly1` binary versions are not expected to appear in the official APT
+candidate list; future upstream versions still require checking whether this
+correction is present before replacing them. No publisher key or automatic
+update/promotion is introduced.
+
+The original Debian candidate's raw graphical LeakSanitizer failures remain in
+the historical evidence. Matching official Debian debug information mapped them
+to `get_cpu_topology` in `src/util/u_cpu_detect.c` and `u_mmInit` in `src/util/u_mm.c`.
+Changing renderer or adding an SDL EGL-thread cleanup did not fix them; that SDL
+experiment was removed.
+
+With the local Mesa correction, the original raster/GLES cases and the repeated
+GL/mapping regression pass ASan/UBSan without suppressions, changed sanitizer exit
+codes or `continue-on-error`. The complete Debian Mesa build's 113 upstream tests
+also pass. This is software evidence, not target-GPU qualification.
+
+The expanded Debian sanitizer run also exposed an empty SPA property dictionary:
+the audio adapter now avoids calling the upstream lookup loop for zero items.
+The standalone stream fixture explicitly releases its process-wide libdbus
+caches after PipeWire teardown, using the supported `dbus_shutdown` API. It does
+not disable D-Bus/RT modules or suppress allocations. Actual routing and saved
+audio preferences pass in raster/GLES sanitizer runs on Debian and Alpine.
+The corrected candidate completes all 71 Debian ASan/UBSan tests with
+`UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`, plus the shared core suite and
+real PAM fixture. The normal 71-test run passed before the final audio guards;
+the changed normal audio cases and core suite were then rerun successfully.
 
 The Debian candidate boots both read-only USB and optical media under OVMF/KVM:
 ordinary PAM/logind session, real guest DRM, Rime Chinese input, clipboard
@@ -290,7 +336,8 @@ podman run --rm --network=none --device /dev/kvm --user 1000:1000 \
 Use a new evidence directory per run.
 Omit `--device /dev/kvm` to use TCG without changing host permissions.
 
-Physical-machine and complete graphical-memory acceptance remain open gates.
+Physical-machine acceptance remains open; software qualification must use the
+corrected Mesa package set and the matching candidate's regression results.
 The Alpine user report does not qualify this Debian image. Keep exact
 candidate revisions, package inventories and known failures with results.
 See the [maintenance policy](../../../docs/desktop-base-maintenance.md) for

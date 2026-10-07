@@ -130,24 +130,33 @@ def retain(release, output):
             os.chown(download, pwd.getpwnam("_apt").pw_uid, 0)
         entries = []
         total = 0
+        local = {item["name"]: item for item in report.get("localPackages", {}).get("packages", [])}
         for pin in pins:
             spec = pin["name"] + "=" + pin["version"]
-            record = package_record(run("apt-cache", "show", spec), pin["name"], pin["version"])
+            if pin["name"] in local:
+                record = dict(local[pin["name"]], origin="polly-local-rebuild")
+                target = release / record["file"]
+            else:
+                record = package_record(run("apt-cache", "show", spec), pin["name"], pin["version"])
             total += record["bytes"]
             if total > 4 * 1024 * 1024 * 1024:
                 raise ValueError("Runtime binary input set exceeds 4 GiB")
-            run("apt-get", "download", spec, cwd=download)
-            fetched = list(download.iterdir())
-            if len(fetched) != 1 or fetched[0].is_symlink() or not fetched[0].is_file():
-                raise ValueError("APT download produced unexpected files")
-            target = fetched[0]
+            if pin["name"] not in local:
+                run("apt-get", "download", spec, cwd=download)
+                fetched = list(download.iterdir())
+                if len(fetched) != 1 or fetched[0].is_symlink() or not fetched[0].is_file():
+                    raise ValueError("APT download produced unexpected files")
+                target = fetched[0]
             if target.stat().st_size != record["bytes"] or digest(target) != record["sha256"]:
                 raise ValueError("Downloaded payload differs from indexed checksum: " + spec)
             record["file"] = "packages/" + record["sha256"] + ".deb"
             destination = stage / record["file"]
             if destination.exists():
                 raise ValueError("Two pins unexpectedly reference the same payload")
-            target.rename(destination)
+            if pin["name"] in local:
+                shutil.copyfile(target, destination)
+            else:
+                target.rename(destination)
             destination.chmod(0o644)
             entries.append(record)
             print("Retained " + spec, flush=True)
@@ -159,7 +168,7 @@ def retain(release, output):
                     "limits": [
                         "Binary runtime dependency inputs only, not a complete Debian mirror or source-compliance archive.",
                         "The bootstrap/minbase and custom source builds remain separate inputs.",
-                        "APT verifies downloaded packages against indexed metadata; this manifest is not a publisher signature.",
+                        "APT downloads use indexed metadata; explicitly inventoried local rebuilds use their release hashes, not Debian publisher signatures.",
                         "No package is installed, upgraded or executed by this tool.",
                     ]}
         (stage / "input-pack.json").write_text(json.dumps(manifest, indent=2) + "\n")

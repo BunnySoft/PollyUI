@@ -70,7 +70,7 @@ export async function inspectRelease(directory) {
     'Invalid development version');
   requireValue(manifest.architecture === 'x86_64', 'Unsupported release architecture');
   let packages, payloadBytes, files, groups;
-  let inputs;
+  let inputs, localPackages;
   if (seen.has('build-inputs.json')) {
     inputs = await json(root, 'build-inputs.json');
     requireValue(inputs.schemaVersion === 1 && inputs.revision === source && inputs.dirty === dirty &&
@@ -130,12 +130,46 @@ export async function inspectRelease(directory) {
     requireValue(sbom.spdxVersion === 'SPDX-2.3' && Array.isArray(sbom.packages), 'Missing SPDX package inventory');
     const listed = new Set(sbom.packages.map(pkg => pkg.name + '=' + pkg.versionInfo));
     requireValue(packages.every(pkg => listed.has(pkg.name + '=' + pkg.version)), 'SBOM omits pinned runtime packages');
+    if (seen.has('local-packages.json')) {
+      localPackages = await json(root, 'local-packages.json');
+      requireValue(localPackages.schemaVersion === 1 && localPackages.kind === 'polly-rebuilt-debian-packages' &&
+        checksum.test(localPackages.patchSha256) && Array.isArray(localPackages.packages) &&
+        localPackages.packages.length > 0 && localPackages.packages.length <= 128, 'Invalid local package inventory');
+      requireValue(entries.some(entry => entry.name === 'mesa-lifetime.patch' && entry.sha256 === localPackages.patchSha256),
+        'Local package source patch differs from the release');
+      requireValue(seen.has('mesa-source-inputs.json') && seen.has('local-package-SHA256SUMS'),
+        'Missing checksummed local build provenance or installation checksums');
+      const localInputs = await json(root, 'mesa-source-inputs.json');
+      requireValue(localInputs.patchSha256 === localPackages.patchSha256 &&
+        localInputs.sourceVersion === localPackages.sourceVersion &&
+        typeof localInputs.rebuiltVersion === 'string', 'Local source provenance differs from package inventory');
+      const localNames = new Set(), localFiles = new Set();
+      for (const pkg of localPackages.packages) {
+        requireValue(pkg && !localNames.has(pkg.name) && !localFiles.has(pkg.file) &&
+          ['amd64', 'all'].includes(pkg.architecture) && checksum.test(pkg.sha256) &&
+          pkg.file === 'local-' + pkg.sha256 + '.deb' &&
+          Number.isSafeInteger(pkg.bytes) && pkg.bytes > 0 && pkg.bytes <= 512 * 1024 * 1024 &&
+          pkg.version === localInputs.rebuiltVersion &&
+          packages.some(pin => pin.name === pkg.name && pin.version === pkg.version) &&
+          entries.some(entry => entry.name === pkg.file && entry.bytes === pkg.bytes && entry.sha256 === pkg.sha256),
+        'Local package does not match pinned identity or verified bytes');
+        localNames.add(pkg.name); localFiles.add(pkg.file);
+      }
+      requireValue(entries.filter(entry => /^local-.*\.deb$/.test(entry.name)).length === localFiles.size,
+        'Unlisted local package artifact');
+      const installSums = await readFile(await file(root, 'local-package-SHA256SUMS'), 'utf8');
+      requireValue(installSums.trim().split('\n').sort().join('\n') === localPackages.packages
+        .map(pkg => pkg.sha256 + '  ' + pkg.file).sort().join('\n'), 'Installation checksums differ from local package inventory');
+    } else {
+      requireValue(!entries.some(entry => /^local-.*\.deb$/.test(entry.name)), 'Local package inventory is missing');
+    }
   }
   return { schemaVersion: 1, kind: live ? 'live' : 'runtime', version: manifest.version,
     distribution: manifest.distribution || (manifest.debian ? 'debian13' : 'alpine3.24'),
     architecture: manifest.architecture, source: { revision: source, dirty },
     artifacts: entries, packages, payload: { bytes: payloadBytes, files, ...(groups ? { groups } : {}) },
     ...(inputs ? { buildInputs: inputs } : {}),
+    ...(localPackages ? { localPackages } : {}),
     ...(live ? { minimumGuestMemoryMiB: manifest.minimumGuestMemoryMiB, runtimeImage: manifest.runtimeImage } : {}),
     limits: [
       'Local integrity/provenance report, not a trusted signature or automatic release approval.',
