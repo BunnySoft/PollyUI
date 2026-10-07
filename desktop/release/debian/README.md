@@ -146,8 +146,49 @@ Schema v3 additionally preserves ownership and POSIX access/default ACLs referri
 only to the current stable user/group and fixed root identity 0. Root-owned files
 are not reassigned to the ordinary user; the top-level HOME must still belong
 exactly to the requested user. Other named ACL identities need an explicit mapping,
-and unknown/security attributes remain refused. Schema v1 unlinked and v2 hard-link
-transactions remain inspectable under their original rules. These are HOME migration
+and unknown/security attributes remain refused. Schema v4 permits additional
+identities only with an explicit, root-owned `0600` mapping file and qualified
+public passwd/group tables for both the stopped source and intended target:
+
+```sh
+polly-migrate-home identities --source-etc /mnt/old/etc --target-etc /mnt/new/etc
+polly-migrate-home import --source /mnt/old/home/polly --users /mnt/new/Users \
+    --name polly --uid 1000 --gid 1000 --identity-map /root/home-identities.json \
+    --source-etc /mnt/old/etc --target-etc /mnt/new/etc
+```
+
+`identities` is a root-only, read-only inspection: it prints SHA256 fingerprints,
+not account contents, passwords or an inferred mapping. Its source filesystem must
+also be genuinely read-only. All input files must be regular, root-owned, singly
+linked, non-writable by group/others, under trusted root-managed parents, and at
+most 256 KiB. The mapping format is separate from the HOME journal format:
+
+```json
+{
+  "schemaVersion": 1,
+  "source": {"passwd": "SOURCE_PASSWD_SHA256", "group": "SOURCE_GROUP_SHA256"},
+  "target": {"passwd": "TARGET_PASSWD_SHA256", "group": "TARGET_GROUP_SHA256"},
+  "users": [{"name": "worker", "role": "service", "sourceUid": 110, "targetUid": 112}],
+  "groups": [{"name": "worker", "role": "service", "sourceGid": 110, "targetGid": 112}]
+}
+```
+
+Replace the placeholders with the inspection's exact 64-character hashes and
+explicitly select the identities. Each mapping list has at most 256 entries.
+Names and numeric IDs must match both qualified tables; names alone never establish
+stability. Additional persistent users use role `user` and keep UID/GID unchanged.
+Services use role `service` and may rebase only within service identities, never
+to root, the current user or an ordinary-user ID. Aliases, duplicate JSON fields,
+unknown roles and incomplete primary-group plans are refused. Ownership and named
+access/default ACLs are rebased only in the staged destination, preserving ACL
+permissions and canonical entry order; the private backup remains numerically
+unchanged. Changed mapping/table proofs interrupt the operation before publication
+or explicitly report a post-publication interruption without rollback. Inspection
+uses the sealed private journal, not a subsequently unavailable source mount.
+It neither edits the target account tables nor proves service/account migration.
+
+Schema v1 unlinked, v2 hard-link and v3 known-identity ACL transactions remain
+inspectable under their original rules. These are HOME migration
 formats, independent of account configuration versions. This is not a complete
 installer/account migration.
 

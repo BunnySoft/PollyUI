@@ -15,6 +15,10 @@ spec = importlib.util.spec_from_file_location("migration",
     Path(__file__).resolve().parents[1] / "release/storage/migrate-home.py")
 migration = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(migration)
+spec = importlib.util.spec_from_file_location("identity_tests",
+    Path(__file__).resolve().with_name("storage-identities.py"))
+identity_tests = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(identity_tests)
 
 
 @unittest.skipUnless(os.geteuid() == 0, "disposable root SDK required")
@@ -76,7 +80,7 @@ class Migration(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE(transaction.stat().st_mode), 0o700)
                 self.assertEqual((transaction / "journal.json").stat().st_mode & 0o777, 0o600)
                 self.assertEqual(migration.status(transaction), {
-                    "schemaVersion": 3, "phase": "committed", "publicationVerified": True,
+                    "schemaVersion": 4, "phase": "committed", "publicationVerified": True,
                     "backupRetained": True, "backupVerified": True, "automaticResume": False})
         self.assertFalse((self.users / "SystemData").exists())
 
@@ -146,8 +150,8 @@ class Migration(unittest.TestCase):
         self.readonly.start()
         original = migration.copy_records
 
-        def corrupt_backup(*args):
-            original(*args)
+        def corrupt_backup(*args, **kwargs):
+            original(*args, **kwargs)
             if args[1].name == "backup":
                 (args[1] / "Documents/document.txt").write_text("corrupted")
 
@@ -202,7 +206,7 @@ class Migration(unittest.TestCase):
                 migration.migrate(source, self.users, user)
         transaction, = self.users.glob(".migration-*")
         self.assertEqual(migration.status(transaction), {
-            "schemaVersion": 3, "phase": "interrupted", "publicationVerified": True,
+            "schemaVersion": 4, "phase": "interrupted", "publicationVerified": True,
             "backupRetained": True, "backupVerified": True, "automaticResume": False})
         with self.assertRaises(FileExistsError):
             migration.migrate(source, self.users, user)
@@ -320,6 +324,166 @@ class Migration(unittest.TestCase):
         self.assertEqual(os.getxattr(self.users / "1000/Settings", "system.posix_acl_default"), value)
         self.assertEqual(os.getxattr(transaction / "backup/.config", "system.posix_acl_default"), value)
         self.assertTrue(migration.status(transaction)["backupVerified"])
+
+    def qualified_inputs(self, *, reordered=False):
+        source_etc, target_etc = self.legacy / "etc", self.users.parent / "target-etc"
+        source_etc.mkdir()
+        target_etc.mkdir()
+        source_passwd, source_group = identity_tests.SOURCE_PASSWD, identity_tests.SOURCE_GROUP
+        target_passwd, target_group = identity_tests.TARGET_PASSWD, identity_tests.TARGET_GROUP
+        record = identity_tests.plan()
+        if reordered:
+            source_passwd += "other:x:111:111:service:/nonexistent:/usr/sbin/nologin\n"
+            source_group += "other:x:111:\n"
+            target_passwd += "other:x:109:109:service:/nonexistent:/usr/sbin/nologin\n"
+            target_group += "other:x:109:\n"
+            record["users"].append({"name": "other", "role": "service", "sourceUid": 111, "targetUid": 109})
+            record["groups"].append({"name": "other", "role": "service", "sourceGid": 111, "targetGid": 109})
+        for directory, passwd, group in ((source_etc, source_passwd, source_group),
+                                          (target_etc, target_passwd, target_group)):
+            (directory / "passwd").write_text(passwd)
+            (directory / "group").write_text(group)
+        record["source"] = migration.identity_module.fingerprint(source_passwd, source_group)
+        record["target"] = migration.identity_module.fingerprint(target_passwd, target_group)
+        plan = self.users.parent / "identity-map.json"
+        plan.write_text(json.dumps(record))
+        plan.chmod(0o600)
+        return {"identity_map": plan, "source_etc": source_etc, "target_etc": target_etc}
+
+    def service_data(self, source):
+        file = source / "Documents/service-data"
+        file.write_text("qualified service metadata")
+        file.chmod(0o600)
+        os.chown(file, 110, 110)
+        return file
+
+    def service_acl(self):
+        return struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in (
+            (1, 6, 0xffffffff), (2, 4, 110), (2, 2, 111), (2, 4, 1001),
+            (4, 0, 0xffffffff), (8, 4, 110), (8, 2, 111),
+            (16, 6, 0xffffffff), (32, 0, 0xffffffff)))
+
+    def test_explicit_identities_rebase_files_and_acls_but_not_private_backup(self):
+        source, user = self.source()
+        inputs = self.qualified_inputs(reordered=True)
+        file = self.service_data(source)
+        acl = self.service_acl()
+        os.setxattr(file, "system.posix_acl_access", acl)
+        os.setxattr(source / ".config", "system.posix_acl_default", acl)
+        peer = source / "Documents/peer-data"
+        peer.write_text("stable peer owner")
+        os.chown(peer, 1001, 1001)
+        peer.chmod(0o600)
+        mapper = migration.identity_module.IdentityMap(
+            json.loads(inputs["identity_map"].read_text()), user)
+        before = migration.inventory(source, user, identities=mapper)
+        transaction = migration.migrate(source, self.users, user, **inputs)
+        destination = self.users / "1000"
+        copied = destination / "Documents/service-data"
+        self.assertEqual((copied.stat().st_uid, copied.stat().st_gid), (112, 112))
+        self.assertEqual((destination / "Documents/peer-data").stat().st_uid, 1001)
+        mapped = migration.mapped_acl(acl, mapper)
+        self.assertEqual(os.getxattr(copied, "system.posix_acl_access"), mapped)
+        self.assertEqual(os.getxattr(destination / "Settings", "system.posix_acl_default"), mapped)
+        entries = [struct.unpack_from("<HHI", mapped, offset) for offset in range(4, len(mapped), 8)]
+        self.assertEqual([(uid, mode) for tag, mode, uid in entries if tag == 2],
+                         [(109, 2), (112, 4), (1001, 4)])
+        self.assertEqual([(gid, mode) for tag, mode, gid in entries if tag == 8], [(109, 2), (112, 4)])
+        self.assertEqual(migration.inventory(transaction / "backup", user, identities=mapper), before)
+        self.assertEqual(migration.inventory(source, user, identities=mapper), before)
+        # Status uses the sealed private record, not a later or unavailable source mount.
+        inputs["identity_map"].unlink()
+        (inputs["source_etc"] / "passwd").unlink()
+        self.assertTrue(migration.status(transaction)["publicationVerified"])
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+
+    def test_unqualified_mapping_and_stale_target_are_rejected_before_writes(self):
+        source, user = self.source()
+        self.service_data(source)
+        inputs = self.qualified_inputs()
+        with self.assertRaisesRegex(ValueError, "both qualified"):
+            migration.migrate(source, self.users, user, identity_map=inputs["identity_map"])
+        with self.assertRaisesRegex(ValueError, "foreign UID/GID"):
+            migration.migrate(source, self.users, user)
+        inputs["identity_map"].chmod(0o644)
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            migration.migrate(source, self.users, user, **inputs)
+        inputs["identity_map"].chmod(0o600)
+        target = inputs["target_etc"] / "passwd"
+        target.write_text(target.read_text().replace("worker:x:112:112:", "worker:x:113:112:"))
+        with self.assertRaisesRegex(ValueError, "stale"):
+            migration.migrate(source, self.users, user, **inputs)
+        self.assertEqual(list(self.users.iterdir()), [])
+
+    def test_identity_proof_drift_after_backup_retains_original_before_publication(self):
+        source, user = self.source()
+        self.service_data(source)
+        inputs = self.qualified_inputs()
+        original = migration.copy_records
+
+        def drift(*args, **kwargs):
+            original(*args, **kwargs)
+            if args[1].name == "backup":
+                target = inputs["target_etc"] / "group"
+                target.write_text(target.read_text().replace("worker:x:112:", "worker:x:113:"))
+
+        with patch.object(migration, "copy_records", side_effect=drift):
+            with self.assertRaisesRegex(ValueError, "stale"):
+                migration.migrate(source, self.users, user, **inputs)
+        self.assertFalse((self.users / "1000").exists())
+        transaction, = self.users.glob(".migration-*")
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+        self.assertEqual(migration.status(transaction)["phase"], "interrupted")
+        self.assertEqual((transaction / "backup/Documents/service-data").stat().st_uid, 110)
+
+    def test_identity_proof_drift_after_publication_is_not_silent_success_or_rollback(self):
+        source, user = self.source()
+        inputs = self.qualified_inputs()
+        original = migration.publish
+
+        def drift(stage, destination):
+            original(stage, destination)
+            inputs["identity_map"].write_text("{}")
+
+        with patch.object(migration, "publish", side_effect=drift):
+            with self.assertRaisesRegex(ValueError, "changed during"):
+                migration.migrate(source, self.users, user, **inputs)
+        transaction, = self.users.glob(".migration-*")
+        state = migration.status(transaction)
+        self.assertEqual(state["phase"], "interrupted")
+        self.assertTrue(state["publicationVerified"])
+        self.assertTrue(state["backupVerified"])
+        self.assertTrue((self.users / "1000").is_dir())
+
+    def test_public_identity_inputs_are_root_trusted_regular_files_and_exact_bytes(self):
+        inputs = self.qualified_inputs()
+        file = inputs["target_etc"] / "passwd"
+        raw = file.read_bytes().replace(b"\n", b"\r\n")
+        file.write_bytes(raw)
+        import hashlib
+        self.assertEqual(migration.identity_module.fingerprint(migration.public_file(file), "")["passwd"],
+                         hashlib.sha256(raw).hexdigest())
+        file.chmod(0o666)
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            migration.public_file(file)
+        file.unlink()
+        file.symlink_to(inputs["source_etc"] / "passwd")
+        with self.assertRaisesRegex(ValueError, "Unsafe"):
+            migration.public_file(file)
+
+    def test_legacy_schema_three_acls_remain_inspectable_but_cannot_contain_mapping(self):
+        source, user = self.source()
+        os.setxattr(source / "Documents/document.txt", "system.posix_acl_access", self.acl(4))
+        transaction = migration.migrate(source, self.users, user)
+        record = json.loads((transaction / "journal.json").read_text())
+        record["schemaVersion"] = 3
+        migration.journal(transaction, record)
+        self.assertTrue(migration.status(transaction)["publicationVerified"])
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+        record["identities"] = identity_tests.plan()
+        migration.journal(transaction, record)
+        with self.assertRaisesRegex(ValueError, "schema v4"):
+            migration.status(transaction)
 
 
 if __name__ == "__main__":

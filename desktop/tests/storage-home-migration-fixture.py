@@ -33,8 +33,12 @@ def main():
         try:
             factory = tests.Migration()
             factory.legacy = legacy
+            factory.users = users
             sources = [factory.source(uid, name)
                        for uid, name in ((0, "root"), (1000, "polly"), (1001, "tester"))]
+            qualified = factory.qualified_inputs(reordered=True)
+            service = factory.service_data(sources[1][0])
+            os.setxattr(service, "system.posix_acl_access", factory.service_acl())
             for source, _ in sources:
                 os.link(source / ".config/editor/settings.json", source / "Documents/linked-settings.json")
                 access = factory.acl(4)
@@ -43,6 +47,7 @@ def main():
                 protected = source / "Documents/root-private"
                 protected.write_text("root-owned data is not reassigned to the ordinary user")
                 protected.chmod(0o600)
+            os.setxattr(sources[1][0] / ".local/state/polly", "system.posix_acl_default", factory.service_acl())
             # A read-only bind over a writable superblock is deliberately insufficient.
             view = root / "view"
             view.mkdir()
@@ -62,6 +67,14 @@ def main():
             transactions = {}
             entry = root / "polly-migrate-home"
             entry.symlink_to(args.repo / "desktop/release/storage/migrate-home.py")
+            inspected = subprocess.run([sys.executable, "-I", "-B", str(entry), "identities",
+                "--source-etc", str(qualified["source_etc"]), "--target-etc", str(qualified["target_etc"])],
+                check=True, capture_output=True, text=True, timeout=10)
+            proof = json.loads(inspected.stdout)
+            plan = json.loads(qualified["identity_map"].read_text())
+            if proof != {"schemaVersion": 1, "source": plan["source"], "target": plan["target"],
+                         "automaticMapping": False}:
+                raise RuntimeError("Read-only qualification did not report the exact public input proofs")
             for source, user in sources:
                 if user["uid"] == 1001:
                     imported = subprocess.run([sys.executable, "-I", "-B",
@@ -70,6 +83,28 @@ def main():
                         "--uid", str(user["uid"]), "--gid", str(user["gid"])],
                         check=True, capture_output=True, text=True, timeout=20)
                     transaction = Path(json.loads(imported.stdout)["transaction"])
+                elif user["uid"] == 1000:
+                    imported = subprocess.run([sys.executable, "-I", "-B", str(entry), "import",
+                        "--source", str(source), "--users", str(users), "--name", user["name"],
+                        "--uid", str(user["uid"]), "--gid", str(user["gid"]),
+                        "--identity-map", str(qualified["identity_map"]),
+                        "--source-etc", str(qualified["source_etc"]),
+                        "--target-etc", str(qualified["target_etc"])],
+                        check=True, capture_output=True, text=True, timeout=20)
+                    transaction = Path(json.loads(imported.stdout)["transaction"])
+                    mapper = migration.identity_module.IdentityMap(plan, user)
+                    copied, saved = users / "1000/Documents/service-data", transaction / "backup/Documents/service-data"
+                    if (copied.stat().st_uid, copied.stat().st_gid) != (112, 112) or \
+                            (saved.stat().st_uid, saved.stat().st_gid) != (110, 110) or \
+                            os.getxattr(copied, "system.posix_acl_access") != migration.mapped_acl(
+                                factory.service_acl(), mapper) or \
+                            os.getxattr(saved, "system.posix_acl_access") != factory.service_acl():
+                        raise RuntimeError("Qualified service ownership/ACL rebase changed the original backup")
+                    if os.getxattr(users / "1000/AppState/polly", "system.posix_acl_default") != \
+                            migration.mapped_acl(factory.service_acl(), mapper) or \
+                            os.getxattr(transaction / "backup/.local/state/polly", "system.posix_acl_default") != \
+                            factory.service_acl():
+                        raise RuntimeError("Qualified default ACL rebase changed the original backup")
                 else:
                     transaction = migration.migrate(source, users, user)
                 result = migration.status(transaction)
@@ -85,6 +120,16 @@ home, other, private = map(Path, sys.argv[1:])
 uid = os.getuid()
 if home.stat().st_uid != uid:
     raise RuntimeError("Imported home changed stable UID")
+if uid == 1000:
+    service = home / "Documents/service-data"
+    if service.stat().st_uid != 112 or service.stat().st_gid != 112:
+        raise RuntimeError("Qualified service ownership was not rebased")
+    try:
+        service.read_text()
+    except PermissionError:
+        pass
+    else:
+        raise RuntimeError("Qualified service data was reassigned to the ordinary user")
 if (home / "Documents/document.txt").read_text() != "document-" + str(uid):
     raise RuntimeError("Imported document belongs to another user")
 if not os.path.samestat((home / "Settings/editor/settings.json").stat(),
@@ -130,8 +175,13 @@ for path in (other, home.parent / "0", private):
                 user=1000, group=1000, extra_groups=[], capture_output=True, text=True, timeout=10)
             if denied.returncode == 0 or "requires root authorization" not in denied.stderr:
                 raise RuntimeError("Ordinary caller obtained privileged migration writes")
+            denied = subprocess.run([sys.executable, "-I", "-B", str(entry), "identities",
+                "--source-etc", str(qualified["source_etc"]), "--target-etc", str(qualified["target_etc"])],
+                user=1000, group=1000, extra_groups=[], capture_output=True, text=True, timeout=10)
+            if denied.returncode == 0 or "requires root authorization" not in denied.stderr:
+                raise RuntimeError("Ordinary caller obtained privileged identity qualification")
             print("PASS: read-only filesystem import, mutable-bind refusal, root/two-UID data "
-                  "and private backup isolation")
+                  "and private backup isolation; qualified service ownership/ACL rebase")
         finally:
             subprocess.run(["umount", str(legacy)], check=True, timeout=10)
 

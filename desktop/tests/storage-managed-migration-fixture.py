@@ -124,10 +124,12 @@ def main():
                     "nativeRuntimeSha256": migration.digest_file(args.manager.with_name("pollyui")),
                     "sourceSha256": {name: migration.digest_file(args.repo / name) for name in (
                         "desktop/release/storage/layout.py", "desktop/release/storage/homes.py",
+                        "desktop/release/storage/identities.py",
                         "desktop/release/storage/migrate-home.py",
                         "desktop/tests/storage-managed-migration-fixture.py",
                         "desktop/tests/persistent-storage.mjs")},
                     "limits": ["No account/password migration or second-user PAM acceptance",
+                               "No explicit service identity mapping in this managed-app fixture",
                                "No migrated image cold boot or ext4 power-loss durability",
                                "No shared-app authorization/registry migration",
                                "Cached native binaries; no compile or image build"] }

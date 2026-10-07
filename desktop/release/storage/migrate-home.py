@@ -17,7 +17,11 @@ spec = importlib.util.spec_from_file_location("polly_migration_homes",
                                             Path(__file__).resolve().with_name("homes.py"))
 homes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(homes)
-SCHEMA_VERSION = 3
+spec = importlib.util.spec_from_file_location("polly_migration_identities",
+                                            Path(__file__).resolve().with_name("identities.py"))
+identity_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(identity_module)
+SCHEMA_VERSION = 4
 ACL_ATTRIBUTES = {"system.posix_acl_access", "system.posix_acl_default"}
 ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER = 1, 2, 4, 8, 16, 32
 
@@ -47,7 +51,7 @@ def readonly_source(source):
                              check=True, capture_output=True, text=True, timeout=10)
     options = mounted.stdout.split()
     if len(options) != 2 or any("ro" not in value.split(",") for value in options):
-        raise ValueError("Source HOME must be an offline read-only filesystem, not just a bind view")
+        raise ValueError("Source inputs must be an offline read-only filesystem, not just a bind view")
     targets = subprocess.run(["findmnt", "-rn", "-o", "TARGET"], check=True,
                              capture_output=True, text=True, timeout=10)
     for target in targets.stdout.splitlines():
@@ -79,7 +83,7 @@ def attributes(path):
     return values
 
 
-def validate_acl(value, user):
+def validate_acl(value, user, *, identities=None, side="source"):
     if len(value) < 28 or (len(value) - 4) % 8 or struct.unpack_from("<I", value)[0] != 2:
         raise ValueError("Invalid POSIX ACL format")
     required, named, mask = set(), set(), False
@@ -96,7 +100,8 @@ def validate_acl(value, user):
                 raise ValueError("Invalid POSIX ACL mask")
             mask = True
         elif tag in (ACL_USER, ACL_GROUP):
-            allowed = {0, user["uid"] if tag == ACL_USER else user["gid"]}
+            kind = "uid" if tag == ACL_USER else "gid"
+            allowed = identities.allowed(kind, side) if identities else {0, user[kind]}
             if identity not in allowed or (tag, identity) in named:
                 raise ValueError("POSIX ACL identity requires explicit service/user mapping")
             named.add((tag, identity))
@@ -106,8 +111,25 @@ def validate_acl(value, user):
         raise ValueError("Incomplete POSIX ACL")
 
 
-def inventory(root, user, *, schema=SCHEMA_VERSION):
-    if type(schema) is not int or schema not in (1, 2, SCHEMA_VERSION):
+def mapped_acl(value, identities):
+    validate_acl(value, identities.user, identities=identities)
+    entries = []
+    order = {ACL_USER_OBJ: 0, ACL_USER: 1, ACL_GROUP_OBJ: 2,
+             ACL_GROUP: 3, ACL_MASK: 4, ACL_OTHER: 5}
+    for offset in range(4, len(value), 8):
+        tag, permissions, identity = struct.unpack_from("<HHI", value, offset)
+        if tag == ACL_USER:
+            identity = identities.uid_map.get(identity, identity)
+        elif tag == ACL_GROUP:
+            identity = identities.gid_map.get(identity, identity)
+        entries.append((tag, permissions, identity))
+    entries.sort(key=lambda entry: (order[entry[0]], entry[2]))
+    return struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in entries)
+
+
+def inventory(root, user, *, schema=SCHEMA_VERSION, identities=None, side="source"):
+    if type(schema) is not int or schema not in (1, 2, 3, SCHEMA_VERSION) or \
+            (identities is not None and schema < 4):
         raise ValueError("Unsupported home inventory schema")
     records, links = {}, {}
     device = root.lstat().st_dev
@@ -118,6 +140,8 @@ def inventory(root, user, *, schema=SCHEMA_VERSION):
         if schema >= 3:
             owners.add(0)
             groups.add(0)
+        if identities:
+            owners, groups = identities.allowed("uid", side), identities.allowed("gid", side)
         if info.st_dev != device or info.st_uid not in owners or info.st_gid not in groups:
             raise ValueError("Cross-device or foreign UID/GID home data requires explicit migration")
         mode = stat.S_IMODE(info.st_mode)
@@ -128,7 +152,7 @@ def inventory(root, user, *, schema=SCHEMA_VERSION):
             if name in ACL_ATTRIBUTES:
                 if schema < 3:
                     raise ValueError("Legacy migration schema does not support POSIX ACLs")
-                validate_acl(value, user)
+                validate_acl(value, user, identities=identities, side=side)
         entry = {"uid": info.st_uid, "gid": info.st_gid, "mode": mode,
                  "mtimeNs": info.st_mtime_ns,
                  "xattrs": {name: hashlib.sha256(value).hexdigest()
@@ -207,19 +231,29 @@ def mapping(records):
     return result
 
 
-def metadata(source, destination, entry):
-    os.chown(destination, entry["uid"], entry["gid"], follow_symlinks=False)
+def metadata(source, destination, entry, identities=None):
+    uid = identities.uid_map.get(entry["uid"], entry["uid"]) if identities else entry["uid"]
+    gid = identities.gid_map.get(entry["gid"], entry["gid"]) if identities else entry["gid"]
+    os.chown(destination, uid, gid, follow_symlinks=False)
     if entry["type"] != "symlink":
         destination.chmod(entry["mode"])
     for name, value in attributes(source).items():
+        if identities and name in ACL_ATTRIBUTES:
+            value = mapped_acl(value, identities)
         os.setxattr(destination, name, value, follow_symlinks=False)
     os.utime(destination, ns=(entry["mtimeNs"], entry["mtimeNs"]), follow_symlinks=False)
 
 
-def normalized_records(records, paths):
+def normalized_records(records, paths, *, source=None, identities=None):
     normalized, groups = {}, {}
     for name, target in paths.items():
-        entry = dict(records[name])
+        entry = {**records[name], "xattrs": dict(records[name]["xattrs"])}
+        if identities:
+            entry["uid"] = identities.uid_map.get(entry["uid"], entry["uid"])
+            entry["gid"] = identities.gid_map.get(entry["gid"], entry["gid"])
+            for attribute, value in attributes(source / name).items():
+                if attribute in ACL_ATTRIBUTES:
+                    entry["xattrs"][attribute] = hashlib.sha256(mapped_acl(value, identities)).hexdigest()
         normalized[target] = entry
         if "hardlink" in entry:
             groups.setdefault(entry["hardlink"], []).append(target)
@@ -230,7 +264,7 @@ def normalized_records(records, paths):
     return normalized
 
 
-def copy_records(source, destination, records, paths):
+def copy_records(source, destination, records, paths, *, identities=None):
     copied_links = {}
     for name, target in paths.items():
         entry, original, output = records[name], source / name, destination / target
@@ -241,7 +275,7 @@ def copy_records(source, destination, records, paths):
                 raise ValueError("Staging directory conflict")
         elif entry["type"] == "symlink":
             output.symlink_to(entry["target"])
-            metadata(original, output, entry)
+            metadata(original, output, entry, identities)
         elif entry.get("hardlink") in copied_links:
             os.link(copied_links[entry["hardlink"]], output, follow_symlinks=False)
         else:
@@ -255,7 +289,7 @@ def copy_records(source, destination, records, paths):
                         while block := incoming.read(1024 * 1024):
                             outgoing.write(block)
                         outgoing.flush()
-                    metadata(original, output, entry)
+                    metadata(original, output, entry, identities)
                     os.fsync(write_fd)
                 finally:
                     os.close(write_fd)
@@ -265,7 +299,7 @@ def copy_records(source, destination, records, paths):
                 copied_links[entry["hardlink"]] = output
     for name, target in sorted(paths.items(), key=lambda item: item[1].count("/"), reverse=True):
         if records[name]["type"] == "directory":
-            metadata(source / name, destination / target, records[name])
+            metadata(source / name, destination / target, records[name], identities)
 
 
 def sync_tree(root):
@@ -312,7 +346,23 @@ def publish(source, destination):
         raise OSError(number, os.strerror(number), str(destination))
 
 
-def migrate(source, users, user):
+def public_file(path, *, private=False):
+    trusted_path(path.parent)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or \
+            stat.S_IMODE(info.st_mode) & 0o022 or info.st_size > 256 * 1024 or \
+            (private and stat.S_IMODE(info.st_mode) != 0o600):
+        raise ValueError("Unsafe or oversized identity mapping input")
+    return path.read_bytes().decode("utf8")
+
+
+def identity_inputs(source_etc, target_etc):
+    readonly_source(source_etc)
+    return (public_file(source_etc / "passwd"), public_file(source_etc / "group"),
+            public_file(target_etc / "passwd"), public_file(target_etc / "group"))
+
+
+def migrate(source, users, user, *, identity_map=None, source_etc=None, target_etc=None):
     if os.geteuid() != 0:
         raise PermissionError("Offline home migration requires root authorization")
     if not isinstance(user, dict):
@@ -328,7 +378,22 @@ def migrate(source, users, user):
             (info.st_uid, info.st_gid) != (user["uid"], user["gid"]):
         raise ValueError("Source HOME must be a real private directory")
     readonly_source(source)
-    records = inventory(source, user)
+    identities = None
+    plan_text = None
+    if any(value is not None for value in (identity_map, source_etc, target_etc)):
+        if any(value is None for value in (identity_map, source_etc, target_etc)):
+            raise ValueError("Explicit mapping requires both qualified source and target account tables")
+        plan_text = public_file(identity_map, private=True)
+        identities = identity_module.IdentityMap(identity_module.load_record(plan_text), user)
+        identities.verify(*identity_inputs(source_etc, target_etc))
+
+    def check_identities():
+        if identities:
+            if public_file(identity_map, private=True) != plan_text:
+                raise ValueError("Explicit identity mapping changed during migration")
+            identities.verify(*identity_inputs(source_etc, target_etc))
+
+    records = inventory(source, user, identities=identities)
     paths = mapping(records)
     destination = users / str(user["uid"])
     if destination.exists() or destination.is_symlink():
@@ -339,39 +404,47 @@ def migrate(source, users, user):
     sync_directory(users)
     record = {"schemaVersion": SCHEMA_VERSION, "user": dict(user), "source": str(source),
               "destination": str(destination), "sourceSha256": checksum(records), "phase": "planned"}
+    if identities:
+        record["identities"] = identities.record
     journal(transaction, record)
     try:
         backup = transaction / "backup"
         backup.mkdir(mode=0o700)
         copy_records(source, backup, records, {name: name for name in records})
         sync_tree(backup)
-        if inventory(backup, user) != records or inventory(source, user) != records:
+        if inventory(backup, user, identities=identities) != records or \
+                inventory(source, user, identities=identities) != records:
             raise ValueError("Source/backup verification failed")
         record["phase"] = "backed-up"
         journal(transaction, record)
+        check_identities()
         stage = transaction / "home"
         stage.mkdir(mode=0o700)
         stage.chmod(0o700)
         os.chown(stage, user["uid"], user["gid"])
         homes.initialize(stage, user, user_dirs=False)
-        copy_records(backup, stage, records, paths)
-        staged = inventory(stage, user)
-        if any(staged.get(target) != entry for target, entry in normalized_records(records, paths).items()):
+        copy_records(backup, stage, records, paths, identities=identities)
+        staged = inventory(stage, user, identities=identities, side="target")
+        expected = normalized_records(records, paths, source=backup, identities=identities)
+        if any(staged.get(target) != entry for target, entry in expected.items()):
             raise ValueError("Normalized home verification failed")
         config = stage / "Settings/user-dirs.dirs"
         if not config.exists() and not config.is_symlink():
             homes.seed_user_dirs(stage, user)
         sync_tree(stage)
-        record.update(phase="verified", destinationSha256=checksum(inventory(stage, user)))
+        record.update(phase="verified", destinationSha256=checksum(
+            inventory(stage, user, identities=identities, side="target")))
         journal(transaction, record)
-        if inventory(source, user) != records:
+        if inventory(source, user, identities=identities) != records:
             raise ValueError("Source changed before publication")
+        check_identities()
         record["phase"] = "committing"
         journal(transaction, record)
         publish(stage, destination)
         sync_directory(users)
         sync_directory(transaction)
-        if checksum(inventory(destination, user)) != record["destinationSha256"]:
+        check_identities()
+        if checksum(inventory(destination, user, identities=identities, side="target")) != record["destinationSha256"]:
             raise ValueError("Published home verification failed; retain transaction for diagnosis")
         record["phase"] = "committed"
         journal(transaction, record)
@@ -389,11 +462,11 @@ def status(transaction):
     path = transaction / "journal.json"
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or \
-            stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size > 65536:
+            stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1 or info.st_size > 256 * 1024:
         raise ValueError("Invalid private migration journal")
-    record = json.loads(path.read_text())
+    record = identity_module.load_record(path.read_text())
     if not isinstance(record, dict) or type(record.get("schemaVersion")) is not int or \
-            record["schemaVersion"] not in (1, 2, SCHEMA_VERSION) or record.get("phase") not in {
+            record["schemaVersion"] not in (1, 2, 3, SCHEMA_VERSION) or record.get("phase") not in {
                 "planned", "backed-up", "verified", "committing", "committed", "interrupted"}:
         raise ValueError("Unsupported migration journal")
     user = record["user"]
@@ -401,17 +474,24 @@ def status(transaction):
         raise ValueError("Invalid journal user identity")
     homes.layout.validate_users([*(
         identity for identity in homes.layout.DEFAULT_USERS if identity["uid"] != user.get("uid")), user])
+    identities = None
+    if "identities" in record:
+        if record["schemaVersion"] != 4:
+            raise ValueError("Identity mappings require migration schema v4")
+        identities = identity_module.IdentityMap(record["identities"], user)
     destination = Path(record["destination"])
     if destination != transaction.parent / str(record["user"]["uid"]):
         raise ValueError("Migration destination escaped its transaction")
     published = destination.exists() and "destinationSha256" in record and \
-        checksum(inventory(destination, record["user"], schema=record["schemaVersion"])) == record["destinationSha256"]
+        checksum(inventory(destination, record["user"], schema=record["schemaVersion"],
+                           identities=identities, side="target")) == record["destinationSha256"]
     backup = transaction / "backup"
     backup_retained = backup.exists() and stat.S_ISDIR(backup.lstat().st_mode)
     backed_up = record.get("failedPhase", record["phase"]) in {
         "backed-up", "verified", "committing", "committed"}
     backup_verified = backed_up and backup_retained and \
-        checksum(inventory(backup, user, schema=record["schemaVersion"])) == record["sourceSha256"]
+        checksum(inventory(backup, user, schema=record["schemaVersion"],
+                           identities=identities)) == record["sourceSha256"]
     if backed_up and not backup_verified:
         raise ValueError("Required migration backup is missing or corrupted")
     return {"schemaVersion": record["schemaVersion"], "phase": record["phase"],
@@ -429,14 +509,32 @@ def main():
     importer.add_argument("--name", required=True)
     importer.add_argument("--uid", type=int, required=True)
     importer.add_argument("--gid", type=int, required=True)
+    importer.add_argument("--identity-map", type=Path)
+    importer.add_argument("--source-etc", type=Path)
+    importer.add_argument("--target-etc", type=Path)
+    qualified = commands.add_parser("identities")
+    qualified.add_argument("--source-etc", type=Path, required=True)
+    qualified.add_argument("--target-etc", type=Path, required=True)
     inspector = commands.add_parser("status")
     inspector.add_argument("--transaction", type=Path, required=True)
     args = parser.parse_args()
     try:
         if args.command == "import":
             transaction = migrate(args.source, args.users,
-                                  {"name": args.name, "uid": args.uid, "gid": args.gid})
+                                  {"name": args.name, "uid": args.uid, "gid": args.gid},
+                                  identity_map=args.identity_map, source_etc=args.source_etc,
+                                  target_etc=args.target_etc)
             print(json.dumps({"transaction": str(transaction), **status(transaction)}, sort_keys=True))
+        elif args.command == "identities":
+            if os.geteuid() != 0:
+                raise PermissionError("Identity qualification requires root authorization")
+            old_passwd, old_group, new_passwd, new_group = identity_inputs(args.source_etc, args.target_etc)
+            for text, kind in ((old_passwd, "passwd"), (old_group, "group"),
+                               (new_passwd, "passwd"), (new_group, "group")):
+                identity_module.database(text, kind)
+            print(json.dumps({"schemaVersion": 1, "source": identity_module.fingerprint(old_passwd, old_group),
+                              "target": identity_module.fingerprint(new_passwd, new_group),
+                              "automaticMapping": False}, sort_keys=True))
         else:
             print(json.dumps(status(args.transaction), sort_keys=True))
     except (OSError, ValueError, RuntimeError, KeyError, AttributeError) as error:
