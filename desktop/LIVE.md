@@ -1,11 +1,23 @@
 # Memory-only UEFI development image
 
+**Current candidate:** Debian alpha.5-r2, with the Mesa lifetime correction and
+successful 4 GiB UEFI ISO/virtual-USB preflight. Exact paths, hashes, software
+results and pending physical acceptance are in the
+[PollyOS overview and handoff](../docs/POLLYOS.md); Debian build commands are in
+the [Debian guide](./release/debian/README.md).
+
+The Alpine alpha.4 commands and first-machine history below are retained as the
+previous physical-validation baseline, not the latest Debian candidate.
+The memory-only format and no-installer/data-persistence limits apply to both.
+
 The Live builder produces an **unsigned x86_64 UEFI ISO and GPT/FAT32 USB image**,
 not an installer.
-It combines the already packaged PollyDesktop runtime with Alpine 3.24's
+The preserved Alpine path combines the packaged PollyDesktop runtime with Alpine 3.24's
 `linux-lts` kernel, OpenRC, eudev and elogind. GRUB loads Intel early microcode,
 the kernel and an
 initramfs containing the entire runtime; there is no writable block-device root.
+The Debian path uses a minbase-derived runtime, its Debian kernel and
+systemd/udev/logind instead of OpenRC/eudev/elogind.
 
 This image prepares a first physical-machine validation preview, with disposable
 VM checks before writing any external boot media. The initial

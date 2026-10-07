@@ -191,5 +191,6 @@ The management UI, explicit source/publisher associations beyond local replaceme
 approval, richer native adapters, data adoption/migration, safe code-cache GC,
 and separately confirmed data erasure are not implemented. Neither cross-reboot
 persistence nor full USB installation follows from these temporary-filesystem
-tests. The prior Debian graphical LeakSanitizer acceptance issue also remains
-separate; managed filesystem tests do not waive that gate.
+tests. The current Debian candidate separately passes the graphical memory gate
+with its corrected Mesa packages; managed filesystem tests alone never waive
+graphics or hardware acceptance. See the [current PollyOS handoff](../docs/POLLYOS.md).

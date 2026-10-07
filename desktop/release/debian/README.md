@@ -4,6 +4,8 @@ This is the Debian 13 trixie amd64 migration path. The accepted Alpine alpha.4
 source and artifact hashes are preserved in `baseline.json`. Debian is a
 separate candidate, not a replacement for that physical-validation baseline
 until equivalent acceptance is complete.
+The current alpha.5-r2 artifact inventory, architecture and handoff are in the
+[PollyOS technical overview](../../../docs/POLLYOS.md).
 
 ## Minimal root filesystem
 
@@ -317,11 +319,12 @@ copy/paste and keyboard workspace switching passed. Removing approximately
 same acceptance with a **4 GiB** guest. A previous cache-heavy 4 GiB trial
 reported an initramfs unpack write error and remains explicitly a failed result.
 
-The measured cache-free candidate ISO is approximately 644 MiB and the USB image
-694 MiB, versus the accepted Alpine baseline's 688/738 MiB. Installed payload
-sizes and compressed image sizes are different measurements. This comparison
-uses the required feature scope, but does not establish a performance win or
-physical-hardware equivalence; firmware coverage and package splits differ.
+The earlier Debian alpha.4-r1 cache-free candidate measured approximately
+644 MiB (ISO) and 694 MiB (USB). The current corrected alpha.5-r2 measures
+646.4 MiB and 697.0 MiB respectively, versus the accepted Alpine baseline's
+688/738 MiB. Installed payload sizes and compressed image sizes are different
+measurements. This does not establish a performance win or physical-hardware
+equivalence; firmware coverage and package splits differ.
 
 For local boot verification, use the distro-specific tool image:
 
@@ -329,8 +332,8 @@ For local boot verification, use the distro-specific tool image:
 podman run --rm --network=none --device /dev/kvm --user 1000:1000 \
     -v "$PWD:/workspace" -w /workspace localhost/polly-debian-live-tools \
     python3 desktop/tests/live-boot.py \
-    dist/polly-debian-live/pollydesktop-0.1.0-alpha.4-debian13-x86_64-uefi-usb.img \
-    build/debian-usb-evidence --usb
+    dist/pollydesktop-0.1.0-alpha.5-debian13-r2-live/pollydesktop-0.1.0-alpha.5-debian13-x86_64-uefi-usb.img \
+    build/debian-usb-new-evidence --usb
 ```
 
 Use a new evidence directory per run.

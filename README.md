@@ -26,6 +26,18 @@ PollyUI is built from five cooperating engines (host & engines in **C11**):
 The full design — layering, the JS↔native bridge, lifetimes, threading, and the
 build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
+## PollyOS Linux desktop
+
+PollyOS combines a minimal Linux base with our own wlroots-based **PollyWM**
+compositor and **PollyShell**, built with PollyUI rather than GNOME/KDE or labwc.
+The current Debian alpha.5-r2 candidate has bootable UEFI Live media; persistent
+installation and production session protection remain future work.
+
+Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**
+for design principles, architecture, current capabilities, known limits,
+verified artifacts and the remaining roadmap. Detailed implementation lives in
+the [desktop guide](./desktop/README.md).
+
 ## Status
 
 The Windows and **macOS** vertical slices are **working** — `pollyui app.js`
@@ -149,9 +161,12 @@ host then creates a `CAMetalLayer`-backed GPU surface (Skia Ganesh/Metal).
 
 Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 
-### Linux (experimental - native Alpine/musl build, EGL/GLES and raster)
+### Linux (experimental - Alpine/musl and Debian/glibc, EGL/GLES and raster)
 
 The Linux path uses SDL3, Skia Ganesh GLES or CPU drawing, and Fontconfig/FreeType system fonts.
+For the current Debian desktop/runtime build and qualification scope, see the
+[Debian guide](./desktop/release/debian/README.md). The Alpine instructions below
+remain available for the preserved first-stage path.
 The native source recipe pins Skia to
 `08a5439a6be726021c1c1905d23ce298a3edc5e4`, matching m124, and uses Clang 18
 (newer Clang removed intrinsics used by this Skia revision). GN, the compiler,

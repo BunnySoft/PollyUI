@@ -1,5 +1,9 @@
 # PollyDesktop
 
+For the current system-level introduction, principles, capability matrix and
+handoff, start with **[PollyOS 技术简介与交接指南](../docs/POLLYOS.md)**.
+PollyOS is the system name; existing subproject/tool/artifact names remain unchanged.
+
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
 compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
 It includes a native development **PollyShell** with themed wallpaper, panels,
@@ -12,8 +16,9 @@ on 2026-10-06; this is not a comprehensive hardware matrix or independent
 per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,
 built from a debootstrap minbase rootfs**, not a GNOME/KDE Live image or a
 bootable use of the slim container image. Debian minbase, glibc runtime and
-systemd/logind Live candidates are implemented, but graphical sanitizer and
-Debian physical acceptance remain open; maintenance automation is not enabled.
+systemd/logind Live candidates are implemented. The corrected Mesa build now
+passes the Debian graphical sanitizer gate; Debian physical acceptance remains
+open, and maintenance automation is not enabled.
 The existing Alpine build remains the user-verified baseline;
 see [base selection and maintenance plan](../docs/desktop-base-maintenance.md)
 for version pinning, upstream synchronization, acceptance and rollback policy,
@@ -38,9 +43,11 @@ rollback preserve data and reject changed data-schema contracts. Removal retires
 registration but intentionally retains code caches and data. See
 [managed applications](./APPLICATIONS.md) for commands, bounds and remaining work.
 The alpha.5 code line adds managed applications, authoritative startup/runtime
-service status and explicit release-input tooling. It is a development candidate;
-the earlier Alpine alpha.4 physical baseline and Debian alpha.4-r1 boot media
-remain separate preserved artifacts, not silently upgraded installations.
+service status and explicit release-input tooling. The latest Debian alpha.5-r2
+ISO/USB includes the Mesa lifetime correction and passes 4 GiB UEFI VM preflight.
+It remains a memory-only development candidate; the earlier Alpine alpha.4
+physical baseline and Debian alpha.4-r1 boot media remain separate preserved
+artifacts, not silently upgraded installations.
 
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
 engine must not depend on the desktop. Use wlroots' scene graph for external
@@ -72,11 +79,11 @@ applications rather than importing their buffers into the PollyUI DOM.
 | 3c - native development PollyShell | Real per-output wallpaper, taskbar/menu bar, floating Dock, appearance/about overlays, searchable native application launcher, live window buttons/actions and persistent five-theme selection. System services remain separate steps. |
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
-| Runtime packaging | Relocatable Alpine x86_64 installation, private patched SDL, pinned runtime package list, dependency inventory, licenses and SHA-256 checksums. This is a development runtime bundle, not an ISO or a qualified distribution release. |
-| UEFI Live development image | Memory-only root, Alpine/OpenRC + PAM/elogind session, temporary ordinary-user automatic login. Hardware-capable LTS kernel, target Intel/NVIDIA firmware, optical ISO and GPT/FAT32 USB image with baseline/GPU/console entries. VM evidence is separate from still-required physical acceptance; no installer, protected login, secure lock or signing trust. |
+| Runtime packaging | Relocatable Alpine/musl and Debian/glibc x86_64 runtimes, private patched SDL, pinned runtime packages, dependency inventory, licenses and SHA-256 checksums. Debian records the locally corrected Mesa DEBs separately from official archive binaries. Runtime bundles are not bootable media. |
+| UEFI Live development image | Memory-only root; current Debian/systemd/PAM/logind candidate and preserved Alpine/OpenRC/PAM/elogind baseline. Temporary ordinary-user automatic login, target kernel/firmware, optical ISO and GPT/FAT32 USB image. Debian VM evidence does not replace its pending physical acceptance; no installer, protected login, enabled secure lock or signing trust. |
 | Authentication and lock mechanism | Ordinary-user PAM helper, separately trusted standard session-lock client, native password UI and crash/output-loss black-cover protection. Real masked typing/PAM unlock verified; protected-session/power integration remains incomplete and the passwordless Live keeps locking disabled. See `SESSION.md`. |
 | Power controls - authorization deferred | Native login1 capability checks and themed confirmation/cancellation; actual Live elogind denies shutdown/restart, so both remain disabled. No polkit or privileged authorization proxy. Suspend/hibernate remain unavailable. See `SESSION.md`. |
-| 5 - system image | Alpine boot/login/session integration, non-root seat access, installation, persistent user data, signed updates/recovery and real hardware qualification. |
+| 5 - persistent system | Full external-media installation, persistent user data, manual system update/recovery, production trust and joint hardware qualification remain separate from the implemented Live boot/session foundation. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
 require a narrowly scoped private protocol or socket, with an explicit trust

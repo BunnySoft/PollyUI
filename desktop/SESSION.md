@@ -1,11 +1,13 @@
 # Authentication and session foundation
 
-The development image now uses Linux-PAM and elogind. Its explicit
-`system/login.pam` registers a login UID and an elogind session, avoiding reliance
-on optional desktop-keyring or alternate session modules in the distribution's
-generic PAM stack. OpenRC starts dbus, cgroups and elogind. The ordinary
-compositor uses libseat's logind backend, and PAM supplies the user's private
-`XDG_RUNTIME_DIR`.
+Both development bases use Linux-PAM and the login1 session interface.
+The current Debian candidate uses systemd/udev/logind and
+`release/debian/login.pam`; the preserved Alpine path uses OpenRC/eudev/elogind
+and `system/login.pam`. Their explicit PAM policies register a login UID and
+session without depending on a GNOME/KDE keyring stack. The ordinary compositor
+uses libseat's logind backend, and PAM supplies the user's private
+`XDG_RUNTIME_DIR`. See the [PollyOS overview](../docs/POLLYOS.md) for the current
+candidate and its separately tracked physical acceptance.
 
 The temporary Live getty still explicitly selects automatic login. The account
 has no usable password, and **password locking remains disabled by default**.
@@ -27,12 +29,14 @@ Confirmation rechecks the session and capability before making a noninteractive
 request; stale state, service loss and `challenge` authorization do not bypass
 the daemon. Suspend and hibernate remain unsupported.
 
-**Actual Live power authorization is deferred.** In the PAM/elogind UEFI guest,
+**Actual Live power authorization is deferred.** In the Alpine PAM/elogind UEFI guest,
 `CanPowerOff` and `CanReboot` return `Access denied`; the panel reports the
 failure and keeps both actions disabled. No real shutdown/restart is claimed.
 The project does not install polkit, grant new power privileges or add a
 privileged authorization proxy. This is an explicit scope decision, not a
 silent fallback to a different power command.
+The Debian Live policy also deliberately keeps these actions denied; moving
+from elogind to systemd-logind does not enable power controls.
 
 The isolated `desktop-power-shell-raster` and `desktop-power-shell-gl` fixtures
 exercise native pointer confirmation/cancellation, capability gating and service
