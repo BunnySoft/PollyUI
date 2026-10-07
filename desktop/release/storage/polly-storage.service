@@ -1,0 +1,14 @@
+[Unit]
+Description=Polly required system and persistent storage mappings
+DefaultDependencies=no
+RequiresMountsFor=/run/polly-storage/persistent /System/Boot/efi
+After=systemd-remount-fs.service local-fs-pre.target
+Before=local-fs.target sysinit.target polly-accounts.service systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/polly-storage/storage.py prepare
+
+[Install]
+RequiredBy=sysinit.target

@@ -34,6 +34,21 @@ podman run --rm --network=none --cap-add=SYS_ADMIN --security-opt seccomp=unconf
 This checks actual binds, fail-closed cases and the packed initramfs's executables
 in a chroot with no main-system `/usr` tools. It is not a cold-boot or apt result.
 
+The storage overlay also installs `polly-storage.service` as required by sysinit,
+and a root-owned `/usr/sbin/polly-storage prepare|check` backend. It consumes the
+versioned manifest, requires the system/persistent/EFI mounts, binds each declared
+state/HOME path, remounts the early `/usr` writable and retains the EFI child under
+the recursive `/boot` alias. Missing state is never initialized automatically.
+APT's update and package pre-invoke hooks recheck readiness; direct dpkg maintenance
+and actual package transactions remain separate work.
+
+`desktop-storage-mappings` covers UUID/type/flag and rejection rules. The bounded
+`desktop/tests/storage-mount-fixture.py /workspace` command can run in the same
+isolated mount-capable container above to exercise actual mappings and writes.
+That fixture uses tmpfs; it does not establish ext4 UUID boot or account migration.
+The unconfigured container must refuse `polly-storage check` until the image
+assembler supplies the manifest and required state; the D1 recipe remains unchanged.
+
 ## Minimal root filesystem
 
 From the repository root on Linux:

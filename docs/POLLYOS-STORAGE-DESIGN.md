@@ -321,7 +321,7 @@ ACL 或其他系统级强制机制；未实现前不得宣称已经提供应用�
 
 | 当前实现 | 目标差距 |
 |---|---|
-| `desktop/release/storage/layout.py` 已定义并校验新布局契约 | 尚未接入实际挂载、镜像构建或维护/救援，不代表新系统已可启动 |
+| `layout.py` 契约已由 `storage.py` 必需映射后端复用 | 实际 bind/权限/故障规则已测试；新镜像、账户接入及维护/救援仍待联合验收 |
 | `early-usr` 与专用 storage initramfs 配方已实现早期接入及失败阻断 | 真实 bind 和 initramfs 自有工具已验证；完整普通新镜像冷启动仍待 M07.5 |
 | `desktop/tools/build-installed-image.py` 生成 ext4 A/B 加独立 `/home` | 新单系统/持久存储/救援布局、真实路径与独立启动链尚未实现 |
 | `desktop/release/install/accounts.py` 使用 `/home/.polly-system/accounts` | 需迁移到 `SystemData/Accounts`，更新 UUID、挂载和权限校验 |
