@@ -227,6 +227,8 @@ print(json.dumps({'home':os.environ['HOME'],'data':str(p),'arg':__import__('sys'
     tampered = store / "objects" / second / "main.mjs"
     tampered.chmod(0o600); tampered.write_text("throw new Error('tampered');")
     assert "modified" in run("run", base["id"], second, ok=False).stderr
+    run("replace", archive, second, ok=False)
+    assert record()["current"]["digest"] == second, "Identical replacement must not bless modified installed bytes"
     print("PASS: concurrent writers excluded, interrupted staging recovered and content tampering blocks launch")
 
     shell_app = package("Shell-integrated.app", {**base, "id": "org.example.shelltest", "name": "Bundle launch fixture"})

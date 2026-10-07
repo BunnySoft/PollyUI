@@ -113,6 +113,9 @@ the active registry file. It records the previous version for rollback. Identica
 replacements are no-ops and do not discard rollback history. Sync errors after
 registry replacement explicitly report that state may already have changed;
 inspect `list` rather than blindly replaying an operation.
+An identical replacement still verifies the existing content object; it cannot
+declare changed installed bytes healthy merely because the supplied archive has
+the previously registered digest.
 
 Automatic data migrations are not supported: the first updater **rejects a
 change of `data.schema` or layout**, leaving the active registration and AppData

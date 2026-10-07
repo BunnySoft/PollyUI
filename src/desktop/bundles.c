@@ -648,7 +648,7 @@ static int install_bundle(struct Store *s, struct Schema *schema, const char *so
     JSContext *ctx = schema->ctx;
     JSValue manifest = JS_UNDEFINED, record = JS_UNDEFINED, old = JS_UNDEFINED, descriptor = JS_UNDEFINED;
     int result = -1, fd = -1;
-    bool staged = false;
+    bool staged = false, unchanged = false;
     char *id = NULL;
     if (random_name(s, stage)) goto done;
     if (mkdirat(s->objects, stage, 0700)) { failure(s, "Cannot create unique application staging directory"); goto done; }
@@ -710,10 +710,9 @@ static int install_bundle(struct Store *s, struct Schema *schema, const char *so
         descriptor = JS_GetPropertyStr(ctx, old, "current");
         char *current = field(s, ctx, descriptor, "digest");
         bool matches = current && !strcmp(current, expected);
-        bool unchanged = matches && !strcmp(current, digest);
+        unchanged = matches && !strcmp(current, digest);
         free(current);
         if (!matches) { error(s, "Installed application changed; replacement digest is stale"); goto done; }
-        if (unchanged) { result = 0; printf("%s %s\n", id, digest); goto done; }
     } else if (expected) { error(s, "Cannot replace an application that is not installed"); goto done; }
     JSValue next = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, next, "digest", JS_NewString(ctx, digest));
@@ -737,6 +736,11 @@ static int install_bundle(struct Store *s, struct Schema *schema, const char *so
         if (renameat(s->objects, stage, s->objects, digest)) { failure(s, "Cannot publish application content"); goto done; }
         staged = false;
         if (fsync(s->objects)) { error(s, "Content published but sync failed; no registry change performed"); goto done; }
+    }
+    if (unchanged) {
+        result = 0;
+        printf("%s %s\n", id, digest);
+        goto done;
     }
     snprintf(record_name, sizeof(record_name), "%s.json", id);
     result = publish_record(s, ctx, record_name, record);
