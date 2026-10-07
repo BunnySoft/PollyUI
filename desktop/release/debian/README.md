@@ -15,7 +15,7 @@ Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-
 
 ## Fast storage development checks
 
-Run the cached SDK's syntax, five targeted unit suites and strict passwd-proxy
+Run the cached SDK's syntax, targeted unit suites and strict passwd-proxy
 compilation without building a container/image, configuring CMake or starting QEMU:
 
 ```powershell

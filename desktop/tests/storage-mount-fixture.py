@@ -26,9 +26,14 @@ def main():
     volumes = {"EFI": "12AB-34CD", "SYSTEM": "10000000-0000-4000-8000-000000000001",
                "PERSISTENT": "10000000-0000-4000-8000-000000000002",
                "RECOVERY": "10000000-0000-4000-8000-000000000003"}
-    contract = storage.layout.contract(volumes)
+    users = [*storage.layout.DEFAULT_USERS, {"name": "tester", "uid": 1001, "gid": 1001}]
+    contract = storage.layout.contract(volumes, users)
+    spec = importlib.util.spec_from_file_location("homes", args.repo / "desktop/release/storage/homes.py")
+    homes = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(homes)
     subprocess.run(["mount", "--make-rprivate", "/"], check=True, timeout=10)
     with tempfile.TemporaryDirectory(prefix="polly-storage-mount-") as temporary:
+        Path(temporary).chmod(0o755)
         root = Path(temporary) / "root"
         root.mkdir()
         subprocess.run(["mount", "-t", "tmpfs", "-o", "mode=755", "tmpfs", str(root)],
@@ -50,6 +55,7 @@ def main():
                 path = persistent / f"Users/{user['uid']}"
                 path.mkdir(mode=0o700)
                 os.chown(path, user["uid"], user["gid"])
+                homes.initialize(path, user)
             for mapping in contract["mappings"]:
                 source, target = state.source(mapping), state.path(mapping["target"])
                 source.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -92,6 +98,31 @@ def main():
                 if (state.path("/System/Resources/writable-probe")).read_text() != \
                         "usr writable after root remount\n":
                     raise RuntimeError("Writable usr does not reach system resources")
+                for user in users[1:]:
+                    own = state.path("/home/" + user["name"])
+                    other = state.path("/home/tester" if user["uid"] == 1000 else "/home/polly")
+                    subprocess.run([
+                        "/usr/bin/python3", "-I", "-B", "-c",
+                        "import os,sys;from pathlib import Path;"
+                        "p=Path(sys.argv[1]);"
+                        "assert p.stat().st_uid==os.getuid();"
+                        "assert os.path.samestat(p.stat(),Path(sys.argv[3]).stat());"
+                        "[(p/n/'private-probe').write_text(str(os.getuid()))"
+                        " for n in ('Settings','AppData','AppState','Cache','Documents')];"
+                        "assert os.path.samestat((p/'.config').stat(),(p/'Settings').stat());"
+                        "assert os.path.samestat((p/'.local/share').stat(),(p/'AppData').stat());"
+                        "\nfor path in (Path(sys.argv[2]),Path(sys.argv[4])):\n"
+                        " try: list(path.iterdir())\n"
+                        " except PermissionError: pass\n"
+                        " else: raise RuntimeError('Another private UID home was readable')\n",
+                        str(own), str(other), str(persistent / f"Users/{user['uid']}"),
+                        str(state.path("/root")),
+                    ], check=True, user=user["uid"], group=user["gid"], extra_groups=[], timeout=20)
+                for user in users[1:]:
+                    for name in ("Settings", "AppData", "AppState", "Cache", "Documents"):
+                        probe = persistent / f"Users/{user['uid']}" / name / "private-probe"
+                        if probe.read_text() != str(user["uid"]) or probe.stat().st_uid != user["uid"]:
+                            raise RuntimeError("Ordinary user writes crossed their stable UID authority")
                 subprocess.run(["umount", str(state.path("/var/lib/apt"))], check=True, timeout=10)
                 try:
                     state.check()
@@ -127,9 +158,10 @@ def main():
             json.dump({"schemaVersion": 1, "result": "pass", "mappedPaths": len(contract["mappings"]),
                        "idempotent": True, "usrRemountedWritable": True,
                        "efiChildRetained": True, "stateLossRejected": True,
+                       "ordinaryUserUids": [1000, 1001], "userHomesIsolated": True,
                        "filesystem": "tmpfs-fixture", "newLayoutColdBootVerified": False}, report, indent=2)
             report.write("\n")
-    print("PASS: actual required binds, writable usr, EFI child, idempotence and missing-state refusal")
+    print("PASS: required binds, writable usr, EFI child, UID1000/1001 isolation and missing-state refusal")
 
 
 if __name__ == "__main__":

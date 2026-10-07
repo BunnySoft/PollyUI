@@ -23,6 +23,7 @@ def load(name, path):
 REPO = Path(__file__).resolve().parents[2]
 legacy = load("installed_image", Path(__file__).with_name("build-installed-image.py"))
 layout = load("storage_layout", REPO / "desktop/release/storage/layout.py")
+homes = load("storage_homes", REPO / "desktop/release/storage/homes.py")
 MIB = layout.MIB
 
 
@@ -73,17 +74,7 @@ def seed_users(root, persistent):
         relocate(root, str(source.relative_to(root)), destination)
         destination.chmod(0o700)
         os.chown(destination, user["uid"], user["gid"])
-        for name in layout.USER_DIRECTORIES:
-            child = destination / name
-            child.mkdir(mode=0o700)
-            os.chown(child, user["uid"], user["gid"])
-        local = destination / ".local"
-        local.mkdir(mode=0o700)
-        os.chown(local, user["uid"], user["gid"])
-        for link, target in layout.COMPATIBILITY_LINKS.items():
-            path = destination / link
-            path.symlink_to(target)
-            os.lchown(path, user["uid"], user["gid"])
+        homes.initialize(destination, user)
 
 
 def prepare_root(root, persistent, identifiers):
