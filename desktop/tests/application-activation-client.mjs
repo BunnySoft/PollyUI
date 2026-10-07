@@ -74,6 +74,28 @@ async function run() {
           'bounded pending request ends in an explicit timeout, never success-shaped');
       clearInterval(timer);
       check(ticks >= 10, 'native pending activation does not block the UI timer pump');
+    } else if (mode === 'late-reply') {
+      let acknowledged = false;
+      const pending = desktop.activateApplication(id('LateReply')).then(
+        result => { acknowledged = true; return { result }; }, error => ({ error }));
+      console.log('WAIT: late reply queued');
+      await new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000;
+        const timer = setInterval(() => {
+          if (desktop.applicationFiles().some(entry => entry.id === id('BlockNow'))) {
+            clearInterval(timer); resolve();
+          } else if (Date.now() >= deadline) {
+            clearInterval(timer); reject(new Error('Missing synthetic blocked-pump rendezvous'));
+          }
+        }, 10);
+      });
+      console.log('WAIT: blocking native pump after actual service delivery');
+      const until = Date.now() + 4000;
+      while (Date.now() < until) {}
+      const completed = await pending;
+      check(!acknowledged && completed.error && completed.error.code === 'POLLY_ACTIVATION_TIMEOUT' &&
+        String(completed.error).includes('indeterminate'),
+        'absolute deadline rejects an actual late method-return queued while the native pump was blocked');
     } else if (mode === 'rediscovery') {
       check(launcher.refresh().some(entry => entry.id === id('Deleted')), 'entry exists before rediscovery');
       console.log('WAIT: mutate synthetic entries');

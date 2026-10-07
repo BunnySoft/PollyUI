@@ -56,6 +56,7 @@ const specs = [
   ['org.pollyui.Activation-fixture', 'slow-ack'], ['org.pollyui.ActivationFixture.Wrong', 'wrong'],
   ['org.pollyui.ActivationFixture.Error', 'error'], ['org.pollyui.ActivationFixture.Malformed', 'malformed'],
   ['org.pollyui.ActivationFixture.StartFailure', 'start-failure'], ['org.pollyui.ActivationFixture.Oversized', 'oversized'],
+  ['org.pollyui.ActivationFixture.LateReply', 'late-ack'],
   ['org.pollyui.ActivationFixture.Timeout', 'timeout'], ['org.pollyui.ActivationFixture.Disconnect', 'disconnect'],
 ];
 const logs = new Map();
@@ -124,11 +125,18 @@ try {
       ['org.pollyui.ActivationFixture.Wrong', 'UnknownMethod'], ['org.pollyui.ActivationFixture.Error', 'Failed'],
       ['org.pollyui.ActivationFixture.StartFailure', 'Spawn.ChildExited'],
       ['org.pollyui.ActivationFixture.Timeout', 'NoReply'],
+      ['org.pollyui.ActivationFixture.LateReply', 'NoReply'],
     ]) await completed(child(service, ['--probe', name, '/' + name.replaceAll('.', '/').replaceAll('-', '_'), expected]),
       'probe-' + name);
   } else {
     await completed(await client('main'), 'native-main');
     await completed(await client('bounds'), 'native-queue-and-pump');
+    const late = await client('late-reply');
+    await until(async () => (await contents(logs.get('org.pollyui.ActivationFixture.LateReply'))).includes('call\t') ||
+      late.finished, 'actual late-reply service delivery before blocking native pump');
+    assert.equal(late.finished, false, late.output);
+    await entry('BlockNow', 'Hidden=true\n', data);
+    await completed(late, 'native-absolute-deadline-blocked-pump');
     const rediscovery = await client('rediscovery');
     await until(() => rediscovery.output.includes('WAIT: mutate') || rediscovery.finished, 'native rediscovery rendezvous');
     assert.equal(rediscovery.finished, false, rediscovery.output);
@@ -139,6 +147,8 @@ try {
     await completed(shutdown, 'native-shutdown');
     assert.match(shutdown.output, /Application activation cancelled at shutdown/);
   }
+  await until(async () => (await contents(logs.get('org.pollyui.ActivationFixture.LateReply'))).includes('late-reply\t'),
+    'actual service reply sent after 3000 ms');
   for (const [name, log] of logs) {
     const text = await contents(log);
     if (!text && probe && ['Malformed', 'Oversized', 'Disconnect'].some(suffix => name.endsWith(suffix))) continue;
@@ -156,6 +166,10 @@ try {
     for (const line of lines) assert.deepEqual(line.split('\t').slice(1), [
       '/' + name.replaceAll('.', '/').replaceAll('-', '_'), 'org.freedesktop.Application', 'Activate', 'a{sv}', '1', '1',
     ], 'exact member/interface/object path/empty platform data/auto-start flag');
+    if (name.endsWith('LateReply')) {
+      const elapsed = Number(text.match(/late-reply\t([0-9]+)/)?.[1]);
+      assert.ok(elapsed >= 3000 && elapsed < 6000, 'the actual service method-return is later than the method deadline');
+    }
     assert.equal(text.split('\n').filter(line => line.startsWith('started\t')).length, 1,
       'service came from bus auto-start, not repeated manual launches');
   }

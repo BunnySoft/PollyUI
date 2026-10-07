@@ -164,6 +164,10 @@ deadline does not claim to bound that helper's synchronous connection setup.
 Queue/ID/trust/send failures throw synchronously. Remote errors reject with
 their D-Bus error name in `error.code`; timeout, disconnect, invalid reply,
 dispatch failure and shutdown cancellation reject explicitly and are logged.
+The absolute method deadline takes priority over completed/reply state. If a
+blocked UI pump resumes after the deadline, even an empty method-return is
+rejected as timeout/indeterminate: no receipt timestamp proves it arrived in
+time. A delayed method-return cannot turn an expired request into success.
 Timeout/disconnect/cancellation can mean delivery already occurred. There is
 **no automatic retry, Exec fallback or fabricated positive PID**. Shutdown
 cancels pending calls, releases Promise references and closes only this
@@ -204,6 +208,8 @@ PollyUI; it rejects old binaries without the API, rather than substituting a
 stub. It starts an isolated `dbus-daemon` with only synthetic service files,
 verifies real service auto-start and the exact invocation, blocked/invalid/error
 replies, failed service startup, missing/wrong service, queue/timeout/pump,
+an actual service reply after 3000 ms while the native pump is deliberately
+blocked (delivery is confirmed before blocking),
 oversized reply, disconnect, native shutdown, strict host-bus rejection and
 entry deletion/masking rediscovery. Runtime sockets live on a Linux temporary
 filesystem; logs/configs/results are copied to the evidence directory even on

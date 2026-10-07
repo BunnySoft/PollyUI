@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "desktop/session-bus.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,6 +92,7 @@ int main(int argc, char **argv)
             bool valid = path && !strcmp(path, argv[2]) && interface && !strcmp(interface, "org.freedesktop.Application") &&
                 member && !strcmp(member, "Activate") && empty;
             DBusMessage *reply = NULL;
+            long long late_elapsed = 0;
             if (!valid || !strcmp(argv[4], "wrong"))
                 reply = dbus_message_new_error(message, DBUS_ERROR_UNKNOWN_METHOD, "Synthetic fixture has no such method");
             else if (!strcmp(argv[4], "error"))
@@ -99,10 +101,16 @@ int main(int argc, char **argv)
                 reply = dbus_message_new_method_return(message);
                 const char *unexpected = "not an empty acknowledgement";
                 if (reply && !dbus_message_append_args(reply, DBUS_TYPE_STRING, &unexpected, DBUS_TYPE_INVALID)) return 1;
-            } else if (!strcmp(argv[4], "ack") || !strcmp(argv[4], "slow-ack")) {
-                if (!strcmp(argv[4], "slow-ack")) {
-                    const struct timespec pause = { .tv_sec = 0, .tv_nsec = 300000000 };
-                    nanosleep(&pause, NULL);
+            } else if (!strcmp(argv[4], "ack") || !strcmp(argv[4], "slow-ack") || !strcmp(argv[4], "late-ack")) {
+                bool late = !strcmp(argv[4], "late-ack");
+                if (late || !strcmp(argv[4], "slow-ack")) {
+                    struct timespec begin, end, pause = { .tv_sec = late ? 3 : 0,
+                        .tv_nsec = late ? 500000000 : 300000000 };
+                    if (clock_gettime(CLOCK_MONOTONIC, &begin)) return 1;
+                    while (nanosleep(&pause, &pause)) if (errno != EINTR) return 1;
+                    if (clock_gettime(CLOCK_MONOTONIC, &end)) return 1;
+                    if (late) late_elapsed = (long long)(end.tv_sec - begin.tv_sec) * 1000 +
+                        (end.tv_nsec - begin.tv_nsec) / 1000000;
                 }
                 reply = dbus_message_new_method_return(message);
             } else if (!strcmp(argv[4], "oversized")) {
@@ -114,9 +122,11 @@ int main(int argc, char **argv)
                 free(large);
             }
             else if (strcmp(argv[4], "timeout") && strcmp(argv[4], "disconnect")) return 2;
+            if (!reply && (!valid || (strcmp(argv[4], "timeout") && strcmp(argv[4], "disconnect")))) return 1;
             if (reply) {
                 if (!dbus_connection_send(bus, reply, NULL)) return 1;
                 dbus_connection_flush(bus); dbus_message_unref(reply);
+                if (late_elapsed) { fprintf(log, "late-reply\t%lld\n", late_elapsed); fflush(log); }
             }
             dbus_message_unref(message);
         }

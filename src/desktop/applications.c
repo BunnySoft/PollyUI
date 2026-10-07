@@ -252,10 +252,12 @@ static int pump_activations(void)
     while (*slot) {
         struct AppActivation *request = *slot;
         bool done = dbus_pending_call_get_completed(request->pending);
-        if (!code && !done && pu_now_ms() < request->deadline) { slot = &request->next; continue; }
+        bool expired = pu_now_ms() >= request->deadline;
+        if (!code && !done && !expired) { slot = &request->next; continue; }
         *slot = request->next; activation_count--;
-        DBusMessage *reply = !code && done ? dbus_pending_call_steal_reply(request->pending) : NULL;
-        complete_activation(request, reply, code, message);
+        /* Without a receipt timestamp, a reply dispatched by an overdue pump cannot prove timely acknowledgement. */
+        DBusMessage *reply = !expired && !code && done ? dbus_pending_call_steal_reply(request->pending) : NULL;
+        complete_activation(request, reply, expired ? NULL : code, expired ? NULL : message);
         if (reply) dbus_message_unref(reply);
         worked++;
     }
