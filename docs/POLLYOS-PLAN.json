@@ -582,11 +582,12 @@
         "M07.2",
         "M07.4"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t24-m07-2",
         "t24-m07-3"
-      ]
+      ],
+      "evidence": "第二批基于已推送8ce0b6d，子会话2ca28434-854f-4de9-928b-806d17ad4374实现只读报告UI/provider/controller与合成夹具；真实native-helper部署接入尚未完成，无真实枚举或writer授权，完整任务保持进行中。"
     },
     {
       "id": "menu-native-dismiss",
@@ -1680,7 +1681,7 @@
         "recovery"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -1720,10 +1721,11 @@
       "sources": [
         "M09.5"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t07-m09-1"
-      ]
+      ],
+      "evidence": "第二批固定8ce0b6d，子会话951d53c8-b0b7-4553-96a5-fef0328a7862实现测试身份签名与严格拒绝；独立验收待返回，不使用生产私钥，不把development-unsigned自动提升为生产信任。"
     },
     {
       "id": "t08-m09-6",
@@ -2710,7 +2712,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -2727,11 +2729,12 @@
       "sources": [
         "M12.1"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "account-private",
         "required-maps"
-      ]
+      ],
+      "evidence": "第二批固定8ce0b6d，子会话d7b1a26f-73e8-4b37-a324-503fc1ce53f0实现Live临时/installed UUID绑定私有状态及iwd正常停止checkpoint；仅合成凭据，不连接真实网络。运行期即时落盘与异常断电持久性未保证，完整任务保持进行中。"
     },
     {
       "id": "t17-m12-2",
@@ -3169,12 +3172,13 @@
       "sources": [
         "M07.4"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t24-m07-2",
         "t24-m07-3",
         "target-identity-ui"
-      ]
+      ],
+      "evidence": "与T24.6同一子会话顺序实现只读UI及写前显式确认/重新识别/generation/cancel；确认记录始终writeAuthorized=false。真实provider、writer进度/取消和介质验收未完成，不关闭整项或放行真实写盘gate。"
     },
     {
       "id": "t24-m07-6",

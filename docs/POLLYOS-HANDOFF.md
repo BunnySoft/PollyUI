@@ -84,3 +84,18 @@ SHA256 `c5e30c0acaecd2d509d9ec0f8a4e51f16eba5769bf8b0fb41314073200965a6b`。
 
 下一批仍用独立分支实现与固定快照验证；仅在收到准确证据后关闭，
 不把全批完成等同系统已可生产发布。
+
+### 第二批已启动
+
+三个隔离实现分支均已核对干净源 `8ce0b6d22fe9d5095f136f4f497850e20c1edd34`；
+主会话维护共享计划和注册，不让分支各自改写中央状态。
+
+| 执行项 | 子会话 / 分支 | 本轮交付与剩余边界 |
+| --- | --- | --- |
+| T08.2 | `951d53c8-b0b7-4553-96a5-fef0328a7862` / `bunnysoft-payload-test-signatures` | 测试身份签名、错误钥/签名/篡改/格式拒绝；生产密钥和发布仍未授权 |
+| T17.1 | `d7b1a26f-73e8-4b37-a324-503fc1ce53f0` / `bunnysoft-private-network-state` | root 私有版本快照、Live 临时与安装 UUID 绑定、iwd 启动加载/正常停止保存；运行期即时持久、断电及真实网络验收未完成 |
+| T24.6 / T24.3 | `2ca28434-854f-4de9-928b-806d17ad4374` / `bunnysoft-install-target-confirmation` | 只读报告 UI/provider/controller、显式确认和过期回调拒绝；原生 helper 部署接入与 writer 未完成，确认始终 `writeAuthorized=false` |
+
+这些执行项均为进行中；实现提交、独立固定源验证、组合注册和最终验收分别记录。
+不以 synthetic provider、正常停止快照或测试公钥代替实际安装器、
+异常断电持久性或生产信任。T21.5 原生菜单信号没有被本轮三个分支隐式放行。
