@@ -35,6 +35,8 @@ def main():
             factory.legacy = legacy
             sources = [factory.source(uid, name)
                        for uid, name in ((0, "root"), (1000, "polly"), (1001, "tester"))]
+            for source, _ in sources:
+                os.link(source / ".config/editor/settings.json", source / "Documents/linked-settings.json")
             # A read-only bind over a writable superblock is deliberately insufficient.
             view = root / "view"
             view.mkdir()
@@ -79,6 +81,9 @@ if home.stat().st_uid != uid:
     raise RuntimeError("Imported home changed stable UID")
 if (home / "Documents/document.txt").read_text() != "document-" + str(uid):
     raise RuntimeError("Imported document belongs to another user")
+if not os.path.samestat((home / "Settings/editor/settings.json").stat(),
+                       (home / "Documents/linked-settings.json").stat()):
+    raise RuntimeError("Imported settings/document hard-link relationship was lost")
 for name in ("Settings", "AppData", "AppState", "Cache", "Documents"):
     (home / name / "post-import").write_text("ordinary UID " + str(uid))
 if not os.path.samestat((home / ".config").stat(), (home / "Settings").stat()):

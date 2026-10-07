@@ -30,6 +30,7 @@ def main():
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
         "desktop/tools/check-storage.py",
         "desktop/tests/account-auth-fixture.py",
+        "desktop/tests/storage-managed-migration-fixture.py",
     ]
     for name in python_files:
         ast.parse((repo / name).read_text(), filename=name)

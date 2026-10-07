@@ -16,7 +16,7 @@ spec = importlib.util.spec_from_file_location("polly_migration_homes",
                                             Path(__file__).resolve().with_name("homes.py"))
 homes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(homes)
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def sync_directory(path):
@@ -76,8 +76,10 @@ def attributes(path):
     return values
 
 
-def inventory(root, user):
-    records = {}
+def inventory(root, user, *, schema=SCHEMA_VERSION):
+    if type(schema) is not int or schema not in (1, SCHEMA_VERSION):
+        raise ValueError("Unsupported home inventory schema")
+    records, links = {}, {}
     device = root.lstat().st_dev
 
     def visit(path):
@@ -94,10 +96,17 @@ def inventory(root, user):
         if stat.S_ISDIR(info.st_mode):
             entry["type"] = "directory"
         elif stat.S_ISREG(info.st_mode):
-            if info.st_nlink != 1:
-                raise ValueError("Hard-linked home data requires explicit migration")
+            if schema == 1 and info.st_nlink != 1:
+                raise ValueError("Legacy migration schema does not support hard links")
+            key = (info.st_dev, info.st_ino)
+            group = links.setdefault(key, {"count": info.st_nlink, "paths": []})
+            if group["count"] != info.st_nlink:
+                raise ValueError("Home hard links changed during inspection")
+            group["paths"].append(path.relative_to(root).as_posix())
             entry.update(type="file", size=info.st_size, sha256=digest_file(path))
         elif stat.S_ISLNK(info.st_mode):
+            if info.st_nlink != 1:
+                raise ValueError("Hard-linked symbolic links require explicit migration")
             entry.update(type="symlink", target=os.readlink(path))
         else:
             raise ValueError("Special home files require explicit migration")
@@ -107,6 +116,13 @@ def inventory(root, user):
                 visit(child)
 
     visit(root)
+    for group in links.values():
+        if group["count"] != len(group["paths"]):
+            raise ValueError("Hard links outside the source HOME require explicit migration")
+        if group["count"] > 1:
+            canonical = min(group["paths"])
+            for name in group["paths"]:
+                records[name]["hardlink"] = canonical
     return records
 
 
@@ -160,7 +176,22 @@ def metadata(source, destination, entry):
     os.utime(destination, ns=(entry["mtimeNs"], entry["mtimeNs"]), follow_symlinks=False)
 
 
+def normalized_records(records, paths):
+    normalized, groups = {}, {}
+    for name, target in paths.items():
+        entry = dict(records[name])
+        normalized[target] = entry
+        if "hardlink" in entry:
+            groups.setdefault(entry["hardlink"], []).append(target)
+    for names in groups.values():
+        canonical = min(names)
+        for name in names:
+            normalized[name]["hardlink"] = canonical
+    return normalized
+
+
 def copy_records(source, destination, records, paths):
+    copied_links = {}
     for name, target in paths.items():
         entry, original, output = records[name], source / name, destination / target
         if entry["type"] == "directory":
@@ -171,6 +202,8 @@ def copy_records(source, destination, records, paths):
         elif entry["type"] == "symlink":
             output.symlink_to(entry["target"])
             metadata(original, output, entry)
+        elif entry.get("hardlink") in copied_links:
+            os.link(copied_links[entry["hardlink"]], output, follow_symlinks=False)
         else:
             read_fd = os.open(original, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
             try:
@@ -188,6 +221,8 @@ def copy_records(source, destination, records, paths):
                     os.close(write_fd)
             finally:
                 os.close(read_fd)
+            if "hardlink" in entry:
+                copied_links[entry["hardlink"]] = output
     for name, target in sorted(paths.items(), key=lambda item: item[1].count("/"), reverse=True):
         if records[name]["type"] == "directory":
             metadata(source / name, destination / target, records[name])
@@ -280,7 +315,7 @@ def migrate(source, users, user):
         homes.initialize(stage, user, user_dirs=False)
         copy_records(backup, stage, records, paths)
         staged = inventory(stage, user)
-        if any(staged.get(target) != records[name] for name, target in paths.items()):
+        if any(staged.get(target) != entry for target, entry in normalized_records(records, paths).items()):
             raise ValueError("Normalized home verification failed")
         config = stage / "Settings/user-dirs.dirs"
         if not config.exists() and not config.is_symlink():
@@ -317,7 +352,7 @@ def status(transaction):
         raise ValueError("Invalid private migration journal")
     record = json.loads(path.read_text())
     if not isinstance(record, dict) or type(record.get("schemaVersion")) is not int or \
-            record["schemaVersion"] != SCHEMA_VERSION or record.get("phase") not in {
+            record["schemaVersion"] not in (1, SCHEMA_VERSION) or record.get("phase") not in {
                 "planned", "backed-up", "verified", "committing", "committed", "interrupted"}:
         raise ValueError("Unsupported migration journal")
     user = record["user"]
@@ -329,16 +364,16 @@ def status(transaction):
     if destination != transaction.parent / str(record["user"]["uid"]):
         raise ValueError("Migration destination escaped its transaction")
     published = destination.exists() and "destinationSha256" in record and \
-        checksum(inventory(destination, record["user"])) == record["destinationSha256"]
+        checksum(inventory(destination, record["user"], schema=record["schemaVersion"])) == record["destinationSha256"]
     backup = transaction / "backup"
     backup_retained = backup.exists() and stat.S_ISDIR(backup.lstat().st_mode)
     backed_up = record.get("failedPhase", record["phase"]) in {
         "backed-up", "verified", "committing", "committed"}
     backup_verified = backed_up and backup_retained and \
-        checksum(inventory(backup, user)) == record["sourceSha256"]
+        checksum(inventory(backup, user, schema=record["schemaVersion"])) == record["sourceSha256"]
     if backed_up and not backup_verified:
         raise ValueError("Required migration backup is missing or corrupted")
-    return {"schemaVersion": SCHEMA_VERSION, "phase": record["phase"],
+    return {"schemaVersion": record["schemaVersion"], "phase": record["phase"],
             "publicationVerified": published, "backupRetained": backup_retained,
             "backupVerified": backup_verified,
             "automaticResume": False}

@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('fast', 'mounts', 'initramfs')]
+    [ValidateSet('fast', 'mounts', 'initramfs', 'migration')]
     [string]$Mode = 'fast',
     [string]$Distro = 'podman-machine-default'
 )

@@ -22,9 +22,10 @@ compilation without building a container/image, configuring CMake or starting QE
 .\desktop\tools\check-storage.ps1
 .\desktop\tools\check-storage.ps1 -Mode mounts
 .\desktop\tools\check-storage.ps1 -Mode initramfs
+.\desktop\tools\check-storage.ps1 -Mode migration
 ```
 
-The equivalent Linux entry is `sh desktop/tools/check-storage.sh [fast|mounts|initramfs]`.
+The equivalent Linux entry is `sh desktop/tools/check-storage.sh [fast|mounts|initramfs|migration]`.
 `fast` is the default; it prints the actual elapsed time inside the cached SDK.
 `mounts` adds actual bind/permission/failure fixtures in a disposable mount namespace;
 it needs only the cached storage base and no disk image or VM. `initramfs` checks the
@@ -35,6 +36,10 @@ pulls dependencies, writes host block devices or enables network access.
 Use fast checks for each edit and mounts for mapping/identity changes. Actual
 image/cold-boot acceptance is still required for boot/partition/kernel changes and
 stage handoff, but not after each small edit. Fast checks are not boot evidence.
+`migration` adds actual private managed-app install/run/import/run probes for two
+numeric UIDs, using the cached SDK and native build volume
+(`POLLY_NATIVE_BUILD_VOLUME`, default `polly-debian-build-fde67803`). It does not
+build binaries. Missing cache or fixture failure is explicit, not skipped.
 
 ## Storage overlay and candidate assembly
 
@@ -43,7 +48,7 @@ the historical D1 recipe. Its `local-bottom` hook binds `/System/Resources` befo
 main-system init. GNU tools use distinct initramfs names because Debian's existing
 klibc commands are not interchangeable with their full-featured counterparts.
 Mapping errors halt and remain blocked if halt returns; they never open a shell.
-The future single-system boot menu must also use `panic=0` for earlier root failures.
+The ordinary single-system boot menu also uses `panic=0` for earlier root failures.
 
 The bounded early-mapping fixture needs only an isolated disposable container's
 mount capability; it does not launch systemd or write any host block device:
@@ -131,10 +136,14 @@ hardware snapshots or stop another OS writing the device.
 Legacy XDG contents are normalized into Settings/AppData/AppState/Cache, with
 traditional aliases and missing XDG user-directory defaults. Existing user-dirs
 configuration and unknown user files stay intact. Conflicting paths, nested mounts,
-foreign owners/groups, privileged/special/hard-linked files and ACL/security
+foreign owners/groups, privileged/special files and ACL/security
 attributes require explicit adapters or resolution; they are refused, not discarded.
 The current controlled importer supports regular files, directories, inert symlinks
-and `user.*` attributes. It is not a complete installer/account migration.
+and `user.*` attributes. Schema v2 preserves regular-file hard links wholly within
+one HOME in the separate backup and normalized destination, without linking either
+to the source. External hard-link references and hard-linked symlinks are refused.
+Schema v1 unlinked transactions remain inspectable. This is not a complete
+installer/account migration.
 
 Each operation retains a root-private transaction, original-layout backup, checksums
 and versioned journal. Publication uses atomic no-replace rename. Interrupted or
@@ -144,6 +153,12 @@ checksum; normal later user edits can change that comparison. Inspection does no
 mutate or finalize a transaction. The lightweight regression includes root and two
 UIDs; `mounts` also exercises a real read-only tmpfs and ordinary-user/backup
 isolation. Neither establishes ext4 power-loss durability or a migrated boot.
+The separate managed fixture reuses `persistent-storage.mjs` and cached actual
+`polly-app`/`pollyui`: both ordinary UIDs install and launch before the snapshot,
+then launch after import through a compatible HOME bind and new XDG paths. Each
+localStorage counter continues from 1 to 2 with the same app-id and code digest.
+`storage-managed-migration-fixture.py REPO MANAGER --report NEW_FILE` optionally
+writes non-overwriting evidence, including source/runtime hashes and scope limits.
 
 ## Minimal root filesystem
 

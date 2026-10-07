@@ -75,7 +75,7 @@ class Migration(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE(transaction.stat().st_mode), 0o700)
                 self.assertEqual((transaction / "journal.json").stat().st_mode & 0o777, 0o600)
                 self.assertEqual(migration.status(transaction), {
-                    "schemaVersion": 1, "phase": "committed", "publicationVerified": True,
+                    "schemaVersion": 2, "phase": "committed", "publicationVerified": True,
                     "backupRetained": True, "backupVerified": True, "automaticResume": False})
         self.assertFalse((self.users / "SystemData").exists())
 
@@ -116,7 +116,7 @@ class Migration(unittest.TestCase):
                 elif kind == "foreign-owner":
                     os.chown(source / "Documents/document.txt", 1001, 1001)
                 elif kind == "hard-link":
-                    os.link(source / "Documents/document.txt", source / "another-link")
+                    os.link(source / "Documents/document.txt", self.root / "outside-link")
                 elif kind == "privileged":
                     (source / ".local/bin/custom").chmod(0o4700)
                 else:
@@ -133,6 +133,9 @@ class Migration(unittest.TestCase):
                     destination.unlink()
                 elif destination.exists():
                     destination.rmdir()
+                outside = self.root / "outside-link"
+                if outside.exists():
+                    outside.unlink()
 
     def test_writable_source_and_mutating_backup_are_rejected(self):
         source, user = self.source()
@@ -198,7 +201,7 @@ class Migration(unittest.TestCase):
                 migration.migrate(source, self.users, user)
         transaction, = self.users.glob(".migration-*")
         self.assertEqual(migration.status(transaction), {
-            "schemaVersion": 1, "phase": "interrupted", "publicationVerified": True,
+            "schemaVersion": 2, "phase": "interrupted", "publicationVerified": True,
             "backupRetained": True, "backupVerified": True, "automaticResume": False})
         with self.assertRaises(FileExistsError):
             migration.migrate(source, self.users, user)
@@ -227,6 +230,36 @@ class Migration(unittest.TestCase):
         (transaction / "backup/Documents/document.txt").write_text("tampered")
         with self.assertRaisesRegex(ValueError, "backup is missing or corrupted"):
             migration.status(transaction)
+
+    def test_internal_hard_links_survive_xdg_normalization_and_private_backup(self):
+        source, user = self.source()
+        original = source / ".config/editor/settings.json"
+        os.link(original, source / "Documents/linked-settings.json")
+        os.link(original, source / ".local/state/polly/linked-settings.json")
+        before = migration.inventory(source, user)
+        transaction = migration.migrate(source, self.users, user)
+        backup = transaction / "backup"
+        destination = self.users / "1000"
+        paths = ("Settings/editor/settings.json", "Documents/linked-settings.json",
+                 "AppState/polly/linked-settings.json")
+        info = (destination / paths[0]).stat()
+        self.assertEqual(info.st_nlink, 3)
+        self.assertTrue(all((destination / name).stat().st_ino == info.st_ino for name in paths))
+        self.assertNotEqual(info.st_ino, original.stat().st_ino)
+        self.assertEqual(migration.inventory(backup, user), before)
+        self.assertEqual((backup / ".config/editor/settings.json").stat().st_nlink, 3)
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+
+    def test_old_unlinked_schema_remains_inspectable(self):
+        source, user = self.source()
+        transaction = migration.migrate(source, self.users, user)
+        record = json.loads((transaction / "journal.json").read_text())
+        record["schemaVersion"] = 1
+        migration.journal(transaction, record)
+        state = migration.status(transaction)
+        self.assertEqual(state["schemaVersion"], 1)
+        self.assertTrue(state["publicationVerified"])
+        self.assertTrue(state["backupVerified"])
 
 
 if __name__ == "__main__":
