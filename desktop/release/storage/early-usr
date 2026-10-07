@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+    prereqs) exit 0 ;;
+esac
+
+fail() {
+    echo "POLLY_STORAGE_EARLY_FAILED: $1" >&2
+    if halt -f; then
+        echo "POLLY_STORAGE_HALT_RETURNED: blocking main-system startup" >&2
+    else
+        echo "POLLY_STORAGE_HALT_FAILED: blocking main-system startup" >&2
+    fi
+    # Debian's ORDER does not propagate child errors; never return to its init.
+    while :; do sleep 3600; done
+}
+
+trusted_permissions() {
+    owner=$(polly-storage-stat -c %u "$1") || fail "Cannot inspect resource owner"
+    mode=$(polly-storage-stat -c %a "$1") || fail "Cannot inspect resource permissions"
+    case "$mode" in ''|*[!0-7]*) fail "Invalid resource permissions" ;; esac
+    [ "$owner" = 0 ] && [ $((0$mode & 022)) -eq 0 ] || fail "Unsafe resource ownership or permissions"
+}
+
+trusted_directory() {
+    [ -d "$1" ] && [ ! -L "$1" ] || fail "Missing or linked resource directory"
+    trusted_permissions "$1"
+}
+
+case "${rootmnt:-}" in
+    /*) [ "$rootmnt" != / ] || fail "Refusing a non-guest root" ;;
+    *) fail "Missing absolute mounted root" ;;
+esac
+
+trusted_directory "$rootmnt"
+trusted_directory "$rootmnt/System"
+trusted_directory "$rootmnt/System/Resources"
+for directory in bin sbin lib share; do
+    trusted_directory "$rootmnt/System/Resources/$directory"
+done
+trusted_directory "$rootmnt/usr"
+
+source_identity=$(polly-storage-stat -c %d:%i "$rootmnt/System/Resources") || fail "Cannot inspect resource identity"
+[ "$(polly-storage-stat -c %d "$rootmnt/System/Resources")" = "$(polly-storage-stat -c %d "$rootmnt")" ] ||
+    fail "Resources are not on the main-system filesystem"
+if polly-storage-findmnt -rn -M "$rootmnt/usr" >/dev/null; then
+    [ "$(polly-storage-stat -c %d:%i "$rootmnt/usr")" = "$source_identity" ] ||
+        fail "Unexpected existing usr mount"
+else
+    contents=$(polly-storage-find "$rootmnt/usr" -mindepth 1 -maxdepth 1 -print -quit) ||
+        fail "Cannot inspect the usr mountpoint"
+    [ -z "$contents" ] ||
+        fail "Refusing a second usr software tree"
+    polly-storage-mount -n --bind "$rootmnt/System/Resources" "$rootmnt/usr" ||
+        fail "Cannot bind system resources"
+fi
+[ "$(polly-storage-stat -c %d:%i "$rootmnt/usr")" = "$source_identity" ] ||
+    fail "Usr does not reference the authoritative resource tree"
+init="$rootmnt/usr/lib/systemd/systemd"
+[ -f "$init" ] && [ ! -L "$init" ] && [ -x "$init" ] ||
+    fail "Missing executable main-system init"
+trusted_permissions "$init"
+echo "POLLY_STORAGE_EARLY_USR_READY"

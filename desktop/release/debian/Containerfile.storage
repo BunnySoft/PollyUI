@@ -1,0 +1,12 @@
+ARG INSTALLED_IMAGE=localhost/polly-debian-installed-base
+FROM ${INSTALLED_IMAGE}
+USER root
+COPY release/storage/early-usr /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr
+COPY release/storage/initramfs-hook /etc/initramfs-tools/hooks/polly-storage-tools
+RUN sed -i 's/\r$//' /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
+        /etc/initramfs-tools/hooks/polly-storage-tools && \
+    chmod 755 /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
+        /etc/initramfs-tools/hooks/polly-storage-tools && \
+    update-initramfs -u -k all
+ENTRYPOINT []
+CMD ["/bin/sh"]

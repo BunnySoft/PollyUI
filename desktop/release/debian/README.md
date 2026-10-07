@@ -8,9 +8,31 @@ per-device equivalence; the Alpine fallback and its evidence remain preserved.
 The current alpha.5-r2 artifact inventory, architecture and handoff are in the
 [PollyOS technical overview](../../../docs/POLLYOS.md).
 The [storage design](../../../docs/POLLYOS-STORAGE-DESIGN.md) is now the P0
-implementation priority; its single writable system, early `/usr` mapping,
-shared Apps and independent recovery are **not yet implemented**.
+implementation priority. The layout contract and early `/usr` initramfs mapping
+are implemented; the complete single-system image, shared Apps and independent
+recovery are **not yet validated**.
 Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
+
+The separate `Containerfile.storage` extends the installed base without changing
+the historical D1 recipe. Its `local-bottom` hook binds `/System/Resources` before
+main-system init. GNU tools use distinct initramfs names because Debian's existing
+klibc commands are not interchangeable with their full-featured counterparts.
+Mapping errors halt and remain blocked if halt returns; they never open a shell.
+The future single-system boot menu must also use `panic=0` for earlier root failures.
+
+The bounded early-mapping fixture needs only an isolated disposable container's
+mount capability; it does not launch systemd or write any host block device:
+
+```sh
+podman build --network=none -t localhost/polly-debian-storage-base \
+    -f desktop/release/debian/Containerfile.storage desktop
+podman run --rm --network=none --cap-add=SYS_ADMIN --security-opt seccomp=unconfined \
+    -v "$PWD:/workspace:ro" localhost/polly-debian-storage-base \
+    sh -c 'python3 -I -B /workspace/desktop/tests/storage-early-usr.py /workspace --initramfs /boot/initrd.img-*'
+```
+
+This checks actual binds, fail-closed cases and the packed initramfs's executables
+in a chroot with no main-system `/usr` tools. It is not a cold-boot or apt result.
 
 ## Minimal root filesystem
 

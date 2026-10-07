@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+    prereqs) exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+for program in stat find findmnt mount; do
+    copy_exec "/usr/bin/$program" "/bin/polly-storage-$program"
+done
