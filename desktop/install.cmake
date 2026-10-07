@@ -19,6 +19,8 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/client"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/themes"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.json")

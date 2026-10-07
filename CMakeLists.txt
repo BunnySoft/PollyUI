@@ -428,6 +428,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-fixture.mjs"
                 $<TARGET_FILE:pollyui> $<TARGET_FILE:pollyui-application-process-test>)
         set_tests_properties(desktop-application-launch PROPERTIES TIMEOUT 35 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-bundle-data
+            COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/bundle-data-fixture.mjs" $<TARGET_FILE:pollyui>)
+        set_tests_properties(desktop-bundle-data PROPERTIES TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-launcher-shell
             COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"
                 "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"

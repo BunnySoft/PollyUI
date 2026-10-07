@@ -31,4 +31,5 @@ workspace-preferences.mjs
 display-profiles.mjs
 audio-preferences.mjs
 session-health.mjs
+app-bundle.mjs
 desktop-applications.mjs

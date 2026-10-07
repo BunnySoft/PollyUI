@@ -459,6 +459,22 @@ the launcher validates up to 256 argv strings. The vendored QuickJS normalizatio
 paths use their existing correctly typed allocator adapter rather than casting
 allocator function pointers, fixing the UBSan failure exposed by Unicode sorting.
 
+### Managed application bundles (contract stage)
+
+`desktop/shared/app-bundle.mjs` validates a bounded versioned `manifest.json`
+and creates a launch/data-path plan without installing or running anything.
+Directory bundles carry program code and resources; configuration, data, cache
+and state are addressed by user XDG roots plus a stable explicit application ID.
+PollyUI bundles retain existing app data namespaces. XDG-compliant native apps
+receive per-app XDG roots without replacing `HOME`. Bundle paths and data paths
+must not overlap; changing a version/name/location does not change data identity.
+
+Real-process fixtures cover data continuity and cache separation. This is not
+yet a bundle installer, registry, updater, third-party adapter catalog or security
+sandbox. Source authentication, filesystem/symlink validation, compatible data
+migration and old-version lifetime still need the later lifecycle stages.
+See the [application contract and maintenance plan](./docs/desktop-base-maintenance.md).
+
 ### Native desktop notifications
 
 The real Shell registers `org.freedesktop.Notifications` on its private session
