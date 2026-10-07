@@ -44,6 +44,23 @@ class Profiles(unittest.TestCase):
         self.assertIn("historical fallback is unavailable", helper)
         self.assertIn("session and image profiles do not match", helper)
 
+    def test_offline_overlay_requires_a_qualified_locked_source(self):
+        recipe = (ROOT / "desktop/release/debian/Containerfile.profiles").read_text()
+        self.assertIn("ARG LOCKED_BASE_IMAGE\n", recipe)
+        common, live = recipe.split("FROM platform-base AS live-base", 1)
+        self.assertIn("polly-account-profile template", common)
+        self.assertNotIn("polly-account-profile live", common)
+        self.assertIn("polly-account-profile live", live)
+        self.assertNotIn("apt-get", recipe)
+
+    def test_memory_root_has_explicit_trusted_permissions(self):
+        init = (ROOT / "desktop/release/live/init").read_text()
+        self.assertIn("chmod 0755 /", init)
+        builder = (ROOT / "desktop/tools/build-live-image.py").read_text()
+        self.assertIn('entry(".", stat.S_IFDIR | 0o755)', builder)
+        recipe = (ROOT / "desktop/release/debian/Containerfile.profiles").read_text()
+        self.assertIn("COPY release/live/init /init", recipe)
+
 
 if __name__ == "__main__":
     unittest.main()

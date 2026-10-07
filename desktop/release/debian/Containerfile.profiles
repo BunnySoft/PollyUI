@@ -1,0 +1,18 @@
+ARG LOCKED_BASE_IMAGE
+FROM ${LOCKED_BASE_IMAGE} AS platform-base
+USER root
+COPY release/debian/account-profile /tmp/polly-account-profile
+COPY release/debian/profile-check /usr/lib/polly-account-profile-check
+COPY release/live/session /usr/bin/polly-live-session
+COPY release/live/init /init
+RUN sed -i 's/\r$//' /tmp/polly-account-profile /usr/lib/polly-account-profile-check \
+        /usr/bin/polly-live-session /init && \
+    chmod 755 /usr/lib/polly-account-profile-check /usr/bin/polly-live-session /init && \
+    sh /tmp/polly-account-profile template && rm /tmp/polly-account-profile
+ENTRYPOINT []
+CMD ["/bin/sh"]
+
+FROM platform-base AS live-base
+COPY release/debian/account-profile /tmp/polly-account-profile
+RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
+    sh /tmp/polly-account-profile live && rm /tmp/polly-account-profile

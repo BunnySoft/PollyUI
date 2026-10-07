@@ -268,7 +268,7 @@ A 的基本实机启动已通过；历史 ID 不因优先级调整重编号。
 - 完成一个条目时，附准确提交、用例/产物、验证范围和剩余限制；必要时拆出新的子项，保留原 ID。
 - 每轮更新计划数据中的具体子项、状态和准确证据，再生成本文并同步应用 Plan；未提交明确写未提交，失败/中断记录保留。其它文档只链接入口，不复制动态清单。
 - 应用 Plan 显示 R/T/执行子项以及独立 E/C/H 和授权门槛。模型显式记录归属和具体前置，旧组件不重复计数；界面具体展开/布局不作为模型正确性的替代证明。
-- 每个任务/子任务实现并通过对应校验后，更新本台账并自动 commit 到本地，再继续下一项；不自动 push。真实前置/授权未满足则明确记录，不伪造完成。产品不确定项尽量在实施前集中确认，普通技术细节自行验证。
+- 主会话优先实现并自动本地提交固定快照，继续下一项；编译/验证交给临时 worktree 分支子会话异步进行。实现已提交但验证未返回保持进行中，按固定快照结果关闭；验证修复经主会话审阅合并。不给主会话安排阻塞等待，不自动 push/PR；真实授权仍单独确认。
 - 2026-10-07 用户要求缩短验证反馈：默认使用 `desktop\tools\check-storage.ps1` 的语法、针对性单测及 C 严格编译，不每次修改重建/启动镜像。映射改动加 `-Mode mounts`；已打包 initramfs 检查用 `-Mode initramfs`，缓存不匹配明确失败。启动链/分区/内核变更及阶段交付仍需实际启动验收，快速检查不冒充系统可启动。
 - 新发现的需求记录来源，区分“历史欠项”“新观察”“已否决/被替代方案”，不从“目前不支持”推导出必须实现。
 - 这里只覆盖 PollyOS 相关历史任务及明确的跨平台边界；PollyUI 所有控件/渲染 API 的长期功能矩阵仍见 [ROADMAP.md](../ROADMAP.md)，不整体搬成操作系统需求。
@@ -327,10 +327,12 @@ R 是可验收交付目标，T 是实现任务，子项是独立状态的执行�
 **依赖语义：** `归属`是完成汇总；`前置`是实际实现/验收所需的具体子项。父节点关闭依赖子节点，不反向阻塞子项开工。
 同一技术后端可以支撑不同交付物；跨组前置不改变归属。里程碑的进行中可以表示部分子项完成，不代表全组已开工。
 保持普通用户桌面、标准 PAM/passwd/su、版本配套服务账户、源/备份保留和故障显式拒绝；不整体共享 /etc 或 /var/lib。
-每个执行子项完成后更新 JSON 中的状态/证据，运行 `desktop/tools/polly-plan.py --write`，同步 Plan，自动本地提交并继续；不自动 push。
+主会话优先实现并本地提交固定快照；编译/回归/镜像验收由临时 worktree 分支子会话异步承担，不在主会话等待。
+实现已提交但验证未返回的子项保持进行中并注明待验证；只有固定快照的证据通过才关闭。验证修复留在子分支，由主会话审阅合并，不自动 push/PR。
+每批更新 JSON 的状态/证据，运行 `desktop/tools/polly-plan.py --write` 生成文档并同步 Plan；主会话继续具备前置的实现。仅一个重型构建/VM lane，快速验证可并行。
 
 
-### R1 Live 账户可用 — 进行中/部分完成
+### R1 Live 账户可用 — 已完成
 
 **交付/边界：** Live 用公开账户和公开维护密码启动普通用户桌面；远程登录默认关闭，预设凭据不污染安装或救援。
 
@@ -343,7 +345,7 @@ R 是可验收交付目标，T 是实现任务，子项是独立状态的执行�
 - [x] **T01.2 Live 公开密码** · 已完成 · P0 · live：在 Live 专用配置层设置 polly 和 root 的公开开发默认密码 polly；提示这些密码公开，桌面仍为 UID1000。 前置：T01.1、T02.1。 证据：Live 专用层/构建辅助已实现；独立缓存容器真实 PAM/su/改密通过，不能据此宣称新 Live 镜像已启动。
 - [x] **T01.3 Live 自动登录** · 已完成 · P0 · live：保留普通用户自动登录配置；容器验证默认凭据、改密和标准 su/PAM，不自动开放未验收的锁定/挂起。新候选实际自动进入桌面由 T01.5 验收。 前置：T01.2。 证据：getty 普通 UID1000 自动登录配置保持；独立缓存容器正确/错误 root 密码与普通用户改密/PAM 验证通过。
 - [x] **T01.4 关闭默认远程登录** · 已完成 · P0 · live：默认不开 SSH/远程 root 登录；启用远程服务须独立配置，不能直接暴露公开默认凭据。 前置：T01.2。 证据：Live 层明确 mask ssh/sshd 的 service/socket 别名；独立容器核对 /dev/null 掩码，未重新构建原 Live 镜像。
-- [ ] **T01.5 Live 新策略启动** · 进行中/部分完成 · P0 · live：新的 Live 候选实际启动并验证公开账户及 root 维护行为；改密默认仅本次会话，不宣传为持久化 Live。 前置：T01.3、T01.4。
+- [x] **T01.5 Live 新策略启动** · 已完成 · P0 · live：新的 Live 候选实际启动并验证公开账户及 root 维护行为；改密默认仅本次会话，不宣传为持久化 Live。 前置：T01.3、T01.4。 证据：独立 r2 ISO/USB 已装配，sourceDirty=1、复用固定缓存载荷；build/live-profiles-r2-boot-slow-input/run/result.json 通过普通 OVMF UEFI/TCG、UID1000 DRM/logind 桌面、真实中文/剪贴板/工作区。public-maintenance 串口记录确认根0755与 UID1000→标准 root su 的公开密码；QMP退出非正常关机/持久性/独立救援证明，失败r1及首次TCG输入证据保留。
 
 #### T02 安装凭据与模式隔离
 
@@ -790,6 +792,9 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 ### 历史证据与当前产物边界
 
+- Live 新策略 r2：`dist/pollydesktop-live-profiles-r2`，来源 `997587b` 且 sourceDirty=1，ISO 677,810,176 字节；`build/live-profiles-r2-boot-slow-input/run/result.json` 为普通 UEFI/TCG 图形/中文/剪贴板/工作区通过；`build/live-profiles-r2-public-maintenance/public-profile-diagnostic.log` 验证根 0755、公开 root 凭据及普通 UID1000 的标准 su。第一次 TCG 高速输入超时记录不覆盖；加速器感知键间隔仍要求真实标记通过。
+- Live 新策略 r1：`dist/pollydesktop-live-profiles-r1` 复用固定锁定载荷，sourceDirty=1；`build/live-profiles-r1-boot/run` 保留失败。TCG 公开凭据诊断 `build/live-profiles-r1-diagnostic-tcg/public-profile-diagnostic.log` 确认内存根目录实际为 1777，新守卫拒绝，尚未通过桌面启动。init 与 CPIO 现明确 0755，继续独立 r2，不放宽父目录检查。
+- 新 profile 镜像阶段完整断网构建曾因软件包层缓存未命中失败；之后以明确固定旧锁定载荷、无 apt 的 `Containerfile.profiles` 完成平台/Live 层和载荷检查。它拒绝已有预设/配置密码的来源，原镜像标签不改写。缓存复用不冒充完整包重建；独立救援尚未可启动。
 - 历史 D1：`617cea4`；`build/persistent-d1-boot-r2/result.json` / smoke，A/B 范围与原 sourceDirty 不改写。
 - 存储组件：`07e1692` / `aacde4c` / `a0a4e1c`；early usr/必需映射 namespace 不冒充整机或断电验收。
 - 普通单系统 r2：来源 `9e89f8c`，raw 3,468,689,408 字节，SHA256 `4e1c0f7b16311baf5901e5b5a5009bcdc2679c7b6015d6668648d34defe38c84`；Recovery 仍 reserved-not-bootable。`build/single-system-smoke-r2/run/result.json` 的 QMP 退出不是正常关机。

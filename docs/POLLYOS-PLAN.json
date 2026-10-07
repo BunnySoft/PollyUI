@@ -579,7 +579,7 @@
         "common"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": []
     },
     {
@@ -666,7 +666,7 @@
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": []
     },
     {
@@ -747,11 +747,12 @@
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "live-login",
         "live-remote"
-      ]
+      ],
+      "evidence": "独立 r2 ISO/USB 已装配，sourceDirty=1、复用固定缓存载荷；build/live-profiles-r2-boot-slow-input/run/result.json 通过普通 OVMF UEFI/TCG、UID1000 DRM/logind 桌面、真实中文/剪贴板/工作区。public-maintenance 串口记录确认根0755与 UID1000→标准 root su 的公开密码；QMP退出非正常关机/持久性/独立救援证明，失败r1及首次TCG输入证据保留。"
     },
     {
       "id": "t02",
@@ -4638,6 +4639,9 @@
     }
   ],
   "evidenceNotes": [
+    "- Live 新策略 r2：`dist/pollydesktop-live-profiles-r2`，来源 `997587b` 且 sourceDirty=1，ISO 677,810,176 字节；`build/live-profiles-r2-boot-slow-input/run/result.json` 为普通 UEFI/TCG 图形/中文/剪贴板/工作区通过；`build/live-profiles-r2-public-maintenance/public-profile-diagnostic.log` 验证根 0755、公开 root 凭据及普通 UID1000 的标准 su。第一次 TCG 高速输入超时记录不覆盖；加速器感知键间隔仍要求真实标记通过。",
+    "- Live 新策略 r1：`dist/pollydesktop-live-profiles-r1` 复用固定锁定载荷，sourceDirty=1；`build/live-profiles-r1-boot/run` 保留失败。TCG 公开凭据诊断 `build/live-profiles-r1-diagnostic-tcg/public-profile-diagnostic.log` 确认内存根目录实际为 1777，新守卫拒绝，尚未通过桌面启动。init 与 CPIO 现明确 0755，继续独立 r2，不放宽父目录检查。",
+    "- 新 profile 镜像阶段完整断网构建曾因软件包层缓存未命中失败；之后以明确固定旧锁定载荷、无 apt 的 `Containerfile.profiles` 完成平台/Live 层和载荷检查。它拒绝已有预设/配置密码的来源，原镜像标签不改写。缓存复用不冒充完整包重建；独立救援尚未可启动。",
     "- 历史 D1：`617cea4`；`build/persistent-d1-boot-r2/result.json` / smoke，A/B 范围与原 sourceDirty 不改写。",
     "- 存储组件：`07e1692` / `aacde4c` / `a0a4e1c`；early usr/必需映射 namespace 不冒充整机或断电验收。",
     "- 普通单系统 r2：来源 `9e89f8c`，raw 3,468,689,408 字节，SHA256 `4e1c0f7b16311baf5901e5b5a5009bcdc2679c7b6015d6668648d34defe38c84`；Recovery 仍 reserved-not-bootable。`build/single-system-smoke-r2/run/result.json` 的 QMP 退出不是正常关机。",

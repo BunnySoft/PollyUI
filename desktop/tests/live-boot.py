@@ -121,11 +121,12 @@ def main():
                         time.sleep(0.2)
 
                 def keys(*names):
-                    execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in names]})
-                    time.sleep(0.15)
+                    execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in names],
+                                         "hold-time": 80})
+                    time.sleep(1.0 if acceleration == "tcg" else 0.15)
 
                 wait_log("Input-method protocol ready", 120)
-                time.sleep(1)
+                time.sleep(10 if acceleration == "tcg" else 1)
                 for key in ("n", "i", "h", "a", "o", "spc"):
                     keys(key)
                 wait_log("POLLY_LIVE_IME_COMMIT")
@@ -160,6 +161,7 @@ def main():
                     "keyboardWorkspaceSwitch": True,
                     "pamSessionRegistered": True,
                     "nativeChineseCommit": True, "nativeClipboardPaste": True,
+                    "inputCadenceSeconds": 1.0 if acceleration == "tcg" else 0.15,
                     "iso": iso.name, "serialLog": "serial.log", "screenshot": "desktop.ppm",
                 }
                 with iso.open("rb") as source:

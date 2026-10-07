@@ -124,6 +124,7 @@ def main():
                         files += 1
                         total += size
 
+                    entry(".", stat.S_IFDIR | 0o755)
                     for member in archive:
                         name = member.name.removeprefix("./").rstrip("/")
                         path = PurePosixPath(name)

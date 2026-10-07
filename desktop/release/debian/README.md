@@ -16,6 +16,11 @@ Its generated view and the app Plan use the single data source
 [`POLLYOS-PLAN.json`](../../../docs/POLLYOS-PLAN.json): delivery outcomes, implementation
 tasks and independently tracked subtasks. Historical M IDs are trace aliases, not
 ordering or prerequisite rules. Fresh installation does not wait for old-data migration.
+Implementation snapshots are committed locally by the main session; temporary
+worktree validation sessions own compilation/regressions and the single heavy
+media/VM lane. They test fixed revisions rather than a changing main checkout.
+Pending validation is not completion, and validation-only fixes return on their
+own branches for review without automatic push/PR.
 
 The 2026-10-08 target account policy separates public Live presets (`polly/polly`,
 root maintenance password `polly`) from locked shared templates and installed
