@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+# This file is installed only in explicitly requested disposable verification images.
+for attempt in $(seq 1 180); do
+    text=$(journalctl -b --no-pager -o cat)
+    if printf '%s\n' "$text" | grep -q POLLY_PERSISTENCE_FAILED; then
+        echo "Persistence fixture failed; refusing to report a successful shutdown." >&2
+        exit 1
+    fi
+    if printf '%s\n' "$text" | grep -q 'POLLY_INSTALLED_DESKTOP_READY .*theme=bigsur'; then
+        sync
+        systemctl poweroff
+        exit 0
+    fi
+    sleep 1
+done
+echo "Native installed desktop did not become ready." >&2
+exit 1

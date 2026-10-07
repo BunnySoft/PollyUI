@@ -30,13 +30,22 @@ build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
 PollyOS combines a minimal Linux base with our own wlroots-based **PollyWM**
 compositor and **PollyShell**, built with PollyUI rather than GNOME/KDE or labwc.
-The current Debian alpha.5-r2 candidate has bootable UEFI Live media; persistent
-installation and production session protection remain future work.
+The current Debian alpha.5-r2 candidate has bootable UEFI Live media. A separate
+[D1 installed-development virtual disk](./desktop/release/debian/README.md#installed-development-virtual-disk-d1)
+adds A/B systems and persistent user data; a physical-media installer, system
+updates and production session protection remain future work.
 
 Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**
 for design principles, architecture, current capabilities, known limits,
 verified artifacts and the remaining roadmap. Detailed implementation lives in
 the [desktop guide](./desktop/README.md).
+
+The **[storage and Linux compatibility design (中文)](./docs/POLLYOS-STORAGE-DESIGN.md)**
+defines the target single-system/recovery layout, shared applications and
+program/state separation. Implementing it is the **current P0 priority**;
+tasks, dependencies and progress live only in the
+[execution ledger](./docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
+It is not the current D1 layout or evidence that system recovery is implemented.
 
 ## Status
 

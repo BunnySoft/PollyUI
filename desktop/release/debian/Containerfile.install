@@ -1,0 +1,22 @@
+ARG LIVE_IMAGE=localhost/polly-debian-live-base
+ARG SDK_IMAGE=localhost/polly-debian-sdk-mesa:polly1
+FROM ${SDK_IMAGE} AS account-tools
+COPY release/install/passwd-proxy.c /tmp/passwd-proxy.c
+RUN cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+    -o /tmp/polly-passwd /tmp/passwd-proxy.c
+FROM ${LIVE_IMAGE}
+USER root
+COPY --from=account-tools /tmp/polly-passwd /usr/lib/polly-passwd
+RUN apt-get update -qq && apt-get install -y --no-install-recommends e2fsprogs python3 libnss-extrausers && \
+    dpkg-divert --local --rename --add /usr/bin/passwd && \
+    dpkg-statoverride --add --update root root 0755 /usr/bin/passwd.distrib && \
+    install -o root -g root -m 4755 /usr/lib/polly-passwd /usr/bin/passwd && \
+    rm /usr/lib/polly-passwd && \
+    systemctl mask e2scrub_all.timer e2scrub_all.service e2scrub_reap.service && \
+    printf 'RESUME=none\nFSTYPE=ext4\n' > /etc/initramfs-tools/conf.d/polly-install && \
+    update-initramfs -u -k all && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-installed-packages.tsv && \
+    apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+ENTRYPOINT []
+CMD ["/bin/sh"]

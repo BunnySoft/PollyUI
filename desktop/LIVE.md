@@ -11,6 +11,13 @@ previous physical-validation baseline, not the latest Debian candidate.
 On 2026-10-07 the user confirmed the Debian alpha.5-r2 candidate boots and runs
 on physical hardware; per-device and endurance results were not separately reported.
 The memory-only format and no-installer/data-persistence limits apply to both.
+The separate [installed-development virtual disk](./release/debian/README.md#installed-development-virtual-disk-d1)
+uses a normal ext4 disk root and required user-data volume. Its persistence does
+not change either Live artifact or turn this builder into a physical installer.
+The new [P0 storage target](../docs/POLLYOS-STORAGE-DESIGN.md) is an installed-system
+migration with independent recovery, not a change to this Live format or an
+implemented rescue partition. Tasks/status are maintained in the
+[execution ledger](../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
 
 The Live builder produces an **unsigned x86_64 UEFI ISO and GPT/FAT32 USB image**,
 not an installer.

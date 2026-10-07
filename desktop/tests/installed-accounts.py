@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Bounded account-state unit tests; no real credentials, mounts or account changes."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location("installed_accounts",
+    Path(__file__).resolve().parents[1] / "release/install/accounts.py")
+accounts = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(accounts)
+
+UUID = "73c3d806-e114-4691-b1a7-8506c7a44e21"
+
+
+class InstalledAccounts(unittest.TestCase):
+    def test_identities(self):
+        text = "root:x:0:0:root:/root:/bin/sh\npolly:x:1000:1000::/home/polly:/usr/bin/polly-installed-session\n"
+        self.assertEqual(set(accounts.identities(text)), {"root", "polly"})
+        for invalid in (text.replace(":1000:1000:", ":0:1000:"),
+                        text.replace(":1000:1000:", ":1000:0:"),
+                        text + text, text.splitlines()[0]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                accounts.identities(invalid)
+
+    def test_managed_password_changes_require_persistent_scope(self):
+        with self.assertRaises(ValueError):
+            accounts.password_scope(None)
+        accounts.password_scope("daemon")
+        with patch.object(accounts.Path, "is_file", return_value=False):
+            for user in ("root", "polly"):
+                with self.subTest(user=user), self.assertRaisesRegex(ValueError, "persistent passwd entry"):
+                    accounts.password_scope(user)
+
+    def test_setup_failure_does_not_commit_initialization(self):
+        with patch.object(accounts, "require_ready"), \
+                patch.object(accounts, "completed", return_value=False), \
+                patch.object(accounts.sys, "stdin") as terminal, \
+                patch.object(accounts.subprocess, "run", side_effect=[
+                    accounts.subprocess.CompletedProcess(["passwd", "polly"], 0),
+                    accounts.subprocess.CalledProcessError(1, ["passwd", "root"]),
+                ]) as password_tool, \
+                patch.object(accounts, "finish") as commit, \
+                patch("builtins.print"):
+            terminal.isatty.return_value = True
+            with self.assertRaises(accounts.subprocess.CalledProcessError):
+                accounts.setup()
+            self.assertEqual(password_tool.call_count, 2)
+            commit.assert_not_called()
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_configuration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "config.json"
+            valid = {"schemaVersion": 2, "homeUuid": UUID, "automaticLogin": False, "initialized": False}
+            accounts.atomic(path, json.dumps(valid))
+            self.assertEqual(accounts.config(root), valid)
+            for invalid in ({**valid, "automaticLogin": 1}, {**valid, "schemaVersion": True},
+                            {**valid, "schemaVersion": 1}, {**valid, "homeUuid": "../other"},
+                            {**valid, "initialized": 1},
+                            {**valid, "extra": "unknown"}, []):
+                accounts.atomic(path, json.dumps(invalid))
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    accounts.config(root)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_completion_and_unsafe_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            marker = root / "setup-complete"
+            settings = {"schemaVersion": 2, "homeUuid": UUID, "automaticLogin": False, "initialized": False}
+            accounts.atomic(root / "config.json", json.dumps(settings))
+            self.assertFalse(accounts.completed(root))
+            settings["initialized"] = True
+            accounts.atomic(root / "config.json", json.dumps(settings))
+            self.assertTrue(accounts.completed(root))
+            accounts.atomic(marker, "1\n")
+            self.assertTrue(accounts.completed(root))
+            marker.chmod(0o666)
+            with self.assertRaises(ValueError):
+                accounts.completed(root)
+            marker.unlink()
+            marker.symlink_to(root / "missing")
+            with self.assertRaises(ValueError):
+                accounts.completed(root)
+            marker.unlink()
+            accounts.atomic(marker, "1\n")
+            settings["initialized"] = False
+            accounts.atomic(root / "config.json", json.dumps(settings))
+            with self.assertRaises(ValueError):
+                accounts.completed(root)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_atomic_and_limits(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "state"
+            accounts.atomic(path, "first", 0o600)
+            accounts.atomic(path, "second", 0o600)
+            self.assertEqual(accounts.read(path), "second")
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(sorted(item.name for item in root.iterdir()), ["state"])
+            with self.assertRaises(ValueError):
+                accounts.read(path, 2)
+            root.chmod(0o777)
+            with self.assertRaises(ValueError):
+                accounts.atomic(path, "unsafe")
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_automatic_login_is_once_and_boot_scoped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            runtime = Path(temporary)
+            accounts.atomic(runtime / "automatic-login", "off\n", 0o600)
+            with patch.object(accounts, "RUNTIME", runtime), \
+                    patch.object(accounts, "require_ready"), \
+                    patch.object(accounts.os, "execv") as execute, \
+                    patch.object(accounts.syslog, "syslog"):
+                accounts.getty("tty1")
+                self.assertNotIn("--autologin", execute.call_args.args[1])
+                accounts.atomic(runtime / "automatic-login", "on\n", 0o600)
+                accounts.getty("tty1")
+                self.assertIn("--autologin", execute.call_args.args[1])
+                accounts.getty("tty1")
+                self.assertNotIn("--autologin", execute.call_args.args[1])
+                with self.assertRaises(ValueError):
+                    accounts.getty("tty2")
+
+
+if __name__ == "__main__":
+    unittest.main()

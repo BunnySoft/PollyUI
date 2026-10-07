@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/home/polly USER=polly LOGNAME=polly SHELL=/bin/sh
+export LIBSEAT_BACKEND=logind WLR_BACKENDS=drm,libinput
+unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET DBUS_SESSION_BUS_ADDRESS
+if [ "$(id -u)" != 1000 ] || [ "${XDG_RUNTIME_DIR:-}" != /run/user/1000 ] ||
+    [ -z "${XDG_SESSION_ID:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    echo "PollyDesktop requires its ordinary-user PAM/logind session." >&2
+    exit 1
+fi
+if ! mountpoint -q /home ||
+    [ "$(findmnt -rn -o UUID /home)" != "$(cat /etc/polly-home-uuid)" ]; then
+    echo "Required user data volume is missing or mismatched; desktop startup refused." >&2
+    exit 1
+fi
+. /usr/share/pollyui/desktop/tools/live-session-mode.sh
+cd "$HOME"
+logger -t polly-installed "Starting ordinary user desktop, uid=$(id -u), tty=$(tty)"
+loginctl show-session "$XDG_SESSION_ID" --property=Active --property=User --property=Seat | logger -t polly-login
+logger -t polly-installed "POLLY_SESSION_REGISTERED uid=$(id -u) id=$XDG_SESSION_ID"
+echo "Installed development session. User data is on a separate required volume."
+echo "Password-configured installed session; integrated lock and power actions are not yet available."
+if [ "$live_mode" = console ]; then exec /bin/sh; fi
+case " $(cat /proc/cmdline) " in
+    *" polly.verify-persistence=1 "*)
+        if ! /usr/share/pollyui/desktop/tests/persistent-verify > "$HOME/persistence-test.log" 2>&1; then
+            cat "$HOME/persistence-test.log" | logger -t polly-installed
+            sync
+            logger -t polly-installed "POLLY_PERSISTENCE_FAILED"
+            exit 1
+        fi
+        if ! grep -q '^POLLY_PERSISTENCE_PASS ' "$HOME/persistence-test.log"; then
+            logger -t polly-installed "POLLY_PERSISTENCE_FAILED"
+            exit 1
+        fi
+        cat "$HOME/persistence-test.log" | logger -t polly-installed
+        ;;
+esac
+log=$(mktemp "$HOME/polly-session-XXXXXX")
+chmod 600 "$log"
+status=$(mktemp "$XDG_RUNTIME_DIR/polly-session-status-XXXXXX")
+trap 'rm -f "$status"' EXIT
+{
+    result=0
+    if sh /usr/share/pollyui/desktop/tools/run-session.sh --ime --audio \
+        /usr/bin/pollywm /usr/bin/pollyui /usr/share/pollyui/desktop/shell/installed.mjs; then
+        echo "PollyDesktop session exited normally."
+    else
+        result=$?
+        echo "PollyDesktop session failed with status $result."
+    fi
+    printf '%s\n' "$result" > "$status"
+} 2>&1 | tee "$log" | logger -t polly-session
+echo "Desktop ended. Session log: $log. User files remain on the data volume."
+result=$(cat "$status")
+case "$result" in ''|*[!0-9]*) echo "Missing desktop exit status." >&2; exit 1 ;; esac
+exit "$result"

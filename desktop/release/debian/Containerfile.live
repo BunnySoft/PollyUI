@@ -63,8 +63,8 @@ CMD ["/bin/sh"]
 FROM docker.io/library/debian:trixie-slim AS image-tools
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
-    python3 cpio gzip grub-efi-amd64-bin xorriso mtools dosfstools fdisk \
-    qemu-system-x86 ovmf
+    python3 cpio gzip grub-efi-amd64-bin xorriso mtools dosfstools fdisk e2fsprogs \
+    qemu-system-x86 qemu-utils ovmf
 WORKDIR /work
 ENTRYPOINT []
 CMD ["/bin/sh"]

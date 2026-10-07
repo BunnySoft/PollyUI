@@ -7,6 +7,10 @@ physical hardware. This basic boot/runtime result does not establish full
 per-device equivalence; the Alpine fallback and its evidence remain preserved.
 The current alpha.5-r2 artifact inventory, architecture and handoff are in the
 [PollyOS technical overview](../../../docs/POLLYOS.md).
+The [storage design](../../../docs/POLLYOS-STORAGE-DESIGN.md) is now the P0
+implementation priority; its single writable system, early `/usr` mapping,
+shared Apps and independent recovery are **not yet implemented**.
+Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
 
 ## Minimal root filesystem
 
@@ -111,6 +115,173 @@ Payload permissions, PAM/script line endings and essential services are checked
 before export. Image assembly uses a native temporary filesystem, then publishes
 completed artifacts to the destination so Windows mount I/O does not stall ISO
 creation. No physical disk, host service or firmware setting is changed.
+
+## Installed-development virtual disk (D1)
+
+This section describes the **existing A/B builder**, retained as historical
+evidence and a migration source. It is not the new single-system/recovery
+layout; its commands still generate D1-format candidates.
+
+This separate path creates a **new regular disk-image file**, not an installer
+that selects or writes a physical device. It reuses a checked Debian Live base
+and its corrected Mesa runtime, adds ext4 checking tools, and uses Debian's
+normal disk-root initramfs rather than unpacking the whole system into RAM.
+The Live ISO/USB builder and existing alpha.5-r2 artifacts remain unchanged.
+
+The initial, user-approved GPT layout is:
+
+| Partition | Default size | Responsibility |
+|---|---|---|
+| EFI | 256 MiB FAT32 | Unsigned removable-media UEFI entry and embedded boot menu |
+| A | 3072 MiB ext4 | First complete system, including its kernel/initramfs, `/etc` and `/var/lib/dpkg` |
+| B | 3072 MiB ext4 | Independent complete system and matching package database |
+| DATA | 2048 MiB ext4 | Required `/home`: settings, managed application code/registration, AppData and documents |
+
+Filesystem UUIDs, not enumeration order, select the system root and user volume.
+`/home` is required before tty1 login; the session checks its UUID again and
+refuses to start the desktop on a missing or mismatched volume. Both initial
+system slots contain the **same version**. Selecting them is not an implemented
+system update, version rollback or data-schema migration.
+`/run`, `/tmp` and iwd's `/var/lib/iwd` profiles remain volatile. The rest of
+`/var` belongs to its system slot, not shared AppData. No other disks or swap
+are configured. Automatic APT updates and the deferred desktop power/lock
+policies remain unchanged. The added ext4 tools' unattended e2scrub timer/reap
+units are masked; they are not a new disk-maintenance service.
+
+Run these commands **inside Linux/WSL**, from the repository root:
+
+```sh
+POLLY_LIVE_IMAGE=localhost/polly-debian-live-base \
+    sh desktop/tools/build-installed.sh dist/polly-installed-d1
+```
+
+The wrapper checks the supplied Live base before deriving an installed image.
+Use a Live base assembled from the intended runtime; an image tag alone does
+not prove that it contains the current source. Windows worktrees must provide
+the real `POLLY_SOURCE_REVISION` and `POLLY_SOURCE_DIRTY=0|1`, as for Live builds.
+Dependencies are installed only in build containers. Assembly uses `mkfs.ext4 -d`,
+regular partition files and byte offsets: no loop devices, host mounts, physical
+disk access or host-account changes. Existing output directories are refused.
+
+Outputs are the approximately 8.25 GiB `.img`, `installed-manifest.json`,
+`SHA256SUMS` and the embedded `grub.cfg`. The manifest records filesystem UUIDs,
+partition boundaries, kernel-package inventory, source dirty state, base-image
+identity, export hash and recipe/overlay fingerprints. This is integrity and
+provenance metadata, not a signed or bit-reproducible release.
+
+For disposable **test-only** images:
+
+```sh
+sh desktop/tools/build-installed.sh dist/polly-installed-d1-test --verification-fixture
+podman run --rm --network=none --device /dev/kvm \
+    -v "$PWD:/workspace" -w /workspace localhost/polly-debian-live-tools \
+    python3 -u -B desktop/tests/persistent-boot.py \
+    dist/polly-installed-d1-test build/persistent-d1-test
+```
+
+Omit `--device /dev/kvm` when unavailable; the fixture can use TCG. It keeps the
+original image read-only and creates one disposable qcow2 overlay. Four cold
+boots select **A, A, B, A**, checking an actual PollyUI settings namespace,
+managed-app installation/registration and localStorage, a user document,
+ordinary-user PAM/logind and the native DRM desktop. The fixture enables a
+guest-only clean shutdown helper only in explicitly built verification images
+and only with `polly.verify-persistence=1`. Regular images do not include that
+helper or test application. Evidence directories cannot be overwritten.
+No network, shared guest folder, physical disk/GPU or host audio is attached.
+Pass `--smoke` with a **regular**, non-fixture image to check ordinary-user
+native desktop startup without installing or running the persistence helper.
+This check stops its disposable VM rather than claiming a clean guest shutdown
+or a persistence run.
+
+Previously generated D1 artifacts retain unprotected automatic login, no
+encryption, no update installer and no production signing trust. **Do not write
+it to physical media without a separately selected destination and explicit
+authorization.** VM persistence is not physical-device or power-loss acceptance.
+Administrator initialization is also incomplete: the default `polly` and `root`
+passwords are locked, so `su -` currently cannot authenticate. The required next
+setup step is local interactive `polly` and independent root-password provisioning,
+password login with an administrator-controlled automatic-login option, and an
+everyday su entry;
+see [console account setup](../../SESSION.md#installed-console-setup-login-and-everyday-su).
+The [complete task ledger](../../../docs/POLLYOS-BACKLOG.md) records the confirmed
+installed-system defaults, subtasks and acceptance boundaries. These future
+requirements do not change existing D1 artifacts or passwordless Live policy.
+
+## Installed console accounts (development follow-up)
+
+The current builder adds local console setup, real PAM password login,
+everyday `su -`, and standard `passwd` persistence for the fixed `polly`/root
+accounts. The root-managed account database is shared on the required DATA
+filesystem; only shadow lookup uses Debian `libnss-extrausers`, not shared
+system `/etc` or `/var`. Python is an explicit installed account-controller
+dependency. The compatibility password binary is built with the pinned
+`POLLY_SDK_IMAGE` (default `localhost/polly-debian-sdk-mesa:polly1`).
+Its restricted setuid/namespace contract is described in
+[session foundation](../../SESSION.md#installed-console-setup-login-and-everyday-su).
+
+Inside Linux/WSL, create a **new** output directory as before:
+
+```sh
+sh desktop/tools/build-installed.sh dist/polly-installed-accounts
+```
+
+On first boot, set `polly` and root passwords locally. TTY1 then requires the
+`polly` password; the graphical desktop still runs as UID 1000. In a terminal:
+
+```sh
+su -
+passwd
+passwd polly
+polly-accounts autologin on
+polly-accounts autologin off
+exit
+```
+
+The two autologin commands are alternatives. Changes apply on the next boot;
+logout does not automatically log back in. Image templates contain no usable
+passwords, including no locked personal password hashes. Schema-v1 development
+prototypes are superseded, not silently migrated or reset.
+
+Verification images additionally include an explicit guest-only account
+fixture. It generates temporary passwords in memory, exercises real setup,
+ordinary-user password changes and correct/wrong/old root-password su, then
+checks password-record retention across A/A/B/A. No fixture passwords are
+embedded in the image or written to serial logs. Regular `--smoke` verification
+instead provisions the normal first-boot console interactively and enters the
+required password before checking native desktop readiness. It still stops
+the VM rather than claiming a clean shutdown or persistence acceptance.
+
+The verified schema-v2 follow-up is retained separately from the old D1 and
+schema-v1 prototypes:
+
+| Candidate directory | Evidence | Scope |
+| --- | --- | --- |
+| `dist/pollydesktop-installed-accounts-r2` | `build/persistent-accounts-smoke-r2/result.json` | Normal first-boot setup and required password before UID-1000 native desktop; VM stopped, not clean-shutdown acceptance |
+| `dist/pollydesktop-installed-accounts-verification-r2` | `build/persistent-accounts-boot-r2/result.json` | A/A/B/A, real account authentication and retained password records/policy, settings, app registration/AppData and document; each boot cleanly powers down |
+
+Both raw images remain unchanged by verification. Their SHA-256 values are,
+respectively, `0913e570ff4416e7131d91c7601bac98504c079ab9a5362d71dffb8cfd029053`
+and `a5ca4b1ad5d0c42170fdbba7d914f650d3668aeeb25fcf75f42b513fbe37b44e`.
+Build-input fingerprints match the packaged source. These are uncommitted
+development builds, not a published or signed release.
+The three registered installed-image/accounts/session CTests pass, including
+seven account-state unit cases. Additional disposable-container checks reject
+out-of-scope PAM changes and unsupported namespace/aging overrides without
+altering either shadow database, deny locked-root su, and confirm `su -` root
+login environment plus return to UID/GID 1000.
+
+Do not use `dist/pollydesktop-installed-accounts` as the normal candidate:
+that superseded schema-v1 prototype failed the required-password check because
+the inherited Live getty override won. Its failure evidence is retained.
+The schema-v1 verification prototype's earlier cold-boot pass does not establish
+acceptance of the hardened schema-v2 follow-up.
+
+These are console-stage development candidates. Graphical setup/login,
+administrator settings UI, integrated screen locking/TTY protection, actual
+system-version migration, encryption, Wi-Fi persistence, power authorization
+and production signatures remain incomplete. Ordinary image boot must not be
+presented as evidence for those features; real-device installation still needs
+a selected target and explicit write authorization.
 
 ## Offline release verification and comparison
 

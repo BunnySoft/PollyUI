@@ -14,6 +14,24 @@ capabilities. It does not load validation code from the package. Native code
 provides bounded filesystem/archive operations using libarchive and SHA-256.
 No Node, Python, root service or GLib/GIO loop is required by the manager.
 
+## Confirmed P0 target, not the current implementation
+
+The [storage design](../docs/POLLYOS-STORAGE-DESIGN.md) now takes priority:
+shared code in `/Apps/Packages/<PackageHash>`, global registration/policy in
+`/SystemData/Apps`, and separate HOME/XDG data per stable UID.
+The current per-user CLI below has **not** been migrated. Global install,
+replace and uninstall need a restricted backend that verifies the real caller;
+running this existing manager through sudo is not the implementation.
+apt retains its own package authority and program tree.
+
+Migration must resolve conflicting old users' active versions before switching,
+preserve stable app IDs and source data, and validate two-user isolation.
+Global removal is not personal launcher hiding; GC must consider cross-user
+references and resource users. Launcher policy alone is not execution isolation.
+Tasks, decisions and status live only in
+the [execution ledger](../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖), M04/M15.
+The commands and evidence below remain scoped to the current private store.
+
 ## Package and data layout
 
 ```text

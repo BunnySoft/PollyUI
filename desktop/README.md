@@ -6,6 +6,11 @@ PollyOS is the system name; existing subproject/tool/artifact names remain uncha
 The **[historical deferred-work ledger](../docs/POLLYOS-BACKLOG.md)** tracks
 unfinished subfeatures across the original 45 milestones, theme/release decisions
 and the second-stage plan; a completed milestone does not close all future extensions.
+The [storage/Linux compatibility design](../docs/POLLYOS-STORAGE-DESIGN.md)
+is the current **P0 implementation priority**: writable single system,
+classified persistent state, shared Apps and independent recovery.
+The ledger owns all sequencing and status; current D1 and private application
+stores below remain unchanged until separately verified migration.
 
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
 compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
@@ -47,6 +52,15 @@ Program objects, registration and AppData are separate; explicit replacement and
 rollback preserve data and reject changed data-schema contracts. Removal retires
 registration but intentionally retains code caches and data. See
 [managed applications](./APPLICATIONS.md) for commands, bounds and remaining work.
+The separate [D1 installed-development image](./release/debian/README.md#installed-development-virtual-disk-d1)
+adds a user-approved GPT/EFI + ext4 A/B + required `/home` layout for disposable
+virtual disks. It does not select or write physical media, implement system
+updates, or change the memory-only Live image.
+The current builder's separate console-account follow-up adds local
+`polly`/root setup, default password login, once-per-boot optional autologin,
+standard password changes and everyday `su -`; see
+[installed console accounts](./release/debian/README.md#installed-console-accounts-development-follow-up).
+Integrated graphical login/administration and locking remain incomplete.
 The alpha.5 code line adds managed applications, authoritative startup/runtime
 service status and explicit release-input tooling. The latest Debian alpha.5-r2
 ISO/USB includes the Mesa lifetime correction and passes 4 GiB UEFI VM preflight.
@@ -88,7 +102,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | UEFI Live development image | Memory-only root; current Debian/systemd/PAM/logind candidate and preserved Alpine/OpenRC/PAM/elogind baseline. Temporary ordinary-user automatic login, target kernel/firmware, optical ISO and GPT/FAT32 USB image. Debian alpha.5-r2 passes VM preflight and user-reported physical boot/basic operation; per-device qualification remains separate. No installer, protected login, enabled secure lock or signing trust. |
 | Authentication and lock mechanism | Ordinary-user PAM helper, separately trusted standard session-lock client, native password UI and crash/output-loss black-cover protection. Real masked typing/PAM unlock verified; protected-session/power integration remains incomplete and the passwordless Live keeps locking disabled. See `SESSION.md`. |
 | Power controls - authorization deferred | Native login1 capability checks and themed confirmation/cancellation; actual Live elogind denies shutdown/restart, so both remain disabled. No polkit or privileged authorization proxy. Suspend/hibernate remain unavailable. See `SESSION.md`. |
-| 5 - persistent system | Full external-media installation, persistent user data, manual system update/recovery, production trust and joint hardware qualification remain separate from the implemented Live boot/session foundation. |
+| 5 - persistent system | D1 A/B persistence is historical evidence. P0 targets a writable single system, early `/usr` mapping, classified state/shared Apps and independent recovery; new-layout implementation/acceptance, physical installer and production trust remain incomplete. |
 
 Prefer standard Wayland protocols. Workspaces/window management may later
 require a narrowly scoped private protocol or socket, with an explicit trust

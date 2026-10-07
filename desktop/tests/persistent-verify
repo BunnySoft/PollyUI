@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eux
+test "$(id -u)" = 1000
+test "$(findmnt -rn -o UUID /home)" = "$(cat /etc/polly-home-uuid)"
+test "$(findmnt -rn -o FSTYPE /)" = ext4
+test "$(findmnt -rn -o FSTYPE /var/lib/iwd)" = tmpfs
+test -s /var/lib/dpkg/status
+slot=$(cat /etc/polly-system-slot)
+case "$slot" in A|B) ;; *) echo "Invalid system slot" >&2; exit 1 ;; esac
+state="$HOME/Documents/persistence-check.txt"
+count=1
+if [ -f "$state" ]; then
+    previous=$(cat "$state")
+    case "$previous" in 1|2|3) count=$((previous + 1)) ;; *) echo "Invalid retained document" >&2; exit 1 ;; esac
+fi
+export SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software PU_RENDERER=raster
+fixture=/usr/share/pollyui/desktop/tests/persistent-storage.mjs
+if ! settings=$(/usr/bin/pollyui --app-id org.pollyui.shell "$fixture" settings "$count" 2>&1); then
+    printf '%s\n' "$settings" >&2
+    exit 1
+fi
+printf '%s\n' "$settings"
+printf '%s\n' "$settings" | grep -qx "POLLY_SETTINGS_PASS $count"
+bundle="$HOME/persistence-fixture.app"
+if [ "$count" = 1 ]; then
+    mkdir -m 700 "$bundle"
+    cp "$fixture" "$bundle/main.mjs"
+    cat > "$bundle/manifest.json" <<'MANIFEST'
+{"schemaVersion":1,"id":"org.example.persistence","name":"Persistence verification","version":"1.0.0","target":{"os":"linux","architecture":"x86_64","libc":"glibc"},"launch":{"kind":"pollyui","entry":"main.mjs","arguments":[]},"data":{"layout":"pollyui","schema":1}}
+MANIFEST
+    /usr/bin/polly-app install "$bundle"
+fi
+if ! app=$(/usr/bin/polly-app run org.example.persistence 2>&1); then
+    printf '%s\n' "$app" >&2
+    exit 1
+fi
+printf '%s\n' "$app"
+printf '%s\n' "$app" | grep -qx "POLLY_APPDATA_PASS $count"
+umask 077
+printf '%s\n' "$count" > "$state"
+sync
+printf 'POLLY_PERSISTENCE_PASS count=%s slot=%s\n' "$count" "$slot"
