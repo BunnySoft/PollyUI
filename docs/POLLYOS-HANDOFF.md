@@ -87,7 +87,8 @@ SHA256 `c5e30c0acaecd2d509d9ec0f8a4e51f16eba5769bf8b0fb41314073200965a6b`。
 
 ### 第二批已启动
 
-三个隔离实现分支均已核对干净源 `8ce0b6d22fe9d5095f136f4f497850e20c1edd34`；
+前三个隔离实现分支均已核对干净源 `8ce0b6d22fe9d5095f136f4f497850e20c1edd34`；
+另增 T13.1 独立分支，基线 `81f948f` 仅记录本批计划，系统行为与 `8ce0b6d` 相同。
 主会话维护共享计划和注册，不让分支各自改写中央状态。
 
 | 执行项 | 子会话 / 分支 | 本轮交付与剩余边界 |
@@ -95,6 +96,7 @@ SHA256 `c5e30c0acaecd2d509d9ec0f8a4e51f16eba5769bf8b0fb41314073200965a6b`。
 | T08.2 | `951d53c8-b0b7-4553-96a5-fef0328a7862` / `bunnysoft-payload-test-signatures` | 测试身份签名、错误钥/签名/篡改/格式拒绝；生产密钥和发布仍未授权 |
 | T17.1 | `d7b1a26f-73e8-4b37-a324-503fc1ce53f0` / `bunnysoft-private-network-state` | root 私有版本快照、Live 临时与安装 UUID 绑定、iwd 启动加载/正常停止保存；运行期即时持久、断电及真实网络验收未完成 |
 | T24.6 / T24.3 | `2ca28434-854f-4de9-928b-806d17ad4374` / `bunnysoft-install-target-confirmation` | 只读报告 UI/provider/controller、显式确认和过期回调拒绝；原生 helper 部署接入与 writer 未完成，确认始终 `writeAuthorized=false` |
+| T13.1 | `b4a59cb1-4aaa-4c7d-9f72-bfa451931552` / `bunnysoft-dbus-application-activation` | 补 D-Bus-only 应用的私有总线激活及真实服务夹具；保留普通 Exec/应用生命周期，不伪造 PID，不扩大为任意 D-Bus/特权 broker |
 
 这些执行项均为进行中；实现提交、独立固定源验证、组合注册和最终验收分别记录。
 不以 synthetic provider、正常停止快照或测试公钥代替实际安装器、

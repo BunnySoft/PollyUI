@@ -2167,7 +2167,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -2183,8 +2183,9 @@
       "sources": [
         "M15.2"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "第二批新增独立子会话b4a59cb1-4aaa-4c7d-9f72-bfa451931552，固定81f948f（仅计划记录，行为等同8ce0b6d）补D-Bus-only激活与私有总线真实fixture；保留Exec/普通应用行为，不伪造PID或借shell启动。原生固定源重编译验收待单lane返回。"
     },
     {
       "id": "t13-m15-3",
