@@ -158,6 +158,41 @@ payloads, solve a proposed transaction, claim security fixes, perform upgrades o
 create recurring jobs. Persisted old sources remain necessary for reproducible
 rebuilds; registry version listings alone do not satisfy that requirement.
 
+## Retained binary inputs and offline reconstruction
+
+To explicitly retain the exact Debian **binary** dependencies of a verified
+runtime package, invoke the tool in a disposable SDK container:
+
+```sh
+podman run --rm -v "$PWD:/workspace" -w /workspace localhost/polly-debian-sdk \
+    sh -ec 'apt-get update -qq -o APT::Update::Error-Mode=any;
+      python3 -B desktop/tools/retain-debian-packages.py \
+      dist/polly-debian-runtime dist/polly-debian-binary-inputs'
+sh desktop/tools/test-offline-debian.sh dist/polly-debian-runtime dist/polly-debian-binary-inputs
+```
+
+The retention command reads pinned versions from the verified runtime artifact,
+resolves exact indexed sizes/SHA-256 values, downloads packages without installing
+them, and verifies every byte before publishing a new input-pack directory.
+Missing versions or conflicting indexed payloads fail instead of silently choosing
+a newer package. Inputs are bounded to 4096 packages, 512 MiB per package and
+4 GiB total. Existing output directories are never overwritten.
+
+The offline reconstruction command first verifies runtime and retained-package
+inventories and requires identical pin lists. It then starts a separate
+`--network=none` minbase container, installs only the supplied local DEBs,
+extracts the validated runtime, and checks ordinary-user startup and repeated
+managed-app data access. Package service startup remains blocked by `policy-rc.d`.
+It mounts neither the full source tree nor an SDK into the reconstructed runtime
+and changes no host account, filesystem or service.
+
+The retained set does **not** include a complete bootstrap/SDK, kernel/Live-only
+packages, or all Debian/custom upstream source archives. It is not a source
+redistribution compliance claim, signature or guarantee of bit-identical image
+reconstruction. Existing source fingerprints, publisher verification and
+license/source-retention work remain distinct responsibilities. The binary input
+cache is not copied into the Live image.
+
 ## Current acceptance limits
 
 The Debian normal build passes all 59 native tests, the shared core suite and
