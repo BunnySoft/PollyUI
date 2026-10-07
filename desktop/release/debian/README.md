@@ -136,13 +136,19 @@ hardware snapshots or stop another OS writing the device.
 Legacy XDG contents are normalized into Settings/AppData/AppState/Cache, with
 traditional aliases and missing XDG user-directory defaults. Existing user-dirs
 configuration and unknown user files stay intact. Conflicting paths, nested mounts,
-foreign owners/groups, privileged/special files and ACL/security
+unknown owners/groups, privileged/special files and security
 attributes require explicit adapters or resolution; they are refused, not discarded.
 The current controlled importer supports regular files, directories, inert symlinks
 and `user.*` attributes. Schema v2 preserves regular-file hard links wholly within
 one HOME in the separate backup and normalized destination, without linking either
 to the source. External hard-link references and hard-linked symlinks are refused.
-Schema v1 unlinked transactions remain inspectable. This is not a complete
+Schema v3 additionally preserves ownership and POSIX access/default ACLs referring
+only to the current stable user/group and fixed root identity 0. Root-owned files
+are not reassigned to the ordinary user; the top-level HOME must still belong
+exactly to the requested user. Other named ACL identities need an explicit mapping,
+and unknown/security attributes remain refused. Schema v1 unlinked and v2 hard-link
+transactions remain inspectable under their original rules. These are HOME migration
+formats, independent of account configuration versions. This is not a complete
 installer/account migration.
 
 Each operation retains a root-private transaction, original-layout backup, checksums

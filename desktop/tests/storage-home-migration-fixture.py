@@ -37,6 +37,12 @@ def main():
                        for uid, name in ((0, "root"), (1000, "polly"), (1001, "tester"))]
             for source, _ in sources:
                 os.link(source / ".config/editor/settings.json", source / "Documents/linked-settings.json")
+                access = factory.acl(4)
+                os.setxattr(source / "Documents/document.txt", "system.posix_acl_access", access)
+                os.setxattr(source / ".config", "system.posix_acl_default", access)
+                protected = source / "Documents/root-private"
+                protected.write_text("root-owned data is not reassigned to the ordinary user")
+                protected.chmod(0o600)
             # A read-only bind over a writable superblock is deliberately insufficient.
             view = root / "view"
             view.mkdir()
@@ -84,6 +90,16 @@ if (home / "Documents/document.txt").read_text() != "document-" + str(uid):
 if not os.path.samestat((home / "Settings/editor/settings.json").stat(),
                        (home / "Documents/linked-settings.json").stat()):
     raise RuntimeError("Imported settings/document hard-link relationship was lost")
+try:
+    (home / "Documents/root-private").read_text()
+except PermissionError:
+    pass
+else:
+    raise RuntimeError("Root-owned home data was reassigned or made readable")
+if not os.getxattr(home / "Documents/document.txt", "system.posix_acl_access"):
+    raise RuntimeError("Imported document POSIX ACL was lost")
+if not os.getxattr(home / "Settings", "system.posix_acl_default"):
+    raise RuntimeError("Normalized settings directory default ACL was lost")
 for name in ("Settings", "AppData", "AppState", "Cache", "Documents"):
     (home / name / "post-import").write_text("ordinary UID " + str(uid))
 if not os.path.samestat((home / ".config").stat(), (home / "Settings").stat()):

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -75,7 +76,7 @@ class Migration(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE(transaction.stat().st_mode), 0o700)
                 self.assertEqual((transaction / "journal.json").stat().st_mode & 0o777, 0o600)
                 self.assertEqual(migration.status(transaction), {
-                    "schemaVersion": 2, "phase": "committed", "publicationVerified": True,
+                    "schemaVersion": 3, "phase": "committed", "publicationVerified": True,
                     "backupRetained": True, "backupVerified": True, "automaticResume": False})
         self.assertFalse((self.users / "SystemData").exists())
 
@@ -185,8 +186,8 @@ class Migration(unittest.TestCase):
         transaction, = self.users.glob(".migration-*")
         self.assertTrue((transaction / "home").is_dir())
         self.assertEqual(json.loads((transaction / "journal.json").read_text())["phase"], "interrupted")
-        with self.assertRaisesRegex(ValueError, "foreign UID/GID"):
-            migration.status(transaction)
+        self.assertFalse(migration.status(transaction)["publicationVerified"])
+        self.assertTrue(migration.status(transaction)["backupVerified"])
 
     def test_interruption_after_rename_is_reported_not_rolled_back(self):
         source, user = self.source()
@@ -201,7 +202,7 @@ class Migration(unittest.TestCase):
                 migration.migrate(source, self.users, user)
         transaction, = self.users.glob(".migration-*")
         self.assertEqual(migration.status(transaction), {
-            "schemaVersion": 2, "phase": "interrupted", "publicationVerified": True,
+            "schemaVersion": 3, "phase": "interrupted", "publicationVerified": True,
             "backupRetained": True, "backupVerified": True, "automaticResume": False})
         with self.assertRaises(FileExistsError):
             migration.migrate(source, self.users, user)
@@ -260,6 +261,65 @@ class Migration(unittest.TestCase):
         self.assertEqual(state["schemaVersion"], 1)
         self.assertTrue(state["publicationVerified"])
         self.assertTrue(state["backupVerified"])
+
+    def test_old_hard_link_schema_remains_inspectable(self):
+        source, user = self.source()
+        os.link(source / "Documents/document.txt", source / "Documents/linked.txt")
+        transaction = migration.migrate(source, self.users, user)
+        record = json.loads((transaction / "journal.json").read_text())
+        record["schemaVersion"] = 2
+        migration.journal(transaction, record)
+        self.assertEqual(migration.status(transaction)["schemaVersion"], 2)
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+
+    def acl(self, permissions):
+        return struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in (
+            (1, 6, 0xffffffff), (2, permissions, 0), (4, 0, 0xffffffff),
+            (16, 4, 0xffffffff), (32, 0, 0xffffffff)))
+
+    def test_known_root_ownership_and_posix_acl_are_preserved_not_reassigned(self):
+        source, user = self.source()
+        file = source / "Documents/document.txt"
+        os.chown(file, 0, 0)
+        acl = self.acl(4)
+        os.setxattr(file, "system.posix_acl_access", acl)
+        before = migration.inventory(source, user)
+        transaction = migration.migrate(source, self.users, user)
+        for root in (transaction / "backup", self.users / "1000"):
+            copied = root / "Documents/document.txt"
+            self.assertEqual((copied.stat().st_uid, copied.stat().st_gid), (0, 0))
+            self.assertEqual(os.getxattr(copied, "system.posix_acl_access"), acl)
+        self.assertEqual(migration.inventory(transaction / "backup", user), before)
+        self.assertTrue(migration.status(transaction)["backupVerified"])
+
+    def test_unknown_acl_identity_is_rejected_before_transaction(self):
+        source, user = self.source()
+        acl = struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in (
+            (1, 6, 0xffffffff), (2, 4, 1001), (4, 0, 0xffffffff),
+            (16, 4, 0xffffffff), (32, 0, 0xffffffff)))
+        os.setxattr(source / "Documents/document.txt", "system.posix_acl_access", acl)
+        with self.assertRaisesRegex(ValueError, "explicit service/user mapping"):
+            migration.migrate(source, self.users, user)
+        self.assertEqual(list(self.users.iterdir()), [])
+        for invalid in (b"", struct.pack("<I", 9), self.acl(8)):
+            with self.assertRaises(ValueError):
+                migration.validate_acl(invalid, user)
+
+    def test_home_identity_cannot_be_substituted_by_known_root_owner(self):
+        source, user = self.source()
+        os.chown(source, 0, 0)
+        with self.assertRaisesRegex(ValueError, "real private directory"):
+            migration.migrate(source, self.users, user)
+        self.assertEqual(list(self.users.iterdir()), [])
+
+    def test_default_directory_acl_survives_normalization(self):
+        source, user = self.source()
+        value = self.acl(4)
+        os.setxattr(source / ".config", "system.posix_acl_default", value)
+        transaction = migration.migrate(source, self.users, user)
+        self.assertEqual(os.getxattr(self.users / "1000/Settings", "system.posix_acl_default"), value)
+        self.assertEqual(os.getxattr(transaction / "backup/.config", "system.posix_acl_default"), value)
+        self.assertTrue(migration.status(transaction)["backupVerified"])
 
 
 if __name__ == "__main__":

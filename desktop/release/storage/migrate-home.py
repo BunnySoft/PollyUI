@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import struct
 import subprocess
 import sys
 import uuid
@@ -16,7 +17,9 @@ spec = importlib.util.spec_from_file_location("polly_migration_homes",
                                             Path(__file__).resolve().with_name("homes.py"))
 homes = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(homes)
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+ACL_ATTRIBUTES = {"system.posix_acl_access", "system.posix_acl_default"}
+ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_GROUP, ACL_MASK, ACL_OTHER = 1, 2, 4, 8, 16, 32
 
 
 def sync_directory(path):
@@ -70,29 +73,66 @@ def digest_file(path):
 def attributes(path):
     values = {}
     for name in os.listxattr(path, follow_symlinks=False):
-        if not name.startswith("user."):
-            raise ValueError("ACL/security attributes require an explicit migration adapter")
+        if not name.startswith("user.") and name not in ACL_ATTRIBUTES:
+            raise ValueError("Security/unknown attributes require an explicit migration adapter")
         values[name] = os.getxattr(path, name, follow_symlinks=False)
     return values
 
 
+def validate_acl(value, user):
+    if len(value) < 28 or (len(value) - 4) % 8 or struct.unpack_from("<I", value)[0] != 2:
+        raise ValueError("Invalid POSIX ACL format")
+    required, named, mask = set(), set(), False
+    for offset in range(4, len(value), 8):
+        tag, permissions, identity = struct.unpack_from("<HHI", value, offset)
+        if permissions > 7:
+            raise ValueError("Invalid POSIX ACL permissions")
+        if tag in (ACL_USER_OBJ, ACL_GROUP_OBJ, ACL_OTHER):
+            if tag in required or identity != 0xffffffff:
+                raise ValueError("Invalid POSIX ACL base entry")
+            required.add(tag)
+        elif tag == ACL_MASK:
+            if mask or identity != 0xffffffff:
+                raise ValueError("Invalid POSIX ACL mask")
+            mask = True
+        elif tag in (ACL_USER, ACL_GROUP):
+            allowed = {0, user["uid"] if tag == ACL_USER else user["gid"]}
+            if identity not in allowed or (tag, identity) in named:
+                raise ValueError("POSIX ACL identity requires explicit service/user mapping")
+            named.add((tag, identity))
+        else:
+            raise ValueError("Unknown POSIX ACL tag")
+    if required != {ACL_USER_OBJ, ACL_GROUP_OBJ, ACL_OTHER} or (named and not mask):
+        raise ValueError("Incomplete POSIX ACL")
+
+
 def inventory(root, user, *, schema=SCHEMA_VERSION):
-    if type(schema) is not int or schema not in (1, SCHEMA_VERSION):
+    if type(schema) is not int or schema not in (1, 2, SCHEMA_VERSION):
         raise ValueError("Unsupported home inventory schema")
     records, links = {}, {}
     device = root.lstat().st_dev
 
     def visit(path):
         info = path.lstat()
-        if info.st_dev != device or (info.st_uid, info.st_gid) != (user["uid"], user["gid"]):
+        owners, groups = {user["uid"]}, {user["gid"]}
+        if schema >= 3:
+            owners.add(0)
+            groups.add(0)
+        if info.st_dev != device or info.st_uid not in owners or info.st_gid not in groups:
             raise ValueError("Cross-device or foreign UID/GID home data requires explicit migration")
         mode = stat.S_IMODE(info.st_mode)
         if mode & (stat.S_ISUID | stat.S_ISGID):
             raise ValueError("Privileged home data requires explicit migration")
+        values = attributes(path)
+        for name, value in values.items():
+            if name in ACL_ATTRIBUTES:
+                if schema < 3:
+                    raise ValueError("Legacy migration schema does not support POSIX ACLs")
+                validate_acl(value, user)
         entry = {"uid": info.st_uid, "gid": info.st_gid, "mode": mode,
                  "mtimeNs": info.st_mtime_ns,
                  "xattrs": {name: hashlib.sha256(value).hexdigest()
-                           for name, value in sorted(attributes(path).items())}}
+                           for name, value in sorted(values.items())}}
         if stat.S_ISDIR(info.st_mode):
             entry["type"] = "directory"
         elif stat.S_ISREG(info.st_mode):
@@ -284,7 +324,8 @@ def migrate(source, users, user):
     if source.is_relative_to(users) or users.is_relative_to(source):
         raise ValueError("Source and destination trees must be disjoint")
     info = source.lstat()
-    if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700:
+    if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700 or \
+            (info.st_uid, info.st_gid) != (user["uid"], user["gid"]):
         raise ValueError("Source HOME must be a real private directory")
     readonly_source(source)
     records = inventory(source, user)
@@ -352,7 +393,7 @@ def status(transaction):
         raise ValueError("Invalid private migration journal")
     record = json.loads(path.read_text())
     if not isinstance(record, dict) or type(record.get("schemaVersion")) is not int or \
-            record["schemaVersion"] not in (1, SCHEMA_VERSION) or record.get("phase") not in {
+            record["schemaVersion"] not in (1, 2, SCHEMA_VERSION) or record.get("phase") not in {
                 "planned", "backed-up", "verified", "committing", "committed", "interrupted"}:
         raise ValueError("Unsupported migration journal")
     user = record["user"]
