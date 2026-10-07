@@ -36,7 +36,7 @@ Use fast checks for each edit and mounts for mapping/identity changes. Actual
 image/cold-boot acceptance is still required for boot/partition/kernel changes and
 stage handoff, but not after each small edit. Fast checks are not boot evidence.
 
-## Storage overlay and current candidate
+## Storage overlay and candidate assembly
 
 The separate `Containerfile.storage` extends the installed base without changing
 the historical D1 recipe. Its `local-bottom` hook binds `/System/Resources` before
@@ -79,20 +79,16 @@ historical D1 keeps schema v2 with `homeUuid`. New-layout markers never fall bac
 to D1 if storage readiness is missing. The rebuilt setuid passwd proxy checks the
 required storage before entering its private password namespace, still retaining
 the real caller UID. An unconfigured ordinary-user invocation is refused.
-These adapters and the D1 real PAM/passwd/su regression are checked; new-layout
-setup/login/password persistence still require the separately assembled VM image.
+Component fixtures and actual-image acceptance have different scopes. Their current
+results and remaining account/persistence work live only in the execution ledger.
 
 `sh desktop/tools/build-storage.sh OUTPUT_DIRECTORY` assembles a separate ordinary
 single-system candidate from cached inputs, using measured payload and explicit
-reserves. It never changes D1 artifacts. The current prototype's Recovery partition
+reserves. It never changes D1 artifacts. This prototype's Recovery partition
 is **reserved but not bootable**, clearly marked in the manifest and omitted from
-the boot menu; independent authenticated recovery remains M10. The first candidate
-reached real early `/usr` and systemd but failed required-storage preparation, so
-normal setup/login has not yet passed and it is not a usable-system handoff.
-Reusing that candidate with matching cached kernel/initrd and console journaling
-identified a `/var/tmp` compatibility-directory mode of `1755` instead of `1777`
-due to the builder's umask. Explicit chmod and restrictive-umask regression tests
-fix the assembly code; the existing r1 image remains unchanged and failed.
+the boot menu; independent authenticated recovery remains M10. Candidate hashes,
+ordinary UEFI/setup/login evidence, failed candidates and remaining limits are
+recorded in the execution ledger rather than duplicated here.
 The optional smoke harness `--diagnostic-inputs` directory (`vmlinuz`, combined
 `initrd`) bypasses firmware only for diagnosis and records `uefiBoot=false`;
 it must not be used as UEFI acceptance evidence.
