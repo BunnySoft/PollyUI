@@ -16,6 +16,10 @@ loginctl show-session "$XDG_SESSION_ID" --property=Active --property=User --prop
 logger -t polly-live "POLLY_SESSION_REGISTERED uid=$(id -u) id=$XDG_SESSION_ID"
 echo "Live mode: $POLLY_LIVE_MODE, GPU selection: $POLLY_LIVE_GPU"
 echo "Internal disks are not mounted. Diagnostics: polly-live-diagnostics"
+if [ -f /etc/polly-account-profile ] && [ "$(cat /etc/polly-account-profile)" = live ]; then
+    echo "Public Live credentials: polly/polly; root maintenance password: polly."
+    echo "These public presets do not protect personal data and are not installed-system passwords."
+fi
 if [ "$live_mode" = console ]; then exec /bin/sh; fi
 for capability in CanPowerOff CanReboot; do
     if value=$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager "$capability"); then

@@ -44,6 +44,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 podman build --quiet --target live-base --build-arg "RUNTIME_IMAGE=$runtime" \
     -t "$base_image" -f "$recipe" desktop
+if [ "$distribution" = debian13 ]; then
+    podman build --quiet --target platform-base --build-arg "RUNTIME_IMAGE=$runtime_id" \
+        -t localhost/polly-debian-platform-base -f "$recipe" desktop
+fi
 if [ "$(podman image inspect --format '{{.Id}}' "$runtime")" != "$runtime_id" ]; then
     echo "Runtime image changed during the build; refusing ambiguous provenance" >&2
     exit 1

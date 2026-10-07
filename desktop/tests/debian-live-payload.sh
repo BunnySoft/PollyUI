@@ -1,5 +1,12 @@
 #!/bin/sh
 set -eu
+profile=${1:-live}
+case "$profile" in live|template) ;; *) echo "Invalid payload profile" >&2; exit 2 ;; esac
+test "$#" -le 1
+test -f /etc/polly-account-profile
+test ! -L /etc/polly-account-profile
+test "$(cat /etc/polly-account-profile)" = "$profile"
+test "$(stat -c '%a:%u:%g:%h' /etc/polly-account-profile)" = 644:0:0:1
 . /etc/os-release
 test "$ID" = debian
 test "$VERSION_CODENAME" = trixie

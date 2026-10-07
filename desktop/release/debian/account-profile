@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
+profile=/etc/polly-account-profile
+fail() { echo "POLLY_ACCOUNT_PROFILE_FAILED: $*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || fail "image account preparation requires root"
+[ "$#" -eq 1 ] || fail "expected template, live or installed"
+case "$1" in template|live|installed) ;; *) fail "unknown account profile" ;; esac
+for file in /etc/passwd /etc/shadow; do
+    [ -f "$file" ] && [ ! -L "$file" ] || fail "unsafe account template"
+    [ "$(stat -c '%u:%h' "$file")" = 0:1 ] || fail "untrusted or linked account template"
+    mode=$(stat -c '%a' "$file")
+    case "$file:$mode" in /etc/passwd:644|/etc/shadow:600|/etc/shadow:640) ;;
+        *) fail "unsafe account template permissions" ;; esac
+done
+awk -F: '
+    $1=="root" { if ($2!="x" || $3!=0 || $4!=0) exit 1; root++ }
+    $1=="polly" { if ($2!="x" || $3!=1000 || $4!=1000) exit 1; polly++ }
+    ($3==0 && $1!="root") || ($3==1000 && $1!="polly") { exit 1 }
+    END { if (root!=1 || polly!=1) exit 1 }
+' /etc/passwd || fail "root/polly identities do not match the locked factory template"
+awk -F: '
+    $1=="root" || $1=="polly" {
+        if (NF!=9 || ($2!="!" && $2!="!!" && $2!="*" && $2!="!*")) exit 1
+        if ($1=="root") root++
+        else polly++
+    }
+    END { if (root!=1 || polly!=1) exit 1 }
+' /etc/shadow || fail "configured credentials cannot become a factory template"
+if [ "$1" = template ]; then
+    [ ! -e "$profile" ] && [ ! -L "$profile" ] || fail "profile already exists"
+else
+    [ -f "$profile" ] && [ ! -L "$profile" ] || fail "missing trusted template profile"
+    [ "$(stat -c '%a:%u:%g:%h' "$profile")" = 644:0:0:1 ] || fail "unsafe template profile"
+    [ "$(cat "$profile")" = template ] || fail "only the shared template may create a mode"
+fi
+if [ "$1" = live ]; then
+    # These intentionally public presets apply only to the final Live layer.
+    printf 'polly:polly\nroot:polly\n' | chpasswd
+    systemctl mask --force ssh.service ssh.socket sshd.service sshd.socket >/dev/null
+fi
+umask 022
+printf '%s\n' "$1" > "$profile"
+chown 0:0 "$profile"
+chmod 644 "$profile"
+echo "POLLY_ACCOUNT_PROFILE_READY: $1"

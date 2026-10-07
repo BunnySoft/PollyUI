@@ -17,8 +17,12 @@ else
     dirty=0
     if [ -n "$(git status --porcelain --untracked-files=normal)" ]; then dirty=1; fi
 fi
-live=${POLLY_LIVE_IMAGE:-localhost/polly-debian-live-base}
-live_id=$(podman image inspect --format '{{.Id}}' "$live")
+if [ -n "${POLLY_LIVE_IMAGE:-}" ]; then
+    echo "Installed builds must use POLLY_PLATFORM_IMAGE; Live images contain public presets." >&2
+    exit 2
+fi
+platform=${POLLY_PLATFORM_IMAGE:-localhost/polly-debian-platform-base}
+platform_id=$(podman image inspect --format '{{.Id}}' "$platform")
 tools=localhost/polly-debian-live-tools
 base=localhost/polly-debian-installed-base
 sdk_id=$(podman image inspect --format '{{.Id}}' "${POLLY_SDK_IMAGE:-localhost/polly-debian-sdk-mesa:polly1}")
@@ -32,9 +36,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-podman run --rm --network=none -v "$repo:/workspace:ro" --entrypoint sh "$live_id" \
-    /workspace/desktop/tests/debian-live-payload.sh
-podman build --quiet --build-arg "LIVE_IMAGE=$live_id" --build-arg "SDK_IMAGE=$sdk_id" -t "$base" \
+podman run --rm --network=none -v "$repo:/workspace:ro" --entrypoint sh "$platform_id" \
+    /workspace/desktop/tests/debian-live-payload.sh template
+podman build --quiet --build-arg "PLATFORM_IMAGE=$platform_id" --build-arg "SDK_IMAGE=$sdk_id" -t "$base" \
     -f desktop/release/debian/Containerfile.install desktop
 base_id=$(podman image inspect --format '{{.Id}}' "$base")
 podman build --quiet --target image-tools -t "$tools" \

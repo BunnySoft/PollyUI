@@ -220,6 +220,9 @@ def build(args):
                   Path(__file__).with_name("build-installed-image.py"),
                   *sorted((REPO / "desktop/release/storage").iterdir()),
                   REPO / "desktop/release/debian/Containerfile.storage",
+                  REPO / "desktop/release/debian/Containerfile.install",
+                  REPO / "desktop/release/debian/Containerfile.live",
+                  REPO / "desktop/release/debian/account-profile",
                   REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
                   REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs"]
         manifest = {

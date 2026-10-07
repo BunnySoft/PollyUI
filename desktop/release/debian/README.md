@@ -12,6 +12,27 @@ implementation priority. The layout contract and early `/usr` initramfs mapping
 are implemented. Ordinary single-system boot/account evidence is recorded in the
 ledger; the complete installer, shared Apps and independent recovery remain pending.
 Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
+Its generated view and the app Plan use the single data source
+[`POLLYOS-PLAN.json`](../../../docs/POLLYOS-PLAN.json): delivery outcomes, implementation
+tasks and independently tracked subtasks. Historical M IDs are trace aliases, not
+ordering or prerequisite rules. Fresh installation does not wait for old-data migration.
+
+The 2026-10-08 target account policy separates public Live presets (`polly/polly`,
+root maintenance password `polly`) from locked shared templates and installed
+state. Installed first-run setup still requires separate user and root passwords;
+never copy Live shadow into an installation or use its public password for recovery
+authorization. Recipes now build a locked `platform-base`, a final preset-bearing
+`live-base`, and an installed base derived **only** from the platform. The build-only
+helper refuses configured credentials, cross-profile reuse and preset reruns, and
+masks SSH service/socket aliases in Live. Cached-container PAM/su/passwd checks
+do not establish new-image boot acceptance; existing artifacts are unchanged.
+Remote login stays disabled by default.
+
+`build-live.sh --debian` also publishes `localhost/polly-debian-platform-base`.
+Installed builds use `POLLY_PLATFORM_IMAGE` (that tag by default), not
+`POLLY_LIVE_IMAGE`; the old override is explicitly refused rather than silently
+resetting or copying public credentials. Keep the locked platform image available
+before `build-installed.sh`. Storage assembly continues to consume the installed base.
 
 ## Fast storage development checks
 
@@ -91,7 +112,8 @@ results and remaining account/persistence work live only in the execution ledger
 single-system candidate from cached inputs, using measured payload and explicit
 reserves. It never changes D1 artifacts. This prototype's Recovery partition
 is **reserved but not bootable**, clearly marked in the manifest and omitted from
-the boot menu; independent authenticated recovery remains M10. Candidate hashes,
+the boot menu; independent authenticated recovery is tracked under T09 (historical
+M10 requirements). Candidate hashes,
 ordinary UEFI/setup/login evidence, failed candidates and remaining limits are
 recorded in the execution ledger rather than duplicated here.
 The optional smoke harness `--diagnostic-inputs` directory (`vmlinuz`, combined

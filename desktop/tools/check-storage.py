@@ -31,8 +31,10 @@ def main():
         "desktop/release/storage/storage.py", "desktop/tools/build-installed-image.py",
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
         "desktop/tools/check-storage.py",
+        "desktop/tools/polly-plan.py",
         "desktop/tests/account-auth-fixture.py",
         "desktop/tests/storage-account-migration-fixture.py",
+        "desktop/tests/account-profile-fixture.py",
         "desktop/tests/storage-managed-migration-fixture.py",
     ]
     for name in python_files:
@@ -42,7 +44,9 @@ def main():
         temporary = Path(temporary)
         for name in ("desktop/release/install/session", "desktop/release/storage/early-usr",
                      "desktop/release/storage/initramfs-hook", "desktop/tools/build-storage.sh",
-                     "desktop/tools/check-storage.sh"):
+                     "desktop/tools/check-storage.sh", "desktop/release/debian/account-profile",
+                     "desktop/release/live/session", "desktop/tools/build-live.sh",
+                     "desktop/tools/build-installed.sh"):
             script = temporary / "syntax-check"
             script.write_text((repo / name).read_text(), encoding="utf8", newline="\n")
             run("shell syntax: " + name, ["/bin/sh", "-n", str(script)])
@@ -53,7 +57,7 @@ def main():
         ])
     for name in ("installed-image", "installed-accounts", "storage-layout",
                  "storage-mappings", "storage-image", "storage-homes", "storage-home-migration",
-                 "storage-identities", "storage-account-migration"):
+                 "storage-identities", "storage-account-migration", "polly-plan", "account-profiles"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)

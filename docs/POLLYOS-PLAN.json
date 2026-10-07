@@ -1,0 +1,4644 @@
+{
+  "schemaVersion": 1,
+  "legacy": {
+    "M00.1": {
+      "requirement": "生成 GPT、256 MiB EFI、独立 ext4 A/B 系统槽和至少 2 GiB 用户卷的普通镜像文件。",
+      "status": "done"
+    },
+    "M00.2": {
+      "requirement": "按 UUID 要求用户卷挂载，普通 UID 1000 启动原生桌面；各槽保留独立系统/包数据库。",
+      "status": "done"
+    },
+    "M00.3": {
+      "requirement": "A/A/B/A 四次冷启动，实际设置、应用注册/AppData 和文档连续保留，测试镜像各轮正常关机。",
+      "status": "done"
+    },
+    "M00.4": {
+      "requirement": "正常镜像不包含验证 fixture；单次原生桌面启动预检通过，不冒充正常关机或持久性验收。",
+      "status": "done"
+    },
+    "M01.1": {
+      "requirement": "定义最小持久状态集、格式版本及权威存储；区分用户账户、版本配套的系统服务账户、认证/管理员策略、主机身份和网络状态。",
+      "status": "pending"
+    },
+    "M01.2": {
+      "requirement": "实现 root 私有、普通应用不可改写的存储/加载边界，不共享整个 `/etc`、`/var` 或把认证数据放入 AppData。",
+      "status": "done"
+    },
+    "M01.3": {
+      "requirement": "接通标准 `passwd`、root 改密和账户状态变更，不能只保留 setup UI 写入的密码。",
+      "status": "pending"
+    },
+    "M01.4": {
+      "requirement": "实现原子保存、锁定/并发控制、版本校验和中断恢复；缺失/损坏不能退回默认密码、无密码登录或重新开放 setup。",
+      "status": "in_progress"
+    },
+    "M01.5": {
+      "requirement": "验证密码修改后重复重启、系统维护和救援恢复保持最新认证和稳定身份，密码哈希不进普通日志/发行镜像。",
+      "status": "pending"
+    },
+    "M01.6": {
+      "requirement": "联合适配 `SystemData/Accounts`、控制器/passwd proxy/NSS/PAM、UUID/权限及唯一初始化权威；服务账户仍随系统版本，持久配置逐项分类，不整体替换 `/etc`。",
+      "status": "done"
+    },
+    "M01.7": {
+      "requirement": "按稳定 UID 接入 `/Users`、兼容 HOME、root 家目录及 XDG/传统链接；迁移前备份/校验冲突，至少两用户验证设置、AppData、缓存和文档不混合。",
+      "status": "in_progress"
+    },
+    "M02.1": {
+      "requirement": "仅在真实未初始化状态进入受控 setup，不开放通用 root 桌面或无限制 root shell。",
+      "status": "done"
+    },
+    "M02.2": {
+      "requirement": "本地交互设置/确认 `polly` 与独立 root 密码；校验输入和 PAM 结果，不从聊天、参数、环境或日志取得密码。",
+      "status": "done"
+    },
+    "M02.3": {
+      "requirement": "建立用户目录、管理员角色和必要初始配置，应用/桌面继续以普通用户运行。",
+      "status": "pending"
+    },
+    "M02.4": {
+      "requirement": "实现成功、取消、失败、重试和中断恢复；账户与完成标记不能半配置提交。",
+      "status": "pending"
+    },
+    "M02.5": {
+      "requirement": "验证第二次启动不重复 setup，磁盘只读/满盘/断电不会产生“初始化成功”的假象。",
+      "status": "pending"
+    },
+    "M03.1": {
+      "requirement": "实现登录界面与真实 PAM 认证，替换安装版硬编码自动登录路径，不改变历史 Live。",
+      "status": "pending"
+    },
+    "M03.2": {
+      "requirement": "连接 getty/登录、logind/seat、运行目录和普通用户桌面，认证失败不能启动桌面。",
+      "status": "pending"
+    },
+    "M03.3": {
+      "requirement": "处理错误密码、账户不可用、服务失联、取消/超时和启动失败，提供受保护的诊断/重试入口。",
+      "status": "pending"
+    },
+    "M03.4": {
+      "requirement": "提供显式自动登录开关及风险说明；管理员认证后保存策略，默认关闭且不保存明文密码。",
+      "status": "pending"
+    },
+    "M03.5": {
+      "requirement": "验证密码登录和自动登录模式跨重启/维护/恢复保留；注销与锁屏仍有认证，自动登录不冒充加密解锁。",
+      "status": "pending"
+    },
+    "M04.1": {
+      "requirement": "通过发行版标准 su/PAM 支持普通用户日常 `su -`，核实 root 身份、环境与退出后的普通用户身份。",
+      "status": "done"
+    },
+    "M04.2": {
+      "requirement": "验证错误密码、锁定账户、取消和服务失败均拒绝提权；不以 sudo-only、无密码规则替代要求。",
+      "status": "pending"
+    },
+    "M04.3": {
+      "requirement": "实现管理员角色校验、认证 UI 和受限系统管理后端；真实本地会话、角色及操作授权均需验证。",
+      "status": "pending"
+    },
+    "M04.4": {
+      "requirement": "区分普通偏好与账户/安全/系统组件管理；普通应用不能通过自报身份取得通用 root 执行权限。",
+      "status": "pending"
+    },
+    "M04.5": {
+      "requirement": "接入改密、登录策略等管理操作，提供明确取消/失败反馈和不含凭据的诊断信息。",
+      "status": "pending"
+    },
+    "M04.6": {
+      "requirement": "P0 实现共享 App 安装/替换/全局卸载的窄授权接口，验证真实调用者和操作范围；拒绝任意路径/命令/hooks，不将旧 `polly-app` 整体提权。",
+      "status": "pending"
+    },
+    "M05.1": {
+      "requirement": "接通 Shell 锁屏入口、快捷键及 login1 Lock/Unlock 信号，解锁仅接受有效的 `polly` 认证。",
+      "status": "pending"
+    },
+    "M05.2": {
+      "requirement": "默认 10 分钟无操作锁屏，提供配置；定义正常输入、活动/抑制请求和失效状态的边界。",
+      "status": "pending"
+    },
+    "M05.3": {
+      "requirement": "接通可信锁进程恢复，验证崩溃、超时、多显示器/热插拔、黑屏覆盖和普通输入隔离。",
+      "status": "pending"
+    },
+    "M05.4": {
+      "requirement": "注销提供应用保存机会并回到受保护登录入口，不遗留已登录 shell 或误结束其它用户会话。",
+      "status": "pending"
+    },
+    "M05.5": {
+      "requirement": "验证 VT 切换、已存在 TTY 会话和恢复入口，不能经 TTY 绕过锁屏；安全性结论不扩展到有 root 权限的攻击者。",
+      "status": "pending"
+    },
+    "M05.6": {
+      "requirement": "确认自动登录、密码修改、锁进程失败及注销重进组合；未闭环前不启用自动挂起。",
+      "status": "pending"
+    },
+    "M06.1": {
+      "requirement": "覆盖必需存储/映射缺失、错 UUID、坏 schema/权限、不可写、满盘、损坏及启动中断；拒绝空目录写入、空包数据库和认证重置。",
+      "status": "pending"
+    },
+    "M06.2": {
+      "requirement": "实现明确的故障信息、只读诊断和受控恢复入口，不自动格式化/修复未知介质。",
+      "status": "pending"
+    },
+    "M06.3": {
+      "requirement": "验证设置、应用注册、文档写入的中断一致性，区分未提交、已提交和可恢复状态。",
+      "status": "pending"
+    },
+    "M06.4": {
+      "requirement": "扩展普通镜像/fixture 的隔离检查，真实软件流程验证且不把测试授权带进正常镜像。",
+      "status": "pending"
+    },
+    "M06.5": {
+      "requirement": "验证基础镜像不变、正常关机/异常断电的不同结论，保留每轮独立证据和失败产物。",
+      "status": "pending"
+    },
+    "M06.6": {
+      "requirement": "落实布局版本、UUID、必需映射/权限、各类状态权威和恢复分组，容量按载荷/暂存/救援实测；禁止整映射 `/etc` 或 `/var/lib`。",
+      "status": "done"
+    },
+    "M06.7": {
+      "requirement": "在 initramfs 自有工具链中将完整 `System/Resources` 接入 `/usr`，保留 merged-usr 关系；校验失败不得启动主系统 init。",
+      "status": "done"
+    },
+    "M06.8": {
+      "requirement": "接通 `SystemData/Apps/Users` 及 Dpkg/Apt、日志/缓存/临时、账户/服务、HOME 必需映射；启动/维护前检查同一存储与权限，不静默回落。",
+      "status": "done"
+    },
+    "M07.1": {
+      "requirement": "实现可丢弃虚拟目标的 EFI + 可写单系统 + 持久存储 + 独立救援布局及安装流程；主系统不用 Rootfs.img，不复制两份 `/usr`，不承诺 D1 固定容量。",
+      "status": "in_progress"
+    },
+    "M07.2": {
+      "requirement": "展示目标型号、容量、稳定设备身份、现有分区及将被清除的范围，提交前再次核对身份。",
+      "status": "pending"
+    },
+    "M07.3": {
+      "requirement": "明确排除三块已知内置 SSD；不因设备名变化、热插拔或多盘存在而选错目标。",
+      "status": "pending"
+    },
+    "M07.4": {
+      "requirement": "提供写入前明确确认、进度、取消边界和失败反馈；安装源/当前运行盘不得被误覆盖。",
+      "status": "pending"
+    },
+    "M07.5": {
+      "requirement": "验证真实启动路径、UUID/布局、匹配载荷/包状态及正常/救援入口；先让无 fixture 普通候选冷启动、登录和桌面通过，再交接 setup/迁移。",
+      "status": "in_progress"
+    },
+    "M07.6": {
+      "requirement": "验证空间不足、写入/校验失败、拔出及中断；不发布虚假的安装成功或自动扩大写入范围。",
+      "status": "pending"
+    },
+    "M08.1": {
+      "requirement": "在指定外置 USB/SSD 安装并记录硬件、固件、布局、版本及授权范围，不修改排除内盘。",
+      "status": "pending"
+    },
+    "M08.2": {
+      "requirement": "验证首次 setup、默认密码登录、可选自动登录、日常 su、锁屏/注销和重复冷启动。",
+      "status": "pending"
+    },
+    "M08.3": {
+      "requirement": "验证设置、文档、应用注册/AppData、认证状态和已实现网络凭据跨重启/维护/救援连续性。",
+      "status": "pending"
+    },
+    "M08.4": {
+      "requirement": "在可丢弃测试数据/授权介质上验证拔出、掉电及满盘后的可恢复性，不能用 VM 结果代替。",
+      "status": "pending"
+    },
+    "M08.5": {
+      "requirement": "记录实际 GPU/renderer、VT/seat、网络、音频等逐项结果；未覆盖组合明确标注。",
+      "status": "pending"
+    },
+    "M09.1": {
+      "requirement": "定义完整系统载荷、版本/架构、容量、数据兼容及物料元数据；核对系统与包数据库匹配。",
+      "status": "pending"
+    },
+    "M09.2": {
+      "requirement": "验证 apt 安装/升级/卸载、配置冲突、divert、锁及内核启动文件更新；必要映射就绪前不得维护系统，不与离线恢复并发。",
+      "status": "pending"
+    },
+    "M09.3": {
+      "requirement": "完整载荷替换写前检查容量/来源/兼容性及匹配恢复材料，在维护/救援环境执行；记录事务与中断状态，不覆盖用户数据或破坏唯一救援入口。",
+      "status": "pending"
+    },
+    "M09.4": {
+      "requirement": "保留最新认证/管理员/网络状态，迁移可验证且版本不兼容时明确拒绝。",
+      "status": "pending"
+    },
+    "M09.5": {
+      "requirement": "用测试身份验证签名、可信公钥、篡改/错误签名拒绝；正式信任根、生产签名及密钥操作另行确定/授权。",
+      "status": "pending"
+    },
+    "M09.6": {
+      "requirement": "开发未签名产物明确标识，不能通过成功形态的 fallback 绕过正式验签；不默认开启在线自动更新。",
+      "status": "pending"
+    },
+    "M09.7": {
+      "requirement": "验证 `/boot` 真实存储/兼容接入、微码、内核/模块、update-initramfs/update-grub 和包脚本，维护后实际冷启动，不能仅测路径存在。",
+      "status": "pending"
+    },
+    "M09.8": {
+      "requirement": "在 `SystemData/Updates` 记录操作 ID、源/目标、恢复范围、校验、阶段和错误；离线事务排除活动 apt 写入，关键阶段中断可识别并继续/修复/恢复。",
+      "status": "pending"
+    },
+    "M10.1": {
+      "requirement": "提供不依赖主系统软件的独立救援与匹配系统恢复，验证引导配置损坏、更新中断、空间不足和包/载荷不一致；共用 EFI 损坏须有外部恢复路径。",
+      "status": "pending"
+    },
+    "M10.2": {
+      "requirement": "定义系统/应用数据 schema 兼容、备份、恢复与不可逆迁移边界，不能假定旧系统能读新数据。",
+      "status": "pending"
+    },
+    "M10.3": {
+      "requirement": "提供诊断导出、受控改密/账户恢复、修复说明和数据备份流程；回退不能恢复旧密码或偷偷重置凭据。",
+      "status": "pending"
+    },
+    "M10.4": {
+      "requirement": "独立实现可选用户卷加密、启动解锁、密钥/恢复材料保存及更新/回退兼容；默认不自动开启。",
+      "status": "pending"
+    },
+    "M10.5": {
+      "requirement": "验证丢失解锁材料、错误密码、取消、卷损坏和自动登录组合；不提供隐藏万能密钥或绕过解锁。",
+      "status": "pending"
+    },
+    "M10.6": {
+      "requirement": "构建救援自有内核、initramfs、Rootfs.img、Manifest 和工具；不依赖主系统程序/库/账户加载，主资源或包数据库损坏时实际启动。",
+      "status": "pending"
+    },
+    "M10.7": {
+      "requirement": "诊断只读且不开放个人数据；写入/重装/账户恢复认证 polly 管理员或 root，忘记全部密码无内置重置入口。验证来源/材料和唯一救援入口，恢复后软件/包状态匹配而最新身份、凭据、App 和用户内容保持。",
+      "status": "pending"
+    },
+    "M11.1": {
+      "requirement": "明确 Shell 正常退出、崩溃、重启及最终失败策略，不误杀仍正常工作的普通应用。",
+      "status": "pending"
+    },
+    "M11.2": {
+      "requirement": "补齐 IME、网络、音频、通知等必要服务的就绪/失效诊断和受控恢复入口。",
+      "status": "pending"
+    },
+    "M11.3": {
+      "requirement": "实现有界重试/退避、状态持有和人工恢复，失败显式提示，不增加无限后台循环。",
+      "status": "pending"
+    },
+    "M11.4": {
+      "requirement": "接通应用自启动、窗口/应用恢复及保存提示；恢复对象与代码版本合法，不能恢复陈旧或已卸载会话。",
+      "status": "pending"
+    },
+    "M11.5": {
+      "requirement": "验证反复登录/注销、Shell 重启、服务失联和进程残留/资源释放，并记录可导出的会话诊断。",
+      "status": "pending"
+    },
+    "M12.1": {
+      "requirement": "实现 `SystemData/Network` 的 root 私有配置/凭据及 iwd 接入，按服务映射而非整体共享 `/var`，区分安装版与 Live。",
+      "status": "pending"
+    },
+    "M12.2": {
+      "requirement": "连接成功后记住/重连，支持忘记网络，验证重启/维护/恢复、错误密码、失联和凭据权限。",
+      "status": "pending"
+    },
+    "M12.3": {
+      "requirement": "补齐隐藏 SSID、静态 IP、企业网络与证书配置，不关闭证书校验。",
+      "status": "pending"
+    },
+    "M12.4": {
+      "requirement": "补齐有线状态、地址/DNS 管理和失败反馈，不把已有 DHCP/DNS 记为未实现。",
+      "status": "pending"
+    },
+    "M12.5": {
+      "requirement": "选择并实现需要的 VPN 后端/权限及配置 UX，未选定前保留候选，不默认装另一套网络策略服务。",
+      "status": "pending"
+    },
+    "M13.1": {
+      "requirement": "设计并实现只允许所需动作的受限授权后端，核实 login1 对本地活动用户的实际授权而非仅消息放行。",
+      "status": "pending"
+    },
+    "M13.2": {
+      "requirement": "关机/重启确认、保存机会、其它会话/更新警告、取消及能力变化处理；普通操作不每次索要 root 密码。",
+      "status": "pending"
+    },
+    "M13.3": {
+      "requirement": "锁定确认完成后才能挂起，唤醒仍需密码；验证锁进程失败、设备恢复和多显示器覆盖。",
+      "status": "pending"
+    },
+    "M13.4": {
+      "requirement": "独立验证休眠所需存储、恢复和介质行为；盖子/电源键/空闲策略仅在目标硬件与认证链路验证后开放。",
+      "status": "pending"
+    },
+    "M14.1": {
+      "requirement": "补齐实体扬声器/麦克风、设备/端口/profile 切换、插拔、恢复和延迟证据。",
+      "status": "pending"
+    },
+    "M14.2": {
+      "requirement": "实现并验证 PulseAudio 客户端兼容及所需 ALSA 重定向，第三方应用确实能出声/采集。",
+      "status": "pending"
+    },
+    "M14.3": {
+      "requirement": "选择蓝牙后端并实现发现、配对确认、连接、断开、忘记和失败反馈。",
+      "status": "pending"
+    },
+    "M14.4": {
+      "requirement": "实现蓝牙音频 profile/路由切换，验证输出、麦克风、重连及服务失效。",
+      "status": "pending"
+    },
+    "M15.1": {
+      "requirement": "补齐安装、替换、回退、退役/恢复管理 UI、版本/状态/空间展示和明确错误。",
+      "status": "pending"
+    },
+    "M15.2": {
+      "requirement": "补齐 `.desktop` D-Bus-only activation，不借任意 shell 命令或伪造 Exec 绕过。",
+      "status": "pending"
+    },
+    "M15.3": {
+      "requirement": "安全回收旧版本/孤立代码；覆盖脱离主进程的后代及仍被使用的资源，不以主 PID 退出判断可删。",
+      "status": "pending"
+    },
+    "M15.4": {
+      "requirement": "卸载默认保留 AppData；清除数据独立确认，仅针对管理器明确拥有的路径。",
+      "status": "pending"
+    },
+    "M15.5": {
+      "requirement": "设计发布者/来源、签名和未知既存数据接管机制；未决定前维持显式本地安装和拒绝未知接管。",
+      "status": "pending"
+    },
+    "M15.6": {
+      "requirement": "实现 schema/layout 迁移、独占/备份及不兼容回退策略，不静默清空数据。",
+      "status": "pending"
+    },
+    "M15.7": {
+      "requirement": "选择更多真实第三方应用及非 XDG 适配，验证上游升级和完整跨重启安装/更新/回退/卸载组合。",
+      "status": "pending"
+    },
+    "M15.8": {
+      "requirement": "将共享代码/资源置于 `Apps/Packages/<PackageHash>`，权威注册/策略置于 `SystemData/Apps`；复用校验/限额/暂存/摘要和版本约束，普通 App 不可写，个人数据身份不变。",
+      "status": "pending"
+    },
+    "M15.9": {
+      "requirement": "迁移为每 app-id 一个全机活动版本；冲突由管理员显式选择，保留各用户数据/旧版本；暂存/校验/提交/中断恢复，未解决不切换、未知数据不接管，确认前保留旧源。",
+      "status": "pending"
+    },
+    "M15.10": {
+      "requirement": "至少两用户运行同一共享包且数据隔离；启动器区分 apt/Polly 来源，apt 无第二套安装数据库；全局卸载不等于隐藏个人入口，GC 检查跨用户引用/资源使用，策略检查不冒充执行隔离或沙箱。",
+      "status": "pending"
+    },
+    "M16.1": {
+      "requirement": "文件管理器浏览、目录导航、图标/属性和错误反馈，明确区分真实文件与逻辑 `.app` 应用对象。",
+      "status": "pending"
+    },
+    "M16.2": {
+      "requirement": "实现创建、复制、移动、重命名、删除及其确认/失败行为，路径/符号链接和数据覆盖有明确边界。",
+      "status": "pending"
+    },
+    "M16.3": {
+      "requirement": "打通打开/保存选择器、MIME、默认应用与文档启动参数，不把能启动应用当成能正确打开文件。",
+      "status": "pending"
+    },
+    "M16.4": {
+      "requirement": "明确首批文件选择 Portal 协议范围，实现第三方调用、取消/错误及真实文件使用闭环。",
+      "status": "pending"
+    },
+    "M16.5": {
+      "requirement": "选择并实现外置设备挂载/卸载/安全移除后端及权限；不自动挂载/写入排除内盘。",
+      "status": "pending"
+    },
+    "M17.1": {
+      "requirement": "应用图标、分组、固定、图标网格与任务窗口联动，不把包 icon 元数据视为 UI 已完成。",
+      "status": "pending"
+    },
+    "M17.2": {
+      "requirement": "菜单/浮层点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归。",
+      "status": "pending"
+    },
+    "M17.3": {
+      "requirement": "托盘主题图标/overlay/动画/tooltip 与通知历史、丰富内容/声音；确定隐私、容量和外部资源边界。",
+      "status": "pending"
+    },
+    "M17.4": {
+      "requirement": "IME 主题跟随、深色变体和现有主题深化；任意模板、自动监听、字体文件扩展先定义受限契约。",
+      "status": "pending"
+    },
+    "M17.5": {
+      "requirement": "按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。",
+      "status": "pending"
+    },
+    "M17.6": {
+      "requirement": "选择最大化拖动恢复、贴靠/平铺、overview、手势等具体行为；保留手动全局工作区，不照搬动态 Space。",
+      "status": "pending"
+    },
+    "M17.7": {
+      "requirement": "确认终端普通/Server/Client 入口呈现、交互 shell、提示符/配色范围，不擅自切换 bash/zsh 或启用服务。",
+      "status": "pending"
+    },
+    "M18.1": {
+      "requirement": "标题 shaping/bidi、字素安全省略及语义；补齐正文段落方向/locale、bidi、视觉光标 affinity。",
+      "status": "pending"
+    },
+    "M18.2": {
+      "requirement": "字体连字 caret、高级断行/断字及匿名输入控件选择/剪贴板编辑，保留已实现稳定 ID 路径。",
+      "status": "pending"
+    },
+    "M18.3": {
+      "requirement": "改实际主机/输入链路实现 surrounding-text/delete-surrounding 和 Rime 上下文消费，不伪造 SDL API 能力。",
+      "status": "pending"
+    },
+    "M18.4": {
+      "requirement": "按真实语言需求选择其它输入引擎，保持独立可信 IME 和敏感字段隔离。",
+      "status": "pending"
+    },
+    "M18.5": {
+      "requirement": "补齐向外拖放、offer、动作协商与 DataTransfer 语义，明确取消/拒绝及传入文本自动插入规则。",
+      "status": "pending"
+    },
+    "M18.6": {
+      "requirement": "触摸拖放与多点触摸协议/取消语义联动，不复用伪造指针 grab。",
+      "status": "pending"
+    },
+    "M18.7": {
+      "requirement": "决定退出后剪贴板保留/历史策略、敏感内容清除及容量/期限，再实施后台管理。",
+      "status": "pending"
+    },
+    "M18.8": {
+      "requirement": "接收传输阶段限制内存和大载荷，测峰值内存而非只在收完后检查长度。",
+      "status": "pending"
+    },
+    "M19.1": {
+      "requirement": "交付用户截图/录屏与屏幕/窗口捕获接口、保存/错误 UX，不把 harness/QEMU 截图当产品。",
+      "status": "pending"
+    },
+    "M19.2": {
+      "requirement": "选择首批屏幕共享/采集 Portal、授权/撤销及会话边界，和文件 Portal、音频采集协调。",
+      "status": "pending"
+    },
+    "M19.3": {
+      "requirement": "语义树、焦点/动作/文本、屏幕阅读器及 Linux 辅助技术集成，验证实际辅助技术而非只测键盘。",
+      "status": "pending"
+    },
+    "M19.4": {
+      "requirement": "XWayland/X11 应用及 XEmbed 托盘兼容，验证真实客户端，不因 SDL 构建 X11 就声称有 XWayland。",
+      "status": "pending"
+    },
+    "M19.5": {
+      "requirement": "选择应用沙箱/兼容打包/权限模型及 Portal 联动；未完成前不宣传同 UID 目录、socket 或 UI 提示为 OS 隔离。",
+      "status": "pending"
+    },
+    "M20.1": {
+      "requirement": "补齐当前 Debian 的实际 GPU/renderer、网络、音频、VT/seat 和目标设备逐项结果。",
+      "status": "pending"
+    },
+    "M20.2": {
+      "requirement": "验证物理热插拔、多显示器/混合缩放、音频插拔和所选设备恢复，按具体接线范围记录。",
+      "status": "pending"
+    },
+    "M20.3": {
+      "requirement": "按新增设备扩展硬件/驱动矩阵，不承诺未测三 GPU 全组合或所有硬件兼容。",
+      "status": "pending"
+    },
+    "M20.4": {
+      "requirement": "测启动时间、空闲/峰值内存、帧耗时/输入延迟、镜像/安装占用，再定可复测预算。",
+      "status": "pending"
+    },
+    "M20.5": {
+      "requirement": "多小时运行、反复启动退出和登录/锁定、应用/服务/设备故障，以及安装/更新中断联合验收。",
+      "status": "pending"
+    },
+    "M20.6": {
+      "requirement": "根据测量决定固件/字体/词库裁剪、增量布局、dirty-region/display-list 和动画调度投入。",
+      "status": "pending"
+    },
+    "M21.1": {
+      "requirement": "实际运行远端 CI，记录来源/脏状态、固定输入、依赖/补丁/包版本和失败信息；推送/权限按实际状态处理。",
+      "status": "pending"
+    },
+    "M21.2": {
+      "requirement": "在干净环境从留存材料断网恢复 SDK/基础系统，补全开发依赖、bootstrap/Live 输入及源包。",
+      "status": "pending"
+    },
+    "M21.3": {
+      "requirement": "许可证、必要源码/补丁、SPDX/SBOM 和发行履约审查，清单/哈希不冒充合规结论。",
+      "status": "pending"
+    },
+    "M21.4": {
+      "requirement": "提供压缩分发包及解压内容/容量校验，分别记录下载大小、raw 逻辑容量和实际占用；不能承诺未经测量的 600 MB。",
+      "status": "pending"
+    },
+    "M21.5": {
+      "requirement": "确定正式支持范围、渠道、发布提升/旧版维护标识和签名身份/公钥、密钥轮换/撤销流程。",
+      "status": "pending"
+    },
+    "M21.6": {
+      "requirement": "验证位级可复现性与差异归因；当前可追踪输入不自动宣称字节相同。",
+      "status": "pending"
+    },
+    "M21.7": {
+      "requirement": "手动候选/安全包检查、新布局迁移/救援说明及已知限制；在线自动更新、定时同步/自动发布继续暂缓。",
+      "status": "pending"
+    },
+    "M22.1": {
+      "requirement": "仅保留持久化 Live 候选，避免默认维护第二套安装器；独立救援已确认，转由 P0/M10 实施。",
+      "status": "pending"
+    },
+    "M22.2": {
+      "requirement": "ARM64 的 ABI、依赖、镜像/启动和指定设备验证，不复用 x86_64 产物。",
+      "status": "pending"
+    },
+    "M22.3": {
+      "requirement": "Tiny Core 可行性；只有重新选择底座才启动，不默认长期平行维护三套发行版。",
+      "status": "blocked"
+    },
+    "M22.4": {
+      "requirement": "多点触摸、设备与系统手势，和 M17/M18 的窗口策略及触摸拖放协调。",
+      "status": "pending"
+    },
+    "M22.5": {
+      "requirement": "HDR、VRR 的目标硬件/色彩/呈现链路及独立测量，不因安装 Mesa 就声称支持。",
+      "status": "pending"
+    },
+    "M22.6": {
+      "requirement": "远程桌面的采集、输入/会话授权与传输；打印的发现、配置/权限及真实设备。",
+      "status": "pending"
+    },
+    "M22.7": {
+      "requirement": "Windows Explorer/Shell 替换继续明确暂缓；若重启需独立测试账号/VM 与恢复方案，不改 DWM。",
+      "status": "blocked"
+    },
+    "M22.8": {
+      "requirement": "macOS HTTP/数据目录、iOS/Android 触摸/生命周期/打包、bare Wayland/DRM 主机，归 PollyUI 跨平台路线，不整体变成 PollyOS 发布条件。",
+      "status": "pending"
+    }
+  },
+  "nodes": [
+    {
+      "id": "r1",
+      "label": "R1 Live 账户可用",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "Live 用公开账户和公开维护密码启动普通用户桌面；远程登录默认关闭，预设凭据不污染安装或救援。",
+      "priority": "P0",
+      "modes": [
+        "live",
+        "common"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "r2",
+      "label": "R2 新安装可启动并初始化",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "在可丢弃虚拟目标上，新策略候选通过可写单系统启动、独立两套密码设置、标准认证和普通用户桌面；不要求先迁移旧系统或完成 GUI。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "r3",
+      "label": "R3 系统可维护与独立救援",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "apt/内核维护及匹配恢复保留最新身份和数据；独立救援不依赖主系统资源，不使用 Live 公开密码授权。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "recovery"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "r4",
+      "label": "R4 数据迁移与共享应用",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "旧来源显式资格/备份/迁移可验收；额外用户认证和共享包的数据隔离闭环。新安装共享运行只依赖具体组件，不等待整个旧系统迁移。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "migration"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "r5",
+      "label": "R5 受保护日常桌面",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "图形登录、管理、锁屏/注销、基础网络/本地音频、文件打开保存、基本应用 UI、普通关机与设备安全操作可用；不包含蓝牙、Portal、挂起或高级效果。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "r6",
+      "label": "R6 外置可用开发候选",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "安装器在明确授权的目标可靠写入；按选定硬件逐项证明日常使用、维护/恢复及耐久，分发物料与确切候选对应。开发候选不冒充生产签名或全硬件认证。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "release"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t01",
+      "label": "T01 Live 账户与会话",
+      "kind": "task",
+      "parent": "r1",
+      "scope": "只改变 Live 体验策略；默认 polly/polly，root 公开维护密码 polly。公开密码不提供个人数据保护。",
+      "priority": "P0",
+      "modes": [
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "mode-policy",
+      "label": "T01.1 运行模式账户策略",
+      "kind": "subtask",
+      "parent": "t01",
+      "scope": "已确认 Live 有公开默认账户/密码；完整安装首次必须设置 polly 与独立 root 密码。介质是 USB 或 SSD 不决定模式。",
+      "priority": "P0",
+      "modes": [
+        "common"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "2026-10-08 用户提出 Live 默认凭据，并明确选择安装首启设置两套独立密码。"
+    },
+    {
+      "id": "live-passwords",
+      "label": "T01.2 Live 公开密码",
+      "kind": "subtask",
+      "parent": "t01",
+      "scope": "在 Live 专用配置层设置 polly 和 root 的公开开发默认密码 polly；提示这些密码公开，桌面仍为 UID1000。",
+      "priority": "P0",
+      "modes": [
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "mode-policy",
+        "template-isolation"
+      ],
+      "evidence": "Live 专用层/构建辅助已实现；独立缓存容器真实 PAM/su/改密通过，不能据此宣称新 Live 镜像已启动。"
+    },
+    {
+      "id": "live-login",
+      "label": "T01.3 Live 自动登录",
+      "kind": "subtask",
+      "parent": "t01",
+      "scope": "保留普通用户自动登录配置；容器验证默认凭据、改密和标准 su/PAM，不自动开放未验收的锁定/挂起。新候选实际自动进入桌面由 T01.5 验收。",
+      "priority": "P0",
+      "modes": [
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "live-passwords"
+      ],
+      "evidence": "getty 普通 UID1000 自动登录配置保持；独立缓存容器正确/错误 root 密码与普通用户改密/PAM 验证通过。"
+    },
+    {
+      "id": "live-remote",
+      "label": "T01.4 关闭默认远程登录",
+      "kind": "subtask",
+      "parent": "t01",
+      "scope": "默认不开 SSH/远程 root 登录；启用远程服务须独立配置，不能直接暴露公开默认凭据。",
+      "priority": "P0",
+      "modes": [
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "live-passwords"
+      ],
+      "evidence": "Live 层明确 mask ssh/sshd 的 service/socket 别名；独立容器核对 /dev/null 掩码，未重新构建原 Live 镜像。"
+    },
+    {
+      "id": "live-acceptance",
+      "label": "T01.5 Live 新策略启动",
+      "kind": "subtask",
+      "parent": "t01",
+      "scope": "新的 Live 候选实际启动并验证公开账户及 root 维护行为；改密默认仅本次会话，不宣传为持久化 Live。",
+      "priority": "P0",
+      "modes": [
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [
+        "live-login",
+        "live-remote"
+      ]
+    },
+    {
+      "id": "t02",
+      "label": "T02 安装凭据与模式隔离",
+      "kind": "task",
+      "parent": "r1",
+      "scope": "公共 runtime/SDK 保持锁定账户模板；Live 预设在最终 Live 层应用。安装和独立救援不复制 Live shadow。",
+      "priority": "P0",
+      "modes": [
+        "common"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "template-isolation",
+      "label": "T02.1 锁定模板与 Live 分层",
+      "kind": "subtask",
+      "parent": "t02",
+      "scope": "把公共锁定账户模板、Live 预设和安装镜像模板分层；安装生成独立状态，无安装默认密码，不把已设置密码的 Live 模板冒充未初始化模板。",
+      "priority": "P0",
+      "modes": [
+        "common"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "mode-policy"
+      ],
+      "evidence": "platform-base 保持锁定模板，最终 live-base 才设置公开密码；Installed FROM PLATFORM_IMAGE。配方/不重置边界和独立缓存容器验证通过，完整新镜像待验收。"
+    },
+    {
+      "id": "mode-markers",
+      "label": "T02.2 可信模式与拒绝回落",
+      "kind": "subtask",
+      "parent": "t02",
+      "scope": "明确 Live/fresh/installed/recovery 的可信模式入口；安装状态缺失/坏卷不回退 Live 登录或重开 setup。",
+      "priority": "P0",
+      "modes": [
+        "common"
+      ],
+      "sources": [
+        "M01.4",
+        "M03.1"
+      ],
+      "status": "in_progress",
+      "requires": [
+        "template-isolation"
+      ]
+    },
+    {
+      "id": "profile-separation",
+      "label": "T02.3 模式串用回归",
+      "kind": "subtask",
+      "parent": "t02",
+      "scope": "验证 Live 公开密码不能被安装模板、迁移目标或独立救援当作授权；安装无通用默认密码且移植旧账户不重置密码。",
+      "priority": "P0",
+      "modes": [
+        "common"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [
+        "template-isolation",
+        "mode-markers"
+      ]
+    },
+    {
+      "id": "t03",
+      "label": "T03 存储与普通启动",
+      "kind": "task",
+      "parent": "r2",
+      "scope": "只验收普通单系统启动；独立救援由 T09 验收，完整安装器由 T24 实现。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "storage-layout",
+      "label": "T03.1 可写单系统契约",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "落实布局版本、UUID、必需映射/权限、各类状态权威和恢复分组，容量按载荷/暂存/救援实测；禁止整映射 `/etc` 或 `/var/lib`。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M06.6"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "07e1692；布局版本/UUID/权限及容量规则组件验收。"
+    },
+    {
+      "id": "early-usr",
+      "label": "T03.2 早期 usr 接入",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "在 initramfs 自有工具链中将完整 `System/Resources` 接入 `/usr`，保留 merged-usr 关系；校验失败不得启动主系统 init。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M06.7"
+      ],
+      "status": "done",
+      "requires": [
+        "storage-layout"
+      ],
+      "evidence": "aacde4c；early-usr 与 initramfs-only 工具检查；不替代新候选冷启动。"
+    },
+    {
+      "id": "required-maps",
+      "label": "T03.3 必需持久状态映射",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "接通 `SystemData/Apps/Users` 及 Dpkg/Apt、日志/缓存/临时、账户/服务、HOME 必需映射；启动/维护前检查同一存储与权限，不静默回落。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M06.8"
+      ],
+      "status": "done",
+      "requires": [
+        "storage-layout",
+        "early-usr"
+      ],
+      "evidence": "a0a4e1c；namespace 映射及 r2 ext4 普通启动，服务状态仍逐项分类。"
+    },
+    {
+      "id": "prototype-assembly",
+      "label": "T03.4 普通虚拟候选装配",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "普通单系统 regular 镜像装配、容量实测及目录权限已完成；Recovery 仅 reserved-not-bootable，不继承救援或真实安装验收。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M07.1"
+      ],
+      "status": "done",
+      "requires": [
+        "required-maps"
+      ],
+      "evidence": "9e89f8c；single-system-r2 原始 raw 保持不变。"
+    },
+    {
+      "id": "prototype-boot",
+      "label": "T03.5 r2 普通启动基线",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "r2 无 fixture 的 OVMF/KVM 启动、首次设置、PAM 登录和 UID1000 桌面；该 smoke 由 QMP 退出，不是正常关机验收。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M07.5"
+      ],
+      "status": "done",
+      "requires": [
+        "prototype-assembly"
+      ],
+      "evidence": "build/single-system-smoke-r2/run/result.json；来源 9e89f8c。"
+    },
+    {
+      "id": "t03-m06-1",
+      "label": "T03.6 必需存储故障",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "覆盖必需存储/映射缺失、错 UUID、坏 schema/权限、不可写、满盘、损坏及启动中断；拒绝空目录写入、空包数据库和认证重置。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M06.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "required-maps"
+      ]
+    },
+    {
+      "id": "t03-m06-2",
+      "label": "T03.7 只读诊断入口",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "实现明确的故障信息、只读诊断和受控恢复入口，不自动格式化/修复未知介质。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M06.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t03-m06-1"
+      ]
+    },
+    {
+      "id": "current-fresh-boot",
+      "label": "T03.8 新策略正常冷启动",
+      "kind": "subtask",
+      "parent": "t03",
+      "scope": "将当前已提交的模式、账户、HOME 与必要组件装入新候选，实际普通 UEFI 冷启动、两套密码设置、默认密码登录与正常关机；保留失败/来源摘要。",
+      "priority": "P0",
+      "modes": [
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M07.5",
+        "M01.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "profile-separation",
+        "required-maps",
+        "account-bind",
+        "first-passwords",
+        "role-bootstrap",
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t04",
+      "label": "T04 持久身份与版本状态",
+      "kind": "task",
+      "parent": "r2",
+      "scope": "用户凭据/角色、版本服务账户、主机身份和网络状态各有权威；不整体共享系统账户表。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "account-model",
+      "label": "T04.1 账户权威与版本",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "定义账户/初始化/角色权威及版本兼容规则；不把 root/polly 凭据、服务 UID 与普通 AppData 混成一个状态集。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "role-model",
+      "label": "T04.2 管理员角色契约",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "定义 polly 管理员资格、稳定 UID/GID 和操作范围，普通应用不可自报身份；该模型先于首启创建角色，不依赖图形认证 UI。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.1",
+        "M04.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-model"
+      ]
+    },
+    {
+      "id": "account-private",
+      "label": "T04.3 root 私有账户存储",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "实现 root 私有、普通应用不可改写的存储/加载边界，不共享整个 `/etc`、`/var` 或把认证数据放入 AppData。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.2"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "617cea4/df7088e；既有私有账户加载边界。"
+    },
+    {
+      "id": "account-lock",
+      "label": "T04.4 账户原子保存与锁",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "已实现私有有界状态锁、原子保存、并发写与提交后同步失败报错；不等于实际断电/完整恢复。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.4"
+      ],
+      "status": "done",
+      "requires": [
+        "account-private"
+      ],
+      "evidence": "1468b6b；有界 flock/并发/故障检查。"
+    },
+    {
+      "id": "account-bind",
+      "label": "T04.5 新布局账户接入",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "联合适配 `SystemData/Accounts`、控制器/passwd proxy/NSS/PAM、UUID/权限及唯一初始化权威；服务账户仍随系统版本，持久配置逐项分类，不整体替换 `/etc`。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.6"
+      ],
+      "status": "done",
+      "requires": [
+        "required-maps",
+        "account-private"
+      ],
+      "evidence": "df7088e；schema3/UUID/NSS/PAM/passwd 接入及 r2 普通认证。"
+    },
+    {
+      "id": "account-recovery",
+      "label": "T04.6 账户事务故障闭环",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "补齐当前版本、只读/满盘/损坏/中断恢复与初始化权威一致性；失败不回默认密码或无密码登录。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-lock",
+        "account-model"
+      ]
+    },
+    {
+      "id": "service-state",
+      "label": "T04.7 服务状态逐项分类",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "版本配套服务 UID/GID 随系统；分类持久服务配置及升级/恢复规则，不整体覆盖 passwd/group/var/lib。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "storage-layout"
+      ]
+    },
+    {
+      "id": "machine-state",
+      "label": "T04.8 主机身份权威",
+      "kind": "subtask",
+      "parent": "t04",
+      "scope": "定义并保存机器身份/主机配置的权威、权限和维护保留；网络凭据实施归 T17，不重复做另一套存储。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh",
+        "installed"
+      ],
+      "sources": [
+        "M01.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-model"
+      ]
+    },
+    {
+      "id": "t05",
+      "label": "T05 全新首次设置",
+      "kind": "task",
+      "parent": "r2",
+      "scope": "仅处理真正新安装；创建角色与 HOME 是初始化，不等待旧数据迁移或完整管理 UI。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "fresh-home",
+      "label": "T05.1 稳定 UID 的新 HOME",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "已实现 root/polly/稳定 UID 的私有 HOME、XDG、兼容链接及 user-dirs 初始化组件，迁移暂存也可复用；这是代码能力，不要求先在迁移目标创建 UID 目录。既有数据冲突拒绝，不覆盖。",
+      "priority": "P0",
+      "modes": [
+        "common",
+        "fresh"
+      ],
+      "sources": [
+        "M02.3",
+        "M01.7"
+      ],
+      "status": "done",
+      "requires": [
+        "required-maps"
+      ],
+      "evidence": "21517ca；fresh HOME、两个真实 UID 数据隔离组件检查。"
+    },
+    {
+      "id": "first-entry",
+      "label": "T05.2 未初始化入口",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "仅在真实未初始化状态进入受控 setup，不开放通用 root 桌面或无限制 root shell。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.1"
+      ],
+      "status": "done",
+      "requires": [
+        "account-bind"
+      ],
+      "evidence": "617cea4；控制台 setup 入口；不是图形安装向导。"
+    },
+    {
+      "id": "first-passwords",
+      "label": "T05.3 首启两套独立密码",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "本地交互设置/确认 `polly` 与独立 root 密码；校验输入和 PAM 结果，不从聊天、参数、环境或日志取得密码。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.2"
+      ],
+      "status": "done",
+      "requires": [
+        "first-entry"
+      ],
+      "evidence": "617cea4 与 r2 控制台/实际 PAM；首次必须独立设置 polly/root，无安装默认密码。"
+    },
+    {
+      "id": "role-bootstrap",
+      "label": "T05.4 首个管理员初始化",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "按既定角色模型创建首个 polly 管理员，桌面仍普通用户；bootstrap 使用受控 setup 权限，不依赖尚未建成的管理员 UI。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "role-model",
+        "first-entry"
+      ]
+    },
+    {
+      "id": "initial-config",
+      "label": "T05.5 必要初始配置",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "初始化必要主机/用户配置及权威完成状态，不以缺 marker 判断新用户；不会替换已有安装的当前认证。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "fresh-home",
+        "machine-state"
+      ]
+    },
+    {
+      "id": "t05-m02-4",
+      "label": "T05.6 首次设置中断恢复",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "实现成功、取消、失败、重试和中断恢复；账户与完成标记不能半配置提交。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "first-passwords",
+        "role-bootstrap",
+        "account-recovery"
+      ]
+    },
+    {
+      "id": "t05-m02-5",
+      "label": "T05.7 首次设置故障验收",
+      "kind": "subtask",
+      "parent": "t05",
+      "scope": "验证第二次启动不重复 setup，磁盘只读/满盘/断电不会产生“初始化成功”的假象。",
+      "priority": "P0",
+      "modes": [
+        "fresh"
+      ],
+      "sources": [
+        "M02.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "t05-m02-4",
+        "current-fresh-boot"
+      ]
+    },
+    {
+      "id": "t06",
+      "label": "T06 标准认证与密码维护",
+      "kind": "task",
+      "parent": "r2",
+      "scope": "保留 root 密码标准 su；公开 Live 密码不进入安装认证；组件/历史镜像证据与新策略候选分开。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "persistent-passwd",
+      "label": "T06.1 标准持久改密",
+      "kind": "subtask",
+      "parent": "t06",
+      "scope": "标准 passwd、root 改密及锁定/解锁写入同一受控权威，普通用户不能改 root；额外用户生命周期另由 T11 完成。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [
+        "M01.3"
+      ],
+      "status": "done",
+      "requires": [
+        "account-bind"
+      ],
+      "evidence": "1468b6b/94c23cd；真实 passwd/PAM/su，保留实际调用 UID。"
+    },
+    {
+      "id": "standard-su",
+      "label": "T06.2 标准 su 与身份恢复",
+      "kind": "subtask",
+      "parent": "t06",
+      "scope": "通过发行版标准 su/PAM 支持普通用户日常 `su -`，核实 root 身份、环境与退出后的普通用户身份。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [
+        "M04.1"
+      ],
+      "status": "done",
+      "requires": [
+        "first-passwords"
+      ],
+      "evidence": "617cea4；root 身份/环境及退出后普通 UID/GID 验证。"
+    },
+    {
+      "id": "pam-session",
+      "label": "T06.3 普通 PAM 桌面链路",
+      "kind": "subtask",
+      "parent": "t06",
+      "scope": "getty/login/PAM/logind/seat/runtime 连接 UID1000 原生桌面，认证失败不启动；图形登录界面另属 T14。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [
+        "M03.2",
+        "M03.1"
+      ],
+      "status": "done",
+      "requires": [
+        "account-bind"
+      ],
+      "evidence": "r2 普通 UEFI 密码登录与 logind/DRM 桌面；不继承 Live 自动登录。"
+    },
+    {
+      "id": "auth-reboots",
+      "label": "T06.4 r2 改密冷启动基线",
+      "kind": "subtask",
+      "parent": "t06",
+      "scope": "三轮普通 r2 控制台密码登录、标准改密/root su、旧密码拒绝、新密码及数据保留；每轮正常关机。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [
+        "M01.5"
+      ],
+      "status": "done",
+      "requires": [
+        "persistent-passwd",
+        "standard-su"
+      ],
+      "evidence": "build/single-system-account-persistence-r2-attempt3/run/result.json；不代替不同版本维护/救援。"
+    },
+    {
+      "id": "t06-m04-2",
+      "label": "T06.5 提权失败拒绝",
+      "kind": "subtask",
+      "parent": "t06",
+      "scope": "验证错误密码、锁定账户、取消和服务失败均拒绝提权；不以 sudo-only、无密码规则替代要求。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "fresh"
+      ],
+      "sources": [
+        "M04.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "standard-su",
+        "persistent-passwd"
+      ]
+    },
+    {
+      "id": "t07",
+      "label": "T07 apt 与内核维护",
+      "kind": "task",
+      "parent": "r3",
+      "scope": "使用当前可写系统和版本配套包状态；root 维护原型不等待完整管理员 GUI 或旧安装迁移。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t07-m09-1",
+      "label": "T07.1 载荷与包状态契约",
+      "kind": "subtask",
+      "parent": "t07",
+      "scope": "定义完整系统载荷、版本/架构、容量、数据兼容及物料元数据；核对系统与包数据库匹配。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M09.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "storage-layout"
+      ]
+    },
+    {
+      "id": "t07-m09-2",
+      "label": "T07.2 apt 维护与锁",
+      "kind": "subtask",
+      "parent": "t07",
+      "scope": "验证 apt 安装/升级/卸载、配置冲突、divert、锁及内核启动文件更新；必要映射就绪前不得维护系统，不与离线恢复并发。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M09.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "required-maps",
+        "t07-m09-1",
+        "t07-m09-8"
+      ]
+    },
+    {
+      "id": "t07-m09-4",
+      "label": "T07.3 维护保留最新身份",
+      "kind": "subtask",
+      "parent": "t07",
+      "scope": "保留最新认证/管理员/网络状态，迁移可验证且版本不兼容时明确拒绝。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M09.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-bind",
+        "persistent-passwd",
+        "account-model"
+      ]
+    },
+    {
+      "id": "t07-m09-7",
+      "label": "T07.4 内核与引导维护",
+      "kind": "subtask",
+      "parent": "t07",
+      "scope": "验证 `/boot` 真实存储/兼容接入、微码、内核/模块、update-initramfs/update-grub 和包脚本，维护后实际冷启动，不能仅测路径存在。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M09.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "t07-m09-2"
+      ]
+    },
+    {
+      "id": "t07-m09-8",
+      "label": "T07.5 更新事务与中断",
+      "kind": "subtask",
+      "parent": "t07",
+      "scope": "在 `SystemData/Updates` 记录操作 ID、源/目标、恢复范围、校验、阶段和错误；离线事务排除活动 apt 写入，关键阶段中断可识别并继续/修复/恢复。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M09.8"
+      ],
+      "status": "pending",
+      "requires": [
+        "required-maps",
+        "account-lock"
+      ]
+    },
+    {
+      "id": "t08",
+      "label": "T08 匹配载荷与开发信任",
+      "kind": "task",
+      "parent": "r3",
+      "scope": "完整系统替换与包状态匹配；测试身份验签、开发未签名边界和生产身份分开。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "recovery"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t08-m09-3",
+      "label": "T08.1 匹配载荷替换",
+      "kind": "subtask",
+      "parent": "t08",
+      "scope": "完整载荷替换写前检查容量/来源/兼容性及匹配恢复材料，在维护/救援环境执行；记录事务与中断状态，不覆盖用户数据或破坏唯一救援入口。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "recovery"
+      ],
+      "sources": [
+        "M09.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t07-m09-1",
+        "t07-m09-8",
+        "t09-m10-6",
+        "t09-m10-7",
+        "t09-m10-2"
+      ]
+    },
+    {
+      "id": "t08-m09-5",
+      "label": "T08.2 测试签名与拒绝",
+      "kind": "subtask",
+      "parent": "t08",
+      "scope": "用测试身份验证签名、可信公钥、篡改/错误签名拒绝；正式信任根、生产签名及密钥操作另行确定/授权。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "recovery"
+      ],
+      "sources": [
+        "M09.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "t07-m09-1"
+      ]
+    },
+    {
+      "id": "t08-m09-6",
+      "label": "T08.3 开发未签名边界",
+      "kind": "subtask",
+      "parent": "t08",
+      "scope": "开发未签名产物明确标识，不能通过成功形态的 fallback 绕过正式验签；不默认开启在线自动更新。",
+      "priority": "P0",
+      "modes": [
+        "installed",
+        "recovery"
+      ],
+      "sources": [
+        "M09.6"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t09",
+      "label": "T09 独立救援与一致恢复",
+      "kind": "task",
+      "parent": "r3",
+      "scope": "救援使用自己的内核/软件，按已安装系统的 polly/root 凭据授权；诊断只读、无万能重置，不依赖 Live 默认密码。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t09-m10-6",
+      "label": "T09.1 独立救援载荷",
+      "kind": "subtask",
+      "parent": "t09",
+      "scope": "构建救援自有内核、initramfs、Rootfs.img、Manifest 和工具；不依赖主系统程序/库/账户加载，主资源或包数据库损坏时实际启动。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [
+        "M10.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "storage-layout"
+      ]
+    },
+    {
+      "id": "t09-m10-7",
+      "label": "T09.2 救援认证与保留",
+      "kind": "subtask",
+      "parent": "t09",
+      "scope": "诊断只读且不开放个人数据；写入/重装/账户恢复认证 polly 管理员或 root，忘记全部密码无内置重置入口。验证来源/材料和唯一救援入口，恢复后软件/包状态匹配而最新身份、凭据、App 和用户内容保持。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [
+        "M10.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "t09-m10-6",
+        "account-bind",
+        "role-model"
+      ]
+    },
+    {
+      "id": "t09-m10-1",
+      "label": "T09.3 匹配恢复与外部入口",
+      "kind": "subtask",
+      "parent": "t09",
+      "scope": "提供不依赖主系统软件的独立救援与匹配系统恢复，验证引导配置损坏、更新中断、空间不足和包/载荷不一致；共用 EFI 损坏须有外部恢复路径。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [
+        "M10.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "t09-m10-6",
+        "t09-m10-7",
+        "t07-m09-1"
+      ]
+    },
+    {
+      "id": "t09-m10-2",
+      "label": "T09.4 数据兼容与恢复边界",
+      "kind": "subtask",
+      "parent": "t09",
+      "scope": "定义系统/应用数据 schema 兼容、备份、恢复与不可逆迁移边界，不能假定旧系统能读新数据。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [
+        "M10.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "storage-layout",
+        "account-model"
+      ]
+    },
+    {
+      "id": "t09-m10-3",
+      "label": "T09.5 诊断与授权账户恢复",
+      "kind": "subtask",
+      "parent": "t09",
+      "scope": "提供诊断导出、受控改密/账户恢复、修复说明和数据备份流程；回退不能恢复旧密码或偷偷重置凭据。",
+      "priority": "P0",
+      "modes": [
+        "recovery"
+      ],
+      "sources": [
+        "M10.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t09-m10-7",
+        "t09-m10-2"
+      ]
+    },
+    {
+      "id": "t10",
+      "label": "T10 既有安装离线迁移",
+      "kind": "task",
+      "parent": "r4",
+      "scope": "仅处理明确的旧来源；源只读、资格/备份/校验后原子发布，新安装不依赖本任务整组完成。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "home-import",
+      "label": "T10.1 离线 HOME 导入",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "保留旧 HOME/XDG/文档及原始私有备份、内部硬链接和已知 root/ACL；冲突、未知属性/身份及中断显式拒绝。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7"
+      ],
+      "status": "done",
+      "requires": [
+        "fresh-home"
+      ],
+      "evidence": "fa6763a/b8a9a4e/cbf128f；v1/v2/v3 检查范围保持。"
+    },
+    {
+      "id": "identity-map",
+      "label": "T10.2 明确身份与 ACL 映射",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "源/目标公开表指纹固定，普通 UID 稳定、服务身份显式重基；备份不改数值身份，漂移明确中断。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7"
+      ],
+      "status": "done",
+      "requires": [
+        "home-import"
+      ],
+      "evidence": "e7c4ea3；schema4，真实只读 namespace；不写系统账户表。"
+    },
+    {
+      "id": "account-import",
+      "label": "T10.3 旧账户权威导入",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "旧 schema2/homeUuid 明确资格，转换目标 schema3/persistentUuid；保留密码/锁定/初始化/自动登录，目标已有状态拒绝。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7",
+        "M01.5"
+      ],
+      "status": "done",
+      "requires": [
+        "account-bind",
+        "identity-map"
+      ],
+      "evidence": "94c23cd；私有备份/no-replace 与真实 tmpfs/PAM/su/passwd；卷发现 fixture 不是 ext4/整机证明。"
+    },
+    {
+      "id": "managed-data-probe",
+      "label": "T10.4 原生应用迁移组件",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "两个普通 UID 用真实 cached manager/runtime 验证同 app-id/代码和 localStorage 1→2，源/备份不变；不是额外账户 PAM 或共享注册证明。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7"
+      ],
+      "status": "done",
+      "requires": [
+        "home-import"
+      ],
+      "evidence": "build/storage-managed-home-migration-v4/result.json；旧 v2/v3 结果保留。"
+    },
+    {
+      "id": "migration-role",
+      "label": "T10.5 迁移角色与版本配置",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "对明确旧管理员资格、主机/服务配置与新角色模型作显式适配；不重开 setup、不把同名服务推为管理员、不重置现有凭据。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.1",
+        "M01.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "role-model",
+        "account-import"
+      ]
+    },
+    {
+      "id": "migrated-boot",
+      "label": "T10.6 迁移后的正常冷启动",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "合并当前迁移工具，选择明确旧来源，在迁移后的普通候选正常登录、运行应用、改密并重复冷启动；不得用源丢失重开 setup。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7",
+        "M07.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-import",
+        "migration-role",
+        "managed-data-probe",
+        "current-fresh-boot"
+      ]
+    },
+    {
+      "id": "migration-durability",
+      "label": "T10.7 迁移中断与耐久",
+      "kind": "subtask",
+      "parent": "t10",
+      "scope": "补齐目标 ext4 满盘/各阶段掉电重启诊断及备份保留；注入失败和 tmpfs 证据不替代真实文件系统/整机。",
+      "priority": "P0",
+      "modes": [
+        "migration"
+      ],
+      "sources": [
+        "M01.7",
+        "M06.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-import",
+        "home-import"
+      ]
+    },
+    {
+      "id": "t11",
+      "label": "T11 额外用户生命周期",
+      "kind": "task",
+      "parent": "r4",
+      "scope": "把数据 UID 夹具提升为真实额外账户/NSS/PAM 生命周期；不误称第二个数值 UID 已能登录。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "extra-users",
+      "label": "T11.1 用户创建改密与停用",
+      "kind": "subtask",
+      "parent": "t11",
+      "scope": "定义并实现额外普通用户的稳定 UID/GID、passwd/shadow/NSS/PAM 与安全停用，服务身份不当用户；账户操作原子且保持独立 HOME。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M01.3",
+        "M01.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-model",
+        "role-model",
+        "fresh-home"
+      ]
+    },
+    {
+      "id": "two-user-auth",
+      "label": "T11.2 两账户真实认证隔离",
+      "kind": "subtask",
+      "parent": "t11",
+      "scope": "至少两账户真实认证、创建/改密/会话与 Settings/AppData/Cache/文档/root HOME 隔离，维护后 UID 不漂移。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M01.7",
+        "M15.10"
+      ],
+      "status": "pending",
+      "requires": [
+        "extra-users",
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t12",
+      "label": "T12 共享包与全局注册",
+      "kind": "task",
+      "parent": "r4",
+      "scope": "全机活动版本和普通用户数据隔离；新共享运行不等待整机旧数据迁移或管理员 GUI。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t12-m04-6",
+      "label": "T12.1 共享操作窄授权",
+      "kind": "subtask",
+      "parent": "t12",
+      "scope": "P0 实现共享 App 安装/替换/全局卸载的窄授权接口，验证真实调用者和操作范围；拒绝任意路径/命令/hooks，不将旧 `polly-app` 整体提权。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M04.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "admin-backend",
+        "account-bind"
+      ]
+    },
+    {
+      "id": "t12-m15-8",
+      "label": "T12.2 共享包与权威注册",
+      "kind": "subtask",
+      "parent": "t12",
+      "scope": "将共享代码/资源置于 `Apps/Packages/<PackageHash>`，权威注册/策略置于 `SystemData/Apps`；复用校验/限额/暂存/摘要和版本约束，普通 App 不可写，个人数据身份不变。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.8"
+      ],
+      "status": "pending",
+      "requires": [
+        "required-maps",
+        "fresh-home",
+        "t12-m04-6"
+      ]
+    },
+    {
+      "id": "t12-m15-9",
+      "label": "T12.3 共享版本冲突迁移",
+      "kind": "subtask",
+      "parent": "t12",
+      "scope": "迁移为每 app-id 一个全机活动版本；冲突由管理员显式选择，保留各用户数据/旧版本；暂存/校验/提交/中断恢复，未解决不切换、未知数据不接管，确认前保留旧源。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.9"
+      ],
+      "status": "pending",
+      "requires": [
+        "home-import",
+        "identity-map",
+        "t12-m15-8",
+        "t12-m04-6"
+      ]
+    },
+    {
+      "id": "t12-m15-10",
+      "label": "T12.4 双用户共享隔离",
+      "kind": "subtask",
+      "parent": "t12",
+      "scope": "至少两用户运行同一共享包且数据隔离；启动器区分 apt/Polly 来源，apt 无第二套安装数据库；全局卸载不等于隐藏个人入口，GC 检查跨用户引用/资源使用，策略检查不冒充执行隔离或沙箱。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.10"
+      ],
+      "status": "pending",
+      "requires": [
+        "t12-m15-8",
+        "two-user-auth"
+      ]
+    },
+    {
+      "id": "t13",
+      "label": "T13 应用运行与数据生命周期",
+      "kind": "task",
+      "parent": "r4",
+      "scope": "版本/数据分别处理，未知数据不接管，运行资源不因主 PID 退出就回收。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t13-m15-2",
+      "label": "T13.1 D-Bus 桌面激活",
+      "kind": "subtask",
+      "parent": "t13",
+      "scope": "补齐 `.desktop` D-Bus-only activation，不借任意 shell 命令或伪造 Exec 绕过。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.2"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t13-m15-3",
+      "label": "T13.2 使用中代码安全回收",
+      "kind": "subtask",
+      "parent": "t13",
+      "scope": "安全回收旧版本/孤立代码；覆盖脱离主进程的后代及仍被使用的资源，不以主 PID 退出判断可删。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t12-m15-8",
+        "t12-m15-10"
+      ]
+    },
+    {
+      "id": "t13-m15-4",
+      "label": "T13.3 卸载与独立清除数据",
+      "kind": "subtask",
+      "parent": "t13",
+      "scope": "卸载默认保留 AppData；清除数据独立确认，仅针对管理器明确拥有的路径。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t12-m04-6",
+        "t12-m15-8"
+      ]
+    },
+    {
+      "id": "t13-m15-6",
+      "label": "T13.4 应用数据版本迁移",
+      "kind": "subtask",
+      "parent": "t13",
+      "scope": "实现 schema/layout 迁移、独占/备份及不兼容回退策略，不静默清空数据。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "t09-m10-2",
+        "t12-m15-8"
+      ]
+    },
+    {
+      "id": "t13-m15-7",
+      "label": "T13.5 第三方应用联合验收",
+      "kind": "subtask",
+      "parent": "t13",
+      "scope": "选择更多真实第三方应用及非 XDG 适配，验证上游升级和完整跨重启安装/更新/回退/卸载组合。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "t12-m15-10",
+        "t13-m15-6"
+      ]
+    },
+    {
+      "id": "t14",
+      "label": "T14 图形认证与账户管理",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "GUI 消费已有身份/角色后端；先建角色再用它认证，不反向阻塞首启。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "gui-setup",
+      "label": "T14.1 图形首次设置",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "将已验证控制台双密码/初始化流程接入受控 GUI，取消/失败不虚报完成；GUI 不持通用 root 桌面。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M02.1",
+        "M02.2",
+        "M02.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "first-passwords",
+        "role-bootstrap"
+      ]
+    },
+    {
+      "id": "gui-login",
+      "label": "T14.2 图形密码登录",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "实现真实 PAM 登录界面和普通用户桌面交接；仍默认密码登录，不改变历史已生成 Live 产物。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M03.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t14-m03-3",
+      "label": "T14.3 登录失败与重试",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "处理错误密码、账户不可用、服务失联、取消/超时和启动失败，提供受保护的诊断/重试入口。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M03.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "gui-login"
+      ]
+    },
+    {
+      "id": "t14-m03-5",
+      "label": "T14.4 登录策略联合验收",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "验证密码登录和自动登录模式跨重启/维护/恢复保留；注销与锁屏仍有认证，自动登录不冒充加密解锁。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M03.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "gui-login",
+        "autologin-ui",
+        "t15-m05-1",
+        "t15-m05-4"
+      ]
+    },
+    {
+      "id": "autologin-core",
+      "label": "T14.5 已有自动登录策略",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "root CLI 明确开启/关闭，跨重启保存且每次启动最多一次；不等于图形管理员认证或锁屏已经交付。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M03.4"
+      ],
+      "status": "done",
+      "requires": [
+        "account-bind"
+      ],
+      "evidence": "617cea4/1468b6b；默认关闭与 once-per-boot 检查。"
+    },
+    {
+      "id": "admin-backend",
+      "label": "T14.6 真实管理调用者授权",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "验证真实本地会话、管理员角色和所需操作范围；拒绝自报 UID/任意路径/命令/hooks，可先用受限后端和夹具验收。",
+      "priority": "P0",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M04.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "role-model",
+        "role-bootstrap",
+        "pam-session"
+      ]
+    },
+    {
+      "id": "admin-ui",
+      "label": "T14.7 管理员认证界面",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "系统管理使用认证 UI/PAM、取消/失联/超时反馈和不含凭据诊断；标准 su 仍使用独立 root 密码。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M04.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "admin-backend"
+      ]
+    },
+    {
+      "id": "autologin-ui",
+      "label": "T14.8 自动登录设置界面",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "管理员认证后显式修改自动登录，提供风险说明，不存明文密码；锁屏和注销认证不被取消。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M03.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "autologin-core",
+        "admin-ui"
+      ]
+    },
+    {
+      "id": "t14-m04-4",
+      "label": "T14.9 普通偏好与系统管理",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "区分普通偏好与账户/安全/系统组件管理；普通应用不能通过自报身份取得通用 root 执行权限。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M04.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "admin-backend"
+      ]
+    },
+    {
+      "id": "t14-m04-5",
+      "label": "T14.10 账户管理界面",
+      "kind": "subtask",
+      "parent": "t14",
+      "scope": "接入改密、登录策略等管理操作，提供明确取消/失败反馈和不含凭据的诊断信息。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M04.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "admin-ui",
+        "persistent-passwd",
+        "autologin-ui"
+      ]
+    },
+    {
+      "id": "t15",
+      "label": "T15 锁屏注销与 TTY",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "失败保持覆盖；锁定、注销与普通登录分别验收，挂起属于独立 E03。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t15-m05-1",
+      "label": "T15.1 锁屏入口与认证",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "接通 Shell 锁屏入口、快捷键及 login1 Lock/Unlock 信号，解锁仅接受有效的 `polly` 认证。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t15-m05-2",
+      "label": "T15.2 空闲锁屏与抑制",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "默认 10 分钟无操作锁屏，提供配置；定义正常输入、活动/抑制请求和失效状态的边界。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t15-m05-1"
+      ]
+    },
+    {
+      "id": "t15-m05-3",
+      "label": "T15.3 锁进程恢复",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "接通可信锁进程恢复，验证崩溃、超时、多显示器/热插拔、黑屏覆盖和普通输入隔离。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t15-m05-1"
+      ]
+    },
+    {
+      "id": "t15-m05-4",
+      "label": "T15.4 注销与保存",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "注销提供应用保存机会并回到受保护登录入口，不遗留已登录 shell 或误结束其它用户会话。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "gui-login"
+      ]
+    },
+    {
+      "id": "t15-m05-5",
+      "label": "T15.5 受保护 TTY",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "验证 VT 切换、已存在 TTY 会话和恢复入口，不能经 TTY 绕过锁屏；安全性结论不扩展到有 root 权限的攻击者。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session",
+        "t15-m05-1"
+      ]
+    },
+    {
+      "id": "t15-m05-6",
+      "label": "T15.6 锁定会话组合",
+      "kind": "subtask",
+      "parent": "t15",
+      "scope": "确认自动登录、密码修改、锁进程失败及注销重进组合；未闭环前不启用自动挂起。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M05.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "t15-m05-3",
+        "t15-m05-4",
+        "autologin-ui"
+      ]
+    },
+    {
+      "id": "t16",
+      "label": "T16 会话与服务可靠性",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "有界恢复/自启动/保存与资源释放；基础会话不等待完整共享迁移。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t16-m11-1",
+      "label": "T16.1 Shell 生命周期",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "明确 Shell 正常退出、崩溃、重启及最终失败策略，不误杀仍正常工作的普通应用。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M11.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t16-m11-2",
+      "label": "T16.2 服务就绪与诊断",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "补齐 IME、网络、音频、通知等必要服务的就绪/失效诊断和受控恢复入口。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M11.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t16-m11-3",
+      "label": "T16.3 有界重试与人工恢复",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "实现有界重试/退避、状态持有和人工恢复，失败显式提示，不增加无限后台循环。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M11.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t16-m11-2"
+      ]
+    },
+    {
+      "id": "t16-m11-4",
+      "label": "T16.4 自启动与会话恢复",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "接通应用自启动、窗口/应用恢复及保存提示；恢复对象与代码版本合法，不能恢复陈旧或已卸载会话。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M11.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t16-m11-1",
+        "t13-m15-2"
+      ]
+    },
+    {
+      "id": "t16-m11-5",
+      "label": "T16.5 会话耐久与释放",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "验证反复登录/注销、Shell 重启、服务失联和进程残留/资源释放，并记录可导出的会话诊断。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M11.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "t16-m11-3",
+        "t16-m11-4",
+        "t15-m05-4"
+      ]
+    },
+    {
+      "id": "t17",
+      "label": "T17 基础网络与凭据",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络门槛。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t17-m12-1",
+      "label": "T17.1 私有网络状态",
+      "kind": "subtask",
+      "parent": "t17",
+      "scope": "实现 `SystemData/Network` 的 root 私有配置/凭据及 iwd 接入，按服务映射而非整体共享 `/var`，区分安装版与 Live。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed"
+      ],
+      "sources": [
+        "M12.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-private",
+        "required-maps"
+      ]
+    },
+    {
+      "id": "t17-m12-2",
+      "label": "T17.2 网络记忆与重连",
+      "kind": "subtask",
+      "parent": "t17",
+      "scope": "连接成功后记住/重连，支持忘记网络，验证重启/维护/恢复、错误密码、失联和凭据权限。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed"
+      ],
+      "sources": [
+        "M12.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t17-m12-1"
+      ]
+    },
+    {
+      "id": "t17-m12-4",
+      "label": "T17.3 有线网络与 DNS",
+      "kind": "subtask",
+      "parent": "t17",
+      "scope": "补齐有线状态、地址/DNS 管理和失败反馈，不把已有 DHCP/DNS 记为未实现。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed"
+      ],
+      "sources": [
+        "M12.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t17-m12-1"
+      ]
+    },
+    {
+      "id": "t18",
+      "label": "T18 本地音频设备",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "本地播放/录音及设备路由，不把蓝牙完成当普通音频前置；软件和物理证据分开。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "audio-control",
+      "label": "T18.1 音频设备与路由控制",
+      "kind": "subtask",
+      "parent": "t18",
+      "scope": "补设备/端口/profile 选择、音量和失联恢复，复用现有私有 PipeWire，独立于蓝牙发现/配对。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M14.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "audio-device-proof",
+      "label": "T18.2 扬声器麦克风验收",
+      "kind": "subtask",
+      "parent": "t18",
+      "scope": "指定实体扬声器/麦克风，验证播放、录音、插拔、恢复及延迟；软件模拟不冒充物理设备。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M14.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "audio-control"
+      ]
+    },
+    {
+      "id": "t19",
+      "label": "T19 文件管理与安全操作",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "真实文件浏览/修改的用户操作闭环；设备挂载与文件 Portal 是其它任务，不要求它们全完成才浏览现有 HOME。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t19-m16-1",
+      "label": "T19.1 文件浏览与属性",
+      "kind": "subtask",
+      "parent": "t19",
+      "scope": "文件管理器浏览、目录导航、图标/属性和错误反馈，明确区分真实文件与逻辑 `.app` 应用对象。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t19-m16-2",
+      "label": "T19.2 文件操作与覆盖",
+      "kind": "subtask",
+      "parent": "t19",
+      "scope": "实现创建、复制、移动、重命名、删除及其确认/失败行为，路径/符号链接和数据覆盖有明确边界。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t19-m16-1"
+      ]
+    },
+    {
+      "id": "t20",
+      "label": "T20 文档打开保存",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "原生打开/保存、MIME 和默认应用及文档启动参数；不依赖文件 Portal 或完整管理员 UI。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "document-association",
+      "label": "T20.1 MIME 与默认应用",
+      "kind": "subtask",
+      "parent": "t20",
+      "scope": "正确的 MIME/默认应用/文档启动参数，区分可启动应用与可处理文档；复用注册/启动查询而非第二套应用数据库。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "native-file-dialog",
+      "label": "T20.2 原生打开保存选择器",
+      "kind": "subtask",
+      "parent": "t20",
+      "scope": "原生用户选择、取消/错误和真实文件读写；不以假路径回成功，不等待第三方 Portal。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t19-m16-1"
+      ]
+    },
+    {
+      "id": "t21",
+      "label": "T21 基础 Shell 与应用 UI",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "启动器、菜单/托盘通知和应用管理 UI；高级效果、窗口策略、终端形态另列。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t21-m17-1",
+      "label": "T21.1 启动器与窗口联动",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "应用图标、分组、固定、图标网格与任务窗口联动，不把包 icon 元数据视为 UI 已完成。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M17.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "t12-m15-8"
+      ]
+    },
+    {
+      "id": "t21-m17-2",
+      "label": "T21.2 菜单焦点与关闭",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "菜单/浮层点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M17.2"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t21-m17-3",
+      "label": "T21.3 托盘与通知",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "托盘主题图标/overlay/动画/tooltip 与通知历史、丰富内容/声音；确定隐私、容量和外部资源边界。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M17.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t21-m15-1",
+      "label": "T21.4 应用管理界面",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "补齐安装、替换、回退、退役/恢复管理 UI、版本/状态/空间展示和明确错误。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "admin-ui",
+        "t12-m04-6",
+        "t12-m15-8"
+      ]
+    },
+    {
+      "id": "t22",
+      "label": "T22 授权关机与重启",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "普通本地活动用户电源动作及保存/警告，不每次索取 root 密码；挂起休眠不混入该交付。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t22-m13-1",
+      "label": "T22.1 本地会话电源授权",
+      "kind": "subtask",
+      "parent": "t22",
+      "scope": "设计并实现只允许所需动作的受限授权后端，核实 login1 对本地活动用户的实际授权而非仅消息放行。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M13.1"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ]
+    },
+    {
+      "id": "t22-m13-2",
+      "label": "T22.2 关机重启与保存",
+      "kind": "subtask",
+      "parent": "t22",
+      "scope": "关机/重启确认、保存机会、其它会话/更新警告、取消及能力变化处理；普通操作不每次索要 root 密码。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M13.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t22-m13-1",
+        "t16-m11-1"
+      ]
+    },
+    {
+      "id": "t23",
+      "label": "T23 可移动设备安全操作",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "独立的设备/会话授权后端和安全移除；不因挂载需求强制先实现全部管理员 UI。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "removable-policy",
+      "label": "T23.1 设备与会话权限契约",
+      "kind": "subtask",
+      "parent": "t23",
+      "scope": "选择受限挂载后端并定义真实本地会话、设备来源、排除内盘、挂载/卸载与敏感动作认证边界；不能从 UI 自报身份授权。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session",
+        "t24-m07-3"
+      ]
+    },
+    {
+      "id": "removable-backend",
+      "label": "T23.2 挂载与安全移除",
+      "kind": "subtask",
+      "parent": "t23",
+      "scope": "按权限契约实现挂载、卸载、安全移除和使用中/拔出/失联反馈；不自动挂载或写入排除内盘。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "removable-policy"
+      ]
+    },
+    {
+      "id": "t24",
+      "label": "T24 安装器与写入安全",
+      "kind": "task",
+      "parent": "r6",
+      "scope": "虚拟装配不等于实际设备安装器；逐次核对目标、范围、来源和确认，任何真实写入仍需单独授权。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t24-m07-2",
+      "label": "T24.1 目标身份展示",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "展示目标型号、容量、稳定设备身份、现有分区及将被清除的范围，提交前再次核对身份。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "storage-layout"
+      ]
+    },
+    {
+      "id": "t24-m07-3",
+      "label": "T24.2 内盘排除与防误选",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "明确排除三块已知内置 SSD；不因设备名变化、热插拔或多盘存在而选错目标。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t24-m07-4",
+      "label": "T24.3 写入确认与取消",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "提供写入前明确确认、进度、取消边界和失败反馈；安装源/当前运行盘不得被误覆盖。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t24-m07-2",
+        "t24-m07-3"
+      ]
+    },
+    {
+      "id": "t24-m07-6",
+      "label": "T24.4 安装失败与中断",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "验证空间不足、写入/校验失败、拔出及中断；不发布虚假的安装成功或自动扩大写入范围。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "installer-flow",
+        "t24-m07-4"
+      ]
+    },
+    {
+      "id": "installer-flow",
+      "label": "T24.5 新装与迁移流程分支",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "实现目标安装流程并区分 fresh 与 migration：新装生成锁定模板/首启；迁移先资格与事务发布，不覆盖已有 Accounts/HOME，不由状态缺失猜测该重置。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.1",
+        "M01.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "prototype-assembly",
+        "t24-m07-4"
+      ]
+    },
+    {
+      "id": "t25",
+      "label": "T25 外置安装逐项验收",
+      "kind": "task",
+      "parent": "r6",
+      "scope": "写入前检查明确候选/安全条件；日常、维护、救援和拔出耐久分别验收，不机械等待原 M01–M07 全部条目。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t25-m08-1",
+      "label": "T25.1 授权外置安装",
+      "kind": "subtask",
+      "parent": "t25",
+      "scope": "在指定外置 USB/SSD 安装并记录硬件、固件、布局、版本及授权范围，不修改排除内盘。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M08.1"
+      ],
+      "status": "blocked",
+      "requires": [
+        "gate-disk",
+        "current-fresh-boot",
+        "installer-flow",
+        "t24-m07-6"
+      ]
+    },
+    {
+      "id": "t25-m08-2",
+      "label": "T25.2 外置认证与冷启动",
+      "kind": "subtask",
+      "parent": "t25",
+      "scope": "验证首次 setup、默认密码登录、可选自动登录、日常 su、锁屏/注销和重复冷启动。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M08.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t25-m08-1",
+        "gui-login",
+        "t15-m05-6"
+      ]
+    },
+    {
+      "id": "t25-m08-3",
+      "label": "T25.3 外置数据连续性",
+      "kind": "subtask",
+      "parent": "t25",
+      "scope": "验证设置、文档、应用注册/AppData、认证状态和已实现网络凭据跨重启/维护/救援连续性。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M08.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t25-m08-1",
+        "t07-m09-4",
+        "t09-m10-1",
+        "t12-m15-10",
+        "t17-m12-2"
+      ]
+    },
+    {
+      "id": "t25-m08-4",
+      "label": "T25.4 外置故障耐久",
+      "kind": "subtask",
+      "parent": "t25",
+      "scope": "在可丢弃测试数据/授权介质上验证拔出、掉电及满盘后的可恢复性，不能用 VM 结果代替。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M08.4"
+      ],
+      "status": "blocked",
+      "requires": [
+        "gate-disk",
+        "gate-fault-tests",
+        "t25-m08-1",
+        "t26-m06-3"
+      ]
+    },
+    {
+      "id": "t26",
+      "label": "T26 硬件与联合故障验收",
+      "kind": "task",
+      "parent": "r6",
+      "scope": "限定当前候选/硬件范围，普通启动、测试授权、持久提交与实际断电分别记录；更多硬件不是统一门槛。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t26-m20-1",
+      "label": "T26.1 目标硬件逐项记录",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "补齐当前 Debian 的实际 GPU/renderer、网络、音频、VT/seat 和目标设备逐项结果。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M20.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t26-m20-2",
+      "label": "T26.2 热插拔与设备恢复",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "验证物理热插拔、多显示器/混合缩放、音频插拔和所选设备恢复，按具体接线范围记录。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M20.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "t26-m20-1"
+      ]
+    },
+    {
+      "id": "t26-m20-5",
+      "label": "T26.3 长期耐久与联合故障",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "多小时运行、反复启动退出和登录/锁定、应用/服务/设备故障，以及安装/更新中断联合验收。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M20.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "t15-m05-6",
+        "t07-m09-8",
+        "t09-m10-1",
+        "t16-m11-5"
+      ]
+    },
+    {
+      "id": "t26-m06-3",
+      "label": "T26.4 用户写入中断一致性",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "验证设置、应用注册、文档写入的中断一致性，区分未提交、已提交和可恢复状态。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M06.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "account-lock",
+        "t12-m15-8"
+      ]
+    },
+    {
+      "id": "t26-m06-4",
+      "label": "T26.5 正常与测试授权隔离",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "扩展普通镜像/fixture 的隔离检查，真实软件流程验证且不把测试授权带进正常镜像。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M06.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "current-fresh-boot",
+        "t09-m10-6"
+      ]
+    },
+    {
+      "id": "t26-m06-5",
+      "label": "T26.6 关机断电证据",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "验证基础镜像不变、正常关机/异常断电的不同结论，保留每轮独立证据和失败产物。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M06.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "current-fresh-boot"
+      ]
+    },
+    {
+      "id": "t26-m08-5",
+      "label": "T26.7 外置硬件记录",
+      "kind": "subtask",
+      "parent": "t26",
+      "scope": "记录实际 GPU/renderer、VT/seat、网络、音频等逐项结果；未覆盖组合明确标注。",
+      "priority": "P1",
+      "modes": [
+        "hardware",
+        "installed"
+      ],
+      "sources": [
+        "M08.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "t25-m08-1",
+        "t26-m20-1"
+      ]
+    },
+    {
+      "id": "t27",
+      "label": "T27 开发候选物料与分发",
+      "kind": "task",
+      "parent": "r6",
+      "scope": "来源/许可材料和下载/raw/占用实测对应当前候选；正式身份和线上自动发布不混入开发分发。",
+      "priority": "P1",
+      "modes": [
+        "release"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t27-m21-3",
+      "label": "T27.1 许可证与发行物料",
+      "kind": "subtask",
+      "parent": "t27",
+      "scope": "许可证、必要源码/补丁、SPDX/SBOM 和发行履约审查，清单/哈希不冒充合规结论。",
+      "priority": "P1",
+      "modes": [
+        "release"
+      ],
+      "sources": [
+        "M21.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "t27-m21-4",
+      "label": "T27.2 压缩分发与容量",
+      "kind": "subtask",
+      "parent": "t27",
+      "scope": "提供压缩分发包及解压内容/容量校验，分别记录下载大小、raw 逻辑容量和实际占用；不能承诺未经测量的 600 MB。",
+      "priority": "P1",
+      "modes": [
+        "release"
+      ],
+      "sources": [
+        "M21.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t27-m21-3",
+        "current-fresh-boot"
+      ]
+    },
+    {
+      "id": "t27-m21-7",
+      "label": "T27.3 手动候选与已知限制",
+      "kind": "subtask",
+      "parent": "t27",
+      "scope": "手动候选/安全包检查、新布局迁移/救援说明及已知限制；在线自动更新、定时同步/自动发布继续暂缓。",
+      "priority": "P1",
+      "modes": [
+        "release"
+      ],
+      "sources": [
+        "M21.7"
+      ],
+      "status": "pending",
+      "requires": [
+        "t07-m09-1",
+        "t09-m10-1",
+        "t27-m21-3"
+      ]
+    },
+    {
+      "id": "e01",
+      "label": "E01 蓝牙设备可连接",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "独立完成选定蓝牙后端、发现、配对确认、连接/断开/忘记；不阻塞本地音频。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e01-m14-3",
+      "label": "E01.1 蓝牙发现配对连接",
+      "kind": "subtask",
+      "parent": "e01",
+      "scope": "选择蓝牙后端并实现发现、配对确认、连接、断开、忘记和失败反馈。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M14.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e02",
+      "label": "E02 蓝牙音频可用",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "使用已验证蓝牙连接和音频路由；不是要求普通扬声器全硬件矩阵先完成。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e02-m14-4",
+      "label": "E02.1 蓝牙音频与重连",
+      "kind": "subtask",
+      "parent": "e02",
+      "scope": "实现蓝牙音频 profile/路由切换，验证输出、麦克风、重连及服务失效。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M14.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "e01-m14-3",
+        "audio-control"
+      ]
+    },
+    {
+      "id": "e03",
+      "label": "E03 安全挂起与唤醒",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "仅在锁定/恢复及所选硬件通过后开放；普通关机不等待本项。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e03-m13-3",
+      "label": "E03.1 锁前挂起与唤醒",
+      "kind": "subtask",
+      "parent": "e03",
+      "scope": "锁定确认完成后才能挂起，唤醒仍需密码；验证锁进程失败、设备恢复和多显示器覆盖。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M13.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t15-m05-3",
+        "t15-m05-6",
+        "t16-m11-2"
+      ]
+    },
+    {
+      "id": "e04",
+      "label": "E04 可选休眠",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "休眠存储/恢复和盖子/电源键策略独立验收，禁止隐式内盘 swap；实际介质操作另授权。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e05",
+      "label": "E05 可选用户卷加密",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "明确选择后实现加密/解锁/恢复材料；默认不启用，不阻断未加密开发版。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e05-m10-4",
+      "label": "E05.1 可选用户卷加密",
+      "kind": "subtask",
+      "parent": "e05",
+      "scope": "独立实现可选用户卷加密、启动解锁、密钥/恢复材料保存及更新/回退兼容；默认不自动开启。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M10.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t09-m10-2"
+      ]
+    },
+    {
+      "id": "e05-m10-5",
+      "label": "E05.2 解锁故障与材料",
+      "kind": "subtask",
+      "parent": "e05",
+      "scope": "验证丢失解锁材料、错误密码、取消、卷损坏和自动登录组合；不提供隐藏万能密钥或绕过解锁。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M10.5"
+      ],
+      "status": "pending",
+      "requires": [
+        "e05-m10-4",
+        "autologin-core"
+      ]
+    },
+    {
+      "id": "e06",
+      "label": "E06 第三方音频兼容",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "验证所选 PulseAudio/ALSA 客户端的真实播放/采集，不把安装库视为兼容完成。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e06-m14-2",
+      "label": "E06.1 第三方音频兼容",
+      "kind": "subtask",
+      "parent": "e06",
+      "scope": "实现并验证 PulseAudio 客户端兼容及所需 ALSA 重定向，第三方应用确实能出声/采集。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M14.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "audio-control"
+      ]
+    },
+    {
+      "id": "e07",
+      "label": "E07 高级网络配置",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "隐藏/静态/企业网络按各配置分别验收；不能以该整组阻断基础已支持网络。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e07-m12-3",
+      "label": "E07.1 隐藏静态与企业网络",
+      "kind": "subtask",
+      "parent": "e07",
+      "scope": "补齐隐藏 SSID、静态 IP、企业网络与证书配置，不关闭证书校验。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M12.3"
+      ],
+      "status": "pending",
+      "requires": [
+        "t17-m12-1"
+      ]
+    },
+    {
+      "id": "e08",
+      "label": "E08 文件选择 Portal",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "第三方文件选择调用、授权/取消和实际文件使用闭环；原生选择器不等待本项。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e08-m16-4",
+      "label": "E08.1 文件选择 Portal",
+      "kind": "subtask",
+      "parent": "e08",
+      "scope": "明确首批文件选择 Portal 协议范围，实现第三方调用、取消/错误及真实文件使用闭环。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M16.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "native-file-dialog"
+      ]
+    },
+    {
+      "id": "e09",
+      "label": "E09 采集与屏幕分享",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "屏幕/窗口捕获、保存、选择/授权/撤销和失败体验；用户会话同意不等同管理员认证。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e09-m19-1",
+      "label": "E09.1 截图录屏与保存",
+      "kind": "subtask",
+      "parent": "e09",
+      "scope": "交付用户截图/录屏与屏幕/窗口捕获接口、保存/错误 UX，不把 harness/QEMU 截图当产品。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M19.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e09-m19-2",
+      "label": "E09.2 屏幕共享与撤销",
+      "kind": "subtask",
+      "parent": "e09",
+      "scope": "选择首批屏幕共享/采集 Portal、授权/撤销及会话边界，和文件 Portal、音频采集协调。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M19.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "e09-m19-1",
+        "pam-session",
+        "t15-m05-1"
+      ]
+    },
+    {
+      "id": "e10",
+      "label": "E10 辅助技术可用",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "所选 Linux 辅助技术真正读取语义/焦点/动作与文本；键盘测试不是辅助技术验收。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e10-m19-3",
+      "label": "E10.1 无障碍与辅助技术",
+      "kind": "subtask",
+      "parent": "e10",
+      "scope": "语义树、焦点/动作/文本、屏幕阅读器及 Linux 辅助技术集成，验证实际辅助技术而非只测键盘。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M19.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e11",
+      "label": "E11 XWayland 兼容",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "明确真实 X11/XEmbed 客户端集合；不能以 SDL 支持 X11 宣称会话有 XWayland。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e11-m19-4",
+      "label": "E11.1 XWayland 与托盘",
+      "kind": "subtask",
+      "parent": "e11",
+      "scope": "XWayland/X11 应用及 XEmbed 托盘兼容，验证真实客户端，不因 SDL 构建 X11 就声称有 XWayland。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M19.4"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e12",
+      "label": "E12 主题与输入法一致",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "IME 跟随与深色变体按受限主题契约验收；不无限扩展模板/字体加载范围。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e12-m17-4",
+      "label": "E12.1 输入法与深色主题",
+      "kind": "subtask",
+      "parent": "e12",
+      "scope": "IME 主题跟随、深色变体和现有主题深化；任意模板、自动监听、字体文件扩展先定义受限契约。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M17.4"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e13",
+      "label": "E13 窗口视觉效果",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "对所选圆角/模糊/阴影/动画/形状输入分别测量；已有 alpha 不重做。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e13-m17-5",
+      "label": "E13.1 窗口视觉效果",
+      "kind": "subtask",
+      "parent": "e13",
+      "scope": "按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M17.5"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e14",
+      "label": "E14 深度文本输入",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "文字方向/字素、断行/caret 与真实 IME 上下文分别验收；不伪造主机 API 能力。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e14-m18-1",
+      "label": "E14.1 文字方向与字素",
+      "kind": "subtask",
+      "parent": "e14",
+      "scope": "标题 shaping/bidi、字素安全省略及语义；补齐正文段落方向/locale、bidi、视觉光标 affinity。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M18.1"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e14-m18-2",
+      "label": "E14.2 高级断行与光标",
+      "kind": "subtask",
+      "parent": "e14",
+      "scope": "字体连字 caret、高级断行/断字及匿名输入控件选择/剪贴板编辑，保留已实现稳定 ID 路径。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M18.2"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e14-m18-3",
+      "label": "E14.3 输入法上下文",
+      "kind": "subtask",
+      "parent": "e14",
+      "scope": "改实际主机/输入链路实现 surrounding-text/delete-surrounding 和 Rime 上下文消费，不伪造 SDL API 能力。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M18.3"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e15",
+      "label": "E15 跨应用输出传输",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "输出拖放/offer/动作和接收阶段峰值内存有界；触摸/剪贴板历史是未选方向。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e15-m18-5",
+      "label": "E15.1 输出拖放语义",
+      "kind": "subtask",
+      "parent": "e15",
+      "scope": "补齐向外拖放、offer、动作协商与 DataTransfer 语义，明确取消/拒绝及传入文本自动插入规则。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M18.5"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e15-m18-8",
+      "label": "E15.2 传输峰值内存",
+      "kind": "subtask",
+      "parent": "e15",
+      "scope": "接收传输阶段限制内存和大载荷，测峰值内存而非只在收完后检查长度。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M18.8"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e16",
+      "label": "E16 可复测性能预算",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "先记录启动/内存/帧与占用，再定可复测目标；优化方向按测量另选，不先删回退。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e16-m20-4",
+      "label": "E16.1 可复测性能预算",
+      "kind": "subtask",
+      "parent": "e16",
+      "scope": "测启动时间、空闲/峰值内存、帧耗时/输入延迟、镜像/安装占用，再定可复测预算。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M20.4"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e17",
+      "label": "E17 远端 CI 可运行",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "在授权仓库/权限范围真实运行 CI，来源/依赖/失败可追溯；不自动 push 或取得权限。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "e17-m21-1",
+      "label": "E17.1 远端 CI 与固定输入",
+      "kind": "subtask",
+      "parent": "e17",
+      "scope": "实际运行远端 CI，记录来源/脏状态、固定输入、依赖/补丁/包版本和失败信息；推送/权限按实际状态处理。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M21.1"
+      ],
+      "status": "blocked",
+      "requires": [
+        "gate-ci"
+      ]
+    },
+    {
+      "id": "e18",
+      "label": "E18 干净环境离线复建",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "从留存源/包/补丁恢复 SDK 与基础系统，断网复建；缓存可用不冒充恢复成功。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e18-m21-2",
+      "label": "E18.1 断网构建环境恢复",
+      "kind": "subtask",
+      "parent": "e18",
+      "scope": "在干净环境从留存材料断网恢复 SDK/基础系统，补全开发依赖、bootstrap/Live 输入及源包。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M21.2"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e19",
+      "label": "E19 位级复现与归因",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "对具体产物比较位级结果并归因；固定输入不自动意味着字节相同。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e19-m21-6",
+      "label": "E19.1 位级可复现与归因",
+      "kind": "subtask",
+      "parent": "e19",
+      "scope": "验证位级可复现性与差异归因；当前可追踪输入不自动宣称字节相同。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M21.6"
+      ],
+      "status": "pending",
+      "requires": [
+        "e18-m21-2"
+      ]
+    },
+    {
+      "id": "e20",
+      "label": "E20 正式信任与发行准备",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "确定支持/渠道、系统与应用来源/签名、未知数据接管及密钥轮换策略；生产密钥/发布另授权，未决前只显式本地安装且拒绝未知接管。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e20-m21-5",
+      "label": "E20.1 支持范围渠道与身份",
+      "kind": "subtask",
+      "parent": "e20",
+      "scope": "确定正式支持范围、渠道、发布提升/旧版维护标识和签名身份/公钥、密钥轮换/撤销流程。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M21.5"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e20-m15-5",
+      "label": "E20.2 发布者与数据接管",
+      "kind": "subtask",
+      "parent": "e20",
+      "scope": "设计发布者/来源、签名和未知既存数据接管机制；未决定前维持显式本地安装和拒绝未知接管。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M15.5"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "production-release",
+      "label": "E20.3 生产材料与发布",
+      "kind": "subtask",
+      "parent": "e20",
+      "scope": "在身份/渠道选择后，按具体授权处理生产密钥、公钥部署与发布提升；规划和测试材料不需要生产权限，实际动作不以此前本地提交为授权。",
+      "priority": "P2",
+      "modes": [
+        "release"
+      ],
+      "sources": [
+        "M21.5"
+      ],
+      "status": "blocked",
+      "requires": [
+        "e20-m21-5",
+        "gate-release"
+      ]
+    },
+    {
+      "id": "e21",
+      "label": "E21 可选应用沙箱",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "先选择 OS 权限/隔离模型和 Portal 边界；不宣传同 UID 数据目录为沙箱，不成为首版统一前置。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "e21-m19-5",
+      "label": "E21.1 沙箱与权限模型",
+      "kind": "subtask",
+      "parent": "e21",
+      "scope": "选择应用沙箱/兼容打包/权限模型及 Portal 联动；未完成前不宣传同 UID 目录、socket 或 UI 提示为 OS 隔离。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M19.5"
+      ],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "hibernate-scope",
+      "label": "E04.1 休眠与硬件电源策略",
+      "kind": "subtask",
+      "parent": "e04",
+      "scope": "先在可丢弃虚拟目标验证休眠所需存储/恢复与取消失败；设计不等待真实盘授权。盖子/电源键/空闲策略在指定硬件和认证链路验证后才开放，不隐式启用内盘 swap。",
+      "priority": "P2",
+      "modes": [
+        "installed"
+      ],
+      "sources": [
+        "M13.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "e03-m13-3"
+      ]
+    },
+    {
+      "id": "hibernate-hardware",
+      "label": "E04.2 休眠介质与硬件验收",
+      "kind": "subtask",
+      "parent": "e04",
+      "scope": "在明确授权的存储/硬件上验证实际休眠与恢复、盖子/电源键及所选策略；虚拟结果不冒充 USB/实体机证据，不越过内盘排除范围。",
+      "priority": "P2",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [
+        "M13.4"
+      ],
+      "status": "blocked",
+      "requires": [
+        "hibernate-scope",
+        "gate-disk"
+      ]
+    },
+    {
+      "id": "c1",
+      "label": "C1 未选方向登记",
+      "kind": "catalog",
+      "parent": null,
+      "scope": "候选不是承诺交付的里程碑；指定目标/范围并批准后才拆出执行任务，不给 R1–R6 添加硬前置。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-1",
+      "label": "C1.1 VPN 后端",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "选择 VPN 后端/权限及 UX 后立项，不默认引入另一套网络策略。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M12.5"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-2",
+      "label": "C1.2 高级窗口行为",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "贴靠/平铺/overview/手势先选择具体行为，保持手动全局工作区。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M17.6"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-3",
+      "label": "C1.3 终端形态",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "普通/Server/Client 入口与 shell 策略先选；不擅自换 bash/zsh 或启用服务。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M17.7"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-4",
+      "label": "C1.4 其它输入引擎",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "按真实语言选择引擎，保留可信 IME 与敏感字段隔离。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M18.4"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-5",
+      "label": "C1.5 触摸拖放",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "只有选择多点触摸协议/设备后扩展动作与取消；不阻塞普通指针传输。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M18.6"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-6",
+      "label": "C1.6 剪贴板历史",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "先决定历史/退出保留、敏感清除和限额，再实施后台管理。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M18.7"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-7",
+      "label": "C1.7 更多硬件支持",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "按明确新增设备扩展矩阵，不承诺未测组合。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M20.3"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-8",
+      "label": "C1.8 测量驱动优化",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "按 E16 数据选择裁剪/增量渲染/调度投入，不预设优化结论。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M20.6"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-9",
+      "label": "C1.9 持久化 Live",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "本次只改变普通 Live 账户；持久化 Live 独立候选，避免默认第二套安装器。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.1"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-10",
+      "label": "C1.10 ARM64",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "指定 ABI/依赖/启动与设备后立项，不能复用 x86 产物。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.2"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-11",
+      "label": "C1.11 Tiny Core 暂缓",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "只有重新选择底座才启动，不平行长期维护三套发行版。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.3"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-12",
+      "label": "C1.12 多点触摸与手势",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "指定设备、系统手势和协议取消语义，再协调触摸拖放。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.4"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-13",
+      "label": "C1.13 HDR 与 VRR",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "指定硬件/色彩/呈现链路并独立测量，不因 Mesa 存在宣称支持。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.5"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-14",
+      "label": "C1.14 远程桌面",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "独立选择采集/输入/会话授权与传输范围；与打印分开立项。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.6"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-15",
+      "label": "C1.15 打印",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "独立选择发现/配置/权限和真实设备；不与远程桌面共用一个完成判断。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.6"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-16",
+      "label": "C1.16 Windows Shell 暂缓",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "独立测试账号/VM与恢复后才可能重启，不修改 DWM。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.7"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "candidate-17",
+      "label": "C1.17 PollyUI 跨平台",
+      "kind": "subtask",
+      "parent": "c1",
+      "scope": "macOS HTTP/目录、iOS/Android 生命周期/打包、bare Wayland/DRM 各按目标立项，不整体变成 PollyOS 发布门槛。",
+      "priority": "P3",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [
+        "M22.8"
+      ],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "h0",
+      "label": "H0 D1 历史基线",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "保留旧 A/B 产物/范围与证据，仅作回归或迁移来源，不转化为当前可写单系统验收。",
+      "priority": "history",
+      "modes": [
+        "common"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": []
+    },
+    {
+      "id": "history-d1-1",
+      "label": "H0.1 D1 基线 1",
+      "kind": "subtask",
+      "parent": "h0",
+      "scope": "生成 GPT、256 MiB EFI、独立 ext4 A/B 系统槽和至少 2 GiB 用户卷的普通镜像文件。",
+      "priority": "history",
+      "modes": [
+        "common"
+      ],
+      "sources": [
+        "M00.1"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。"
+    },
+    {
+      "id": "history-d1-2",
+      "label": "H0.2 D1 基线 2",
+      "kind": "subtask",
+      "parent": "h0",
+      "scope": "按 UUID 要求用户卷挂载，普通 UID 1000 启动原生桌面；各槽保留独立系统/包数据库。",
+      "priority": "history",
+      "modes": [
+        "common"
+      ],
+      "sources": [
+        "M00.2"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。"
+    },
+    {
+      "id": "history-d1-3",
+      "label": "H0.3 D1 基线 3",
+      "kind": "subtask",
+      "parent": "h0",
+      "scope": "A/A/B/A 四次冷启动，实际设置、应用注册/AppData 和文档连续保留，测试镜像各轮正常关机。",
+      "priority": "history",
+      "modes": [
+        "common"
+      ],
+      "sources": [
+        "M00.3"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。"
+    },
+    {
+      "id": "history-d1-4",
+      "label": "H0.4 D1 基线 4",
+      "kind": "subtask",
+      "parent": "h0",
+      "scope": "正常镜像不包含验证 fixture；单次原生桌面启动预检通过，不冒充正常关机或持久性验收。",
+      "priority": "history",
+      "modes": [
+        "common"
+      ],
+      "sources": [
+        "M00.4"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。"
+    },
+    {
+      "id": "gate-disk",
+      "label": "授权 外置介质写入",
+      "kind": "gate",
+      "parent": null,
+      "scope": "用户指定目标稳定身份/型号/容量与写入清除范围；三块排除内盘禁写，批准一次具体范围才解除。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "gate-ci",
+      "label": "授权 远端推送与 CI",
+      "kind": "gate",
+      "parent": null,
+      "scope": "远端实际 push/权限或触发动作需要用户明确范围；本地配方验证不需要该授权。",
+      "priority": "P2",
+      "modes": [
+        "release"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "gate-release",
+      "label": "授权 生产密钥与发布",
+      "kind": "gate",
+      "parent": null,
+      "scope": "生产信任根/私钥操作与对外发布先选身份/渠道并获得具体授权；测试身份不等同生产授权。",
+      "priority": "P2",
+      "modes": [
+        "release"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    },
+    {
+      "id": "gate-fault-tests",
+      "label": "授权 外置故障测试",
+      "kind": "gate",
+      "parent": null,
+      "scope": "指定可丢弃数据、介质和拔出/掉电/满盘测试范围后才执行；安装写入授权不自动包括故意中断和故障注入。",
+      "priority": "P1",
+      "modes": [
+        "hardware"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": []
+    }
+  ],
+  "evidenceNotes": [
+    "- 历史 D1：`617cea4`；`build/persistent-d1-boot-r2/result.json` / smoke，A/B 范围与原 sourceDirty 不改写。",
+    "- 存储组件：`07e1692` / `aacde4c` / `a0a4e1c`；early usr/必需映射 namespace 不冒充整机或断电验收。",
+    "- 普通单系统 r2：来源 `9e89f8c`，raw 3,468,689,408 字节，SHA256 `4e1c0f7b16311baf5901e5b5a5009bcdc2679c7b6015d6668648d34defe38c84`；Recovery 仍 reserved-not-bootable。`build/single-system-smoke-r2/run/result.json` 的 QMP 退出不是正常关机。",
+    "- 认证连续性：`build/single-system-account-persistence-r2-attempt3/run/result.json` 三轮正常关机/冷启动；前两次时序失败与 r1 `/var/tmp` umask 失败证据保留。",
+    "- HOME：`21517ca` / `fa6763a` / `b8a9a4e` / `cbf128f` / `e7c4ea3`；v2/v3/v4 managed 结果分别保留，1→2 不等于共享注册/额外用户 PAM。",
+    "- 账户导入：`94c23cd`；真实 readonly tmpfs/PAM/su/passwd，fixture 仅适配卷发现。新工具未装入现有 r2，不宣称迁移镜像/ext4耐久已经通过。",
+    "- 以上已完成只指各子项的准确组件/产物范围；当前策略候选、独立救援、正式签名和真实外置写入仍需对应新证据。"
+  ]
+}

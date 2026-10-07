@@ -1,5 +1,5 @@
 ARG RUNTIME_IMAGE=localhost/polly-debian-runtime
-FROM ${RUNTIME_IMAGE} AS live-base
+FROM ${RUNTIME_IMAGE} AS platform-base
 USER root
 WORKDIR /
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
@@ -29,6 +29,7 @@ COPY release/debian/resolvconf.conf /etc/resolvconf.conf
 COPY release/debian/network-runtime.conf /etc/systemd/system/iwd.service.d/polly-network.conf
 COPY release/debian/network-runtime.conf /etc/systemd/system/dhcpcd.service.d/polly-network.conf
 COPY release/debian/network-tmpfiles.conf /etc/tmpfiles.d/polly-network.conf
+COPY release/debian/account-profile /tmp/polly-account-profile
 RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware && \
     sed -i 's/\r$//' /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware \
         /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
@@ -55,10 +56,17 @@ RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics 
     systemctl set-default multi-user.target && \
     dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
     rm -f /usr/sbin/policy-rc.d /etc/machine-id /var/lib/dbus/machine-id && \
+    sed -i 's/\r$//' /tmp/polly-account-profile && \
+    sh /tmp/polly-account-profile template && rm /tmp/polly-account-profile && \
     apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
     rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
 ENTRYPOINT []
 CMD ["/bin/sh"]
+
+FROM platform-base AS live-base
+COPY release/debian/account-profile /tmp/polly-account-profile
+RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
+    sh /tmp/polly-account-profile live && rm /tmp/polly-account-profile
 
 FROM docker.io/library/debian:trixie-slim AS image-tools
 ENV DEBIAN_FRONTEND=noninteractive

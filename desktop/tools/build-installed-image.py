@@ -386,6 +386,7 @@ def build(args):
                 Path(__file__).resolve(), repo / "desktop/tools/build-installed.sh",
                 repo / "desktop/release/debian/Containerfile.install",
                 repo / "desktop/release/debian/Containerfile.live",
+                repo / "desktop/release/debian/account-profile",
                 repo / "desktop/release/install/session", repo / "desktop/release/install/shell.mjs",
                 repo / "desktop/release/install/accounts.py", repo / "desktop/release/install/passwd-proxy.c",
                 *fixture_files,
