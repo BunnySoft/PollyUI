@@ -51,6 +51,12 @@ add_custom_command(
 set(APPEARANCE_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-appearance-v1.xml")
 set(SHORTCUTS_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-shortcuts-v1.xml")
 set(OUTPUT_GUARD_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-output-guard-v1.xml")
+set(SESSION_STATUS_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/polly-session-status-v1.xml")
+add_custom_command(
+    OUTPUT "${PROTOCOL_DIR}/polly-session-status-server.h" "${PROTOCOL_DIR}/polly-session-status.c"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${SESSION_STATUS_XML}" "${PROTOCOL_DIR}/polly-session-status-server.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${SESSION_STATUS_XML}" "${PROTOCOL_DIR}/polly-session-status.c"
+    DEPENDS "${SESSION_STATUS_XML}" VERBATIM)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/polly-output-guard-server.h" "${PROTOCOL_DIR}/polly-output-guard.c"
     COMMAND "${WAYLAND_SCANNER}" server-header "${OUTPUT_GUARD_XML}" "${PROTOCOL_DIR}/polly-output-guard-server.h"
@@ -85,6 +91,7 @@ add_library(pollywm-core STATIC
     compositor/data-device.c
     compositor/private-process.c
     compositor/input-method.c
+    "${PROTOCOL_DIR}/polly-session-status-server.h" "${PROTOCOL_DIR}/polly-session-status.c"
     compositor/session-lock.c
     "${PROTOCOL_DIR}/text-input-v3-server.h"
     compositor/server.c

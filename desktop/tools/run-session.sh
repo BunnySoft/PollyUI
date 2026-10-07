@@ -1,14 +1,18 @@
 #!/bin/sh
 set -eu
 usage() {
-    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--audio] [--restarts COUNT] pollywm pollyui shell-script [ARG...]" >&2
+    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--audio] [--restarts COUNT] [--health-check] pollywm pollyui shell-script [ARG...]" >&2
 }
 mode=auto
 restarts=0
 ime=0
 audio=0
+failure_option=
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --health-check)
+            if [ -n "$failure_option" ]; then usage; exit 2; fi
+            failure_option=--exit-on-shell-failure; shift ;;
         --audio)
             if [ "$audio" -ne 0 ]; then usage; exit 2; fi
             audio=1; shift ;;
@@ -28,6 +32,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 if [ "$#" -lt 3 ]; then usage; exit 2; fi
+if [ -n "$failure_option" ] && [ "$restarts" != 0 ]; then
+    echo "Health checks cannot restart failed Shells; omit --restarts." >&2
+    exit 2
+fi
 wm=$1
 ui=$2
 script=$3
@@ -96,10 +104,10 @@ printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
         --input-method "$repo/desktop/tools/run-input-method.sh" \
-        --exit-with-shell --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 else
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
-        --exit-with-shell --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 fi
 pid=$!
 while kill -0 "$pid" 2>/dev/null; do

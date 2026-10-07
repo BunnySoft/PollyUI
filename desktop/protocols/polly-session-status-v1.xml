@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="polly_session_status_v1">
+  <interface name="polly_session_status_v1" version="1">
+    <description summary="connection-bound service readiness">
+      Only the trusted Shell and the separately spawned input-method connection
+      may bind this global. The Shell may query status, but cannot mark a service
+      ready. Only the current input-method connection may report initialization.
+      This interface grants no keyboard, window, lock or process-control rights.
+      Status reports startup completion, not hardware input or rendering quality.
+    </description>
+    <enum name="service_state">
+      <entry name="disabled" value="0" summary="no input method was requested"/>
+      <entry name="starting" value="1" summary="process exists but initialization is incomplete"/>
+      <entry name="ready" value="2" summary="trusted engine initialized and input-method role is live"/>
+      <entry name="failed" value="3" summary="requested service exited, disconnected or lost its ready role"/>
+    </enum>
+    <request name="destroy" type="destructor"/>
+    <request name="inspect">
+      <description summary="query one authoritative snapshot">
+        Only the currently trusted Shell connection may inspect. Exactly one
+        status event echoes the serial. Clients must not cache this as authority
+        after a later service loss.
+      </description>
+      <arg name="serial" type="uint"/>
+    </request>
+    <request name="input_method_initialized">
+      <description summary="report native engine initialization">
+        Only the separately authorized input method may send this after engine
+        setup, schema selection, state initialization and protocol synchronization.
+        A live input-method object and keyboard grab are required. Loss of that
+        object invalidates readiness. Other connections are rejected.
+      </description>
+    </request>
+    <event name="status">
+      <arg name="serial" type="uint"/>
+      <arg name="input_method" type="uint" enum="service_state"/>
+    </event>
+  </interface>
+</protocol>

@@ -114,6 +114,35 @@ physical-device qualification remain to be connected. The development Live
 still returns to an unprotected ordinary-user console after desktop exit.
 Therefore it continues to advertise no secure lock and enables none by default.
 
+## Startup health and ordinary shutdown
+
+`polly-desktop --check` distinguishes created Shell surfaces, private audio
+discovery and the separately spawned input method's engine/protocol initialization.
+It requires the services selected by `--audio`/`--ime`; it does not wait for services
+that were not requested. The native input method reports readiness after schema
+selection, initial state and protocol synchronization, not merely when its PID
+exists. Its connection and role must remain live when the Shell queries status.
+No user text, passwords or process-control request is carried by this status
+protocol.
+
+The diagnostic has an explicit inner readiness deadline and an outer process
+deadline. Known failures return nonzero promptly via the opt-in
+`--exit-on-shell-failure` supervision policy, with retries disabled. Normal Shell
+crashes continue to preserve ordinary clients unless an explicit exit policy
+was selected; failure never terminates a protected locked session.
+
+During ordinary compositor shutdown the input method receives termination while
+its Wayland connection can still complete surface cleanup. Its grace period is
+bounded; an unresponsive service still gets terminated. An SDL quit now ends
+the service keep-alive loop even when it has no visible window, rather than
+requiring connection failure to end it.
+
+`desktop-installed-session` covers disabled services, real initialization,
+delayed startup, invalid schemas and never-ready processes. The `session-health`
+core fixture covers missing/failed services, timeouts, closed Shell surfaces and
+transition reporting. These checks do not replace hardware, rendered-frame,
+Chinese-input or audio-signal acceptance.
+
 ## Isolated verification
 
 `tests/auth-helper.py` runs only as root in a throwaway Podman container,

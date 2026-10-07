@@ -23,6 +23,8 @@ bool pu_desktop_global_filter(const struct wl_client *client,
     const char *name = wl_global_get_interface(global)->name;
     if (!strcmp(name, "ext_session_lock_manager_v1"))
         return pu_session_lock_allowed(desktop, client);
+    if (!strcmp(name, "polly_session_status_v1"))
+        return (desktop->shell_client && client == desktop->shell_client) || pu_input_method_allowed(desktop, client);
     if (!strcmp(name, "zwp_input_method_manager_v2") || !strcmp(name, "zwp_virtual_keyboard_manager_v1"))
         return pu_input_method_allowed(desktop, client);
     if (strcmp(name, "zwlr_layer_shell_v1") == 0 ||
@@ -135,8 +137,15 @@ static void clear_supervision(struct PuDesktop *desktop)
 
 static void schedule_restart(struct PuDesktop *desktop)
 {
-    if (desktop->stopping || !desktop->shell_command || desktop->shell_restart_pending) return;
+    if (desktop->stopping || desktop->shell_restart_pending) return;
     if (!desktop->shell_restarts_left) {
+        if (desktop->exit_on_shell_failure && !pu_session_lock_active(desktop)) {
+            wlr_log(WLR_ERROR, "Shell restart budget exhausted; ending the requested session with failure");
+            desktop->failed = true;
+            wl_display_terminate(desktop->display);
+            return;
+        }
+        if (!desktop->shell_command) return;
         wlr_log(WLR_ERROR, "Shell restart budget exhausted; ordinary clients remain running");
         return;
     }

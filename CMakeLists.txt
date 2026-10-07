@@ -155,6 +155,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         find_program(UI_WAYLAND_SCANNER wayland-scanner REQUIRED)
         set(UI_PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/ui-protocols")
         file(MAKE_DIRECTORY "${UI_PROTOCOL_DIR}")
+        set(UI_SESSION_STATUS_XML "${CMAKE_SOURCE_DIR}/desktop/protocols/polly-session-status-v1.xml")
+        add_custom_command(
+            OUTPUT "${UI_PROTOCOL_DIR}/polly-session-status-client.h" "${UI_PROTOCOL_DIR}/polly-session-status.c"
+            COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_SESSION_STATUS_XML}" "${UI_PROTOCOL_DIR}/polly-session-status-client.h"
+            COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_SESSION_STATUS_XML}" "${UI_PROTOCOL_DIR}/polly-session-status.c"
+            DEPENDS "${UI_SESSION_STATUS_XML}" VERBATIM)
+        target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/polly-session-status-client.h"
+            "${UI_PROTOCOL_DIR}/polly-session-status.c")
         set(UI_LAYER_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-layer-shell-unstable-v1.xml")
         set(UI_XDG_XML "${WAYLAND_UI_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml")
         add_custom_command(

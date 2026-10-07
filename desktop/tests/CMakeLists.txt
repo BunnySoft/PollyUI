@@ -106,7 +106,10 @@ target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
 
 add_executable(pollywm-integration integration.c)
 target_link_libraries(pollywm-integration PRIVATE pollywm-core)
-add_executable(pollywm-shell-policy shell-policy.c)
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/polly-session-status-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${SESSION_STATUS_XML}" "${PROTOCOL_DIR}/polly-session-status-client.h"
+    DEPENDS "${SESSION_STATUS_XML}" VERBATIM)
+add_executable(pollywm-shell-policy shell-policy.c "${PROTOCOL_DIR}/polly-session-status-client.h")
 target_link_libraries(pollywm-shell-policy PRIVATE pollywm-core PkgConfig::WAYLAND_CLIENT)
 foreach(target pollywm-test-client pollywm-integration pollywm-shell-policy)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

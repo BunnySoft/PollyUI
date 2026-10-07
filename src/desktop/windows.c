@@ -9,6 +9,7 @@
 #include "appearance-document.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
+#include "polly-session-status-client.h"
 
 #include <SDL3/SDL.h>
 #include <errno.h>
@@ -49,6 +50,8 @@ static struct {
     struct zwlr_foreign_toplevel_manager_v1 *manager;
     struct wl_seat *seat;
     struct polly_appearance_v1 *appearance;
+    struct polly_session_status_v1 *session_status;
+    uint32_t status_serial, status_reply, input_method_state;
     struct ext_workspace_manager_v1 *workspace_manager;
     struct ext_workspace_group_handle_v1 *workspace_group;
     struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
@@ -64,6 +67,15 @@ static struct {
     uint32_t restore_serial, restore_reply, restore_result;
     char restore_error[192];
 } control;
+
+static void session_status(void *data, struct polly_session_status_v1 *status, uint32_t serial, uint32_t input_method)
+{
+    (void)data; (void)status;
+    if (serial != control.status_serial) return;
+    control.status_reply = serial;
+    control.input_method_state = input_method;
+}
+static const struct polly_session_status_v1_listener session_status_listener = { .status = session_status };
 
 static void workspace_restored(void *data, struct polly_workspace_toplevel_manager_v1 *manager,
                                uint32_t serial, uint32_t result, const char *message)
@@ -351,6 +363,13 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
     (void)data;
     if (pu_shortcut_client_bind(control.display, registry, name, interface)) return;
     if (pu_output_client_bind(control.display, registry, name, interface, version)) return;
+    if (!control.session_status && !strcmp(interface, polly_session_status_v1_interface.name)) {
+        control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, 1);
+        if (!control.session_status ||
+            polly_session_status_v1_add_listener(control.session_status, &session_status_listener, NULL) < 0)
+            control.failed = control.changed = 1;
+        return;
+    }
     if (!control.manager && version >= 3 && !strcmp(interface, "zwlr_foreign_toplevel_manager_v1")) {
         control.manager = wl_registry_bind(registry, name, &zwlr_foreign_toplevel_manager_v1_interface, 3);
         if (!control.manager ||
@@ -431,6 +450,8 @@ static void disconnect_control(void)
     }
     if (control.seat) wl_seat_destroy(control.seat);
     if (control.appearance) polly_appearance_v1_destroy(control.appearance);
+    if (control.session_status) polly_session_status_v1_destroy(control.session_status);
+    control.session_status = NULL;
     control.appearance = NULL;
     control.manager = NULL; control.seat = NULL; control.display = NULL;
     control.ready = control.changed = 0;
@@ -467,6 +488,27 @@ static int property(JSContext *ctx, JSValueConst object, const char *name, JSVal
 
 int pu_desktop_windows_ready(JSContext *ctx) { return ensure_control(ctx); }
 int pu_desktop_windows_roundtrip(void) { return roundtrip(); }
+
+static JSValue services(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    if (!control.session_status) return JS_ThrowTypeError(ctx, "Session status requires the trusted PollyWM connection");
+    if (!++control.status_serial) ++control.status_serial;
+    control.status_reply = 0;
+    polly_session_status_v1_inspect(control.session_status, control.status_serial);
+    if (!roundtrip() || control.status_reply != control.status_serial)
+        return JS_ThrowInternalError(ctx, "Session status was not acknowledged");
+    const char *states[] = { "disabled", "starting", "ready", "failed" };
+    if (control.input_method_state >= sizeof(states) / sizeof(states[0]))
+        return JS_ThrowInternalError(ctx, "Invalid session service state");
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) return result;
+    if (!property(ctx, result, "inputMethod", JS_NewString(ctx, states[control.input_method_state]))) {
+        JS_FreeValue(ctx, result); return JS_EXCEPTION;
+    }
+    return result;
+}
 
 static int ensure_workspaces(JSContext *ctx)
 {
@@ -922,6 +964,7 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     control.api = JS_DupValue(ctx, api);
     if (!pu_shortcut_client_install(ctx, api)) return 0;
     if (!pu_output_client_install(ctx, api)) return 0;
+    if (!property(ctx, api, "sessionServices", JS_NewCFunction(ctx, services, "sessionServices", 0))) return 0;
     if (!pu_theme_files_install(ctx, api)) return 0;
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;

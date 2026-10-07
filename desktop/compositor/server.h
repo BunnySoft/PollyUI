@@ -109,7 +109,7 @@ struct PuDesktop {
     struct wl_event_source *shell_restart_timer;
     char **shell_command;
     unsigned shell_restarts_left, shell_restarts_used;
-    bool shell_restart_pending, exit_with_shell;
+    bool shell_restart_pending, exit_with_shell, exit_on_shell_failure;
     struct wl_client *shell_client;
     struct wl_listener shell_client_destroy;
     pid_t shell_pid;

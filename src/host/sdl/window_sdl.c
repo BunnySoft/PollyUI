@@ -1001,6 +1001,7 @@ int pu_window_run(PuWindow *w)
 static void route_event(const SDL_Event *e)
 {
     if (e->type == SDL_EVENT_QUIT) {
+        pu_window_keep_alive(0);
         for (PuWindow *w = g_windows; w; w = w->next) pu_window_close(w);
         return;
     }

@@ -3,6 +3,7 @@
 #include "server.h"
 #include "data-device.h"
 #include "text-input-v3-server.h"
+#include "polly-session-status-server.h"
 #include <errno.h>
 #include <linux/input-event-codes.h>
 #include <signal.h>
@@ -49,10 +50,12 @@ struct VirtualKeyboard {
 struct PuInputMethod {
     struct PuDesktop *desktop;
     struct wl_client *client;
+    struct wl_global *status_global;
+    bool requested, initialized, initialization_lost;
     pid_t pid;
     struct wl_event_source *exit;
     struct wl_listener client_destroy, new_input, new_method, new_keyboard, focus;
-    struct wl_listener method_commit, method_destroy, popup, grab;
+    struct wl_listener method_commit, method_destroy, popup, grab, initialized_grab_destroy;
     struct wl_list inputs, popups, keyboards;
     struct TextInput *active;
     struct wlr_input_method_v2 *method;
@@ -346,6 +349,9 @@ static void method_destroyed(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuInputMethod *state = wl_container_of(listener, state, method_destroy);
+    if (state->initialized) state->initialization_lost = true;
+    state->initialized = false;
+    unlisten(&state->initialized_grab_destroy);
     release_forwarded(state);
     state->method = NULL; state->epoch++;
     clear_preedit(state->active);
@@ -374,6 +380,61 @@ static bool can_grab(struct PuInputMethod *state)
 }
 bool pu_input_method_ready(struct PuDesktop *desktop)
 { return desktop->input_method && desktop->input_method->method && desktop->input_method->method->keyboard_grab; }
+static void inspect_status(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
+{
+    struct PuInputMethod *state = wl_resource_get_user_data(resource);
+    if (client != state->desktop->shell_client) {
+        wl_client_post_implementation_error(client, "Session status requires the trusted Shell");
+        return;
+    }
+    uint32_t status = POLLY_SESSION_STATUS_V1_SERVICE_STATE_DISABLED;
+    if (state->requested) {
+        if (!state->client || !state->pid || state->initialization_lost ||
+            (state->initialized && !pu_input_method_ready(state->desktop)))
+            status = POLLY_SESSION_STATUS_V1_SERVICE_STATE_FAILED;
+        else status = state->initialized ? POLLY_SESSION_STATUS_V1_SERVICE_STATE_READY :
+            POLLY_SESSION_STATUS_V1_SERVICE_STATE_STARTING;
+    }
+    polly_session_status_v1_send_status(resource, serial, status);
+}
+static void initialized_grab_destroyed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuInputMethod *state = wl_container_of(listener, state, initialized_grab_destroy);
+    state->initialized = false;
+    state->initialization_lost = true;
+    unlisten(listener);
+}
+static void initialized(struct wl_client *client, struct wl_resource *resource)
+{
+    struct PuInputMethod *state = wl_resource_get_user_data(resource);
+    if (!pu_input_method_allowed(state->desktop, client) || !state->pid || !pu_input_method_ready(state->desktop)) {
+        wl_client_post_implementation_error(client, "Only the live trusted input method may report initialization");
+        return;
+    }
+    if (!state->initialized) {
+        state->initialized = true;
+        state->initialization_lost = false;
+        listen(&state->method->keyboard_grab->events.destroy, &state->initialized_grab_destroy, initialized_grab_destroyed);
+        wlr_log(WLR_INFO, "Input-method engine and protocol initialized");
+    }
+}
+static void destroy_status(struct wl_client *client, struct wl_resource *resource)
+{ (void)client; wl_resource_destroy(resource); }
+static const struct polly_session_status_v1_interface status_impl = {
+    .destroy = destroy_status, .inspect = inspect_status, .input_method_initialized = initialized,
+};
+static void bind_status(struct wl_client *client, void *data, uint32_t version, uint32_t id)
+{
+    struct PuInputMethod *state = data;
+    if (client != state->desktop->shell_client && !pu_input_method_allowed(state->desktop, client)) {
+        wl_client_post_implementation_error(client, "Session status connection is not authorized");
+        return;
+    }
+    struct wl_resource *resource = wl_resource_create(client, &polly_session_status_v1_interface, version, id);
+    if (!resource) { wl_client_post_no_memory(client); return; }
+    wl_resource_set_implementation(resource, &status_impl, state, NULL);
+}
 bool pu_input_method_active(struct PuDesktop *desktop) { return can_grab(desktop->input_method); }
 bool pu_input_method_key(struct PuDesktop *desktop, struct wlr_keyboard *keyboard,
     const struct wlr_keyboard_key_event *event)
@@ -478,6 +539,13 @@ bool pu_input_method_spawn(struct PuDesktop *desktop, char *const argv[])
 {
     struct PuInputMethod *state = desktop->input_method;
     if (!state) { wlr_log(WLR_ERROR, "Input-method relay is not initialized"); return false; }
+    if (state->client || state->pid) {
+        wlr_log(WLR_ERROR, "Input method is already running");
+        return false;
+    }
+    state->requested = true;
+    state->initialized = false;
+    state->initialization_lost = false;
     if (!state->exit) state->exit = wl_event_loop_add_signal(wl_display_get_event_loop(desktop->display), SIGCHLD, exited, state);
     if (!state->exit) { wlr_log_errno(WLR_ERROR, "Cannot watch input-method process"); return false; }
     state->client_destroy.notify = disconnected;
@@ -487,10 +555,15 @@ void pu_input_method_stop(struct PuDesktop *desktop)
 {
     struct PuInputMethod *state = desktop->input_method;
     if (!state) return;
-    if (state->client) wl_client_destroy(state->client);
     if (reap(state, WNOHANG)) return;
     if (kill(state->pid, SIGTERM) < 0 && errno != ESRCH) wlr_log_errno(WLR_ERROR, "Cannot terminate input method");
     for (int i = 0; i < 100 && !reap(state, WNOHANG); i++) {
+        /* Keep Wayland sync replies available while the service retires its surfaces. */
+        wl_display_flush_clients(desktop->display);
+        if (wl_event_loop_dispatch(wl_display_get_event_loop(desktop->display), 0) < 0) {
+            wlr_log_errno(WLR_ERROR, "Cannot dispatch input-method shutdown");
+            break;
+        }
         struct timespec delay = { .tv_nsec = 10000000 }; nanosleep(&delay, NULL);
     }
     if (state->pid) {
@@ -498,6 +571,7 @@ void pu_input_method_stop(struct PuDesktop *desktop)
         if (kill(state->pid, SIGKILL) < 0 && errno != ESRCH) wlr_log_errno(WLR_ERROR, "Cannot kill input method");
         else reap(state, 0);
     }
+    if (state->client) wl_client_destroy(state->client);
 }
 bool pu_input_method_init(struct PuDesktop *desktop)
 {
@@ -509,7 +583,8 @@ bool pu_input_method_init(struct PuDesktop *desktop)
     struct wlr_text_input_manager_v3 *inputs = wlr_text_input_manager_v3_create(desktop->display);
     struct wlr_input_method_manager_v2 *methods = wlr_input_method_manager_v2_create(desktop->display);
     struct wlr_virtual_keyboard_manager_v1 *keyboards = wlr_virtual_keyboard_manager_v1_create(desktop->display);
-    if (!state->tree || !inputs || !methods || !keyboards) return false;
+    state->status_global = wl_global_create(desktop->display, &polly_session_status_v1_interface, 1, state, bind_status);
+    if (!state->tree || !inputs || !methods || !keyboards || !state->status_global) return false;
     listen(&inputs->events.text_input, &state->new_input, new_text_input);
     listen(&methods->events.input_method, &state->new_method, new_method);
     listen(&keyboards->events.new_virtual_keyboard, &state->new_keyboard, new_virtual_keyboard);
@@ -521,6 +596,7 @@ void pu_input_method_finish(struct PuDesktop *desktop)
     struct PuInputMethod *state = desktop->input_method;
     if (!state) return;
     pu_input_method_stop(desktop);
+    if (state->status_global) wl_global_destroy(state->status_global);
     if (state->exit) wl_event_source_remove(state->exit);
     unlisten(&state->new_input); unlisten(&state->new_method); unlisten(&state->new_keyboard); unlisten(&state->focus);
     if (state->tree) wlr_scene_node_destroy(&state->tree->node);

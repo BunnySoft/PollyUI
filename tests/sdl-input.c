@@ -249,6 +249,12 @@ int main(void)
     pu_window_set_drop(window, on_drop, NULL);
     pu_window_set_async(window, tick, NULL);
     int result = pu_window_run(window);
+    pu_window_keep_alive(1);
+    SDL_Event quit;
+    SDL_zero(quit);
+    quit.type = SDL_EVENT_QUIT;
+    check(SDL_PushEvent(&quit), "queue service shutdown without an open window");
+    check(pu_window_run_all(NULL, NULL) == 0, "SDL quit terminates a hidden service keep-alive loop");
     pu_window_destroy(window);
     free(large_drop);
     pu_render_shutdown();

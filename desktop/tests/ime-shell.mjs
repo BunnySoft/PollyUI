@@ -19,6 +19,7 @@ async function tap(code) {
 async function run() {
   if (application.arguments[0] === 'reload') { await signal('fixture-success'); window.quit(); return; }
   const editor = window.create({ title: 'IME editor fixture', width: 480, height: 200 });
+  check(desktop.sessionServices().inputMethod === 'disabled', 'unrequested IME is disabled, not falsely waiting');
   window.close();
   const field = createTextInput({ document: editor.document, width: 400 });
   const password = createTextInput({ document: editor.document, width: 400, password: true });
@@ -32,6 +33,7 @@ async function run() {
   field.root.addEventListener('keydown', event => { if (event.key === 'F5') functionKeys++; });
   await until(() => desktop.windows().some(item => item.title === 'IME editor fixture' && item.active), 'editor focus');
   await signal('fixture-ime-start'); await signal('fixture-ime-ready');
+  await until(() => desktop.sessionServices().inputMethod === 'ready', 'trusted engine readiness acknowledgment');
   await tap(63);
   await until(() => functionKeys === 1, 'unhandled function key is forwarded');
   for (const code of [49, 23, 35, 30, 24]) await tap(code);
@@ -65,6 +67,7 @@ async function run() {
   await signal('fixture-ime-ready');
   for (const code of [16, 22, 23, 20]) await tap(code);
   await signal('fixture-ime-gone');
+  await until(() => desktop.sessionServices().inputMethod === 'failed', 'service loss invalidates initialization status');
   await until(() => field.root.textContent === field.value, 'service exit clears unfinished composition');
   await tap(44);
   await until(() => field.value === '\u4f60\u597dz', 'ordinary typing recovers after service exit');

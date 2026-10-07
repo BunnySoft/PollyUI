@@ -4,12 +4,16 @@ bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 data=$(CDPATH= cd -- "$bindir/@PU_DATA_FROM_BIN@" && pwd)
 script="$data/desktop/shell/main.mjs"
 check=0
+require_ime=
+require_audio=
 for argument in "$@"; do
     case "$argument" in
         --check) check=1 ;;
+        --ime) require_ime=--require-ime ;;
+        --audio) require_audio=--require-audio ;;
         --help)
             echo "Usage: polly-desktop [--nested | --headless] [--ime] [--audio] [--restarts COUNT] [--check]"
-            echo "--check verifies session startup, then exits; its deadline is 30 seconds."
+            echo "--check waits for Shell and enabled IME/audio initialization, then exits; its deadline is 30 seconds."
             exit 0 ;;
     esac
 done
@@ -21,7 +25,11 @@ if [ "$check" -eq 1 ]; then
         argument=$1; shift; count=$((count - 1))
         if [ "$argument" != --check ]; then set -- "$@" "$argument"; fi
     done
+    set -- --health-check "$@"
 fi
 set -- sh "$data/desktop/tools/run-session.sh" "$@" "$bindir/pollywm" "$bindir/pollyui" "$script"
-if [ "$check" -eq 1 ]; then exec timeout -s TERM -k 5 30 "$@"; fi
+if [ "$check" -eq 1 ]; then
+    set -- "$@" ${require_ime:+"$require_ime"} ${require_audio:+"$require_audio"}
+    exec timeout -s TERM -k 5 30 "$@"
+fi
 exec "$@"

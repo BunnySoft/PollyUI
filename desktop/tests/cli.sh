@@ -34,6 +34,12 @@ expect_status 2 "$wm" --shell-restarts -1
 expect_status 2 "$wm" --shell-restarts '2x'
 expect_status 2 "$wm" --shell-restarts 2
 expect_status 2 "$wm" --exit-with-shell
+expect_status 2 "$wm" --exit-on-shell-failure
+expect_status 1 "$wm" --exit-with-shell --exit-on-shell-failure --shell /bin/false
+grep -q 'ending the requested session with failure' "$runtime/error.log"
+expect_status 1 "$wm" --shell-restarts 1 --exit-on-shell-failure --shell /bin/false
+grep -q 'Shell restart 1 scheduled' "$runtime/error.log"
+expect_status 0 "$wm" --exit-on-shell-failure --exit-with-shell --shell /bin/true
 expect_status 1 "$wm" --shell /pollywm-test/nonexistent-shell
 grep -q 'Cannot start shell' "$runtime/error.log"
 expect_status 1 "$wm" --shell-restarts 2 --shell /pollywm-test/nonexistent-shell

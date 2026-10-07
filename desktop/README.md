@@ -136,6 +136,11 @@ created for every attempt. Pending restarts are cancelled on shutdown.
 `--exit-with-shell` additionally terminates PollyWM when the shell exits normally.
 It does not terminate the session on a shell crash. Use this only when the shell's
 normal exit is intended to end the session: remaining clients will disconnect.
+The separate opt-in `--exit-on-shell-failure` returns a failed session after the
+restart budget is exhausted; it never ends a locked session. Installed diagnostic
+checks enable this option with no restart allowance so an observed failure returns
+nonzero instead of leaving an empty compositor until the outer timeout. Ordinary
+sessions keep their existing preserve-applications behavior.
 There is no process-tree supervisor, login/authentication service, or production
 logout/save protocol yet.
 
@@ -597,10 +602,24 @@ helper, runtime JS modules and session scripts. `polly-desktop` locates its
 resources relative to its installed binary directory, not the source checkout.
 The patched SDL is private under `lib/pollyui`; the installed executable uses
 an origin-relative loader path and does not replace the system SDL.
-`--check` starts the real session and exits after its Shell/audio startup check,
-with an outer 30-second deadline and termination cleanup. It is not hardware,
-input-method candidate interaction or complete desktop acceptance testing.
+`--check` starts the real session and waits up to 15 seconds for its created Shell
+surfaces and configured services. `--ime` requires successful native engine/schema
+initialization and a live input-method role; `--audio` requires its private policy
+discovery to complete. Disabled services are not required. State transitions are
+logged, and service loss, missing required services or timeout fail explicitly.
+An outer 30-second deadline covers a frozen startup/event loop, with termination
+cleanup. Checks reject nonzero `--restarts` rather than retrying failures into a
+success. This is initialization health, not physical GPU/audio/input acceptance
+or a Chinese candidate interaction test.
 Normal operation omits `--check`; `--help` lists wrapper options.
+
+`desktop.sessionServices()` queries an authoritative input-method state:
+`disabled`, `starting`, `ready` or `failed`. The connection-restricted
+`polly_session_status_v1` interface allows the Shell to inspect, but only the
+separately authorized input method to report completed engine initialization.
+Public connections cannot bind it, even from the Shell's own process.
+Disconnecting or losing the initialized role invalidates readiness. A same-process
+SDK or localStorage flag is never used as service authority.
 
 On Alpine 3.24 x86_64, create a versioned package with the matching SDK sources:
 

@@ -81,6 +81,14 @@ int main(int argc, char **argv)
     CHECK(!desktop.seat->keyboard_state.focused_surface && !desktop.seat->pointer_state.focused_surface);
     for (int i = 0; i < 60; i++) tick(&desktop);
     CHECK(pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
+    desktop.exit_on_shell_failure = true;
+    char *failed_shell[] = {"/bin/false", NULL};
+    CHECK(pu_desktop_supervise_shell(&desktop, failed_shell, 0));
+    for (int i = 0; i < 100 && desktop.shell_pid; i++) tick(&desktop);
+    CHECK(desktop.shell_exited && !desktop.shell_pid && WIFEXITED(desktop.shell_status) &&
+        WEXITSTATUS(desktop.shell_status) == 1);
+    CHECK(!desktop.failed && pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
+    desktop.exit_on_shell_failure = false;
     struct wlr_backend *backend = NULL;
     wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
     CHECK(backend);

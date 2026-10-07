@@ -30,4 +30,5 @@ native-shell.mjs
 workspace-preferences.mjs
 display-profiles.mjs
 audio-preferences.mjs
+session-health.mjs
 desktop-applications.mjs

@@ -1,4 +1,5 @@
 #include "server.h"
+#include "polly-session-status-client.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -32,11 +33,19 @@ static const struct wl_interface workspace_toplevel_interface = { .name = "polly
 static const struct wl_interface shortcuts_interface = { .name = "polly_shortcuts_v1", .version = 1 };
 static const struct wl_interface output_interface = { .name = "zwlr_output_manager_v1", .version = 1 };
 static const struct wl_interface output_guard_interface = { .name = "polly_output_guard_v1", .version = 1 };
+static const struct wl_interface status_interface = { .name = "polly_session_status_v1", .version = 1 };
 static const char literal[] = "argument with spaces; $HOME is not expanded";
+static uint32_t status_serial, input_status;
+static void status_received(void *data, struct polly_session_status_v1 *object, uint32_t serial, uint32_t state)
+{
+    (void)data; (void)object;
+    status_serial = serial; input_status = state;
+}
+static const struct polly_session_status_v1_listener status_listener = { .status = status_received };
 
 struct Registry {
     uint32_t restricted, foreign, appearance, workspace, workspace_toplevel, shortcuts, output, output_guard, compositor;
-    uint32_t input_method, virtual_keyboard;
+    uint32_t input_method, virtual_keyboard, status;
 };
 
 static void registry_global(void *data, struct wl_registry *registry, uint32_t name,
@@ -53,6 +62,7 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
     if (strcmp(interface, shortcuts_interface.name) == 0) state->shortcuts = name;
     if (strcmp(interface, output_interface.name) == 0) state->output = name;
     if (strcmp(interface, output_guard_interface.name) == 0) state->output_guard = name;
+    if (strcmp(interface, status_interface.name) == 0) state->status = name;
     if (strcmp(interface, "wl_compositor") == 0) state->compositor = name;
     if (strcmp(interface, "zwp_input_method_manager_v2") == 0) state->input_method = name;
     if (strcmp(interface, "zwp_virtual_keyboard_manager_v1") == 0) state->virtual_keyboard = name;
@@ -88,7 +98,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(wl_display_roundtrip(trusted) >= 0);
     CHECK(privileged.restricted && privileged.foreign && privileged.appearance && privileged.compositor);
     CHECK(privileged.workspace && privileged.workspace_toplevel && privileged.shortcuts);
-    CHECK(privileged.output && privileged.output_guard);
+    CHECK(privileged.output && privileged.output_guard && privileged.status);
     CHECK(!privileged.input_method && !privileged.virtual_keyboard);
     if (strcmp(mode, "--ignore-term") == 0) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct wl_proxy *capability = wl_registry_bind(
@@ -100,6 +110,13 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     }
     CHECK(wl_display_roundtrip(trusted) >= 0);
 
+    struct polly_session_status_v1 *status = wl_registry_bind(
+        registry, privileged.status, &polly_session_status_v1_interface, 1);
+    CHECK(status && polly_session_status_v1_add_listener(status, &status_listener, NULL) == 0);
+    polly_session_status_v1_inspect(status, 42);
+    CHECK(wl_display_roundtrip(trusted) >= 0 && status_serial == 42 &&
+        input_status == POLLY_SESSION_STATUS_V1_SERVICE_STATE_DISABLED);
+
     /* The very same process cannot obtain privilege through the public socket. */
     struct wl_display *ordinary = wl_display_connect(socket_name);
     CHECK(ordinary);
@@ -108,7 +125,7 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
     CHECK(wl_display_roundtrip(ordinary) >= 0);
     CHECK(public.compositor && !public.restricted && !public.foreign && !public.appearance);
-    CHECK(!public.input_method && !public.virtual_keyboard);
+    CHECK(!public.input_method && !public.virtual_keyboard && !public.status);
     CHECK(!public.workspace && !public.workspace_toplevel && !public.shortcuts && !public.output && !public.output_guard);
     struct wl_proxy *forged = wl_registry_bind(
         public_registry, privileged.restricted, &restricted_interface, 1);
@@ -141,16 +158,16 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
     wl_display_disconnect(ordinary);
     CHECK(wl_display_roundtrip(trusted) >= 0);
     const struct wl_interface *interfaces[] = { &workspace_interface, &workspace_toplevel_interface, &shortcuts_interface,
-        &output_interface, &output_guard_interface };
+        &output_interface, &output_guard_interface, &status_interface };
     uint32_t globals[] = { privileged.workspace, privileged.workspace_toplevel, privileged.shortcuts,
-        privileged.output, privileged.output_guard };
-    for (size_t i = 0; i < 5; i++) {
+        privileged.output, privileged.output_guard, privileged.status };
+    for (size_t i = 0; i < sizeof(globals) / sizeof(globals[0]); i++) {
         ordinary = wl_display_connect(socket_name);
         CHECK(ordinary);
         public_registry = wl_display_get_registry(ordinary);
         CHECK(wl_registry_add_listener(public_registry, &registry_listener, &public) == 0);
         CHECK(wl_display_roundtrip(ordinary) >= 0 && !public.workspace && !public.workspace_toplevel &&
-            !public.shortcuts && !public.output && !public.output_guard);
+            !public.shortcuts && !public.output && !public.output_guard && !public.status);
         forged = wl_registry_bind(public_registry, globals[i], interfaces[i], 1);
         CHECK(forged && wl_display_roundtrip(ordinary) < 0 && wl_display_get_error(ordinary) == EPROTO);
         wl_proxy_destroy(forged);
@@ -158,6 +175,9 @@ static bool probe(const char *socket_name, const char *mode, const char *argumen
         wl_display_disconnect(ordinary);
     }
     wl_proxy_destroy(capability);
+    polly_session_status_v1_input_method_initialized(status);
+    CHECK(wl_display_roundtrip(trusted) < 0 && wl_display_get_error(trusted) == EPROTO);
+    polly_session_status_v1_destroy(status);
     wl_registry_destroy(registry);
     wl_display_disconnect(trusted);
     return true;

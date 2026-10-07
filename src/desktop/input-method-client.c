@@ -3,6 +3,7 @@
 #include "input-method-v2-client.h"
 #include "virtual-keyboard-v1-client.h"
 #include "text-input-v3-client.h"
+#include "polly-session-status-client.h"
 #include <SDL3/SDL.h>
 #include <errno.h>
 #include <inttypes.h>
@@ -21,6 +22,7 @@ static struct {
     JSValue api;
     struct wl_display *display;
     struct wl_seat *seat;
+    struct polly_session_status_v1 *status;
     struct zwp_input_method_manager_v2 *manager;
     struct zwp_virtual_keyboard_manager_v1 *virtual_manager;
     struct zwp_input_method_v2 *method;
@@ -187,6 +189,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
         client.virtual_manager = wl_registry_bind(registry, name, &zwp_virtual_keyboard_manager_v1_interface, 1);
     else if (!client.seat && !strcmp(interface, wl_seat_interface.name))
         client.seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+    else if (!client.status && !strcmp(interface, polly_session_status_v1_interface.name))
+        client.status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, 1);
 }
 static void global_removed(void *data, struct wl_registry *registry, uint32_t name)
 { (void)data; (void)registry; (void)name; }
@@ -220,11 +224,13 @@ static void release_resources(void)
     if (client.manager) zwp_input_method_manager_v2_destroy(client.manager);
     if (client.virtual_manager) zwp_virtual_keyboard_manager_v1_destroy(client.virtual_manager);
     if (client.seat) wl_seat_destroy(client.seat);
+    if (client.status) polly_session_status_v1_destroy(client.status);
     xkb_state_unref(client.xkb); xkb_keymap_unref(client.keymap); xkb_context_unref(client.xkb_context);
     pu_ime_close(client.engine);
     client.grab = NULL; client.method = NULL; client.keyboard = NULL; client.manager = NULL;
     client.virtual_manager = NULL; client.seat = NULL; client.xkb = NULL; client.keymap = NULL;
     client.xkb_context = NULL; client.engine = NULL;
+    client.status = NULL;
 }
 static JSValue start(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
@@ -262,6 +268,10 @@ static JSValue start(JSContext *ctx, JSValueConst self, int argc, JSValueConst *
     if (!client.grab) { failure("Cannot allocate input-method keyboard grab"); goto failed; }
     zwp_input_method_keyboard_grab_v2_add_listener(client.grab, &grab_listener, NULL);
     if (!synchronize() || !engine_ok(pu_ime_reset(client.engine, &client.snapshot))) goto failed;
+    if (client.status) {
+        polly_session_status_v1_input_method_initialized(client.status);
+        if (!synchronize()) goto failed;
+    }
     for (int i = 0; i < 3; i++) JS_FreeCString(ctx, args[i]);
     return JS_UNDEFINED;
 failed:
