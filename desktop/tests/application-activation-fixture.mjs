@@ -136,11 +136,13 @@ try {
     if (name.endsWith('StartFailure')) {
       assert.match(text, /start-failed\t[0-9]+\torg.pollyui.ActivationFixture.StartFailure\n/);
       assert.doesNotMatch(text, /call\t/);
+      assert.equal(text.trim().split('\n').length, 1, 'failed service activation is not automatically replayed');
       continue;
     }
     assert.match(text, new RegExp('started\\t[0-9]+\\t' + name.replaceAll('.', '\\.') + '\\n'));
     const lines = text.trim().split('\n').filter(line => line.startsWith('call\t'));
-    assert.ok(lines.length > 0, name + ': actual auto-started service received a request');
+    assert.equal(lines.length, !probe && name.endsWith('Timeout') ? 10 : 1,
+      name + ': exactly the requested deliveries, no automatic retry');
     for (const line of lines) assert.deepEqual(line.split('\t').slice(1), [
       '/' + name.replaceAll('.', '/').replaceAll('-', '_'), 'org.freedesktop.Application', 'Activate', 'a{sv}', '1', '1',
     ], 'exact member/interface/object path/empty platform data/auto-start flag');
@@ -154,6 +156,12 @@ try {
     assert.equal(disconnect.finished, false, disconnect.output);
     daemon.process.kill('SIGTERM');
     await completed(disconnect, 'native-disconnect');
+    const disconnectCalls = (await contents(logs.get('org.pollyui.ActivationFixture.Disconnect'))).trim().split('\n')
+      .filter(line => line.startsWith('call\t'));
+    assert.equal(disconnectCalls.length, 1, 'disconnect does not replay an indeterminate delivery');
+    assert.deepEqual(disconnectCalls[0].split('\t').slice(1), [
+      '/org/pollyui/ActivationFixture/Disconnect', 'org.freedesktop.Application', 'Activate', 'a{sv}', '1', '1',
+    ]);
   }
   passed = true;
   console.log(probe ? 'PASS: isolated daemon/service infrastructure only; product native API is NOT verified' :

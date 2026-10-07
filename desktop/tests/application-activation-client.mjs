@@ -24,12 +24,17 @@ async function run() {
     'rebuilt native activation API is required (old binaries/stubs are not accepted)');
   if (mode === 'guard') {
     check(!desktop.canActivateApplication(), 'unqualified private bus is rejected');
-    check(launcher.refresh().filter(entry => entry.activation).every(entry =>
+    const entries = launcher.refresh();
+    check(entries.some(entry => entry.id === 'org.pollyui.Activation-fixture.desktop' && entry.activation),
+      'a valid synthetic D-Bus-only entry remains discoverable without a qualified bus');
+    check(entries.filter(entry => entry.activation).every(entry =>
       entry.unavailable.includes('qualified private session bus')), 'valid bus-only entries are visibly unavailable');
     throws(() => desktop.activateApplication(id('Success')), /qualified private session bus/);
   } else {
     check(desktop.canActivateApplication(), 'qualified private bus allows an attempt, not service readiness');
     if (mode === 'main') {
+      throws(() => desktop.activateApplication(id('Success'), 'org.pollyui.ArbitraryInterface'),
+        /requires a desktop-file ID/);
       for (const invalid of ['bus.desktop', ':1.4.desktop', 'org..App.desktop', 'org.9App.desktop',
         'org/App.desktop', 'org.应用.desktop', 'org.App\n.desktop', 'org.App\0.desktop', 'org.App.desktop\0',
         'a.' + 'b'.repeat(254) + '.desktop'])
@@ -64,7 +69,9 @@ async function run() {
       let ticks = 0;
       const timer = setInterval(() => ticks++, 20);
       for (const result of await Promise.allSettled(requests))
-        check(result.status === 'rejected', 'bounded pending request is never success-shaped');
+        check(result.status === 'rejected' &&
+          /POLLY_ACTIVATION_TIMEOUT|org.freedesktop.DBus.Error.NoReply/.test(String(result.reason.code)),
+          'bounded pending request ends in an explicit timeout, never success-shaped');
       clearInterval(timer);
       check(ticks >= 10, 'native pending activation does not block the UI timer pump');
     } else if (mode === 'rediscovery') {
