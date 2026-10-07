@@ -164,9 +164,9 @@ to `buildInputs`. The sidecar describes the input trees, **not an inspection of
 the final ext4 image**. Consumers must not use a sidecar to skip final image
 verification or treat legacy manifests without the sidecar as qualified proof.
 
-Central integration is intentionally left to the owner: register
-`desktop/tests/system-payload.py` in the fast runner and/or a CTest Python test;
-include `desktop/release/maintenance/payload.py` in source syntax checks.
+`desktop/tests/system-payload.py` is registered as the CTest
+`desktop-system-payload` test and in the source-only `check-storage.py` runner.
+The runner includes `desktop/release/maintenance/payload.py` in its AST checks.
 Run `python3 -I -B desktop/tests/system-payload.py` on Linux. No SDK rebuild,
 network, image build, mounts, block writes or VM are required.
 
@@ -293,5 +293,9 @@ Run `python3 -I -B desktop/tests/system-payload-signature.py` on Linux with
 OpenSSL available. Synthetic tests measure exact body/source bounds and output
 shapes, deterministic signatures/canonical framing, independent OpenSSL
 interoperation, repaired-digest/body tampering, wrong keys/signatures, strict
-parsing/CLI refusal and separate actual-material preflight rejection. Central
-runner/source-check registration remains the integration owner's task.
+parsing/CLI refusal and separate actual-material preflight rejection.
+The suite is registered as the CTest `desktop-system-payload-signature` test
+with `python3 -I -B` and a 30-second timeout, and in the source-only
+`check-storage.py` runner. The runner also checks the AST of `signature.py` and
+its test module. Registration does not qualify production trust or native
+integration, and no native build or VM is required for these source checks.

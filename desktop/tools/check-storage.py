@@ -27,6 +27,8 @@ def main():
         "desktop/release/install/roles.py",
         "desktop/release/install/targets.py",
         "desktop/release/maintenance/payload.py",
+        "desktop/release/maintenance/signature.py",
+        "desktop/tests/system-payload-signature.py",
         "desktop/release/storage/homes.py",
         "desktop/release/storage/identities.py",
         "desktop/release/storage/migrate-home.py",
@@ -64,7 +66,7 @@ def main():
     for name in ("installed-image", "installed-accounts", "installed-roles", "storage-layout",
                  "storage-mappings", "storage-image", "storage-homes", "storage-home-migration",
                  "storage-identities", "storage-account-migration", "polly-plan", "account-profiles",
-                 "system-payload", "install-targets"):
+                 "system-payload", "system-payload-signature", "install-targets"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)
