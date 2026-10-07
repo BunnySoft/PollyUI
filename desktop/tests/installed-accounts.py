@@ -324,6 +324,44 @@ class InstalledAccounts(unittest.TestCase):
                 accounts.finish()
             save.assert_not_called()
 
+    @unittest.skipUnless(os.geteuid() == 0, "disposable root SDK required")
+    def test_account_reads_reject_links_raced_symlinks_and_private_invalid_text(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            accounts.atomic(state, "original")
+            alias = root / "alias"
+            os.link(state, alias)
+            with self.assertRaisesRegex(ValueError, "Linked"):
+                accounts.read(state)
+            alias.unlink()
+            real_trusted = accounts.trusted
+
+            def swap(path, *args, **kwargs):
+                info = real_trusted(path, *args, **kwargs)
+                path.unlink()
+                path.symlink_to(alias)
+                return info
+
+            alias.write_text("must not read a raced symlink")
+            with patch.object(accounts, "trusted", side_effect=swap):
+                with self.assertRaises(OSError):
+                    accounts.read(state)
+            state.unlink()
+            state.write_bytes(b"\xffprivate")
+            with self.assertRaisesRegex(ValueError, "not UTF-8") as error:
+                accounts.read(state)
+            self.assertNotIn("private", str(error.exception))
+            for limit in (True, 0, -1):
+                with self.assertRaisesRegex(ValueError, "read bound"):
+                    accounts.read(state, limit)
+
+    def test_duplicate_configuration_fields_are_not_a_valid_last_value(self):
+        text = ('{"schemaVersion":3,"persistentUuid":"' + UUID +
+                '","initialized":false,"initialized":true,"automaticLogin":false}')
+        with self.assertRaisesRegex(ValueError, "Duplicate"):
+            accounts.parse_config(text)
+
     @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
     def test_automatic_login_is_once_and_boot_scoped(self):
         with tempfile.TemporaryDirectory() as temporary:

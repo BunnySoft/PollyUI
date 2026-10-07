@@ -29,8 +29,7 @@ PROFILE_CHECK = Path("/usr/lib/polly-account-profile-check")
 ROLE_MODEL = Path("/usr/lib/polly-account-roles.py")
 
 
-def trusted(path, directory=False, secret=False):
-    info = path.lstat()
+def trusted_info(path, info, directory=False, secret=False):
     valid_type = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
     if not valid_type or info.st_uid != 0 or info.st_mode & 0o022 or \
             (secret and info.st_mode & 0o007):
@@ -38,13 +37,29 @@ def trusted(path, directory=False, secret=False):
     return info
 
 
+def trusted(path, directory=False, secret=False):
+    return trusted_info(path, path.lstat(), directory, secret)
+
+
 def read(path, limit=16384, secret=False):
+    if type(limit) is not int or limit < 1:
+        raise ValueError("Invalid account-state read bound")
     trusted(path, secret=secret)
-    with path.open("rb") as source:
-        contents = source.read(limit + 1)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = trusted_info(path, os.fstat(descriptor), secret=secret)
+        if info.st_nlink != 1:
+            raise ValueError("Linked account-state records are not authoritative")
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            contents = source.read(limit + 1)
+    finally:
+        os.close(descriptor)
     if len(contents) > limit:
         raise ValueError("Account state exceeds its size limit: " + str(path))
-    return contents.decode("utf8")
+    try:
+        return contents.decode("utf8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Account state is not UTF-8: " + str(path)) from error
 
 
 def atomic(path, text, mode=0o644):
@@ -94,7 +109,15 @@ def state_lock(root=ROOT, timeout=60):
 
 
 def parse_config(text):
-    result = json.loads(text)
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate account configuration field")
+            result[key] = value
+        return result
+
+    result = json.loads(text, object_pairs_hook=unique)
     version = result.get("schemaVersion") if isinstance(result, dict) else None
     field = "persistentUuid" if version == 3 else "homeUuid"
     if not isinstance(result, dict) or set(result) != {"schemaVersion", field, "automaticLogin", "initialized"} or \

@@ -1134,11 +1134,12 @@
       "sources": [
         "M01.4"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "account-lock",
         "account-model"
-      ]
+      ],
+      "evidence": "新增受限/O_NOFOLLOW/fstat 账户读、硬链接拒绝、私有无效UTF诊断与重复JSON键拒绝实现已开始；编译/回归交给临时 worktree 快速验证子会话，未返回对应固定快照结果前不关闭完整故障恢复条目。"
     },
     {
       "id": "service-state",
