@@ -45,6 +45,7 @@ def main():
         for name in ("desktop/release/install/session", "desktop/release/storage/early-usr",
                      "desktop/release/storage/initramfs-hook", "desktop/tools/build-storage.sh",
                      "desktop/tools/check-storage.sh", "desktop/release/debian/account-profile",
+                     "desktop/release/debian/profile-check",
                      "desktop/release/live/session", "desktop/tools/build-live.sh",
                      "desktop/tools/build-installed.sh"):
             script = temporary / "syntax-check"

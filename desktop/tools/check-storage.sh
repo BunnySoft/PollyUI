@@ -38,5 +38,9 @@ elif [ "$mode" != fast ]; then
         podman run --rm --network=none --cap-add=SYS_ADMIN --security-opt seccomp=unconfined \
             -v "$repo:/workspace:ro" "$installed" \
             python3 -I -B /workspace/desktop/tests/storage-account-migration-fixture.py /workspace
+        for profile in installed live recovery; do
+            podman run --rm --network=none -v "$repo:/workspace:ro" "$installed" \
+                python3 -I -B /workspace/desktop/tests/account-profile-fixture.py /workspace "$profile"
+        done
     fi
 fi

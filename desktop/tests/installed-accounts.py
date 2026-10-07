@@ -204,6 +204,22 @@ class InstalledAccounts(unittest.TestCase):
                     accounts.backing_store()
                 legacy_read.assert_not_called()
 
+    def test_mismatched_profile_never_reads_legacy_or_new_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            profile, checker = root / "profile", root / "check"
+            profile.write_text("live\n")
+            checker.write_text("fixture-only placeholder")
+            with patch.object(accounts, "PROFILE_FILE", profile), \
+                    patch.object(accounts, "PROFILE_CHECK", checker), \
+                    patch.object(accounts, "trusted"), \
+                    patch.object(accounts.subprocess, "run", return_value=
+                        accounts.subprocess.CompletedProcess([], 1)), \
+                    patch.object(accounts, "read") as legacy_read:
+                with self.assertRaisesRegex(ValueError, "profile"):
+                    accounts.backing_store()
+                legacy_read.assert_not_called()
+
     @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
     def test_configuration(self):
         with tempfile.TemporaryDirectory() as temporary:

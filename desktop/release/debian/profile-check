@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
+fail() { echo "POLLY_PROFILE_FAILED: $*" >&2; exit 1; }
+[ "$#" -eq 1 ] || fail "expected live, installed or recovery"
+case "$1" in live|installed|recovery) ;; *) fail "unsupported session profile" ;; esac
+for directory in / /etc; do
+    [ -d "$directory" ] && [ ! -L "$directory" ] || fail "unsafe profile parent"
+    [ "$(stat -c '%u' "$directory")" -eq 0 ] || fail "untrusted profile parent"
+    mode=$(stat -c '%a' "$directory")
+    [ "$((0$mode & 022))" -eq 0 ] || fail "writable profile parent"
+done
+profile=/etc/polly-account-profile
+if [ -e "$profile" ] || [ -L "$profile" ]; then
+    [ -f "$profile" ] && [ ! -L "$profile" ] || fail "profile must be a regular file"
+    [ "$(stat -c '%a:%u:%g:%h' "$profile")" = 644:0:0:1 ] || fail "unsafe profile metadata"
+    [ "$(wc -c < "$profile")" -le 16 ] || fail "oversized profile"
+    value=$(cat "$profile")
+    case "$value" in live|installed|recovery|template) ;; *) fail "invalid profile value" ;; esac
+    printf '%s\n' "$value" | cmp -s "$profile" - || fail "invalid profile encoding"
+    [ "$value" = "$1" ] || fail "session and image profiles do not match"
+else
+    fail "required profile is missing; historical fallback is unavailable"
+fi

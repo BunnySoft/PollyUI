@@ -24,6 +24,8 @@ RUNTIME = Path("/run/polly-accounts")
 UUID_FILE = Path("/etc/polly-home-uuid")
 STORAGE_MANIFEST = Path("/etc/polly-storage.json")
 STORAGE_PROGRAM = Path("/usr/lib/polly-storage/storage.py")
+PROFILE_FILE = Path("/etc/polly-account-profile")
+PROFILE_CHECK = Path("/usr/lib/polly-account-profile-check")
 
 
 def trusted(path, directory=False, secret=False):
@@ -109,6 +111,16 @@ def config(root=ROOT):
 
 
 def backing_store():
+    if PROFILE_FILE.exists() or PROFILE_FILE.is_symlink() or \
+            PROFILE_CHECK.exists() or PROFILE_CHECK.is_symlink():
+        for path in (PROFILE_CHECK.parent.parent, PROFILE_CHECK.parent):
+            trusted(path, directory=True)
+        trusted(PROFILE_CHECK)
+        result = subprocess.run([str(PROFILE_CHECK), "installed"],
+                                capture_output=True, text=True, timeout=10,
+                                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+        if result.returncode != 0:
+            raise ValueError("Installed account profile is unavailable or mismatched")
     if STORAGE_PROGRAM.exists() or STORAGE_PROGRAM.is_symlink() or \
             STORAGE_MANIFEST.exists() or STORAGE_MANIFEST.is_symlink():
         for path in (STORAGE_PROGRAM.parent.parent, STORAGE_PROGRAM.parent):

@@ -35,6 +35,15 @@ class Profiles(unittest.TestCase):
         self.assertNotIn("passwd -l", helper)
         self.assertNotIn("usermod -L", helper)
 
+    def test_each_session_requires_its_own_guarded_mode(self):
+        for source, mode in (("desktop/release/live/session", "live"),
+                             ("desktop/release/install/session", "installed")):
+            text = (ROOT / source).read_text()
+            self.assertIn("polly-account-profile-check " + mode, text)
+        helper = (ROOT / "desktop/release/debian/profile-check").read_text()
+        self.assertIn("historical fallback is unavailable", helper)
+        self.assertIn("session and image profiles do not match", helper)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -387,6 +387,7 @@ def build(args):
                 repo / "desktop/release/debian/Containerfile.install",
                 repo / "desktop/release/debian/Containerfile.live",
                 repo / "desktop/release/debian/account-profile",
+                repo / "desktop/release/debian/profile-check",
                 repo / "desktop/release/install/session", repo / "desktop/release/install/shell.mjs",
                 repo / "desktop/release/install/accounts.py", repo / "desktop/release/install/passwd-proxy.c",
                 *fixture_files,

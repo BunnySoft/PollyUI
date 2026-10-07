@@ -4,8 +4,8 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin LANG=C.UTF-8
 profile=/etc/polly-account-profile
 fail() { echo "POLLY_ACCOUNT_PROFILE_FAILED: $*" >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || fail "image account preparation requires root"
-[ "$#" -eq 1 ] || fail "expected template, live or installed"
-case "$1" in template|live|installed) ;; *) fail "unknown account profile" ;; esac
+[ "$#" -eq 1 ] || fail "expected template, live, installed or recovery"
+case "$1" in template|live|installed|recovery) ;; *) fail "unknown account profile" ;; esac
 for file in /etc/passwd /etc/shadow; do
     [ -f "$file" ] && [ ! -L "$file" ] || fail "unsafe account template"
     [ "$(stat -c '%u:%h' "$file")" = 0:1 ] || fail "untrusted or linked account template"

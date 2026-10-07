@@ -28,6 +28,16 @@ masks SSH service/socket aliases in Live. Cached-container PAM/su/passwd checks
 do not establish new-image boot acceptance; existing artifacts are unchanged.
 Remote login stays disabled by default.
 
+New images carry a root-owned exact `template`, `live`, `installed` or `recovery`
+profile. The read-only profile checker is usable by ordinary users; sessions and
+the installed account backend reject mismatched, missing, linked, writable or
+malformed new profiles before reading fallback state. A template is not bootable
+as Live/installed. Fresh versus initialized installation remains the authoritative
+account configuration's decision, not a missing-file heuristic. Old artifacts
+without the new checker keep their original UUID/storage checks; the historical
+Live entry also refuses installed-state markers. Recovery classification does not
+implement an independent recovery image or its target-credential authorization.
+
 `build-live.sh --debian` also publishes `localhost/polly-debian-platform-base`.
 Installed builds use `POLLY_PLATFORM_IMAGE` (that tag by default), not
 `POLLY_LIVE_IMAGE`; the old override is explicitly refused rather than silently

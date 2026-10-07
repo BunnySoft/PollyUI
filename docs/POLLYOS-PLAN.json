@@ -764,7 +764,7 @@
         "common"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": []
     },
     {
@@ -798,27 +798,29 @@
         "M01.4",
         "M03.1"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "template-isolation"
-      ]
+      ],
+      "evidence": "公共只读 profile-check 校验模式、元数据/编码并拒绝缺失/串用；Live/安装会话和账户后端接通。fresh 由已存在的 initialized 权威决定；旧无守卫产物保留原验证路径。快验及普通 UID 容器检查通过，救援模式标签不等于独立救援已可启动。"
     },
     {
       "id": "profile-separation",
       "label": "T02.3 模式串用回归",
       "kind": "subtask",
       "parent": "t02",
-      "scope": "验证 Live 公开密码不能被安装模板、迁移目标或独立救援当作授权；安装无通用默认密码且移植旧账户不重置密码。",
+      "scope": "组件回归验证 Live 预设不能复用为安装/救援锁定模板，缺失/串用/不安全标记均拒绝；安装无默认密码，旧账户导入保持既有凭据。救援整机及目标凭据写入授权仍由 T09 验收。",
       "priority": "P0",
       "modes": [
         "common"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "template-isolation",
         "mode-markers"
-      ]
+      ],
+      "evidence": "统一 mounts 快验包含独立 installed/live/recovery 缓存容器和旧账户导入：正确/错误/旧密码、普通改密、模板字节保留、无预设重置及拒绝串用通过；不是新镜像/实际独立救援验收。"
     },
     {
       "id": "t03",

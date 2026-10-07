@@ -4,6 +4,19 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/home/polly USER=polly LOGNAME=polly SHELL=/bin/sh
 export LIBSEAT_BACKEND=logind WLR_BACKENDS=drm,libinput
 unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET DBUS_SESSION_BUS_ADDRESS
+if [ -e /etc/polly-account-profile ] || [ -L /etc/polly-account-profile ] ||
+    [ -e /usr/lib/polly-account-profile-check ] || [ -L /usr/lib/polly-account-profile-check ]; then
+    if ! /usr/lib/polly-account-profile-check live; then
+        echo "Live desktop refused an invalid or mismatched image profile." >&2
+        exit 1
+    fi
+elif [ -e /etc/polly-home-uuid ] || [ -L /etc/polly-home-uuid ] ||
+    [ -e /etc/polly-storage.json ] || [ -L /etc/polly-storage.json ] ||
+    [ -e /usr/lib/polly-storage/storage.py ] || [ -L /usr/lib/polly-storage/storage.py ] ||
+    [ -e /usr/sbin/polly-accounts ] || [ -L /usr/sbin/polly-accounts ]; then
+    echo "Installed state cannot start the historical Live session." >&2
+    exit 1
+fi
 if [ "$(id -u)" != 1000 ] || [ "${XDG_RUNTIME_DIR:-}" != /run/user/1000 ] ||
     [ ! -d "$XDG_RUNTIME_DIR" ] || [ -z "${XDG_SESSION_ID:-}" ]; then
     echo "PollyDesktop Live requires its unprivileged live user and private runtime" >&2

@@ -4,6 +4,13 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export HOME=/home/polly USER=polly LOGNAME=polly SHELL=/bin/sh
 export LIBSEAT_BACKEND=logind WLR_BACKENDS=drm,libinput
 unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET DBUS_SESSION_BUS_ADDRESS
+if [ -e /etc/polly-account-profile ] || [ -L /etc/polly-account-profile ] ||
+    [ -e /usr/lib/polly-account-profile-check ] || [ -L /usr/lib/polly-account-profile-check ]; then
+    if ! /usr/lib/polly-account-profile-check installed; then
+        echo "Installed desktop refused an invalid or mismatched image profile." >&2
+        exit 1
+    fi
+fi
 if [ "$(id -u)" != 1000 ] || [ "${XDG_RUNTIME_DIR:-}" != /run/user/1000 ] ||
     [ -z "${XDG_SESSION_ID:-}" ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
     echo "PollyDesktop requires its ordinary-user PAM/logind session." >&2

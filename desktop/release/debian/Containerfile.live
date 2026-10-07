@@ -30,6 +30,7 @@ COPY release/debian/network-runtime.conf /etc/systemd/system/iwd.service.d/polly
 COPY release/debian/network-runtime.conf /etc/systemd/system/dhcpcd.service.d/polly-network.conf
 COPY release/debian/network-tmpfiles.conf /etc/tmpfiles.d/polly-network.conf
 COPY release/debian/account-profile /tmp/polly-account-profile
+COPY release/debian/profile-check /usr/lib/polly-account-profile-check
 RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware && \
     sed -i 's/\r$//' /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware \
         /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
@@ -56,7 +57,8 @@ RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics 
     systemctl set-default multi-user.target && \
     dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
     rm -f /usr/sbin/policy-rc.d /etc/machine-id /var/lib/dbus/machine-id && \
-    sed -i 's/\r$//' /tmp/polly-account-profile && \
+    sed -i 's/\r$//' /tmp/polly-account-profile /usr/lib/polly-account-profile-check && \
+    chmod 755 /usr/lib/polly-account-profile-check && \
     sh /tmp/polly-account-profile template && rm /tmp/polly-account-profile && \
     apt-get clean && rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
     rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
