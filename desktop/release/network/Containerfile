@@ -1,0 +1,12 @@
+ARG STORAGE_IMAGE=localhost/polly-debian-storage-base
+FROM ${STORAGE_IMAGE}
+USER root
+# Installed single-system overlay only. Live/legacy service packaging is unchanged.
+COPY release/network/state.py /usr/lib/polly-network/state.py
+COPY release/network/iwd-state.conf /etc/systemd/system/iwd.service.d/polly-state.conf
+RUN sed -i 's/\r$//' /usr/lib/polly-network/state.py \
+        /etc/systemd/system/iwd.service.d/polly-state.conf && \
+    chmod 755 /usr/lib/polly-network/state.py && \
+    chmod 644 /etc/systemd/system/iwd.service.d/polly-state.conf
+ENTRYPOINT []
+CMD ["/bin/sh"]
