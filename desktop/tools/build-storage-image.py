@@ -24,6 +24,9 @@ REPO = Path(__file__).resolve().parents[2]
 legacy = load("installed_image", Path(__file__).with_name("build-installed-image.py"))
 layout = load("storage_layout", REPO / "desktop/release/storage/layout.py")
 homes = load("storage_homes", REPO / "desktop/release/storage/homes.py")
+storage = load("image_storage", REPO / "desktop/release/storage/storage.py")
+accounts = load("image_accounts", REPO / "desktop/release/install/accounts.py")
+network = load("image_network", REPO / "desktop/release/network/state.py")
 payload = load("system_payload", REPO / "desktop/release/maintenance/payload.py")
 MIB = layout.MIB
 
@@ -78,7 +81,19 @@ def seed_users(root, persistent):
         homes.initialize(destination, user)
 
 
-def prepare_root(root, persistent, identifiers):
+def qualify_network_overlay(root, assembly_root):
+    state = network.NetworkState(storage, accounts, root=assembly_root)
+    state.trusted(root, mode=0o755)
+    for source, target, mode in (
+            ("state.py", "usr/lib/polly-network/state.py", 0o755),
+            ("iwd-state.conf", "etc/systemd/system/iwd.service.d/polly-state.conf", 0o644)):
+        expected = (REPO / "desktop/release/network" / source).read_bytes().replace(b"\r\n", b"\n")
+        if state.read(root / target, mode=mode) != expected:
+            raise ValueError("Storage export network overlay does not match the assembly source")
+
+
+def prepare_root(root, persistent, identifiers, *, assembly_root):
+    qualify_network_overlay(root, assembly_root)
     for directory in layout.STATE_DIRECTORIES:
         path = persistent / directory[0]
         path.mkdir(mode=directory[1], parents=True, exist_ok=True)
@@ -101,6 +116,14 @@ def prepare_root(root, persistent, identifiers):
                               identifiers["PERSISTENT"], REPO, storage=True)
     contract = layout.contract(identifiers)
     legacy.write(root, layout.MANIFEST_PATH.lstrip("/"), json.dumps(contract, indent=2) + "\n")
+    (root / "var/lib/iwd").mkdir(mode=0o700, parents=True, exist_ok=True)
+    if (root / "var/lib/iwd").is_symlink():
+        raise ValueError("Refusing a linked network working directory")
+    if any((root / "var/lib/iwd").iterdir()):
+        raise ValueError("Refusing existing network credentials")
+    network.initialize_empty(
+        persistent / "SystemData/Network", identifiers["PERSISTENT"],
+        storage, accounts, assembly_root=assembly_root, image_root=root)
     for mapping in contract["mappings"]:
         if mapping["volume"] == "PERSISTENT":
             (root / mapping["target"].lstrip("/")).mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -110,9 +133,6 @@ def prepare_root(root, persistent, identifiers):
     (root / "System/Boot/efi").mkdir(mode=0o755, exist_ok=True)
     relocate(root, "usr", root / "System/Resources")
     (root / "Recovery").mkdir(mode=0o755)
-    (root / "var/lib/iwd").mkdir(mode=0o700, parents=True, exist_ok=True)
-    if any((root / "var/lib/iwd").iterdir()):
-        raise ValueError("Refusing existing network credentials")
     legacy.write(root, "etc/fstab",
         f"UUID={identifiers['SYSTEM']} / ext4 defaults 0 1\n"
         f"UUID={identifiers['PERSISTENT']} {layout.PERSISTENT_MOUNT} ext4 nodev,nosuid 0 2\n"
@@ -159,6 +179,23 @@ def qualify_payload(root, persistent, version, parts):
     return value
 
 
+def build_inputs():
+    return [Path(__file__).resolve(), Path(__file__).with_name("build-storage.sh"),
+            Path(__file__).with_name("build-installed-image.py"),
+            *sorted((REPO / "desktop/release/storage").iterdir()),
+            REPO / "desktop/release/debian/Containerfile.storage",
+            REPO / "desktop/release/debian/Containerfile.install",
+            REPO / "desktop/release/debian/Containerfile.live",
+            REPO / "desktop/release/debian/account-profile",
+            REPO / "desktop/release/debian/profile-check",
+            REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
+            REPO / "desktop/release/install/roles.py",
+            REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs",
+            REPO / "desktop/release/maintenance/payload.py",
+            REPO / "desktop/release/network/state.py",
+            REPO / "desktop/release/network/iwd-state.conf"]
+
+
 def build(args):
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_revision):
         raise ValueError("Expected a full source revision")
@@ -187,12 +224,14 @@ def build(args):
             if not file.is_file() or file.is_symlink() or not file.stat().st_size:
                 raise ValueError("Missing boot input: " + name)
         for name in ("usr/lib/polly-storage/storage.py", "usr/sbin/polly-accounts",
-                     "etc/initramfs-tools/scripts/local-bottom/polly-storage-usr"):
+                     "etc/initramfs-tools/scripts/local-bottom/polly-storage-usr",
+                     "usr/lib/polly-network/state.py",
+                     "etc/systemd/system/iwd.service.d/polly-state.conf"):
             if not (root / name).is_file() or (root / name).is_symlink():
                 raise ValueError("Export does not contain the storage overlay: " + name)
         inventory = (root / "usr/share/polly-installed-packages.tsv").read_text()
         identifiers = layout.new_volume_uuids()
-        contract = prepare_root(root, persistent, identifiers)
+        contract = prepare_root(root, persistent, identifiers, assembly_root=stage)
         version = (REPO / "desktop/VERSION").read_text().strip()
         if not re.fullmatch(r"\d+\.\d+\.\d+-alpha\.\d+", version):
             raise ValueError("Invalid development version")
@@ -239,18 +278,7 @@ def build(args):
             for part, filesystem in zip(parts, filesystems):
                 legacy.copy_partition(destination, filesystem, part["startSector"] * 512)
         legacy.run("sfdisk", "--verify", str(image))
-        inputs = [Path(__file__).resolve(), Path(__file__).with_name("build-storage.sh"),
-                  Path(__file__).with_name("build-installed-image.py"),
-                  *sorted((REPO / "desktop/release/storage").iterdir()),
-                  REPO / "desktop/release/debian/Containerfile.storage",
-                  REPO / "desktop/release/debian/Containerfile.install",
-                  REPO / "desktop/release/debian/Containerfile.live",
-                  REPO / "desktop/release/debian/account-profile",
-                  REPO / "desktop/release/debian/profile-check",
-                  REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
-                  REPO / "desktop/release/install/roles.py",
-                  REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs",
-                  REPO / "desktop/release/maintenance/payload.py"]
+        inputs = build_inputs()
         manifest = {
             "schemaVersion": 1, "stage": "development-single-system-normal-boot",
             "version": version, "architecture": "x86_64", "distribution": "debian13",

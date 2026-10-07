@@ -10,7 +10,7 @@ No whole `/var`, `/var/lib` or `/etc` sharing is added.
 ## Authority and compatibility
 
 `SystemData/Network` already exists in the storage contract with UID/GID 0:0 and
-mode 0700. The optional network overlay adds a private schema-1 `state.json`
+mode 0700. Fresh default storage assembly adds a private schema-1 `state.json`
 (0600) pointing to a `Snapshot<32 lowercase hex>` directory (0700). Its exact
 fields are `schemaVersion`, `persistentUuid`, `generation`, `profiles`; `profiles`
 maps iwd filenames to SHA256. Profile files are UID/GID 0:0, 0600, regular,
@@ -40,13 +40,15 @@ and locked root/polly shadow records, with the shadow GID resolved from that
 image's group file; existing account parsers are reused. It never reads host
 passwd/shadow/profile or creates/changes a password.
 
-**Parent integration still required:** select `release/network/Containerfile`
-as the single-system storage overlay and explicitly call that initializer from
-fresh `build-storage-image.py` assembly before payload capture. Central image
-builder/CMake/check-storage/plan files are deliberately not modified by this
-bounded change. An older image with no snapshot fails closed if the overlay is
-installed; it is not a supported implicit migration. Do not install the overlay
-on the legacy shared-home installation or a Live image.
+The default `release/debian/Containerfile.storage` now copies the fixed helper
+and installed-only drop-in. Fresh `build-storage-image.py` assembly explicitly
+initializes its empty Network directory before relocation and payload capture.
+It requires the deployed helper/unit to match the current LF-normalized source,
+with root-owned single-link 0755/0644 metadata, rather than treating a cached
+older overlay as current provenance. An older image with no snapshot still
+fails closed; this is not an implicit migration. Neither the legacy shared-home
+installation nor Live packaging receives this overlay. Source wiring does not
+establish a rebuilt image, PID1 hook execution or cold-boot acceptance.
 
 The one fresh-builder call is **after `legacy.configure_accounts` and storage
 manifest creation, before boot/usr relocation and payload capture**, using
@@ -58,7 +60,8 @@ network.initialize_empty(
     storage, accounts, assembly_root=stage, image_root=root)
 ```
 
-`stage` must be the trusted root-owned common assembly ancestor containing the
+`prepare_root` receives `assembly_root=stage` explicitly from the main assembly
+stage; it never infers a host or phase directory. `stage` must be the trusted root-owned common assembly ancestor containing the
 new root and persistent trees, not `/tmp` itself. `storage` is the existing
 `release/storage/storage.py` module, `accounts` the existing
 `release/install/accounts.py` module, `network` the new `release/network/state.py`.
@@ -68,8 +71,11 @@ existing `/usr/lib/polly-storage/{storage,layout}.py`,
 `/usr/sbin/polly-accounts` and `/usr/lib/polly-account-profile-check`.
 Normalize installed scripts/unit files to LF as in the supplied Containerfile;
 a Windows CRLF shebang is not a runnable Linux hook.
-The optional Containerfile demonstrates these copies only; it has **not**
-entered the default installed artifact/build chain.
+The optional `release/network/Containerfile` remains a separate overlay example;
+default assembly uses the copies in `release/debian/Containerfile.storage`
+directly, not that optional recipe. `buildInputs` records the Network helper,
+drop-in and initializer/builder dependencies. Existing artifact manifests are
+unchanged and are not retroactively described as containing these inputs.
 
 ## Owner writes, parser and atomicity
 
@@ -262,3 +268,35 @@ terminal release ordering, unlink and lock-close failures retaining a guard,
 and `/run` RAM qualification. The private fixture now mounts its own `/run`
 tmpfs and rejects a foreign persistent-volume runtime bind; host `/run` is
 never changed.
+
+CTest registers `desktop-network-state` and the fresh factory assembly suite
+`desktop-storage-network-image`, both with explicit repository arguments,
+`python3 -I -B`, a 30-second timeout and the `root-container` label. Both suites
+require actual root UID/EUID in an isolated container; a host or ordinary-user
+run refuses rather than skipping or substituting a mocked UID. The source-only
+`check-storage.py` runner invokes them as explicit special selectors, not its
+generic single-argument unit list, and checks Network Python AST and helper/unit
+LF source. The ordinary UID1000 native activation/UI lane is separate.
+
+The factory suite uses real root-owned disposable image and persistent trees,
+locked synthetic root/polly templates, the image's shadow GID and the actual
+fresh initializer. It checks ordering, provenance and refusal of existing
+homes, configured credentials, wrong profiles and nonempty Network/iwd trees.
+It creates no filesystem image, mount or runtime Network connection. Private
+Network remains excluded from the SYSTEM/Dpkg/Apt payload proof.
+
+`network-state-fixture.py` is not a default host or CTest unit. Its actual
+private namespace checks require an explicitly scoped root container with
+`CAP_SYS_ADMIN`, for example:
+
+```sh
+podman run --rm --network=none --cap-add=SYS_ADMIN --security-opt seccomp=unconfined \
+  -v "$PWD:/workspace:ro" <qualified-cached-sdk-or-storage-image> \
+  python3 -I -B /workspace/desktop/tests/network-state-fixture.py /workspace \
+  --report /tmp/unique-network-fixture-report.json
+```
+
+The mount fixture remains distinct from source tests, `systemd-analyze` syntax
+checking, real PID1 `+` hook namespace/stop ordering, immediate durability and
+power-loss/cold-boot qualification. None of those runtime outcomes follows from
+this registration or default fresh-builder wiring.

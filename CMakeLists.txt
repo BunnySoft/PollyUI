@@ -495,6 +495,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-system-payload PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-system-payload-signature COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/system-payload-signature.py")
         set_tests_properties(desktop-system-payload-signature PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-network-state COMMAND python3 -I -B
+            "${CMAKE_SOURCE_DIR}/desktop/tests/network-state.py" "${CMAKE_SOURCE_DIR}")
+        set_tests_properties(desktop-network-state PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container")
+        add_test(NAME desktop-storage-network-image COMMAND python3 -I -B
+            "${CMAKE_SOURCE_DIR}/desktop/tests/storage-network-image.py" "${CMAKE_SOURCE_DIR}")
+        set_tests_properties(desktop-storage-network-image PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container")
         add_test(NAME desktop-install-targets COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/install-targets.py")
         set_tests_properties(desktop-install-targets PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-install-target-ui COMMAND node --test

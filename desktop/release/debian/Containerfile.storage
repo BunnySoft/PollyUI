@@ -14,18 +14,22 @@ COPY release/storage/initramfs-hook /etc/initramfs-tools/hooks/polly-storage-too
 COPY release/storage/layout.py release/storage/storage.py release/storage/homes.py release/storage/identities.py release/storage/migrate-home.py release/storage/migrate-accounts.py /usr/lib/polly-storage/
 COPY release/storage/polly-storage.service /etc/systemd/system/
 COPY release/storage/apt-storage.conf /etc/apt/apt.conf.d/00polly-storage
+COPY release/network/state.py /usr/lib/polly-network/state.py
+COPY release/network/iwd-state.conf /etc/systemd/system/iwd.service.d/polly-state.conf
 RUN sed -i 's/\r$//' /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
         /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/*.py \
         /etc/systemd/system/polly-storage.service /etc/apt/apt.conf.d/00polly-storage \
-        /usr/sbin/polly-accounts /usr/lib/polly-account-roles.py && \
+        /usr/sbin/polly-accounts /usr/lib/polly-account-roles.py \
+        /usr/lib/polly-network/state.py /etc/systemd/system/iwd.service.d/polly-state.conf && \
+    chown 0:0 /usr/lib/polly-network/state.py /etc/systemd/system/iwd.service.d/polly-state.conf && \
     chmod 755 /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
         /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/storage.py \
         /usr/lib/polly-storage/migrate-home.py \
         /usr/lib/polly-storage/migrate-accounts.py \
-        /usr/sbin/polly-accounts && \
+        /usr/sbin/polly-accounts /usr/lib/polly-network/state.py && \
     chmod 4755 /usr/bin/passwd && chmod 644 /usr/lib/polly-account-roles.py && \
     chmod 644 /usr/lib/polly-storage/layout.py /usr/lib/polly-storage/homes.py /usr/lib/polly-storage/identities.py /etc/systemd/system/polly-storage.service \
-        /etc/apt/apt.conf.d/00polly-storage && \
+        /etc/apt/apt.conf.d/00polly-storage /etc/systemd/system/iwd.service.d/polly-state.conf && \
     ln -s ../lib/polly-storage/storage.py /usr/sbin/polly-storage && \
     ln -s ../lib/polly-storage/migrate-home.py /usr/sbin/polly-migrate-home && \
     ln -s ../lib/polly-storage/migrate-accounts.py /usr/sbin/polly-migrate-accounts && \

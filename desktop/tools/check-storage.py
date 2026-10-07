@@ -29,6 +29,10 @@ def main():
         "desktop/release/maintenance/payload.py",
         "desktop/release/maintenance/signature.py",
         "desktop/tests/system-payload-signature.py",
+        "desktop/release/network/state.py",
+        "desktop/tests/network-state.py",
+        "desktop/tests/network-state-fixture.py",
+        "desktop/tests/storage-network-image.py",
         "desktop/release/storage/homes.py",
         "desktop/release/storage/identities.py",
         "desktop/release/storage/migrate-home.py",
@@ -46,6 +50,10 @@ def main():
     for name in python_files:
         ast.parse((repo / name).read_text(), filename=name)
     print("PASS Python syntax", flush=True)
+    for name in ("desktop/release/network/state.py", "desktop/release/network/iwd-state.conf"):
+        if b"\r" in (repo / name).read_bytes():
+            raise ValueError("Network source must use LF: " + name)
+    print("PASS Network helper/unit LF source", flush=True)
     with tempfile.TemporaryDirectory(prefix="polly-storage-fast-") as temporary:
         temporary = Path(temporary)
         for name in ("desktop/release/install/session", "desktop/release/storage/early-usr",
@@ -68,6 +76,10 @@ def main():
                  "storage-identities", "storage-account-migration", "polly-plan", "account-profiles",
                  "system-payload", "system-payload-signature", "install-targets"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])
+    run("network-state (isolated root container)",
+        ["python3", "-I", "-B", str(repo / "desktop/tests/network-state.py"), str(repo)])
+    run("storage-network-image (isolated root container)",
+        ["python3", "-I", "-B", str(repo / "desktop/tests/storage-network-image.py"), str(repo)])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)
 
