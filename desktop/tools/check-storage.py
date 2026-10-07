@@ -25,6 +25,7 @@ def main():
     python_files = [
         "desktop/release/install/accounts.py", "desktop/release/storage/layout.py",
         "desktop/release/storage/homes.py",
+        "desktop/release/storage/migrate-home.py",
         "desktop/release/storage/storage.py", "desktop/tools/build-installed-image.py",
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
         "desktop/tools/check-storage.py",
@@ -47,7 +48,7 @@ def main():
             str(repo / "desktop/release/install/passwd-proxy.c"),
         ])
     for name in ("installed-image", "installed-accounts", "storage-layout",
-                 "storage-mappings", "storage-image", "storage-homes"):
+                 "storage-mappings", "storage-image", "storage-homes", "storage-home-migration"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)

@@ -24,6 +24,7 @@ if [ "$mode" != fast ]; then
         podman run --rm --network=none --cap-add=SYS_ADMIN --security-opt seccomp=unconfined \
             -v "$repo:/workspace:ro" "$base" sh -c \
             'python3 -I -B /workspace/desktop/tests/storage-early-usr.py /workspace &&
-             python3 -I -B /workspace/desktop/tests/storage-mount-fixture.py /workspace'
+             python3 -I -B /workspace/desktop/tests/storage-mount-fixture.py /workspace &&
+             python3 -I -B /workspace/desktop/tests/storage-home-migration-fixture.py /workspace'
     fi
 fi

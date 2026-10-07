@@ -9,8 +9,8 @@ The current alpha.5-r2 artifact inventory, architecture and handoff are in the
 [PollyOS technical overview](../../../docs/POLLYOS.md).
 The [storage design](../../../docs/POLLYOS-STORAGE-DESIGN.md) is now the P0
 implementation priority. The layout contract and early `/usr` initramfs mapping
-are implemented; the complete single-system image, shared Apps and independent
-recovery are **not yet validated**.
+are implemented. Ordinary single-system boot/account evidence is recorded in the
+ledger; the complete installer, shared Apps and independent recovery remain pending.
 Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).
 
 ## Fast storage development checks
@@ -25,7 +25,7 @@ compilation without building a container/image, configuring CMake or starting QE
 ```
 
 The equivalent Linux entry is `sh desktop/tools/check-storage.sh [fast|mounts|initramfs]`.
-`fast` is the default (about 1.5 seconds inside the cached SDK in this environment).
+`fast` is the default; it prints the actual elapsed time inside the cached SDK.
 `mounts` adds actual bind/permission/failure fixtures in a disposable mount namespace;
 it needs only the cached storage base and no disk image or VM. `initramfs` checks the
 already-packed hook, tools and ordering; a stale cached hook is rejected, not silently
@@ -107,6 +107,43 @@ disposable overlay; root-authenticated `systemctl poweroff`, not QMP quit, commi
 each shutdown. Old credentials are rejected, new credentials and user data retained;
 no secret is stored in arguments, files or transcripts. It does not prove everyday
 unprivileged power UX, graphical lock, account migration, update or recovery.
+
+## Explicit offline HOME import
+
+The storage recipe installs `polly-migrate-home` as an ordinary root-only maintenance
+command, not a setuid tool or automatic boot migration. With an already-authorized
+root shell, a stopped source system mounted on a read-only **filesystem**, and an
+empty, root-managed target Users tree:
+
+```sh
+polly-migrate-home import --source /mnt/old/home/polly --users /mnt/new/Users \
+    --name polly --uid 1000 --gid 1000
+polly-migrate-home status --transaction /mnt/new/Users/.migration-TRANSACTION_ID
+```
+
+UID/GID must match the source. Root and other users use their own explicit source
+and stable identity. The importer never mounts a disk, changes passwords, replaces
+an existing UID home, removes source/backup data or registers imported code as a
+trusted shared app. A read-only bind over a writable filesystem is insufficient.
+The caller must keep the source system offline; this command cannot certify
+hardware snapshots or stop another OS writing the device.
+
+Legacy XDG contents are normalized into Settings/AppData/AppState/Cache, with
+traditional aliases and missing XDG user-directory defaults. Existing user-dirs
+configuration and unknown user files stay intact. Conflicting paths, nested mounts,
+foreign owners/groups, privileged/special/hard-linked files and ACL/security
+attributes require explicit adapters or resolution; they are refused, not discarded.
+The current controlled importer supports regular files, directories, inert symlinks
+and `user.*` attributes. It is not a complete installer/account migration.
+
+Each operation retains a root-private transaction, original-layout backup, checksums
+and versioned journal. Publication uses atomic no-replace rename. Interrupted or
+post-rename sync failures are reported, not silently rolled back or auto-resumed.
+`status` verifies the retained backup and compares the destination with its handoff
+checksum; normal later user edits can change that comparison. Inspection does not
+mutate or finalize a transaction. The lightweight regression includes root and two
+UIDs; `mounts` also exercises a real read-only tmpfs and ordinary-user/backup
+isolation. Neither establishes ext4 power-loss durability or a migrated boot.
 
 ## Minimal root filesystem
 

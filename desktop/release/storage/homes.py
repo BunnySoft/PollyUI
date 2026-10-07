@@ -4,14 +4,23 @@ import os
 from pathlib import Path
 import stat
 
-spec = importlib.util.spec_from_file_location("polly_home_layout", Path(__file__).with_name("layout.py"))
+spec = importlib.util.spec_from_file_location("polly_home_layout", Path(__file__).resolve().with_name("layout.py"))
 layout = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(layout)
 
 USER_DIRS = {"DESKTOP": "Desktop", "DOWNLOAD": "Downloads", "DOCUMENTS": "Documents"}
 
 
-def initialize(home, user):
+def seed_user_dirs(home, user):
+    config = home / "Settings/user-dirs.dirs"
+    with config.open("x", encoding="utf8", newline="\n") as destination:
+        os.fchmod(destination.fileno(), 0o600)
+        destination.write("".join(f'XDG_{name}_DIR="$HOME/{target}"\n'
+                                  for name, target in USER_DIRS.items()))
+    os.chown(config, user["uid"], user["gid"])
+
+
+def initialize(home, user, *, user_dirs=True):
     if not isinstance(user, dict):
         raise ValueError("Invalid fresh user identity")
     identities = [identity for identity in layout.DEFAULT_USERS if identity["uid"] != user.get("uid")]
@@ -33,9 +42,5 @@ def initialize(home, user):
         link = home / name
         link.symlink_to(target)
         os.lchown(link, user["uid"], user["gid"])
-    config = home / "Settings/user-dirs.dirs"
-    with config.open("x", encoding="utf8", newline="\n") as destination:
-        os.fchmod(destination.fileno(), 0o600)
-        destination.write("".join(f'XDG_{name}_DIR="$HOME/{target}"\n'
-                                  for name, target in USER_DIRS.items()))
-    os.chown(config, user["uid"], user["gid"])
+    if user_dirs:
+        seed_user_dirs(home, user)

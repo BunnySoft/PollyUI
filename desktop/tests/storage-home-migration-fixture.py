@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Real read-only tmpfs import and numeric-UID isolation; no host devices."""
+import argparse
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("repo", type=Path)
+    args = parser.parse_args()
+    if os.geteuid() != 0 or not Path("/run/.containerenv").exists():
+        raise RuntimeError("Home migration fixture requires an isolated root container")
+    spec = importlib.util.spec_from_file_location("migration_tests",
+        args.repo / "desktop/tests/storage-home-migration.py")
+    tests = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tests)
+    migration = tests.migration
+    subprocess.run(["mount", "--make-rprivate", "/"], check=True, timeout=10)
+    with tempfile.TemporaryDirectory(prefix="polly-home-offline-", dir="/run") as temporary:
+        root = Path(temporary)
+        root.chmod(0o755)
+        legacy, users = root / "legacy", root / "Users"
+        legacy.mkdir()
+        users.mkdir()
+        subprocess.run(["mount", "-t", "tmpfs", "-o", "mode=755,nodev,nosuid",
+                        "tmpfs", str(legacy)], check=True, timeout=10)
+        try:
+            factory = tests.Migration()
+            factory.legacy = legacy
+            sources = [factory.source(uid, name)
+                       for uid, name in ((0, "root"), (1000, "polly"), (1001, "tester"))]
+            # A read-only bind over a writable superblock is deliberately insufficient.
+            view = root / "view"
+            view.mkdir()
+            subprocess.run(["mount", "--bind", str(legacy), str(view)], check=True, timeout=10)
+            subprocess.run(["mount", "-o", "remount,bind,ro", str(view)], check=True, timeout=10)
+            try:
+                try:
+                    migration.migrate(view / "polly", users, sources[1][1])
+                except ValueError as error:
+                    if "read-only filesystem" not in str(error):
+                        raise
+                else:
+                    raise RuntimeError("Read-only bind accepted a mutable backing filesystem")
+            finally:
+                subprocess.run(["umount", str(view)], check=True, timeout=10)
+            subprocess.run(["mount", "-o", "remount,ro", str(legacy)], check=True, timeout=10)
+            transactions = {}
+            entry = root / "polly-migrate-home"
+            entry.symlink_to(args.repo / "desktop/release/storage/migrate-home.py")
+            for source, user in sources:
+                if user["uid"] == 1001:
+                    imported = subprocess.run([sys.executable, "-I", "-B",
+                        str(entry), "import",
+                        "--source", str(source), "--users", str(users), "--name", user["name"],
+                        "--uid", str(user["uid"]), "--gid", str(user["gid"])],
+                        check=True, capture_output=True, text=True, timeout=20)
+                    transaction = Path(json.loads(imported.stdout)["transaction"])
+                else:
+                    transaction = migration.migrate(source, users, user)
+                result = migration.status(transaction)
+                if result["phase"] != "committed" or not result["publicationVerified"] or \
+                        not result["backupVerified"]:
+                    raise RuntimeError("Real offline import did not verify publication and backup")
+                transactions[user["uid"]] = transaction
+            child = r'''
+import os
+from pathlib import Path
+import sys
+home, other, private = map(Path, sys.argv[1:])
+uid = os.getuid()
+if home.stat().st_uid != uid:
+    raise RuntimeError("Imported home changed stable UID")
+if (home / "Documents/document.txt").read_text() != "document-" + str(uid):
+    raise RuntimeError("Imported document belongs to another user")
+for name in ("Settings", "AppData", "AppState", "Cache", "Documents"):
+    (home / name / "post-import").write_text("ordinary UID " + str(uid))
+if not os.path.samestat((home / ".config").stat(), (home / "Settings").stat()):
+    raise RuntimeError("Imported legacy alias does not use the product directory")
+for path in (other, home.parent / "0", private):
+    try:
+        list(path.iterdir())
+    except PermissionError:
+        pass
+    else:
+        raise RuntimeError("Imported HOME or migration backup leaked across UIDs")
+'''
+            for uid, other in ((1000, 1001), (1001, 1000)):
+                subprocess.run([sys.executable, "-I", "-B", "-c", child,
+                                str(users / str(uid)), str(users / str(other)),
+                                str(transactions[uid])],
+                               user=uid, group=uid, extra_groups=[], check=True, timeout=10)
+            rejected = subprocess.run([sys.executable, "-I", "-B",
+                str(args.repo / "desktop/release/storage/migrate-home.py"), "status",
+                "--transaction", str(transactions[1000])],
+                user=1000, group=1000, extra_groups=[], capture_output=True, text=True, timeout=10)
+            if rejected.returncode == 0 or "requires root authorization" not in rejected.stderr:
+                raise RuntimeError("Ordinary caller obtained privileged migration inspection")
+            denied = subprocess.run([sys.executable, "-I", "-B",
+                str(args.repo / "desktop/release/storage/migrate-home.py"), "import",
+                "--source", str(sources[1][0]), "--users", str(users), "--name", "polly",
+                "--uid", "1000", "--gid", "1000"],
+                user=1000, group=1000, extra_groups=[], capture_output=True, text=True, timeout=10)
+            if denied.returncode == 0 or "requires root authorization" not in denied.stderr:
+                raise RuntimeError("Ordinary caller obtained privileged migration writes")
+            print("PASS: read-only filesystem import, mutable-bind refusal, root/two-UID data "
+                  "and private backup isolation")
+        finally:
+            subprocess.run(["umount", str(legacy)], check=True, timeout=10)
+
+
+if __name__ == "__main__":
+    main()

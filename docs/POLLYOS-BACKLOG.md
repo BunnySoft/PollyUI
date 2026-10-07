@@ -412,8 +412,21 @@ Downloads/Documents。遇到旧 `.config`、`.local`、`.cache` 或已有产品�
 权限/链接/冲突用例通过；真实 mount namespace 中两个普通 UID 分别经兼容 HOME/
 传统链接写入 Settings/AppData/AppState/Cache/Documents，无法读取另一用户或
 root 的家目录。该证据是数据/路径隔离，不是第二账户的 PAM/图形登录或旧数据迁移。
-新 home 初始化未写回 r2；接下来仍须旧数据备份、校验、冲突/提交/中断流程，
+fresh 初始化阶段本地提交 `21517ca`。新 home 初始化未写回 r2；
 M01.7 保持未勾选，且不触碰真实用户/宿主磁盘。
+
+继续实现 `polly-migrate-home` 的受控离线导入：root 真实调用者、源文件系统
+只读（只读 bind 不足）、稳定 UID/GID、目标 UID 不存在是准入；旧 XDG 按契约
+归一化并保留未知用户文件和 app-id 内容，不自动注册全局 App 或修改认证。
+原始源和 root 私有备份保留；schema v1 journal 记录备份、校验、暂存和提交，
+使用原子 no-replace rename。冲突、满盘/复制故障、备份篡改、发布竞争、rename
+之后的中断/目录同步错误均明确拒绝/报错；检查不自动覆盖、回滚或续跑。
+root 和两普通 UID 的小目录迁移回归，以及真实只读 tmpfs、可写后台 bind 拒绝、
+root CLI/符号链接入口、普通调用拒绝和提交后的用户/备份隔离均通过。
+该受控子集暂拒绝硬链接、ACL/security 属性、特殊/特权文件、异属 UID/GID、
+嵌套挂载；不得丢弃这些内容后伪报完整迁移。后续仍须对应元数据适配、真实旧
+数据/managed app 运行验证、账户/身份配套迁移及整机迁移/断电验收，M01.7
+继续进行。当前新工具仅接入源码/配方，r2 未包含此补丁；无宿主盘写入或 push。
 
 #### M02. 首次启动 Setup
 
