@@ -24,6 +24,7 @@ REPO = Path(__file__).resolve().parents[2]
 legacy = load("installed_image", Path(__file__).with_name("build-installed-image.py"))
 layout = load("storage_layout", REPO / "desktop/release/storage/layout.py")
 homes = load("storage_homes", REPO / "desktop/release/storage/homes.py")
+payload = load("system_payload", REPO / "desktop/release/maintenance/payload.py")
 MIB = layout.MIB
 
 
@@ -137,6 +138,27 @@ def boot_config(identifier, kernel, initrd):
     return "\n".join(entries) + "\n"
 
 
+def qualify_payload(root, persistent, version, parts):
+    """Read-only T07.1 proof for a fresh assembly, not an existing-data update."""
+    capacities = {part["name"]: part for part in parts}
+    if len(capacities) != len(parts) or set(capacities) != set(layout.VOLUME_ROLES):
+        raise ValueError("Expected distinct measured storage partitions")
+    value = payload.capture(
+        root, persistent, version=version,
+        overhead_bytes={role: capacities[role]["filesystemOverheadMiB"] * MIB
+                        for role in ("SYSTEM", "PERSISTENT")},
+        reserve_bytes={role: capacities[role]["reserveMiB"] * MIB
+                       for role in ("SYSTEM", "PERSISTENT")},
+        accepts_schemas={"accounts": [3], "applications": [], "services": [], "users": []})
+    payload.preflight(
+        value, root, persistent, expected_version=version, distribution=payload.DISTRIBUTION,
+        architecture="amd64",
+        available_bytes={role: capacities[role]["sizeMiB"] * MIB
+                         for role in ("SYSTEM", "PERSISTENT")},
+        current_schemas={key: None for key, _ in payload.DATA_POLICIES})
+    return value
+
+
 def build(args):
     if not re.fullmatch(r"[0-9a-f]{40}", args.source_revision):
         raise ValueError("Expected a full source revision")
@@ -189,6 +211,7 @@ def build(args):
         reserves = {"EFI": 64, "SYSTEM": args.system_reserve_mib,
                     "PERSISTENT": args.persistent_reserve_mib, "RECOVERY": 64}
         parts, size = layout.partition_plan(measured, reserves, identifiers)
+        payload_contract = qualify_payload(root, persistent, version, parts)
         filesystems = []
         for part in parts:
             filesystem = stage / (part["name"] + ".fs")
@@ -226,7 +249,8 @@ def build(args):
                   REPO / "desktop/release/debian/profile-check",
                   REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
                   REPO / "desktop/release/install/roles.py",
-                  REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs"]
+                  REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs",
+                  REPO / "desktop/release/maintenance/payload.py"]
         manifest = {
             "schemaVersion": 1, "stage": "development-single-system-normal-boot",
             "version": version, "architecture": "x86_64", "distribution": "debian13",
@@ -247,11 +271,15 @@ def build(args):
         }
         manifest_path = stage / "installed-manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        # Separate versioned evidence: installed-manifest v1 is not reinterpreted as a payload proof.
+        payload_path = stage / "system-payload.json"
+        payload_path.write_text(payload.encode(payload_contract), encoding="ascii")
         sums = stage / "SHA256SUMS"
-        sums.write_text("".join(f"{legacy.digest(path)}  {path.name}\n" for path in (image, manifest_path)))
+        sums.write_text("".join(f"{legacy.digest(path)}  {path.name}\n"
+                               for path in (image, manifest_path, payload_path)))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.mkdir()
-        for source in (image, manifest_path, sums, cfg):
+        for source in (image, manifest_path, payload_path, sums, cfg):
             with (output / source.name).open("xb") as destination:
                 legacy.copy_partition(destination, source, 0)
                 destination.truncate(source.stat().st_size)
