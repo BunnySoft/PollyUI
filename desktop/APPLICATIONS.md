@@ -217,6 +217,17 @@ failure. It never scans host applications or contacts a real host service.
 The menu host tests use controlled Promises to verify instance/stop scoping;
 they do not stand in for rebuilt QuickJS/native completion and cancellation.
 
+CTest registers `desktop-application-activation-unit` for the pure Node suite
+and `desktop-application-activation-native` for the actual product fixture.
+The synthetic service target, `polly-application-activation-service`, links only
+the existing session-bus helper and libdbus, with strict C warnings; it adds no
+GLib dependency. The native test receives absolute target paths for the rebuilt
+PollyUI and service, keeps isolated evidence under the private build directory,
+and has a 120-second timeout. It runs the product mode, never `--probe`.
+Native acceptance requires an ordinary-user run of these newly built targets;
+registration or standalone infrastructure probes do not establish that result.
+The source-only storage runner remains Python-only.
+
 ## Explicit update and rollback
 
 ```sh

@@ -438,6 +438,20 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             set_tests_properties(desktop-workspace-persistence PROPERTIES TIMEOUT 110 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         endif()
         add_executable(pollyui-application-process-test desktop/tests/application-process.c)
+        add_executable(polly-application-activation-service
+            desktop/tests/application-activation-service.c src/desktop/session-bus.c)
+        target_include_directories(polly-application-activation-service PRIVATE src)
+        target_compile_definitions(polly-application-activation-service PRIVATE _POSIX_C_SOURCE=200809L)
+        target_compile_options(polly-application-activation-service PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        target_link_libraries(polly-application-activation-service PRIVATE PkgConfig::SESSION_DBUS)
+        add_test(NAME desktop-application-activation-unit
+            COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/application-activation.mjs")
+        set_tests_properties(desktop-application-activation-unit PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-application-activation-native
+            COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-activation-fixture.mjs"
+                $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-application-activation-service>
+                "${CMAKE_BINARY_DIR}/activation-evidence")
+        set_tests_properties(desktop-application-activation-native PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-application-launch
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-fixture.mjs"
                 $<TARGET_FILE:pollyui> $<TARGET_FILE:pollyui-application-process-test>)
