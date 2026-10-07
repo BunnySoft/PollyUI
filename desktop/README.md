@@ -37,6 +37,10 @@ Program objects, registration and AppData are separate; explicit replacement and
 rollback preserve data and reject changed data-schema contracts. Removal retires
 registration but intentionally retains code caches and data. See
 [managed applications](./APPLICATIONS.md) for commands, bounds and remaining work.
+The alpha.5 code line adds managed applications, authoritative startup/runtime
+service status and explicit release-input tooling. It is a development candidate;
+the earlier Alpine alpha.4 physical baseline and Debian alpha.4-r1 boot media
+remain separate preserved artifacts, not silently upgraded installations.
 
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
 engine must not depend on the desktop. Use wlroots' scene graph for external

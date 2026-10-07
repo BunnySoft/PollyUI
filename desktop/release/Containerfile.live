@@ -1,4 +1,4 @@
-ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.4
+ARG RUNTIME_IMAGE=localhost/pollydesktop-alpha:0.1.0-alpha.5
 FROM ${RUNTIME_IMAGE} AS live-base
 USER root
 WORKDIR /
