@@ -1,5 +1,6 @@
-import { parseBundleManifest, validateBundleManifest, planBundleLaunch, bundleDataPaths,
+import { parseBundleManifest, validateBundleManifest, validateBundleRecord, planBundleLaunch, bundleDataPaths,
   bundleRelativePath } from './desktop/shared/app-bundle.mjs';
+import { bundleCatalog } from './desktop/shell/bundles.mjs';
 const check = (value, message) => {
   if (!value) throw new Error('FAIL: ' + message);
   console.log('PASS: ' + message);
@@ -70,3 +71,20 @@ rejects(() => bundleDataPaths(source.id, { HOME: '/home/polly', XDG_DATA_HOME: '
   XDG_CACHE_HOME: '/shared/pollyui/org.example.notes/nested' }), 'cache cannot be nested inside durable data');
 check(planBundleLaunch({ ...source, data: { layout: 'pollyui', schema: 2 } }, options).paths.dataDir === first.paths.dataDir,
   'data-schema changes do not silently create a new empty data namespace');
+const descriptor = {digest:'a'.repeat(64),manifest:source};
+const record = validateBundleRecord({schemaVersion:1,current:descriptor,previous:null});
+check(Object.isFrozen(record.current.manifest), 'installed records reuse the canonical immutable schema');
+rejects(() => validateBundleRecord({...record, previous:{...descriptor,manifest:{...source,id:'org.example.wrong'}}}),
+  'previous version cannot change the application identity');
+rejects(() => validateBundleRecord({...record, previous:{...descriptor,manifest:{...source,data:{layout:'pollyui',schema:2}}}}),
+  'incompatible data schemas cannot be registered for implicit rollback');
+rejects(() => validateBundleRecord({...record,current:{...descriptor,digest:'../outside'}}),
+  'content object reference is a fixed digest, never an arbitrary path');
+const logs = [];
+const catalog = bundleCatalog([{id:source.id,store:'/apps',contents:JSON.stringify(record)}],
+  '/usr/bin/polly-app', () => true, message => logs.push(message));
+check(catalog[0].id === 'bundle:org.example.notes' &&
+  catalog[0].argv.join('|') === '/usr/bin/polly-app|run|org.example.notes|'+'a'.repeat(64),
+  'Shell launch includes the observed digest, preventing stale catalog execution');
+check(bundleCatalog([{id:source.id,store:'/apps',contents:'broken'}],'/usr/bin/polly-app',()=>true,
+  message=>logs.push(message)).length === 0 && logs.length === 1, 'corrupt catalog records are logged and not launched');

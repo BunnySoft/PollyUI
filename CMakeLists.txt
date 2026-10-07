@@ -127,13 +127,27 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if (PU_DESKTOP_SERVICES)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(SESSION_DBUS REQUIRED IMPORTED_TARGET dbus-1)
+        pkg_check_modules(BUNDLE_ARCHIVE REQUIRED IMPORTED_TARGET libarchive)
+        pkg_check_modules(BUNDLE_CRYPTO REQUIRED IMPORTED_TARGET libcrypto)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS desktop/shared/app-bundle.mjs)
+        file(READ "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs" BUNDLE_SCHEMA HEX)
+        string(REGEX REPLACE "(..)" "0x\\1," BUNDLE_SCHEMA "${BUNDLE_SCHEMA}")
+        file(WRITE "${CMAKE_BINARY_DIR}/bundle-schema.h"
+            "static const unsigned char bundle_schema[] = {${BUNDLE_SCHEMA}0};\n")
+        add_library(polly-bundles STATIC src/desktop/bundles.c)
+        target_include_directories(polly-bundles PRIVATE "${CMAKE_BINARY_DIR}" PUBLIC src)
+        target_link_libraries(polly-bundles PUBLIC qjs PkgConfig::BUNDLE_ARCHIVE PkgConfig::BUNDLE_CRYPTO)
+        target_compile_options(polly-bundles PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_executable(polly-app src/desktop/bundle-main.c)
+        target_link_libraries(polly-app PRIVATE polly-bundles)
+        install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
         target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/session-bus.c)
-        target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS)
+        target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
         add_executable(pollyui-app-launcher src/desktop/exec.c)
         target_compile_options(pollyui-app-launcher PRIVATE -fno-sanitize=all -Wall -Wextra -Werror)
         target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
-        add_dependencies(pollyui pollyui-app-launcher)
+        add_dependencies(pollyui pollyui-app-launcher polly-app)
         install(TARGETS pollyui-app-launcher RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
     endif()
 
@@ -431,6 +445,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         add_test(NAME desktop-bundle-data
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/bundle-data-fixture.mjs" $<TARGET_FILE:pollyui>)
         set_tests_properties(desktop-bundle-data PROPERTIES TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-bundle-manager
+            COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/bundle-manager.py"
+                $<TARGET_FILE:polly-app> $<TARGET_FILE:pollyui>)
+        set_tests_properties(desktop-bundle-manager PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-launcher-shell
             COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"
                 "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
@@ -478,6 +496,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
                         "${CMAKE_SOURCE_DIR}/desktop/tests/power-shell.mjs" power)
                 set_tests_properties(desktop-power-shell-${renderer} PROPERTIES TIMEOUT 90
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+                add_test(NAME desktop-bundle-shell-${renderer}
+                    COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/bundle-manager.py"
+                        $<TARGET_FILE:polly-app> $<TARGET_FILE:pollyui> --graphical)
+                set_tests_properties(desktop-bundle-shell-${renderer} PROPERTIES TIMEOUT 120
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
                 add_test(NAME desktop-theme-files-${renderer}
                     COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"

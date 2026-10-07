@@ -138,7 +138,7 @@ try {
   }
   copy(path.join(repo, debian ? 'desktop/release/debian/Containerfile.runtime' : 'desktop/release/Containerfile'),
     path.join(staging, 'Containerfile'));
-  const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher'];
+  const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher', 'usr/bin/polly-app'];
   if (existsSync(path.join(root, 'usr/bin/polly-auth-check'))) binaries.push('usr/bin/polly-auth-check');
   for (const binary of binaries) {
     const libraries = run('ldd', [path.join(root, binary)]);

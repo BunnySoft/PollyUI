@@ -1,3 +1,5 @@
+import { bundleCatalog } from './desktop/shell/bundles.mjs';
+
 function unescapeValue(value, list = false) {
   let result = '';
   for (let i = 0; i < value.length; i++) {
@@ -200,6 +202,10 @@ export function createApplicationLauncher(native, report = console.error) {
       entries = applicationCatalog(native.applicationFiles(), {
         locale: native.locale, desktops: ['Polly'], canExecute: name => native.canExecute(name),
       }, report);
+      if (typeof native.bundleFiles === 'function') {
+        entries.push(...bundleCatalog(native.bundleFiles(), native.bundleManager, name => native.canExecute(name), report));
+        entries.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+      }
       for (const entry of entries) {
         if (entry.terminal && !native.canExecute(native.terminal))
           entry.unavailable = 'Configured terminal is unavailable: ' + native.terminal;

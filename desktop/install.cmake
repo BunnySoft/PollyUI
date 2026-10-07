@@ -48,6 +48,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/third_party/quickjs/LICENSE"
 install(FILES "${CMAKE_SOURCE_DIR}/third_party/yoga/LICENSE"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/pollyui/yoga" COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/THEMES.md" "${CMAKE_SOURCE_DIR}/desktop/SESSION.md"
+    "${CMAKE_SOURCE_DIR}/desktop/APPLICATIONS.md"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
 
 if (BUILD_TESTING)

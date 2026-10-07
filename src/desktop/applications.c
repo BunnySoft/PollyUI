@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "desktop/applications.h"
 #include "desktop/session-bus.h"
+#include "desktop/bundles.h"
 #include "core/thread.h"
 #if defined(PU_LAYER_SHELL)
 #include "desktop/windows.h"
@@ -361,6 +362,7 @@ int pu_applications_install(JSContext *ctx)
 {
     context = ctx;
     desktop_api = JS_NewObject(ctx);
+    if (JS_IsException(desktop_api) || !pu_bundles_install(ctx, desktop_api)) return 0;
     if (JS_IsException(desktop_api)) return 0;
     JS_SetPropertyStr(ctx, desktop_api, "applicationFiles", JS_NewCFunction(ctx, read_applications, "applicationFiles", 0));
     JS_SetPropertyStr(ctx, desktop_api, "canExecute", JS_NewCFunction(ctx, can_execute, "canExecute", 1));

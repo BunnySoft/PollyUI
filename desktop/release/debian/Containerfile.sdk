@@ -43,5 +43,6 @@ RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
     dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-sdk-packages.txt
 ENV ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer-19
 COPY release/debian/rime-default.custom.yaml /usr/share/rime-data/default.custom.yaml
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libarchive-dev libssl-dev
 WORKDIR /workspace
 CMD ["/bin/sh"]

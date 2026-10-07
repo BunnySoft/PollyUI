@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const build = path.resolve(process.argv[2]);
 const temporary = mkdtempSync(path.join(tmpdir(), 'polly install,'));
@@ -11,6 +12,15 @@ try {
   execFileSync('cmake', ['--install', build, '--prefix', '/usr', '--component', 'PollyDesktop'],
     { env: { ...process.env, DESTDIR: root }, timeout: 20000, stdio: 'pipe' });
   const program = path.join(root, 'usr/bin/polly-desktop');
+  const manager = path.join(root, 'usr/bin/polly-app');
+  if (existsSync(manager)) {
+    chmodSync(temporary, 0o755);
+    const output = execFileSync('python3', [fileURLToPath(new URL('./bundle-manager.py', import.meta.url)),
+      manager, path.join(root, 'usr/bin/pollyui')], {
+      encoding: 'utf8', timeout: 30000,
+    });
+    assert.match(output, /native manager installs, validates, replaces and rolls back/);
+  }
   const imeEnabled = process.argv[3] === '--ime';
   const libraries = execFileSync('ldd', [path.join(root, 'usr/bin/pollyui')], { encoding: 'utf8' });
   assert.ok(libraries.includes(root + '/usr/bin/../lib/pollyui/libSDL3.so.0'), libraries);

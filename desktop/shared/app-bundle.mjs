@@ -127,6 +127,7 @@ export function planBundleLaunch(value, { bundleRoot, platform, environment, pol
     if (overlaps(directory, bundleRoot))
       throw new Error('Application data must be outside the program bundle');
   }
+
   const entry = join(bundleRoot, manifest.launch.entry);
   const args = manifest.launch.kind === 'pollyui' ?
     [absolutePath(pollyuiExecutable, 'PollyUI runtime'), '--app-id', manifest.id, entry, ...manifest.launch.arguments] :
@@ -137,4 +138,22 @@ export function planBundleLaunch(value, { bundleRoot, platform, environment, pol
   };
   return Object.freeze({ appId: manifest.id, version: manifest.version, dataSchema: manifest.data.schema,
     cwd: bundleRoot, argv: Object.freeze(args), environmentOverrides: Object.freeze(overrides), paths });
+}
+
+export function validateBundleRecord(value) {
+  object(value, ['schemaVersion', 'current', 'previous']);
+  if (value.schemaVersion !== 1) throw new TypeError('Unsupported application registry version');
+  const descriptor = entry => {
+    object(entry, ['digest', 'manifest']);
+    if (typeof entry.digest !== 'string' || !/^[0-9a-f]{64}$/.test(entry.digest))
+      throw new TypeError('Invalid installed application digest');
+    return Object.freeze({ digest: entry.digest, manifest: validateBundleManifest(entry.manifest) });
+  };
+  const current = descriptor(value.current);
+  const previous = value.previous === null ? null : descriptor(value.previous);
+  if (previous && (previous.manifest.id !== current.manifest.id ||
+      previous.manifest.data.schema !== current.manifest.data.schema ||
+      previous.manifest.data.layout !== current.manifest.data.layout))
+    throw new TypeError('Application registry contains incompatible identities or data schemas');
+  return Object.freeze({ schemaVersion: 1, current, previous });
 }

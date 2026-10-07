@@ -31,6 +31,13 @@ Keep three boundaries:
 - Session/system integration: native application launching, private D-Bus session and notifications; future system services,
   permissions, persistence and distribution packaging.
 
+Local managed application bundles can now be installed from a directory/tar/zip
+using the ordinary-user `polly-app` tool and launched through the Apps catalog.
+Program objects, registration and AppData are separate; explicit replacement and
+rollback preserve data and reject changed data-schema contracts. Removal retires
+registration but intentionally retains code caches and data. See
+[managed applications](./APPLICATIONS.md) for commands, bounds and remaining work.
+
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
 engine must not depend on the desktop. Use wlroots' scene graph for external
 applications rather than importing their buffers into the PollyUI DOM.

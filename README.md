@@ -459,7 +459,7 @@ the launcher validates up to 256 argv strings. The vendored QuickJS normalizatio
 paths use their existing correctly typed allocator adapter rather than casting
 allocator function pointers, fixing the UBSan failure exposed by Unicode sorting.
 
-### Managed application bundles (contract stage)
+### Managed application bundles
 
 `desktop/shared/app-bundle.mjs` validates a bounded versioned `manifest.json`
 and creates a launch/data-path plan without installing or running anything.
@@ -469,10 +469,14 @@ PollyUI bundles retain existing app data namespaces. XDG-compliant native apps
 receive per-app XDG roots without replacing `HOME`. Bundle paths and data paths
 must not overlap; changing a version/name/location does not change data identity.
 
-Real-process fixtures cover data continuity and cache separation. This is not
-yet a bundle installer, registry, updater, third-party adapter catalog or security
-sandbox. Source authentication, filesystem/symlink validation, compatible data
-migration and old-version lifetime still need the later lifecycle stages.
+The ordinary-user `polly-app` manager now installs local directory/tar/zip bundles,
+validates and hashes staged content, registers complete versions and integrates
+them with the existing Apps catalog. Explicit digest-checked replacement/rollback
+keeps AppData untouched and rejects incompatible data-schema changes.
+Remove/restore retires registration while retaining data and old code caches;
+cache garbage collection and data deletion are not implemented. No root helper,
+package install scripts, application store or publisher authentication is implied.
+See [managed application usage and limits](./desktop/APPLICATIONS.md).
 See the [application contract and maintenance plan](./docs/desktop-base-maintenance.md).
 
 ### Native desktop notifications
