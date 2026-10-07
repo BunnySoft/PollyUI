@@ -1,6 +1,7 @@
 #include "server.h"
 #include "decoration.h"
 #include "decoration-themes.h"
+#include "decoration-paint.h"
 #include "workspace.h"
 #include "data-device.h"
 #include "input-method.h"
@@ -371,7 +372,9 @@ static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uin
     CHECK(inside && (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888));
     for (int shift = 0; shift <= 16; shift += 8) {
         int from = (theme->titleFrom >> shift) & 255, to = (theme->titleTo >> shift) & 255;
-        int expected = from + (int)((to - from) * ((height / 2 + 0.5) / scale / theme->title_height));
+        int expected = theme->luna ?
+            (int)((pu_chrome_title(theme, (height / 2 + 0.5) / scale, true) >> shift) & 255) :
+            from + (int)((to - from) * ((height / 2 + 0.5) / scale / theme->title_height));
         int actual = (sample >> shift) & 255;
         if (theme->pinstripe) CHECK(abs(actual - expected) < 20);
         else CHECK(abs(actual - expected) <= 3);
@@ -410,13 +413,16 @@ static bool decoration_suite(const char *path)
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     CHECK(client->reply.width == width + 30 && client->reply.height == height + 25);
     CHECK(client->reply.buttons == buttons_before);
-    motion(x - 1, y - 31);
+    struct wlr_box inset = { .width = width, .height = height };
+    pu_decoration_inset(view, &inset, false);
+    int resize_top = y - inset.y + 1;
+    motion(x - 1, resize_top);
     button(BTN_LEFT, true);
     CHECK(desktop.grab == PU_DESKTOP_RESIZE && desktop.grab_edges == (WLR_EDGE_TOP | WLR_EDGE_LEFT));
-    motion(x + 9, y - 23);
+    motion(x + 9, resize_top + 8);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     CHECK(geometry_is(view, x + 10, y + 8, width + 20, height + 17));
-    motion(x - 1, y - 31);
+    motion(x - 1, resize_top);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     button(BTN_LEFT, false);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
@@ -518,7 +524,7 @@ static bool decoration_suite(const char *path)
     CHECK(content.y == full.y + 40);
     CHECK(command(client, TEST_RELEASE, 0, 0, 0));
     content = full; pu_decoration_inset(view, &content, false);
-    CHECK(content.y == full.y + 32);
+    CHECK(content.y == full.y + pu_decoration_themes[0].title_height);
     CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
     CHECK(view->mode == PU_DESKTOP_FLOATING);
     CHECK(geometry_is(view, x, y, width + 30, height + 25));
