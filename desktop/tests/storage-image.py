@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """In-memory/small-directory assembly tests; no mkfs, export, disk image or VM."""
 import importlib.util
+import base64
 import json
 import os
 from pathlib import Path
 import stat
+import shlex
 import tempfile
 import unittest
-from unittest.mock import patch
+import zlib
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("storage_image",
     Path(__file__).resolve().parents[1] / "tools/build-storage-image.py")
@@ -17,6 +20,10 @@ spec = importlib.util.spec_from_file_location("persistent_boot",
     Path(__file__).with_name("persistent-boot.py"))
 boot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot)
+spec = importlib.util.spec_from_file_location("account_auth_fixture",
+    Path(__file__).with_name("account-auth-fixture.py"))
+auth = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(auth)
 
 
 class StorageImage(unittest.TestCase):
@@ -136,6 +143,67 @@ class StorageImage(unittest.TestCase):
             (directory / "initrd").symlink_to("vmlinuz")
             with self.assertRaises(ValueError):
                 boot.diagnostic_kernel_arguments(manifest, directory)
+
+    def test_console_acceptance_keeps_uefi_and_normal_authentication(self):
+        manifest = {"storageContract": builder.layout.contract(builder.layout.new_volume_uuids())}
+        identifier = boot.system_uuid(manifest)
+        config = builder.boot_config(identifier, "vmlinuz-test", "initrd.img-test")
+        commands = boot.console_boot_commands(manifest, config)
+        self.assertEqual(commands[-1], "boot")
+        self.assertIn("polly.mode=console", commands[1])
+        self.assertIn("panic=0", commands[1])
+        self.assertIn("/System/Boot/intel-ucode.img /System/Boot/initrd.img-test", commands[2])
+        self.assertNotIn("init=/", " ".join(commands))
+        self.assertNotIn("polly.verify-persistence", " ".join(commands))
+        for broken in ("", config.replace(identifier, "10000000-0000-4000-8000-000000000001"),
+                       config.replace("/System/Boot/vmlinuz-test", "/unsafe/kernel")):
+            with self.subTest(config=broken), self.assertRaises(ValueError):
+                boot.console_boot_commands(manifest, broken)
+
+    def test_console_payload_is_chunked_and_contains_no_password_arguments(self):
+        commands = boot.console_fixture_commands(1)
+        encoded = "".join(shlex.split(command)[2] for command in commands[1:-1])
+        self.assertEqual(zlib.decompress(base64.b64decode(encoded)),
+                         boot.console_fixture_source())
+        self.assertNotIn(b"def seed_container", boot.console_fixture_source())
+        self.assertTrue(all(len(command) < 2048 for command in commands))
+        self.assertIn("'console','1','first'", commands[-1])
+        self.assertIn("'console','2','retained'", boot.console_fixture_commands(2)[-1])
+        for command in commands:
+            boot.key_chords(command)
+        self.assertEqual(boot.key_chords("aA=+\n"), [
+            ["a"], ["shift", "a"], ["equal"], ["shift", "equal"], ["ret"]])
+        with self.assertRaises(ValueError):
+            boot.key_chords("\x00")
+
+    def test_console_secret_prompt_follows_echo_disable_and_restores_terminal(self):
+        terminal = Mock()
+        terminal.fileno.return_value = 123
+        terminal.readline.return_value = "x" * 28 + "\n"
+        original = [0, 0, 0, auth.termios.ECHO | auth.termios.ECHONL | auth.termios.ICANON, 0, 0, []]
+        with patch.object(auth.sys, "stdin", terminal), \
+                patch.object(auth.os, "isatty", return_value=True), \
+                patch.object(auth.termios, "tcgetattr", return_value=original), \
+                patch.object(auth.termios, "tcsetattr") as attributes, \
+                patch.object(auth, "console_message") as message:
+            def confirm(message):
+                quiet = attributes.call_args.args[2]
+                self.assertFalse(quiet[3] & (auth.termios.ECHO | auth.termios.ECHONL))
+                self.assertNotIn("x" * 28, message)
+            message.side_effect = confirm
+            self.assertEqual(auth.console_password(0, 1), "x" * 28)
+            self.assertEqual(attributes.call_args.args[2], original)
+            terminal.readline.assert_called_once_with(256)
+            terminal.readline.return_value = "invalid\n"
+            with self.assertRaisesRegex(RuntimeError, "input withheld"):
+                auth.console_password(1, 1)
+            self.assertEqual(attributes.call_args.args[2], original)
+        with patch.object(auth.sys, "stdin", terminal), \
+                patch.object(auth.os, "isatty", return_value=False), \
+                patch.object(auth, "console_message") as message:
+            with self.assertRaises(RuntimeError):
+                auth.console_password(0, 1)
+            message.assert_not_called()
 
 
 if __name__ == "__main__":

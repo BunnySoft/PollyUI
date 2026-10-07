@@ -27,6 +27,7 @@ def main():
         "desktop/release/storage/storage.py", "desktop/tools/build-installed-image.py",
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
         "desktop/tools/check-storage.py",
+        "desktop/tests/account-auth-fixture.py",
     ]
     for name in python_files:
         ast.parse((repo / name).read_text(), filename=name)

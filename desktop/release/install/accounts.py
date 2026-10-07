@@ -1,6 +1,9 @@
 #!/usr/bin/python3 -I
 """Root-owned installed account lifecycle; passwords are handled only by passwd/PAM."""
 import argparse
+from contextlib import contextmanager
+import errno
+import fcntl
 import grp
 import importlib.util
 import json
@@ -13,6 +16,7 @@ import subprocess
 import sys
 import syslog
 import tempfile
+import time
 
 DATA = Path("/home/.polly-system/accounts")
 ROOT = Path("/var/lib/polly-accounts")
@@ -58,6 +62,32 @@ def atomic(path, text, mode=0o644):
             os.close(directory)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@contextmanager
+def state_lock(root=ROOT, timeout=60):
+    trusted(root, directory=True)
+    descriptor = os.open(root / ".state.lock",
+                         os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or \
+                stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1:
+            raise ValueError("Unsafe account state lock")
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Account state is busy; no configuration change was committed") from error
+                time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def config(root=ROOT):
@@ -186,24 +216,26 @@ def prepare():
         raise ValueError("Required writable ext4 user volume is missing or mismatched")
     for path in (volume, data.parent, data, data / "etc"):
         trusted(path, directory=True)
-    state_volume(config(data), expected, version)
-    records = identities(read(Path("/etc/passwd")))
-    identities(read(data / "etc/passwd"))
-    passwords(data)
-    if completed(data) and not (data / "setup-complete").exists():
-        atomic(data / "setup-complete", "1\n")
-    atomic(data / "etc/passwd", records["root"] + "\n" + records["polly"] + "\n")
-    bind(data, ROOT)
-    bind(data / "etc", Path("/var/lib/extrausers"))
-    RUNTIME.mkdir(mode=0o700, exist_ok=True)
-    trusted(RUNTIME, directory=True)
-    atomic(RUNTIME / "ready", expected + "\n", 0o600)
-    atomic(RUNTIME / "automatic-login", "on\n" if config()["automaticLogin"] else "off\n", 0o600)
-    if "polly.serial=1" in Path("/proc/cmdline").read_text().split():
-        dropin = Path("/run/systemd/system/polly-firstboot.service.d")
-        dropin.mkdir(parents=True, exist_ok=True)
-        atomic(dropin / "serial.conf", "[Service]\nTTYPath=/dev/ttyS0\n")
-        subprocess.run(["/usr/bin/systemctl", "daemon-reload"], check=True, timeout=20)
+    with state_lock(data):
+        settings = config(data)
+        state_volume(settings, expected, version)
+        records = identities(read(Path("/etc/passwd")))
+        identities(read(data / "etc/passwd"))
+        passwords(data)
+        if completed(data) and not (data / "setup-complete").exists():
+            atomic(data / "setup-complete", "1\n")
+        atomic(data / "etc/passwd", records["root"] + "\n" + records["polly"] + "\n")
+        bind(data, ROOT)
+        bind(data / "etc", Path("/var/lib/extrausers"))
+        RUNTIME.mkdir(mode=0o700, exist_ok=True)
+        trusted(RUNTIME, directory=True)
+        atomic(RUNTIME / "ready", expected + "\n", 0o600)
+        atomic(RUNTIME / "automatic-login", "on\n" if settings["automaticLogin"] else "off\n", 0o600)
+        if "polly.serial=1" in Path("/proc/cmdline").read_text().split():
+            dropin = Path("/run/systemd/system/polly-firstboot.service.d")
+            dropin.mkdir(parents=True, exist_ok=True)
+            atomic(dropin / "serial.conf", "[Service]\nTTYPath=/dev/ttyS0\n")
+            subprocess.run(["/usr/bin/systemctl", "daemon-reload"], check=True, timeout=20)
     print("POLLY_ACCOUNTS_READY", flush=True)
 
 
@@ -231,19 +263,30 @@ def password_scope(user):
 
 def setup():
     require_ready(False)
-    if completed():
-        if not (ROOT / "setup-complete").exists():
-            atomic(ROOT / "setup-complete", "1\n")
-        print("PollyDesktop setup is already complete.", flush=True)
-        return
-    if not sys.stdin.isatty():
-        raise ValueError("First-run setup requires a local interactive terminal")
-    print("PollyDesktop first-run setup.\nSet separate polly and root passwords locally.\n"
-          "No default password is provided. Cancelling keeps normal login disabled.", flush=True)
-    for name in ("polly", "root"):
-        print("Setting " + name + " password.", flush=True)
-        subprocess.run(["/usr/bin/passwd", name], check=True)
-    finish()
+    with state_lock():
+        require_ready(False)
+        if completed():
+            if not (ROOT / "setup-complete").exists():
+                atomic(ROOT / "setup-complete", "1\n")
+            print("PollyDesktop setup is already complete.", flush=True)
+            return
+        if not sys.stdin.isatty():
+            raise ValueError("First-run setup requires a local interactive terminal")
+        print("PollyDesktop first-run setup.\nSet separate polly and root passwords locally.\n"
+              "No default password is provided. Cancelling keeps normal login disabled.", flush=True)
+        for name in ("polly", "root"):
+            print("Setting " + name + " password.", flush=True)
+            subprocess.run(["/usr/bin/passwd", name], check=True)
+        finish()
+
+
+def set_automatic_login(enabled):
+    require_ready()
+    with state_lock():
+        require_ready()
+        settings = config()
+        settings["automaticLogin"] = enabled
+        atomic(ROOT / "config.json", json.dumps(settings, sort_keys=True) + "\n")
 
 
 def getty(tty):
@@ -296,10 +339,7 @@ def main():
     elif args.operation == "password-scope" and args.value is None:
         password_scope(password_user)
     elif args.operation == "autologin" and args.value in {"on", "off"}:
-        require_ready()
-        settings = config()
-        settings["automaticLogin"] = args.value == "on"
-        atomic(ROOT / "config.json", json.dumps(settings, sort_keys=True) + "\n")
+        set_automatic_login(args.value == "on")
         print("Automatic login " + args.value + " (next boot only).")
     elif args.operation == "getty" and args.value is not None:
         getty(args.value)

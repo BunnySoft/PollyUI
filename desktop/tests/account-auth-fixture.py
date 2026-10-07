@@ -18,6 +18,7 @@ import subprocess
 import termios
 import time
 import fcntl
+import sys
 
 
 def load_accounts():
@@ -34,10 +35,12 @@ def interactive(command, replies=(), uid=0):
     def session():
         os.setsid()
         fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
-        if uid:
+        if uid and os.geteuid() == 0:
             os.setgroups([])
             os.setgid(uid)
             os.setuid(uid)
+        elif uid and uid != os.geteuid():
+            raise PermissionError("An ordinary fixture cannot select another identity")
 
     process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave,
                                preexec_fn=session, env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin",
@@ -203,11 +206,111 @@ def verify(accounts, guest):
     print(f"POLLY_ACCOUNT_AUTH_PASS count={count} slot={slot}", flush=True)
 
 
+def console_message(message):
+    subprocess.run(["/usr/bin/logger", "-t", "polly-account-console", message],
+                   check=True, timeout=10)
+
+
+def console_password(index, count):
+    descriptor = sys.stdin.fileno()
+    if not os.isatty(descriptor):
+        raise RuntimeError("Console fixture requires its authenticated controlling terminal")
+    original = termios.tcgetattr(descriptor)
+    quiet = list(original)
+    quiet[3] &= ~(termios.ECHO | termios.ECHONL)
+    termios.tcsetattr(descriptor, termios.TCSAFLUSH, quiet)
+    try:
+        console_message(f"POLLY_AUTH_SECRET_PENDING index={index} round={count}")
+        token = sys.stdin.readline(256).rstrip("\n")
+        if not re.fullmatch(r"[a-z0-9]{28}", token):
+            raise RuntimeError("Invalid console fixture secret; input withheld")
+        return token
+    finally:
+        termios.tcsetattr(descriptor, termios.TCSAFLUSH, original)
+
+
+def console_authenticate(user, token, expected=True):
+    command = ["/usr/bin/su", "-", "-c", "/usr/bin/id -u"] if user == "root" else [
+        "/usr/bin/su", "polly", "-s", "/bin/sh", "-c", "/usr/bin/id -u"]
+    result, output = interactive(command, [token])
+    uid = b"0" if user == "root" else b"1000"
+    accepted = result == 0 and re.search(rb"(?:^|[\r\n])" + uid + rb"(?:[\r\n]|$)", output) is not None
+    if accepted != expected:
+        raise RuntimeError("Console PAM accepted/denied credentials contrary to expectation")
+
+
+def console_data(first):
+    home = Path.home()
+    if home != Path("/home/polly") or not os.path.samestat(home.stat(), Path("/Users/1000").stat()):
+        raise RuntimeError("Console HOME does not reference the stable UID authority")
+    expected = {"XDG_CONFIG_HOME": "Settings", "XDG_DATA_HOME": "AppData",
+                "XDG_STATE_HOME": "AppState", "XDG_CACHE_HOME": "Cache"}
+    for variable, name in expected.items():
+        if os.environ.get(variable) != str(home / name):
+            raise RuntimeError("Console XDG path disagrees with its user authority")
+    for name in ("Settings", "AppData", "AppState", "Documents"):
+        directory = home / name
+        if directory.is_symlink() or not directory.is_dir() or directory.stat().st_uid != 1000:
+            raise RuntimeError("User data directory has an unexpected identity")
+        probe = directory / ".polly-account-persistence"
+        content = "ordinary-user retained probe: " + name + "\n"
+        if first:
+            with probe.open("x") as destination:
+                os.fchmod(destination.fileno(), 0o600)
+                destination.write(content)
+                destination.flush()
+                os.fsync(destination.fileno())
+        elif probe.is_symlink() or not probe.is_file() or probe.read_text() != content or \
+                probe.stat().st_uid != 1000 or stat.S_IMODE(probe.stat().st_mode) != 0o600:
+            raise RuntimeError("Committed user data did not survive the clean restart")
+
+
+def verify_console(first, count):
+    cmdline = Path("/proc/cmdline").read_text().split()
+    if os.getuid() != 1000 or os.geteuid() != 1000 or \
+            "polly.mode=console" not in cmdline or "polly.serial=1" not in cmdline:
+        raise RuntimeError("Console fixture requires normal polly authentication, not a root test service")
+    old_user, old_root, new_user, new_root = [console_password(index, count) for index in range(4)]
+    console_data(first)
+    if first:
+        console_authenticate("polly", old_user)
+        console_authenticate("root", old_root)
+        success(["/usr/bin/passwd"], [old_user, new_user, new_user])
+        result, _ = interactive(["/usr/bin/passwd", "root"])
+        if result == 0:
+            raise RuntimeError("Ordinary passwd changed root without root authentication")
+        success(["/usr/bin/su", "-", "-c", "/usr/bin/passwd root"],
+                [old_root, new_root, new_root])
+    console_authenticate("polly", old_user, False)
+    console_authenticate("polly", new_user)
+    console_authenticate("root", old_root, False)
+    console_authenticate("root", new_root)
+    denied = subprocess.run(["/usr/bin/getent", "shadow", "polly"],
+                            capture_output=True, timeout=10)
+    if b"$y$" in denied.stdout or b"$6$" in denied.stdout:
+        raise RuntimeError("Ordinary console process read a private password hash")
+    console_message(f"POLLY_ACCOUNT_CONSOLE_PASS round={count} uid=1000 changed={int(first)}")
+    fixture = Path.home() / "Cache/.polly-account-console.b64"
+    fixture.unlink()
+    success(["/usr/bin/su", "-", "-c", "/usr/bin/systemctl poweroff"], [new_root])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--container", type=Path)
     parser.add_argument("--guest", action="store_true")
+    parser.add_argument("--console", choices=("first", "retained"))
+    parser.add_argument("--round", type=int, default=1)
     args = parser.parse_args()
+    if args.console is not None:
+        if args.container is not None or args.guest or not 1 <= args.round <= 3:
+            parser.error("Console acceptance cannot be mixed with root fixture modes")
+        try:
+            verify_console(args.console == "first", args.round)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            console_message("POLLY_ACCOUNT_CONSOLE_FAILED: " + str(error))
+            raise
+        return
     if args.container is not None and not args.guest:
         accounts = seed_container(args.container)
     elif args.guest and args.container is None:

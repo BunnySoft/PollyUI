@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Bounded account-state unit tests; no real credentials, mounts or account changes."""
 import importlib.util
+import errno
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -38,6 +41,7 @@ class InstalledAccounts(unittest.TestCase):
 
     def test_setup_failure_does_not_commit_initialization(self):
         with patch.object(accounts, "require_ready"), \
+                patch.object(accounts, "state_lock"), \
                 patch.object(accounts, "completed", return_value=False), \
                 patch.object(accounts.sys, "stdin") as terminal, \
                 patch.object(accounts.subprocess, "run", side_effect=[
@@ -51,6 +55,119 @@ class InstalledAccounts(unittest.TestCase):
                 accounts.setup()
             self.assertEqual(password_tool.call_count, 2)
             commit.assert_not_called()
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_atomic_failures_preserve_the_old_record(self):
+        for operation in ("fsync", "replace"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                path = root / "config.json"
+                accounts.atomic(path, "old valid record", 0o600)
+                with patch.object(accounts.os, operation, side_effect=OSError(errno.ENOSPC, "fixture full")):
+                    with self.assertRaises(OSError):
+                        accounts.atomic(path, "must not appear", 0o600)
+                self.assertEqual(accounts.read(path), "old valid record")
+                self.assertEqual(sorted(child.name for child in root.iterdir()), ["config.json"])
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_state_lock_is_private_bounded_and_released_on_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with accounts.state_lock(root):
+                self.assertEqual((root / ".state.lock").stat().st_mode & 0o777, 0o600)
+                with self.assertRaisesRegex(TimeoutError, "busy"):
+                    with accounts.state_lock(root, timeout=0.01):
+                        self.fail("A concurrent writer acquired an already-held state lock")
+            with self.assertRaisesRegex(RuntimeError, "fixture"):
+                with accounts.state_lock(root):
+                    raise RuntimeError("fixture")
+            with accounts.state_lock(root, timeout=0):
+                pass
+            (root / ".state.lock").chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "Unsafe account state lock"):
+                with accounts.state_lock(root):
+                    pass
+            (root / ".state.lock").unlink()
+            (root / ".state.lock").symlink_to(root / "unexpected")
+            with self.assertRaises(OSError):
+                with accounts.state_lock(root):
+                    pass
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_concurrent_configuration_writers_retain_both_updates(self):
+        context = multiprocessing.get_context("fork")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            accounts.atomic(root / "config.json", json.dumps({
+                "schemaVersion": 3, "persistentUuid": UUID,
+                "initialized": False, "automaticLogin": False,
+            }))
+            start = context.Event()
+
+            def update(field):
+                if not start.wait(3):
+                    raise RuntimeError("Concurrent fixture did not start")
+                with accounts.state_lock(root, timeout=3):
+                    settings = accounts.config(root)
+                    time.sleep(0.03)
+                    settings[field] = True
+                    accounts.atomic(root / "config.json", json.dumps(settings))
+
+            processes = [context.Process(target=update, args=(field,))
+                         for field in ("initialized", "automaticLogin")]
+            try:
+                for process in processes:
+                    process.start()
+                start.set()
+                for process in processes:
+                    process.join(timeout=5)
+                    self.assertEqual(process.exitcode, 0)
+                settings = accounts.config(root)
+                self.assertTrue(settings["initialized"])
+                self.assertTrue(settings["automaticLogin"])
+            finally:
+                for process in processes:
+                    if process.is_alive():
+                        process.terminate()
+                        process.join(timeout=3)
+
+    @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
+    def test_directory_sync_failure_is_reported_after_an_atomic_commit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / "config.json"
+            accounts.atomic(path, "old complete record", 0o600)
+            real_sync = accounts.os.fsync
+            calls = 0
+
+            def fail_directory(descriptor):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError(errno.EIO, "fixture directory sync failure")
+                real_sync(descriptor)
+
+            with patch.object(accounts.os, "fsync", side_effect=fail_directory):
+                with self.assertRaises(OSError):
+                    accounts.atomic(path, "new complete record", 0o600)
+            self.assertEqual(accounts.read(path), "new complete record")
+            self.assertEqual(sorted(child.name for child in root.iterdir()), ["config.json"])
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_automatic_login_reads_current_configuration_under_lock(self):
+        settings = {"schemaVersion": 3, "persistentUuid": UUID,
+                    "initialized": True, "automaticLogin": False}
+        with patch.object(accounts, "require_ready") as ready, \
+                patch.object(accounts, "state_lock") as lock, \
+                patch.object(accounts, "config", return_value=settings) as read, \
+                patch.object(accounts, "atomic") as write:
+            accounts.set_automatic_login(True)
+            self.assertEqual(ready.call_count, 2)
+            lock.assert_called_once()
+            read.assert_called_once()
+            self.assertTrue(json.loads(write.call_args.args[1])["automaticLogin"])
+            self.assertTrue(json.loads(write.call_args.args[1])["initialized"])
 
     def test_account_volume_is_layout_specific(self):
         old = {"schemaVersion": 2, "homeUuid": UUID}

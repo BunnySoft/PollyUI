@@ -93,6 +93,21 @@ The optional smoke harness `--diagnostic-inputs` directory (`vmlinuz`, combined
 `initrd`) bypasses firmware only for diagnosis and records `uefiBoot=false`;
 it must not be used as UEFI acceptance evidence.
 
+For stage-level account durability, reuse an ordinary single-system candidate:
+
+```sh
+python3 -I -B desktop/tests/persistent-boot.py ARTIFACT NEW_EVIDENCE --account-persistence
+```
+
+Run in the cached QEMU tools container (KVM optional), with the artifact mounted
+read-only and a fresh writable evidence directory. This is not part of fast checks.
+It uses UEFI/GRUB's supported console mode, standard password login, and an
+ordinary-user test client to drive real passwd/PAM/su. Three cold boots share one
+disposable overlay; root-authenticated `systemctl poweroff`, not QMP quit, commits
+each shutdown. Old credentials are rejected, new credentials and user data retained;
+no secret is stored in arguments, files or transcripts. It does not prove everyday
+unprivileged power UX, graphical lock, account migration, update or recovery.
+
 ## Minimal root filesystem
 
 From the repository root on Linux:
