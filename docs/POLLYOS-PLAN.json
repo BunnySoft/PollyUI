@@ -568,6 +568,115 @@
   },
   "nodes": [
     {
+      "id": "target-identity-ui",
+      "label": "T24.6 目标展示接入",
+      "kind": "subtask",
+      "parent": "t24",
+      "scope": "把已实现只读目标报告接入安装UI，显示稳定身份/容量/分区/假定清除范围和具体拒绝理由，重新识别结果用于后续显式确认；不把 eligible 标记当写权限，不部署到错误layout路径。",
+      "priority": "P1",
+      "modes": [
+        "fresh",
+        "hardware"
+      ],
+      "sources": [
+        "M07.2",
+        "M07.4"
+      ],
+      "status": "pending",
+      "requires": [
+        "t24-m07-2",
+        "t24-m07-3"
+      ]
+    },
+    {
+      "id": "menu-native-dismiss",
+      "label": "T21.5 原生弹层关闭信号",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "设计并实现可信 compositor/host 到 Shell 的 surface-instance-scoped outside-press/popup-dismiss 事件，保留 owner/child membership/generation、真实输入及session-lock/trusted-shell隔离；exclusive层键盘保留时不能用DOM blur或window metadata猜焦点。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [
+        "M17.2"
+      ],
+      "status": "pending",
+      "requires": [
+        "pam-session"
+      ],
+      "evidence": "菜单子会话精确6487101 trace确认native event缺口；当前合并的是授权A的JS lifecycle/owned surfaces，不含真正foreign app outside press，待新批明确接口并作原生输入验收。"
+    },
+    {
+      "id": "e22",
+      "label": "E22 XP Luna 视觉对齐",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "以选定 XP 蓝色 Luna 版本/96-DPI 基线，逐部件对齐真实窗口装饰和 Shell 控件、字体/资源、材质和状态；使用原创或有明确授权材料，记录剩余差异，不以预览/模拟截图宣称1:1或强制第三方控件改样式。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "xp-reference-baseline",
+      "label": "E22.1 固定参考与测量",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "建立来源可追溯的固定目标版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。"
+    },
+    {
+      "id": "xp-painted-components",
+      "label": "E22.2 控件与装饰绘制",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "当前XP小批：30px任务栏、21px标题按钮、受限多段绘制/bevel、原创通用图形及基础控件状态，绘制/命中尺寸一致；保留其它四主题与数据安全契约，不改菜单生命周期。未实现状态/完整Start布局另行验收。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [
+        "M17.4",
+        "M17.5"
+      ],
+      "status": "done",
+      "requires": [],
+      "evidence": "1176066与startup修复1d5254a纳入固定最终组合a5e176a；完整新native build、13selectors、3真实PollyUI/实际四scale组成截图通过。source-reviewed startup typed拒绝/generic schema1真实回退通过；非整桌面1:1/官方字体或品牌资源认证。"
+    },
+    {
+      "id": "xp-native-comparison",
+      "label": "E22.3 真实截图差异验收",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "固定实现提交在独立验证lane真实绘制截图，对照裁剪部件的几何/颜色/状态与已定义图像差异；说明字体/授权资产/抗锯齿和未实现效果，迭代，不以mock或预览替代native。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "xp-painted-components"
+      ],
+      "evidence": "临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。"
+    },
+    {
       "id": "r1",
       "label": "R1 Live 账户可用",
       "kind": "milestone",
@@ -608,7 +717,7 @@
         "recovery"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -652,7 +761,7 @@
         "release"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -1460,7 +1569,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -1476,10 +1585,11 @@
       "sources": [
         "M09.1"
       ],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "storage-layout"
-      ]
+      ],
+      "evidence": "7b6000d→临时集成67cc861→最终a5e176a已合并并推送；系统/完整Dpkg/Apt树SHA身份、status/TSV/usr+boot/list/MD5/diversion一致性、容量/兼容固定schema与拒绝矩阵已实现并独立20单测及组合CTest通过。dev-unsigned证明不认证来源/ABI/conffile或ext4/启动，不执行apt/替换/恢复。"
     },
     {
       "id": "t07-m09-2",
@@ -2816,7 +2926,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -2850,8 +2960,9 @@
       "sources": [
         "M17.2"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "7c12e8→49b3e6d纳入a5已合并推送；Shell-owned surface/stale callbacks/捕获清理与17宿主回归、既有native window/workspace/output兼容通过。真正foreign/already-focused app outside-press缺可信surface实例信号，完整T21.2仍进行中；新增native前置单独跟踪。"
     },
     {
       "id": "t21-m17-3",
@@ -3003,15 +3114,15 @@
         "hardware"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
       "id": "t24-m07-2",
-      "label": "T24.1 目标身份展示",
+      "label": "T24.1 只读目标身份模型",
       "kind": "subtask",
       "parent": "t24",
-      "scope": "展示目标型号、容量、稳定设备身份、现有分区及将被清除的范围，提交前再次核对身份。",
+      "scope": "只读枚举/输出型号、容量、稳定serial/WWN、分区与假定清除范围；选择绑定及重新识别对缺失/歧义/活动来源/热插拔改变拒绝。JSON/CLI资格不等于UI确认或写权限，真实展示接入由T24.6完成。",
       "priority": "P1",
       "modes": [
         "fresh",
@@ -3020,17 +3131,18 @@
       "sources": [
         "M07.2"
       ],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "storage-layout"
-      ]
+      ],
+      "evidence": "e3b74df→be85a42→最终a5已合并推送；34合成CLI/sysfs/graph/边界/重识别测试及组合CTest通过。未实际探测host盘、尚无writer/UI确认/独占raw opener或其它namespace证明；仅USB/sysfs外部来源floor，未知overlay/loop fail-closed。"
     },
     {
       "id": "t24-m07-3",
       "label": "T24.2 内盘排除与防误选",
       "kind": "subtask",
       "parent": "t24",
-      "scope": "明确排除三块已知内置 SSD；不因设备名变化、热插拔或多盘存在而选错目标。",
+      "scope": "当前只读模型排除三块已知内盘型号/family及root/boot/source/活动holder/swap祖先，对身份缺失/冲突/热插拔改变拒绝；不按sdX/nvme号或RM布尔挑选，实际writer独占与确认仍后续。",
       "priority": "P1",
       "modes": [
         "fresh",
@@ -3039,8 +3151,9 @@
       "sources": [
         "M07.3"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "done",
+      "requires": [],
+      "evidence": "与targets只读实现同一e3b74df/a5固定组合；型号alias、大小/重复ID、dm祖先/改变identity/diskseq/歧义拒绝fixtures通过；真实设备/其它mount namespace/raw opener与破坏性安装验收不由此替代。"
     },
     {
       "id": "t24-m07-4",
@@ -3059,7 +3172,8 @@
       "status": "pending",
       "requires": [
         "t24-m07-2",
-        "t24-m07-3"
+        "t24-m07-3",
+        "target-identity-ui"
       ]
     },
     {
