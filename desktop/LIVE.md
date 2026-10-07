@@ -2,12 +2,14 @@
 
 **Current candidate:** Debian alpha.5-r2, with the Mesa lifetime correction and
 successful 4 GiB UEFI ISO/virtual-USB preflight. Exact paths, hashes, software
-results and pending physical acceptance are in the
+results and scoped physical feedback are in the
 [PollyOS overview and handoff](../docs/POLLYOS.md); Debian build commands are in
 the [Debian guide](./release/debian/README.md).
 
 The Alpine alpha.4 commands and first-machine history below are retained as the
 previous physical-validation baseline, not the latest Debian candidate.
+On 2026-10-07 the user confirmed the Debian alpha.5-r2 candidate boots and runs
+on physical hardware; per-device and endurance results were not separately reported.
 The memory-only format and no-installer/data-persistence limits apply to both.
 
 The Live builder produces an **unsigned x86_64 UEFI ISO and GPT/FAT32 USB image**,
@@ -149,6 +151,11 @@ is explicitly deferred, with no polkit or privileged proxy added. Suspend,
 hibernate and automatic lid/power-key actions remain disabled. See `SESSION.md`.
 
 ## First physical target and acceptance
+
+On 2026-10-07 at 14:07 (UTC+08:00), the user reported that the current Debian
+alpha.5-r2 image can boot and run on physical hardware. Record this as successful
+physical boot/basic operation, not as an inferred pass for every GPU, network or
+audio path. It does not authorize a new media write or imply persistent installation.
 
 On 2026-10-06 the user reported that alpha.4 passed validation on the selected
 physical machine. This is user-reported first-stage acceptance, not separately

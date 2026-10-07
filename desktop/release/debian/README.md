@@ -2,8 +2,9 @@
 
 This is the Debian 13 trixie amd64 migration path. The accepted Alpine alpha.4
 source and artifact hashes are preserved in `baseline.json`. Debian is a
-separate candidate, not a replacement for that physical-validation baseline
-until equivalent acceptance is complete.
+separate candidate: on 2026-10-07 the user confirmed alpha.5-r2 boots and runs on
+physical hardware. This basic boot/runtime result does not establish full
+per-device equivalence; the Alpine fallback and its evidence remain preserved.
 The current alpha.5-r2 artifact inventory, architecture and handoff are in the
 [PollyOS technical overview](../../../docs/POLLYOS.md).
 
@@ -339,9 +340,11 @@ podman run --rm --network=none --device /dev/kvm --user 1000:1000 \
 Use a new evidence directory per run.
 Omit `--device /dev/kvm` to use TCG without changing host permissions.
 
-Physical-machine acceptance remains open; software qualification must use the
-corrected Mesa package set and the matching candidate's regression results.
-The Alpine user report does not qualify this Debian image. Keep exact
+The user confirmed physical boot/basic operation of Debian alpha.5-r2 on
+2026-10-07 at 14:07 (UTC+08:00). Per-GPU/renderer, network, audio and endurance
+results were not separately reported and must not be inferred. Software
+qualification uses the corrected Mesa package set and matching candidate results.
+This Debian feedback is separate from the earlier Alpine report. Keep exact
 candidate revisions, package inventories and known failures with results.
 See the [maintenance policy](../../../docs/desktop-base-maintenance.md) for
 promotion, data and rollback limits.

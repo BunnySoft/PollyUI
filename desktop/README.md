@@ -17,9 +17,11 @@ per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,
 built from a debootstrap minbase rootfs**, not a GNOME/KDE Live image or a
 bootable use of the slim container image. Debian minbase, glibc runtime and
 systemd/logind Live candidates are implemented. The corrected Mesa build now
-passes the Debian graphical sanitizer gate; Debian physical acceptance remains
-open, and maintenance automation is not enabled.
-The existing Alpine build remains the user-verified baseline;
+passes the Debian graphical sanitizer gate. On 2026-10-07 the user also confirmed
+that Debian alpha.5-r2 boots and runs on physical hardware. This is a basic
+boot/runtime result, not per-GPU, network, audio or endurance qualification.
+Maintenance automation is not enabled.
+The Alpine build remains a preserved user-verified fallback;
 see [base selection and maintenance plan](../docs/desktop-base-maintenance.md)
 for version pinning, upstream synchronization, acceptance and rollback policy,
 and [Debian build status](./release/debian/README.md) for commands and known gaps.
@@ -80,7 +82,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Multi-window runtime - implemented | A shared JS realm with per-window documents, input, rendering and close lifecycle. PollyShell can own multiple native surfaces without creating a process per surface. |
 | 4 - usable session | Outgoing PollyUI drags, advanced text, power and remaining audio/network integration, secure session lock, restricted management commands where standard protocols are insufficient. |
 | Runtime packaging | Relocatable Alpine/musl and Debian/glibc x86_64 runtimes, private patched SDL, pinned runtime packages, dependency inventory, licenses and SHA-256 checksums. Debian records the locally corrected Mesa DEBs separately from official archive binaries. Runtime bundles are not bootable media. |
-| UEFI Live development image | Memory-only root; current Debian/systemd/PAM/logind candidate and preserved Alpine/OpenRC/PAM/elogind baseline. Temporary ordinary-user automatic login, target kernel/firmware, optical ISO and GPT/FAT32 USB image. Debian VM evidence does not replace its pending physical acceptance; no installer, protected login, enabled secure lock or signing trust. |
+| UEFI Live development image | Memory-only root; current Debian/systemd/PAM/logind candidate and preserved Alpine/OpenRC/PAM/elogind baseline. Temporary ordinary-user automatic login, target kernel/firmware, optical ISO and GPT/FAT32 USB image. Debian alpha.5-r2 passes VM preflight and user-reported physical boot/basic operation; per-device qualification remains separate. No installer, protected login, enabled secure lock or signing trust. |
 | Authentication and lock mechanism | Ordinary-user PAM helper, separately trusted standard session-lock client, native password UI and crash/output-loss black-cover protection. Real masked typing/PAM unlock verified; protected-session/power integration remains incomplete and the passwordless Live keeps locking disabled. See `SESSION.md`. |
 | Power controls - authorization deferred | Native login1 capability checks and themed confirmation/cancellation; actual Live elogind denies shutdown/restart, so both remain disabled. No polkit or privileged authorization proxy. Suspend/hibernate remain unavailable. See `SESSION.md`. |
 | 5 - persistent system | Full external-media installation, persistent user data, manual system update/recovery, production trust and joint hardware qualification remain separate from the implemented Live boot/session foundation. |
