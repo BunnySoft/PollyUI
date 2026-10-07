@@ -182,7 +182,9 @@ Shell `launchApplication` still returns a PID synchronously for Exec. For this
 activation path it returns a Promise resolving to the acknowledgement (or
 `null` after a visibly reported launch failure). A queued request leaves its
 menu open. Success closes only the originating menu instance; late rejection
-is logged but cannot repaint a replacement menu or a stopped Shell.
+is logged but cannot repaint a replacement menu or a stopped Shell. A
+launch-only scope token is invalidated at stop, so a menu-less request from a
+previous Shell generation cannot clear or overwrite errors after restart.
 
 ### Focused fixtures and evidence boundary
 

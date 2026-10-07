@@ -82,6 +82,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (typeof previousWindowsChanged === 'function') previousWindowsChanged();
   };
   const launcher = native ? createApplicationLauncher(native, report) : null;
+  let applicationLaunchScope = {};
   const notifications = createNotificationSurfaces({ host, native, theme: () => getDesktopTheme(themeId), report,
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
@@ -888,8 +889,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function launchApplication(id) {
     if (!running || !launcher) throw new Error('Application launcher is unavailable');
     const current = menu;
+    const scope = applicationLaunchScope;
     const succeeded = result => {
-      if (running && menu === current) {
+      if (running && scope === applicationLaunchScope && menu === current) {
         if (errorKind === 'application') { error = ''; errorKind = ''; }
         closeMenu(current);
       }
@@ -898,7 +900,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const failed = failure => {
       const message = 'Could not launch application: ' + String(failure);
       report('[shell] ' + message);
-      if (running && menu === current) {
+      if (running && scope === applicationLaunchScope && menu === current) {
         error = message;
         errorKind = 'application';
         repaintMenu();
@@ -1008,6 +1010,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     },
     stop() {
       running = false;
+      applicationLaunchScope = {};
       serviceMonitor.reset(); serviceError = '';
       notifications.stop();
       tray.stop();

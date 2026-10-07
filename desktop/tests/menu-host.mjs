@@ -306,6 +306,27 @@ test('blocked activation rejection remains visible in the originating menu', asy
 });
 
 for (const result of ['acknowledgement', 'rejection']) {
+  test('menu-less activation ' + result + ' from a stopped generation cannot mutate a restarted Shell', async () => {
+    const f = fixture();
+    try {
+      const blocked = blockedActivation(f);
+      const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+      f.shell.stop();
+      f.shell.start();
+      assert.equal(f.shell.launchApplication('missing.desktop'), null);
+      f.expectedWarnings.push('[shell] Could not launch application: Error: Application is no longer available');
+      const before = f.shell.getState().error;
+      if (result === 'acknowledgement') blocked.resolve({ kind: 'dbus', acknowledged: true });
+      else {
+        blocked.reject(new Error('old generation activation failed'));
+        f.expectedWarnings.push('[shell] Could not launch application: Error: old generation activation failed');
+      }
+      await pending;
+      assert.equal(f.shell.getState().error, before);
+      assert.equal(f.shell.getState().running, true);
+    } finally { f.done(); }
+  });
+
   test('late activation ' + result + ' cannot affect a new applications instance of the same menu', async () => {
     const f = fixture();
     try {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, unlink, chmod, cp, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, unlink, chmod, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -89,6 +89,16 @@ async function client(mode, overrides = {}) {
 async function contents(file) {
   try { return await readFile(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
 }
+async function preserve(directory, destination) {
+  await mkdir(destination, { recursive: true });
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const source = path.join(directory, entry.name), target = path.join(destination, entry.name);
+    if (entry.isDirectory()) await preserve(source, target);
+    // Windows-mounted evidence can accept bytes but not copyFile's Unix metadata operations.
+    else if (entry.isFile()) await writeFile(target, await readFile(source));
+    else if (!entry.isSocket()) throw new Error('Unexpected synthetic fixture evidence type: ' + source);
+  }
+}
 let passed = false;
 try {
   await until(() => daemon.output.includes('guid=') || daemon.finished, 'isolated daemon readiness');
@@ -174,6 +184,6 @@ try {
     complete: passed, runtimeRoot: root, evidence: saved, mode: probe ? 'infrastructure-probe-NOT-product-native' : 'rebuilt-native',
     children: states.map(state => ({ pid: state.process.pid, code: state.code, signal: state.signal, output: state.output })),
   }, null, 2));
-  await cp(root, saved, { recursive: true, filter: async source => !(await lstat(source)).isSocket() });
+  await preserve(root, saved);
   console.log('Evidence preserved: ' + saved);
 }
