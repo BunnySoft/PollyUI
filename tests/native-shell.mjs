@@ -222,3 +222,23 @@ try {
     [{ action: 'minimize-window', modifiers: 2, key: 'm' }]);
 } catch (error) { failedSave = String(error).includes('disk full'); }
 check(failedSave && currentShortcuts[0].key === 'F9', 'failed shortcut persistence restores the previous compositor bindings');
+
+let service = 'ready';
+const serviceWarnings = [];
+const serviceShell = createDesktopShell({ host: fakeHost, storage, native: {
+  sessionServices: () => ({inputMethod:service}),
+}, report: message => serviceWarnings.push(message) }).start();
+serviceShell.refresh(true);
+check(!serviceShell.getState().error && serviceShell.getState().services.inputMethod === 'ready',
+  'running Shell observes actual service readiness separately from settings');
+service = 'failed';
+serviceShell.refresh(true);
+check(serviceShell.getState().error.includes('input method failed') && serviceShell.getState().running,
+  'input-method failure is visible without stopping the Shell');
+const warningCount = serviceWarnings.length;
+serviceShell.refresh(true);
+check(serviceWarnings.length === warningCount, 'Shell service warnings are not repeatedly logged');
+service = 'ready';
+serviceShell.refresh(true);
+check(!serviceShell.getState().error, 'service recovery clears its warning');
+serviceShell.stop();

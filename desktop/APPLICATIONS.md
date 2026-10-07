@@ -178,6 +178,11 @@ Native Shell pointer tests launch an installed public PollyUI process, plus a
 copy of the distro's `foot` Wayland terminal using that distro's runtime libraries.
 This is a representative compatibility test, not a claim that all Linux apps
 are self-contained or respect XDG.
+The third-party fixture also reads a real `foot.ini` from its managed XDG config
+directory, changes the bundle revision and relaunches it, verifying its config
+and prior data remain untouched through replacement and rollback. This tests
+repackaging/version selection of the installed distro binary, not compatibility
+between arbitrary upstream foot releases or database schema migrations.
 
 The management UI, explicit source/publisher associations beyond local replacement
 approval, richer native adapters, data adoption/migration, safe code-cache GC,

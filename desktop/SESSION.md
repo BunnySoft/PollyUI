@@ -143,6 +143,15 @@ core fixture covers missing/failed services, timeouts, closed Shell surfaces and
 transition reporting. These checks do not replace hardware, rendered-frame,
 Chinese-input or audio-signal acceptance.
 
+The running Shell also observes service status at a bounded polling cadence.
+Input-method loss and native audio errors are shown through the panel's existing
+error display and included in `getState().services`. A long input-method startup
+produces a warning after 15 seconds; it does not itself terminate or restart the
+service. Repeated unchanged warnings do not flood logs, recovery clears the
+service warning, and unrelated settings/application errors keep their own state.
+This observation never changes normal Shell supervision, application lifetimes,
+lock policy or audio routing.
+
 ## Isolated verification
 
 `tests/auth-helper.py` runs only as root in a throwaway Podman container,

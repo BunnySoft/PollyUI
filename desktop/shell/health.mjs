@@ -27,3 +27,40 @@ export async function waitForSessionReady({ shell, native, requireIme = false, r
     await delay(50);
   }
 }
+
+export function createSessionMonitor({ native, report, now = Date.now }) {
+  let starting = null, previous = '', current = { inputMethod: 'unavailable', audio: 'unavailable', message: '', error: '' };
+  return {
+    refresh() {
+      if (typeof native?.sessionServices !== 'function') return current;
+      let message = '';
+      try {
+        const inputMethod = native.sessionServices().inputMethod;
+        if (!['disabled', 'starting', 'ready', 'failed'].includes(inputMethod))
+          throw new Error('Invalid input-method service status');
+        if (inputMethod === 'starting') {
+          if (starting === null) starting = now();
+          if (now() - starting >= 15000) message = 'Input method is still initializing. Text conversion is not ready.';
+        } else {
+          starting = null;
+          if (inputMethod === 'failed') message = 'Requested input method failed or disconnected. Direct keyboard input remains available.';
+        }
+        const audio = native.audioAvailable ? native.audioState() : null;
+        if (audio?.error) message += (message ? ' ' : '') + 'Audio service: ' + audio.error;
+        current = { inputMethod, audio: audio ? audio.error ? 'failed' : audio.ready ? 'ready' : 'starting' : 'disabled',
+          message, error: inputMethod === 'failed' || audio?.error ? message : '' };
+      } catch (error) {
+        message = 'Cannot inspect session services: ' + String(error);
+        current = { inputMethod: 'unavailable', audio: 'unavailable', message, error: message };
+      }
+      if (message && message !== previous) report('[shell] ' + message);
+      previous = message;
+      return current;
+    },
+    reset() {
+      starting = null; previous = '';
+      current = { inputMethod: 'unavailable', audio: 'unavailable', message: '', error: '' };
+    },
+    snapshot() { return { ...current }; },
+  };
+}

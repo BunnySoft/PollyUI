@@ -14,6 +14,7 @@ import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
+import { createSessionMonitor } from './desktop/shell/health.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
@@ -26,6 +27,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let themeAssetSource = '';
   let error = THEME_LOAD_ERROR;
   let errorKind = error ? 'settings' : '';
+  const serviceMonitor = createSessionMonitor({ native, report });
+  let serviceError = '';
+  let lastServicePoll = 0;
   let timer = null;
   let menu = null;
   let switcher = null;
@@ -193,7 +197,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     } : null;
     if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper', themeAsset), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error, () => showSettings(bundle.output.id), listed, toggleWindow,
+      error || serviceError, () => showSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), activate: (item, kind, x, y) => tray.activate(item, kind,
@@ -841,6 +845,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function refresh(force = false) {
     if (!running) return;
+    const now = Date.now();
+    if (force || now - lastServicePoll >= 1000) {
+      lastServicePoll = now;
+      const nextError = serviceMonitor.refresh().message;
+      if (nextError !== serviceError) {
+        serviceError = nextError;
+        repaintMenu();
+      }
+    }
     notifications.paint();
     tray.paint();
     network.refresh();
@@ -877,6 +890,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (running) throw new Error('Shell is already running');
       host.close();
       running = true;
+      lastServicePoll = 0;
       try { reconcile(themeId, false); }
       catch (failure) { running = false; throw failure; }
       timer = setInterval(refresh, 1000);
@@ -903,6 +917,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     },
     stop() {
       running = false;
+      serviceMonitor.reset(); serviceError = '';
       notifications.stop();
       tray.stop();
       network.stop();
@@ -935,7 +950,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     },
     selectTheme, reloadThemes, restoreThemes, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
     showNotifications: notifications.show, showNetwork, showAudio, showPower, refresh,
-    getState() { return { themeId, error, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION }; },
+    getState() {
+      const services = serviceMonitor.snapshot();
+      return { themeId, error: error || services.error,
+        services, outputs: [...bundles.keys()], running, themeFilesEnabled, themeRevision: THEME_REVISION };
+    },
     getSurfaces() { return [...bundles.values()].flatMap(bundle => Object.values(bundle.surfaces)); },
   };
 }

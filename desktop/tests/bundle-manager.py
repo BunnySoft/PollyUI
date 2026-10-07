@@ -243,13 +243,17 @@ setTimeout(() => window.quit(), 1500);
     terminal = package("Foot.app", {
         **base, "id": "org.example.foot", "name": "Managed Foot fixture",
         "launch": {"kind": "native", "entry": "foot",
-                   "arguments": ["--app-id=org.example.foot", "--title=Managed third-party terminal", "/bin/sh", "-c",
+                   "arguments": ["--title=Managed third-party terminal", "/bin/sh", "-c",
                                  'printf "%s" "$XDG_DATA_HOME" > "$XDG_DATA_HOME/terminal-data"; sleep 2']},
         "data": {"layout": "xdg", "schema": 1},
     })
     shutil.copyfile(shutil.which("foot"), terminal / "foot")
     (terminal / "foot").chmod(0o755)
-    run("install", terminal)
+    terminal_digest = run("install", terminal).stdout.split()[1]
+    terminal_config = root / "config/pollyui/org.example.foot/foot"
+    terminal_config.mkdir(parents=True)
+    terminal_config.parent.chmod(0o700)
+    terminal_config.joinpath("foot.ini").write_text("[main]\napp-id=org.example.foot\nfont=monospace:size=11\n")
     runtime = root / "run"
     runtime.mkdir(mode=0o700)
     compositor = str(Path(ui).parent / "pollyui-layer-client-test")
@@ -267,6 +271,31 @@ setTimeout(() => window.quit(), 1500);
         assert (terminal_data / "terminal-data").read_text() == str(terminal_data)
         print("PASS: managed bundle public process, data and cleanup through native Shell pointer input")
         print("PASS: copied third-party foot binary runs with the current distro dependencies and independent XDG data")
+        old_data = (terminal_data / "terminal-data").read_bytes()
+        old_config = terminal_config.joinpath("foot.ini").read_bytes()
+        terminal_v2 = json.loads(terminal.joinpath("manifest.json").read_text())
+        terminal_v2["version"] = "2.0.0"
+        terminal_v2["launch"]["arguments"] = [
+            "--title=Managed third-party terminal", "/bin/sh", "-c",
+            'test "$(cat "$XDG_DATA_HOME/terminal-data")" = "$XDG_DATA_HOME" && '
+            'printf verified > "$XDG_DATA_HOME/upgrade-check"; sleep 2',
+        ]
+        terminal.joinpath("manifest.json").write_text(json.dumps(terminal_v2))
+        replacement = run("replace", terminal, terminal_digest).stdout.split()[1]
+        shell_result = subprocess.run([compositor, ui, str(Path("desktop/tests/bundle-shell.mjs").resolve()), "bundles", "initial"],
+                                      env=dict(environment, XDG_RUNTIME_DIR=str(runtime), WLR_BACKENDS="headless",
+                                               WLR_HEADLESS_OUTPUTS="2", WLR_RENDERER="pixman", SDL_VIDEODRIVER="wayland",
+                                               PU_RENDERER=os.environ.get("PU_RENDERER", "raster")),
+                                      capture_output=True, text=True, timeout=30)
+        output = shell_result.stdout + shell_result.stderr
+        assert shell_result.returncode == 0 and "PASS: managed bundle launches through the native Shell catalog" in output, output
+        assert not any(word in output for word in ("FAIL:", "Uncaught", "AddressSanitizer", "LeakSanitizer", "runtime error:")), output
+        assert (terminal_data / "upgrade-check").read_text() == "verified"
+        assert (terminal_data / "terminal-data").read_bytes() == old_data
+        assert terminal_config.joinpath("foot.ini").read_bytes() == old_config
+        run("rollback", "org.example.foot", replacement)
+        assert (terminal_data / "terminal-data").read_bytes() == old_data
+        print("PASS: third-party bundle revision keeps its actual XDG configuration and existing data across update/rollback")
 
     # All retained immutable version directories are owned by this fixture.
     for current, directories, files in os.walk(root):

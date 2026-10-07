@@ -1,4 +1,4 @@
-import { waitForSessionReady } from './desktop/shell/health.mjs';
+import { waitForSessionReady, createSessionMonitor } from './desktop/shell/health.mjs';
 
 function check(value, message) {
   if (!value) throw new Error('FAIL: ' + message);
@@ -52,3 +52,28 @@ result = await scenario([{ ime: 'ready', error: 'status connection lost' }]);
 check(result.error.includes('status connection lost'), 'lost compositor status connection fails closed');
 result = await scenario([{ ime: 'unexpected' }]);
 check(result.error.includes('Invalid input-method'), 'unknown protocol status is not success-shaped');
+
+let clock = 0, status = 'starting', audioError = '';
+const warnings = [];
+const monitor = createSessionMonitor({
+  native: { sessionServices: () => ({inputMethod:status}), audioAvailable:true,
+    audioState: () => ({ready:!audioError,error:audioError}) },
+  now: () => clock, report: message => warnings.push(message),
+});
+check(!monitor.refresh().message, 'normal startup is not presented as a service failure');
+clock = 15000;
+check(monitor.refresh().message.includes('still initializing'), 'extended initialization has a visible bounded-delay warning');
+monitor.refresh();
+check(warnings.length === 1, 'steady service warnings do not flood the log');
+status = 'ready';
+check(!monitor.refresh().message, 'successful initialization clears only the service warning');
+status = 'failed';
+check(monitor.refresh().message.includes('Direct keyboard input'), 'IME failure describes the available fallback without restarting it');
+audioError = 'connection lost';
+check(monitor.refresh().message.includes('Audio service: connection lost'), 'audio failure can coexist with input-method failure');
+status = 'ready'; audioError = '';
+check(!monitor.refresh().message && monitor.snapshot().audio === 'ready', 'native recovery updates status without mutating service policy');
+status = 'unknown';
+check(monitor.refresh().message.includes('Cannot inspect'), 'invalid runtime status does not masquerade as ready');
+monitor.reset();
+check(!monitor.snapshot().message, 'stopped Shell drops old service warning state');
