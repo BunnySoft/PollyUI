@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -51,6 +52,41 @@ class InstalledAccounts(unittest.TestCase):
             self.assertEqual(password_tool.call_count, 2)
             commit.assert_not_called()
 
+    def test_account_volume_is_layout_specific(self):
+        old = {"schemaVersion": 2, "homeUuid": UUID}
+        new = {"schemaVersion": 3, "persistentUuid": UUID}
+        accounts.state_volume(old, UUID, 2)
+        accounts.state_volume(new, UUID, 3)
+        for settings, version, expected in ((old, 3, UUID), (new, 2, UUID), (new, 3, "wrong")):
+            with self.subTest(settings=settings, version=version), self.assertRaises(ValueError):
+                accounts.state_volume(settings, expected, version)
+
+    def test_new_layout_requires_backend_without_legacy_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            program = root / "storage.py"
+            program.touch()
+            state = SimpleNamespace(check=lambda: None, persistent=root / "persistent",
+                                    volumes={"PERSISTENT": UUID}, contract={"users": [
+                                        {"name": "root", "uid": 0, "gid": 0},
+                                        {"name": "polly", "uid": 1000, "gid": 1000}]})
+            module = SimpleNamespace(Storage=lambda: state)
+            spec = SimpleNamespace(loader=SimpleNamespace(exec_module=lambda module: None))
+            with patch.object(accounts, "STORAGE_PROGRAM", program), \
+                    patch.object(accounts, "STORAGE_MANIFEST", root / "missing-manifest"), \
+                    patch.object(accounts, "trusted"), \
+                    patch.object(accounts.importlib.util, "spec_from_file_location", return_value=spec), \
+                    patch.object(accounts.importlib.util, "module_from_spec", return_value=module), \
+                    patch.object(accounts, "read") as legacy_read:
+                self.assertEqual(accounts.backing_store(),
+                                 (root / "persistent/SystemData/Accounts", root / "persistent", UUID, 3))
+                def unavailable():
+                    raise ValueError("missing required storage")
+                state.check = unavailable
+                with self.assertRaisesRegex(ValueError, "missing required storage"):
+                    accounts.backing_store()
+                legacy_read.assert_not_called()
+
     @unittest.skipUnless(os.geteuid() == 0, "root-owned fixture files require a disposable root runner")
     def test_configuration(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -63,6 +99,17 @@ class InstalledAccounts(unittest.TestCase):
                             {**valid, "schemaVersion": 1}, {**valid, "homeUuid": "../other"},
                             {**valid, "initialized": 1},
                             {**valid, "extra": "unknown"}, []):
+                accounts.atomic(path, json.dumps(invalid))
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    accounts.config(root)
+            valid_new = {"schemaVersion": 3, "persistentUuid": UUID,
+                         "automaticLogin": False, "initialized": True}
+            accounts.atomic(path, json.dumps(valid_new))
+            self.assertEqual(accounts.config(root), valid_new)
+            self.assertTrue(accounts.completed(root))
+            for invalid in ({**valid_new, "homeUuid": UUID},
+                            {**valid_new, "persistentUuid": "../other"},
+                            {**valid_new, "schemaVersion": 2}):
                 accounts.atomic(path, json.dumps(invalid))
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     accounts.config(root)

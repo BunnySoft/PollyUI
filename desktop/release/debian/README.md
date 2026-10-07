@@ -49,6 +49,14 @@ That fixture uses tmpfs; it does not establish ext4 UUID boot or account migrati
 The unconfigured container must refuse `polly-storage check` until the image
 assembler supplies the manifest and required state; the D1 recipe remains unchanged.
 
+The overlay's account controller accepts schema v3 with `persistentUuid`, while
+historical D1 keeps schema v2 with `homeUuid`. New-layout markers never fall back
+to D1 if storage readiness is missing. The rebuilt setuid passwd proxy checks the
+required storage before entering its private password namespace, still retaining
+the real caller UID. An unconfigured ordinary-user invocation is refused.
+These adapters and the D1 real PAM/passwd/su regression are checked; new-layout
+setup/login/password persistence still require the separately assembled VM image.
+
 ## Minimal root filesystem
 
 From the repository root on Linux:

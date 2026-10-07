@@ -1,6 +1,13 @@
 ARG INSTALLED_IMAGE=localhost/polly-debian-installed-base
+ARG SDK_IMAGE=localhost/polly-debian-sdk-mesa:polly1
+FROM ${SDK_IMAGE} AS storage-account-tools
+COPY release/install/passwd-proxy.c /tmp/passwd-proxy.c
+RUN cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+    -o /tmp/polly-passwd /tmp/passwd-proxy.c
 FROM ${INSTALLED_IMAGE}
 USER root
+COPY --from=storage-account-tools /tmp/polly-passwd /usr/bin/passwd
+COPY release/install/accounts.py /usr/sbin/polly-accounts
 COPY release/storage/early-usr /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr
 COPY release/storage/initramfs-hook /etc/initramfs-tools/hooks/polly-storage-tools
 COPY release/storage/layout.py release/storage/storage.py /usr/lib/polly-storage/
@@ -8,9 +15,12 @@ COPY release/storage/polly-storage.service /etc/systemd/system/
 COPY release/storage/apt-storage.conf /etc/apt/apt.conf.d/00polly-storage
 RUN sed -i 's/\r$//' /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
         /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/*.py \
-        /etc/systemd/system/polly-storage.service /etc/apt/apt.conf.d/00polly-storage && \
+        /etc/systemd/system/polly-storage.service /etc/apt/apt.conf.d/00polly-storage \
+        /usr/sbin/polly-accounts && \
     chmod 755 /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
-        /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/storage.py && \
+        /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/storage.py \
+        /usr/sbin/polly-accounts && \
+    chmod 4755 /usr/bin/passwd && \
     chmod 644 /usr/lib/polly-storage/layout.py /etc/systemd/system/polly-storage.service \
         /etc/apt/apt.conf.d/00polly-storage && \
     ln -s ../lib/polly-storage/storage.py /usr/sbin/polly-storage && \

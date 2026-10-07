@@ -324,9 +324,9 @@ ACL 或其他系统级强制机制；未实现前不得宣称已经提供应用�
 | `layout.py` 契约已由 `storage.py` 必需映射后端复用 | 实际 bind/权限/故障规则已测试；新镜像、账户接入及维护/救援仍待联合验收 |
 | `early-usr` 与专用 storage initramfs 配方已实现早期接入及失败阻断 | 真实 bind 和 initramfs 自有工具已验证；完整普通新镜像冷启动仍待 M07.5 |
 | `desktop/tools/build-installed-image.py` 生成 ext4 A/B 加独立 `/home` | 新单系统/持久存储/救援布局、真实路径与独立启动链尚未实现 |
-| `desktop/release/install/accounts.py` 使用 `/home/.polly-system/accounts` | 需迁移到 `SystemData/Accounts`，更新 UUID、挂载和权限校验 |
-| `passwd-proxy.c`、PAM/NSS 使用当前账户兼容路径 | 必须一起适配，保持标准改密及拒绝绕过行为 |
-| 安装会话固定 `/home/polly`，现有 XDG 数据与命名空间已使用 | 需按稳定 UID 接入 HOME/XDG，保留数据身份并验证兼容链接 |
+| `accounts.py` 已区分旧 DATA/schema v2 与新 `SystemData/Accounts`/schema v3 | 新卷及映射需就绪后才访问；新镜像实际认证和旧数据迁移尚待验收 |
+| `passwd-proxy.c` 保留真实调用者，并在新布局改密前增加存储复验 | PAM/NSS 兼容入口不变；缺状态拒绝已测，新布局成功改密/重启仍待验收 |
+| 安装会话已增加新布局复验及 `/home/polly` 下的 XDG 路径 | 兼容 HOME 来自稳定 UID 1000；多用户、传统链接和迁移尚待 M01.7 |
 | `polly-app` 是普通用户私有对象库与注册，详见应用文档 | 共享库和全局注册需新的受限管理边界，不是路径替换 |
 | 当前启动配置和证据使用 A/A/B/A | 只能作为历史回归，不能作为新单系统、apt 或救援验收 |
 

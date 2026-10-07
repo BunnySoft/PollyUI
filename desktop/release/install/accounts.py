@@ -2,6 +2,7 @@
 """Root-owned installed account lifecycle; passwords are handled only by passwd/PAM."""
 import argparse
 import grp
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,8 @@ DATA = Path("/home/.polly-system/accounts")
 ROOT = Path("/var/lib/polly-accounts")
 RUNTIME = Path("/run/polly-accounts")
 UUID_FILE = Path("/etc/polly-home-uuid")
+STORAGE_MANIFEST = Path("/etc/polly-storage.json")
+STORAGE_PROGRAM = Path("/usr/lib/polly-storage/storage.py")
 
 
 def trusted(path, directory=False, secret=False):
@@ -59,14 +62,41 @@ def atomic(path, text, mode=0o644):
 
 def config(root=ROOT):
     result = json.loads(read(root / "config.json"))
-    if not isinstance(result, dict) or set(result) != {"schemaVersion", "homeUuid", "automaticLogin", "initialized"} or \
-            type(result["schemaVersion"]) is not int or result["schemaVersion"] != 2 or \
+    version = result.get("schemaVersion") if isinstance(result, dict) else None
+    field = "persistentUuid" if version == 3 else "homeUuid"
+    if not isinstance(result, dict) or set(result) != {"schemaVersion", field, "automaticLogin", "initialized"} or \
+            type(version) is not int or version not in (2, 3) or \
             type(result["automaticLogin"]) is not bool or \
             type(result["initialized"]) is not bool or \
-            not isinstance(result["homeUuid"], str) or \
-            not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", result["homeUuid"]):
+            not isinstance(result[field], str) or \
+            not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", result[field]):
         raise ValueError("Unsupported or invalid account configuration")
     return result
+
+
+def backing_store():
+    if STORAGE_PROGRAM.exists() or STORAGE_PROGRAM.is_symlink() or \
+            STORAGE_MANIFEST.exists() or STORAGE_MANIFEST.is_symlink():
+        for path in (STORAGE_PROGRAM.parent.parent, STORAGE_PROGRAM.parent):
+            trusted(path, directory=True)
+        trusted(STORAGE_PROGRAM)
+        trusted(STORAGE_PROGRAM.with_name("layout.py"))
+        spec = importlib.util.spec_from_file_location("polly_account_storage", STORAGE_PROGRAM)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        state = module.Storage()
+        state.check()
+        if state.contract["users"][:2] != [
+                {"name": "root", "uid": 0, "gid": 0}, {"name": "polly", "uid": 1000, "gid": 1000}]:
+            raise ValueError("Primary account rename requires the explicit identity migration")
+        return state.persistent / "SystemData/Accounts", state.persistent, state.volumes["PERSISTENT"], 3
+    return DATA, Path("/home"), read(UUID_FILE, 64).strip(), 2
+
+
+def state_volume(settings, expected, version):
+    field = "persistentUuid" if version == 3 else "homeUuid"
+    if settings["schemaVersion"] != version or settings.get(field) != expected:
+        raise ValueError("Persistent account state belongs to a different layout or volume")
 
 
 def identities(text):
@@ -115,13 +145,16 @@ def completed(root=ROOT):
 
 
 def require_ready(require_complete=True):
-    for path in (Path("/home"), DATA.parent, DATA, ROOT, ROOT / "etc", RUNTIME):
+    data, volume, expected, version = backing_store()
+    for path in (volume, data.parent, data, ROOT, ROOT / "etc", RUNTIME):
         trusted(path, directory=True)
-    expected = read(UUID_FILE, 64).strip()
-    if config()["homeUuid"] != expected or read(RUNTIME / "ready", 64).strip() != expected:
+    state_volume(config(), expected, version)
+    if read(RUNTIME / "ready", 64).strip() != expected:
         raise ValueError("Account state does not match the required user volume")
-    for source, target in ((DATA, ROOT), (DATA / "etc", Path("/var/lib/extrausers"))):
-        if not os.path.ismount(target) or not os.path.samestat(source.stat(), target.stat()):
+    for source, target in ((data, ROOT), (data / "etc", Path("/var/lib/extrausers"))):
+        mounted = subprocess.run(["/usr/bin/findmnt", "-rn", "-M", str(target)],
+                                 capture_output=True, text=True, timeout=10)
+        if mounted.returncode != 0 or not os.path.samestat(source.stat(), target.stat()):
             raise ValueError("Required account bind mount is missing or mismatched")
     identities(read(ROOT / "etc/passwd"))
     passwords()
@@ -133,32 +166,35 @@ def bind(source, target):
     trusted(source, directory=True)
     target.mkdir(mode=0o755, parents=True, exist_ok=True)
     trusted(target, directory=True)
-    if os.path.ismount(target):
+    mounted = subprocess.run(["/usr/bin/findmnt", "-rn", "-M", str(target)],
+                             capture_output=True, text=True, timeout=10)
+    if mounted.returncode == 0:
         if not os.path.samestat(source.stat(), target.stat()):
             raise ValueError("Refusing to replace an unexpected account mount")
-    else:
+    elif mounted.returncode == 1:
         subprocess.run(["/usr/bin/mount", "--bind", str(source), str(target)],
                        check=True, timeout=10)
+    else:
+        raise ValueError("Cannot inspect the required account mount: " + mounted.stderr.strip())
 
 
 def prepare():
-    expected = read(UUID_FILE, 64).strip()
-    mounted = subprocess.run(["/usr/bin/findmnt", "-rn", "-M", "/home", "-o", "UUID,FSTYPE,OPTIONS"],
+    data, volume, expected, version = backing_store()
+    mounted = subprocess.run(["/usr/bin/findmnt", "-rn", "-M", str(volume), "-o", "UUID,FSTYPE,OPTIONS"],
                              check=True, capture_output=True, text=True, timeout=10).stdout.split()
     if len(mounted) != 3 or mounted[:2] != [expected, "ext4"] or "rw" not in mounted[2].split(","):
         raise ValueError("Required writable ext4 user volume is missing or mismatched")
-    for path in (Path("/home"), DATA.parent, DATA, DATA / "etc"):
+    for path in (volume, data.parent, data, data / "etc"):
         trusted(path, directory=True)
-    if config(DATA)["homeUuid"] != expected:
-        raise ValueError("Persistent account state belongs to a different user volume")
+    state_volume(config(data), expected, version)
     records = identities(read(Path("/etc/passwd")))
-    identities(read(DATA / "etc/passwd"))
-    passwords(DATA)
-    if completed(DATA) and not (DATA / "setup-complete").exists():
-        atomic(DATA / "setup-complete", "1\n")
-    atomic(DATA / "etc/passwd", records["root"] + "\n" + records["polly"] + "\n")
-    bind(DATA, ROOT)
-    bind(DATA / "etc", Path("/var/lib/extrausers"))
+    identities(read(data / "etc/passwd"))
+    passwords(data)
+    if completed(data) and not (data / "setup-complete").exists():
+        atomic(data / "setup-complete", "1\n")
+    atomic(data / "etc/passwd", records["root"] + "\n" + records["polly"] + "\n")
+    bind(data, ROOT)
+    bind(data / "etc", Path("/var/lib/extrausers"))
     RUNTIME.mkdir(mode=0o700, exist_ok=True)
     trusted(RUNTIME, directory=True)
     atomic(RUNTIME / "ready", expected + "\n", 0o600)
@@ -244,7 +280,7 @@ def main():
     os.environ.clear()
     os.environ.update(PATH="/usr/sbin:/usr/bin:/sbin:/bin", LANG="C.UTF-8")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["prepare", "setup", "check", "autologin", "getty", "password-scope"])
+    parser.add_argument("operation", choices=["prepare", "setup", "check", "check-storage", "autologin", "getty", "password-scope"])
     parser.add_argument("value", nargs="?")
     args = parser.parse_args()
     if args.operation == "prepare" and args.value is None:
@@ -255,6 +291,8 @@ def main():
         require_ready()
         if login_auth:
             syslog.syslog(syslog.LOG_AUTH | syslog.LOG_NOTICE, "POLLY_LOGIN_AUTH_PENDING")
+    elif args.operation == "check-storage" and args.value is None:
+        require_ready(False)
     elif args.operation == "password-scope" and args.value is None:
         password_scope(password_user)
     elif args.operation == "autologin" and args.value in {"on", "off"}:

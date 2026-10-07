@@ -9,10 +9,21 @@ if [ "$(id -u)" != 1000 ] || [ "${XDG_RUNTIME_DIR:-}" != /run/user/1000 ] ||
     echo "PollyDesktop requires its ordinary-user PAM/logind session." >&2
     exit 1
 fi
-if ! mountpoint -q /home ||
-    [ "$(findmnt -rn -o UUID /home)" != "$(cat /etc/polly-home-uuid)" ]; then
-    echo "Required user data volume is missing or mismatched; desktop startup refused." >&2
-    exit 1
+if [ -e /usr/lib/polly-storage/storage.py ] || [ -L /usr/lib/polly-storage/storage.py ] ||
+    [ -e /etc/polly-storage.json ] ||
+    [ -L /etc/polly-storage.json ]; then
+    if ! /usr/sbin/polly-storage check; then
+        echo "Required system/user state is not ready; desktop startup refused." >&2
+        exit 1
+    fi
+    export XDG_CONFIG_HOME="$HOME/Settings" XDG_DATA_HOME="$HOME/AppData"
+    export XDG_STATE_HOME="$HOME/AppState" XDG_CACHE_HOME="$HOME/Cache"
+else
+    if ! mountpoint -q /home ||
+        [ "$(findmnt -rn -o UUID /home)" != "$(cat /etc/polly-home-uuid)" ]; then
+        echo "Required user data volume is missing or mismatched; desktop startup refused." >&2
+        exit 1
+    fi
 fi
 . /usr/share/pollyui/desktop/tools/live-session-mode.sh
 cd "$HOME"

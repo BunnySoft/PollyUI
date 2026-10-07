@@ -18,6 +18,7 @@
 
 #define ACCOUNT_ROOT "/var/lib/polly-accounts"
 #define PASSWORD_TOOL "/usr/bin/passwd.distrib"
+#define ACCOUNT_TOOL "/usr/sbin/polly-accounts"
 
 static void fail(const char *message) {
     fprintf(stderr, "polly-passwd: %s: %s\n", message, strerror(errno));
@@ -91,6 +92,40 @@ static void sync_file(const char *path, int directory) {
     close(fd);
 }
 
+static void check_storage(void) {
+    struct stat st;
+    if (lstat("/usr/lib/polly-storage/storage.py", &st) != 0) {
+        if (errno != ENOENT)
+            fail("checking storage policy");
+        if (lstat("/etc/polly-storage.json", &st) != 0) {
+            if (errno == ENOENT)
+                return;
+            fail("checking storage manifest");
+        }
+    }
+    trusted("/usr", 1);
+    trusted("/usr/sbin", 1);
+    trusted(ACCOUNT_TOOL, 0);
+    pid_t child = fork();
+    if (child < 0)
+        fail("starting account storage check");
+    if (child == 0) {
+        if (close_range(3, ~0U, 0) != 0)
+            fail("isolating account storage check");
+        execl(ACCOUNT_TOOL, ACCOUNT_TOOL, "check-storage", (char *)NULL);
+        fail("starting account storage check");
+    }
+    int status;
+    while (waitpid(child, &status, 0) < 0) {
+        if (errno != EINTR)
+            fail("waiting for account storage check");
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        errno = EPERM;
+        fail("required account storage is not ready");
+    }
+}
+
 int main(int argc, char **argv) {
     static const struct option options[] = {
         {"all", no_argument, NULL, 'a'}, {"delete", no_argument, NULL, 'd'},
@@ -147,6 +182,7 @@ int main(int argc, char **argv) {
         execv(PASSWORD_TOOL, argv);
         fail("starting distribution passwd");
     }
+    check_storage();
     trusted("/var", 1);
     trusted("/var/lib", 1);
     trusted(ACCOUNT_ROOT, 1);
