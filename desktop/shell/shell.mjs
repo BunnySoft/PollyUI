@@ -887,18 +887,28 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function launchApplication(id) {
     if (!running || !launcher) throw new Error('Application launcher is unavailable');
-    try {
-      const pid = launcher.launch(id);
-      if (errorKind === 'application') { error = ''; errorKind = ''; }
-      closeMenu();
-      return pid;
-    } catch (failure) {
-      error = 'Could not launch application: ' + String(failure);
-      errorKind = 'application';
-      report('[shell] ' + error);
-      repaintMenu();
+    const current = menu;
+    const succeeded = result => {
+      if (running && menu === current) {
+        if (errorKind === 'application') { error = ''; errorKind = ''; }
+        closeMenu(current);
+      }
+      return result;
+    };
+    const failed = failure => {
+      const message = 'Could not launch application: ' + String(failure);
+      report('[shell] ' + message);
+      if (running && menu === current) {
+        error = message;
+        errorKind = 'application';
+        repaintMenu();
+      }
       return null;
-    }
+    };
+    try {
+      const result = launcher.launch(id);
+      return result && typeof result.then === 'function' ? result.then(succeeded, failed) : succeeded(result);
+    } catch (failure) { return failed(failure); }
   }
 
   function showNetwork(output) {

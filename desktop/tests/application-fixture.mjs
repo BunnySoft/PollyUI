@@ -17,6 +17,7 @@ async function run(mode, output) {
     env: { ...process.env, SDL_VIDEODRIVER: 'dummy', SDL_RENDER_DRIVER: 'software', PU_RENDERER: 'raster',
       WAYLAND_DISPLAY: 'polly-test-display', WAYLAND_SOCKET: '3', DISPLAY: ':host',
       DBUS_SESSION_BUS_ADDRESS: 'unix:path=/host/bus', SDL_APP_ID: 'must-not-leak',
+      POLLY_SESSION_BUS_ADDRESS: '',
       XDG_RUNTIME_DIR: root, XDG_DATA_HOME: user, XDG_DATA_DIRS: system,
       XDG_CONFIG_HOME: path.join(root, 'config'), XDG_CACHE_HOME: path.join(root, 'cache'), LC_ALL: 'zh_CN.UTF-8' },
     stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
@@ -47,7 +48,7 @@ try {
   await writeFile(path.join(user, 'applications', 'hidden.desktop'), entry('Hidden=true\nExec=/bin/true\n'));
   await writeFile(path.join(system, 'applications', 'hidden.desktop'), entry('Exec=/bin/true\n'));
   await writeFile(path.join(system, 'applications', 'Utilities', 'tool.desktop'), entry('Exec=/bin/true\n'));
-  await writeFile(path.join(system, 'applications', 'bus.desktop'), entry('DBusActivatable=true\n'));
+  await writeFile(path.join(system, 'applications', 'org.pollyui.Bus.desktop'), entry('DBusActivatable=true\n'));
   const desktopFile = path.join(user, 'applications', 'echo.desktop');
   await writeFile(desktopFile, entry(`Name[zh_CN]=本地化 %u\nPath=${work}\nExec=${quote(helper)} ${quote(echo)} %c %k %% %f "two words"\n`));
   await run('launch', result);

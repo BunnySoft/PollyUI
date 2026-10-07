@@ -45,9 +45,9 @@ rejects(() => parseDesktopEntry(file('Hidden=maybe\n')), 'invalid booleans are r
 rejects(() => parseDesktopEntry(file('Name=Duplicate\n')), 'duplicate keys are rejected');
 rejects(() => parseDesktopEntry(file('Path=relative\n')), 'ambiguous relative working directories are rejected');
 rejects(() => parseDesktopEntry(file('Comment=trailing\\\n')), 'incomplete escapes are rejected');
-const bus = file();
+const bus = file('', 'org.pollyui.Bus.desktop');
 bus.contents = '[Desktop Entry]\nType=Application\nName=Bus only\nDBusActivatable=true\n';
-check(parseDesktopEntry(bus).unavailable.includes('D-Bus'), 'unsupported D-Bus-only activation is explicit');
+check(parseDesktopEntry(bus).unavailable.includes('qualified private session bus'), 'unqualified D-Bus-only activation is explicit');
 const errors = [];
 const files = [file('Hidden=true\n'), file('', 'second.desktop'), file('', 'app.desktop'),
   file('Name=Bad duplicate\n', 'bad.desktop')];

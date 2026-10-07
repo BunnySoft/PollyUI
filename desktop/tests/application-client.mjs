@@ -28,7 +28,10 @@ if (mode === 'survive') {
     check(entries.some(entry => entry.name === '本地化 %u'), 'native files and locale selection');
     check(!entries.some(entry => entry.id === 'hidden.desktop'), 'user override masks system entry');
     check(entries.some(entry => entry.id === 'Utilities-tool.desktop'), 'recursive desktop-file IDs');
-    check(entries.find(entry => entry.id === 'bus.desktop').unavailable, 'D-Bus-only entry is explicitly unavailable');
+    check(entries.find(entry => entry.id === 'org.pollyui.Bus.desktop').unavailable.includes('qualified private session bus'),
+      'D-Bus-only entry without a qualified private bus is explicitly unavailable');
+    if (typeof desktop.canActivateApplication === 'function')
+      check(!desktop.canActivateApplication(), 'fake inherited host bus does not enable activation');
     check(launcher.launch('echo.desktop') > 0, 'desktop Exec launches a direct argument vector');
     let rejected = false;
     try { desktop.spawnApplication(['/nonexistent/polly-app'], '', 'missing.desktop'); } catch { rejected = true; }

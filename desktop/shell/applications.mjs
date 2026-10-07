@@ -123,7 +123,18 @@ export function expandExec(command, entry) {
   return result;
 }
 
-export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], canExecute = () => true } = {}) {
+export function applicationActivationTarget(id) {
+  if (typeof id !== 'string' || !id.endsWith('.desktop'))
+    throw new Error('D-Bus application ID must end in .desktop');
+  const busName = id.slice(0, -8);
+  const match = /^[A-Za-z_-][A-Za-z0-9_-]*(?:\.[A-Za-z_-][A-Za-z0-9_-]*)+$/.exec(busName);
+  if (busName.length > 255 || !match || match[0] !== busName)
+    throw new Error('Invalid D-Bus application desktop ID');
+  return { busName, objectPath: '/' + busName.replaceAll('.', '/').replaceAll('-', '_') };
+}
+
+export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], canExecute = () => true,
+  activationAvailable = false } = {}) {
   if (file.contents.includes('\0')) throw new Error('Desktop entry contains NUL');
   const values = new Map();
   let active = false, found = false;
@@ -157,6 +168,7 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
   if (!visible) return null;
   const tryExec = values.has('TryExec') ? unescapeValue(values.get('TryExec')) : '';
   if (tryExec && !canExecute(tryExec)) return null;
+  const dbusActivatable = boolean(values, 'DBusActivatable');
   const name = localized(values, 'Name', locale);
   if (!values.has('Name') || !name) throw new Error('Application entry requires Name');
   const entry = {
@@ -165,12 +177,13 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     icon: values.has('Icon') ? unescapeValue(values.get('Icon')) : '',
     cwd: values.has('Path') ? unescapeValue(values.get('Path')) : '',
     terminal: boolean(values, 'Terminal'), categories: listValue(values.get('Categories')),
-    keywords: listValue(localized(values, 'Keywords', locale, false)), argv: null, unavailable: '',
+    keywords: listValue(localized(values, 'Keywords', locale, false)), argv: null, activation: null, unavailable: '',
   };
   if (entry.cwd && !entry.cwd.startsWith('/')) throw new Error('Relative application working directories are unsupported');
   if (!values.get('Exec')) {
-    if (!boolean(values, 'DBusActivatable')) throw new Error('Application entry requires Exec');
-    entry.unavailable = 'D-Bus-only activation is not implemented';
+    if (!dbusActivatable) throw new Error('Application entry requires Exec');
+    entry.activation = applicationActivationTarget(entry.id);
+    if (!activationAvailable) entry.unavailable = 'D-Bus activation requires a qualified private session bus';
     return entry;
   }
   entry.argv = expandExec(unescapeValue(values.get('Exec')), entry);
@@ -201,22 +214,26 @@ export function createApplicationLauncher(native, report = console.error) {
     refresh() {
       entries = applicationCatalog(native.applicationFiles(), {
         locale: native.locale, desktops: ['Polly'], canExecute: name => native.canExecute(name),
+        activationAvailable: typeof native.activateApplication === 'function' &&
+          typeof native.canActivateApplication === 'function' && native.canActivateApplication(),
       }, report);
       if (typeof native.bundleFiles === 'function') {
         entries.push(...bundleCatalog(native.bundleFiles(), native.bundleManager, name => native.canExecute(name), report));
         entries.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
       }
       for (const entry of entries) {
-        if (entry.terminal && !native.canExecute(native.terminal))
+        if (!entry.activation && entry.terminal && !native.canExecute(native.terminal))
           entry.unavailable = 'Configured terminal is unavailable: ' + native.terminal;
       }
-      return entries.map(entry => ({ ...entry, argv: entry.argv && [...entry.argv] }));
+      return entries.map(entry => ({ ...entry, argv: entry.argv && [...entry.argv],
+        activation: entry.activation && { ...entry.activation } }));
     },
     launch(id) {
       this.refresh();
       const entry = entries.find(item => item.id === id);
       if (!entry) throw new Error('Application is no longer available');
       if (entry.unavailable) throw new Error(entry.unavailable);
+      if (entry.activation) return native.activateApplication(entry.id);
       const argv = entry.terminal ? [native.terminal, '-e', ...entry.argv] : entry.argv;
       return native.spawnApplication(argv, entry.cwd, entry.id);
     },

@@ -263,6 +263,115 @@ function scenario(name, run) {
   });
 }
 
+function blockedActivation(f) {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  f.native.applicationFiles = () => [{
+    id: 'org.pollyui.MenuFixture.desktop', path: '/synthetic/org.pollyui.MenuFixture.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Fixture\nDBusActivatable=true\n',
+  }];
+  f.native.canActivateApplication = () => true;
+  f.native.activateApplication = id => { f.calls.push(['activate', id]); return promise; };
+  return { resolve, reject };
+}
+
+test('blocked activation keeps its menu until acknowledged and returns no invented PID', async () => {
+  const f = fixture();
+  try {
+    const blocked = blockedActivation(f), menu = f.shell.showApplications(1);
+    const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+    assert.equal(menu.closed, false);
+    assert.deepEqual(f.calls.filter(call => call[0] === 'activate'), [['activate', 'org.pollyui.MenuFixture.desktop']]);
+    const acknowledgement = { kind: 'dbus', id: 'org.pollyui.MenuFixture.desktop', acknowledged: true };
+    blocked.resolve(acknowledgement);
+    assert.equal(await pending, acknowledgement);
+    assert.equal(menu.closed, true);
+    assert.equal(menu.closeCount, 1);
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  } finally { f.done(); }
+});
+
+test('blocked activation rejection remains visible in the originating menu', async () => {
+  const f = fixture();
+  try {
+    const blocked = blockedActivation(f), menu = f.shell.showApplications(1);
+    const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+    blocked.reject(new Error('synthetic method failure'));
+    assert.equal(await pending, null);
+    assert.equal(menu.closed, false);
+    assert.match(f.shell.getState().error, /synthetic method failure/);
+    f.expectedWarnings.push('[shell] Could not launch application: Error: synthetic method failure');
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  } finally { f.done(); }
+});
+
+for (const result of ['acknowledgement', 'rejection']) {
+  test('late activation ' + result + ' cannot affect a new applications instance of the same menu', async () => {
+    const f = fixture();
+    try {
+      const blocked = blockedActivation(f), first = f.shell.showApplications(1);
+      const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+      key(first, 'Escape');
+      const reopened = f.shell.showApplications(1);
+      const root = reopened.document.body.firstChild, before = f.shell.getState().error;
+      if (result === 'acknowledgement') blocked.resolve({ kind: 'dbus', acknowledged: true });
+      else {
+        blocked.reject(new Error('late reopened-menu failure'));
+        f.expectedWarnings.push('[shell] Could not launch application: Error: late reopened-menu failure');
+      }
+      await pending;
+      assert.equal(reopened.closed, false);
+      assert.equal(reopened.document.body.firstChild, root);
+      assert.equal(f.shell.getState().error, before);
+    } finally { f.done(); }
+  });
+
+  test('late activation ' + result + ' cannot close or repaint a reopened/replaced menu', async () => {
+    const f = fixture();
+    try {
+      const blocked = blockedActivation(f), first = f.shell.showApplications(1);
+      const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+      key(first, 'Escape');
+      assert.equal(first.closed, true);
+      const reopened = f.shell.showApplications(1);
+      const replacement = f.shell.showSettings(2);
+      assert.equal(reopened.closed, true);
+      const root = replacement.document.body.firstChild, before = f.shell.getState().error;
+      if (result === 'acknowledgement') blocked.resolve({ kind: 'dbus', acknowledged: true });
+      else {
+        blocked.reject(new Error('late synthetic failure'));
+        f.expectedWarnings.push('[shell] Could not launch application: Error: late synthetic failure');
+      }
+      await pending;
+      assert.equal(replacement.closed, false);
+      assert.equal(replacement.document.body.firstChild, root);
+      assert.equal(f.shell.getState().error, before);
+      assert.equal(first.closeCount, 1);
+      assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+    } finally { f.done(); }
+  });
+
+  test('late activation ' + result + ' after stop logs failure without Shell UI mutation', async () => {
+    const f = fixture();
+    try {
+      const blocked = blockedActivation(f), menu = f.shell.showApplications(1);
+      const pending = f.shell.launchApplication('org.pollyui.MenuFixture.desktop');
+      f.shell.stop();
+      const before = f.shell.getState().error, created = f.created.length;
+      if (result === 'acknowledgement') blocked.resolve({ kind: 'dbus', acknowledged: true });
+      else {
+        blocked.reject(new Error('shutdown cancelled activation'));
+        f.expectedWarnings.push('[shell] Could not launch application: Error: shutdown cancelled activation');
+      }
+      await pending;
+      assert.equal(menu.closeCount, 1);
+      assert.equal(f.created.length, created);
+      assert.equal(f.shell.getState().error, before);
+      assert.equal(f.shell.getState().running, false);
+    } finally { f.done(); }
+  });
+}
+
 scenario('owned wallpaper/panel/dock presses dismiss across outputs without suppressing the action', f => {
   for (const button of [0, 1, 2]) {
     const menu = f.shell.showSettings(1);

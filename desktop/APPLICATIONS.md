@@ -108,6 +108,107 @@ exit reporting and public Wayland/session bus inheritance. The manager strips
 private Wayland/activation identity and marks unrelated descriptors close-on-exec
 before starting the application.
 
+## Bounded desktop-entry D-Bus activation
+
+PollyShell supports **launch without documents** for an entry with
+`DBusActivatable=true` and no `Exec`. The desktop-file ID (including recursive
+XDG directory-to-dash mapping) must end in `.desktop`. Removing that suffix must
+give an ASCII, non-unique D-Bus bus name: at least two nonempty dot-separated
+elements, each starting with a letter, underscore or dash and containing only
+letters, digits, underscores or dashes. The bus name is at most 255 bytes (263
+bytes including `.desktop`); NUL, Unicode, slashes, empty elements and
+digit-leading elements are rejected. The object path prefixes `/`, changes
+dots to slashes and dashes to underscores, for example:
+
+```text
+org.example.Foo-Viewer.desktop
+  destination: org.example.Foo-Viewer
+  object path: /org/example/Foo_Viewer
+  interface:   org.freedesktop.Application
+  member:      Activate
+  signature:   a{sv} (empty platform data)
+```
+
+Neither interface/member nor command/platform data are caller-selectable.
+`desktop.activateApplication(id)` returns a Promise resolving **only after an
+empty method-return** to:
+
+```js
+{ kind: 'dbus', id: 'org.example.Foo-Viewer.desktop',
+  busName: 'org.example.Foo-Viewer', objectPath: '/org/example/Foo_Viewer',
+  acknowledged: true }
+```
+
+This is acknowledgement of the request, **not a PID, window or readiness
+guarantee**. Bus auto-start is enabled; an application need not already own the
+name, but must provide its standard session D-Bus `.service` registration.
+`desktop.canActivateApplication()` reports only whether the existing private
+bus address/socket qualifies for an attempt. It does not query service
+availability, name ownership or readiness. The launcher additionally validates
+the desktop ID and rediscovers the entry before each attempt; deletion,
+hidden/invalid higher-priority masks, visibility and `TryExec` still apply.
+
+Activation reuses `pu_session_bus_connect` and its unchanged trust guard:
+`POLLY_SESSION_BUS_ADDRESS` must exactly match `DBUS_SESSION_BUS_ADDRESS`;
+`XDG_RUNTIME_DIR` must be an absolute, UID-owned 0700 directory; the sole Unix
+address must name that directory's UID-owned `/bus` socket. It never selects the
+system bus, an inherited/default host bus or libdbus autolaunch. This is the
+existing same-UID session boundary, not an adversarial application sandbox.
+The private activation connection closes when the pending set becomes empty.
+
+There are at most eight pending requests, each with a 3000 ms method-reply
+deadline after sending, a 16 KiB incoming-message bound, 64 KiB received queue,
+no received FDs, and at most 64 dispatches per pump. Initial local connection
+authentication/registration uses the existing session-bus helper; the method
+deadline does not claim to bound that helper's synchronous connection setup.
+Queue/ID/trust/send failures throw synchronously. Remote errors reject with
+their D-Bus error name in `error.code`; timeout, disconnect, invalid reply,
+dispatch failure and shutdown cancellation reject explicitly and are logged.
+Timeout/disconnect/cancellation can mean delivery already occurred. There is
+**no automatic retry, Exec fallback or fabricated positive PID**. Shutdown
+cancels pending calls, releases Promise references and closes only this
+connection; it does not terminate applications activated by the bus.
+
+Ordinary `Exec`, `TryExec`, localized metadata, terminal prefixes, managed
+bundles and direct child/exit lifecycles keep their existing paths. An entry
+that has `Exec` continues to use it even with `DBusActivatable=true`; malformed
+`DBusActivatable` boolean values are rejected rather than silently ignored.
+For D-Bus-only entries the service controls its own working directory/terminal;
+the launcher does not fabricate a terminal command. MIME association, document
+`Open`, `ActivateAction`, startup tokens and generic D-Bus/privilege APIs are
+outside this contract.
+
+Shell `launchApplication` still returns a PID synchronously for Exec. For this
+activation path it returns a Promise resolving to the acknowledgement (or
+`null` after a visibly reported launch failure). A queued request leaves its
+menu open. Success closes only the originating menu instance; late rejection
+is logged but cannot repaint a replacement menu or a stopped Shell.
+
+### Focused fixtures and evidence boundary
+
+```sh
+node --test desktop/tests/application-activation.mjs \
+  desktop/tests/menu-host.mjs desktop/tests/xp-startup-compatibility.mjs
+sh desktop/tests/application-activation-check.sh /absolute/evidence
+node desktop/tests/application-activation-fixture.mjs \
+  /absolute/rebuilt/pollyui /absolute/evidence/application-activation-service /absolute/evidence
+```
+
+The scoped check compiles only `applications.c` (including a layer-shell syntax
+check) and the synthetic libdbus service fixture, then runs pure Node regressions
+and a fixture-infrastructure probe. **The `--probe` run is not product-native
+verification.** The final command requires a genuinely rebuilt desktop-enabled
+PollyUI; it rejects old binaries without the API, rather than substituting a
+stub. It starts an isolated `dbus-daemon` with only synthetic service files,
+verifies real service auto-start and the exact invocation, blocked/invalid/error
+replies, failed service startup, missing/wrong service, queue/timeout/pump,
+oversized reply, disconnect, native shutdown, strict host-bus rejection and
+entry deletion/masking rediscovery. Runtime sockets live on a Linux temporary
+filesystem; logs/configs/results are copied to the evidence directory even on
+failure. It never scans host applications or contacts a real host service.
+The menu host tests use controlled Promises to verify instance/stop scoping;
+they do not stand in for rebuilt QuickJS/native completion and cancellation.
+
 ## Explicit update and rollback
 
 ```sh

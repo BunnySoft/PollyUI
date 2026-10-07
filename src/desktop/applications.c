@@ -32,6 +32,20 @@ static struct AppProcess *processes;
 static JSContext *context;
 static JSValue desktop_api;
 
+#define ACTIVATION_LIMIT 8
+#define ACTIVATION_TIMEOUT_MS 3000
+struct AppActivation {
+    DBusPendingCall *pending;
+    JSValue resolve, reject;
+    long long deadline;
+    char id[264], name[256], path[257];
+    struct AppActivation *next;
+};
+static struct AppActivation *activations;
+static unsigned activation_count;
+static DBusConnection *activation_bus;
+static char *activation_address;
+
 static void report_exception(void)
 {
     JSValue exception = JS_GetException(context);
@@ -39,6 +53,214 @@ static void report_exception(void)
     fprintf(stderr, "[applications] Exit callback failed: %s\n", message ? message : "error");
     JS_FreeCString(context, message);
     JS_FreeValue(context, exception);
+}
+
+static bool activation_target(const char *id, size_t size, char *name, char *path)
+{
+    if (size < 11 || size > 263 || memchr(id, 0, size) || memcmp(id + size - 8, ".desktop", 8)) return false;
+    size_t length = size - 8;
+    bool start = true, dot = false;
+    path[0] = '/';
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)id[i];
+        if (c == '.') {
+            if (start) return false;
+            dot = true; start = true;
+        } else {
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c == '-' ||
+                  (!start && c >= '0' && c <= '9'))) return false;
+            start = false;
+        }
+        name[i] = (char)c;
+        path[i + 1] = c == '.' ? '/' : c == '-' ? '_' : (char)c;
+    }
+    name[length] = 0; path[length + 1] = 0;
+    return dot && !start;
+}
+
+static void close_activation_bus(void)
+{
+    if (activation_bus) {
+        dbus_connection_close(activation_bus);
+        dbus_connection_unref(activation_bus);
+        activation_bus = NULL;
+    }
+    free(activation_address); activation_address = NULL;
+}
+
+static JSValue can_activate_application(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    char *address = pu_session_bus_address();
+    bool available = address && strcmp(address, "disabled:");
+    free(address);
+    return JS_NewBool(ctx, available);
+}
+
+static JSValue activate_application(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsString(argv[0]))
+        return JS_ThrowTypeError(ctx, "activateApplication requires a desktop-file ID");
+    size_t size;
+    const char *id = JS_ToCStringLen(ctx, &size, argv[0]);
+    if (!id) return JS_EXCEPTION;
+    char name[256], path[257];
+    bool valid = activation_target(id, size, name, path);
+    if (!valid) {
+        JS_FreeCString(ctx, id);
+        return JS_ThrowTypeError(ctx, "Invalid D-Bus application desktop ID");
+    }
+    if (activation_count >= ACTIVATION_LIMIT) {
+        JS_FreeCString(ctx, id);
+        return JS_ThrowRangeError(ctx, "D-Bus application activation queue is full");
+    }
+    char *address = pu_session_bus_address();
+    if (!address || !strcmp(address, "disabled:") ||
+        (activation_address && strcmp(address, activation_address))) {
+        free(address); JS_FreeCString(ctx, id);
+        return JS_ThrowInternalError(ctx, "D-Bus activation requires an unchanged qualified private session bus");
+    }
+    if (!activation_bus) {
+        char error[256];
+        activation_bus = pu_session_bus_connect(error, sizeof(error));
+        if (!activation_bus) {
+            free(address); JS_FreeCString(ctx, id);
+            return JS_ThrowInternalError(ctx, "%s", error);
+        }
+        activation_address = address; address = NULL;
+        dbus_connection_set_max_received_size(activation_bus, 64 * 1024);
+        dbus_connection_set_max_message_size(activation_bus, 16 * 1024);
+        dbus_connection_set_max_received_unix_fds(activation_bus, 0);
+    }
+    free(address);
+    struct AppActivation *request = calloc(1, sizeof(*request));
+    DBusMessage *message = dbus_message_new_method_call(name, path, "org.freedesktop.Application", "Activate");
+    JSValue result = JS_EXCEPTION;
+    if (!request || !message) { JS_ThrowOutOfMemory(ctx); goto cleanup; }
+    strcpy(request->id, id); strcpy(request->name, name); strcpy(request->path, path);
+    DBusMessageIter body, dictionary;
+    dbus_message_iter_init_append(message, &body);
+    if (!dbus_message_iter_open_container(&body, DBUS_TYPE_ARRAY, "{sv}", &dictionary) ||
+        !dbus_message_iter_close_container(&body, &dictionary)) {
+        JS_ThrowOutOfMemory(ctx); goto cleanup;
+    }
+    dbus_message_set_auto_start(message, true);
+    JSValue callbacks[2];
+    result = JS_NewPromiseCapability(ctx, callbacks);
+    if (JS_IsException(result)) goto cleanup;
+    request->resolve = callbacks[0]; request->reject = callbacks[1];
+    if (!dbus_connection_get_is_connected(activation_bus) ||
+        !dbus_connection_send_with_reply(activation_bus, message, &request->pending, ACTIVATION_TIMEOUT_MS) ||
+        !request->pending) {
+        JS_FreeValue(ctx, result); result = JS_EXCEPTION;
+        JS_FreeValue(ctx, request->resolve); JS_FreeValue(ctx, request->reject);
+        JS_ThrowInternalError(ctx, "Cannot send D-Bus application activation request");
+        goto cleanup;
+    }
+    request->deadline = pu_now_ms() + ACTIVATION_TIMEOUT_MS;
+    request->next = activations; activations = request; request = NULL;
+    activation_count++;
+cleanup:
+    if (message) dbus_message_unref(message);
+    if (request && request->pending) {
+        dbus_pending_call_cancel(request->pending);
+        dbus_pending_call_unref(request->pending);
+    }
+    free(request); JS_FreeCString(ctx, id);
+    if (!activations) close_activation_bus();
+    return result;
+}
+
+static void complete_activation(struct AppActivation *request, DBusMessage *reply,
+                                const char *code, const char *message)
+{
+    char failure[704];
+    if (!code && !reply) {
+        code = "POLLY_ACTIVATION_TIMEOUT";
+        message = "D-Bus activation timed out; delivery is indeterminate (no automatic retry or Exec fallback)";
+    } else if (!code && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR) {
+        code = dbus_message_get_error_name(reply);
+        DBusMessageIter body;
+        const char *detail = "";
+        if (dbus_message_iter_init(reply, &body) && dbus_message_iter_get_arg_type(&body) == DBUS_TYPE_STRING)
+            dbus_message_iter_get_basic(&body, &detail);
+        bool indeterminate = code && (!strcmp(code, DBUS_ERROR_NO_REPLY) ||
+            !strcmp(code, DBUS_ERROR_DISCONNECTED) || !strcmp(code, DBUS_ERROR_TIMEOUT));
+        snprintf(failure, sizeof(failure), "D-Bus activation error %.255s: %.200s%s (no automatic retry or Exec fallback)",
+            code ? code : "unknown", detail, indeterminate ? "; delivery is indeterminate" : "");
+        message = failure;
+        if (!code) code = "POLLY_ACTIVATION_INVALID_REPLY";
+    } else if (!code && (dbus_message_get_type(reply) != DBUS_MESSAGE_TYPE_METHOD_RETURN ||
+               !dbus_message_has_signature(reply, "") || !dbus_message_get_sender(reply) ||
+               dbus_message_get_sender(reply)[0] != ':')) {
+        code = "POLLY_ACTIVATION_INVALID_REPLY";
+        message = "Invalid D-Bus activation reply; delivery is indeterminate (no automatic retry or Exec fallback)";
+    }
+    JSValue value;
+    if (code) {
+        fprintf(stderr, "[applications] %s: %s\n", request->id, message);
+        value = JS_NewError(context);
+        if (!JS_IsException(value) &&
+            (JS_SetPropertyStr(context, value, "code", JS_NewString(context, code)) < 0 ||
+             JS_SetPropertyStr(context, value, "message", JS_NewString(context, message)) < 0)) {
+            JS_FreeValue(context, value); value = JS_EXCEPTION;
+        }
+    } else {
+        value = JS_NewObject(context);
+        if (!JS_IsException(value) &&
+            (JS_SetPropertyStr(context, value, "kind", JS_NewString(context, "dbus")) < 0 ||
+             JS_SetPropertyStr(context, value, "id", JS_NewString(context, request->id)) < 0 ||
+             JS_SetPropertyStr(context, value, "busName", JS_NewString(context, request->name)) < 0 ||
+             JS_SetPropertyStr(context, value, "objectPath", JS_NewString(context, request->path)) < 0 ||
+             JS_SetPropertyStr(context, value, "acknowledged", JS_NewBool(context, true)) < 0)) {
+            JS_FreeValue(context, value); value = JS_EXCEPTION;
+        }
+    }
+    bool failed = code || JS_IsException(value);
+    if (JS_IsException(value)) {
+        fprintf(stderr, "[applications] Cannot allocate activation completion for %s\n", request->id);
+        value = JS_GetException(context);
+    }
+    JSValue settled = JS_Call(context, failed ? request->reject : request->resolve, JS_UNDEFINED, 1, &value);
+    if (JS_IsException(settled)) report_exception();
+    JS_FreeValue(context, settled); JS_FreeValue(context, value);
+    JS_FreeValue(context, request->resolve); JS_FreeValue(context, request->reject);
+    dbus_pending_call_cancel(request->pending);
+    dbus_pending_call_unref(request->pending);
+    free(request);
+}
+
+static int pump_activations(void)
+{
+    if (!activations) return 0;
+    const char *code = NULL, *message = NULL;
+    if (!dbus_connection_read_write(activation_bus, 0)) {
+        code = "POLLY_ACTIVATION_DISCONNECTED";
+        message = "Private activation bus disconnected; delivery is indeterminate (no automatic retry or Exec fallback)";
+    } else {
+        for (unsigned i = 0; i < 64 && dbus_connection_get_dispatch_status(activation_bus) == DBUS_DISPATCH_DATA_REMAINS; i++) {
+            if (dbus_connection_dispatch(activation_bus) == DBUS_DISPATCH_NEED_MEMORY) {
+                code = "POLLY_ACTIVATION_DISPATCH_FAILED";
+                message = "Cannot dispatch D-Bus activation reply; delivery is indeterminate (no automatic retry or Exec fallback)";
+                break;
+            }
+        }
+    }
+    int worked = 0;
+    struct AppActivation **slot = &activations;
+    while (*slot) {
+        struct AppActivation *request = *slot;
+        bool done = dbus_pending_call_get_completed(request->pending);
+        if (!code && !done && pu_now_ms() < request->deadline) { slot = &request->next; continue; }
+        *slot = request->next; activation_count--;
+        DBusMessage *reply = !code && done ? dbus_pending_call_steal_reply(request->pending) : NULL;
+        complete_activation(request, reply, code, message);
+        if (reply) dbus_message_unref(reply);
+        worked++;
+    }
+    if (!activations) close_activation_bus();
+    return worked;
 }
 
 static char *join(const char *a, const char *b)
@@ -367,6 +589,8 @@ int pu_applications_install(JSContext *ctx)
     JS_SetPropertyStr(ctx, desktop_api, "applicationFiles", JS_NewCFunction(ctx, read_applications, "applicationFiles", 0));
     JS_SetPropertyStr(ctx, desktop_api, "canExecute", JS_NewCFunction(ctx, can_execute, "canExecute", 1));
     JS_SetPropertyStr(ctx, desktop_api, "spawnApplication", JS_NewCFunction(ctx, spawn_application, "spawnApplication", 3));
+    if (JS_SetPropertyStr(ctx, desktop_api, "canActivateApplication", JS_NewCFunction(ctx, can_activate_application, "canActivateApplication", 0)) < 0 ||
+        JS_SetPropertyStr(ctx, desktop_api, "activateApplication", JS_NewCFunction(ctx, activate_application, "activateApplication", 1)) < 0) return 0;
     const char *locale = getenv("LC_ALL");
     if (!locale || !*locale) locale = getenv("LC_MESSAGES");
     if (!locale || !*locale) locale = getenv("LANG");
@@ -391,7 +615,7 @@ int pu_applications_install(JSContext *ctx)
 int pu_applications_pump(void)
 {
     if (!context) return 0;
-    int worked = 0;
+    int worked = pump_activations();
     struct AppProcess **link = &processes;
     while (*link) {
         struct AppProcess *process = *link;
@@ -432,6 +656,13 @@ int pu_applications_pump(void)
 
 void pu_applications_shutdown(void)
 {
+    while (activations) {
+        struct AppActivation *request = activations;
+        activations = request->next; activation_count--;
+        complete_activation(request, NULL, "POLLY_ACTIVATION_CANCELLED",
+            "Application activation cancelled at shutdown; delivery is indeterminate (no automatic retry or Exec fallback)");
+    }
+    close_activation_bus();
 #if defined(PU_LAYER_SHELL)
     pu_power_shutdown();
     pu_audio_shutdown();
