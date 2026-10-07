@@ -207,6 +207,62 @@ localStorage counter continues from 1 to 2 with the same app-id and code digest.
 `storage-managed-migration-fixture.py REPO MANAGER --report NEW_FILE` optionally
 writes non-overwriting evidence, including source/runtime hashes and scope limits.
 
+## Explicit offline account import
+
+The storage recipe also installs the ordinary root-only `polly-migrate-accounts`
+maintenance command. It imports the historical D1 schema-v2 authority, not arbitrary
+Linux accounts, into an offline single-system target:
+
+```sh
+polly-migrate-accounts import --source /mnt/old-home/.polly-system/accounts \
+    --target-root /mnt/new-system --persistent /mnt/new-state
+polly-migrate-accounts status \
+    --transaction /mnt/new-state/SystemData/.accounts-migration-TRANSACTION_ID
+```
+
+Keep source and target systems stopped and all other writers excluded. The source
+must be a genuinely read-only ext4 filesystem whose UUID matches `homeUuid`; a
+read-only bind over a writable backing filesystem is insufficient. Target SYSTEM
+and PERSISTENT UUIDs must match the validated storage manifest. SYSTEM is writable
+without `nosuid`/`noexec`; PERSISTENT is writable with `nodev,nosuid`. The intended
+target passwd/group tables qualify fixed root/polly identities and its shadow
+group; extra persistent accounts, unsupported HOME/shells and privileged-group
+memberships are refused. Target `SystemData/Accounts` must **not exist**: even an
+uninitialized template or dangling link is never replaced or implicitly merged.
+This is an installer maintenance boundary, not a way to bypass an existing setup.
+
+Credential bytes, password locks/aging fields, authoritative `initialized` and
+`automaticLogin` are retained. An initialized source missing its derived marker
+does not reopen setup; an uninitialized partial setup is not promoted to success.
+Configuration becomes schema v3 with the target `persistentUuid`; only the
+shadow file's qualified helper GID and version-related public account records are
+adapted. Target service accounts remain in the target system, not copied from D1.
+Only root/polly are supported as persistent accounts by this importer.
+
+Original private state is backed up under root `0700` before staging and no-replace
+publication. Known empty password-tool mount points, inert compatibility links,
+locks and database backups stay in that backup, not the activated authority.
+Unclassified files, nested/live mounts, unsafe metadata/attributes, aliases and
+malformed state are refused, not dropped. Files are bounded to 16 KiB and the source
+tree to 40 classified entries. Source/target qualification is checked again before
+publication; post-publication qualification/sync failures retain the published
+state and report interruption rather than pretending rollback.
+
+The root-private journal records checksums and qualification, never credential
+contents. CLI failures deliberately withhold parser/exception text that could
+include private input; `status` gives phase and backup/publication verification,
+does not mutate or resume. Subsequent legitimate account changes can make the
+publication comparison false. Core dumps are disabled for the maintenance CLI.
+The importer does not migrate HOME, rebuild boot files, edit the target system's
+global passwd/group tables, remove old data or provide unauthenticated recovery.
+
+Fast tests cover transaction and refusal paths. `mounts` additionally runs a
+disposable **installed-base** container with real read-only tmpfs, private backup,
+NSS/PAM/su and standard passwd. Only volume discovery is adapted for that fixture;
+it cannot establish ext4 UUID/durability, complete storage boot, additional-user
+lifecycle or migrated-image acceptance. Its adapters are test-only and never
+installed into a normal image.
+
 ## Minimal root filesystem
 
 From the repository root on Linux:

@@ -10,7 +10,7 @@ COPY --from=storage-account-tools /tmp/polly-passwd /usr/bin/passwd
 COPY release/install/accounts.py /usr/sbin/polly-accounts
 COPY release/storage/early-usr /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr
 COPY release/storage/initramfs-hook /etc/initramfs-tools/hooks/polly-storage-tools
-COPY release/storage/layout.py release/storage/storage.py release/storage/homes.py release/storage/identities.py release/storage/migrate-home.py /usr/lib/polly-storage/
+COPY release/storage/layout.py release/storage/storage.py release/storage/homes.py release/storage/identities.py release/storage/migrate-home.py release/storage/migrate-accounts.py /usr/lib/polly-storage/
 COPY release/storage/polly-storage.service /etc/systemd/system/
 COPY release/storage/apt-storage.conf /etc/apt/apt.conf.d/00polly-storage
 RUN sed -i 's/\r$//' /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
@@ -20,12 +20,14 @@ RUN sed -i 's/\r$//' /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr
     chmod 755 /etc/initramfs-tools/scripts/local-bottom/polly-storage-usr \
         /etc/initramfs-tools/hooks/polly-storage-tools /usr/lib/polly-storage/storage.py \
         /usr/lib/polly-storage/migrate-home.py \
+        /usr/lib/polly-storage/migrate-accounts.py \
         /usr/sbin/polly-accounts && \
     chmod 4755 /usr/bin/passwd && \
     chmod 644 /usr/lib/polly-storage/layout.py /usr/lib/polly-storage/homes.py /usr/lib/polly-storage/identities.py /etc/systemd/system/polly-storage.service \
         /etc/apt/apt.conf.d/00polly-storage && \
     ln -s ../lib/polly-storage/storage.py /usr/sbin/polly-storage && \
     ln -s ../lib/polly-storage/migrate-home.py /usr/sbin/polly-migrate-home && \
+    ln -s ../lib/polly-storage/migrate-accounts.py /usr/sbin/polly-migrate-accounts && \
     systemctl enable polly-storage.service && \
     update-initramfs -u -k all
 ENTRYPOINT []

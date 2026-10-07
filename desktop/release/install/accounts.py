@@ -90,8 +90,8 @@ def state_lock(root=ROOT, timeout=60):
         os.close(descriptor)
 
 
-def config(root=ROOT):
-    result = json.loads(read(root / "config.json"))
+def parse_config(text):
+    result = json.loads(text)
     version = result.get("schemaVersion") if isinstance(result, dict) else None
     field = "persistentUuid" if version == 3 else "homeUuid"
     if not isinstance(result, dict) or set(result) != {"schemaVersion", field, "automaticLogin", "initialized"} or \
@@ -102,6 +102,10 @@ def config(root=ROOT):
             not re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", result[field]):
         raise ValueError("Unsupported or invalid account configuration")
     return result
+
+
+def config(root=ROOT):
+    return parse_config(read(root / "config.json"))
 
 
 def backing_store():
@@ -146,9 +150,9 @@ def identities(text):
     return records
 
 
-def passwords(root=ROOT, usable=False):
+def password_records(text, usable=False):
     records = {}
-    for line in read(root / "etc/shadow", secret=True).splitlines():
+    for line in text.splitlines():
         fields = line.split(":")
         if len(fields) != 9 or fields[0] not in {"root", "polly"} or fields[0] in records:
             raise ValueError("Invalid persistent shadow database")
@@ -157,7 +161,14 @@ def passwords(root=ROOT, usable=False):
         records[fields[0]] = fields
     if set(records) != {"root", "polly"}:
         raise ValueError("Missing persistent account password")
-    if trusted(root / "etc/shadow", secret=True).st_gid != grp.getgrnam("shadow").gr_gid:
+    return records
+
+
+def passwords(root=ROOT, usable=False, *, shadow_gid=None):
+    records = password_records(read(root / "etc/shadow", secret=True), usable)
+    expected = grp.getgrnam("shadow").gr_gid if shadow_gid is None else shadow_gid
+    if type(expected) is not int or expected < 0 or \
+            trusted(root / "etc/shadow", secret=True).st_gid != expected:
         raise ValueError("Persistent shadow group does not match this system")
     return records
 

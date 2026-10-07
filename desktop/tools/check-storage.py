@@ -27,10 +27,12 @@ def main():
         "desktop/release/storage/homes.py",
         "desktop/release/storage/identities.py",
         "desktop/release/storage/migrate-home.py",
+        "desktop/release/storage/migrate-accounts.py",
         "desktop/release/storage/storage.py", "desktop/tools/build-installed-image.py",
         "desktop/tools/build-storage-image.py", "desktop/tests/persistent-boot.py",
         "desktop/tools/check-storage.py",
         "desktop/tests/account-auth-fixture.py",
+        "desktop/tests/storage-account-migration-fixture.py",
         "desktop/tests/storage-managed-migration-fixture.py",
     ]
     for name in python_files:
@@ -51,7 +53,7 @@ def main():
         ])
     for name in ("installed-image", "installed-accounts", "storage-layout",
                  "storage-mappings", "storage-image", "storage-homes", "storage-home-migration",
-                 "storage-identities"):
+                 "storage-identities", "storage-account-migration"):
         run(name, ["python3", "-I", "-B", str(repo / f"desktop/tests/{name}.py")])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)
