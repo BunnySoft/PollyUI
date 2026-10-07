@@ -11,6 +11,13 @@ import subprocess
 import tempfile
 
 REPO = Path(__file__).resolve().parents[2]
+RECIPE_PATHS = (
+    "desktop/release/debian/Containerfile.sdk", "desktop/release/debian/sources.json",
+    "desktop/release/debian/libinput.json", "desktop/release/debian/build-wlroots.py",
+    "desktop/release/debian/build-libinput.sh", "desktop/tools/build-skia-linux.sh",
+    "desktop/tools/skia-linux.gn", "desktop/tools/build-sdl-linux.sh", "desktop/tools/build-harfbuzz-linux.sh",
+    "desktop/patches/sdl-wayland-sync-lifetime.patch",
+)
 
 
 def digest(path, algorithm="sha256"):
@@ -104,8 +111,19 @@ def retain(output):
                 raise ValueError("Unexpected tracked source changes: " + name)
             filename = name + "-" + revision + ".tar.gz"
             git(source, "archive", "--format=tar.gz", "--prefix=" + name + "/", "--output=" + str(sources / filename), revision)
+            bundle = name + "-" + revision + ".bundle"
+            git(source, "bundle", "create", str(sources / bundle), "HEAD")
+            shallow = source / ".git/shallow"
+            boundary = None
+            if shallow.exists():
+                contents = shallow.read_text()
+                if not contents.strip() or not all(re.fullmatch("[0-9a-f]{40}", line) for line in contents.splitlines()):
+                    raise ValueError("SDK has an invalid shallow source boundary")
+                boundary = "sources/" + name + "-shallow.txt"
+                (stage / boundary).write_text(contents)
             records.append({"name": name, "revision": revision, "file": "sources/" + filename,
                             "format": "git archive of tracked pristine upstream source",
+                            "gitBundle": "sources/" + bundle, "shallowBoundary": boundary,
                             "patch": "recipes/sdl-wayland-sync-lifetime.patch" if name == "sdl" else None})
         for name in ("wlroots", "wlr-protocols"):
             expected = definition[name]
@@ -128,12 +146,7 @@ def retain(output):
         shutil.copyfile(descriptor, sources / descriptor.name)
         records.append({"name": "libinput", "version": version, "file": "sources/" + descriptor.name,
                         "format": "Debian source descriptor and verified referenced archives"})
-        for file in [
-            "desktop/release/debian/Containerfile.sdk", "desktop/release/debian/sources.json",
-            "desktop/release/debian/libinput.json", "desktop/release/debian/build-wlroots.py",
-            "desktop/release/debian/build-libinput.sh", "desktop/tools/build-skia-linux.sh",
-            "desktop/tools/skia-linux.gn", "desktop/tools/build-sdl-linux.sh", "desktop/tools/build-harfbuzz-linux.sh",
-        ]:
+        for file in RECIPE_PATHS:
             shutil.copyfile(REPO / file, recipes / Path(file).name)
         inventory = [{"path": str(file.relative_to(stage)), "bytes": file.stat().st_size, "sha256": digest(file)}
                      for directory in (sources, recipes) for file in sorted(directory.iterdir())]

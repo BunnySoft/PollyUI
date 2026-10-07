@@ -209,12 +209,41 @@ Before retention, SDL's actual tracked modifications must exactly match the
 declared patch; unrelated edits are rejected. No source archive is executed or
 extracted during retention or verification.
 
-The Git source exports are not full Git repositories. Rehydrating an SDK from
-these exports requires a separate restore path that respects the recorded
-revision/archive checksums; the existing network-oriented build scripts do not
-magically obtain missing Git metadata from them. This is source retention,
-not a claim that a complete toolchain can already be rebuilt offline. The
-project's own source remains separately versioned in Git, and redistribution
+New source packs also contain Git bundles and the original shallow boundaries.
+Plain Git archives still do not carry Git metadata, and a shallow bundle alone
+does not carry its missing-history boundary: cloning one without that boundary
+fails `git fsck`. Restoration preserves the actual boundary, checks every object,
+checks out the recorded revision, and requires a clean tree. It neither fabricates
+commits nor claims to retain complete upstream history.
+
+Restore in a disposable, network-disabled build container to a **new** directory:
+
+```sh
+podman run --rm --network=none -v "$PWD:/workspace:ro" -w /workspace \
+    localhost/polly-debian-sdk sh -ec '
+      python3 -B desktop/tools/restore-build-sources.py dist/polly-custom-source-inputs /tmp/polly-sources
+      sh /tmp/polly-sources/desktop/tools/build-sdl-linux.sh /tmp/polly-sources/pollyui-sdl /tmp/polly-sdl
+      sh /tmp/polly-sources/desktop/tools/build-harfbuzz-linux.sh /tmp/polly-sources/pollyui-harfbuzz /tmp/polly-text'
+```
+
+Restoration verifies the retained inventory before use, cross-checks the saved
+recipe pins, extracts wlroots/wlr-protocols and the Debian libinput source, and
+reconstructs the original relative recipe/patch paths. SDL remains pristine until
+its existing build recipe applies the retained patch. Git configuration/hooks and
+SDK build outputs are not imported. Failed restoration removes only its own
+temporary staging directory; existing destination directories are not replaced.
+Older packs without bundles are rejected by restoration, but remain valid for
+source-archive verification.
+
+The libinput descriptor/archive checksums are verified, but maintainer signature
+authentication is a separate guarantee. `dpkg-source` retains its normal signature
+checks and warnings; a missing acceptable maintainer key is reported, not hidden
+or described as a successfully authenticated signature.
+
+This restores custom source inputs, **not a complete offline SDK**. Compilers and
+system build dependencies still come from the explicitly selected SDK, and the
+existing wlroots/libinput SDK recipes still contain acquisition/install steps.
+The project's own source remains separately versioned in Git, and redistribution
 obligations for all distro packages are not covered by this custom-source set.
 
 ## Current acceptance limits

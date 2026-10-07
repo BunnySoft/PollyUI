@@ -459,6 +459,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-retained-inputs PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-retained-sources COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/retained-sources.py")
         set_tests_properties(desktop-retained-sources PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        find_program(PU_DPKG_SOURCE_EXECUTABLE dpkg-source)
+        if (PU_DPKG_SOURCE_EXECUTABLE)
+            add_test(NAME desktop-restored-sources COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/restored-sources.py")
+            set_tests_properties(desktop-restored-sources PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
         add_test(NAME desktop-launcher-shell
             COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"
                 "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
