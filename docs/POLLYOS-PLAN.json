@@ -4962,12 +4962,12 @@
         "candidate"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "alpha-code-integration",
         "alpha-functional-closure"
       ],
-      "evidence": "现有 e879 ISO/VHDX 可继续手测，来源/哈希冻结；它们不含 ce73/1cd 最新源码修复。当前工作不是再建每功能测试 VM；功能齐后集中更新一次介质。"
+      "evidence": "2026-10-08 用户明确要求测试并更新虚拟机，批准全新测试环境，随后指定复用现有 Hyper-V PollyOS 配置并自行挂载介质。已开始从固定 12fecb4 生成一次新 Live ISO/未初始化安装 VHDX，并做新隔离 guest 的集中短 smoke；补入实际标准电源依赖/规则，不复用缺 pin 的旧底座或导出已首设测试盘。成品放 D:\\Temp\\PollyOS，无覆盖旧媒体或自动修改现有 VM。QEMU 结果不当 Hyper-V 现场证明，首次图形入口及真实用户流程仍按实际结果记录。"
     },
     {
       "id": "alpha-manual-acceptance",
