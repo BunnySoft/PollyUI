@@ -568,6 +568,22 @@
   },
   "nodes": [
     {
+      "id": "system-settings-hub",
+      "label": "T21.6 系统设置中心",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "可操作的统一系统设置窗口，接通现有外观、显示、网络、音频、快捷键与关于页面；复用已具备的控制器和真实权限，不以卡片/假成功替代用户操作。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "用户明确将第四批改为实际系统功能优先；固定0f86311，子会话47f514de-9e94-47a4-8ccf-05299e0676fe实现Shell连接拥有的普通设置窗口、持续导航和现有服务操作；显示确认/快捷键捕获继续使用现有受控层，不扩大普通应用权限。功能与实际原生验收待返回。"
+    },
+    {
       "id": "target-identity-ui",
       "label": "T24.6 目标展示接入",
       "kind": "subtask",
@@ -1290,7 +1306,8 @@
       "status": "pending",
       "requires": [
         "account-model"
-      ]
+      ],
+      "evidence": "用户重排第四批为图形登录/首次设置/系统设置与文件功能；本轮暂停新增主机身份基础设施。原子会话工作树0f86311干净、无产品修改，任务仍待实现，不作用户功能的新增前置。"
     },
     {
       "id": "t05",
@@ -2293,11 +2310,12 @@
         "M02.2",
         "M02.4"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "first-passwords",
         "role-bootstrap"
-      ]
+      ],
+      "evidence": "第四批用户功能优先，固定0f86311，子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4与图形登录同一完整账户流程；用户已批准greetd底层/Polly非root图形界面，复用现双密码/角色初始化，不改变Live或默认密码登录。真实首次设置和PAM/会话交接待实现验收。"
     },
     {
       "id": "gui-login",
@@ -2312,10 +2330,11 @@
       "sources": [
         "M03.1"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "pam-session"
-      ]
+      ],
+      "evidence": "第四批与gui-setup同一子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4；用户批准greetd标准PAM/VT/logind会话管理及非rootPolly greeter，安装版真正图形密码登录交付优先。锁屏认证成功不当作登录，root不进入桌面，Live既有策略不更改，真实会话验收待返回。"
     },
     {
       "id": "t14-m03-3",
@@ -2625,7 +2644,8 @@
       "status": "pending",
       "requires": [
         "pam-session"
-      ]
+      ],
+      "evidence": "用户已选择Shell崩溃默认最多自动重启3次、耗尽保留普通应用并明确故障/手动恢复，正常退出/注销/health-check语义分开；随后明确暂缓新的恢复基础设施，第四批改为图形账户入口/设置/文件功能。原子会话0f86311干净，仅只读研究，当前策略未实现，不阻塞本批用户功能。"
     },
     {
       "id": "t16-m11-2",
@@ -2835,7 +2855,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -2851,8 +2871,9 @@
       "sources": [
         "M16.1"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "用户要求增加功能并行，固定0f86311，子会话4b0f28e2-6cc2-48f5-b900-3d9b04d7ab8c实现普通用户原生目录导航/属性/真实MIME打开、新目录/重命名；唯一共享FS后端供选择器使用，不重复root broker。以真实浏览/操作为交付，原生功能验收待返回。"
     },
     {
       "id": "t19-m16-2",
@@ -2867,10 +2888,11 @@
       "sources": [
         "M16.2"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t19-m16-1"
-      ]
+      ],
+      "evidence": "第四批同文件管理器子会话仅先接通创建目录、同目录无覆盖重命名和普通文本保存；用户明确第一版支持已有文件覆盖，必须明确确认且变化后重新确认，由同一FS后端提供观察绑定。复制/跨目录移动/删除未实施时不关闭整项，无实际用户文件操作授权。"
     },
     {
       "id": "t20",
@@ -2916,10 +2938,11 @@
       "sources": [
         "M16.3"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t19-m16-1"
-      ]
+      ],
+      "evidence": "第四批子会话fade3257-83ac-4381-a82b-b524b08390d1与文件管理器并行实现原生选择/导航/取消及真实打开读取、新建保存；共享FS由4b0f28e2唯一维护。用户批准首版既有文件覆盖确认与变化后再确认，未具备时明确拒绝而非假保存。选择器和真实读写/普通权限/原生交互验收待返回。"
     },
     {
       "id": "t21",
