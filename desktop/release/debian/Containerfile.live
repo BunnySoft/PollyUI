@@ -31,6 +31,9 @@ COPY release/debian/network-runtime.conf /etc/systemd/system/dhcpcd.service.d/po
 COPY release/debian/network-tmpfiles.conf /etc/tmpfiles.d/polly-network.conf
 COPY release/debian/account-profile /tmp/polly-account-profile
 COPY release/debian/profile-check /usr/lib/polly-account-profile-check
+COPY release/install/readonly-helper.py release/install/targets.py /usr/lib/pollyui/install-targets/install/
+COPY release/storage/layout.py /usr/lib/pollyui/install-targets/storage/layout.py
+COPY release/maintenance/payload.py /usr/lib/pollyui/install-targets/maintenance/payload.py
 RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware && \
     sed -i 's/\r$//' /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics /usr/bin/polly-boot-hardware \
         /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
@@ -46,6 +49,17 @@ RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics 
         /usr/share/pollyui/desktop/shell/live.mjs /etc/resolvconf.conf \
         /etc/systemd/system/iwd.service.d/polly-network.conf \
         /etc/systemd/system/dhcpcd.service.d/polly-network.conf /etc/tmpfiles.d/polly-network.conf && \
+    sed -i 's/\r$//' /usr/lib/pollyui/install-targets/install/*.py \
+        /usr/lib/pollyui/install-targets/storage/layout.py /usr/lib/pollyui/install-targets/maintenance/payload.py && \
+    chown 0:0 /usr/lib/pollyui/install-targets /usr/lib/pollyui/install-targets/install \
+        /usr/lib/pollyui/install-targets/storage /usr/lib/pollyui/install-targets/maintenance \
+        /usr/lib/pollyui/install-targets/install/readonly-helper.py \
+        /usr/lib/pollyui/install-targets/install/targets.py \
+        /usr/lib/pollyui/install-targets/storage/layout.py /usr/lib/pollyui/install-targets/maintenance/payload.py && \
+    chmod 755 /usr/lib/pollyui/install-targets /usr/lib/pollyui/install-targets/install \
+        /usr/lib/pollyui/install-targets/storage /usr/lib/pollyui/install-targets/maintenance && \
+    chmod 644 /usr/lib/pollyui/install-targets/install/*.py \
+        /usr/lib/pollyui/install-targets/storage/layout.py /usr/lib/pollyui/install-targets/maintenance/payload.py && \
     (getent group netdev >/dev/null || groupadd --system netdev) && \
     usermod -aG audio,netdev,systemd-journal -s /usr/bin/polly-live-session polly && \
     printf '/usr/bin/polly-live-session\n' >> /etc/shells && \

@@ -141,7 +141,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(polly-app src/desktop/bundle-main.c)
         target_link_libraries(polly-app PRIVATE polly-bundles)
         install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
-        target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/documents.c src/desktop/session-bus.c)
+        target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/documents.c
+            src/desktop/install-targets.c src/desktop/session-bus.c)
         target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
         add_executable(pollyui-app-launcher src/desktop/exec.c)
@@ -527,7 +528,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-install-targets PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-install-target-ui COMMAND node --test
             "${CMAKE_SOURCE_DIR}/desktop/installer/target-tests.mjs"
-            "${CMAKE_SOURCE_DIR}/desktop/installer/host-tests.mjs")
+            "${CMAKE_SOURCE_DIR}/desktop/installer/host-tests.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/installer/native-provider-tests.mjs")
         set_tests_properties(desktop-install-target-ui PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-menu-host COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/menu-host.mjs")
         set_tests_properties(desktop-menu-host PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -547,6 +549,39 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             set_tests_properties(desktop-restored-sources PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
             add_test(NAME desktop-local-debian-packages COMMAND python3 "${CMAKE_SOURCE_DIR}/desktop/tests/local-debian-packages.py")
             set_tests_properties(desktop-local-debian-packages PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
+
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND BUILD_TESTING)
+            add_executable(polly-install-readonly-transport-test
+                desktop/tests/install-readonly-native.c src/desktop/install-targets.c)
+            target_include_directories(polly-install-readonly-transport-test PRIVATE src/desktop)
+            target_include_directories(polly-install-readonly-transport-test SYSTEM PRIVATE third_party/quickjs)
+            target_compile_definitions(polly-install-readonly-transport-test PRIVATE
+                PU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py")
+            target_compile_options(polly-install-readonly-transport-test PRIVATE -Wall -Wextra -Werror)
+            target_link_libraries(polly-install-readonly-transport-test PRIVATE qjs Threads::Threads ${CMAKE_DL_LIBS} m)
+            add_test(NAME desktop-install-readonly-transport
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/install-readonly-registered.py"
+                    $<TARGET_FILE:polly-install-readonly-transport-test>)
+            set_tests_properties(desktop-install-readonly-transport PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;private-readonly-fixture")
+
+            get_target_property(PU_READONLY_FIXTURE_SOURCES pollyui SOURCES)
+            add_executable(pollyui-readonly-fixture ${PU_READONLY_FIXTURE_SOURCES})
+            target_include_directories(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,INCLUDE_DIRECTORIES>)
+            target_compile_definitions(pollyui-readonly-fixture PRIVATE
+                $<TARGET_PROPERTY:pollyui,COMPILE_DEFINITIONS>
+                PU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py")
+            target_compile_options(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,COMPILE_OPTIONS>)
+            target_link_options(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,LINK_OPTIONS>)
+            target_link_libraries(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,LINK_LIBRARIES>)
+            add_dependencies(pollyui-readonly-fixture pollyui-app-launcher polly-app)
+            add_test(NAME desktop-install-readonly-window
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/install-readonly-window.sh"
+                    $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollyui-readonly-fixture> "${CMAKE_BINARY_DIR}/readonly-window-evidence")
+            set_tests_properties(desktop-install-readonly-window PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-readonly-fixture")
         endif()
         add_test(NAME desktop-launcher-shell
             COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/launcher-shell.sh"

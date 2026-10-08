@@ -19,6 +19,29 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/client"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/installer/main.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/installer/native-provider.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/installer/target-app.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/installer/target-controller.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/installer/target-model.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/installer/target-view.mjs"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/installer"
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
+foreach(PU_INSTALL_TARGETS_GROUP IN ITEMS install storage maintenance)
+    install(DIRECTORY DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/${PU_INSTALL_TARGETS_GROUP}"
+        DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
+        COMPONENT PollyDesktop)
+endforeach()
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/install/readonly-helper.py"
+    "${CMAKE_SOURCE_DIR}/desktop/release/install/targets.py"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/install"
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/storage/layout.py"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/storage"
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/maintenance/payload.py"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/maintenance"
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/themes"

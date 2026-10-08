@@ -271,9 +271,14 @@ delivered runtime. The Debian runtime package generator explicitly requires
 `file`, `libmagic1t64` and `libmagic-mgc`; its existing installed-package resolver
 pins actual versions and records the dependency closure in `runtime-packages.txt`
 and the SBOM. The runtime recipe consumes that generated list, and the package
-manifest check requires these packages. The immutable SDK already has the
+manifest check requires these packages. The Alpine package generator also
+explicitly requires `file`, resolving its transitive `libmagic` dependencies
+through the existing installed-package resolver, not Debian t64 names.
+Both platform manifest checks require `file`; only Debian additionally requires
+`libmagic1t64` and `libmagic-mgc`. The immutable Debian SDK already has the
 utility/data, but SDK availability and source registration do not prove an
-existing release has them; no old artifact is retroactively qualified.
+existing release has them; no old artifact or new Alpine runtime is qualified
+by the Debian cached-package inspection.
 No extension-only fallback, guessed type or
 success-shaped tool error is returned. Missing tool, nonregular/unreadable file,
 nonzero exit, invalid MIME output, output above 256 bytes and a 1500 ms

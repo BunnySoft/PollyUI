@@ -11,10 +11,11 @@ no target-write permission.
 ## Source-checkout launches
 
 Run from the repository root with an already built PollyUI runtime, as an
-ordinary user. Application entry points are not deployed by CMake/package
-scripts. The two Node suites are registered as the CTest
-`desktop-install-target-ui` test; this does not deploy a native provider or
-qualify native rendering. Do not copy `targets.py` away from its source-adjacent
+ordinary user. CMake packaging includes only the production installer modules,
+not synthetic entry points or test providers. The model/host/native-provider
+Node suites are registered as the CTest `desktop-install-target-ui` test;
+registration and source packaging do not qualify native rendering or a
+production source producer. Do not copy `targets.py` away from its source-adjacent
 `release/storage/layout.py` and claim a functional deployed helper.
 
 ```powershell
@@ -37,8 +38,8 @@ the narrowly fixed `desktop.installTargets` API. `--desktop` alone does not
 acquire any report and grants no installation/management/root rights. With
 opt-in, the ordinary window automatically refreshes; absent/incompatible native
 API or missing/unqualified deployed source is a visible error, not a mock,
-empty inventory or helper-pending success. No packaging/build registration is
-performed by these files; parent integration remains necessary.
+empty inventory or helper-pending success. API registration alone starts no
+process and does not invent production source inputs.
 
 ## Explicit provider interface
 
@@ -160,13 +161,20 @@ deployment, exclusive descriptor/race closure and writer remain separate work.
 
 ## Fixed native transport and deployment contract
 
-The new files do **not** register themselves in the runtime, install scripts or
-image builder. A real qualified source producer and default packaging are still
-**pending**. No production `source.json` or invented measurements ship here.
-The parent integration must add `src/desktop/install-targets.c` to the existing
-Linux desktop-services target, include `desktop/install-targets.h`, and perform
-these three calls in the existing application API lifecycle (not Shell code,
-and not inside the Wayland-only service block):
+The Linux desktop-services target now includes `src/desktop/install-targets.c`,
+and the existing application API lifecycle calls install/pump/shutdown outside
+the Wayland-only service block. CMake runtime packaging uses the complete
+source-adjacent helper layout below (with the existing `/usr` install prefix and
+`lib` library directory); the default Debian platform recipe also copies those
+four fixed code files, normalizes LF and sets root-owned 0755 directories/0644
+files. `package-linux.mjs` records the helper/collector/layout/payload source
+hashes as build inputs and its tar writer assigns root ownership. This source
+wiring does not rebuild or retroactively qualify existing artifacts.
+
+A real qualified offline source producer is still **pending**. No production
+`source.json`, measured amounts, EFI/RECOVERY defaults or staged inputs ship
+here. Missing configuration remains a visible logged refusal before enumeration.
+The three existing lifecycle calls are:
 
 ```c
 // pu_applications_install(), before publishing the desktop global:
@@ -286,6 +294,18 @@ privilege: every native acquisition runs as UID1000, empty supplementary groups.
 The fixed **test compile** path names `install/fixture-helper.py`, not the
 production helper; there is no runtime environment/argument escape for tests.
 
+No `CAP_SYS_ADMIN` or fixture mount syscalls are needed: the operator creates
+the private tmpfs views when starting the container. Production host mounts,
+mount propagation, `/proc` and `/sys` are not altered by test registration.
+
+CTest registers `desktop-install-readonly-transport` with the
+`root-container;private-readonly-fixture` labels. Its strict small QuickJS target
+`polly-install-readonly-transport-test` compiles only the adapter/harness and
+uses the fixed test-helper macro. `install-readonly-registered.py` refuses
+without the private marker/tmpfs views, stages the already-built test binary
+only in private `/tmp`, then executes the existing UID1000 acquisition matrix.
+It is not part of the ordinary host/source-only storage runner.
+
 The fixture supplies real private sysfs/proc text and fixed synthetic
 `lsblk/findmnt` subprocess responses to the actual collector, then executes
 the actual helper envelope, compiled native Promise transport, JS provider,
@@ -299,8 +319,21 @@ real disks, host sysfs/proc evidence, Accounts/Network/Users, or create writers.
 
 `native-fixture-main.mjs` is the separate final heavy-lane **ordinary SDL window**
 fixture: it rejects old binaries/JS stubs and accepts only the staged private
-collector fixture receipt/identity. Parent registration plus a freshly compiled
-adapter with the fixed test-helper path is required. The final lane must observe
+collector fixture receipt/identity. The distinct `pollyui-readonly-fixture`
+target reuses the full product source/options/dependencies but applies the
+fixed test-helper macro only to that uninstalled fixture target, never to
+production `pollyui`. CTest's `desktop-install-readonly-window` is labeled
+`ordinary-native;private-readonly-fixture`, receives absolute production
+compositor/runtime and fixture-runtime target paths, and saves logs under a
+private build evidence directory. It requires actual UID1000 and explicitly
+prepared synthetic source, then launches the fixture as a separate ordinary
+window through the existing native launcher.
+
+Both native registrations have 120-second timeouts; neither runs by virtue of
+source registration, and neither accepts an environment/argument override to
+the production helper. The final lane must observe
 `NATIVE READONLY ORDINARY WINDOW PASS` and no FAIL marker; source/Node mocks or
 the small transport harness do not qualify that window, real pointer/wheel
 input, normal installed source modes, GPU hardware or production deployment.
+Default provider-pending, explicit missing-config errors, real pointer/wheel
+actions and close/late-result barriers remain separate runtime scenarios.

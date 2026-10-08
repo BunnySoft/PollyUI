@@ -32,6 +32,20 @@ for (const file of manifest.files) {
   assert.equal(statSync(payload).size, file.size, file.path);
   assert.equal(digest(payload), file.sha256, file.path);
 }
+for (const relative of [
+  'usr/lib/pollyui/install-targets/install/readonly-helper.py',
+  'usr/lib/pollyui/install-targets/install/targets.py',
+  'usr/lib/pollyui/install-targets/storage/layout.py',
+  'usr/lib/pollyui/install-targets/maintenance/payload.py',
+]) {
+  const record = manifest.files.find(file => file.path === relative);
+  assert.ok(record, 'Missing fixed readonly helper dependency: ' + relative);
+  assert.equal(record.mode, '0644', relative);
+}
+assert.ok(!manifest.files.some(file => file.path.startsWith('usr/lib/pollyui/install-targets/') &&
+  file.path.includes('fixture')), 'Test helper/provider must not enter runtime packaging');
+assert.ok(!manifest.files.some(file => file.path === 'usr/share/pollyui/install-targets/source.json'),
+  'No production source receipt is qualified by this package generator');
 for (const line of read('SHA256SUMS').trim().split('\n')) {
   const match = line.match(/^([0-9a-f]{64})  ([A-Za-z0-9._-]+)$/);
   assert.ok(match, line);
@@ -40,7 +54,7 @@ for (const line of read('SHA256SUMS').trim().split('\n')) {
 const packages = read('runtime-packages.txt');
 for (const name of manifest.debian ? ['libwayland-egl1', 'libegl-mesa0', 'libgl1', 'libgles2', 'pipewire-bin', 'rime-data-luna-pinyin',
   'file', 'libmagic1t64', 'libmagic-mgc'] :
-  ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data'])
+  ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data', 'file'])
   assert.ok(packages.split('\n').some(line => line.split('=')[0].split(':')[0] === name), name);
 for (const line of packages.trim().split('\n'))
   assert.match(line, /^[a-z0-9][a-z0-9+_.-]*(?::[a-z0-9-]+)?=[A-Za-z0-9._+~:-]+$/);

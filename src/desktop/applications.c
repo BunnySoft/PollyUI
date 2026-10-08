@@ -3,6 +3,7 @@
 #include "desktop/session-bus.h"
 #include "desktop/bundles.h"
 #include "desktop/documents.h"
+#include "desktop/install-targets.h"
 #include "core/thread.h"
 #if defined(PU_LAYER_SHELL)
 #include "desktop/windows.h"
@@ -669,6 +670,7 @@ int pu_applications_install(JSContext *ctx)
     if (!pu_audio_install(ctx, desktop_api)) return 0;
     if (!pu_power_install(ctx, desktop_api)) return 0;
 #endif
+    if (!pu_install_targets_install(ctx, desktop_api)) return 0;
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, desktop_api));
     JS_FreeValue(ctx, global);
@@ -714,6 +716,7 @@ int pu_applications_pump(void)
     worked += pu_audio_pump();
     worked += pu_power_pump();
 #endif
+    worked += pu_install_targets_pump();
     return worked;
 }
 
@@ -734,6 +737,7 @@ void pu_applications_shutdown(void)
     pu_notifications_shutdown();
     pu_desktop_windows_shutdown();
 #endif
+    pu_install_targets_shutdown();
     if (context) JS_FreeValue(context, desktop_api);
     context = NULL;
     desktop_api = JS_UNDEFINED;
