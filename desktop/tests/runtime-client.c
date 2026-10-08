@@ -567,18 +567,44 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
     return true;
 }
 
+struct SettingsLifetimeState {
+    bool settings_mapped, settings_ready, survivor_mapped_alive, survivor_geometry_pending;
+};
+
+static bool settings_lifetime_matches(bool open, struct SettingsLifetimeState state)
+{
+    // Pending geometry is diagnostic for an idle observer, not evidence that its process/window died.
+    return state.survivor_mapped_alive &&
+        (open ? state.settings_mapped && state.settings_ready : !state.settings_mapped);
+}
+
+static bool settings_lifetime_policy(void)
+{
+    CHECK(settings_lifetime_matches(false, (struct SettingsLifetimeState){ false, false, true, true }));
+    CHECK(!settings_lifetime_matches(false, (struct SettingsLifetimeState){ true, false, true, true }));
+    CHECK(settings_lifetime_matches(true, (struct SettingsLifetimeState){ true, true, true, true }));
+    CHECK(!settings_lifetime_matches(true, (struct SettingsLifetimeState){ true, false, true, false }));
+    CHECK(!settings_lifetime_matches(false, (struct SettingsLifetimeState){ false, false, false, false }));
+    CHECK(!settings_lifetime_matches(true, (struct SettingsLifetimeState){ true, true, false, false }));
+    CHECK(!settings_lifetime_matches(true, (struct SettingsLifetimeState){ false, true, true, false }));
+    puts("PASS: Settings lifetime distinguishes mapped/alive observers from coordinate-ready input targets");
+    return true;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
         script, mode, executable, script, NULL };
     CHECK(pu_desktop_spawn_shell(&desktop, args));
+    pid_t settings_shell_identity = desktop.shell_pid;
     bool success = false, crashed = false;
     unsigned settings_sequence = 0;
     unsigned file_dialog_sequence = 0;
     unsigned files_sequence = 0;
     uint32_t settings_time = 70000;
     unsigned settings_state_sequence = 0;
-    char settings_state_previous[512] = "";
+    pid_t settings_survivor_identity = 0;
+    char settings_state_previous[1024] = "";
     for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
         CHECK(pump());
         CHECK(ordinary_fixture_requests("org.pollyui.file-dialog-window", "PollyUI.FileText",
@@ -770,11 +796,16 @@ static bool window_suite(char *executable, char *script, char *mode)
             }
             unsigned settings_open, sequence;
             if (sscanf(name, "fixture-settings-state %u %u", &sequence, &settings_open) == 2) {
-                CHECK(settings_open <= 1 && desktop.shell_pid);
+                CHECK(settings_open <= 1 && desktop.shell_pid == settings_shell_identity && desktop.shell_pid > 0);
                 bool found_settings = false, found_survivor = false;
                 unsigned settings_mapped = 0, settings_pending = 0, survivor_mapped = 0, survivor_pending = 0;
                 pid_t survivor_pid = 0;
+                uid_t survivor_uid = (uid_t)-1;
                 int survivor_alive = 0;
+                bool survivor_minimized = false, survivor_visible = false, survivor_buffer_present = false;
+                uint32_t survivor_required_serial = 0, survivor_committed_serial = 0, survivor_acked_serial = 0;
+                struct wlr_box survivor_current = {0}, survivor_wanted = {0}, survivor_presented = {0};
+                int survivor_buffer_width = 0, survivor_buffer_height = 0;
                 struct PuDesktopView *view;
                 wl_list_for_each(view, &desktop.views, link) {
                     struct wl_client *client = wl_resource_get_client(view->toplevel->base->resource);
@@ -784,36 +815,56 @@ static bool window_suite(char *executable, char *script, char *mode)
                         settings_pending += view->geometry_pending;
                     }
                     if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings-survivor")) {
-                        wl_client_get_credentials(client, &survivor_pid, NULL, NULL);
+                        wl_client_get_credentials(client, &survivor_pid, &survivor_uid, NULL);
+                        CHECK(client != desktop.shell_client && survivor_uid == 1000 && survivor_pid > 0);
+                        if (!settings_survivor_identity) settings_survivor_identity = survivor_pid;
+                        CHECK(survivor_pid == settings_survivor_identity);
                         survivor_mapped += view->mapped;
                         survivor_pending += view->geometry_pending;
-                        survivor_alive = survivor_pid > 0 && kill(survivor_pid, 0) == 0;
+                        survivor_alive = kill(survivor_pid, 0) == 0;
+                        survivor_minimized = view->minimized;
+                        survivor_visible = view->tree->node.enabled;
+                        survivor_buffer_present = view->toplevel->base->surface->buffer &&
+                            view->toplevel->base->surface->buffer->source;
+                        found_survivor = view->mapped && survivor_alive && !survivor_minimized &&
+                            survivor_visible && survivor_buffer_present;
+                        survivor_required_serial = view->geometry_serial;
+                        survivor_committed_serial = view->toplevel->base->current.configure_serial;
+                        survivor_acked_serial = view->toplevel->base->pending.configure_serial;
+                        survivor_current = view->toplevel->base->geometry;
+                        survivor_wanted = view->pending_box;
+                        survivor_presented = view->presented_box;
+                        survivor_buffer_width = view->toplevel->base->surface->current.buffer_width;
+                        survivor_buffer_height = view->toplevel->base->surface->current.buffer_height;
                     }
                     if (!view->mapped || view->geometry_pending) continue;
                     if (client == desktop.shell_client && view->toplevel->title &&
                         !strcmp(view->toplevel->title, "Settings")) found_settings = true;
-                    if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings-survivor")) {
-                        pid_t pid;
-                        wl_client_get_credentials(client, &pid, NULL, NULL);
-                        CHECK(client != desktop.shell_client && pid > 0 && kill(pid, 0) == 0);
-                        found_survivor = true;
-                    }
                 }
-                char diagnostic[512];
+                char diagnostic[1024];
                 snprintf(diagnostic, sizeof(diagnostic),
                     "SETTINGS_STATE: seq=%u expected_open=%u shell_pid=%ld settings_ready=%d settings_mapped=%u "
-                    "settings_pending=%u survivor_ready=%d survivor_mapped=%u survivor_pending=%u "
-                    "survivor_pid=%ld survivor_alive=%d",
+                    "settings_pending=%u survivor_lifetime=%d survivor_mapped=%u survivor_pending=%u "
+                    "survivor_pid=%ld survivor_uid=%lu survivor_alive=%d survivor_minimized=%d survivor_visible=%d "
+                    "survivor_buffer_present=%d required_serial=%u committed_serial=%u acked_serial=%u "
+                    "current_size=%dx%d wanted_box=%d,%d,%dx%d presented_box=%d,%d,%dx%d buffer_size=%dx%d",
                     sequence, settings_open, (long)desktop.shell_pid, found_settings, settings_mapped,
                     settings_pending, found_survivor, survivor_mapped, survivor_pending,
-                    (long)survivor_pid, survivor_alive);
+                    (long)survivor_pid, (unsigned long)survivor_uid, survivor_alive, survivor_minimized,
+                    survivor_visible, survivor_buffer_present, survivor_required_serial, survivor_committed_serial,
+                    survivor_acked_serial, survivor_current.width, survivor_current.height,
+                    survivor_wanted.x, survivor_wanted.y, survivor_wanted.width, survivor_wanted.height,
+                    survivor_presented.x, survivor_presented.y, survivor_presented.width, survivor_presented.height,
+                    survivor_buffer_width, survivor_buffer_height);
                 if (sequence != settings_state_sequence || strcmp(diagnostic, settings_state_previous)) {
                     puts(diagnostic);
                     fflush(stdout);
                     settings_state_sequence = sequence;
                     strcpy(settings_state_previous, diagnostic);
                 }
-                if (found_survivor && found_settings == (settings_open != 0))
+                if (settings_lifetime_matches(settings_open != 0, (struct SettingsLifetimeState){
+                    settings_mapped != 0, found_settings, found_survivor,
+                    survivor_pending != 0 }))
                     wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
@@ -911,6 +962,8 @@ static bool window_suite(char *executable, char *script, char *mode)
 
 int main(int argc, char **argv)
 {
+    if (argc == 2 && !strcmp(argv[1], "--settings-lifetime-policy"))
+        return settings_lifetime_policy() ? 0 : 1;
     if (argc != 3 && argc != 4 && argc != 5) return 2;
     missing_display_identity = argc == 5 && !strcmp(argv[4], "unknown");
     wlr_log_init(WLR_INFO, NULL);

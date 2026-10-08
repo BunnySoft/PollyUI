@@ -151,3 +151,16 @@ and inspect their current DOM/focus/files; capturing their real window buffer
 is a separate JS action. Paired ordinary-key delivery is a new fixture path
 requiring native acceptance, not evidence inherited from old layer-key tests.
 These bindings exist only in the test executable, not the product compositor.
+
+The Settings close handshake separates window/process lifetime from coordinate
+readiness. Its independent idle observer must keep the same native UID1000/PID,
+remain mapped, non-minimized and visible, and retain a real surface buffer.
+Waiting for a newer configure does not by itself mean that this application
+exited. Configure serials, current/wanted/presented geometry and buffer size stay
+visible in changed-state diagnostics; the test does not clear pending geometry
+or claim a new configure was presented. A closed Settings window must be truly
+absent even if a remaining Settings view is pending; an open Settings window and
+every actual pointer target still require settled geometry. The native driver's
+`--settings-lifetime-policy` option checks these predicate boundaries without
+starting a compositor. Normal application resize/titlebar interaction remains
+a separate native assertion if pending geometry is observed.
