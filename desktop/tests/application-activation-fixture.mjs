@@ -58,6 +58,7 @@ const specs = [
   ['org.pollyui.ActivationFixture.StartFailure', 'start-failure'], ['org.pollyui.ActivationFixture.Oversized', 'oversized'],
   ['org.pollyui.ActivationFixture.LateReply', 'late-ack'],
   ['org.pollyui.ActivationFixture.Timeout', 'timeout'], ['org.pollyui.ActivationFixture.Disconnect', 'disconnect'],
+  ['org.pollyui.ActivationFixture.Fds', 'fds'],
 ];
 const logs = new Map();
 for (const [name, mode] of specs) {
@@ -151,7 +152,7 @@ try {
     'actual service reply sent after 3000 ms');
   for (const [name, log] of logs) {
     const text = await contents(log);
-    if (!text && probe && ['Malformed', 'Oversized', 'Disconnect'].some(suffix => name.endsWith(suffix))) continue;
+    if (!text && probe && ['Malformed', 'Oversized', 'Disconnect', 'Fds'].some(suffix => name.endsWith(suffix))) continue;
     if (name.endsWith('Disconnect')) continue;
     if (name.endsWith('StartFailure')) {
       assert.match(text, /start-failed\t[0-9]+\torg.pollyui.ActivationFixture.StartFailure\n/);
@@ -170,6 +171,8 @@ try {
       const elapsed = Number(text.match(/late-reply\t([0-9]+)/)?.[1]);
       assert.ok(elapsed >= 3000 && elapsed < 6000, 'the actual service method-return is later than the method deadline');
     }
+    if (name.endsWith('Fds')) assert.match(text, /fd-reply\t1\n/,
+      'actual synthetic FD-bearing reply was sent; it is not an empty acknowledgement');
     assert.equal(text.split('\n').filter(line => line.startsWith('started\t')).length, 1,
       'service came from bus auto-start, not repeated manual launches');
   }

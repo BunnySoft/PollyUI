@@ -131,7 +131,9 @@ static JSValue activate_application(JSContext *ctx, JSValueConst self, int argc,
         activation_address = address; address = NULL;
         dbus_connection_set_max_received_size(activation_bus, 64 * 1024);
         dbus_connection_set_max_message_size(activation_bus, 16 * 1024);
-        dbus_connection_set_max_received_unix_fds(activation_bus, 0);
+        /* A zero live-FD budget stalls FD-free reads; completion still rejects all FD-bearing replies. */
+        dbus_connection_set_max_received_unix_fds(activation_bus, 1);
+        dbus_connection_set_max_message_unix_fds(activation_bus, 0);
     }
     free(address);
     struct AppActivation *request = calloc(1, sizeof(*request));
@@ -192,6 +194,7 @@ static void complete_activation(struct AppActivation *request, DBusMessage *repl
         message = failure;
         if (!code) code = "POLLY_ACTIVATION_INVALID_REPLY";
     } else if (!code && (dbus_message_get_type(reply) != DBUS_MESSAGE_TYPE_METHOD_RETURN ||
+               dbus_message_contains_unix_fds(reply) ||
                !dbus_message_has_signature(reply, "") || !dbus_message_get_sender(reply) ||
                dbus_message_get_sender(reply)[0] != ':')) {
         code = "POLLY_ACTIVATION_INVALID_REPLY";

@@ -120,12 +120,21 @@ int main(int argc, char **argv)
                 reply = dbus_message_new_method_return(message);
                 if (reply && !dbus_message_append_args(reply, DBUS_TYPE_STRING, &large, DBUS_TYPE_INVALID)) return 1;
                 free(large);
+            } else if (!strcmp(argv[4], "fds")) {
+                int descriptors[2];
+                if (pipe(descriptors)) return 1;
+                reply = dbus_message_new_method_return(message);
+                bool appended = reply && dbus_message_append_args(
+                    reply, DBUS_TYPE_UNIX_FD, &descriptors[0], DBUS_TYPE_INVALID);
+                close(descriptors[0]); close(descriptors[1]);
+                if (!appended) return 1;
             }
             else if (strcmp(argv[4], "timeout") && strcmp(argv[4], "disconnect")) return 2;
             if (!reply && (!valid || (strcmp(argv[4], "timeout") && strcmp(argv[4], "disconnect")))) return 1;
             if (reply) {
                 if (!dbus_connection_send(bus, reply, NULL)) return 1;
                 dbus_connection_flush(bus); dbus_message_unref(reply);
+                if (!strcmp(argv[4], "fds")) { fprintf(log, "fd-reply\t1\n"); fflush(log); }
                 if (late_elapsed) { fprintf(log, "late-reply\t%lld\n", late_elapsed); fflush(log); }
             }
             dbus_message_unref(message);

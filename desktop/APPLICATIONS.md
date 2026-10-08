@@ -210,12 +210,19 @@ verifies real service auto-start and the exact invocation, blocked/invalid/error
 replies, failed service startup, missing/wrong service, queue/timeout/pump,
 an actual service reply after 3000 ms while the native pump is deliberately
 blocked (delivery is confirmed before blocking),
-oversized reply, disconnect, native shutdown, strict host-bus rejection and
+oversized and actual FD-bearing reply rejection, disconnect, native shutdown, strict host-bus rejection and
 entry deletion/masking rediscovery. Runtime sockets live on a Linux temporary
 filesystem; logs/configs/results are copied to the evidence directory even on
 failure. It never scans host applications or contacts a real host service.
 The menu host tests use controlled Promises to verify instance/stop scoping;
 they do not stand in for rebuilt QuickJS/native completion and cancellation.
+
+The activation connection keeps a one-FD live receive budget because libdbus
+backpressure at zero also prevents ordinary FD-free replies from being read.
+The per-message transport setting remains zero, with explicit descriptor-presence
+validation on completion: actual FD-bearing replies reject rather than becoming
+acknowledgements, regardless of transport-specific limit handling. This does not extend the
+3000 ms absolute deadline, permit descriptor inputs or enable retries.
 
 CTest registers `desktop-application-activation-unit` for the pure Node suite
 and `desktop-application-activation-native` for the actual product fixture.

@@ -62,6 +62,9 @@ async function run() {
       check(Date.now() - start >= 2500 && Date.now() - start < 6000, 'native no-reply deadline is bounded');
       await rejects(launcher.launch(id('Oversized')),
         /POLLY_ACTIVATION_DISCONNECTED|org.freedesktop.DBus.Error.Disconnected|POLLY_ACTIVATION_TIMEOUT|org.freedesktop.DBus.Error.NoReply|POLLY_ACTIVATION_INVALID_REPLY/);
+      await rejects(launcher.launch(id('Fds')),
+        /POLLY_ACTIVATION_INVALID_REPLY|POLLY_ACTIVATION_DISCONNECTED|org.freedesktop.DBus.Error.Disconnected/);
+      console.log('PASS: actual FD-bearing reply is refused, never an acknowledgement or descriptor API');
     } else if (mode === 'bounds') {
       const requests = [];
       for (let i = 0; i < 8; i++) requests.push(desktop.activateApplication(id('Timeout')));
