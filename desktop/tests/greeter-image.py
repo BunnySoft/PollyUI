@@ -54,6 +54,12 @@ class GreeterImage(unittest.TestCase):
         self.assertIn("After=polly-accounts.service polly-firstboot.service systemd-user-sessions.service", fallback)
         self.assertIn("ExecStart=/usr/sbin/polly-accounts getty tty1", fallback)
         self.assertIn("Conflicts=polly-greetd.service", fallback)
+        socket = (units / "polly-greeter-setup.socket").read_text()
+        self.assertNotIn("After=polly-accounts.service", socket)
+        for name in ("polly-greetd.service", "polly-greeter-setup.service"):
+            consumer = (units / name).read_text()
+            self.assertIn("Requires=polly-accounts.service", consumer)
+            self.assertIn("After=polly-accounts.service", consumer)
         self.assertIn("Requires=polly-console-fallback.service", (units / "polly-console.target").read_text())
 
     def test_missing_or_wrong_greetd_version_refused(self):

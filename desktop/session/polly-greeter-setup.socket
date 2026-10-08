@@ -1,6 +1,6 @@
 [Unit]
 Description=Restricted local first-run password setup socket
-After=polly-accounts.service
+# Account preparation is ordered by the broker and greeter, after basic.target.
 
 [Socket]
 ListenStream=/run/polly-greeter/setup.sock
