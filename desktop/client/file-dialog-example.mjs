@@ -1,12 +1,33 @@
 import { h, render } from './js/reconciler.mjs';
 import { createTextInput } from './js/textinput.mjs';
 import { utf8Bytes } from './desktop/shell/documents.mjs';
-import { requireFileSystem, fileEntry, fileError, parentPath } from './desktop/files/model.mjs';
+import { requireFileSystem, fileEntry, fileError, parentPath, pathValue,
+  textObservation } from './desktop/files/model.mjs';
 import { showFileDialog } from './desktop/client/file-dialog.mjs';
+
+export function parseFileTextArguments(values) {
+  if (!Array.isArray(values) || values.some(value => typeof value !== 'string'))
+    throw new TypeError('File Text arguments must be strings');
+  const options = { initialDirectory: null, initialFile: null, optInTheme: false };
+  for (let index = 0; index < values.length; index++) {
+    const value = values[index];
+    if (value === '--theme') options.optInTheme = true;
+    else if (value === '--file') {
+      if (options.initialFile !== null || values[index + 1] === undefined)
+        throw new Error('--file requires exactly one absolute local file path');
+      options.initialFile = pathValue(values[++index]);
+    } else {
+      if (value.startsWith('--') || options.initialDirectory !== null)
+        throw new Error('Use one initial directory, --file LOCALPATH, and optional --theme');
+      options.initialDirectory = pathValue(value);
+    }
+  }
+  return options;
+}
 
 export function createFileTextApp({ host = window, files,
   native = typeof desktop === 'undefined' ? null : desktop, optInTheme = false,
-  initialDirectory = null, suggestedName = 'note.txt',
+  initialDirectory = null, initialFile = null, suggestedName = 'note.txt',
   reportError = message => console.error('[file-text] ' + message) } = {}) {
   let surface = null, dialog = null, closed = false, generation = 0, busy = false;
   let status = 'Open reads a real file. Save writes your text only after a target is chosen.';
@@ -51,6 +72,17 @@ export function createFileTextApp({ host = window, files,
     status = label + ': ' + fileError(error);
     paint();
   }
+  async function readChoice(choice, token) {
+    status = 'Reading file...'; paint();
+    const read = await files.readText(choice.path, choice.identity);
+    if (!live(token)) return;
+    if (!read || read.path !== choice.path || read.identity !== choice.identity || typeof read.text !== 'string')
+      throw new Error('Native read returned mismatched file identity or text');
+    contents = read.text.slice(0, 4096);
+    lastPath = read.path; initialDirectory = parentPath(choice.selectedPath); suggestedName = read.path.split('/').at(-1);
+    status = 'Read ' + utf8Bytes(read.text) + ' UTF-8 bytes from the selected file.' +
+      (read.text.length > 4096 ? ' Display is limited to the first 4096 characters.' : '');
+  }
   async function open() {
     if (busy || closed) return;
     busy = true; const token = ++generation; saved = null; paint();
@@ -59,16 +91,21 @@ export function createFileTextApp({ host = window, files,
       dialog = null;
       if (!live(token)) return;
       if (choice.status === 'cancelled') { status = 'Open cancelled. No content was read.'; return; }
-      status = 'Reading selected file...'; paint();
-      const read = await files.readText(choice.path, choice.identity);
-      if (!live(token)) return;
-      if (read.path !== choice.path || read.identity !== choice.identity || typeof read.text !== 'string')
-        throw new Error('Native read returned mismatched file identity or text');
-      contents = read.text.slice(0, 4096);
-      lastPath = read.path; initialDirectory = parentPath(choice.selectedPath); suggestedName = read.path.split('/').at(-1);
-      status = 'Read ' + utf8Bytes(read.text) + ' UTF-8 bytes from the selected file.' +
-        (read.text.length > 4096 ? ' Display is limited to the first 4096 characters.' : '');
+      await readChoice(choice, token);
     } catch (error) { report(error, 'Open failed', token); }
+    finally { if (live(token)) { busy = false; paint(); } }
+  }
+  async function openPath(path) {
+    if (busy || closed) return;
+    if (!surface) throw new Error('Start File Text before opening a named file');
+    busy = true; const token = ++generation; saved = null;
+    status = 'Inspecting named file...'; paint();
+    try {
+      if (!files) throw new Error(unavailable || 'Native ordinary-user filesystem API is unavailable.');
+      const observed = textObservation(await files.observeText(pathValue(path)));
+      if (!live(token)) return;
+      await readChoice({ path: observed.path, identity: observed.identity, selectedPath: observed.path }, token);
+    } catch (error) { report(error, 'Open named file failed', token); }
     finally { if (live(token)) { busy = false; paint(); } }
   }
   async function save() {
@@ -126,7 +163,7 @@ export function createFileTextApp({ host = window, files,
     if (surface && !surface.closed) surface.close();
   }
   return {
-    open, save, stop, getWindow: () => surface, getDialog: () => dialog,
+    open, openPath, save, stop, getWindow: () => surface, getDialog: () => dialog,
     getState: () => ({ busy, status, contents, lastPath, saved, closed }),
     start() {
       if (closed) throw new Error('Closed file example cannot restart');
@@ -149,6 +186,7 @@ export function createFileTextApp({ host = window, files,
       });
       surface.document.body.appendChild(root);
       host.close(); paint();
+      if (initialFile !== null) openPath(initialFile);
       return this;
     },
   };

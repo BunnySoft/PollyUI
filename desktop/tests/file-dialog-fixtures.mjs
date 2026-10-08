@@ -20,6 +20,8 @@ export function fixtureFiles({ overwrite = true } = {}) {
   put('/home/polly/image.png', 'file'); put('/home/polly/special', 'other');
   function get(path) { const record = records.get(path); if (!record) throw error('ENOENT'); return record; }
   const observed = record => { const { text, ...value } = record; return { ...value }; };
+  const observedText = value => ({ ...observed(value), metadataIdentity: value.identity,
+    identity: 'sha256:' + value.identity + ':' + createHash('sha256').update(value.text).digest('hex') });
   function parent(directory, identity) {
     const value = get(directory);
     if (value.type !== 'directory' || value.identity !== identity) throw error('ESTALE');
@@ -51,7 +53,7 @@ export function fixtureFiles({ overwrite = true } = {}) {
     readText(path, identity) {
       assert.equal(arguments.length, 2, 'readText requires 2 native arguments');
       calls.push(['readText', path, identity]); const value = get(path);
-      if (value.identity !== identity) throw error('ESTALE');
+      if (value.identity !== identity && observedText(value).identity !== identity) throw error('ESTALE');
       if (value.type !== 'file' || !value.readable) throw error('EACCES');
       return { path, identity, text: value.text };
     },
@@ -60,8 +62,7 @@ export function fixtureFiles({ overwrite = true } = {}) {
       calls.push(['observeText', path]);
       const value = get(path);
       if (value.type !== 'file' || !value.readable) throw error('EACCES');
-      return { ...observed(value), metadataIdentity: value.identity, identity: 'sha256:' + value.identity + ':' +
-        createHash('sha256').update(value.text).digest('hex') };
+      return observedText(value);
     },
     writeText(directory, name, text, identity) {
       assert.equal(arguments.length, 4, 'writeText requires 4 native arguments');

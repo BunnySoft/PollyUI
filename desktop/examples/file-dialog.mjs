@@ -1,4 +1,3 @@
-import { createFileTextApp } from './desktop/client/file-dialog-example.mjs';
+import { createFileTextApp, parseFileTextArguments } from './desktop/client/file-dialog-example.mjs';
 
-createFileTextApp({ initialDirectory: application.arguments.find(value => value !== '--theme') || null,
-  optInTheme: application.arguments.includes('--theme') }).start();
+createFileTextApp(parseFileTextArguments(application.arguments)).start();

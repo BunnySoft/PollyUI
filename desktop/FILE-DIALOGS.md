@@ -14,6 +14,8 @@ Run from the repository root with a desktop-enabled Linux runtime:
 pollyui --desktop desktop/examples/file-dialog.mjs /absolute/private/directory
 # Optional desktop color subscription:
 pollyui --desktop desktop/examples/file-dialog.mjs /absolute/private/directory --theme
+# Read one literal local document, such as a launcher's --file %f argument:
+pollyui --desktop desktop/examples/file-dialog.mjs --file '/absolute/private/document with spaces.txt'
 ```
 
 The example actually reads the selected file. Its separate single-line text
@@ -22,6 +24,28 @@ field supplies at most 4096 UTF-8 bytes for saving. Save-new uses native
 write and matching native readback does it display "Saved and read back".
 An error after writing says the write completed but readback failed, rather than
 claiming nothing was written. This example is not a full document editor.
+
+The entry accepts one positional initial directory and optional `--theme` as
+before. `--file LOCALPATH` explicitly names one absolute local file; spaces,
+quotes and Unicode remain one literal argv value. A bare file path is still
+treated as the legacy directory argument, so document launchers must supply
+`--file %f`, not an unmarked `%f` or a `file://` URI. Unknown flags, duplicate
+file options, missing file values and multiple positional directories reject.
+This entry does not register MIME associations or change user defaults.
+
+`createFileTextApp({ initialFile: localPath })` starts a real named-file read
+after creating its ordinary window. Its public `openPath(localPath)` performs
+the same operation on an already-started app. Both call native `observeText`,
+validate the strong text observation, and call `readText` with its canonical
+path and exact strong identity. They display only the matching actual text,
+report missing/stale/incompatible reads explicitly, and do not open a chooser
+as a substitute for consuming the document. Busy/generation/close guards are
+shared with ordinary Open; a closed app cannot dispatch a late read or repaint
+a late success/failure. No initial read writes anything or populates the
+separate bounded text-to-write field with a full document.
+Named-file loading follows the shared `observeText` regular-file policy:
+bounded readable UTF-8 text up to 1 MiB without NUL, with no automatic final
+symbolic-link traversal. Unsupported files produce visible backend errors.
 
 For another ordinary PollyUI application:
 
@@ -169,6 +193,8 @@ code neither invents file receipts nor implements content hashing.
 
 ```sh
 node --test desktop/tests/file-dialog.mjs
+# Narrow literal-file entry/consumer delta:
+node --test desktop/tests/file-text-open.mjs
 node --check desktop/tests/file-dialog-native.mjs
 node --check desktop/tests/file-dialog-native-fixture.mjs
 node --check desktop/tests/file-dialog-window.mjs
