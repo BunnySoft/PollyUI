@@ -3151,7 +3151,7 @@
         "t22-m13-1",
         "t16-m11-1"
       ],
-      "evidence": "2026-10-08 Power 源 7567077/87d39c2 已审阅并组合至本地 main ffc887f，实际消费统一 session-exit controller。正常关闭/Save/Cancel 后独立最终确认，再核真实 PID 会话与当前 yes 能力，只发送一次固定非交互动作；明确 accepted/rejected/failed/uncertain，已发送不重放。固定 ffc 的真实新 PollyUI/PollyWM 产品已增量链接，receipt SHA9f45bf17；Live/安装版标准授权源 659d1ab 已另合入 e2fae72，引擎源码未变。旧媒体仍未更新，实际 guest 关机/重启、权限变化与应用保存交互待集中手测。"
+      "evidence": "Power/native/shared close 流程与双模式标准授权已审合，原引擎已链接。真实 6d guest 首次 Power 请求在 JS guard 被拒，未发 ACTION；后台 pending/busy 被当作无授权的 UI 漏洞由源 4e6b004 修复并审合 main 1dac93d。仅 UI 分离 eligibility/refresh，最终 fresh busy 时保持 ready、不 seal/send、不排队重放，原 native pending/revision/PID/Root-owner/实际 Can 与 sent sticky guard 不变。父精确新 refresh 与受影响 denial 两 selector通过；真实 guest Can、保存/重启/关机与持久性仍待新正确固定源验证，未把源码测试当电源通过。"
     },
     {
       "id": "t23",
@@ -4947,7 +4947,7 @@
         "t15-m05-4",
         "t22-m13-2"
       ],
-      "evidence": "注销/保存及 Power 产品已组合链接，双模式标准授权与精确依赖已实现。新 12fecb4 隔离 guest 冷启动未见 greeter，首 silent RAM journal 因 volatile 未保存；独立 logging-only clone 的实际 PID1 日志确认 accounts→basic.target→sockets.target→setup.socket→accounts 排序环，raw SHA564f6aca。最小源 6d93e6f 已审合本地 main ea0ac1a，只移除 socket 错误 After，保消费者 Requires/Afteraccounts、PAM、Class/Peer 等资格不变。修后默认启动参数首设/真实登录与用户流程仍在复测，未回填旧 Hyper-V 根因或修改其 VM。"
+      "evidence": "12f 首启无 greeter 已由独立真实日志确证排序环，最小源 6d93e6f 审合 ea0ac1a，所有认证前置保持。修后 6d 生产默认冷启动真实四字段首设、标准 passwd/PAM 提交、普通登录、正常 Logout 返回 greetd 及再次登录已确认。Power 初次 JS guard 拒绝后，UI-only 刷新修复 4e6b004 已审合 1dac93d；真实普通 Can/保存机会/Reboot/PowerOff/持久性仍待新源完整短 smoke。30m 测试控制器清 RAM 不当产品故障或绕认证理由，旧 cow 留已登入状态；新源 fresh testcow 预设 90m，发行盘不带测试状态，用户 VM 未修改。"
     },
     {
       "id": "alpha-candidate-media",
@@ -4967,7 +4967,7 @@
         "alpha-code-integration",
         "alpha-functional-closure"
       ],
-      "evidence": "2026-10-08 用户指定全新介质放 D:\\Temp\\PollyOS，沿用现有 Hyper-V 配置并自行挂载。首 12fecb4 ISO/VHDX 已生成但冷启动无 greeter，未交付；原帧/两独立 clone/NoPersistentJournal 与诊断日志保留。日志证实排序环后，源 6d93e6f 已审合 ea0ac1a，正在用正确固定源及已合格依赖/原引擎重新组装并复测，不隐改测试盘冒新发行源。最终 VHDX 必须未初始化，不导出首设 cow；不覆盖旧媒体，QEMU 不当 Hyper-V 现场证明。"
+      "evidence": "用户指定 D:\\Temp\\PollyOS 并自行更换现有 Hyper-V 介质。12f 未过首启未交付；修后 6d 候选已完成真实首设/登录/注销再登录，但 Power guard 尚无 ACTION。UI-only 修复源 4e6b004 已审合 1dac93d，将沿合格依赖/原 native 引擎正确更新 runtime JS 与固定源介质后继续短 smoke，不重引擎或用旧失败拼整轮绿。原失败 clone/帧/日志及丢 RAM 事实保留；最终 VHDX 仍未初始化，不能导出测试 cow。实际电源验证与最终文件交付待完成，不覆盖旧媒体或宣称 Hyper-V 已验证。"
     },
     {
       "id": "alpha-manual-acceptance",

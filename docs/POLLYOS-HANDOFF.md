@@ -1,6 +1,6 @@
 # PollyOS 当前批次交接
 
-更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `ea0ac1a`，
+更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `1dac93d`，
 保留此前正常快进合入的 `ce73a3c`，本轮尚未推送。
 此前已推送的代码基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，
 交接提交为 `0f863116fb3f1de8abbb6e032925a9860ce17553`；没有强推。
@@ -118,6 +118,21 @@ LF 行 1109–1114 明确记录账号服务经 basic/sockets/setup socket 回到
 的 `After=polly-accounts.service` 并加必要直接断言；broker 和 greetd 的 Requires/Afteraccounts、
 SocketUser/Group/Mode、PAM、Peer/Class 校验全部保留。修后正常冷启动和新正确固定源介质
 正在复测；这证明此次新 guest 的真实问题，不替代历史 Hyper-V 缺失日志。
+
+### Power UI 后台刷新修复
+
+本轮修后 `6d` 隔离 guest 已真实图形首设、标准 passwd/PAM 完成、普通登录、Logout 回 greetd
+及再次登录；对应 04/05/16/17 实图由父核看。Power 首阶段两次 JS guard 拒绝，未 native ACTION
+或 guest RESET；后台只读 busy 不等权限拒绝，源 `4e6b00486190e9d321f8b7bcf8bca56068e78aa1`
+已审合 `1dac93d`。仅三个 UI/测试/文档路径，first/close 确认可在 verified busy 时进行，
+最终按钮 fresh read 先于 seal；busy 保持 ready+notice，刷新完成不自动重放。
+原 native revision/pending/PID/caps/Root-owner 与 sent/uncertain 约束全保留。
+父用 pinned SDK 仅跑新增 refresh 与改动的 denial 两 selector，2PASS/3patternSKIP，
+不是整个五用例或实际 guest Power PASS。源码红绿日志 SHA256
+`fdbf22c9cdb2b57d3d6b0e20952d8efb9b454432ed1da7eb36db96d4e99d491c` 已核。
+原测试控制器一次性 30m 到期只清 RAM/关闭 QMP，未杀已登入 guest；不 debug secret 或重置密码。
+新 runtime JS 来自 `4e6b004`，native ELF 仍保持真实 `ffc887f` 构建来源；
+新源实际 Save/Can/Restart/PowerOff/persistence 与固定路径交付仍待完成。
 
 ## 第一批代码与准确范围
 
