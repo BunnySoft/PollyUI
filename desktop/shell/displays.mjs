@@ -1,13 +1,20 @@
 import { createTextInput } from './js/textinput.mjs';
 import { h } from './js/reconciler.mjs';
+import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 
 export function displayField(owner, inputs, head, field, theme, width = 78) {
   const id = 'shell-output-' + head.id + '-' + field;
-  return h('view', { style: { width, height: 30, flexShrink: 0 }, onMount: node => {
+  const fontSize = themeTextSize(theme, 12);
+  const existing = inputs.get(id);
+  if (existing) existing.setAppearance({ color: theme.colors.text, background: theme.colors.surface,
+    selectionColor: theme.colors.selection, borderColor: theme.colors.border,
+    borderRadius: theme.button.radius, fontSize });
+  return h('view', { style: { width, height: fontSize + 16, flexShrink: 0 }, onMount: node => {
     let input = inputs.get(id);
     if (!input) {
       input = createTextInput({ document: owner, value: field === 'refresh' ? head[field] / 1000 : head[field],
-        width, fontSize: 12, padding: 7, purpose: 'number', color: theme.colors.text, background: theme.colors.surface });
+        width, fontSize, padding: 7, purpose: 'number', color: theme.colors.text, background: theme.colors.surface,
+        selectionColor: theme.colors.selection });
       input.root.id = id;
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', head.name + ' ' + field);

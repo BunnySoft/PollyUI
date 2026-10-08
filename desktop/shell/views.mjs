@@ -13,7 +13,7 @@ const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gra
 const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
-function button(id, text, theme, action, selected = false, extra = {}) {
+export function button(id, text, theme, action, selected = false, extra = {}) {
   const activate = event => { event.stopPropagation(); action(); };
   const luna = isLuna(theme);
   const label = labelFor(theme)(text, theme.colors.text);
@@ -108,7 +108,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
       ...gradient(panel.from, panel.to), position: 'relative',
     } }, lunaBands(theme, 'panel', panel.height), launcher,
-      tool('shell-panel-settings', 'Appearance', 'appearance', openSettings),
+      tool('shell-panel-settings', 'Settings', 'appearance', openSettings),
       workspace ? tool('shell-workspaces', workspace.name, 'workspace', workspace.open) : null,
       windowButtons(theme, windows, toggle, actions),
       error ? label('Desktop needs attention', panel.text, 11) : null,
@@ -131,7 +131,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     height: panel.kind === 'dock' ? theme.layout.compactButtonHeight : theme.layout.buttonHeight,
     ...gradient(panel.launcherFrom, panel.launcherTo),
   }),
-  button('shell-panel-settings', 'Appearance', theme, openSettings, false, { height: theme.layout.compactButtonHeight }),
+  button('shell-panel-settings', 'Settings', theme, openSettings, false, { height: theme.layout.compactButtonHeight }),
   workspace ? button('shell-workspaces', Array.from(workspace.name).slice(0, theme.layout.workspaceTitleLimit).join(''),
     theme, workspace.open, false, { height: theme.layout.compactButtonHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) :
     label('PollyDesktop', panel.text, 12),
@@ -155,12 +155,12 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
     ...gradient(panel.from, panel.to),
   } },
   button('shell-dock-applications', 'Apps', theme, openApplications, false, tile),
-  button('shell-dock-settings', 'Appearance', theme, openSettings, false, tile),
+  button('shell-dock-settings', 'Settings', theme, openSettings, false, tile),
   button('shell-dock-about', 'About', theme, openAbout, false, tile),
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null) {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '') {
   const label = labelFor(theme);
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
@@ -170,7 +170,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   h('view', { style: { ...row, gap: theme.layout.contentGap } },
     label(about ? 'PollyDesktop' : 'Desktop appearance', theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }),
-    button('shell-settings-close', 'Close', theme, close)),
+    embedded ? null : button('shell-settings-close', 'Close', theme, close)),
   about
     ? [
         label('Independent Wayland desktop', theme.colors.text, 13),
@@ -180,10 +180,10 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Alt+F11 toggles fullscreen.', theme.colors.muted, 11),
         label('Alt+Escape ends the development session.', theme.colors.muted, 11),
         label('Window buttons reflect live compositor state.', theme.colors.muted, 10),
-        label('No login, secure lock or background blur yet.', theme.colors.muted, 10),
+        label('Login and locking depend on deployed session policy.', theme.colors.muted, 10),
       ]
     : [
-        label('Changes apply to the real desktop and persist.', theme.colors.muted, 11),
+        label('Changes apply now and save in your user preferences.', theme.colors.muted, 11),
         ...DESKTOP_THEMES.map(preset => button('shell-theme-' + preset.id, preset.name, theme,
           () => select(preset.id), theme.id === preset.id, { height: theme.layout.choiceHeight })),
         label('Negotiated window frames follow this appearance.', theme.colors.muted, 11),
@@ -197,10 +197,11 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   network ? button('shell-network-settings-open', 'Wi-Fi', theme, network) : null,
   audio ? button('shell-audio-settings-open', 'Audio', theme, audio) : null,
   power ? button('shell-power-settings-open', 'Power', theme, power) : null,
+  status ? h('view', { role: 'status', 'aria-live': 'polite' }, label(status, theme.colors.text, 11)) : null,
   error ? h('view', { role: 'alert', style: { gap: theme.layout.controlGap, padding: theme.layout.serviceButtonPadding, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11),
     button('shell-retry', 'Retry', theme, retry)) : null,
-  label('Escape closes this menu.', theme.colors.muted, 10));
+  label(embedded ? 'Live sessions keep preferences only until reboot.' : 'Escape closes this menu.', theme.colors.muted, 10));
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '') {

@@ -158,7 +158,7 @@ function find(window, id) {
   return node;
 }
 
-function fixture() {
+function fixture(configure = () => {}) {
   const previous = { document: globalThis.document, measureText: globalThis.measureText,
     setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval };
   globalThis.document = document();
@@ -225,6 +225,9 @@ function fixture() {
     close() {},
     displays: () => clone(state.outputs),
     create(options) {
+      if (!options.layer)
+        for (const key of ['output', 'anchors', 'keyboard', 'exclusiveZone', 'margins'])
+          assert.equal(options[key], undefined, key + ' requires a layer surface');
       if (state.failCreate) throw new Error('fixture surface creation failed');
       const window = { options, document: document(), closed: false, closeCount: 0,
         close() {
@@ -243,6 +246,7 @@ function fixture() {
     setItem: (key, value) => saved.set(key, value),
     removeItem: key => saved.delete(key),
   };
+  configure({ native, state, calls, saved });
   const shell = createDesktopShell({ host, native, storage, report: value => warnings.push(value) }).start();
   const surface = (kind, output = 1) => shell.getSurfaces().find(item => item.kind === kind && item.output === output).window;
   const done = () => {
@@ -256,12 +260,363 @@ function fixture() {
   };
   return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings };
 }
-function scenario(name, run) {
+function scenario(name, run, configure) {
   test(name, () => {
-    const f = fixture();
+    const f = fixture(configure);
     try { run(f); } finally { f.done(); }
   });
 }
+
+function settingsBackend({ native, state, calls }) {
+  const clone = value => JSON.parse(JSON.stringify(value));
+  state.network = { ready: true, registered: true, revision: 10, operation: '', refreshing: false,
+    networkConfiguration: true, authentication: null, error: '',
+    devices: [{ id: '/net/connman/iwd/0', name: 'fixture-wifi', powered: true, station: true,
+      state: 'disconnected', mode: 'station', scanning: false }],
+    networks: [{ id: '/net/connman/iwd/0/test', device: '/net/connman/iwd/0', name: 'Private fixture',
+      type: 'psk', signal: -45, order: 0, known: false, connected: false }] };
+  state.audio = { ready: true, generation: 1, error: '', defaultSink: 20, defaultSource: 22,
+    preferredSink: '', preferredSource: '', nodes: [
+      { id: 20, instance: 100, revision: 1, name: 'fixture-speaker', description: 'Private speaker',
+        class: 'Audio/Sink', state: 'idle', volume: 1, muted: false },
+      { id: 21, instance: 101, revision: 1, name: 'fixture-headphones', description: 'Private headphones',
+        class: 'Audio/Sink', state: 'idle', volume: 1, muted: false },
+      { id: 22, instance: 102, revision: 1, name: 'fixture-microphone', description: 'Private microphone',
+        class: 'Audio/Source', state: 'idle', volume: 1, muted: false },
+    ] };
+  native.audioAvailable = true;
+  native.sessionServices = () => ({ inputMethod: 'disabled' });
+  native.startNetwork = () => calls.push(['start-network']);
+  native.stopNetwork = () => calls.push(['stop-network']);
+  native.refreshNetworks = () => calls.push(['refresh-network']);
+  native.networkState = () => clone(state.network);
+  native.onNetworkChanged = () => calls.push(['previous-network']);
+  native.networkAction = (revision, target, action) => {
+    assert.equal(revision, state.network.revision);
+    calls.push(['network-action', revision, target, action]);
+    if (action === 'connect') {
+      state.network.operation = 'connect';
+      state.network.authentication = { id: 77, network: target, kind: 'passphrase' };
+    }
+  };
+  native.replyNetworkAuthentication = (id, username, password) => {
+    assert.equal(id, state.network.authentication.id);
+    calls.push(['network-auth', id, username, password === null ? null : 'synthetic supplied']);
+    state.network.authentication = null;
+    state.network.operation = '';
+    state.network.networks[0].connected = password !== null;
+    state.network.networks[0].known = password !== null;
+    state.network.revision++;
+  };
+  native.cancelNetworkConnection = () => {
+    calls.push(['cancel-network']);
+    state.network.authentication = null; state.network.operation = '';
+  };
+  native.startAudio = () => calls.push(['start-audio']);
+  native.stopAudio = () => calls.push(['stop-audio']);
+  native.audioState = () => clone(state.audio);
+  native.onAudioChanged = () => calls.push(['previous-audio']);
+  for (const operation of ['setAudioVolume', 'setAudioMute', 'setDefaultAudio'])
+    native[operation] = (id, revision, value) => {
+      assert.equal(revision, state.audio.nodes.find(node => node.id === id).revision);
+      calls.push([operation, id, revision, value]);
+    };
+  native.applyOutputConfiguration = draft => {
+    calls.push(['apply-outputs', clone(draft)]);
+    state.output.pendingToken = 5;
+    state.output.heads = clone(draft.heads);
+  };
+}
+function settingsScenario(name, run) { scenario('Settings: ' + name, run, settingsBackend); }
+function text(node) { return descendants(node).map(item => item.textContent || item.nodeValue || '').join(' '); }
+function navigate(window, page) { click(find(window, 'shell-settings-page-' + page)); }
+
+settingsScenario('taskbar, desktop and searchable application entry share one ordinary window', f => {
+  click(find(f.surface('panel'), 'shell-panel-settings'));
+  const settings = f.created.at(-1);
+  assert.equal(settings.options.title, 'Settings');
+  assert.equal(settings.options.layer, undefined);
+  click(find(f.surface('panel'), 'shell-panel-settings'));
+  assert.equal(f.created.at(-1), settings);
+  domEvent(f.surface('wallpaper').document.body, 'contextmenu', { button: 2 });
+  assert.equal(f.created.at(-1), settings);
+  const applications = f.shell.showApplications(2);
+  domEvent(find(applications, 'shell-app-search'), 'textinput', { data: 'Settings' });
+  click(find(applications, 'shell-app-org.pollyui.shell.Settings'));
+  assert.equal(applications.closed, true);
+  assert.equal(settings.closed, false);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'Shell action does not launch a privileged public app');
+});
+
+settingsScenario('theme choices persist and repaint in place across all preset layouts', f => {
+  const settings = f.shell.showSystemSettings(1);
+  const stale = callback(find(settings, 'shell-theme-bigsur'), 'click');
+  for (const id of ['server2003', 'aqua', 'lion', 'bigsur', 'xp']) {
+    click(find(settings, 'shell-theme-' + id));
+    assert.equal(settings.closed, false);
+    assert.equal(f.saved.get('desktop.theme'), id);
+    assert.equal(find(settings, 'shell-theme-' + id).getAttribute('aria-pressed'), 'true');
+    assert.equal(f.shell.getState().themeId, id);
+  }
+  stale(event('click'));
+  assert.equal(f.shell.getState().themeId, 'xp', 'retired rendered choices cannot apply a theme');
+  for (const page of ['displays', 'network', 'audio', 'keyboard', 'about', 'appearance']) {
+    navigate(settings, page);
+    assert.equal(find(settings, 'shell-settings-page-' + page).getAttribute('aria-current'), 'page');
+    const expected = { displays: 'shell-displays', network: 'shell-network-settings', audio: 'shell-audio-settings',
+      keyboard: 'shell-shortcuts', about: 'shell-settings-about', appearance: 'shell-settings' };
+    assert.ok(find(settings, expected[page]), 'navigation mounts actual page content');
+    assert.equal(settings.closed, false);
+  }
+  assert.equal(f.created.filter(window => window.options.title === 'Settings').length, 1);
+});
+
+settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-window semantics', f => {
+  const settings = f.shell.showSystemSettings(1);
+  key(settings, 'Tab');
+  assert.equal(settings.document.activeElement.id, 'shell-system-settings-close');
+  find(settings, 'shell-settings-page-about').focus();
+  key(settings, ' ');
+  assert.ok(find(settings, 'shell-settings-about'));
+  find(settings, 'shell-settings-page-appearance').focus();
+  key(settings, 'Enter');
+  find(settings, 'shell-theme-lion').focus(); key(settings, 'Enter');
+  assert.equal(f.shell.getState().themeId, 'lion');
+  assert.equal(settings.closed, false);
+  const child = settings.document.createElement('view');
+  child.tabIndex = 0; child.addEventListener('keydown', value => value.preventDefault());
+  find(settings, 'shell-settings-content').appendChild(child); child.focus();
+  key(settings, 'Escape'); assert.equal(settings.closed, false);
+  settings.document.body.focus(); key(settings, 'Escape');
+  assert.equal(settings.closed, true);
+  assert.equal(f.shell.getState().running, true);
+  assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
+});
+
+settingsScenario('display edits use guarded apply, Keep persistence and live replacement drafts', f => {
+  const settings = f.shell.showSystemSettings(1, 'displays');
+  const field = find(settings, 'shell-output-1-scale');
+  field.focus(); key(settings, 'a', { ctrlKey: true });
+  domEvent(field, 'textinput', { data: '1.25' });
+  click(find(settings, 'shell-output-apply'));
+  const request = f.calls.find(call => call[0] === 'apply-outputs')[1];
+  assert.equal(request.serial, 1);
+  assert.equal(request.heads[0].scale, 1.25);
+  assert.equal(settings.closed, false);
+  const guard = f.created.at(-1);
+  assert.ok(find(guard, 'shell-output-confirmation'));
+  assert.match(text(guard.document.body), /15 seconds/);
+  assert.equal(guard.options.layer, 'overlay');
+  assert.equal(f.saved.has('desktop.outputs.v1'), false);
+  click(find(guard, 'shell-output-keep'));
+  assert.equal(guard.closed, true);
+  assert.ok([...f.saved.keys()].some(key => key.includes('display')));
+  assert.ok(find(settings, 'shell-output-1-scale'));
+  f.state.output.serial++;
+  f.state.output.heads[0].scale = 1.5;
+  f.native.onOutputsChanged();
+  f.expectedWarnings.push('[shell] Display settings: Outputs changed; the draft was refreshed. Review it before applying.');
+  assert.match(text(settings.document.body), /draft was refreshed/);
+  click(find(settings, 'shell-output-apply'));
+  assert.equal(f.calls.filter(call => call[0] === 'apply-outputs').at(-1)[1].heads[0].scale, 1.5);
+});
+
+settingsScenario('closing Settings cannot confirm/revert a pending layout or stop its watchdog', f => {
+  const settings = f.shell.showSystemSettings(1, 'displays');
+  click(find(settings, 'shell-output-apply'));
+  const guard = f.created.at(-1);
+  const close = callback(find(settings, 'shell-system-settings-close'), 'click');
+  click(find(settings, 'shell-system-settings-close'));
+  assert.equal(guard.closed, false);
+  assert.equal(f.state.output.pendingToken, 5);
+  const next = f.shell.showSystemSettings(1, 'audio');
+  close(event('click'));
+  assert.equal(next.closed, false);
+  key(guard, 'Escape');
+  assert.equal(f.state.output.pendingToken, 0);
+  assert.equal(next.closed, false);
+});
+
+settingsScenario('iwd scan/connect/password/disconnect/forget consume actual revision and target shapes', f => {
+  const settings = f.shell.showSystemSettings(1, 'network');
+  assert.match(text(settings.document.body), /fixture-wifi/);
+  assert.match(text(settings.document.body), /-45 dBm/);
+  click(find(settings, 'shell-network-scan-0'));
+  assert.deepEqual(f.calls.find(call => call[0] === 'network-action'),
+    ['network-action', 10, '/net/connman/iwd/0', 'scan']);
+  click(find(settings, 'shell-network-connect-0-0'));
+  assert.equal(f.calls.some(call => call[3] === 'connect'), false);
+  click(find(settings, 'shell-network-confirm'));
+  const password = find(settings, 'shell-network-password');
+  password.focus(); domEvent(password, 'textinput', { data: 'fixture-pass' });
+  assert.equal(text(password).includes('fixture-pass'), false);
+  click(find(settings, 'shell-network-auth-submit'));
+  assert.equal(f.state.network.authentication, null);
+  assert.equal(f.state.network.networks[0].known, true);
+  click(find(settings, 'shell-network-disconnect-0'));
+  click(find(settings, 'shell-network-forget-0-0'));
+  assert.equal(f.calls.some(call => call[3] === 'forget'), false);
+  click(find(settings, 'shell-network-confirm'));
+  assert.ok(f.calls.some(call => call[0] === 'network-action' && call[3] === 'forget'));
+});
+
+settingsScenario('Wi-Fi page teardown clears/cancels credentials and retires snapshot callbacks', f => {
+  const settings = f.shell.showSystemSettings(1, 'network');
+  const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
+  f.state.network.revision++; f.native.onNetworkChanged();
+  oldScan(event('click'));
+  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
+  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
+  const password = find(settings, 'shell-network-password');
+  password.focus(); domEvent(password, 'textinput', { data: 'fixture-secret' });
+  const oldSubmit = callback(find(settings, 'shell-network-auth-submit'), 'click');
+  navigate(settings, 'appearance');
+  assert.equal(f.state.network.authentication, null);
+  assert.ok(f.calls.some(call => call[0] === 'network-auth' && call[3] === null));
+  assert.equal(text(password).includes('fixture-secret'), false);
+  assert.equal(text(password).includes('\u2022'), false, 'retired field is wiped');
+  navigate(settings, 'network'); oldSubmit(event('click'));
+  assert.equal(f.state.network.networks[0].connected, false);
+  assert.equal(f.calls.some(call => call[0] === 'stop-network'), false);
+});
+
+settingsScenario('iwd service loss and changed confirmation disable requests without invented readiness', f => {
+  const settings = f.shell.showSystemSettings(1, 'network');
+  click(find(settings, 'shell-network-connect-0-0'));
+  f.state.network.revision++; f.native.onNetworkChanged();
+  assert.equal(find(settings, 'shell-network-confirm').getAttribute('aria-disabled'), 'true');
+  click(find(settings, 'shell-network-confirm'));
+  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
+  click(find(settings, 'shell-network-confirm-cancel'));
+  f.state.network.ready = false; f.state.network.error = 'Private fixture iwd unavailable';
+  f.native.onNetworkChanged();
+  assert.match(text(settings.document.body), /iwd unavailable/);
+  assert.equal(find(settings, 'shell-network-scan-0').getAttribute('aria-disabled'), 'true');
+  click(find(settings, 'shell-network-scan-0'));
+  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
+});
+
+settingsScenario('PipeWire volume, mute and default devices show progress and save only acknowledgments', f => {
+  const settings = f.shell.showSystemSettings(1, 'audio');
+  assert.match(text(settings.document.body), /Private speaker/);
+  click(find(settings, 'shell-audio-lower-20'));
+  assert.deepEqual(f.calls.find(call => call[0] === 'setAudioVolume'), ['setAudioVolume', 20, 1, 0.9]);
+  assert.match(text(settings.document.body), /acknowledge and save/);
+  assert.equal(f.saved.has('desktop.audio.v1'), false);
+  assert.equal(find(settings, 'shell-audio-mute-20').getAttribute('aria-disabled'), 'true');
+  f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
+  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices[0].volume, 0.9);
+  click(find(settings, 'shell-audio-mute-22'));
+  f.state.audio.nodes[2].muted = true; f.state.audio.nodes[2].revision++; f.native.onAudioChanged();
+  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices.find(node => node.name === 'fixture-microphone').muted, true);
+  click(find(settings, 'shell-audio-default-21'));
+  f.state.audio.defaultSink = 21; f.state.audio.preferredSink = 'fixture-headphones'; f.native.onAudioChanged();
+  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).preferredSink, 'fixture-headphones');
+  assert.equal(settings.closed, false);
+});
+
+settingsScenario('audio policy outlives Settings and persists an acknowledgment after page detach', f => {
+  const settings = f.shell.showSystemSettings(1, 'audio');
+  const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
+  click(find(settings, 'shell-audio-lower-20'));
+  settings.close();
+  assert.equal(f.calls.some(call => call[0] === 'stop-audio'), false);
+  f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
+  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices[0].volume, 0.9);
+  const next = f.shell.showSystemSettings(1, 'audio');
+  assert.match(text(next.document.body), /90%/);
+  oldMute(event('click'));
+  assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
+  assert.equal(f.calls.filter(call => call[0] === 'start-audio').length, 1);
+});
+
+settingsScenario('keyboard changes retain the trusted-layer capture boundary and existing persistence', f => {
+  const settings = f.shell.showSystemSettings(1, 'keyboard');
+  click(find(settings, 'shell-shortcut-minimize-window'));
+  const capture = f.created.at(-1);
+  assert.equal(capture.options.layer, 'overlay');
+  assert.equal(settings.closed, false);
+  key(capture, 'm', { ctrlKey: true });
+  assert.equal(f.state.shortcuts[0].key, 'm');
+  assert.ok(f.saved.has('desktop.shortcuts.v1'));
+  key(capture, 'Escape');
+  assert.equal(capture.closed, true);
+  assert.match(text(settings.document.body), /Ctrl\+M/);
+  click(find(settings, 'shell-shortcut-disable-minimize-window'));
+  assert.equal(f.state.shortcuts[0].key, '');
+});
+
+settingsScenario('unsupported capabilities stay visible and About makes no login/version claims', f => {
+  const settings = f.shell.showSystemSettings(1);
+  delete f.native.startNetwork; delete f.native.startAudio; delete f.native.outputConfiguration; delete f.native.shortcuts;
+  for (const page of ['network', 'audio', 'displays', 'keyboard']) {
+    navigate(settings, page);
+    assert.match(text(settings.document.body), /unavailable|requires/i);
+    assert.ok(descendants(settings.document.body).some(node => node.getAttribute('aria-disabled') === 'true'));
+  }
+  navigate(settings, 'about');
+  assert.match(text(settings.document.body), /version is not exposed/);
+  assert.match(text(settings.document.body), /Input method: disabled/);
+  assert.equal(text(settings.document.body).includes('No login'), false);
+});
+
+settingsScenario('close/reopen and Shell restart restore listeners and reject old generations', f => {
+  const previousNetwork = f.native.onNetworkChanged;
+  const settings = f.shell.showSystemSettings(1, 'network');
+  const oldNav = callback(find(settings, 'shell-settings-page-appearance'), 'click');
+  const oldClose = settings.onclose;
+  settings.close();
+  assert.equal(settings.document.body.listeners.get('keydown').length, 0);
+  f.shell.stop();
+  assert.equal(f.native.onNetworkChanged, previousNetwork);
+  assert.equal(f.timers.size, 0);
+  f.shell.start();
+  const next = f.shell.showSystemSettings(1, 'about');
+  oldNav(event('click')); oldClose();
+  assert.ok(find(next, 'shell-settings-about'));
+  assert.equal(next.closed, false);
+});
+
+settingsScenario('late device notifications and detached controls cannot replace a later page', f => {
+  const settings = f.shell.showSystemSettings(1, 'network');
+  const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
+  navigate(settings, 'audio');
+  const audioRoot = find(settings, 'shell-audio-settings');
+  f.state.network.devices[0].name = 'Changed after detach'; f.native.onNetworkChanged();
+  oldScan(event('click'));
+  assert.equal(find(settings, 'shell-audio-settings'), audioRoot);
+  assert.equal(settings.document.getElementById('shell-network-settings'), null);
+  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
+  const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
+  navigate(settings, 'appearance');
+  const appearance = find(settings, 'shell-settings');
+  f.state.audio.generation++;
+  f.state.audio.nodes[0].instance++; f.native.onAudioChanged();
+  oldMute(event('click'));
+  assert.equal(find(settings, 'shell-settings'), appearance);
+  assert.equal(settings.document.getElementById('shell-audio-settings'), null);
+  assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
+  assert.ok(f.calls.some(call => call[0] === 'previous-network'));
+  assert.ok(f.calls.some(call => call[0] === 'previous-audio'));
+});
+
+settingsScenario('theme repaint preserves current credential value/focus and unavailable-state retry reports errors', f => {
+  const settings = f.shell.showSystemSettings(1, 'network');
+  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
+  const input = find(settings, 'shell-network-password');
+  input.focus(); domEvent(input, 'textinput', { data: 'fixture-secret' });
+  f.shell.selectTheme('bigsur');
+  assert.equal(find(settings, 'shell-network-password'), input);
+  assert.equal(settings.document.activeElement, input);
+  assert.match(text(input), /\u2022{14}/);
+  click(find(settings, 'shell-network-auth-cancel'));
+  f.native.networkState = () => { throw new Error('fixture state read failed'); };
+  f.native.onNetworkChanged();
+  f.expectedWarnings.push('[shell] Network: Error: fixture state read failed');
+  assert.match(text(settings.document.body), /fixture state read failed/);
+  assert.equal(settings.document.getElementById('shell-network-scan-0'), null);
+  assert.ok(find(settings, 'shell-network-retry'));
+});
 
 function blockedActivation(f) {
   let resolve, reject;
@@ -410,7 +765,7 @@ scenario('owned wallpaper/panel/dock presses dismiss across outputs without supp
   assert.equal(menu.closed, true);
 });
 
-scenario('pointer toggles retain their existing close behavior and different controls replace menus', f => {
+scenario('launcher toggles remain scoped while Settings buttons reuse a persistent ordinary window', f => {
   const panel = f.surface('panel');
   click(find(panel, 'shell-menu'));
   const first = f.created.at(-1);
@@ -420,8 +775,10 @@ scenario('pointer toggles retain their existing close behavior and different con
   assert.ok(f.created.at(-1) === first, 'same opener must not close on press then reopen on click');
   click(find(panel, 'shell-panel-settings'));
   const appearance = f.created.at(-1);
+  assert.ok(find(appearance, 'shell-system-settings'));
+  assert.equal(appearance.options.layer, undefined);
   click(find(panel, 'shell-menu'));
-  assert.equal(appearance.closed, true);
+  assert.equal(appearance.closed, false, 'ordinary Settings is not dismissed by opening a menu');
   assert.ok(find(f.created.at(-1), 'shell-applications'));
   const applications = f.created.at(-1);
   click(find(f.surface('panel', 2), 'shell-menu'));
@@ -429,13 +786,17 @@ scenario('pointer toggles retain their existing close behavior and different con
   assert.equal(f.created.at(-1).options.output, 2);
   assert.equal(f.shell.selectTheme('bigsur'), true);
   const dock = f.surface('dock');
-  for (const id of ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about']) {
-    click(find(dock, id));
-    const current = f.created.at(-1);
-    click(find(dock, id));
-    assert.equal(current.closed, true);
-    assert.ok(f.created.at(-1) === current);
+  click(find(dock, 'shell-dock-applications'));
+  const current = f.created.at(-1);
+  click(find(dock, 'shell-dock-applications'));
+  assert.equal(current.closed, true);
+  assert.ok(f.created.at(-1) === current);
+  for (const id of ['shell-dock-settings', 'shell-dock-about']) {
+    click(find(dock, id)); click(find(dock, id));
+    assert.equal(appearance.closed, false);
+    assert.equal(f.shell.showSystemSettings(1), appearance);
   }
+  assert.ok(find(appearance, 'shell-settings-about'));
 });
 
 scenario('right-click window and workspace menu triggers still toggle rather than reopen', f => {

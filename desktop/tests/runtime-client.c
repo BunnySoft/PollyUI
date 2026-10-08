@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <unistd.h>
@@ -404,14 +405,176 @@ static bool ime_popup_ready(struct ImePopup *popup)
     return (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888) && (pixel & 0xffffff) == 0x20cc40;
 }
 
+static struct PuDesktopView *settings_view(void)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop.views, link) {
+        if (view->mapped && !view->geometry_pending && view->toplevel->title &&
+            !strcmp(view->toplevel->title, "Settings") &&
+            wl_resource_get_client(view->toplevel->base->resource) == desktop.shell_client) return view;
+    }
+    return NULL;
+}
+
+static void acknowledge_settings_marker(const char *name)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link) {
+        if (!strcmp(layer->surface->namespace, name)) {
+            wlr_layer_surface_v1_destroy(layer->surface);
+            return;
+        }
+    }
+}
+
+static void fixture_pointer_motion(int x, int y, uint32_t time)
+{
+    struct wlr_box all;
+    wlr_output_layout_get_box(desktop.layout, NULL, &all);
+    struct wlr_pointer_motion_absolute_event motion = { .pointer = &pointer, .time_msec = time,
+        .x = (double)(x - all.x) / all.width, .y = (double)(y - all.y) / all.height };
+    wl_signal_emit_mutable(&pointer.events.motion_absolute, &motion);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+}
+
+static void fixture_pointer_click(int x, int y, uint32_t time, unsigned button)
+{
+    fixture_pointer_motion(x, y, time);
+    struct wlr_pointer_button_event click = { .pointer = &pointer, .time_msec = time + 1,
+        .button = button == 2 ? BTN_RIGHT : button == 1 ? BTN_MIDDLE : BTN_LEFT,
+        .state = WL_POINTER_BUTTON_STATE_PRESSED };
+    wlr_pointer_notify_button(&pointer, &click);
+    click.time_msec++; click.state = WL_POINTER_BUTTON_STATE_RELEASED;
+    wlr_pointer_notify_button(&pointer, &click);
+    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+}
+
+static void fixture_keyboard(unsigned code, unsigned modifiers, uint32_t *time)
+{
+    const unsigned modifier_keys[] = { KEY_LEFTSHIFT, KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFTMETA };
+    struct wlr_keyboard_key_event event = { .update_state = true };
+    for (unsigned bit = 0; bit < 4; bit++) if (modifiers & (1u << bit)) {
+        event.time_msec = ++*time; event.keycode = modifier_keys[bit]; event.state = WL_KEYBOARD_KEY_STATE_PRESSED;
+        wlr_keyboard_notify_key(&keyboard, &event);
+    }
+    event.time_msec = ++*time; event.keycode = code; event.state = WL_KEYBOARD_KEY_STATE_PRESSED;
+    wlr_keyboard_notify_key(&keyboard, &event);
+    event.time_msec = ++*time; event.state = WL_KEYBOARD_KEY_STATE_RELEASED;
+    wlr_keyboard_notify_key(&keyboard, &event);
+    for (int bit = 3; bit >= 0; bit--) if (modifiers & (1u << bit)) {
+        event.time_msec = ++*time; event.keycode = modifier_keys[bit];
+        wlr_keyboard_notify_key(&keyboard, &event);
+    }
+}
+
+static struct PuDesktopView *file_dialog_view(struct wl_client *client, const char *title)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop.views, link) {
+        if (view->mapped && !view->geometry_pending && view->toplevel->title &&
+            !strcmp(view->toplevel->title, title) && view->toplevel->app_id &&
+            !strcmp(view->toplevel->app_id, "org.pollyui.file-dialog-window") &&
+            wl_resource_get_client(view->toplevel->base->resource) == client) return view;
+    }
+    return NULL;
+}
+
+static void acknowledge_file_dialog_marker(pid_t owner, const char *title)
+{
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop.views, link) {
+        if (!view->toplevel->title || strcmp(view->toplevel->title, title) || !view->toplevel->app_id ||
+            strcmp(view->toplevel->app_id, "org.pollyui.file-dialog-window")) continue;
+        pid_t pid;
+        wl_client_get_credentials(wl_resource_get_client(view->toplevel->base->resource), &pid, NULL, NULL);
+        if (pid == owner) { wlr_xdg_toplevel_send_close(view->toplevel); return; }
+    }
+}
+
+static bool file_dialog_requests(unsigned *last, uint32_t *time)
+{
+    struct PuDesktopView *marker, *next;
+    wl_list_for_each_safe(marker, next, &desktop.views, link) {
+        if (!marker->mapped || !marker->toplevel->title || !marker->toplevel->app_id ||
+            strcmp(marker->toplevel->app_id, "org.pollyui.file-dialog-window") ||
+            strncmp(marker->toplevel->title, "FileDialogFixture.", 18)) continue;
+        char request[256];
+        CHECK(strlen(marker->toplevel->title) < sizeof(request));
+        strcpy(request, marker->toplevel->title);
+        const char *digits = request + 18;
+        CHECK(*digits >= '0' && *digits <= '9');
+        char *end;
+        errno = 0;
+        unsigned long parsed = strtoul(digits, &end, 10);
+        CHECK(!errno && parsed > 0 && parsed <= UINT_MAX && *end == '.');
+        unsigned sequence = (unsigned)parsed;
+        if (sequence <= *last) continue;
+        const char *action = end + 1;
+        struct wl_client *client = wl_resource_get_client(marker->toplevel->base->resource);
+        pid_t pid; uid_t uid;
+        wl_client_get_credentials(client, &pid, &uid, NULL);
+        CHECK(client != desktop.shell_client && pid > 0 && uid == 1000);
+        struct PuDesktopView *view = file_dialog_view(client, "PollyUI.FileText");
+        CHECK(view && view != marker);
+        wlr_scene_node_set_enabled(&marker->tree->node, false);
+        int sx, sy;
+        CHECK(wlr_scene_node_coords(&view->tree->node, &sx, &sy));
+        if (strcmp(action, "close") && (desktop.focused != view || desktop.focused_layer)) {
+            // The chooser fixture's mask/root at (10,10) consumes focus without dismissal.
+            fixture_pointer_click(sx + 10, sy + 10, *time += 3, 0);
+            continue; // No pointer is retained across the next event-loop settle.
+        }
+        int x, y, delta, used = 0;
+        if (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used]) {
+            CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
+                y < view->toplevel->base->geometry.height);
+            *last = sequence;
+            fixture_pointer_motion(sx + x, sy + y, ++*time);
+            CHECK(desktop.seat->pointer_state.focused_surface == view->toplevel->base->surface);
+            fixture_pointer_click(sx + x, sy + y, *time += 3, 0);
+        } else if (sscanf(action, "wheel %d %d %d%n", &x, &y, &delta, &used) == 3 && !action[used]) {
+            CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
+                y < view->toplevel->base->geometry.height && delta >= -10000 && delta <= 10000);
+            *last = sequence;
+            fixture_pointer_motion(sx + x, sy + y, ++*time);
+            CHECK(desktop.seat->pointer_state.focused_surface == view->toplevel->base->surface);
+            struct wlr_pointer_axis_event event = { .pointer = &pointer, .time_msec = ++*time,
+                .source = WL_POINTER_AXIS_SOURCE_WHEEL, .orientation = WL_POINTER_AXIS_VERTICAL_SCROLL,
+                .delta = delta, .delta_discrete = delta > 0 ? 120 : delta < 0 ? -120 : 0 };
+            wl_signal_emit_mutable(&pointer.events.axis, &event);
+            wl_signal_emit_mutable(&pointer.events.frame, NULL);
+        } else if (!strncmp(action, "key ", 4)) {
+            unsigned code, modifiers = 0;
+            if (!strcmp(action + 4, "enter")) code = KEY_ENTER;
+            else if (!strcmp(action + 4, "escape")) code = KEY_ESC;
+            else if (!strcmp(action + 4, "tab")) code = KEY_TAB;
+            else if (!strcmp(action + 4, "shift-tab")) { code = KEY_TAB; modifiers = 1; }
+            else CHECK(false);
+            CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+            *last = sequence;
+            fixture_keyboard(code, modifiers, time);
+        } else if (!strcmp(action, "close")) {
+            *last = sequence;
+            wlr_xdg_toplevel_send_close(view->toplevel);
+        } else CHECK(false);
+        // Native actions can retire either window; resolve the copied marker title again.
+        acknowledge_file_dialog_marker(pid, request);
+    }
+    return true;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
         script, mode, executable, script, NULL };
     CHECK(pu_desktop_spawn_shell(&desktop, args));
     bool success = false, crashed = false;
+    unsigned settings_sequence = 0;
+    unsigned file_dialog_sequence = 0;
+    uint32_t settings_time = 70000;
     for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
         CHECK(pump());
+        CHECK(file_dialog_requests(&file_dialog_sequence, &settings_time));
         struct PuDesktopLayer *marker, *tmp;
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
@@ -595,6 +758,52 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
+            unsigned settings_open, sequence;
+            if (sscanf(name, "fixture-settings-state %u %u", &sequence, &settings_open) == 2) {
+                CHECK(settings_open <= 1 && desktop.shell_pid);
+                bool found_settings = false, found_survivor = false;
+                struct PuDesktopView *view;
+                wl_list_for_each(view, &desktop.views, link) {
+                    if (!view->mapped || view->geometry_pending) continue;
+                    struct wl_client *client = wl_resource_get_client(view->toplevel->base->resource);
+                    if (client == desktop.shell_client && view->toplevel->title &&
+                        !strcmp(view->toplevel->title, "Settings")) found_settings = true;
+                    if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings-survivor")) {
+                        pid_t pid;
+                        wl_client_get_credentials(client, &pid, NULL, NULL);
+                        CHECK(client != desktop.shell_client && pid > 0 && kill(pid, 0) == 0);
+                        found_survivor = true;
+                    }
+                }
+                if (found_survivor && found_settings == (settings_open != 0))
+                    wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (sscanf(name, "fixture-settings-close %u", &sequence) == 1) {
+                struct PuDesktopView *view = settings_view();
+                if (view && sequence > settings_sequence) {
+                    char request[96];
+                    CHECK(strlen(name) < sizeof(request));
+                    strcpy(request, name);
+                    settings_sequence = sequence;
+                    wlr_xdg_toplevel_send_close(view->toplevel);
+                    acknowledge_settings_marker(request);
+                }
+                continue;
+            }
+            unsigned code, modifiers;
+            if (sscanf(name, "fixture-settings-key %u %u %u", &sequence, &code, &modifiers) == 3) {
+                struct PuDesktopView *view = settings_view();
+                CHECK(code <= KEY_MAX && modifiers <= 15);
+                if (!view || sequence <= settings_sequence) continue;
+                CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+                char request[96];
+                CHECK(strlen(name) < sizeof(request)); strcpy(request, name);
+                settings_sequence = sequence;
+                fixture_keyboard(code, modifiers, &settings_time);
+                acknowledge_settings_marker(request);
+                continue;
+            }
             unsigned serial, button;
             int x, y;
             char target[96];
@@ -617,39 +826,43 @@ static bool window_suite(char *executable, char *script, char *mode)
                 CHECK(found);
                 wlr_layer_surface_v1_destroy(marker->surface); continue;
             }
-            if (sscanf(name, "fixture-click %u %d %d %u %95s", &serial, &x, &y, &button, target) != 5)
+            bool ordinary = sscanf(name, "fixture-xdg-click %u %d %d %u %95s", &serial, &x, &y, &button, target) == 5;
+            if (!ordinary && sscanf(name, "fixture-click %u %d %d %u %95s", &serial, &x, &y, &button, target) != 5)
                 continue;
             struct PuDesktopLayer *layer;
-            bool clicked = false;
-            wl_list_for_each(layer, &desktop.layers, link) {
-                if (strcmp(layer->surface->namespace, target) || !layer->surface->surface->mapped ||
-                    !layer->presented) continue;
-                int sx, sy;
-                CHECK(wlr_scene_node_coords(&layer->tree->node, &sx, &sy));
-                struct wlr_box all;
-                wlr_output_layout_get_box(desktop.layout, NULL, &all);
-                struct wlr_pointer_motion_absolute_event motion = {
-                    .pointer = &pointer, .time_msec = serial * 3,
-                    .x = (double)(sx + x - all.x) / all.width,
-                    .y = (double)(sy + y - all.y) / all.height,
-                };
-                wl_signal_emit_mutable(&pointer.events.motion_absolute, &motion);
-                /* SDL applies buffered motion at the end of its pointer frame. */
-                wl_signal_emit_mutable(&pointer.events.frame, NULL);
-                struct wlr_pointer_button_event click = {
-                    .pointer = &pointer, .time_msec = serial * 3 + 1,
-                    .button = button == 2 ? BTN_RIGHT : button == 1 ? BTN_MIDDLE : BTN_LEFT,
-                    .state = WL_POINTER_BUTTON_STATE_PRESSED,
-                };
-                wlr_pointer_notify_button(&pointer, &click);
-                click.time_msec++; click.state = WL_POINTER_BUTTON_STATE_RELEASED;
-                wlr_pointer_notify_button(&pointer, &click);
-                wl_signal_emit_mutable(&pointer.events.frame, NULL);
-                clicked = true;
-                break;
+            struct wlr_scene_tree *tree = NULL;
+            if (ordinary) {
+                CHECK(!strcmp(target, "Settings"));
+                struct PuDesktopView *view = settings_view();
+                if (!view || serial <= settings_sequence) continue;
+                tree = view->tree;
+                if (desktop.focused != view || desktop.focused_layer) {
+                    int sx, sy;
+                    CHECK(wlr_scene_node_coords(&tree->node, &sx, &sy));
+                    // Settings's header spacer at (140,10) has no business/close action.
+                    fixture_pointer_click(sx + 140, sy + 10, settings_time += 3, 0);
+                    continue; // Settle client focus, then look up both view and marker again.
+                }
+                CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+            } else {
+                wl_list_for_each(layer, &desktop.layers, link) {
+                    if (strcmp(layer->surface->namespace, target) || !layer->surface->surface->mapped ||
+                        !layer->presented) continue;
+                    tree = layer->tree;
+                    break;
+                }
             }
-            CHECK(clicked);
-            wlr_layer_surface_v1_destroy(marker->surface);
+            if (ordinary && !tree) continue;
+            CHECK(tree);
+            char request[256];
+            CHECK(strlen(name) < sizeof(request)); strcpy(request, name);
+            {
+                int sx, sy;
+                CHECK(wlr_scene_node_coords(&tree->node, &sx, &sy));
+                if (ordinary) settings_sequence = serial;
+                fixture_pointer_click(sx + x, sy + y, ordinary ? settings_time += 3 : serial * 3, button);
+            }
+            acknowledge_settings_marker(request);
         }
     }
     CHECK(success && !desktop.shell_pid && desktop.shell_exited &&

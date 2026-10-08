@@ -1,6 +1,7 @@
 import { h, render } from './js/reconciler.mjs';
 import { createTextInput } from './js/textinput.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
+import { button as themedButton } from './desktop/shell/views.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
@@ -8,31 +9,37 @@ export function createNetworkSettings({ native, host, theme, report }) {
   let credentialTheme = null;
   function failure(value) { error = String(value); report('[shell] Network: ' + error); paint(); }
   function clearCredentials() {
+    password?.root.blur();
+    username?.root.blur();
     if (password) password.value = '';
     if (username) username.value = '';
     prompt = 0; password = username = null; credentialTheme = null;
   }
   function close() {
+    if (!surface) { clearCredentials(); confirmation = null; return; }
     if (state?.authentication) {
       try { native.replyNetworkAuthentication(state.authentication.id, null, null); }
       catch (value) { report('[shell] Cannot cancel network authentication: ' + String(value)); }
       state.authentication = null;
+    } else if (state?.operation === 'connect') {
+      try { native.cancelNetworkConnection(); }
+      catch (value) { report('[shell] Cannot cancel pending network connection: ' + String(value)); }
     }
     clearCredentials(); confirmation = null;
-    if (surface && !surface.window.closed) surface.window.close();
+    const current = surface;
     surface = null;
+    if (current) render(null, current.root);
+    if (current?.owned && !current.window.closed) current.window.close();
   }
   function button(id, label, callback, enabled = true) {
-    const current = theme();
-    return h('view', { id, role: 'button', tabIndex: enabled ? 0 : -1, 'aria-disabled': String(!enabled),
-      style: { padding: current.layout.serviceButtonPadding, borderWidth: current.layout.borderWidth, borderColor: current.colors.border,
-        borderRadius: current.button.radius, backgroundColor: current.colors.surface,
-        color: enabled ? current.colors.text : current.colors.muted, fontSize: current.layout.fontSize, flexShrink: 0 },
-      onClick: () => { if (enabled) callback(); },
-      onKeydown: event => {
-        if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); callback(); }
-      },
-    }, label);
+    const owner = surface, snapshot = state, current = theme();
+    const node = themedButton(id, label, current, () => {
+      if (enabled && surface === owner && state === snapshot && !owner.window.closed) callback();
+    }, false, { height: current.layout.choiceHeight,
+      opacity: enabled ? 1 : current.layout.disabledOpacity });
+    node.props.tabIndex = enabled ? 0 : -1;
+    node.props['aria-disabled'] = String(!enabled);
+    return node;
   }
   const label = (value, size = 12) => h('view', { style: {
     fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0 } }, value);
@@ -53,7 +60,13 @@ export function createNetworkSettings({ native, host, theme, report }) {
     } catch (value) { failure(value); }
   }
   function paint() {
-    if (!surface || surface.window.closed || !state) return;
+    if (!surface || surface.window.closed) return;
+    if (!state) {
+      render(h('view', { style: { padding: theme().layout.contentPadding, gap: theme().layout.contentGap } },
+        h('view', { role: 'alert' }, label(error || 'Network state is unavailable.')),
+        button('shell-network-retry', 'Refresh / retry', retry)), surface.root);
+      return;
+    }
     const current = theme(), owner = surface.window.document, auth = state.authentication;
     const revision = state.revision;
     let focusCredentials = false;
@@ -64,9 +77,13 @@ export function createNetworkSettings({ native, host, theme, report }) {
         prompt = auth.id;
         password = createTextInput({ document: owner, password: true, width: 420, fontSize: current.layout.sectionFontSize });
         password.root.id = 'shell-network-password';
+        password.root.setAttribute('role', 'textbox');
+        password.root.setAttribute('aria-label', 'Wi-Fi password');
         if (auth.kind === 'username-password') {
           username = createTextInput({ document: owner, value: auth.username, width: 420, fontSize: current.layout.sectionFontSize });
           username.root.id = 'shell-network-username';
+          username.root.setAttribute('role', 'textbox');
+          username.root.setAttribute('aria-label', 'Wi-Fi username');
         }
       }
     }
@@ -97,8 +114,11 @@ export function createNetworkSettings({ native, host, theme, report }) {
         'Forget this saved network and its credentials? iwd will also disconnect it if connected.' :
         'Connect using iwd? Successful authentication can save credentials and enable automatic reconnection.'));
       content.push(button('shell-network-confirm', confirmation.action === 'forget' ? 'Forget network' : 'Connect',
-        () => perform(confirmation.action, confirmation.id, confirmation.revision), state.ready && !state.operation),
+        () => perform(confirmation.action, confirmation.id, confirmation.revision),
+        state.ready && !state.operation && state.revision === confirmation.revision),
         button('shell-network-confirm-cancel', 'Cancel', () => { confirmation = null; paint(); }));
+      if (state.revision !== confirmation.revision)
+        content.push(label('Network state changed. Cancel and select the network again.'));
     } else {
       if (!state.ready) content.push(label(state.error || error || 'Waiting for iwd...'));
       else if (!state.devices.length) content.push(label('No Wi-Fi adapters are available.'));
@@ -109,22 +129,23 @@ export function createNetworkSettings({ native, host, theme, report }) {
         content.push(label(device.name + ' - ' + (device.powered ? device.state || device.mode : 'powered off'), 14));
         content.push(h('view', { style: { flexDirection: 'row', gap: 6, flexShrink: 0 } },
           button('shell-network-power-' + index, device.powered ? 'Turn Wi-Fi off' : 'Turn Wi-Fi on',
-            () => perform(device.powered ? 'power-off' : 'power-on', device.id, revision), !state.operation),
+            () => perform(device.powered ? 'power-off' : 'power-on', device.id, revision), state.ready && !state.operation),
           button('shell-network-scan-' + index, device.scanning ? 'Scanning...' : 'Scan',
-            () => perform('scan', device.id, revision), device.powered && device.station && !device.scanning && !state.operation),
+            () => perform('scan', device.id, revision), state.ready && device.powered && device.station && !device.scanning && !state.operation),
           button('shell-network-disconnect-' + index, 'Disconnect', () => perform('disconnect', device.id, revision),
-            device.powered && device.station && device.state !== 'disconnected' && !state.operation)));
+            state.ready && device.powered && device.station && device.state !== 'disconnected' && !state.operation)));
         const entries = state.networks.filter(item => item.device === device.id).sort((a, b) => a.order - b.order);
         for (const [at, entry] of entries.entries()) {
           const supported = entry.type === 'open' || entry.type === 'psk' || (entry.type === '8021x' && entry.known);
           content.push(h('view', { style: { gap: 4, padding: 8, borderWidth: 1, borderColor: current.colors.border, flexShrink: 0 } },
             label(entry.name + ' [' + entry.type + '] ' + (entry.signal === null ? '' : entry.signal + ' dBm') +
-              (entry.connected ? ' (selected)' : '')),
+              (entry.connected ? ' (connected)' : '')),
             entry.type === '8021x' && !entry.known ? label('Provision an EAP profile and certificate policy in iwd first.') : null,
             button('shell-network-connect-' + index + '-' + at, entry.known ? 'Connect saved network' : 'Connect...',
-              () => confirm('connect', entry, revision), supported && device.powered && device.station &&
+              () => confirm('connect', entry, revision), state.ready && supported && device.powered && device.station &&
                 state.registered && !state.operation && !entry.connected),
-            entry.known ? button('shell-network-forget-' + index + '-' + at, 'Forget...', () => confirm('forget', entry, revision), !state.operation) : null));
+            entry.known ? button('shell-network-forget-' + index + '-' + at, 'Forget...', () => confirm('forget', entry, revision),
+              state.ready && !state.operation) : null));
         }
       }
     }
@@ -133,19 +154,20 @@ export function createNetworkSettings({ native, host, theme, report }) {
       overflow: 'scroll', backgroundColor: current.colors.body } },
       h('view', { style: { flexDirection: 'row', gap: 8, flexShrink: 0 } }, label('Wi-Fi (iwd)', 18),
         button('shell-network-retry', 'Refresh / retry', retry, !state.operation),
-        button('shell-network-close', 'Close', close)),
-      state.operation ? label('Operation: ' + state.operation) : null,
+        surface.owned ? button('shell-network-close', 'Close', close) : null),
+      state.operation || state.refreshing ? h('view', { role: 'status', 'aria-live': 'polite' },
+        label(state.operation ? 'Operation: ' + state.operation : 'Refreshing Wi-Fi networks...')) : null,
       state.operation === 'connect' ? button('shell-network-connect-cancel', 'Cancel connection', () => {
         try { native.cancelNetworkConnection(); clearCredentials(); refresh(); }
         catch (value) { failure(value); }
       }) : null,
       error || state.error ? h('view', { role: 'alert' }, label(error || state.error)) : null,
-      ...content), owner.body);
+      ...content), surface.root);
     if (focusCredentials) (username || password).root.focus();
   }
   function refresh() {
     try { state = native.networkState(); paint(); }
-    catch (value) { failure(value); }
+    catch (value) { state = null; failure(value); }
   }
   function retry() {
     try {
@@ -156,9 +178,23 @@ export function createNetworkSettings({ native, host, theme, report }) {
     } catch (value) { failure(value); }
   }
   const onChanged = () => { refresh(); if (typeof previous === 'function') previous(); };
+  function start() {
+    if (!started) {
+      previous = native.onNetworkChanged; native.onNetworkChanged = onChanged; started = true;
+    }
+    try { native.startNetwork(); } catch (value) { failure(value); }
+    refresh();
+  }
   return {
+    attach(window, root) {
+      close();
+      surface = { window, root, owned: false };
+      start();
+    },
+    detach: close,
     show(outputId) {
-      if (surface && !surface.window.closed) { paint(); return surface.window; }
+      if (surface?.owned && !surface.window.closed) { paint(); return surface.window; }
+      close();
       const output = host.displays().find(item => item.id === outputId) || host.displays()[0];
       if (!output) throw new Error('No output available for network settings');
       const layout = theme().layout;
@@ -166,17 +202,13 @@ export function createNetworkSettings({ native, host, theme, report }) {
         layer: 'overlay', keyboard: 'exclusive', width: Math.max(1, Math.min(layout.networkWidth, output.width - layout.overlayInset * 2)),
         height: Math.max(1, Math.min(layout.networkHeight, output.height - layout.overlayVerticalInset * 2)), anchors: ['top', 'right'],
         margins: { top: layout.overlayTopMargin, right: layout.overlayRightMargin }, exclusiveZone: -1 });
-      surface = { window, output: output.id };
+      surface = { window, root: window.document.body, output: output.id, owned: true };
+      const current = surface;
       window.document.body.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); close(); }
+        if (surface === current && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); }
       });
-      window.onclose = () => { if (surface?.window === window) close(); };
-      if (!started) {
-        previous = native.onNetworkChanged; native.onNetworkChanged = onChanged; started = true;
-      }
-      state = native.networkState();
-      try { native.startNetwork(); } catch (value) { failure(value); }
-      refresh(); return window;
+      window.onclose = () => { if (surface === current) close(); };
+      start(); return window;
     },
     stop() {
       close();
@@ -186,7 +218,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
       try { native.stopNetwork(); } catch (value) { report('[shell] Cannot stop network client: ' + String(value)); }
     },
     refresh() {
-      if (surface && !host.displays().some(item => item.id === surface.output)) close();
+      if (surface?.owned && !host.displays().some(item => item.id === surface.output)) close();
       else if (surface) paint();
     },
   };

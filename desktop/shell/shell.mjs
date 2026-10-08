@@ -16,6 +16,8 @@ import { createTextInput } from './js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { genericAppearance, isLunaSchemaRejection } from './desktop/shell/appearance-compatibility.mjs';
+import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView,
+  aboutSettingsView } from './desktop/shell/settings.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
@@ -33,6 +35,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let lastServicePoll = 0;
   let timer = null;
   let menu = null;
+  let settings = null;
   let switcher = null;
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
@@ -71,6 +74,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (typeof previousWorkspacesChanged === 'function') previousWorkspacesChanged();
   };
   let compositorAppearance = null;
+  let appearanceStatus = '';
   let compatibilityTheme = null, appearanceWarning = '';
   function getDesktopTheme(id) {
     return compatibilityTheme?.id === id ? compatibilityTheme : getCatalogTheme(id);
@@ -188,6 +192,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       // Only these owned documents deliver this event; foreign application presses need a native popup API.
       if (!menuOpener(surface, event)) closeMenu();
     });
+    if (kind === 'wallpaper') listen(surface, 'contextmenu', event => {
+      if (!running || surface.expectedClose || nativeWindow.closed ||
+          bundles.get(output.id)?.surfaces.wallpaper !== surface) return;
+      event.preventDefault();
+      showSystemSettings(output.id);
+    });
     nativeWindow.onclose = () => {
       releaseMenu(surface);
       releaseSurface(surface);
@@ -245,15 +255,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     } : null;
     if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper', themeAsset), background.window.document.body);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error || appearanceWarning || serviceError, () => showSettings(bundle.output.id), listed, toggleWindow,
+      error || appearanceWarning || serviceError, () => showSystemSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
           bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
       panel.window.document.body);
-    if (dock && !dock.window.closed) render(dockView(theme, () => showSettings(bundle.output.id),
-      () => showSettings(bundle.output.id, true), () => showApplications(bundle.output.id), listed, toggleWindow,
+    if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
+      () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id)), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
@@ -362,15 +372,21 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     power.paint();
     if (switcher) switcherChanged();
     if (pendingDisplayToken) paintDisplayConfirmation();
+    repaintSettings();
   }
 
   function selectTheme(id) {
     if (!running) throw new Error('Shell is not running');
     getDesktopTheme(id);
+    appearanceStatus = 'Applying and saving appearance...';
+    repaintMenu();
     try {
       applySelectedTheme(id);
+      appearanceStatus = getDesktopTheme(id).name + ' applied and saved.';
+      repaintSettings();
       return true;
     } catch (failure) {
+      appearanceStatus = '';
       error = 'Could not apply/save appearance: ' + String(failure);
       errorKind = 'settings';
       report('[shell] ' + error);
@@ -391,6 +407,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       storage.setItem(SHELL_THEME_FILES_KEY, enabled ? 'enabled' : 'disabled'); saved = true;
       applySelectedTheme(selected);
       themeFilesEnabled = enabled;
+      repaintSettings();
     } catch (failure) {
       if (installed) installThemeCatalog(previous);
       if (saved) {
@@ -406,10 +423,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   }
 
   function changeThemeFiles(enabled) {
+    appearanceStatus = 'Loading and applying theme files...';
+    repaintMenu();
     try {
       replaceThemes(enabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG, enabled);
+      appearanceStatus = enabled ? 'Theme files reloaded and applied.' : 'Packaged themes applied and saved.';
+      repaintSettings();
       return true;
     } catch (failure) {
+      appearanceStatus = '';
       error = 'Could not apply theme files: ' + String(failure);
       errorKind = 'theme-files';
       report('[shell] ' + error);
@@ -421,6 +443,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function restoreThemes() { return changeThemeFiles(false); }
 
   function repaintMenu() {
+    repaintSettings();
     if (!menu || menu.window.closed) return;
     const current = menu;
     const scoped = action => (...args) => {
@@ -461,7 +484,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return;
     }
     if (current.mode === 'applications') {
-      render(applicationsView(getDesktopTheme(themeId), applications, current.query,
+      render(applicationsView(getDesktopTheme(themeId), [{
+        id: SETTINGS_APPLICATION_ID, name: 'Settings', genericName: 'System settings',
+        comment: 'Appearance, displays, Wi-Fi, audio and keyboard', keywords: ['preferences', 'desktop'],
+      }, ...applications.filter(entry => entry.id !== SETTINGS_APPLICATION_ID)], current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error), current.window.document.body);
       return;
@@ -546,6 +572,154 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     return openMenu(outputId, about ? 'about' : 'appearance');
   }
 
+  function currentSettings(current, page = current?.page, revision = current?.viewRevision) {
+    return running && current && settings === current && !current.window.closed &&
+      current.page === page && current.viewRevision === revision;
+  }
+
+  function detachSettingsPage(current) {
+    if (current.page === 'network') network.detach();
+    if (current.page === 'audio') audio.detach();
+    for (const input of current.displayInputs?.values() || []) input.root.blur();
+    current.displayInputs?.clear();
+    current.displayInputs = null;
+    current.displayDraft = null;
+  }
+
+  function closeSystemSettings(current = settings) {
+    if (!current || settings !== current) return;
+    settings = null;
+    detachSettingsPage(current);
+    // A provisional layout still belongs to its compositor watchdog/confirmation, not this window.
+    if (menu?.settingsOwner === current) closeMenu();
+    closeSurface(current);
+  }
+
+  function navigateSettings(current, page) {
+    if (!running || settings !== current || current.window.closed) return;
+    if (!SETTINGS_PAGES.includes(page)) throw new RangeError('Unknown Settings page');
+    if (current.page === page) { repaintSettings(); return; }
+    if (menu?.settingsOwner === current) closeMenu();
+    detachSettingsPage(current);
+    current.page = page;
+    current.window.document.activeElement?.blur();
+    // This reconciler is positional; keys do not recreate document/input mounts.
+    render(null, current.window.document.body);
+    repaintSettings();
+    current.window.document.getElementById('shell-settings-page-' + page)?.focus();
+  }
+
+  function repaintSettings() {
+    if (!settings || settings.window.closed || !running) return;
+    const current = settings, page = current.page, revision = ++current.viewRevision;
+    const scoped = action => (...args) => {
+      if (currentSettings(current, page, revision)) return action(...args);
+    };
+    const theme = getDesktopTheme(themeId), owner = current.window.document;
+    let content = null, mount = null;
+    const unavailable = (title, message) => unavailableSettingsView(theme, title, message);
+    if (page === 'appearance') {
+      content = settingsView(theme, scoped(selectTheme), scoped(() => closeSystemSettings(current)),
+        scoped(() => errorKind === 'theme-files' ? reloadThemes() : refresh(true)), error || appearanceWarning,
+        false, null, null, null, null, typeof native?.readThemeFiles === 'function' ? {
+          enabled: themeFilesEnabled, reload: scoped(reloadThemes), restore: scoped(restoreThemes),
+        } : null, typeof native?.startPower === 'function' ? scoped(() => showPower(current.output)) : null,
+        true, appearanceStatus);
+    } else if (page === 'displays') {
+      if (typeof native?.outputConfiguration !== 'function') content = unavailable('Displays',
+        'Display configuration requires the supported trusted PollyWM output backend.');
+      else {
+        try {
+          const snapshot = native.outputConfiguration();
+          if (snapshot.pendingToken) content = unavailable('Display changes awaiting confirmation',
+            'Use Keep or Revert in the display confirmation. Unconfirmed changes revert automatically.');
+          else {
+            if (!current.displayDraft) {
+              current.displayDraft = { serial: snapshot.serial, heads: snapshot.heads.map(head => ({ ...head })) };
+              current.displayInputs = new Map();
+            }
+            content = displaysView(theme, owner, current.displayDraft, current.displayInputs,
+              scoped(repaintSettings), scoped(() => applyDisplays(current)),
+              scoped(() => closeSystemSettings(current)), errorKind === 'outputs' ? error : '',
+              { status: displayPersistence.status, forget: scoped(forgetDisplayProfile) });
+          }
+        } catch (failure) {
+          const message = 'Display settings: ' + String(failure);
+          if (error !== message) report('[shell] ' + message);
+          error = message; errorKind = 'outputs';
+          content = unavailable('Displays', message);
+        }
+      }
+    } else if (page === 'network') {
+      if (typeof native?.startNetwork !== 'function') content = unavailable('Wi-Fi',
+        'The native iwd client is unavailable in this build. Bluetooth and VPN configuration are not supported here.');
+      else mount = root => { if (currentSettings(current, page, revision)) network.attach(current.window, root); };
+    } else if (page === 'audio') {
+      if (typeof native?.startAudio !== 'function') content = unavailable('Audio',
+        'The native PipeWire client is unavailable in this build.');
+      else mount = root => { if (currentSettings(current, page, revision)) audio.attach(current.window, root); };
+    } else if (page === 'keyboard') {
+      if (typeof native?.shortcuts !== 'function') content = unavailable('Keyboard shortcuts',
+        'Shortcut configuration requires the supported trusted PollyWM shortcut backend.');
+      else content = shortcutsView(theme, shortcutBindings, recordingShortcut,
+        scoped(action => {
+          const capture = showShortcuts(current.output);
+          if (capture) { menu.settingsOwner = current; beginRecording(action); }
+        }),
+        scoped(action => applyShortcuts(shortcutBindings.map(binding => binding.action === action ?
+          { ...binding, modifiers: 0, key: '' } : binding))),
+        scoped(() => {
+          try { applyShortcuts(native.shortcutDefaults()); }
+          catch (failure) { shortcutFailure(failure); }
+        }),
+        scoped(() => closeSystemSettings(current)), errorKind === 'shortcuts' ? error : '');
+    } else content = aboutSettingsView(theme, {
+      services: serviceMonitor.snapshot(), outputs: bundles.size, themeId,
+      applicationId: typeof application === 'undefined' ? 'PollyShell' : application.id,
+    });
+    render(systemSettingsView(theme, page, scoped(id => navigateSettings(current, id)),
+      scoped(() => closeSystemSettings(current)), content, mount), owner.body);
+    if (page === 'network') network.refresh();
+    if (page === 'audio') audio.paint();
+  }
+
+  function showSystemSettings(outputId, page = null) {
+    if (!running) throw new Error('Shell is not running');
+    if (page !== null && !SETTINGS_PAGES.includes(page)) throw new RangeError('Unknown Settings page');
+    const bundle = bundles.get(outputId);
+    if (!bundle) throw new RangeError('Unknown shell output');
+    closeMenu();
+    if (settings && !settings.window.closed) {
+      if (page) navigateSettings(settings, page);
+      else repaintSettings();
+      return settings.window;
+    }
+    try {
+      const layout = getDesktopTheme(themeId).layout;
+      const window = host.create({ title: 'Settings',
+        width: Math.max(1, Math.min(900, bundle.output.width - layout.screenInset * 2)),
+        height: Math.max(1, Math.min(650, bundle.output.height - getDesktopTheme(themeId).panel.height - layout.overlayInset * 2)) });
+      const current = { window, output: outputId, kind: 'system-settings',
+        page: page || 'appearance', viewRevision: 0, listeners: [], expectedClose: false };
+      settings = current;
+      window.onclose = () => closeSystemSettings(current);
+      window.document.body.tabIndex = 0;
+      listen(current, 'keydown', event => {
+        if (!running || settings !== current || current.window.closed || event.defaultPrevented) return;
+        if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSystemSettings(current); }
+      });
+      repaintSettings();
+      window.document.body.focus();
+      return window;
+    } catch (failure) {
+      closeSystemSettings();
+      error = 'Could not open Settings: ' + String(failure); errorKind = 'settings';
+      report('[shell] ' + error);
+      for (const current of bundles.values()) paint(current, getDesktopTheme(themeId));
+      return null;
+    }
+  }
+
   function shortcutFailure(failure) {
     error = 'Shortcut settings: ' + String(failure);
     errorKind = 'shortcuts';
@@ -555,8 +729,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   }
 
   function showShortcuts(outputId) {
-    shortcutBindings = native.shortcuts();
-    return openMenu(outputId, 'shortcuts');
+    try {
+      shortcutBindings = native.shortcuts();
+      return openMenu(outputId, 'shortcuts');
+    } catch (failure) { shortcutFailure(failure); return null; }
   }
 
   function stopRecording() {
@@ -653,8 +829,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       const draft = readDisplayDraft(source.displayDraft, source.displayInputs);
       native.applyOutputConfiguration(draft);
       if (errorKind === 'outputs') { error = ''; errorKind = ''; }
-      closeMenu();
+      if (source === settings) {
+        source.displayInputs.clear(); source.displayInputs = null; source.displayDraft = null;
+        render(null, source.window.document.body);
+      } else closeMenu();
       updateOutputs();
+      repaintSettings();
     } catch (failure) { outputFailure(failure); }
   }
 
@@ -732,6 +912,16 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       }
       lastOutputMessage = snapshot.message;
       paintDisplayConfirmation(snapshot);
+      if (settings?.page === 'displays' && settings.displayDraft &&
+          settings.displayDraft.serial !== snapshot.serial) {
+        detachSettingsPage(settings);
+        render(null, settings.window.document.body);
+        if (!snapshot.pendingToken) {
+          error = 'Display settings: Outputs changed; the draft was refreshed. Review it before applying.';
+          errorKind = 'outputs'; report('[shell] ' + error);
+        }
+      }
+      repaintSettings();
     } catch (failure) { outputFailure(failure); }
   }
 
@@ -887,7 +1077,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   }
 
   function launchApplication(id) {
-    if (!running || !launcher) throw new Error('Application launcher is unavailable');
+    if (!running) throw new Error('Application launcher is unavailable');
+    if (id === SETTINGS_APPLICATION_ID) return showSystemSettings(menu?.output || host.displays()[0]?.id);
+    if (!launcher) throw new Error('Application launcher is unavailable');
     const current = menu;
     const scope = applicationLaunchScope;
     const succeeded = result => {
@@ -952,7 +1144,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         return;
       }
       if (menu && !outputs.some(output => output.id === menu.output)) closeMenu();
+      if (settings && !outputs.some(output => output.id === settings.output) && outputs.length)
+        settings.output = outputs[0].id;
       reconcile(themeId, false);
+      repaintSettings();
       if (errorKind === 'display') {
         error = ''; errorKind = '';
         repaintMenu();
@@ -973,6 +1168,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (running) throw new Error('Shell is already running');
       host.close();
       running = true;
+      appearanceStatus = '';
       lastServicePoll = 0;
       try { reconcile(themeId, false); }
       catch (failure) {
@@ -1014,6 +1210,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       serviceMonitor.reset(); serviceError = '';
       notifications.stop();
       tray.stop();
+      closeSystemSettings();
       network.stop();
       audio.stop();
       power.stop();
@@ -1042,7 +1239,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       bundles.clear();
       releaseThemeAsset(themeAsset); themeAsset = ''; themeAssetSource = '';
     },
-    selectTheme, reloadThemes, restoreThemes, showSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
     showNotifications: notifications.show, showNetwork, showAudio, showPower, refresh,
     getState() {
       const services = serviceMonitor.snapshot();

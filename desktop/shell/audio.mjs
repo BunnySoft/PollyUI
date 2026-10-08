@@ -1,42 +1,59 @@
 import { h, render } from './js/reconciler.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
+import { button as themedButton } from './desktop/shell/views.mjs';
 
 export function createAudioSettings({ native, host, theme, report, storage }) {
   let started = false, previous, window = null, state = null, error = '';
   let timer = null;
+  let root = null, owned = false, attachment = null;
   const preferences = createAudioPersistence({ native, storage, failure: failure => {
     error = 'Audio settings: ' + String(failure); report('[shell] ' + error);
   } });
-  function close() { if (window && !window.closed) window.close(); window = null; }
+  function close() {
+    const current = window, closeWindow = owned;
+    if (root) { root.ownerDocument.activeElement?.blur(); render(null, root); }
+    window = root = attachment = null; owned = false;
+    if (closeWindow && current && !current.closed) current.close();
+  }
   function button(id, label, callback, enabled = true) {
-    const current = theme();
-    return h('view', { id, role: 'button', tabIndex: enabled ? 0 : -1, 'aria-disabled': String(!enabled),
-      style: { padding: current.layout.serviceButtonPadding, flexShrink: 0, backgroundColor: current.colors.surface,
-        borderWidth: current.layout.borderWidth, borderColor: current.colors.border, borderRadius: current.button.radius,
-        color: enabled ? current.colors.text : current.colors.muted, fontSize: current.layout.fontSize },
-      onClick: () => { if (enabled) callback(); },
-      onKeydown: event => { if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); callback(); } },
-    }, label);
+    const current = theme(), owner = attachment, snapshot = state;
+    const node = themedButton(id, label, current, () => {
+      if (enabled && attachment === owner && state === snapshot && window && !window.closed) callback();
+    }, false, { height: current.layout.choiceHeight,
+      opacity: enabled ? 1 : current.layout.disabledOpacity });
+    node.props.tabIndex = enabled ? 0 : -1;
+    node.props['aria-disabled'] = String(!enabled);
+    return node;
   }
   function change(node, operation, value) {
     try {
       error = '';
       preferences.change(node, operation, value);
+      refresh();
     } catch (failure) { error = String(failure); report('[shell] Audio: ' + error); paint(); }
   }
   function paint() {
-    if (!window || window.closed || !state) return;
+    if (!window || window.closed) return;
     const current = theme();
     const label = (text, size = 12) => h('view', { style: { color: current.colors.text,
       fontSize: themeTextSize(current, size), flexShrink: 0 } }, text);
+    if (!state) {
+      render(h('view', { style: { padding: current.layout.contentPadding, gap: current.layout.contentGap } },
+        h('view', { role: 'alert' }, label(error || 'Audio state is unavailable.')),
+        button('shell-audio-retry', 'Refresh / retry', retry)), root);
+      return;
+    }
     render(h('view', { id: 'shell-audio-settings', style: { width: '100%', height: '100%', minHeight: 0,
       padding: current.layout.contentPadding, gap: current.layout.contentGap,
       overflow: 'scroll', backgroundColor: current.colors.body } },
       h('view', { style: { flexDirection: 'row', gap: 8 } }, label('Audio (PipeWire)', 18),
-        button('shell-audio-close', 'Close', close)),
+        button('shell-audio-retry', 'Refresh / retry', retry, !preferences.busy),
+        owned ? button('shell-audio-close', 'Close', close) : null),
       error || state.error ? h('view', { role: 'alert' }, label(error || state.error)) : null,
       label(preferences.status, 10),
+      preferences.busy ? h('view', { role: 'status', 'aria-live': 'polite' },
+        label('Waiting for the audio service to acknowledge and save changes...')) : null,
       button('shell-audio-forget-settings', 'Forget saved audio settings', () => {
         try { preferences.forget(); error = ''; paint(); }
         catch (failure) { error = String(failure); report('[shell] Audio: ' + error); paint(); }
@@ -56,13 +73,16 @@ export function createAudioSettings({ native, host, theme, report, storage }) {
         label(node.volume === null ? 'Volume control unavailable' : 'Volume: ' + Math.round(node.volume * 100) + '%'),
         h('view', { style: { flexDirection: 'row', gap: 6, flexShrink: 0 } },
           button('shell-audio-lower-' + node.id, node.volume > 1 ? 'Set to 100%' : '-10%',
-            () => change(node, 'setAudioVolume', Math.min(1, Math.max(0, node.volume - 0.1))), state.ready && node.volume !== null),
-          button('shell-audio-raise-' + node.id, '+10%', () => change(node, 'setAudioVolume', Math.min(1, node.volume + 0.1)), state.ready && node.volume !== null),
-          button('shell-audio-mute-' + node.id, node.muted ? 'Unmute' : 'Mute', () => change(node, 'setAudioMute', !node.muted), state.ready && node.muted !== null)),
+            () => change(node, 'setAudioVolume', Math.min(1, Math.max(0, node.volume - 0.1))), state.ready && node.volume !== null && !preferences.busy),
+          button('shell-audio-raise-' + node.id, '+10%', () => change(node, 'setAudioVolume', Math.min(1, node.volume + 0.1)),
+            state.ready && node.volume !== null && node.volume < 1 && !preferences.busy),
+          button('shell-audio-mute-' + node.id, node.muted ? 'Unmute' : 'Mute', () => change(node, 'setAudioMute', !node.muted),
+            state.ready && node.muted !== null && !preferences.busy)),
         node.class === 'Audio/Sink' || node.class.startsWith('Audio/Source') ?
           button('shell-audio-default-' + node.id, state.defaultSink === node.id || state.defaultSource === node.id ? 'Selected default' : 'Use as default',
-            () => change(node, 'setDefaultAudio'), state.ready) : null))),
-    window.document.body);
+            () => change(node, 'setDefaultAudio'), state.ready && !preferences.busy &&
+              state.defaultSink !== node.id && state.defaultSource !== node.id) : null))),
+    root);
   }
   function refresh() {
     try {
@@ -72,7 +92,7 @@ export function createAudioSettings({ native, host, theme, report, storage }) {
       state.nodes.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
       paint();
     }
-    catch (failure) { error = String(failure); report('[shell] Audio: ' + error); }
+    catch (failure) { state = null; error = String(failure); report('[shell] Audio: ' + error); paint(); }
   }
   const onChanged = () => { refresh(); if (typeof previous === 'function') previous(); };
   function start() {
@@ -83,13 +103,20 @@ export function createAudioSettings({ native, host, theme, report, storage }) {
       started = true; previous = native.onAudioChanged; native.onAudioChanged = onChanged;
       timer = setInterval(() => { if (preferences.busy) refresh(); }, 200);
       refresh();
-    } catch (failure) { error = String(failure); report('[shell] Cannot start audio policy: ' + error); }
+    } catch (failure) { error = String(failure); report('[shell] Cannot start audio policy: ' + error); paint(); }
   }
+  function retry() { error = ''; start(); refresh(); }
   return {
     start,
     paint,
+    attach(owner, container) {
+      close(); window = owner; root = container; owned = false; attachment = {};
+      start(); refresh();
+    },
+    detach: close,
     show(outputId) {
-      if (window && !window.closed) return window;
+      if (owned && window && !window.closed) return window;
+      close();
       const output = host.displays().find(item => item.id === outputId) || host.displays()[0];
       if (!output) throw new Error('No output available for audio settings');
       const layout = theme().layout;
@@ -97,9 +124,12 @@ export function createAudioSettings({ native, host, theme, report, storage }) {
         keyboard: 'on-demand', width: Math.max(1, Math.min(layout.audioWidth, output.width - layout.overlayInset * 2)),
         height: Math.max(1, Math.min(layout.audioHeight, output.height - layout.overlayVerticalInset * 2)), anchors: ['top', 'right'],
         margins: { top: layout.overlayTopMargin, right: layout.overlayRightMargin }, exclusiveZone: -1 });
+      root = window.document.body; owned = true; attachment = {};
+      const current = window;
       window.document.body.addEventListener('keydown', event => {
-        if (event.key === 'Escape') { event.preventDefault(); close(); }
+        if (window === current && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); close(); }
       });
+      window.onclose = () => { if (window === current) close(); };
       start(); refresh(); return window;
     },
     stop() {

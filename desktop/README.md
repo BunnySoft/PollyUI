@@ -19,6 +19,11 @@ Dock and appearance settings. An unsigned, memory-only x86_64 UEFI development
 ISO now boots this desktop in a disposable VM. It is **not yet a complete,
 production-qualified desktop distribution**; see **[Live image](./LIVE.md)**.
 
+The Shell-owned [System Settings window](./SETTINGS.md) brings Appearance,
+Displays, Network, Audio, Keyboard and About together using the existing native
+controllers. Unavailable services remain explicit; closing Settings does not
+stop the desktop, audio policy or independent applications.
+
 The user reported successful first-target physical validation of Alpine alpha.4
 on 2026-10-06; this is not a comprehensive hardware matrix or independent
 per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,
