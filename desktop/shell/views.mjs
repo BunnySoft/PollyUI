@@ -178,7 +178,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Alt+Tab switches windows. Alt+F4 closes one.', theme.colors.muted, 11),
         label('Alt+F9 minimizes. Alt+F10 maximizes.', theme.colors.muted, 11),
         label('Alt+F11 toggles fullscreen.', theme.colors.muted, 11),
-        label('Alt+Escape ends the development session.', theme.colors.muted, 11),
+        label('Alt+Escape opens logout confirmation.', theme.colors.muted, 11),
         label('Window buttons reflect live compositor state.', theme.colors.muted, 10),
         label('Login and locking depend on deployed session policy.', theme.colors.muted, 10),
       ]
@@ -204,7 +204,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   label(embedded ? 'Live sessions keep preferences only until reboot.' : 'Escape closes this menu.', theme.colors.muted, 10));
 }
 
-export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '') {
+export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null) {
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
@@ -219,6 +219,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label('Applications', isLuna(theme) ? theme.window.titleText : theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }), button('shell-app-refresh', 'Refresh', theme, refresh),
     button('shell-app-close', 'Close', theme, close)),
+  logout ? button('shell-app-logout', 'Log out...', theme, logout) : null,
   h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
     style: { padding: theme.layout.serviceButtonPadding, height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, backgroundColor: theme.colors.surface,
       borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
@@ -324,7 +325,7 @@ export function shortcutsView(theme, bindings, recording, record, disable, reset
         recording === binding.action ? 'Press a shortcut...' : shortcutText(binding)),
       button('shell-shortcut-' + binding.action, 'Change', theme, () => record(binding.action)),
       button('shell-shortcut-disable-' + binding.action, 'Off', theme, () => disable(binding.action)))))),
-  label('Shift reverses switching. Alt+Escape exits the session.', theme.colors.muted, 10),
+  label('Shift reverses switching. Alt+Escape opens logout confirmation.', theme.colors.muted, 10),
   recording ? label('Press Escape to cancel recording.', theme.colors.muted, 10) : null,
   error ? label(error, theme.colors.text, 11) : null);
 }

@@ -8,10 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <limits.h>
 #include <wayland-client.h>
 #include <wlr/util/log.h>
+#include <wlr/types/wlr_xdg_shell.h>
 
 #define CHECK(expression) do { \
     if (!(expression)) { \
@@ -292,8 +294,53 @@ static bool suite(char *self)
     return true;
 }
 
+static bool session_exit_policy(void)
+{
+    CHECK(getuid() == 1000 && geteuid() == 1000);
+    struct wl_display *display = wl_display_create();
+    CHECK(display);
+    struct PuDesktop session = { .display = display };
+    wl_list_init(&session.all_views);
+    int private_pair[2], public_pair[2];
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, private_pair) == 0);
+    CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, public_pair) == 0);
+    struct wl_client *trusted = wl_client_create(display, private_pair[0]);
+    struct wl_client *ordinary = wl_client_create(display, public_pair[0]);
+    CHECK(trusted && ordinary);
+    session.shell_client = trusted;
+    uint32_t phase, pending;
+    CHECK(!pu_desktop_session_exit(&session, ordinary, 1, &phase, &pending) &&
+        phase == 4 && !session.session_exit_pending);
+    CHECK(!pu_desktop_session_exit(&session, trusted, 1, &phase, &pending));
+    session.exit_with_shell = true;
+    CHECK(pu_desktop_session_exit(&session, trusted, 1, &phase, &pending) && phase == 2 && !pending);
+    struct wlr_xdg_toplevel public_top = { .resource = wl_resource_create(ordinary, &restricted_interface, 1, 0) };
+    struct wlr_xdg_toplevel private_top = { .resource = wl_resource_create(trusted, &restricted_interface, 1, 0) };
+    CHECK(public_top.resource && private_top.resource);
+    struct PuDesktopView public_view = { .toplevel = &public_top, .mapped = false };
+    struct PuDesktopView private_view = { .toplevel = &private_top, .mapped = true };
+    wl_list_insert(&session.all_views, &public_view.all_link);
+    wl_list_insert(&session.all_views, &private_view.all_link);
+    CHECK(pu_desktop_session_exit(&session, trusted, 0, &phase, &pending) && phase == 1 && pending == 1);
+    CHECK(!pu_desktop_session_exit(&session, trusted, 3, &phase, &pending) && !session.session_exit_sealed);
+    wl_list_remove(&public_view.all_link);
+    wl_resource_destroy(public_top.resource);
+    CHECK(pu_desktop_session_exit(&session, trusted, 0, &phase, &pending) && phase == 2 && !pending);
+    CHECK(pu_desktop_session_exit(&session, trusted, 3, &phase, &pending) && phase == 3 && session.session_exit_sealed);
+    CHECK(pu_desktop_session_exit(&session, trusted, 2, &phase, &pending) && phase == 0 &&
+        !session.session_exit_pending && !session.session_exit_sealed);
+    CHECK(!pu_desktop_session_exit(&session, trusted, 4, &phase, &pending));
+    wl_list_remove(&private_view.all_link);
+    wl_display_destroy_clients(display);
+    wl_display_destroy(display);
+    close(private_pair[1]); close(public_pair[1]);
+    puts("PASS: session exit authorization, unmapped resource barrier, private UI exclusion and explicit cancel/seal");
+    return true;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc == 2 && !strcmp(argv[1], "--session-exit-policy")) return session_exit_policy() ? 0 : 1;
     if (argc == 2 && strcmp(argv[1], "--exit-failure") == 0) return 23;
     if (argc == 4) return probe(argv[2], argv[1], argv[3]) ? 0 : 1;
     if (argc != 1) return 2;

@@ -1,4 +1,5 @@
 #include "desktop/windows.h"
+#include "desktop/applications.h"
 #include "desktop/shortcut-client.h"
 #include "desktop/output-client.h"
 #include "desktop/theme-files.h"
@@ -19,6 +20,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <wayland-client.h>
 
 struct DesktopWorkspace {
@@ -46,12 +49,16 @@ struct DesktopWindow {
 static struct {
     JSContext *ctx;
     JSValue api;
+    JSValue exit_windows;
+    uint32_t exit_window_count;
     struct wl_display *display;
     struct zwlr_foreign_toplevel_manager_v1 *manager;
     struct wl_seat *seat;
     struct polly_appearance_v1 *appearance;
     struct polly_session_status_v1 *session_status;
     uint32_t status_serial, status_reply, input_method_state;
+    uint32_t exit_serial, exit_reply, exit_phase, exit_pending;
+    bool logout_requested;
     struct ext_workspace_manager_v1 *workspace_manager;
     struct ext_workspace_group_handle_v1 *workspace_group;
     struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
@@ -75,7 +82,37 @@ static void session_status(void *data, struct polly_session_status_v1 *status, u
     control.status_reply = serial;
     control.input_method_state = input_method;
 }
-static const struct polly_session_status_v1_listener session_status_listener = { .status = session_status };
+static void session_exit_status(void *data, struct polly_session_status_v1 *status,
+                                uint32_t serial, uint32_t phase, uint32_t pending)
+{
+    (void)data; (void)status;
+    if (serial != control.exit_serial) return;
+    control.exit_reply = serial;
+    control.exit_phase = phase;
+    control.exit_pending = pending;
+}
+static void session_exit_window(void *data, struct polly_session_status_v1 *status,
+                                uint32_t serial, const char *title, const char *app_id)
+{
+    (void)data; (void)status;
+    if (serial != control.exit_serial) return;
+    if (control.exit_window_count >= 256) { control.failed = 1; return; }
+    JSValue item = JS_NewObject(control.ctx);
+    if (JS_IsException(item)) { control.failed = 1; return; }
+    if (JS_SetPropertyStr(control.ctx, item, "title", JS_NewString(control.ctx, title)) < 0 ||
+        JS_SetPropertyStr(control.ctx, item, "appId", JS_NewString(control.ctx, app_id)) < 0) {
+        JS_FreeValue(control.ctx, item); control.failed = 1; return;
+    }
+    if (JS_SetPropertyUint32(control.ctx, control.exit_windows, control.exit_window_count++, item) < 0)
+        control.failed = 1;
+}
+static void logout_requested(void *data, struct polly_session_status_v1 *status)
+{ (void)data; (void)status; control.logout_requested = true; }
+static const struct polly_session_status_v1_listener session_status_listener = {
+    .status = session_status, .session_exit_status = session_exit_status,
+    .session_exit_window = session_exit_window,
+    .logout_requested = logout_requested,
+};
 
 static void workspace_restored(void *data, struct polly_workspace_toplevel_manager_v1 *manager,
                                uint32_t serial, uint32_t result, const char *message)
@@ -364,7 +401,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
     if (pu_shortcut_client_bind(control.display, registry, name, interface)) return;
     if (pu_output_client_bind(control.display, registry, name, interface, version)) return;
     if (!control.session_status && !strcmp(interface, polly_session_status_v1_interface.name)) {
-        control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, 1);
+        control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, version >= 2 ? 2 : 1);
         if (!control.session_status ||
             polly_session_status_v1_add_listener(control.session_status, &session_status_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -782,6 +819,84 @@ static JSValue action(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     return JS_UNDEFINED;
 }
 
+static int exit_request(JSContext *ctx, uint32_t operation)
+{
+    if (getuid() != 1000 || geteuid() != getuid() || getegid() != getgid() || !ensure_control(ctx)) {
+        if (!JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Session exit requires the ordinary trusted Shell");
+        return 0;
+    }
+    if (!control.session_status || polly_session_status_v1_get_version(control.session_status) < 2) {
+        JS_ThrowTypeError(ctx, "This compositor does not support save-before-session-exit"); return 0;
+    }
+    if (!++control.exit_serial) ++control.exit_serial;
+    control.exit_reply = 0;
+    JS_FreeValue(ctx, control.exit_windows);
+    control.exit_windows = JS_NewArray(ctx);
+    control.exit_window_count = 0;
+    if (JS_IsException(control.exit_windows)) return 0;
+    polly_session_status_v1_session_exit(control.session_status, control.exit_serial, operation);
+    if (!roundtrip() || control.exit_reply != control.exit_serial) {
+        JS_ThrowInternalError(ctx, "Session exit was not acknowledged; the current session is retained");
+        return 0;
+    }
+    if (control.exit_phase >= POLLY_SESSION_STATUS_V1_EXIT_PHASE_DENIED) {
+        JS_ThrowTypeError(ctx, "Session exit denied: use the current ordinary Shell, with no active lock or pending windows");
+        return 0;
+    }
+    return 1;
+}
+
+static const char *session_profile(JSContext *ctx)
+{
+    int fd = open("/etc/polly-account-profile", O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    if (fd < 0) {
+        if (errno == ENOENT) return "development";
+        JS_ThrowInternalError(ctx, "Cannot read the session profile"); return NULL;
+    }
+    struct stat info;
+    char value[16] = {0};
+    ssize_t length = read(fd, value, sizeof(value));
+    int valid = !fstat(fd, &info) && S_ISREG(info.st_mode) && !info.st_uid &&
+        !(info.st_mode & 022) && length > 0 && length < (ssize_t)sizeof(value);
+    close(fd);
+    if (valid && !strcmp(value, "installed\n")) return "installed";
+    if (valid && !strcmp(value, "live\n")) return "live";
+    JS_ThrowTypeError(ctx, "Session profile is not a trusted Live or installed profile");
+    return NULL;
+}
+
+static JSValue session_exit(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int operation)
+{
+    (void)self; (void)argv;
+    if (argc) return JS_ThrowTypeError(ctx, "Session exit operations take no user, session or process arguments");
+    const char *profile = session_profile(ctx);
+    if (!profile) return JS_EXCEPTION;
+    if (operation == POLLY_SESSION_STATUS_V1_EXIT_OPERATION_SEAL && !pu_applications_exit_ready())
+        return JS_ThrowTypeError(ctx, "Applications have not exited normally; retain the session and review them");
+    if (operation == POLLY_SESSION_STATUS_V1_EXIT_OPERATION_BEGIN) {
+        if (!exit_request(ctx, POLLY_SESSION_STATUS_V1_EXIT_OPERATION_INSPECT)) return JS_EXCEPTION;
+        pu_applications_begin_exit();
+    }
+    if (!exit_request(ctx, (uint32_t)operation)) return JS_EXCEPTION;
+    if (operation == POLLY_SESSION_STATUS_V1_EXIT_OPERATION_CANCEL) pu_applications_cancel_exit();
+    const char *phases[] = { "idle", "waiting", "ready", "committed" };
+    JSValue result = pu_applications_exit_snapshot(ctx);
+    if (JS_IsException(result)) return result;
+    JSValue list = JS_DupValue(ctx, control.exit_windows);
+    uint32_t phase = control.exit_phase;
+    if (phase == POLLY_SESSION_STATUS_V1_EXIT_PHASE_READY && !pu_applications_exit_ready())
+        phase = POLLY_SESSION_STATUS_V1_EXIT_PHASE_WAITING;
+    if (JS_IsException(list) || !property(ctx, result, "windows", JS_DupValue(ctx, list)) ||
+        !property(ctx, result, "version", JS_NewInt32(ctx, 1)) ||
+        !property(ctx, result, "phase", JS_NewString(ctx, phases[phase])) ||
+        !property(ctx, result, "pendingWindows", JS_NewUint32(ctx, control.exit_pending)) ||
+        !property(ctx, result, "profile", JS_NewString(ctx, profile))) {
+        JS_FreeValue(ctx, list); JS_FreeValue(ctx, result); return JS_EXCEPTION;
+    }
+    JS_FreeValue(ctx, list);
+    return result;
+}
+
 static JSValue set_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
@@ -980,10 +1095,16 @@ invalid:
 int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
 {
     control.ctx = ctx;
+    control.exit_windows = JS_UNDEFINED;
     control.api = JS_DupValue(ctx, api);
     if (!pu_shortcut_client_install(ctx, api)) return 0;
     if (!pu_output_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "sessionServices", JS_NewCFunction(ctx, services, "sessionServices", 0))) return 0;
+    if (!property(ctx, api, "onSessionExitRequested", JS_NULL)) return 0;
+    const char *exit_names[] = { "sessionExitState", "beginSessionExit", "cancelSessionExit", "sealSessionExit" };
+    for (int i = 0; i < 4; i++)
+        if (!property(ctx, api, exit_names[i], JS_NewCFunctionMagic(ctx, session_exit, exit_names[i],
+            0, JS_CFUNC_generic_magic, i))) return 0;
     if (!pu_theme_files_install(ctx, api)) return 0;
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
@@ -1023,6 +1144,10 @@ static void notify(const char *name)
 
 int pu_desktop_windows_pump(void)
 {
+    if (control.ctx && control.logout_requested) {
+        control.logout_requested = false;
+        notify("onSessionExitRequested");
+    }
     int worked = pu_shortcut_client_pump();
     worked += pu_theme_client_pump();
     worked += pu_output_client_pump();
@@ -1041,6 +1166,9 @@ void pu_desktop_windows_shutdown(void)
     pu_shortcut_client_shutdown();
     pu_output_client_shutdown();
     disconnect_control();
-    if (control.ctx) JS_FreeValue(control.ctx, control.api);
+    if (control.ctx) {
+        JS_FreeValue(control.ctx, control.exit_windows);
+        JS_FreeValue(control.ctx, control.api);
+    }
     memset(&control, 0, sizeof(control));
 }

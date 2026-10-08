@@ -450,7 +450,7 @@ third-party panel programs connected to the public socket.
 - Keyboard `none` leaves application focus unchanged. `on_demand` focuses on
   pointer click. Mapped, visible top/overlay `exclusive` surfaces take priority,
   with application focus restored when they close, unmap, or relinquish focus.
-  WM shortcuts other than the development Alt+Escape escape hatch are forwarded
+  WM shortcuts other than the Alt+Escape logout-confirmation request are forwarded
   while a layer owns keyboard focus. This is **not** a secure session-lock API.
 - Layer popups may extend outside the panel, are constrained to its output, and
   support nested/repositioned/reactive xdg popups. Layer content is clipped to
@@ -929,7 +929,8 @@ From a second terminal, use the printed directory:
 XDG_RUNTIME_DIR=<printed-directory> WAYLAND_DISPLAY=pollywm-0 foot
 ```
 
-Launch a second client the same way. Exit with Alt+Escape or SIGTERM, then remove
+Launch a second client the same way. A trusted Shell handles Alt+Escape through
+logout confirmation; a standalone compositor can be stopped with SIGTERM. Then remove
 the now-empty temporary runtime directory. PollyWM requires an absolute,
 user-owned, mode-0700 runtime directory. Do not reuse WSLg's world-accessible
 runtime directory as PollyWM's runtime, and do not run a real desktop as root.

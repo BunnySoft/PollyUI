@@ -1,6 +1,7 @@
 #include "shortcut-control.h"
 #include "server.h"
 #include "workspace.h"
+#include "input-method.h"
 #include "polly-shortcuts-server.h"
 
 #include <stdlib.h>
@@ -148,7 +149,7 @@ bool pu_shortcuts_key(struct PuDesktop *desktop, struct wlr_keyboard *keyboard, 
     if (state->active && key == XKB_KEY_Escape) { pu_shortcuts_cancel(desktop); return true; }
     uint32_t mods = modifiers(keyboard);
     if ((mods & PU_SHORTCUT_ALT) && key == XKB_KEY_Escape) {
-        wl_display_terminate(desktop->display);
+        pu_desktop_request_logout(desktop);
         return true;
     }
     if (desktop->focused_layer) return false;

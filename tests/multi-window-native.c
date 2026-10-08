@@ -6,6 +6,7 @@
 static PuWindow *windows[4];
 static SDL_WindowID ids[4];
 static int painted[4], keys[4], pointers[4], wheels[4], closed[4];
+static int close_requests[4], close_retried;
 static int failed, ticks, phase;
 static int indices[] = { 0, 1, 2, 3 };
 
@@ -50,6 +51,12 @@ static int wheel(const PuWheelEvent *event, void *user)
 }
 
 static void create(int index);
+static int request_close(PuWindow *window, void *user)
+{
+    (void)window;
+    int index = *(int *)user;
+    return ++close_requests[index] > 1;
+}
 static void close_window(PuWindow *window, void *user)
 {
     int index = *(int *)user;
@@ -73,6 +80,7 @@ static void create(int index)
     pu_window_set_pointer(windows[index], pointer, &indices[index]);
     pu_window_set_wheel(windows[index], wheel, &indices[index]);
     pu_window_set_close(windows[index], close_window, &indices[index]);
+    pu_window_set_close_request(windows[index], request_close, &indices[index]);
     int count;
     SDL_Window **native = SDL_GetWindows(&count);
     for (int i = 0; i < count; i++)
@@ -108,7 +116,14 @@ static int frame(void *user)
         SDL_zero(e); e.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED; e.window.windowID = ids[0];
         check(SDL_PushEvent(&e), "queue first-window close");
         phase = 1;
+    } else if (phase == 1 && !closed[0] && close_requests[0] == 1 && !close_retried) {
+        check(pu_window_is_open(windows[0]), "declined WM close preserves the window for Save or Cancel");
+        SDL_Event e;
+        SDL_zero(e); e.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED; e.window.windowID = ids[0];
+        check(SDL_PushEvent(&e), "request close again after the application declined");
+        close_retried = 1;
     } else if (phase == 1 && closed[0]) {
+        check(close_requests[0] == 2, "accepted external close is followed by one actual close notification");
         check(keys[0] == 0 && keys[1] == 2 && pointers[1] == 1 && wheels[1] == 1,
               "events are delivered exactly once, without cross-window leakage");
         check(pu_window_is_open(windows[1]) && painted[1], "second window survives the first");
@@ -144,6 +159,7 @@ int main(void)
     for (int i = 0; i < 4; i++) {
         pu_window_destroy(windows[i]);
         check(closed[i] == 1, "all native windows received close notifications");
+        check(i == 0 || close_requests[i] == 0, "explicit application close bypasses the external-request hook");
     }
     pu_render_shutdown();
     if (!result && !failed) puts("PASS: native multi-window routing, creation failures, replacement and shutdown");

@@ -360,6 +360,42 @@ static void app_closed(PuWindow *window, void *user)
     app_retire(user, 1);
 }
 
+static JSValue app_close_rejected(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    (void)ctx;
+    fprintf(stderr, "[window] Deferred close request failed; the window remains open\n");
+    return JS_UNDEFINED;
+}
+
+static int app_close_requested(PuWindow *window, void *user)
+{
+    (void)window;
+    PuApp *app = user;
+    JSContext *ctx = pu_script_jsctx(app->script);
+    JSValue callback = JS_GetPropertyStr(ctx, app->handle, "oncloserequest");
+    int accepted = JS_IsNull(callback) || JS_IsUndefined(callback);
+    if (JS_IsException(callback)) app_report(ctx);
+    else if (JS_IsFunction(ctx, callback)) {
+        JSValue result = JS_Call(ctx, callback, app->handle, 0, NULL);
+        if (JS_IsException(result)) app_report(ctx);
+        else if (JS_IsPromise(result)) {
+            JSValue then = JS_GetPropertyStr(ctx, result, "then");
+            JSValue args[] = { JS_UNDEFINED,
+                JS_NewCFunction(ctx, app_close_rejected, "closeRequestRejected", 1) };
+            JSValue handled = JS_IsException(then) ? JS_EXCEPTION : JS_Call(ctx, then, result, 2, args);
+            if (JS_IsException(handled)) app_report(ctx);
+            JS_FreeValue(ctx, handled); JS_FreeValue(ctx, args[1]); JS_FreeValue(ctx, then);
+        } else accepted = JS_IsBool(result) && JS_ToBool(ctx, result) == 1;
+        JS_FreeValue(ctx, result);
+    } else if (!accepted) {
+        JS_ThrowTypeError(ctx, "oncloserequest must be a function or null");
+        app_report(ctx);
+    }
+    JS_FreeValue(ctx, callback);
+    return accepted;
+}
+
 static void window_finalizer(JSRuntime *rt, JSValueConst value)
 {
     (void)rt;
@@ -379,7 +415,8 @@ static PuApp *new_app(PuBridge *bridge)
     JS_SetOpaque(app->handle, app);
     if (JS_DefinePropertyValueStr(ctx, app->handle, "document", pu_bridge_document(bridge),
             JS_PROP_ENUMERABLE) < 0 ||
-        JS_SetPropertyStr(ctx, app->handle, "onclose", JS_NULL) < 0) {
+        JS_SetPropertyStr(ctx, app->handle, "onclose", JS_NULL) < 0 ||
+        JS_SetPropertyStr(ctx, app->handle, "oncloserequest", JS_NULL) < 0) {
         JS_SetOpaque(app->handle, NULL);
         JS_FreeValue(ctx, app->handle);
         free(app);
@@ -411,6 +448,7 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
     pu_window_set_wheel(app->window, app_wheel, app);
     pu_window_set_region(app->window, app_region, app);
     pu_window_set_close(app->window, app_closed, app);
+    pu_window_set_close_request(app->window, app_close_requested, app);
     if (app->frameless >= 0) pu_window_set_frameless(app->window, app->frameless);
     if (app->backdrop >= 0) pu_window_set_backdrop(app->window, app->backdrop);
     if (app->titlebar >= 0) pu_window_set_titlebar_style(app->window, app->titlebar);

@@ -73,6 +73,48 @@ not an already authenticated shell. Graphical setup/greeter, administrator UI,
 integrated locking/VT protection and account/host migration across different
 system versions remain incomplete.
 
+## Ordinary logout and save-before-session-exit
+
+The trusted Shell's Applications menu provides **Log out...**. Alt+Escape now
+requests that same confirmation rather than abruptly terminating the compositor;
+Ctrl+Alt+L also opens it while a Shell surface has focus. The first confirmation
+sends normal `xdg_toplevel.close` requests. Apps decide whether to save, discard
+or cancel; PollyUI apps can defer an external close through `oncloserequest`.
+The desktop never claims that application data was saved.
+
+Pending public toplevel resources (including unmapped windows), this Shell's
+still-running launched processes and pending Activate/Open requests keep the
+session alive. The UI lists remaining apps and offers Cancel or another normal
+close request, not force-kill. Already closed apps are not reopened on cancel.
+Only a fresh, authoritative empty inventory enables the final **Log out now**
+confirmation. A sealed barrier denies late new toplevels and new Shell launches.
+Logout ends the normal Shell, its `--exit-with-shell` compositor and installed
+session entry; greetd then supervises the real user's exit and shows login again.
+Standard installed/Live entries additionally select `--save-before-exit`, which
+sets the compositor's `--require-session-exit` gate. A Shell's uncommitted normal
+exit retains ordinary applications instead of disconnecting them. Development
+and health-check commands keep their existing default supervision behavior.
+Live ends its desktop in the existing ordinary user's temporary console, not a
+root shell, and does not acquire installed persistence or password policy.
+
+Native fixed no-argument operations are `beginSessionExit()`, `sessionExitState()`,
+`cancelSessionExit()` and `sealSessionExit()`. Session-status protocol v2 admits
+these only from the current private Shell connection as ordinary UID1000, with
+no active lock and an exit-with-Shell session. It grants no arbitrary session ID,
+other-user access, root process API or logind termination shortcut. Old v1 service
+readiness/IME behavior remains compatible; old servers explicitly reject this
+new feature rather than report a fake empty session.
+
+`shell/session-exit.mjs` is the shared close coordinator for logout and Power.
+It requires an explicit final action and invokes its commit callback once.
+Known-not-sent failure (`error.sent === false`) can release the barrier through
+Cancel; uncertain sent delivery (`error.sent === true`) stays visibly blocked
+and is never retried automatically. Power's daemon capabilities and authorization
+remain its native backend's responsibility, not this close coordinator's.
+Source/controller and host-close tests are not proof of a real installed
+logout-to-greetd or saved-document lifecycle; those belong to the concentrated
+Alpha hand test.
+
 ## Installed graphical setup and password greeter
 
 On 2026-10-08 the user approved **Debian greetd for the installed profile only**.

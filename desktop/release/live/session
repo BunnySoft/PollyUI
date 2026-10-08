@@ -48,7 +48,7 @@ if ! log=$(mktemp "$HOME/polly-session-XXXXXX"); then
 fi
 chmod 600 "$log"
 {
-    if sh /usr/share/pollyui/desktop/tools/run-session.sh --ime --audio \
+    if sh /usr/share/pollyui/desktop/tools/run-session.sh --save-before-exit --ime --audio \
         /usr/bin/pollywm /usr/bin/pollyui /usr/share/pollyui/desktop/shell/live.mjs; then
         echo "PollyDesktop session exited normally."
     else

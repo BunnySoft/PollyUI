@@ -1,13 +1,14 @@
 #!/bin/sh
 set -eu
 usage() {
-    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--audio] [--restarts COUNT] [--health-check] pollywm pollyui shell-script [ARG...]" >&2
+    echo "Usage: run-session.sh [--nested | --headless] [--ime] [--audio] [--restarts COUNT] [--health-check | --save-before-exit] pollywm pollyui shell-script [ARG...]" >&2
 }
 mode=auto
 restarts=0
 ime=0
 audio=0
 failure_option=
+exit_option=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --health-check)
@@ -16,6 +17,9 @@ while [ "$#" -gt 0 ]; do
         --audio)
             if [ "$audio" -ne 0 ]; then usage; exit 2; fi
             audio=1; shift ;;
+        --save-before-exit)
+            if [ -n "$exit_option" ]; then usage; exit 2; fi
+            exit_option=--require-session-exit; shift ;;
         --ime)
             if [ "$ime" -ne 0 ]; then usage; exit 2; fi
             ime=1; shift ;;
@@ -37,6 +41,10 @@ if [ -n "$failure_option" ] && [ "$restarts" != 0 ]; then
     exit 2
 fi
 wm=$1
+if [ -n "$failure_option" ] && [ -n "$exit_option" ]; then
+    echo "Health checks cannot also request an interactive save-before-exit session." >&2
+    exit 2
+fi
 ui=$2
 script=$3
 shift 3
@@ -104,10 +112,10 @@ printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
         --input-method "$repo/desktop/tools/run-input-method.sh" \
-        --exit-with-shell ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 else
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
-        --exit-with-shell ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
 fi
 pid=$!
 while kill -0 "$pid" 2>/dev/null; do

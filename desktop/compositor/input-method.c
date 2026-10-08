@@ -2,6 +2,7 @@
 #include "private-process.h"
 #include "server.h"
 #include "data-device.h"
+#include "session-lock.h"
 #include "text-input-v3-server.h"
 #include "polly-session-status-server.h"
 #include <errno.h>
@@ -421,9 +422,38 @@ static void initialized(struct wl_client *client, struct wl_resource *resource)
 }
 static void destroy_status(struct wl_client *client, struct wl_resource *resource)
 { (void)client; wl_resource_destroy(resource); }
+static void session_exit(struct wl_client *client, struct wl_resource *resource,
+                         uint32_t serial, uint32_t operation)
+{
+    struct PuInputMethod *state = wl_resource_get_user_data(resource);
+    uint32_t phase, pending;
+    if (pu_desktop_session_exit(state->desktop, client, operation, &phase, &pending))
+        pu_desktop_session_exit_windows(state->desktop, resource, serial);
+    polly_session_status_v1_send_session_exit_status(resource, serial, phase, pending);
+}
 static const struct polly_session_status_v1_interface status_impl = {
     .destroy = destroy_status, .inspect = inspect_status, .input_method_initialized = initialized,
+    .session_exit = session_exit,
 };
+static enum wl_iterator_result request_logout(struct wl_resource *resource, void *data)
+{
+    bool *sent = data;
+    if (wl_resource_instance_of(resource, &polly_session_status_v1_interface, &status_impl) &&
+        wl_resource_get_version(resource) >= 2) {
+        polly_session_status_v1_send_logout_requested(resource);
+        *sent = true;
+    }
+    return WL_ITERATOR_CONTINUE;
+}
+bool pu_desktop_request_logout(struct PuDesktop *desktop)
+{
+    bool sent = false;
+    if (desktop->shell_client && getuid() == 1000 && geteuid() == 1000 &&
+        !pu_session_lock_active(desktop))
+        wl_client_for_each_resource(desktop->shell_client, request_logout, &sent);
+    if (!sent) wlr_log(WLR_ERROR, "Logout confirmation is unavailable; retaining the session");
+    return sent;
+}
 static void bind_status(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 {
     struct PuInputMethod *state = data;
@@ -583,7 +613,7 @@ bool pu_input_method_init(struct PuDesktop *desktop)
     struct wlr_text_input_manager_v3 *inputs = wlr_text_input_manager_v3_create(desktop->display);
     struct wlr_input_method_manager_v2 *methods = wlr_input_method_manager_v2_create(desktop->display);
     struct wlr_virtual_keyboard_manager_v1 *keyboards = wlr_virtual_keyboard_manager_v1_create(desktop->display);
-    state->status_global = wl_global_create(desktop->display, &polly_session_status_v1_interface, 1, state, bind_status);
+    state->status_global = wl_global_create(desktop->display, &polly_session_status_v1_interface, 2, state, bind_status);
     if (!state->tree || !inputs || !methods || !keyboards || !state->status_global) return false;
     listen(&inputs->events.text_input, &state->new_input, new_text_input);
     listen(&methods->events.input_method, &state->new_method, new_method);

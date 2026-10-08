@@ -1,5 +1,6 @@
 /* Wayland lifecycle patterns informed by wlroots tinywl; see ../LICENSE.wlroots. */
 #include "server.h"
+#include "polly-session-status-server.h"
 #include "decoration.h"
 #include "workspace.h"
 #include "shortcut-control.h"
@@ -14,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -1709,10 +1711,74 @@ static void view_fullscreen(struct wl_listener *listener, void *data)
         view->toplevel->requested.fullscreen ? view->toplevel->requested.fullscreen_output : NULL);
 }
 
+static bool session_public_view(struct PuDesktop *desktop, struct PuDesktopView *view)
+{
+    struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
+    return client != desktop->shell_client && !pu_input_method_allowed(desktop, client) &&
+        !pu_session_lock_allowed(desktop, client);
+}
+
+void pu_desktop_session_exit_windows(struct PuDesktop *desktop, struct wl_resource *resource,
+    uint32_t serial)
+{
+    struct PuDesktopView *view;
+    unsigned count = 0;
+    wl_list_for_each(view, &desktop->all_views, all_link)
+        if (session_public_view(desktop, view) && count++ < 256) {
+            char title[257], app_id[257];
+            snprintf(title, sizeof(title), "%s", view->toplevel->title ? view->toplevel->title : "Untitled");
+            snprintf(app_id, sizeof(app_id), "%s", view->toplevel->app_id ? view->toplevel->app_id : "");
+            polly_session_status_v1_send_session_exit_window(resource, serial, title, app_id);
+        }
+}
+
+bool pu_desktop_session_exit(struct PuDesktop *desktop, struct wl_client *client,
+    uint32_t operation, uint32_t *phase, uint32_t *pending)
+{
+    pid_t pid;
+    uid_t uid;
+    gid_t gid;
+    wl_client_get_credentials(client, &pid, &uid, &gid);
+    (void)pid; (void)gid;
+    *phase = 4; *pending = 0;
+    if (operation > 3 || client != desktop->shell_client || getuid() != 1000 ||
+        geteuid() != 1000 || getegid() != getgid() || uid != 1000 || desktop->stopping ||
+        !desktop->exit_with_shell || pu_session_lock_active(desktop)) return false;
+    if (operation == 2) {
+        desktop->session_exit_pending = desktop->session_exit_sealed = false;
+    }
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->all_views, all_link)
+        if (session_public_view(desktop, view)) {
+            if (*pending == UINT32_MAX) return false;
+            (*pending)++;
+        }
+    if (operation == 1 && !desktop->session_exit_sealed) {
+        desktop->session_exit_pending = true;
+        wl_list_for_each(view, &desktop->all_views, all_link)
+            if (session_public_view(desktop, view)) {
+                uid_t owner;
+                wl_client_get_credentials(wl_resource_get_client(view->toplevel->resource), NULL, &owner, NULL);
+                if (owner == 1000) wlr_xdg_toplevel_send_close(view->toplevel);
+            }
+    } else if (operation == 3) {
+        if (!desktop->session_exit_pending || *pending) return false;
+        desktop->session_exit_sealed = true;
+    }
+    *phase = desktop->session_exit_sealed ? 3 :
+        !desktop->session_exit_pending ? 0 : *pending ? 1 : 2;
+    return true;
+}
+
 static void new_toplevel(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, new_toplevel);
     struct wlr_xdg_toplevel *toplevel = data;
+    if (desktop->session_exit_sealed &&
+        wl_resource_get_client(toplevel->resource) != desktop->shell_client) {
+        wl_resource_post_error(toplevel->resource, 0, "This compositor session is ending");
+        return;
+    }
     struct PuDesktopView *view = calloc(1, sizeof(*view));
     if (!view) { wl_resource_post_no_memory(toplevel->resource); return; }
     view->desktop = desktop;

@@ -48,6 +48,8 @@ struct PuWindow {
     void       *region_user;
     PuCloseFn close_fn;
     void *close_user;
+    PuCloseRequestFn close_request_fn;
+    void *close_request_user;
     int running, registered, close_notified, exit_code, presented;
 };
 
@@ -523,7 +525,8 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_CLOSE:
-        pu_window_close(w);
+        if (w && (!w->close_request_fn || w->close_request_fn(w, w->close_request_user)))
+            pu_window_close(w);
         return 0;
     case WM_DESTROY:
         if (w) { w->running = 0; w->hwnd = NULL; }
@@ -674,6 +677,8 @@ void pu_window_set_region(PuWindow *w, PuRegionFn fn, void *user)
 
 void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *user)
 { if (w) { w->close_fn = fn; w->close_user = user; } }
+void pu_window_set_close_request(PuWindow *w, PuCloseRequestFn fn, void *user)
+{ if (w) { w->close_request_fn = fn; w->close_request_user = user; } }
 int pu_window_is_open(PuWindow *w) { return w && w->running; }
 void pu_window_redraw(PuWindow *w) { if (w && w->running && w->hwnd) InvalidateRect(w->hwnd, NULL, FALSE); }
 int pu_window_save_frame(PuWindow *w, const char *path)

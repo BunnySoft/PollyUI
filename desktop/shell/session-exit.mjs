@@ -119,12 +119,15 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
     const state = controller.snapshot();
     if (state.action !== 'logout') return;
     const current = theme();
+    const target = surface;
     const button = (id, label, action) => h('view', { id, role: 'button', tabIndex: 0,
       style: { padding: 10, borderWidth: 1, borderColor: current.colors.border,
         backgroundColor: current.colors.surface, color: current.colors.text, flexShrink: 0 },
-      onClick: event => { if (event.button === 0) action(); },
+      onClick: event => { if (surface === target && !target.closed && event.button === 0) action(); },
       onKeydown: event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+        if (surface === target && !target.closed && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault(); action();
+        }
       } }, label);
     const label = text => h('view', { style: { color: current.colors.text, flexShrink: 0 } }, text);
     render(h('view', { id: 'shell-logout', style: { padding: 16, gap: 10, height: '100%',
@@ -158,16 +161,28 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
       const output = host.displays().find(item => item.id === outputId) || host.displays()[0];
       if (!output) throw new Error('No display is available for logout confirmation.');
       if (!controller.request({ action: 'logout', commit })) return null;
-      surface = host.create({ title: 'PollyShell.logout.' + output.id, output: output.id,
-        layer: 'overlay', keyboard: 'on-demand', width: Math.min(480, output.width),
-        height: Math.min(500, output.height), anchors: ['top', 'right'], exclusiveZone: -1 });
-      surface.oncloserequest = () => { close(); return false; };
+      try {
+        surface = host.create({ title: 'PollyShell.logout.' + output.id, output: output.id,
+          layer: 'overlay', keyboard: 'on-demand', width: Math.min(480, output.width),
+          height: Math.min(500, output.height), anchors: ['top', 'right'], exclusiveZone: -1 });
+      } catch (error) {
+        controller.cancel();
+        throw error;
+      }
+      const current = surface;
+      surface.oncloserequest = () => {
+        if (surface !== current) return true;
+        close(); return false;
+      };
       surface.onclose = () => {
+        if (surface !== current) return;
         if (controller.snapshot().canCancel) controller.cancel();
         surface = null;
       };
       surface.document.body.addEventListener('keydown', event => {
-        if (event.key === 'Escape' && controller.snapshot().canCancel) { event.preventDefault(); close(); }
+        if (surface === current && event.key === 'Escape' && controller.snapshot().canCancel) {
+          event.preventDefault(); close();
+        }
       });
       paint();
       return surface;

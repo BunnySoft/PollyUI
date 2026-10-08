@@ -84,6 +84,9 @@ void pu_window_set_async(PuWindow *w, PuAsyncFn fn, void *user);
 /* Called once at a safe loop boundary after close; may destroy this window. */
 typedef void (*PuCloseFn)(PuWindow *w, void *user);
 void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *user);
+/* External close requests may be declined while an application saves/prompts. */
+typedef int (*PuCloseRequestFn)(PuWindow *w, void *user);
+void pu_window_set_close_request(PuWindow *w, PuCloseRequestFn fn, void *user);
 int  pu_window_is_open(PuWindow *w);
 void pu_window_redraw(PuWindow *w);
 int  pu_window_save_frame(PuWindow *w, const char *path);

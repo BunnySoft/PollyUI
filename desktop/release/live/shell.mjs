@@ -18,7 +18,7 @@ for (const [text, size] of [
   ['Temporary, unprivileged live user. All changes are lost at shutdown.', 15],
   ['No disk installer. No secure lock screen. Do not use this image for sensitive work.', 15],
   ['Use Appearance for JSON themes and settings; Polly for applications.', 15],
-  ['Ctrl+Super+Left/Right switches manual workspaces. Alt+Escape ends the desktop.', 14],
+  ['Ctrl+Super+Left/Right switches manual workspaces. Alt+Escape asks to log out.', 14],
   ['Hardware preview: wired DHCP; Wi-Fi and audio via Appearance settings.', 14],
   ['Diagnostics stay in your temporary home. Review them before sharing.', 14],
 ]) {

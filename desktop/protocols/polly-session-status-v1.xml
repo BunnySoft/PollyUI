@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_session_status_v1">
-  <interface name="polly_session_status_v1" version="1">
+  <interface name="polly_session_status_v1" version="2">
     <description summary="connection-bound service readiness">
       Only the trusted Shell and the separately spawned input-method connection
       may bind this global. The Shell may query status, but cannot mark a service
       ready. Only the current input-method connection may report initialization.
-      This interface grants no keyboard, window, lock or process-control rights.
+      Version 2 lets only the current ordinary-user Shell drain its compositor's
+      public toplevels before ending its own session. It grants no arbitrary
+      process, user, session ID, lock or keyboard control.
       Status reports startup completion, not hardware input or rendering quality.
     </description>
     <enum name="service_state">
@@ -34,6 +36,52 @@
     <event name="status">
       <arg name="serial" type="uint"/>
       <arg name="input_method" type="uint" enum="service_state"/>
+    </event>
+    <enum name="exit_operation" since="2">
+      <entry name="inspect" value="0"/>
+      <entry name="begin" value="1"/>
+      <entry name="cancel" value="2"/>
+      <entry name="seal" value="3"/>
+    </enum>
+    <enum name="exit_phase" since="2">
+      <entry name="idle" value="0"/>
+      <entry name="waiting" value="1"/>
+      <entry name="ready" value="2"/>
+      <entry name="sealed" value="3"/>
+      <entry name="denied" value="4"/>
+    </enum>
+    <request name="session_exit" since="2">
+      <description summary="ordinary Shell close-and-save barrier">
+        Begin requests normal close from public toplevels, including registered
+        unmapped ones. Inspect counts their actual resource lifetimes, not just
+        visibility. Applications may retain their windows to save or cancel.
+        Cancel never reopens an application or kills a process. Seal succeeds
+        only after all public toplevel resources are gone; new toplevels are
+        refused until cancellation or session exit. A denied operation has no
+        closing side effects. The input method cannot use these requests.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="operation" type="uint" enum="exit_operation"/>
+    </request>
+    <event name="session_exit_status" since="2">
+      <arg name="serial" type="uint"/>
+      <arg name="phase" type="uint" enum="exit_phase"/>
+      <arg name="pending_toplevels" type="uint"/>
+    </event>
+    <event name="session_exit_window" since="2">
+      <description summary="bounded labels for pending public windows">
+        Up to 256 labels precede the authoritative status count. Only public
+        toplevels are included, never Shell UI or private service surfaces.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="title" type="string"/>
+      <arg name="app_id" type="string"/>
+    </event>
+    <event name="logout_requested" since="2">
+      <description summary="show confirmation, not an exit grant">
+        The compositor logout shortcut asks its trusted Shell to display the
+        same confirmation flow as its user menu. No application is closed here.
+      </description>
     </event>
   </interface>
 </protocol>

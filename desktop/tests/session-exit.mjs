@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
 register('./root-loader.mjs', import.meta.url);
-const { createSessionExitController } = await import('../shell/session-exit.mjs');
+const { createSessionExitController, createLogoutSurface } = await import('../shell/session-exit.mjs');
 
 function fixture() {
   let current = { version: 1, phase: 'idle', pendingWindows: 1, pendingApplications: 1,
@@ -106,6 +106,7 @@ test('cancellation during a changed callback invalidates subsequent close or com
   const cancelClose = f.controller.subscribe(state => {
     if (state.phase === 'waiting') f.controller.cancel();
   });
+
   f.controller.confirm();
   assert.equal(f.calls.includes('close'), false);
   cancelClose();
@@ -117,4 +118,21 @@ test('cancellation during a changed callback invalidates subsequent close or com
   cancelCommit();
   assert.equal(f.calls.includes('seal'), false);
   assert.equal(committed, 0);
+});
+
+test('a retired logout surface close callback cannot cancel a reopened confirmation', async t => {
+  const { fixtureHost } = await import('./file-dialog-fixtures.mjs');
+  const { host } = fixtureHost(t);
+  host.displays = () => [{ id: 1, width: 800, height: 600 }];
+  const f = fixture();
+  const surface = createLogoutSurface({ controller: f.controller, host, commit() {},
+    theme: () => ({ colors: { text: '#000000', border: '#999999', surface: '#ffffff', body: '#eeeeee' } }) });
+  const old = surface.show(1);
+  old.close = function () { this.closed = true; };
+  f.controller.stop(); surface.stop(); f.controller.start();
+  const current = surface.show(1);
+  old.onclose();
+  assert.equal(f.controller.snapshot().phase, 'confirm');
+  assert.equal(current.closed, false);
+  f.controller.stop(); surface.stop();
 });

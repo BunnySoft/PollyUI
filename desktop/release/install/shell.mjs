@@ -11,7 +11,7 @@ for (const [text, size] of [
   ['Password login is enabled. Screen locking and encryption are not yet integrated.', 15],
   ['Wi-Fi credentials stay in RAM. System updates are not implemented.', 15],
   ['Appearance opens settings; Polly opens applications.', 15],
-  ['Ctrl+Super+Left/Right switches workspaces. Alt+Escape ends the desktop.', 14],
+  ['Ctrl+Super+Left/Right switches workspaces. Alt+Escape asks to log out.', 14],
 ]) {
   const label = guide.document.createElement('view');
   label.textContent = text;

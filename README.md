@@ -321,6 +321,18 @@ replacement, even for the last window. `window.quit()` closes the entire
 application and prevents new windows. With no surviving/replacement windows,
 the loop exits and shared background services shut down.
 
+`handle.oncloserequest` intercepts an external WM close request, including the
+desktop's normal application-close request during logout. With no handler,
+behavior is unchanged. A handler must return literal `true` to close immediately;
+`false`, `undefined` or a Promise defers closure while the application presents
+Save/Cancel or completes a save. Promise settlement does **not** automatically
+close the window: after successful save or explicit discard, the application
+calls `handle.close()` itself. Explicit `close()`/`quit()` do not re-enter this
+hook. Throwing logs the native callback error and declines closure. A rejected
+Promise is explicitly logged and does not close the window; handlers should
+also show their own save error to the user.
+`onclose` remains the once-only notification of actual native teardown.
+
 Retained closed-window handles/documents remain readable, but minimize/maximize,
 chrome and capture operations throw after close; closing again is harmless. Native ownership, input references
 and attached DOM listeners are released on close. Shared timers/workers are

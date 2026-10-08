@@ -31,6 +31,7 @@
 extern char **environ;
 struct AppProcess { pid_t pid; char *id; struct AppProcess *next; };
 static struct AppProcess *processes;
+static bool session_exiting, session_exit_failed;
 static JSContext *context;
 static JSValue desktop_api;
 
@@ -102,6 +103,7 @@ static JSValue can_activate_application(JSContext *ctx, JSValueConst self, int a
 
 static JSValue request_application(JSContext *ctx, int argc, JSValueConst *argv, bool documents)
 {
+    if (session_exiting) return JS_ThrowTypeError(ctx, "Session exit is pending; cancel before opening an application");
     if (argc != (documents ? 2 : 1) || !JS_IsString(argv[0]) || (documents && !JS_IsArray(argv[1])))
         return JS_ThrowTypeError(ctx, documents ? "openApplicationDocuments requires a desktop-file ID and local URI array" :
             "activateApplication requires a desktop-file ID");
@@ -279,6 +281,7 @@ static void complete_activation(struct AppActivation *request, DBusMessage *repl
         }
     }
     bool failed = code || JS_IsException(value);
+    if (session_exiting && failed) session_exit_failed = true;
     if (JS_IsException(value)) {
         fprintf(stderr, "[applications] Cannot allocate activation completion for %s\n", request->id);
         value = JS_GetException(context);
@@ -510,6 +513,7 @@ static int discard_env(const char *value)
 
 static JSValue spawn_application(JSContext *ctx, JSValueConst self, int argc, JSValueConst *args)
 {
+    if (session_exiting) return JS_ThrowTypeError(ctx, "Session exit is pending; cancel before launching an application");
     (void)self;
     if (argc != 3 || !JS_IsArray(args[0]) || !JS_IsString(args[1]) || !JS_IsString(args[2]))
         return JS_ThrowTypeError(ctx, "spawnApplication requires argv, working directory and application ID");
@@ -646,6 +650,7 @@ cleanup:
 int pu_applications_install(JSContext *ctx)
 {
     context = ctx;
+    session_exiting = session_exit_failed = false;
     desktop_api = JS_NewObject(ctx);
     if (JS_IsException(desktop_api) || !pu_bundles_install(ctx, desktop_api) || !pu_documents_install(ctx, desktop_api)) return 0;
     if (JS_IsException(desktop_api)) return 0;
@@ -693,6 +698,7 @@ int pu_applications_pump(void)
         int code = result < 0 ? -1 : WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
         if (code) fprintf(stderr, "[applications] %s (pid %ld) exited with status %d\n",
             process->id, (long)process->pid, code);
+        if (session_exiting && code) session_exit_failed = true;
         JSValue callback = JS_GetPropertyStr(context, desktop_api, "onExit");
         if (JS_IsException(callback)) report_exception();
         else if (JS_IsFunction(context, callback)) {
@@ -740,10 +746,39 @@ void pu_applications_shutdown(void)
     pu_install_targets_shutdown();
     if (context) JS_FreeValue(context, desktop_api);
     context = NULL;
+    session_exiting = session_exit_failed = false;
     desktop_api = JS_UNDEFINED;
     while (processes) {
         struct AppProcess *next = processes->next;
         free(processes->id); free(processes);
         processes = next;
+    }
+
+    void pu_applications_begin_exit(void) { session_exiting = true; }
+    void pu_applications_cancel_exit(void) { session_exiting = session_exit_failed = false; }
+    int pu_applications_exit_ready(void)
+    {
+        return session_exiting && !session_exit_failed && !processes && !activation_count;
+    }
+    JSValue pu_applications_exit_snapshot(JSContext *ctx)
+    {
+        JSValue result = JS_NewObject(ctx), applications = JS_NewArray(ctx);
+        if (JS_IsException(result) || JS_IsException(applications)) {
+            JS_FreeValue(ctx, result); JS_FreeValue(ctx, applications); return JS_EXCEPTION;
+        }
+        uint32_t count = 0;
+        for (struct AppProcess *process = processes; process; process = process->next)
+            if (JS_SetPropertyUint32(ctx, applications, count++, JS_NewString(ctx, process->id)) < 0)
+                goto failed;
+        if (JS_SetPropertyStr(ctx, result, "applications", JS_DupValue(ctx, applications)) < 0 ||
+            JS_SetPropertyStr(ctx, result, "pendingApplications", JS_NewUint32(ctx, count)) < 0 ||
+            JS_SetPropertyStr(ctx, result, "pendingActivations", JS_NewUint32(ctx, activation_count)) < 0 ||
+            JS_SetPropertyStr(ctx, result, "error", JS_NewString(ctx, session_exit_failed ?
+                "An application exit was unsuccessful or could not be confirmed. Cancel and review its state before retrying." : "")) < 0)
+            goto failed;
+        JS_FreeValue(ctx, applications);
+        return result;
+    failed:
+        JS_FreeValue(ctx, result); JS_FreeValue(ctx, applications); return JS_EXCEPTION;
     }
 }

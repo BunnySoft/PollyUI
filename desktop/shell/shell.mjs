@@ -11,6 +11,7 @@ import { createTray } from './desktop/shell/tray.mjs';
 import { createNetworkSettings } from './desktop/shell/network.mjs';
 import { createAudioSettings } from './desktop/shell/audio.mjs';
 import { createPowerSettings } from './desktop/shell/power.mjs';
+import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
@@ -93,7 +94,20 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const network = createNetworkSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
   const audio = createAudioSettings({ native, report, host, storage, theme: () => getDesktopTheme(themeId) });
-  const power = createPowerSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
+  const sessionExit = createSessionExitController({ native, report });
+  const logout = createLogoutSurface({ controller: sessionExit, host, theme: () => getDesktopTheme(themeId),
+    commit: () => {
+      if (!running) throw new Error('The desktop session is no longer running.');
+      host.quit();
+    } });
+  const power = createPowerSettings({ native, report, host, theme: () => getDesktopTheme(themeId), sessionExit });
+  let previousSessionExit = null;
+  const sessionExitRequested = () => {
+    if (!running) return;
+    try { showLogout(host.displays()[0]?.id); }
+    catch (failure) { report('[shell] Cannot show logout confirmation: ' + String(failure)); }
+    if (typeof previousSessionExit === 'function') previousSessionExit();
+  };
   let previousExit = null;
   const exited = event => {
     if (!running) return;
@@ -186,6 +200,12 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const nativeWindow = host.create({ title: `PollyShell.${kind}.${output.id}`, output: output.id, ...options });
     const surface = { output: output.id, kind, window: nativeWindow, signature: JSON.stringify(options),
       expectedClose: false, listeners: [] };
+    if (['wallpaper', 'panel', 'dock'].includes(kind)) listen(surface, 'keydown', event => {
+      if (running && event.ctrlKey && event.altKey && !event.shiftKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        showLogout(output.id);
+      }
+    });
     if (['wallpaper', 'panel', 'dock'].includes(kind)) listen(surface, 'mousedown', event => {
       if (!running || surface.expectedClose || nativeWindow.closed ||
           bundles.get(output.id)?.surfaces[kind] !== surface || !menu) return;
@@ -489,7 +509,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         comment: 'Appearance, displays, Wi-Fi, audio and keyboard', keywords: ['preferences', 'desktop'],
       }, ...applications.filter(entry => entry.id !== SETTINGS_APPLICATION_ID)], current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
-        scoped(launchApplication), scoped(reloadApplications), close, error), current.window.document.body);
+        scoped(launchApplication), scoped(reloadApplications), close, error,
+        typeof native?.beginSessionExit === 'function' ? scoped(() => showLogout(current.output)) : null),
+        current.window.document.body);
       return;
     }
     render(settingsView(getDesktopTheme(themeId), scoped(selectTheme), close,
@@ -1117,6 +1139,18 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     closeMenu();
     return power.show(output);
   }
+  function showLogout(output) {
+    if (!running) throw new Error('Shell is not running');
+    closeMenu();
+    try { return logout.show(output); }
+    catch (failure) {
+      error = 'Logout is unavailable; this session is retained. ' + String(failure);
+      errorKind = 'session-exit';
+      report('[shell] ' + error);
+      for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+      return null;
+    }
+  }
 
   function refresh(force = false) {
     if (!running) return;
@@ -1130,6 +1164,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       }
     }
     notifications.paint();
+    sessionExit.refresh();
     tray.paint();
     network.refresh();
     if (pendingDisplayToken) {
@@ -1168,6 +1203,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (running) throw new Error('Shell is already running');
       host.close();
       running = true;
+      sessionExit.start();
+      if (native && typeof native.beginSessionExit === 'function') {
+        previousSessionExit = native.onSessionExitRequested;
+        native.onSessionExitRequested = sessionExitRequested;
+      }
       appearanceStatus = '';
       lastServicePoll = 0;
       try { reconcile(themeId, false); }
@@ -1214,6 +1254,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       network.stop();
       audio.stop();
       power.stop();
+      sessionExit.stop();
+      logout.stop();
+      if (native && native.onSessionExitRequested === sessionExitRequested)
+        native.onSessionExitRequested = previousSessionExit;
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
@@ -1240,7 +1284,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       releaseThemeAsset(themeAsset); themeAsset = ''; themeAssetSource = '';
     },
     selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
-    showNotifications: notifications.show, showNetwork, showAudio, showPower, refresh,
+    showNotifications: notifications.show, showNetwork, showAudio, showPower, showLogout, refresh,
+    sessionExit,
     getState() {
       const services = serviceMonitor.snapshot();
       return { themeId, error: error || services.error, warning: appearanceWarning, appearanceFallback: !!compatibilityTheme,

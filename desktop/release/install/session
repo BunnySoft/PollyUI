@@ -61,7 +61,7 @@ status=$(mktemp "$XDG_RUNTIME_DIR/polly-session-status-XXXXXX")
 trap 'rm -f "$status"' EXIT
 {
     result=0
-    if sh /usr/share/pollyui/desktop/tools/run-session.sh --ime --audio \
+    if sh /usr/share/pollyui/desktop/tools/run-session.sh --save-before-exit --ime --audio \
         /usr/bin/pollywm /usr/bin/pollyui /usr/share/pollyui/desktop/shell/installed.mjs; then
         echo "PollyDesktop session exited normally."
     else

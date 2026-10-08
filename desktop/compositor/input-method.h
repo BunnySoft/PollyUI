@@ -18,4 +18,5 @@ uint32_t pu_input_method_epoch(struct PuDesktop *desktop);
 void pu_input_method_reposition(struct PuDesktop *desktop);
 bool pu_input_method_ready(struct PuDesktop *desktop);
 bool pu_input_method_active(struct PuDesktop *desktop);
+bool pu_desktop_request_logout(struct PuDesktop *desktop);
 #endif

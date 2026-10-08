@@ -44,6 +44,7 @@ static void shell_disconnected(struct wl_listener *listener, void *data)
     (void)data;
     struct PuDesktop *desktop = wl_container_of(listener, desktop, shell_client_destroy);
     desktop->shell_client = NULL;
+    if (!desktop->session_exit_sealed) desktop->session_exit_pending = false;
     wl_list_remove(&listener->link);
     wl_list_init(&listener->link);
     if (!desktop->stopping)
@@ -83,6 +84,10 @@ static bool reap_shell(struct PuDesktop *desktop, int options)
     if (result > 0 && !desktop->stopping) {
         if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
             if (desktop->exit_with_shell && !pu_session_lock_active(desktop)) {
+                if (desktop->require_session_exit && !desktop->session_exit_sealed) {
+                    wlr_log(WLR_ERROR, "Shell exited without committing logout; retaining ordinary applications");
+                    return true;
+                }
                 wlr_log(WLR_INFO, "Shell exited normally; ending the requested session");
                 wl_display_terminate(desktop->display);
             }
@@ -115,6 +120,7 @@ static bool spawn_shell(struct PuDesktop *desktop, char *const argv[])
             return false;
         }
     }
+    desktop->session_exit_pending = desktop->session_exit_sealed = false;
     desktop->shell_client_destroy.notify = shell_disconnected;
     if (!pu_spawn_private(desktop, argv, "shell", &desktop->shell_client,
         &desktop->shell_pid, &desktop->shell_client_destroy)) return false;

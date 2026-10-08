@@ -78,6 +78,8 @@ struct PuDesktop {
     struct wlr_cursor *cursor;
     struct wlr_xcursor_manager *cursor_theme;
     struct wlr_seat *seat;
+    bool session_exit_pending, session_exit_sealed;
+    bool require_session_exit;
     struct wlr_xdg_shell *shell;
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
@@ -134,5 +136,9 @@ bool pu_desktop_global_filter(const struct wl_client *client,
 struct wlr_surface;
 bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
     struct wlr_box *box, struct PuDesktopOwner **owner);
+bool pu_desktop_session_exit(struct PuDesktop *desktop, struct wl_client *client,
+    uint32_t operation, uint32_t *phase, uint32_t *pending);
+void pu_desktop_session_exit_windows(struct PuDesktop *desktop, struct wl_resource *resource,
+    uint32_t serial);
 
 #endif

@@ -68,6 +68,8 @@ struct PuWindow {
     PuTextInputState text_input;
     PuCloseFn     close_fn;
     void         *close_user;
+    PuCloseRequestFn close_request_fn;
+    void         *close_request_user;
 
     PuPaintFn   paint_fn;   void *paint_user;
     PuPointerFn pointer_fn; void *pointer_user;
@@ -635,6 +637,8 @@ void pu_window_set_drop(PuWindow *w, PuDropFn fn, void *u)
 void pu_window_set_async  (PuWindow *w, PuAsyncFn   fn, void *u){ if(w){w->async_fn=fn;   w->async_user=u;} }
 void pu_window_set_region (PuWindow *w, PuRegionFn  fn, void *u){ if(w){w->region_fn=fn;  w->region_user=u;} }
 void pu_window_set_close(PuWindow *w, PuCloseFn fn, void *u) { if (w) { w->close_fn = fn; w->close_user = u; } }
+void pu_window_set_close_request(PuWindow *w, PuCloseRequestFn fn, void *u)
+{ if (w) { w->close_request_fn = fn; w->close_request_user = u; } }
 int pu_window_is_open(PuWindow *w) { return w && w->running; }
 void pu_window_redraw(PuWindow *w) { if (w && w->running) w->dirty = 1; }
 int pu_window_save_frame(PuWindow *w, const char *path)
@@ -843,7 +847,9 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             break;
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-            w->running = 0; break;
+            if (!w->close_request_fn || w->close_request_fn(w, w->close_request_user))
+                w->running = 0;
+            break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP: {
@@ -1002,7 +1008,9 @@ static void route_event(const SDL_Event *e)
 {
     if (e->type == SDL_EVENT_QUIT) {
         pu_window_keep_alive(0);
-        for (PuWindow *w = g_windows; w; w = w->next) pu_window_close(w);
+        for (PuWindow *w = g_windows; w; w = w->next)
+            if (w->running && (!w->close_request_fn || w->close_request_fn(w, w->close_request_user)))
+                pu_window_close(w);
         return;
     }
     SDL_Window *target = SDL_GetWindowFromEvent(e);
