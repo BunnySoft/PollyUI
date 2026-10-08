@@ -35,9 +35,22 @@ globalThis.window = {
   displays: () => [{ id: 1, width: host.width, height: host.height }],
   create() {
     windowsCreated++;
-    while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
-    return { document, closed: false, onclose: null,
-      close() { this.closed = true; this.onclose?.(); } };
+    const body = document.createElement('view');
+    Object.assign(body.style, { width: host.width, height: host.height });
+    document.body.appendChild(body);
+    const owner = {
+      body,
+      createElement: tag => document.createElement(tag),
+      createTextNode: text => document.createTextNode(text),
+      get activeElement() { return document.activeElement; },
+    };
+    return { document: owner, closed: false, onclose: null,
+      close() {
+        if (this.closed) return;
+        this.closed = true;
+        document.body.removeChild(body);
+        this.onclose?.();
+      } };
   },
 };
 const calls = [];
