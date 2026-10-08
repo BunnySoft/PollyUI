@@ -19,10 +19,15 @@ static struct {
     enum Step step;
     long long deadline, refresh;
     uint32_t revision;
-    bool ready, active, remote, local_user, changed, failed, trusted;
+    bool ready, active, remote, local_user, changed, failed, trusted, sent;
     char owner[256], session[256], can_off[16], can_reboot[16], operation[16], error[256];
+    char outcome[16];
 } power;
 
+static bool ordinary_identity(uid_t real, uid_t effective)
+{
+    return real != 0 && real == effective;
+}
 static void changed(void)
 {
     if (!++power.revision) ++power.revision;
@@ -30,9 +35,9 @@ static void changed(void)
 }
 static void error(const char *message)
 {
-    snprintf(power.error, sizeof(power.error), "%s", message);
+    if (message != power.error) snprintf(power.error, sizeof(power.error), "%s", message);
     changed();
-    fprintf(stderr, "[power] %s\n", message);
+    fprintf(stderr, "[power] %s\n", power.error);
 }
 static void drop_pending(void)
 {
@@ -41,19 +46,29 @@ static void drop_pending(void)
     dbus_pending_call_unref(power.pending);
     power.pending = NULL;
 }
+static void request_failed(bool uncertain, const char *message)
+{
+    power.operation[0] = 0;
+    strcpy(power.outcome, uncertain ? "uncertain" : "failed");
+    power.sent = uncertain;
+    error(message);
+}
 static bool send(enum Step step, DBusMessage *message)
 {
     if (!message) {
         power.failed = true; power.ready = false; power.operation[0] = 0;
-        error("Cannot allocate power request"); return false;
+        request_failed(false, "Cannot allocate power request; no power action was sent"); return false;
     }
     if (power.pending || !dbus_connection_send_with_reply(power.bus, message, &power.pending, 3000) || !power.pending) {
         dbus_message_unref(message);
         power.failed = true; power.ready = false; power.operation[0] = 0;
-        error("Cannot send power request"); return false;
+        request_failed(step == ACTION, step == ACTION ?
+            "Power request could not be tracked; it may already have been sent. Do not repeat it." :
+            "Cannot send power state request; no power action was sent"); return false;
     }
     dbus_message_unref(message);
     power.step = step; power.deadline = pu_now_ms() + 3000;
+    if (step == ACTION) power.sent = true;
     return true;
 }
 static DBusMessage *method(const char *path, const char *interface, const char *member)
@@ -70,6 +85,14 @@ static void discover(void)
 static void reset(void)
 {
     drop_pending();
+    if (power.sent && strcmp(power.outcome, "accepted")) {
+        strcpy(power.outcome, "uncertain");
+        snprintf(power.error, sizeof(power.error), "%s",
+            "Power service disconnected after the request was sent; shutdown/restart may already be underway. Do not repeat it.");
+    } else if (*power.operation && !power.sent) {
+        strcpy(power.outcome, "failed");
+        snprintf(power.error, sizeof(power.error), "%s", "Power verification was interrupted; no power action was sent.");
+    }
     power.ready = power.active = power.local_user = power.trusted = false;
     power.owner[0] = power.session[0] = power.operation[0] = 0;
     strcpy(power.can_off, "unknown"); strcpy(power.can_reboot, "unknown");
@@ -139,9 +162,22 @@ static void complete(enum Step step, DBusMessage *reply)
     if (!valid) {
         if (step == MATCH) power.failed = true;
         char message[256];
-        snprintf(message, sizeof(message), "Power service request failed: %s",
+        bool rejected = step == ACTION && reply && dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR &&
+            dbus_message_get_sender(reply) && !strcmp(dbus_message_get_sender(reply), power.owner) &&
+            (dbus_message_is_error(reply, DBUS_ERROR_ACCESS_DENIED) ||
+                dbus_message_is_error(reply, DBUS_ERROR_AUTH_FAILED) ||
+                dbus_message_is_error(reply, DBUS_ERROR_UNKNOWN_METHOD) ||
+                dbus_message_is_error(reply, DBUS_ERROR_NOT_SUPPORTED) ||
+                dbus_message_is_error(reply, "org.freedesktop.DBus.Error.InteractiveAuthorizationRequired"));
+        bool uncertain = step == ACTION && !rejected;
+        snprintf(message, sizeof(message), "%s: %s",
+            uncertain ? "Power result is unknown after sending; do not repeat the request" :
+            rejected ? "The login service rejected the power action" : "Power verification failed; no power action was sent",
             reply && dbus_message_get_error_name(reply) ? dbus_message_get_error_name(reply) : "timeout or invalid service reply");
-        power.ready = false; power.operation[0] = 0; error(message); power.refresh = pu_now_ms() + 5000;
+        power.ready = false;
+        request_failed(uncertain, message);
+        if (rejected) strcpy(power.outcome, "rejected");
+        power.refresh = pu_now_ms() + 5000;
         return;
     }
     if (step == MATCH) {
@@ -185,11 +221,12 @@ static void complete(enum Step step, DBusMessage *reply)
     } else if (step == CAN_REBOOT) {
         if (!capability(reply, power.can_reboot)) goto invalid;
         power.ready = true; power.refresh = pu_now_ms() + 5000;
-        power.error[0] = 0; changed();
+        if (!power.sent && (!*power.outcome || !strcmp(power.outcome, "checking"))) power.error[0] = 0;
+        changed();
         if (*power.operation) {
             const char *allowed = !strcmp(power.operation, "poweroff") ? power.can_off : power.can_reboot;
             if (!power.active || power.remote || !power.local_user || strcmp(allowed, "yes")) {
-                power.operation[0] = 0; error("The current local session is not authorized for this power action"); return;
+                request_failed(false, "The current local session is not authorized for this power action; no action was sent"); return;
             }
             DBusMessage *message = method(MANAGER, LOGIN ".Manager", !strcmp(power.operation, "poweroff") ? "PowerOff" : "Reboot");
             dbus_bool_t interactive = false;
@@ -200,14 +237,16 @@ static void complete(enum Step step, DBusMessage *reply)
         }
     } else {
         if (!dbus_message_has_signature(reply, "")) goto invalid;
-        power.operation[0] = 0; changed();
+        power.operation[0] = 0; strcpy(power.outcome, "accepted"); power.error[0] = 0; changed();
     }
     return;
 invalid:
     if (step == MATCH) power.failed = true;
-    power.ready = false; power.operation[0] = 0;
+    power.ready = false;
     power.refresh = pu_now_ms() + 5000;
-    error("Invalid power service state");
+    request_failed(step == ACTION, step == ACTION ?
+        "Invalid power acknowledgment after sending; shutdown/restart may already be underway. Do not repeat it." :
+        "Invalid power service state; no power action was sent");
 }
 static DBusHandlerResult filter(DBusConnection *bus, DBusMessage *message, void *data)
 {
@@ -218,7 +257,9 @@ static DBusHandlerResult filter(DBusConnection *bus, DBusMessage *message, void 
         if (dbus_message_get_args(message, NULL, DBUS_TYPE_STRING, &name, DBUS_TYPE_STRING, &old,
             DBUS_TYPE_STRING, &next, DBUS_TYPE_INVALID) && !strcmp(name, LOGIN)) {
             reset(); power.failed = false; power.refresh = pu_now_ms() + 50;
-            error("Login service changed; verifying the new owner");
+            error(power.sent ? *power.error ? power.error :
+                "The login service accepted the power request; it cannot be repeated here." :
+                "Login service changed; verifying the new owner");
         }
     }
     return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -236,8 +277,12 @@ static JSValue start(JSContext *ctx, JSValueConst self, int argc, JSValueConst *
 {
     (void)self; (void)argc; (void)argv;
     if (!pu_desktop_windows_ready(ctx)) return JS_EXCEPTION;
+    if (!ordinary_identity(getuid(), geteuid()))
+        return JS_ThrowTypeError(ctx, "Power controls require an ordinary non-setid desktop user");
+    if (power.sent) return JS_UNDEFINED;
     if (power.bus && !power.failed && dbus_connection_get_is_connected(power.bus)) return JS_UNDEFINED;
-    stop(); power.error[0] = 0;
+    stop();
+    if (!power.sent) power.error[0] = 0;
     char message[256];
     power.bus = pu_system_bus_connect(message, sizeof(message));
     if (!power.bus) return JS_ThrowInternalError(ctx, "%s", message);
@@ -258,13 +303,19 @@ static JSValue start(JSContext *ctx, JSValueConst self, int argc, JSValueConst *
     return JS_UNDEFINED;
 }
 static JSValue stop_service(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
-{ (void)ctx; (void)self; (void)argc; (void)argv; stop(); return JS_UNDEFINED; }
+{
+    (void)self; (void)argc; (void)argv;
+    if (!pu_desktop_windows_ready(ctx)) return JS_EXCEPTION;
+    stop(); return JS_UNDEFINED;
+}
 static JSValue snapshot(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self; (void)argc; (void)argv;
+    if (!pu_desktop_windows_ready(ctx)) return JS_EXCEPTION;
     JSValue result = JS_NewObject(ctx);
     if (JS_IsException(result)) return result;
 #define PUT(name, value) if (JS_SetPropertyStr(ctx, result, name, value) < 0) { JS_FreeValue(ctx, result); return JS_EXCEPTION; }
+    PUT("version", JS_NewUint32(ctx, 1));
     PUT("ready", JS_NewBool(ctx, power.ready && !power.failed));
     PUT("active", JS_NewBool(ctx, power.active && !power.remote && power.local_user));
     PUT("revision", JS_NewUint32(ctx, power.revision));
@@ -273,6 +324,10 @@ static JSValue snapshot(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     PUT("operation", JS_NewString(ctx, power.operation));
     PUT("error", JS_NewString(ctx, power.error));
     PUT("session", JS_NewString(ctx, power.session));
+    PUT("outcome", JS_NewString(ctx, power.outcome));
+    PUT("sent", JS_NewBool(ctx, power.sent));
+    PUT("busy", JS_NewBool(ctx, power.pending != NULL));
+    PUT("cancellable", JS_NewBool(ctx, *power.operation && !power.sent));
 #undef PUT
     return result;
 }
@@ -283,7 +338,8 @@ static JSValue action(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     double revision;
     if (argc != 2 || !JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &revision, argv[0]) < 0 ||
         !isfinite(revision) || revision != power.revision || !JS_IsString(argv[1]) ||
-        !power.ready || power.failed || !power.active || power.remote || !power.local_user || power.pending)
+        !power.ready || power.failed || !power.active || power.remote || !power.local_user || power.pending || power.sent ||
+        !ordinary_identity(getuid(), geteuid()))
         return JS_ThrowTypeError(ctx, "Power operation requires current authorized session state");
     size_t length;
     const char *name = JS_ToCStringLen(ctx, &length, argv[1]);
@@ -293,8 +349,20 @@ static JSValue action(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     if ((!off && !reboot) || strcmp(off ? power.can_off : power.can_reboot, "yes"))
         return JS_ThrowTypeError(ctx, "Power action is not available without additional authorization");
     strcpy(power.operation, off ? "poweroff" : "reboot");
+    strcpy(power.outcome, "checking");
     power.error[0] = 0; changed();
     read_session();
+    return JS_UNDEFINED;
+}
+static JSValue cancel_action(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!pu_desktop_windows_ready(ctx)) return JS_EXCEPTION;
+    if (power.sent) return JS_ThrowTypeError(ctx, "The final power action was sent and cannot be cancelled here");
+    if (!*power.operation) return JS_UNDEFINED;
+    drop_pending();
+    power.operation[0] = 0; strcpy(power.outcome, "cancelled"); power.error[0] = 0;
+    power.refresh = pu_now_ms(); changed();
     return JS_UNDEFINED;
 }
 int pu_power_install(JSContext *ctx, JSValueConst api)
@@ -304,6 +372,7 @@ int pu_power_install(JSContext *ctx, JSValueConst api)
         JS_SetPropertyStr(ctx, api, "stopPower", JS_NewCFunction(ctx, stop_service, "stopPower", 0)) >= 0 &&
         JS_SetPropertyStr(ctx, api, "powerState", JS_NewCFunction(ctx, snapshot, "powerState", 0)) >= 0 &&
         JS_SetPropertyStr(ctx, api, "requestPower", JS_NewCFunction(ctx, action, "requestPower", 2)) >= 0 &&
+        JS_SetPropertyStr(ctx, api, "cancelPower", JS_NewCFunction(ctx, cancel_action, "cancelPower", 0)) >= 0 &&
         JS_SetPropertyStr(ctx, api, "onPowerChanged", JS_NULL) >= 0;
 }
 int pu_power_pump(void)
@@ -311,17 +380,27 @@ int pu_power_pump(void)
     if (!power.ctx || !power.bus) return 0;
     if (!power.failed) {
         if (!dbus_connection_read_write(power.bus, 0) || !dbus_connection_get_is_connected(power.bus)) {
-            reset(); power.failed = true; error("System power bus disconnected");
+            reset(); power.failed = true;
+            error(power.sent ? *power.error ? power.error : "The login service accepted the power request and disconnected." :
+                "System power bus disconnected; no power action was sent");
         } else {
             for (unsigned i = 0; i < 16 && dbus_connection_get_dispatch_status(power.bus) == DBUS_DISPATCH_DATA_REMAINS; i++)
-                if (dbus_connection_dispatch(power.bus) == DBUS_DISPATCH_NEED_MEMORY) { power.failed = true; error("Cannot dispatch power service message"); }
+                if (dbus_connection_dispatch(power.bus) == DBUS_DISPATCH_NEED_MEMORY) {
+                    drop_pending(); power.failed = true; power.ready = false;
+                    if (power.sent && !strcmp(power.outcome, "accepted"))
+                        error("The accepted power request cannot be repeated; further service status is unavailable.");
+                    else request_failed(power.sent, power.sent ?
+                            "Power acknowledgment could not be processed after sending; do not repeat the request." :
+                            "Cannot inspect the power service; no power action was sent");
+                    break;
+                }
             if (power.pending && (dbus_pending_call_get_completed(power.pending) || pu_now_ms() >= power.deadline)) {
                 DBusMessage *reply = dbus_pending_call_get_completed(power.pending) ? dbus_pending_call_steal_reply(power.pending) : NULL;
                 enum Step step = power.step;
                 drop_pending(); complete(step, reply);
                 if (reply) dbus_message_unref(reply);
             }
-            if (!power.failed && !power.pending && pu_now_ms() >= power.refresh) {
+            if (!power.failed && !power.pending && !power.sent && pu_now_ms() >= power.refresh) {
                 power.refresh = pu_now_ms() + 5000;
                 if (power.trusted) read_session(); else discover();
             }

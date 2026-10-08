@@ -1028,8 +1028,9 @@ scenario('settings replacement and transfer to a power child do not misclose the
   const power = f.created.at(-1);
   assert.equal(settings.closed, true);
   click(find(power, 'shell-power-poweroff'));
-  press(find(power, 'shell-power-confirm'));
-  find(power, 'shell-power-cancel').focus();
+  assert.equal(find(power, 'shell-power-poweroff').getAttribute('aria-disabled'), 'true',
+    'this menu fixture has no application-close coordinator or versioned power backend');
+  find(power, 'shell-power-poweroff').focus();
   staleClose(event('click'));
   assert.equal(power.closed, false);
   key(power, 'Enter');

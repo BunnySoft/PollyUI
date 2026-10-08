@@ -357,6 +357,45 @@ Confirmation rechecks the session and capability before making a noninteractive
 request; stale state, service loss and `challenge` authorization do not bypass
 the daemon. Suspend and hibernate remain unsupported.
 
+The Alpha Power flow shares `createSessionExitController` with Logout. The
+first confirmation requests each application's normal Close path; applications
+can show their own Save / Cancel prompt. The on-demand Power layer does not
+hold exclusive keyboard focus over those application prompts. Pending windows,
+processes or activation requests keep the session open, with explicit retry and
+cancel. There is no deadline kill, quiet termination or claim that an open
+application has saved. Already closed applications are not reopened by Cancel.
+Once the common controller observes all applications closed, a separate final
+confirmation seals that same session-close barrier and invokes the existing
+`requestPower` once using the current native revision. The native backend then
+re-reads the actual PID's session and both daemon capabilities before sending the
+fixed noninteractive `PowerOff(false)` or `Reboot(false)` call. No caller-supplied
+UID, role, session ID or arbitrary root command is accepted.
+
+`powerState()` now has `version: 1`, the existing capability/session fields,
+and `outcome`, `sent`, `busy`, `cancellable`. Outcomes distinguish verification,
+accepted request, explicit daemon rejection, preflight failure, cancellation and
+uncertain final result. `cancelPower()` cancels only the verification phase
+before the final action is sent. Transport loss, owner change, timeout or a bad
+acknowledgment after sending is explicitly **uncertain**, not “never shut down”.
+The UI waits for the native outcome instead of treating a queued request as
+success. Accepted/uncertain actions cannot be cancelled or resubmitted by
+refreshing or reopening the panel; the service does not automatically retry the
+final method. A definite rejection or preflight failure leaves a visible error
+and allows the common barrier to be cancelled without undoing already closed
+applications. A backend without versioned outcome tracking or a missing common
+application-close controller is visibly unavailable, never a direct unsafe
+power-button fallback.
+
+These source changes implement the real **already-authorized `yes` path**.
+They do not grant new daemon permission. Ordinary non-setid desktop users
+retain the existing trusted Shell connection boundary; root/setid callers and
+ordinary public applications cannot acquire this Power interface. The Session
+owner supplies the common controller and Shell wiring; Power subscribes to it
+and detaches only its own subscription, leaving common lifecycle ownership with
+the Shell. Deployment still needs an actual active local user session and
+daemon authorization. Isolated source checks of UI/native result handling are
+not evidence of a guest shutdown/restart or installed permission.
+
 **Actual Live power authorization is deferred.** In the Alpine PAM/elogind UEFI guest,
 `CanPowerOff` and `CanReboot` return `Access denied`; the panel reports the
 failure and keeps both actions disabled. No real shutdown/restart is claimed.
@@ -365,11 +404,25 @@ privileged authorization proxy. This is an explicit scope decision, not a
 silent fallback to a different power command.
 The Debian Live policy also deliberately keeps these actions denied; moving
 from elogind to systemd-logind does not enable power controls.
+The Debian Live recipe explicitly stages
+`/etc/dbus-1/system.d/polly-live-power.conf`; that file denies polly's capability
+queries and final methods. If an installed candidate retains it or login1
+returns `no`/`challenge`, Shutdown/Restart remain visibly disabled. Removing a
+deny policy, installing an authorization agent or adding a privileged proxy
+requires a separately approved installed-profile authorization decision.
 
-The isolated `desktop-power-shell-raster` and `desktop-power-shell-gl` fixtures
-exercise native pointer confirmation/cancellation, capability gating and service
-loss against a test-only login1 provider. They never control the host's daemon
-and are not evidence that the Live guest has power authorization.
+The earlier isolated `desktop-power-shell-raster` and `desktop-power-shell-gl`
+fixtures exercised the original direct-confirmation controls and capability
+gating against a test-only login1 provider. Their Shell-spawned provider is a
+managed process, so that fixture must be adapted to an externally owned private
+provider before it can exercise the new normal-application-close barrier; a
+daemon must not be force-killed just to make the barrier pass. They are not
+evidence that Live has power authorization or that this Alpha flow has shut down
+a guest. The bounded `power-actions.mjs` cases use synthetic controller/backend
+state and the actual view/reconciler. `power-result.c` checks real result-handling
+code using synthetic D-Bus messages without connecting to any bus. Actual
+ordinary-user guest shutdown/restart and Save/Cancel interaction belong to the
+single coordinated Alpha manual acceptance.
 
 ## Independent authentication helper
 
