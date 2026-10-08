@@ -467,41 +467,43 @@ static void fixture_keyboard(unsigned code, unsigned modifiers, uint32_t *time)
     }
 }
 
-static struct PuDesktopView *file_dialog_view(struct wl_client *client, const char *title)
+static struct PuDesktopView *ordinary_fixture_view(struct wl_client *client, const char *app_id, const char *title)
 {
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop.views, link) {
         if (view->mapped && !view->geometry_pending && view->toplevel->title &&
             !strcmp(view->toplevel->title, title) && view->toplevel->app_id &&
-            !strcmp(view->toplevel->app_id, "org.pollyui.file-dialog-window") &&
+            !strcmp(view->toplevel->app_id, app_id) &&
             wl_resource_get_client(view->toplevel->base->resource) == client) return view;
     }
     return NULL;
 }
 
-static void acknowledge_file_dialog_marker(pid_t owner, const char *title)
+static void acknowledge_ordinary_fixture_marker(pid_t owner, const char *app_id, const char *title)
 {
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop.views, link) {
         if (!view->toplevel->title || strcmp(view->toplevel->title, title) || !view->toplevel->app_id ||
-            strcmp(view->toplevel->app_id, "org.pollyui.file-dialog-window")) continue;
+            strcmp(view->toplevel->app_id, app_id)) continue;
         pid_t pid;
         wl_client_get_credentials(wl_resource_get_client(view->toplevel->base->resource), &pid, NULL, NULL);
         if (pid == owner) { wlr_xdg_toplevel_send_close(view->toplevel); return; }
     }
 }
 
-static bool file_dialog_requests(unsigned *last, uint32_t *time)
+static bool ordinary_fixture_requests(const char *app_id, const char *title, const char *prefix,
+    int focus_x, int focus_y, unsigned *last, uint32_t *time)
 {
+    size_t prefix_length = strlen(prefix);
     struct PuDesktopView *marker, *next;
     wl_list_for_each_safe(marker, next, &desktop.views, link) {
         if (!marker->mapped || !marker->toplevel->title || !marker->toplevel->app_id ||
-            strcmp(marker->toplevel->app_id, "org.pollyui.file-dialog-window") ||
-            strncmp(marker->toplevel->title, "FileDialogFixture.", 18)) continue;
+            strcmp(marker->toplevel->app_id, app_id) ||
+            strncmp(marker->toplevel->title, prefix, prefix_length)) continue;
         char request[256];
         CHECK(strlen(marker->toplevel->title) < sizeof(request));
         strcpy(request, marker->toplevel->title);
-        const char *digits = request + 18;
+        const char *digits = request + prefix_length;
         CHECK(*digits >= '0' && *digits <= '9');
         char *end;
         errno = 0;
@@ -514,14 +516,14 @@ static bool file_dialog_requests(unsigned *last, uint32_t *time)
         pid_t pid; uid_t uid;
         wl_client_get_credentials(client, &pid, &uid, NULL);
         CHECK(client != desktop.shell_client && pid > 0 && uid == 1000);
-        struct PuDesktopView *view = file_dialog_view(client, "PollyUI.FileText");
+        struct PuDesktopView *view = ordinary_fixture_view(client, app_id, title);
         CHECK(view && view != marker);
         wlr_scene_node_set_enabled(&marker->tree->node, false);
         int sx, sy;
         CHECK(wlr_scene_node_coords(&view->tree->node, &sx, &sy));
         if (strcmp(action, "close") && (desktop.focused != view || desktop.focused_layer)) {
-            // The chooser fixture's mask/root at (10,10) consumes focus without dismissal.
-            fixture_pointer_click(sx + 10, sy + 10, *time += 3, 0);
+            // Each fixture declares a root padding/mask point with no business or dismissal handler.
+            fixture_pointer_click(sx + focus_x, sy + focus_y, *time += 3, 0);
             continue; // No pointer is retained across the next event-loop settle.
         }
         int x, y, delta, used = 0;
@@ -558,7 +560,7 @@ static bool file_dialog_requests(unsigned *last, uint32_t *time)
             wlr_xdg_toplevel_send_close(view->toplevel);
         } else CHECK(false);
         // Native actions can retire either window; resolve the copied marker title again.
-        acknowledge_file_dialog_marker(pid, request);
+        acknowledge_ordinary_fixture_marker(pid, app_id, request);
     }
     return true;
 }
@@ -571,10 +573,14 @@ static bool window_suite(char *executable, char *script, char *mode)
     bool success = false, crashed = false;
     unsigned settings_sequence = 0;
     unsigned file_dialog_sequence = 0;
+    unsigned files_sequence = 0;
     uint32_t settings_time = 70000;
     for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
         CHECK(pump());
-        CHECK(file_dialog_requests(&file_dialog_sequence, &settings_time));
+        CHECK(ordinary_fixture_requests("org.pollyui.file-dialog-window", "PollyUI.FileText",
+            "FileDialogFixture.", 10, 10, &file_dialog_sequence, &settings_time));
+        CHECK(ordinary_fixture_requests("org.pollyui.files-window-fixture", "Files",
+            "FilesFixture.", 6, 6, &files_sequence, &settings_time));
         struct PuDesktopLayer *marker, *tmp;
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;

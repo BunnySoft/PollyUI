@@ -107,3 +107,19 @@ does not read host preferences, connect the host system bus, install packages,
 change display hardware or operate real Wi-Fi/audio devices. Physical radios,
 GPU/audio hardware, installed reboot persistence and authenticated-session
 qualification are separate acceptance work.
+
+The same private test driver also consumes two fixed public fixture targets:
+`org.pollyui.file-dialog-window` / `PollyUI.FileText` with
+`FileDialogFixture.<seq>.`, and `org.pollyui.files-window-fixture` / `Files`
+with `FilesFixture.<seq>.`. Their ordinary markers must share the target's
+public client, UID1000 and owner PID. The only actions are `click x y`,
+`wheel x y deltaY`, `key enter|escape|tab|shift-tab` and `close`; coordinates
+must fit the current client geometry, wheel magnitude is at most 10000 and
+sequences are positive, monotonic unsigned integers. The driver hides its
+marker and uses each fixture's declared no-action focus point, then looks up
+the target again before one business action. It never retains a view across
+an event-loop settle. Receivers await the marker's actual `onclose` callback
+and inspect their current DOM/focus/files; capturing their real window buffer
+is a separate JS action. Paired ordinary-key delivery is a new fixture path
+requiring native acceptance, not evidence inherited from old layer-key tests.
+These bindings exist only in the test executable, not the product compositor.
