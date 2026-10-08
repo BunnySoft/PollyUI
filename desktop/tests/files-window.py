@@ -20,6 +20,20 @@ def driver_command(repo, driver, runtime):
             str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "initial"]
 
 
+def retain_fixture_home(root, evidence):
+    info = root.lstat()
+    marker = root / "fixture-marker.txt"
+    token = marker.lstat()
+    if root.parent != Path("/tmp") or not root.name.startswith("polly-files-window-") or \
+            root.resolve() != root or not stat.S_ISDIR(info.st_mode) or \
+            (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (1000, 1000, 0o700) or \
+            not stat.S_ISREG(token.st_mode) or \
+            (token.st_uid, token.st_gid, stat.S_IMODE(token.st_mode)) != (1000, 1000, 0o600) or \
+            marker.read_text() != "POLLY-FILES-PRIVATE-WINDOW-V1\n":
+        raise PermissionError("Refusing to retain an unqualified or non-synthetic Files HOME")
+    shutil.copytree(root, evidence / "retained-home", symlinks=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("driver", type=Path)
@@ -83,9 +97,9 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
-            shutil.copytree(root, evidence / "retained-home", symlinks=True)
+            retain_fixture_home(root, evidence)
             raise RuntimeError("Files native fixture timed out; original private evidence retained") from error
-    shutil.copytree(root, evidence / "retained-home", symlinks=True)
+    retain_fixture_home(root, evidence)
     text = (evidence / "native.log").read_text(errors="replace")
     if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text:
         raise RuntimeError("Actual Files native fixture failed; original private evidence retained")
