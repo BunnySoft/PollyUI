@@ -141,7 +141,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(polly-app src/desktop/bundle-main.c)
         target_link_libraries(polly-app PRIVATE polly-bundles)
         install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
-        target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/session-bus.c)
+        target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/documents.c src/desktop/session-bus.c)
         target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
         add_executable(pollyui-app-launcher src/desktop/exec.c)
@@ -452,6 +452,23 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                 $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-application-activation-service>
                 "${CMAKE_BINARY_DIR}/activation-evidence")
         set_tests_properties(desktop-application-activation-native PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_executable(polly-document-association-service
+            desktop/tests/document-association-service.c src/desktop/session-bus.c)
+        target_include_directories(polly-document-association-service PRIVATE src)
+        target_compile_definitions(polly-document-association-service PRIVATE _POSIX_C_SOURCE=200809L)
+        target_compile_options(polly-document-association-service PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        target_link_libraries(polly-document-association-service PRIVATE PkgConfig::SESSION_DBUS)
+        add_executable(polly-document-association-process desktop/tests/document-association-process.c)
+        target_compile_definitions(polly-document-association-process PRIVATE _POSIX_C_SOURCE=200809L)
+        target_compile_options(polly-document-association-process PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME desktop-document-association-unit
+            COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/document-association.mjs")
+        set_tests_properties(desktop-document-association-unit PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME desktop-document-association-native
+            COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/document-association-fixture.mjs"
+                $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-document-association-service>
+                $<TARGET_FILE:polly-document-association-process> "${CMAKE_BINARY_DIR}/document-evidence")
+        set_tests_properties(desktop-document-association-native PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-application-launch
             COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/application-fixture.mjs"
                 $<TARGET_FILE:pollyui> $<TARGET_FILE:pollyui-application-process-test>)

@@ -267,8 +267,14 @@ The validated open descriptor is retained only in that child. All unrelated
 descriptors are closed; stdin is `/dev/null`, output/error are captured together,
 and the environment contains only a fixed `PATH` and `LC_ALL=C`. The `file`
 utility and its distribution-provided magic database must be present in the
-delivered runtime. The immutable SDK already has both; SDK availability alone
-does not prove a release has them. No extension-only fallback, guessed type or
+delivered runtime. The Debian runtime package generator explicitly requires
+`file`, `libmagic1t64` and `libmagic-mgc`; its existing installed-package resolver
+pins actual versions and records the dependency closure in `runtime-packages.txt`
+and the SBOM. The runtime recipe consumes that generated list, and the package
+manifest check requires these packages. The immutable SDK already has the
+utility/data, but SDK availability and source registration do not prove an
+existing release has them; no old artifact is retroactively qualified.
+No extension-only fallback, guessed type or
 success-shaped tool error is returned. Missing tool, nonregular/unreadable file,
 nonzero exit, invalid MIME output, output above 256 bytes and a 1500 ms
 post-spawn processing deadline are explicit errors. Classification is synchronous
@@ -368,12 +374,20 @@ settings, host-bus refusal, shutdown and disconnect without replay. Linux
 temporary runtime directories and all logs/configs/results (including failures)
 are retained as byte-copied evidence.
 
-The parent integration must add `src/desktop/documents.c` alongside
-`applications.c`, register this Node suite and actual product fixture, and build
-the two dedicated fixture targets with the existing session-bus helper/libdbus.
-It must ensure `file` plus its magic database in runtime packaging and rerun
-the existing desktop-applications, activation, menu, XP and bundle fixtures
-against the newly built fixed source. Child scoped checks and committed fixtures
+The product CMake source list now links `src/desktop/documents.c` alongside
+`applications.c`. It registers `desktop-document-association-unit` for the pure
+Node suite and `desktop-document-association-native` for the actual product
+fixture. The strict service target links only the existing session-bus helper
+and libdbus; the separate strict process target checks actual argv/environment/
+descriptor boundaries. The native test receives absolute rebuilt target paths
+and a private build evidence directory, runs from the source root with a
+120-second timeout, and never uses `--probe`.
+
+The existing desktop-applications, activation, menu, XP and bundle fixtures
+still require verification against the newly built fixed source. This source
+registration and runtime dependency declaration do not rebuild or qualify any
+current runtime bundle, image, native API or physical media; the Python-only
+storage runner remains unchanged. Child scoped checks and committed fixtures
 are not full T20.1 native acceptance or release/image/real-media verification.
 
 ## Explicit update and rollback

@@ -97,6 +97,7 @@ function dependency(spec) {
 }
 const runtimePackages = debian ? [
   'dbus-daemon', 'dbus-bin', 'pipewire-bin', 'libspa-0.2-modules',
+  'file', 'libmagic1t64', 'libmagic-mgc',
   'libegl1', 'libegl-mesa0', 'libgl1', 'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'libgles2', 'libwayland-client0',
   'libwayland-cursor0', 'libwayland-egl1', 'libxkbcommon0', 'xkb-data', 'adwaita-icon-theme',
   'fonts-dejavu-core', 'fonts-noto-core', 'fonts-noto-cjk', 'fonts-noto-color-emoji',
