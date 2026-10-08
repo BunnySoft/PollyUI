@@ -257,7 +257,8 @@ def run_greetd(repo, first, second, native=False, evidence=None):
         "session required pam_exec.so quiet /usr/lib/polly-graphical-auth-session-marker")
     Path("/etc/pam.d/polly-greetd-greeter-fixture").write_text(greeter_policy)
     marker = Path("/usr/lib/polly-graphical-auth-session-marker")
-    marker.write_text('#!/bin/sh\nset -eu\nprintf "%s %s %s\\n" "$PAM_SERVICE" "$PAM_TYPE" "$PAM_USER" >> '
+    marker.write_text('#!/bin/sh\nset -eu\nprintf "%s %s %s class=%s\\n" "$PAM_SERVICE" "$PAM_TYPE" '
+                      '"$PAM_USER" "${XDG_SESSION_CLASS:-missing}" >> '
                       '/run/polly-graphical-auth-fixture/pam-events\n')
     marker.chmod(0o755)
     shutil.copyfile(__file__, "/usr/lib/polly-graphical-auth-fixture.py")
@@ -272,7 +273,12 @@ def run_greetd(repo, first, second, native=False, evidence=None):
         Path("/usr/bin/polly-installed-session").chmod(0o755)
     events_file = FIXTURE / "pam-events"
     old_events = events_file.read_text() if events_file.exists() else ""
-    old_closed = old_events.count("polly-greetd-fixture close_session polly\n")
+    user_open = "polly-greetd-fixture open_session polly class=user\n"
+    user_close = "polly-greetd-fixture close_session polly class=missing\n"
+    greeter_open = "polly-greetd-greeter-fixture open_session polly-greeter class=greeter\n"
+    old_closed = old_events.count(user_close)
+    old_user_open = old_events.count(user_open)
+    old_greeter_open = old_events.count(greeter_open)
     config = FIXTURE / "greetd.conf"
     config.write_text('[terminal]\nvt = "none"\n[general]\nsource_profile = false\n'
                       'service = "polly-greetd-fixture"\nrunfile = "/run/polly-graphical-auth-fixture/greetd-used"\n'
@@ -312,19 +318,21 @@ def run_greetd(repo, first, second, native=False, evidence=None):
                 if len(output) > 32768:
                     raise RuntimeError("greetd diagnostic bound exceeded")
             if b"POLLY_GREETD_USER_PASS" in output and events_file.exists() and \
-                    events_file.read_text().count("polly-greetd-fixture close_session polly\n") > old_closed:
+                    events_file.read_text().count(user_close) > old_closed:
                 break
         if first in output or second in output:
             raise RuntimeError("Synthetic credential appeared in greetd output; transcript withheld")
         if expected_marker not in output or b"POLLY_GREETD_USER_PASS" not in output:
             raise RuntimeError("Actual greetd authentication/UID transition did not finish")
         events = events_file.read_text()
-        if "polly-greetd-fixture open_session polly\n" not in events or \
-                "polly-greetd-fixture close_session polly\n" not in events:
+        if events.count(user_open) <= old_user_open or events.count(user_close) <= old_closed:
             raise RuntimeError("Actual PAM session open/close was not observed")
+        if events.count(greeter_open) <= old_greeter_open:
+            raise RuntimeError("Released greetd did not pass greeter class to PAM session opening")
         print(("POLLY_GREETD_NATIVE_FIXTURE_PASS" if native else "POLLY_GREETD_FIXTURE_PASS") +
               " package=0.10.3-4 actual-greeter-uid=991 actual-user-uid=1000 "
-              "wrong-denied=1 root-denied=1 pam-open=1 pam-close=1 logind-tested=0 gui-tested=0", flush=True)
+              "wrong-denied=1 root-denied=1 pam-open=1 pam-close=1 pam-greeter-class=greeter "
+              "pam-user-class=user logind-tested=0 gui-tested=0", flush=True)
     except BaseException:
         diagnostics = bytes(output).replace(first, b"[redacted]").replace(second, b"[redacted]")
         print("GREETER FIXTURE DIAGNOSTIC (synthetic tokens redacted): " +
@@ -355,7 +363,7 @@ def run_greetd(repo, first, second, native=False, evidence=None):
                 "fixtureVt": "none", "greeterUid": UID, "greeterGid": greeter_gid,
                 "pamSystemdReplacedByFixtureEventMarker": True,
                 "productionSeatPolicyModified": False, "logindTested": False, "guiTested": False,
-                "nativeClient": native,
+                "nativeClient": native, "pamGreeterClassExpected": "greeter", "pamUserClassExpected": "user",
             }, sort_keys=True) + "\n")
         output[:] = b"\0" * len(output)
 

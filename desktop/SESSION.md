@@ -114,7 +114,10 @@ PTY and the existing persistent passwd proxy/PAM policy. It does not hash or
 silently reset passwords itself. Both updates must succeed before `prepared`.
 The client must then send a distinct commit before existing
 `accounts.finish()` validates hashes, bootstraps the initial role and atomically
-initializes state. Cancel/disconnect before commit leaves initialization false;
+initializes state. The original **Set passwords and continue** click authorizes
+that completion: after `prepared`, the native client sends the separate IPC commit
+on its next pump tick unless cancelled. There is no second user confirmation button.
+Cancel/disconnect before commit leaves initialization false;
 already accepted password changes are retained, never rolled back to older
 credentials. Committing is visibly non-cancellable. Closing after that commit
 point does not undo committed state or admit a desktop without login. Initialized
@@ -131,6 +134,15 @@ The dedicated greeter PAM service permits only its named service identity;
 `pam_permit` is needed there for greetd's credential establishment even though
 greeter password authentication is skipped. It is not used for ordinary login.
 Both production policies retain required `pam_loginuid`/`pam_systemd` sessions.
+In the exact Debian 0.10.3-4 source, `context.rs:118-124` starts the default
+session as `SessionClass::Greeter`; `session/worker.rs:205-218` sets
+`XDG_SESSION_CLASS=greeter` (ordinary sessions: `user`) and `XDG_SEAT=seat0`
+in PAM's environment **before** `pam_open_session` at line222. Class is removed
+from the child's environment only after opening, at line225; the broker therefore
+checks libsystemd's recorded class, not a greeter-supplied environment string.
+The bounded actual-daemon fixture also asserts greeter/user class at PAM session
+opening. This validates the released backend's class propagation, not logind's
+real seat registration; production `pam_systemd type=wayland` remains unchanged.
 
 ### Central integration contract (not yet applied by these files)
 
