@@ -5,10 +5,11 @@ WORKDIR /
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
 RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
     apt-get update -qq && apt-get install -y --no-install-recommends \
-    systemd-sysv udev dbus libpam-systemd kmod linux-image-amd64 \
+    systemd-sysv udev dbus libpam-systemd polkitd=126-2 python3 kmod linux-image-amd64 \
     firmware-intel-graphics firmware-nvidia-graphics firmware-iwlwifi firmware-sof-signed intel-microcode iucode-tool \
     iwd dhcpcd openresolv wireless-regdb iproute2 iw rfkill ethtool \
     pciutils usbutils alsa-utils util-linux && \
+    test "$(dpkg-query -W -f='${Version}' polkitd)" = 126-2 && \
     iucode_tool --write-earlyfw=/boot/intel-ucode.img /lib/firmware/intel-ucode
 COPY release/live/init /init
 COPY release/live/session /usr/bin/polly-live-session
@@ -23,6 +24,8 @@ COPY release/debian/login.pam /etc/pam.d/login
 COPY release/debian/getty.conf /etc/systemd/system/getty@tty1.service.d/polly.conf
 COPY release/debian/journald.conf /etc/systemd/journald.conf.d/polly.conf
 COPY release/debian/live-power.conf /etc/dbus-1/system.d/polly-live-power.conf
+COPY release/debian/00-polly-power.rules /etc/polkit-1/rules.d/00-polly-power.rules
+COPY release/debian/power-dependencies.json /usr/share/pollyui/power-dependencies.json
 COPY release/debian/polly-hardware-log.service /etc/systemd/system/polly-hardware-log.service
 COPY release/debian/boot-hardware /usr/bin/polly-boot-hardware
 COPY release/debian/resolvconf.conf /etc/resolvconf.conf
@@ -39,16 +42,20 @@ RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics 
         /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
         /etc/systemd/logind.conf.d/50-polly.conf /etc/systemd/journald.conf.d/polly.conf \
         /etc/systemd/system/getty@tty1.service.d/polly.conf /etc/systemd/system/polly-hardware-log.service \
-        /etc/dbus-1/system.d/polly-live-power.conf /usr/share/pollyui/desktop/tools/live-session-mode.sh \
+        /etc/dbus-1/system.d/polly-live-power.conf /etc/polkit-1/rules.d/00-polly-power.rules \
+        /usr/share/pollyui/power-dependencies.json /usr/share/pollyui/desktop/tools/live-session-mode.sh \
         /etc/resolvconf.conf /etc/systemd/system/iwd.service.d/polly-network.conf \
         /etc/systemd/system/dhcpcd.service.d/polly-network.conf /etc/tmpfiles.d/polly-network.conf && \
     chmod 644 /etc/dhcpcd.conf /etc/iwd/main.conf /etc/pam.d/login /etc/pam.d/polly-lock \
         /etc/systemd/logind.conf.d/50-polly.conf /etc/systemd/journald.conf.d/polly.conf \
         /etc/systemd/system/getty@tty1.service.d/polly.conf /etc/systemd/system/polly-hardware-log.service \
-        /etc/dbus-1/system.d/polly-live-power.conf /usr/share/pollyui/desktop/tools/live-session-mode.sh \
+        /etc/dbus-1/system.d/polly-live-power.conf /etc/polkit-1/rules.d/00-polly-power.rules \
+        /usr/share/pollyui/power-dependencies.json /usr/share/pollyui/desktop/tools/live-session-mode.sh \
         /usr/share/pollyui/desktop/shell/live.mjs /etc/resolvconf.conf \
         /etc/systemd/system/iwd.service.d/polly-network.conf \
         /etc/systemd/system/dhcpcd.service.d/polly-network.conf /etc/tmpfiles.d/polly-network.conf && \
+    chown 0:0 /etc/dbus-1/system.d/polly-live-power.conf /etc/polkit-1/rules.d/00-polly-power.rules \
+        /usr/share/pollyui/power-dependencies.json && \
     sed -i 's/\r$//' /usr/lib/pollyui/install-targets/install/*.py \
         /usr/lib/pollyui/install-targets/storage/layout.py /usr/lib/pollyui/install-targets/maintenance/payload.py && \
     chown 0:0 /usr/lib/pollyui/install-targets /usr/lib/pollyui/install-targets/install \

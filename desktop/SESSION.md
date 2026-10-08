@@ -339,10 +339,10 @@ The console account subset above is implemented; the full policy is not.
 | Network credentials | Remember successful connections in root-managed private system storage, support forgetting networks, and keep credentials out of images/logs. Filesystem permissions are not encrypted-vault protection. |
 | Encryption and release trust | Optional data encryption does not bypass boot unlock for automatic login. Formal system updates require signature verification; checksums and login passwords do not supply these protections. |
 
-The restricted administration/power backend still needs implementation and an
-explicit dependency/authorization design. A permitted D-Bus message alone is
-not daemon authorization, and no general-purpose root executor or root Shell is
-implied. See the [complete task ledger](../docs/POLLYOS-BACKLOG.md) for the
+Restricted administration remains separate; the approved basic power
+dependency/authorization design is described below. A permitted D-Bus message
+alone is not daemon authorization, and no general-purpose root executor or root
+Shell is implied. See the [complete task ledger](../docs/POLLYOS-BACKLOG.md) for the
 confirmed defaults, M01-M06 foundation, M13 power work and remaining dependencies.
 Old D1 artifacts retain locked passwords and unprotected automatic login.
 Account-enabled candidates are separate development artifacts, not completed
@@ -386,30 +386,68 @@ applications. A backend without versioned outcome tracking or a missing common
 application-close controller is visibly unavailable, never a direct unsafe
 power-button fallback.
 
-These source changes implement the real **already-authorized `yes` path**.
-They do not grant new daemon permission. Ordinary non-setid desktop users
-retain the existing trusted Shell connection boundary; root/setid callers and
-ordinary public applications cannot acquire this Power interface. The Session
-owner supplies the common controller and Shell wiring; Power subscribes to it
-and detaches only its own subscription, leaving common lifecycle ownership with
-the Shell. Deployment still needs an actual active local user session and
-daemon authorization. Isolated source checks of UI/native result handling are
-not evidence of a guest shutdown/restart or installed permission.
+The UI/native source implements the real **daemon-authorized `yes` path**.
+Ordinary non-setid desktop users retain the existing trusted Shell connection
+boundary; root/setid callers and ordinary public applications cannot acquire
+this private Power interface. The Session owner supplies the common controller
+and Shell wiring; Power subscribes to it and detaches only its own subscription.
+The deployment authorization below is separate from that private UI interface.
 
-**Actual Live power authorization is deferred.** In the Alpine PAM/elogind UEFI guest,
-`CanPowerOff` and `CanReboot` return `Access denied`; the panel reports the
-failure and keeps both actions disabled. No real shutdown/restart is claimed.
-For Live power controls the project does not install polkit, grant new power privileges or add a
-privileged authorization proxy. This is an explicit scope decision, not a
-silent fallback to a different power command.
-The Debian Live policy also deliberately keeps these actions denied; moving
-from elogind to systemd-logind does not enable power controls.
-The Debian Live recipe explicitly stages
-`/etc/dbus-1/system.d/polly-live-power.conf`; that file denies polly's capability
-queries and final methods. If an installed candidate retains it or login1
-returns `no`/`challenge`, Shutdown/Restart remain visibly disabled. Removing a
-deny policy, installing an authorization agent or adding a privileged proxy
-requires a separately approved installed-profile authorization decision.
+### Approved basic power authorization for Debian Live and installed profiles
+
+On 2026-10-08 the user explicitly approved **normal shutdown/restart in both
+Live and installed profiles**, replacing the earlier deferred-authorization
+scope. New Debian platform recipes pin `polkitd=126-2`, inherited by both
+profiles, and stage root-owned mode0644 `00-polly-power.rules` before the
+distribution's later rules. The only positive decisions are the exact standard
+action IDs `org.freedesktop.login1.power-off` and `org.freedesktop.login1.reboot`
+for `subject.user === "polly"`, `subject.local === true`, `subject.active === true`
+and nonempty standard `seat`/`session` attributes. Image qualification checks
+that `polly` uniquely resolves to ordinary UID1000. Root, greeter, another user,
+remote and inactive subjects do not receive this grant.
+
+These attributes are the documented **polkit 126 Subject API**, populated by
+polkitd from the real bus/process/session authority, not values supplied by a
+PollyUI window. See [polkit 126's Subject documentation](https://github.com/polkit-org/polkit/blob/126/docs/man/polkit.xml)
+and [systemd 257's login1 interface](https://www.freedesktop.org/software/systemd/man/257/org.freedesktop.login1.html).
+The rule adds no admin-group privilege, cached `AUTH_*_KEEP` grant, helper spawn,
+root command, sudo exception, pkexec or GUI authentication agent. The pinned
+standard Debian polkitd package includes its distribution PAM agent helper and
+`pkttyagent` tool; this flow does not invoke them or add a custom setid helper.
+
+Multiple-session and ignore-inhibitor variants are explicitly denied for polly,
+including distro defaults that otherwise allow active users. Firmware/boot-entry
+and reboot-parameter changes, halt/kexec/soft reboot and sleep families gain no
+permission. `polly-live-power.conf` retains precise polly-only unsupported-method
+denials, including flags variants, scheduled shutdown, wall-message and sleep
+methods. Only its four former basic `CanPowerOff`/`CanReboot`/`PowerOff`/`Reboot`
+denials are removed; no blanket D-Bus allow replaces authorization. Normal
+`PowerOff(false)`/`Reboot(false)` still go through standard logind's polkit and
+inhibitor decisions. Extra sessions or blockers can still produce `no`,
+`challenge` or explicit failure; the backend/UI does not convert them to `yes`.
+Suspend, hibernate and automatic lid/power-key actions remain unsupported.
+
+This is **Linux-session-level authorization**, not a sandbox or exclusive
+system-wide Shell capability. Another program running as that same qualified
+active local user may request the standard login1 methods. The private Shell API
+still performs its own current PID/seat/capability checks and Save/Cancel flow;
+the polkit rule does not itself certify that every Linux program saved its work.
+Unrelated polkit actions keep their existing policy.
+
+`power-dependencies.json` declares the exact new package and required runtime
+closure; real dpkg inventories record the versions chosen for dependencies.
+Live payload checks and both installed image paths qualify approved rule/conf
+bytes, owner/modes, the standard polkit executable and D-Bus/systemd activation,
+logind action catalog and pinned package inventory. A stale deny file, missing
+polkitd, extra earlier rule or custom/masked polkit activation is rejected, not
+published as an authorized image. The offline profile recipe requires the pin
+already present; it does not install packages or silently reuse an old base.
+
+**Deployment and actual ordinary-user guest `Can*`/shutdown/restart acceptance
+are not established by rule/source tests.** Old Debian and preserved Alpine
+media keep their original `Access denied` behavior; they are not retroactively
+updated by this recipe change. This implementation does not change host policy,
+start host/guest services or perform a real power action.
 
 The earlier isolated `desktop-power-shell-raster` and `desktop-power-shell-gl`
 fixtures exercised the original direct-confirmation controls and capability

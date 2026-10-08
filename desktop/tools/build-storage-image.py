@@ -190,6 +190,8 @@ def build_inputs():
             REPO / "desktop/release/debian/Containerfile.live",
             REPO / "desktop/release/debian/account-profile",
             REPO / "desktop/release/debian/profile-check",
+            *(REPO / "desktop/release/debian" / name for name in
+              ("00-polly-power.rules", "live-power.conf", "power-dependencies.json", "power-policy.py")),
             REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
             REPO / "desktop/release/install/roles.py",
             REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs",

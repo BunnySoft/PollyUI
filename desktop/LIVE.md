@@ -152,10 +152,14 @@ nothing. Reports may contain device identifiers, IP/MAC addresses and applicatio
 logs: review them before sharing. Root captures a bounded-lifetime boot report
 for the ordinary user; desktop logs remain in that user's temporary home.
 
-Power settings show the actual elogind capability failure and disable shutdown
-and restart. The current guest returns `Access denied`; authorization integration
-is explicitly deferred, with no polkit or privileged proxy added. Suspend,
-hibernate and automatic lid/power-key actions remain disabled. See `SESSION.md`.
+The preserved Alpine and previously built Debian media show their actual
+`Access denied` power capability state. On 2026-10-08 the user approved normal
+shutdown/restart in **both** new Debian Live and installed profiles. The new
+shared recipe pins standard polkitd and permits only basic logind actions for
+the actual active local `polly` seat session; it adds no custom root proxy or
+pkexec/GUI agent. Old media are unchanged, and source-rule checks are not guest
+power acceptance. Suspend, hibernate and automatic lid/power-key actions remain
+disabled. See [the precise authorization boundary](./SESSION.md#approved-basic-power-authorization-for-debian-live-and-installed-profiles).
 
 ## First physical target and acceptance
 

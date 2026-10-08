@@ -1,0 +1,13 @@
+polkit.addRule(function(action, subject) {
+    if (action.id === "org.freedesktop.login1.power-off" ||
+        action.id === "org.freedesktop.login1.reboot") {
+        return subject.user === "polly" && subject.local === true && subject.active === true &&
+            typeof subject.seat === "string" && subject.seat.length > 0 &&
+            typeof subject.session === "string" && subject.session.length > 0 ?
+            polkit.Result.YES : polkit.Result.NO;
+    }
+    if (subject.user === "polly" &&
+        /^org\.freedesktop\.login1\.(power-off-|reboot-|halt($|-)|kexec($|-)|soft-reboot($|-)|suspend($|-)|hibernate($|-)|hybrid-sleep($|-)|set-reboot-parameter$|set-reboot-to-|set-wall-message$)/.test(action.id)) {
+        return polkit.Result.NO;
+    }
+});

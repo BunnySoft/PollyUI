@@ -2,6 +2,7 @@
 """Create a new regular GPT image; never mount or open a host block device."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -15,6 +16,10 @@ import uuid
 
 MIB = 1024 * 1024
 GETTY_DROPIN = "etc/systemd/system/getty@tty1.service.d/zz-installed.conf"
+_power_spec = importlib.util.spec_from_file_location("polly_power_policy",
+    Path(__file__).resolve().parents[1] / "release/debian/power-policy.py")
+power_policy = importlib.util.module_from_spec(_power_spec)
+_power_spec.loader.exec_module(power_policy)
 GREETER_RESOURCES = (
     ("greeter-entry", "usr/lib/pollyui/greeter-entry", 0o755),
     ("greetd-launch.py", "usr/lib/pollyui/greetd-launch.py", 0o644),
@@ -236,6 +241,7 @@ def configure_graphical_login(root):
 
 def configure_accounts(root, account_root, identifier, repo, storage=False):
     qualify_greeter(root, repo)
+    power_policy.qualify(root, repo, "usr/share/polly-installed-packages.tsv")
     passwd = (root / "etc/passwd").read_text()
     if not re.search(r"^polly:[^:]*:1000:1000:", passwd, re.M):
         raise ValueError("Unexpected development user identity")
@@ -511,6 +517,8 @@ def build(args):
                 repo / "desktop/release/debian/Containerfile.live",
                 repo / "desktop/release/debian/account-profile",
                 repo / "desktop/release/debian/profile-check",
+                *(repo / "desktop/release/debian" / name for name in
+                  ("00-polly-power.rules", "live-power.conf", "power-dependencies.json", "power-policy.py")),
                 repo / "desktop/release/install/session", repo / "desktop/release/install/shell.mjs",
                 repo / "desktop/release/install/accounts.py", repo / "desktop/release/install/passwd-proxy.c",
                 repo / "desktop/release/install/roles.py",

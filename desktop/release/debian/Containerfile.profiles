@@ -5,8 +5,17 @@ COPY release/debian/account-profile /tmp/polly-account-profile
 COPY release/debian/profile-check /usr/lib/polly-account-profile-check
 COPY release/live/session /usr/bin/polly-live-session
 COPY release/live/init /init
+COPY release/debian/live-power.conf /etc/dbus-1/system.d/polly-live-power.conf
+COPY release/debian/00-polly-power.rules /etc/polkit-1/rules.d/00-polly-power.rules
+COPY release/debian/power-dependencies.json /usr/share/pollyui/power-dependencies.json
 RUN sed -i 's/\r$//' /tmp/polly-account-profile /usr/lib/polly-account-profile-check \
-        /usr/bin/polly-live-session /init && \
+        /usr/bin/polly-live-session /init /etc/dbus-1/system.d/polly-live-power.conf \
+        /etc/polkit-1/rules.d/00-polly-power.rules /usr/share/pollyui/power-dependencies.json && \
+    test "$(dpkg-query -W -f='${Version}' polkitd)" = 126-2 && \
+    chown 0:0 /etc/dbus-1/system.d/polly-live-power.conf /etc/polkit-1/rules.d/00-polly-power.rules \
+        /usr/share/pollyui/power-dependencies.json && \
+    chmod 644 /etc/dbus-1/system.d/polly-live-power.conf /etc/polkit-1/rules.d/00-polly-power.rules \
+        /usr/share/pollyui/power-dependencies.json && \
     chmod 755 /usr/lib/polly-account-profile-check /usr/bin/polly-live-session /init && \
     sh /tmp/polly-account-profile template && rm /tmp/polly-account-profile
 ENTRYPOINT []

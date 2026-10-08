@@ -56,6 +56,40 @@ the common template, then applies presets only in its final Live target. It inst
 no packages and cannot silently convert a configured Live/installed system. Record
 the pinned base ID and rerun `debian-live-payload.sh template|live`; this is cached
 payload reuse, not a fresh package reconstruction or a Live boot result.
+The base must also contain the approved `polkitd=126-2` pin. This offline overlay
+stages the same basic power rule/conf as new platform builds and refuses a base
+without that dependency rather than asserting that a rule alone enables shutdown.
+
+### Basic shutdown/restart authorization
+
+The user approved normal poweroff/reboot for both Debian profiles on 2026-10-08.
+The shared platform installs **polkitd 126-2** without recommends, pkexec,
+compatibility authorization packages or a GUI agent. Both Live and installed
+inherit the root-owned `00-polly-power.rules`: only exact standard basic
+`org.freedesktop.login1.power-off`/`reboot` actions receive `YES`, and only for
+the actual active, local `polly` seat session. Other users, root/greeter,
+remote/inactive callers, multi-session/inhibitor bypass, firmware and sleep
+actions receive no new grant. Existing polly-only D-Bus denials remain for
+unsupported methods; only the four basic capability/final-method denials are
+removed. Standard logind remains the authority, with inhibitors respected and
+the native Shell rechecking its own PID/seat and actual `Can*` result.
+
+`power-dependencies.json` records the pin and closure requirements. The read-only
+`power-policy.py` assembly qualifier rejects stale policy bytes, wrong owners,
+missing/incorrect dependency versions and custom/masked daemon activation; both
+Live payload and installed account assembly use it. Package inventory and
+source-input hashes include these resources. Standard polkitd ships its own
+PAM helper/tool; no custom setid proxy or arbitrary root execution is added.
+This is Linux-session authorization, not exclusive access for the Shell over
+other programs of the same active user. The Shell still uses the common normal
+application-close/Save/Cancel flow before its final request.
+
+These are approved **source/packaging changes**, not evidence of a new media
+build, guest permission or actual shutdown/restart. Previously built artifacts
+retain their old denial policy. Real ordinary-user guest `CanPowerOff`/`CanReboot`,
+cancellation and power actions are part of the single coordinated Alpha manual
+acceptance; no host authorization policy or service is changed by source checks.
+See [session/power boundaries](../../SESSION.md#approved-basic-power-authorization-for-debian-live-and-installed-profiles).
 
 ## Fast storage development checks
 
@@ -394,9 +428,10 @@ candidate is a clean-source release. Existing output directories are refused.
 
 The Debian Live recipe uses systemd/udev/logind and Linux-PAM, ordinary-user
 temporary auto-login, iwd, wired-only dhcpcd/openresolv, and our private PipeWire
-policy. A Live-only D-Bus policy keeps power capabilities/actions denied; no
-polkit or privilege proxy is added. No password locking, suspend, disk installer
-or persistence is enabled. Package scripts cannot start services in containers;
+policy. New shared platform recipes use the approved basic logind/polkit power
+authorization above; the preserved alpha.5-r2 media retains its old denial.
+No custom privilege proxy, password locking, suspend, disk installer or
+persistence is enabled. Package scripts cannot start services in containers;
 systemd itself only runs when the completed image boots in a guest.
 Automatic APT update/upgrade and filesystem-trim units are masked in this
 development Live image. DNS state lives under `/run/polly-network` with narrowly

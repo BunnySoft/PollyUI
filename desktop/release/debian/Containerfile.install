@@ -21,6 +21,9 @@ RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
         e2fsprogs python3 libnss-extrausers greetd=0.10.3-4 \
         libpam0g libpam-modules libpam-systemd libsystemd0 && \
     test "$(dpkg-query -W -f='${Version}' greetd)" = 0.10.3-4 && \
+    test "$(dpkg-query -W -f='${Version}' polkitd)" = 126-2 && \
+    test -f /etc/polkit-1/rules.d/00-polly-power.rules && \
+    test -f /usr/share/pollyui/power-dependencies.json && \
     groupadd --system polly-greeter && \
     useradd --system --gid polly-greeter --no-create-home --home-dir /nonexistent \
         --shell /usr/sbin/nologin polly-greeter && \

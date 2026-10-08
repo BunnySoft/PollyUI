@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "profiles": ["live", "installed"],
+  "suite": "trixie",
+  "newPackages": [
+    {"name": "polkitd", "version": "126-2"},
+    {"name": "libpolkit-agent-1-0", "version": "126-2"},
+    {"name": "libpolkit-gobject-1-0", "version": "126-2"}
+  ],
+  "requiredPackages": ["dbus", "systemd", "libpam-systemd", "libduktape207", "libexpat1",
+    "libglib2.0-0t64", "libpam0g", "libsystemd0", "xml-core", "python3"],
+  "excludedPackages": ["pkexec", "polkitd-pkla", "policykit-1"],
+  "account": "polly",
+  "uid": 1000,
+  "allowedActions": ["org.freedesktop.login1.power-off", "org.freedesktop.login1.reboot"],
+  "requiresActiveLocalSeat": true,
+  "authenticationAgent": false,
+  "ignoreInhibitors": false,
+  "multipleSessions": false
+}
