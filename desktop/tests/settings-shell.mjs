@@ -55,7 +55,10 @@ async function network(settings) {
   const state = () => desktop.networkState();
   const idle = () => until(() => state().ready && !state().operation && !state().refreshing, 'private iwd operation');
   await click('shell-settings-page-network');
-  await until(() => state().ready && state().registered && state().networks[0]?.signal === -45, 'root-owned synthetic iwd');
+  await until(() => state().ready && state().registered && state().networks.length >= 13 &&
+    state().networks[0]?.signal === -45, 'root-owned multi-network synthetic iwd');
+  check(settings.document.getElementById('shell-network-connect-0-12'),
+    'Settings mounts the real long iwd network list before delayed credentials');
   check(settings.document.getElementById('shell-network-settings').textContent.includes('wlan-test'),
     'Settings displays actual iwd adapter data');
   await capture(settings, 'network');
@@ -72,6 +75,13 @@ async function network(settings) {
   }
   check(settings.document.getElementById('shell-network-password').textContent === '\u2022'.repeat(8),
     'native Settings password is masked');
+  const field = settings.document.getElementById('shell-network-password');
+  check(shell.selectTheme('bigsur'), 'native theme repaint while iwd credentials are entered');
+  await painted();
+  check(settings.document.getElementById('shell-network-password') === field &&
+    settings.document.activeElement === field && field.textContent === '\u2022'.repeat(8),
+    'same native iwd prompt keeps its mounted field, secret and focus across retheme');
+  check(shell.selectTheme('xp'), 'restore native Settings theme without recreating credentials');
   await click('shell-network-auth-submit'); await idle();
   await until(() => state().networks[0].connected && state().networks[0].known, 'synthetic Wi-Fi connected');
   await capture(settings, 'network-connected');

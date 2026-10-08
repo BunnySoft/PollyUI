@@ -15,7 +15,8 @@
 #define CHECK(value) do { if (!(value)) { fprintf(stderr, "FAIL iwd fixture line %d: %s\n", __LINE__, #value); exit(1); } } while (0)
 static DBusConnection *bus;
 static bool powered = true, connected, known, running = true, connecting;
-static bool restarting;
+static bool restarting, multi_network;
+static long long prompt_deadline;
 static unsigned scans, canceled, authenticated, disconnected, forgotten, powers;
 static char *agent_owner;
 static DBusMessage *connect_request;
@@ -32,7 +33,7 @@ static void property(DBusMessageIter *array, const char *name, const char *signa
     CHECK(dbus_message_iter_append_basic(&variant, type, value));
     CHECK(dbus_message_iter_close_container(&entry, &variant) && dbus_message_iter_close_container(array, &entry));
 }
-static void interface(DBusMessageIter *array, const char *name)
+static void interface(DBusMessageIter *array, const char *name, const char *path)
 {
     DBusMessageIter entry, props;
     CHECK(dbus_message_iter_open_container(array, DBUS_TYPE_DICT_ENTRY, NULL, &entry));
@@ -52,13 +53,14 @@ static void interface(DBusMessageIter *array, const char *name)
         property(&props, "Scanning", "b", DBUS_TYPE_BOOLEAN, &scanning);
         if (connected || connecting) { const char *path = NETWORK; property(&props, "ConnectedNetwork", "o", DBUS_TYPE_OBJECT_PATH, &path); }
     } else {
-        const char *ssid = "Polly test network", *type = "psk", *device = DEVICE, *saved = KNOWN;
-        dbus_bool_t selected = connected || connecting;
+        const char *ssid = !strcmp(path, NETWORK) ? "Polly test network" : "Polly extra network";
+        const char *type = "psk", *device = DEVICE, *saved = KNOWN;
+        dbus_bool_t selected = !strcmp(path, NETWORK) && (connected || connecting);
         property(&props, "Name", "s", DBUS_TYPE_STRING, &ssid);
         property(&props, "Type", "s", DBUS_TYPE_STRING, &type);
         property(&props, "Device", "o", DBUS_TYPE_OBJECT_PATH, &device);
         property(&props, "Connected", "b", DBUS_TYPE_BOOLEAN, &selected);
-        if (known) property(&props, "KnownNetwork", "o", DBUS_TYPE_OBJECT_PATH, &saved);
+        if (known && !strcmp(path, NETWORK)) property(&props, "KnownNetwork", "o", DBUS_TYPE_OBJECT_PATH, &saved);
     }
     CHECK(dbus_message_iter_close_container(&entry, &props) && dbus_message_iter_close_container(array, &entry));
 }
@@ -77,6 +79,14 @@ static void changed(void)
         dbus_message_iter_close_container(&args, &invalidated));
     send_message(signal);
 }
+static void request_credentials(void)
+{
+    const char *path = NETWORK;
+    DBusMessage *request = dbus_message_new_method_call(agent_owner, AGENT, IWD ".Agent", "RequestPassphrase");
+    CHECK(dbus_message_append_args(request, DBUS_TYPE_OBJECT_PATH, &path, DBUS_TYPE_INVALID));
+    CHECK(dbus_connection_send_with_reply(bus, request, &credentials, 15000));
+    dbus_message_unref(request);
+}
 static DBusHandlerResult method(DBusConnection *connection, DBusMessage *message, void *data)
 {
     (void)connection; (void)data;
@@ -85,14 +95,16 @@ static DBusHandlerResult method(DBusConnection *connection, DBusMessage *message
         DBusMessageIter args, objects;
         dbus_message_iter_init_append(reply, &args);
         CHECK(dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "{oa{sa{sv}}}", &objects));
-        const char *paths[] = { DEVICE, NETWORK };
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < (multi_network ? 14 : 2); i++) {
+            char extra[96];
+            snprintf(extra, sizeof(extra), DEVICE "/extra_psk_%d", i - 1);
+            const char *path = i == 0 ? DEVICE : i == 1 ? NETWORK : extra;
             DBusMessageIter entry, interfaces;
             CHECK(dbus_message_iter_open_container(&objects, DBUS_TYPE_DICT_ENTRY, NULL, &entry));
-            CHECK(dbus_message_iter_append_basic(&entry, DBUS_TYPE_OBJECT_PATH, &paths[i]));
+            CHECK(dbus_message_iter_append_basic(&entry, DBUS_TYPE_OBJECT_PATH, &path));
             CHECK(dbus_message_iter_open_container(&entry, DBUS_TYPE_ARRAY, "{sa{sv}}", &interfaces));
-            if (!i) { interface(&interfaces, IWD ".Device"); interface(&interfaces, IWD ".Station"); }
-            else interface(&interfaces, IWD ".Network");
+            if (!i) { interface(&interfaces, IWD ".Device", path); interface(&interfaces, IWD ".Station", path); }
+            else interface(&interfaces, IWD ".Network", path);
             CHECK(dbus_message_iter_close_container(&entry, &interfaces) && dbus_message_iter_close_container(&objects, &entry));
         }
         CHECK(dbus_message_iter_close_container(&args, &objects));
@@ -101,13 +113,19 @@ static DBusHandlerResult method(DBusConnection *connection, DBusMessage *message
     if (dbus_message_is_method_call(message, IWD ".Station", "GetOrderedNetworks")) {
         DBusMessage *reply = dbus_message_new_method_return(message);
         DBusMessageIter args, array, tuple;
-        const char *path = NETWORK; int16_t signal = -4500;
         dbus_message_iter_init_append(reply, &args);
         CHECK(dbus_message_iter_open_container(&args, DBUS_TYPE_ARRAY, "(on)", &array));
-        CHECK(dbus_message_iter_open_container(&array, DBUS_TYPE_STRUCT, NULL, &tuple));
-        CHECK(dbus_message_iter_append_basic(&tuple, DBUS_TYPE_OBJECT_PATH, &path) &&
-            dbus_message_iter_append_basic(&tuple, DBUS_TYPE_INT16, &signal));
-        CHECK(dbus_message_iter_close_container(&array, &tuple) && dbus_message_iter_close_container(&args, &array));
+        for (int i = 0; i < (multi_network ? 13 : 1); i++) {
+            char extra[96];
+            snprintf(extra, sizeof(extra), DEVICE "/extra_psk_%d", i);
+            const char *path = i == 0 ? NETWORK : extra;
+            int16_t signal = (int16_t)(-4500 - i * 100);
+            CHECK(dbus_message_iter_open_container(&array, DBUS_TYPE_STRUCT, NULL, &tuple));
+            CHECK(dbus_message_iter_append_basic(&tuple, DBUS_TYPE_OBJECT_PATH, &path) &&
+                dbus_message_iter_append_basic(&tuple, DBUS_TYPE_INT16, &signal));
+            CHECK(dbus_message_iter_close_container(&array, &tuple));
+        }
+        CHECK(dbus_message_iter_close_container(&args, &array));
         send_message(reply); return DBUS_HANDLER_RESULT_HANDLED;
     }
     if (dbus_message_is_method_call(message, IWD ".Daemon", "GetInfo")) {
@@ -134,14 +152,19 @@ static DBusHandlerResult method(DBusConnection *connection, DBusMessage *message
         CHECK(agent_owner && !connect_request && !credentials);
         connecting = true;
         connect_request = dbus_message_ref(message);
-        const char *path = NETWORK;
-        DBusMessage *request = dbus_message_new_method_call(agent_owner, AGENT, IWD ".Agent", "RequestPassphrase");
-        CHECK(dbus_message_append_args(request, DBUS_TYPE_OBJECT_PATH, &path, DBUS_TYPE_INVALID));
-        CHECK(dbus_connection_send_with_reply(bus, request, &credentials, 15000));
-        dbus_message_unref(request); changed(); return DBUS_HANDLER_RESULT_HANDLED;
+        if (multi_network) prompt_deadline = now() + 100;
+        else request_credentials();
+        changed(); return DBUS_HANDLER_RESULT_HANDLED;
     }
     if (dbus_message_is_method_call(message, IWD ".Station", "Scan")) scans++;
-    else if (dbus_message_is_method_call(message, IWD ".Station", "Disconnect")) { disconnected++; connected = connecting = false; }
+    else if (dbus_message_is_method_call(message, IWD ".Station", "Disconnect")) {
+        disconnected++; connected = connecting = false;
+        if (prompt_deadline) {
+            prompt_deadline = 0;
+            send_message(dbus_message_new_error(connect_request, IWD ".Aborted", "Canceled before credentials"));
+            dbus_message_unref(connect_request); connect_request = NULL;
+        }
+    }
     else if (dbus_message_is_method_call(message, IWD ".KnownNetwork", "Forget")) { forgotten++; known = connected = false; }
     else if (dbus_message_is_method_call(message, DBUS_INTERFACE_PROPERTIES, "Set")) {
         CHECK(dbus_message_has_signature(message, "ssv"));
@@ -176,7 +199,8 @@ int main(int argc, char **argv)
     CHECK(bus);
     DBusError failure = DBUS_ERROR_INIT;
     restarting = argc == 2 && !strcmp(argv[1], "restart");
-    if (argc == 2 && !restarting) {
+    multi_network = argc == 2 && !strcmp(argv[1], "multi");
+    if (argc == 2 && !restarting && !multi_network) {
         bool spoof = !strcmp(argv[1], "spoof");
         DBusMessage *request = dbus_message_new_method_call(IWD, ROOT, "org.pollyui.Test", spoof ? "Agent" : "Quit");
         DBusMessage *reply = dbus_connection_send_with_reply_and_block(bus, request, 3000, &failure);
@@ -198,6 +222,10 @@ int main(int argc, char **argv)
         long long deadline = now() + 60000;
         while (running && now() < deadline) {
             CHECK(dbus_connection_read_write_dispatch(bus, 10));
+            if (prompt_deadline && now() >= prompt_deadline) {
+                prompt_deadline = 0;
+                request_credentials();
+            }
             if (credentials && dbus_pending_call_get_completed(credentials)) {
                 DBusMessage *reply = dbus_pending_call_steal_reply(credentials);
                 CHECK(reply);

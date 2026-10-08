@@ -115,7 +115,7 @@ def main():
                     env["DBUS_SYSTEM_BUS_ADDRESS"] = "unix:path=" + str(run / "system-bus")
                     provider_log = (stage / "iwd.log").open("w+")
                     logs.append(provider_log)
-                    provider = subprocess.Popen([str(helper)], env=env, stdout=provider_log, stderr=subprocess.STDOUT)
+                    provider = subprocess.Popen([str(helper), "multi"], env=env, stdout=provider_log, stderr=subprocess.STDOUT)
                     processes.append(provider)
                 elif mode == "audio":
                     config = repo / "desktop" / "tests" / "audio.conf"

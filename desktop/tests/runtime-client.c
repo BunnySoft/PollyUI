@@ -551,6 +551,8 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             else if (!strcmp(action + 4, "escape")) code = KEY_ESC;
             else if (!strcmp(action + 4, "tab")) code = KEY_TAB;
             else if (!strcmp(action + 4, "shift-tab")) { code = KEY_TAB; modifiers = 1; }
+            else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
+                !strcmp(action + 4, "backspace")) code = KEY_BACKSPACE;
             else CHECK(false);
             CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
             *last = sequence;

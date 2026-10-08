@@ -59,8 +59,14 @@ Every Settings callback is scoped to its live window, current page and rendered
 revision. Embedded service buttons also bind their attachment and actual state
 snapshot. Page transitions explicitly remount only this Settings document's
 content because the existing reconciler is positional and ignores `key`.
-Same-page repaints/retheming preserve mounted credential/display inputs. Native
-display confirmation owns its own token/lifetime and survives Settings close;
+Same-page repaints/retheming preserve mounted credential/display inputs. Network
+content additionally remounts only on list/confirmation/authentication-token
+transitions: an asynchronously arriving credential prompt cannot reuse a long
+network-list card and silently skip the input's create-time mount. The same
+authentication token and kind retain the field, entered value, selection and
+focus. A changed kind rebuilds the corresponding username/password model and
+wipes the old field even if a test reuses the token. Native display confirmation
+owns its own token/lifetime and survives Settings close;
 it cannot be silently kept or reverted by a stale Settings callback.
 
 ## Bounded checks and native acceptance
@@ -81,8 +87,9 @@ node .\desktop\tests\xp-luna-unit.mjs
 It opens Settings through a real taskbar click, navigates current DOM controls,
 changes a real native appearance, captures native window buffers, and exercises
 WM close, Close-button reopen and an independent public application's live PID.
-Audio uses actual private PipeWire virtual endpoints; network uses the existing
-root-owned synthetic iwd D-Bus service and real native requests/credential input,
+Audio uses actual private PipeWire virtual endpoints; network opts into the
+existing root-owned synthetic iwd service's 13-network, delayed-prompt mode and
+uses real native requests/credential input,
 never a user AP. The test-only `runtime-client.c` driver checks fresh mapped
 owned surfaces and delivers actual compositor pointer/paired keyboard events;
 it is not a management protocol in PollyWM.
@@ -115,7 +122,9 @@ with `FilesFixture.<seq>.`. Their ordinary markers must share the target's
 public client, UID1000 and owner PID. The only actions are `click x y`,
 `wheel x y deltaY`, `key enter|escape|tab|shift-tab` and `close`; coordinates
 must fit the current client geometry, wheel magnitude is at most 10000 and
-sequences are positive, monotonic unsigned integers. The driver hides its
+sequences are positive, monotonic unsigned integers. Files additionally accepts
+the paired native `key backspace` for its focused inline rename field; the
+chooser's key whitelist is unchanged. The driver hides its
 marker and uses each fixture's declared no-action focus point, then looks up
 the target again before one business action. It never retains a view across
 an event-loop settle. Receivers await the marker's actual `onclose` callback

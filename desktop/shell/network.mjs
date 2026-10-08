@@ -5,18 +5,18 @@ import { button as themedButton } from './desktop/shell/views.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
-  let prompt = 0, password = null, username = null;
-  let credentialTheme = null;
+  let prompt = 0, promptKind = '', password = null, username = null;
+  let credentialTheme = null, contentMode = '';
   function failure(value) { error = String(value); report('[shell] Network: ' + error); paint(); }
   function clearCredentials() {
     password?.root.blur();
     username?.root.blur();
     if (password) password.value = '';
     if (username) username.value = '';
-    prompt = 0; password = username = null; credentialTheme = null;
+    prompt = 0; promptKind = ''; password = username = null; credentialTheme = null;
   }
   function close() {
-    if (!surface) { clearCredentials(); confirmation = null; return; }
+    if (!surface) { clearCredentials(); confirmation = null; contentMode = ''; return; }
     if (state?.authentication) {
       try { native.replyNetworkAuthentication(state.authentication.id, null, null); }
       catch (value) { report('[shell] Cannot cancel network authentication: ' + String(value)); }
@@ -28,6 +28,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
     clearCredentials(); confirmation = null;
     const current = surface;
     surface = null;
+    contentMode = '';
     if (current) render(null, current.root);
     if (current?.owned && !current.window.closed) current.window.close();
   }
@@ -62,6 +63,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
   function paint() {
     if (!surface || surface.window.closed) return;
     if (!state) {
+      if (contentMode !== 'unavailable') { render(null, surface.root); contentMode = 'unavailable'; }
       render(h('view', { style: { padding: theme().layout.contentPadding, gap: theme().layout.contentGap } },
         h('view', { role: 'alert' }, label(error || 'Network state is unavailable.')),
         button('shell-network-retry', 'Refresh / retry', retry)), surface.root);
@@ -70,11 +72,12 @@ export function createNetworkSettings({ native, host, theme, report }) {
     const current = theme(), owner = surface.window.document, auth = state.authentication;
     const revision = state.revision;
     let focusCredentials = false;
-    if (!auth || auth.id !== prompt) {
+    if (!auth || auth.id !== prompt || auth.kind !== promptKind) {
       clearCredentials();
       if (auth) {
         focusCredentials = true;
         prompt = auth.id;
+        promptKind = auth.kind;
         password = createTextInput({ document: owner, password: true, width: 420, fontSize: current.layout.sectionFontSize });
         password.root.id = 'shell-network-password';
         password.root.setAttribute('role', 'textbox');
@@ -94,6 +97,13 @@ export function createNetworkSettings({ native, host, theme, report }) {
         fontSize: current.layout.sectionFontSize,
       });
       credentialTheme = current;
+    }
+    const mode = auth ? 'authentication:' + auth.id + ':' + auth.kind :
+      confirmation ? 'confirmation' : 'networks';
+    if (contentMode !== mode) {
+      // Credential wrappers need a create-time mount; the positional reconciler ignores keys.
+      render(null, surface.root);
+      contentMode = mode;
     }
     const content = [];
     if (auth) {
@@ -167,7 +177,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
   }
   function refresh() {
     try { state = native.networkState(); paint(); }
-    catch (value) { state = null; failure(value); }
+    catch (value) { state = null; clearCredentials(); failure(value); }
   }
   function retry() {
     try {

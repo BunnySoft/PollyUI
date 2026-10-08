@@ -618,6 +618,52 @@ settingsScenario('theme repaint preserves current credential value/focus and una
   assert.ok(find(settings, 'shell-network-retry'));
 });
 
+for (const kind of ['passphrase', 'username-password'])
+settingsScenario('a long multi-network list mounts ' + kind + ' fields and preserves the same prompt on repaint', f => {
+  const prototype = f.state.network.networks[0];
+  f.state.network.networks.push(...Array.from({ length: 12 }, (_, index) => ({
+    ...prototype, id: prototype.id + '-' + index, name: 'Private fixture ' + index, order: index + 1,
+  })));
+  let authentication = null;
+  const originalAction = f.native.networkAction;
+  f.native.networkAction = (...args) => {
+    originalAction(...args);
+    if (args[2] === 'connect') {
+      authentication = f.state.network.authentication;
+      authentication.kind = kind;
+      authentication.username = 'fixture-user';
+      f.state.network.authentication = null;
+    }
+  };
+  const settings = f.shell.showSystemSettings(1, 'network');
+  assert.ok(find(settings, 'shell-network-connect-0-12'));
+  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
+  assert.equal(settings.document.getElementById('shell-network-password'), null);
+  f.state.network.authentication = authentication; f.native.onNetworkChanged();
+  const field = find(settings, 'shell-network-password');
+  const user = kind === 'username-password' ? find(settings, 'shell-network-username') : null;
+  assert.equal(settings.document.activeElement, user || field);
+  field.focus();
+  domEvent(field, 'textinput', { data: 'fixture-secret' });
+  f.native.onNetworkChanged();
+  f.shell.selectTheme('bigsur');
+  assert.equal(find(settings, 'shell-network-password'), field);
+  if (user) assert.equal(find(settings, 'shell-network-username'), user);
+  assert.equal(settings.document.activeElement, field);
+  assert.match(text(field), /\u2022{14}/);
+  if (kind === 'passphrase') {
+    f.state.network.authentication.kind = 'username-password';
+    f.native.onNetworkChanged();
+    assert.ok(find(settings, 'shell-network-username'));
+    const replacement = find(settings, 'shell-network-password');
+    assert.notEqual(replacement, field);
+    assert.equal(text(field).includes('\u2022'), false, 'changed prompt kind wipes the old field');
+    replacement.focus(); domEvent(replacement, 'textinput', { data: 'fixture-secret' });
+  }
+  click(find(settings, 'shell-network-auth-submit'));
+  assert.equal(f.state.network.networks[0].connected, true);
+});
+
 function blockedActivation(f) {
   let resolve, reject;
   const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
