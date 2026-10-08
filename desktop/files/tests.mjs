@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 register('../tests/menu-host-loader.mjs', import.meta.url);
 const { pathValue, childPath, parentPath, directorySnapshot, requireFileSystem, textObservation } = await import('./model.mjs');
 const { createFilesController } = await import('./controller.mjs');
@@ -304,6 +306,35 @@ test('native Files wheel scroll clamps bounded viewport using absolute unscrolle
   wheel(-10000); assert.equal(node.scrollTop, 0);
   node.childNodes = []; wheel(180); assert.equal(node.scrollTop, 0);
   assert.equal(prevented, 4);
+});
+test('fixture close marker follows persisted callback receipt without needing a later timer', () => {
+  const source = readFileSync(new URL('../tests/files-window-client.mjs', import.meta.url), 'utf8');
+  const handler = source.slice(source.indexOf('const surface = app.getWindow(), originalClose = surface.onclose;'),
+    source.indexOf('const timer = setInterval('));
+  assert.ok(handler.includes('surface.onclose = () =>'));
+  for (const mode of ['success', 'write-failure', 'no-driver-close', 'drive-failed', 'incomplete-captures']) {
+    const calls = [], evidence = { actualAction: true }, captures = mode === 'incomplete-captures' ? [] : ['actual.png'];
+    const surface = { onclose() { calls.push('original-close'); } };
+    const context = { app: { getWindow: () => surface, controller: { getState: () => ({ phase: 'disposed' }) } },
+      evidence, captures, captureStages: ['only-stage'], mode: '--drive', closingViaDriver: mode !== 'no-driver-close',
+      driveFailed: mode === 'drive-failed', root: '/tmp/polly-files-window-unit', renamedName: 'New folde',
+      console: { log(message) { calls.push(message); }, error(message) { calls.push(message); } },
+      api: { stat() { return { identity: 'parent-observation' }; }, writeText(parent, name, text, expected) {
+        calls.push('write-receipt');
+        assert.equal(parent, context.root); assert.equal(name, 'files-window-result.json');
+        assert.equal(expected, 'parent-observation'); assert.equal(JSON.parse(text).closeObserved, true);
+        if (mode === 'write-failure') throw new Error('Private write failed');
+      } } };
+    runInNewContext(handler, context);
+    surface.onclose();
+    assert.equal(calls[0], 'original-close');
+    const passed = calls.some(call => call.startsWith('FILES_WINDOW_CLOSE_PASS:'));
+    assert.equal(passed, mode === 'success');
+    if (passed) assert.equal(calls[1], 'write-receipt');
+    if (mode === 'write-failure') assert.ok(calls.some(call => call.startsWith('FILES_WINDOW_FAIL:')));
+    if (['no-driver-close', 'drive-failed', 'incomplete-captures'].includes(mode))
+      assert.ok(!calls.includes('write-receipt'));
+  }
 });
 test('late navigation reply and close cannot resurrect a retired snapshot', async () => {
   const { controller, fs } = fixture(), list = fs.listDirectory;

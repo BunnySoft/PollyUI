@@ -52,6 +52,7 @@ surface.onclose = () => {
         version: 1, native: true, root, passed: true, closeObserved, evidence,
         appId: 'org.pollyui.files-window-fixture', renamedName, captures,
       }), api.stat(root, false).identity);
+      console.log('FILES_WINDOW_CLOSE_PASS: real ordinary Files window disposed; actual close receipt persisted');
     } catch (error) { console.error('FILES_WINDOW_FAIL: cannot persist actual close receipt: ' + error); }
   }
 };
@@ -60,7 +61,6 @@ const timer = setInterval(() => {
     const state = app.controller.getState(), surface = app.getWindow();
     if (state.phase === 'disposed') {
       clearInterval(timer);
-      console.log('FILES_WINDOW_CLOSE_PASS: real ordinary Files window disposed');
       return;
     }
     if (++ticks > 6000) throw new Error('Files ordinary-window fixture timed out waiting for real input');
