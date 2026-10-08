@@ -10,6 +10,7 @@ import signal
 import stat
 import struct
 import tempfile
+import shutil
 
 
 def driver_command(repo, driver, runtime):
@@ -82,7 +83,9 @@ def main():
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
+            shutil.copytree(root, evidence / "retained-home", symlinks=True)
             raise RuntimeError("Files native fixture timed out; original private evidence retained") from error
+    shutil.copytree(root, evidence / "retained-home", symlinks=True)
     text = (evidence / "native.log").read_text(errors="replace")
     if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text:
         raise RuntimeError("Actual Files native fixture failed; original private evidence retained")
