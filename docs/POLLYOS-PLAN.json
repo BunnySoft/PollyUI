@@ -2372,12 +2372,12 @@
         "M02.2",
         "M02.4"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "first-passwords",
         "role-bootstrap"
       ],
-      "evidence": "第四批用户功能优先，固定0f86311，子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4与图形登录同一完整账户流程；用户已批准greetd底层/Polly非root图形界面，复用现双密码/角色初始化，不改变Live或默认密码登录。真实首次设置和PAM/会话交接待实现验收。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。"
+      "evidence": "2026-10-09 固定 4e6b004 生产默认 UEFI 新 QEMU guest 真实四字段首设，经受限 broker/标准 passwd/PAM 完成独立 polly/root 测试密码设置并转密码登录；先前 source/小 C/PAM 的取消、失败与权威 Retry 状态边界保留，不通用 Root GUI、不 console/PAM observer 旁路。真实排序环由 6d93e6f 最小源修复，父审合并并核实际截图/61项最终证据，receipt SHAb2f62ede。范围为已验证图形功能与新隔离 guest，不回填旧 Hyper-V 根因或宣称该宿主现场首设已测试；发行 VHDX 未初始化、无预设安装密码。"
     },
     {
       "id": "gui-login",
@@ -2392,11 +2392,11 @@
       "sources": [
         "M03.1"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "pam-session"
       ],
-      "evidence": "第四批与gui-setup同一子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4；用户批准greetd标准PAM/VT/logind会话管理及非rootPolly greeter，安装版真正图形密码登录交付优先。锁屏认证成功不当作登录，root不进入桌面，Live既有策略不更改，真实会话验收待返回。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。"
+      "evidence": "2026-10-09 新 4e6b004 guest 标准 greetd/PAM 图形密码登录进入普通 installed 桌面，实际一次错误密码拒绝后正确重试成功；正常注销回 greetd 后再次登录，以及标准 guest Reboot 后原密码重新登录均成立。父核 03/04/18/19 实图与 guest-reset 事件，receipt SHAb2f62ede；不是 Live、root 桌面、锁屏解锁或恢复 cow。用户旧 Hyper-V 配置未改，现场挂载/启动由用户执行，不能以 QEMU 覆盖硬件或该宿主资格。"
     },
     {
       "id": "t14-m03-3",
@@ -2635,11 +2635,11 @@
       "sources": [
         "M05.4"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "gui-login"
       ],
-      "evidence": "2026-10-08 注销/保存源码已审阅并组合至本地 main ffc887f：共享正常关闭流程、真实窗口/应用/Activate 屏障、明确取消/最终确认、标准会话严格退出门槛及 SDL/Win32 oncloserequest。父审发现的四个函数作用域/外部链接缺陷已由 2f91cef 修复；固定 ffc 产品增量编译并链接 PollyUI/PollyWM，实际新 PollyUI ELF 四个 helper 均为 GLOBAL T，receipt SHA9f45bf17。源码和产品链接不等于真实注销回 greetd 或应用保存完成；统一候选集中手测仍待完成。"
+      "evidence": "共享 native 真实窗口/进程/Activate 屏障、严格标准入口与 SDL/Win32 close-veto 原语已实现，2f91cef 外部符号缺陷已修并实际链接。2026-10-09 正常用户注销经确认返回真实 greetd/可再登录；4e6b004 普通 managed App 收 close 后 boolfalse 保 1window/1process、common/app Cancel 保会话、nativeFS 真保存后正常关闭；标准 Reboot/PAM 登录后原生 chooser/FileText 真读回 /home/polly/alpha-smoke.txt 的 26 字节完整 normal-user-saved-document。父核实图/最终61项证据，receipt SHAb2f62ede。未 kill/TerminateSession/Root broker，发行盘不带测试 App/账号状态；无新 full editor、其他用户权限或 Hyper-V 现场认证宣称。"
     },
     {
       "id": "t15-m05-5",
@@ -3126,11 +3126,11 @@
       "sources": [
         "M13.1"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "pam-session"
       ],
-      "evidence": "2026-10-08 用户明确批准 Live 和安装版正常关机/重启。标准授权源 659d1ab 已审阅并合入本地 main e2fae72：共享底座 pin polkitd 126-2，仅当前活跃本地普通 polly 会话获基本动作 YES，精准撤销四个旧基本方法 deny，保留多会话/忽略 inhibitor/挂起等拒绝；两种模式及安装组装均核实标准资源和依赖。真实 126 DEB 元数据/完整 unit 解析证据已核，源码与打包接线完成但新依赖尚未装入候选介质；实际 guest CanPowerOff/CanReboot 和电源动作仍待集中手测。"
+      "evidence": "用户批准的标准 logind/polkit 精准授权已实现并实际部署到 4e6b004 两模式候选，pin polkitd/两 libpolkit 126-2；保留多会话/忽略 inhibitor/挂起等拒绝，工厂核资源原字节/权限/依赖/标准激活。普通 UID1000 真实 self 会话 Active=yes/Remote=no/Class=user/Seat0，两 Can 查询 yes，标准 system-bus GetConnectionUnixUser 明确 u0；installed native guarded 两阶段 Reboot 真产生 guest=true guest-reset 并可原密码登录，Live settled native PID/session/caps 可用。receipt SHAb2f62ede、32/33 Root资格原图已核，不是消息放行或 fakeprovider。实际 Shutdown GUI 未产生动作属于 T22.2 未完成，Live 仅能力状态无真实 power 执行/硬件资格宣称。"
     },
     {
       "id": "t22-m13-2",
@@ -3151,7 +3151,7 @@
         "t22-m13-1",
         "t16-m11-1"
       ],
-      "evidence": "Power/native/shared close 流程与双模式标准授权已审合，原引擎已链接。真实 6d guest 首次 Power 请求在 JS guard 被拒，未发 ACTION；后台 pending/busy 被当作无授权的 UI 漏洞由源 4e6b004 修复并审合 main 1dac93d。仅 UI 分离 eligibility/refresh，最终 fresh busy 时保持 ready、不 seal/send、不排队重放，原 native pending/revision/PID/Root-owner/实际 Can 与 sent sticky guard 不变。父精确新 refresh 与受影响 denial 两 selector通过；真实 guest Can、保存/重启/关机与持久性仍待新正确固定源验证，未把源码测试当电源通过。"
+      "evidence": "源 4e6b004 的 guarded Power UI 已实际两阶段触发普通新 guest 标准 Reboot，QMP 仅收 guest=true/guest-reset(1791475112)，随后原密码 PAM 登录、Classic 偏好与原生 FileText 26字节文档读回都成功；App close-veto/取消/真实保存成立。Shutdown GUI 最终确认数次及一次有界取消重開仍 ready/NoSend，无 accepted 或 guest SHUTDOWN，未 Root/CLI/QMP替代或反复刷新采运气，不归因未实证权限拒绝。受限候选已交付 D:\\Temp\\PollyOS，receipt SHAb2f62ede；保持此任务未完成。后台 busy UI-only修复不改变 native PID/revision/pending/Root-owner/Can/sent guard，Live仅能力状态无实际动作。"
     },
     {
       "id": "t23",
@@ -4894,7 +4894,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": []
     },
     {
@@ -4947,7 +4947,7 @@
         "t15-m05-4",
         "t22-m13-2"
       ],
-      "evidence": "12f 首启无 greeter 已由独立真实日志确证排序环，最小源 6d93e6f 审合 ea0ac1a，所有认证前置保持。修后 6d 生产默认冷启动真实四字段首设、标准 passwd/PAM 提交、普通登录、正常 Logout 返回 greetd 及再次登录已确认。Power 初次 JS guard 拒绝后，UI-only 刷新修复 4e6b004 已审合 1dac93d；真实普通 Can/保存机会/Reboot/PowerOff/持久性仍待新源完整短 smoke。30m 测试控制器清 RAM 不当产品故障或绕认证理由，旧 cow 留已登入状态；新源 fresh testcow 预设 90m，发行盘不带测试状态，用户 VM 未修改。"
+      "evidence": "2026-10-09 4e6b004 受限候选已实际交付：生产默认新 guest 图形首设、标准 PAM 错误拒绝/正确重试、普通登录、正常 Logout回greetd、真实 managedApp close-veto/Cancel/nativeSave、标准Reboot、原密码再登录及Classic/26字节用户文档普通读回均确证。首启排序修复与busy UI-only修复已父审合，61项最终证据全hash核。Shutdown GUI仍ready/NoSend，当前没有实际关机证明；长批量QMP输入Wayland4KiB/Foot断管未修且普通持续输入范围未资格。保持功能闭环/完整Alpha未完成，不把诊断host-qmp-quit当PowerOff；旧Hyper-V未改、现场由用户测。"
     },
     {
       "id": "alpha-candidate-media",
@@ -4967,7 +4967,7 @@
         "alpha-code-integration",
         "alpha-functional-closure"
       ],
-      "evidence": "用户指定 D:\\Temp\\PollyOS 并自行更换现有 Hyper-V 介质。12f 未过首启未交付；修后 6d 候选已完成真实首设/登录/注销再登录，但 Power guard 尚无 ACTION。UI-only 修复源 4e6b004 已审合 1dac93d，将沿合格依赖/原 native 引擎正确更新 runtime JS 与固定源介质后继续短 smoke，不重引擎或用旧失败拼整轮绿。原失败 clone/帧/日志及丢 RAM 事实保留；最终 VHDX 仍未初始化，不能导出测试 cow。实际电源验证与最终文件交付待完成，不覆盖旧媒体或宣称 Hyper-V 已验证。"
+      "evidence": "受限测试介质已在 D:\\Temp\\PollyOS no-overwrite交付并加Library：4e LiveISO713508864B SHA17e663...383423、freshVHDX1598029824B/virtual3471835136B SHAae843...10e6dd，与未初始化raw6afd逻辑内容相同，无测试App/账号/默认安装密码。父核5项交付checksum与61项实际证据，receipt完整SHAb2f62edea0faa6cf5edb043bd45d25802cc90eeb179626a3ee6d9758a4a2441b；真实构建sourceffc与runtimePowerJS4e/合格polkit依赖分层保留。普通新QEMU短测包含真实Reboot/持久性，但Shutdown UI与长输入限制未闭环，因此只是已交付测试预览，正式Alpha功能齐备冻结仍进行中。用户本人复用现有Hyper-V换介质，未自动改配置；所有ownedVM/controller已停。"
     },
     {
       "id": "alpha-manual-acceptance",
@@ -4980,11 +4980,11 @@
         "candidate"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "alpha-candidate-media"
       ],
-      "evidence": "用户要求先完成功能再集中手测。只保留必要编译/类型及直接小回归，后期专项复测/硬件/性能/锁屏不混入此一轮手测门槛；不自动操作用户正在使用的 PollyOS VM/密码/磁盘。"
+      "evidence": "本轮集中有界真实QEMU/TCG短测已完成结果评估并交付4e受限预览：首设/PAM拒绝重试/登录/注销/应用SaveCancel/标准Reboot/偏好与文档持久性/LIVE普通桌面能力状态已核；Shutdown GUI未产生动作，Foot长批量输入断管范围未修，不能完整验收。用户Hyper-V现场测试及阻塞修复后冻结仍待完成；不自动操作其VM/密码/磁盘，不把诊断清理或源Mock计绿。"
     }
   ],
   "evidenceNotes": [

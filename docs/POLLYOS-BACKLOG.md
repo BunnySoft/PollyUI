@@ -343,7 +343,7 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 | A0.1 基础功能代码集成 | 已完成 | 将已具备的模式/账户/普通桌面/系统设置/基础 Files/原生打开保存与当前功能修复汇入同一主分支，不携未完成强化草稿。 |
 | A0.2 必要功能闭环 | 进行中/部分完成 | 剩余近程功能：首次启动图形入口稳定、密码登录/失败重试、普通注销与保存、普通关机重启；不以重启可进桌面当首次图形问题已修。 |
 | A0.3 统一 Alpha 候选介质 | 进行中/部分完成 | 从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。 |
-| A0.4 集中手动验收 | 待实现 | 按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。 |
+| A0.4 集中手动验收 | 进行中/部分完成 | 按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。 |
 
 版本范围、已交付介质和最短手测清单见 [Alpha 路线](POLLYOS-ALPHA.md)。
 
@@ -353,9 +353,9 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 **交付/边界：** 首个面向普通用户的开发版：可启动的 Live ISO 与单 SYSTEM 安装版虚拟磁盘、稳定首次设置/密码登录、基础 Shell/设置/应用和打开保存。不是空白磁盘安装器、受保护生产桌面或硬件认证版本；后期项目不作为 Alpha 前置。
 
 - [x] **A0.1 基础功能代码集成** · 已完成 · P1 · candidate：将已具备的模式/账户/普通桌面/系统设置/基础 Files/原生打开保存与当前功能修复汇入同一主分支，不携未完成强化草稿。 证据：主工作区已实际 --ff-only 3beac48 到 ce73a3cee08f8b09ff9f78e681957a0c993e0d51；包含基础 Files 和中央完整接线、控制台 1cd 服务闭包及闲置窗口源码修复。未推送，未将未完成 Files419行草稿合入。集成完成不等所有功能/媒体/手测通过。
-- [ ] **A0.2 必要功能闭环** · 进行中/部分完成 · P1 · installed：剩余近程功能：首次启动图形入口稳定、密码登录/失败重试、普通注销与保存、普通关机重启；不以重启可进桌面当首次图形问题已修。 前置：T14.1、T14.2、T14.3、T15.4、T22.2。 证据：12f 首启无 greeter 已由独立真实日志确证排序环，最小源 6d93e6f 审合 ea0ac1a，所有认证前置保持。修后 6d 生产默认冷启动真实四字段首设、标准 passwd/PAM 提交、普通登录、正常 Logout 返回 greetd 及再次登录已确认。Power 初次 JS guard 拒绝后，UI-only 刷新修复 4e6b004 已审合 1dac93d；真实普通 Can/保存机会/Reboot/PowerOff/持久性仍待新源完整短 smoke。30m 测试控制器清 RAM 不当产品故障或绕认证理由，旧 cow 留已登入状态；新源 fresh testcow 预设 90m，发行盘不带测试状态，用户 VM 未修改。
-- [ ] **A0.3 统一 Alpha 候选介质** · 进行中/部分完成 · P1 · live/installed/candidate：从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。 前置：A0.1、A0.2。 证据：用户指定 D:\Temp\PollyOS 并自行更换现有 Hyper-V 介质。12f 未过首启未交付；修后 6d 候选已完成真实首设/登录/注销再登录，但 Power guard 尚无 ACTION。UI-only 修复源 4e6b004 已审合 1dac93d，将沿合格依赖/原 native 引擎正确更新 runtime JS 与固定源介质后继续短 smoke，不重引擎或用旧失败拼整轮绿。原失败 clone/帧/日志及丢 RAM 事实保留；最终 VHDX 仍未初始化，不能导出测试 cow。实际电源验证与最终文件交付待完成，不覆盖旧媒体或宣称 Hyper-V 已验证。
-- [ ] **A0.4 集中手动验收** · 待实现 · P1 · candidate：按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。 前置：A0.3。 证据：用户要求先完成功能再集中手测。只保留必要编译/类型及直接小回归，后期专项复测/硬件/性能/锁屏不混入此一轮手测门槛；不自动操作用户正在使用的 PollyOS VM/密码/磁盘。
+- [ ] **A0.2 必要功能闭环** · 进行中/部分完成 · P1 · installed：剩余近程功能：首次启动图形入口稳定、密码登录/失败重试、普通注销与保存、普通关机重启；不以重启可进桌面当首次图形问题已修。 前置：T14.1、T14.2、T14.3、T15.4、T22.2。 证据：2026-10-09 4e6b004 受限候选已实际交付：生产默认新 guest 图形首设、标准 PAM 错误拒绝/正确重试、普通登录、正常 Logout回greetd、真实 managedApp close-veto/Cancel/nativeSave、标准Reboot、原密码再登录及Classic/26字节用户文档普通读回均确证。首启排序修复与busy UI-only修复已父审合，61项最终证据全hash核。Shutdown GUI仍ready/NoSend，当前没有实际关机证明；长批量QMP输入Wayland4KiB/Foot断管未修且普通持续输入范围未资格。保持功能闭环/完整Alpha未完成，不把诊断host-qmp-quit当PowerOff；旧Hyper-V未改、现场由用户测。
+- [ ] **A0.3 统一 Alpha 候选介质** · 进行中/部分完成 · P1 · live/installed/candidate：从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。 前置：A0.1、A0.2。 证据：受限测试介质已在 D:\Temp\PollyOS no-overwrite交付并加Library：4e LiveISO713508864B SHA17e663...383423、freshVHDX1598029824B/virtual3471835136B SHAae843...10e6dd，与未初始化raw6afd逻辑内容相同，无测试App/账号/默认安装密码。父核5项交付checksum与61项实际证据，receipt完整SHAb2f62edea0faa6cf5edb043bd45d25802cc90eeb179626a3ee6d9758a4a2441b；真实构建sourceffc与runtimePowerJS4e/合格polkit依赖分层保留。普通新QEMU短测包含真实Reboot/持久性，但Shutdown UI与长输入限制未闭环，因此只是已交付测试预览，正式Alpha功能齐备冻结仍进行中。用户本人复用现有Hyper-V换介质，未自动改配置；所有ownedVM/controller已停。
+- [ ] **A0.4 集中手动验收** · 进行中/部分完成 · P1 · candidate：按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。 前置：A0.3。 证据：本轮集中有界真实QEMU/TCG短测已完成结果评估并交付4e受限预览：首设/PAM拒绝重试/登录/注销/应用SaveCancel/标准Reboot/偏好与文档持久性/LIVE普通桌面能力状态已核；Shutdown GUI未产生动作，Foot长批量输入断管范围未修，不能完整验收。用户Hyper-V现场测试及阻塞修复后冻结仍待完成；不自动操作其VM/密码/磁盘，不把诊断清理或源Mock计绿。
 
 ### A1 系统自带 App — 已延期 / 进行中/部分完成
 
@@ -652,8 +652,8 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 
 GUI 消费已有身份/角色后端；先建角色再用它认证，不反向阻塞首启。
 
-- [ ] **T14.1 图形首次设置** · 进行中/部分完成 · P1 · installed：将已验证控制台双密码/初始化流程接入受控 GUI，取消/失败不虚报完成；GUI 不持通用 root 桌面。 前置：T05.3、T05.4。 来源：M02.1、M02.2、M02.4。 证据：第四批用户功能优先，固定0f86311，子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4与图形登录同一完整账户流程；用户已批准greetd底层/Polly非root图形界面，复用现双密码/角色初始化，不改变Live或默认密码登录。真实首次设置和PAM/会话交接待实现验收。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。
-- [ ] **T14.2 图形密码登录** · 进行中/部分完成 · P1 · installed：实现真实 PAM 登录界面和普通用户桌面交接；仍默认密码登录，不改变历史已生成 Live 产物。 前置：T06.3。 来源：M03.1。 证据：第四批与gui-setup同一子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4；用户批准greetd标准PAM/VT/logind会话管理及非rootPolly greeter，安装版真正图形密码登录交付优先。锁屏认证成功不当作登录，root不进入桌面，Live既有策略不更改，真实会话验收待返回。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。
+- [x] **T14.1 图形首次设置** · 已完成 · P1 · installed：将已验证控制台双密码/初始化流程接入受控 GUI，取消/失败不虚报完成；GUI 不持通用 root 桌面。 前置：T05.3、T05.4。 来源：M02.1、M02.2、M02.4。 证据：2026-10-09 固定 4e6b004 生产默认 UEFI 新 QEMU guest 真实四字段首设，经受限 broker/标准 passwd/PAM 完成独立 polly/root 测试密码设置并转密码登录；先前 source/小 C/PAM 的取消、失败与权威 Retry 状态边界保留，不通用 Root GUI、不 console/PAM observer 旁路。真实排序环由 6d93e6f 最小源修复，父审合并并核实际截图/61项最终证据，receipt SHAb2f62ede。范围为已验证图形功能与新隔离 guest，不回填旧 Hyper-V 根因或宣称该宿主现场首设已测试；发行 VHDX 未初始化、无预设安装密码。
+- [x] **T14.2 图形密码登录** · 已完成 · P1 · installed：实现真实 PAM 登录界面和普通用户桌面交接；仍默认密码登录，不改变历史已生成 Live 产物。 前置：T06.3。 来源：M03.1。 证据：2026-10-09 新 4e6b004 guest 标准 greetd/PAM 图形密码登录进入普通 installed 桌面，实际一次错误密码拒绝后正确重试成功；正常注销回 greetd 后再次登录，以及标准 guest Reboot 后原密码重新登录均成立。父核 03/04/18/19 实图与 guest-reset 事件，receipt SHAb2f62ede；不是 Live、root 桌面、锁屏解锁或恢复 cow。用户旧 Hyper-V 配置未改，现场挂载/启动由用户执行，不能以 QEMU 覆盖硬件或该宿主资格。
 - [ ] **T14.3 登录失败与重试** · 进行中/部分完成 · P1 · installed：处理错误密码、账户不可用、服务失联、取消/超时和启动失败，提供受保护的诊断/重试入口。 前置：T14.2。 来源：M03.3。 证据：第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。
 - [x] **T14.5 已有自动登录策略** · 已完成 · P1 · installed：root CLI 明确开启/关闭，跨重启保存且每次启动最多一次；不等于图形管理员认证或锁屏已经交付。 前置：T04.5。 来源：M03.4。 证据：617cea4/1468b6b；默认关闭与 once-per-boot 检查。
 - [ ] **T14.6 真实管理调用者授权** · 待实现 · P0 · installed：验证真实本地会话、管理员角色和所需操作范围；拒绝自报 UID/任意路径/命令/hooks，可先用受限后端和夹具验收。 前置：T04.2、T05.4、T06.3。 来源：M04.3。
@@ -709,14 +709,14 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 普通本地活动用户电源动作及保存/警告，不每次索取 root 密码；挂起休眠不混入该交付。
 
-- [ ] **T22.1 本地会话电源授权** · 进行中/部分完成 · P1 · live/installed：设计并实现只允许所需动作的受限授权后端，核实 login1 对本地活动用户的实际授权而非仅消息放行。 前置：T06.3。 来源：M13.1。 证据：2026-10-08 用户明确批准 Live 和安装版正常关机/重启。标准授权源 659d1ab 已审阅并合入本地 main e2fae72：共享底座 pin polkitd 126-2，仅当前活跃本地普通 polly 会话获基本动作 YES，精准撤销四个旧基本方法 deny，保留多会话/忽略 inhibitor/挂起等拒绝；两种模式及安装组装均核实标准资源和依赖。真实 126 DEB 元数据/完整 unit 解析证据已核，源码与打包接线完成但新依赖尚未装入候选介质；实际 guest CanPowerOff/CanReboot 和电源动作仍待集中手测。
-- [ ] **T22.2 关机重启与保存** · 进行中/部分完成 · P1 · live/installed：关机/重启确认、保存机会、其它会话/更新警告、取消及能力变化处理；普通操作不每次索要 root 密码。 前置：T22.1、T16.1。 来源：M13.2。 证据：Power/native/shared close 流程与双模式标准授权已审合，原引擎已链接。真实 6d guest 首次 Power 请求在 JS guard 被拒，未发 ACTION；后台 pending/busy 被当作无授权的 UI 漏洞由源 4e6b004 修复并审合 main 1dac93d。仅 UI 分离 eligibility/refresh，最终 fresh busy 时保持 ready、不 seal/send、不排队重放，原 native pending/revision/PID/Root-owner/实际 Can 与 sent sticky guard 不变。父精确新 refresh 与受影响 denial 两 selector通过；真实 guest Can、保存/重启/关机与持久性仍待新正确固定源验证，未把源码测试当电源通过。
+- [x] **T22.1 本地会话电源授权** · 已完成 · P1 · live/installed：设计并实现只允许所需动作的受限授权后端，核实 login1 对本地活动用户的实际授权而非仅消息放行。 前置：T06.3。 来源：M13.1。 证据：用户批准的标准 logind/polkit 精准授权已实现并实际部署到 4e6b004 两模式候选，pin polkitd/两 libpolkit 126-2；保留多会话/忽略 inhibitor/挂起等拒绝，工厂核资源原字节/权限/依赖/标准激活。普通 UID1000 真实 self 会话 Active=yes/Remote=no/Class=user/Seat0，两 Can 查询 yes，标准 system-bus GetConnectionUnixUser 明确 u0；installed native guarded 两阶段 Reboot 真产生 guest=true guest-reset 并可原密码登录，Live settled native PID/session/caps 可用。receipt SHAb2f62ede、32/33 Root资格原图已核，不是消息放行或 fakeprovider。实际 Shutdown GUI 未产生动作属于 T22.2 未完成，Live 仅能力状态无真实 power 执行/硬件资格宣称。
+- [ ] **T22.2 关机重启与保存** · 进行中/部分完成 · P1 · live/installed：关机/重启确认、保存机会、其它会话/更新警告、取消及能力变化处理；普通操作不每次索要 root 密码。 前置：T22.1、T16.1。 来源：M13.2。 证据：源 4e6b004 的 guarded Power UI 已实际两阶段触发普通新 guest 标准 Reboot，QMP 仅收 guest=true/guest-reset(1791475112)，随后原密码 PAM 登录、Classic 偏好与原生 FileText 26字节文档读回都成功；App close-veto/取消/真实保存成立。Shutdown GUI 最终确认数次及一次有界取消重開仍 ready/NoSend，无 accepted 或 guest SHUTDOWN，未 Root/CLI/QMP替代或反复刷新采运气，不归因未实证权限拒绝。受限候选已交付 D:\Temp\PollyOS，receipt SHAb2f62ede；保持此任务未完成。后台 busy UI-only修复不改变 native PID/revision/pending/Root-owner/Can/sent guard，Live仅能力状态无实际动作。
 
 #### T15 基本注销与保存
 
 保留 Alpha 的普通会话退出与保存要求；锁屏、受保护 TTY 和认证组合移入后期优化。
 
-- [ ] **T15.4 注销与保存** · 进行中/部分完成 · P1 · installed：注销提供应用保存机会并回到受保护登录入口，不遗留已登录 shell 或误结束其它用户会话。 前置：T14.2。 来源：M05.4。 证据：2026-10-08 注销/保存源码已审阅并组合至本地 main ffc887f：共享正常关闭流程、真实窗口/应用/Activate 屏障、明确取消/最终确认、标准会话严格退出门槛及 SDL/Win32 oncloserequest。父审发现的四个函数作用域/外部链接缺陷已由 2f91cef 修复；固定 ffc 产品增量编译并链接 PollyUI/PollyWM，实际新 PollyUI ELF 四个 helper 均为 GLOBAL T，receipt SHA9f45bf17。源码和产品链接不等于真实注销回 greetd 或应用保存完成；统一候选集中手测仍待完成。
+- [x] **T15.4 注销与保存** · 已完成 · P1 · installed：注销提供应用保存机会并回到受保护登录入口，不遗留已登录 shell 或误结束其它用户会话。 前置：T14.2。 来源：M05.4。 证据：共享 native 真实窗口/进程/Activate 屏障、严格标准入口与 SDL/Win32 close-veto 原语已实现，2f91cef 外部符号缺陷已修并实际链接。2026-10-09 正常用户注销经确认返回真实 greetd/可再登录；4e6b004 普通 managed App 收 close 后 boolfalse 保 1window/1process、common/app Cancel 保会话、nativeFS 真保存后正常关闭；标准 Reboot/PAM 登录后原生 chooser/FileText 真读回 /home/polly/alpha-smoke.txt 的 26 字节完整 normal-user-saved-document。父核实图/最终61项证据，receipt SHAb2f62ede。未 kill/TerminateSession/Root broker，发行盘不带测试 App/账号状态；无新 full editor、其他用户权限或 Hyper-V 现场认证宣称。
 
 ### R6 外置可用开发候选 — 进行中/部分完成
 

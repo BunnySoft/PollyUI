@@ -1,6 +1,6 @@
 # PollyOS 当前批次交接
 
-更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `1dac93d`，
+更新时间：2026-10-09。本地 `main` 的最新功能组合基线为 `1dac93d`，
 保留此前正常快进合入的 `ce73a3c`，本轮尚未推送。
 此前已推送的代码基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，
 交接提交为 `0f863116fb3f1de8abbb6e032925a9860ce17553`；没有强推。
@@ -10,9 +10,37 @@
 
 **当前补充：** 本地代码包含第四批基础用户功能、控制台服务依赖修复
 与闲置窗口交互源码修复，以及新审阅组合的普通注销/保存和 Power 关闭流程。
-已交付 ISO/VHDX 仍来自 `e879de1`，不被重标为新源码。
+最新受限测试 ISO/VHDX 来自固定 `4e6b004`，已交 `D:\Temp\PollyOS\`；
+旧 `e879de1` 产物和失败候选仍保原来源，不被重标或覆盖。
 用户已要求先完成功能、再集中手测，并将文件 App 强化与专项优化延期。
 最新版本边界与剩余收尾见 [Alpha 路线](POLLYOS-ALPHA.md) 和 JSON 生成执行清单。
+
+### 最新测试介质交接
+
+`D:\Temp\PollyOS\pollydesktop-4e6b004-live.iso`：713,508,864 字节，
+SHA256 `17e663265467d03d5e01264f24be3b194d5e3f5aad210018610bb0057f383423`。
+`D:\Temp\PollyOS\pollydesktop-4e6b004-installed.vhdx`：1,598,029,824 字节，
+virtual 3,471,835,136 字节，
+SHA256 `ae843aa450a47556ea9f8655563106f56bfb394c45428c3bd566db561010e6dd`。
+均已加 Library，未初始化安装盘与 raw6afd 逻辑 compare 相同，不导出测试 cow/预设密码。
+
+`validation-receipt.json` SHA256
+`b2f62edea0faa6cf5edb043bd45d25802cc90eeb179626a3ee6d9758a4a2441b`；
+主会话核全部 5 项交付 checksum 和 61 项最终实图/日志/JSON 证据。
+QEMU/TCG 真实默认冷首设、标准 PAM 错误拒绝/正确重试、普通 managed App veto/取消/保存、
+标准 guest Reboot(guest=true guest-reset)、原密码再登录与 Classic/原生 26 字节文档读回成立。
+正常注销回 greetd/再登录的旧6d证据仅复用 byte-equivalent common/native 范围，不拼成新 PowerOff 通过。
+Live 只读光盘普通桌面和 native PID/session/capability 状态成立，未执行真实 Live power。
+
+**未通过：** Shutdown GUI 有界重开/确认仍 ready/NoSend，没有 guest SHUTDOWN；原生 guard 未放宽，
+不把 Root/CLI/QMP/ACPI 或诊断 host-qmp-quit 计正常关机。长批量 QMP 输入 Wayland4KiB溢出/Foot230
+未修，普通手动/粘贴等价性尚未测；Live 初始 Desktop needs attention，非全服务健康。
+完整 T22/Alpha 不标 done，用户本人挂现有 Hyper-V 做现场测试；代理无管理权限且未触其配置/数据/UAC。
+所有已知 owned VM/controller 已停、私人测试 token 清 RAM，无 credential 交接。
+
+native 构建仍精确 `ffc887f`（94ae/fbab），CMake 安装/RPATH 后实际 stage023e/8196；
+native-only 源与打包 `4e6b004` 相同，runtime Power JS 确实更新为4e/hash878fc239...，
+新标准 polkit126-2 依赖/库存/许可证已真实装入合格模板。不是全包 fresh reconstruction 或再编引擎。
 
 ## 执行入口与工作方式
 
