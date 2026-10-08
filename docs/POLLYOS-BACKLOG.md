@@ -436,7 +436,7 @@ R 是可验收交付目标，T 是实现任务，子项是独立状态的执行�
 完整系统替换与包状态匹配；测试身份验签、开发未签名边界和生产身份分开。
 
 - [ ] **T08.1 匹配载荷替换** · 待实现 · P0 · installed/recovery：完整载荷替换写前检查容量/来源/兼容性及匹配恢复材料，在维护/救援环境执行；记录事务与中断状态，不覆盖用户数据或破坏唯一救援入口。 前置：T07.1、T07.5、T09.1、T09.2、T09.4。 来源：M09.3。
-- [ ] **T08.2 测试签名与拒绝** · 进行中/部分完成 · P0 · installed/recovery：用测试身份验证签名、可信公钥、篡改/错误签名拒绝；正式信任根、生产签名及密钥操作另行确定/授权。 前置：T07.1。 来源：M09.5。 证据：第二批固定8ce0b6d，子会话951d53c8-b0b7-4553-96a5-fef0328a7862实现测试身份签名与严格拒绝；独立验收待返回，不使用生产私钥，不把development-unsigned自动提升为生产信任。
+- [x] **T08.2 测试签名与拒绝** · 已完成 · P0 · installed/recovery：用测试身份验证签名、可信公钥、篡改/错误签名拒绝；正式信任根、生产签名及密钥操作另行确定/授权。 前置：T07.1。 来源：M09.5。 证据：f156227→fe89350及中央注册已随ff4be97合并推送；明确test-only Ed25519/外部测试公钥、错误签名/篡改/格式/工具失败拒绝，独立41项及0c完整源码套件通过。development-unsigned不提升，实际物料仍需独立preflight；无生产密钥/发行/写授权。独立报告0ec1c8497566d23fa28ad32ca417d2d8f0d7a6f60ea29ceb329a759413d4b165，最终native组合报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。
 - [ ] **T08.3 开发未签名边界** · 待实现 · P0 · installed/recovery：开发未签名产物明确标识，不能通过成功形态的 fallback 绕过正式验签；不默认开启在线自动更新。 来源：M09.6。
 
 #### T09 独立救援与一致恢复
@@ -486,7 +486,7 @@ R 是可验收交付目标，T 是实现任务，子项是独立状态的执行�
 
 版本/数据分别处理，未知数据不接管，运行资源不因主 PID 退出就回收。
 
-- [ ] **T13.1 D-Bus 桌面激活** · 进行中/部分完成 · P0 · installed：补齐 `.desktop` D-Bus-only activation，不借任意 shell 命令或伪造 Exec 绕过。 来源：M15.2。 证据：第二批新增独立子会话b4a59cb1-4aaa-4c7d-9f72-bfa451931552，固定81f948f（仅计划记录，行为等同8ce0b6d）补D-Bus-only激活与私有总线真实fixture；保留Exec/普通应用行为，不伪造PID或借shell启动。原生固定源重编译验收待单lane返回。
+- [x] **T13.1 D-Bus 桌面激活** · 已完成 · P0 · installed：补齐 `.desktop` D-Bus-only activation，不借任意 shell 命令或伪造 Exec 绕过。 来源：M15.2。 证据：2715d00→e68d142链及真实native修复e7d709已随ff4be97合并推送；普通UID1000新编产品真实自动启动/ACK/错误/8队列/断连/关闭/重新发现/FD拒绝及3500ms晚回复+4000ms阻塞pump绝对超时通过，21/21普通回归通过，旧Exec/bundle/菜单/XP相邻行为保留。明确不伪造PID、不重试/Exec fallback；common bus同步认证/注册不属于3000ms post-send期限，MIME/Open不由此完成。保留0c zero-FD背压原失败和确定性修复对照；最终报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。
 - [ ] **T13.2 使用中代码安全回收** · 待实现 · P0 · installed：安全回收旧版本/孤立代码；覆盖脱离主进程的后代及仍被使用的资源，不以主 PID 退出判断可删。 前置：T12.2、T12.4。 来源：M15.3。
 - [ ] **T13.3 卸载与独立清除数据** · 待实现 · P0 · installed：卸载默认保留 AppData；清除数据独立确认，仅针对管理器明确拥有的路径。 前置：T12.1、T12.2。 来源：M15.4。
 - [ ] **T13.4 应用数据版本迁移** · 待实现 · P0 · installed：实现 schema/layout 迁移、独占/备份及不兼容回退策略，不静默清空数据。 前置：T09.4、T12.2。 来源：M15.6。
@@ -537,7 +537,7 @@ GUI 消费已有身份/角色后端；先建角色再用它认证，不反向阻
 
 iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络门槛。
 
-- [ ] **T17.1 私有网络状态** · 进行中/部分完成 · P1 · live/installed：实现 `SystemData/Network` 的 root 私有配置/凭据及 iwd 接入，按服务映射而非整体共享 `/var`，区分安装版与 Live。 前置：T04.3、T03.3。 来源：M12.1。 证据：第二批固定8ce0b6d，子会话d7b1a26f-73e8-4b37-a324-503fc1ce53f0实现Live临时/installed UUID绑定私有状态及iwd正常停止checkpoint；仅合成凭据，不连接真实网络。运行期即时落盘与异常断电持久性未保证，完整任务保持进行中。
+- [ ] **T17.1 私有网络状态** · 进行中/部分完成 · P1 · live/installed：实现 `SystemData/Network` 的 root 私有配置/凭据及 iwd 接入，按服务映射而非整体共享 `/var`，区分安装版与 Live。 前置：T04.3、T03.3。 来源：M12.1。 证据：32030d9→247a375与默认Containerfile.storage/fresh builder接线随ff4be97合并推送；明确installed UUID私有快照/正常停止checkpoint、Live临时；terminal RAM guard-release修复经36独立单测/私有真实mount与UID1000拒绝通过，新factory12及组合root注册2/2通过。只是源码和临时树，未构建新媒体；真实PID1/+namespace/即时落盘/断电/冷启动/物理网络仍待验收，完整T17.1保持进行中。独立报告950c85efc3a0fb8302816f47a56f723e52b7e4a1402e97a72314d1f5f15eb693。
 - [ ] **T17.2 网络记忆与重连** · 待实现 · P1 · live/installed：连接成功后记住/重连，支持忘记网络，验证重启/维护/恢复、错误密码、失联和凭据权限。 前置：T17.1。 来源：M12.2。
 - [ ] **T17.3 有线网络与 DNS** · 待实现 · P1 · live/installed：补齐有线状态、地址/DNS 管理和失败反馈，不把已有 DHCP/DNS 记为未实现。 前置：T17.1。 来源：M12.4。
 
@@ -595,10 +595,10 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 虚拟装配不等于实际设备安装器；逐次核对目标、范围、来源和确认，任何真实写入仍需单独授权。
 
-- [ ] **T24.6 目标展示接入** · 进行中/部分完成 · P1 · fresh/hardware：把已实现只读目标报告接入安装UI，显示稳定身份/容量/分区/假定清除范围和具体拒绝理由，重新识别结果用于后续显式确认；不把 eligible 标记当写权限，不部署到错误layout路径。 前置：T24.1、T24.2。 来源：M07.2、M07.4。 证据：第二批基于已推送8ce0b6d，子会话2ca28434-854f-4de9-928b-806d17ad4374实现只读报告UI/provider/controller与合成夹具；真实native-helper部署接入尚未完成，无真实枚举或writer授权，完整任务保持进行中。
+- [ ] **T24.6 目标展示接入** · 进行中/部分完成 · P1 · fresh/hardware：把已实现只读目标报告接入安装UI，显示稳定身份/容量/分区/假定清除范围和具体拒绝理由，重新识别结果用于后续显式确认；不把 eligible 标记当写权限，不部署到错误layout路径。 前置：T24.1、T24.2。 来源：M07.2、M07.4。 证据：第二批ff4be97已合并推送：c05793b及中央注册完成只读UI/controller/provider契约；独立Node100/Python34/逐字段报告一致性、新编普通UID1000真实窗口/滚动/指针选择/确认/取消/关闭后迟到回调通过。默认明确helper-pending，合成入口标注SYNTHETIC；真实provider/部署/设备资格仍缺，不关闭完整T24.6。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。
 - [x] **T24.1 只读目标身份模型** · 已完成 · P1 · fresh/hardware：只读枚举/输出型号、容量、稳定serial/WWN、分区与假定清除范围；选择绑定及重新识别对缺失/歧义/活动来源/热插拔改变拒绝。JSON/CLI资格不等于UI确认或写权限，真实展示接入由T24.6完成。 前置：T03.1。 来源：M07.2。 证据：e3b74df→be85a42→最终a5已合并推送；34合成CLI/sysfs/graph/边界/重识别测试及组合CTest通过。未实际探测host盘、尚无writer/UI确认/独占raw opener或其它namespace证明；仅USB/sysfs外部来源floor，未知overlay/loop fail-closed。
 - [x] **T24.2 内盘排除与防误选** · 已完成 · P1 · fresh/hardware：当前只读模型排除三块已知内盘型号/family及root/boot/source/活动holder/swap祖先，对身份缺失/冲突/热插拔改变拒绝；不按sdX/nvme号或RM布尔挑选，实际writer独占与确认仍后续。 来源：M07.3。 证据：与targets只读实现同一e3b74df/a5固定组合；型号alias、大小/重复ID、dm祖先/改变identity/diskseq/歧义拒绝fixtures通过；真实设备/其它mount namespace/raw opener与破坏性安装验收不由此替代。
-- [ ] **T24.3 写入确认与取消** · 进行中/部分完成 · P1 · fresh/hardware：提供写入前明确确认、进度、取消边界和失败反馈；安装源/当前运行盘不得被误覆盖。 前置：T24.1、T24.2、T24.6。 来源：M07.4。 证据：与T24.6同一子会话顺序实现只读UI及写前显式确认/重新识别/generation/cancel；确认记录始终writeAuthorized=false。真实provider、writer进度/取消和介质验收未完成，不关闭整项或放行真实写盘gate。
+- [ ] **T24.3 写入确认与取消** · 进行中/部分完成 · P1 · fresh/hardware：提供写入前明确确认、进度、取消边界和失败反馈；安装源/当前运行盘不得被误覆盖。 前置：T24.1、T24.2、T24.6。 来源：M07.4。 证据：c05793b组件随ff4be97合并推送；新编普通UID1000真实指针选择/范围ack/fresh generation重识别/确认/取消/实际WMclose后迟到回调不复活通过，确认始终readOnly=true/writeAuthorized=false。仅合成provider，无实际writer/安装进度/写入取消/介质授权，不关闭完整T24.3或真实写盘gate。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。
 - [ ] **T24.4 安装失败与中断** · 待实现 · P1 · fresh/hardware：验证空间不足、写入/校验失败、拔出及中断；不发布虚假的安装成功或自动扩大写入范围。 前置：T24.5、T24.3。 来源：M07.6。
 - [ ] **T24.5 新装与迁移流程分支** · 待实现 · P1 · fresh/hardware：实现目标安装流程并区分 fresh 与 migration：新装生成锁定模板/首启；迁移先资格与事务发布，不覆盖已有 Accounts/HOME，不由状态缺失猜测该重置。 前置：T03.4、T24.3。 来源：M07.1、M01.7。
 

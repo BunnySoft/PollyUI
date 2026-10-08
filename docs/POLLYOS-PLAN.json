@@ -587,7 +587,7 @@
         "t24-m07-2",
         "t24-m07-3"
       ],
-      "evidence": "第二批基于已推送8ce0b6d，子会话2ca28434-854f-4de9-928b-806d17ad4374实现只读报告UI/provider/controller与合成夹具；真实native-helper部署接入尚未完成，无真实枚举或writer授权，完整任务保持进行中。"
+      "evidence": "第二批ff4be97已合并推送：c05793b及中央注册完成只读UI/controller/provider契约；独立Node100/Python34/逐字段报告一致性、新编普通UID1000真实窗口/滚动/指针选择/确认/取消/关闭后迟到回调通过。默认明确helper-pending，合成入口标注SYNTHETIC；真实provider/部署/设备资格仍缺，不关闭完整T24.6。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。"
     },
     {
       "id": "menu-native-dismiss",
@@ -1721,11 +1721,11 @@
       "sources": [
         "M09.5"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "t07-m09-1"
       ],
-      "evidence": "第二批固定8ce0b6d，子会话951d53c8-b0b7-4553-96a5-fef0328a7862实现测试身份签名与严格拒绝；独立验收待返回，不使用生产私钥，不把development-unsigned自动提升为生产信任。"
+      "evidence": "f156227→fe89350及中央注册已随ff4be97合并推送；明确test-only Ed25519/外部测试公钥、错误签名/篡改/格式/工具失败拒绝，独立41项及0c完整源码套件通过。development-unsigned不提升，实际物料仍需独立preflight；无生产密钥/发行/写授权。独立报告0ec1c8497566d23fa28ad32ca417d2d8f0d7a6f60ea29ceb329a759413d4b165，最终native组合报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。"
     },
     {
       "id": "t08-m09-6",
@@ -2183,9 +2183,9 @@
       "sources": [
         "M15.2"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [],
-      "evidence": "第二批新增独立子会话b4a59cb1-4aaa-4c7d-9f72-bfa451931552，固定81f948f（仅计划记录，行为等同8ce0b6d）补D-Bus-only激活与私有总线真实fixture；保留Exec/普通应用行为，不伪造PID或借shell启动。原生固定源重编译验收待单lane返回。"
+      "evidence": "2715d00→e68d142链及真实native修复e7d709已随ff4be97合并推送；普通UID1000新编产品真实自动启动/ACK/错误/8队列/断连/关闭/重新发现/FD拒绝及3500ms晚回复+4000ms阻塞pump绝对超时通过，21/21普通回归通过，旧Exec/bundle/菜单/XP相邻行为保留。明确不伪造PID、不重试/Exec fallback；common bus同步认证/注册不属于3000ms post-send期限，MIME/Open不由此完成。保留0c zero-FD背压原失败和确定性修复对照；最终报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。"
     },
     {
       "id": "t13-m15-3",
@@ -2735,7 +2735,7 @@
         "account-private",
         "required-maps"
       ],
-      "evidence": "第二批固定8ce0b6d，子会话d7b1a26f-73e8-4b37-a324-503fc1ce53f0实现Live临时/installed UUID绑定私有状态及iwd正常停止checkpoint；仅合成凭据，不连接真实网络。运行期即时落盘与异常断电持久性未保证，完整任务保持进行中。"
+      "evidence": "32030d9→247a375与默认Containerfile.storage/fresh builder接线随ff4be97合并推送；明确installed UUID私有快照/正常停止checkpoint、Live临时；terminal RAM guard-release修复经36独立单测/私有真实mount与UID1000拒绝通过，新factory12及组合root注册2/2通过。只是源码和临时树，未构建新媒体；真实PID1/+namespace/即时落盘/断电/冷启动/物理网络仍待验收，完整T17.1保持进行中。独立报告950c85efc3a0fb8302816f47a56f723e52b7e4a1402e97a72314d1f5f15eb693。"
     },
     {
       "id": "t17-m12-2",
@@ -3179,7 +3179,7 @@
         "t24-m07-3",
         "target-identity-ui"
       ],
-      "evidence": "与T24.6同一子会话顺序实现只读UI及写前显式确认/重新识别/generation/cancel；确认记录始终writeAuthorized=false。真实provider、writer进度/取消和介质验收未完成，不关闭整项或放行真实写盘gate。"
+      "evidence": "c05793b组件随ff4be97合并推送；新编普通UID1000真实指针选择/范围ack/fresh generation重识别/确认/取消/实际WMclose后迟到回调不复活通过，确认始终readOnly=true/writeAuthorized=false。仅合成provider，无实际writer/安装进度/写入取消/介质授权，不关闭完整T24.3或真实写盘gate。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。"
     },
     {
       "id": "t24-m07-6",
