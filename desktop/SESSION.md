@@ -73,6 +73,161 @@ not an already authenticated shell. Graphical setup/greeter, administrator UI,
 integrated locking/VT protection and account/host migration across different
 system versions remain incomplete.
 
+## Installed graphical setup and password greeter
+
+On 2026-10-08 the user approved **Debian greetd for the installed profile only**.
+The dedicated sources in `session/` and `src/desktop/greeter-client.*` implement
+the first-run/password-login flow. Central build, image/default-boot wiring and
+real graphical/logind acceptance are separate integration steps; the presence of
+these sources does not change existing images, Live policy or the console fallback.
+
+`greeter.mjs` displays four masked fields for separate polly/root passwords and
+their confirmations, then a polly-only password login. Pointer, Tab, Enter,
+visible progress/errors, retry and cancellation use the existing text input.
+Mismatch, empty/multiline/invalid UTF-8, over-1024-byte and identical passwords
+submit nothing. Input references are cleared after submission/cancel/close.
+No password is logged, persisted, put in argv/environment or exposed as a hash.
+JS strings necessarily exist transiently in RAM; this is not a claim that the
+garbage collector securely erases every immutable string copy.
+
+The non-setid native `graphicalAuth` API has only `status()`, `setup(polly, root)`,
+`login(pollyPassword)`, `cancel()` and `onProgress(phase)`. It refuses root and
+identities other than the dedicated `polly-greeter` service account (UID 1-999).
+It checks root kernel socket peers, root-owned socket parent directories and
+greeter-owned sockets, bounds frames/deadlines and wipes native credential buffers.
+Login uses greetd's length-prefixed JSON protocol with fixed username `polly`,
+fixed `/usr/bin/polly-installed-session` and only the two fixed desktop/type
+environment entries. `handoff` means greetd acknowledged scheduling, **not** that
+PAM/logind or the desktop has already started. Exiting the greeter then lets greetd
+establish and supervise the actual user session.
+
+`setup-broker.py` is a root, systemd-socket-activated service, not a root GUI,
+setid interpreter, polkit/sudo exception or general command executor. Its only
+requests are bounded status/setup/commit/cancel. `SO_PEERCRED` plus a live pidfd
+and libsystemd session checks require the dedicated UID/GID, active local
+greeter-class **seat0/tty1/wayland** session. Production has no test-authority
+switch or environment override. Status returns only setup/login.
+
+Under the existing account state lock, the broker calls the fixed installed
+`/usr/bin/passwd polly` and `/usr/bin/passwd root` through a private, echo-disabled
+PTY and the existing persistent passwd proxy/PAM policy. It does not hash or
+silently reset passwords itself. Both updates must succeed before `prepared`.
+The client must then send a distinct commit before existing
+`accounts.finish()` validates hashes, bootstraps the initial role and atomically
+initializes state. Cancel/disconnect before commit leaves initialization false;
+already accepted password changes are retained, never rolled back to older
+credentials. Committing is visibly non-cancellable. Closing after that commit
+point does not undo committed state or admit a desktop without login. Initialized
+accounts refuse setup without changing either configured password.
+
+The declared new runtime dependency is **greetd 0.10.3-4 from Debian trixie**;
+see `session/greeter-dependencies.json`. That exact released worker performs
+PAM authenticate/account/setcred/open-session, drops UID/GID/groups for the
+session child, waits for it and closes the session/deletes credentials.
+It does not implement master's expired-token change flow. The user PAM policy
+requires polly UID1000 plus ready/initialized storage in authentication **and**
+account checks, so root and incomplete state cannot enter even via autologin.
+The dedicated greeter PAM service permits only its named service identity;
+`pam_permit` is needed there for greetd's credential establishment even though
+greeter password authentication is skipped. It is not used for ordinary login.
+Both production policies retain required `pam_loginuid`/`pam_systemd` sessions.
+
+### Central integration contract (not yet applied by these files)
+
+| Source | Installed destination / requirement |
+|---|---|
+| `session/greeter.mjs`, `greeter-controller.mjs` | `/usr/share/pollyui/desktop/session/`, together with existing JS text-input modules |
+| `src/desktop/greeter-client.c`, `.h`, `session/greeter-protocol.h` | Compile into Linux PollyUI; include `desktop/session`. No new native PAM link is needed for this client |
+| `session/greeter-entry` | `/usr/lib/pollyui/greeter-entry`, root-owned 0755; normalized LF |
+| `session/greetd-launch.py`, `setup-broker.py` | `/usr/lib/pollyui/`, root-owned 0644, invoked by fixed `/usr/bin/python3 -I -B` |
+| `session/greetd.conf` | `/usr/lib/pollyui/greetd.conf`, root-owned 0644; no default `initial_session`, `source_profile=false`, VT1 |
+| `session/polly-greetd*.pam` | `/etc/pam.d/polly-greetd` and `/etc/pam.d/polly-greetd-greeter`, root-owned 0644 |
+| `session/polly-greetd.service`, `polly-greeter-setup.service`, `.socket` | Root-owned system units; socket owner/group `polly-greeter`, mode0600, parent root0755 |
+| `session/greeter-dependencies.json` | Qualify/stage the exact package and required runtime packages in the installed recipe, not merely the SDK |
+
+Create a locked, non-login, non-root system account/group `polly-greeter` in
+the **image**, with its own UID below1000; do not assign polly's groups or role.
+`greeter-entry` uses the PAM runtime for ephemeral XDG directories.
+The parent must add a dedicated mutually exclusive `--greeter` service mode
+to `src/main.c`: install `pu_greeter_client_install(ctx)` before running the entry,
+pump `pu_greeter_client_pump()` with existing native service pumps and shut it down
+before freeing JS. Keep the runtime alive across primary-window closure and
+setup-to-login surface replacement; clear keep-alive on quit/error/shutdown, as
+for lock/input-method modes. Fail startup if installation fails. Do **not** enable
+`--desktop` application-spawn APIs for this mode. Add its source/header/include
+and feature define in central CMake; `greeter-entry` directly launches the dedicated
+PollyWM shell, not `run-session.sh` (that launcher currently selects `--desktop`).
+
+Only after that fixed-source build and native validation should installed startup
+enable `polly-greetd.service` and its setup socket, preserve `polly-accounts prepare`
+and storage ordering, and resolve TTY1 getty/console-firstboot conflicts. Existing
+`zz-installed.conf` pulls console firstboot; do not leave that active on the same
+VT or use a root greeter to avoid the conflict. Preserve an explicit console
+fallback, not a default passwordless desktop. The image's default target must
+actually reach the service's `graphical.target` installation. The distro greetd
+unit/default tty7 must not run a second manager. This is image-only wiring; do not
+mask host gettys, change host PAM/logind or change Live policy.
+
+The fixed root launcher validates the installed account backend and prepared
+`automatic-login` boot snapshot. Default/off or incomplete accounts have no
+initial session. Explicit on + completed/ready state consumes the existing private
+`autologin-used` marker before launch, at most once per boot, and never deletes it
+on restart/logout. The generated root-only runtime configuration does not modify
+stored preferences, passwords or initialized state.
+
+### Bounded evidence and remaining product acceptance
+
+`node --test desktop/tests/greeter-controller.mjs` covers confirmations, exact UTF-8
+bounds, retry, cancel, secret clearing and closed late callbacks.
+`python3 -B desktop/tests/greeter-setup.py` covers the wire/state/seat-policy adapter
+and root-only launcher/autologin fixtures. Existing installed account/role/profile
+regressions remain relevant. `greeter-ui.mjs` is for the **newly compiled engine**
+with `pollyui --test desktop/tests/greeter-ui.mjs`: it exercises real native
+DOM/render/input with explicitly synthetic windows/backend. It is not real PAM,
+Wayland-window, installed-boot or logind evidence.
+
+`greeter-auth-fixture.py REPO PACKAGES [EVIDENCE]` requires a pristine marked
+rootless container with the existing locked installed-account template, private
+mount capability and no host PAM/TTY/seat/bus mounts. Root stages only fixture
+accounts/policy; the actual native client and greetd greeter run as UID991.
+`PACKAGES` must contain the exact verified `.deb`, retained exact APT metadata,
+source-current `polly-passwd`, and `polly-greeter-client-fixture`. Compile only the
+two small C files, not the whole engine:
+
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+  -Ithird_party/quickjs -Isrc/desktop -Idesktop/session \
+  desktop/tests/greeter-native-client.c src/desktop/greeter-client.c \
+  /reference/normal/third_party/quickjs/libqjs.a -lm -lpthread -ldl \
+  -o /out/polly-greeter-client-fixture
+cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
+  desktop/release/install/passwd-proxy.c -o /out/polly-passwd
+```
+
+Actual fixtures passed real passwd/PAM second-password refusal, native
+status/setup/prepared-cancel/commit, bootstrap/initialized-reset refusal,
+kernel root-peer refusal, actual greetd wrong-password/root refusal, native
+wrong-password retry and fixed-command handoff to real UID/GID1000, plus actual
+PAM open/close. The fixture deliberately substitutes only `pam_systemd` with
+session-event recording and uses greetd `vt="none"`; **seat/logind/GUI tested=0**.
+Production seat checks, `pam_systemd` and VT1 are not relaxed for this test.
+An actual run exposed and fixed greeter `pam_setcred` policy, retired-worker
+cancel acknowledgement, closed-transport cancel races and QuickJS's mandatory
+zero-terminated JSON frame. These are functional backend fixes, not lock-helper
+success being re-labelled as session acceptance.
+
+Full T14.1/T14.2 acceptance still requires the parent's newly assembled installed
+VM: fresh graphical setup, actual pointer/Tab/Enter/masked input, mismatch/no action,
+cancel/second-password failure with initialized=false, visible correct/wrong-password
+login/retry, real PAM/logind seat/runtime and logout/restart/cold-boot policy retention.
+`greeter-installed-session.py` is a read-only post-login proof, run as the actual
+ordinary user only after the parent stages the root-owned isolated-VM marker
+`/run/polly-installed-greeter-acceptance` with `isolated-installed-greeter-v1\n`.
+It requires polly UID/GID1000, `polly-greetd` service, user/wayland/seat0/tty1,
+active/nonremote and the owned mode0700 PAM runtime. Its success alone does not
+prove the preceding screenshots/input/password/cancellation or subsequent logout
+cleanup; those remain explicit native/boot acceptance observations.
+
 ### P0 storage migration
 
 The [confirmed storage target](../docs/POLLYOS-STORAGE-DESIGN.md) replaces future

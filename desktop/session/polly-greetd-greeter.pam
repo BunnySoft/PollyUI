@@ -1,0 +1,7 @@
+#%PAM-1.0
+auth requisite pam_succeed_if.so user = polly-greeter uid > 0 uid < 1000 quiet
+auth required pam_permit.so
+account requisite pam_succeed_if.so user = polly-greeter uid > 0 uid < 1000 quiet
+account required pam_permit.so
+session required pam_loginuid.so
+session required pam_systemd.so type=wayland

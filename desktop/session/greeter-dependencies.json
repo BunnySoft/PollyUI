@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "profile": "installed",
+  "suite": "trixie",
+  "newPackages": [{"name": "greetd", "version": "0.10.3-4"}],
+  "requiredPackages": ["python3", "libpam0g", "libpam-modules", "libpam-systemd", "libsystemd0", "libnss-extrausers"],
+  "greeterAccount": "polly-greeter",
+  "greeterUidRange": [1, 999],
+  "desktopAccount": "polly",
+  "desktopUid": 1000,
+  "liveChanges": false
+}

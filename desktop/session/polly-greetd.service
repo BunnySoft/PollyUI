@@ -1,0 +1,22 @@
+[Unit]
+Description=PollyDesktop installed graphical setup and password login
+Requires=polly-accounts.service polly-greeter-setup.socket
+After=polly-accounts.service systemd-user-sessions.service plymouth-quit-wait.service
+Conflicts=getty@tty1.service polly-firstboot.service
+ConditionPathExists=/etc/polly-account-profile
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I -B /usr/lib/pollyui/greetd-launch.py
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=15
+RuntimeDirectory=polly-greeter
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+UMask=0077
+LimitCORE=0
+
+[Install]
+WantedBy=graphical.target

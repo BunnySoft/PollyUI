@@ -1,0 +1,15 @@
+#ifndef POLLYUI_GREETER_PROTOCOL_H
+#define POLLYUI_GREETER_PROTOCOL_H
+#include <stdint.h>
+#define PU_GREETER_MAGIC UINT32_C(0x50475231)
+#define PU_GREETER_PASSWORD_LIMIT 1024u
+#define PU_GREETER_SETUP_SOCKET "/run/polly-greeter/setup.sock"
+enum PuGreeterOperation { PU_GREETER_STATUS, PU_GREETER_SETUP, PU_GREETER_COMMIT, PU_GREETER_CANCEL };
+enum PuGreeterReply {
+    PU_GREETER_NEEDS_SETUP = 1, PU_GREETER_LOGIN, PU_GREETER_POLLY, PU_GREETER_ROOT,
+    PU_GREETER_PREPARED, PU_GREETER_COMMITTING, PU_GREETER_COMPLETE, PU_GREETER_CANCELLED,
+    PU_GREETER_PASSWORD_POLICY, PU_GREETER_UNAVAILABLE
+};
+struct PuGreeterRequest { uint32_t magic, operation, polly_length, root_length; };
+struct PuGreeterResponse { uint32_t magic, result; };
+#endif

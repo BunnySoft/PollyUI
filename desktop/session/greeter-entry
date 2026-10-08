@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+ulimit -c 0
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+expected=$(id -u polly-greeter)
+if [ "$expected" -le 0 ] || [ "$expected" -ge 1000 ] || [ "$(id -u)" != "$expected" ] ||
+    [ "${XDG_RUNTIME_DIR:-}" != "/run/user/$expected" ] ||
+    [ -z "${XDG_SESSION_ID:-}" ] || [ -z "${GREETD_SOCK:-}" ]; then
+    echo "Graphical setup requires its dedicated ordinary-user PAM/logind greeter session." >&2
+    exit 1
+fi
+/usr/lib/polly-account-profile-check installed
+export LIBSEAT_BACKEND=logind WLR_BACKENDS=drm,libinput SDL_VIDEODRIVER=wayland
+export XDG_SESSION_TYPE=wayland XDG_CURRENT_DESKTOP=Polly
+export XDG_CONFIG_HOME="$XDG_RUNTIME_DIR/config" XDG_DATA_HOME="$XDG_RUNTIME_DIR/data"
+export XDG_STATE_HOME="$XDG_RUNTIME_DIR/state" XDG_CACHE_HOME="$XDG_RUNTIME_DIR/cache"
+unset DISPLAY WAYLAND_DISPLAY WAYLAND_SOCKET DBUS_SESSION_BUS_ADDRESS
+cd /usr/share/pollyui
+exec /usr/bin/pollywm --socket polly-greeter-0 --exit-with-shell --exit-on-shell-failure \
+    --shell /usr/bin/pollyui --greeter --app-id org.pollyui.greeter \
+    /usr/share/pollyui/desktop/session/greeter.mjs

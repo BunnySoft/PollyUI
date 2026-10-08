@@ -1,0 +1,14 @@
+[Unit]
+Description=Restricted local first-run password setup socket
+After=polly-accounts.service
+
+[Socket]
+ListenStream=/run/polly-greeter/setup.sock
+SocketUser=polly-greeter
+SocketGroup=polly-greeter
+SocketMode=0600
+DirectoryMode=0755
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
