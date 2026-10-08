@@ -33,6 +33,17 @@ async function run() {
         'cancelled', 'wheel', 'keyboardRename', 'history'].some(key => receipt.evidence?.[key] !== true) ||
       api.stat(root + '/' + receipt.renamedName, false).type !== 'directory')
     throw new Error('Actual ordinary Files action/close/filesystem receipt is incomplete');
+  const stages = ['home-browser', 'scrolled-list', 'new-folder', 'rename-edit', 'renamed-folder', 'before-wm-close'];
+  if (!Array.isArray(receipt.captures) || receipt.captures.length !== stages.length)
+    throw new Error('Private app-buffer capture receipt is incomplete');
+  for (const [index, capture] of receipt.captures.entries()) {
+    if (capture.stage !== stages[index] || capture.kind !== 'presented-app-buffer' ||
+        capture.path !== root + '/evidence/files-' + stages[index] + '.png')
+      throw new Error('Unexpected app-buffer capture path/stage');
+    const image = api.stat(capture.path, false);
+    if (image.type !== 'file' || image.uid !== 1000 || image.bytes <= 8 || image.bytes !== capture.bytes)
+      throw new Error('Actual app-buffer artifact is missing or changed');
+  }
   console.log('FILES_WINDOW_SUPERVISOR_PASS: normal ordinary child exit and exact actual UI/close receipt');
   const marker = window.create({ title: 'fixture-success', layer: 'overlay', width: 1, height: 1,
     anchors: ['top', 'right'], exclusiveZone: -1 });

@@ -216,3 +216,15 @@ The parent must independently check the real MIME helper argv/output receipt;
 the public client claims successful native MIME dispatch, not that an external
 application rendered or consumed a document. Source syntax checks do not prove
 the optional drive mode or new engine pixels/input.
+
+Stage an ordinary-user `HOME/evidence` directory before starting the fixture.
+The drive captures six named PNGs there using the current live app window's
+native `capture(path)` API: Home, scrolled list, created folder, rename edit,
+renamed folder and before WM close. It records stage/state/path/bytes only after
+that API succeeds and the real file exists. No captures occur after closing.
+The supervisor verifies exact private paths and actual file sizes; the parent
+must independently validate PNG headers/hashes and inspect stage contents.
+These are presented app-buffer artifacts, not a compositor/host screenshot,
+physical-GPU proof or a source-only claim that captures have already passed.
+Capturing in the pre-staged child directory avoids modifying the browser's
+root directory identity while creation/rename confirmations are pending.

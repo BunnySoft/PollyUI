@@ -18,6 +18,8 @@ if (marker.uid !== 1000 || marker.type !== 'file' ||
 const app = createFilesApp({ initialPath: root, optInTheme: false }).start();
 const evidence = { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
   documentOpenRequested: false, cancelled: false, wheel: false, keyboardRename: false, history: false };
+const captureStages = ['home-browser', 'scrolled-list', 'new-folder', 'rename-edit', 'renamed-folder', 'before-wm-close'];
+const captures = [];
 let ticks = 0, last = '', previousDialog = false, passed = false;
 const renamedName = mode === '--drive' ? 'New folde' : 'Renamed folder';
 let closeObserved = false;
@@ -43,12 +45,12 @@ const surface = app.getWindow(), originalClose = surface.onclose;
 surface.onclose = () => {
   originalClose();
   closeObserved = app.controller.getState().phase === 'disposed';
-  const complete = Object.values(evidence).every(Boolean);
+  const complete = Object.values(evidence).every(Boolean) && captures.length === captureStages.length;
   if (mode === '--drive' && complete && closeObserved && closingViaDriver && !driveFailed) {
     try {
       api.writeText(root, 'files-window-result.json', JSON.stringify({
         version: 1, native: true, root, passed: true, closeObserved, evidence,
-        appId: 'org.pollyui.files-window-fixture', renamedName,
+        appId: 'org.pollyui.files-window-fixture', renamedName, captures,
       }), api.stat(root, false).identity);
     } catch (error) { console.error('FILES_WINDOW_FAIL: cannot persist actual close receipt: ' + error); }
   }
@@ -126,8 +128,37 @@ async function drive() {
     await request('wheel ' + Math.round(rect.x + Math.min(120, rect.width / 2)) +
       ' ' + Math.round(rect.y + Math.min(90, rect.height / 2)) + ' ' + delta);
   }
+  async function captureFrame(stage) {
+    if (stage !== captureStages[captures.length]) throw new Error('Unexpected capture stage: ' + stage);
+    const directory = api.stat(root + '/evidence', false);
+    if (directory.type !== 'directory' || directory.path !== root + '/evidence' ||
+        directory.uid !== 1000 || directory.permissions !== '0700' || !directory.readable || !directory.writable)
+      throw new Error('Captures require a staged ordinary-user private evidence directory');
+    const path = directory.path + '/files-' + stage + '.png';
+    try {
+      api.stat(path, false);
+      throw new Error('Capture destination already exists: ' + path);
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await wait(80);
+    const current = app.getWindow(), snapshot = app.controller.getState();
+    if (!current || current.closed || snapshot.phase !== 'ready' || typeof current.capture !== 'function' ||
+        !Function.prototype.toString.call(current.capture).includes('[native code]'))
+      throw new Error('A live actual native window is required for capture');
+    current.capture(path);
+    const file = api.stat(path, false);
+    if (file.type !== 'file' || file.uid !== 1000 || file.bytes <= 8)
+      throw new Error('Native capture did not produce an ordinary PNG artifact');
+    const record = { stage, path, bytes: file.bytes, kind: 'presented-app-buffer',
+      folder: snapshot.path, generation: snapshot.generation, page: snapshot.page,
+      scrollTop: Number(current.document.getElementById('files-list').scrollTop),
+      selection: snapshot.selection?.name ?? null, dialog: snapshot.dialog?.kind ?? null,
+      dialogName: snapshot.dialog?.name ?? null, message: snapshot.message };
+    captures.push(record);
+    console.log('FILES_WINDOW_CAPTURE: ' + JSON.stringify(record));
+  }
   const state = () => app.controller.getState();
   await until(() => state().phase === 'ready' && state().path === root, 'private initial folder');
+  await captureFrame('home-browser');
   await click('files-place-documents');
   await until(() => state().phase === 'ready' && state().path === root + '/Documents', 'Documents navigation');
   await click('files-parent');
@@ -139,6 +170,7 @@ async function drive() {
   evidence.history = true;
   await wheel(180);
   await until(() => Number(app.getWindow().document.getElementById('files-list').scrollTop) > 0, 'actual wheel scroll');
+  await captureFrame('scrolled-list');
   await wheel(-400);
   await click('files-new-folder');
   await until(() => state().dialog?.kind === 'create' && state().dialog.name === 'New folder', 'editable new folder');
@@ -148,6 +180,7 @@ async function drive() {
   await until(() => state().dialog?.kind === 'create', 'new folder confirmation');
   await click('files-confirm');
   await until(() => state().phase === 'ready' && state().selection?.name === 'New folder', 'actual create and rescan');
+  await captureFrame('new-folder');
   await click('files-rename');
   await until(() => state().dialog?.kind === 'rename', 'rename exact selected folder');
   await click('files-name', true);
@@ -158,8 +191,10 @@ async function drive() {
   if (app.getWindow().document.activeElement?.id !== 'files-name')
     throw new Error('Native Backspace must retain actual input focus');
   evidence.keyboardRename = true;
+  await captureFrame('rename-edit');
   await click('files-confirm');
   await until(() => state().phase === 'ready' && state().selection?.name === renamedName, 'actual rename and rescan');
+  await captureFrame('renamed-folder');
   const index = state().snapshot.entries.findIndex(entry => entry.name === 'literal %u; 中文.txt');
   if (index < 0) throw new Error('Private actual document is missing');
   const page = Math.floor(index / 64);
@@ -181,6 +216,7 @@ async function drive() {
   await until(() => state().selection?.name === 'literal %u; 中文.txt', 'explicit actual document selection');
   await click('files-open');
   await until(() => state().message === 'Open requested: literal %u; 中文.txt', 'actual standard MIME dispatch');
+  await captureFrame('before-wm-close');
   observe();
   if (!Object.values(evidence).every(Boolean)) throw new Error('Missing actual Files action evidence: ' + JSON.stringify(evidence));
   console.log('FILES_WINDOW_DRIVE_PASS: native pointer/wheel/name-focus/Backspace/history/MIME-dispatch; helper receipt verified externally');
