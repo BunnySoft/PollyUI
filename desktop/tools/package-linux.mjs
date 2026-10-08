@@ -97,12 +97,12 @@ function dependency(spec) {
 }
 const runtimePackages = debian ? [
   'dbus-daemon', 'dbus-bin', 'pipewire-bin', 'libspa-0.2-modules',
-  'file', 'libmagic1t64', 'libmagic-mgc',
+  'file', 'libmagic1t64', 'libmagic-mgc', 'python3',
   'libegl1', 'libegl-mesa0', 'libgl1', 'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'libgles2', 'libwayland-client0',
   'libwayland-cursor0', 'libwayland-egl1', 'libxkbcommon0', 'xkb-data', 'adwaita-icon-theme',
   'fonts-dejavu-core', 'fonts-noto-core', 'fonts-noto-cjk', 'fonts-noto-color-emoji',
   'librime-data', 'rime-data-luna-pinyin', 'libinput-bin', 'foot', 'ca-certificates',
-] : ['dbus', 'pipewire', 'pipewire-tools', 'file', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
+] : ['dbus', 'pipewire', 'pipewire-tools', 'file', 'python3', 'mesa-egl', 'mesa-gl', 'mesa-gles', 'mesa-dri-gallium',
   'wayland-libs-client', 'wayland-libs-cursor', 'wayland-libs-egl', 'libxkbcommon',
   'xkeyboard-config', 'capitaine-cursors', 'font-dejavu', 'font-noto-cjk', 'font-noto-emoji',
   'font-noto-arabic', 'font-noto-devanagari', 'rime-plum-data', 'foot', 'ca-certificates'];

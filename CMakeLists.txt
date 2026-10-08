@@ -552,12 +552,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         endif()
 
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND BUILD_TESTING)
-            add_executable(polly-install-readonly-transport-test
-                desktop/tests/install-readonly-native.c src/desktop/install-targets.c)
+            add_library(polly-install-readonly-test-adapter OBJECT src/desktop/install-targets.c)
+            target_include_directories(polly-install-readonly-test-adapter PRIVATE src/desktop)
+            target_include_directories(polly-install-readonly-test-adapter SYSTEM PRIVATE third_party/quickjs)
+            target_compile_definitions(polly-install-readonly-test-adapter PRIVATE
+                PU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py"
+                clock_gettime=pu_install_fixture_clock_gettime read=pu_install_fixture_read
+                waitpid=pu_install_fixture_waitpid)
+            target_compile_options(polly-install-readonly-test-adapter PRIVATE -Wall -Wextra -Werror)
+            add_executable(polly-install-readonly-transport-test desktop/tests/install-readonly-native.c
+                $<TARGET_OBJECTS:polly-install-readonly-test-adapter>)
             target_include_directories(polly-install-readonly-transport-test PRIVATE src/desktop)
             target_include_directories(polly-install-readonly-transport-test SYSTEM PRIVATE third_party/quickjs)
-            target_compile_definitions(polly-install-readonly-transport-test PRIVATE
-                PU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py")
             target_compile_options(polly-install-readonly-transport-test PRIVATE -Wall -Wextra -Werror)
             target_link_libraries(polly-install-readonly-transport-test PRIVATE qjs Threads::Threads ${CMAKE_DL_LIBS} m)
             add_test(NAME desktop-install-readonly-transport

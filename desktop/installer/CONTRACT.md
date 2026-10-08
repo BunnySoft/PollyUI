@@ -168,7 +168,11 @@ source-adjacent helper layout below (with the existing `/usr` install prefix and
 `lib` library directory); the default Debian platform recipe also copies those
 four fixed code files, normalizes LF and sets root-owned 0755 directories/0644
 files. `package-linux.mjs` records the helper/collector/layout/payload source
-hashes as build inputs and its tar writer assigns root ownership. This source
+hashes as build inputs and its tar writer assigns root ownership. Both platform
+runtime package lists explicitly resolve `python3`, required by the fixed
+interpreter endpoint; SDK availability alone is not a deployed dependency.
+The package manifest verifies that dependency and all four 0644 code files.
+This source
 wiring does not rebuild or retroactively qualify existing artifacts.
 
 A real qualified offline source producer is still **pending**. No production
@@ -315,7 +319,10 @@ mount propagation, `/proc` and `/sys` are not altered by test registration.
 CTest registers `desktop-install-readonly-transport` with the
 `root-container;private-readonly-fixture` labels. Its strict small QuickJS target
 `polly-install-readonly-transport-test` compiles only the adapter/harness and
-uses the fixed test-helper macro. `install-readonly-registered.py` refuses
+uses the fixed test-helper macro. Its separate test-adapter object also applies
+the standalone clock/read/waitpid redirects for the four deterministic boundary
+cases; those definitions never apply to the harness itself, production object
+or full ordinary-window target. `install-readonly-registered.py` refuses
 without the private marker/tmpfs views, stages the already-built test binary
 only in private `/tmp`, then executes the existing UID1000 acquisition matrix.
 It is not part of the ordinary host/source-only storage runner.
