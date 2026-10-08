@@ -135,6 +135,8 @@ Atomic replacement changes only the explicitly selected pathname: another
 hard-link name continues to reference the original inode and contents.
 This is ordinary single-path atomic-save semantics, not an in-place update of
 every alias. A dedicated disposable-fixture case checks that behavior.
+Replacement preserves ordinary rwx bits, not custom ACLs, xattrs or every
+metadata field; it publishes a new inode rather than editing the old inode.
 
 This is a cooperating local-filesystem observation model, **not atomic inode
 compare-and-swap**: an unrelated process can change a path between the final
