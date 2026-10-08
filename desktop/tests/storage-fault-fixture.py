@@ -281,6 +281,7 @@ def main():
                         target.write(b"x" * min(4096, available.f_bavail * available.f_frsize))
                 if os.statvfs(run_root).f_bavail != 0:
                     raise RuntimeError("ENOSPC fixture did not actually fill its 64KiB tmpfs")
+                checked()
                 refused("prepare-runtime-full", state.prepare, number=errno.ENOSPC)
                 filler.unlink()
                 if ready.read_bytes() != ready_bytes:
@@ -291,6 +292,34 @@ def main():
                         raise RuntimeError("Fault handling changed a persistent authority")
                 if any(path.name.startswith(".ready-") for path in runtime.iterdir()):
                     raise RuntimeError("Failed prepare leaked a temporary readiness file")
+
+                full_checks = ["RUNTIME"]
+                for role, volume_root in (("SYSTEM", root), ("PERSISTENT", persistent)):
+                    filler = volume_root / "full-volume-fixture"
+                    with filler.open("wb", buffering=0) as target:
+                        while os.statvfs(volume_root).f_bavail:
+                            available = os.statvfs(volume_root)
+                            target.write(b"x" * min(4096, available.f_bavail * available.f_frsize))
+                    if os.statvfs(volume_root).f_bavail != 0:
+                        raise RuntimeError("Read-only full-volume test did not reach zero available blocks")
+                    checked()
+                    filler.unlink()
+                    full_checks.append(role)
+                inode_state = os.statvfs(persistent)
+                used_inodes = inode_state.f_files - inode_state.f_ffree
+                if used_inodes < 1:
+                    raise RuntimeError("Cannot measure allocated private tmpfs inodes")
+                run("mount", "-o", "remount,rw,nodev,nosuid,nr_inodes=" + str(used_inodes),
+                    str(persistent))
+                if os.statvfs(persistent).f_favail != 0:
+                    raise RuntimeError("Read-only inode test did not reach zero available inodes")
+                checked()
+                run("mount", "-o", "remount,rw,nodev,nosuid,nr_inodes=" + str(inode_state.f_files),
+                    str(persistent))
+                checked()
+                for path, contents in authorities.items():
+                    if path.read_bytes() != contents:
+                        raise RuntimeError("Read-only full-volume checks changed an authority")
 
                 ordinary = run(
                     "/usr/bin/python3", "-I", "-B", "-c",
@@ -331,6 +360,8 @@ def main():
             json.dump({"schemaVersion": 1, "result": "pass", **baseline,
                        "uid": os.getuid(), "euid": os.geteuid(), "faults": results,
                        "ordinaryUser": ordinary_result, "authoritiesUnchanged": True,
+                       "zeroAvailableBlockReadOnlyChecks": full_checks,
+                       "zeroAvailableInodeReadOnlyCheck": True,
                        "filesystem": "synthetic-private-tmpfs",
                        "uuidAndTypeSubstitution": True, "realMountFlagsAndInodes": True,
                        "newLayoutColdBootVerified": False, "powerCutVerified": False},

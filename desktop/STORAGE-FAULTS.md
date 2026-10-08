@@ -32,6 +32,9 @@ failure can leave the complete new record visible but still reports failure,
 not rollback or durable success. No global zero-free-block/inode login gate
 or arbitrary capacity reserve is added: actual ENOSPC at publication is
 reported, while read-only inspection is not claimed to reserve future writes.
+Full storage must retain login, read-only diagnosis and cleanup access when the
+existing authorities remain readable; each persistent writer applies its own
+operation-specific needs and explicit ENOSPC/I/O refusal.
 
 ## Focused reproduction
 
@@ -54,6 +57,10 @@ runtime readiness, real EROFS and actual ENOSPC on its 64KiB runtime. Checks
 must issue only `findmnt`, leave empty destinations empty and preserve the
 synthetic package/account authorities. A real UID/GID 1000 subprocess must
 pass `Storage.check` and refuse privileged preparation.
+Positive checks also run with actual zero available blocks on the SYSTEM,
+PERSISTENT and runtime tmpfs, and actual zero available PERSISTENT inodes.
+Those conditions must not turn a readable authority into a global login or
+cleanup refusal; the ENOSPC publication operation still fails explicitly.
 
 Tmpfs has no ext4 UUID. The fixture explicitly substitutes only the synthetic
 UUID/type returned for its private volume devices; production
