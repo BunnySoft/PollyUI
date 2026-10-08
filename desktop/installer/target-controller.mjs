@@ -15,7 +15,9 @@ export function createTargetController({ provider = null, onChange = () => {},
     !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000)
     throw new TypeError('Expected callbacks and a bounded report timeout');
   if (provider !== null && (typeof provider.readReport !== 'function' ||
-    (provider.subscribeInvalidation !== undefined && typeof provider.subscribeInvalidation !== 'function')))
+    (provider.subscribeInvalidation !== undefined && typeof provider.subscribeInvalidation !== 'function') ||
+    (provider.cancelRead !== undefined && typeof provider.cancelRead !== 'function') ||
+    (provider.stop !== undefined && typeof provider.stop !== 'function')))
     throw new TypeError('Expected an explicit read-only report provider');
   let state = freezeData({ schemaVersion: 1, ...RO, generation: 0,
     phase: provider ? 'idle' : 'unavailable', envelope: null, selection: null,
@@ -28,7 +30,15 @@ export function createTargetController({ provider = null, onChange = () => {},
     onChange(state);
   }
   function interrupt(status) {
-    if (active) { const request = active; active = null; request.cancel(status); }
+    if (active) {
+      const request = active; active = null; request.cancel(status);
+      if (provider?.cancelRead) {
+        try {
+          Promise.resolve(provider.cancelRead()).catch(error =>
+            reportError('Read-only transport cancellation failed: ' + String(error)));
+        } catch (error) { reportError('Read-only transport cancellation failed: ' + String(error)); }
+      }
+    }
   }
   function clear(phase, reasons = []) {
     publish({ phase, selection: null, scopeAcknowledged: false, confirmation: null, reasons });
@@ -105,6 +115,7 @@ export function createTargetController({ provider = null, onChange = () => {},
       return result('ready');
     } catch (error) {
       if (active !== request || state.generation !== requestId || stopped) return stale();
+      interrupt('error');
       return fail(error);
     } finally {
       clearTimeout(timer);
@@ -167,6 +178,10 @@ export function createTargetController({ provider = null, onChange = () => {},
       const stop = unsubscribe; unsubscribe = null;
       publish({ phase: 'disposed', selection: null, scopeAcknowledged: false, confirmation: null });
       if (stop) stop();
+      if (provider?.stop) {
+        try { provider.stop(); }
+        catch (error) { reportError('Read-only provider shutdown failed: ' + String(error)); }
+      }
     },
   };
   if (provider?.subscribeInvalidation) {

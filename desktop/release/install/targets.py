@@ -711,7 +711,26 @@ def _collect_kernel(dev, deadline, sys_root=Path("/sys")):
     return result
 
 
-def enumerate_readonly(source_paths):
+class _CollectorEvidence:
+    """Fixed production evidence locations; tests inject a private evidence object."""
+
+    def command(self, args, deadline):
+        return _command(args, deadline)
+
+    def kernel(self, dev, deadline):
+        return _collect_kernel(dev, deadline)
+
+    def resolve(self, path):
+        return Path(path).resolve(strict=True)
+
+    def exists(self, path):
+        return Path(path).exists()
+
+    def read(self, path, limit):
+        return _read(path, limit)
+
+
+def enumerate_readonly(source_paths, *, evidence=None, timeout=20):
     """Bounded Linux collector; only lsblk/findmnt and proc/sysfs text are read.
 
     Source paths must name ALL payload/input locations, supplied by the trusted
@@ -719,39 +738,41 @@ def enumerate_readonly(source_paths):
     roots with unknown physical backing are rejected, not treated as safe.
     """
     if sys.platform != "linux" or not isinstance(source_paths, list) or \
-            not 1 <= len(source_paths) <= 16:
+            not 1 <= len(source_paths) <= 16 or type(timeout) not in (int, float) or \
+            not 0 < timeout <= 20:
         raise ValueError("Linux enumeration requires 1-16 explicit source paths")
-    deadline = time.monotonic() + 20
-    before = _json(_command(LSBLK, deadline))
+    evidence = _CollectorEvidence() if evidence is None else evidence
+    deadline = time.monotonic() + timeout
+    before = _json(evidence.command(LSBLK, deadline))
     flat = _flatten(before)
     kernel, errors = {}, []
     for raw, _ in flat:
         dev = raw.get("maj:min")
         if isinstance(dev, str) and dev not in kernel:
             try:
-                kernel[dev] = _collect_kernel(dev, deadline)
+                kernel[dev] = evidence.kernel(dev, deadline)
             except (OSError, ValueError) as error:
                 errors.append(str(error))
     context = {"complete": True, "root": [], "boot": [], "source": [],
                "mounts": [], "swaps": [], "errors": errors}
 
     def backing(path):
-        return _major(_command(("/usr/bin/findmnt", "--noheadings", "--raw",
+        return _major(evidence.command(("/usr/bin/findmnt", "--noheadings", "--raw",
                                 "--target", str(path), "--output", "MAJ:MIN"), deadline).strip())
 
     boot_paths = ["/boot"]
-    if Path("/System/Boot").exists():
+    if evidence.exists("/System/Boot"):
         boot_paths.append("/System/Boot")
     for category, paths in (("root", ["/"]), ("boot", boot_paths),
                             ("source", source_paths)):
         for path in paths:
             try:
-                resolved = Path(path).resolve(strict=True)
+                resolved = evidence.resolve(path)
                 context[category].append(backing(resolved))
             except (OSError, ValueError) as error:
                 errors.append(category + ": " + str(error))
     try:
-        lines = _read("/proc/self/mountinfo", MAX_OUTPUT).splitlines()
+        lines = evidence.read("/proc/self/mountinfo", MAX_OUTPUT).splitlines()
         if len(lines) > MAX_NODES:
             raise ValueError("Mount inventory exceeds bound")
         for line in lines:
@@ -759,7 +780,7 @@ def enumerate_readonly(source_paths):
             if len(fields) < 10 or "-" not in fields:
                 raise ValueError("Invalid mountinfo")
             context["mounts"].append({"majorMinor": _major(fields[2]), "target": _unescape(fields[4])})
-        swaps = _read("/proc/swaps", MAX_OUTPUT).splitlines()
+        swaps = evidence.read("/proc/swaps", MAX_OUTPUT).splitlines()
         if not swaps or not swaps[0].startswith("Filename") or len(swaps) > MAX_NODES:
             raise ValueError("Invalid or excessive swap inventory")
         for line in swaps[1:]:
@@ -772,12 +793,12 @@ def enumerate_readonly(source_paths):
     except (OSError, ValueError) as error:
         errors.append(str(error))
     # Catch changed lsblk geometry/IDs/mounts while collecting ancillary evidence.
-    after = _json(_command(LSBLK, deadline))
+    after = _json(evidence.command(LSBLK, deadline))
     if after != before:
         errors.append(MESSAGES["enumeration-changed"])
     for dev, original in kernel.items():
         try:
-            if _collect_kernel(dev, deadline) != original:
+            if evidence.kernel(dev, deadline) != original:
                 errors.append(MESSAGES["enumeration-changed"] + " " + dev)
         except (OSError, ValueError) as error:
             errors.append(str(error))

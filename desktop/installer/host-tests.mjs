@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 register('../tests/menu-host-loader.mjs', import.meta.url);
 const { createTargetApp } = await import('./target-app.mjs');
+const { createNativeTargetProvider } = await import('./native-provider.mjs');
 const { makeFixtureEnvelope, createFixtureProvider } = await import('./fixtures.mjs');
 
 // The real reconciler is exercised against a bounded DOM/window mock, not SDL,
@@ -297,4 +298,36 @@ test('theme failure is visible and logged, not authority escalation or fake repo
   assert.equal(f.app.controller.getState().phase, 'unavailable');
   assert.equal(f.app.controller.getState().envelope, null);
   assert.equal(f.app.controller.getState().writeAuthorized, false);
+});
+
+test('explicit fixed provider drives the ordinary app view and stops on window close', async t => {
+  let reads = 0, cancels = 0;
+  const native = { installTargets: { protocolVersion: 1, transport: 'fixed-unprivileged-v1',
+    readReport(...args) {
+      assert.deepEqual(args, []); return Promise.resolve(makeFixtureEnvelope('native-shaped-' + ++reads));
+    },
+    cancel() { cancels++; },
+  } };
+  const provider = createNativeTargetProvider(native);
+  const f = fixture(t, { provider, native }); await settled();
+  assert.equal(reads, 1);
+  assert.equal(f.app.controller.getState().phase, 'ready');
+  assert.equal(f.app.controller.getState().selection, null);
+  assert.match(f.text(), /FIXTURE-USB-001/);
+  f.windows[0].close();
+  await assert.rejects(provider.readReport({ purpose: 'refresh', requestId: 2,
+    previousGeneration: null }), /stopped/);
+  assert.equal(cancels, 0);
+});
+
+test('opted-in missing backend API error remains visible in the ordinary view', async t => {
+  let error;
+  try { createNativeTargetProvider(null); }
+  catch (caught) { error = caught; }
+  const f = fixture(t, { provider: { readReport: async () => { throw error; } } });
+  await settled();
+  assert.equal(f.app.controller.getState().phase, 'error');
+  assert.match(f.text(), /Fixed native read-only.*missing or incompatible/);
+  assert.equal(f.errors.length, 1);
+  assert.equal(f.app.controller.getState().envelope, null);
 });
