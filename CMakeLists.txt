@@ -427,7 +427,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_include_directories(polly-files-api-test PRIVATE src/desktop)
         target_include_directories(polly-files-api-test SYSTEM PRIVATE third_party/quickjs)
         target_link_libraries(polly-files-api-test PRIVATE qjs PkgConfig::BUNDLE_CRYPTO Threads::Threads ${CMAKE_DL_LIBS} m)
-        target_compile_options(polly-files-api-test PRIVATE -Wall -Wextra -Werror)
+        target_compile_options(polly-files-api-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
         add_test(NAME desktop-files-core COMMAND polly-files-core-test)
         add_test(NAME desktop-files-api COMMAND polly-files-api-test
             "${CMAKE_SOURCE_DIR}/desktop/tests/files-api-native.js")
