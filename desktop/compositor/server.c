@@ -676,9 +676,42 @@ static void fit_floating(struct PuDesktopView *view, struct wlr_box *box,
     keep_visible(box, bounds);
 }
 
+static void present_view(struct PuDesktopView *view);
+
+static void present_geometry(struct PuDesktopView *view)
+{
+    view->geometry_pending = false;
+    pu_decoration_present(view);
+    view->mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
+                 view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    view->presented_box = view->pending_box;
+    struct wlr_box box = view->pending_box;
+    if (view->mode == PU_DESKTOP_FLOATING) {
+        box.width = view->toplevel->base->geometry.width;
+        box.height = view->toplevel->base->geometry.height;
+        struct wlr_box bounds;
+        if (output_box(view->desktop, view->output, &bounds)) {
+            use_work_area(view->output, &bounds);
+            pu_decoration_inset(view, &bounds, false);
+            keep_visible(&box, &bounds);
+        }
+    }
+    wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
+}
+
 static void configure_view(struct PuDesktopView *view, struct wlr_box box,
                            const struct wlr_box *bounds)
 {
+    struct wlr_xdg_surface *surface = view->toplevel->base;
+    enum PuDesktopMode mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
+                              view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    bool reuse_buffer = view->mapped && surface->surface->buffer &&
+        !view->geometry_pending && !view->resize_pending &&
+        view->mode == mode && !view->toplevel->current.resizing &&
+        view->toplevel->current.maximized == view->maximized &&
+        view->toplevel->current.fullscreen == view->fullscreen &&
+        box.width == surface->geometry.width && box.height == surface->geometry.height &&
+        !pu_decoration_mode_pending(view);
     if (view->desktop->grabbed == view) end_grab(view->desktop);
     view->resize_pending = false;
     view->pending_box = box;
@@ -689,6 +722,12 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
     wlr_xdg_toplevel_set_resizing(view->toplevel, false);
     view->geometry_serial = wlr_xdg_toplevel_set_size(view->toplevel, box.width, box.height);
     view->geometry_pending = true;
+    /* Position/theme-only changes can use the presented buffer; idle clients
+       may acknowledge an unchanged size without committing another buffer. */
+    if (reuse_buffer) {
+        present_geometry(view);
+        present_view(view);
+    }
 }
 
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
@@ -742,23 +781,7 @@ static void present_view(struct PuDesktopView *view)
         /* A buffer for an older configure must not acquire the latest position. */
         uint32_t serial = view->toplevel->base->current.configure_serial;
         if ((int32_t)(serial - view->geometry_serial) < 0) return;
-        view->geometry_pending = false;
-        pu_decoration_present(view);
-        view->mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
-                     view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
-        view->presented_box = view->pending_box;
-        struct wlr_box box = view->pending_box;
-        if (view->mode == PU_DESKTOP_FLOATING) {
-            box.width = view->toplevel->base->geometry.width;
-            box.height = view->toplevel->base->geometry.height;
-            struct wlr_box bounds;
-            if (output_box(view->desktop, view->output, &bounds)) {
-                use_work_area(view->output, &bounds);
-                pu_decoration_inset(view, &bounds, false);
-                keep_visible(&box, &bounds);
-            }
-        }
-        wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
+        present_geometry(view);
     }
     struct wlr_box geometry = view->toplevel->base->geometry;
     bool fullscreen = view->mode == PU_DESKTOP_FULLSCREEN;

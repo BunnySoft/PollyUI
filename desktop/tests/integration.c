@@ -544,6 +544,38 @@ static bool decoration_suite(const char *path)
     CHECK(view && client->reply.decoration_mode == 1 && !pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
     CHECK(command(client, TEST_DECORATION, 2, 0, 0));
     CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    uint32_t committed = view->toplevel->base->current.configure_serial;
+    struct wlr_client_buffer *buffer = view->toplevel->base->surface->buffer;
+    CHECK(command(client, TEST_HOLD, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_APPEARANCE, 1, 0, 0));
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(!view->geometry_pending && view->toplevel->base->current.configure_serial == committed);
+    CHECK(view->toplevel->base->surface->buffer == buffer);
+    inset = (struct wlr_box){0};
+    pu_decoration_inset(view, &inset, false);
+    CHECK(inset.y == pu_decoration_themes[1].title_height);
+    pu_desktop_redecorate(view);
+    CHECK(!view->geometry_pending && view->toplevel->base->surface->buffer == buffer);
+    int before_x = view->tree->node.x, before_y = view->tree->node.y;
+    motion(before_x + 80, before_y - inset.y / 2.0);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_MOVE);
+    motion(before_x + 110, before_y - inset.y / 2.0 + 20);
+    button(BTN_LEFT, false);
+    CHECK(view->tree->node.x == before_x + 30 && view->tree->node.y == before_y + 20);
+    int idle_width = view->toplevel->base->geometry.width, idle_height = view->toplevel->base->geometry.height;
+    motion(view->tree->node.x + idle_width + 1, view->tree->node.y + idle_height + 1);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_RESIZE);
+    motion(view->tree->node.x + idle_width + 21, view->tree->node.y + idle_height + 16);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(view->resize_pending && view->toplevel->base->geometry.width == idle_width &&
+        view->toplevel->base->geometry.height == idle_height);
+    button(BTN_LEFT, false);
+    CHECK(command(client, TEST_RELEASE, 0, 0, 0));
+    CHECK(view->toplevel->base->geometry.width == idle_width + 20 &&
+        view->toplevel->base->geometry.height == idle_height + 15 && !view->resize_pending);
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
     motion(view->tree->node.x + box.x + box.width / 2.0, view->tree->node.y + box.y + box.height / 2.0);
     button(BTN_LEFT, true);
     CHECK(desktop.decoration_pressed == view);
@@ -896,6 +928,8 @@ static bool state_suite(struct TestClient *client, struct PuDesktopView *view)
     /* Delayed and skipped buffers must not change placement or the restore box. */
     CHECK(command(client, TEST_HOLD, 0, 0, 0));
     CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
+    CHECK(view->geometry_pending && geometry_is(view, x, y, width, height));
+    pu_desktop_redecorate(view);
     CHECK(view->geometry_pending && geometry_is(view, x, y, width, height));
     CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0));
     CHECK(client->reply.pending >= 2);

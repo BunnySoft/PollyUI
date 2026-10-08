@@ -233,8 +233,12 @@ minimize/maximize/close controls. Titlebar double-click toggles maximize; drag
 moves floating windows and edges/corners resize them. Releases outside the
 pressed control cancel the action. Fullscreen hides the frame, and maximized
 client geometry excludes both Shell reservations and decoration extents.
-Negotiation and theme geometry changes use the normal configure/ack/commit
+Negotiation and client-size changes use the normal configure/ack/commit
 path, so an older client buffer does not acquire a newer frame layout.
+Position and theme-only changes with unchanged client size, mode and decoration
+negotiation reuse the presented buffer. An idle client need not redraw before
+its titlebar can move or resize. Outstanding size changes still require the
+latest matching commit, including when a theme refresh arrives while resizing.
 
 Shell appearance selection calls `desktop.configureAppearance(theme)` on the
 private connection. JS reads and validates versioned JSON, then prepares and

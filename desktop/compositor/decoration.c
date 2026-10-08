@@ -134,6 +134,12 @@ void pu_decoration_schedule(struct PuDesktopView *view)
     }
 }
 
+bool pu_decoration_mode_pending(struct PuDesktopView *view)
+{
+    struct PuDecoration *d = view->decoration;
+    return d && d->protocol && d->protocol->scheduled_mode != d->protocol->current.mode;
+}
+
 void pu_decoration_present(struct PuDesktopView *view)
 {
     struct PuDecoration *d = view->decoration;
