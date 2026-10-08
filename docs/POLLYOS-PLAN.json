@@ -2635,10 +2635,11 @@
       "sources": [
         "M05.4"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "gui-login"
-      ]
+      ],
+      "evidence": "2026-10-08 用户开始实现 Alpha 必要功能：由已有会话退出/电源接口 owner 从 ed3f88f 新分支完成功能源码，复用真实应用保存关闭流程；只保留必要编译和直接小回归，不操作用户 VM 或实际关机，不扩测试矩阵。"
     },
     {
       "id": "t15-m05-5",
@@ -3107,7 +3108,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -3123,10 +3124,11 @@
       "sources": [
         "M13.1"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "pam-session"
-      ]
+      ],
+      "evidence": "2026-10-08 用户开始实现 Alpha 必要功能：由已有会话退出/电源接口 owner 从 ed3f88f 新分支完成功能源码，复用真实应用保存关闭流程；只保留必要编译和直接小回归，不操作用户 VM 或实际关机，不扩测试矩阵。"
     },
     {
       "id": "t22-m13-2",
@@ -3141,11 +3143,12 @@
       "sources": [
         "M13.2"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t22-m13-1",
         "t16-m11-1"
-      ]
+      ],
+      "evidence": "2026-10-08 用户开始实现 Alpha 必要功能：由已有会话退出/电源接口 owner 从 ed3f88f 新分支完成功能源码，复用真实应用保存关闭流程；只保留必要编译和直接小回归，不操作用户 VM 或实际关机，不扩测试矩阵。"
     },
     {
       "id": "t23",
@@ -4888,7 +4891,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
