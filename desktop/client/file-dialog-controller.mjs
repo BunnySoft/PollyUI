@@ -1,4 +1,5 @@
-import { pathValue, childPath, parentPath, fileEntry, directorySnapshot, fileError } from './desktop/files/model.mjs';
+import { pathValue, childPath, parentPath, fileEntry, directorySnapshot, fileError,
+  textObservation } from './desktop/files/model.mjs';
 
 const immutable = value => {
   if (value && typeof value === 'object') {
@@ -75,11 +76,11 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     publish({ phase: 'finished', selection: null, confirmation: null, error: '' });
     onFinish(immutable(result));
   }
-  async function navigate(path, expected) {
+  async function navigate(path, expected, expectedDirectoryIdentity = null) {
     if (!active(expected) || !files) return;
     const token = publish({ phase: 'loading', selection: null, confirmation: null, error: '' });
     try {
-      const reply = directorySnapshot(await files.listDirectory(pathValue(path)));
+      const reply = directorySnapshot(await files.listDirectory(pathValue(path), expectedDirectoryIdentity));
       if (!pending(token)) return;
       publish({ phase: 'ready', directory: { path: reply.path, identity: reply.identity },
         entries: copy(reply.entries), complete: reply.complete, selection: null, confirmation: null });
@@ -97,7 +98,8 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     const selected = visibleEntries().find(item => item.path === path);
     if (!selected || !['file', 'directory', 'symlink'].includes(selected.type)) return;
     publish({ phase: 'ready', selection: selected, confirmation: null, error: '',
-      ...(config.mode === 'save' && selected.type === 'file' ? { name: selected.name } : {}) });
+      ...(config.mode === 'save' && (selected.type === 'file' ||
+        (selected.type === 'symlink' && selected.targetType !== 'directory')) ? { name: selected.name } : {}) });
   }
   async function selectedTarget(selected, token) {
     const observed = entry(await files.stat(selected.path, false));
@@ -118,7 +120,7 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     try {
       const observed = await selectedTarget(selected, token);
       if (!pending(token)) return;
-      if (observed.type === 'directory') return navigate(observed.path, token);
+      if (observed.type === 'directory') return navigate(observed.path, token, observed.identity);
       if (observed.type !== 'file' || !observed.readable)
         throw failure('EACCES', 'Choose an existing readable regular file.');
       if (!matches(selected.name)) throw failure('EINVAL', 'Selected file does not match this filter.');
@@ -130,12 +132,14 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     }
   }
   function setName(name, expected) {
-    if (!active(expected) || typeof name !== 'string') return;
+    if (!active(expected) || !['ready', 'validating', 'overwrite'].includes(state.phase) ||
+        typeof name !== 'string') return;
     publish({ phase: state.directory ? 'ready' : state.phase, name, selection: null,
       confirmation: null, error: '' });
   }
   function setFilter(index, expected) {
-    if (!active(expected) || !Number.isInteger(index) || !config.filters[index]) return;
+    if (!active(expected) || !['ready', 'validating', 'overwrite'].includes(state.phase) ||
+        !Number.isInteger(index) || !config.filters[index]) return;
     publish({ phase: state.directory ? 'ready' : state.phase, filterIndex: index,
       selection: null, confirmation: null, error: '' });
   }
@@ -159,8 +163,12 @@ export function createFileDialogController({ files = null, settings = {}, onChan
       if (!pending(token)) return;
       if (target) {
         if (target.type !== 'file') throw failure('EEXIST', 'This name belongs to a directory, link or non-regular file.');
-        if (files.overwrite !== true || typeof files.replaceText !== 'function')
-          throw failure('EEXIST', 'This file already exists. Conditional replacement is unavailable; choose a new name.');
+        if (files.overwrite !== true || files.textObservation !== 'sha256-v1' ||
+            typeof files.replaceText !== 'function' || typeof files.observeText !== 'function')
+          throw failure('EEXIST', 'This file already exists. Content-checked conditional replacement is unavailable; choose a new name.');
+        target = copy(textObservation(await files.observeText(path)));
+        if (!pending(token)) return;
+        if (target.path !== path) throw failure('ESTALE', 'Destination path changed. Refresh before saving.');
         if (!target.writable) throw failure('EACCES', 'Existing file is not writable.');
         publish({ phase: 'overwrite', name, confirmation: { path, name, parent, target }, error: '' });
         return;
@@ -179,7 +187,7 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     try {
       const parent = entry(await files.stat(confirmation.parent.path, false));
       if (!pending(token)) return;
-      const target = entry(await files.stat(confirmation.path, false));
+      const target = copy(textObservation(await files.observeText(confirmation.path)));
       if (!pending(token)) return;
       if (parent.path !== confirmation.parent.path || parent.type !== 'directory' || !parent.writable)
         throw failure('ESTALE', 'Destination directory changed. Refresh before saving.');
@@ -202,7 +210,7 @@ export function createFileDialogController({ files = null, settings = {}, onChan
   return {
     getState: () => state, visibleEntries,
     async start() {
-      if (!active() || !files || state.phase !== 'idle') return;
+      if (!active() || !files || !['idle', 'error'].includes(state.phase)) return;
       const token = publish({ phase: 'loading', error: '' });
       try {
         const locations = await files.locations();

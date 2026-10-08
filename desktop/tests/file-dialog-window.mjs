@@ -1,9 +1,10 @@
 import { requireFileSystem, childPath, fileEntry } from './desktop/files/model.mjs';
 import { createFileTextApp } from './desktop/client/file-dialog-example.mjs';
+import { requestPrivateMutation } from './desktop/tests/file-dialog-mutation.mjs';
 
 const [directory, evidence] = application.arguments;
 const files = requireFileSystem(typeof desktop === 'undefined' ? null : desktop);
-for (const name of ['locations', 'listDirectory', 'stat', 'readText', 'writeText', 'replaceText'])
+for (const name of ['locations', 'listDirectory', 'stat', 'readText', 'observeText', 'writeText', 'replaceText'])
   if (!Function.prototype.toString.call(files[name]).includes('[native code]'))
     throw new Error('Actual newly compiled ordinary filesystem required: ' + name);
 const markerFile = files.stat(childPath(directory, 'fixture-marker.txt'), false);
@@ -136,7 +137,7 @@ async function run() {
   actual = fileEntry(files.replaceText(existing, 'External change requiring fresh consent.', old.target.identity, parent.identity));
   await click(dialog.id + '-replace');
   await until(() => dialog.controller.getState().phase === 'overwrite' &&
-    dialog.controller.getState().confirmation.target.identity === actual.identity, 'fresh changed observation');
+    dialog.controller.getState().confirmation.target.identity === files.observeText(existing).identity, 'fresh changed observation');
   check(files.readText(existing, actual.identity).text === 'External change requiring fresh consent.',
     'first real Replace did not overwrite changed file');
   check(surface.document.activeElement?.id === dialog.id + '-keep', 'changed question again defaults to Keep');
@@ -146,6 +147,22 @@ async function run() {
   check(app.getState().saved?.path === existing && app.getState().contents === 'PollyUI saved text',
     'fresh ordinary key confirmation actually replaced and read back native content');
   await capture('replace-readback');
+  await click('file-text-save'); dialog = await ready(); dialog.controller.setName('eight.txt');
+  await click(dialog.id + '-accept');
+  await until(() => dialog.controller.getState().phase === 'overwrite', 'real eight-byte existing question');
+  const before = dialog.controller.getState().confirmation.target;
+  check(before.bytes === 8, 'actual in-place fixture starts with eight bytes');
+  await requestPrivateMutation(files, directory, evidence);
+  await click(dialog.id + '-replace');
+  await until(() => dialog.controller.getState().phase === 'overwrite' &&
+    dialog.controller.getState().confirmation.target.identity !== before.identity, 'fresh in-place content observation');
+  const after = dialog.controller.getState().confirmation.target;
+  console.log('FILE_DIALOG_NATIVE_METADATA_MATCH: ' + String(before.metadataIdentity === after.metadataIdentity));
+  check(files.readText(after.path, after.identity).text === 'external', 'first pointer confirmation preserved actual in-place update');
+  await capture('in-place-reconfirm');
+  await click(dialog.id + '-replace'); await idle();
+  check(app.getState().saved?.path === childPath(directory, 'eight.txt') && app.getState().contents === 'PollyUI saved text',
+    'second pointer confirmation actually wrote and read back in-place changed document');
 
   await click('file-text-open'); dialog = await ready();
   observer = window.create({ title: 'FileDialogFixture observer', width: 240, height: 80 });

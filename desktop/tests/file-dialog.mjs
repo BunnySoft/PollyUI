@@ -15,6 +15,13 @@ function controller(options = {}) {
     reportError: message => errors.push(message), ...options });
   return { ...f, c, results, errors };
 }
+test('native argument counts are enforced: directory navigation sends explicit null identity', async () => {
+  const f = controller();
+  assert.throws(() => f.files.listDirectory(HOME), /listDirectory requires 2 native arguments/);
+  await f.c.start();
+  assert.equal(f.c.getState().phase, 'ready');
+  assert.ok(f.calls.some(call => call[0] === 'listDirectory' && call[1] === HOME && call[2] === null));
+});
 function findChoice(handle, name) {
   return nodes(handle.element).find(node => node.getAttribute?.('aria-label')?.endsWith(name));
 }
@@ -54,6 +61,8 @@ test('folders navigate only on activation; home and up use actual directory list
   const f = controller(); await f.c.start(); f.c.select(HOME + '/Docs');
   assert.equal(f.c.getState().directory.path, HOME); await f.c.activate();
   assert.equal(f.c.getState().directory.path, HOME + '/Docs');
+  assert.ok(f.calls.some(call => call[0] === 'listDirectory' && call[1] === HOME + '/Docs' &&
+    call[2] === f.get(HOME + '/Docs').identity));
   assert.equal(f.c.getState().selection, null); assert.deepEqual(f.results, []);
   await f.c.up(); assert.equal(f.c.getState().directory.path, HOME);
   await f.c.navigate('/missing'); assert.match(f.c.getState().error, /ENOENT/);
@@ -113,7 +122,7 @@ test('save keeps suffixes, rejects mismatched filters/invalid names and does not
   }
   const f = controller({ settings: { mode: 'save' } }); await f.c.start(); f.c.setName('permission.txt');
   const stat = f.files.stat;
-  f.files.stat = path => { if (path.endsWith('permission.txt')) throw f.error('EACCES'); return stat(path); };
+  f.files.stat = path => { if (path.endsWith('permission.txt')) throw f.error('EACCES'); return stat(path, false); };
   await f.c.saveSelection(); assert.match(f.c.getState().error, /EACCES/); assert.equal(f.results.length, 0);
 });
 
@@ -146,7 +155,32 @@ test('changed existing identity requires another fresh explicit confirmation, no
   assert.match(f.c.getState().error, /changed.*confirm again/);
   await f.c.confirmOverwrite(oldRevision); assert.equal(f.results.length, 0, 'retained confirmation callback is stale');
   await f.c.confirmOverwrite(f.c.getState().revision);
-  assert.equal(f.results[0].expectedIdentity, f.get(EXISTING).identity);
+  assert.equal(f.results[0].expectedIdentity, f.files.observeText(EXISTING).identity);
+});
+
+test('matching metadata with changed content requires fresh backend content observation and new consent', async () => {
+  const f = controller({ settings: { mode: 'save' } }); await readySave(f.c, 'hello.txt');
+  const original = f.c.getState().confirmation.target;
+  f.get(EXISTING).text = 'Changed content with unchanged injected metadata.';
+  assert.equal(f.files.stat(EXISTING, false).identity, original.metadataIdentity);
+  await f.c.confirmOverwrite();
+  const current = f.c.getState().confirmation.target;
+  assert.equal(current.metadataIdentity, original.metadataIdentity);
+  assert.notEqual(current.identity, original.identity);
+  assert.equal(f.results.length, 0); assert.match(f.c.getState().error, /changed.*confirm again/);
+  await f.c.confirmOverwrite();
+  assert.equal(f.results[0].expectedIdentity, current.identity);
+});
+
+test('overwrite refuses a metadata-only or unbounded text observation even from an injected capable adapter', async () => {
+  for (const malformed of ['metadata', 'unbounded']) {
+    const f = controller({ settings: { mode: 'save' } }), observe = f.files.observeText;
+    f.files.observeText = path => malformed === 'metadata' ? f.files.stat(path, false) :
+      { ...observe(path), bytes: 1048577 };
+    await readySave(f.c, 'hello.txt');
+    assert.equal(f.results.length, 0); assert.equal(f.c.getState().confirmation, null);
+    assert.match(f.c.getState().error, /bounded native text observation/);
+  }
 });
 
 test('changed parent observation also requires fresh consent; replaced non-directory parent is rejected', async () => {
@@ -173,18 +207,24 @@ test('existing links/special targets and old new-only capability never masquerad
   const f = controller({ settings: { mode: 'save' } }); f.files.overwrite = false;
   await readySave(f.c, 'hello.txt'); assert.match(f.c.getState().error, /unavailable/);
   assert.equal(f.c.getState().confirmation, null);
+  const link = controller({ settings: { mode: 'save', suggestedName: 'different.txt' } });
+  link.put(HOME + '/link.txt', 'symlink', { linkTarget: EXISTING, targetType: 'file',
+    targetIdentity: link.get(EXISTING).identity });
+  await link.c.start(); link.c.select(HOME + '/link.txt'); await link.c.activate();
+  assert.equal(link.c.getState().name, 'link.txt');
+  assert.equal(link.results.length, 0); assert.match(link.c.getState().error, /EEXIST/);
 });
 
 test('late directory/readiness completions and stale callbacks cannot revive cancelled or replaced selection', async () => {
   const f = controller(); await f.c.start();
-  const held = deferred(), listing = f.files.listDirectory(HOME);
+  const held = deferred(), listing = f.files.listDirectory(HOME, null);
   f.files.listDirectory = () => held.promise;
   const pending = f.c.navigate(HOME); const old = f.c.getState().revision;
   f.c.cancel(); held.resolve(listing); await pending;
   f.c.select(EXISTING, old); assert.equal(f.results.length, 1); assert.equal(f.results[0].status, 'cancelled');
   const selecting = controller(); await selecting.c.start(); selecting.c.select(EXISTING);
-  const observed = selecting.files.stat(EXISTING), stat = selecting.files.stat, hold = deferred();
-  selecting.files.stat = path => path === EXISTING ? hold.promise : stat(path);
+  const observed = selecting.files.stat(EXISTING, false), stat = selecting.files.stat, hold = deferred();
+  selecting.files.stat = path => path === EXISTING ? hold.promise : stat(path, false);
   const open = selecting.c.openSelection();
   selecting.c.select(HOME + '/space "quoted" \u6587\u4ef6.txt');
   hold.resolve(observed); await open;
@@ -195,10 +235,51 @@ test('late directory/readiness completions and stale callbacks cannot revive can
 test('editing filename during pending validation invalidates late results', async () => {
   const f = controller({ settings: { mode: 'save' } }); await f.c.start(); f.c.setName('first.txt');
   const hold = deferred(), stat = f.files.stat;
-  f.files.stat = path => path === HOME ? hold.promise : stat(path);
+  f.files.stat = path => path === HOME ? hold.promise : stat(path, false);
   const pending = f.c.saveSelection(); f.c.setName('second.txt');
-  hold.resolve(stat(HOME)); await pending;
+  hold.resolve(stat(HOME, false)); await pending;
   assert.equal(f.results.length, 0); assert.equal(f.c.getState().name, 'second.txt');
+});
+
+test('filter/name edits cannot strand a deferred directory load; intentional new navigation still supersedes', async () => {
+  const f = controller({ settings: { mode: 'save', suggestedName: 'initial.txt', filters: textFilters } });
+  const listing = f.files.listDirectory(HOME, null), held = deferred();
+  f.files.listDirectory = path => path === HOME ? held.promise : {
+    version: 1, path, identity: f.get(path).identity, complete: true, entries: [] };
+  const starting = f.c.start(); await settled();
+  const loading = f.c.getState();
+  assert.equal(loading.phase, 'loading');
+  f.c.setName('blocked.txt'); f.c.setFilter(1);
+  assert.equal(f.c.getState(), loading, 'loading edits do not invalidate the acquisition token');
+  held.resolve(listing); await starting;
+  assert.equal(f.c.getState().phase, 'ready'); assert.equal(f.c.getState().name, 'initial.txt');
+  f.c.setName('usable.txt'); await f.c.saveSelection();
+  assert.equal(f.results[0].name, 'usable.txt');
+  const other = controller(), wait = deferred(), list = other.files.listDirectory(HOME, null);
+  const realList = other.files.listDirectory;
+  other.files.listDirectory = path => path === HOME ? wait.promise : realList(path, null);
+  const pending = other.c.start(); await settled(); await other.c.navigate(HOME + '/Docs');
+  wait.resolve(list); await pending;
+  assert.equal(other.c.getState().phase, 'ready');
+  assert.equal(other.c.getState().directory.path, HOME + '/Docs');
+});
+
+test('loading with an existing directory refuses filter/name mutations and still supports cancel', async () => {
+  const f = controller({ settings: { mode: 'save', suggestedName: 'initial.txt', filters: textFilters } });
+  await f.c.start(); const snapshot = f.files.listDirectory(HOME, null), held = deferred();
+  f.files.listDirectory = () => held.promise;
+  const pending = f.c.navigate(HOME), loading = f.c.getState();
+  f.c.setName('blocked.txt'); f.c.setFilter(1);
+  assert.equal(f.c.getState(), loading); assert.equal(loading.directory.path, HOME);
+  f.c.cancel(); held.resolve(snapshot); await pending;
+  assert.deepEqual(f.results, [{ status: 'cancelled', reason: 'cancelled' }]);
+});
+
+test('initial home-acquisition errors can be explicitly retried instead of leaving an inert Refresh button', async () => {
+  const f = controller(), locations = f.files.locations; let attempts = 0;
+  f.files.locations = () => { if (++attempts === 1) throw f.error('EIO'); return locations(); };
+  await f.c.start(); assert.equal(f.c.getState().phase, 'error'); assert.match(f.c.getState().error, /EIO/);
+  await f.c.start(); assert.equal(f.c.getState().phase, 'ready'); assert.equal(attempts, 2);
 });
 
 test('missing production API is visibly unavailable and cancellation has no selected path', async t => {
@@ -216,6 +297,24 @@ test('optional theme failure is visible without replacing the filesystem or sele
     reportError: message => errors.push(message) }); await settled();
   assert.match(dialog.element.textContent, /Theme error.*native/);
   assert.equal(dialog.controller.getState().selection, null); assert.equal(errors.length, 1);
+  dialog.dispose();
+});
+
+test('loading UI disables filter/name actions without losing a deferred reply or Location supersession', async t => {
+  const { host } = fixtureHost(t), parent = host.create({}), f = fixtureFiles();
+  const listing = f.files.listDirectory(HOME, null), held = deferred(), list = f.files.listDirectory;
+  f.files.listDirectory = path => path === HOME ? held.promise : list(path, null);
+  const dialog = showFileDialog({ parent, files: f.files,
+    settings: { mode: 'save', suggestedName: 'initial.txt', filters: textFilters } }); await settled();
+  assert.equal(find(dialog, 'filter-1').getAttribute('aria-disabled'), 'true');
+  assert.equal(find(dialog, 'name').tabIndex, -1);
+  assert.equal(find(dialog, 'location').tabIndex, 0, 'explicit replacement navigation remains available');
+  deliver(find(dialog, 'filter-1')); dialog.controller.setName('not-applied.txt');
+  held.resolve(listing); await settled();
+  assert.equal(dialog.controller.getState().phase, 'ready');
+  assert.equal(dialog.controller.getState().name, 'initial.txt');
+  assert.equal(find(dialog, 'filter-1').getAttribute('aria-disabled'), 'false');
+  assert.equal(find(dialog, 'name').tabIndex, 0);
   dialog.dispose();
 });
 
@@ -295,7 +394,7 @@ test('dismissing overwrite keeps focus in the modal, excludes hidden controls an
 test('large directories render only 64 rows/page with visible list-cap disclosure and bounded scrolling', async t => {
   const { host } = fixtureHost(t), parent = host.create({}), f = fixtureFiles();
   for (let i = 0; i < 1000; i++) f.put(HOME + '/file' + String(i).padStart(4, '0') + '.txt');
-  const list = f.files.listDirectory; f.files.listDirectory = path => ({ ...list(path), complete: false });
+  const list = f.files.listDirectory; f.files.listDirectory = path => ({ ...list(path, null), complete: false });
   const dialog = showFileDialog({ parent, files: f.files }); await settled();
   const rows = () => nodes(dialog.element).filter(node => node.id.startsWith(dialog.id + '-entry-'));
   assert.equal(rows().length, 64);
@@ -310,9 +409,9 @@ test('parent close, explicit disposal and held native reads do not repaint or co
   const dialog = showFileDialog({ parent, files: f.files }); await settled();
   assert.throws(() => showFileDialog({ parent, files: f.files }), /already owns/);
   const hold = deferred(), stat = f.files.stat;
-  f.files.stat = path => path === EXISTING ? hold.promise : stat(path);
+  f.files.stat = path => path === EXISTING ? hold.promise : stat(path, false);
   dialog.controller.select(EXISTING); const pending = dialog.controller.openSelection();
-  parent.close(); hold.resolve(stat(EXISTING)); await pending;
+  parent.close(); hold.resolve(stat(EXISTING, false)); await pending;
   assert.deepEqual(await dialog.result, { status: 'cancelled', reason: 'parent-closed' });
   assert.equal(closed, 1); assert.equal(dialog.element.parentNode, null);
 });

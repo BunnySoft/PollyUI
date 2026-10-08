@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { childPath, parentPath } from '../files/model.mjs';
 
 // Explicit in-memory dependencies, not product filesystem or native input proof.
@@ -26,37 +27,56 @@ export function fixtureFiles({ overwrite = true } = {}) {
   }
   const files = {
     version: 1, implementation: 'posix-ordinary-v1', maxEntries: 1024, maxTextBytes: 1048576, overwrite,
-    locations() { calls.push(['locations']); return { home: '/home/polly', documents: '/home/polly/Docs',
+    textObservation: 'sha256-v1',
+    locations() {
+      assert.equal(arguments.length, 0, 'locations requires 0 native arguments');
+      calls.push(['locations']); return { home: '/home/polly', documents: '/home/polly/Docs',
       downloads: '/home/polly/Downloads', desktop: '/home/polly/Desktop' }; },
-    listDirectory(path) {
-      calls.push(['listDirectory', path]);
+    listDirectory(path, expectedIdentity) {
+      assert.equal(arguments.length, 2, 'listDirectory requires 2 native arguments');
+      assert.ok(expectedIdentity === null || typeof expectedIdentity === 'string');
+      calls.push(['listDirectory', path, expectedIdentity]);
       const value = get(path);
+      if (expectedIdentity !== null && expectedIdentity !== value.identity) throw error('ESTALE');
       if (value.type !== 'directory' || !value.readable) throw error('EACCES');
       return { version: 1, path, identity: value.identity, complete: true,
         entries: [...records.values()].filter(item => item.path !== path && parentPath(item.path) === path).map(observed) };
     },
-    stat(path, follow = false) {
+    stat(path, follow) {
+      assert.equal(arguments.length, 2, 'stat requires 2 native arguments');
+      assert.equal(typeof follow, 'boolean');
       calls.push(['stat', path, follow]); const value = get(path);
       return observed(follow && value.type === 'symlink' ? get(value.linkTarget) : value);
     },
     readText(path, identity) {
+      assert.equal(arguments.length, 2, 'readText requires 2 native arguments');
       calls.push(['readText', path, identity]); const value = get(path);
       if (value.identity !== identity) throw error('ESTALE');
       if (value.type !== 'file' || !value.readable) throw error('EACCES');
       return { path, identity, text: value.text };
     },
+    observeText(path) {
+      assert.equal(arguments.length, 1, 'observeText requires 1 native argument');
+      calls.push(['observeText', path]);
+      const value = get(path);
+      if (value.type !== 'file' || !value.readable) throw error('EACCES');
+      return { ...observed(value), metadataIdentity: value.identity, identity: 'sha256:' + value.identity + ':' +
+        createHash('sha256').update(value.text).digest('hex') };
+    },
     writeText(directory, name, text, identity) {
+      assert.equal(arguments.length, 4, 'writeText requires 4 native arguments');
       calls.push(['writeText', directory, name, text, identity]); parent(directory, identity);
       const path = childPath(directory, name);
       if (records.has(path)) throw error('EEXIST');
       return observed(put(path, 'file', { text }));
     },
     replaceText(path, text, expected, directoryIdentity) {
+      assert.equal(arguments.length, 4, 'replaceText requires 4 native arguments');
       calls.push(['replaceText', path, text, expected, directoryIdentity]);
       if (!overwrite) throw error('ENOSYS');
       parent(parentPath(path), directoryIdentity);
       const value = get(path);
-      if (value.identity !== expected) throw error('ESTALE');
+      if (files.observeText(path).identity !== expected) throw error('ESTALE');
       if (value.type !== 'file' || !value.writable) throw error('EACCES');
       return observed(put(path, 'file', { text }));
     },

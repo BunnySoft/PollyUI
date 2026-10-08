@@ -57,7 +57,7 @@ and optionally `defaultExtension: 'txt'`. It returns checked selection intent,
 | --- | --- |
 | Open selection | `status: 'selected'`, `mode: 'open'`, canonical `path`, opaque `identity`, original explicitly chosen `selectedPath` |
 | New save target | `status: 'selected'`, `mode: 'save'`, `path`, `parentPath`, `parentIdentity`, `name`, `expectedIdentity: null`, `overwrite: false` |
-| Confirmed existing target | Same save fields, `expectedIdentity` from fresh file observation, `overwrite: true` |
+| Confirmed existing target | Same save fields, `expectedIdentity` from fresh bounded native SHA256 text observation, `overwrite: true` |
 | Cancel / disposal / parent close | `status: 'cancelled'`, `reason`; no selected path |
 
 After receiving a save result, the consumer must use its observations:
@@ -76,6 +76,13 @@ confirming the fresh observation again. It does not automatically retry a write.
 Other consumers must similarly surface backend errors and obtain renewed consent.
 No result is an OS permission grant, sandbox token, open FD, or durable write
 receipt. Normal permissions and final native revalidation remain authoritative.
+The native ABI uses exact argument counts: `locations()`,
+`listDirectory(path, expectedDirectoryIdentityOrNull)`, `stat(path, followLinks)`,
+`observeText(path)`, `readText(path, expectedIdentity)`, and the four-argument
+`writeText` / `replaceText` calls above. Initial, typed and Refresh navigation
+pass an explicit `null`, not an omitted second argument. Explicitly activated
+folders pass their freshly observed directory identity. Injected tests enforce
+these counts; JavaScript default-argument behavior is not the native contract.
 
 ## Inputs, interaction and lifetime
 
@@ -115,6 +122,11 @@ replacement consequence, and never use Enter as implicit overwrite consent.
 Changes to either file or parent observation require a fresh question and
 another explicit confirmation. Stale callbacks and late Promise completions
 cannot complete an edited selection, cancelled dialog or closed parent.
+During directory acquisition, filter and filename edits are disabled and their
+controller actions cannot invalidate the pending load. Location remains
+available to explicitly start a replacement navigation once home metadata is
+known. Edits during selected-target validation deliberately invalidate that
+validation and return to ready; they do not strand the directory acquisition.
 
 One chooser may own a parent at a time. Its `dispose()` cancels and removes the
 modal; parent `onclose` is chained/restored without taking Shell capabilities.
@@ -140,13 +152,18 @@ without publishing replacement, and retains the residual check-to-rename race
 with uncooperative concurrent writers. It is **not an atomic filename CAS against
 malicious same-UID or privileged changes**. No root password, disk/format API,
 network mount setup, administrator policy or Portal broker is added here.
-The currently supplied v1 observation is metadata, not a content hash.
-Same-size in-place edits within filesystem timestamp precision can have exactly
-the same identity, even when preserving full native nanoseconds. Such
-metadata-identical content changes are not detected by this contract; this is
-a separate limitation from the final check-to-rename race. The frontend treats
-the identity as opaque and will consume stronger backend observations without
-implementing its own filesystem/content identity.
+Browse/Open/directory observations remain metadata-only. Existing text-save
+preparation requires `textObservation: 'sha256-v1'` and native `observeText(path)`.
+Its entry has an opaque strong `.identity` and the original `.metadataIdentity`;
+the shared `textObservation` validator checks the bounded receipt. The chooser
+observes this identity again at explicit confirmation, and the consumer passes
+it unchanged to native `replaceText`. The backend rechecks the digest, rejecting
+metadata-identical changed content, not just detecting a new inode or timestamp.
+Metadata-only replacement tokens and missing strong-observation APIs are
+refused, never fallback inputs. Readable regular UTF-8 text up to 1 MiB without
+NUL is the explicit existing-file replacement scope; directories/listings are
+not hashed wholesale. All hashing stays in the one native backend; frontend
+code neither invents file receipts nor implements content hashing.
 
 ## Focused verification and evidence boundary
 
@@ -156,6 +173,7 @@ node --check desktop/tests/file-dialog-native.mjs
 node --check desktop/tests/file-dialog-native-fixture.mjs
 node --check desktop/tests/file-dialog-window.mjs
 node --check desktop/tests/file-dialog-window-shell.mjs
+node --check desktop/tests/file-dialog-mutation.mjs
 ```
 
 The Node suite injects private in-memory filesystem observations and a bounded
@@ -175,10 +193,14 @@ PU_RENDERER=raster node desktop/tests/file-dialog-native-fixture.mjs \
 
 This runner creates only a named private Linux temporary fixture, rejects
 UID0/old binaries/JS filesystem stubs, and retains logs, fixture paths, a runtime
-hash receipt and six actual window PNGs. Its ordinary app performs real native
+hash receipt and seven actual window PNGs. Its ordinary app performs real native
 listing, selection/cancellation, selected-content read, new text write/readback,
 cancelled existing-file confirmation, an external native replacement followed
 by required fresh confirmation, actual replacement/readback and parent close.
+An additional private eight-byte document is changed in place by the Node
+fixture producer. It preserves the inode and size, does not forge timestamps,
+records full before/after metadata, and requires renewed strong observation
+and a second explicit confirmation before the consumer replaces it.
 The runner independently verifies both final files and every PNG. It uses
 programmatic controller actions: **real compositor pointer/key delivery still
 requires the parent's ordinary-window injector**, not the Node handler mocks.
@@ -197,7 +219,7 @@ pollyui-layer-client-test /absolute/newly-built/pollyui \
 
 The Shell supervisor starts the same private Node runner with `--window-input`.
 It supplies a private HOME, 96 fixture rows, a separate public app with
-`org.pollyui.file-dialog-window` / `PollyUI.FileText`, and seven actual app-buffer
+`org.pollyui.file-dialog-window` / `PollyUI.FileText`, and eight actual app-buffer
 PNGs. Public control windows use
 `FileDialogFixture.<sequence>.click x y`, `.wheel x y deltaY`,
 `.key enter|escape|tab|shift-tab`, or `.close`.
@@ -212,6 +234,13 @@ final files, all PNGs and the native-written input receipt before exiting zero.
 Only then does the supervisor send the existing trusted `fixture-success`.
 Actual keyboard/compositor acceptance is **pending** until this new selector
 runs; neither source registration nor old layer-input evidence substitutes.
+`in-place.json` records actual dev/inode/mode/size/mtime-ns/ctime-ns and whether
+those fields truly matched; `FILE_DIALOG_NATIVE_METADATA_MATCH` additionally
+reports the actual native metadata-token comparison. A GUI handshake normally
+crosses a timestamp tick, so this fixture does not fabricate all-field equality.
+The filesystem owner's separate ordinary native/QuickJS regression owns the
+precise same-metadata alias proof; injected UI observations establish only the
+receipt-comparison/reconsent behavior, not OS-level detection.
 
 Parent integration must register the focused Node selector/native fixture,
 package the client modules plus the single owner's `desktop/files/model.mjs`

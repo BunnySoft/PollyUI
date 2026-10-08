@@ -114,8 +114,10 @@ export function showFileDialog({ parent = window, files,
     for (const input of [location, filename]) {
       input.setAppearance({ color: colors.text, background: colors.surface,
         borderColor: colors.border, selectionColor: colors.accent });
-      input.root.tabIndex = hasFiles && !blocked ? 0 : -1;
-      input.root.style.pointerEvents = hasFiles && !blocked ? 'auto' : 'none';
+      const enabled = hasFiles && !blocked && (input === location ? !!state.locations :
+        ['ready', 'validating'].includes(state.phase));
+      input.root.tabIndex = enabled ? 0 : -1;
+      input.root.style.pointerEvents = enabled ? 'auto' : 'none';
     }
     if (state.directory && (lastPath !== state.directory.path || (lastPhase === 'loading' && state.phase !== 'loading'))) {
       if (lastPath !== state.directory.path) { listing.scrollTop = 0; page = 0; }
@@ -173,7 +175,8 @@ export function showFileDialog({ parent = window, files,
           page++; listing.scrollTop = 0; paint(); focus('previous');
         }, usable && page + 1 < pages)) : null,
       h('view', { style: row }, ...state.filters.map((filter, index) => button('filter-' + index,
-        filter.label, () => controller.setFilter(index, revision), hasFiles && !blocked, state.filterIndex === index))),
+        filter.label, () => controller.setFilter(index, revision),
+        hasFiles && !blocked && ['ready', 'validating'].includes(state.phase), state.filterIndex === index))),
       state.mode === 'save' ? label('name-label', 'Filename; chooser does not write content.', colors.muted) : null,
       state.selection ? label('selected', state.selection.path, colors.text) : label('selected', 'No file selected', colors.muted),
       state.phase === 'validating' ? label('pending', 'Checking the latest file and directory...', colors.muted) : null,

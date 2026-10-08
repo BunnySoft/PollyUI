@@ -1,9 +1,10 @@
 import { requireFileSystem, childPath, fileEntry } from './desktop/files/model.mjs';
 import { createFileTextApp } from './desktop/client/file-dialog-example.mjs';
+import { requestPrivateMutation } from './desktop/tests/file-dialog-mutation.mjs';
 
 const [directory, evidence] = application.arguments;
 const files = requireFileSystem(typeof desktop === 'undefined' ? null : desktop);
-for (const name of ['locations', 'listDirectory', 'stat', 'readText', 'writeText', 'replaceText'])
+for (const name of ['locations', 'listDirectory', 'stat', 'readText', 'observeText', 'writeText', 'replaceText'])
   if (!Function.prototype.toString.call(files[name]).includes('[native code]'))
     throw new Error('New compiled ordinary-user filesystem required; old binary/JS stub rejected: ' + name);
 const parent = files.stat(directory, false);
@@ -66,7 +67,7 @@ async function run() {
     old.target.identity, observedParent.identity));
   await dialog.controller.confirmOverwrite();
   check(dialog.controller.getState().phase === 'overwrite' &&
-    dialog.controller.getState().confirmation.target.identity === actual.identity,
+    dialog.controller.getState().confirmation.target.identity === files.observeText(existing).identity,
   'changed native file was freshly observed, not replaced by the stale confirmation');
   check(files.readText(existing, actual.identity).text === 'External change requiring fresh consent.',
     'first confirmation did not overwrite changed content');
@@ -75,6 +76,21 @@ async function run() {
   check(app.getState().contents === 'PollyUI saved text' && app.getState().saved?.path === existing,
     'second explicit confirmation actually replaced and read back existing native text');
   await capture('06-replace-readback');
+  operation = app.save(); dialog = await dialogReady('in-place content change');
+  dialog.controller.setName('eight.txt'); await dialog.controller.saveSelection();
+  const before = dialog.controller.getState().confirmation.target;
+  check(before.bytes === 8, 'private in-place case starts with eight real bytes');
+  await requestPrivateMutation(files, directory, evidence);
+  await dialog.controller.confirmOverwrite();
+  const after = dialog.controller.getState().confirmation.target;
+  check(dialog.controller.getState().phase === 'overwrite' && after.identity !== before.identity,
+    'actual in-place content change requires a fresh strong observation and another confirmation');
+  console.log('FILE_DIALOG_NATIVE_METADATA_MATCH: ' + String(before.metadataIdentity === after.metadataIdentity));
+  check(files.readText(after.path, after.identity).text === 'external', 'strong native read proves first confirmation preserved changed content');
+  await capture('07-in-place-reconfirm');
+  await dialog.controller.confirmOverwrite(); await operation;
+  check(app.getState().saved?.path === childPath(directory, 'eight.txt') && app.getState().contents === 'PollyUI saved text',
+    'second explicit confirmation saved and read back the in-place changed document');
   operation = app.open(); dialog = await dialogReady('parent close');
   app.getWindow().close(); await operation;
   check(app.getState().closed, 'parent close disposed its chooser without late resurrection');
