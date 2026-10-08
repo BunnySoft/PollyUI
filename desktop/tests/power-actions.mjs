@@ -28,7 +28,7 @@ class Node {
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
 }
 function nodes(root) { return [root, ...root.childNodes.flatMap(nodes)]; }
-function fixture(coordinator = true) {
+export function fixture(coordinator = true, controllerFactory = null) {
   const previousDocument = globalThis.document;
   const document = { activeElement: null, createElement: () => new Node(document),
     createTextNode: text => Object.assign(new Node(document), { textContent: text }),
@@ -38,7 +38,7 @@ function fixture(coordinator = true) {
   let commit;
   let status = { phase: 'idle', action: '', windows: [], applications: [], error: '', profile: 'installed', canCancel: false };
   const notify = () => subscribers.forEach(action => action());
-  const exit = {
+  let exit = {
     snapshot: () => clone(status),
     subscribe(action) { subscribers.add(action); return () => subscribers.delete(action); },
     request(value) { commit = value.commit; calls.push(['request', value.action]); status = { ...status, action: value.action, phase: 'confirm', canCancel: true }; notify(); },
@@ -83,6 +83,28 @@ function fixture(coordinator = true) {
       Object.assign(state, { operation: '', outcome: 'cancelled', cancellable: false });
     },
   };
+  let inventory = { version: 1, phase: 'idle', pendingWindows: 0, pendingApplications: 0,
+    pendingActivations: 0, windows: [], applications: [], error: '', profile: 'installed' };
+  if (controllerFactory) {
+    native.sessionExitState = () => clone(inventory);
+    native.beginSessionExit = () => {
+      calls.push(['close-applications']);
+      inventory = { ...inventory, phase: 'waiting', pendingWindows: 1, pendingApplications: 1,
+        windows: [{ id: 7, title: 'Unsaved editor', appId: 'editor' }], applications: ['editor'] };
+      return clone(inventory);
+    };
+    native.sealSessionExit = () => {
+      assert.equal(inventory.phase, 'ready'); calls.push(['seal']);
+      inventory = { ...inventory, phase: 'committed' }; return clone(inventory);
+    };
+    native.cancelSessionExit = () => {
+      calls.push(['cancel-session-close']);
+      inventory = { ...inventory, phase: 'idle', windows: [], applications: [],
+        pendingWindows: 0, pendingApplications: 0, pendingActivations: 0 };
+      return clone(inventory);
+    };
+    exit = controllerFactory({ native, report: value => reports.push(value) });
+  }
   let window;
   const host = { displays: () => [{ id: 1, width: 1280, height: 720 }], create() {
     window = { document, closed: false, close() { if (!this.closed) { this.closed = true; this.onclose?.(); } } };
@@ -96,8 +118,13 @@ function fixture(coordinator = true) {
     stopPropagation() {}, preventDefault() {}, button: 0,
   }));
   return { power, native, state, calls, reports, exit, get, click,
-    ready() { status = { ...status, phase: 'ready', windows: [], applications: [], canCancel: true }; notify(); },
-    status: () => status,
+    ready() {
+      if (controllerFactory) {
+        inventory = { ...inventory, phase: 'ready', windows: [], applications: [], pendingWindows: 0, pendingApplications: 0 };
+        exit.refresh();
+      } else { status = { ...status, phase: 'ready', windows: [], applications: [], canCancel: true }; notify(); }
+    },
+    status: () => exit.snapshot(),
     notify() { native.onPowerChanged(); },
     async done() { power.stop(); await drain(); assert.equal(subscribers.size, 0); globalThis.document = previousDocument; },
   };

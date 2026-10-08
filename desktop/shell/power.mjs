@@ -144,6 +144,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
       label(status.phase === 'waiting' ? 'Waiting for applications to close' : 'Applications are closed'),
       ...status.windows.map(item => label(item.title || item.appId || 'Application window')),
       ...status.applications.map(id => label('Application still running: ' + id)),
+      status.pendingActivations ? label('Waiting for application activation to settle.') : null,
       status.phase === 'waiting' ? label('A Save / Cancel prompt or application may still be open. Cancel here to keep the session; already closed applications stay closed.') :
         label('The final request will recheck your current login session and the daemon permission.'),
       status.phase === 'waiting' ? button('shell-power-retry-applications', 'Ask remaining applications to close',
