@@ -71,6 +71,33 @@ class Plan(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "long"):
             planner.validate(self.plan)
 
+    def test_alpha_scope_keeps_deferred_work_and_authorization_separate(self):
+        nodes = planner.validate(self.plan)
+        self.assertEqual(nodes["t19"]["parent"], "system-apps")
+        self.assertEqual(nodes["t19-m16-2"]["status"], "pending")
+        self.assertEqual(nodes["e18"]["parent"], "system-build")
+        self.assertEqual(nodes["e22"]["parent"], "system-optimizations")
+        self.assertEqual(nodes["xp-painted-components"]["status"], "done")
+        for key in ("t11", "t12", "t15", "t23", "t25", "t26", "e09", "e11", "e13", "e16"):
+            self.assertEqual(nodes[key]["parent"], "system-optimizations")
+        self.assertEqual(nodes["t15-m05-4"]["parent"], "basic-session-exit")
+        self.assertEqual(nodes["t17-m12-4"]["parent"], "opt-wired-network")
+        self.assertEqual(nodes["gate-disk"]["status"], "blocked")
+        required = nodes["alpha-functional-closure"]["requires"]
+        self.assertIn("gui-login", required)
+        self.assertIn("t15-m05-4", required)
+        self.assertNotIn("gate-disk", required)
+        self.assertNotIn("t19-m16-2", required)
+
+    def test_generated_alpha_view_distinguishes_function_work_from_later_projects(self):
+        text = planner.markdown(self.plan)
+        self.assertIn("### Alpha 剩余工作", text)
+        self.assertIn("A0.2 必要功能闭环", text)
+        self.assertIn("A1 系统自带 App", text)
+        self.assertIn("B1 系统构建", text)
+        self.assertIn("O1 系统优化", text)
+        self.assertIn("集中手动测试", text)
+
     def test_import_database_preserves_all_nodes_origins_and_edge_kinds(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "plan.sqlite"

@@ -568,6 +568,64 @@
   },
   "nodes": [
     {
+      "id": "alpha",
+      "label": "A0 Alpha 可手测系统",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "首个面向普通用户的开发版：可启动的 Live ISO 与单 SYSTEM 安装版虚拟磁盘、稳定首次设置/密码登录、基础 Shell/设置/应用和打开保存。不是空白磁盘安装器、受保护生产桌面或硬件认证版本；后期项目不作为 Alpha 前置。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "system-apps",
+      "label": "A1 系统自带 App",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "当前基础自带 App 够用即冻结；文件管理器的复制、跨目录移动、回收站/还原及其它强化单独安排，不阻挡 Alpha。",
+      "priority": "P2",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
+      "id": "system-build",
+      "label": "B1 系统构建",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "保存现有可重建配方与物料来源；完整断网构建、CI、位级复现、渠道/签名身份和正式分发后续单独完成，不把当前缓存复用叫断网复建成功。",
+      "priority": "P2",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "system-optimizations",
+      "label": "O1 系统优化",
+      "kind": "milestone",
+      "parent": null,
+      "scope": "后期按独立项目完善复测、视觉精修、XWayland、屏幕采集、目标硬件热插拔、有线网络、锁屏认证、共享包、多用户隔离和授权外置安装；延期不等于完成，授权边界不解除。",
+      "priority": "P2",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": []
+    },
+    {
       "id": "system-settings-hub",
       "label": "T21.6 系统设置中心",
       "kind": "subtask",
@@ -579,9 +637,9 @@
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "done",
       "requires": [],
-      "evidence": "用户明确将第四批改为实际系统功能优先；固定0f86311，子会话47f514de-9e94-47a4-8ccf-05299e0676fe实现Shell连接拥有的普通设置窗口、持续导航和现有服务操作；显示确认/快捷键捕获继续使用现有受控层，不扩大普通应用权限。功能与实际原生验收待返回。"
+      "evidence": "用户明确将第四批改为实际系统功能优先；固定0f86311，子会话47f514de-9e94-47a4-8ccf-05299e0676fe实现Shell连接拥有的普通设置窗口、持续导航和现有服务操作；显示确认/快捷键捕获继续使用现有受控层，不扩大普通应用权限。功能与实际原生验收待返回。 第四批普通设置中心六页导航与复用控制器已进入本地 main ce73a3c。固定 e879 的实际 UI16.27s/音频17.38s 与合格私有 PSK 网络关闭/重开、最少七张 UI/十张网络 app-buffer 门槛通过，父核对日志 SHA6ee5d39a。账户管理、物理音频/无线、原生 EAP、正式授权和 Hyper-V 首启图形稳定性不被此完成声明覆盖。"
     },
     {
       "id": "target-identity-ui",
@@ -628,25 +686,10 @@
     {
       "id": "e22",
       "label": "E22 XP Luna 视觉对齐",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-optimizations",
       "scope": "以选定 XP 蓝色 Luna 版本/96-DPI 基线，逐部件对齐真实窗口装饰和 Shell 控件、字体/资源、材质和状态；使用原创或有明确授权材料，记录剩余差异，不以预览/模拟截图宣称1:1或强制第三方控件改样式。",
-      "priority": "P1",
-      "modes": [
-        "installed",
-        "live"
-      ],
-      "sources": [],
-      "status": "in_progress",
-      "requires": []
-    },
-    {
-      "id": "xp-reference-baseline",
-      "label": "E22.1 固定参考与测量",
-      "kind": "subtask",
-      "parent": "e22",
-      "scope": "建立来源可追溯的固定目标版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed",
         "live"
@@ -654,7 +697,23 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。"
+      "evidence": "2026-10-08 用户范围调整：XP 参考认证与完整视觉精修；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
+    },
+    {
+      "id": "xp-reference-baseline",
+      "label": "E22.1 固定参考与测量",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "建立来源可追溯的固定目标版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。"
     },
     {
       "id": "xp-painted-components",
@@ -673,7 +732,7 @@
       ],
       "status": "done",
       "requires": [],
-      "evidence": "1176066与startup修复1d5254a纳入固定最终组合a5e176a；完整新native build、13selectors、3真实PollyUI/实际四scale组成截图通过。source-reviewed startup typed拒绝/generic schema1真实回退通过；非整桌面1:1/官方字体或品牌资源认证。"
+      "evidence": "1176066与startup修复1d5254a纳入固定最终组合a5e176a；完整新native build、13selectors、3真实PollyUI/实际四scale组成截图通过。source-reviewed startup typed拒绝/generic schema1真实回退通过；非整桌面1:1/官方字体或品牌资源认证。 Alpha 的当前 XP 基础窗口装饰绘制保持已完成：标题栏、按钮、任务栏与 bevel 已有固定原生四倍率证据；未完成的完整 Start、disabled/focus、外部托盘图标和参考认证仅属后期精修。主题刷新后的闲置窗口拖缩是独立交互缺陷，ce73a3c 已修功能源码，旧 e879 媒体没有该修复。"
     },
     {
       "id": "xp-native-comparison",
@@ -681,17 +740,17 @@
       "kind": "subtask",
       "parent": "e22",
       "scope": "固定实现提交在独立验证lane真实绘制截图，对照裁剪部件的几何/颜色/状态与已定义图像差异；说明字体/授权资产/抗锯齿和未实现效果，迭代，不以mock或预览替代native。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "pending",
       "requires": [
         "xp-painted-components"
       ],
-      "evidence": "临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。"
+      "evidence": "临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。"
     },
     {
       "id": "r1",
@@ -754,10 +813,10 @@
     },
     {
       "id": "r5",
-      "label": "R5 受保护日常桌面",
+      "label": "R5 日常桌面基础",
       "kind": "milestone",
       "parent": null,
-      "scope": "图形登录、管理、锁屏/注销、基础网络/本地音频、文件打开保存、基本应用 UI、普通关机与设备安全操作可用；不包含蓝牙、Portal、挂起或高级效果。",
+      "scope": "Alpha 的图形登录、基础设置/本地音频与应用、文档打开保存、普通注销和关机体验；锁屏认证、视觉精修、共享包和设备硬件资格单独延后，不宣传已具受保护生产桌面。",
       "priority": "P1",
       "modes": [
         "installed"
@@ -1117,7 +1176,7 @@
         "M07.5",
         "M01.6"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "profile-separation",
         "required-maps",
@@ -1125,7 +1184,8 @@
         "first-passwords",
         "role-bootstrap",
         "pam-session"
-      ]
+      ],
+      "evidence": "新 e879 的 Live ISO 与未初始化单 SYSTEM raw/VHDX已交付：Live ISO677996544字节/SHA d52d36a3，QEMU光盘实际普通 Live 桌面；VHDX SHA a0849d5d/QEMU真实首次设置；用户正确 Hyper-V PollyOS installed 桌面已观察。不是当前 ce73 新媒体、正常关机/重启耐久或 fresh Hyper-V 图形入口一致性完整验收。"
     },
     {
       "id": "t04",
@@ -2030,15 +2090,16 @@
       "id": "t11",
       "label": "T11 额外用户生命周期",
       "kind": "task",
-      "parent": "r4",
+      "parent": "system-optimizations",
       "scope": "把数据 UID 夹具提升为真实额外账户/NSS/PAM 生命周期；不误称第二个数值 UID 已能登录。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：额外用户与隔离；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "extra-users",
@@ -2046,7 +2107,7 @@
       "kind": "subtask",
       "parent": "t11",
       "scope": "定义并实现额外普通用户的稳定 UID/GID、passwd/shadow/NSS/PAM 与安全停用，服务身份不当用户；账户操作原子且保持独立 HOME。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2067,7 +2128,7 @@
       "kind": "subtask",
       "parent": "t11",
       "scope": "至少两账户真实认证、创建/改密/会话与 Settings/AppData/Cache/文档/root HOME 隔离，维护后 UID 不漂移。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2085,15 +2146,16 @@
       "id": "t12",
       "label": "T12 共享包与全局注册",
       "kind": "task",
-      "parent": "r4",
+      "parent": "system-optimizations",
       "scope": "全机活动版本和普通用户数据隔离；新共享运行不等待整机旧数据迁移或管理员 GUI。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：共享包与全局注册；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t12-m04-6",
@@ -2101,7 +2163,7 @@
       "kind": "subtask",
       "parent": "t12",
       "scope": "P0 实现共享 App 安装/替换/全局卸载的窄授权接口，验证真实调用者和操作范围；拒绝任意路径/命令/hooks，不将旧 `polly-app` 整体提权。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2120,7 +2182,7 @@
       "kind": "subtask",
       "parent": "t12",
       "scope": "将共享代码/资源置于 `Apps/Packages/<PackageHash>`，权威注册/策略置于 `SystemData/Apps`；复用校验/限额/暂存/摘要和版本约束，普通 App 不可写，个人数据身份不变。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2140,7 +2202,7 @@
       "kind": "subtask",
       "parent": "t12",
       "scope": "迁移为每 app-id 一个全机活动版本；冲突由管理员显式选择，保留各用户数据/旧版本；暂存/校验/提交/中断恢复，未解决不切换、未知数据不接管，确认前保留旧源。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2161,7 +2223,7 @@
       "kind": "subtask",
       "parent": "t12",
       "scope": "至少两用户运行同一共享包且数据隔离；启动器区分 apt/Polly 来源，apt 无第二套安装数据库；全局卸载不等于隐藏个人入口，GC 检查跨用户引用/资源使用，策略检查不冒充执行隔离或沙箱。",
-      "priority": "P0",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2315,7 +2377,7 @@
         "first-passwords",
         "role-bootstrap"
       ],
-      "evidence": "第四批用户功能优先，固定0f86311，子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4与图形登录同一完整账户流程；用户已批准greetd底层/Polly非root图形界面，复用现双密码/角色初始化，不改变Live或默认密码登录。真实首次设置和PAM/会话交接待实现验收。"
+      "evidence": "第四批用户功能优先，固定0f86311，子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4与图形登录同一完整账户流程；用户已批准greetd底层/Polly非root图形界面，复用现双密码/角色初始化，不改变Live或默认密码登录。真实首次设置和PAM/会话交接待实现验收。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。"
     },
     {
       "id": "gui-login",
@@ -2334,7 +2396,7 @@
       "requires": [
         "pam-session"
       ],
-      "evidence": "第四批与gui-setup同一子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4；用户批准greetd标准PAM/VT/logind会话管理及非rootPolly greeter，安装版真正图形密码登录交付优先。锁屏认证成功不当作登录，root不进入桌面，Live既有策略不更改，真实会话验收待返回。"
+      "evidence": "第四批与gui-setup同一子会话7d0bf6ec-34e8-48d4-b685-8bb584ca8df4；用户批准greetd标准PAM/VT/logind会话管理及非rootPolly greeter，安装版真正图形密码登录交付优先。锁屏认证成功不当作登录，root不进入桌面，Live既有策略不更改，真实会话验收待返回。 第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。"
     },
     {
       "id": "t14-m03-3",
@@ -2349,18 +2411,19 @@
       "sources": [
         "M03.3"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "gui-login"
-      ]
+      ],
+      "evidence": "第四批受限 greetd/非root greeter、双密码/取消/独立提交、错误登录与权威状态 Retry 的功能源码及真实小 C/PAM 组件已具并纳入 ce73a3c；QEMU 新 VHDX 初次四字段实际可见，用户 Hyper-V PollyOS 通过控制台设密并进入 installed desktop。Hyper-V 首次图形入口不出现/首次卡住重启后能进桌面的确切原因未取 guest journal，不能假称全图形首启完成。未来镜像含 1cd5f77 控制台 user-sessions 服务依赖修复，已交付 e879 不被改写。"
     },
     {
       "id": "t14-m03-5",
       "label": "T14.4 登录策略联合验收",
       "kind": "subtask",
-      "parent": "t14",
+      "parent": "t15",
       "scope": "验证密码登录和自动登录模式跨重启/维护/恢复保留；注销与锁屏仍有认证，自动登录不冒充加密解锁。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2373,7 +2436,8 @@
         "autologin-ui",
         "t15-m05-1",
         "t15-m05-4"
-      ]
+      ],
+      "evidence": "用户将锁屏认证和复测移后期；登录/锁定/迁移/恢复联合复测不阻挡 Alpha 的基本密码登录。"
     },
     {
       "id": "autologin-core",
@@ -2491,17 +2555,18 @@
     },
     {
       "id": "t15",
-      "label": "T15 锁屏注销与 TTY",
+      "label": "O1 锁屏认证与 TTY",
       "kind": "task",
-      "parent": "r5",
+      "parent": "system-optimizations",
       "scope": "失败保持覆盖；锁定、注销与普通登录分别验收，挂起属于独立 E03。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：锁屏认证、空闲锁定与受保护 TTY 后期完善；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t15-m05-1",
@@ -2509,7 +2574,7 @@
       "kind": "subtask",
       "parent": "t15",
       "scope": "接通 Shell 锁屏入口、快捷键及 login1 Lock/Unlock 信号，解锁仅接受有效的 `polly` 认证。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2527,7 +2592,7 @@
       "kind": "subtask",
       "parent": "t15",
       "scope": "默认 10 分钟无操作锁屏，提供配置；定义正常输入、活动/抑制请求和失效状态的边界。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2545,7 +2610,7 @@
       "kind": "subtask",
       "parent": "t15",
       "scope": "接通可信锁进程恢复，验证崩溃、超时、多显示器/热插拔、黑屏覆盖和普通输入隔离。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2561,7 +2626,7 @@
       "id": "t15-m05-4",
       "label": "T15.4 注销与保存",
       "kind": "subtask",
-      "parent": "t15",
+      "parent": "basic-session-exit",
       "scope": "注销提供应用保存机会并回到受保护登录入口，不遗留已登录 shell 或误结束其它用户会话。",
       "priority": "P1",
       "modes": [
@@ -2581,7 +2646,7 @@
       "kind": "subtask",
       "parent": "t15",
       "scope": "验证 VT 切换、已存在 TTY 会话和恢复入口，不能经 TTY 绕过锁屏；安全性结论不扩展到有 root 权限的攻击者。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2600,7 +2665,7 @@
       "kind": "subtask",
       "parent": "t15",
       "scope": "确认自动登录、密码修改、锁进程失败及注销重进组合；未闭环前不启用自动挂起。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -2781,9 +2846,9 @@
       "id": "t17-m12-4",
       "label": "T17.3 有线网络与 DNS",
       "kind": "subtask",
-      "parent": "t17",
+      "parent": "opt-wired-network",
       "scope": "补齐有线状态、地址/DNS 管理和失败反馈，不把已有 DHCP/DNS 记为未实现。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "live",
         "installed"
@@ -2794,7 +2859,8 @@
       "status": "pending",
       "requires": [
         "t17-m12-1"
-      ]
+      ],
+      "evidence": "用户明确将有线网络延后，归系统优化，不作为 Alpha 桌面候选的硬件前置。"
     },
     {
       "id": "t18",
@@ -2846,53 +2912,54 @@
     },
     {
       "id": "t19",
-      "label": "T19 文件管理与安全操作",
+      "label": "App1 文件管理器",
       "kind": "task",
-      "parent": "r5",
+      "parent": "system-apps",
       "scope": "真实文件浏览/修改的用户操作闭环；设备挂载与文件 Portal 是其它任务，不要求它们全完成才浏览现有 HOME。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [],
       "status": "in_progress",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：基础文件管理器先到此为止，后期单独强化；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t19-m16-1",
       "label": "T19.1 文件浏览与属性",
       "kind": "subtask",
       "parent": "t19",
-      "scope": "文件管理器浏览、目录导航、图标/属性和错误反馈，明确区分真实文件与逻辑 `.app` 应用对象。",
-      "priority": "P1",
+      "scope": "当前基础 Files：普通用户真实目录浏览、导航、类型/属性、MIME 打开、新目录与同目录不覆盖重命名；高级图标、搜索与文件操作另列后期。",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [
         "M16.1"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [],
-      "evidence": "用户要求增加功能并行，固定0f86311，子会话4b0f28e2-6cc2-48f5-b900-3d9b04d7ab8c实现普通用户原生目录导航/属性/真实MIME打开、新目录/重命名；唯一共享FS后端供选择器使用，不重复root broker。以真实浏览/操作为交付，原生功能验收待返回。"
+      "evidence": "用户要求增加功能并行，固定0f86311，子会话4b0f28e2-6cc2-48f5-b900-3d9b04d7ab8c实现普通用户原生目录导航/属性/真实MIME打开、新目录/重命名；唯一共享FS后端供选择器使用，不重复root broker。以真实浏览/操作为交付，原生功能验收待返回。 第四批实现与中央接线已快进到本地主分支 ce73a3c；新引擎中实际指针/滚轮/Backspace/创建/重命名/MIME helper 读文件/WM 关闭与六张原生 app-buffer 图通过。完整 ISO/VHDX 手测与高级 App 强化不在此基础项完成声明内。"
     },
     {
       "id": "t19-m16-2",
       "label": "T19.2 文件操作与覆盖",
       "kind": "subtask",
       "parent": "t19",
-      "scope": "实现创建、复制、移动、重命名、删除及其确认/失败行为，路径/符号链接和数据覆盖有明确边界。",
-      "priority": "P1",
+      "scope": "后期文件 App 强化：二进制/目录树复制、跨目录移动、删除到回收站和还原；默认保留已有目标，不隐式合并或永久删除。当前创建目录、同目录重命名和文本强观察覆盖保留。",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [
         "M16.2"
       ],
-      "status": "in_progress",
+      "status": "pending",
       "requires": [
         "t19-m16-1"
       ],
-      "evidence": "第四批同文件管理器子会话仅先接通创建目录、同目录无覆盖重命名和普通文本保存；用户明确第一版支持已有文件覆盖，必须明确确认且变化后重新确认，由同一FS后端提供观察绑定。复制/跨目录移动/删除未实施时不关闭整项，无实际用户文件操作授权。"
+      "evidence": "第四批同文件管理器子会话仅先接通创建目录、同目录无覆盖重命名和普通文本保存；用户明确第一版支持已有文件覆盖，必须明确确认且变化后重新确认，由同一FS后端提供观察绑定。复制/跨目录移动/删除未实施时不关闭整项，无实际用户文件操作授权。 用户已选删除默认回收站并支持还原，作为未来需求保留。新分支 bunnysoft-files-operations 基线 1cd5f77，仅 files.c/h 共419行未完成、未编译草稿，原样保留而未合入 main；暂停全部实现/研究/测试，不批准未来 Trash 挂载发现策略。"
     },
     {
       "id": "t20",
@@ -2923,7 +2990,7 @@
       ],
       "status": "in_progress",
       "requires": [],
-      "evidence": "ac43e9f→1ae1444e及中央documents链接/双平台file、Debian magic、Python3依赖/夹具注册随ac5a5a5合并推送；复用现desktop registry，普通UID1000新编产品真实local MIME/默认关联/Exec argv/URI/cwd/env/FD/退出、标准D-Bus Open及迟到/FD/错误/共享队列/关闭断连均通过。不写用户默认设置、不猜MIME、不造PID或不确定后重试fallback；保留3000ms post-send/common同步setup界限。本地concrete type匹配不等于全shared-mime aliases/subclasses/远程协议/default-write/bundle MIME模型，完整T20.1继续进行中。最终native报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b。"
+      "evidence": "ac43e9f→1ae1444e及中央documents链接/双平台file、Debian magic、Python3依赖/夹具注册随ac5a5a5合并推送；复用现desktop registry，普通UID1000新编产品真实local MIME/默认关联/Exec argv/URI/cwd/env/FD/退出、标准D-Bus Open及迟到/FD/错误/共享队列/关闭断连均通过。不写用户默认设置、不猜MIME、不造PID或不确定后重试fallback；保留3000ms post-send/common同步setup界限。本地concrete type匹配不等于全shared-mime aliases/subclasses/远程协议/default-write/bundle MIME模型，完整T20.1继续进行中。最终native报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b。 当前本地 MIME/Exec/D-Bus Open 与普通 File Text --file literal 参数及用户 XDG 默认优先级已具。完整 shared-mime、远程 URI、默认关联编辑和 bundle MIME 扩展仍待完善，不因现有组件完成关闭全项。"
     },
     {
       "id": "native-file-dialog",
@@ -2938,11 +3005,11 @@
       "sources": [
         "M16.3"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [
         "t19-m16-1"
       ],
-      "evidence": "第四批子会话fade3257-83ac-4381-a82b-b524b08390d1与文件管理器并行实现原生选择/导航/取消及真实打开读取、新建保存；共享FS由4b0f28e2唯一维护。用户批准首版既有文件覆盖确认与变化后再确认，未具备时明确拒绝而非假保存。选择器和真实读写/普通权限/原生交互验收待返回。"
+      "evidence": "第四批子会话fade3257-83ac-4381-a82b-b524b08390d1与文件管理器并行实现原生选择/导航/取消及真实打开读取、新建保存；共享FS由4b0f28e2唯一维护。用户批准首版既有文件覆盖确认与变化后再确认，未具备时明确拒绝而非假保存。选择器和真实读写/普通权限/原生交互验收待返回。 第四批当前原生选择器范围已实现并纳入 ce73a3c：严格 native arity、普通父窗口模态、打开实际读取、新建保存、强 SHA256 观察的现文件覆盖/变化重问、Keep/Cancel/焦点/关闭回收；独立源码与普通新引擎 window fixture 通过。不是完整文本编辑器、第三方 Portal 或新版集中手测已完成。"
     },
     {
       "id": "t21",
@@ -3084,15 +3151,16 @@
       "id": "t23",
       "label": "T23 可移动设备安全操作",
       "kind": "task",
-      "parent": "r5",
+      "parent": "system-optimizations",
       "scope": "独立的设备/会话授权后端和安全移除；不因挂载需求强制先实现全部管理员 UI。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：设备热插拔与安全操作；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "removable-policy",
@@ -3100,7 +3168,7 @@
       "kind": "subtask",
       "parent": "t23",
       "scope": "选择受限挂载后端并定义真实本地会话、设备来源、排除内盘、挂载/卸载与敏感动作认证边界；不能从 UI 自报身份授权。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -3119,7 +3187,7 @@
       "kind": "subtask",
       "parent": "t23",
       "scope": "按权限契约实现挂载、卸载、安全移除和使用中/拔出/失联反馈；不自动挂载或写入排除内盘。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "installed"
       ],
@@ -3251,15 +3319,16 @@
       "id": "t25",
       "label": "T25 外置安装逐项验收",
       "kind": "task",
-      "parent": "r6",
+      "parent": "system-optimizations",
       "scope": "写入前检查明确候选/安全条件；日常、维护、救援和拔出耐久分别验收，不机械等待原 M01–M07 全部条目。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：授权外置安装；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t25-m08-1",
@@ -3267,7 +3336,7 @@
       "kind": "subtask",
       "parent": "t25",
       "scope": "在指定外置 USB/SSD 安装并记录硬件、固件、布局、版本及授权范围，不修改排除内盘。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
@@ -3288,7 +3357,7 @@
       "kind": "subtask",
       "parent": "t25",
       "scope": "验证首次 setup、默认密码登录、可选自动登录、日常 su、锁屏/注销和重复冷启动。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
@@ -3308,7 +3377,7 @@
       "kind": "subtask",
       "parent": "t25",
       "scope": "验证设置、文档、应用注册/AppData、认证状态和已实现网络凭据跨重启/维护/救援连续性。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
@@ -3330,7 +3399,7 @@
       "kind": "subtask",
       "parent": "t25",
       "scope": "在可丢弃测试数据/授权介质上验证拔出、掉电及满盘后的可恢复性，不能用 VM 结果代替。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
@@ -3349,16 +3418,17 @@
       "id": "t26",
       "label": "T26 硬件与联合故障验收",
       "kind": "task",
-      "parent": "r6",
+      "parent": "system-optimizations",
       "scope": "限定当前候选/硬件范围，普通启动、测试授权、持久提交与实际断电分别记录；更多硬件不是统一门槛。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：目标硬件与联合复测；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t26-m20-1",
@@ -3366,7 +3436,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "补齐当前 Debian 的实际 GPU/renderer、网络、音频、VT/seat 和目标设备逐项结果。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3383,7 +3453,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "验证物理热插拔、多显示器/混合缩放、音频插拔和所选设备恢复，按具体接线范围记录。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3402,7 +3472,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "多小时运行、反复启动退出和登录/锁定、应用/服务/设备故障，以及安装/更新中断联合验收。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3424,7 +3494,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "验证设置、应用注册、文档写入的中断一致性，区分未提交、已提交和可恢复状态。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3444,7 +3514,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "扩展普通镜像/fixture 的隔离检查，真实软件流程验证且不把测试授权带进正常镜像。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3464,7 +3534,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "验证基础镜像不变、正常关机/异常断电的不同结论，保留每轮独立证据和失败产物。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3483,7 +3553,7 @@
       "kind": "subtask",
       "parent": "t26",
       "scope": "记录实际 GPU/renderer、VT/seat、网络、音频等逐项结果；未覆盖组合明确标注。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware",
         "installed"
@@ -3501,15 +3571,16 @@
       "id": "t27",
       "label": "T27 开发候选物料与分发",
       "kind": "task",
-      "parent": "r6",
+      "parent": "system-build",
       "scope": "来源/许可材料和下载/raw/占用实测对应当前候选；正式身份和线上自动发布不混入开发分发。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "release"
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：正式发行物料与分发；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "t27-m21-3",
@@ -3517,7 +3588,7 @@
       "kind": "subtask",
       "parent": "t27",
       "scope": "许可证、必要源码/补丁、SPDX/SBOM 和发行履约审查，清单/哈希不冒充合规结论。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "release"
       ],
@@ -3533,7 +3604,7 @@
       "kind": "subtask",
       "parent": "t27",
       "scope": "提供压缩分发包及解压内容/容量校验，分别记录下载大小、raw 逻辑容量和实际占用；不能承诺未经测量的 600 MB。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "release"
       ],
@@ -3552,7 +3623,7 @@
       "kind": "subtask",
       "parent": "t27",
       "scope": "手动候选/安全包检查、新布局迁移/救援说明及已知限制；在线自动更新、定时同步/自动发布继续暂缓。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "release"
       ],
@@ -3827,8 +3898,8 @@
     {
       "id": "e09",
       "label": "E09 采集与屏幕分享",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-optimizations",
       "scope": "屏幕/窗口捕获、保存、选择/授权/撤销和失败体验；用户会话同意不等同管理员认证。",
       "priority": "P2",
       "modes": [
@@ -3836,7 +3907,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：屏幕采集；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e09-m19-1",
@@ -3907,8 +3979,8 @@
     {
       "id": "e11",
       "label": "E11 XWayland 兼容",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-optimizations",
       "scope": "明确真实 X11/XEmbed 客户端集合；不能以 SDL 支持 X11 宣称会话有 XWayland。",
       "priority": "P2",
       "modes": [
@@ -3916,7 +3988,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：XWayland；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e11-m19-4",
@@ -3967,8 +4040,8 @@
     {
       "id": "e13",
       "label": "E13 窗口视觉效果",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-optimizations",
       "scope": "对所选圆角/模糊/阴影/动画/形状输入分别测量；已有 alpha 不重做。",
       "priority": "P2",
       "modes": [
@@ -3976,7 +4049,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：窗口视觉效果；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e13-m17-5",
@@ -4105,8 +4179,8 @@
     {
       "id": "e16",
       "label": "E16 可复测性能预算",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-optimizations",
       "scope": "先记录启动/内存/帧与占用，再定可复测目标；优化方向按测量另选，不先删回退。",
       "priority": "P2",
       "modes": [
@@ -4114,7 +4188,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：性能复测；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e16-m20-4",
@@ -4135,8 +4210,8 @@
     {
       "id": "e17",
       "label": "E17 远端 CI 可运行",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-build",
       "scope": "在授权仓库/权限范围真实运行 CI，来源/依赖/失败可追溯；不自动 push 或取得权限。",
       "priority": "P2",
       "modes": [
@@ -4144,7 +4219,8 @@
       ],
       "sources": [],
       "status": "blocked",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：远端 CI；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e17-m21-1",
@@ -4167,8 +4243,8 @@
     {
       "id": "e18",
       "label": "E18 干净环境离线复建",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-build",
       "scope": "从留存源/包/补丁恢复 SDK 与基础系统，断网复建；缓存可用不冒充恢复成功。",
       "priority": "P2",
       "modes": [
@@ -4176,7 +4252,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：完整断网构建；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e18-m21-2",
@@ -4197,8 +4274,8 @@
     {
       "id": "e19",
       "label": "E19 位级复现与归因",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-build",
       "scope": "对具体产物比较位级结果并归因；固定输入不自动意味着字节相同。",
       "priority": "P2",
       "modes": [
@@ -4206,7 +4283,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：位级复建与归因；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e19-m21-6",
@@ -4229,8 +4307,8 @@
     {
       "id": "e20",
       "label": "E20 正式信任与发行准备",
-      "kind": "milestone",
-      "parent": null,
+      "kind": "task",
+      "parent": "system-build",
       "scope": "确定支持/渠道、系统与应用来源/签名、未知数据接管及密钥轮换策略；生产密钥/发布另授权，未决前只显式本地安装且拒绝未知接管。",
       "priority": "P2",
       "modes": [
@@ -4238,7 +4316,8 @@
       ],
       "sources": [],
       "status": "pending",
-      "requires": []
+      "requires": [],
+      "evidence": "2026-10-08 用户范围调整：支持渠道、签名身份与正式发布；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
     },
     {
       "id": "e20-m21-5",
@@ -4732,13 +4811,14 @@
       "kind": "gate",
       "parent": null,
       "scope": "用户指定目标稳定身份/型号/容量与写入清除范围；三块排除内盘禁写，批准一次具体范围才解除。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
       "sources": [],
       "status": "blocked",
-      "requires": []
+      "requires": [],
+      "evidence": "用户将授权外置安装/相关硬件复测推迟；此授权仍未授予，不成为 Alpha 虚拟介质交付前置。"
     },
     {
       "id": "gate-ci",
@@ -4774,16 +4854,137 @@
       "kind": "gate",
       "parent": null,
       "scope": "指定可丢弃数据、介质和拔出/掉电/满盘测试范围后才执行；安装写入授权不自动包括故意中断和故障注入。",
-      "priority": "P1",
+      "priority": "P2",
       "modes": [
         "hardware"
       ],
       "sources": [],
       "status": "blocked",
+      "requires": [],
+      "evidence": "用户将授权外置安装/相关硬件复测推迟；此授权仍未授予，不成为 Alpha 虚拟介质交付前置。"
+    },
+    {
+      "id": "opt-wired-network",
+      "label": "O1 有线网络与 DNS",
+      "kind": "task",
+      "parent": "system-optimizations",
+      "scope": "有线连接、地址/DNS、错误与恢复作为独立后期网络项目；已具备的私有状态与 Wi-Fi PSK 控制不被它反向阻塞。",
+      "priority": "P2",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "pending",
       "requires": []
+    },
+    {
+      "id": "basic-session-exit",
+      "label": "T15 基本注销与保存",
+      "kind": "task",
+      "parent": "r5",
+      "scope": "保留 Alpha 的普通会话退出与保存要求；锁屏、受保护 TTY 和认证组合移入后期优化。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": []
+    },
+    {
+      "id": "window-idle-interaction",
+      "label": "T21.7 闲置窗口拖动与缩放",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "主题/纯位置刷新不阻塞已有当前缓冲的标题栏拖动与缩放；真正尺寸/模式/装饰协商仍等待最新 matching commit，保留输入/工作区/边界契约。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "功能源码固定 ce73a3c 已审并纳入本地主分支；直接既有 Core 集成 runner 3.77s 与 held-buffer/no-body-click 拖动、真实 resize release 回归通过，receipt SHA0513501b。仅 Core/runner 增量，产品二进制/已交付 e879 媒体未重新链接，集中新候选手测仍待执行。"
+    },
+    {
+      "id": "alpha-code-integration",
+      "label": "A0.1 基础功能代码集成",
+      "kind": "subtask",
+      "parent": "alpha",
+      "scope": "将已具备的模式/账户/普通桌面/系统设置/基础 Files/原生打开保存与当前功能修复汇入同一主分支，不携未完成强化草稿。",
+      "priority": "P1",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "主工作区已实际 --ff-only 3beac48 到 ce73a3cee08f8b09ff9f78e681957a0c993e0d51；包含基础 Files 和中央完整接线、控制台 1cd 服务闭包及闲置窗口源码修复。未推送，未将未完成 Files419行草稿合入。集成完成不等所有功能/媒体/手测通过。"
+    },
+    {
+      "id": "alpha-functional-closure",
+      "label": "A0.2 必要功能闭环",
+      "kind": "subtask",
+      "parent": "alpha",
+      "scope": "剩余近程功能：首次启动图形入口稳定、密码登录/失败重试、普通注销与保存、普通关机重启；不以重启可进桌面当首次图形问题已修。",
+      "priority": "P1",
+      "modes": [
+        "installed"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [
+        "gui-setup",
+        "gui-login",
+        "t14-m03-3",
+        "t15-m05-4",
+        "t22-m13-2"
+      ],
+      "evidence": "当前最明确实际缺口是用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用，日志与根因未闭环。注销/电源父计划仍未完成；缺项按产品功能推进，不再扩测试矩阵。"
+    },
+    {
+      "id": "alpha-candidate-media",
+      "label": "A0.3 统一 Alpha 候选介质",
+      "kind": "subtask",
+      "parent": "alpha",
+      "scope": "从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。",
+      "priority": "P1",
+      "modes": [
+        "live",
+        "installed",
+        "candidate"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [
+        "alpha-code-integration",
+        "alpha-functional-closure"
+      ],
+      "evidence": "现有 e879 ISO/VHDX 可继续手测，来源/哈希冻结；它们不含 ce73/1cd 最新源码修复。当前工作不是再建每功能测试 VM；功能齐后集中更新一次介质。"
+    },
+    {
+      "id": "alpha-manual-acceptance",
+      "label": "A0.4 集中手动验收",
+      "kind": "subtask",
+      "parent": "alpha",
+      "scope": "按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。",
+      "priority": "P1",
+      "modes": [
+        "candidate"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [
+        "alpha-candidate-media"
+      ],
+      "evidence": "用户要求先完成功能再集中手测。只保留必要编译/类型及直接小回归，后期专项复测/硬件/性能/锁屏不混入此一轮手测门槛；不自动操作用户正在使用的 PollyOS VM/密码/磁盘。"
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-08 Alpha 范围重排：延期项目保留来源和状态，不因移出 Alpha 假标完成；代码 main=ce73a3c，已交付 ISO/VHDX仍 e879，未来集中新候选才携当前修复。",
+    "- 当前 Live 体验 ISO：677,996,544 字节/SHA256 d52d36a3627831ac93767a83bb13f96bffe43c41b00150542a7903484154287f，QEMU只读光盘实际桌面，PNG fd2d4a880650fdc2363945dba224385f0c1e9f268386f3539c2bb1d0152ef09c；无空白盘安装器、临时数据、公开开发密码，不用它解释用户 PollyOS installed 问题。",
+    "- 当前未初始化 VHDX：1,692,401,664 字节，虚拟容量3,568,304,128，SHA256 a0849d5dc0836193c6f56e4bebee2abf8954288463c069a85d5052d0effdb858；用户 Hyper-V 控制台首次设密与 installed 桌面已观察，但首次图形登录/重启差异原因未确认，未读取凭据，不能反向当完整 fresh 图形验收。",
     "- Live 新策略 r2：`dist/pollydesktop-live-profiles-r2`，来源 `997587b` 且 sourceDirty=1，ISO 677,810,176 字节；`build/live-profiles-r2-boot-slow-input/run/result.json` 为普通 UEFI/TCG 图形/中文/剪贴板/工作区通过；`build/live-profiles-r2-public-maintenance/public-profile-diagnostic.log` 验证根 0755、公开 root 凭据及普通 UID1000 的标准 su。第一次 TCG 高速输入超时记录不覆盖；加速器感知键间隔仍要求真实标记通过。",
     "- Live 新策略 r1：`dist/pollydesktop-live-profiles-r1` 复用固定锁定载荷，sourceDirty=1；`build/live-profiles-r1-boot/run` 保留失败。TCG 公开凭据诊断 `build/live-profiles-r1-diagnostic-tcg/public-profile-diagnostic.log` 确认内存根目录实际为 1777，新守卫拒绝，尚未通过桌面启动。init 与 CPIO 现明确 0755，继续独立 r2，不放宽父目录检查。",
     "- 新 profile 镜像阶段完整断网构建曾因软件包层缓存未命中失败；之后以明确固定旧锁定载荷、无 apt 的 `Containerfile.profiles` 完成平台/Live 层和载荷检查。它拒绝已有预设/配置密码的来源，原镜像标签不改写。缓存复用不冒充完整包重建；独立救援尚未可启动。",

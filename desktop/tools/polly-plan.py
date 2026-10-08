@@ -112,33 +112,51 @@ def markdown(plan):
     nodes = plan["nodes"]
     by_id = rollup(nodes)
     state_names = {"done": "已完成", "pending": "待实现", "in_progress": "进行中/部分完成", "blocked": "待授权/待决策"}
+
+    def state_label(node):
+        key = node["id"]
+        while key:
+            if key in {"system-apps", "system-build", "system-optimizations"} and node["status"] != "done":
+                return "已延期 / " + state_names[node["status"]]
+            key = by_id[key].get("parent")
+        return state_names[node["status"]]
     text = [
         "## 16. 完整执行清单与依赖",
         "",
         "计划数据唯一源为 `docs/POLLYOS-PLAN.json`；本节与应用 Plan 均从它生成，不分别维护状态。",
-        "R 是可验收交付目标，T 是实现任务，子项是独立状态的执行单元；E 是独立增强交付物，C 是未选方向登记，H 是历史证据。",
+        "A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是后期系统优化。R/T/E 的原任务 ID 和旧来源保留，归属调整不等于任务已经完成；C 是未选方向，H 是历史证据。",
         "旧 M 编号仅作来源索引，不再决定归属、顺序或依赖。拆分后的完成只承认对应组件证据，不继承整组验收。",
         "",
         "### 当前执行顺序与首个可用版本边界",
         "",
         "| 队列 | 当前交付 | 放行与并行边界 |",
         "| --- | --- | --- |",
-        "| P0 / 先做 | R1 Live 账户与安装凭据隔离 | 先隔离公共底座与 Live 预设，再配置公开密码；不能污染安装模板 |",
-        "| P0 / 底座 | R2 新安装启动与初始化 | 存储、账户及控制台链路已有组件；补角色和新策略候选验收，不等待旧系统迁移或完整 GUI |",
-        "| P0 / 数据与维护 | R3 维护/救援；R4 迁移/共享应用 | 各叶子前置满足后独立推进；共享新安装不等待旧数据迁移整组完成，救援不是 Live root 默认密码入口 |",
-        "| P1 / 日常 | R5 受保护日常桌面 | GUI、锁屏、网络、本地音频、文件和电源按具体后端就绪推进；不等待蓝牙、Portal 或正式发行 |",
-        "| P1 / 实际交付 | R6 外置可用开发候选 | 指定介质和授权仍是硬门槛；先通过写入安全/虚拟候选，再按明确范围逐项验收，不机械依赖旧 M01–M07 的所有功能 |",
-        "| P2 / 独立增强 | E 系列 | 每项有自己的验收边界，不自动成为 R1–R6 前置；休眠/加密/CI/正式身份保留额外授权 |",
+        "| P1 / 当前 | A0 Alpha 可手测系统 | 先完成功能闭环，再统一产出一个新候选，集中手测；旧候选已可用不代表最新源码和首次图形入口已完整验收 |",
+        "| 已具底座 / 保留 | R1 Live 模式；R2 启动账户；R5 基础桌面 | 原组件、来源和限制保留；Alpha 只依赖 A0 明列的具体子项，不把全系统里程碑的所有未完成项目叠成门槛 |",
+        "| P2 / 自带 App | A1 系统自带 App | 基础 Files 先冻结，复制/跨目录移动/回收站与还原等强化推迟；未完成草稿不合入候选 |",
+        "| P2 / 系统构建 | B1 系统构建 | 完整断网构建、CI、位级复现、渠道和正式签名身份后期单独安排；保留必要许可证和当前物料来源，不宣传已经全部履约 |",
+        "| P2 / 后期项目 | O1 系统优化 | XP 精修、复测、视觉效果、XWayland、采集、硬件热插拔、有线、锁屏、共享包、多用户及授权外置安装不阻挡 Alpha；仍保持未完成/未授权状态 |",
+        "| 长期完整系统 / 保留 | R3 维护与救援；R4 迁移；R6 安装写入 | 完整系统要求不删除；Alpha 虚拟候选不等于实盘安装器、独立救援、生产安全或硬件认证 |",
+        "| P2 / 其它独立增强 | E 系列 | 其余增强按原具体前置独立推进，不自动成为 Alpha 门槛；休眠、加密和生产密钥保留授权边界 |",
         "| P3 / 未选方向 | C1 | 只登记方向，选择目标/范围后另立执行任务；不把全部候选变成一个必须完成的里程碑 |",
         "",
         "**依赖语义：** `归属`是完成汇总；`前置`是实际实现/验收所需的具体子项。父节点关闭依赖子节点，不反向阻塞子项开工。",
         "同一技术后端可以支撑不同交付物；跨组前置不改变归属。里程碑的进行中可以表示部分子项完成，不代表全组已开工。",
         "保持普通用户桌面、标准 PAM/passwd/su、版本配套服务账户、源/备份保留和故障显式拒绝；不整体共享 /etc 或 /var/lib。",
-        "主会话优先实现并本地提交固定快照；编译/回归/镜像验收由临时 worktree 分支子会话异步承担，不在主会话等待。",
-        "实现已提交但验证未返回的子项保持进行中并注明待验证；只有固定快照的证据通过才关闭。验证修复留在子分支，由主会话审阅合并，不自动 push/PR。",
-        "每批更新 JSON 的状态/证据，运行 `desktop/tools/polly-plan.py --write` 生成文档并同步 Plan；主会话继续具备前置的实现。仅一个重型构建/VM lane，快速验证可并行。",
+        "执行方式：功能代码优先，只保留必要编译/类型检查及直接小回归；功能闭环后统一候选、集中手动测试，不再为每项功能扩测试夹具/矩阵、反复构建 VM。",
+        "实现、源码资格、原生组件、媒体启动和用户手测分证；完成声明只覆盖对应范围，不能把旧媒体重标为新修复或把延期标成已完成。",
+        "每批更新 JSON 的状态/证据，运行 `desktop/tools/polly-plan.py --write` 生成文档并同步 Plan；仅一个重型构建/VM lane。不自动操作用户正在使用的 VM、磁盘或密码。",
         "",
     ]
+    alpha_children = [node for node in nodes if node.get("parent") == "alpha"]
+    if alpha_children:
+        text.extend(["### Alpha 剩余工作", "",
+                     "以下是当前 Alpha 的唯一门槛，不以全表任务完成比例估算版本距离。", "",
+                     "| 收尾包 | 状态 | 具体边界 |", "| --- | --- | --- |"])
+        for node in alpha_children:
+            actual = by_id[node["id"]]
+            text.append(f"| {node['label']} | {state_names[actual['status']]} | {node['scope']} |")
+        text.extend(["", "版本范围、已交付介质和最短手测清单见 [Alpha 路线](POLLYOS-ALPHA.md)。", ""])
     children = {}
     for node in nodes:
         children.setdefault(node.get("parent"), []).append(node)
@@ -146,14 +164,14 @@ def markdown(plan):
     def render(node, depth):
         actual = by_id[node["id"]]
         if node["kind"] in {"milestone", "catalog"}:
-            text.extend(["", "### " + node["label"] + " — " + state_names[actual["status"]], "",
+            text.extend(["", "### " + node["label"] + " — " + state_label(actual), "",
                          "**交付/边界：** " + node["scope"], ""])
         elif node["kind"] == "task":
             text.extend(["", "#### " + node["label"], "", node["scope"], ""])
         else:
             marker = "x" if actual["status"] == "done" else " "
             modes = "/".join(node["modes"])
-            line = f"- [{marker}] **{node['label']}** · {state_names[actual['status']]} · {node['priority']} · {modes}：{node['scope']}"
+            line = f"- [{marker}] **{node['label']}** · {state_label(actual)} · {node['priority']} · {modes}：{node['scope']}"
             if node.get("requires"):
                 line += " 前置：" + "、".join(by_id[key]["label"].split(" ", 1)[0] for key in node["requires"]) + "。"
             if node.get("sources"):
