@@ -147,6 +147,30 @@ test('file changed since selection is refused before MIME Open', async () => {
   assert.equal(await controller.open(), false); assert.equal(opened.length, 0);
   assert.match(controller.getState().error, /changed/);
 });
+test('selection epochs distinguish different hard-link names with the same metadata identity', async () => {
+  const { controller, directories, operations } = fixture();
+  directories.get('/fixture').push(entry('/fixture/hard-a.txt', 'file', { identity: 'shared-inode' }),
+    entry('/fixture/hard-b.txt', 'file', { identity: 'shared-inode' }));
+  await controller.start(); select(controller, '/fixture/hard-a.txt');
+  const old = controller.getState().generation;
+  select(controller, '/fixture/hard-b.txt');
+  assert.equal(controller.beginRename(old, 'shared-inode'), false);
+  assert.equal(await controller.open(old, 'shared-inode'), false);
+  assert.equal(operations.filter(item => item[0] === 'rename').length, 0);
+});
+test('cancelled confirmation and name callbacks cannot operate on a reopened dialog', async () => {
+  const { controller, operations } = fixture(); await controller.start();
+  controller.beginCreate(); controller.editName('Cancelled folder');
+  const old = controller.getState().generation; controller.cancel();
+  controller.beginCreate(); controller.editName('Current folder');
+  assert.equal(controller.editName('Retired name', old), false);
+  assert.equal(controller.cancel(old), false);
+  assert.equal(await controller.confirm(old), false);
+  assert.equal(operations.filter(item => item[0] === 'mkdir').length, 0);
+  assert.equal(controller.getState().dialog.name, 'Current folder');
+  assert.equal(await controller.confirm(), true);
+  assert.equal(controller.getState().selection.name, 'Current folder');
+});
 test('MIME opening passes literal path into existing launcher and Open With uses actual available handler ID', async () => {
   const { controller, opened } = fixture(); await controller.start();
   const item = select(controller, '/fixture/literal %u; 中文.txt');
@@ -182,6 +206,15 @@ test('symlink follow is an explicit action, validates target identity and does n
   assert.equal(controller.getState().dialog.kind, 'link'); assert.equal(controller.getState().path, '/fixture');
   assert.equal(operations.filter(item => item[0] === 'list').length, 1);
   await controller.confirm(); assert.equal(controller.getState().path, '/fixture/Documents');
+});
+test('changed managed registry cannot launch a different version from the selected package path', async () => {
+  const { controller, launcher, opened } = fixture();
+  launcher.refresh = () => [{ id: 'bundle:org.example.notes', path: '/fixture/unmanaged.app', name: 'Notes' }];
+  await controller.start(); select(controller, '/fixture/unmanaged.app');
+  launcher.refresh = () => [{ id: 'bundle:org.example.notes', path: '/fixture/new-version.app', name: 'Notes v2' }];
+  assert.equal(await controller.open(), false); assert.equal(opened.length, 0);
+  assert.match(controller.getState().error, /version changed.*Refresh/);
+  await controller.refresh(); assert.equal(controller.getState().applications[0].path, '/fixture/new-version.app');
 });
 test('partial snapshot is labelled partial, pages are bounded and keyboard/wheel callbacks exist', async () => {
   const { controller, fs } = fixture(), list = fs.listDirectory;
@@ -269,6 +302,8 @@ test('actual reconciler dispatches injected pointer/key/textinput browser action
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(controller.getState().path, '/fixture');
   document.getElementById('files-new-folder').fire('click');
+  assert.equal(controller.getState().dialog.name, 'New folder');
+  document.getElementById('files-name').fire('keydown', { key: 'a', ctrlKey: true });
   document.getElementById('files-name').fire('textinput', { data: 'New folder' });
   assert.equal(controller.getState().dialog.name, 'New folder');
   document.getElementById('files-confirm').fire('click');

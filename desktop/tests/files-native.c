@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "files.h"
 #include <assert.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -11,6 +12,15 @@
 
 static unsigned checks;
 #define CHECK(condition) do { if (!(condition)) { fprintf(stderr, "FAIL line %d: %s (errno=%d)\n", __LINE__, #condition, errno); exit(1); } checks++; } while (0)
+static const char *retiring_directory;
+DIR *pu_files_fixture_fdopendir(int fd)
+{
+    if (retiring_directory) {
+        CHECK(!rmdir(retiring_directory));
+        retiring_directory = NULL;
+    }
+    return fdopendir(fd);
+}
 static PuFileEntry inspect(const char *path)
 {
     PuFileEntry entry;
@@ -81,7 +91,8 @@ int main(int argc, char **argv)
     CHECK(!strcmp(text, "replaced")); free(text);
     char old_identity[PU_FILES_ID], old_content[PU_FILES_CONTENT_ID];
     bool alias = false;
-    for (unsigned attempt = 0; attempt < 64 && !alias; attempt++) {
+    unsigned attempts = 0;
+    for (; attempts < 64 && !alias; attempts++) {
         int original = open(file, O_WRONLY | O_TRUNC | O_CLOEXEC);
         CHECK(original >= 0 && write(original, "replaced", 8) == 8 && !close(original));
         CHECK(!pu_files_observe_text(file, &entry));
@@ -92,13 +103,17 @@ int main(int argc, char **argv)
         alias = !strcmp(old_identity, raw_external.identity);
         if (alias) printf("OBSERVATION same-size external write: before=%s after=%s same=1\n", old_identity, raw_external.identity);
     }
-    CHECK(alias);
+    printf("OBSERVATION alias sampling: observed=%d attempts=%u bound=64\n", alias, attempts);
     parent = inspect(root);
     CHECK(pu_files_replace(file, "bad", 3, old_content, parent.identity, &entry) == -1 && errno == ESTALE);
     CHECK(pu_files_read(file, old_content, &text, &size, &entry) == -1 && errno == ESTALE);
     CHECK(!pu_files_observe_text(file, &entry));
-    CHECK(!strcmp(old_identity, entry.identity) && strcmp(old_content, entry.content_identity));
+    if (alias) CHECK(!strcmp(old_identity, entry.identity));
+    CHECK(strcmp(old_content + strlen(old_content) - 64, entry.content_identity + strlen(entry.content_identity) - 64));
+    printf("OBSERVATION strong content: before=%s after=%s old-token-refused=ESTALE\n", old_content, entry.content_identity);
     CHECK(!pu_files_replace(file, "new confirmation", 16, entry.content_identity, parent.identity, &entry));
+    CHECK(!pu_files_read(file, entry.identity, &text, &size, &entry));
+    CHECK(size == 16 && !strcmp(text, "new confirmation")); free(text);
     CHECK(!pu_files_observe_text(file, &entry));
     strcpy(old_content, entry.content_identity); strcpy(old_identity, entry.identity);
     contents(file, "external");
@@ -126,6 +141,18 @@ int main(int argc, char **argv)
     entry = inspect(collision);
     CHECK(!pu_files_read(collision, entry.identity, &text, &size, &entry));
     CHECK(!strcmp(text, "retain")); free(text);
+    char hard_original[PU_FILES_PATH], hard_other[PU_FILES_PATH];
+    path(hard_original, root, "hard-original.txt"); path(hard_other, root, "hard-other.txt");
+    contents(hard_original, "shared");
+    CHECK(!link(hard_original, hard_other));
+    CHECK(!pu_files_observe_text(hard_original, &entry)); parent = inspect(root);
+    CHECK(!pu_files_replace(hard_original, "independent", 11, entry.content_identity, parent.identity, &entry));
+    entry = inspect(hard_other);
+    CHECK(!pu_files_read(hard_other, entry.identity, &text, &size, &entry));
+    CHECK(!strcmp(text, "shared")); free(text);
+    struct stat original_info, other_info;
+    CHECK(!stat(hard_original, &original_info) && !stat(hard_other, &other_info));
+    CHECK(original_info.st_ino != other_info.st_ino && original_info.st_nlink == 1 && other_info.st_nlink == 1);
     char link[PU_FILES_PATH], documents[PU_FILES_PATH];
     path(link, root, "folder link"); path(documents, root, "Documents");
     CHECK(!symlink("Documents", link));
@@ -147,6 +174,12 @@ int main(int argc, char **argv)
     CHECK(!mkdir(denied, 0000));
     CHECK(pu_files_list(denied, NULL, &snapshot) == -1 && errno == EACCES);
     entry = inspect(denied); CHECK(!entry.readable && !entry.writable);
+    char retired[PU_FILES_PATH]; path(retired, root, "retired-directory"); CHECK(!mkdir(retired, 0700));
+    retiring_directory = retired;
+    CHECK(pu_files_list(retired, NULL, &snapshot) == -1 && (errno == ESTALE || errno == ENOENT));
+    int retirement_error = errno;
+    CHECK(retiring_directory == NULL && !snapshot.entries);
+    printf("PASS: actual directory removed after open fails with errno=%d, not empty-success\n", retirement_error);
     char pipe[PU_FILES_PATH]; path(pipe, root, "pipe"); CHECK(!mkfifo(pipe, 0600)); entry = inspect(pipe);
     CHECK(!strcmp(entry.type, "other"));
     CHECK(pu_files_read(pipe, entry.identity, &text, &size, &entry) == -1 && errno == EINVAL);

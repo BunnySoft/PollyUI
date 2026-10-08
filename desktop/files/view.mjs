@@ -99,7 +99,8 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
     Object.assign(node.props, { role: 'option', 'aria-selected': String(selection?.path === entry.path),
       onDblclick: () => {
         if (!ready) return;
-        controller.select(entry.path, entry.identity, generation); return controller.open(generation, entry.identity);
+        controller.select(entry.path, entry.identity, generation);
+        return controller.open(controller.getState().generation, entry.identity);
       } });
     return h('view', { id: 'files-row-' + index, style: { gap: 3, flexShrink: 0, paddingBottom: 6 } },
       node, label('files-properties-' + index, formatSize(entry.bytes) + ' | modified ' +
@@ -128,7 +129,8 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
       label('files-page-status', 'Page ' + (state.page + 1) + ' / ' + pages, 'muted'),
       button('files-page-next', 'Next page', () => controller.page(state.page + 1, generation), ready && state.page < pages - 1)));
   return h('view', { id: 'files-root', style: {
-    width: '100%', height: '100%', padding: 12, gap: 8, color: color('text'), backgroundColor: color('body'),
+    width: '100%', height: '100%', padding: 12, gap: 8, flexDirection: 'column',
+    color: color('text'), backgroundColor: color('body'),
   }, onKeydown: event => {
     const editing = event.target?.id === 'files-name';
     if (event.key === 'Escape') { event.preventDefault(); controller.cancel(generation); }
@@ -143,7 +145,7 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
       const entry = all[index];
       if (entry) {
         controller.select(entry.path, entry.identity, generation);
-        controller.page(Math.floor(index / 64), generation);
+        controller.page(Math.floor(index / 64), controller.getState().generation);
       }
     }
     else if (!editing && event.key === 'F5') { event.preventDefault(); controller.refresh(generation); }

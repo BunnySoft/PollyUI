@@ -27,6 +27,14 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     if (fresh.identity !== entry.identity) throw new Error('Selected entry changed. Refresh and select it again.');
     return fresh;
   }
+  function refreshApplications() {
+    if (!launcher) return;
+    try { update({ applications: launcher.refresh(), applicationError: '' }); }
+    catch (error) {
+      const message = fileError(error); reportError(message);
+      update({ applications: [], applicationError: 'Applications catalog: ' + message });
+    }
+  }
   async function navigate(path, { expectedIdentity = null, targetPosition = null, refresh = false } = {}) {
     if (disposed) return false;
     const request = ++serial;
@@ -59,19 +67,14 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         const locations = api.locations();
         for (const key of ['home', 'documents', 'downloads', 'desktop']) pathValue(locations[key]);
         update({ locations: Object.freeze({ ...locations }) });
-        if (launcher) {
-          try { update({ applications: launcher.refresh(), applicationError: '' }); }
-          catch (error) {
-            const message = fileError(error); reportError(message);
-            update({ applicationError: 'Applications catalog: ' + message });
-          }
-        }
+        refreshApplications();
         return navigate(path ?? locations.home);
       } catch (error) { return failure(error); }
     },
     navigate,
     refresh(generation = state.generation) {
       if (!valid(generation) || !state.path) return false;
+      refreshApplications();
       return navigate(state.path, { refresh: true });
     },
     back(generation = state.generation) {
@@ -90,7 +93,7 @@ export function createFilesController({ api, launcher = null, onChange = () => {
       if (!valid(generation) || state.phase !== 'ready') return false;
       const entry = state.snapshot.entries.find(item => item.path === path && item.identity === identity);
       if (!entry) return false;
-      update({ selection: entry, dialog: null, openWith: null, error: '', message: '' });
+      update({ generation: state.generation + 1, selection: entry, dialog: null, openWith: null, error: '', message: '' });
       return true;
     },
     async open(generation = state.generation, identity = state.selection?.identity, followLink = false) {
@@ -101,7 +104,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         entry = observed(entry);
         if (entry.type === 'symlink') {
           if (!followLink) {
-            update({ dialog: { kind: 'link', entry, name: '', generation } }); return false;
+            const next = state.generation + 1;
+            update({ generation: next, dialog: { kind: 'link', entry, name: '', generation: next } }); return false;
           }
           const target = fileEntry(api.stat(entry.path, true));
           if (target.identity !== entry.targetIdentity)
@@ -111,6 +115,9 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         const managed = state.applications.find(app => app.id.startsWith('bundle:') && app.path === entry.path);
         if (managed) {
           if (!launcher) throw new Error('Managed application launcher is unavailable');
+          const current = launcher.refresh().find(app => app.id === managed.id);
+          if (!current || current.path !== entry.path)
+            throw new Error('Managed application version changed. Refresh and select its current registered path.');
           const request = ++serial;
           openingRequest = request;
           update({ phase: 'opening', dialog: null, openWith: null });
@@ -138,7 +145,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         observed(entry);
         if (entry.type !== 'file') throw new Error('Open With requires an explicitly selected regular file');
         if (!launcher) throw new Error('Open With is unavailable in this engine');
-        update({ openWith: { entry, ...launcher.documentApplications(entry.path) }, dialog: null, error: '' });
+        update({ generation: state.generation + 1, openWith: { entry, ...launcher.documentApplications(entry.path) },
+          dialog: null, error: '' });
         return true;
       } catch (error) {
         const message = 'Open With unavailable: ' + fileError(error);
@@ -166,7 +174,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     },
     beginCreate(generation = state.generation) {
       if (!valid(generation) || state.phase !== 'ready') return false;
-      update({ dialog: { kind: 'create', name: '', generation }, openWith: null, error: '' });
+      const next = state.generation + 1;
+      update({ generation: next, dialog: { kind: 'create', name: 'New folder', generation: next }, openWith: null, error: '' });
       return true;
     },
     beginRename(generation = state.generation, identity = state.selection?.identity) {
@@ -176,7 +185,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         update({ error: 'Managed application packages must be changed using the application manager' });
         return false;
       }
-      update({ dialog: { kind: 'rename', name: entry.name, entry, generation }, openWith: null, error: '' });
+      const next = state.generation + 1;
+      update({ generation: next, dialog: { kind: 'rename', name: entry.name, entry, generation: next }, openWith: null, error: '' });
       return true;
     },
     editName(name, generation = state.generation) {
@@ -212,7 +222,12 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     },
     cancel(generation = state.generation) {
       if (!valid(generation)) return false;
-      update({ dialog: null, openWith: null, error: '' }); return true;
+      if (state.phase === 'opening') {
+        serial++;
+        update({ generation: state.generation + 1, phase: 'ready', dialog: null, openWith: null,
+          error: 'Open UI dismissed; delivery may already have occurred. No automatic retry.' });
+      } else update({ generation: state.generation + 1, dialog: null, openWith: null, error: '' });
+      return true;
     },
     page(index, generation = state.generation) {
       if (!valid(generation) || state.phase !== 'ready' || !Number.isInteger(index) || index < 0 ||

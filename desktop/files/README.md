@@ -32,10 +32,13 @@ more than 1024 entries is explicitly **partial**, never presented as complete.
 
 Rows show real name, type, bytes, modification time, permission mode, UID and
 actual effective-UID read/write accessibility. Empty and permission-denied
-states differ. New folder asks for a single name and creates mode 0700.
+states differ. New folder offers the editable default `New folder` and creates mode 0700.
 Rename shows the exact selected path and requires explicit confirmation;
 it only changes a name within that directory and never replaces a destination.
 Selection and directory observation identities travel with the operation.
+UI epochs also advance when selecting a row or opening/cancelling a dialog:
+distinct hard-link names with equal inode metadata do not share actionable
+retained callbacks, and a retired confirmation cannot confirm a new dialog.
 Refresh, navigation, close and stale callbacks cannot operate on a different
 selected entry. Reopening uses a new app/controller instance.
 
@@ -95,7 +98,7 @@ linkTarget,targetType,targetIdentity,targetError`. Type is directory/file/
 symlink/other. A root stat entry has `name:'/'`. Identity is an opaque string
 of dev/inode/mode/size/mtime/ctime with nanoseconds; consumers compare exact
 equality. Directory read/write accessibility includes search (`X_OK`).
-Individual-entry inspection failure or a changed directory aborts the snapshot
+Individual-entry inspection failure or an observably changed directory aborts the snapshot
 instead of omitting entries silently. Invalid UTF-8 names fail with EILSEQ.
 
 Reads require an exact observed regular file, up to 1 MiB, valid UTF-8 without
@@ -114,7 +117,7 @@ containing the original stat identity, and **`identity` containing a strong
 `sha256:<full-stat-identity>:<64-hex-digest>` token**, at most 255 characters.
 Only this explicit text operation reads and hashes up to 1 MiB; directory
 listing and ordinary stat do not hash file contents. Unreadable, non-UTF-8,
-NUL-containing, special, linked or oversized input fails explicitly.
+NUL-containing, special, final-symbolic-link or oversized input fails explicitly.
 Native code rejects
 root/set-ID processes, non-owned/special/set-ID files and final symbolic links.
 It checks real read/write permission using an untruncated `O_RDWR|O_NOFOLLOW` open,
@@ -126,6 +129,12 @@ the filesystem reports identical mtime/ctime nanoseconds.
 Missing, replaced or changed targets produce ESTALE. Consumers must refresh
 both parent and target observations and obtain a new explicit confirmation;
 they must not retry the old intent automatically.
+
+Hard links are not rejected by ordinary stat/read or the text observer.
+Atomic replacement changes only the explicitly selected pathname: another
+hard-link name continues to reference the original inode and contents.
+This is ordinary single-path atomic-save semantics, not an in-place update of
+every alias. A dedicated disposable-fixture case checks that behavior.
 
 This is a cooperating local-filesystem observation model, **not atomic inode
 compare-and-swap**: an unrelated process can change a path between the final
@@ -157,9 +166,15 @@ small C core harness and QuickJS binding harness from the current source and
 executes real ordinary UID/GID 1000 operations in private `/tmp` fixtures.
 Run in the pinned offline SDK with source read-only, not against a user's HOME.
 The harness links existing `-lcrypto`. The in-place edit case samples at most
-64 real writes for an observed identical-metadata alias, records full native
-fields, rejects the old strong token and reads back a newly confirmed write.
+64 real writes for an identical-metadata alias, records full native fields and
+whether the alias was actually observed, rejects the old strong token and
+reads back a newly confirmed write.
 It does not forge ctime or edit a user's files.
+One core-test object redirects only `fdopendir` to remove an explicitly known
+empty fixture directory after its real FD has opened; the wrapper then calls
+the real libc function. Actual removed/zero-link inode state produces ENOENT/ESTALE, not
+an empty successful directory. Production and the QuickJS harness have no hook,
+and live hard links (`st_nlink > 1`) remain supported.
 Fixture shell input must use LF line endings. The script prints actual source
 and harness SHA256 hashes. It never builds the engine, image or VM.
 
@@ -169,3 +184,23 @@ v1 capability, emits named real control bounds, and only uses an explicit
 private fixture HOME. The parent controls actual pointer/wheel/key/WM-close
 events using its shared driver; no second compositor/input protocol is added.
 Native pixel/input acceptance remains separate from the source-only harnesses.
+
+The optional `--drive` mode uses the Settings-owned test input driver, not JS
+event dispatch: public same-client `FilesFixture.<seq>.click`, `wheel`, `key`
+and `close` markers target only app ID `org.pollyui.files-window-fixture`,
+title `Files`. `[6,6]` is neutral root padding under every inline confirmation.
+Only Enter/Escape/Tab/Shift+Tab and the Files-specific Backspace key are needed.
+The fixture creates the default folder, clicks the actual rename input's right
+end and presses real Backspace to rename `New folder` to `New folde`; it checks
+real input focus and the real resulting directory. Public markers await driver
+ACK and never call product action callbacks. The actual close handler writes a
+new-only private receipt; failure cleanup is not accepted as a WM-close result.
+
+`files-window-shell.mjs` is the trusted fixture supervisor, invoked by the
+shared driver as `DRIVER UI ABSOLUTE/files-window-shell.mjs files-window initial`.
+It spawns the separate ordinary process, requires normal exit and the actual
+action/close receipt, then emits the existing trusted `fixture-success` marker.
+The parent must independently check the real MIME helper argv/output receipt;
+the public client claims successful native MIME dispatch, not that an external
+application rendered or consumed a document. Source syntax checks do not prove
+the optional drive mode or new engine pixels/input.

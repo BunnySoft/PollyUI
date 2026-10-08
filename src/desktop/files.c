@@ -74,6 +74,7 @@ static void identity(const struct stat *status, char *out)
 static int matches(const struct stat *status, const char *expected)
 {
     char value[PU_FILES_ID];
+    if (!status->st_nlink) { errno = ESTALE; return -1; }
     if (!expected || !*expected || strlen(expected) >= PU_FILES_ID) { errno = EINVAL; return -1; }
     identity(status, value);
     if (strcmp(value, expected)) { errno = ESTALE; return -1; }
@@ -87,6 +88,9 @@ static const char *kind(mode_t mode)
 
 static int fd_path(int fd, char *path)
 {
+    struct stat status;
+    if (fstat(fd, &status)) return -1;
+    if (!status.st_nlink) { errno = ESTALE; return -1; }
     char descriptor[64];
     snprintf(descriptor, sizeof(descriptor), "/proc/self/fd/%d", fd);
     ssize_t length = readlink(descriptor, path, PU_FILES_PATH - 1);

@@ -5,7 +5,9 @@ test "$(id -g)" = 1000
 repo=${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
 build=$(mktemp -d /tmp/polly-files-build-XXXXXX)
 cc -std=c11 -Wall -Wextra -Werror -DPU_FILES_CORE_ONLY -I"$repo/src/desktop" \
-    "$repo/src/desktop/files.c" "$repo/desktop/tests/files-native.c" -lcrypto -o "$build/files-native"
+    -Dfdopendir=pu_files_fixture_fdopendir -c "$repo/src/desktop/files.c" -o "$build/core.o"
+cc -std=c11 -Wall -Wextra -Werror -DPU_FILES_CORE_ONLY -I"$repo/src/desktop" \
+    "$build/core.o" "$repo/desktop/tests/files-native.c" -lcrypto -o "$build/files-native"
 "$build/files-native"
 cc -std=c11 -Wall -Wextra -Werror -I"$repo/third_party/quickjs" -I"$repo/src/desktop" \
     -c "$repo/src/desktop/files.c" -o "$build/files.o"
