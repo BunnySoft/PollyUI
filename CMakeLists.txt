@@ -634,6 +634,22 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         pkg_check_modules(PIXMAN_UI_TEST REQUIRED IMPORTED_TARGET pixman-1)
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        if (PU_DESKTOP_SERVICES)
+            foreach(mode IN ITEMS ui audio)
+                add_test(NAME desktop-settings-${mode}
+                    COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        --mode ${mode} --evidence "${CMAKE_BINARY_DIR}/settings-${mode}-evidence")
+                set_tests_properties(desktop-settings-${mode} PROPERTIES TIMEOUT 120
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native")
+            endforeach()
+            add_test(NAME desktop-settings-network
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    --mode network --evidence "${CMAKE_BINARY_DIR}/settings-network-evidence")
+            set_tests_properties(desktop-settings-network PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;synthetic-network")
+        endif()
         foreach(renderer IN ITEMS raster gl)
             if (PU_DESKTOP_SERVICES)
                 add_test(NAME desktop-power-shell-${renderer}

@@ -115,6 +115,25 @@ change display hardware or operate real Wi-Fi/audio devices. Physical radios,
 GPU/audio hardware, installed reboot persistence and authenticated-session
 qualification are separate acceptance work.
 
+CTest registers three separate wrapper invocations: `desktop-settings-ui` and
+`desktop-settings-audio` use `--mode ui`/`audio` and the `ordinary-native` label;
+run them explicitly as UID1000. `desktop-settings-network` uses `--mode network`
+and the `root-container;fixture-coordinator;synthetic-network` labels. Its root
+coordinator owns only the private synthetic iwd/system-bus fixture; the wrapper
+drops PollyWM, PollyUI and the public survivor to UID1000. The audio mode starts
+its private PipeWire core as that same ordinary user. These registrations do
+not grant Settings new service authority or qualify an authenticated login.
+
+Each test receives absolute driver/PollyUI target paths, runs from the source
+root, writes only under its own build evidence directory and has a 120-second
+CTest bound; each native mode retains its existing 90-second subprocess limit.
+The existing menu-host test already covers the source-level Settings cases, so
+no duplicate pure Node selector is added. The shell-directory install rule
+already includes `settings.mjs`; no separate packaging policy is needed.
+Registration, syntax checks and earlier-layer input evidence do not establish
+new ordinary-window input or Settings native acceptance. Build/run only the
+fixed combined feature snapshot in the coordinator's single native lane.
+
 The same private test driver also consumes two fixed public fixture targets:
 `org.pollyui.file-dialog-window` / `PollyUI.FileText` with
 `FileDialogFixture.<seq>.`, and `org.pollyui.files-window-fixture` / `Files`
