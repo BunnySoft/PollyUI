@@ -377,7 +377,7 @@ R 是可验收交付目标，T 是实现任务，子项是独立状态的执行�
 - [x] **T03.3 必需持久状态映射** · 已完成 · P0 · fresh/installed：接通 `SystemData/Apps/Users` 及 Dpkg/Apt、日志/缓存/临时、账户/服务、HOME 必需映射；启动/维护前检查同一存储与权限，不静默回落。 前置：T03.1、T03.2。 来源：M06.8。 证据：a0a4e1c；namespace 映射及 r2 ext4 普通启动，服务状态仍逐项分类。
 - [x] **T03.4 普通虚拟候选装配** · 已完成 · P0 · fresh/installed：普通单系统 regular 镜像装配、容量实测及目录权限已完成；Recovery 仅 reserved-not-bootable，不继承救援或真实安装验收。 前置：T03.3。 来源：M07.1。 证据：9e89f8c；single-system-r2 原始 raw 保持不变。
 - [x] **T03.5 r2 普通启动基线** · 已完成 · P0 · fresh/installed：r2 无 fixture 的 OVMF/KVM 启动、首次设置、PAM 登录和 UID1000 桌面；该 smoke 由 QMP 退出，不是正常关机验收。 前置：T03.4。 来源：M07.5。 证据：build/single-system-smoke-r2/run/result.json；来源 9e89f8c。
-- [ ] **T03.6 必需存储故障** · 待实现 · P0 · fresh/installed：覆盖必需存储/映射缺失、错 UUID、坏 schema/权限、不可写、满盘、损坏及启动中断；拒绝空目录写入、空包数据库和认证重置。 前置：T03.3。 来源：M06.1。
+- [ ] **T03.6 必需存储故障** · 进行中/部分完成 · P0 · fresh/installed：覆盖必需存储/映射缺失、错 UUID、坏 schema/权限、不可写、满盘、损坏及启动中断；拒绝空目录写入、空包数据库和认证重置。 前置：T03.3。 来源：M06.1。 证据：第三批固定已推送18d47e7，子会话21c0b051-d0ad-444a-b95d-21babfb0c9f9实现必需存储manifest/映射/fingerprint的严格故障拒绝与有界矩阵；无空目录fallback/认证重置/自动修复。用户明确选择：满盘但现有状态完整可读时保留登录/只读诊断/清理，只拒绝需要空间的持久写入；不为Storage.check/preflight加全局zero-available或reserve gate。必要Dpkg/status缺失/空/非正规/不可信则拒绝，不复制完整包语义解析。实际ext4/整机掉电及冷启动不由source/tmpfs验证代替，整项验收待返回。
 - [ ] **T03.7 只读诊断入口** · 待实现 · P0 · fresh/installed：实现明确的故障信息、只读诊断和受控恢复入口，不自动格式化/修复未知介质。 前置：T03.6。 来源：M06.2。
 - [ ] **T03.8 新策略正常冷启动** · 待实现 · P0 · fresh/installed：将当前已提交的模式、账户、HOME 与必要组件装入新候选，实际普通 UEFI 冷启动、两套密码设置、默认密码登录与正常关机；保留失败/来源摘要。 前置：T02.3、T03.3、T04.5、T05.3、T05.4、T06.3。 来源：M07.5、M01.6。
 
@@ -559,7 +559,7 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 原生打开/保存、MIME 和默认应用及文档启动参数；不依赖文件 Portal 或完整管理员 UI。
 
-- [ ] **T20.1 MIME 与默认应用** · 待实现 · P1 · installed：正确的 MIME/默认应用/文档启动参数，区分可启动应用与可处理文档；复用注册/启动查询而非第二套应用数据库。 来源：M16.3。
+- [ ] **T20.1 MIME 与默认应用** · 进行中/部分完成 · P1 · installed：正确的 MIME/默认应用/文档启动参数，区分可启动应用与可处理文档；复用注册/启动查询而非第二套应用数据库。 来源：M16.3。 证据：第三批固定已推送18d47e7，子会话78d977e3-b66b-4353-938d-b5931a7b54a5实现MIME/XDG默认应用与真实文档argv/URI处理，复用现应用注册/启动；保留e7总线FD/期限/no-replay及菜单生命周期，不建立第二套registry或泛化root命令。固定源和新原生验收待返回。
 - [ ] **T20.2 原生打开保存选择器** · 待实现 · P1 · installed：原生用户选择、取消/错误和真实文件读写；不以假路径回成功，不等待第三方 Portal。 前置：T19.1。 来源：M16.3。
 
 #### T21 基础 Shell 与应用 UI
@@ -595,7 +595,7 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 虚拟装配不等于实际设备安装器；逐次核对目标、范围、来源和确认，任何真实写入仍需单独授权。
 
-- [ ] **T24.6 目标展示接入** · 进行中/部分完成 · P1 · fresh/hardware：把已实现只读目标报告接入安装UI，显示稳定身份/容量/分区/假定清除范围和具体拒绝理由，重新识别结果用于后续显式确认；不把 eligible 标记当写权限，不部署到错误layout路径。 前置：T24.1、T24.2。 来源：M07.2、M07.4。 证据：第二批ff4be97已合并推送：c05793b及中央注册完成只读UI/controller/provider契约；独立Node100/Python34/逐字段报告一致性、新编普通UID1000真实窗口/滚动/指针选择/确认/取消/关闭后迟到回调通过。默认明确helper-pending，合成入口标注SYNTHETIC；真实provider/部署/设备资格仍缺，不关闭完整T24.6。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。
+- [ ] **T24.6 目标展示接入** · 进行中/部分完成 · P1 · fresh/hardware：把已实现只读目标报告接入安装UI，显示稳定身份/容量/分区/假定清除范围和具体拒绝理由，重新识别结果用于后续显式确认；不把 eligible 标记当写权限，不部署到错误layout路径。 前置：T24.1、T24.2。 来源：M07.2、M07.4。 证据：第二批ff4be97已合并推送：c05793b及中央注册完成只读UI/controller/provider契约；独立Node100/Python34/逐字段报告一致性、新编普通UID1000真实窗口/滚动/指针选择/确认/取消/关闭后迟到回调通过。默认明确helper-pending，合成入口标注SYNTHETIC；真实provider/部署/设备资格仍缺，不关闭完整T24.6。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。第三批固定18d47e7，子会话b9cd8e69-6436-428d-a4b7-17d86617c342实现受限只读原生provider/部署，不放行writer/实盘或猜测source kernelBasis。
 - [x] **T24.1 只读目标身份模型** · 已完成 · P1 · fresh/hardware：只读枚举/输出型号、容量、稳定serial/WWN、分区与假定清除范围；选择绑定及重新识别对缺失/歧义/活动来源/热插拔改变拒绝。JSON/CLI资格不等于UI确认或写权限，真实展示接入由T24.6完成。 前置：T03.1。 来源：M07.2。 证据：e3b74df→be85a42→最终a5已合并推送；34合成CLI/sysfs/graph/边界/重识别测试及组合CTest通过。未实际探测host盘、尚无writer/UI确认/独占raw opener或其它namespace证明；仅USB/sysfs外部来源floor，未知overlay/loop fail-closed。
 - [x] **T24.2 内盘排除与防误选** · 已完成 · P1 · fresh/hardware：当前只读模型排除三块已知内盘型号/family及root/boot/source/活动holder/swap祖先，对身份缺失/冲突/热插拔改变拒绝；不按sdX/nvme号或RM布尔挑选，实际writer独占与确认仍后续。 来源：M07.3。 证据：与targets只读实现同一e3b74df/a5固定组合；型号alias、大小/重复ID、dm祖先/改变identity/diskseq/歧义拒绝fixtures通过；真实设备/其它mount namespace/raw opener与破坏性安装验收不由此替代。
 - [ ] **T24.3 写入确认与取消** · 进行中/部分完成 · P1 · fresh/hardware：提供写入前明确确认、进度、取消边界和失败反馈；安装源/当前运行盘不得被误覆盖。 前置：T24.1、T24.2、T24.6。 来源：M07.4。 证据：c05793b组件随ff4be97合并推送；新编普通UID1000真实指针选择/范围ack/fresh generation重识别/确认/取消/实际WMclose后迟到回调不复活通过，确认始终readOnly=true/writeAuthorized=false。仅合成provider，无实际writer/安装进度/写入取消/介质授权，不关闭完整T24.3或真实写盘gate。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。

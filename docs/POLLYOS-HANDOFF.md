@@ -183,3 +183,25 @@ guard cleanup 失败不撤销已提交 persistent generation，仍拒绝自动�
 旧 single-system-r2 不能声称已包含这些新代码。
 完整 T17、T24、原生 outside-app 菜单和 XP 1:1 仍开放；
 真实介质、生产钥和发行 gate 不变。按具体前置继续下一批，提交/推送不是停止点。
+
+## 第三批已启动
+
+第二批代码 `ff4be97` 与交接/状态 `18d47e7` 已分别正常推送；
+以下三个隔离实现分支固定在 `18d47e78ab6c4e32330e2592d0a3ee5d4bc14eb2`。
+
+| 执行项 | 子会话 / 分支 | 当前范围 |
+| --- | --- | --- |
+| T03.6 必需存储故障 | `21c0b051-d0ad-444a-b95d-21babfb0c9f9` / `bunnysoft-storage-fault-guards` | 严格 manifest/映射/就绪守卫及故障矩阵；不空目录 fallback、认证重置或自动修复，整机/真实盘故障仍须独立验收 |
+| T20.1 MIME 与默认应用 | `78d977e3-b66b-4353-938d-b5931a7b54a5` / `bunnysoft-mime-document-launch` | XDG 默认应用、MIME 与正确文档启动参数；复用现有应用数据库，保留真实 D-Bus/FD/期限/no-replay 及普通 Exec 边界 |
+| T24.6 只读原生 provider | `b9cd8e69-6436-428d-a4b7-17d86617c342` / `bunnysoft-installer-readonly-provider` | 填补现 UI 的真实只读 transport/部署；无任意命令/root broker/writer，不伪造来源、容量、kernelBasis 或写权限 |
+
+共享注册、默认构建链与计划状态仍由主会话统一维护。MIME 分支拥有现
+`applications.c`/应用查询；安装报告分支用独立 adapter，并交回最小注册契约，
+避免两条分支同时重写同一原生入口。固定提交交回后再独立验证和单 lane 组合。
+不会在验证中枚举主机真实磁盘、改变默认应用或触及真实用户文档。
+
+**满盘策略已由用户明确选择：** 如果既有账户、包状态和映射完整可读，
+保留登录、只读诊断和清理能力；只有需要空间的持久写入按其真实需求拒绝。
+不得把 `f_bavail`/`f_favail` 为零变成 `Storage.check`/preflight 的全局拒绝，
+也不设置全局任意 reserve。必要 Dpkg/status 缺失、空、非正规或不可信仍拒绝；
+写入的 ENOSPC/I/O 错误必须显式反馈，不能清空状态、重置认证或假称成功。
