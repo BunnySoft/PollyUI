@@ -65,6 +65,16 @@ class GreeterImage(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     builder.qualify_greeter(self.root, REPO)
 
+    def test_live_or_linked_factory_profile_refused(self):
+        path = self.root / "etc/polly-account-profile"
+        path.write_text("live\n")
+        with self.assertRaises(ValueError):
+            builder.qualify_greeter(self.root, REPO)
+        path.unlink()
+        path.symlink_to("/dev/null")
+        with self.assertRaises(ValueError):
+            builder.qualify_greeter(self.root, REPO)
+
     def test_changed_source_or_executable_mode_refused(self):
         path = self.root / "usr/lib/pollyui/greeter-entry"
         original = path.read_bytes()

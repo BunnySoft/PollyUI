@@ -4,6 +4,9 @@ from pathlib import Path
 
 
 def seed(root, builder, repo):
+    profile = root / "etc/polly-account-profile"
+    if not profile.exists():
+        profile.write_text("installed\n")
     for source, destination, mode in builder.GREETER_RESOURCES:
         path = root / destination
         path.parent.mkdir(parents=True, exist_ok=True)

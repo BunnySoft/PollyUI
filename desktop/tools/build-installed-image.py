@@ -132,6 +132,16 @@ def account_templates(passwd, shadow):
 
 
 def qualify_greeter(root, repo):
+    for name in ("etc/polly-account-profile", "etc/passwd", "etc/group", "etc/shadow",
+                 "usr/share/polly-installed-packages.tsv", "usr/sbin/greetd"):
+        path = root / name
+        if not path.parent.resolve().is_relative_to(root.resolve()):
+            raise ValueError("Greeter factory input escapes candidate guest root: " + name)
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid or info.st_mode & 0o022:
+            raise ValueError("Untrusted installed greeter factory input: " + name)
+    if (root / "etc/polly-account-profile").read_text() != "installed\n":
+        raise ValueError("Graphical login requires the locked installed profile, never Live")
     for source, destination, mode in GREETER_RESOURCES:
         path = root / destination
         if not path.parent.resolve().is_relative_to(root.resolve()):
