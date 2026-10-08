@@ -4947,7 +4947,7 @@
         "t15-m05-4",
         "t22-m13-2"
       ],
-      "evidence": "用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用的日志与根因仍未闭环。注销/保存及 Power 流程已组合为 ffc887f，两个真实产品仅重编 9 个对象并链接，receipt SHA9f45bf17；用户批准的 Live/安装版标准电源授权与发行接线已另审合 e2fae72，引擎源码未变。相关功能源码闭环，但新依赖/规则尚未装入介质，统一新候选和真实用户流程验收仍待完成，不扩测试矩阵或操作用户现有 VM。"
+      "evidence": "注销/保存及 Power 流程已组合为 ffc887f，两个真实产品已链接，receipt SHA9f45bf17；双模式标准授权已审合 e2fae72。2026-10-08 新 12fecb4 候选已实际装入精确 polkit 依赖，但新隔离 QEMU UEFI 冷启动约 120s 到 graphical.target 仍未见 greeter；原首失败画面与测试盘保留，正在从真实 guest 日志定位，不把疑似 unit 排序环或旧 Hyper-V 首次问题根因标已确定。首启阻塞修复后再交付，真实用户流程仍待验收；不操作用户现有 VM。"
     },
     {
       "id": "alpha-candidate-media",
@@ -4967,7 +4967,7 @@
         "alpha-code-integration",
         "alpha-functional-closure"
       ],
-      "evidence": "2026-10-08 用户明确要求测试并更新虚拟机，批准全新测试环境，随后指定复用现有 Hyper-V PollyOS 配置并自行挂载介质。已开始从固定 12fecb4 生成一次新 Live ISO/未初始化安装 VHDX，并做新隔离 guest 的集中短 smoke；补入实际标准电源依赖/规则，不复用缺 pin 的旧底座或导出已首设测试盘。成品放 D:\\Temp\\PollyOS，无覆盖旧媒体或自动修改现有 VM。QEMU 结果不当 Hyper-V 现场证明，首次图形入口及真实用户流程仍按实际结果记录。"
+      "evidence": "2026-10-08 用户批准全新测试环境，指定复用现有 Hyper-V PollyOS 配置并自行挂载介质，成品放 D:\\Temp\\PollyOS。固定 12fecb4 已生成新 Live ISO/未初始化安装 VHDX并实际补入精确标准电源依赖；VHDX compare 与新原盘一致，不导出首设测试 cow。新隔离 guest 冷启动到 graphical.target 却未出现 greeter，交付暂缓，先保留失败画面/日志并修真实首启阻塞，再测试与更新正确固定源介质。无覆盖旧媒体或自动改用户 VM，QEMU 不当 Hyper-V 现场证明。"
     },
     {
       "id": "alpha-manual-acceptance",
