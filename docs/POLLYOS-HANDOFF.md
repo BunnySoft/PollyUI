@@ -1,6 +1,6 @@
 # PollyOS 当前批次交接
 
-更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `ffc887f`，
+更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `e2fae72`，
 保留此前正常快进合入的 `ce73a3c`，本轮尚未推送。
 此前已推送的代码基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，
 交接提交为 `0f863116fb3f1de8abbb6e032925a9860ce17553`；没有强推。
@@ -45,7 +45,7 @@ Alpha 是可手测的普通用户开发候选，不等于正式安装器、安�
   原 `2d19c91` 中四个退出 helper 仍嵌套在 shutdown 内，语法检查没有证明外部符号；
   `2f91cef` 已改为 file-scope 并核实四个 GLOBAL T，旧证据和原失败事实均保留。
 - 用户明确批准 Live 与安装版都支持正常关机/重启。父核实共享 platform-base
-  让安装版继承 Live 拒绝策略，现跟进标准 logind + polkit 的精准基本动作授权。
+  让安装版继承 Live 拒绝策略；标准 logind + polkit 精准基本动作授权已另审合 `e2fae72`。
   不新增自定义 Root 代理、sudo、强制关闭应用、挂起或忽略 inhibitor 权限；
   源码/组件证据不替代实际 guest 能力或真实电源结果，旧媒体仍未更新。
 - 闲置窗口主题/纯位置更新不等待无意义的新缓冲，在 `ce73a3c` 完成功能源码修复；
@@ -82,6 +82,29 @@ Alpha 是可手测的普通用户开发候选，不等于正式安装器、安�
 主会话已逐项核对 21 个 receipt 文件与两个产品哈希，新 PollyUI ELF 四个退出 helper 均为 GLOBAL T。
 旧产品与准备阶段失败日志保留，未冒充新源；后续标准电源授权配方不属于此固定源，
 真实 guest 能力、注销回登录与关机/重启仍留统一 Alpha 手测。
+
+### Live/安装版标准电源授权源码
+
+源 `659d1ab166666c725dc1be5fa63d8115af32a2d6` 已正常 cherry-pick 为 `e2fae72`，
+仅涉及发行配方、资源资格检查、相关直接用例及文档，未改变引擎源码或再次编译产品。
+共享平台精确 pin `polkitd=126-2`，只为真实 active/local polly seat 会话批准标准基本
+poweroff/reboot；移除四个基本方法旧 deny，保留 unsupported 方法、多会话和忽略 inhibitor 拒绝。
+没有自定义 Root 代理、sudo、pkexec、GUI agent 或强制关闭应用。
+
+两种发行模式使用相同的根所有规则和标准 daemon；安装/Live 组装校验资源原字节、包版本、
+系统身份与标准激活元数据。父已核定源检查日志、实际 DEB 及完整真实 unit 严格解析证明，
+不是只用自造 subject 或简化 synthetic unit 宣称 daemon 可用。
+实际 `polkitd_126-2_amd64.deb` SHA256 为
+`d5a9482759b4f7379eb0d83f7afb49b315165adcfd38ebb00512bb27b7cc5d74`；
+源码检查日志 SHA256 `ea8eb2a056fca9d805f862e5383e952cac08e8e41abd573c6960d2abd12b8499`，
+组装资源直接用例日志 `7763594997d86e849ca87381b4b5147256e7ce791f5442661195000373d9d4a2`，
+真实 unit 解析日志 `35bcd7f68e562177d117a762feceed592c4b02f6f9aa5160bfa5eed06e5244dd`，
+均保留于 Power 子会话 `files`。
+
+未安装包、启动 daemon、组装新介质或进行真实 power 调用。旧缓存缺 pin 会被明确拒绝，
+不可盲复用；下一统一候选需实际装入标准依赖与规则，再确认 guest `Can*` 和用户保存/取消流程。
+这是 Linux 会话级授权，同一符合条件的用户程序可调用标准 login1；不宣称整个系统只有 Shell
+能调用电源，也不把 Root 维护入口或另一活动用户会话的拒绝改为绕过。
 
 ## 第一批代码与准确范围
 

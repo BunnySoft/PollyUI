@@ -3130,7 +3130,7 @@
       "requires": [
         "pam-session"
       ],
-      "evidence": "2026-10-08 父核实共享 platform-base 将 Live 电源拒绝策略带入安装版。用户明确批准 Live 和安装版均支持正常关机/重启：使用标准 logind + polkit，仅当前活跃本地普通 polly 会话获得基本动作授权，不新增自定义 Root 代理、sudo、强制关闭应用或挂起功能。精准发行策略接线进行中；实际 guest CanPowerOff/CanReboot 与正常电源动作留统一候选集中手测，不以源码模拟 yes 代替真实权限。"
+      "evidence": "2026-10-08 用户明确批准 Live 和安装版正常关机/重启。标准授权源 659d1ab 已审阅并合入本地 main e2fae72：共享底座 pin polkitd 126-2，仅当前活跃本地普通 polly 会话获基本动作 YES，精准撤销四个旧基本方法 deny，保留多会话/忽略 inhibitor/挂起等拒绝；两种模式及安装组装均核实标准资源和依赖。真实 126 DEB 元数据/完整 unit 解析证据已核，源码与打包接线完成但新依赖尚未装入候选介质；实际 guest CanPowerOff/CanReboot 和电源动作仍待集中手测。"
     },
     {
       "id": "t22-m13-2",
@@ -3151,7 +3151,7 @@
         "t22-m13-1",
         "t16-m11-1"
       ],
-      "evidence": "2026-10-08 Power 源 7567077/87d39c2 已审阅并组合至本地 main ffc887f，实际消费统一 session-exit controller。正常关闭/Save/Cancel 后独立最终确认，再核真实 PID 会话与当前 yes 能力，只发送一次固定非交互动作；明确 accepted/rejected/failed/uncertain，已发送不重放。固定 ffc 的真实新 PollyUI/PollyWM 产品已增量链接，receipt SHA9f45bf17；两个发行模式的标准授权已获用户批准并在接线。旧媒体仍未更新，实际 guest 关机/重启、权限变化与应用保存交互待集中手测。"
+      "evidence": "2026-10-08 Power 源 7567077/87d39c2 已审阅并组合至本地 main ffc887f，实际消费统一 session-exit controller。正常关闭/Save/Cancel 后独立最终确认，再核真实 PID 会话与当前 yes 能力，只发送一次固定非交互动作；明确 accepted/rejected/failed/uncertain，已发送不重放。固定 ffc 的真实新 PollyUI/PollyWM 产品已增量链接，receipt SHA9f45bf17；Live/安装版标准授权源 659d1ab 已另合入 e2fae72，引擎源码未变。旧媒体仍未更新，实际 guest 关机/重启、权限变化与应用保存交互待集中手测。"
     },
     {
       "id": "t23",
@@ -4947,7 +4947,7 @@
         "t15-m05-4",
         "t22-m13-2"
       ],
-      "evidence": "用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用的日志与根因仍未闭环。注销/保存及 Power 关闭流程已审阅并组合至本地 main ffc887f；Live 与安装版正常电源标准授权已获用户批准，发行接线进行中。固定 ffc 仅编译 9 个受影响对象、复用 62 个并正常链接两个真实产品，receipt SHA9f45bf17；统一新介质和真实用户流程验收仍待完成，不扩测试矩阵或操作用户现有 VM。"
+      "evidence": "用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用的日志与根因仍未闭环。注销/保存及 Power 流程已组合为 ffc887f，两个真实产品仅重编 9 个对象并链接，receipt SHA9f45bf17；用户批准的 Live/安装版标准电源授权与发行接线已另审合 e2fae72，引擎源码未变。相关功能源码闭环，但新依赖/规则尚未装入介质，统一新候选和真实用户流程验收仍待完成，不扩测试矩阵或操作用户现有 VM。"
     },
     {
       "id": "alpha-candidate-media",
