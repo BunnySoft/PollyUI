@@ -1,8 +1,9 @@
 # PollyOS 当前批次交接
 
-更新时间：2026-10-08。最新代码合并基线为 `ff4be97f6e8a019a60f4d295e9d2b892fae55f0e`，
+更新时间：2026-10-08。最新代码合并基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，
 已正常快进合并并推送到 `BunnySoft/PollyUI` 的 `main`；没有强推。
-第一批 `a5e176a` 证据保留在下文；第二批原生代码为 `e7d709e`，`ff4be97` 仅更正一行文档。
+第一批 `a5e176a` 和第二批 `e7d709e`/`ff4be97` 证据保留在下文；
+第三批始终固定 `ac5a5a5`，新私有环境实际编译验收，没有原生阶段源码修复。
 本文不把实验性组件等同生产系统或全部任务完成。
 
 ## 执行入口与工作方式
@@ -184,7 +185,7 @@ guard cleanup 失败不撤销已提交 persistent generation，仍拒绝自动�
 完整 T17、T24、原生 outside-app 菜单和 XP 1:1 仍开放；
 真实介质、生产钥和发行 gate 不变。按具体前置继续下一批，提交/推送不是停止点。
 
-## 第三批已启动
+## 第三批开工记录
 
 第二批代码 `ff4be97` 与交接/状态 `18d47e7` 已分别正常推送；
 以下三个隔离实现分支固定在 `18d47e78ab6c4e32330e2592d0a3ee5d4bc14eb2`。
@@ -205,3 +206,102 @@ guard cleanup 失败不撤销已提交 persistent generation，仍拒绝自动�
 不得把 `f_bavail`/`f_favail` 为零变成 `Storage.check`/preflight 的全局拒绝，
 也不设置全局任意 reserve。必要 Dpkg/status 缺失、空、非正规或不可信仍拒绝；
 写入的 ENOSPC/I/O 错误必须显式反馈，不能清空状态、重置认证或假称成功。
+
+## 第三批合并与有界验收
+
+固定源码 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1` 已正常快进合并并推送。
+前三个执行项完成下列组件，**完整 T03.6、T20.1、T24.6/T24.3 仍进行中**；
+不为了关闭本批把未覆盖的整机、MIME 管理或实际安装来源范围删除。
+
+| 组件 | 原分支 → 组合提交 | 本批完成及剩余范围 |
+| --- | --- | --- |
+| 必需存储记录/映射守卫 | `8e1e069`/`8af0915` → `75ad21c`/`d47fee4`，注册 `7e51c3d` | 受限 FD 快照、严格 JSON、非空可信 Dpkg/status、就绪及映射拒绝；103 单测/64 私有故障矩阵/三个 namespace 夹具通过，真实 ext4/包事务/掉电/启动未认证 |
+| 本地文档 MIME/默认关联/Open | `ac43e9f` → `1ae1444`，接线 `ebb06fd` | 新普通用户产品真实 local MIME/Exec/标准 Open 和错误/迟到/FD/退出通过；无用户默认写入、全 MIME aliases/subclasses、远程协议或 bundle MIME 模型 |
+| 固定只读 native provider | `4124fb8` → `93be948`，接线 `2c01e17`；期限修复 `9f9c1a5` → `b12147f`，对象隔离 `ac5a5a5` | 无参数普通用户固定 helper、真实取消/回收/窗口及 8 秒完成资格通过；生产来源 producer/source.json、有效介质模式/exclusive broker/writer 仍缺 |
+
+### 固定证据与实际新二进制
+
+验证会话仍为 `4838b4ff-1600-4719-9cbb-bb08e7bb3e34`，工作区与旧批次相同，
+但本批使用新的专有 volume `polly-child-batch3-ac5a5a5-59a1317a`；
+不写旧/共享 build cache，也不拿旧 binary 代替当前源码。
+SDK 固定 `4ef0cd4e096e79eedc8310c9cc87897fc5db778a6e68401e2ee7a56a64555cfb`，
+网络关闭、源码只读；全部项目编译是 UID/GID1000，实际 256 步。
+缓存依赖如实复用；未变的 helper/WM 新编结果可能与旧 SHA 相同，不表示复用了旧文件。
+
+证据根 `build\batch3-native-ac5a5a5-59a1317a`；
+`native-final-ac5a5a5.json`，76,995 字节，SHA256
+`d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b`。
+`complete=true / phase=fixed-source-native-and-explicit-private-fixtures`，
+`sourceDirty=false`。主会话核对报告、**210 个 artifact 加报告共 211 个 SHA**、
+真实缺来源错误和 native 确认画面后才合并。
+
+- 普通 UID1000 的 23/23 原生 CTest 通过，119.65 秒；
+  真实新产品 document/Open 和 activation、app/launcher/bundle、菜单/XP及八个相邻 native selectors 保留。
+- 文档真实夹具不接受 `--probe`：临时实际文档/file 分类、XDG 默认关联、
+  Exec argv/URI/cwd/env/FD/退出、标准 `asa{sv}` Open/自动启动、
+  实际 FD 拒绝、错误/过大/队列/关闭/断连和元数据重新发现通过。
+  实际 3500ms 晚回复加 4000ms pump 停顿明确超时，无 ACK/replay/fallback。
+- 新生产 PollyUI 三个像素夹具通过，外观 1124 assertions；
+  不是物理屏/GPU 或 XP 整桌面 1:1。
+- 独立 root 容器中的存储13/Network36/factory12 注册 3/3 通过，
+  7.53 秒、原 30 秒限制不变；不混成 ordinary native 或 PID1/namespace 实机证据。
+
+生产 `pollyui` SHA256
+`c893eceb3cfca9007bf667c94ecce44da25122a4ca670d3f2e6958b584f68607`；
+`pollywm` SHA256
+`3b44e5c2130f519114d8148ed43ebc03bad1d739fc517c0790988fbfaf7a212c`。
+十个真实新 target 的 binary SHA、四种对象的 compile_commands/nm、
+原 UID/GID/mode 与 185 项转存文件记录均在报告中。
+后置只读 volume 的 UID0 字节转存不冒充原编译/运行 UID。
+
+### Provider 的四种证据不能混用
+
+1. **生产 binary：** 无 helper 覆盖或时钟钩子；默认 main 明确 pending，
+   显式 opt-in 且缺生产 `source.json` 时真实固定 helper 报 ENOENT，
+   UI 显示失败，不输出空成功 inventory。未缓存 strace，未安装工具或伪造 syscall trace；
+   “枚举前失败”依据实际异常及已审定 configuration-before-enumerate 顺序。
+2. **普通 SDL 测试变体：** 只定义固定 private fixture-helper 路径，
+   clock/read/waitpid 仍真实；UID1000/groups 空，真实新引擎窗口、滚轮/指针、
+   fresh native 确认/取消/实际关闭终止 transport 和迟到保护通过。
+   仅接受 `NATIVE-COLLECTOR-FIXTURE`，不是生产来源或真实盘资格。
+3. **小型传输测试：** 专用 OBJECT 独有 clock/read/waitpid 重定向，
+   harness 仍真实 libc；注册全部 16 cases/31 UID1000 marker，36.85 秒通过。
+   四个精确边界是确定性样本，不冒充 8 秒墙钟或 SDL 窗口证明。
+4. **部署检查：** CMake component 只在本批私有安装 stage 验证四个相邻 Python
+   文件 0:0/0644、目录0755和六个生产 JS，不夹带 fixture/source.json。
+   双平台 runtime 包 authority 已声明 file/Python3，Debian 还有 libmagic 库/数据；
+   这是当前源码接线与 SDK 工具 provenance，不是新 runtime bundle/Alpine/image 已构建。
+
+Private staging 使用 Podman 创建的明确 0755 tmpfs 和 marker，
+不加 CAP_SYS_ADMIN，不执行 mount/unshare，不读取主机磁盘或改变传播属性。
+只有私有合成 metadata/命令/proc/sys 文本被 collector 使用；
+root staging 和 actual UID1000 acquisition 分 phase 记录。
+来源真实性不能从 `/run`、root 所有权、generation 或 UI kernelBasis 推断，writer 未放行。
+
+### 独立源码证据与保留失败
+
+快速会话 `6e642253-6ffb-4b8e-8fa5-9c8ac6fa01c5` 固定同一 `ac5a5a5`：
+18 Python selectors 日志实际求和 257，单次 Node 174（107 top-level），
+无失败/跳过，另有 52 条 pure app-bundle、XP unit/generator/syntax。
+报告 SHA256
+`309a74d9e4a8cdfcc52b29b49d9c14471f304d0d62c01f642cf8fd0727902316`。
+observer 只记录原 subprocess 输出，未改 args/60s 限制或重新实现/重跑选择器。
+这份 whole-source proof 不代替前述新引擎。
+
+固定组件证据各自保留：8af 存储 103/64 私有矩阵，
+ac43 MIME67/C/52，4124 provider107/34/12cases27及其已知期限缺口，
+9f9 仅受影响的生产 C/四精确边界。
+原 4124 确实在入口 elapsed7999、最终 EOF elapsed8001 时错误 resolve；
+修复后 EOF7999 成功、EOF8000/8001拒绝，
+post-drain7999但 pre-resolve8001 也拒绝。先释放原 JSON，只 reject timeout Error；
+8 秒常量和生产 API/header没有测试 escape。
+
+WSL 临时运行目录丢失导致未开始的 MIME SDK preflight 曾失败，原日志保留；
+只在确认配置目录确实缺失时恢复已配置的 UID1000/0700 volatile 目录，
+不换 rootful、不改 store/runroot/linger/全局挂载。
+其他 evidence driver 打字/匹配错误保留并单独分类，没有改产品或隐藏测试失败。
+本批原生阶段没有 unexpected product/compile/test 失败，也没有新源码修复。
+
+本批没有新 runtime bundle、完整 apt 包重建、Alpine 产物、ISO/VM/PID1/PAM/logind 启动、
+物理 GPU/无线或真实介质操作。完整 T03.6、T20.1、T24、T17、原生菜单和 XP1:1
+继续开放；旧镜像不能声称包含本批代码。继续按具体前置选择下一批独立实现。

@@ -587,7 +587,7 @@
         "t24-m07-2",
         "t24-m07-3"
       ],
-      "evidence": "第二批ff4be97已合并推送：c05793b及中央注册完成只读UI/controller/provider契约；独立Node100/Python34/逐字段报告一致性、新编普通UID1000真实窗口/滚动/指针选择/确认/取消/关闭后迟到回调通过。默认明确helper-pending，合成入口标注SYNTHETIC；真实provider/部署/设备资格仍缺，不关闭完整T24.6。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。第三批固定18d47e7，子会话b9cd8e69-6436-428d-a4b7-17d86617c342实现受限只读原生provider/部署，不放行writer/实盘或猜测source kernelBasis。"
+      "evidence": "第三批ac5a5a5已合并推送：4124fb8/9f9c1a5→93be9483/b12147fe及中央接线完成固定普通用户只读native provider、4个相邻Python文件/6个生产JS部署；8s完成前严格期限、子进程/FD清理、新报告generation/实际窗口滚动指针确认取消及关闭迟到保护通过。生产默认pending，显式缺source.json显示失败而非空成功；私有collector/helper测试与生产binary分证。实际可信offline来源producer/source.json/支持介质及exclusive broker/writer仍缺，不关闭完整T24.6，不以root所有权或UI kernelBasis授予写权。最终报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b。"
     },
     {
       "id": "menu-native-dismiss",
@@ -1065,7 +1065,7 @@
       "requires": [
         "required-maps"
       ],
-      "evidence": "第三批固定已推送18d47e7，子会话21c0b051-d0ad-444a-b95d-21babfb0c9f9实现必需存储manifest/映射/fingerprint的严格故障拒绝与有界矩阵；无空目录fallback/认证重置/自动修复。用户明确选择：满盘但现有状态完整可读时保留登录/只读诊断/清理，只拒绝需要空间的持久写入；不为Storage.check/preflight加全局zero-available或reserve gate。必要Dpkg/status缺失/空/非正规/不可信则拒绝，不复制完整包语义解析。实际ext4/整机掉电及冷启动不由source/tmpfs验证代替，整项验收待返回。"
+      "evidence": "8e1e069/8af0915→75ad21c6/d47fee45及中央注册随ac5a5a5合并推送：descriptor稳定快照/严格JSON/必要Dpkg status/就绪及映射守卫完成，独立103单测和3个实际私有namespace夹具、64唯一故障拒绝通过。实际SYSTEM/PERSISTENT/runtime零可用块和PERSISTENT零inode仍可只读检查，实际prepare EROFS/ENOSPC明确拒绝；无空目录fallback/认证重置/全局reserve。用户选定满盘仍保留登录诊断清理，写入各按需求失败。tmpfs/synthetic UUID证明不关闭真实ext4损坏、包事务满盘、启动中断/整机掉电/冷启动；完整T03.6继续进行中。独立报告7c4076dc43ce14cc30de74b2939343536900cd159bedb0ca8341075ae083c7fc；最终native报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b。"
     },
     {
       "id": "t03-m06-2",
@@ -2901,7 +2901,7 @@
       ],
       "status": "in_progress",
       "requires": [],
-      "evidence": "第三批固定已推送18d47e7，子会话78d977e3-b66b-4353-938d-b5931a7b54a5实现MIME/XDG默认应用与真实文档argv/URI处理，复用现应用注册/启动；保留e7总线FD/期限/no-replay及菜单生命周期，不建立第二套registry或泛化root命令。固定源和新原生验收待返回。"
+      "evidence": "ac43e9f→1ae1444e及中央documents链接/双平台file、Debian magic、Python3依赖/夹具注册随ac5a5a5合并推送；复用现desktop registry，普通UID1000新编产品真实local MIME/默认关联/Exec argv/URI/cwd/env/FD/退出、标准D-Bus Open及迟到/FD/错误/共享队列/关闭断连均通过。不写用户默认设置、不猜MIME、不造PID或不确定后重试fallback；保留3000ms post-send/common同步setup界限。本地concrete type匹配不等于全shared-mime aliases/subclasses/远程协议/default-write/bundle MIME模型，完整T20.1继续进行中。最终native报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b。"
     },
     {
       "id": "native-file-dialog",
@@ -3181,7 +3181,7 @@
         "t24-m07-3",
         "target-identity-ui"
       ],
-      "evidence": "c05793b组件随ff4be97合并推送；新编普通UID1000真实指针选择/范围ack/fresh generation重识别/确认/取消/实际WMclose后迟到回调不复活通过，确认始终readOnly=true/writeAuthorized=false。仅合成provider，无实际writer/安装进度/写入取消/介质授权，不关闭完整T24.3或真实写盘gate。最终native报告a3211b6f5321d2a247c65fa7c1e3324b5b0c7acab99e2da9bb5ee0df3b769cbe。"
+      "evidence": "ff4be97只读UI组件及ac5a5a5固定native provider组合已合并推送；普通UID1000真实指针选择/范围ack/fresh native generation/确认/取消/实际WMclose终止pending transport且迟到状态不复活通过。确认始终readOnly=true/writeAuthorized=false；数据来源为明确private collector fixture，不认证生产来源。实际writer/安装进度/写入取消/介质授权/exclusive证明未完成，不关闭完整T24.3或写盘gate。第三批最终报告d4ec553edb9afa5c583e258140bc28fa63ace3ee97a1f0499612ff2ffab3739b，第二批证据保持原SHA。"
     },
     {
       "id": "t24-m07-6",
