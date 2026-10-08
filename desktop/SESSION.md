@@ -370,6 +370,12 @@ confirmation seals that same session-close barrier and invokes the existing
 re-reads the actual PID's session and both daemon capabilities before sending the
 fixed noninteractive `PowerOff(false)` or `Reboot(false)` call. No caller-supplied
 UID, role, session ID or arbitrary root command is accepted.
+The periodic background capability read is not itself an authorization denial:
+it does not prevent opening confirmation or requesting normal application
+closure. A final click re-reads Power state before sealing the close barrier;
+while that read is busy, the flow stays ready with an explicit refresh notice,
+without sealing, sending or queuing the action. Completion of the refresh never
+replays the click; the user must confirm again.
 
 `powerState()` now has `version: 1`, the existing capability/session fields,
 and `outcome`, `sent`, `busy`, `cancellable`. Outcomes distinguish verification,

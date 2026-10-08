@@ -161,7 +161,8 @@ test('fresh denial sends nothing; post-send uncertainty cannot cancel or replay'
     const callback = f.get('shell-power-commit').listeners.get('click')[0];
     f.state.active = false;
     callback({ stopPropagation() {} }); await drain();
-    assert.equal(f.status().phase, 'blocked');
+    assert.equal(f.status().phase, 'ready');
+    assert.equal(f.calls.some(call => call[0] === 'seal'), false);
     assert.equal(f.calls.some(call => call[0] === 'native-power'), false);
     f.click('shell-power-cancel'); f.state.active = true; f.notify();
     f.click('shell-power-poweroff'); f.click('shell-power-confirm'); f.ready(); f.click('shell-power-commit');
@@ -211,4 +212,46 @@ test('no application-close coordinator or challenge permission stays explicitly 
     assert.equal(f.status().phase, 'idle');
     assert.equal(f.calls.some(call => call[0] === 'native-power'), false);
   } finally { await f.done(); }
+});
+
+test('background power refresh permits confirmation but keeps final ready unsealed until a fresh manual click', async () => {
+  const { createSessionExitController } = await import('../shell/session-exit.mjs');
+  const f = fixture(true, createSessionExitController);
+  try {
+    f.state.busy = true;
+    f.click('shell-power-reboot');
+    assert.equal(f.status().phase, 'confirm', 'a background read is not an authorization denial');
+    assert.equal(f.reports.length, 0);
+    f.click('shell-power-confirm');
+    assert.equal(f.status().phase, 'waiting');
+    assert.equal(f.calls.some(call => call[0] === 'native-power' || call[0] === 'seal'), false);
+    f.state.busy = false; f.notify(); f.ready();
+    const final = f.get('shell-power-commit').listeners.get('click')[0];
+    f.state.busy = true;
+    final({ stopPropagation() {} }); await drain();
+    assert.equal(f.status().phase, 'ready');
+    assert.equal(f.calls.some(call => call[0] === 'seal' || call[0] === 'native-power'), false);
+    assert.match(nodes(f.get('shell-power-settings')).map(node => node.textContent || '').join(' '),
+      /Refreshing.*No power action was sent/i);
+    assert.equal(f.get('shell-power-commit').getAttribute('aria-disabled'), 'true');
+    assert.equal(f.reports.length, 0);
+    f.state.busy = false; f.state.revision = 12; f.notify(); await drain();
+    assert.equal(f.status().phase, 'ready');
+    assert.equal(f.calls.some(call => call[0] === 'seal' || call[0] === 'native-power'), false,
+      'finishing a background read cannot replay the final click');
+    f.state.reboot = 'challenge'; f.notify();
+    assert.equal(f.get('shell-power-commit').getAttribute('aria-disabled'), 'true');
+    f.click('shell-power-commit'); await drain();
+    assert.equal(f.calls.some(call => call[0] === 'seal' || call[0] === 'native-power'), false);
+    f.state.reboot = 'yes'; f.notify();
+    f.click('shell-power-commit');
+    assert.equal(f.calls.filter(call => call[0] === 'seal').length, 1);
+    assert.deepEqual(f.calls.find(call => call[0] === 'native-power'), ['native-power', 12, 'reboot']);
+    Object.assign(f.state, { outcome: 'accepted', sent: true, operation: '', cancellable: false });
+    f.notify(); await drain();
+    assert.equal(f.status().phase, 'complete');
+    assert.equal(f.status().canCancel, false);
+    f.power.paint(); f.notify(); await drain();
+    assert.equal(f.calls.filter(call => call[0] === 'native-power').length, 1);
+  } finally { await f.done(); f.exit.stop(); }
 });

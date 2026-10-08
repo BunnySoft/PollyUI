@@ -2,19 +2,21 @@ import { h, render } from './js/reconciler.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';
 
 export function createPowerSettings({ native, host, theme, report, sessionExit = null }) {
-  let surface = null, previous, started = false, state = null, error = '', revision = 0;
+  let surface = null, previous, started = false, state = null, error = '', notice = '', revision = 0;
   let unsubscribe = null, completion = null;
   const flow = () => sessionExit?.snapshot() || { phase: 'idle', canCancel: false, profile: 'unknown' };
   const powerFlow = value => value.action === 'poweroff' || value.action === 'reboot';
-  const available = action => state?.version === 1 && state.ready && state.active && state[action] === 'yes' &&
-    !state.busy && !state.operation && !state.sent;
+  const eligible = action => state?.version === 1 && state.ready && state.active && state[action] === 'yes' &&
+    !state.operation && !state.sent;
+  const available = action => eligible(action) && !state.busy;
+  const refreshNotice = 'Refreshing the current session and power permission. No power action was sent. Wait, then confirm again.';
   function powerError(value, sent) {
     const problem = value instanceof Error ? value : new Error(String(value));
     problem.sent = sent;
     return problem;
   }
   function failure(value) {
-    error = String(value);
+    error = String(value); notice = '';
     report('[shell] Power: ' + error);
     paint();
   }
@@ -34,6 +36,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
   function commitPower(action) {
     try {
       state = native.powerState();
+      if (eligible(action) && state.busy) throw new Error(refreshNotice);
       if (!available(action)) throw new Error('Power permission or session changed. No power action was sent.');
       if (completion) throw new Error('A power request is already being tracked.');
       return new Promise((resolve, reject) => {
@@ -41,7 +44,12 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
         try { native.requestPower(state.revision, action); refresh(); }
         catch (value) {
           completion = null;
-          reject(powerError(value, false));
+          try {
+            state = native.powerState();
+            reject(powerError(eligible(action) && state.busy ? new Error(refreshNotice) : value, false));
+          } catch (inspection) {
+            reject(powerError(new Error(String(value) + '; power state could not be inspected: ' + String(inspection)), false));
+          }
         }
       });
     } catch (value) {
@@ -53,7 +61,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
       const current = flow();
       if (powerFlow(current) && current.canCancel && current.phase !== 'committing' && !completion) {
         sessionExit.cancel();
-        error = '';
+        error = ''; notice = '';
         refresh();
         return;
       }
@@ -67,7 +75,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
       else Promise.resolve().then(() => {
         if (powerFlow(flow()) && flow().canCancel) sessionExit.cancel();
       }).catch(failure);
-      error = '';
+      error = ''; notice = '';
       refresh();
     } catch (value) { failure(value); }
   }
@@ -110,11 +118,26 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
   function request(action) {
     try {
       state = native.powerState();
-      if (!available(action)) throw new Error('This action is not currently authorized for your active local session.');
+      if (!eligible(action)) throw new Error('This action is not currently authorized for your active local session.');
       if (!sessionExit) throw new Error('Safe application-close coordination is unavailable; no power action was sent.');
-      error = '';
+      error = ''; notice = '';
       sessionExit.request({ action, commit: () => commitPower(action) });
       paint();
+    } catch (value) { failure(value); }
+  }
+  function confirmPower() {
+    try {
+      const current = flow();
+      if (!powerFlow(current) || current.phase !== 'ready') return;
+      state = native.powerState();
+      if (!eligible(current.action))
+        throw new Error('Power permission or session changed. No power action was sent.');
+      if (state.busy) {
+        error = ''; notice = refreshNotice; paint();
+        return;
+      }
+      error = ''; notice = '';
+      invoke(() => sessionExit.confirmCommit());
     } catch (value) { failure(value); }
   }
   function invoke(action) {
@@ -138,7 +161,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
       label(status.profile === 'live' ? 'This Live session loses memory-only files and settings after shutdown.' :
         'Save your work first. Memory-only Live files are not preserved after shutdown.'),
       button('shell-power-confirm', 'Close applications and continue', () => invoke(() => sessionExit.confirm()),
-        available(status.action)),
+        eligible(status.action)),
     ];
     else if (active && ['waiting', 'ready'].includes(status.phase)) content = [
       label(status.phase === 'waiting' ? 'Waiting for applications to close' : 'Applications are closed'),
@@ -149,7 +172,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
         label('The final request will recheck your current login session and the daemon permission.'),
       status.phase === 'waiting' ? button('shell-power-retry-applications', 'Ask remaining applications to close',
         () => invoke(() => sessionExit.retry()), typeof sessionExit.retry === 'function') :
-        button('shell-power-commit', 'Confirm ' + title.toLowerCase(), () => invoke(() => sessionExit.confirmCommit()),
+        button('shell-power-commit', 'Confirm ' + title.toLowerCase(), confirmPower,
           available(status.action)),
     ];
     else if (active && status.phase === 'committing') content = [
@@ -171,7 +194,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
     else content = [
       ...[['poweroff', 'Shut down'], ['reboot', 'Restart']].map(([action, text]) =>
         button('shell-power-' + action, text + (state?.[action] === 'challenge' ? ' (authorization required)' : ''),
-          () => request(action), !!sessionExit && available(action) && status.phase === 'idle')),
+          () => request(action), !!sessionExit && eligible(action) && status.phase === 'idle')),
       !sessionExit ? label('Safe application-close coordination is unavailable in this build.') : null,
       status.phase !== 'idle' && !powerFlow(status) ? label('Another session exit is already in progress.') : null,
       state && state.version !== 1 ? label('This native power backend cannot track final request outcomes; actions are disabled.') : null,
@@ -191,6 +214,8 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
         !state.ready ? label('Waiting for a verified local login service...') : null,
       error || state?.error || (active && status.error) ?
         h('view', { role: 'alert' }, label(error || state?.error || status.error)) : null,
+      notice || (active && status.phase === 'ready' && eligible(status.action) && state.busy) ?
+        h('view', { role: 'status', 'aria-live': 'polite' }, label(notice || refreshNotice)) : null,
       h('view', { role: 'status', 'aria-live': 'polite', style: { gap: current.layout.contentGap } }, content),
       cancellable ? button('shell-power-cancel', 'Cancel and keep session', cancel) : null,
       button('shell-power-retry', 'Refresh service status', () => {
@@ -199,7 +224,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
       }, !active && !state?.sent && !state?.operation)), surface.document.body);
   }
   function refresh() {
-    try { state = native.powerState(); settle(); paint(); }
+    try { state = native.powerState(); if (!state.busy) notice = ''; settle(); paint(); }
     catch (value) { state = null; settleUnknown(value); failure(value); }
   }
   function keydown(event) {
