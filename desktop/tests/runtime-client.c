@@ -577,6 +577,8 @@ static bool window_suite(char *executable, char *script, char *mode)
     unsigned file_dialog_sequence = 0;
     unsigned files_sequence = 0;
     uint32_t settings_time = 70000;
+    unsigned settings_state_sequence = 0;
+    char settings_state_previous[512] = "";
     for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
         CHECK(pump());
         CHECK(ordinary_fixture_requests("org.pollyui.file-dialog-window", "PollyUI.FileText",
@@ -770,10 +772,24 @@ static bool window_suite(char *executable, char *script, char *mode)
             if (sscanf(name, "fixture-settings-state %u %u", &sequence, &settings_open) == 2) {
                 CHECK(settings_open <= 1 && desktop.shell_pid);
                 bool found_settings = false, found_survivor = false;
+                unsigned settings_mapped = 0, settings_pending = 0, survivor_mapped = 0, survivor_pending = 0;
+                pid_t survivor_pid = 0;
+                int survivor_alive = 0;
                 struct PuDesktopView *view;
                 wl_list_for_each(view, &desktop.views, link) {
-                    if (!view->mapped || view->geometry_pending) continue;
                     struct wl_client *client = wl_resource_get_client(view->toplevel->base->resource);
+                    if (client == desktop.shell_client && view->toplevel->title &&
+                        !strcmp(view->toplevel->title, "Settings")) {
+                        settings_mapped += view->mapped;
+                        settings_pending += view->geometry_pending;
+                    }
+                    if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings-survivor")) {
+                        wl_client_get_credentials(client, &survivor_pid, NULL, NULL);
+                        survivor_mapped += view->mapped;
+                        survivor_pending += view->geometry_pending;
+                        survivor_alive = survivor_pid > 0 && kill(survivor_pid, 0) == 0;
+                    }
+                    if (!view->mapped || view->geometry_pending) continue;
                     if (client == desktop.shell_client && view->toplevel->title &&
                         !strcmp(view->toplevel->title, "Settings")) found_settings = true;
                     if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings-survivor")) {
@@ -782,6 +798,20 @@ static bool window_suite(char *executable, char *script, char *mode)
                         CHECK(client != desktop.shell_client && pid > 0 && kill(pid, 0) == 0);
                         found_survivor = true;
                     }
+                }
+                char diagnostic[512];
+                snprintf(diagnostic, sizeof(diagnostic),
+                    "SETTINGS_STATE: seq=%u expected_open=%u shell_pid=%ld settings_ready=%d settings_mapped=%u "
+                    "settings_pending=%u survivor_ready=%d survivor_mapped=%u survivor_pending=%u "
+                    "survivor_pid=%ld survivor_alive=%d",
+                    sequence, settings_open, (long)desktop.shell_pid, found_settings, settings_mapped,
+                    settings_pending, found_survivor, survivor_mapped, survivor_pending,
+                    (long)survivor_pid, survivor_alive);
+                if (sequence != settings_state_sequence || strcmp(diagnostic, settings_state_previous)) {
+                    puts(diagnostic);
+                    fflush(stdout);
+                    settings_state_sequence = sequence;
+                    strcpy(settings_state_previous, diagnostic);
                 }
                 if (found_survivor && found_settings == (settings_open != 0))
                     wlr_layer_surface_v1_destroy(marker->surface);

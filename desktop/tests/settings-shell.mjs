@@ -5,7 +5,23 @@ import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const [mode, executable, script] = application.arguments;
 const surfaces = [], exits = new Map(), reports = [];
-let shell, serial = 0;
+let shell, serial = 0, survivorPid = 0;
+const startedAt = Date.now();
+function diagnose(stage) {
+  const windows = desktop.windows().filter(item => item.title === 'Settings' ||
+    item.appId === 'org.pollyui.settings-survivor').map(item => ({
+      id: item.id, settings: item.title === 'Settings', survivor: item.appId === 'org.pollyui.settings-survivor',
+      active: item.active, minimized: item.minimized,
+    }));
+  console.log('SETTINGS_FIXTURE_STATE: ' + JSON.stringify({
+    stage, serial, elapsedMs: Date.now() - startedAt, running: shell?.getState().running,
+    survivorPid, survivorExited: exits.has(survivorPid), survivorStatus: exits.get(survivorPid),
+    settingsHandles: surfaces.filter(item => item.title === 'Settings').map(item => ({
+      closed: item.window.closed,
+      activeElement: item.window.closed ? '' : item.window.document.activeElement?.id || '',
+    })), windows,
+  }));
+}
 function check(value, message) {
   if (!value) throw new Error(message);
   console.log('PASS: ' + message);
@@ -13,7 +29,10 @@ function check(value, message) {
 async function until(predicate, message) {
   const deadline = Date.now() + 15000;
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('Timed out: ' + message);
+    if (Date.now() > deadline) {
+      diagnose(message);
+      throw new Error('Timed out: ' + message);
+    }
     await delay(10);
   }
 }
@@ -137,6 +156,7 @@ async function run() {
   } }).start();
   const survivor = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings-survivor', script, 'survivor'],
     '', 'settings-survivor');
+  survivorPid = survivor;
   const output = shell.getState().outputs[0];
   const panel = shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output === output);
   await until(() => panel.window.document.getElementById('shell-panel-settings')?.offsetWidth > 0, 'Settings taskbar entry');
@@ -168,6 +188,7 @@ async function run() {
   settings.onclose = () => { wmClosed = true; previousClose?.(); };
   await signal('fixture-settings-close ' + ++serial);
   await until(() => wmClosed, 'WM Settings actual onclose');
+  diagnose('WM Settings onclose acknowledged');
   await signal('fixture-settings-state ' + ++serial + ' 0');
   check(shell.getState().running && !exits.has(survivor), 'Settings close keeps Shell and ordinary PID alive');
   const reopened = shell.showSystemSettings(output, mode === 'audio' ? 'audio' : 'appearance');
