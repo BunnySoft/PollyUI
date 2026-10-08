@@ -124,6 +124,18 @@ async function drive() {
       ' ' + Math.round(rect.y + rect.height / 2));
   }
   async function wheel(delta) {
+    await until(() => {
+      const current = app.getWindow();
+      if (!current || current.closed) return false;
+      const list = current.document.getElementById('files-list');
+      const first = current.document.getElementById('files-entry-0');
+      if (!list || !first) return false;
+      const viewport = bounds(list), frame = bounds(current.document.body), entry = bounds(first);
+      return viewport.width > 0 && viewport.height > 0 && entry.width > 0 && entry.height > 0 &&
+        viewport.x >= frame.x && viewport.y >= frame.y &&
+        viewport.x + viewport.width <= frame.x + frame.width &&
+        viewport.y + viewport.height <= frame.y + frame.height;
+    }, 'bounded mapped file-list viewport');
     const rect = bounds(app.getWindow().document.getElementById('files-list'));
     await request('wheel ' + Math.round(rect.x + Math.min(120, rect.width / 2)) +
       ' ' + Math.round(rect.y + Math.min(90, rect.height / 2)) + ' ' + delta);

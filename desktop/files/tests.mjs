@@ -272,6 +272,39 @@ test('partial snapshot is labelled partial, pages are bounded and keyboard/wheel
   controller.page(2); nodes = flatten(filesView(controller.getState(), controller));
   assert.equal(nodes.filter(node => node.props?.role === 'option').length, 2);
 });
+test('native Files viewport uses supported flex dimensions so rows do not expand the window', async () => {
+  const { controller } = fixture(); await controller.start();
+  const tree = filesView(controller.getState(), controller), nodes = flatten(tree);
+  const list = nodes.find(node => node.props?.id === 'files-list');
+  const viewport = nodes.find(node => node.children.includes(list));
+  assert.equal(viewport.props.style.flexGrow, 1);
+  assert.equal(viewport.props.style.flexBasis, 0);
+  assert.equal(viewport.props.style.flexShrink, 1);
+  assert.equal(viewport.props.style.minHeight, 120);
+  assert.equal(viewport.props.style.overflow, 'hidden');
+  assert.equal(list.props.style.flexGrow, 1);
+  assert.equal(list.props.style.flexBasis, 0);
+  assert.equal(list.props.style.minWidth, 0);
+  assert.equal(list.props.style.minHeight, 0);
+  assert.equal(list.props.style.overflow, 'scroll');
+  assert.equal(tree.props.style.overflow, 'hidden');
+  assert.ok(nodes.every(node => !Object.hasOwn(node.props?.style ?? {}, 'flex')));
+  const footer = nodes.find(node => node.children.some(child => child.props?.id === 'files-page-status'));
+  assert.equal(footer.props.style.flexShrink, 0);
+});
+test('native Files wheel scroll clamps bounded viewport using absolute unscrolled child geometry', async () => {
+  const { controller } = fixture(); await controller.start();
+  const list = flatten(filesView(controller.getState(), controller)).find(node => node.props?.id === 'files-list');
+  const node = { offsetTop: 135, offsetHeight: 450, scrollTop: 0,
+    childNodes: [{ offsetTop: 135, offsetHeight: 60 }, { offsetTop: 3955, offsetHeight: 60 }] };
+  let prevented = 0;
+  const wheel = deltaY => list.props.onWheel({ currentTarget: node, deltaY, preventDefault() { prevented++; } });
+  wheel(180); assert.equal(node.scrollTop, 180);
+  wheel(10000); assert.equal(node.scrollTop, 3430);
+  wheel(-10000); assert.equal(node.scrollTop, 0);
+  node.childNodes = []; wheel(180); assert.equal(node.scrollTop, 0);
+  assert.equal(prevented, 4);
+});
 test('late navigation reply and close cannot resurrect a retired snapshot', async () => {
   const { controller, fs } = fixture(), list = fs.listDirectory;
   let resolve; fs.listDirectory = () => new Promise(yes => { resolve = yes; });

@@ -108,7 +108,7 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
   });
   if (ready && !entries.length) rows.push(label('files-empty', 'This folder is empty.', 'muted'));
   const list = h('view', { id: 'files-list', role: 'listbox', 'aria-label': 'Files and folders',
-    style: { flex: 1, minHeight: 120, overflow: 'scroll', gap: 6 },
+    style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, overflow: 'scroll', gap: 6 },
     onWheel: event => {
       event.preventDefault();
       const node = event.currentTarget;
@@ -122,14 +122,15 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
     style: { width: 150, gap: 8, flexShrink: 0 } },
     Object.entries(state.locations ?? {}).map(([key, path]) => button('files-place-' + key,
       key[0].toUpperCase() + key.slice(1), () => controller.navigate(path), true, path === state.path)));
-  content.push(h('view', { style: { flexDirection: 'row', gap: 12, flex: 1, minHeight: 120 } }, sidebar, list),
+  content.push(h('view', { style: { flexDirection: 'row', gap: 12, flexGrow: 1, flexBasis: 0,
+    flexShrink: 1, minHeight: 120, overflow: 'hidden' } }, sidebar, list),
     h('view', { style: row },
       button('files-page-previous', 'Previous page', () => controller.page(state.page - 1, generation), ready && state.page > 0),
       label('files-page-status', 'Page ' + (state.page + 1) + ' / ' + pages, 'muted'),
       button('files-page-next', 'Next page', () => controller.page(state.page + 1, generation), ready && state.page < pages - 1)));
   return h('view', { id: 'files-root', style: {
     width: '100%', height: '100%', padding: 12, gap: 8, flexDirection: 'column',
-    color: color('text'), backgroundColor: color('body'),
+    color: color('text'), backgroundColor: color('body'), overflow: 'hidden',
   }, onKeydown: event => {
     const editing = event.target?.id === 'files-name';
     if (event.key === 'Escape') { event.preventDefault(); controller.cancel(generation); }

@@ -34,6 +34,9 @@ double-click it. Arrow keys select entries; Enter opens, F2 begins rename,
 F5 refreshes, Alt+Left/Right navigate history and Escape dismisses confirmation.
 Lists have 64-row pages with native wheel scrolling. A directory containing
 more than 1024 entries is explicitly **partial**, never presented as complete.
+The bounded file-list viewport uses the engine's explicit `flexGrow` and
+`flexBasis` properties, not unsupported CSS `flex` shorthand. Rows overflow
+inside that viewport; the page controls stay below it within the window.
 
 Rows show real name, type, bytes, modification time, permission mode, UID and
 actual effective-UID read/write accessibility. Empty and permission-denied
