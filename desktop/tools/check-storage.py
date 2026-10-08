@@ -33,6 +33,8 @@ def main():
         "desktop/tests/network-state.py",
         "desktop/tests/network-state-fixture.py",
         "desktop/tests/storage-network-image.py",
+        "desktop/tests/storage-failures.py",
+        "desktop/tests/storage-fault-fixture.py",
         "desktop/release/storage/homes.py",
         "desktop/release/storage/identities.py",
         "desktop/release/storage/migrate-home.py",
@@ -80,6 +82,8 @@ def main():
         ["python3", "-I", "-B", str(repo / "desktop/tests/network-state.py"), str(repo)])
     run("storage-network-image (isolated root container)",
         ["python3", "-I", "-B", str(repo / "desktop/tests/storage-network-image.py"), str(repo)])
+    run("storage-failures (isolated root container)",
+        ["python3", "-I", "-B", str(repo / "desktop/tests/storage-failures.py")])
     print(f"PASS fast storage checks in {time.monotonic() - started:.2f}s "
           "(no image build, no VM, no host devices)", flush=True)
 

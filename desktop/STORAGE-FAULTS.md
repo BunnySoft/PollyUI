@@ -73,9 +73,15 @@ seed a minimal real `status` record and continue exercising actual
 
 Run existing `storage-layout`, `storage-mappings`, `installed-accounts`,
 `account-profiles`, Network36 and factory12 consumers alongside the new tests.
-Central CTest/fast-runner registration is intentionally a separate composition
-step; `storage-failures` must use the root-container lane, not ordinary UID
-unit selectors. Preserve failed runs and immutable image/source/command
+CTest registers `desktop-storage-failures` with `python3 -I -B`, no repository
+argument, a 30-second timeout, source working directory and the `root-container`
+label. The source-only `check-storage.py` runner invokes the same suite as an
+explicit root-container selector, outside its ordinary generic unit list.
+Its AST checks include the production storage guard, fault suite and private
+namespace fixture. `storage-fault-fixture.py` is not registered as a default
+host/CTest test: its `CAP_SYS_ADMIN` namespace run still requires a separately
+scoped root container. Registration is not mount, native runtime, image or
+boot acceptance. Preserve failed runs and immutable image/source/command
 provenance with the reports.
 
 This bounded matrix is **not** complete T03.6 acceptance: real ext4 corruption,
