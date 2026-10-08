@@ -178,9 +178,10 @@ bundles and direct child/exit lifecycles keep their existing paths. An entry
 that has `Exec` continues to use it even with `DBusActivatable=true`; malformed
 `DBusActivatable` boolean values are rejected rather than silently ignored.
 For D-Bus-only entries the service controls its own working directory/terminal;
-the launcher does not fabricate a terminal command. MIME association, document
-`Open`, `ActivateAction`, startup tokens and generic D-Bus/privilege APIs are
-outside this contract.
+the launcher does not fabricate a terminal command. The separate local-document
+contract below adds standard `Open` without changing launch-only `Activate`.
+`ActivateAction`, startup tokens and generic D-Bus/privilege APIs remain outside
+both contracts.
 
 Shell `launchApplication` still returns a PID synchronously for Exec. For this
 activation path it returns a Promise resolving to the acknowledgement (or
@@ -234,6 +235,146 @@ and has a 120-second timeout. It runs the product mode, never `--probe`.
 Native acceptance requires an ordinary-user run of these newly built targets;
 registration or standalone infrastructure probes do not establish that result.
 The source-only storage runner remains Python-only.
+
+## Local document MIME and default applications
+
+`createApplicationLauncher(desktop)` now exposes two **Linux desktop** methods:
+
+```js
+launcher.documentApplications('/absolute/local/document.txt');
+// { mimeType: 'text/plain', defaultApplication: 'editor.desktop',
+//   applications: [{ id, name, path, mimeTypes, documentField, dbusOpen }, ...] }
+
+launcher.openDocuments(['/absolute/local/document.txt', 'file:///absolute/other.txt']);
+launcher.openDocuments(['/absolute/local/document.txt'], 'editor.desktop');
+// Exec: actual child PID, with the existing onExit lifecycle.
+// D-Bus-only: Promise resolving after the actual empty Open method-return.
+```
+
+This reuses the existing `applicationFiles`/desktop-entry parser and launch
+helper. There is no second application registry, shell command interpolation,
+GLib/GIO/GObject dependency or privileged file opener. A handler must advertise
+the concrete `MimeType` **and** have exactly one `%f`, `%F`, `%u` or `%U` field
+in `Exec`, or be a valid D-Bus-only application with document `Open` available.
+An app that merely launches, or a managed bundle whose existing manifest has
+no document capability, is not silently treated as a document handler. A
+selected handler must qualify for **every** document; differing defaults require
+an explicit common handler, not partial launch or guessing from the first file.
+
+`desktop.documentMimeType(path)` opens a readable regular file as the current
+user and invokes fixed `/usr/bin/file --brief --mime-type --dereference -- /proc/self/fd/3`.
+The validated open descriptor is retained only in that child. All unrelated
+descriptors are closed; stdin is `/dev/null`, output/error are captured together,
+and the environment contains only a fixed `PATH` and `LC_ALL=C`. The `file`
+utility and its distribution-provided magic database must be present in the
+delivered runtime. The immutable SDK already has both; SDK availability alone
+does not prove a release has them. No extension-only fallback, guessed type or
+success-shaped tool error is returned. Missing tool, nonregular/unreadable file,
+nonzero exit, invalid MIME output, output above 256 bytes and a 1500 ms
+post-spawn processing deadline are explicit errors. Classification is synchronous
+and bounded per file, not an asynchronous content-service API. This is the
+distribution's `file` content classification, not a new shared-mime-info magic,
+alias, subclass or glob implementation; the returned concrete type is matched
+exactly against desktop entries and mimeapps keys.
+
+`desktop.mimeAssociationFiles()` reads standard XDG sources in this order:
+`$XDG_CONFIG_HOME` (or `~/.config`), each `$XDG_CONFIG_DIRS` (or `/etc/xdg`),
+`$XDG_DATA_HOME/applications` (or `~/.local/share/applications`), then each
+`$XDG_DATA_DIRS/applications` (or `/usr/local/share` and `/usr/share`). Within
+each directory, `polly-mimeapps.list` precedes `mimeapps.list`; Polly's
+desktop-specific file contributes **defaults only**, as required by the MIME
+apps specification. Generic files contribute ordered Default Applications,
+Added Associations and Removed Associations. Higher-priority additions survive
+lower removals; removals prevent lower additions and declared associations.
+Default candidates must still be installed, associated, advertise the type and
+handle document parameters. Missing/invalid/masked/unavailable candidates are
+not launched; remaining defaults, then associated handlers, are considered
+in priority order. Missing association files are empty directory markers, not
+errors or fabricated default selections. Other read failures and malformed
+NUL/UTF-8/duplicate groups/keys/lists are explicit errors, not ignored settings.
+No settings are written and no real user defaults are changed.
+
+`Hidden` and invalid higher-priority desktop files continue to mask lower copies,
+including recursive desktop IDs; `TryExec`, executable availability and Polly
+visibility rules still apply. `NoDisplay` excludes an app from the Apps menu but
+does **not** exclude an otherwise valid document handler. The catalog, MIME
+types, defaults, removals, terminal and capability are rediscovered for every
+document query/open. As with ordinary pathname-based desktop launching, this
+does not lock documents or application metadata against subsequent concurrent
+changes by their owner.
+
+Documents are only absolute Linux paths or encoded, authority-free `file:///`
+URIs. Remote schemes, host authorities, double-slash paths, query/fragment
+components, malformed escapes/UTF-8, relative paths, lone surrogates and NUL
+(including `%00`) are rejected. Unicode, spaces, quotes, percent signs and
+command-looking path bytes remain literal data. Paths are limited to 4095 UTF-8
+bytes; a request has 1–32 documents and at most 8192 combined URI bytes including
+terminators. `%f`/`%u` accept one document (multi-document requests refuse rather
+than discard files), `%F`/`%U` produce one argument per document, and `%u`/`%U`
+encode local paths as file URIs. `%i`, `%c`, `%k`, `%%`, whole-argument quoting
+and no-document placeholder removal preserve the existing semantics; expansion
+never reparses the resulting document/name/icon as command text. A document
+cannot select the executable. Document Exec argv is bounded to 256 arguments
+and 64 KiB including any configured terminal prefix. `Path`, `Terminal`, ordinary
+exit reporting and bundle digest launch selection retain their existing paths.
+Unsupported platforms or missing native MIME/Open capabilities explicitly
+refuse the applicable operation rather than reporting an unsupported success.
+
+For D-Bus-only handlers, `desktop.openApplicationDocuments(id, localFileUris)`
+uses the same validated desktop ID/object path and qualified **private session**
+connection as activation:
+
+```text
+interface: org.freedesktop.Application
+member:    Open
+signature: asa{sv} (bounded local file URI array, empty platform data)
+```
+
+It returns the actual Promise, with success shaped as the existing
+`{ kind: 'dbus', id, busName, objectPath, acknowledged: true }` plus
+`method: 'Open'`. This is acknowledgement, not PID/window/readiness or proof the
+app displayed a document. Inputs must also identify currently readable regular
+files at the native boundary. Activate and Open share the eight-request queue,
+post-send absolute 3000 ms expiry-first deadline, incoming size/dispatch bounds,
+live-FD receive budget **one**, per-message FD budget **zero**, and explicit
+FD-bearing reply rejection. The common helper's synchronous connection setup
+is still outside that post-send deadline. Interface/member/platform data are
+not caller-selectable. All timeout/disconnect/invalid-reply/shutdown outcomes
+retain explicit indeterminate errors and **no retry, Activate substitution,
+Exec fallback or replay**. Entries with `Exec` still take their original Exec
+path even when `DBusActivatable=true`.
+
+### Document fixtures and integration boundary
+
+```sh
+sh desktop/tests/document-association-check.sh /absolute/scoped-evidence
+node desktop/tests/document-association-fixture.mjs \
+  /absolute/rebuilt/pollyui /absolute/rebuilt/document-association-service \
+  /absolute/rebuilt/document-association-process /absolute/native-evidence
+```
+
+The scoped runner checks only strict C objects (including layer-shell syntax),
+pure Node document/activation/menu/XP regressions, fixture syntax and synthetic
+helper compilation. It does **not** build or validate the product-native API.
+The product fixture accepts no `--probe`, old API-less binary or replacement
+stub. It creates only ordinary temporary documents, private XDG application
+and mimeapps directories, isolated service registrations and a private daemon;
+it neither scans host applications nor reads/writes real user defaults/docs.
+It measures actual application argv/URI/cwd/environment/FD isolation and child
+exit, actual standard Open auto-start/signature/URI/empty platform-data,
+ACK/error/invalid/actual FD/oversized reply rejection, shared queue/timer,
+blocked-pump expiry-first, changed metadata/default rediscovery, malformed
+settings, host-bus refusal, shutdown and disconnect without replay. Linux
+temporary runtime directories and all logs/configs/results (including failures)
+are retained as byte-copied evidence.
+
+The parent integration must add `src/desktop/documents.c` alongside
+`applications.c`, register this Node suite and actual product fixture, and build
+the two dedicated fixture targets with the existing session-bus helper/libdbus.
+It must ensure `file` plus its magic database in runtime packaging and rerun
+the existing desktop-applications, activation, menu, XP and bundle fixtures
+against the newly built fixed source. Child scoped checks and committed fixtures
+are not full T20.1 native acceptance or release/image/real-media verification.
 
 ## Explicit update and rollback
 

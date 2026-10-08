@@ -2,6 +2,7 @@
 #include "desktop/applications.h"
 #include "desktop/session-bus.h"
 #include "desktop/bundles.h"
+#include "desktop/documents.h"
 #include "core/thread.h"
 #if defined(PU_LAYER_SHELL)
 #include "desktop/windows.h"
@@ -39,6 +40,7 @@ struct AppActivation {
     JSValue resolve, reject;
     long long deadline;
     char id[264], name[256], path[257];
+    bool documents;
     struct AppActivation *next;
 };
 static struct AppActivation *activations;
@@ -97,36 +99,58 @@ static JSValue can_activate_application(JSContext *ctx, JSValueConst self, int a
     return JS_NewBool(ctx, available);
 }
 
-static JSValue activate_application(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+static JSValue request_application(JSContext *ctx, int argc, JSValueConst *argv, bool documents)
 {
-    (void)self;
-    if (argc != 1 || !JS_IsString(argv[0]))
-        return JS_ThrowTypeError(ctx, "activateApplication requires a desktop-file ID");
+    if (argc != (documents ? 2 : 1) || !JS_IsString(argv[0]) || (documents && !JS_IsArray(argv[1])))
+        return JS_ThrowTypeError(ctx, documents ? "openApplicationDocuments requires a desktop-file ID and local URI array" :
+            "activateApplication requires a desktop-file ID");
+    const char *uris[32] = { 0 };
+    uint32_t uri_count = 0;
+    if (documents) {
+        JSValue length = JS_GetPropertyStr(ctx, argv[1], "length");
+        int converted = JS_ToUint32(ctx, &uri_count, length);
+        JS_FreeValue(ctx, length);
+        if (converted < 0) return JS_EXCEPTION;
+        if (!uri_count || uri_count > 32) return JS_ThrowRangeError(ctx, "Document Open requires 1-32 local file URIs");
+        size_t total = 0;
+        for (uint32_t i = 0; i < uri_count; i++) {
+            JSValue value = JS_GetPropertyUint32(ctx, argv[1], i);
+            size_t uri_size = 0;
+            if (JS_IsString(value)) uris[i] = JS_ToCStringLen(ctx, &uri_size, value);
+            JS_FreeValue(ctx, value);
+            total += uri_size + 1;
+            if (!uris[i] || total > 8192 || !pu_document_uri_valid(uris[i], uri_size)) {
+                for (uint32_t j = 0; j <= i; j++) JS_FreeCString(ctx, uris[j]);
+                if (JS_HasException(ctx)) return JS_EXCEPTION;
+                return JS_ThrowTypeError(ctx, "Document Open requires bounded readable local regular-file URIs");
+            }
+        }
+    }
     size_t size;
     const char *id = JS_ToCStringLen(ctx, &size, argv[0]);
-    if (!id) return JS_EXCEPTION;
+    if (!id) goto invalid;
     char name[256], path[257];
     bool valid = activation_target(id, size, name, path);
     if (!valid) {
         JS_FreeCString(ctx, id);
-        return JS_ThrowTypeError(ctx, "Invalid D-Bus application desktop ID");
+        JS_ThrowTypeError(ctx, "Invalid D-Bus application desktop ID"); goto invalid;
     }
     if (activation_count >= ACTIVATION_LIMIT) {
         JS_FreeCString(ctx, id);
-        return JS_ThrowRangeError(ctx, "D-Bus application activation queue is full");
+        JS_ThrowRangeError(ctx, "D-Bus application activation queue is full"); goto invalid;
     }
     char *address = pu_session_bus_address();
     if (!address || !strcmp(address, "disabled:") ||
         (activation_address && strcmp(address, activation_address))) {
         free(address); JS_FreeCString(ctx, id);
-        return JS_ThrowInternalError(ctx, "D-Bus activation requires an unchanged qualified private session bus");
+        JS_ThrowInternalError(ctx, "D-Bus activation requires an unchanged qualified private session bus"); goto invalid;
     }
     if (!activation_bus) {
         char error[256];
         activation_bus = pu_session_bus_connect(error, sizeof(error));
         if (!activation_bus) {
             free(address); JS_FreeCString(ctx, id);
-            return JS_ThrowInternalError(ctx, "%s", error);
+            JS_ThrowInternalError(ctx, "%s", error); goto invalid;
         }
         activation_address = address; address = NULL;
         dbus_connection_set_max_received_size(activation_bus, 64 * 1024);
@@ -137,12 +161,25 @@ static JSValue activate_application(JSContext *ctx, JSValueConst self, int argc,
     }
     free(address);
     struct AppActivation *request = calloc(1, sizeof(*request));
-    DBusMessage *message = dbus_message_new_method_call(name, path, "org.freedesktop.Application", "Activate");
+    DBusMessage *message = dbus_message_new_method_call(name, path, "org.freedesktop.Application", documents ? "Open" : "Activate");
     JSValue result = JS_EXCEPTION;
     if (!request || !message) { JS_ThrowOutOfMemory(ctx); goto cleanup; }
     strcpy(request->id, id); strcpy(request->name, name); strcpy(request->path, path);
+    request->documents = documents;
     DBusMessageIter body, dictionary;
     dbus_message_iter_init_append(message, &body);
+    if (documents) {
+        DBusMessageIter list;
+        if (!dbus_message_iter_open_container(&body, DBUS_TYPE_ARRAY, "s", &list)) {
+            JS_ThrowOutOfMemory(ctx); goto cleanup;
+        }
+        for (uint32_t i = 0; i < uri_count; i++) {
+            if (!dbus_message_iter_append_basic(&list, DBUS_TYPE_STRING, &uris[i])) {
+                JS_ThrowOutOfMemory(ctx); goto cleanup;
+            }
+        }
+        if (!dbus_message_iter_close_container(&body, &list)) { JS_ThrowOutOfMemory(ctx); goto cleanup; }
+    }
     if (!dbus_message_iter_open_container(&body, DBUS_TYPE_ARRAY, "{sv}", &dictionary) ||
         !dbus_message_iter_close_container(&body, &dictionary)) {
         JS_ThrowOutOfMemory(ctx); goto cleanup;
@@ -170,8 +207,24 @@ cleanup:
         dbus_pending_call_unref(request->pending);
     }
     free(request); JS_FreeCString(ctx, id);
+    for (uint32_t i = 0; i < uri_count; i++) JS_FreeCString(ctx, uris[i]);
     if (!activations) close_activation_bus();
     return result;
+invalid:
+    for (uint32_t i = 0; i < uri_count; i++) JS_FreeCString(ctx, uris[i]);
+    return JS_EXCEPTION;
+}
+
+static JSValue activate_application(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    return request_application(ctx, argc, argv, false);
+}
+
+static JSValue open_application_documents(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    return request_application(ctx, argc, argv, true);
 }
 
 static void complete_activation(struct AppActivation *request, DBusMessage *reply,
@@ -217,6 +270,10 @@ static void complete_activation(struct AppActivation *request, DBusMessage *repl
              JS_SetPropertyStr(context, value, "busName", JS_NewString(context, request->name)) < 0 ||
              JS_SetPropertyStr(context, value, "objectPath", JS_NewString(context, request->path)) < 0 ||
              JS_SetPropertyStr(context, value, "acknowledged", JS_NewBool(context, true)) < 0)) {
+            JS_FreeValue(context, value); value = JS_EXCEPTION;
+        }
+        if (request->documents && !JS_IsException(value) &&
+            JS_SetPropertyStr(context, value, "method", JS_NewString(context, "Open")) < 0) {
             JS_FreeValue(context, value); value = JS_EXCEPTION;
         }
     }
@@ -589,13 +646,14 @@ int pu_applications_install(JSContext *ctx)
 {
     context = ctx;
     desktop_api = JS_NewObject(ctx);
-    if (JS_IsException(desktop_api) || !pu_bundles_install(ctx, desktop_api)) return 0;
+    if (JS_IsException(desktop_api) || !pu_bundles_install(ctx, desktop_api) || !pu_documents_install(ctx, desktop_api)) return 0;
     if (JS_IsException(desktop_api)) return 0;
     JS_SetPropertyStr(ctx, desktop_api, "applicationFiles", JS_NewCFunction(ctx, read_applications, "applicationFiles", 0));
     JS_SetPropertyStr(ctx, desktop_api, "canExecute", JS_NewCFunction(ctx, can_execute, "canExecute", 1));
     JS_SetPropertyStr(ctx, desktop_api, "spawnApplication", JS_NewCFunction(ctx, spawn_application, "spawnApplication", 3));
     if (JS_SetPropertyStr(ctx, desktop_api, "canActivateApplication", JS_NewCFunction(ctx, can_activate_application, "canActivateApplication", 0)) < 0 ||
-        JS_SetPropertyStr(ctx, desktop_api, "activateApplication", JS_NewCFunction(ctx, activate_application, "activateApplication", 1)) < 0) return 0;
+        JS_SetPropertyStr(ctx, desktop_api, "activateApplication", JS_NewCFunction(ctx, activate_application, "activateApplication", 1)) < 0 ||
+        JS_SetPropertyStr(ctx, desktop_api, "openApplicationDocuments", JS_NewCFunction(ctx, open_application_documents, "openApplicationDocuments", 2)) < 0) return 0;
     const char *locale = getenv("LC_ALL");
     if (!locale || !*locale) locale = getenv("LC_MESSAGES");
     if (!locale || !*locale) locale = getenv("LANG");

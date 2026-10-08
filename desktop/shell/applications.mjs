@@ -1,4 +1,5 @@
 import { bundleCatalog } from './desktop/shell/bundles.mjs';
+import { localDocuments, mimeType, resolveMimeApplications, utf8Bytes } from './desktop/shell/documents.mjs';
 
 function unescapeValue(value, list = false) {
   let result = '';
@@ -88,10 +89,22 @@ function tokenize(command) {
   return tokens;
 }
 
-export function expandExec(command, entry) {
+export function execDocumentField(command) {
+  for (const { text } of tokenize(command)) {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] !== '%') continue;
+      const code = text[++i];
+      if (code && 'fFuU'.includes(code)) return code;
+    }
+  }
+  return '';
+}
+
+export function expandExec(command, entry, inputs = []) {
+  const documents = localDocuments(inputs);
   const result = [];
   let files = 0;
-  for (const { text, quoted } of tokenize(command)) {
+  for (const [index, { text, quoted }] of tokenize(command).entries()) {
     if (text === '%i' && !quoted) {
       if (entry.icon) result.push('--icon', entry.icon);
       continue;
@@ -107,7 +120,14 @@ export function expandExec(command, entry) {
       if ('fFuU'.includes(code)) {
         if (++files > 1) throw new Error('Exec may contain only one file/URL field code');
         if ('FU'.includes(code) && text !== '%' + code) throw new Error('List field code must be a separate argument');
-        removed = true;
+        if (index === 0) throw new Error('A document cannot select the executable');
+        if ('fu'.includes(code) && documents.length > 1)
+          throw new Error('Single-document Exec field cannot receive multiple documents');
+        if ('FU'.includes(code)) {
+          result.push(...documents.map(document => code === 'F' ? document.path : document.uri));
+          removed = true;
+        } else if (documents.length) value += code === 'f' ? documents[0].path : documents[0].uri;
+        else removed = true;
       } else if ('dDnNvm'.includes(code)) removed = true;
       else if (code === 'c') value += entry.name;
       else if (code === 'k') value += entry.path;
@@ -120,6 +140,9 @@ export function expandExec(command, entry) {
     throw new Error('Invalid Exec executable');
   if (result.some(value => value.includes('\0'))) throw new Error('Exec contains NUL');
   if (result[0].includes('/') && !result[0].startsWith('/')) throw new Error('Relative Exec paths are unsupported');
+  if (documents.length && (!files || result.length > 256 ||
+      result.reduce((size, value) => size + utf8Bytes(value) + 1, 0) > 65536))
+    throw new Error('Document Exec must have a file/URL field and bounded argv');
   return result;
 }
 
@@ -134,7 +157,7 @@ export function applicationActivationTarget(id) {
 }
 
 export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], canExecute = () => true,
-  activationAvailable = false } = {}) {
+  activationAvailable = false, documentHandlers = false } = {}) {
   if (file.contents.includes('\0')) throw new Error('Desktop entry contains NUL');
   const values = new Map();
   let active = false, found = false;
@@ -156,7 +179,7 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     values.set(key, line.slice(separator + 1).trim());
   }
   if (!found || values.get('Type') !== 'Application') return null;
-  if (boolean(values, 'Hidden') || boolean(values, 'NoDisplay')) return null;
+  if (boolean(values, 'Hidden') || (boolean(values, 'NoDisplay') && !documentHandlers)) return null;
   const only = listValue(values.get('OnlyShowIn'));
   const not = listValue(values.get('NotShowIn'));
   if (only.some(name => not.includes(name))) throw new Error('Conflicting desktop visibility rules');
@@ -178,6 +201,7 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     cwd: values.has('Path') ? unescapeValue(values.get('Path')) : '',
     terminal: boolean(values, 'Terminal'), categories: listValue(values.get('Categories')),
     keywords: listValue(localized(values, 'Keywords', locale, false)), argv: null, activation: null, unavailable: '',
+    mimeTypes: listValue(values.get('MimeType')).map(mimeType), exec: '', documentField: '',
   };
   if (entry.cwd && !entry.cwd.startsWith('/')) throw new Error('Relative application working directories are unsupported');
   if (!values.get('Exec')) {
@@ -186,7 +210,9 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     if (!activationAvailable) entry.unavailable = 'D-Bus activation requires a qualified private session bus';
     return entry;
   }
-  entry.argv = expandExec(unescapeValue(values.get('Exec')), entry);
+  entry.exec = unescapeValue(values.get('Exec'));
+  entry.argv = expandExec(entry.exec, entry);
+  entry.documentField = execDocumentField(entry.exec);
   if (!canExecute(entry.argv[0])) entry.unavailable = 'Executable is unavailable';
   return entry;
 }
@@ -210,13 +236,29 @@ export function applicationCatalog(files, options = {}, report = console.error) 
 
 export function createApplicationLauncher(native, report = console.error) {
   let entries = [];
+  const options = documentHandlers => ({
+    locale: native.locale, desktops: ['Polly'], canExecute: name => native.canExecute(name), documentHandlers,
+    activationAvailable: typeof native.activateApplication === 'function' &&
+      typeof native.canActivateApplication === 'function' && native.canActivateApplication(),
+  });
+  function requireDocuments() {
+    if (native.documentPlatform !== 'linux' || typeof native.documentMimeType !== 'function' ||
+        typeof native.mimeAssociationFiles !== 'function')
+      throw new Error('Local document associations require the Linux desktop MIME API');
+  }
+  function handlers() {
+    const catalog = applicationCatalog(native.applicationFiles(), options(true), report);
+    for (const entry of catalog) {
+      if (entry.activation && typeof native.openApplicationDocuments !== 'function')
+        entry.unavailable = 'D-Bus document Open is unavailable';
+      if (!entry.activation && entry.terminal && !native.canExecute(native.terminal))
+        entry.unavailable = 'Configured terminal is unavailable: ' + native.terminal;
+    }
+    return catalog;
+  }
   return {
     refresh() {
-      entries = applicationCatalog(native.applicationFiles(), {
-        locale: native.locale, desktops: ['Polly'], canExecute: name => native.canExecute(name),
-        activationAvailable: typeof native.activateApplication === 'function' &&
-          typeof native.canActivateApplication === 'function' && native.canActivateApplication(),
-      }, report);
+      entries = applicationCatalog(native.applicationFiles(), options(false), report);
       if (typeof native.bundleFiles === 'function') {
         entries.push(...bundleCatalog(native.bundleFiles(), native.bundleManager, name => native.canExecute(name), report));
         entries.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
@@ -235,6 +277,35 @@ export function createApplicationLauncher(native, report = console.error) {
       if (entry.unavailable) throw new Error(entry.unavailable);
       if (entry.activation) return native.activateApplication(entry.id);
       const argv = entry.terminal ? [native.terminal, '-e', ...entry.argv] : entry.argv;
+      return native.spawnApplication(argv, entry.cwd, entry.id);
+    },
+    documentApplications(input) {
+      requireDocuments();
+      const [document] = localDocuments([input], true);
+      const type = mimeType(native.documentMimeType(document.path));
+      const resolved = resolveMimeApplications(type, handlers(), native.mimeAssociationFiles());
+      return { mimeType: type, defaultApplication: resolved.defaultApplication,
+        applications: resolved.applications.map(entry => ({ id: entry.id, name: entry.name, path: entry.path,
+          mimeTypes: [...entry.mimeTypes], documentField: entry.documentField, dbusOpen: !!entry.activation })) };
+    },
+    openDocuments(inputs, id = null) {
+      requireDocuments();
+      const documents = localDocuments(inputs, true);
+      const types = documents.map(document => mimeType(native.documentMimeType(document.path)));
+      const catalog = handlers(), associations = native.mimeAssociationFiles();
+      const resolved = types.map(type => resolveMimeApplications(type, catalog, associations));
+      const selected = id === null ? resolved[0].defaultApplication : id;
+      if (id === null && resolved.some(result => result.defaultApplication !== selected))
+        throw new Error('Documents have different default applications; select a common handler explicitly');
+      if (typeof selected !== 'string' || !resolved.every(result =>
+        result.applications.some(entry => entry.id === selected)))
+        throw new Error('Selected application is not an available handler for every document');
+      const entry = catalog.find(candidate => candidate.id === selected);
+      if (entry.activation) return native.openApplicationDocuments(entry.id, documents.map(document => document.uri));
+      const expanded = expandExec(entry.exec, entry, documents.map(document => document.path));
+      const argv = entry.terminal ? [native.terminal, '-e', ...expanded] : expanded;
+      if (argv.length > 256 || argv.reduce((size, value) => size + utf8Bytes(value) + 1, 0) > 65536)
+        throw new Error('Document launch including terminal prefix exceeds bounded argv');
       return native.spawnApplication(argv, entry.cwd, entry.id);
     },
   };
