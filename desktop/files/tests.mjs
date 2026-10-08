@@ -158,6 +158,48 @@ test('selection epochs distinguish different hard-link names with the same metad
   assert.equal(await controller.open(old, 'shared-inode'), false);
   assert.equal(operations.filter(item => item[0] === 'rename').length, 0);
 });
+test('stale double-click view callback cannot open the current equal-identity hard-link selection', async () => {
+  const { controller, directories, operations, opened } = fixture();
+  directories.get('/fixture').push(entry('/fixture/hard-a.txt', 'file', { identity: 'shared-inode' }),
+    entry('/fixture/hard-b.txt', 'file', { identity: 'shared-inode' }));
+  await controller.start(); select(controller, '/fixture/hard-a.txt');
+  const oldState = controller.getState(), index = oldState.snapshot.entries.findIndex(item => item.path === '/fixture/hard-a.txt');
+  const oldRow = flatten(filesView(oldState, controller)).find(node => node.props?.id === 'files-entry-' + index);
+  select(controller, '/fixture/hard-b.txt');
+  const current = controller.getState(), operationCount = operations.length;
+  await oldRow.props.onDblclick();
+  assert.equal(opened.length, 0);
+  assert.equal(operations.length, operationCount);
+  assert.equal(controller.getState().selection, current.selection);
+  assert.equal(controller.getState().path, current.path);
+  assert.equal(controller.getState().generation, current.generation);
+  const newIndex = current.snapshot.entries.findIndex(item => item.path === '/fixture/hard-b.txt');
+  const newRow = flatten(filesView(controller.getState(), controller))
+    .find(node => node.props?.id === 'files-entry-' + newIndex);
+  assert.equal(await newRow.props.onDblclick(), true);
+  assert.deepEqual(opened, [['documents', ['/fixture/hard-b.txt'], 'editor.desktop']]);
+});
+test('stale arrow view callback cannot page a new directory after failed captured-epoch selection', async () => {
+  const { controller, fs, operations } = fixture(), list = fs.listDirectory;
+  fs.listDirectory = path => ({ ...list(path), entries: Array.from({ length: 130 }, (_, index) =>
+    entry(path + '/entry-' + String(index).padStart(3, '0'))) });
+  await controller.start();
+  select(controller, controller.getState().snapshot.entries[63].path);
+  const oldTree = filesView(controller.getState(), controller);
+  await controller.navigate('/fixture/Documents');
+  const current = controller.getState(), operationCount = operations.length;
+  oldTree.props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
+  assert.equal(controller.getState().page, 0);
+  assert.equal(controller.getState().selection, null);
+  assert.equal(controller.getState().path, current.path);
+  assert.equal(controller.getState().generation, current.generation);
+  assert.equal(operations.length, operationCount);
+  const selected = select(controller, controller.getState().snapshot.entries[63].path);
+  filesView(controller.getState(), controller).props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
+  assert.equal(controller.getState().page, 1);
+  assert.equal(controller.getState().selection.path, '/fixture/Documents/entry-064');
+  assert.notEqual(controller.getState().selection.path, selected.path);
+});
 test('cancelled confirmation and name callbacks cannot operate on a reopened dialog', async () => {
   const { controller, operations } = fixture(); await controller.start();
   controller.beginCreate(); controller.editName('Cancelled folder');

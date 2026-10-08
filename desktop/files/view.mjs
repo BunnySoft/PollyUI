@@ -98,8 +98,7 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
       () => controller.select(entry.path, entry.identity, generation), ready, selection?.path === entry.path);
     Object.assign(node.props, { role: 'option', 'aria-selected': String(selection?.path === entry.path),
       onDblclick: () => {
-        if (!ready) return;
-        controller.select(entry.path, entry.identity, generation);
+        if (!ready || !controller.select(entry.path, entry.identity, generation)) return false;
         return controller.open(controller.getState().generation, entry.identity);
       } });
     return h('view', { id: 'files-row-' + index, style: { gap: 3, flexShrink: 0, paddingBottom: 6 } },
@@ -143,8 +142,7 @@ export function filesView(state, controller, { theme = null, themeError = '' } =
       const all = state.snapshot.entries, old = all.findIndex(entry => entry.path === selection?.path);
       const index = Math.max(0, Math.min(all.length - 1, old < 0 ? 0 : old + (event.key === 'ArrowDown' ? 1 : -1)));
       const entry = all[index];
-      if (entry) {
-        controller.select(entry.path, entry.identity, generation);
+      if (entry && controller.select(entry.path, entry.identity, generation)) {
         controller.page(Math.floor(index / 64), controller.getState().generation);
       }
     }
