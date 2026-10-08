@@ -12,6 +12,13 @@ import struct
 import tempfile
 
 
+def driver_command(repo, driver, runtime):
+    return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
+            'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
+            "polly-files-fixture", str(driver), str(runtime),
+            str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "initial"]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("driver", type=Path)
@@ -34,6 +41,7 @@ def main():
         if not stat.S_ISDIR(info.st_mode) or (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) != (1000, 1000, 0o700):
             raise PermissionError("Private fixture HOME/evidence must be real UID/GID1000 mode0700 directories")
     (root / "fixture-marker.txt").write_text("POLLY-FILES-PRIVATE-WINDOW-V1\n")
+    (root / "fixture-marker.txt").chmod(0o600)
     document = root / "literal %u; \u4e2d\u6587.txt"
     document.write_text("Synthetic private Files MIME content.\n", encoding="utf8")
     for index in range(96):
@@ -55,8 +63,7 @@ def main():
                        XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
-    command = ["sh", str(repo / "desktop/tests/runtime-client.sh"), str(args.driver), str(args.runtime),
-               str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "initial"]
+    command = driver_command(repo, args.driver, args.runtime)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
         "driverSha256": hashlib.sha256(args.driver.read_bytes()).hexdigest(),
