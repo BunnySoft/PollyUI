@@ -27,7 +27,8 @@ export function requireFileSystem(native) {
   const api = native?.fileSystem;
   if (api?.version !== FILE_SYSTEM_VERSION || api.implementation !== 'posix-ordinary-v1' ||
       api.maxEntries !== 1024 || api.maxTextBytes !== 1048576 || api.overwrite !== true ||
-      ['locations', 'listDirectory', 'stat', 'readText', 'writeText', 'replaceText', 'createDirectory', 'rename']
+      api.textObservation !== 'sha256-v1' ||
+      ['locations', 'listDirectory', 'stat', 'readText', 'observeText', 'writeText', 'replaceText', 'createDirectory', 'rename']
         .some(name => typeof api[name] !== 'function'))
     throw new Error('Files requires the ordinary-user native fileSystem v1 API; this engine is missing or incompatible');
   return api;
@@ -35,7 +36,7 @@ export function requireFileSystem(native) {
 
 export function fileEntry(value) {
   if (!value || typeof value !== 'object' || !['directory', 'file', 'symlink', 'other'].includes(value.type) ||
-      typeof value.identity !== 'string' || !value.identity || value.identity.length >= 192 ||
+      typeof value.identity !== 'string' || !value.identity || value.identity.length >= 256 ||
       typeof value.name !== 'string' || typeof value.permissions !== 'string' ||
       !/^[0-7]{4}$/.test(value.permissions) || !Number.isFinite(value.bytes) || value.bytes < 0 ||
       !Number.isFinite(value.mtimeMs) || !Number.isInteger(value.uid) || !Number.isInteger(value.gid) ||
@@ -64,6 +65,16 @@ export function directorySnapshot(value) {
   entries.sort((a, b) => (a.type === 'directory' ? 0 : 1) - (b.type === 'directory' ? 0 : 1) ||
     a.name.localeCompare(b.name));
   return Object.freeze({ ...value, entries: Object.freeze(entries) });
+}
+
+export function textObservation(value) {
+  const entry = fileEntry(value);
+  if (entry.type !== 'file' || entry.bytes > 1048576 || typeof entry.metadataIdentity !== 'string' ||
+      !entry.metadataIdentity || entry.metadataIdentity.length >= 192 ||
+      !entry.identity.startsWith('sha256:' + entry.metadataIdentity + ':') ||
+      !/^[0-9a-f]{64}$/.test(entry.identity.slice(('sha256:' + entry.metadataIdentity + ':').length)))
+    throw new Error('Overwrite requires a bounded native text observation with exact SHA256 content identity');
+  return entry;
 }
 
 export function formatSize(bytes) {
