@@ -50,6 +50,8 @@ class GreeterImage(unittest.TestCase):
         self.assertFalse((units / "multi-user.target.wants/polly-firstboot.service").exists())
         fallback = (units / "polly-console-fallback.service").read_text()
         self.assertIn("Requires=polly-accounts.service polly-firstboot.service", fallback)
+        self.assertIn("Requires=polly-accounts.service polly-firstboot.service systemd-user-sessions.service", fallback)
+        self.assertIn("After=polly-accounts.service polly-firstboot.service systemd-user-sessions.service", fallback)
         self.assertIn("ExecStart=/usr/sbin/polly-accounts getty tty1", fallback)
         self.assertIn("Conflicts=polly-greetd.service", fallback)
         self.assertIn("Requires=polly-console-fallback.service", (units / "polly-console.target").read_text())

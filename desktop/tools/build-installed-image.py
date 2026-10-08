@@ -222,8 +222,8 @@ def configure_graphical_login(root):
     guest_link(root, "etc/systemd/system/default.target", "/usr/lib/systemd/system/graphical.target")
     write(root, "etc/systemd/system/polly-console-fallback.service",
           "[Unit]\nDescription=Explicit authenticated installed console fallback\n"
-          "Requires=polly-accounts.service polly-firstboot.service\n"
-          "After=polly-accounts.service polly-firstboot.service\n"
+          "Requires=polly-accounts.service polly-firstboot.service systemd-user-sessions.service\n"
+          "After=polly-accounts.service polly-firstboot.service systemd-user-sessions.service\n"
           "Conflicts=polly-greetd.service\n"
           "[Service]\nExecStart=/usr/sbin/polly-accounts getty tty1\n"
           "Restart=on-failure\nStandardInput=tty\nStandardOutput=tty\n"
