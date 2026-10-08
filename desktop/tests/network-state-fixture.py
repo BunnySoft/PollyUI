@@ -77,6 +77,8 @@ def main():
                 path = persistent / directory["path"]
                 path.mkdir(parents=True, exist_ok=True)
                 path.chmod(directory["mode"])
+            (persistent / "SystemData/Library/Dpkg/status").write_text(
+                "Package: synthetic-fixture\nStatus: install ok installed\n\n")
             for user in contract["users"]:
                 path = persistent / f"Users/{user['uid']}"
                 path.mkdir(mode=0o700)

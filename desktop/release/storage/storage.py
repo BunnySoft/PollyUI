@@ -17,6 +17,25 @@ layout = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(layout)
 
 RUNTIME = "/run/polly-storage"
+MANIFEST_LIMIT = 65536
+
+
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate storage manifest field")
+        result[key] = value
+    return result
+
+
+def finite(value):
+    raise ValueError("Non-finite storage manifest number")
+
+
+def stamp(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_size, info.st_nlink, info.st_mtime_ns, info.st_ctime_ns)
 
 
 def command(*arguments):
@@ -38,12 +57,12 @@ class Storage:
     def __init__(self, root=Path("/")):
         self.root = root
         path = self.path(layout.MANIFEST_PATH)
-        self.trusted(path, directory=False)
-        with path.open("rb") as source:
-            contents = source.read(65537)
-        if len(contents) > 65536:
-            raise ValueError("Storage manifest exceeds its size limit")
-        self.contract = layout.validate(json.loads(contents))
+        contents = self.read(path, MANIFEST_LIMIT)
+        try:
+            value = json.loads(contents.decode("utf8"), object_pairs_hook=unique, parse_constant=finite)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+            raise ValueError("Malformed storage manifest JSON") from error
+        self.contract = layout.validate(value)
         self.fingerprint = hashlib.sha256(json.dumps(
             self.contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.volumes = {volume["role"]: volume["uuid"] for volume in self.contract["volumes"]}
@@ -64,6 +83,26 @@ class Storage:
                 (stat.S_IMODE(info.st_mode) != mode if mode is not None else info.st_mode & 0o022):
             raise ValueError("Unsafe storage path: " + str(path))
         return info
+
+    def read(self, path, limit, *, prefix=False):
+        """Inspect one bounded, single-link record without following its final link."""
+        if type(limit) is not int or limit < 1:
+            raise ValueError("Invalid storage read bound")
+        before = self.trusted(path, directory=False)
+        if before.st_nlink != 1:
+            raise ValueError("Linked storage records are not authoritative")
+        if not prefix and before.st_size > limit:
+            raise ValueError("Storage record exceeds its size limit: " + str(path))
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb", buffering=0) as source:
+            if stamp(os.fstat(source.fileno())) != stamp(before):
+                raise ValueError("Storage record changed before inspection")
+            contents = source.read(limit if prefix else limit + 1)
+            if len(contents) > limit or stamp(os.fstat(source.fileno())) != stamp(before):
+                raise ValueError("Storage record changed during inspection")
+        if stamp(self.trusted(path, directory=False)) != stamp(before):
+            raise ValueError("Storage record changed after inspection")
+        return contents
 
     def mounted(self, path):
         result = subprocess.run(["/usr/bin/findmnt", "-rn", "-M", str(path), "-o", "TARGET"],
@@ -92,6 +131,8 @@ class Storage:
         for directory in self.contract["directories"]:
             self.trusted(self.persistent / directory["path"], uid=directory["uid"],
                          gid=directory["gid"], mode=directory["mode"])
+        if not self.read(self.persistent / "SystemData/Library/Dpkg/status", 1, prefix=True):
+            raise ValueError("Required package database is empty")
         users = {f"Users/{user['uid']}": user for user in self.contract["users"]}
         for mapping in self.contract["mappings"]:
             source = self.source(mapping)
@@ -100,7 +141,7 @@ class Storage:
                 self.trusted(source, uid=user["uid"], gid=user["gid"], mode=0o700)
             else:
                 self.trusted(source, mode=0o1777 if mapping["target"] == "/var/tmp" else None)
-            if source.stat().st_dev != (self.root if mapping["volume"] == "SYSTEM"
+            if source.lstat().st_dev != (self.root if mapping["volume"] == "SYSTEM"
                                         else self.persistent).stat().st_dev:
                 raise ValueError("Storage source is on an unexpected filesystem")
         usr = self.path("/usr")
@@ -112,8 +153,10 @@ class Storage:
     def alias(self, mapping):
         source, target = self.source(mapping), self.path(mapping["target"])
         if self.mounted(target):
-            if not os.path.samestat(source.stat(), target.stat()):
+            if not os.path.samestat(source.lstat(), target.lstat()):
                 raise ValueError("Refusing to replace an unexpected storage mount: " + str(target))
+            info = source.lstat()
+            self.trusted(target, uid=info.st_uid, gid=info.st_gid, mode=stat.S_IMODE(info.st_mode))
         else:
             self.trusted(target, mode=0o1777 if mapping["target"] == "/var/tmp" else None)
             if any(target.iterdir()):
@@ -128,16 +171,19 @@ class Storage:
     def verify_aliases(self):
         for mapping in self.contract["mappings"]:
             source, target = self.source(mapping), self.path(mapping["target"])
-            if not self.mounted(target) or not os.path.samestat(source.stat(), target.stat()):
+            if not self.mounted(target) or not os.path.samestat(source.lstat(), target.lstat()):
                 raise ValueError("Required storage mapping is absent or mismatched: " + str(target))
+            info = source.lstat()
+            self.trusted(target, uid=info.st_uid, gid=info.st_gid, mode=stat.S_IMODE(info.st_mode))
             flags = ("rw",) if mapping["volume"] == "SYSTEM" else ("rw", "nodev", "nosuid")
             self.volume(target, mapping["volume"], flags)
         self.volume(self.path("/boot/efi"), "EFI", ("rw",))
-        if not os.path.samestat(self.path("/System/Boot/efi").stat(), self.path("/boot/efi").stat()):
+        self.trusted(self.path("/boot/efi"))
+        if not os.path.samestat(self.path("/System/Boot/efi").lstat(), self.path("/boot/efi").lstat()):
             raise ValueError("Boot compatibility path lost the actual EFI mount")
 
     def prepare(self):
-        if os.geteuid() != 0:
+        if os.getuid() != 0 or os.geteuid() != 0:
             raise PermissionError("Storage preparation requires root")
         self.preflight()
         for mapping in self.contract["mappings"]:
@@ -156,7 +202,7 @@ class Storage:
                 os.fsync(target.fileno())
             ready = runtime / "ready"
             if ready.exists() or ready.is_symlink():
-                self.trusted(ready, directory=False)
+                self.read(ready, 65)
             os.replace(temporary, ready)
             directory = os.open(runtime, os.O_DIRECTORY | os.O_RDONLY)
             try:
@@ -171,9 +217,7 @@ class Storage:
         self.preflight()
         self.verify_aliases()
         ready = self.path(RUNTIME) / "ready"
-        self.trusted(ready, directory=False)
-        with ready.open("rb") as source:
-            record = source.read(66)
+        record = self.read(ready, 65)
         if record != (self.fingerprint + "\n").encode():
             raise ValueError("Storage readiness belongs to another contract")
 

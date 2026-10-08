@@ -22,6 +22,10 @@ VOLUMES = {
 }
 
 
+def metadata(path, **policy):
+    return path.lstat()
+
+
 class StorageMappings(unittest.TestCase):
     def test_volume_identity_type_and_flags(self):
         storage.validate_volume(VOLUMES["PERSISTENT"] + " ext4 rw,nodev,nosuid",
@@ -47,7 +51,7 @@ class StorageMappings(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path = self.fixture(root)
-            with patch.object(storage.Storage, "trusted"):
+            with patch.object(storage.Storage, "trusted", side_effect=metadata):
                 state = storage.Storage(root)
                 self.assertEqual(state.persistent, root / "run/polly-storage/persistent")
                 self.assertEqual(state.source(state.contract["mappings"][0]), root / "System/Resources")
@@ -64,7 +68,7 @@ class StorageMappings(unittest.TestCase):
             target = root / "var/lib/dpkg"
             target.mkdir(parents=True)
             (target / "status").write_text("existing authority")
-            with patch.object(storage.Storage, "trusted"), \
+            with patch.object(storage.Storage, "trusted", side_effect=metadata), \
                     patch.object(storage.Storage, "mounted", return_value=False), \
                     patch.object(storage, "command") as command:
                 state = storage.Storage(root)
@@ -79,7 +83,7 @@ class StorageMappings(unittest.TestCase):
             self.fixture(root)
             (root / "System/Boot").mkdir(parents=True)
             (root / "boot").mkdir()
-            with patch.object(storage.Storage, "trusted"), \
+            with patch.object(storage.Storage, "trusted", side_effect=metadata), \
                     patch.object(storage.Storage, "mounted", return_value=True), \
                     patch.object(storage, "command") as command:
                 state = storage.Storage(root)
@@ -95,7 +99,7 @@ class StorageMappings(unittest.TestCase):
             source = root / "System/Boot"
             source.mkdir(parents=True)
             # Mock only inode equality; actual bind execution is covered by the namespace fixture.
-            with patch.object(storage.Storage, "trusted"), \
+            with patch.object(storage.Storage, "trusted", side_effect=metadata), \
                     patch.object(storage.Storage, "mounted", return_value=True), \
                     patch.object(storage.os.path, "samestat", return_value=True), \
                     patch.object(storage, "command") as command:
@@ -119,14 +123,15 @@ class StorageMappings(unittest.TestCase):
             root = Path(temporary)
             path = self.fixture(root)
             path.write_text(" " * 65537)
-            with patch.object(storage.Storage, "trusted"), self.assertRaisesRegex(ValueError, "size limit"):
+            with patch.object(storage.Storage, "trusted", side_effect=metadata), \
+                    self.assertRaisesRegex(ValueError, "size limit"):
                 storage.Storage(root)
 
     def test_unsafe_nodes_or_ancestors_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path = self.fixture(root)
-            with patch.object(storage.Storage, "trusted"):
+            with patch.object(storage.Storage, "trusted", side_effect=metadata):
                 state = storage.Storage(root)
             original = Path.lstat
 

@@ -67,7 +67,8 @@ def main():
             subprocess.run(["mount", "-t", "tmpfs", "-o", "mode=755", "tmpfs", str(efi)],
                            check=True, timeout=10)
             (efi / "probe").write_text("actual EFI child mount\n")
-            (persistent / "SystemData/Library/Dpkg/probe").write_text("package authority\n")
+            package_status = "Package: synthetic-fixture\nStatus: install ok installed\n\n"
+            (persistent / "SystemData/Library/Dpkg/status").write_text(package_status)
             usr = state.path("/usr")
             subprocess.run(["mount", "--bind", str(state.path("/System/Resources")), str(usr)],
                            check=True, timeout=10)
@@ -88,11 +89,11 @@ def main():
                 state.check()
                 if (state.path("/boot/efi/probe")).read_text() != "actual EFI child mount\n":
                     raise RuntimeError("Recursive boot alias lost the mounted EFI child")
-                target = state.path("/var/lib/dpkg/probe")
-                if target.read_text() != "package authority\n":
+                target = state.path("/var/lib/dpkg/status")
+                if target.read_text() != package_status:
                     raise RuntimeError("Package state mapping references a second database")
-                target.write_text("same authority through compatibility path\n")
-                if (persistent / "SystemData/Library/Dpkg/probe").read_text() != target.read_text():
+                target.write_text(package_status + "Description: compatibility write\n")
+                if (persistent / "SystemData/Library/Dpkg/status").read_text() != target.read_text():
                     raise RuntimeError("Package writes did not reach the persistent authority")
                 (usr / "writable-probe").write_text("usr writable after root remount\n")
                 if (state.path("/System/Resources/writable-probe")).read_text() != \
