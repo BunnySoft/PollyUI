@@ -221,7 +221,9 @@ VM: fresh graphical setup, actual pointer/Tab/Enter/masked input, mismatch/no ac
 cancel/second-password failure with initialized=false, visible correct/wrong-password
 login/retry, real PAM/logind seat/runtime and logout/restart/cold-boot policy retention.
 `greeter-installed-session.py` is a read-only post-login proof, run as the actual
-ordinary user only after the parent stages the root-owned isolated-VM marker
+ordinary user at the PAM-created installed-session entry, before existing
+`run-session.sh` narrows `XDG_RUNTIME_DIR` to its private compositor directory,
+and only after the parent stages the root-owned isolated-VM marker
 `/run/polly-installed-greeter-acceptance` with `isolated-installed-greeter-v1\n`.
 It requires polly UID/GID1000, `polly-greetd` service, user/wayland/seat0/tty1,
 active/nonremote and the owned mode0700 PAM runtime. Its success alone does not
