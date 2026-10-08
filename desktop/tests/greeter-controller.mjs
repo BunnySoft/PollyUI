@@ -16,7 +16,7 @@ function fixture(screen = 'setup') {
     clear: () => clears++,
     leave: () => leaves++,
   });
-  return { controller, calls, settle: value => settle(value), fail: error => fail(error),
+  return { controller, calls, settle: value => settle(value), fail: error => fail(error), setStatus: value => screen = value,
     clears: () => clears, leaves: () => leaves };
 }
 const values = () => ({ polly: 'synthetic-polly', pollyConfirm: 'synthetic-polly',
@@ -105,7 +105,7 @@ test('unavailable and malformed backend state remain visibly blocked', async () 
   const f = fixture('root');
   await f.controller.refresh();
   assert.equal(f.controller.state().screen, 'error');
-  assert.match(f.controller.state().message, /unavailable/);
+  assert.match(f.controller.state().message, /could not be confirmed/);
   await f.controller.submit(values());
   assert.equal(f.calls.length, 0);
 });
@@ -128,4 +128,60 @@ test('UTF-8 password bounds are exact, not UTF-16 character counts', async () =>
     assert.equal(input.polly, '');
     assert.match(f.controller.state().message, /1024 UTF-8 bytes/);
   }
+});
+
+test('first setup refuses every ASCII control and Delete for either password before backend action', async () => {
+  for (const code of [...Array.from({ length: 32 }, (_, index) => index), 127]) {
+    for (const name of ['polly', 'root']) {
+      const f = fixture();
+      await f.controller.refresh();
+      const input = values();
+      input[name] += String.fromCharCode(code);
+      input[name + 'Confirm'] = input[name];
+      await f.controller.submit(input);
+      assert.equal(f.calls.length, 0);
+      assert.match(f.controller.state().message, /control characters or Delete/);
+      assert.ok(Object.values(input).every(value => value === ''));
+    }
+  }
+});
+
+test('direct password login preserves existing non-NUL single-line PAM control characters', async () => {
+  for (const code of [...Array.from({ length: 32 }, (_, index) => index), 127]
+    .filter(code => ![0, 10, 13].includes(code))) {
+    const f = fixture('login');
+    await f.controller.refresh();
+    const operation = f.controller.submit({ polly: 'synthetic-' + String.fromCharCode(code) + '-password' });
+    assert.equal(f.calls.length, 1);
+    f.fail({ code: 'denied' });
+    await operation;
+    assert.match(f.controller.state().message, /not accepted/);
+  }
+});
+
+test('uncertain setup result exposes status retry and can discover an already committed login state', async () => {
+  const f = fixture();
+  await f.controller.refresh();
+  const operation = f.controller.submit(values());
+  f.fail({ code: 'unavailable' });
+  await operation;
+  assert.equal(f.controller.state().screen, 'error');
+  assert.match(f.controller.state().message, /could not be confirmed/);
+  assert.doesNotMatch(f.controller.state().message, /No desktop was started/);
+  f.setStatus('login');
+  await f.controller.refresh();
+  assert.equal(f.controller.state().screen, 'login');
+  assert.equal(f.calls.filter(call => call[0] === 'setup').length, 1);
+  assert.equal(f.leaves(), 0);
+});
+
+test('setup password policy refusal still offers password re-entry, not uncertain-result recovery', async () => {
+  const f = fixture();
+  await f.controller.refresh();
+  const operation = f.controller.submit(values());
+  f.fail({ code: 'password-policy' });
+  await operation;
+  assert.equal(f.controller.state().screen, 'setup');
+  assert.equal(f.controller.state().busy, false);
+  assert.match(f.controller.state().message, /system policy/);
 });

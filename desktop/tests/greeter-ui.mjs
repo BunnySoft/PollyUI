@@ -20,9 +20,10 @@ globalThis.window = {
 };
 const calls = [];
 let complete, fail;
+let backendStatus = 'setup';
 const pending = () => new Promise((resolve, reject) => { complete = resolve; fail = reject; });
 globalThis.graphicalAuth = {
-  status: async () => 'setup',
+  status: async () => backendStatus,
   setup: () => { calls.push('setup'); return pending(); },
   login: () => { calls.push('login'); return pending(); },
   cancel: () => calls.push('cancel'),
@@ -71,7 +72,13 @@ await until(() => status().includes('remains incomplete'));
 check(!left, 'Cancellation does not leave the greeter');
 fill();
 host.key('Enter');
-complete('login');
+backendStatus = 'login';
+fail({ code: 'unavailable' });
+await until(() => document.getElementById('greeter-submit')?.textContent === 'Retry');
+check(status().includes('could not be confirmed'), 'Uncertain setup result is not claimed as desktop/initialization failure');
+host.render();
+const retry = document.getElementById('greeter-submit');
+host.click(retry.offsetLeft + 10, retry.offsetTop + 10);
 await until(() => field('polly') && !field('root'));
 input('polly', 'synthetic-wrong');
 host.key('Enter');

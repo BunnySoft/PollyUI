@@ -10,7 +10,7 @@ const messages = {
   handoff: 'Starting your ordinary-user desktop...',
   cancelled: 'Cancelled. First-run setup remains incomplete; passwords already accepted by the system are not rolled back.',
   denied: 'Password was not accepted. Please try again.',
-  unavailable: 'The account service is unavailable. No desktop was started. Retry to check the service.',
+  unavailable: 'The request result could not be confirmed. Check the account service and retry.',
   setupFailed: 'The system could not finish setup. No initialization success was reported. Retry with passwords accepted by the system policy.',
 };
 
@@ -36,8 +36,13 @@ export function createGreeterController({ backend, changed = () => {}, clear = (
     changed({ ...state });
   };
   const alive = token => !closed && token === generation;
-  const failure = (error, setup) => error?.code === 'denied' ? messages.denied :
+  const failure = (error, setup) => !setup && error?.code === 'denied' ? messages.denied :
     setup && error?.code === 'password-policy' ? messages.setupFailed : messages.unavailable;
+  const rejected = (error, setup) => ({
+    screen: setup && error?.code === 'password-policy' ? 'setup' :
+      !setup && error?.code === 'denied' ? 'login' : 'error',
+    busy: false, cancellable: false, message: failure(error, setup),
+  });
 
   async function refresh() {
     if (closed || state.busy) return;
@@ -61,6 +66,12 @@ export function createGreeterController({ backend, changed = () => {}, clear = (
       clear();
       for (const key of Object.keys(values)) values[key] = '';
     };
+    if (setup && [values.polly, values.root].some(value =>
+      typeof value === 'string' && /[\x00-\x1f\x7f]/.test(value))) {
+      discard();
+      publish({ message: 'Setup passwords cannot contain ASCII control characters or Delete.' });
+      return;
+    }
     if (!validPassword(values.polly) || (setup && !validPassword(values.root))) {
       discard();
       publish({ message: 'Enter nonempty single-line passwords of at most 1024 UTF-8 bytes.' });
@@ -82,7 +93,7 @@ export function createGreeterController({ backend, changed = () => {}, clear = (
     try {
       operation = setup ? backend.setup(values.polly, values.root) : backend.login(values.polly);
     } catch (error) {
-      if (alive(token)) publish({ busy: false, cancellable: false, message: failure(error, setup) });
+      if (alive(token)) publish(rejected(error, setup));
     } finally {
       discard();
     }
@@ -101,7 +112,7 @@ export function createGreeterController({ backend, changed = () => {}, clear = (
         throw new Error('Invalid authentication result');
       }
     } catch (error) {
-      if (alive(token)) publish({ busy: false, cancellable: false, message: failure(error, setup) });
+      if (alive(token)) publish(rejected(error, setup));
     }
   }
 

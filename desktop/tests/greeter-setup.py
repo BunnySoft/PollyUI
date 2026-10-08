@@ -118,9 +118,23 @@ class Setup(unittest.TestCase):
             tool = Mock()
             def action(channel, accounts):
                 self.command(channel, broker.SETUP, first, second)
-                self.assertEqual(self.reply(channel), broker.UNAVAILABLE)
+                self.assertEqual(self.reply(channel), broker.UNAVAILABLE if first == second else broker.POLICY)
             self.exchange(action, tool=tool)
             tool.assert_not_called()
+
+    def test_ascii_controls_and_delete_never_reach_password_tool_or_initialize_state(self):
+        with patch.object(broker.sys, "stderr"):
+            for value in (*range(32), 127):
+                for name in ("polly", "root"):
+                    tool = Mock()
+                    passwords = {"polly": b"synthetic-polly", "root": b"synthetic-root"}
+                    passwords[name] += bytes([value])
+                    def action(channel, accounts):
+                        self.command(channel, broker.SETUP, passwords["polly"], passwords["root"])
+                        self.assertEqual(self.reply(channel), broker.POLICY)
+                    accounts = self.exchange(action, tool=tool)
+                    tool.assert_not_called()
+                    accounts.finish.assert_not_called()
 
     def test_bounded_header_rejects_arbitrary_operations_targets_and_lengths(self):
         for request in ((broker.MAGIC, 99, 0, 0), (0, broker.STATUS, 0, 0),

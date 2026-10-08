@@ -62,6 +62,16 @@ int main(int argc, char **argv)
         " try { graphicalAuth.status('/bin/true'); } catch (_) { refused = true; }"
         " if (!refused) throw Error('Native API accepted a command');"
         " if (fixtureSetup) {"
+        "   for (const code of [...Array.from({length:32}, (_, i) => i), 127]) {"
+        "     for (const target of [0, 1]) {"
+        "       let refusedControl = false;"
+        "       const control = 'synthetic-' + String.fromCharCode(code) + '-password';"
+        "       try { graphicalAuth.setup(target === 0 ? control : fixturePassword,"
+        "                                 target === 1 ? control : fixtureRootPassword); }"
+        "       catch (error) { refusedControl = String(error).includes('control characters or Delete'); }"
+        "       if (!refusedControl) throw Error('Native SETUP accepted a terminal control');"
+        "     }"
+        "   }"
         "   if (await graphicalAuth.status() !== 'setup') throw Error('Initial state not setup');"
         "   graphicalAuth.onProgress = phase => { if (phase === 'prepared') graphicalAuth.cancel(); };"
         "   if (await graphicalAuth.setup(fixturePassword, fixtureRootPassword) !== 'cancelled')"
@@ -79,6 +89,12 @@ int main(int argc, char **argv)
         " try { await graphicalAuth.login('synthetic-wrong-' + fixturePassword); }"
         " catch (error) { denied = error.code === 'denied'; }"
         " if (!denied || handoffs) throw Error('Wrong password entered a native session');"
+        " for (const code of [4, 127]) {"
+        "   let reachedPam = false;"
+        "   try { await graphicalAuth.login('synthetic-' + String.fromCharCode(code) + '-wrong'); }"
+        "   catch (error) { reachedPam = error.code === 'denied'; }"
+        "   if (!reachedPam || handoffs) throw Error('Native LOGIN lost existing PAM control-character compatibility');"
+        " }"
         " const result = await graphicalAuth.login(fixturePassword);"
         " fixturePassword = '';"
         " if (result !== 'handoff' || handoffs !== 1) throw Error('Native handoff was not acknowledged');"
@@ -110,7 +126,7 @@ int main(int argc, char **argv)
     if (failed || !done) {
         fprintf(stderr, "NATIVE GREETER CLIENT FIXTURE FAILED (credential details withheld)\n"); return 1;
     }
-    puts(setup_mode ? "POLLY_NATIVE_SETUP_CLIENT_PASS actual-client-uid=991 cancel-uninitialized=1 commit=1 seat-tested=0" :
-        "POLLY_GREETD_NATIVE_CLIENT_PASS wrong-denied=1 fixed-api=1 actual-client-uid=991 handoff-ack=1 gui-tested=0");
+    puts(setup_mode ? "POLLY_NATIVE_SETUP_CLIENT_PASS actual-client-uid=991 setup-control-cases=66 cancel-uninitialized=1 commit=1 seat-tested=0" :
+        "POLLY_GREETD_NATIVE_CLIENT_PASS wrong-denied=1 login-control-compatibility=1 fixed-api=1 actual-client-uid=991 handoff-ack=1 gui-tested=0");
     return 0;
 }

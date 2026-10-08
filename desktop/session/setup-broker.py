@@ -244,7 +244,10 @@ def transaction(channel, accounts, authorize):
             raise ValueError("Expected status or first-run setup")
         payload = receive(channel, first + second)
         polly, root = memoryview(payload)[:first], memoryview(payload)[first:]
-        if any(value in (0, 10, 13) for value in payload) or hmac.compare_digest(polly, root):
+        if any(value < 32 or value == 127 for value in payload):
+            print("First-run setup rejected terminal-control password input.", file=sys.stderr)
+            raise PasswordPolicyError()
+        if hmac.compare_digest(polly, root):
             raise ValueError("Passwords must be nonempty, separate and single-line")
         with accounts.state_lock(timeout=5):
             accounts.require_ready(False)

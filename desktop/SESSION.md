@@ -86,6 +86,12 @@ their confirmations, then a polly-only password login. Pointer, Tab, Enter,
 visible progress/errors, retry and cancellation use the existing text input.
 Mismatch, empty/multiline/invalid UTF-8, over-1024-byte and identical passwords
 submit nothing. Input references are cleared after submission/cancel/close.
+First-run setup additionally rejects ASCII control bytes 0-31 and Delete (127)
+in the UI, native SETUP API and broker before invoking passwd. An echo-disabled
+PTY can still interpret erase/kill/EOF/signal controls; accepting those bytes
+could otherwise set a different password from the one entered. Direct greetd
+LOGIN keeps its existing nonempty/NUL/CR/LF/UTF-8 bound and does not impose this
+new setup-only character restriction on previously configured PAM passwords.
 No password is logged, persisted, put in argv/environment or exposed as a hash.
 JS strings necessarily exist transiently in RAM; this is not a claim that the
 garbage collector securely erases every immutable string copy.
@@ -122,6 +128,12 @@ already accepted password changes are retained, never rolled back to older
 credentials. Committing is visibly non-cancellable. Closing after that commit
 point does not undo committed state or admit a desktop without login. Initialized
 accounts refuse setup without changing either configured password.
+An unavailable or uncertain operation result goes to the explicit Retry screen;
+Retry reads authoritative setup/login status rather than resubmitting setup.
+This also handles an already committed setup whose completion reply was lost.
+Password-policy rejection stays on setup for re-entry, and a denied login stays
+on login. An uncertain transport result does not assert that a desktop was never
+scheduled.
 
 The declared new runtime dependency is **greetd 0.10.3-4 from Debian trixie**;
 see `session/greeter-dependencies.json`. That exact released worker performs
@@ -227,6 +239,14 @@ An actual run exposed and fixed greeter `pam_setcred` policy, retired-worker
 cancel acknowledgement, closed-transport cancel races and QuickJS's mandatory
 zero-terminated JSON frame. These are functional backend fixes, not lock-helper
 success being re-labelled as session acceptance.
+The original fixed `f6f1609` was also reproduced in a separate private container:
+a DEL-containing setup token committed, but direct PAM denied the intended bytes
+and accepted the terminal-edited bytes. That verifier proves only password-byte
+matching, not login/session establishment. The corrected actual broker rejects
+all 33 ASCII control/Delete bytes in either password (66 cases), without changing
+either password record or initialized state. Native SETUP refusal, direct LOGIN
+control-character compatibility and successful mixed Unicode/ASCII passwd/PAM
+and greetd authentication are separately exercised.
 
 Full T14.1/T14.2 acceptance still requires the parent's newly assembled installed
 VM: fresh graphical setup, actual pointer/Tab/Enter/masked input, mismatch/no action,

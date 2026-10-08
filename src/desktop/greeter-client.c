@@ -198,11 +198,19 @@ static JSValue begin(JSContext *ctx, enum Stage stage, int argc, JSValueConst *a
     for (int i = 0; i < argc; i++) {
         size_t length = 0;
         const char *password = JS_IsString(argv[i]) ? JS_ToCStringLen(ctx, &length, argv[i]) : NULL;
+        bool terminal_control = false;
+        if (stage == SETUP && password && length <= PU_GREETER_PASSWORD_LIMIT)
+            for (size_t j = 0; j < length; j++)
+                if ((unsigned char)password[j] < 32 || (unsigned char)password[j] == 127)
+                    terminal_control = true;
         if (!password || !length || length > PU_GREETER_PASSWORD_LIMIT ||
-            memchr(password, 0, length) || memchr(password, '\n', length) || memchr(password, '\r', length)) {
+            memchr(password, 0, length) || memchr(password, '\n', length) || memchr(password, '\r', length) ||
+            terminal_control) {
             if (password) JS_FreeCString(ctx, password);
             explicit_bzero(packet, sizeof(packet)); explicit_bzero(client.password, sizeof(client.password));
-            return JS_ThrowTypeError(ctx, "Passwords must be nonempty single-line UTF-8, at most 1024 bytes");
+            return JS_ThrowTypeError(ctx, terminal_control ?
+                "Setup passwords cannot contain ASCII control characters or Delete" :
+                "Passwords must be nonempty single-line UTF-8, at most 1024 bytes");
         }
         if (stage == AUTH) {
             memcpy(client.password, password, length); client.password[length] = 0;

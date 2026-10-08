@@ -160,7 +160,8 @@ def setup_round(accounts, broker, first, second, ending, deny_uid=False):
                     raise RuntimeError("Fixture root peer was incorrectly admitted")
             else:
                 channel.sendall(broker.REQUEST.pack(broker.MAGIC, broker.SETUP, len(first), len(second)) + first + second)
-                expected = [broker.POLLY, broker.ROOT, broker.POLICY] if ending == "policy" else \
+                expected = [broker.POLICY] if ending == "control" else \
+                    [broker.POLLY, broker.ROOT, broker.POLICY] if ending == "policy" else \
                     [broker.POLLY, broker.ROOT, broker.PREPARED] if ending in ("cancel", "commit") else [broker.UNAVAILABLE]
                 for wanted in expected:
                     magic, result = broker.REPLY.unpack(exact(channel, broker.REPLY.size))
@@ -188,7 +189,7 @@ def setup_round(accounts, broker, first, second, ending, deny_uid=False):
         path.unlink(missing_ok=True)
 
 
-def native_setup(accounts, broker, first, second):
+def native_setup(accounts, broker, first, second, evidence=None):
     greeter_gid = pwd.getpwnam("polly-greeter").pw_gid
     Path("/run/polly-greeter").mkdir(mode=0o755)
     listener = socket.socket(socket.AF_UNIX)
@@ -234,6 +235,11 @@ def native_setup(accounts, broker, first, second):
                   output.replace(first, b"[redacted]").replace(second, b"[redacted]").decode("utf8", errors="replace"),
                   file=sys.stderr, flush=True)
             raise RuntimeError("Actual native client did not cancel/commit first-run state correctly")
+        if first in output or second in output:
+            raise RuntimeError("Synthetic credential appeared in native setup output; transcript withheld")
+        if evidence is not None:
+            evidence.mkdir(parents=True, exist_ok=True)
+            (evidence / "native-setup-client.log").write_bytes(output)
         print("POLLY_NATIVE_SETUP_FIXTURE_PASS actual-client-uid=991 real-passwd=1 cancel-uninitialized=1 "
               "commit=1 seat-tested=0 gui-tested=0", flush=True)
     finally:
@@ -244,6 +250,24 @@ def native_setup(accounts, broker, first, second):
         os.kill(worker, signal.SIGTERM)
         os.waitpid(worker, 0)
         Path(broker.SOCKET).unlink(missing_ok=True)
+
+
+def reject_terminal_controls(accounts, broker):
+    original = accounts.read(accounts.ROOT / "etc/shadow", secret=True)
+    before_config = accounts.read(accounts.ROOT / "config.json")
+    for value in (*range(32), 127):
+        for target in ("polly", "root"):
+            first, second = b"synthetic-polly", b"synthetic-root"
+            if target == "polly":
+                first += bytes([value])
+            else:
+                second += bytes([value])
+            setup_round(accounts, broker, first, second, "control")
+            if accounts.read(accounts.ROOT / "etc/shadow", secret=True) != original or \
+                    accounts.read(accounts.ROOT / "config.json") != before_config or accounts.completed():
+                raise RuntimeError("Refused terminal-control input changed a password or initialized state")
+    print("POLLY_SETUP_CONTROL_FIXTURE_PASS cases=66 password-record-changed=0 initialized=0 "
+          "actual-client-uid=991", flush=True)
 
 
 def run_greetd(repo, first, second, native=False, evidence=None):
@@ -393,8 +417,10 @@ def root_fixture(repo, packages, evidence=None):
         raise RuntimeError("Compile the current native client fixture before running this acceptance")
     shutil.copyfile(native, "/usr/bin/polly-greeter-client-fixture")
     Path("/usr/bin/polly-greeter-client-fixture").chmod(0o755)
-    first, second = bytearray(secrets.token_hex(20).encode()), bytearray(secrets.token_hex(20).encode())
+    first = bytearray(secrets.token_hex(20).encode() + "-\u00e9\u96ea\U0001f642".encode())
+    second = bytearray(secrets.token_hex(20).encode() + "-\u00c5\u4fdd\u8b77".encode())
     try:
+        reject_terminal_controls(accounts, broker)
         password_policy = Path("/etc/pam.d/common-password")
         original_policy = password_policy.read_text()
         deny = Path("/usr/lib/polly-graphical-auth-root-deny")
@@ -411,7 +437,7 @@ def root_fixture(repo, packages, evidence=None):
         if accounts.completed():
             raise RuntimeError("Cancellation incorrectly initialized installed accounts")
         accounts.passwords(usable=True)
-        native_setup(accounts, broker, first, second)
+        native_setup(accounts, broker, first, second, evidence)
         accounts.require_ready()
         if accounts.administrator_policy()["administratorUids"] != [1000]:
             raise RuntimeError("Graphical first-run did not use the existing role bootstrap")
@@ -420,7 +446,7 @@ def root_fixture(repo, packages, evidence=None):
         setup_round(accounts, broker, first, second, "initialized", deny_uid=True)
         if previous != accounts.read(accounts.ROOT / "etc/shadow", secret=True):
             raise RuntimeError("Initialized-state refusal changed a configured password")
-        print("POLLY_GRAPHICAL_SETUP_FIXTURE_PASS actual-client-uid=991 second-password-failure=1 "
+        print("POLLY_GRAPHICAL_SETUP_FIXTURE_PASS actual-client-uid=991 unicode-ascii-passwords=1 second-password-failure=1 "
               "cancel-uninitialized=1 commit=1 root-peer-denied=1 initialized-reset-denied=1 seat-tested=0", flush=True)
         run_greetd(repo, first, second, evidence=evidence)
         run_greetd(repo, first, second, native=True, evidence=evidence)
