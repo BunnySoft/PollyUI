@@ -2639,7 +2639,7 @@
       "requires": [
         "gui-login"
       ],
-      "evidence": "2026-10-08 注销/保存源码已审阅并组合至本地 main ffc887f：共享正常关闭流程、真实窗口/应用/Activate 屏障、明确取消/最终确认、标准会话严格退出门槛及 SDL/Win32 oncloserequest。父审发现的四个函数作用域/外部链接缺陷已由 2f91cef 修复并核实 GLOBAL T。源码和直接组件证据不等于真实注销回 greetd 或应用保存完成；统一候选集中手测仍待完成。"
+      "evidence": "2026-10-08 注销/保存源码已审阅并组合至本地 main ffc887f：共享正常关闭流程、真实窗口/应用/Activate 屏障、明确取消/最终确认、标准会话严格退出门槛及 SDL/Win32 oncloserequest。父审发现的四个函数作用域/外部链接缺陷已由 2f91cef 修复；固定 ffc 产品增量编译并链接 PollyUI/PollyWM，实际新 PollyUI ELF 四个 helper 均为 GLOBAL T，receipt SHA9f45bf17。源码和产品链接不等于真实注销回 greetd 或应用保存完成；统一候选集中手测仍待完成。"
     },
     {
       "id": "t15-m05-5",
@@ -3151,7 +3151,7 @@
         "t22-m13-1",
         "t16-m11-1"
       ],
-      "evidence": "2026-10-08 Power 源 7567077/87d39c2 已审阅并组合至本地 main ffc887f，实际消费统一 session-exit controller。正常关闭/Save/Cancel 后独立最终确认，再核真实 PID 会话与当前 yes 能力，只发送一次固定非交互动作；明确 accepted/rejected/failed/uncertain，已发送不重放。两个发行模式的标准授权已获用户批准并在接线；旧媒体仍未更新，实际 guest 关机/重启、权限变化与应用保存交互待集中手测。"
+      "evidence": "2026-10-08 Power 源 7567077/87d39c2 已审阅并组合至本地 main ffc887f，实际消费统一 session-exit controller。正常关闭/Save/Cancel 后独立最终确认，再核真实 PID 会话与当前 yes 能力，只发送一次固定非交互动作；明确 accepted/rejected/failed/uncertain，已发送不重放。固定 ffc 的真实新 PollyUI/PollyWM 产品已增量链接，receipt SHA9f45bf17；两个发行模式的标准授权已获用户批准并在接线。旧媒体仍未更新，实际 guest 关机/重启、权限变化与应用保存交互待集中手测。"
     },
     {
       "id": "t23",
@@ -4911,7 +4911,7 @@
       "sources": [],
       "status": "done",
       "requires": [],
-      "evidence": "功能源码固定 ce73a3c 已审并纳入本地主分支；直接既有 Core 集成 runner 3.77s 与 held-buffer/no-body-click 拖动、真实 resize release 回归通过，receipt SHA0513501b。仅 Core/runner 增量，产品二进制/已交付 e879 媒体未重新链接，集中新候选手测仍待执行。"
+      "evidence": "功能源码固定 ce73a3c 已审并纳入本地主分支；直接既有 Core 集成 runner 3.77s 与 held-buffer/no-body-click 拖动、真实 resize release 回归通过，receipt SHA0513501b。2026-10-08 固定组合 ffc887f 的 PollyUI/PollyWM 已增量链接，复用字节一致的最新 Core，receipt SHA9f45bf17；已交付 e879 媒体未更新，集中新候选手测仍待执行。"
     },
     {
       "id": "alpha-code-integration",
@@ -4947,7 +4947,7 @@
         "t15-m05-4",
         "t22-m13-2"
       ],
-      "evidence": "用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用的日志与根因仍未闭环。注销/保存及 Power 关闭流程已审阅并组合至本地 main ffc887f；Live 与安装版正常电源标准授权已获用户批准，发行接线进行中。产品增量链接、统一新介质和真实用户流程验收仍不得以源码证据代替；不扩测试矩阵或操作用户现有 VM。"
+      "evidence": "用户 Hyper-V PollyOS 首次启动无图形入口/重启后可用的日志与根因仍未闭环。注销/保存及 Power 关闭流程已审阅并组合至本地 main ffc887f；Live 与安装版正常电源标准授权已获用户批准，发行接线进行中。固定 ffc 仅编译 9 个受影响对象、复用 62 个并正常链接两个真实产品，receipt SHA9f45bf17；统一新介质和真实用户流程验收仍待完成，不扩测试矩阵或操作用户现有 VM。"
     },
     {
       "id": "alpha-candidate-media",
