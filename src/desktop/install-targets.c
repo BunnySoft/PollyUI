@@ -21,6 +21,7 @@
 #define OUTPUT_LIMIT (2u * 1024u * 1024u)
 #define ERROR_LIMIT 4096u
 #define DEADLINE_MS 8000u
+#define DEADLINE_ERROR "Fixed read-only acquisition exceeded its 8 second deadline"
 
 static struct {
     JSContext *ctx;
@@ -102,7 +103,7 @@ static void finish(void)
         JS_ThrowInternalError(ctx, "%s", reader.error);
         value = JS_GetException(ctx);
     }
-    JSValue callback = reader.error[0] ? reader.reject : reader.resolve;
+    bool failed = reader.error[0] != '\0';
     JSValue resolve = reader.resolve, reject = reader.reject;
     /* An exited leader must not leave a collector descendant behind. */
     if (kill(-reader.pid, SIGKILL) < 0 && errno != ESRCH)
@@ -111,7 +112,13 @@ static void finish(void)
     reader.pid = 0; reader.length = reader.diagnostic_length = 0;
     reader.error[0] = reader.diagnostics[0] = 0; reader.reaped = false;
     reader.resolve = reader.reject = JS_UNDEFINED;
-    JSValue result = JS_Call(ctx, callback, JS_UNDEFINED, 1, &value);
+    if (!failed && now_ms() >= reader.deadline) {
+        JS_FreeValue(ctx, value);
+        JS_ThrowInternalError(ctx, "%s", DEADLINE_ERROR);
+        value = JS_GetException(ctx); failed = true;
+        fprintf(stderr, "[install-targets] %s\n", DEADLINE_ERROR);
+    }
+    JSValue result = JS_Call(ctx, failed ? reject : resolve, JS_UNDEFINED, 1, &value);
     if (JS_IsException(result)) report_exception(ctx);
     JS_FreeValue(ctx, result); JS_FreeValue(ctx, value);
     JS_FreeValue(ctx, resolve); JS_FreeValue(ctx, reject);
@@ -226,7 +233,7 @@ int pu_install_targets_pump(void)
 {
     if (!reader.ctx || !reader.pid) return 0;
     if (now_ms() >= reader.deadline && !reader.error[0])
-        abort_read("Fixed read-only acquisition exceeded its 8 second deadline");
+        abort_read(DEADLINE_ERROR);
     drain(&reader.output, false); drain(&reader.diagnostic, true);
     if (!reader.reaped) {
         pid_t result = waitpid(reader.pid, &reader.status, WNOHANG);
@@ -235,6 +242,8 @@ int pu_install_targets_pump(void)
             reader.reaped = true; abort_read("Cannot reap fixed read-only helper");
         }
     }
+    if (now_ms() >= reader.deadline && !reader.error[0])
+        abort_read(DEADLINE_ERROR);
     if (!reader.reaped || reader.output >= 0 || reader.diagnostic >= 0) return 0;
     if (!reader.error[0] && (!WIFEXITED(reader.status) || WEXITSTATUS(reader.status) != 0)) {
         fprintf(stderr, "[install-targets] Helper refused acquisition: %.*s\n",

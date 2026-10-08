@@ -43,6 +43,19 @@ async function run() {
         'Never a writer');
     }
     controller.dispose();
+  } else if (['deadline-before', 'deadline-overrun', 'deadline-exact', 'deadline-settle-overrun'].includes(scenario)) {
+    let value = null, error = null;
+    try {
+      value = await provider.readReport({ purpose: 'refresh', requestId: 1, previousGeneration: null });
+    } catch (caught) { error = caught; }
+    if (scenario === 'deadline-before') {
+      check(!error && value?.readOnly && !value.writeAuthorized && value.source.exactSourceMapping,
+        'Timely final EOF at elapsed7999ms must retain normal success');
+    } else {
+      check(!value && error && String(error).includes('8 second deadline'),
+        scenario + ': expired acquisition must reject, never resolve');
+    }
+    provider.stop();
   } else if (scenario === 'cancel') {
     const promise = provider.readReport({ purpose: 'refresh', requestId: 1, previousGeneration: null });
     await provider.cancelRead();

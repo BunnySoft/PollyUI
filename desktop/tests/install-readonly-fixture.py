@@ -184,6 +184,18 @@ class ReadonlyNative(unittest.TestCase):
                 self.run_native(scenario)
                 self.assertLess(time.monotonic() - started, 12)
 
+    def test_final_eof_crosses_deadline_inside_pump(self):
+        self.run_native("deadline-overrun")
+
+    def test_final_eof_before_same_deadline_succeeds(self):
+        self.run_native("deadline-before")
+
+    def test_final_eof_at_exact_deadline_rejects(self):
+        self.run_native("deadline-exact")
+
+    def test_pre_resolve_preparation_crosses_deadline(self):
+        self.run_native("deadline-settle-overrun")
+
     def test_missing_unqualified_writable_symlink_source_refused(self):
         original = CONFIG.read_bytes()
         CONFIG.unlink()

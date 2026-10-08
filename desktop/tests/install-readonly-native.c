@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,50 @@
 static const char *root;
 static struct { int id; uint64_t deadline; JSValue callback; } timers[32];
 static int next_timer;
+static int edge_mode, edge_samples, edge_eofs, edge_completion_samples;
+static uint64_t edge_last_sample;
+static bool edge_failed;
+
+/* Compile-only adapter symbol redirects; no production API/environment switch. */
+int pu_install_fixture_clock_gettime(clockid_t clock, struct timespec *value)
+{
+    if (!edge_mode || clock != CLOCK_MONOTONIC) return clock_gettime(clock, value);
+    uint64_t now = ++edge_samples == 1 ? 1000 : 8999;
+    if (edge_eofs == 2) {
+        edge_completion_samples++;
+        now = edge_mode == 1 ? 8999 : edge_mode == 3 ? 9000 :
+            edge_mode == 4 && edge_completion_samples == 1 ? 8999 : 9001;
+        if (edge_mode == 4 && edge_completion_samples == 2)
+            fprintf(stderr, "DEADLINE EDGE: post-drain=8999 pre-resolve=9001\n");
+    }
+    edge_last_sample = now;
+    value->tv_sec = (time_t)(now / 1000);
+    value->tv_nsec = (long)(now % 1000) * 1000000;
+    return 0;
+}
+
+ssize_t pu_install_fixture_read(int fd, void *bytes, size_t length)
+{
+    ssize_t result = read(fd, bytes, length);
+    if (edge_mode && result == 0 && ++edge_eofs == 2) {
+        siginfo_t child = {0};
+        if (waitid(P_ALL, 0, &child, WEXITED | WNOWAIT) < 0) {
+            fprintf(stderr, "NATIVE FIXTURE FAIL: cannot hold completed helper for boundary reap\n");
+            edge_failed = true;
+        }
+        if (edge_last_sample != 8999) edge_failed = true;
+        fprintf(stderr, "DEADLINE EDGE: start=1000 deadline=9000 pump-entry=%llu final-EOF=%d; child waitable\n",
+            (unsigned long long)edge_last_sample,
+            edge_mode == 1 || edge_mode == 4 ? 8999 : edge_mode == 3 ? 9000 : 9001);
+    }
+    return result;
+}
+
+pid_t pu_install_fixture_waitpid(pid_t pid, int *status, int options)
+{
+    if (edge_mode && edge_eofs < 2 && (options & WNOHANG)) return 0;
+    return waitpid(pid, status, options);
+}
 static uint64_t now_ms(void)
 {
     struct timespec now;
@@ -99,6 +144,10 @@ int main(int argc, char **argv)
 {
     if (argc != 4 || getuid() != 1000) return 2;
     root = argv[1];
+    edge_mode = strcmp(argv[3], "deadline-before") == 0 ? 1 :
+        strcmp(argv[3], "deadline-overrun") == 0 ? 2 :
+        strcmp(argv[3], "deadline-exact") == 0 ? 3 :
+        strcmp(argv[3], "deadline-settle-overrun") == 0 ? 4 : 0;
     int baseline = fd_count(), failed = 0;
     int sentinel = open("/dev/null", O_RDONLY);
     if (sentinel < 0) return 2;
@@ -158,6 +207,10 @@ int main(int argc, char **argv)
     JS_FreeContext(ctx); JS_FreeRuntime(rt);
     close(sentinel);
     if (fd_count() != baseline) { fprintf(stderr, "NATIVE FIXTURE FAIL: fd leak\n"); failed = 1; }
+    if (edge_mode && (edge_failed || edge_eofs != 2 ||
+        (edge_mode == 4 && edge_completion_samples != 2))) {
+        fprintf(stderr, "NATIVE FIXTURE FAIL: boundary did not cross inside the final EOF pump\n"); failed = 1;
+    }
     errno = 0;
     if (waitpid(-1, NULL, WNOHANG) != -1 || errno != ECHILD) {
         fprintf(stderr, "NATIVE FIXTURE FAIL: unreaped child\n"); failed = 1;

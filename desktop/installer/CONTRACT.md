@@ -212,6 +212,12 @@ the Promise and log `[install-targets]` diagnostics. Parsing is followed by
 the existing exact UI schema/safe-integer validation. The fixed Python collector
 uses a 7 second evidence deadline, its original MAX_NODES=256/MAX_DEPTH=16/
 MAX_TEXT=4096 bounds and the unchanged dynamic storage layout.
+Expiry is checked at pump entry, again after drain/reap, and immediately before
+the Promise settlement call after JSON parsing and local cleanup. Success
+requires that final monotonic eligibility sample to be strictly **before**
+`started + 8000 ms`; equality expires. An entry-time sample does not timestamp
+later EOF or qualify a receipt that crosses the deadline inside that pump.
+Later JavaScript delivery is not a claim of an earlier kernel receipt timestamp.
 
 Cancel/timeout/close kill the acquisition process group, close pipe FDs and
 reject after the direct owned child is reaped. A superseding read waits for
@@ -293,6 +299,14 @@ private Linux `/tmp` and trusted-mode 0755 tmpfs mounts for `/run`,
 privilege: every native acquisition runs as UID1000, empty supplementary groups.
 The fixed **test compile** path names `install/fixture-helper.py`, not the
 production helper; there is no runtime environment/argument escape for tests.
+The test runner accepts optional Python unittest selectors. Compile-only
+clock/read/waitpid symbol redirects pass through unchanged for the original
+cases. Four deterministic boundary cases begin the final-EOF pump at elapsed
+7999 ms and prove timely 7999 ms success, 8000/8001 ms expiry within that pump,
+and expiry between the post-drain sample and the final pre-resolve sample.
+They hold the real child waitable without reaping it, then let the native
+adapter perform its actual reap; this is not a sleep that expires before entry
+or a production clock/API switch.
 
 No `CAP_SYS_ADMIN` or fixture mount syscalls are needed: the operator creates
 the private tmpfs views when starting the container. Production host mounts,

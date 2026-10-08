@@ -7,6 +7,8 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cc -std=c11 -Wall -Wextra -Werror -I"$repo/third_party/quickjs" \
     -I"$repo/src/desktop" \
     '-DPU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py"' \
+    -Dclock_gettime=pu_install_fixture_clock_gettime -Dread=pu_install_fixture_read \
+    -Dwaitpid=pu_install_fixture_waitpid \
     -c "$repo/src/desktop/install-targets.c" -o /tmp/install-targets.o
 cc -std=c11 -Wall -Wextra -Werror -I"$repo/third_party/quickjs" \
     -I"$repo/src/desktop" -c "$repo/desktop/tests/install-readonly-native.c" \
@@ -18,4 +20,4 @@ cc -D_GNU_SOURCE -O0 -I"$repo/third_party/quickjs" \
     -o /tmp/install-readonly-native
 sha256sum "$repo/src/desktop/install-targets.c" \
     "$repo/desktop/release/install/readonly-helper.py" /tmp/install-readonly-native
-python3 -B "$repo/desktop/tests/install-readonly-fixture.py"
+python3 -B "$repo/desktop/tests/install-readonly-fixture.py" "$@"
