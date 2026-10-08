@@ -1,6 +1,6 @@
 # PollyOS 当前批次交接
 
-更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `e2fae72`，
+更新时间：2026-10-08。本地 `main` 的最新功能组合基线为 `ea0ac1a`，
 保留此前正常快进合入的 `ce73a3c`，本轮尚未推送。
 此前已推送的代码基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，
 交接提交为 `0f863116fb3f1de8abbb6e032925a9860ce17553`；没有强推。
@@ -105,6 +105,19 @@ poweroff/reboot；移除四个基本方法旧 deny，保留 unsupported 方法�
 不可盲复用；下一统一候选需实际装入标准依赖与规则，再确认 guest `Can*` 和用户保存/取消流程。
 这是 Linux 会话级授权，同一符合条件的用户程序可调用标准 login1；不宣称整个系统只有 Shell
 能调用电源，也不把 Root 维护入口或另一活动用户会话的拒绝改为绕过。
+
+### 新候选首启排序修复
+
+本轮新介质首启曾在 `12fecb4` 复现无 greeter；首 silent guest 的 journal 为 volatile，
+停止后 `journalctl` 实际 NoEntries，未宣称保存了该轮 RAM journal。独立 clone 只添加标准
+systemd console/debug 日志参数，原 `cold-diagnostic\serial.log` SHA256
+`564f6aca7ad8472d33d28e3212e25c56385bc4f7245d9fee4493ddebf1c62210`，
+LF 行 1109–1114 明确记录账号服务经 basic/sockets/setup socket 回到自身的排序环，
+以及为解环删除 sockets.target job。不同 CR 行计数的摘录不替代原文件。
+源 `6d93e6fc078bf6c22e68ccd7a9805bf3da77116c` 已合为 `ea0ac1a`，只删除早期 socket
+的 `After=polly-accounts.service` 并加必要直接断言；broker 和 greetd 的 Requires/Afteraccounts、
+SocketUser/Group/Mode、PAM、Peer/Class 校验全部保留。修后正常冷启动和新正确固定源介质
+正在复测；这证明此次新 guest 的真实问题，不替代历史 Hyper-V 缺失日志。
 
 ## 第一批代码与准确范围
 
