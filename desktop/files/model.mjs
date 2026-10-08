@@ -26,8 +26,8 @@ export function parentPath(path) {
 export function requireFileSystem(native) {
   const api = native?.fileSystem;
   if (api?.version !== FILE_SYSTEM_VERSION || api.implementation !== 'posix-ordinary-v1' ||
-      api.maxEntries !== 1024 || api.maxTextBytes !== 1048576 || api.overwrite !== false ||
-      ['locations', 'listDirectory', 'stat', 'readText', 'writeText', 'createDirectory', 'rename']
+      api.maxEntries !== 1024 || api.maxTextBytes !== 1048576 || api.overwrite !== true ||
+      ['locations', 'listDirectory', 'stat', 'readText', 'writeText', 'replaceText', 'createDirectory', 'rename']
         .some(name => typeof api[name] !== 'function'))
     throw new Error('Files requires the ordinary-user native fileSystem v1 API; this engine is missing or incompatible');
   return api;
