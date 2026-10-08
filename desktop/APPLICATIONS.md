@@ -158,7 +158,7 @@ The private activation connection closes when the pending set becomes empty.
 
 There are at most eight pending requests, each with a 3000 ms method-reply
 deadline after sending, a 16 KiB incoming-message bound, 64 KiB received queue,
-no received FDs, and at most 64 dispatches per pump. Initial local connection
+no accepted or exported FDs, and at most 64 dispatches per pump. Initial local connection
 authentication/registration uses the existing session-bus helper; the method
 deadline does not claim to bound that helper's synchronous connection setup.
 Queue/ID/trust/send failures throw synchronously. Remote errors reject with
