@@ -753,32 +753,32 @@ void pu_applications_shutdown(void)
         free(processes->id); free(processes);
         processes = next;
     }
+}
 
-    void pu_applications_begin_exit(void) { session_exiting = true; }
-    void pu_applications_cancel_exit(void) { session_exiting = session_exit_failed = false; }
-    int pu_applications_exit_ready(void)
-    {
-        return session_exiting && !session_exit_failed && !processes && !activation_count;
-    }
-    JSValue pu_applications_exit_snapshot(JSContext *ctx)
-    {
-        JSValue result = JS_NewObject(ctx), applications = JS_NewArray(ctx);
-        if (JS_IsException(result) || JS_IsException(applications)) {
-            JS_FreeValue(ctx, result); JS_FreeValue(ctx, applications); return JS_EXCEPTION;
-        }
-        uint32_t count = 0;
-        for (struct AppProcess *process = processes; process; process = process->next)
-            if (JS_SetPropertyUint32(ctx, applications, count++, JS_NewString(ctx, process->id)) < 0)
-                goto failed;
-        if (JS_SetPropertyStr(ctx, result, "applications", JS_DupValue(ctx, applications)) < 0 ||
-            JS_SetPropertyStr(ctx, result, "pendingApplications", JS_NewUint32(ctx, count)) < 0 ||
-            JS_SetPropertyStr(ctx, result, "pendingActivations", JS_NewUint32(ctx, activation_count)) < 0 ||
-            JS_SetPropertyStr(ctx, result, "error", JS_NewString(ctx, session_exit_failed ?
-                "An application exit was unsuccessful or could not be confirmed. Cancel and review its state before retrying." : "")) < 0)
-            goto failed;
-        JS_FreeValue(ctx, applications);
-        return result;
-    failed:
+void pu_applications_begin_exit(void) { session_exiting = true; }
+void pu_applications_cancel_exit(void) { session_exiting = session_exit_failed = false; }
+int pu_applications_exit_ready(void)
+{
+    return session_exiting && !session_exit_failed && !processes && !activation_count;
+}
+JSValue pu_applications_exit_snapshot(JSContext *ctx)
+{
+    JSValue result = JS_NewObject(ctx), applications = JS_NewArray(ctx);
+    if (JS_IsException(result) || JS_IsException(applications)) {
         JS_FreeValue(ctx, result); JS_FreeValue(ctx, applications); return JS_EXCEPTION;
     }
+    uint32_t count = 0;
+    for (struct AppProcess *process = processes; process; process = process->next)
+        if (JS_SetPropertyUint32(ctx, applications, count++, JS_NewString(ctx, process->id)) < 0)
+            goto failed;
+    if (JS_SetPropertyStr(ctx, result, "applications", JS_DupValue(ctx, applications)) < 0 ||
+        JS_SetPropertyStr(ctx, result, "pendingApplications", JS_NewUint32(ctx, count)) < 0 ||
+        JS_SetPropertyStr(ctx, result, "pendingActivations", JS_NewUint32(ctx, activation_count)) < 0 ||
+        JS_SetPropertyStr(ctx, result, "error", JS_NewString(ctx, session_exit_failed ?
+            "An application exit was unsuccessful or could not be confirmed. Cancel and review its state before retrying." : "")) < 0)
+        goto failed;
+    JS_FreeValue(ctx, applications);
+    return result;
+failed:
+    JS_FreeValue(ctx, result); JS_FreeValue(ctx, applications); return JS_EXCEPTION;
 }
