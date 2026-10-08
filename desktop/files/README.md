@@ -9,10 +9,15 @@ pollyui --desktop --app-id org.pollyui.files desktop/files/main.mjs /absolute/lo
 
 `--desktop` supplies the existing application/MIME and theme client APIs; this
 window neither creates a Shell surface nor acquires trusted Shell management
-authority. The installed launcher must use its installed absolute entry path.
+authority. The installed `polly-files` launcher resolves the installed data
+directory, uses its absolute entry path and runs from that root for JS imports.
 Central integration adds `src/desktop/files.c` to the Linux engine sources and
-calls `pu_files_install(ctx, desktop_api)` in `pu_applications_install`, outside
-the `PU_LAYER_SHELL` block. Link the existing `PkgConfig::BUNDLE_CRYPTO`
+calls `pu_files_install(ctx, desktop_api)` from the engine after the optional
+`pu_applications_install`, outside the `PU_LAYER_SHELL` block. Ordinary Linux
+apps without `--desktop` receive an object containing only `desktop.fileSystem`;
+they do not receive spawn, application catalog, window-management or appearance
+management APIs. `--greeter` does not receive this file object.
+Link the existing `PkgConfig::BUNDLE_CRYPTO`
 dependency for OpenSSL EVP SHA256. No pump, background service or shutdown hook is needed.
 Install the whole `desktop/files` module directory and its existing shared
 `desktop/shell/{applications,bundles,documents}.mjs`, shared bundle schema,
@@ -202,6 +207,11 @@ new-only private receipt; failure cleanup is not accepted as a WM-close result.
 shared driver as `DRIVER UI ABSOLUTE/files-window-shell.mjs files-window initial`.
 It spawns the separate ordinary process, requires normal exit and the actual
 action/close receipt, then emits the existing trusted `fixture-success` marker.
+The registered `files-window.py` coordinator runs as actual UID1000 and creates
+only a fresh private HOME, synthetic rows and a user MIME association. It checks
+the separate helper's literal argv, cwd, ordinary UID and real document contents;
+it does not inspect the host's HOME or applications. Source checks of this
+coordinator are not proof that its new-engine run passed.
 The parent must independently check the real MIME helper argv/output receipt;
 the public client claims successful native MIME dispatch, not that an external
 application rendered or consumed a document. Source syntax checks do not prove

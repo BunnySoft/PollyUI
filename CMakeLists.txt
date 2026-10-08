@@ -142,9 +142,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(polly-app PRIVATE polly-bundles)
         install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
         target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/documents.c
-            src/desktop/install-targets.c src/desktop/session-bus.c)
+            src/desktop/install-targets.c src/desktop/files.c src/desktop/session-bus.c)
         target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
+        target_sources(pollyui PRIVATE src/desktop/greeter-client.c)
+        target_include_directories(pollyui PRIVATE desktop/session)
+        target_compile_definitions(pollyui PRIVATE PU_GREETER)
         add_executable(pollyui-app-launcher src/desktop/exec.c)
         target_compile_options(pollyui-app-launcher PRIVATE -fno-sanitize=all -Wall -Wextra -Werror)
         target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
@@ -408,6 +411,48 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
     set_tests_properties(script-module-errors PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     if (PU_DESKTOP_SERVICES)
         add_executable(polly-session-bus-test desktop/tests/session-bus.c src/desktop/session-bus.c)
+        add_library(polly-files-core-test-adapter OBJECT src/desktop/files.c)
+        target_compile_definitions(polly-files-core-test-adapter PRIVATE PU_FILES_CORE_ONLY
+            fdopendir=pu_files_fixture_fdopendir)
+        target_include_directories(polly-files-core-test-adapter PRIVATE src/desktop)
+        target_link_libraries(polly-files-core-test-adapter PRIVATE PkgConfig::BUNDLE_CRYPTO)
+        target_compile_options(polly-files-core-test-adapter PRIVATE -Wall -Wextra -Werror)
+        add_executable(polly-files-core-test desktop/tests/files-native.c
+            $<TARGET_OBJECTS:polly-files-core-test-adapter>)
+        target_compile_definitions(polly-files-core-test PRIVATE PU_FILES_CORE_ONLY)
+        target_include_directories(polly-files-core-test PRIVATE src/desktop)
+        target_link_libraries(polly-files-core-test PRIVATE PkgConfig::BUNDLE_CRYPTO)
+        target_compile_options(polly-files-core-test PRIVATE -Wall -Wextra -Werror)
+        add_executable(polly-files-api-test src/desktop/files.c desktop/tests/files-api-native.c)
+        target_include_directories(polly-files-api-test PRIVATE src/desktop)
+        target_include_directories(polly-files-api-test SYSTEM PRIVATE third_party/quickjs)
+        target_link_libraries(polly-files-api-test PRIVATE qjs PkgConfig::BUNDLE_CRYPTO Threads::Threads ${CMAKE_DL_LIBS} m)
+        target_compile_options(polly-files-api-test PRIVATE -Wall -Wextra -Werror)
+        add_test(NAME desktop-files-core COMMAND polly-files-core-test)
+        add_test(NAME desktop-files-api COMMAND polly-files-api-test
+            "${CMAKE_SOURCE_DIR}/desktop/tests/files-api-native.js")
+        set_tests_properties(desktop-files-core desktop-files-api PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+        add_test(NAME desktop-files-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/files/tests.mjs")
+        add_test(NAME desktop-file-dialog-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog.mjs")
+        add_test(NAME desktop-file-text-open-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-text-open.mjs")
+        add_test(NAME desktop-functional-launchers COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/functional-launchers.mjs")
+        add_test(NAME desktop-greeter-controller COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-controller.mjs")
+        set_tests_properties(desktop-files-source desktop-file-dialog-source desktop-file-text-open-source
+            desktop-functional-launchers desktop-greeter-controller
+            PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "source")
+        add_test(NAME desktop-greeter-setup COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-setup.py")
+        add_test(NAME desktop-greeter-image COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-image.py")
+        set_tests_properties(desktop-greeter-setup desktop-greeter-image PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;source")
+        add_test(NAME desktop-greeter-ui COMMAND pollyui --test "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-ui.mjs")
+        set_tests_properties(desktop-greeter-ui PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;synthetic-auth")
+        add_executable(polly-greeter-client-fixture src/desktop/greeter-client.c desktop/tests/greeter-native-client.c)
+        target_include_directories(polly-greeter-client-fixture PRIVATE src/desktop desktop/session)
+        target_include_directories(polly-greeter-client-fixture SYSTEM PRIVATE third_party/quickjs)
+        target_link_libraries(polly-greeter-client-fixture PRIVATE qjs Threads::Threads ${CMAKE_DL_LIBS} m)
+        target_compile_options(polly-greeter-client-fixture PRIVATE -Wall -Wextra -Werror)
         target_include_directories(polly-session-bus-test PRIVATE src)
         target_compile_definitions(polly-session-bus-test PRIVATE _POSIX_C_SOURCE=200809L)
         target_link_libraries(polly-session-bus-test PRIVATE PkgConfig::SESSION_DBUS)
@@ -499,7 +544,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-storage-failures PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container")
         add_test(NAME desktop-storage-image COMMAND python3 -B "${CMAKE_SOURCE_DIR}/desktop/tests/storage-image.py")
-        set_tests_properties(desktop-storage-image PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        set_tests_properties(desktop-storage-image PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            LABELS "root-container;fixture-coordinator;source")
         add_test(NAME desktop-storage-homes COMMAND python3 -B "${CMAKE_SOURCE_DIR}/desktop/tests/storage-homes.py")
         set_tests_properties(desktop-storage-homes PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-storage-home-migration COMMAND python3 -B "${CMAKE_SOURCE_DIR}/desktop/tests/storage-home-migration.py")
@@ -635,6 +681,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         if (PU_DESKTOP_SERVICES)
+            add_test(NAME desktop-files-window
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    --evidence "${CMAKE_BINARY_DIR}/files-window-evidence")
+            set_tests_properties(desktop-files-window PROPERTIES TIMEOUT 180
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+            add_test(NAME desktop-file-dialog-window
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog-window-shell.mjs" file-dialog file-dialog)
+            set_tests_properties(desktop-file-dialog-window PROPERTIES TIMEOUT 120
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
             foreach(mode IN ITEMS ui audio)
                 add_test(NAME desktop-settings-${mode}
                     COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"

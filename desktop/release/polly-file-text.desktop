@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=File Text
+Comment=Bounded text read and explicit open/save chooser
+Exec=/usr/bin/polly-file-text
+TryExec=/usr/bin/polly-file-text
+Terminal=false
+Categories=Utility;

@@ -16,6 +16,10 @@ spec = importlib.util.spec_from_file_location("storage_image",
     Path(__file__).resolve().parents[1] / "tools/build-storage-image.py")
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)
+spec = importlib.util.spec_from_file_location("greeter_image_fixture",
+    Path(__file__).with_name("greeter-image-fixture.py"))
+greeter_fixture = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(greeter_fixture)
 spec = importlib.util.spec_from_file_location("persistent_boot",
     Path(__file__).with_name("persistent-boot.py"))
 boot = importlib.util.module_from_spec(spec)
@@ -105,6 +109,7 @@ class StorageImage(unittest.TestCase):
                 }
                 for name, text in values.items():
                     (root / name).write_text(text)
+                greeter_fixture.seed(root, builder.legacy, builder.REPO)
                 # Only chown requires root; this unit uses the actual builder with that one operation mocked.
                 with patch.object(builder.legacy.os, "chown"):
                     builder.legacy.configure_accounts(root, account, "test-volume", builder.REPO, storage)
@@ -117,6 +122,11 @@ class StorageImage(unittest.TestCase):
                 self.assertIn("Requires=polly-storage.service" if storage else "RequiresMountsFor=/home", service)
                 self.assertIn("shadow: extrausers files", (root / "etc/nsswitch.conf").read_text())
                 self.assertFalse((account / "setup-complete").exists())
+                self.assertEqual(os.readlink(root / "etc/systemd/system/default.target"),
+                                 "/usr/lib/systemd/system/graphical.target")
+                self.assertNotIn("polly-firstboot", (root / builder.legacy.GETTY_DROPIN).read_text())
+                self.assertEqual(builder.boot_config("fixture", "vmlinuz", "initrd").count(
+                    "systemd.unit=polly-console.target"), 1)
 
     def test_diagnostic_boot_is_explicit_and_rejects_bad_inputs(self):
         manifest = {"layout": "single-system-independent-recovery",

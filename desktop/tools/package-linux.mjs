@@ -251,7 +251,8 @@ try {
       const file = path.join(directory, entry.name), name = path.posix.join(relative, entry.name);
       if (entry.isDirectory()) inventory(file, name);
       else if (entry.isFile()) manifest.files.push({ path: name, sha256: hash(file), size: lstatSync(file).size,
-        mode: name.startsWith('usr/bin/') || (name.startsWith('usr/share/pollyui/desktop/tools/') && name.endsWith('.sh')) ? '0755' : '0644' });
+        mode: name.startsWith('usr/bin/') || name.endsWith('/pollyui/greeter-entry') ||
+          (name.startsWith('usr/share/pollyui/desktop/tools/') && name.endsWith('.sh')) ? '0755' : '0644' });
       else throw new Error('Unexpected non-regular package payload: ' + file);
     }
   }
@@ -271,7 +272,13 @@ try {
       'desktop/release/debian/build-wlroots.py', 'desktop/release/debian/rime-default.custom.yaml',
       'desktop/release/debian/debian.sources', 'desktop/release/debian/backports.sources'] : ['desktop/Containerfile', 'desktop/release/Containerfile'])];
   recipes.push('desktop/release/install/readonly-helper.py', 'desktop/release/install/targets.py',
-    'desktop/release/storage/layout.py', 'desktop/release/maintenance/payload.py');
+    'desktop/release/storage/layout.py', 'desktop/release/maintenance/payload.py',
+    'desktop/tools/polly-files.in', 'desktop/tools/polly-file-text.in',
+    'desktop/release/polly-files.desktop', 'desktop/release/polly-file-text.desktop',
+    'desktop/release/polly-file-text-open.desktop',
+    'desktop/release/polly-mimeapps.list',
+    'desktop/session/greeter-entry', 'desktop/session/greetd-launch.py',
+    'desktop/session/setup-broker.py', 'desktop/session/greetd.conf', 'desktop/session/greeter-dependencies.json');
   const inputs = { schemaVersion: 1, revision, dirty, architecture: 'x86_64', distribution,
     dependencies: sourceInputs,
     recipes: recipes.map(file => ({ path: file, sha256: hash(path.join(repo, file)) })),

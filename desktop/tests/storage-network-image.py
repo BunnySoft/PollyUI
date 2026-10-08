@@ -40,6 +40,11 @@ class FreshNetworkAssembly(unittest.TestCase):
             path = self.root / name
             path.write_text(text)
             path.chmod(0o640 if name == "etc/shadow" else 0o644)
+        spec = importlib.util.spec_from_file_location("greeter_image_fixture",
+            Path(__file__).with_name("greeter-image-fixture.py"))
+        greeter_fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(greeter_fixture)
+        greeter_fixture.seed(self.root, builder.legacy, REPO)
         os.chown(self.root / "etc/shadow", 0, 42)
         for source, target, mode in (
                 ("state.py", "usr/lib/polly-network/state.py", 0o755),

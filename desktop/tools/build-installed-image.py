@@ -15,6 +15,20 @@ import uuid
 
 MIB = 1024 * 1024
 GETTY_DROPIN = "etc/systemd/system/getty@tty1.service.d/zz-installed.conf"
+GREETER_RESOURCES = (
+    ("greeter-entry", "usr/lib/pollyui/greeter-entry", 0o755),
+    ("greetd-launch.py", "usr/lib/pollyui/greetd-launch.py", 0o644),
+    ("setup-broker.py", "usr/lib/pollyui/setup-broker.py", 0o644),
+    ("greetd.conf", "usr/lib/pollyui/greetd.conf", 0o644),
+    ("greeter-dependencies.json", "usr/lib/pollyui/greeter-dependencies.json", 0o644),
+    ("greeter.mjs", "usr/share/pollyui/desktop/session/greeter.mjs", 0o644),
+    ("greeter-controller.mjs", "usr/share/pollyui/desktop/session/greeter-controller.mjs", 0o644),
+    ("polly-greetd.pam", "etc/pam.d/polly-greetd", 0o644),
+    ("polly-greetd-greeter.pam", "etc/pam.d/polly-greetd-greeter", 0o644),
+    ("polly-greetd.service", "etc/systemd/system/polly-greetd.service", 0o644),
+    ("polly-greeter-setup.service", "etc/systemd/system/polly-greeter-setup.service", 0o644),
+    ("polly-greeter-setup.socket", "etc/systemd/system/polly-greeter-setup.socket", 0o644),
+)
 
 
 def run(*args, **kwargs):
@@ -117,7 +131,101 @@ def account_templates(passwd, shadow):
     return identities, shadows
 
 
+def qualify_greeter(root, repo):
+    for source, destination, mode in GREETER_RESOURCES:
+        path = root / destination
+        if not path.parent.resolve().is_relative_to(root.resolve()):
+            raise ValueError("Greeter resource escapes candidate guest root: " + destination)
+        directory = root
+        for component in path.parent.relative_to(root).parts:
+            directory /= component
+            parent = directory.lstat()
+            if not stat.S_ISDIR(parent.st_mode) or parent.st_uid or parent.st_gid or parent.st_mode & 0o022:
+                raise ValueError("Untrusted installed greeter resource directory: " + destination)
+        info = path.lstat()
+        expected = (repo / "desktop/session" / source).read_bytes().replace(b"\r\n", b"\n")
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or \
+                stat.S_IMODE(info.st_mode) != mode or path.read_bytes() != expected:
+            raise ValueError("Installed greeter resource differs from its source/mode/owner: " + destination)
+    contract = json.loads((root / "usr/lib/pollyui/greeter-dependencies.json").read_text())
+    daemon = (root / "usr/sbin/greetd").lstat()
+    if not stat.S_ISREG(daemon.st_mode) or daemon.st_uid != 0 or daemon.st_gid != 0 or \
+            stat.S_IMODE(daemon.st_mode) != 0o755:
+        raise ValueError("Missing trusted installed greetd executable")
+    inventory = {}
+    for line in (root / "usr/share/polly-installed-packages.tsv").read_text().splitlines():
+        fields = line.split("\t", 2)
+        if len(fields) != 3 or not fields[0] or not fields[1] or fields[0] in inventory:
+            raise ValueError("Invalid installed dependency inventory")
+        inventory[fields[0]] = fields[1]
+    for package in contract["newPackages"]:
+        if inventory.get(package["name"]) != package["version"]:
+            raise ValueError("Missing exact installed greeter dependency: " + package["name"])
+    for name in contract["requiredPackages"]:
+        if name not in inventory and name + ":amd64" not in inventory:
+            raise ValueError("Missing installed greeter runtime dependency: " + name)
+    identities = [line.split(":") for line in (root / "etc/passwd").read_text().splitlines()]
+    if any(len(entry) != 7 or not entry[2].isdigit() or not entry[3].isdigit() for entry in identities):
+        raise ValueError("Invalid installed passwd records")
+    greeters = [entry for entry in identities if entry[0] == "polly-greeter"]
+    if len(greeters) != 1 or len(greeters[0]) != 7:
+        raise ValueError("Missing dedicated installed greeter identity")
+    greeter = greeters[0]
+    if not greeter[2].isdigit() or not greeter[3].isdigit() or not 1 <= int(greeter[2]) <= 999 or \
+            not 1 <= int(greeter[3]) <= 999 or greeter[5:] != ["/nonexistent", "/usr/sbin/nologin"] or \
+            any(entry != greeter and entry[2] == greeter[2] for entry in identities):
+        raise ValueError("Invalid installed greeter UID/GID or login authority")
+    groups = [line.split(":") for line in (root / "etc/group").read_text().splitlines()]
+    if any(len(entry) != 4 or not entry[2].isdigit() for entry in groups):
+        raise ValueError("Invalid installed group records")
+    dedicated = [entry for entry in groups if entry[0] == "polly-greeter"]
+    if len(dedicated) != 1 or dedicated[0] != ["polly-greeter", "x", greeter[3], ""] or any(
+            entry[0] != "polly-greeter" and (entry[2] == greeter[3] or
+            "polly-greeter" in entry[3].split(",")) for entry in groups):
+        raise ValueError("Greeter must have only its own group, without administrative membership")
+    shadows = [line.split(":") for line in (root / "etc/shadow").read_text().splitlines()
+               if line.startswith("polly-greeter:")]
+    if len(shadows) != 1 or len(shadows[0]) != 9 or shadows[0][1] not in {"!", "!!", "*", "!*"}:
+        raise ValueError("Installed greeter account must remain locked")
+
+
+def guest_link(root, name, target):
+    path = root / name
+    if not path.parent.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Unit link escapes candidate guest root: " + name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink():
+        path.unlink()
+    elif path.exists():
+        raise ValueError("Refusing to replace a guest unit: " + name)
+    path.symlink_to(target)
+
+
+def configure_graphical_login(root):
+    write(root, GETTY_DROPIN, "[Unit]\n# TTY1 is owned by polly-greetd; use polly-console-fallback.service explicitly.\n")
+    guest_link(root, "etc/systemd/system/getty@tty1.service", "/dev/null")
+    guest_link(root, "etc/systemd/system/greetd.service", "/dev/null")
+    guest_link(root, "etc/systemd/system/display-manager.service", "/dev/null")
+    guest_link(root, "etc/systemd/system/graphical.target.wants/polly-greetd.service", "../polly-greetd.service")
+    guest_link(root, "etc/systemd/system/sockets.target.wants/polly-greeter-setup.socket",
+               "../polly-greeter-setup.socket")
+    guest_link(root, "etc/systemd/system/default.target", "/usr/lib/systemd/system/graphical.target")
+    write(root, "etc/systemd/system/polly-console-fallback.service",
+          "[Unit]\nDescription=Explicit authenticated installed console fallback\n"
+          "Requires=polly-accounts.service polly-firstboot.service\n"
+          "After=polly-accounts.service polly-firstboot.service\n"
+          "Conflicts=polly-greetd.service\n"
+          "[Service]\nExecStart=/usr/sbin/polly-accounts getty tty1\n"
+          "Restart=on-failure\nStandardInput=tty\nStandardOutput=tty\n"
+          "TTYPath=/dev/tty1\nTTYReset=yes\nTTYVHangup=yes\n")
+    write(root, "etc/systemd/system/polly-console.target",
+          "[Unit]\nDescription=Explicit installed console setup and password login\n"
+          "Requires=polly-console-fallback.service\nAfter=polly-console-fallback.service\n"
+          "AllowIsolate=yes\n")
+
+
 def configure_accounts(root, account_root, identifier, repo, storage=False):
+    qualify_greeter(root, repo)
     passwd = (root / "etc/passwd").read_text()
     if not re.search(r"^polly:[^:]*:1000:1000:", passwd, re.M):
         raise ValueError("Unexpected development user identity")
@@ -184,11 +292,12 @@ def configure_accounts(root, account_root, identifier, repo, storage=False):
           "[Unit]\n" + prerequisite + "Wants=polly-installed-serial.service\n"
           "After=local-fs.target polly-installed-serial.service" +
           (" polly-storage.service" if storage else "") + "\n"
-          "Before=systemd-user-sessions.service getty@tty1.service polly-firstboot.service\n"
+          "Before=systemd-user-sessions.service polly-greetd.service getty@tty1.service polly-firstboot.service\n"
           "[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/sbin/polly-accounts prepare\n"
           "[Install]\nWantedBy=multi-user.target\n")
     write(root, "etc/systemd/system/polly-firstboot.service",
-          "[Unit]\nRequires=polly-accounts.service\nAfter=polly-accounts.service\n"
+          "[Unit]\nRequires=polly-accounts.service\nAfter=polly-accounts.service polly-greetd.service\n"
+          "Conflicts=polly-greetd.service\n"
           "Before=getty@tty1.service\n"
           "[Service]\nType=oneshot\nRemainAfterExit=yes\n"
           "ExecStart=/usr/sbin/polly-accounts setup\n"
@@ -196,11 +305,7 @@ def configure_accounts(root, account_root, identifier, repo, storage=False):
           "TTYPath=/dev/tty1\nTTYReset=yes\nTTYVHangup=yes\nTimeoutStartSec=infinity\n")
     (root / "etc/systemd/system/multi-user.target.wants/polly-accounts.service").symlink_to(
         "../polly-accounts.service")
-    write(root, GETTY_DROPIN,
-          "[Unit]\n" + ("" if storage else "RequiresMountsFor=/home/polly\n") +
-          "Requires=polly-accounts.service polly-firstboot.service\n"
-          "After=polly-accounts.service polly-firstboot.service\n"
-          "[Service]\nExecStart=\nExecStart=/usr/sbin/polly-accounts getty %I\n")
+    configure_graphical_login(root)
     serial_getty = root / "etc/systemd/system/serial-getty@ttyS0.service"
     if serial_getty.exists() or serial_getty.is_symlink():
         raise ValueError("Unexpected preexisting installed serial console policy")
@@ -299,13 +404,15 @@ def build(args):
                 write(root, "usr/share/pollyui/desktop/tests/" + name, source.read_text(), mode)
             write(root, "etc/systemd/system/polly-account-fixture.service",
                   "[Unit]\nConditionKernelCommandLine=polly.verify-persistence=1\n"
-                  "Requires=polly-accounts.service\nAfter=polly-accounts.service\nBefore=polly-firstboot.service\n"
+                  "Requires=polly-accounts.service\nAfter=polly-accounts.service\nBefore=polly-firstboot.service polly-greetd.service\n"
                   "[Service]\nType=oneshot\nRemainAfterExit=yes\nTimeoutStartSec=180\n"
                   "ExecStart=/usr/bin/python3 -I /usr/share/pollyui/desktop/tests/account-auth-fixture.py --guest\n")
             write(root, "etc/systemd/system/polly-firstboot.service.d/verification.conf",
                   "[Unit]\nRequires=polly-account-fixture.service\nAfter=polly-account-fixture.service\n")
+            write(root, "etc/systemd/system/polly-greetd.service.d/verification.conf",
+                  "[Unit]\nRequires=polly-account-fixture.service\nAfter=polly-account-fixture.service\n")
             write(root, "etc/systemd/system/polly-persistence-test.service",
-                  "[Unit]\nConditionKernelCommandLine=polly.verify-persistence=1\nAfter=getty@tty1.service\n"
+                  "[Unit]\nConditionKernelCommandLine=polly.verify-persistence=1\nAfter=polly-greetd.service\n"
                   "[Service]\nType=oneshot\nTimeoutStartSec=240\n"
                   "ExecStart=/usr/share/pollyui/desktop/tests/persistent-poweroff\n"
                   "[Install]\nWantedBy=multi-user.target\n")
@@ -341,6 +448,8 @@ def build(args):
             part = parts[slot + 1]
             title = f"PollyDesktop installed {part['name']} - " + ("serial VM baseline" if serial else mode)
             options = f"root=UUID={part['uuid']} ro rootwait console=tty0 polly.mode={mode}"
+            if mode == "console":
+                options += " systemd.unit=polly-console.target"
             if serial:
                 options += " console=ttyS0,115200 polly.serial=1"
                 if args.verification_fixture:
@@ -379,7 +488,9 @@ def build(args):
             "partitions": parts, "packages": sorted(inventory, key=lambda p: p["name"]),
             "verificationFixture": args.verification_fixture,
             "automaticLogin": "disabled by default; root-configured, once per boot only",
-            "accountSetup": "local interactive polly/root passwords; PAM/NSS; no image passwords",
+            "accountSetup": "installed graphical polly/root setup and polly password login; explicit authenticated console fallback; no image passwords",
+            "graphicalLogin": {"manager": "polly-greetd", "dependency": "greetd=0.10.3-4",
+                               "defaultTarget": "graphical.target", "acceptance": "candidate; native/installed boot validation required"},
             "accountStateSchemaVersion": 2,
             "persistence": ["/home (settings, managed application objects/registration, AppData, documents)",
                             "/home/.polly-system/accounts (root-managed account configuration/passwords)"],
@@ -393,11 +504,12 @@ def build(args):
                 repo / "desktop/release/install/session", repo / "desktop/release/install/shell.mjs",
                 repo / "desktop/release/install/accounts.py", repo / "desktop/release/install/passwd-proxy.c",
                 repo / "desktop/release/install/roles.py",
+                *[repo / "desktop/session" / resource[0] for resource in GREETER_RESOURCES],
                 *fixture_files,
             ]],
             "limitations": ["Virtual-disk development candidate, not a physical-disk installer",
                             "Two identical initial system slots, not implemented system update/rollback",
-                            "Console setup/login only; integrated GUI login, lock and administration pending",
+                            "Graphical setup/login candidate requires independent native and installed-boot acceptance; no administration GUI",
                             "No encryption, signing or persistent Wi-Fi credential store",
                             "No automatic mounting of other disks; no swap; no online automatic updates"],
         }

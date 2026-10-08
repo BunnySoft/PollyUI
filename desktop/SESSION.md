@@ -156,7 +156,7 @@ The bounded actual-daemon fixture also asserts greeter/user class at PAM session
 opening. This validates the released backend's class propagation, not logind's
 real seat registration; production `pam_systemd type=wayland` remains unchanged.
 
-### Central integration contract (not yet applied by these files)
+### Central integration contract (source-wired candidate; runtime acceptance pending)
 
 | Source | Installed destination / requirement |
 |---|---|
@@ -182,15 +182,20 @@ for lock/input-method modes. Fail startup if installation fails. Do **not** enab
 and feature define in central CMake; `greeter-entry` directly launches the dedicated
 PollyWM shell, not `run-session.sh` (that launcher currently selects `--desktop`).
 
-Only after that fixed-source build and native validation should installed startup
-enable `polly-greetd.service` and its setup socket, preserve `polly-accounts prepare`
-and storage ordering, and resolve TTY1 getty/console-firstboot conflicts. Existing
-`zz-installed.conf` pulls console firstboot; do not leave that active on the same
-VT or use a root greeter to avoid the conflict. Preserve an explicit console
-fallback, not a default passwordless desktop. The image's default target must
-actually reach the service's `graphical.target` installation. The distro greetd
-unit/default tty7 must not run a second manager. This is image-only wiring; do not
-mask host gettys, change host PAM/logind or change Live policy.
+The candidate installed recipe stages exact greetd and the dedicated locked
+service account. Both installed image builders qualify those deployed resources,
+owners/modes and the actual dpkg-derived dependency inventory before assembly.
+Candidate startup enables `polly-greetd.service` and its setup socket, preserving
+`polly-accounts prepare` and storage ordering, and uses `graphical.target`.
+TTY1 getty and the distro greetd manager are masked only in the guest root;
+`zz-installed.conf` no longer pulls console firstboot. The unenabled
+`polly-console-fallback.service` explicitly stops the graphical manager and uses
+the existing interactive setup/authenticated getty helpers. The explicit GRUB
+console entry selects `polly-console.target`, so this fallback is reachable
+before first-run credentials exist, without requiring a root login first. It is not a
+passwordless fallback. This source wiring still needs the fixed-source native
+build and real isolated installed boot acceptance before publication. It never
+masks host gettys, changes host PAM/logind or changes Live policy.
 
 The fixed root launcher validates the installed account backend and prepared
 `automatic-login` boot snapshot. Default/off or incomplete accounts have no

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Comment=Browse local files with ordinary user permissions
+Exec=/usr/bin/polly-files
+TryExec=/usr/bin/polly-files
+Terminal=false
+Categories=System;FileTools;

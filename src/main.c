@@ -18,6 +18,10 @@
 #include "concurrency/async.h"
 #if defined(PU_DESKTOP_SERVICES)
 #include "desktop/applications.h"
+#include "desktop/files.h"
+#endif
+#if defined(PU_GREETER)
+#include "desktop/greeter-client.h"
 #endif
 
 #include <stdint.h>
@@ -111,6 +115,7 @@ static PuScript *g_app_script;
 static PuBridge *g_app_bridge;
 static JSClassID g_window_class;
 static int g_app_quitting, g_app_error;
+static int g_greeter_mode;
 static void app_redraw_all(void)
 {
     for (PuApp *app = g_apps; app; app = app->next) pu_window_redraw(app->window);
@@ -261,11 +266,19 @@ static int app_async(void *user)
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
     } else n += lock;
 #endif
+#if defined(PU_GREETER)
+    int greeter = pu_greeter_client_pump();
+    if (greeter < 0) {
+        g_app_error = g_app_quitting = 1;
+        pu_window_keep_alive(0);
+        for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+    } else n += greeter;
+#endif
     n += pu_script_flush_raf(script, pu_frame_ms());
     n += pu_script_pump(script);
-    if (pu_script_failed(script)) {
+    if (pu_script_failed(script) || (g_greeter_mode && g_app_error)) {
         g_app_error = g_app_quitting = 1;
-#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK)
+#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK) || defined(PU_GREETER)
         pu_window_keep_alive(0);
 #endif
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
@@ -305,7 +318,8 @@ static void app_report(JSContext *ctx)
 {
     JSValue exception = JS_GetException(ctx);
     const char *message = JS_ToCString(ctx, exception);
-    fprintf(stderr, "Uncaught (in window callback) %s\n", message ? message : "error");
+    fprintf(stderr, "Uncaught (in window callback) %s\n",
+            g_greeter_mode ? "greeter callback failed (details withheld)" : message ? message : "error");
     JS_FreeCString(ctx, message);
     JS_FreeValue(ctx, exception);
     g_app_error = 1;
@@ -658,7 +672,7 @@ static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 static JSValue jswin_quit(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; if (!window_app(c,t,1)) return JS_EXCEPTION;
   g_app_quitting = 1;
-#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK)
+#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK) || defined(PU_GREETER)
   pu_window_keep_alive(0);
 #endif
   for (PuApp *app = g_apps; app; app = app->next) { app->closed = 1; pu_window_close(app->window); }
@@ -1100,6 +1114,24 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_FreeValue(ctx, global);
 }
 
+#if defined(PU_DESKTOP_SERVICES)
+static int install_file_api(JSContext *ctx)
+{
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue api = JS_GetPropertyStr(ctx, global, "desktop");
+    int ready = 0;
+    if (JS_IsUndefined(api)) {
+        JS_FreeValue(ctx, api);
+        api = JS_NewObject(ctx);
+    }
+    if (!JS_IsException(api) && JS_IsObject(api) && pu_files_install(ctx, api))
+        ready = JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, api)) >= 0;
+    JS_FreeValue(ctx, api);
+    JS_FreeValue(ctx, global);
+    return ready;
+}
+#endif
+
 static int run_test(const char *path)
 {
     if (!pu_font_system_init()) return 1;
@@ -1133,7 +1165,12 @@ static int run_test(const char *path)
     install_host(pu_script_jsctx(s), host.width, host.height);
 
     int rc = 1;
-    if (host.surface) rc = pu_script_run_file(s, path);
+    int files_ready = 1;
+#if defined(PU_DESKTOP_SERVICES)
+    files_ready = install_file_api(pu_script_jsctx(s));
+#endif
+    if (host.surface && files_ready) rc = pu_script_run_file(s, path);
+    else if (!files_ready) fprintf(stderr, "[files] Cannot install ordinary file APIs\n");
     else fprintf(stderr, "[render] Failed to create headless surface\n");
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
     if (pu_script_finish(s)) rc = 1;
@@ -1164,7 +1201,8 @@ static void install_application(JSContext *ctx, const PuAppPaths *paths, int arg
     JS_FreeValue(ctx, global);
 }
 
-static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode, int input_method_mode, int lock_mode)
+static int run_app(const char *path, const char *app_id, int argc, char **argv, int desktop_mode,
+                   int input_method_mode, int lock_mode, int greeter_mode)
 {
     if (!pu_font_system_init()) return 1;
     PuAppPaths paths;
@@ -1199,14 +1237,17 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     g_app_script = s;
     g_app_bridge = bridge;
     g_app_quitting = g_app_error = 0;
+    g_greeter_mode = greeter_mode;
     int host_ready = pu_window_system_init();
     int clipboard_ready = host_ready && pu_clipboard_install(pu_script_jsctx(s), 0);
     PuApp *primary = host_ready ? install_window_api(pu_script_jsctx(s)) : NULL;
     install_application(pu_script_jsctx(s), &paths, argc, argv);
 
     int desktop_ready = 1;
+    int files_ready = 1;
 #if defined(PU_DESKTOP_SERVICES)
     if (desktop_mode) desktop_ready = pu_applications_install(pu_script_jsctx(s));
+    if (!greeter_mode && desktop_ready) files_ready = install_file_api(pu_script_jsctx(s));
 #else
     (void)desktop_mode;
 #endif
@@ -1228,7 +1269,19 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
 #else
     (void)lock_mode;
 #endif
-    int rc = primary && desktop_ready && clipboard_ready && input_ready && lock_ready ? pu_script_run_file(s, path) : 1;
+    int greeter_ready = 1;
+#if defined(PU_GREETER)
+    if (host_ready && greeter_mode) {
+        greeter_ready = pu_greeter_client_install(pu_script_jsctx(s));
+        if (greeter_ready) pu_window_keep_alive(1);
+    }
+#else
+    (void)greeter_mode;
+#endif
+    int rc = primary && desktop_ready && files_ready && clipboard_ready && input_ready &&
+        lock_ready && greeter_ready ? pu_script_run_file(s, path) : 1;
+    if (!greeter_ready) fprintf(stderr, "[greeter] Cannot install dedicated graphical authentication APIs\n");
+    if (!files_ready) fprintf(stderr, "[files] Cannot install ordinary file APIs\n");
     if (!lock_ready) fprintf(stderr, "[lock] Cannot initialize dedicated lock APIs\n");
     if (!input_ready) fprintf(stderr, "[ime] Cannot install input-method APIs\n");
     if (!clipboard_ready) fprintf(stderr, "[host] Cannot initialize clipboard APIs\n");
@@ -1251,7 +1304,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
             fprintf(stderr, "[host] Failed to create application window\n");
             rc = 1;
         }
-        if (rc == 0 && (g_apps || ((input_method_mode || lock_mode) && !g_app_quitting))) {
+        if (rc == 0 && (g_apps || ((input_method_mode || lock_mode || greeter_mode) && !g_app_quitting))) {
             pu_dispatch_set_waker(disp, app_wake, NULL);
             rc = pu_window_run_all(app_async, s);
         }
@@ -1262,6 +1315,12 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     pu_fetch_shutdown();
 #if defined(PU_DESKTOP_SERVICES)
     pu_applications_shutdown();
+#endif
+#if defined(PU_GREETER)
+    pu_greeter_client_shutdown();
+#endif
+#if defined(PU_INPUT_METHOD) || defined(PU_SESSION_LOCK) || defined(PU_GREETER)
+    pu_window_keep_alive(0);
 #endif
     pu_dispatch_set_waker(disp, NULL, NULL);
     g_app_quitting = 1;
@@ -1283,6 +1342,7 @@ static int run_app(const char *path, const char *app_id, int argc, char **argv, 
     pu_bridge_free(bridge); /* release native JS callbacks before destroying their VM */
     pu_script_destroy(s);
     pu_dispatch_free(disp);
+    g_greeter_mode = 0;
     pu_app_paths_free(&paths);
     return rc;
 }
@@ -1312,11 +1372,18 @@ int main(int argc, char **argv)
     int desktop_mode = 0;
     int input_method_mode = 0;
     int lock_mode = 0;
+    int greeter_mode = 0;
     int index = 1;
     while (index < argc) {
         if (!strcmp(argv[index], "--app-id")) {
             if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
             app_id = argv[index + 1]; index += 2;
+        } else if (!strcmp(argv[index], "--greeter")) {
+#if defined(PU_GREETER)
+            greeter_mode = 1; index++;
+#else
+            fprintf(stderr, "Graphical greeter APIs are unavailable in this build\n"); return 2;
+#endif
         } else if (!strcmp(argv[index], "--session-lock")) {
 #if defined(PU_SESSION_LOCK)
             lock_mode = 1; index++;
@@ -1338,25 +1405,26 @@ int main(int argc, char **argv)
         } else break;
     }
     if (index < argc && !strcmp(argv[index], "--help")) {
-        puts("Usage: pollyui [--desktop | --input-method] [--app-id ID] app.js [arguments...]\n"
+        puts("Usage: pollyui [--desktop | --input-method | --session-lock | --greeter] [--app-id ID] app.js [arguments...]\n"
              "       pollyui --test test.js\n"
              "--app-id selects a stable Linux XDG storage namespace.\n"
              "--desktop explicitly enables Linux application discovery and direct process launching.\n"
              "--input-method enables the separately authorized input-method service.\n"
-             "--session-lock enables the separately authorized lock service.");
+             "--session-lock enables the separately authorized lock service.\n"
+             "--greeter enables only the dedicated installed greeter authentication service.");
         return 0;
     }
     if (index < argc && !strcmp(argv[index], "--test")) {
-        if (app_id || desktop_mode || input_method_mode || lock_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept desktop options\n"); return 2; }
+        if (app_id || desktop_mode || input_method_mode || lock_mode || greeter_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept service options\n"); return 2; }
         rc = run_test(argv[index + 1]);
     } else if (index < argc && argv[index][0] == '-') {
         fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
     } else if (index < argc) {
-        if (desktop_mode + input_method_mode + lock_mode > 1) { fprintf(stderr, "Service modes are mutually exclusive\n"); return 2; }
-        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode, input_method_mode, lock_mode);
+        if (desktop_mode + input_method_mode + lock_mode + greeter_mode > 1) { fprintf(stderr, "Service modes are mutually exclusive\n"); return 2; }
+        rc = run_app(argv[index], app_id, argc - index - 1, argv + index + 1, desktop_mode, input_method_mode, lock_mode, greeter_mode);
     }
     else
-        if (desktop_mode || input_method_mode || lock_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
+        if (desktop_mode || input_method_mode || lock_mode || greeter_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
         else rc = run_demo();
     pu_render_shutdown();
     return rc;

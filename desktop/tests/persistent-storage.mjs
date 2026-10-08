@@ -12,7 +12,8 @@ if (mode === 'settings') {
   }
   console.log('POLLY_SETTINGS_PASS ' + count);
 } else {
-  if (application.id !== 'org.example.persistence' || typeof desktop !== 'undefined')
+  if (application.id !== 'org.example.persistence' || typeof desktop !== 'object' ||
+      !desktop.fileSystem || Object.keys(desktop).length !== 1 || Object.keys(desktop)[0] !== 'fileSystem')
     throw new Error('Managed application identity or privilege boundary changed');
   const count = Number(localStorage.getItem('launches') || '0') + 1;
   localStorage.setItem('launches', String(count));

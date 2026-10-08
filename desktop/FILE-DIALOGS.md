@@ -191,6 +191,16 @@ code neither invents file receipts nor implements content hashing.
 
 ## Focused verification and evidence boundary
 
+The installed `polly-file-text` launcher resolves the installed data root and
+starts the ordinary FS-only application without `--desktop`. Its visible Apps
+entry has no document arguments. A separate `NoDisplay=true` document entry uses
+the absolute `/usr/bin/polly-file-text --file %f` command; document discovery
+includes that hidden handler while the Apps catalog omits it. Product
+data-directory defaults cover only `text/plain` and `text/markdown`; existing
+user XDG defaults retain precedence. Installation never rewrites user MIME
+preferences. These source assets still need actual installed-launcher/native
+content-display acceptance; injected startup tests are not that proof.
+
 ```sh
 node --test desktop/tests/file-dialog.mjs
 # Narrow literal-file entry/consumer delta:

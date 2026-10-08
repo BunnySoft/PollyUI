@@ -1,0 +1,3 @@
+[Default Applications]
+text/plain=polly-file-text-open.desktop;
+text/markdown=polly-file-text-open.desktop;

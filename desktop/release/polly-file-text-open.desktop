@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=File Text
+Comment=Read one literal local text document
+Exec=/usr/bin/polly-file-text --file %f
+TryExec=/usr/bin/polly-file-text
+Terminal=false
+NoDisplay=true
+MimeType=text/plain;text/markdown;

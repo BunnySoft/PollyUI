@@ -14,6 +14,15 @@ capabilities. It does not load validation code from the package. Native code
 provides bounded filesystem/archive operations using libarchive and SHA-256.
 No Node, Python, root service or GLib/GIO loop is required by the manager.
 
+Ordinary Linux PollyUI application processes now receive only
+`desktop.fileSystem` by default, including managed PollyUI bundles. This is the
+bounded, synchronous ordinary-UID file API documented in `files/README.md`, not
+desktop management or arbitrary command execution. Explicit `--desktop` still
+installs the existing application/MIME APIs first, then merges that file API
+without replacing the application object. The dedicated `--greeter` mode gets
+neither file nor desktop management APIs. UID0/setid file operations are refused
+by the native backend before filesystem access.
+
 ## Confirmed P0 target, not the current implementation
 
 The [storage design](../docs/POLLYOS-STORAGE-DESIGN.md) now takes priority:

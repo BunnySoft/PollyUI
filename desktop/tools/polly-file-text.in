@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+data=$(CDPATH= cd -- "$bindir/@PU_DATA_FROM_BIN@" && pwd)
+cd "$data"
+exec "$bindir/pollyui" --app-id org.pollyui.file-text "$data/desktop/examples/file-dialog.mjs" "$@"

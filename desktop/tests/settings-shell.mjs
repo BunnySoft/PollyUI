@@ -120,7 +120,9 @@ async function audio(settings) {
 }
 async function run() {
   if (mode === 'survivor') {
-    check(typeof desktop === 'undefined', 'ordinary survivor has no management API');
+    check(typeof desktop === 'object' && desktop.fileSystem &&
+      Object.keys(desktop).length === 1 && Object.keys(desktop)[0] === 'fileSystem',
+    'ordinary survivor has only the public file API, not desktop management');
     render(h('view', { style: { padding: 20 } }, 'Independent ordinary application'), document.body);
     setTimeout(() => window.quit(), 65000);
     return;

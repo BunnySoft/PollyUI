@@ -14,7 +14,8 @@ def metadata(entry):
     entry.uid = entry.gid = 0
     entry.uname = entry.gname = "root"
     executable = relative.startswith("usr/bin/") or (
-        relative.startswith("usr/share/pollyui/desktop/tools/") and relative.endswith(".sh"))
+        relative.startswith("usr/share/pollyui/desktop/tools/") and relative.endswith(".sh")) or \
+        relative.endswith("/pollyui/greeter-entry")
     entry.mode = 0o755 if entry.isdir() or executable else 0o644
     return entry
 

@@ -149,6 +149,8 @@ def boot_config(identifier, kernel, initrd):
     for mode, serial in (("baseline", False), ("gpu", False), ("console", False), ("baseline", True)):
         title = "serial VM baseline" if serial else mode
         options = f"root=UUID={identifier} ro rootwait panic=0 console=tty0 polly.mode={mode}"
+        if mode == "console":
+            options += " systemd.unit=polly-console.target"
         if serial:
             options += " console=ttyS0,115200 polly.serial=1"
         entries += [f'menuentry "PollyDesktop single system - {title}" {{',
@@ -191,6 +193,7 @@ def build_inputs():
             REPO / "desktop/release/install/accounts.py", REPO / "desktop/release/install/passwd-proxy.c",
             REPO / "desktop/release/install/roles.py",
             REPO / "desktop/release/install/session", REPO / "desktop/release/install/shell.mjs",
+            *[REPO / "desktop/session" / resource[0] for resource in legacy.GREETER_RESOURCES],
             REPO / "desktop/release/maintenance/payload.py",
             REPO / "desktop/release/network/state.py",
             REPO / "desktop/release/network/iwd-state.conf"]
@@ -289,13 +292,16 @@ def build(args):
             "packages": [{"name": fields[0], "version": fields[1], "url": fields[2]}
                          for line in inventory.splitlines() if (fields := line.split("\t", 2))],
             "verificationFixture": False, "serialMenuIndex": 3,
-            "accountSetup": "local interactive polly/root passwords; no image passwords",
+            "accountSetup": "installed graphical polly/root setup and polly password login; explicit authenticated console fallback; no image passwords",
+            "graphicalLogin": {"manager": "polly-greetd", "dependency": "greetd=0.10.3-4",
+                               "defaultTarget": "graphical.target", "acceptance": "candidate; native/installed boot validation required"},
             "accountStateSchemaVersion": 3, "recoveryBootReady": False,
             "buildInputs": [{"path": str(path.relative_to(REPO)), "sha256": legacy.digest(path)}
                             for path in inputs if path.is_file()],
             "limitations": ["Ordinary boot candidate, not a physical installer",
                             "Recovery partition is reserved, NOT a bootable recovery system",
-                            "GUI login/lock/administration, multi-user migration and package maintenance pending"],
+                            "Graphical setup/login candidate needs native and installed-boot acceptance; no administration GUI",
+                            "Multi-user migration and package maintenance pending"],
         }
         manifest_path = stage / "installed-manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
