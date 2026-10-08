@@ -183,6 +183,7 @@ async function run() {
   check(settings.document.activeElement?.id === 'shell-settings-page-appearance', 'ordinary native Shift+Tab reverses navigation');
   await signal('fixture-settings-key ' + ++serial + ' 28 0');
   check(settings.document.getElementById('shell-theme-xp') && !settings.closed, 'ordinary native Enter activates current page');
+  await capture(settings, 'keyboard-activated-appearance');
   let wmClosed = false;
   const previousClose = settings.onclose;
   settings.onclose = () => { wmClosed = true; previousClose?.(); };
