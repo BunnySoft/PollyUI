@@ -42,6 +42,49 @@ native 构建仍精确 `ffc887f`（94ae/fbab），CMake 安装/RPATH 后实际 s
 native-only 源与打包 `4e6b004` 相同，runtime Power JS 确实更新为4e/hash878fc239...，
 新标准 polkit126-2 依赖/库存/许可证已真实装入合格模板。不是全包 fresh reconstruction 或再编引擎。
 
+## 已验证代码与子任务整合审计
+
+### 2026-10-09 已验证代码迁入核对
+
+用户要求迁入所有已完成验证的代码并检查子任务遗漏。主工作区 `main` 在核对前固定
+`8239b53` 且 clean。对全部 28 个 `bunnysoft-*` 任务 ref 做 patch-equivalence 审计：
+26 个无未迁入 patch，另两个不同 patch ID 已核生产代码/直接夹具，不存在已验证代码漏迁，
+因此没有重复 cherry-pick 旧提交来覆盖后续功能。
+
+- 安装只读 provider `9f9c1a5` 已组合为 `b12147f`，当前 `install-targets.c` 与源版本同
+  Git blob `c62d0b70d165d0d54f0241ac28884d56d0a8e1f2`；直接边界夹具也相同。
+  组合后的 CONTRACT 只新增了真实生命周期/打包/注册描述。
+- Luna 冷启动兼容 `1d5254a` 已组合为 `c49f409`；compatibility 模块、schema 定义、直接测试
+  与相关主题说明一致。主 Shell 保留 startup-only confirmed negative reply 条件和可见警告；
+  `windows.c` 后续差分只是已审的 v2 注销能力，没有回退或删除 appearance 验证。
+- 四批基础功能、公共关闭原语、普通注销、标准电源授权、首启排序修复和 `4e6b004` 刷新确认
+  修复均已在主分支。源验收与实际 GUI Shutdown 未资格是两件事，后者不是“代码尚未迁入”。
+
+所有 PollyUI worktree 的受跟踪未提交改动只剩原 Files 后期草稿：
+`bunnysoft-files-operations` 的 `src/desktop/files.c` +382 / `files.h` +37，共 419 行；
+未编译、未验证、未补 UI/完整 worker，保留但不迁入。主机身份权威、可信安装来源生成、
+Shell 生命周期恢复三个暂停 worktree 仍在 `0f86311` 且 clean，无新增源提交；
+不是有已验证成品在等待合并。所有相关子会话 idle，没有待答用户问题或计划审批。
+主分支未推送，不清理分支/草稿/媒体或 archive 有持久成果的会话。
+
+### Shutdown 无事件的已知执行边界
+
+实际 `4e6b004` 有界测试停在 common `ready`，未见 `committing`、accepted 或 guest
+SHUTDOWN；最终唯一 `SHUTDOWN` 是诊断 `guest=false/reason=host-qmp-quit`，不记标准关机。
+故这是**没有发送最终电源请求**，而不是系统已关机却没有捕获到事件。
+
+`power.mjs` 的 final handler 先重新读取 Power 状态：若后台只读查询仍 busy，会显示
+“No power action was sent”，保持 ready，不调用 seal/request，也不排队自动重放。
+32/41 实图已明确证明这一分支确实发生。普通用户实际 CanPowerOff/CanReboot=yes、
+login1 Root UID0 及同后端真实标准 Reboot 已核，不能用“未装授权/权限必定拒绝”解释。
+
+之后刷新提示清除的再次点击仍 ready，但现有记录没有 final-handler-entry、
+即时 busy/eligibility、按钮 focus/guard 与 seal 分支的非敏感逐步轨迹，不能确定每次
+是否又遇瞬时 busy、未交付到最终控件，或被其他提交前条件阻止。SDL mouseup/reconciler
+换当前 handler 的源码也不支持仅凭重绘就断言 generation 必然吞 click。
+目前确定止于 final submit 之前，**后续静默 NoSend 的精确根因仍未实证**；
+需要最小非敏感 handler/guard/phase/dispatch 轨迹，而不是删 pending、Root-owner 或已发不可重试 guard。
+
 ## 执行入口与工作方式
 
 - 唯一计划数据：`docs/POLLYOS-PLAN.json`。`POLLYOS-BACKLOG.md` 第 16 节是生成视图。
