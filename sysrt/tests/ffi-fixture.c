@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <errno.h>
+#include <string.h>
 #ifdef _WIN32
 #include <windows.h>
 #define EXPORT __declspec(dllexport)
@@ -67,4 +68,20 @@ EXPORT uint64_t sr_monotonic_ns(void)
     if (clock_gettime(CLOCK_MONOTONIC, &value)) return UINT64_MAX;
     return (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
 #endif
+}
+
+typedef struct SrTextRecord { uint8_t bytes[4]; char text[16]; } SrTextRecord;
+EXPORT size_t sr_text_size(void) { return sizeof(SrTextRecord); }
+EXPORT size_t sr_text_offset(void) { return offsetof(SrTextRecord, text); }
+EXPORT void sr_text_fill(SrTextRecord *record)
+{
+    const uint8_t bytes[] = {1, 2, 3, 4};
+    memcpy(record->bytes, bytes, sizeof(bytes));
+    memset(record->text, 0, sizeof(record->text));
+    memcpy(record->text, "A\xf0\x9f\x99\x82", 5);
+}
+EXPORT int32_t sr_text_check(const SrTextRecord *record)
+{
+    const uint8_t bytes[] = {9, 8, 7, 6};
+    return !memcmp(record->bytes, bytes, sizeof(bytes)) && !strcmp(record->text, "B\xe4\xb8\xad");
 }

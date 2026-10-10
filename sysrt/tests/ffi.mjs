@@ -3,6 +3,7 @@ import { currentId, close as closeProcess } from './sysrt/sdk/js/process.mjs';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
 import { createRecord } from './sysrt/sdk/js/memory.mjs';
 import { monotonicNanoseconds, close as closeClock } from './sysrt/sdk/js/clock.mjs';
+import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
 function check(value, message) { if (!value) throw new Error(message); }
 function refuses(action, message, code) {
@@ -78,6 +79,13 @@ const cases = [
   ['i8', -128, 127], ['u8', 0, 255], ['i16', -32768, 32767], ['u16', 0, 65535],
   ['i32', -2147483648, 2147483647], ['u32', 0, 4294967295],
 ];
+const unicode = 'A\u4e2d\u{1f642}';
+check(decodeUtf8(encodeUtf8(unicode)) === unicode, 'UTF-8 round-trip without browser encoders');
+refuses(() => encodeUtf8('\ud800'), 'Unpaired surrogate');
+refuses(() => encodeUtf8('\u4e2d', 2), 'UTF-8 byte bound rather than character bound');
+for (const bytes of [[0xc0, 0xaf], [0xe0, 0x80, 0x80], [0xed, 0xa0, 0x80],
+  [0xf4, 0x90, 0x80, 0x80], [0xe4, 0xb8], [0x80], [0xc2, 0x41]])
+  refuses(() => decodeUtf8(new Uint8Array(bytes)), 'Invalid UTF-8 is not silently replaced');
 for (const [type, minimum, maximum] of cases) {
   const function_ = bind('sr_echo_' + type, type, [type]);
   check(function_(minimum).value === minimum && function_(maximum).value === maximum, type + ' ABI boundary');
@@ -150,6 +158,38 @@ for (const layout of [
   { byteLength: 8, fields: { a: { type: 'pointer', offset: 0 } } },
   { byteLength: 4, fields: { a: { type: 'i32', offset: 0, automatic: true } } },
 ]) refuses(() => createRecord(layout), 'Invalid or unsupported layout');
+
+const textOffset = Number(bind('sr_text_offset', 'size', [])().value);
+const textRecord = createRecord({
+  byteLength: Number(bind('sr_text_size', 'size', [])().value),
+  fields: {
+    bytes: { type: 'bytes', offset: 0, byteLength: 4 },
+    text: { type: 'cstring', offset: textOffset, byteLength: 16 },
+  },
+});
+bind('sr_text_fill', 'void', ['pointer'])(textRecord.pointer);
+let textSnapshot = textRecord.read();
+check(textSnapshot.text === 'A\u{1f642}' && textSnapshot.bytes[3] === 4,
+  'Native fixed arrays and C strings decode through config');
+textSnapshot.bytes[0] = 99;
+check(textRecord.read().bytes[0] === 1, 'Byte snapshot does not alias native memory');
+refuses(() => textRecord.write({ bytes: new Uint8Array([9, 8, 7, 6]), text: 'x'.repeat(16) }),
+  'Unterminated field overflow');
+check(textRecord.read().bytes[0] === 1, 'Rejected string write does not partially update bytes');
+refuses(() => textRecord.write({ bytes: new Uint8Array(3) }), 'Wrong fixed array size');
+refuses(() => textRecord.write({ text: 'x\0y' }), 'CString embedded NUL');
+textRecord.write({ bytes: new Uint8Array([9, 8, 7, 6]), text: 'B\u4e2d' });
+check(bind('sr_text_check', 'i32', ['pointer'])(textRecord.pointer).value === 1,
+  'Native code reads JS/config byte and string fields');
+textRecord.pointer.write(new Uint8Array(16).fill(65).buffer, textOffset);
+refuses(() => textRecord.read(), 'Missing native CString terminator');
+textRecord.pointer.write(new Uint8Array([0xc0, 0xaf, 0]).buffer, textOffset);
+refuses(() => textRecord.read(), 'Invalid native UTF-8 CString');
+textRecord.close();
+refuses(() => createRecord({ byteLength: 4, fields: { value: { type: 'bytes', offset: 0 } } }),
+  'Missing byte field length');
+refuses(() => createRecord({ byteLength: 4, fields: { value: { type: 'u32', offset: 0, byteLength: 4 } } }),
+  'Numeric field must not silently ignore byteLength');
 
 const buffer = alloc(8);
 refuses(() => Object.getPrototypeOf(buffer).read.call(foreignObject, 1),

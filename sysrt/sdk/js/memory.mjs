@@ -1,4 +1,5 @@
 import { alloc, maxBytes, pointerSize, longSize } from 'sysrt:ffi';
+import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
 const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 const integers = {
@@ -71,9 +72,42 @@ export function compileLayout(description) {
   const entries = Object.entries(description.fields);
   if (!entries.length || entries.length > 256) throw new RangeError('Record fields must be bounded');
   const fields = entries.map(([name, field]) => {
-    object(field, ['type', 'offset'], 'record field');
+    object(field, ['type', 'offset', 'byteLength'], 'record field');
     if (typeof field.type !== 'string') throw new TypeError('Record field requires an explicit type');
-    const type = scalar(field.type);
+    let type;
+    if (field.type === 'bytes' || field.type === 'cstring') {
+      const length = field.byteLength;
+      if (!Number.isInteger(length) || length < 1 || length > size)
+        throw new RangeError('Array/string field requires a bounded byteLength');
+      const string = field.type === 'cstring';
+      type = {
+        size: length,
+        read(view, offset) {
+          const bytes = new Uint8Array(view.buffer, offset, length);
+          if (!string) return bytes.slice();
+          const end = bytes.indexOf(0);
+          if (end < 0) throw new RangeError('No C string terminator inside field: ' + name);
+          return decodeUtf8(bytes.subarray(0, end));
+        },
+        write(view, offset, value) {
+          let bytes;
+          if (string) {
+            if (typeof value !== 'string' || value.includes('\0'))
+              throw new TypeError('CString fields require strings without NUL');
+            bytes = encodeUtf8(value, length - 1);
+          } else {
+            if (!(value instanceof Uint8Array) || value.length !== length)
+              throw new TypeError('Byte fields require an exact-length Uint8Array');
+            bytes = value;
+          }
+          const destination = new Uint8Array(view.buffer, offset, length);
+          destination.fill(0); destination.set(bytes);
+        },
+      };
+    } else {
+      if (field.byteLength !== undefined) throw new TypeError('byteLength is only valid for array/string fields');
+      type = scalar(field.type);
+    }
     if (!Number.isInteger(field.offset) || field.offset < 0 || field.offset > size - type.size)
       throw new RangeError('Record field exceeds its allocation: ' + name);
     return { name, offset: field.offset, ...type };
@@ -95,7 +129,8 @@ export function compileLayout(description) {
           live();
           const view = new DataView(pointer.read(size)), result = Object.create(null);
           for (const field of fields)
-            result[field.name] = view['get' + field.suffix](field.offset, littleEndian);
+            result[field.name] = field.read ? field.read(view, field.offset) :
+              view['get' + field.suffix](field.offset, littleEndian);
           return Object.freeze(result);
         },
         write(values) {
@@ -105,8 +140,10 @@ export function compileLayout(description) {
             throw new TypeError('Unknown or invalid record values');
           const bytes = pointer.read(size), view = new DataView(bytes);
           for (const field of fields)
-            if (Object.hasOwn(values, field.name))
-              view['set' + field.suffix](field.offset, field.validate(values[field.name]), littleEndian);
+            if (Object.hasOwn(values, field.name)) {
+              if (field.write) field.write(view, field.offset, values[field.name]);
+              else view['set' + field.suffix](field.offset, field.validate(values[field.name]), littleEndian);
+            }
           pointer.write(bytes);
         },
         close() {
