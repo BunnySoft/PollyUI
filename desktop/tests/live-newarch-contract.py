@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import sys
 import unittest
+import subprocess
 
 sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("guest", Path(__file__).with_name("live-newarch-guest.py"))
@@ -17,6 +18,22 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_guest_user_theme_matches_the_real_production_file_schema(self):
+        repo = Path(__file__).resolve().parents[2]
+        catalog = json.loads((repo / "desktop/resources/themes/builtin.json").read_text())
+        document = guest.user_theme_document(catalog)
+        self.assertEqual(catalog["themes"][0]["id"], "xp")
+        script = ("import fs from 'node:fs'; import {pathToFileURL} from 'node:url';"
+                  "const {parseThemeFile}=await import(pathToFileURL(process.argv[1]));"
+                  "console.log(parseThemeFile(fs.readFileSync(0,'utf8')).id);")
+        for value, valid in ((document, True), (document["theme"], False)):
+            result = subprocess.run(["node", "--input-type=module", "-e", script,
+                                     str(repo / "desktop/shell/theme-schema.mjs")],
+                                    input=json.dumps(value), text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode == 0, valid)
+            if valid:
+                self.assertEqual(result.stdout.strip(), "alpha-vm")
+
     def test_explicit_runtime_revision_rejects_stale_or_dirty_media(self):
         origin = {"runtimeSourceRevision": "c" * 40, "runtimeSourceDirty": False}
         guest.check_runtime_origin(origin, "c" * 40)

@@ -39,6 +39,12 @@ def check_runtime_origin(origin, expected):
           "Guest did not boot the explicitly selected frozen runtime")
 
 
+def user_theme_document(catalog):
+    theme = dict(next(item for item in catalog["themes"] if item["id"] == "xp"))
+    theme.update(id="alpha-vm", name="Alpha VM user theme")
+    return {"schemaVersion": 1, "theme": theme}
+
+
 def shell_environment():
     processes = process_arguments()
     shells = [pid for pid, args in processes.items() if live_shell(args)]
@@ -153,8 +159,7 @@ def main():
         check_runtime_origin(origin, sys.argv[2])
         file, value = configuration()
         catalog = json.loads(Path("/usr/share/pollyui/desktop/resources/themes/builtin.json").read_text())
-        theme = next(item for item in catalog["themes"] if item["id"] == "xp")
-        theme.update(id="alpha-vm", name="Alpha VM user theme")
+        theme = user_theme_document(catalog)
         themes = Path(env.get("XDG_DATA_HOME", str(Path.home() / ".local/share"))) / "pollyui/themes/alpha-vm"
         themes.mkdir(mode=0o700, parents=True)
         (themes / "theme.json").write_text(json.dumps(theme))
