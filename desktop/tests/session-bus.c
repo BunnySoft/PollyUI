@@ -1,4 +1,4 @@
-#include "desktop/session-bus.h"
+#include "native/session-bus.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>

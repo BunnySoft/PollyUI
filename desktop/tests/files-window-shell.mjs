@@ -1,4 +1,4 @@
-import { requireFileSystem } from './desktop/files/model.mjs';
+import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 
 const [mode, runtime, ownScript] = application.arguments;
 if (mode !== 'initial' || typeof runtime !== 'string' || !runtime.startsWith('/') ||

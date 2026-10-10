@@ -26,6 +26,18 @@ PollyUI is built from five cooperating engines (host & engines in **C11**):
 The full design — layering, the JS↔native bridge, lifetimes, threading, and the
 build plan — lives in **[DESIGN.md](./DESIGN.md)**. Read that first.
 
+The [product boundaries and discussion conclusions](./DESIGN.md#11-product-and-module-boundaries)
+keep the cross-platform `pollyui-engine` separate from optional Linux desktop
+integration. `gui/` contains the library, public headers and `sdk/js/`;
+`sysrt/` contains system capabilities, and `desktop/launcher` assembles the
+formal application runtime. **PollySystemRT** remains incomplete; the existing
+filesystem provider is separated, while some compatibility adapters still mix
+native execution and JS bindings. Settings remains Shell-owned.
+
+`pollyui` retains the existing application command. The separate
+`pollyui-playground` example links only the GUI library (Windows output:
+`build/win-clang/gui/pollyui-playground.exe`), without system-service APIs.
+
 ## PollyOS Linux desktop
 
 PollyOS combines a minimal Linux base with our own wlroots-based **PollyWM**
@@ -66,8 +78,8 @@ ANGLE/D3D11; macOS via SDL3 + Skia **Metal**). Implemented:
 - **Tooling** — a deterministic **headless test harness** (`--test`), a
   no-console release build, an in-process crash handler.
 
-Demo: `js/gallery.mjs` — every Naive UI-style component on one scrollable page.
-Concurrency example: `js/threads.js`. Multi-platform plan (SDL3 + embedded
+Demo: `gui/examples/playground/gallery.mjs` — every Naive UI-style component on one scrollable page.
+Concurrency example: `gui/examples/playground/threads.js`. Multi-platform plan (SDL3 + embedded
 Linux) in **[docs/PORTING.md](./docs/PORTING.md)**; full feature matrix in
 **[ROADMAP.md](./ROADMAP.md)** (architecture in [DESIGN.md](./DESIGN.md)).
 
@@ -85,10 +97,10 @@ The Windows driver discovers the latest installed C++ toolchain through
 ./tools/build.ps1 -Run     # build then open the built-in demo window
 
 # the component gallery (interactive: buttons, toggles, tabs, ...)
-./build/win-clang/pollyui.exe js/gallery.mjs
+./build/win-clang/pollyui.exe gui/examples/playground/gallery.mjs
 
 # headless test: no window, no OS input — deterministic (host.click/pixel/save)
-./build/win-clang/pollyui.exe --test tests/smoke.js
+./build/win-clang/pollyui.exe --test gui/tests/smoke.js
 ```
 
 Rendering is **GPU-accelerated** via Skia Ganesh → **ANGLE** (GLES → D3D11) — the
@@ -111,8 +123,8 @@ the script above.
 The macOS backend is **working** (verified on Apple Silicon): an SDL3 host plus a
 Skia **Metal** GPU surface, with a native title bar and clean live resize. The
 shared engine (JS, DOM, Yoga, Skia draw calls) is identical to Windows; only the
-host (`src/host/sdl/window_sdl.c`) and the Metal surface
-(`src/render/skia_metal.mm`) are macOS-specific. Two build modes:
+host (`gui/src/host/sdl/window_sdl.c`) and the Metal surface
+(`gui/src/render/skia_metal.mm`) are macOS-specific. Two build modes:
 
 - **CPU raster** (default) — works with the fetched prebuilt Skia, no GPU.
 - **GPU Metal** (`--metal`) — real GPU acceleration; needs a Metal-enabled Skia
@@ -129,8 +141,8 @@ chmod +x tools/build.sh tools/fetch_skia.sh
 ./tools/build.sh                # add --clean to wipe, --run to launch after
 
 # run
-./build/mac-sdl/pollyui js/gallery.mjs          # interactive demo
-./build/mac-sdl/pollyui --test tests/smoke.js   # headless test
+./build/mac-sdl/pollyui gui/examples/playground/gallery.mjs          # interactive demo
+./build/mac-sdl/pollyui --test gui/tests/smoke.js   # headless test
 ```
 
 `tools/build.sh` auto-fetches the matching prebuilt Skia, then configures +
@@ -917,7 +929,7 @@ switching, automatic reordering or speculative settings for these are included.
 
 ### Input event contract
 
-Native host callbacks now take the structs in `src/host/input.h` rather than
+Native host callbacks now take the structs in `gui/include/pollyui/input.h` rather than
 positional key/pointer arguments. Both Win32 and SDL hosts use the same contract:
 `keydown`/`keyup` carry `key`, `code`, `repeat` and modifier booleans;
 `textinput` carries committed UTF-8 as `event.data`. Unknown physical codes are
@@ -944,7 +956,7 @@ font's normal missing-glyph behavior.
 fontSize = 16, weight = 400)` returns a single-line `{width, clusters}` snapshot;
 each cluster has `{start, end, x, width, rtl}`. Its indices are UTF-16, including
 correct indexing for lone surrogates; coordinates are logical pixels.
-`js/textgeometry.mjs` uses these snapshots for caret placement, nearest-boundary
+`gui/sdk/js/textgeometry.mjs` uses these snapshots for caret placement, nearest-boundary
 hit testing and potentially disjoint bidi selection rectangles.
 Logical arrow navigation follows grapheme order; visual bidi caret affinity and
 explicit paragraph direction/locale settings are not implemented.
@@ -1011,7 +1023,7 @@ string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
 `host.compose(text, selectionStart, selectionLength)` submits preedit in tests.
 Top-level `.mjs` exceptions and rejected or unfinished top-level `await`
 evaluations now fail with a nonzero exit status rather than ending silently.
-`tests/input-events.mjs`, `tests/pointer-events.mjs` and the Linux SDL adapter
+`gui/tests/input-events.mjs`, `gui/tests/pointer-events.mjs` and the Linux SDL adapter
 test cover these contracts; the latter queues synthetic SDL events and is not
 physical-device or locale-layout qualification.
 

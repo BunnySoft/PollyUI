@@ -29,6 +29,41 @@ the implemented-vs-planned feature list.
 - No accessibility tree or animation timeline at MVP (planned,
   see §10).
 
+### 1.1 Product and module boundaries
+
+Discussion conclusions (2026-10-10):
+
+- PollyUI remains an independent cross-platform, native self-rendered GUI.
+  PollyOS uses it; GUI code must not depend on Linux desktop policy.
+- PollySystemRT is the optional system-capability runtime, not the QuickJS
+  ScriptEngine. Borrow stable component boundaries from COM, not its naming,
+  base-object model or remote reference counting. Use typed contracts with
+  explicit resources, tasks, events and failure semantics.
+- Separate presentation, application logic and OS implementations regardless
+  of whether calls are in-process or IPC. Logic must work without a GUI;
+  deployment adapters are selected at the composition root.
+- Isolate applications by process, UI VM and event loop. Windows of the same
+  application may share its realm. Settings must eventually be independent
+  from Shell without inheriting its private desktop connection.
+- Keep PollyWM independent. Desktop authority, display recovery and dedicated
+  input/lock roles must not move into ordinary application UI.
+- FFI is local; RPC reuses suitable IPC; discovery is not authorization.
+  REST/OpenAPI is an explicit external subset, not a mandatory desktop stack.
+- Aim for basic configuration, management and everyday GUI applications,
+  not full Windows feature coverage. Prefer sound boundaries over breadth.
+- Organize by product: `gui/` delivers a library, public headers and `sdk/js/`;
+  `sysrt/` and `desktop/` stay separate. GUI context does not own the application.
+  `desktop/launcher` assembles the formal runtime; `examples/playground` is a
+  GUI-only example, not the desktop application host.
+
+Migration: native GUI/SDK/examples/tests now live in `gui`, system capabilities
+in `sysrt`, and execution primitives in `shared`. The GUI library exposes
+context hooks; Linux service assembly stays in `desktop/launcher`. Existing
+Files and installer modules distinguish UI, logic and tests. Legacy mixed
+integration remains in `desktop/native`.
+The complete runtime and logic/UI extraction remain unfinished. Record stable
+decisions here, not detailed file inventories or speculative implementations.
+
 ---
 
 ## 2. The five engines (and how they fit)
@@ -87,7 +122,7 @@ event loop, and translate native input into framework events. It is also where
 "app lifecycle" lives (start, vsync tick, resize, close).
 
 It is **not** a separate "bridge". The bridge (Script↔Model) is portable C and
-lives in `src/bridge`. Mixing "host" and "bridge" is a common confusion — we
+lives in `gui/src/bridge`. Mixing "host" and "bridge" is a common confusion — we
 keep them separate: Host = *platform*, Bridge = *language boundary*.
 
 ### Language: **C (C11)** — chosen. Reasoning vs the alternatives.
@@ -105,7 +140,7 @@ task) — a permanent maintenance tax — despite minimizing glue.
   stable for a decade and doesn't move under us. QuickJS and Skia are
   themselves proof that C-style code reaches top-tier performance.
 - **The cost — Skia:** Skia has no first-class C API, so we write **one thin
-  `extern "C"` C++ shim** (`src/render/skia_c.cpp`) exposing just the draw calls
+  `extern "C"` C++ shim** (`gui/src/render/skia_c.cpp`) exposing just the draw calls
   we need. It is the *only* `.cpp` in the tree; everything else (host, model,
   bridge, layout, script) is plain C. The maintained C++ surface is near zero.
   (Alternative: the third-party `sk4d` C API → no C++ at all, at the cost of
@@ -258,7 +293,7 @@ a shared multithreaded DOM:
   state ⇒ no locks around the tree, race-free by construction.
 - **Native async tasks** (`computeAsync`) — background C work on a thread, the
   completion callback **marshaled back to the UI thread**.
-- A UI-thread **dispatcher** (`src/core/dispatch`) is the marshal-to-UI
+- A UI-thread **dispatcher** (`shared/dispatch`) is the marshal-to-UI
   mechanism (cf. WinForms `Control.BeginInvoke` / WPF `Dispatcher`); an
   outstanding-async refcount keeps the event loop alive while work is in flight
   (cf. libuv handle refs). Worker threads wake the window via a posted message.
@@ -276,7 +311,7 @@ parallelism without the bridge's costs.
 |---|---|---|
 | **QuickJS-ng** | JS engine | **Vendored** in `third_party/quickjs` (v0.15.1, `add_subdirectory` builds the `qjs` lib). Maintained fork of Bellard's QuickJS. |
 | **Yoga** | Flexbox | **Vendored** (trimmed) in `third_party/yoga` (v3.2.1, `yogacore`). Used via its **first-class C API** (`YGNode*`). |
-| **Skia** | 2D GPU renderer | **Prebuilt** (aseprite/skia m124) via `tools/fetch_skia.ps1` (gitignored). Driven through **our `extern "C"` shim** (`src/render/skia_c.cpp`) compiled against Skia's headers — see §3. |
+| **Skia** | 2D GPU renderer | **Prebuilt** (aseprite/skia m124) via `tools/fetch_skia.ps1` (gitignored). Driven through **our `extern "C"` shim** (`gui/src/render/skia_c.cpp`) compiled against Skia's headers — see §3. |
 | **ANGLE** | GLES → D3D11 | `libEGL`/`libGLESv2`/`d3dcompiler_47` (x64), **dynamically loaded** at runtime — no import lib. Staged next to the exe by `tools/fetch_angle.ps1` (from an installed Chrome/Edge). |
 | **Platform** | window/GPU | Win32 + ANGLE (Windows, done); Cocoa + Metal/ANGLE (macOS) and X11/Wayland + GL/ANGLE (Linux) — planned (§10). |
 
@@ -290,25 +325,14 @@ shim). Skia is the only heavyweight dependency.
 ## 9. Repo layout
 
 ```
-pollyui/
-├─ CMakeLists.txt          # top-level build
-├─ CMakePresets.json       # win-clang, win-clang-windowed (no-console)
-├─ DESIGN.md               # this file
-├─ README.md
-├─ tools/                  # build.ps1, fetch_skia.ps1, fetch_angle.ps1
-├─ third_party/            # quickjs + yoga (vendored); skia (fetched, gitignored)
-├─ src/
-│  ├─ core/                # thread (mutex/cond/thread), dispatch (UI marshal queue)
-│  ├─ host/win32/          # HostEngine: window, DPI, input, frame pump (mac/linux: planned)
-│  ├─ render/              # skia_c.cpp shim (C++: Skia + ANGLE/EGL) + render.c (paint walk)
-│  ├─ layout/              # Yoga integration (C API), style→Yoga mapping
-│  ├─ model/               # node.c (tagged-union tree, lifetimes, hit-test, listeners)
-│  ├─ script/              # QuickJS VM: console, timers, event loop + pump
-│  ├─ bridge/              # Node JSClass, wrapper cache, document, events, focus, measureText
-│  ├─ concurrency/         # async.c — Worker + computeAsync
-│  └─ main.c               # wires it together; --test harness; crash handler
-├─ js/                     # demos: components, counter, textfield, threads, m0..m5
-└─ tests/                  # headless tests: smoke, keyboard, workers, caret
+repository/
+├─ gui/                    # native library, public headers, JS SDK, playground and GUI tests
+├─ sysrt/                  # system capabilities and language projections
+├─ desktop/                # launcher, compositor, Shell, applications and Linux deployment
+├─ shared/                 # small execution primitives
+├─ tests/                  # cross-product boundary checks
+├─ tools/                  # repository build/maintenance
+└─ third_party/            # external dependencies
 ```
 
 ---
@@ -316,8 +340,8 @@ pollyui/
 ## 10. Status — implemented vs planned
 
 The Windows-first vertical slice is **complete and working**. Features are
-committed with runnable demos (`js/*.js`) and deterministic headless tests
-(`tests/*.js`, run via `pollyui --test`) — **101 assertions** at present.
+committed with runnable demos (`gui/examples/playground`) and deterministic
+headless tests (`gui/tests`, run via `pollyui --test`) — **101 assertions** at present.
 
 The full, row-by-row matrix lives in **[ROADMAP.md](./ROADMAP.md)**; this is the
 narrative summary.
@@ -360,7 +384,7 @@ always use raster).
 **`localStorage`** (file-backed, survives restarts), and **`fetch`** (Promise;
 http/https via WinHTTP on a thread, plus `file://`; `Response.text()`/`json()`).
 
-**JS framework layer** (in `js/`, on the DOM API) — a **React-style reconciler**
+**JS framework layer** (in `gui/sdk/js/`, on the DOM API) — a **React-style reconciler**
 (`reconciler.mjs`: `h`/`render`/`mount`, diffing), a **Vue-style reactivity +
 Composition API** (`vue.mjs`: `ref`/`reactive`/`computed`/`watch`,
 `createApp`/`setup`) layered on it, a **Naive UI-style component library**

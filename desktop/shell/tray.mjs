@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { isLuna } from './desktop/shell/luna-primitives.mjs';
 
 export function trayView(theme, items, activate, scroll) {

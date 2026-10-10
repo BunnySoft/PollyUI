@@ -1,8 +1,8 @@
-import { h, render } from './js/reconciler.mjs';
-import { createTextInput } from './js/textinput.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { utf8Bytes } from './desktop/shell/documents.mjs';
 import { requireFileSystem, fileEntry, fileError, parentPath, pathValue,
-  textObservation } from './desktop/files/model.mjs';
+  textObservation } from './desktop/apps/files/logic/model.mjs';
 import { showFileDialog } from './desktop/client/file-dialog.mjs';
 
 export function parseFileTextArguments(values) {

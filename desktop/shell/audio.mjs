@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';

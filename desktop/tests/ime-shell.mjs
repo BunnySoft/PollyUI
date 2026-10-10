@@ -1,4 +1,4 @@
-import { createTextInput } from './js/textinput.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { CANDIDATE_LAYOUT } from './desktop/input-method/view.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

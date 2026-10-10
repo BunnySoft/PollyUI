@@ -18,7 +18,7 @@ export XDG_DATA_HOME="$temporary/data" XDG_CACHE_HOME="$temporary/cache"
 export SDL_RENDER_DRIVER=software PU_RENDERER=raster
 if ! sh "$repo/desktop/tools/run-session.sh" --headless --health-check "$1" "$2" \
         "$repo/desktop/tests/install-readonly-window-supervisor.mjs" \
-        "$3" "$repo/desktop/installer/native-fixture-main.mjs" > "$evidence/window.log" 2>&1; then
+        "$3" "$repo/desktop/apps/installer/tests/native-fixture-main.mjs" > "$evidence/window.log" 2>&1; then
     cat "$evidence/window.log"
     exit 1
 fi

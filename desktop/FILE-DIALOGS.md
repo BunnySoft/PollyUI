@@ -2,7 +2,7 @@
 
 `desktop/client/file-dialog.mjs` provides an in-parent PollyUI modal, using the
 single shared `desktop.fileSystem` ordinary-user backend and
-`desktop/files/model.mjs`. It does not implement filesystem access, use a Shell
+`desktop/apps/files/logic/model.mjs`. It does not implement filesystem access, use a Shell
 surface, launch files, or provide a third-party Portal. A missing/old native API
 produces a visible error with Cancel available; it never returns a demo path.
 
@@ -51,7 +51,7 @@ For another ordinary PollyUI application:
 
 ```js
 import { showFileDialog } from './desktop/client/file-dialog.mjs';
-import { requireFileSystem } from './desktop/files/model.mjs';
+import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 
 const files = requireFileSystem(desktop);
 const picker = showFileDialog({
@@ -279,7 +279,7 @@ precise same-metadata alias proof; injected UI observations establish only the
 receipt-comparison/reconsent behavior, not OS-level detection.
 
 Parent integration must register the focused Node selector/native fixture,
-package the client modules plus the single owner's `desktop/files/model.mjs`
+package the client modules plus the single owner's `desktop/apps/files/logic/model.mjs`
 and backend, and choose an application entry for the example. Those central
 build/package/Shell files are deliberately not changed by this workstream.
 Native acceptance remains pending until that exact combined source is rebuilt

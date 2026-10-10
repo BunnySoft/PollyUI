@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "files.h"
+#include "sysrt/providers/linux/files.h"
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -48,12 +48,25 @@ int main(int argc, char **argv)
         CHECK(geteuid() == 0);
         PuFileEntry entry;
         CHECK(pu_files_stat("/", false, &entry) == -1 && errno == EPERM);
+        PuFileLocations locations;
+        CHECK(pu_files_locations(&locations) == -1 && errno == EPERM);
         printf("PASS: UID0 file operations refused before filesystem access\n");
         return 0;
     }
     CHECK(getuid() == 1000 && geteuid() == 1000);
     char root[] = "/tmp/polly-files-core-XXXXXX";
     CHECK(mkdtemp(root) != NULL);
+    CHECK(!setenv("HOME", root, 1));
+    PuFileLocations locations;
+    CHECK(!pu_files_locations(&locations));
+    CHECK(!strcmp(locations.home, root));
+    char expected[PU_FILES_PATH];
+    path(expected, root, "Documents"); CHECK(!strcmp(locations.documents, expected));
+    path(expected, root, "Downloads"); CHECK(!strcmp(locations.downloads, expected));
+    path(expected, root, "Desktop"); CHECK(!strcmp(locations.desktop, expected));
+    CHECK(!setenv("HOME", "relative-home", 1));
+    CHECK(pu_files_locations(&locations) == -1 && errno == EINVAL);
+    CHECK(!setenv("HOME", root, 1));
     PuFileDirectory snapshot;
     CHECK(!pu_files_list(root, NULL, &snapshot));
     CHECK(snapshot.complete && snapshot.count == 0);

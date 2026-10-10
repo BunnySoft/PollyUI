@@ -1,4 +1,4 @@
-import { createTextInput } from './js/textinput.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createGreeterController } from './desktop/session/greeter-controller.mjs';
 
 window.close();

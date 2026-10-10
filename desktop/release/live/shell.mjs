@@ -1,5 +1,5 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
-import { createTextInput } from './js/textinput.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 
 const shell = createDesktopShell().start();
 const onWorkspacesChanged = desktop.onWorkspacesChanged;

@@ -48,18 +48,18 @@ platform-specific code; the surface-creation seam is already abstracted.
 
 | Feature | Status | Notes |
 |---|---|---|
-| HostEngine — Win32 window, event loop, resize | ✅ | `src/host/win32`; smooth live-resize (double-pump + authoritative size) |
+| HostEngine — Win32 window, event loop, resize | ✅ | `gui/src/host/win32`; smooth live-resize (double-pump + authoritative size) |
 | **Frameless window / custom title bar** | ✅ | `WM_NCCALCSIZE`+`WM_NCHITTEST`; keeps resize/snap; `appRegion:drag` |
 | **JS `window` controls** (minimize/maximize/close/setFrameless/setBackdrop) | ✅ | global `window` object in the windowed app |
 | **Mica / Acrylic backdrop** (Win11 DWM) | 🟡 | `DwmSetWindowAttribute` set; visible Mica needs a transparent surface |
 | Per-monitor **DPI awareness** (logical px → physical) | ✅ | `WM_DPICHANGED`, scale in render + hit-test |
 | **Surface seam abstraction** (`create_gpu`/`create_metal`) | ✅ | opaque native handle; ready for SDL3/macOS/Linux |
 | ScriptEngine — QuickJS-ng VM | ✅ | runs `.js`/`.mjs`, error reporting |
-| Model — retained DOM tree, refcounted lifetimes | ✅ | `src/model/node.c` |
+| Model — retained DOM tree, refcounted lifetimes | ✅ | `gui/src/model/node.c` |
 | Bridge — JS ⇄ native, wrapper cache + GC finalizers | ✅ | verified by refcounts |
-| LayoutEngine — Yoga Flexbox | ✅ | `src/layout` |
+| LayoutEngine — Yoga Flexbox | ✅ | `gui/src/layout` |
 | RenderEngine — Skia | ✅ | full paint set below |
-| Event loop — pump + run-loop, async-aware | ✅ | `src/script` |
+| Event loop — pump + run-loop, async-aware | ✅ | `gui/src/script` |
 
 ## Rendering backend
 
@@ -101,8 +101,8 @@ platform-specific code; the surface-creation seam is already abstracted.
 | **Multi-line text** (embedded `\n`) | ✅ | measure + draw per line |
 | **Word-wrap to a width** | ✅ | greedy word wrap; measure + paint agree |
 | **`text-align`** (left/center/right) | ✅ | per-line within the box |
-| **Blinking, movable caret** (text field) | ✅ | `js/textfield.js`, `tests/caret.js` |
-| **Text selection + click-to-position caret** | ✅ | `js/textinput.mjs` (drag-select, edit) |
+| **Blinking, movable caret** (text field) | ✅ | `gui/sdk/js/textfield.js`, `gui/tests/caret.js` |
+| **Text selection + click-to-position caret** | ✅ | `gui/sdk/js/textinput.mjs` (drag-select, edit) |
 | IME (CJK / emoji composition) | 🛠 | |
 | **Font families** (`fontFamily`) | 🟡 | monospace→Consolas, serif→Georgia; arbitrary loaded faces pending |
 | **Gradient-filled text** (`textGradientFrom/To`) | ✅ | |
@@ -172,7 +172,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 |---|---|---|
 | `Worker` (separate JS context per thread, postMessage/onmessage) | ✅ | JSON messages |
 | `computeAsync(n, cb)` — native bg work → UI callback | ✅ | |
-| UI-thread **dispatcher** (BeginInvoke-style marshal) | ✅ | `src/core/dispatch` |
+| UI-thread **dispatcher** (BeginInvoke-style marshal) | ✅ | `shared/dispatch` |
 | Worker transferables / SharedArrayBuffer, nested workers | 🛠 | |
 | Thread pool + native async **I/O** (file/network) | 🛠 | one-thread-per-task now |
 | JS (main DOM) on its own thread | ⏸ | superseded by JSI + Workers |
@@ -183,7 +183,7 @@ platform-specific code; the surface-creation seam is already abstracted.
 |---|---|---|
 | Imperative `el.style.x = y` | ✅ | |
 | Inheritance (fontSize/color/weight/style) | ✅ | text inherits from parent |
-| **CSS-ish stylesheets + selectors** (`js/css.mjs`) | ✅ | tag/.class/#id/*, descendant, specificity |
+| **CSS-ish stylesheets + selectors** (`gui/sdk/js/css.mjs`) | ✅ | tag/.class/#id/*, descendant, specificity |
 | **Engine-level `:hover` / `:focus`** (`hoverStyle`/`focusStyle`) | ✅ | `PU_STATE_*` flags; per-property override; repaint-only (no relayout) |
 | **Light & dark themes** (`useTheme`) | ✅ | runtime theme switch |
 | Desktop theme configuration | ✅ | Versioned JSON, bounded local bitmaps, user overrides, explicit reload/restore, runtime decoration snapshots and opt-in app subscriptions. See `desktop/THEMES.md`. Existing layout parameters are configurable; arbitrary templates, automatic file watching and new compositor effects remain separate work. |
@@ -195,25 +195,25 @@ platform-specific code; the surface-creation seam is already abstracted.
 | Feature | Status | Notes |
 |---|---|---|
 | `requestAnimationFrame` driving | ✅ | per-frame, ms timestamp |
-| **Tween + easing library** (`js/anim.mjs`) | ✅ | `animate()`, 8 easings, delay, promise |
+| **Tween + easing library** (`gui/sdk/js/anim.mjs`) | ✅ | `animate()`, 8 easings, delay, promise |
 | **Declarative transitions** (`transition` prop) | ✅ | reconciler tweens changed numbers/px/hex-colors; per-prop filter; re-target cancels in-flight |
-| **`<Transition>` enter/leave** (`js/transition.mjs`) | ✅ | onMount/onLeave reconciler hooks; leave defers DOM detach until tween ends |
+| **`<Transition>` enter/leave** (`gui/sdk/js/transition.mjs`) | ✅ | onMount/onLeave reconciler hooks; leave defers DOM detach until tween ends |
 
 ## Higher-level
 
 | Feature | Status | Notes |
 |---|---|---|
-| **Vue-style reactivity + Composition API** (`js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
-| **React-style reconciler** (virtual DOM, `js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
-| **Vue SFC compiler** (`js/sfc.mjs`) | ✅ | `<template>/<script>/<style>` → component; v-if/v-for/:bind/@event, interpolation, ref auto-unwrap, **slots**, stateless tag form + attribute fallthrough |
-| **Custom element tags** (`defineTag`, `js/pollyui.mjs`) | ✅ | author by name: `h('button',…)` / `h('fluent-card',…)`; auto-registers all `N*` as kebab tags |
-| **Fluent / WinUI control pack** (`js/fluent.mjs`) | ✅ | 8 SFC controls: card/button/infobar/toggle/hyperlink/badge/progressbar/expander |
-| **WinUI 3 Gallery demo** (`js/winui.mjs`) | ✅ | frameless + Mica, NavigationView, 5 populated pages (Home/Basic input/Collections/Dialogs/Styles); Naive theme retinted Fluent so all 85 components look native |
-| **MS Store / Fluent demo** (`js/msstore.mjs`) | ✅ | responsive card grid, auto-advancing hero, custom draggable title bar |
-| **Naive UI-style component library** (`js/naive.mjs`) | ✅ | **~86 components** — full Naive UI parity (+ NForm/createForm validation, NTable, dialog API): inputs (Input/Number/Select/Cascader/TreeSelect/AutoComplete/Mention/DatePicker/TimePicker/ColorPicker/Slider/Switch/Checkbox/Radio/Rate/Upload/Transfer/DynamicInput/DynamicTags), data (DataTable+sort/select/VirtualList/Tree/List/Descriptions/Timeline/Calendar/Statistic/Avatar/Badge/Image/Carousel/Code/GradientText/Ellipsis/Time/Countdown), feedback (Modal/Drawer/Popconfirm/Popover/Popselect/Tooltip/Message/Notification/LoadingBar/Alert/Result/Spin/Skeleton/Progress), nav (Menu/Tabs/Steps/Pagination/Breadcrumb/Anchor/Affix/BackTop/Dropdown), layout (Layout/Grid/Flex/Space/Card/Divider/Collapse/Watermark/Scrollbar), Typography/Icon/ButtonGroup/Empty/ConfigProvider — plus a portal layer, form validation, light & dark themes |
-| **CSS engine** (`js/css.mjs`) | ✅ | stylesheet + selector cascade |
-| **Tween/animation** (`js/anim.mjs`) | ✅ | rAF-driven, easings |
-| **Text input** (selection + editing, `js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
+| **Vue-style reactivity + Composition API** (`gui/sdk/js/vue.mjs`) | ✅ | ref/reactive/computed/watch, createApp/setup |
+| **React-style reconciler** (virtual DOM, `gui/sdk/js/reconciler.mjs`) | ✅ | h()/render()/mount(), diff + components |
+| **Vue SFC compiler** (`gui/sdk/js/sfc.mjs`) | ✅ | `<template>/<script>/<style>` → component; v-if/v-for/:bind/@event, interpolation, ref auto-unwrap, **slots**, stateless tag form + attribute fallthrough |
+| **Custom element tags** (`defineTag`, `gui/sdk/js/pollyui.mjs`) | ✅ | author by name: `h('button',…)` / `h('fluent-card',…)`; auto-registers all `N*` as kebab tags |
+| **Fluent / WinUI control pack** (`gui/sdk/js/fluent.mjs`) | ✅ | 8 SFC controls: card/button/infobar/toggle/hyperlink/badge/progressbar/expander |
+| **WinUI 3 Gallery demo** (`gui/sdk/js/winui.mjs`) | ✅ | frameless + Mica, NavigationView, 5 populated pages (Home/Basic input/Collections/Dialogs/Styles); Naive theme retinted Fluent so all 85 components look native |
+| **MS Store / Fluent demo** (`gui/examples/playground/msstore.mjs`) | ✅ | responsive card grid, auto-advancing hero, custom draggable title bar |
+| **Naive UI-style component library** (`gui/sdk/js/naive.mjs`) | ✅ | **~86 components** — full Naive UI parity (+ NForm/createForm validation, NTable, dialog API): inputs (Input/Number/Select/Cascader/TreeSelect/AutoComplete/Mention/DatePicker/TimePicker/ColorPicker/Slider/Switch/Checkbox/Radio/Rate/Upload/Transfer/DynamicInput/DynamicTags), data (DataTable+sort/select/VirtualList/Tree/List/Descriptions/Timeline/Calendar/Statistic/Avatar/Badge/Image/Carousel/Code/GradientText/Ellipsis/Time/Countdown), feedback (Modal/Drawer/Popconfirm/Popover/Popselect/Tooltip/Message/Notification/LoadingBar/Alert/Result/Spin/Skeleton/Progress), nav (Menu/Tabs/Steps/Pagination/Breadcrumb/Anchor/Affix/BackTop/Dropdown), layout (Layout/Grid/Flex/Space/Card/Divider/Collapse/Watermark/Scrollbar), Typography/Icon/ButtonGroup/Empty/ConfigProvider — plus a portal layer, form validation, light & dark themes |
+| **CSS engine** (`gui/sdk/js/css.mjs`) | ✅ | stylesheet + selector cascade |
+| **Tween/animation** (`gui/sdk/js/anim.mjs`) | ✅ | rAF-driven, easings |
+| **Text input** (selection + editing, `gui/sdk/js/textinput.mjs`) | ✅ | click/drag-select; clipboard/IME pending |
 | Per-glyph font fallback + font-family + gradient text | ✅ | symbols/emoji, monospace/serif, gradient-filled text |
 
 ## Accessibility

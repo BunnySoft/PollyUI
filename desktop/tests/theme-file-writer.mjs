@@ -12,7 +12,7 @@ mkdirSync(path.dirname(overrides), { recursive: true, mode: 0o700 });
 const file = path.join(directory, 'theme.json'), backup = path.join(directory, 'saved.json');
 const mode = process.argv[2];
 if (mode === 'create' || mode === 'update' || mode === 'recolor' || mode === 'details') {
-  const builtin = JSON.parse(readFileSync('desktop/themes/builtin.json', 'utf8'));
+  const builtin = JSON.parse(readFileSync('desktop/resources/themes/builtin.json', 'utf8'));
   const theme = builtin.themes.find(item => item.id === 'bigsur');
   theme.id = 'file-theme'; theme.name = 'Theme from a user file';
   const color = mode === 'create' ? '#673ab7' : mode === 'update' ? '#28744d' : '#245dc9';

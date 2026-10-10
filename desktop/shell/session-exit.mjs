@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 
 function inventory(value) {
   if (!value || value.version !== 1 || !['idle', 'waiting', 'ready', 'committed'].includes(value.phase) ||

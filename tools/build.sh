@@ -9,7 +9,7 @@
 #   ./tools/build.sh --skia-dir DIR  # use a specific Skia out/ dir
 #   ./tools/build.sh --skia-root DIR # matching Skia source/header directory
 #   ./tools/build.sh --run           # launch the demo afterward
-#   ./tools/build.sh --run js/gallery.mjs   # run with a JS app
+#   ./tools/build.sh --run gui/examples/playground/gallery.mjs   # run with a JS app
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,4 +1,4 @@
-import { childPath } from './desktop/files/model.mjs';
+import { childPath } from './desktop/apps/files/logic/model.mjs';
 
 // Only the private Node fixture producer writes in place; this is not a backend.
 export async function requestPrivateMutation(files, directory, evidence) {

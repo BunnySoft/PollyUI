@@ -104,7 +104,7 @@ static char *normalize(JSContext *ctx, const char *base, const char *name, void 
 {
     (void)opaque;
     char path[4096];
-    if (strncmp(name, "./desktop/", 10) == 0 || strncmp(name, "./js/", 5) == 0)
+    if (strncmp(name, "./desktop/", 10) == 0 || strncmp(name, "./gui/sdk/js/", 5) == 0)
         snprintf(path, sizeof(path), "%s/%s", root, name + 2);
     else if (name[0] == '/') snprintf(path, sizeof(path), "%s", name);
     else {

@@ -118,7 +118,7 @@ Alpha hand test.
 ## Installed graphical setup and password greeter
 
 On 2026-10-08 the user approved **Debian greetd for the installed profile only**.
-The dedicated sources in `session/` and `src/desktop/greeter-client.*` implement
+The dedicated sources in `session/` and `desktop/native/greeter-client.*` implement
 the first-run/password-login flow. Central build, image/default-boot wiring and
 real graphical/logind acceptance are separate integration steps; the presence of
 these sources does not change existing images, Live policy or the console fallback.
@@ -203,7 +203,7 @@ real seat registration; production `pam_systemd type=wayland` remains unchanged.
 | Source | Installed destination / requirement |
 |---|---|
 | `session/greeter.mjs`, `greeter-controller.mjs` | `/usr/share/pollyui/desktop/session/`, together with existing JS text-input modules |
-| `src/desktop/greeter-client.c`, `.h`, `session/greeter-protocol.h` | Compile into Linux PollyUI; include `desktop/session`. No new native PAM link is needed for this client |
+| `desktop/native/greeter-client.c`, `.h`, `session/greeter-protocol.h` | Compile into Linux PollyUI; include `desktop/session`. No new native PAM link is needed for this client |
 | `session/greeter-entry` | `/usr/lib/pollyui/greeter-entry`, root-owned 0755; normalized LF |
 | `session/greetd-launch.py`, `setup-broker.py` | `/usr/lib/pollyui/`, root-owned 0644, invoked by fixed `/usr/bin/python3 -I -B` |
 | `session/greetd.conf` | `/usr/lib/pollyui/greetd.conf`, root-owned 0644; no default `initial_session`, `source_profile=false`, VT1 |
@@ -215,7 +215,7 @@ Create a locked, non-login, non-root system account/group `polly-greeter` in
 the **image**, with its own UID below1000; do not assign polly's groups or role.
 `greeter-entry` uses the PAM runtime for ephemeral XDG directories.
 The parent must add a dedicated mutually exclusive `--greeter` service mode
-to `src/main.c`: install `pu_greeter_client_install(ctx)` before running the entry,
+to `desktop/launcher`: install `pu_greeter_client_install(ctx)` before running the entry,
 pump `pu_greeter_client_pump()` with existing native service pumps and shut it down
 before freeing JS. Keep the runtime alive across primary-window closure and
 setup-to-login surface replacement; clear keep-alive on quit/error/shutdown, as
@@ -267,8 +267,8 @@ two small C files, not the whole engine:
 
 ```sh
 cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \
-  -Ithird_party/quickjs -Isrc/desktop -Idesktop/session \
-  desktop/tests/greeter-native-client.c src/desktop/greeter-client.c \
+  -Ithird_party/quickjs -Idesktop/native -Idesktop/session \
+  desktop/tests/greeter-native-client.c desktop/native/greeter-client.c \
   /reference/normal/third_party/quickjs/libqjs.a -lm -lpthread -ldl \
   -o /out/polly-greeter-client-fixture
 cc -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror \

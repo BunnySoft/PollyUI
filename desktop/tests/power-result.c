@@ -1,4 +1,4 @@
-#include "../../src/desktop/power.c"
+#include "../../desktop/native/power.c"
 #include <assert.h>
 
 long long pu_now_ms(void) { return 100; }

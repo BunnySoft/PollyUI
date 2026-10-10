@@ -1,5 +1,5 @@
-import { createTextInput } from './js/textinput.mjs';
-import { h } from './js/reconciler.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
+import { h } from './gui/sdk/js/reconciler.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 
 export function displayField(owner, inputs, head, field, theme, width = 78) {

@@ -1,4 +1,4 @@
-#include "desktop/session-bus.h"
+#include "native/session-bus.h"
 #include <dbus/dbus.h>
 #include <signal.h>
 #include <stdbool.h>

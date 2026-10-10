@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.25)
 # C for the engine; CXX only for the Skia shim, skia_c.cpp (DESIGN.md §3).
 project(PollyUI LANGUAGES C CXX)
 include(GNUInstallDirs)
+include(CTest)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -13,7 +14,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PU_BUILD_DESKTOP "Build the experimental Linux Wayland compositor" OFF)
 if (PU_BUILD_DESKTOP)
-    include(CTest)
     add_subdirectory(desktop)
 endif()
 
@@ -70,31 +70,27 @@ if (MSVC)
     target_compile_options(yogacore PRIVATE /WX-)
 endif()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(PU_DESKTOP_SERVICES "Enable explicit Linux desktop application APIs" ${PU_BUILD_DESKTOP})
+endif()
+add_subdirectory(shared)
+add_subdirectory(gui)
+add_subdirectory(sysrt)
+
 add_executable(pollyui
-    src/main.c
-    src/render/skia_c.cpp
-    src/render/render.c
-    src/script/script.c
-    src/script/storage.c
-    src/model/node.c
-    src/bridge/bridge.c
-    src/bridge/clipboard.c
-    src/layout/layout.c
-    src/core/thread.c
-    src/core/dispatch.c
-    src/core/app_paths.c
-    src/concurrency/async.c
-    src/net/fetch.c
+    desktop/launcher/main.c
+    desktop/launcher/launcher.c
 )
+target_link_libraries(pollyui PRIVATE pollyui-engine polly-sysrt-qjs)
 
 # --- HostEngine backend (the only per-OS C; see docs/PORTING.md §1) ----------
 if (PU_HOST STREQUAL "win32")
-    target_sources(pollyui PRIVATE src/host/win32/window.c)
+    target_sources(pollyui-engine PRIVATE gui/src/host/win32/window.c)
 elseif (PU_HOST STREQUAL "sdl")
-    target_sources(pollyui PRIVATE src/host/sdl/window_sdl.c)
-    target_compile_definitions(pollyui PRIVATE PU_CLIPBOARD_SDL)
+    target_sources(pollyui-engine PRIVATE gui/src/host/sdl/window_sdl.c)
+    target_compile_definitions(pollyui-engine PRIVATE PU_CLIPBOARD_SDL)
     find_package(SDL3 REQUIRED)
-    target_link_libraries(pollyui PRIVATE SDL3::SDL3)
+    target_link_libraries(pollyui-engine PUBLIC SDL3::SDL3)
 else()
     message(FATAL_ERROR "Unknown PU_HOST '${PU_HOST}' (expected: win32 | sdl)")
 endif()
@@ -106,24 +102,23 @@ endif()
 # Skia with skia_use_metal=true and configure: -DPU_METAL=ON -DSKIA_LIB_DIR=...
 option(PU_METAL "Build the Apple Metal render backend (needs a Metal-enabled Skia)" OFF)
 if (APPLE AND PU_METAL)
-    target_sources(pollyui PRIVATE src/render/skia_metal.mm)
-    target_compile_definitions(pollyui PRIVATE PU_METAL_BACKEND)
+    target_sources(pollyui-engine PRIVATE gui/src/render/skia_metal.mm)
+    target_compile_definitions(pollyui-engine PRIVATE PU_METAL_BACKEND)
     # The .mm uses manual reference counting (see its header comment).
-    set_source_files_properties(src/render/skia_metal.mm
+    set_source_files_properties(gui/src/render/skia_metal.mm
         PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
-    target_link_libraries(pollyui PRIVATE
+    target_link_libraries(pollyui-engine PUBLIC
         "-framework Metal" "-framework QuartzCore" "-framework Foundation")
 endif()
 
-# POSIX threads for the concurrency layer (core/thread.c) on macOS/Linux.
+# POSIX threads for GUI workers and native fixtures on macOS/Linux.
 if (NOT WIN32)
     find_package(Threads REQUIRED)
-    target_link_libraries(pollyui PRIVATE Threads::Threads)
+    target_link_libraries(pollyui-engine PUBLIC Threads::Threads)
 endif()
 
 # Linux builds use the native font/codec libraries selected by skia-linux.gn.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    option(PU_DESKTOP_SERVICES "Enable explicit Linux desktop application APIs" ${PU_BUILD_DESKTOP})
     if (PU_DESKTOP_SERVICES)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(SESSION_DBUS REQUIRED IMPORTED_TARGET dbus-1)
@@ -134,21 +129,23 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         string(REGEX REPLACE "(..)" "0x\\1," BUNDLE_SCHEMA "${BUNDLE_SCHEMA}")
         file(WRITE "${CMAKE_BINARY_DIR}/bundle-schema.h"
             "static const unsigned char bundle_schema[] = {${BUNDLE_SCHEMA}0};\n")
-        add_library(polly-bundles STATIC src/desktop/bundles.c)
-        target_include_directories(polly-bundles PRIVATE "${CMAKE_BINARY_DIR}" PUBLIC src)
+        add_library(polly-bundles STATIC desktop/native/bundles.c)
+        target_include_directories(polly-bundles PRIVATE "${CMAKE_BINARY_DIR}" PUBLIC "${CMAKE_SOURCE_DIR}" desktop)
         target_link_libraries(polly-bundles PUBLIC qjs PkgConfig::BUNDLE_ARCHIVE PkgConfig::BUNDLE_CRYPTO)
         target_compile_options(polly-bundles PRIVATE -Wall -Wextra -Wpedantic -Werror)
-        add_executable(polly-app src/desktop/bundle-main.c)
+        add_executable(polly-app desktop/native/bundle-main.c)
         target_link_libraries(polly-app PRIVATE polly-bundles)
         install(TARGETS polly-app RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
-        target_sources(pollyui PRIVATE src/desktop/applications.c src/desktop/documents.c
-            src/desktop/install-targets.c src/desktop/files.c src/desktop/session-bus.c)
+        target_sources(pollyui PRIVATE desktop/native/applications.c desktop/native/documents.c
+            desktop/native/install-targets.c sysrt/projection/quickjs/files.c desktop/native/session-bus.c)
+        target_link_libraries(pollyui PRIVATE polly-sysrt-linux-files)
+        target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
         target_link_libraries(pollyui PRIVATE PkgConfig::SESSION_DBUS polly-bundles)
         target_compile_definitions(pollyui PRIVATE PU_DESKTOP_SERVICES)
-        target_sources(pollyui PRIVATE src/desktop/greeter-client.c)
+        target_sources(pollyui PRIVATE desktop/native/greeter-client.c)
         target_include_directories(pollyui PRIVATE desktop/session)
         target_compile_definitions(pollyui PRIVATE PU_GREETER)
-        add_executable(pollyui-app-launcher src/desktop/exec.c)
+        add_executable(pollyui-app-launcher desktop/native/exec.c)
         target_compile_options(pollyui-app-launcher PRIVATE -fno-sanitize=all -Wall -Wextra -Werror)
         target_link_options(pollyui-app-launcher PRIVATE -fno-sanitize=all)
         add_dependencies(pollyui pollyui-app-launcher polly-app)
@@ -158,12 +155,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SKIA_SYSTEM REQUIRED IMPORTED_TARGET
         fontconfig freetype2 libpng libjpeg libwebp libwebpdemux libwebpmux zlib harfbuzz icu-uc icu-i18n)
-    target_compile_definitions(pollyui PRIVATE PU_COMPLEX_TEXT)
-    target_link_libraries(pollyui PRIVATE PkgConfig::SKIA_SYSTEM)
-    pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.85)
-    target_link_libraries(pollyui PRIVATE PkgConfig::CURL)
+    target_compile_definitions(pollyui-engine PUBLIC PU_COMPLEX_TEXT)
     # Match the official Release Skia ABI even when the host is a Debug build.
-    target_compile_definitions(pollyui PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
+    target_compile_definitions(pollyui-engine PUBLIC _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
     option(PU_LAYER_SHELL "Support custom Wayland layer surfaces in the SDL host" ON)
     if (PU_LAYER_SHELL AND PU_HOST STREQUAL "sdl")
         pkg_check_modules(WAYLAND_UI REQUIRED IMPORTED_TARGET wayland-client)
@@ -190,22 +184,27 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_LAYER_XML}" "${UI_PROTOCOL_DIR}/layer-shell.c"
             COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_XDG_XML}" "${UI_PROTOCOL_DIR}/xdg-shell.c"
             DEPENDS "${UI_LAYER_XML}" "${UI_XDG_XML}" VERBATIM)
-        target_sources(pollyui PRIVATE src/host/sdl/layer_shell.c
+        set(PU_HOST_PROTOCOLS "${UI_PROTOCOL_DIR}/layer-shell-client.h"
+            "${UI_PROTOCOL_DIR}/layer-shell.c" "${UI_PROTOCOL_DIR}/xdg-shell.c")
+        target_sources(pollyui-engine PRIVATE gui/src/host/sdl/layer_shell.c
             "${UI_PROTOCOL_DIR}/layer-shell-client.h" "${UI_PROTOCOL_DIR}/layer-shell.c"
             "${UI_PROTOCOL_DIR}/xdg-shell.c")
-        target_include_directories(pollyui PRIVATE "${UI_PROTOCOL_DIR}")
-        target_compile_definitions(pollyui PRIVATE PU_LAYER_SHELL)
-        target_link_libraries(pollyui PRIVATE PkgConfig::WAYLAND_UI)
+        target_include_directories(pollyui-engine PUBLIC "${UI_PROTOCOL_DIR}")
+        target_compile_definitions(pollyui-engine PUBLIC PU_LAYER_SHELL)
+        target_link_libraries(pollyui-engine PUBLIC PkgConfig::WAYLAND_UI)
         if (PU_BUILD_SESSION_AUTH)
             set(UI_LOCK_XML "${WAYLAND_UI_PROTOCOLS}/staging/ext-session-lock/ext-session-lock-v1.xml")
             add_custom_command(OUTPUT "${UI_PROTOCOL_DIR}/session-lock-client.h" "${UI_PROTOCOL_DIR}/session-lock.c"
                 COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_LOCK_XML}" "${UI_PROTOCOL_DIR}/session-lock-client.h"
                 COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_LOCK_XML}" "${UI_PROTOCOL_DIR}/session-lock.c"
                 DEPENDS "${UI_LOCK_XML}" VERBATIM)
-            target_sources(pollyui PRIVATE src/desktop/lock-client.c
+            list(APPEND PU_HOST_PROTOCOLS "${UI_PROTOCOL_DIR}/session-lock-client.h"
+                "${UI_PROTOCOL_DIR}/session-lock.c")
+            target_sources(pollyui PRIVATE desktop/native/lock-client.c)
+            target_sources(pollyui-engine PRIVATE
                 "${UI_PROTOCOL_DIR}/session-lock-client.h" "${UI_PROTOCOL_DIR}/session-lock.c")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/session")
-            target_compile_definitions(pollyui PRIVATE PU_SESSION_LOCK)
+            target_compile_definitions(pollyui-engine PUBLIC PU_SESSION_LOCK)
             add_dependencies(pollyui polly-auth-check)
         endif()
         if (PU_BUILD_IME_ENGINE)
@@ -225,38 +224,40 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                     COMMAND "${UI_WAYLAND_SCANNER}" client-header "${xml}" "${UI_PROTOCOL_DIR}/${protocol}-client.h"
                     COMMAND "${UI_WAYLAND_SCANNER}" private-code "${xml}" "${UI_PROTOCOL_DIR}/${protocol}.c"
                     DEPENDS "${xml}" VERBATIM)
-                target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/${protocol}-client.h" "${UI_PROTOCOL_DIR}/${protocol}.c")
+                list(APPEND PU_HOST_PROTOCOLS "${UI_PROTOCOL_DIR}/${protocol}-client.h"
+                    "${UI_PROTOCOL_DIR}/${protocol}.c")
+                target_sources(pollyui-engine PRIVATE "${UI_PROTOCOL_DIR}/${protocol}-client.h" "${UI_PROTOCOL_DIR}/${protocol}.c")
             endforeach()
-            target_sources(pollyui PRIVATE src/desktop/input-method-client.c)
-            target_compile_definitions(pollyui PRIVATE PU_INPUT_METHOD)
+            target_sources(pollyui PRIVATE desktop/native/input-method-client.c)
+            target_compile_definitions(pollyui-engine PUBLIC PU_INPUT_METHOD)
             target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
         endif()
         if (PU_DESKTOP_SERVICES)
             pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET "libpipewire-0.3>=1.4")
             target_link_libraries(pollyui PRIVATE PkgConfig::PIPEWIRE)
-            target_sources(pollyui PRIVATE src/desktop/notifications.c src/desktop/tray.c src/desktop/dbus-menu.c
-                src/desktop/network.c src/desktop/audio.c src/desktop/power.c)
+            target_sources(pollyui PRIVATE desktop/native/notifications.c desktop/native/tray.c desktop/native/dbus-menu.c
+                desktop/native/network.c desktop/native/audio.c desktop/native/power.c)
             if (BUILD_TESTING)
-                add_executable(polly-power-test desktop/tests/power-service.c src/desktop/session-bus.c)
-                target_include_directories(polly-power-test PRIVATE src)
+                add_executable(polly-power-test desktop/tests/power-service.c desktop/native/session-bus.c)
+                target_include_directories(polly-power-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
                 target_compile_definitions(polly-power-test PRIVATE _POSIX_C_SOURCE=200809L)
                 target_compile_options(polly-power-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
                 target_link_libraries(polly-power-test PRIVATE PkgConfig::SESSION_DBUS)
                 add_executable(polly-audio-stream-test desktop/tests/audio-stream.c)
                 target_link_libraries(polly-audio-stream-test PRIVATE PkgConfig::PIPEWIRE PkgConfig::SESSION_DBUS)
                 target_compile_definitions(polly-audio-stream-test PRIVATE _POSIX_C_SOURCE=200809L)
-                add_executable(polly-iwd-test desktop/tests/iwd-service.c src/desktop/session-bus.c)
-                target_include_directories(polly-iwd-test PRIVATE src)
+                add_executable(polly-iwd-test desktop/tests/iwd-service.c desktop/native/session-bus.c)
+                target_include_directories(polly-iwd-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
                 target_compile_definitions(polly-iwd-test PRIVATE _POSIX_C_SOURCE=200809L)
                 target_compile_options(polly-iwd-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
                 target_link_libraries(polly-iwd-test PRIVATE PkgConfig::SESSION_DBUS)
-                add_executable(polly-tray-test desktop/tests/tray.c src/desktop/session-bus.c)
-                target_include_directories(polly-tray-test PRIVATE src)
+                add_executable(polly-tray-test desktop/tests/tray.c desktop/native/session-bus.c)
+                target_include_directories(polly-tray-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
                 target_compile_definitions(polly-tray-test PRIVATE _POSIX_C_SOURCE=200809L)
                 target_compile_options(polly-tray-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
                 target_link_libraries(polly-tray-test PRIVATE PkgConfig::SESSION_DBUS)
-                add_executable(polly-notification-test desktop/tests/notifications.c src/desktop/session-bus.c)
-                target_include_directories(polly-notification-test PRIVATE src)
+                add_executable(polly-notification-test desktop/tests/notifications.c desktop/native/session-bus.c)
+                target_include_directories(polly-notification-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
                 target_compile_definitions(polly-notification-test PRIVATE _POSIX_C_SOURCE=200809L)
                 target_compile_options(polly-notification-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
                 target_link_libraries(polly-notification-test PRIVATE PkgConfig::SESSION_DBUS)
@@ -304,11 +305,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h"
                 COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_FOREIGN_XML}" "${UI_PROTOCOL_DIR}/foreign-toplevel.c"
                 DEPENDS "${UI_FOREIGN_XML}" VERBATIM)
-            target_sources(pollyui PRIVATE src/desktop/windows.c
-                src/desktop/output-client.c
+            target_sources(pollyui PRIVATE desktop/native/windows.c
+                desktop/native/output-client.c
                 "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
                 "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
-                src/desktop/shortcut-client.c src/desktop/theme-files.c src/desktop/theme-client.c
+                desktop/native/shortcut-client.c desktop/native/theme-files.c desktop/native/theme-client.c
                 desktop/shared/shortcuts.c desktop/shared/appearance-document.c
                 "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
                 "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
@@ -318,25 +319,25 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/compositor")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/shared")
         endif()
+        add_custom_target(pollyui-host-protocols DEPENDS ${PU_HOST_PROTOCOLS})
+        add_dependencies(pollyui-engine pollyui-host-protocols)
     endif()
 endif()
 
 # macOS native title-bar helper (transparent titlebar + native traffic lights).
 # Always built on Apple (the SDL host calls into it); Cocoa is linked below.
 if (APPLE)
-    target_sources(pollyui PRIVATE src/host/sdl/macos_titlebar.mm)
-    set_source_files_properties(src/host/sdl/macos_titlebar.mm
+    target_sources(pollyui-engine PRIVATE gui/src/host/sdl/macos_titlebar.mm)
+    set_source_files_properties(gui/src/host/sdl/macos_titlebar.mm
         PROPERTIES COMPILE_OPTIONS "-fno-objc-arc")
 endif()
 
-# `src` for our headers (included as "host/...", "render/..."); SKIA_ROOT for
-# Skia's root-relative includes (e.g. "include/core/SkSurface.h"); quickjs for
-# "quickjs.h".
-target_include_directories(pollyui PRIVATE src ${SKIA_ROOT} ${CMAKE_SOURCE_DIR}/third_party/quickjs)
+# Only composition-specific internal headers; public GUI/SysRT usage is inherited.
+target_include_directories(pollyui PRIVATE gui/src desktop/launcher)
 
 # ScriptEngine + LayoutEngine. yogacore PUBLIC-exports its include dir, so
 # layout.c can `#include <yoga/Yoga.h>`.
-target_link_libraries(pollyui PRIVATE qjs yogacore)
+target_link_libraries(pollyui PRIVATE qjs)
 
 # skia.lib (Windows) is self-contained: it bundles its own zlib (Cr_z_-prefixed),
 # libpng, freetype, harfbuzz, icu, etc. The macOS/Linux prebuilt instead ships
@@ -344,7 +345,7 @@ target_link_libraries(pollyui PRIVATE qjs yogacore)
 # libicu.a, ...), so there we link ALL the .a files in SKIA_LIB_DIR, grouped so
 # the static linker resolves cross-references regardless of order.
 if (WIN32)
-    target_link_libraries(pollyui PRIVATE ${SKIA_LIB_DIR}/skia.lib)
+    target_link_libraries(pollyui-engine PUBLIC ${SKIA_LIB_DIR}/skia.lib)
 else()
     file(GLOB SKIA_ARCHIVES "${SKIA_LIB_DIR}/*.a")
     if (NOT SKIA_ARCHIVES)
@@ -358,18 +359,18 @@ else()
         endif()
     endif()
     if (APPLE)
-        target_link_libraries(pollyui PRIVATE ${SKIA_ARCHIVES})
+        target_link_libraries(pollyui-engine PUBLIC ${SKIA_ARCHIVES})
         # System frameworks Skia depends on (codecs, fonts, GL backend) + the
         # system zlib: Skia's bundled zlib is Cr_z_-prefixed, but freetype/libpng
         # call the standard inflate/deflate, which /usr/lib/libz provides.
-        target_link_libraries(pollyui PRIVATE
+        target_link_libraries(pollyui-engine PUBLIC
             "-framework CoreFoundation" "-framework CoreGraphics" "-framework CoreText"
             "-framework CoreServices" "-framework ImageIO" "-framework Cocoa"
             "-framework OpenGL" z)
     else()
         # GNU ld needs an explicit group for mutually-referencing static libs.
-        target_link_libraries(pollyui PRIVATE
-            -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group z)
+        target_link_libraries(pollyui-engine PUBLIC
+            -Wl,--start-group ${SKIA_ARCHIVES} PkgConfig::SKIA_SYSTEM -Wl,--end-group z)
     endif()
 endif()
 
@@ -377,7 +378,7 @@ endif()
 # the unprefixed zlib entry points. They are the same functions, so alias the
 # unprefixed references onto the Cr_z_ definitions at link time (lld /alternatename).
 if (MSVC)
-    target_link_options(pollyui PRIVATE
+    target_link_options(pollyui-engine INTERFACE
         "/alternatename:inflate=Cr_z_inflate"
         "/alternatename:inflateInit2_=Cr_z_inflateInit2_"
         "/alternatename:inflateEnd=Cr_z_inflateEnd"
@@ -385,11 +386,12 @@ if (MSVC)
 endif()
 
 if (WIN32)
-    target_compile_definitions(pollyui PRIVATE
+    target_compile_definitions(pollyui-engine PUBLIC
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
     # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
-    target_link_libraries(pollyui PRIVATE
-        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite dbghelp winhttp shcore)
+    target_link_libraries(pollyui-engine PUBLIC
+        user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite shcore)
+    target_link_libraries(pollyui PRIVATE dbghelp)
 endif()
 
 # Release/GUI build: no console window (console.log mirrors to the debugger via
@@ -399,41 +401,38 @@ endif()
 option(PU_WINDOWED "Build a GUI app with no console window" OFF)
 if (WIN32 AND PU_WINDOWED)
     target_compile_definitions(pollyui PRIVATE PU_WINDOWED)
+    target_compile_definitions(pollyui-engine PRIVATE PU_WINDOWED)
     target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
 endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
-    add_test(NAME linux-complex-text COMMAND pollyui --test "${CMAKE_SOURCE_DIR}/tests/complex-text.mjs")
+    add_test(NAME linux-complex-text COMMAND pollyui --test "${CMAKE_SOURCE_DIR}/gui/tests/complex-text.mjs")
     set_tests_properties(linux-complex-text PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-    add_test(NAME linux-text-dependencies COMMAND node "${CMAKE_SOURCE_DIR}/tests/text-dependencies.mjs" $<TARGET_FILE:pollyui>)
+    add_test(NAME linux-text-dependencies COMMAND node "${CMAKE_SOURCE_DIR}/gui/tests/text-dependencies.mjs" $<TARGET_FILE:pollyui>)
     set_tests_properties(linux-text-dependencies PROPERTIES TIMEOUT 10 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-    add_test(NAME script-module-errors COMMAND node "${CMAKE_SOURCE_DIR}/tests/script-errors.mjs" $<TARGET_FILE:pollyui>)
+    add_test(NAME script-module-errors COMMAND node "${CMAKE_SOURCE_DIR}/gui/tests/script-errors.mjs" $<TARGET_FILE:pollyui>)
     set_tests_properties(script-module-errors PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     if (PU_DESKTOP_SERVICES)
-        add_executable(polly-session-bus-test desktop/tests/session-bus.c src/desktop/session-bus.c)
-        add_library(polly-files-core-test-adapter OBJECT src/desktop/files.c)
-        target_compile_definitions(polly-files-core-test-adapter PRIVATE PU_FILES_CORE_ONLY
-            fdopendir=pu_files_fixture_fdopendir)
-        target_include_directories(polly-files-core-test-adapter PRIVATE src/desktop)
+        add_executable(polly-session-bus-test desktop/tests/session-bus.c desktop/native/session-bus.c)
+        add_library(polly-files-core-test-adapter OBJECT sysrt/providers/linux/files.c)
+        target_compile_definitions(polly-files-core-test-adapter PRIVATE fdopendir=pu_files_fixture_fdopendir)
         target_link_libraries(polly-files-core-test-adapter PRIVATE PkgConfig::BUNDLE_CRYPTO)
         target_compile_options(polly-files-core-test-adapter PRIVATE -Wall -Wextra -Werror)
         add_executable(polly-files-core-test desktop/tests/files-native.c
             $<TARGET_OBJECTS:polly-files-core-test-adapter>)
-        target_compile_definitions(polly-files-core-test PRIVATE PU_FILES_CORE_ONLY)
-        target_include_directories(polly-files-core-test PRIVATE src/desktop)
+        target_include_directories(polly-files-core-test PRIVATE "${CMAKE_SOURCE_DIR}")
         target_link_libraries(polly-files-core-test PRIVATE PkgConfig::BUNDLE_CRYPTO)
         target_compile_options(polly-files-core-test PRIVATE -Wall -Wextra -Werror)
-        add_executable(polly-files-api-test src/desktop/files.c desktop/tests/files-api-native.c)
-        target_include_directories(polly-files-api-test PRIVATE src/desktop)
+        add_executable(polly-files-api-test sysrt/projection/quickjs/files.c desktop/tests/files-api-native.c)
         target_include_directories(polly-files-api-test SYSTEM PRIVATE third_party/quickjs)
-        target_link_libraries(polly-files-api-test PRIVATE qjs PkgConfig::BUNDLE_CRYPTO Threads::Threads ${CMAKE_DL_LIBS} m)
+        target_link_libraries(polly-files-api-test PRIVATE polly-sysrt-linux-files qjs Threads::Threads ${CMAKE_DL_LIBS} m)
         target_compile_options(polly-files-api-test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
         add_test(NAME desktop-files-core COMMAND polly-files-core-test)
         add_test(NAME desktop-files-api COMMAND polly-files-api-test
             "${CMAKE_SOURCE_DIR}/desktop/tests/files-api-native.js")
         set_tests_properties(desktop-files-core desktop-files-api PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
-        add_test(NAME desktop-files-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/files/tests.mjs")
+        add_test(NAME desktop-files-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/apps/files/tests/files.mjs")
         add_test(NAME desktop-file-dialog-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog.mjs")
         add_test(NAME desktop-file-text-open-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-text-open.mjs")
         add_test(NAME desktop-functional-launchers COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/functional-launchers.mjs")
@@ -448,12 +447,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         add_test(NAME desktop-greeter-ui COMMAND pollyui --test "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-ui.mjs")
         set_tests_properties(desktop-greeter-ui PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;synthetic-auth")
-        add_executable(polly-greeter-client-fixture src/desktop/greeter-client.c desktop/tests/greeter-native-client.c)
-        target_include_directories(polly-greeter-client-fixture PRIVATE src/desktop desktop/session)
+        add_executable(polly-greeter-client-fixture desktop/native/greeter-client.c desktop/tests/greeter-native-client.c)
+        target_include_directories(polly-greeter-client-fixture PRIVATE desktop/native desktop/session)
         target_include_directories(polly-greeter-client-fixture SYSTEM PRIVATE third_party/quickjs)
         target_link_libraries(polly-greeter-client-fixture PRIVATE qjs Threads::Threads ${CMAKE_DL_LIBS} m)
         target_compile_options(polly-greeter-client-fixture PRIVATE -Wall -Wextra -Werror)
-        target_include_directories(polly-session-bus-test PRIVATE src)
+        target_include_directories(polly-session-bus-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
         target_compile_definitions(polly-session-bus-test PRIVATE _POSIX_C_SOURCE=200809L)
         target_link_libraries(polly-session-bus-test PRIVATE PkgConfig::SESSION_DBUS)
         target_compile_options(polly-session-bus-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
@@ -485,8 +484,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         endif()
         add_executable(pollyui-application-process-test desktop/tests/application-process.c)
         add_executable(polly-application-activation-service
-            desktop/tests/application-activation-service.c src/desktop/session-bus.c)
-        target_include_directories(polly-application-activation-service PRIVATE src)
+            desktop/tests/application-activation-service.c desktop/native/session-bus.c)
+        target_include_directories(polly-application-activation-service PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
         target_compile_definitions(polly-application-activation-service PRIVATE _POSIX_C_SOURCE=200809L)
         target_compile_options(polly-application-activation-service PRIVATE -Wall -Wextra -Wpedantic -Werror)
         target_link_libraries(polly-application-activation-service PRIVATE PkgConfig::SESSION_DBUS)
@@ -499,8 +498,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
                 "${CMAKE_BINARY_DIR}/activation-evidence")
         set_tests_properties(desktop-application-activation-native PROPERTIES TIMEOUT 120 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_executable(polly-document-association-service
-            desktop/tests/document-association-service.c src/desktop/session-bus.c)
-        target_include_directories(polly-document-association-service PRIVATE src)
+            desktop/tests/document-association-service.c desktop/native/session-bus.c)
+        target_include_directories(polly-document-association-service PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
         target_compile_definitions(polly-document-association-service PRIVATE _POSIX_C_SOURCE=200809L)
         target_compile_options(polly-document-association-service PRIVATE -Wall -Wextra -Wpedantic -Werror)
         target_link_libraries(polly-document-association-service PRIVATE PkgConfig::SESSION_DBUS)
@@ -573,9 +572,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         add_test(NAME desktop-install-targets COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/install-targets.py")
         set_tests_properties(desktop-install-targets PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-install-target-ui COMMAND node --test
-            "${CMAKE_SOURCE_DIR}/desktop/installer/target-tests.mjs"
-            "${CMAKE_SOURCE_DIR}/desktop/installer/host-tests.mjs"
-            "${CMAKE_SOURCE_DIR}/desktop/installer/native-provider-tests.mjs")
+            "${CMAKE_SOURCE_DIR}/desktop/apps/installer/tests/target.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/apps/installer/tests/host.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/apps/installer/tests/native-provider.mjs")
         set_tests_properties(desktop-install-target-ui PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-menu-host COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/menu-host.mjs")
         set_tests_properties(desktop-menu-host PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -598,8 +597,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         endif()
 
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND BUILD_TESTING)
-            add_library(polly-install-readonly-test-adapter OBJECT src/desktop/install-targets.c)
-            target_include_directories(polly-install-readonly-test-adapter PRIVATE src/desktop)
+            add_library(polly-install-readonly-test-adapter OBJECT desktop/native/install-targets.c)
+            target_include_directories(polly-install-readonly-test-adapter PRIVATE desktop/native)
             target_include_directories(polly-install-readonly-test-adapter SYSTEM PRIVATE third_party/quickjs)
             target_compile_definitions(polly-install-readonly-test-adapter PRIVATE
                 PU_INSTALL_TARGETS_HELPER="/usr/lib/pollyui/install-targets/install/fixture-helper.py"
@@ -608,7 +607,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
             target_compile_options(polly-install-readonly-test-adapter PRIVATE -Wall -Wextra -Werror)
             add_executable(polly-install-readonly-transport-test desktop/tests/install-readonly-native.c
                 $<TARGET_OBJECTS:polly-install-readonly-test-adapter>)
-            target_include_directories(polly-install-readonly-transport-test PRIVATE src/desktop)
+            target_include_directories(polly-install-readonly-transport-test PRIVATE desktop/native)
             target_include_directories(polly-install-readonly-transport-test SYSTEM PRIVATE third_party/quickjs)
             target_compile_options(polly-install-readonly-transport-test PRIVATE -Wall -Wextra -Werror)
             target_link_libraries(polly-install-readonly-transport-test PRIVATE qjs Threads::Threads ${CMAKE_DL_LIBS} m)
@@ -657,18 +656,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
         set_tests_properties(desktop-ime-session PROPERTIES TIMEOUT 40 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     endif()
     function(pu_host_fixture target source)
-        add_executable(${target} ${source} src/host/sdl/window_sdl.c src/render/skia_c.cpp)
-        target_include_directories(${target} PRIVATE src "${SKIA_ROOT}")
+        add_executable(${target} ${source} gui/src/host/sdl/window_sdl.c gui/src/render/skia_c.cpp)
+        target_include_directories(${target} PRIVATE gui/src gui/include "${CMAKE_SOURCE_DIR}" "${SKIA_ROOT}")
         target_compile_definitions(${target} PRIVATE _POSIX_C_SOURCE=200809L SK_R32_SHIFT=16 SK_RELEASE)
         target_compile_definitions(${target} PRIVATE PU_COMPLEX_TEXT)
         target_link_libraries(${target} PRIVATE SDL3::SDL3 PkgConfig::SKIA_SYSTEM
             -Wl,--start-group ${SKIA_ARCHIVES} -Wl,--end-group Threads::Threads)
     endfunction()
-    pu_host_fixture(pollyui-input-test tests/sdl-input.c)
-    pu_host_fixture(pollyui-multi-test tests/multi-window-native.c)
+    pu_host_fixture(pollyui-input-test gui/tests/sdl-input.c)
+    pu_host_fixture(pollyui-multi-test gui/tests/multi-window-native.c)
     add_test(NAME sdl-input-adapter COMMAND pollyui-input-test)
     add_test(NAME sdl-multi-window COMMAND pollyui-multi-test)
-    add_executable(pollyui-gl-lifecycle-test tests/sdl-gl-lifecycle.c)
+    add_executable(pollyui-gl-lifecycle-test gui/tests/sdl-gl-lifecycle.c)
     target_link_libraries(pollyui-gl-lifecycle-test PRIVATE SDL3::SDL3)
     target_compile_options(pollyui-gl-lifecycle-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME sdl-gl-lifecycle COMMAND pollyui-gl-lifecycle-test)

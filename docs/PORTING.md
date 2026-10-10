@@ -25,7 +25,7 @@ is shared C/C++ and **100% of the app/JS is shared**.
 
 | Layer | Shared? | Notes |
 |-------|---------|-------|
-| App + components (`js/*.mjs`) | ✅ 100% | reconciler, Vue reactivity, CSS, naive.mjs, forms/dialogs… |
+| App + components (`gui/sdk/js/*.mjs`) | ✅ 100% | reconciler, Vue reactivity, CSS, naive.mjs, forms/dialogs… |
 | ScriptEngine (QuickJS-ng) | ✅ | pure C |
 | LayoutEngine (Yoga) | ✅ | pure C++ |
 | Model (DOM-like) | ✅ | pure C |
@@ -41,7 +41,7 @@ The UI/DOM/layout logic remains shared.
 ## 1. The HostEngine contract
 
 Every backend implements the exact interface already defined in
-`src/host/win32/window.h`. This is the seam:
+`gui/include/pollyui/window.h`. This is the seam:
 
 ```c
 typedef struct PuWindow PuWindow;
@@ -116,7 +116,7 @@ So the surface boundary is portable — each host passes a different native hand
 **Phase 1 done:** `pu_surface_create_gl` was renamed to `pu_surface_create_gpu`
 (opaque handle) and a guarded `pu_surface_create_metal` stub added, verified
 behavior-neutral on Windows (GPU path intact, 250/250 tests). The Apple Metal
-implementation lands in `src/render/skia_metal.mm` (defining `PU_METAL_BACKEND`).
+implementation lands in `gui/src/render/skia_metal.mm` (defining `PU_METAL_BACKEND`).
 
 | Platform | Skia backend | Native handle passed | EGL/context source |
 |----------|--------------|----------------------|--------------------|
@@ -172,7 +172,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
 ---
 
-## 4. Tier 1 — SDL3 backend  (`src/host/sdl/`)
+## 4. Tier 1 — SDL3 backend  (`gui/src/host/sdl/`)
 
 The desktop implementation uses a classic event loop, Metal on Apple when enabled,
 and GLES or raster on Linux. Linux uses `pu_surface_create_current_gl` with an
@@ -180,11 +180,11 @@ SDL procedure resolver; SDL owns context lifetime and swapping, while Skia
 owns drawing and wraps the default framebuffer. Keep the context current
 through drawing, resize and readback. `PU_RENDERER` controls auto/gl/raster.
 
-The maintained implementation is `src/host/sdl/window_sdl.c`; use it rather than
+The maintained implementation is `gui/src/host/sdl/window_sdl.c`; use it rather than
 copying the earlier callback-model sketch. SDL3 supplies native Wayland and
 Metal access; mobile lifecycle work remains separate.
 
-Input translation uses `src/host/input.h`: physical keys have logical `key`,
+Input translation uses `gui/src/host/input.h`: physical keys have logical `key`,
 physical `code`, modifiers and repeat; committed text is `PU_KEY_TEXT`. The
 application forwards commits as `textinput.data`, and editors insert only from
 that event. Win32 combines UTF-16 surrogate pairs before submitting UTF-8.
@@ -212,7 +212,7 @@ The bridge handles cancellable default scrolling and forward/reverse Tab focus.
 
 For appliances that own the whole stack. Two sub-profiles.
 
-### 5a. Wayland client (`src/host/wayland/`) — a compositor is present
+### 5a. Wayland client (`gui/src/host/wayland/`) — a compositor is present
 
 ```c
 // connect + bind globals
@@ -233,7 +233,7 @@ PuSurface *s = pu_surface_create_gpu((void*)eglwin, w, h);  // EGL_PLATFORM_WAYL
 You provide **client-side decorations** (draw your own title bar — trivial with
 PollyUI) or negotiate `xdg-decoration` if the compositor supports SSD.
 
-### 5b. DRM/KMS + GBM (`src/host/drm/`) — **no compositor**, direct to display
+### 5b. DRM/KMS + GBM (`gui/src/host/drm/`) — **no compositor**, direct to display
 
 The true single-app appliance path: boot → your binary owns the screen.
 
@@ -263,8 +263,8 @@ Yocto/Buildroot straight into PollyUI. This is the kiosk / IVI / set-top path.
 set(PU_HOST "win32" CACHE STRING "win32 | sdl | wayland | drm")
 set(PU_GPU  "auto"  CACHE STRING "auto | gl | metal | vulkan | raster")
 
-if(PU_HOST STREQUAL "win32")    target_sources(pollyui PRIVATE src/host/win32/window.c)
-elseif(PU_HOST STREQUAL "sdl")  target_sources(pollyui PRIVATE src/host/sdl/window_sdl.c)
+if(PU_HOST STREQUAL "win32")    target_sources(pollyui PRIVATE gui/src/host/win32/window.c)
+elseif(PU_HOST STREQUAL "sdl")  target_sources(pollyui PRIVATE gui/src/host/sdl/window_sdl.c)
                                 find_package(SDL3 REQUIRED); target_link_libraries(pollyui SDL3::SDL3)
 elseif(PU_HOST STREQUAL "wayland") target_sources(pollyui PRIVATE src/host/wayland/window_wl.c)
                                 target_link_libraries(pollyui wayland-client wayland-egl xkbcommon EGL GLESv2)
@@ -272,10 +272,10 @@ elseif(PU_HOST STREQUAL "drm")  target_sources(pollyui PRIVATE src/host/drm/wind
                                 target_link_libraries(pollyui drm gbm EGL GLESv2 input udev xkbcommon)
 endif()
 
-if(APPLE)  target_sources(pollyui PRIVATE src/render/skia_metal.mm)   # Metal path (PU_METAL_BACKEND)
+if(APPLE)  target_sources(pollyui PRIVATE gui/src/render/skia_metal.mm)   # Metal path (PU_METAL_BACKEND)
                                                                      # skia_c.cpp's metal stub is then excluded
 endif()
-# src/render/skia_c.cpp (GL/ANGLE/raster + metal stub) builds on every target
+# gui/src/render/skia_c.cpp (GL/ANGLE/raster + metal stub) builds on every target
 ```
 
 ---
@@ -321,10 +321,10 @@ endif()
 
 1. ✅ **Refactor the surface seam** (`create_gl`→`create_gpu`, stub `create_metal`).
    *Done — behavior-neutral, GPU path intact, 250/250 tests pass on Windows.*
-2. **SDL3 desktop backend** (`src/host/sdl/`) → validate Win/Linux/macOS with one
+2. **SDL3 desktop backend** (`gui/src/host/sdl/`) → validate Win/Linux/macOS with one
    host. macOS forces the **Metal** path, exercising the new render code.
-   *Done (macOS):* `src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
-   poll loop so `main.c` is unchanged) + `src/render/skia_metal.mm` (Ganesh Metal
+   *Done (macOS):* `gui/src/host/sdl/window_sdl.c` (PuWindow contract via SDL3, classic
+   poll loop so `main.c` is unchanged) + `gui/src/render/skia_metal.mm` (Ganesh Metal
    via `SkSurfaces::WrapCAMetalLayer`) + CMake `PU_HOST`/`PU_METAL` wiring + the
    `mac-sdl-metal` preset. **Verified on Apple Silicon**: GPU Metal rendering,
    native traffic-light title bar (`window.setTitleBarStyle('overlay')`), live

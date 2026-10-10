@@ -12,7 +12,12 @@ for test in smoke.js text.js textwrap.js linux-fonts.mjs visual.js \
     style.js dom.js events.js keyboard.js scroll.js modules.mjs \
     runtime.js workers.js fetch.js storage.js storage.js storage-values.mjs input-events.mjs pointer-events.mjs \
     reconciler.mjs vue.mjs textinput.mjs inputcaret.mjs teardown.mjs desktop-appearance.mjs native-shell.mjs desktop-applications.mjs; do
-    if ! timeout 45 "$ui" --test "tests/$test" >"$temporary/output.log" 2>&1; then
+    case "$test" in
+        fetch.js|storage.js|storage-values.mjs) script="sysrt/tests/$test" ;;
+        desktop-*|native-shell.mjs) script="desktop/tests/$test" ;;
+        *) script="gui/tests/$test" ;;
+    esac
+    if ! timeout 45 "$ui" --test "$script" >"$temporary/output.log" 2>&1; then
         cat "$temporary/output.log"
         exit 1
     fi
@@ -37,7 +42,7 @@ expect_log() {
         exit 1
     fi
 }
-expect_failure env FONTCONFIG_FILE="$PWD/desktop/tests/empty-fonts.conf" "$ui" --test tests/smoke.js
+expect_failure env FONTCONFIG_FILE="$PWD/desktop/tests/empty-fonts.conf" "$ui" --test gui/tests/smoke.js
 expect_log 'No system fonts available'
 expect_failure env SDL_VIDEODRIVER=pollyui-invalid "$ui" desktop/tests/runtime-window.mjs
 expect_log 'Failed to create application window'

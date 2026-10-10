@@ -3,4 +3,4 @@ set -eu
 bindir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 data=$(CDPATH= cd -- "$bindir/@PU_DATA_FROM_BIN@" && pwd)
 cd "$data"
-exec "$bindir/pollyui" --desktop --app-id org.pollyui.files "$data/desktop/files/main.mjs" "$@"
+exec "$bindir/pollyui" --desktop --app-id org.pollyui.files "$data/desktop/apps/files/main.mjs" "$@"

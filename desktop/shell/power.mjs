@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';
 
 export function createPowerSettings({ native, host, theme, report, sessionExit = null }) {

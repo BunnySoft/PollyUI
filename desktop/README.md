@@ -41,6 +41,13 @@ and [Debian build status](./release/debian/README.md) for commands and known gap
 
 ## Architecture and implementation plan
 
+The [product boundary conclusions](../DESIGN.md#11-product-and-module-boundaries)
+defines PollyUI, PollySystemRT and PollyOS ownership. Legacy Linux native
+integration now lives in `native/`, outside the GUI engine; this is a source
+boundary, not a claim that its remaining QuickJS/policy coupling is resolved.
+The ordinary filesystem core lives in `../sysrt/providers/linux/`, with its
+unchanged v1 binding in `../sysrt/projection/quickjs/`.
+
 Keep three boundaries:
 
 - `compositor/`: PollyWM owns outputs, seats, window geometry, focus and
@@ -313,7 +320,7 @@ Run from the repository root with an already built PollyUI runtime:
 .\build\win-clang\pollyui.exe .\desktop\shell\preview.mjs
 
 # Native rendering, layout, input and pixel assertions; failures exit nonzero:
-.\build\win-clang\pollyui.exe --test .\tests\desktop-appearance.mjs
+.\build\win-clang\pollyui.exe --test .\desktop\tests\desktop-appearance.mjs
 ```
 
 The existing root README describes the Windows/macOS runtime build. If Skia

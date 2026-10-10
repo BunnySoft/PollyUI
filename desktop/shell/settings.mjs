@@ -1,4 +1,4 @@
-import { h } from './js/reconciler.mjs';
+import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shell/views.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 

@@ -1,6 +1,6 @@
-import { h, render } from './js/reconciler.mjs';
-import { createTextInput } from './js/textinput.mjs';
-import { requireFileSystem } from './desktop/files/model.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
+import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { createFileDialogController } from './desktop/client/file-dialog-controller.mjs';
 

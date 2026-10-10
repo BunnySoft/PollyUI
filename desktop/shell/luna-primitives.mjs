@@ -1,4 +1,4 @@
-import { h } from './js/reconciler.mjs';
+import { h } from './gui/sdk/js/reconciler.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' };
 export const isLuna = (theme, group = 'button') => theme[group].surfaceStyle === 'luna';

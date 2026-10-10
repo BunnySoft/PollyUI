@@ -20,14 +20,15 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/polly-files.desktop"
     "${CMAKE_SOURCE_DIR}/desktop/release/polly-file-text-open.desktop"
     "${CMAKE_SOURCE_DIR}/desktop/release/polly-mimeapps.list"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications" COMPONENT PollyDesktop)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/files"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
-    FILES_MATCHING PATTERN "*.mjs" PATTERN "tests.mjs" EXCLUDE)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/apps/files"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/apps" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs" PATTERN "tests" EXCLUDE)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/examples/file-dialog.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/examples" COMPONENT PollyDesktop)
 install(FILES "$<TARGET_FILE:SDL3::SDL3>" DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui"
     RENAME libSDL3.so.0 COMPONENT PollyDesktop)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/js" DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui"
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/gui/sdk/js"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/gui/sdk"
     COMPONENT PollyDesktop FILES_MATCHING PATTERN "*.js" PATTERN "*.mjs")
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
@@ -35,14 +36,9 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/client"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
-install(FILES "${CMAKE_SOURCE_DIR}/desktop/installer/main.mjs"
-    "${CMAKE_SOURCE_DIR}/desktop/installer/native-provider.mjs"
-    "${CMAKE_SOURCE_DIR}/desktop/installer/target-app.mjs"
-    "${CMAKE_SOURCE_DIR}/desktop/installer/target-controller.mjs"
-    "${CMAKE_SOURCE_DIR}/desktop/installer/target-model.mjs"
-    "${CMAKE_SOURCE_DIR}/desktop/installer/target-view.mjs"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/installer"
-    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/apps/installer"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/apps" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs" PATTERN "tests" EXCLUDE)
 foreach(PU_INSTALL_TARGETS_GROUP IN ITEMS install storage maintenance)
     install(DIRECTORY DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/${PU_INSTALL_TARGETS_GROUP}"
         DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
@@ -60,8 +56,8 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/maintenance/payload.py"
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/themes"
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/themes"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/resources" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.json")
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/input-method/main.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/input-method/view.mjs"

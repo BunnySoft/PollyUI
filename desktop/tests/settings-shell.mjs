@@ -1,5 +1,5 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));

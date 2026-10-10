@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { childPath, parentPath } from '../files/model.mjs';
+import { childPath, parentPath } from '../apps/files/logic/model.mjs';
 
 // Explicit in-memory dependencies, not product filesystem or native input proof.
 export function fixtureFiles({ overwrite = true } = {}) {

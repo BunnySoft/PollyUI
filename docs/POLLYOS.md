@@ -424,10 +424,10 @@ A–G 是第二阶段主线，**不代表早期推迟的任务只有这七组**�
 | `desktop/compositor/` | PollyWM、可信连接、输出/工作区/窗口/输入及监督策略 |
 | `desktop/protocols/` | 必要协议定义，修改时同时检查 compositor、客户端桥接和权限过滤 |
 | `desktop/shell/` | 原生桌面界面、外观、设置、启动器与服务状态 |
-| `src/desktop/` | PollyUI 桌面扩展、D-Bus/音频/网络/输入法和 bundle 原生实现 |
-| `src/host/sdl/`、`src/render/` | SDL 主机适配、输入/窗口生命周期、Skia 绘制桥接 |
-| `desktop/shared/app-bundle.mjs`、`src/desktop/bundles.c` | 共享包 schema 与真实文件系统事务；不能只改一边 |
-| `desktop/themes/`、`desktop/THEMES.md` | 主题数据、schema、范围与订阅契约 |
+| `desktop/native/` | PollyUI 桌面扩展、D-Bus/音频/网络/输入法和 bundle 原生实现 |
+| `gui/src/host/sdl/`、`gui/src/render/` | SDL 主机适配、输入/窗口生命周期、Skia 绘制桥接 |
+| `desktop/shared/app-bundle.mjs`、`desktop/native/bundles.c` | 共享包 schema 与真实文件系统事务；不能只改一边 |
+| `desktop/resources/themes/`、`desktop/THEMES.md` | 主题数据、schema、范围与订阅契约 |
 | `desktop/system/`、`desktop/session/` | 服务配置、PAM/锁进程、会话策略 |
 | `desktop/release/debian/` | minbase/SDK/runtime/Live 配方，Debian 依赖及 Mesa 源码修复 |
 | `desktop/tools/` | 构建、打包、校验、差异报告、依赖留存与恢复 |

@@ -1,5 +1,5 @@
 import { pathValue, childPath, parentPath, fileEntry, directorySnapshot, fileError,
-  textObservation } from './desktop/files/model.mjs';
+  textObservation } from './desktop/apps/files/logic/model.mjs';
 
 const immutable = value => {
   if (value && typeof value === 'object') {

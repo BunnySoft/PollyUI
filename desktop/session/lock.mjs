@@ -1,4 +1,4 @@
-import { createTextInput } from './js/textinput.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 
 window.close();
 const surfaces = new Map();

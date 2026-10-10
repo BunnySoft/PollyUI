@@ -388,7 +388,7 @@ settings, host-bus refusal, shutdown and disconnect without replay. Linux
 temporary runtime directories and all logs/configs/results (including failures)
 are retained as byte-copied evidence.
 
-The product CMake source list now links `src/desktop/documents.c` alongside
+The product CMake source list now links `desktop/native/documents.c` alongside
 `applications.c`. It registers `desktop-document-association-unit` for the pure
 Node suite and `desktop-document-association-native` for the actual product
 fixture. The strict service target links only the existing session-bus helper

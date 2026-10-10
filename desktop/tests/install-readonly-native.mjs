@@ -1,5 +1,5 @@
-import { createNativeTargetProvider } from './desktop/installer/native-provider.mjs';
-import { createTargetController } from './desktop/installer/target-controller.mjs';
+import { createNativeTargetProvider } from './desktop/apps/installer/logic/native-provider.mjs';
+import { createTargetController } from './desktop/apps/installer/logic/target-controller.mjs';
 function check(value, message) { if (!value) throw new Error(message); }
 async function run() {
   check(typeof desktop.installTargets.readReport === 'function' &&

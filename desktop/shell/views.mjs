@@ -1,4 +1,4 @@
-import { h } from './js/reconciler.mjs';
+import { h } from './gui/sdk/js/reconciler.mjs';
 import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
 import { shortcutText } from './desktop/shell/shortcuts.mjs';
 import { displayField, setDisplayField } from './desktop/shell/displays.mjs';

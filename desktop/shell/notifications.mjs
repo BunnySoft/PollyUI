@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 
 function button(id, label, theme, action) {
   return h('view', { id, role: 'button', 'aria-label': label, tabIndex: 0,

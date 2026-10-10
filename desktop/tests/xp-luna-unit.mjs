@@ -7,8 +7,8 @@ const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import(
 const { isLuna, lunaBandColor, lunaBands, lunaButtonPaint, lunaCaptionGlyph, lunaVisualEvents } =
   await import('../shell/luna-primitives.mjs');
 const { panelView, settingsView, applicationsView } = await import('../shell/views.mjs');
-const catalog = parseThemeCatalog(readFileSync(new URL('../themes/builtin.json', import.meta.url), 'utf8'));
-const recovery = parseThemeCatalog(readFileSync(new URL('../themes/fallback.json', import.meta.url), 'utf8'));
+const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
+const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url), 'utf8'));
 const xp = catalog.themes[0];
 const clone = value => JSON.parse(JSON.stringify(value));
 const parse = theme => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme }));
@@ -47,7 +47,7 @@ for (const theme of catalog.themes.slice(1)) {
   assert.equal(isLuna(theme), false);
   assert.equal(isLuna(theme, 'window'), false);
   assert.equal(isLuna(theme, 'panel'), false);
-  const baseline = JSON.parse(readFileSync(new URL('../themes/xp-reference.json', import.meta.url), 'utf8'));
+  const baseline = JSON.parse(readFileSync(new URL('../resources/themes/xp-reference.json', import.meta.url), 'utf8'));
   assert.equal(theme.panel.height, baseline.unchangedPanelHeights[theme.id]);
 }
 const bands = lunaBands(xp, 'title', xp.window.titleHeight);

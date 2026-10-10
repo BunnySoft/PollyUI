@@ -1,5 +1,5 @@
-import { h, render } from './js/reconciler.mjs';
-import { createTextInput } from './js/textinput.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';
 

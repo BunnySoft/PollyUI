@@ -126,7 +126,7 @@ function domEvent(node, type, properties = {}) {
 function key(window, name, properties = {}) {
   const owner = window.document;
   const value = domEvent(owner.activeElement || owner.body, 'keydown', { key: name, ...properties });
-  // src/main.c app_key runs native Tab stepping only after an unprevented keydown.
+  // gui/src/context/context.c app_key runs native Tab stepping only after an unprevented keydown.
   if (name === 'Tab' && !value.defaultPrevented && !value.ctrlKey && !value.altKey && !value.metaKey) {
     const nodes = focusable(owner.body), index = nodes.indexOf(owner.activeElement);
     const step = value.shiftKey ? -1 : 1;

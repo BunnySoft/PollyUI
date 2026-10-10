@@ -1,4 +1,4 @@
-import { requireFileSystem, childPath, fileEntry } from './desktop/files/model.mjs';
+import { requireFileSystem, childPath, fileEntry } from './desktop/apps/files/logic/model.mjs';
 import { createFileTextApp } from './desktop/client/file-dialog-example.mjs';
 import { requestPrivateMutation } from './desktop/tests/file-dialog-mutation.mjs';
 

@@ -1,5 +1,5 @@
-import { createFilesApp } from './desktop/files/app.mjs';
-import { requireFileSystem } from './desktop/files/model.mjs';
+import { createFilesApp } from './desktop/apps/files/app.mjs';
+import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 
 const [root, mode] = application.arguments;
 if (typeof root !== 'string' || !root.startsWith('/tmp/polly-files-window-') ||

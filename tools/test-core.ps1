@@ -8,9 +8,11 @@ $storage = Join-Path $temporary 'storage.dat'
 $previousStorage = $env:PU_TEST_STORAGE
 Push-Location $repo
 try {
+    node --test .\tests\module-boundaries.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Module boundary checks failed' }
     $env:PU_TEST_STORAGE = $storage
     foreach ($test in Get-Content .\tools\core-tests.txt) {
-        $output = & $executablePath --test (Join-Path 'tests' $test) 2>&1
+        $output = & $executablePath --test $test 2>&1
         if ($LASTEXITCODE -ne 0 -or ($output -match '^FAIL:')) {
             $output | Write-Output
             throw "Core test failed: $test"

@@ -4,9 +4,9 @@ const { parseThemeCatalog } = await import(nodeRuntime ? './theme-schema.mjs' : 
 async function readBuiltin(name) {
   if (nodeRuntime) {
     const { readFile } = await import('node:fs/promises');
-    return readFile(new URL('../themes/' + name, import.meta.url), 'utf8');
+    return readFile(new URL('../resources/themes/' + name, import.meta.url), 'utf8');
   }
-  const response = await fetch('file://desktop/themes/' + name);
+  const response = await fetch('file://desktop/resources/themes/' + name);
   if (!response.ok) throw new Error('Cannot read desktop theme data: ' + name);
   return response.text();
 }

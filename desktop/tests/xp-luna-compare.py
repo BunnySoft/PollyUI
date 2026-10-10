@@ -34,7 +34,7 @@ if bool(args.paint_strip) == bool(args.actual):
 reference = Image.open(args.reference).convert("RGB")
 result = {"referenceSha256": hashlib.sha256(args.reference.read_bytes()).hexdigest()}
 if args.paint_strip:
-    manifest = json.loads((Path(__file__).parent.parent / "themes" / "xp-reference.json").read_text())
+    manifest = json.loads((Path(__file__).parent.parent / "resources" / "themes" / "xp-reference.json").read_text())
     source = next(item for item in manifest["references"] if item["id"] == "notepad")
     if result["referenceSha256"] != source["sha256"]:
         raise ValueError("The reference does not match the recorded analysis-only Notepad screenshot")

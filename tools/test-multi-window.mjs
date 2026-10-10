@@ -46,7 +46,7 @@ assert.ok(process.argv.length <= 4 && (process.argv.length < 4 || requireGpu), '
 const directory = await mkdtemp(path.join(tmpdir(), 'pollyui-multi-'));
 const prefix = path.join(directory, 'frame');
 try {
-    const child = spawn(path.resolve(executable), ['tests/multi-window.mjs', prefix], {
+    const child = spawn(path.resolve(executable), ['gui/tests/multi-window.mjs', prefix], {
         env: { ...process.env, XDG_CONFIG_HOME: path.join(directory, 'config'),
             XDG_DATA_HOME: path.join(directory, 'data'), XDG_CACHE_HOME: path.join(directory, 'cache') },
         stdio: ['ignore', 'pipe', 'pipe'],

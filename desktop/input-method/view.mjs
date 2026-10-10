@@ -1,4 +1,4 @@
-import { h, render } from './js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 
 export const CANDIDATE_LAYOUT = Object.freeze({ width: 360, height: 272, padding: 8, header: 20, preedit: 28, row: 32 });
 
