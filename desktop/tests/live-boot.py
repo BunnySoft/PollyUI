@@ -16,6 +16,10 @@ import threading
 import re
 
 
+def acceptance_input_required(diagnostic_prepare, profile_settings_startup):
+    return not (diagnostic_prepare and profile_settings_startup)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("iso", type=Path)
@@ -42,6 +46,17 @@ def main():
     if evidence.exists():
         raise ValueError("Refusing to overwrite prior boot evidence")
     evidence.mkdir(parents=True)
+    if args.diagnostic_prepare:
+        with iso.open("rb") as source:
+            planned_hash = hashlib.file_digest(source, "sha256").hexdigest()
+        (evidence / "diagnostic-plan.json").write_text(json.dumps({
+            "acceptance": False, "isoSha256": planned_hash, "harnessRevision": args.harness_revision,
+            "profileSettingsStartup": args.profile_settings_startup,
+            "skippedAcceptanceGates": ["nativeChineseCommit", "nativeClipboardPaste",
+                                       "keyboardWorkspaceSwitch"] if args.profile_settings_startup else [],
+            "maximumMonitorSeconds": 30 if args.profile_settings_startup else None,
+            "limits": "Diagnosis only, including on failure; no successful acceptance result is implied."
+        }, indent=2) + "\n")
     with tempfile.TemporaryDirectory(prefix="polly-vm-") as temporary:
         temporary = Path(temporary)
         firmware = Path("/usr/share/OVMF")
@@ -172,31 +187,32 @@ def main():
                                          "hold-time": 80})
                     time.sleep(1.0 if acceleration == "tcg" else 0.15)
 
-                wait_log("Input-method protocol ready", 120)
-                time.sleep(10 if acceleration == "tcg" else 1)
-                for key in ("n", "i", "h", "a", "o", "spc"):
-                    keys(key)
-                wait_log("POLLY_LIVE_IME_COMMIT")
-                keys("ctrl", "a")
-                keys("ctrl", "c")
-                keys("right")
-                keys("ctrl", "v")
-                wait_log("POLLY_LIVE_CLIPBOARD_PASTE")
-                time.sleep(2)
-                execute("screendump", {"filename": str(evidence / "desktop.ppm")})
-                execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in ["ctrl", "meta_l", "right"]]})
-                workspace_deadline = time.monotonic() + 15
-                while "POLLY_LIVE_WORKSPACE=2" not in serial.read_text(errors="replace"):
-                    if process.poll() is not None or time.monotonic() > workspace_deadline:
-                        raise RuntimeError("Guest keyboard did not switch the native workspace")
-                    time.sleep(0.2)
-                execute("screendump", {"filename": str(evidence / "workspace2.ppm")})
-                execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in ["ctrl", "meta_l", "left"]]})
-                workspace_deadline = time.monotonic() + 15
-                while "POLLY_LIVE_WORKSPACE=1" not in serial.read_text(errors="replace"):
-                    if process.poll() is not None or time.monotonic() > workspace_deadline:
-                        raise RuntimeError("Guest keyboard did not restore the initial workspace")
-                    time.sleep(0.2)
+                if acceptance_input_required(args.diagnostic_prepare, args.profile_settings_startup):
+                    wait_log("Input-method protocol ready", 120)
+                    time.sleep(10 if acceleration == "tcg" else 1)
+                    for key in ("n", "i", "h", "a", "o", "spc"):
+                        keys(key)
+                    wait_log("POLLY_LIVE_IME_COMMIT")
+                    keys("ctrl", "a")
+                    keys("ctrl", "c")
+                    keys("right")
+                    keys("ctrl", "v")
+                    wait_log("POLLY_LIVE_CLIPBOARD_PASTE")
+                    time.sleep(2)
+                    execute("screendump", {"filename": str(evidence / "desktop.ppm")})
+                    execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in ["ctrl", "meta_l", "right"]]})
+                    workspace_deadline = time.monotonic() + 15
+                    while "POLLY_LIVE_WORKSPACE=2" not in serial.read_text(errors="replace"):
+                        if process.poll() is not None or time.monotonic() > workspace_deadline:
+                            raise RuntimeError("Guest keyboard did not switch the native workspace")
+                        time.sleep(0.2)
+                    execute("screendump", {"filename": str(evidence / "workspace2.ppm")})
+                    execute("send-key", {"keys": [{"type": "qcode", "data": key} for key in ["ctrl", "meta_l", "left"]]})
+                    workspace_deadline = time.monotonic() + 15
+                    while "POLLY_LIVE_WORKSPACE=1" not in serial.read_text(errors="replace"):
+                        if process.poll() is not None or time.monotonic() > workspace_deadline:
+                            raise RuntimeError("Guest keyboard did not restore the initial workspace")
+                        time.sleep(0.2)
                 status = execute("query-status")
                 if status.get("status") != "running":
                     raise RuntimeError("Guest is no longer running")
@@ -273,6 +289,9 @@ def main():
                         (evidence / "diagnostic.json").write_text(json.dumps({
                             "acceptance": False, "isoSha256": diagnostic_hash,
                             "harnessRevision": args.harness_revision, "prepare": stages[preparation],
+                            "skippedAcceptanceGates": ["nativeChineseCommit", "nativeClipboardPaste",
+                                                       "keyboardWorkspaceSwitch"]
+                            if args.profile_settings_startup else [],
                             "limits": "Startup-only diagnostic, not full new-architecture or physical acceptance."
                         }, indent=2) + "\n")
                         execute("quit")

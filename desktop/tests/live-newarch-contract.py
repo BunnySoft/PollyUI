@@ -11,9 +11,22 @@ sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("guest", Path(__file__).with_name("live-newarch-guest.py"))
 guest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(guest)
+boot_spec = importlib.util.spec_from_file_location("boot", Path(__file__).with_name("live-boot.py"))
+boot = importlib.util.module_from_spec(boot_spec)
+boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_diagnostic_never_weakens_acceptance_input_gates(self):
+        self.assertTrue(boot.acceptance_input_required(False, False))
+        self.assertTrue(boot.acceptance_input_required(False, True))
+        self.assertTrue(boot.acceptance_input_required(True, False))
+        self.assertFalse(boot.acceptance_input_required(True, True))
+        source = Path(__file__).with_name("live-boot.py").read_text()
+        self.assertIn('"acceptance": False', source)
+        self.assertIn('"skippedAcceptanceGates"', source)
+        self.assertIn('Completed startup diagnosis only; no acceptance result was published', source)
+
     def test_actual_production_arguments(self):
         args = ["/usr/bin/pollyui", "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
                 "/usr/share/pollyui/desktop/shell/live.mjs"]
