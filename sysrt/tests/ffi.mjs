@@ -1,6 +1,8 @@
 import { open, alloc, platform, pointerSize, longSize, maxBytes, callbacks, async as asyncCalls } from 'sysrt:ffi';
 import { currentId, close as closeProcess } from './sysrt/sdk/js/process.mjs';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
+import { createRecord } from './sysrt/sdk/js/memory.mjs';
+import { monotonicNanoseconds, close as closeClock } from './sysrt/sdk/js/clock.mjs';
 
 function check(value, message) { if (!value) throw new Error(message); }
 function refuses(action, message, code) {
@@ -18,6 +20,22 @@ check(Number.isInteger(pid) && pid === expectedProcessId && currentId() === pid,
 closeProcess();
 check(currentId() === pid, 'SDK bindings can be closed and reloaded');
 closeProcess();
+
+if (platform === 'windows' || platform === 'linux') {
+  let previous = monotonicNanoseconds();
+  check(typeof previous === 'bigint' && previous >= 0n, 'OS clock returns exact nanosecond units');
+  let changed = false;
+  for (let i = 0; i < 64; i++) {
+    const current = monotonicNanoseconds();
+    check(current >= previous, 'Monotonic time never goes backwards');
+    changed ||= current > previous;
+    previous = current;
+  }
+  check(changed, 'OS clock advances rather than returning a constant');
+  closeClock();
+  check(monotonicNanoseconds() >= previous, 'Clock reload preserves monotonic source');
+  closeClock();
+}
 
 let retainedFunction, retainedView;
 {
@@ -41,6 +59,15 @@ const library = open(fixtureLibrary), functions = [];
 function bind(name, result, parameters) {
   const function_ = library.bind(name, { result, parameters });
   functions.push(function_); return function_;
+}
+if (platform === 'windows' || platform === 'linux') {
+  const reference = bind('sr_monotonic_ns', 'u64', []);
+  const before = reference().value;
+  const observed = monotonicNanoseconds();
+  const after = reference().value;
+  check(before !== 18446744073709551615n && after !== 18446744073709551615n &&
+    before <= observed && observed <= after, 'Clock units and source match direct native OS calls');
+  closeClock();
 }
 refuses(() => library.bind('missing_symbol', { result: 'i32', parameters: [] }), 'Unknown export', 'ERR_FFI_SYMBOL');
 refuses(() => library.bind('sr_echo_i8', { result: 'record', parameters: [] }), 'Unsupported structure');
@@ -80,6 +107,49 @@ const nativeError = bind('sr_error', 'i32', ['i32'])(13);
 check(nativeError.value === -1, 'Negative native result remains a result');
 check(platform === 'windows' ? nativeError.systemError === 13 && nativeError.errno === null :
   nativeError.errno === 13 && nativeError.systemError === null, 'Error state is captured with its call');
+
+const recordLayout = {
+  byteLength: Number(bind('sr_record_size', 'size', [])().value),
+  fields: {
+    tag: { type: 'i8', offset: 0 },
+    count: { type: 'i64', offset: Number(bind('sr_record_count_offset', 'size', [])().value) },
+    ratio: { type: 'double', offset: Number(bind('sr_record_ratio_offset', 'size', [])().value) },
+  },
+};
+const records = loadBindings({
+  library: fixtureLibrary, target: { pointerSize, longSize }, layouts: { sample: recordLayout },
+  functions: {
+    fill: { symbol: 'sr_record_fill', result: 'void', parameters: ['pointer'] },
+    check: { symbol: 'sr_record_check', result: 'i32', parameters: ['pointer'] },
+  },
+});
+const record = records.createRecord('sample');
+records.call('fill', record.pointer);
+const observed = record.read();
+check(observed.tag === -7 && observed.count === -9223372036854775807n && observed.ratio === 1.25,
+  'JS layout decodes compiler-verified native offsets');
+refuses(() => record.write({ tag: 12, count: 9223372036854775808n }), 'Record overflow');
+check(record.read().tag === -7, 'Rejected multi-field update does not partially write');
+refuses(() => record.write({ unknown: 1 }), 'Unknown field');
+record.write({ tag: 12, count: 9223372036854775807n, ratio: 2.5 });
+check(records.call('check', record.pointer).value === 1, 'Native code observes JS/config field writes');
+record.close();
+refuses(() => record.read(), 'Closed record read');
+refuses(() => record.pointer, 'Closed record pointer');
+refuses(() => records.createRecord('missing'), 'Unknown layout');
+records.close();
+refuses(() => records.createRecord('sample'), 'No allocation after binding close');
+refuses(() => loadBindings({ library: fixtureLibrary, functions: {},
+  target: { pointerSize: pointerSize === 8 ? 4 : 8 } }), 'Wrong ABI profile');
+for (const layout of [
+  { byteLength: 0, fields: { a: { type: 'i32', offset: 0 } } },
+  { byteLength: maxBytes + 1, fields: { a: { type: 'i32', offset: 0 } } },
+  { byteLength: 4, fields: { a: { type: 'i64', offset: 0 } } },
+  { byteLength: 4, fields: { a: { type: 'i32', offset: -1 } } },
+  { byteLength: 8, fields: { a: { type: 'i64', offset: 0 }, b: { type: 'u8', offset: 1 } } },
+  { byteLength: 8, fields: { a: { type: 'pointer', offset: 0 } } },
+  { byteLength: 4, fields: { a: { type: 'i32', offset: 0, automatic: true } } },
+]) refuses(() => createRecord(layout), 'Invalid or unsupported layout');
 
 const buffer = alloc(8);
 refuses(() => Object.getPrototypeOf(buffer).read.call(foreignObject, 1),

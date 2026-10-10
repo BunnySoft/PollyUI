@@ -38,3 +38,33 @@ EXPORT int32_t sr_error(int32_t value)
 #endif
     return -1;
 }
+
+typedef struct SrRecord { int8_t tag; int64_t count; double ratio; } SrRecord;
+EXPORT size_t sr_record_size(void) { return sizeof(SrRecord); }
+EXPORT size_t sr_record_count_offset(void) { return offsetof(SrRecord, count); }
+EXPORT size_t sr_record_ratio_offset(void) { return offsetof(SrRecord, ratio); }
+EXPORT void sr_record_fill(SrRecord *record)
+{
+    record->tag = -7; record->count = INT64_MIN + 1; record->ratio = 1.25;
+}
+EXPORT int32_t sr_record_check(const SrRecord *record)
+{
+    return record->tag == 12 && record->count == INT64_MAX && record->ratio == 2.5;
+}
+
+EXPORT uint64_t sr_monotonic_ns(void)
+{
+#ifdef _WIN32
+    LARGE_INTEGER counter, frequency;
+    if (!QueryPerformanceCounter(&counter) || !QueryPerformanceFrequency(&frequency) ||
+        counter.QuadPart < 0 || frequency.QuadPart <= 0) return UINT64_MAX;
+    uint64_t value = (uint64_t)counter.QuadPart, rate = (uint64_t)frequency.QuadPart;
+    if (rate > UINT64_MAX / UINT64_C(1000000000)) return UINT64_MAX;
+    return (value / rate) * UINT64_C(1000000000) +
+        (value % rate) * UINT64_C(1000000000) / rate;
+#else
+    struct timespec value;
+    if (clock_gettime(CLOCK_MONOTONIC, &value)) return UINT64_MAX;
+    return (uint64_t)value.tv_sec * UINT64_C(1000000000) + (uint64_t)value.tv_nsec;
+#endif
+}

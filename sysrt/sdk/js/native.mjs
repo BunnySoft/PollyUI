@@ -1,11 +1,27 @@
-import { open, platform, libc } from 'sysrt:ffi';
+import { open, platform, libc, pointerSize, longSize } from 'sysrt:ffi';
+import { compileLayout } from './sysrt/sdk/js/memory.mjs';
 
 export function loadBindings(configuration) {
   if (!configuration || typeof configuration !== 'object' ||
       Array.isArray(configuration) || !configuration.functions ||
       typeof configuration.functions !== 'object' || Array.isArray(configuration.functions) ||
-      Object.keys(configuration).some(key => !['library', 'functions'].includes(key)))
+      Object.keys(configuration).some(key => !['library', 'functions', 'layouts', 'target'].includes(key)))
     throw new TypeError('Native bindings require a library and function descriptions');
+  if (configuration.target !== undefined) {
+    const target = configuration.target;
+    if (!target || typeof target !== 'object' || Array.isArray(target) ||
+        Object.keys(target).some(key => !['pointerSize', 'longSize'].includes(key)) ||
+        (target.pointerSize !== undefined && target.pointerSize !== pointerSize) ||
+        (target.longSize !== undefined && target.longSize !== longSize))
+      throw new Error('Native configuration does not match the host ABI');
+  }
+  const layouts = new Map();
+  if (configuration.layouts !== undefined) {
+    if (!configuration.layouts || typeof configuration.layouts !== 'object' || Array.isArray(configuration.layouts))
+      throw new TypeError('Native layouts must be an object');
+    for (const [name, description] of Object.entries(configuration.layouts))
+      layouts.set(name, compileLayout(description));
+  }
   const name = typeof configuration.library === 'string' ?
     configuration.library : configuration.library?.[libc];
   if (typeof name !== 'string' || !name)
@@ -34,6 +50,12 @@ export function loadBindings(configuration) {
       const function_ = functions.get(name);
       if (!function_) throw new Error('Unknown native binding: ' + name);
       return function_(...args);
+    },
+    createRecord(name) {
+      if (closed) throw new Error('Native bindings are closed');
+      const layout = layouts.get(name);
+      if (!layout) throw new Error('Unknown native layout: ' + name);
+      return layout.create();
     },
     close() {
       if (closed) return;

@@ -12,6 +12,7 @@ gui/tests/runtime.js
 gui/tests/workers.js
 sysrt/tests/fetch.js
 sysrt/tests/process.mjs
+sysrt/tests/clock.mjs
 sysrt/tests/storage.js
 sysrt/tests/storage.js
 sysrt/tests/storage-values.mjs

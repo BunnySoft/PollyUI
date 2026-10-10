@@ -47,6 +47,10 @@ for the call; retained data needs an explicitly managed buffer. Unknown native
 allocations stay opaque. ABI descriptions are trusted native-code contracts,
 not an OS sandbox. Ordinary launchers register the module; dedicated greeter,
 lock and input-method roles do not.
+Numeric by-reference records are described by byte size, field type/offset and
+an explicit ABI profile, then read/written in JS. The clock SDK uses this path
+for Windows 64-bit QPC and Linux LP64 `clock_gettime`; other profiles fail
+explicitly. Results use nanosecond units, not a promise of nanosecond resolution.
 `-DPU_BUILD_LAUNCHER=OFF` configures the GUI without SysRT/libffi. SysRT itself
 can be built with `cmake -S sysrt -B build/sysrt`; its native ABI tests need no
 Skia, Yoga or SDL.
