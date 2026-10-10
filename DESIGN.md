@@ -97,8 +97,12 @@ scalar request/reply polling: no argument or one uint32/bool/string/object-path
 input, and empty/scalar/fixed scalar tuple output. Native strings and diagnostics
 are copied within their owner's lifetime, with explicit overflow rather than
 guessed object bounds. Setup is synchronous; containers/subscriptions and
-remote-service policy remain separate. Existing native desktop services are
-not replaced by this D-Bus client yet.
+remote-service policy remain separate. A minimal JS service endpoint now uses
+a separate private connection and zero-wait receive polling, with explicit
+request-message ownership and single-use replies/errors. Native send acceptance
+is not delivery; sender identity is not application authorization. Name claims
+do not replace existing owners or queue, and disconnect/name loss does not
+reconnect. Existing native desktop services are not replaced by this IPC yet.
 The user theme-file/resource service is now JS over native files: descriptor-
 relative traversal, ownership checks, limits and asset policy remain desktop
 concerns, and the old theme-file C bridge is removed. Generic GUI bitmap handles

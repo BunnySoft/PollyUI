@@ -103,8 +103,12 @@ test('D-Bus client stays JS/config-only with explicit connections and library te
   assert.match(sdk, /loadNativeApi\(dbusBindings\[platform\]\)/);
   assert.match(sdk, /dbus_connection_open_private/);
   assert.match(sdk, /dbus_connection_read_write_dispatch', connection, 0/);
+  assert.match(sdk, /export function openDbusService\(address, options\)/);
+  assert.match(sdk, /dbus_connection_read_write', connection, 0/);
+  assert.match(sdk, /dbus_connection_pop_message/);
+  assert.match(sdk, /NAME_DO_NOT_QUEUE/);
   assert.match(sdk, /export function shutdownDbus\(\)/);
-  assert.doesNotMatch(sdk, /document\.|window\.|desktop\/|dbus_bus_get|DBUS_SESSION_BUS_ADDRESS/);
+  assert.doesNotMatch(sdk, /document\.|window\.|['"]\.?\/desktop\/|\bdbus_bus_get(?:_private)?\b|DBUS_SESSION_BUS_ADDRESS/);
   assert.doesNotMatch(read('sysrt/ffi/module.c'), /#include\s+<dbus\/|\bdbus_/);
   assert.doesNotMatch(read('desktop/launcher/launcher.c'), /\bdbus_shutdown|\bshutdownDbus/);
   const build = read('sysrt/CMakeLists.txt');

@@ -182,10 +182,28 @@ Caller monotonic deadlines report `ERR_DBUS_TIMEOUT`, not a fabricated NoReply.
 Cancellation/close discard local results and never replay requests or roll back
 remote side effects. Close releases pending calls/connections but keeps the
 module's libdbus reference for its global caches. `shutdownDbus()` is explicit
-and requires all SDK clients closed plus exclusive ownership of every libdbus
+and requires all SDK endpoints closed plus exclusive ownership of every libdbus
 user in the process, including other realms/native code. Do not invoke it as
 automatic desktop-host cleanup. Containers, variants and subscriptions are
 not implemented; this is not a general RPC/service framework.
+
+`openDbusService(address, {name, path, interface, methods})` supplies a minimal
+JS service on a separate private connection. Each method declares `signature`
+and `replySignature` using the same scalar subset. Opening/authentication/Hello
+and claiming the well-known name are synchronous; name claims do not replace
+an owner or queue behind one. `poll()` performs one zero-wait I/O step and pops
+at most one message, returning a request or `null`. Drive it from the service's
+event loop; there are no automatic handlers, native callbacks or blocking flush.
+Request headers, unique `sender`, scalar `args` and `noReply` are copied/frozen.
+`reply(args)`, `error(name, text)` or `close()` ends native message ownership;
+responses are single-use, and service close drops retained requests. Native
+send acceptance does not mean remote delivery, and no-reply requests suppress
+responses. Invalid targets/signatures receive native errors without admission.
+Disconnect or a validated daemon NameLost closes admission without reconnect.
+Forced authentic NameLost was not exercised; peer-spoofed NameLost was.
+Unique sender metadata is not authorization: Settings/Shell policy must remain
+above this transport. Introspection, containers, Unix FDs, general signals and
+automatic Promise handlers are not implemented.
 
 `createCallback(signature, fn)` (or native `callback`) creates a handle for
 default-ABI scalar/void callbacks. Pass it through a native signature's
