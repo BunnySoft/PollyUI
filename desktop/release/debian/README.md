@@ -7,8 +7,12 @@ physical hardware. This basic boot/runtime result does not establish full
 per-device equivalence; the Alpine fallback and its evidence remain preserved.
 The current alpha.5-r2 artifact inventory, architecture and handoff are in the
 [PollyOS technical overview](../../../docs/POLLYOS.md).
-The [storage design](../../../docs/POLLYOS-STORAGE-DESIGN.md) is now the P0
-implementation priority. The layout contract and early `/usr` initramfs mapping
+The current delivery goal is a new-architecture, memory-only UEFI Live Alpha,
+with real VM acceptance before physical-test ISO handoff; see the
+[Alpha delivery gate](../../../ROADMAP.md#new-architecture-alpha-delivery-gate).
+Historical alpha.5-r2 media does not qualify the new runtime. The
+[storage design](../../../docs/POLLYOS-STORAGE-DESIGN.md) is separate installed-system
+work. The layout contract and early `/usr` initramfs mapping
 are implemented. Ordinary single-system boot/account evidence is recorded in the
 ledger; the complete installer, shared Apps and independent recovery remain pending.
 Tasks/status live in the [execution ledger](../../../docs/POLLYOS-BACKLOG.md#16-完整执行清单与依赖).

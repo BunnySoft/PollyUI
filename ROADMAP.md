@@ -26,6 +26,30 @@ per-device and endurance evidence is separate. Keep the Alpine fallback and do
 not turn all future features into current release gates.
 See [base selection and maintenance](./docs/desktop-base-maintenance.md).
 
+## New-architecture Alpha delivery gate
+
+The current goal is a **Debian 13 x86_64 UEFI Live test Alpha**, not an
+installer or a complete migration of every native desktop service. Finish the
+selected Shell JSON configuration slice, then freeze one clean source revision
+for integration and media testing. Existing alpha.5-r2 images and their evidence
+remain historical; they do not contain or qualify the new SysRT/Settings work.
+
+| Gate | Required outcome | Current state |
+|---|---|---|
+| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | JSON configuration in progress; no candidate frozen |
+| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Pending |
+| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Pending; containers/headless tests are not VM evidence |
+| Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Pending; no new ISO published |
+| Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
+
+Use the existing QEMU/OVMF lane; temporary VM boot media is a test candidate,
+not physical-release approval. Only one heavy media/VM lane runs against the
+frozen revision. Do not overwrite historical artifacts or silently use cached
+old runtime binaries. Live runs from RAM: no installation, automatic disk
+mounting or internal-disk writes. Other Settings pages, broad SDK coverage,
+installed-system storage/recovery and exhaustive hardware matrices are not
+added to this Alpha's scope.
+
 For PollyOS, use the [technical overview](./docs/POLLYOS.md) and the
 **[historical deferred-work ledger](./docs/POLLYOS-BACKLOG.md)**. The ledger maps
 the original 45 desktop milestones, theme/release review and second-stage A–G
