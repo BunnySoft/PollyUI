@@ -34,6 +34,8 @@ void pu_script_destroy(PuScript *s);
 /* Evaluate `path` as a global script. Returns 0 on success; on a JS error,
  * prints the message + stack and returns nonzero. */
 int pu_script_run_file(PuScript *s, const char *path);
+void pu_script_set_module_root(PuScript *s, const char *root);
+int pu_script_run_module(PuScript *s, const char *specifier);
 int pu_script_failed(PuScript *s);
 /* At application/test exit, unfinished module evaluation is also an error. */
 int pu_script_finish(PuScript *s);

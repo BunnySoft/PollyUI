@@ -1078,13 +1078,23 @@ static void install_host(JSContext *ctx, int w, int h)
     JS_FreeValue(ctx, global);
 }
 
+static int run_entry(PuScript *script, const PuGuiConfig *config)
+{
+    pu_script_set_module_root(script, config->module_root);
+    if (config->prelude) {
+        if (pu_script_run_module(script, config->prelude)) return 1;
+        pu_script_run_loop(script);
+        if (pu_script_finish(script)) return 1;
+    }
+    return pu_script_run_file(script, config->script);
+}
+
 int pu_gui_test(const PuGuiConfig *config)
 {
     if (!config || !config->script) {
         fprintf(stderr, "[gui] A test script is required\n");
         return 2;
     }
-    const char *path = config->script;
     if (!pu_font_system_init()) return 1;
     PuScript *s = pu_script_create();
     if (!s) return 1;
@@ -1125,7 +1135,7 @@ int pu_gui_test(const PuGuiConfig *config)
     install_host(pu_script_jsctx(s), host.width, host.height);
 
     int rc = 1;
-    if (host.surface) rc = pu_script_run_file(s, path);
+    if (host.surface) rc = run_entry(s, config);
     else fprintf(stderr, "[render] Failed to create headless surface\n");
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
     if (pu_script_finish(s)) rc = 1;
@@ -1173,7 +1183,7 @@ int pu_gui_run(const PuGuiConfig *config)
     int installed = primary && (!config->hooks || !config->hooks->install ||
         config->hooks->install(pu_script_jsctx(s), disp, 0, config->user));
     if (installed && config->keep_alive) pu_window_keep_alive(1);
-    int rc = primary && clipboard_ready && installed ? pu_script_run_file(s, config->script) : 1;
+    int rc = primary && clipboard_ready && installed ? run_entry(s, config) : 1;
     if (!clipboard_ready) fprintf(stderr, "[host] Cannot initialize clipboard APIs\n");
     if (!primary) fprintf(stderr, "[host] Failed to create application window: window system initialization\n");
     else if (!installed) fprintf(stderr, "[gui] Cannot initialize host extensions\n");

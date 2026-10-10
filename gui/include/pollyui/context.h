@@ -15,6 +15,10 @@ typedef struct PuGuiHooks {
 
 typedef struct PuGuiConfig {
     const char *script;
+    /* Optional initialization module, completed before the app entry. */
+    const char *prelude;
+    /* Shared module directory; application-local modules remain the fallback. */
+    const char *module_root;
     const PuGuiHooks *hooks;
     void *user;
     int keep_alive;

@@ -20,6 +20,7 @@ if (BUILD_TESTING)
     add_executable(pollyui-context-test tests/context-hooks.c)
     target_link_libraries(pollyui-context-test PRIVATE pollyui-engine)
     add_test(NAME gui-context-hooks COMMAND pollyui-context-test
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/context-hooks.mjs")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/context-hooks.mjs"
+        "context-prelude.mjs" "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     set_tests_properties(gui-context-hooks PROPERTIES TIMEOUT 30)
 endif()

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -50,6 +51,7 @@ struct PuScript {
     int         raf_id;
     PuDispatch *dispatch;   /* optional: async deliveries from worker threads */
     JSValue entry;
+    const char *module_root;
     int failed;
 };
 
@@ -294,8 +296,7 @@ JSContext *pu_script_jsctx(PuScript *s)
 
 static char *pu_read_file(const char *path, size_t *out_len);
 
-/* ES module support: names resolve relative to the working directory (identity
- * normalize), and each module is compiled from its file on demand. */
+/* Module identities stay stable; shared resources precede app-local files. */
 static char *pu_module_normalize(JSContext *ctx, const char *base_name,
                                  const char *name, void *opaque)
 {
@@ -308,9 +309,24 @@ static char *pu_module_normalize(JSContext *ctx, const char *base_name,
 
 static JSModuleDef *pu_module_loader(JSContext *ctx, const char *module_name, void *opaque)
 {
-    (void)opaque;
+    PuScript *script = opaque;
     size_t len = 0;
-    char *buf = pu_read_file(module_name, &len);
+    char *buf = NULL;
+    if (script->module_root && module_name[0] != '/' &&
+        !(module_name[0] && module_name[1] == ':')) {
+        size_t size = strlen(script->module_root) + strlen(module_name) + 2;
+        char *path = malloc(size);
+        if (!path) { JS_ThrowOutOfMemory(ctx); return NULL; }
+        snprintf(path, size, "%s/%s", script->module_root, module_name);
+        buf = pu_read_file(path, &len);
+        int error = errno;
+        free(path);
+        if (!buf && error != ENOENT && error != ENOTDIR) {
+            JS_ThrowReferenceError(ctx, "Cannot read shared module '%s': %s", module_name, strerror(error));
+            return NULL;
+        }
+    }
+    if (!buf) buf = pu_read_file(module_name, &len);
     if (!buf) {
         JS_ThrowReferenceError(ctx, "could not load module '%s'", module_name);
         return NULL;
@@ -336,7 +352,7 @@ PuScript *pu_script_create(void)
     if (!s->ctx) { JS_FreeRuntime(s->rt); free(s); return NULL; }
 
     JS_SetContextOpaque(s->ctx, s);
-    JS_SetModuleLoaderFunc(s->rt, pu_module_normalize, pu_module_loader, NULL);
+    JS_SetModuleLoaderFunc(s->rt, pu_module_normalize, pu_module_loader, s);
     pu_register_globals(s);
     return s;
 }
@@ -345,14 +361,18 @@ static char *pu_read_file(const char *path, size_t *out_len)
 {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END)) { int error = errno; fclose(f); errno = error; return NULL; }
     long n = ftell(f);
-    if (n < 0) { fclose(f); return NULL; }
-    fseek(f, 0, SEEK_SET);
+    if (n < 0 || fseek(f, 0, SEEK_SET)) { int error = errno; fclose(f); errno = error; return NULL; }
     char *buf = (char *)malloc((size_t)n + 1);
-    if (!buf) { fclose(f); return NULL; }
+    if (!buf) { fclose(f); errno = ENOMEM; return NULL; }
+    errno = 0;
     size_t rd = fread(buf, 1, (size_t)n, f);
-    fclose(f);
+    if (rd != (size_t)n) {
+        int error = errno ? errno : EIO;
+        free(buf); fclose(f); errno = error; return NULL;
+    }
+    if (fclose(f)) { free(buf); return NULL; }
     buf[rd] = '\0';
     if (out_len) *out_len = rd;
     return buf;
@@ -385,6 +405,30 @@ int pu_script_finish(PuScript *s)
     return s->failed;
 }
 
+void pu_script_set_module_root(PuScript *s, const char *root) { s->module_root = root; }
+
+static int evaluated(PuScript *s, JSValue val, int is_module)
+{
+    if (JS_IsException(val)) {
+        pu_dump_error(s->ctx);
+        JS_FreeValue(s->ctx, val);
+        s->failed = 1;
+        return 1;
+    }
+    if (is_module && JS_PromiseState(s->ctx, val) != JS_PROMISE_NOT_A_PROMISE) {
+        JS_FreeValue(s->ctx, s->entry);
+        s->entry = val;
+        return pu_script_failed(s);
+    }
+    JS_FreeValue(s->ctx, val);
+    return 0;
+}
+
+int pu_script_run_module(PuScript *s, const char *specifier)
+{
+    return evaluated(s, JS_LoadModule(s->ctx, NULL, specifier), 1);
+}
+
 int pu_script_run_file(PuScript *s, const char *path)
 {
     size_t len = 0;
@@ -400,19 +444,7 @@ int pu_script_run_file(PuScript *s, const char *path)
 
     JSValue val = JS_Eval(s->ctx, src, len, path, eval_flags);
     free(src);
-    if (JS_IsException(val)) {
-        pu_dump_error(s->ctx);
-        JS_FreeValue(s->ctx, val);
-        s->failed = 1;
-        return 1;
-    }
-    if (is_module && JS_PromiseState(s->ctx, val) != JS_PROMISE_NOT_A_PROMISE) {
-        JS_FreeValue(s->ctx, s->entry);
-        s->entry = val;
-        return pu_script_failed(s);
-    }
-    JS_FreeValue(s->ctx, val);
-    return 0;
+    return evaluated(s, val, is_module);
 }
 
 void pu_script_set_dispatch(PuScript *s, PuDispatch *d)
