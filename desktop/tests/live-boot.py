@@ -24,10 +24,19 @@ def guest_drm_input_record(text):
     # Kernel console writes can split a journal record. Use this view only for
     # backend identification; fatal/error checks retain the complete raw log.
     journal = re.sub(r"\x1b\[[0-9;]*m", "", text)
-    journal = re.sub(r"\[\s*\d+\.\d+\] (?![A-Za-z0-9_.-]+\[\d+\]:)[^\r\n]*\r?\n", "", journal)
-    return ("WLR_BACKENDS: drm,libinput" in journal and
+    configured = "WLR_BACKENDS: drm,libinput" in journal
+    for match in re.finditer(
+            r"Loading user-specified backends due to ([A-Z_]+)"
+            r"\[\s*\d+\.\d+\] hrtimer: interrupt took \d+ ns\r?\n([A-Z_]+: drm,libinput)", journal):
+        configured |= match[1] + match[2] == "WLR_BACKENDS: drm,libinput"
+    return (configured and
             "Initializing DRM backend for /dev/dri/" in journal and
             "Seat opened with backend 'logind'" in journal)
+
+
+def fatal_guest_record(raw):
+    return any(message in raw for message in
+               ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"])
 
 
 def main():
@@ -183,7 +192,7 @@ def main():
                     raise RuntimeError("Desktop did not use guest DRM/input devices")
                 if "POLLY_SESSION_REGISTERED uid=1000" not in text or "Active=yes" not in text:
                     raise RuntimeError("PAM did not register an active ordinary-user elogind session")
-                if any(message in text for message in ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"]):
+                if fatal_guest_record(text):
                     raise RuntimeError("Boot reported a fatal error:\n" + text[-8000:])
                 def wait_log(marker, seconds=30, pattern=False):
                     until = time.monotonic() + seconds

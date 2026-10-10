@@ -19,7 +19,7 @@ boot_spec.loader.exec_module(boot)
 
 class Protocol(unittest.TestCase):
     def test_drm_backend_record_survives_actual_kernel_console_interleave(self):
-        record = ("[ 65.0] polly-session[588]: due to "
+        record = ("[ 65.0] polly-session[588]: Loading user-specified backends due to "
                   "W[ 65.076721] hrtimer: interrupt took 17300651 ns\n"
                   "LR_BACKENDS: drm,libinput\n"
                   "[ 65.2] polly-session[588]: Seat opened with backend 'logind'\n"
@@ -28,6 +28,15 @@ class Protocol(unittest.TestCase):
         self.assertFalse(boot.guest_drm_input_record(record.replace("drm,libinput", "headless")))
         self.assertFalse(boot.guest_drm_input_record(record.replace("Initializing DRM", "No DRM")))
         self.assertFalse(boot.guest_drm_input_record(record.replace("LR_BACKENDS", "BACKENDS")))
+        normal = record.replace("W[ 65.076721] hrtimer: interrupt took 17300651 ns\nLR", "WLR")
+        self.assertTrue(boot.guest_drm_input_record(normal))
+        self.assertFalse(boot.guest_drm_input_record(record.replace("hrtimer: interrupt took 17300651 ns",
+                                                                  "unrelated arbitrary text")))
+        fatal = normal + "[ 80.0] Kernel panic - not syncing\n"
+        self.assertTrue(boot.fatal_guest_record(fatal))
+        self.assertTrue(boot.fatal_guest_record(record.replace(
+            "hrtimer: interrupt took 17300651 ns", "Kernel panic - not syncing")))
+        self.assertFalse(boot.guest_drm_input_record(record.replace("Seat opened", "Seat not opened")))
 
     def test_guest_user_theme_matches_the_real_production_file_schema(self):
         repo = Path(__file__).resolve().parents[2]
