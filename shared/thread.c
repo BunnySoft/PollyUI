@@ -33,10 +33,7 @@ void pu_cond_wait_ms(PuCond *c, PuMutex *m, int ms)
     SleepConditionVariableCS(&c->cv, &m->cs, ms < 0 ? INFINITE : (DWORD)ms);
 }
 void pu_cond_signal(PuCond *c)               { WakeConditionVariable(&c->cv); }
-void pu_cond_broadcast(PuCond *c)            { WakeAllConditionVariable(&c->cv); }
 
-/* The trampoline owns its argument block, so detaching/freeing the PuThread
- * handle can never race the running thread reading fn/arg. */
 typedef struct { void (*fn)(void *); void *arg; } TrampArg;
 
 static DWORD WINAPI pu_thread_trampoline(LPVOID p)
@@ -66,12 +63,6 @@ void pu_thread_join(PuThread *t)
 {
     if (!t) return;
     WaitForSingleObject(t->h, INFINITE);
-    CloseHandle(t->h);
-    free(t);
-}
-void pu_thread_detach(PuThread *t)
-{
-    if (!t) return;
     CloseHandle(t->h);
     free(t);
 }
@@ -117,10 +108,7 @@ void pu_cond_wait_ms(PuCond *c, PuMutex *m, int ms)
     pthread_cond_timedwait(&c->c, &m->m, &ts);
 }
 void pu_cond_signal(PuCond *c)    { pthread_cond_signal(&c->c); }
-void pu_cond_broadcast(PuCond *c) { pthread_cond_broadcast(&c->c); }
 
-/* The trampoline owns its argument block, so detaching/freeing the PuThread
- * handle can never race the running thread reading fn/arg. */
 typedef struct { void (*fn)(void *); void *arg; } TrampArg;
 
 static void *pu_thread_trampoline(void *p)
@@ -149,12 +137,6 @@ void pu_thread_join(PuThread *t)
 {
     if (!t) return;
     pthread_join(t->t, NULL);
-    free(t);
-}
-void pu_thread_detach(PuThread *t)
-{
-    if (!t) return;
-    pthread_detach(t->t);
     free(t);
 }
 

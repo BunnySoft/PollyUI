@@ -3,9 +3,7 @@
 
 /* ScriptEngine — the QuickJS VM wrapper (DESIGN.md §2).
  *
- * M1 surface: create a VM, register `console` and timers, evaluate a .js file,
- * and run a minimal event loop (promise microtasks + setTimeout) to completion.
- * The DOM bindings (Model bridge) arrive in M2. */
+ * Owns the VM, module evaluation, timers and the JavaScript event loop. */
 
 #include "quickjs.h"
 #include "shared/dispatch.h"

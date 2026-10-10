@@ -569,11 +569,6 @@ failed:
     return 0;
 }
 
-void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type)
-{
-    dispatch_impl(b, target, type, NULL, 1);
-}
-
 int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event)
 {
     const char *types[] = { "dragenter", "dragover", "drop", "dragleave", "droperror" };
@@ -691,8 +686,6 @@ int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, const PuWheelEvent *ev
     return moved;
 }
 
-PuNode *pu_bridge_focused(PuBridge *b) { return b ? b->focused : NULL; }
-
 /* Set/clear a state flag on a node, or up the whole ancestor chain to the root.
  * Hover marks the path (CSS :hover applies to ancestors); focus marks one node. */
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
@@ -757,8 +750,6 @@ void pu_bridge_focus_step(PuBridge *b, int backwards)
                         (idx + (backwards ? -1 : 1) + count) % count;
     pu_bridge_set_focus(b, arr[next]);
 }
-
-void pu_bridge_focus_next(PuBridge *b) { pu_bridge_focus_step(b, 0); }
 
 /* ---- document --------------------------------------------------------------*/
 

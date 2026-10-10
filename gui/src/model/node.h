@@ -106,7 +106,6 @@ void        pu_node_set_text(PuNode *n, const char *text);
 void        pu_style_set(PuStyle *s, const char *name, const char *value);
 const char *pu_style_get(const PuStyle *s, const char *name);
 void        pu_style_remove(PuStyle *s, const char *name);
-void        pu_style_clear(PuStyle *s);
 
 /* --- events --- */
 /* Add a listener; takes ownership of `func` (caller must have duped it). */

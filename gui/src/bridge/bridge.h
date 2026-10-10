@@ -30,10 +30,6 @@ int pu_bridge_sync_text_input(PuBridge *bridge);
 /* The document body element (root of the user's tree). */
 PuNode *pu_bridge_body(PuBridge *b);
 
-/* Dispatch an event of `type` to `target`, bubbling up to the root, invoking
- * matching listeners with an event object. */
-void pu_bridge_dispatch_event(PuBridge *b, PuNode *target, const char *type);
-
 /* Dispatch a pointer event (mousedown/mouseup/mousemove/click) at `target`,
  * carrying clientX/clientY. mousemove also emits mouseenter/mouseleave as the
  * hovered element changes. Pass the hit-tested target (NULL = empty space). */
@@ -53,9 +49,7 @@ int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *even
 /* Move focus to `node` (NULL = blur), firing blur/focus events. Returns nonzero
  * if focus actually changed (so `focus:*` overrides differ -> host repaints). */
 int     pu_bridge_set_focus(PuBridge *b, PuNode *node);
-PuNode *pu_bridge_focused(PuBridge *b);
-/* Advance focus to the next focusable (tabIndex >= 0) element in tree order. */
-void    pu_bridge_focus_next(PuBridge *b);
+/* Move focus forward or backward through focusable elements in tree order. */
 void    pu_bridge_focus_step(PuBridge *b, int backwards);
 /* Returns nonzero if the event was prevented. TEXT becomes textinput.data. */
 int     pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event);

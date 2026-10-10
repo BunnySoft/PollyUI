@@ -54,12 +54,6 @@ const char *pu_style_get(const PuStyle *s, const char *name)
     return NULL;
 }
 
-void pu_style_clear(PuStyle *s)
-{
-    for (int i = 0; i < s->count; i++) { free(s->props[i].name); free(s->props[i].value); }
-    s->count = 0;
-}
-
 void pu_style_remove(PuStyle *s, const char *name)
 {
     if (!name) return;
