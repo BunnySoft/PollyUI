@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #if defined(__linux__)
 #include <dirent.h>
 #include <fcntl.h>
@@ -26,6 +27,7 @@
 #define EXPORT __declspec(dllexport)
 #else
 #include <time.h>
+#include <pthread.h>
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
@@ -47,6 +49,35 @@ EXPORT void sr_fill(uint8_t *bytes, size_t count, uint8_t value)
 EXPORT void *sr_echo_pointer(void *pointer) { return pointer; }
 EXPORT const char *sr_tail(const char *text) { return text + 1; }
 EXPORT const char *sr_static(void) { return "opaque"; }
+static void fixture_sleep(int32_t milliseconds)
+{
+#ifdef _WIN32
+    Sleep((DWORD)milliseconds);
+#else
+    struct timespec delay = { milliseconds / 1000, (milliseconds % 1000) * 1000000 };
+    while (nanosleep(&delay, &delay) && errno == EINTR) {}
+#endif
+}
+EXPORT int32_t sr_async_delay(int32_t milliseconds, int32_t value)
+{
+    fixture_sleep(milliseconds); return value;
+}
+EXPORT uint64_t sr_thread_id(void)
+{
+#ifdef _WIN32
+    return GetCurrentThreadId();
+#else
+    return (uint64_t)(uintptr_t)pthread_self();
+#endif
+}
+static atomic_int gate_open;
+EXPORT void sr_gate_reset(void) { atomic_store(&gate_open, 0); }
+EXPORT void sr_gate_release(void) { atomic_store(&gate_open, 1); }
+EXPORT int32_t sr_gate_wait(int32_t value)
+{
+    for (int i = 0; i < 1000 && !atomic_load(&gate_open); i++) fixture_sleep(1);
+    return atomic_load(&gate_open) ? value : INT32_MIN;
+}
 EXPORT int32_t sr_error(int32_t value)
 {
     errno = value;

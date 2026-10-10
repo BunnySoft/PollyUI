@@ -1,4 +1,5 @@
 #include "sysrt/ffi/ffi.h"
+#include "shared/thread.h"
 #include <ffi.h>
 #include <errno.h>
 #include <float.h>
@@ -32,6 +33,7 @@ typedef struct Library {
     unsigned refs;
     int closed, wrapped;
     JSClassID function_class, pointer_class;
+    SrFfi *runtime;
 } Library;
 typedef struct Pointer Pointer;
 typedef struct Memory {
@@ -57,11 +59,33 @@ typedef struct Function {
     Type result, params[SR_MAX_ARGS];
     ffi_type *types[SR_MAX_ARGS];
     unsigned count;
+    unsigned refs;
     int closed, clear_errors;
     JSClassID pointer_class;
 } Function;
 
-typedef struct Classes { JSClassID library, function, pointer; } Classes;
+typedef struct AsyncCall AsyncCall;
+struct SrFfi {
+    JSContext *ctx;
+    PuDispatch *dispatch;
+    AsyncCall *calls;
+    int closing;
+};
+struct AsyncCall {
+    SrFfi *runtime;
+    Function *function;
+    PuThread *thread;
+    PuDelivery *delivery;
+    Value values[SR_MAX_ARGS], returned;
+    void *args[SR_MAX_ARGS];
+    Memory *temporary[SR_MAX_ARGS];
+    JSValue settle[2];
+    int native_errno;
+    uint32_t system_error;
+    AsyncCall *next;
+};
+
+typedef struct Classes { JSClassID library, function, pointer, runtime; } Classes;
 
 static JSValue error(JSContext *ctx, const char *code, const char *message)
 {
@@ -93,6 +117,11 @@ static void release_library(Library *library)
     if ((!refs || (library->closed && library->wrapped && refs == 1)) && !unload(library))
         fprintf(stderr, "[ffi] Cannot unload native library\n");
     if (!refs) free(library);
+}
+
+static void release_function(Function *function)
+{
+    if (function && !--function->refs) { release_library(function->library); free(function); }
 }
 
 static void release_pointer(Pointer *pointer);
@@ -133,7 +162,7 @@ static void function_finalizer(JSRuntime *rt, JSValue value)
 {
     (void)rt;
     Function *function = JS_GetOpaque(value, JS_GetClassID(value));
-    if (function) { release_library(function->library); free(function); }
+    release_function(function);
 }
 
 static void pointer_finalizer(JSRuntime *rt, JSValue value)
@@ -321,6 +350,42 @@ static JSValue scalar(JSContext *ctx, Type type, Value value, int promoted)
     }
 }
 
+static void invoke_native(Function *function, Value *returned, void **args, int *native_errno, uint32_t *system_error)
+{
+    if (function->clear_errors) {
+        errno = 0;
+#ifdef _WIN32
+        SetLastError(0);
+#endif
+    }
+    ffi_call(&function->cif, function->code, returned, args);
+    *native_errno = errno;
+#ifdef _WIN32
+    *system_error = GetLastError();
+#else
+    *system_error = 0;
+#endif
+}
+
+static JSValue packet(JSContext *ctx, JSValue value, int native_errno, uint32_t system_error)
+{
+    if (JS_IsException(value)) return value;
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) { JS_FreeValue(ctx, value); return JS_EXCEPTION; }
+    int ok = JS_SetPropertyStr(ctx, result, "value", value) >= 0;
+#ifdef _WIN32
+    (void)native_errno;
+    ok = ok && JS_SetPropertyStr(ctx, result, "errno", JS_NULL) >= 0 &&
+        JS_SetPropertyStr(ctx, result, "systemError", JS_NewUint32(ctx, system_error)) >= 0;
+#else
+    (void)system_error;
+    ok = ok && JS_SetPropertyStr(ctx, result, "errno", JS_NewInt32(ctx, native_errno)) >= 0 &&
+        JS_SetPropertyStr(ctx, result, "systemError", JS_NULL) >= 0;
+#endif
+    if (!ok) { JS_FreeValue(ctx, result); return JS_EXCEPTION; }
+    return result;
+}
+
 static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
                     int argc, JSValueConst *argv, int flags)
 {
@@ -339,17 +404,9 @@ static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
         if (!convert(ctx, function->params[i], argv[i], &values[i], &temporary[i], function->pointer_class)) goto done;
         args[i] = &values[i];
     }
-    if (function->clear_errors) {
-        errno = 0;
-#ifdef _WIN32
-        SetLastError(0);
-#endif
-    }
-    ffi_call(&function->cif, function->code, &returned, args);
-    int native_errno = errno;
-#ifdef _WIN32
-    DWORD system_error = GetLastError();
-#endif
+    int native_errno;
+    uint32_t system_error;
+    invoke_native(function, &returned, args, &native_errno, &system_error);
     JSValue value;
     if (function->result == T_POINTER) {
         Memory *memory = NULL;
@@ -368,25 +425,131 @@ static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
         }
         value = new_pointer(ctx, function->pointer_class, returned.pointer, length, memory, function->library, 0);
     } else value = scalar(ctx, function->result, returned, 1);
-    if (JS_IsException(value)) goto done;
-    result = JS_NewObject(ctx);
-    if (JS_IsException(result)) { JS_FreeValue(ctx, value); goto done; }
-    int ok = JS_SetPropertyStr(ctx, result, "value", value) >= 0;
-#ifdef _WIN32
-    (void)native_errno;
-    ok = ok && JS_SetPropertyStr(ctx, result, "errno", JS_NULL) >= 0 &&
-        JS_SetPropertyStr(ctx, result, "systemError", JS_NewUint32(ctx, system_error)) >= 0;
-#else
-    ok = ok && JS_SetPropertyStr(ctx, result, "errno", JS_NewInt32(ctx, native_errno)) >= 0 &&
-        JS_SetPropertyStr(ctx, result, "systemError", JS_NULL) >= 0;
-#endif
-    if (!ok) { JS_FreeValue(ctx, result); result = JS_EXCEPTION; }
+    result = packet(ctx, value, native_errno, system_error);
 done:
     for (unsigned i = 0; i < function->count; i++) release_memory(temporary[i]);
     return result;
 }
 
-static JSValue open_library(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+static void destroy_async(JSRuntime *rt, AsyncCall *job)
+{
+    for (unsigned i = 0; i < SR_MAX_ARGS; i++) release_memory(job->temporary[i]);
+    JS_FreeValueRT(rt, job->settle[0]); JS_FreeValueRT(rt, job->settle[1]);
+    release_function(job->function); free(job);
+}
+
+static void finish_async(void *user)
+{
+    AsyncCall *job = user;
+    SrFfi *runtime = job->runtime;
+    pu_thread_join(job->thread);
+    AsyncCall **at = &runtime->calls;
+    while (*at && *at != job) at = &(*at)->next;
+    if (*at) *at = job->next;
+    JSValue value = packet(runtime->ctx, scalar(runtime->ctx, job->function->result, job->returned, 1),
+        job->native_errno, job->system_error);
+    int rejected = JS_IsException(value);
+    if (rejected) value = JS_GetException(runtime->ctx);
+    JSValue settled = JS_Call(runtime->ctx, job->settle[rejected], JS_UNDEFINED, 1, &value);
+    if (JS_IsException(settled)) {
+        JSValue failure = JS_GetException(runtime->ctx);
+        const char *message = JS_ToCString(runtime->ctx, failure);
+        fprintf(stderr, "[ffi] Cannot settle native call: %s\n", message ? message : "exception");
+        JS_FreeCString(runtime->ctx, message); JS_FreeValue(runtime->ctx, failure);
+    }
+    JS_FreeValue(runtime->ctx, settled); JS_FreeValue(runtime->ctx, value);
+    pu_dispatch_unref(runtime->dispatch);
+    destroy_async(JS_GetRuntime(runtime->ctx), job);
+}
+
+static void async_worker(void *user)
+{
+    AsyncCall *job = user;
+    invoke_native(job->function, &job->returned, job->args, &job->native_errno, &job->system_error);
+    PuDelivery *delivery = job->delivery;
+    job->delivery = NULL;
+    pu_dispatch_submit(job->runtime->dispatch, delivery);
+}
+
+static JSValue call_async(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+{
+    Function *function = JS_GetOpaque2(ctx, self, classes->function);
+    if (!function) return JS_EXCEPTION;
+    SrFfi *runtime = function->library->runtime;
+    if (runtime->ctx != ctx) return error(ctx, "ERR_FFI_ASYNC", "Async calls require their owning context");
+    if (runtime->closing) return error(ctx, "ERR_FFI_SHUTDOWN", "Native execution is shutting down");
+    if (function->closed || function->library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native binding is closed");
+    if (argc != (int)function->count) return JS_ThrowTypeError(ctx, "Wrong native argument count");
+    if (!function->clear_errors || function->result == T_POINTER)
+        return error(ctx, "ERR_FFI_ASYNC", "Async prototype excludes pointer results and thread-local error observers");
+    for (unsigned i = 0; i < function->count; i++)
+        if (function->params[i] == T_POINTER)
+            return error(ctx, "ERR_FFI_ASYNC", "Async prototype excludes pointer arguments");
+    AsyncCall *job = calloc(1, sizeof(*job));
+    if (!job) return JS_ThrowOutOfMemory(ctx);
+    job->runtime = runtime; job->function = function; function->refs++;
+    job->settle[0] = job->settle[1] = JS_UNDEFINED;
+    for (unsigned i = 0; i < function->count; i++) {
+        if (!convert(ctx, function->params[i], argv[i], &job->values[i], &job->temporary[i], function->pointer_class)) {
+            destroy_async(JS_GetRuntime(ctx), job); return JS_EXCEPTION;
+        }
+        job->args[i] = &job->values[i];
+    }
+    job->delivery = pu_dispatch_prepare(finish_async, job);
+    if (!job->delivery) { destroy_async(JS_GetRuntime(ctx), job); return JS_ThrowOutOfMemory(ctx); }
+    JSValue promise = JS_NewPromiseCapability(ctx, job->settle);
+    if (JS_IsException(promise)) {
+        pu_dispatch_discard(job->delivery); destroy_async(JS_GetRuntime(ctx), job); return JS_EXCEPTION;
+    }
+    job->next = runtime->calls; runtime->calls = job;
+    pu_dispatch_ref(runtime->dispatch);
+    job->thread = pu_thread_start(async_worker, job);
+    if (!job->thread) {
+        runtime->calls = job->next;
+        pu_dispatch_unref(runtime->dispatch); pu_dispatch_discard(job->delivery);
+        JS_FreeValue(ctx, promise); destroy_async(JS_GetRuntime(ctx), job);
+        return error(ctx, "ERR_FFI_THREAD", "Cannot start native call worker");
+    }
+    return promise;
+}
+
+void sr_ffi_shutdown(SrFfi *runtime)
+{
+    if (!runtime || runtime->closing) return;
+    runtime->closing = 1;
+    while (runtime->calls) {
+        AsyncCall *job = runtime->calls;
+        pu_thread_join(job->thread); job->thread = NULL;
+        pu_dispatch_remove(runtime->dispatch, finish_async, job);
+        finish_async(job);
+    }
+}
+
+static void runtime_mark(JSRuntime *rt, JSValueConst value, JS_MarkFunc *mark)
+{
+    SrFfi *runtime = JS_GetOpaque(value, JS_GetClassID(value));
+    if (!runtime) return;
+    for (AsyncCall *job = runtime->calls; job; job = job->next) {
+        JS_MarkValue(rt, job->settle[0], mark); JS_MarkValue(rt, job->settle[1], mark);
+    }
+}
+
+static void runtime_finalizer(JSRuntime *rt, JSValue value)
+{
+    SrFfi *runtime = JS_GetOpaque(value, JS_GetClassID(value));
+    if (!runtime) return;
+    if (runtime->calls) fprintf(stderr, "[ffi] Host destroyed the VM without stopping native calls; results discarded\n");
+    while (runtime->calls) {
+        AsyncCall *job = runtime->calls; runtime->calls = job->next;
+        pu_thread_join(job->thread);
+        pu_dispatch_remove(runtime->dispatch, finish_async, job);
+        pu_dispatch_unref(runtime->dispatch); destroy_async(rt, job);
+    }
+    free(runtime);
+}
+
+static JSValue open_library(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
+                           const Classes *classes, SrFfi *runtime)
 {
     (void)self;
     if (argc != 1) return JS_ThrowTypeError(ctx, "open requires one native library path or name");
@@ -419,6 +582,7 @@ static JSValue open_library(JSContext *ctx, JSValueConst self, int argc, JSValue
     Library *library = calloc(1, sizeof(*library));
     if (!library) { JS_ThrowOutOfMemory(ctx); goto done; }
     library->handle = handle; library->refs = 1; library->wrapped = 1;
+    library->runtime = runtime;
     library->function_class = classes->function; library->pointer_class = classes->pointer;
     result = JS_NewObjectClass(ctx, classes->library);
     if (JS_IsException(result)) { release_library(library); handle = NULL; goto done; }
@@ -549,6 +713,7 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     result = JS_NewObjectClass(ctx, library->function_class);
     if (JS_IsException(result)) goto done;
     function->library = library; library->refs++;
+    function->refs = 1;
     function->pointer_class = library->pointer_class;
     JS_SetOpaque(result, function); function = NULL;
 done:
@@ -724,16 +889,17 @@ static JSValue read_pointer(JSContext *ctx, JSValueConst self, int argc, JSValue
 
 typedef enum {
     M_OPEN, M_ALLOC, M_ALLOC_POINTERS, M_BIND, M_CLOSE_LIBRARY, M_CLOSE_FUNCTION, M_CLOSE_POINTER,
-    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER
+    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER, M_CALL_ASYNC
 } Method;
 
 static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
                         int magic, JSValueConst *data)
 {
     Classes classes = { (JSClassID)JS_VALUE_GET_INT(data[0]),
-        (JSClassID)JS_VALUE_GET_INT(data[1]), (JSClassID)JS_VALUE_GET_INT(data[2]) };
+        (JSClassID)JS_VALUE_GET_INT(data[1]), (JSClassID)JS_VALUE_GET_INT(data[2]), 0 };
     switch ((Method)magic) {
-    case M_OPEN: return open_library(ctx, self, argc, argv, &classes);
+    case M_OPEN: return open_library(ctx, self, argc, argv, &classes,
+        JS_GetOpaque(data[3], JS_GetClassID(data[3])));
     case M_ALLOC: return alloc_buffer(ctx, self, argc, argv, &classes);
     case M_ALLOC_POINTERS: return alloc_pointers(ctx, self, argc, argv, &classes);
     case M_BIND: return bind(ctx, self, argc, argv, &classes);
@@ -745,13 +911,14 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     case M_READ_STRING: return read_string(ctx, self, argc, argv, &classes);
     case M_SLICE: return pointer_slice(ctx, self, argc, argv, &classes);
     case M_READ_POINTER: return read_pointer(ctx, self, argc, argv, &classes);
+    case M_CALL_ASYNC: return call_async(ctx, self, argc, argv, &classes);
     }
     return JS_ThrowInternalError(ctx, "Invalid FFI method");
 }
 
 typedef struct MethodInfo { const char *name; int length; Method method; } MethodInfo;
 static const MethodInfo library_methods[] = { { "bind", 2, M_BIND }, { "close", 0, M_CLOSE_LIBRARY } };
-static const MethodInfo function_methods[] = { { "close", 0, M_CLOSE_FUNCTION } };
+static const MethodInfo function_methods[] = { { "close", 0, M_CLOSE_FUNCTION }, { "callAsync", 0, M_CALL_ASYNC } };
 static const MethodInfo pointer_methods[] = {
     { "close", 0, M_CLOSE_POINTER }, { "read", 1, M_READ }, { "write", 1, M_WRITE },
     { "readString", 1, M_READ_STRING }, { "slice", 2, M_SLICE },
@@ -793,83 +960,97 @@ static const JSCFunctionListEntry exports[] = {
 
 static int module_init(JSContext *ctx, JSModuleDef *module)
 {
-    JSValue private = JS_GetModulePrivateValue(ctx, module), data[3];
-    for (unsigned i = 0; i < 3; i++) data[i] = JS_GetPropertyUint32(ctx, private, i);
+    JSValue private = JS_GetModulePrivateValue(ctx, module), data[4];
+    for (unsigned i = 0; i < 4; i++) data[i] = JS_GetPropertyUint32(ctx, private, i);
     JS_FreeValue(ctx, private);
     int ok = 1;
     for (unsigned i = 0; i < 3; i++)
         if (JS_VALUE_GET_TAG(data[i]) != JS_TAG_INT) ok = 0;
+    if (!JS_IsObject(data[3])) ok = 0;
     if (!ok && !JS_HasException(ctx)) JS_ThrowInternalError(ctx, "Invalid FFI module class state");
     if (ok) {
-        JSValue open = JS_NewCFunctionData(ctx, dispatch, 1, M_OPEN, 3, data);
+        JSValue open = JS_NewCFunctionData(ctx, dispatch, 1, M_OPEN, 4, data);
         if (JS_IsException(open) || JS_SetModuleExport(ctx, module, "open", open) < 0) ok = 0;
         if (ok) {
-            JSValue alloc = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC, 3, data);
+            JSValue alloc = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC, 4, data);
             if (JS_IsException(alloc) || JS_SetModuleExport(ctx, module, "alloc", alloc) < 0) ok = 0;
         }
         if (ok) {
-            JSValue array = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC_POINTERS, 3, data);
+            JSValue array = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC_POINTERS, 4, data);
             if (JS_IsException(array) || JS_SetModuleExport(ctx, module, "allocPointers", array) < 0) ok = 0;
         }
     }
-    for (unsigned i = 0; i < 3; i++) JS_FreeValue(ctx, data[i]);
+    for (unsigned i = 0; i < 4; i++) JS_FreeValue(ctx, data[i]);
     if (!ok) return -1;
     if (JS_SetModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) < 0 ||
         JS_SetModuleExport(ctx, module, "callbacks", JS_NewBool(ctx, 0)) < 0 ||
-        JS_SetModuleExport(ctx, module, "async", JS_NewBool(ctx, 0)) < 0 ||
+        JS_SetModuleExport(ctx, module, "async", JS_NewBool(ctx, 1)) < 0 ||
         JS_SetModuleExport(ctx, module, "variadics", JS_NewBool(ctx, 1)) < 0) return -1;
     return 0;
 }
 
-int sr_ffi_register(JSContext *ctx)
+SrFfi *sr_ffi_register(JSContext *ctx, PuDispatch *dispatcher)
 {
+    if (!ctx || !dispatcher) return NULL;
     JSRuntime *runtime = JS_GetRuntime(ctx);
     Classes classes = {0};
-    JSClassID *ids[] = { &classes.library, &classes.function, &classes.pointer };
+    JSClassID *ids[] = { &classes.library, &classes.function, &classes.pointer, &classes.runtime };
     const JSClassDef definitions[] = {
         { "NativeLibrary", .finalizer = library_finalizer },
         { "NativeFunction", .finalizer = function_finalizer, .call = call },
         { "NativePointer", .finalizer = pointer_finalizer },
+        { "NativeExecution", .finalizer = runtime_finalizer, .gc_mark = runtime_mark },
     };
     const MethodInfo *methods[] = { library_methods, function_methods, pointer_methods };
     const int counts[] = { sizeof(library_methods) / sizeof(*library_methods),
         sizeof(function_methods) / sizeof(*function_methods), sizeof(pointer_methods) / sizeof(*pointer_methods) };
-    for (unsigned i = 0; i < 3; i++) {
+    for (unsigned i = 0; i < 4; i++) {
         do {
             *ids[i] = 0;
             JS_NewClassID(runtime, ids[i]);
         } while (JS_IsRegisteredClass(runtime, *ids[i]));
-        if (JS_NewClass(runtime, *ids[i], &definitions[i]) < 0) return 0;
+        if (JS_NewClass(runtime, *ids[i], &definitions[i]) < 0) return NULL;
     }
+    SrFfi *execution = calloc(1, sizeof(*execution));
+    if (!execution) { JS_ThrowOutOfMemory(ctx); return NULL; }
+    execution->ctx = ctx; execution->dispatch = dispatcher;
+    JSValue state = JS_NewObjectClass(ctx, classes.runtime);
+    if (JS_IsException(state)) { free(execution); return NULL; }
+    JS_SetOpaque(state, execution);
     JSValue data[] = { JS_NewInt32(ctx, (int32_t)classes.library),
-        JS_NewInt32(ctx, (int32_t)classes.function), JS_NewInt32(ctx, (int32_t)classes.pointer) };
+        JS_NewInt32(ctx, (int32_t)classes.function), JS_NewInt32(ctx, (int32_t)classes.pointer), state };
     for (unsigned i = 0; i < 3; i++) {
         JSValue proto = JS_NewObject(ctx);
-        if (JS_IsException(proto)) return 0;
+        if (JS_IsException(proto)) goto failed;
         for (int j = 0; j < counts[i]; j++) {
             const MethodInfo *method = &methods[i][j];
-            JSValue function = JS_NewCFunctionData(ctx, dispatch, method->length, method->method, 3, data);
+            JSValue function = JS_NewCFunctionData(ctx, dispatch, method->length, method->method, 4, data);
             if (JS_IsException(function) || JS_DefinePropertyValueStr(ctx, proto, method->name, function,
                 JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
-                JS_FreeValue(ctx, proto); return 0;
+                JS_FreeValue(ctx, proto); goto failed;
             }
         }
         JS_SetClassProto(ctx, *ids[i], proto);
     }
     JSModuleDef *module = JS_NewCModule(ctx, "sysrt:ffi", module_init);
-    if (!module) return 0;
+    if (!module) goto failed;
     JSValue private = JS_NewArray(ctx);
-    if (JS_IsException(private)) return 0;
-    for (unsigned i = 0; i < 3; i++) {
-        if (JS_DefinePropertyValueUint32(ctx, private, i, data[i],
+    if (JS_IsException(private)) goto failed;
+    for (unsigned i = 0; i < 4; i++) {
+        if (JS_DefinePropertyValueUint32(ctx, private, i, JS_DupValue(ctx, data[i]),
             JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE) < 0) {
-            JS_FreeValue(ctx, private); return 0;
+            JS_FreeValue(ctx, private); goto failed;
         }
     }
-    if (JS_SetModulePrivateValue(ctx, module, private) < 0) return 0;
-    return JS_AddModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) >= 0 &&
+    if (JS_SetModulePrivateValue(ctx, module, private) < 0) goto failed;
+    int exported = JS_AddModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) >= 0 &&
         JS_AddModuleExport(ctx, module, "open") >= 0 && JS_AddModuleExport(ctx, module, "alloc") >= 0 &&
         JS_AddModuleExport(ctx, module, "allocPointers") >= 0 &&
         JS_AddModuleExport(ctx, module, "callbacks") >= 0 && JS_AddModuleExport(ctx, module, "async") >= 0 &&
         JS_AddModuleExport(ctx, module, "variadics") >= 0;
+    if (!exported) goto failed;
+    JS_FreeValue(ctx, state); return execution;
+failed:
+    execution->closing = 1;
+    JS_FreeValue(ctx, state); return NULL;
 }

@@ -52,7 +52,7 @@ prove one complete execution/service path before adding broad API coverage.
 
 | ID | Priority | Task | State / first acceptance | Prerequisites |
 |---|---|---|---|---|
-| RT-01 | P0 | Generic asynchronous native calls | In progress: worker -> owning dispatcher -> Promise; scalar/CString inputs and scalar results first, explicit error capture and joined shutdown | Existing FFI/dispatcher |
+| RT-01 | P0 | Generic asynchronous native calls | First closed loop implemented: worker -> owning dispatcher -> Promise; scalar/CString inputs, scalar results, explicit errors and joined shutdown. Broader support stays staged | Existing FFI/dispatcher |
 | RT-02 | P0 | Native memory/resource ownership | Planned: borrowed/owned returned pointers, release functions and managed-buffer async leases; no guessed allocation bounds | RT-01 for async leases |
 | RT-03 | P0 | Native callbacks | Planned: one safe callback path with VM/thread affinity and teardown; no universal callback coverage | RT-01, RT-02 |
 | RT-04 | P0 | ABI metadata generation | Planned: generate one target's signatures/layouts/constants from headers; retain explicit target checks | Independent |

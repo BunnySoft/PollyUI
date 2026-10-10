@@ -60,7 +60,10 @@ test('filesystem is a JS/config SDK with no domain-specific native provider or p
 test('generic FFI has no GUI or domain-specific API dependency', () => {
   const source = read('sysrt/ffi/module.c');
   assert.doesNotMatch(source, /#include\s+"(?:gui|desktop|providers)\//);
-  assert.doesNotMatch(source, /\b(?:JS_Call|pu_files_|pu_audio_|pu_network_)/);
+  assert.doesNotMatch(source, /\b(?:pu_files_|pu_audio_|pu_network_)/);
+  const worker = source.match(/static void async_worker\(void \*user\)[\s\S]*?\n\}/);
+  assert.ok(worker);
+  assert.doesNotMatch(worker[0], /\bJS_|->ctx/);
   assert.match(source, /ffi_prep_cif/);
   assert.match(source, /ffi_call/);
   assert.match(source, /GetProcAddress/);
@@ -80,6 +83,16 @@ test('network SDK maps OS APIs without HTTP, socket ownership or desktop policy'
   assert.match(configuration, /symbol: 'WSAPoll'/);
   assert.match(configuration, /WSAGetLastError.*clearErrors: false/);
   assert.doesNotMatch(read('sysrt/ffi/module.c'), /winsock2|WSAGetLastError|ws2_32/);
+});
+
+test('asynchronous FFI reuses execution primitives and remains VM-thread confined', () => {
+  const build = read('sysrt/CMakeLists.txt');
+  assert.match(build, /polly-sysrt-ffi PUBLIC qjs polly-execution/);
+  assert.match(read('desktop/launcher/launcher.c'), /sr_ffi_register\(ctx, dispatch\)/);
+  assert.match(read('desktop/launcher/launcher.c'), /sr_ffi_shutdown\(state->ffi\)/);
+  assert.match(read('sysrt/sdk/js/native.mjs'), /callAsync\(name, \.\.\.args\)/);
+  assert.match(read('sysrt/ffi/module.c'), /Async prototype excludes pointer arguments/);
+  assert.match(read('shared/dispatch.c'), /pu_dispatch_submit/);
 });
 
 test('CLI and desktop composition remain outside the GUI engine', () => {

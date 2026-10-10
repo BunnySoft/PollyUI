@@ -84,6 +84,11 @@ if (PU_BUILD_LAUNCHER)
         desktop/launcher/launcher.c
     )
     target_link_libraries(pollyui PRIVATE pollyui-engine polly-sysrt-qjs polly-sysrt-ffi)
+    if (BUILD_TESTING)
+        add_test(NAME sysrt-async-ui COMMAND node "${CMAKE_SOURCE_DIR}/sysrt/tests/async-ui.mjs"
+            $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        set_tests_properties(sysrt-async-ui PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
 endif()
 
 # --- HostEngine backend (the only per-OS C; see docs/PORTING.md §1) ----------

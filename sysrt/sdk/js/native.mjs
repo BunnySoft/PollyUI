@@ -48,13 +48,17 @@ export function loadBindings(configuration) {
     library.close();
     throw error;
   }
+  function lookup(name) {
+    if (closed) throw new Error('Native bindings are closed');
+    const function_ = functions.get(name);
+    if (!function_) throw new Error('Unknown native binding: ' + name);
+    return function_;
+  }
   return {
     call(name, ...args) {
-      if (closed) throw new Error('Native bindings are closed');
-      const function_ = functions.get(name);
-      if (!function_) throw new Error('Unknown native binding: ' + name);
-      return function_(...args);
+      return lookup(name)(...args);
     },
+    callAsync(name, ...args) { return lookup(name).callAsync(...args); },
     createRecord(name) {
       if (closed) throw new Error('Native bindings are closed');
       const layout = layouts.get(name);
@@ -74,13 +78,15 @@ export function loadNativeApi(configuration) {
   const functions = Object.create(null);
   for (const binding of Object.values(configuration.functions)) {
     if (!binding || typeof binding.symbol !== 'string' ||
-        ['createRecord', 'dispose'].includes(binding.symbol) || Object.hasOwn(functions, binding.symbol))
+        ['createRecord', 'dispose', 'async'].includes(binding.symbol) || Object.hasOwn(functions, binding.symbol))
       throw new TypeError('Native API requires unique, non-reserved symbol names');
     functions[binding.symbol] = binding;
   }
   const bindings = loadBindings({ ...configuration, functions });
   return Object.freeze({
     ...Object.fromEntries(Object.keys(functions).map(symbol => [symbol, (...args) => bindings.call(symbol, ...args)])),
+    async: Object.freeze(Object.fromEntries(Object.keys(functions).map(symbol =>
+      [symbol, (...args) => bindings.callAsync(symbol, ...args)]))),
     createRecord: name => bindings.createRecord(name),
     dispose: () => bindings.close(),
   });

@@ -84,7 +84,9 @@ bridge. Desktop launch/activation policy remains separate.
 The socket SDK follows the same native-mapping boundary for TCP/UDP and
 readiness calls. Protocol services, socket ownership and asynchronous scheduling
 remain above it; native fetch and desktop network services are not yet migrated.
-Callback/asynchronous mechanisms remain unfinished.
+The first asynchronous native-call path is implemented for scalar/CString
+arguments and scalar results, settling through the owning dispatcher.
+Pointer loans, callbacks and native cancellation remain unfinished.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 

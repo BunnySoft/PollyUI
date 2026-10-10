@@ -18,7 +18,7 @@ check(longSize === 4 || longSize === 8, 'Native long width is explicit');
 check(['x86_64', 'aarch64', 'x86', 'unsupported'].includes(architecture), 'Host architecture is explicit');
 refuses(() => loadBindings({ library: fixtureLibrary, functions: {},
   target: { architecture: 'wrong-target' } }), 'Wrong architecture cannot load native bindings');
-check(callbacks === false && asyncCalls === false, 'Unimplemented features are explicit');
+check(callbacks === false && asyncCalls === true, 'Async execution is explicit; callbacks remain unsupported');
 check(variadics === true, 'Variadic capability is explicit');
 const pid = currentId();
 check(Number.isInteger(pid) && pid === expectedProcessId && currentId() === pid, 'JS process SDK calls the actual OS');

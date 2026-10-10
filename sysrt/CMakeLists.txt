@@ -34,7 +34,7 @@ if (TARGET qjs)
     endif()
     add_library(polly-sysrt-ffi STATIC ffi/module.c)
     target_include_directories(polly-sysrt-ffi PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-    target_link_libraries(polly-sysrt-ffi PUBLIC qjs PRIVATE ${SR_FFI_LIBRARY} ${CMAKE_DL_LIBS})
+    target_link_libraries(polly-sysrt-ffi PUBLIC qjs polly-execution PRIVATE ${SR_FFI_LIBRARY} ${CMAKE_DL_LIBS})
     if (WIN32)
         target_compile_definitions(polly-sysrt-ffi PRIVATE _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX)
     else()
@@ -44,6 +44,7 @@ if (TARGET qjs)
     endif()
     if (BUILD_TESTING)
         add_library(polly-sysrt-ffi-fixture SHARED tests/ffi-fixture.c)
+        target_link_libraries(polly-sysrt-ffi-fixture PRIVATE polly-execution)
         add_executable(polly-sysrt-ffi-test tests/ffi-runner.c)
         add_executable(polly-sysrt-process-child tests/process-child.c)
         target_link_libraries(polly-sysrt-ffi-test PRIVATE polly-sysrt-ffi)
@@ -53,6 +54,12 @@ if (TARGET qjs)
         add_test(NAME sysrt-ffi COMMAND polly-sysrt-ffi-test
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/ffi.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         set_tests_properties(sysrt-ffi PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        add_test(NAME sysrt-async COMMAND polly-sysrt-ffi-test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/async.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        add_test(NAME sysrt-async-shutdown COMMAND polly-sysrt-ffi-test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/async-shutdown.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture> --shutdown)
+        set_tests_properties(sysrt-async sysrt-async-shutdown PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
         if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_test(NAME sysrt-process COMMAND polly-sysrt-ffi-test
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/process-native.mjs"

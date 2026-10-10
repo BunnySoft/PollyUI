@@ -68,11 +68,13 @@ static JSValue collect(JSContext *ctx, JSValueConst self, int argc, JSValueConst
 
 static JSClassID cached_foreign_class;
 
-static int run(const char *script, const char *fixture, const char *child, unsigned occupied, int cached)
+static int run(const char *script, const char *fixture, const char *child, int shutdown_early, unsigned occupied, int cached)
 {
     JSRuntime *runtime = JS_NewRuntime();
     JSContext *ctx = runtime ? JS_NewContext(runtime) : NULL;
     if (!ctx) { if (runtime) JS_FreeRuntime(runtime); return 1; }
+    PuDispatch *dispatcher = pu_dispatch_new();
+    if (!dispatcher) { JS_FreeContext(ctx); JS_FreeRuntime(runtime); return 1; }
     JS_SetMemoryLimit(runtime, 128 * 1024 * 1024);
     /* Sanitized interpreter frames need room for realistic SDK call depth. */
     JS_SetMaxStackSize(runtime, 4 * 1024 * 1024);
@@ -91,7 +93,8 @@ static int run(const char *script, const char *fixture, const char *child, unsig
         if (!i) cached_foreign_class = id;
         foreign_class = id;
     }
-    if (!sr_ffi_register(ctx)) failed = 1;
+    SrFfi *ffi = sr_ffi_register(ctx, dispatcher);
+    if (!ffi) failed = 1;
     JSValue global = JS_GetGlobalObject(ctx);
     if (JS_SetPropertyStr(ctx, global, "fixtureLibrary", JS_NewString(ctx, fixture)) < 0) failed = 1;
     if (child && JS_SetPropertyStr(ctx, global, "processChild", JS_NewString(ctx, child)) < 0) failed = 1;
@@ -112,27 +115,38 @@ static int run(const char *script, const char *fixture, const char *child, unsig
     JSValue result = source ? JS_Eval(ctx, source, length, script, JS_EVAL_TYPE_MODULE) : JS_UNDEFINED;
     free(source);
     if (JS_IsException(result)) { report(ctx, JS_GetException(ctx)); failed = 1; }
+    if (shutdown_early || failed) sr_ffi_shutdown(ffi);
     JSContext *job;
-    int work;
-    while ((work = JS_ExecutePendingJob(runtime, &job)) > 0) {}
-    if (work < 0) { report(job, JS_GetException(job)); failed = 1; }
+    for (;;) {
+        int work;
+        while ((work = JS_ExecutePendingJob(runtime, &job)) > 0) {}
+        if (work < 0) { report(job, JS_GetException(job)); failed = 1; break; }
+        int delivered = pu_dispatch_drain(dispatcher);
+        if (!pu_dispatch_pending(dispatcher)) {
+            if (!delivered) break;
+        } else pu_dispatch_wait(dispatcher, 100);
+    }
     if (JS_PromiseState(ctx, result) == JS_PROMISE_REJECTED) {
         report(ctx, JS_PromiseResult(ctx, result)); failed = 1;
     } else if (JS_PromiseState(ctx, result) == JS_PROMISE_PENDING) {
         fprintf(stderr, "FFI fixture did not complete\n"); failed = 1;
     }
+    sr_ffi_shutdown(ffi);
+    if (pu_dispatch_pending(dispatcher)) { fprintf(stderr, "Native calls leaked dispatcher references\n"); failed = 1; }
     JS_FreeValue(ctx, result);
     JS_FreeContext(ctx); JS_FreeRuntime(runtime);
+    pu_dispatch_free(dispatcher);
     return failed;
 }
 
 int main(int argc, char **argv)
 {
     if (argc != 3 && argc != 4) { fprintf(stderr, "Pass the test module, native fixture library and optional child executable\n"); return 2; }
-    const char *child = argc == 4 ? argv[3] : NULL;
-    int failed = run(argv[1], argv[2], child, 0, 0);
-    failed |= run(argv[1], argv[2], child, 8, 0);
-    failed |= run(argv[1], argv[2], child, 0, 1);
+    int shutdown_early = argc == 4 && !strcmp(argv[3], "--shutdown");
+    const char *child = argc == 4 && !shutdown_early ? argv[3] : NULL;
+    int failed = run(argv[1], argv[2], child, shutdown_early, 0, 0);
+    failed |= run(argv[1], argv[2], child, shutdown_early, 8, 0);
+    failed |= run(argv[1], argv[2], child, shutdown_early, 0, 1);
     if (!failed) puts("PASS: real libffi calls, VM isolation, memory lifetime and JS/config SDK");
     return failed;
 }

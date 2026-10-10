@@ -54,8 +54,15 @@ Null termination is explicit. `createCStringArray(strings)` provides a scoped
 UTF-8/null-terminated vector for argv/envp. `readPointer(offset?)` reads aligned
 pointer fields from bounded memory; unknown addresses remain opaque, not
 readable native allocations. All pointer-field use is a trusted ABI contract.
-Calls remain synchronous; callbacks and structures passed by value are
-unsupported. `variadic` declares the number of fixed parameters for a complete
+Direct calls remain synchronous. `NativeFunction.callAsync(...)`,
+`bindings.callAsync(name, ...)` and `api.async.NativeSymbol(...)` provide the
+first explicit worker -> owning dispatcher -> Promise path. Scalar/CString
+arguments are copied before submission; scalar/void results and native errors
+are captured on the worker and settled on the VM thread. Library/function GC
+or explicit close does not unload accepted work before it finishes.
+This prototype rejects pointer arguments/results and thread-local error
+observers before starting a worker. Native callbacks and structures passed by
+value are unsupported. `variadic` declares the number of fixed parameters for a complete
 bound signature using the default C ABI; tail types must explicitly use C
 promotions (`i32`/`double` instead of narrow integers/`float`). Each bound
 signature has a fixed argument count, including its variadic tail. CString arguments are borrowed
@@ -95,8 +102,9 @@ Linux x86_64 supports PID/parent/user/group/session observations, `posix_spawn`,
 `OpenProcess`, handle release, wait, exit-code queries and termination.
 Calling conventions, out buffers and return packets remain native. In
 particular, POSIX spawn returns an error number directly; wait may return 0
-with `WNOHANG`. No shell, automatic retry, GUI launch policy, worker offload or
-callback is added. Do not resume a live QuickJS VM through a raw `fork`.
+with `WNOHANG`. No shell, automatic retry, GUI launch policy or process-specific
+worker/callback adapter is added. Generic async is opt-in under its limited
+signature/thread-safety contract. Do not resume a live QuickJS VM through a raw `fork`.
 Callers own child reaping and OS handle release; disposing bindings does not
 terminate a process or close its OS handle. Other process ABI profiles are
 not implemented; the existing current-PID convenience remains available.
@@ -113,8 +121,18 @@ policy is added. Callers explicitly perform `WSAStartup/WSACleanup` on Windows,
 close their sockets and handle partial IO, EOF and would-block results. Windows
 socket errors use `WSAGetLastError`; `WSAStartup` returns its error code directly.
 Disposing bindings does not close sockets or clean up Winsock. Calls remain
-synchronous; nonblocking sockets/readiness calls are not a JS async runtime.
+synchronous; nonblocking sockets/readiness calls are not themselves a JS async runtime. The generic async
+prototype above is opt-in and currently cannot lend socket buffers.
 DNS, HTTP, TLS and the existing native fetch/iwd services are not changed.
+
+Execution lifetime is selected at composition: `sr_ffi_register(ctx, dispatcher)`
+returns a VM-scoped handle, and `sr_ffi_shutdown(handle)` must run on its owning
+thread, outside dispatcher drain, before destroying the VM/dispatcher. Shutdown
+joins accepted workers and settles their actual native outcomes. It does not
+claim to cancel arbitrary OS calls; a stuck native call can delay shutdown.
+Choose worker-safe functions explicitly. No general callback system, task pool,
+timeout/cancellation API or broad API migration is part of this first slice.
+The staged implementation tasks are tracked in [ROADMAP.md](./ROADMAP.md#sysrt-implementation-task-plan).
 
 `pollyui` retains the existing application command. The separate
 `pollyui-playground` example links only the GUI library (Windows output:

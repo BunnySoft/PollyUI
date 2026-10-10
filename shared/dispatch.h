@@ -9,6 +9,7 @@
  * (cf. libuv handle refs): the loop keeps running while pending() > 0. */
 
 typedef struct PuDispatch PuDispatch;
+typedef struct PuDelivery PuDelivery;
 typedef void (*PuDeliverFn)(void *ctx);
 
 PuDispatch *pu_dispatch_new(void);
@@ -17,6 +18,11 @@ void        pu_dispatch_free(PuDispatch *d);
 /* Post a delivery from any thread; returns 0 on allocation failure.
  * Successful deliveries run on the UI thread at the next drain. */
 int pu_dispatch_post(PuDispatch *d, PuDeliverFn fn, void *ctx);
+/* Reserve before starting a producer; submit transfers ownership without
+ * allocating. Discard is valid only before submission. */
+PuDelivery *pu_dispatch_prepare(PuDeliverFn fn, void *ctx);
+void pu_dispatch_submit(PuDispatch *d, PuDelivery *delivery);
+void pu_dispatch_discard(PuDelivery *delivery);
 /* Remove an undelivered callback after its producer has been joined. */
 int pu_dispatch_remove(PuDispatch *d, PuDeliverFn fn, void *ctx);
 
