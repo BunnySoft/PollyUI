@@ -17,6 +17,16 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_explicit_runtime_revision_rejects_stale_or_dirty_media(self):
+        origin = {"runtimeSourceRevision": "c" * 40, "runtimeSourceDirty": False}
+        guest.check_runtime_origin(origin, "c" * 40)
+        with self.assertRaisesRegex(RuntimeError, "explicitly selected"):
+            guest.check_runtime_origin(origin, "a" * 40)
+        with self.assertRaisesRegex(RuntimeError, "explicitly selected"):
+            guest.check_runtime_origin({**origin, "runtimeSourceDirty": True}, "c" * 40)
+        with self.assertRaisesRegex(RuntimeError, "explicit full"):
+            guest.check_runtime_origin(origin, "c" * 7)
+
     def test_diagnostic_never_weakens_acceptance_input_gates(self):
         self.assertTrue(boot.acceptance_input_required(False, False))
         self.assertTrue(boot.acceptance_input_required(False, True))

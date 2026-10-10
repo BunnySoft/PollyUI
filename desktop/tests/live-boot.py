@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--new-architecture", action="store_true",
                         help="Inject ordinary-user test source into guest RAM and exercise production Settings/files")
     parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
+    parser.add_argument("--runtime-revision", help="Exact frozen runtime commit required by the guest origin receipt")
     parser.add_argument("--diagnostic-prepare", action="store_true",
                         help="Capture startup diagnostics only; never publish an acceptance result")
     parser.add_argument("--profile-settings-startup", action="store_true",
@@ -37,6 +38,8 @@ def main():
     if args.new_architecture and (not args.harness_revision or len(args.harness_revision) != 40 or
                                  any(char not in "0123456789abcdef" for char in args.harness_revision)):
         raise ValueError("New-architecture acceptance requires an explicit full harness revision")
+    if args.new_architecture and (not args.runtime_revision or not re.fullmatch(r"[0-9a-f]{40}", args.runtime_revision)):
+        raise ValueError("New-architecture acceptance requires an explicit full frozen runtime revision")
     if args.diagnostic_prepare and not args.new_architecture:
         raise ValueError("Startup diagnosis requires the ordinary-user new-architecture helper")
     if args.profile_settings_startup and not args.diagnostic_prepare:
@@ -51,6 +54,7 @@ def main():
             planned_hash = hashlib.file_digest(source, "sha256").hexdigest()
         (evidence / "diagnostic-plan.json").write_text(json.dumps({
             "acceptance": False, "isoSha256": planned_hash, "harnessRevision": args.harness_revision,
+            "runtimeSourceRevision": args.runtime_revision,
             "profileSettingsStartup": args.profile_settings_startup,
             "skippedAcceptanceGates": ["nativeChineseCommit", "nativeClipboardPaste",
                                        "keyboardWorkspaceSwitch"] if args.profile_settings_startup else [],
@@ -254,7 +258,7 @@ def main():
 
                     def stage(name):
                         previous = serial.read_text(errors="replace")
-                        send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + "\n")
+                        send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + " " + args.runtime_revision + "\n")
                         deadline = time.monotonic() + 60
                         prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
                         while True:
@@ -332,6 +336,7 @@ def main():
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-reopened.ppm")})
                     new_architecture = {"harnessRevision": args.harness_revision,
+                                        "runtimeSourceRevision": args.runtime_revision,
                                         "fixturesInIso": False, "ordinaryUser": 1000,
                                         "actualStages": stages,
                                         "input": "QMP physical USB keyboard and ordinary public Live serial login"}

@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import tempfile
+import re
 
 
 def check(value, message):
@@ -30,6 +31,12 @@ def process_arguments():
 def live_shell(args):
     return ("--desktop" in args and "org.pollyui.shell" in args and
             "/usr/share/pollyui/desktop/shell/live.mjs" in args)
+
+
+def check_runtime_origin(origin, expected):
+    check(re.fullmatch(r"[0-9a-f]{40}", expected) is not None, "Expected one explicit full frozen runtime revision")
+    check(origin["runtimeSourceRevision"] == expected and origin["runtimeSourceDirty"] is False,
+          "Guest did not boot the explicitly selected frozen runtime")
 
 
 def shell_environment():
@@ -143,8 +150,7 @@ def main():
     shell, env = shell_environment()
     if stage in ("prepare", "prepare-profile"):
         origin = json.loads(Path("/usr/share/pollyui/runtime-origin.json").read_text())
-        check(origin["runtimeSourceRevision"] == "5fc944e3d3eb5cb7a4db568e052a9cc4793cc618" and
-              origin["runtimeSourceDirty"] is False, "Guest did not boot the frozen runtime")
+        check_runtime_origin(origin, sys.argv[2])
         file, value = configuration()
         catalog = json.loads(Path("/usr/share/pollyui/desktop/resources/themes/builtin.json").read_text())
         theme = next(item for item in catalog["themes"] if item["id"] == "xp")
