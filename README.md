@@ -161,20 +161,28 @@ The staged implementation tasks are tracked in [ROADMAP.md](./ROADMAP.md#sysrt-i
 
 The first Linux x86_64 D-Bus client uses existing `libdbus-1` through JS/config,
 not a production domain C bridge. `openDbusClient(explicitAddress)` opens a
-private connection; `callUint32(target, argument, timeoutMs)` returns a ticket
-with `poll()`/`cancel()`. Drive polls from the application's event loop; each
-performs a zero-wait native I/O/dispatch step. Outcomes are cached
-`pending`, `reply` (uint32 value), `error` or `cancelled`. Only one uint32 input
-and output are supported. Opening/authentication/Hello are still synchronous.
-Unknown borrowed error strings are not guessed or read; common remote error
-names are matched natively, other remote errors remain explicit with no name.
+private connection; `call(target, signature, args, replySignature, timeoutMs)`
+returns a ticket with `poll()`/`cancel()` (timeout defaults to 25000 ms).
+Requests accept no argument or one `u`/`b`/`s`/`o` scalar; replies accept an
+empty signature, one scalar or a fixed scalar tuple. A reply's `value` is
+respectively `undefined`, a primitive or a frozen array. `callUint32` is a thin
+wrapper over the same call path. Drive polls from the application's event loop;
+each performs a zero-wait native I/O/dispatch step. Outcomes are cached
+`pending`, `reply`, `error` or `cancelled`.
+Opening/authentication/Hello are still synchronous. Reply strings and setup/
+remote diagnostics are copied using their native NUL-string contracts while
+the owning message/error is alive; unknown object extents are never guessed.
+Errors preserve `code`, `dbusName` and `dbusMessage`. Strings exceeding the
+existing FFI allocation bound fail explicitly with `ERR_DBUS_STRING_OVERFLOW`
+or `ERR_DBUS_DIAGNOSTIC_OVERFLOW`, never silent truncation.
 Caller monotonic deadlines report `ERR_DBUS_TIMEOUT`, not a fabricated NoReply.
 Cancellation/close discard local results and never replay requests or roll back
 remote side effects. Close releases pending calls/connections but keeps the
 module's libdbus reference for its global caches. `shutdownDbus()` is explicit
 and requires all SDK clients closed plus exclusive ownership of every libdbus
 user in the process, including other realms/native code. Do not invoke it as
-automatic desktop-host cleanup. This is not a general RPC/service framework.
+automatic desktop-host cleanup. Containers, variants and subscriptions are
+not implemented; this is not a general RPC/service framework.
 
 `createCallback(signature, fn)` (or native `callback`) creates a handle for
 default-ABI scalar/void callbacks. Pass it through a native signature's

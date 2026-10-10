@@ -93,8 +93,12 @@ views and native cancellation remain staged.
 The first generated ABI path covers Linux x86_64 statx and file constants from
 native headers, with deterministic output and explicit target/type checks.
 The first D-Bus client uses explicit-address libdbus connections and zero-wait
-uint32 request/reply polling; setup is synchronous, and remote services/cancellation
-semantics remain separate. Existing native desktop services are not yet replaced.
+scalar request/reply polling: no argument or one uint32/bool/string/object-path
+input, and empty/scalar/fixed scalar tuple output. Native strings and diagnostics
+are copied within their owner's lifetime, with explicit overflow rather than
+guessed object bounds. Setup is synchronous; containers/subscriptions and
+remote-service policy remain separate. Existing native desktop services are
+not yet replaced.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 

@@ -85,6 +85,21 @@ test('network SDK maps OS APIs without HTTP, socket ownership or desktop policy'
   assert.doesNotMatch(read('sysrt/ffi/module.c'), /winsock2|WSAGetLastError|ws2_32/);
 });
 
+test('D-Bus client stays JS/config-only with explicit connections and library teardown', () => {
+  const sdk = read('sysrt/sdk/js/dbus.mjs');
+  assert.match(sdk, /loadNativeApi\(dbusBindings\[platform\]\)/);
+  assert.match(sdk, /dbus_connection_open_private/);
+  assert.match(sdk, /dbus_connection_read_write_dispatch', connection, 0/);
+  assert.match(sdk, /export function shutdownDbus\(\)/);
+  assert.doesNotMatch(sdk, /document\.|window\.|desktop\/|dbus_bus_get|DBUS_SESSION_BUS_ADDRESS/);
+  assert.doesNotMatch(read('sysrt/ffi/module.c'), /#include\s+<dbus\/|\bdbus_/);
+  assert.doesNotMatch(read('desktop/launcher/launcher.c'), /\bdbus_shutdown|\bshutdownDbus/);
+  const build = read('sysrt/CMakeLists.txt');
+  const library = build.match(/add_library\(polly-sysrt-ffi STATIC([\s\S]*?)\)/);
+  assert.ok(library);
+  assert.doesNotMatch(library[1], /dbus/);
+});
+
 test('asynchronous FFI reuses execution primitives and remains VM-thread confined', () => {
   const build = read('sysrt/CMakeLists.txt');
   assert.match(build, /polly-sysrt-ffi PUBLIC qjs polly-execution/);
