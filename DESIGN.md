@@ -50,8 +50,9 @@ Discussion conclusions (2026-10-10):
   of whether calls are in-process or IPC. Logic must work without a GUI;
   deployment adapters are selected at the composition root.
 - Isolate applications by process, UI VM and event loop. Windows of the same
-  application may share its realm. Settings must eventually be independent
-  from Shell without inheriting its private desktop connection.
+  application may share its realm. Settings's Appearance/About application now
+  follows this boundary; its remaining management panels still belong to Shell.
+  Settings never inherits Shell's private desktop connection.
 - Keep PollyWM independent. Desktop authority, display recovery and dedicated
   input/lock roles must not move into ordinary application UI.
 - FFI is local; RPC reuses suitable IPC; discovery is not authorization.
@@ -108,6 +109,16 @@ relative traversal, ownership checks, limits and asset policy remain desktop
 concerns, and the old theme-file C bridge is removed. Generic GUI bitmap handles
 own decoding and image-cache lifetime independently of SysRT. Shell still owns
 appearance authority and its prepare/commit/rollback flow.
+The first independent Settings app uses narrow JS IPC for Appearance/About and
+explicitly delegates Displays/Network/Audio/Keyboard to retained Shell panels.
+Shell records its spawned Settings PID/generation and verifies native daemon
+PID/UID credentials and the presentation endpoint's unique owner before admitting
+management requests. Public Open accepts only a fixed page, not a command or
+claimed identity. Strict snapshots cross IPC, not GUI objects, storage or private
+Wayland descriptors. Private-bus loss retires stale clients without reconnect or
+mutation replay; no-reply calls have no effects. This boundary does not claim a
+same-UID/ptrace sandbox. Configuration storage and the other native domains remain
+unmigrated.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 

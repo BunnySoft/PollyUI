@@ -152,7 +152,7 @@ test('appearance uses runtime configuration without legacy selection or downgrad
 });
 
 test('application logic does not import views or GUI APIs', () => {
-  for (const app of ['files', 'installer']) {
+  for (const app of ['files', 'installer', 'settings']) {
     const directory = `desktop/apps/${app}/logic/`;
     for (const file of readdirSync(new URL(directory, root))) {
       if (!file.endsWith('.mjs')) continue;

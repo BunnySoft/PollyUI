@@ -39,7 +39,9 @@ provider and QuickJS projection are removed. User theme-file and bitmap-resource
 policy also runs in JS over native files; its old C bridge is removed. Bitmap
 decoding and owned in-memory image handles remain generic GUI mechanisms, with
 no SysRT dependency (see [Bitmap resources](gui/sdk/BITMAPS.md)). Storage and HTTP
-still use their native implementations; Settings remains Shell-owned.
+still use their native implementations. Settings now has an independent
+process/realm for Appearance and About; Displays, Network, Audio and Keyboard
+retain explicit Shell control-panel entry points.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
 libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?, clearErrors?})` returns a callable
@@ -204,6 +206,28 @@ Forced authentic NameLost was not exercised; peer-spoofed NameLost was.
 Unique sender metadata is not authorization: Settings/Shell policy must remain
 above this transport. Introspection, containers, Unix FDs, general signals and
 automatic Promise handlers are not implemented.
+
+**Independent Settings (first application slice).**
+
+`polly-settings [appearance|about|displays|network|audio|keyboard]` requests the
+running Shell's single owned `org.pollyui.settings` application. Appearance
+selection, theme-file reload/restore and live About data use the fixed Settings1
+IPC contract and strict versioned JSON snapshots. The app runs without
+`--desktop`, with its own process, QuickJS realm, GUI event loop and storage
+namespace; it does not inherit Shell objects or private Wayland descriptors.
+Displays, Network, Audio and Keyboard explicitly open the existing Shell
+control panel. They are not yet independent implementations.
+
+The Shell checks daemon-supplied PID/UID credentials against its spawned
+Settings PID and current generation, including the presentation endpoint's
+unique owner. Public `Open(page)` only launches/presents the fixed app; it
+accepts no commands, paths or claimed identity. Both endpoints require the
+qualified owned private session bus, with no ambient/system-bus fallback.
+No-reply requests have no effects, and timeout/disconnect never reconnect or
+replay mutations. Existing appearance apply/save/rollback and device-controller
+policies remain in Shell; closing Settings does not stop them or other apps.
+This is an owned-process boundary, not a sandbox against same-UID/ptrace
+attackers. See [Settings](desktop/SETTINGS.md) for controls and lifecycle.
 
 `createCallback(signature, fn)` (or native `callback`) creates a handle for
 default-ABI scalar/void callbacks. Pass it through a native signature's
