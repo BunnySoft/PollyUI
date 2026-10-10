@@ -29,15 +29,15 @@ See [base selection and maintenance](./docs/desktop-base-maintenance.md).
 ## New-architecture Alpha delivery gate
 
 The current goal is a **Debian 13 x86_64 UEFI Live test Alpha**, not an
-installer or a complete migration of every native desktop service. Finish the
-selected Shell JSON configuration slice, then freeze one clean source revision
-for integration and media testing. Existing alpha.5-r2 images and their evidence
+installer or a complete migration of every native desktop service.
+`0.1.0-alpha.6` freezes the integrated runtime/configuration and packaging
+preflight changes for a fresh build and VM testing. Existing alpha.5-r2 images and their evidence
 remain historical; they do not contain or qualify the new SysRT/Settings work.
 
 | Gate | Required outcome | Current state |
 |---|---|---|
-| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | JSON configuration in progress; no candidate frozen |
-| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Pending |
+| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | alpha.6 source selected; integrated configuration and package-contract checks passed |
+| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Next: fresh clean-checkout build; preflight test package is not the candidate |
 | Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Pending; containers/headless tests are not VM evidence |
 | Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Pending; no new ISO published |
 | Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
@@ -83,7 +83,7 @@ prove one complete execution/service path before adding broad API coverage.
 | RT-05 | P1 | IPC/D-Bus SDK | First two-process loop integrated: explicit-address JS client/service, zero-wait noarg/u/b/s/o calls and fixed scalar replies, diagnostics, single-use request replies and stable cancel/close/deadlines. Setup/name claim synchronous; application authorization, containers/subscriptions remain staged | RT-01, RT-02; RT-03 only for callback-based routes |
 | RT-06 | P1 | Real desktop capability migration | First service integrated: user theme-file/resource policy is JS over native files, with Shell authorization, lifecycle and rollback preserved; old C bridge removed. Bitmap decoding stays a generic GUI mechanism | Native files; RT-05 for D-Bus-based services |
 | RT-07 | P1 | Independent Settings/application boundary | First app integrated: Appearance/About in an independent process/realm behind narrow IPC, daemon PID/UID and current-generation checks; Displays/Network/Audio/Keyboard retain explicit Shell-panel entry points. Relocatable single-instance launch; no private Shell connection inheritance or lost controls | RT-06, bidirectional IPC |
-| RT-08 | P1 | Application configuration/state | In progress: application-specific typed JSON configuration for Shell preferences over native files; one-time conversion of existing Shell preferences only when the new file is absent, preserving the original. No arbitrary storage quota or change to other apps' legacy storage | Existing native file API |
+| RT-08 | P1 | Application configuration/state | First target integrated: typed Shell JSON preferences over native files, one-time legacy conversion preserving the original, exclusive writer lifetime and explicit publication/durability failures. Other apps' legacy storage unchanged; no native FileSystem quota | Existing native file API |
 | RT-09 | P2 | Additional platforms/protocols | Deferred: Windows filesystem and DNS/HTTP/TLS only when the next real use case needs them | Relevant mechanism above |
 
 RT-01 does not promise cancellation of arbitrary native calls: accepted work

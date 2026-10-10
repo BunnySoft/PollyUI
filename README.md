@@ -38,8 +38,10 @@ these calls and libcrypto with its UI-specific rules; the old C filesystem
 provider and QuickJS projection are removed. User theme-file and bitmap-resource
 policy also runs in JS over native files; its old C bridge is removed. Bitmap
 decoding and owned in-memory image handles remain generic GUI mechanisms, with
-no SysRT dependency (see [Bitmap resources](gui/sdk/BITMAPS.md)). Storage and HTTP
-still use their native implementations. Settings now has an independent
+no SysRT dependency (see [Bitmap resources](gui/sdk/BITMAPS.md)). Shell preferences
+now use typed JSON over native files, with one-time conversion of its old data
+only when the JSON file is absent. Other applications' legacy storage and HTTP
+remain native. Settings now has an independent
 process/realm for Appearance and About; Displays, Network, Audio and Keyboard
 retain explicit Shell control-panel entry points.
 
@@ -228,6 +230,17 @@ replay mutations. Existing appearance apply/save/rollback and device-controller
 policies remain in Shell; closing Settings does not stop them or other apps.
 This is an owned-process boundary, not a sandbox against same-UID/ptrace
 attackers. See [Settings](desktop/SETTINGS.md) for controls and lifecycle.
+
+Shell is the sole writer of `application.configDir/shell-preferences.json`.
+Its versioned object stores theme, audio, display, workspace and shortcut
+preferences, validated and deeply frozen in JS. Native file operations provide
+private/no-follow access, a lifetime nonblocking writer lock, same-directory
+atomic publication and explicit durability errors. Initial migration reads only
+Shell's old `localstorage.dat`, preserves it, and never falls back once JSON
+exists. A published-but-not-synced change reports `committed:true` without
+rolling back the published state or replaying the operation. This is cooperative
+single-writer protection, not a transaction across the GUI and filesystem.
+See [Shell configuration](desktop/SHELL-CONFIGURATION.md).
 
 `createCallback(signature, fn)` (or native `callback`) creates a handle for
 default-ABI scalar/void callbacks. Pass it through a native signature's

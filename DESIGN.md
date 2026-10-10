@@ -117,8 +117,15 @@ management requests. Public Open accepts only a fixed page, not a command or
 claimed identity. Strict snapshots cross IPC, not GUI objects, storage or private
 Wayland descriptors. Private-bus loss retires stale clients without reconnect or
 mutation replay; no-reply calls have no effects. This boundary does not claim a
-same-UID/ptrace sandbox. Configuration storage and the other native domains remain
-unmigrated.
+same-UID/ptrace sandbox.
+Shell configuration is now a typed versioned JSON object, with a single Shell
+writer and immutable validated snapshots. Its JS persistence uses native files,
+a lifetime advisory writer lock and same-directory atomic publication.
+Only absent JSON triggers one-time conversion of Shell's own legacy byte store;
+the old file remains untouched and is never consulted afterward. Published
+durability failures preserve the actual new state and report uncertainty instead
+of rolling it back or replaying a mutation. Other applications' legacy storage
+and the remaining native domains are not migrated.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 
