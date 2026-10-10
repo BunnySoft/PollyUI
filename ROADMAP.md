@@ -44,6 +44,29 @@ platform-specific code; the surface-creation seam is already abstracted.
 
 ---
 
+## SysRT implementation task plan
+
+Native mappings for files, processes and sockets are implemented on the declared
+ABI profiles. Desktop policy remains above them. Keep the next steps small:
+prove one complete execution/service path before adding broad API coverage.
+
+| ID | Priority | Task | State / first acceptance | Prerequisites |
+|---|---|---|---|---|
+| RT-01 | P0 | Generic asynchronous native calls | In progress: worker -> owning dispatcher -> Promise; scalar/CString inputs and scalar results first, explicit error capture and joined shutdown | Existing FFI/dispatcher |
+| RT-02 | P0 | Native memory/resource ownership | Planned: borrowed/owned returned pointers, release functions and managed-buffer async leases; no guessed allocation bounds | RT-01 for async leases |
+| RT-03 | P0 | Native callbacks | Planned: one safe callback path with VM/thread affinity and teardown; no universal callback coverage | RT-01, RT-02 |
+| RT-04 | P0 | ABI metadata generation | Planned: generate one target's signatures/layouts/constants from headers; retain explicit target checks | Independent |
+| RT-05 | P1 | IPC/D-Bus SDK | Planned: one transport/client path over an existing OS library, not a new per-service C bridge | RT-01, RT-02, RT-03 |
+| RT-06 | P1 | Real desktop capability migration | Planned: select one service, migrate logic/callers to JS and remove its replaced C bridge in the same slice | RT-05 |
+| RT-07 | P1 | Independent Settings/application boundary | Planned: separate process and narrow clients; never inherit Shell's private connection | RT-06 |
+| RT-08 | P1 | Application configuration/state | Planned: decide semantics before replacing localStorage; no application quota in native FileSystem | Existing native file API |
+| RT-09 | P2 | Additional platforms/protocols | Deferred: Windows filesystem and DNS/HTTP/TLS only when the next real use case needs them | Relevant mechanism above |
+
+RT-01 does not promise cancellation of arbitrary native calls: accepted work
+finishes before VM destruction. Its first slice deliberately excludes pointer
+arguments/results, native callbacks and thread-local error observers. A Promise
+does not make every OS API safe to call from another thread.
+
 ## Engines & pipeline
 
 | Feature | Status | Notes |
