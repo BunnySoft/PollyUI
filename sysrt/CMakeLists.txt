@@ -82,6 +82,24 @@ if (TARGET qjs)
         endif()
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             find_program(SR_PYTHON python3 REQUIRED)
+            if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+                pkg_check_modules(SR_DBUS QUIET IMPORTED_TARGET dbus-1)
+                find_program(SR_DBUS_DAEMON dbus-daemon)
+                if (SR_DBUS_FOUND AND SR_DBUS_DAEMON)
+                    add_executable(polly-sysrt-dbus-service tests/dbus-service.c)
+                    target_link_libraries(polly-sysrt-dbus-service PRIVATE PkgConfig::SR_DBUS)
+                    target_compile_options(polly-sysrt-dbus-service PRIVATE -Wall -Wextra -Wpedantic -Werror)
+                    add_test(NAME sysrt-dbus-private COMMAND "${SR_PYTHON}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/dbus-private.py"
+                        $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
+                        $<TARGET_FILE:polly-sysrt-dbus-service> "${SR_DBUS_DAEMON}")
+                    set_tests_properties(sysrt-dbus-private PROPERTIES TIMEOUT 60
+                        LABELS "ordinary-native;private-dbus-fixture"
+                        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+                else()
+                    message(STATUS "sysrt-dbus-private unavailable: requires dbus-1 headers and dbus-daemon")
+                endif()
+            endif()
             add_test(NAME sysrt-files-abi-check COMMAND "${SR_PYTHON}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate-files-abi.py"
                 --cc "${CMAKE_C_COMPILER}" --check)
