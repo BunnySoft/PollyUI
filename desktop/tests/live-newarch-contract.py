@@ -18,6 +18,17 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_drm_backend_record_survives_actual_kernel_console_interleave(self):
+        record = ("[ 65.0] polly-session[588]: due to "
+                  "W[ 65.076721] hrtimer: interrupt took 17300651 ns\n"
+                  "LR_BACKENDS: drm,libinput\n"
+                  "[ 65.2] polly-session[588]: Seat opened with backend 'logind'\n"
+                  "[ 65.5] polly-session[588]: Initializing DRM backend for /dev/dri/card0\n")
+        self.assertTrue(boot.guest_drm_input_record(record))
+        self.assertFalse(boot.guest_drm_input_record(record.replace("drm,libinput", "headless")))
+        self.assertFalse(boot.guest_drm_input_record(record.replace("Initializing DRM", "No DRM")))
+        self.assertFalse(boot.guest_drm_input_record(record.replace("LR_BACKENDS", "BACKENDS")))
+
     def test_guest_user_theme_matches_the_real_production_file_schema(self):
         repo = Path(__file__).resolve().parents[2]
         catalog = json.loads((repo / "desktop/resources/themes/builtin.json").read_text())

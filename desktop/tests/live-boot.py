@@ -20,6 +20,16 @@ def acceptance_input_required(diagnostic_prepare, profile_settings_startup):
     return not (diagnostic_prepare and profile_settings_startup)
 
 
+def guest_drm_input_record(text):
+    # Kernel console writes can split a journal record. Use this view only for
+    # backend identification; fatal/error checks retain the complete raw log.
+    journal = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    journal = re.sub(r"\[\s*\d+\.\d+\] (?![A-Za-z0-9_.-]+\[\d+\]:)[^\r\n]*\r?\n", "", journal)
+    return ("WLR_BACKENDS: drm,libinput" in journal and
+            "Initializing DRM backend for /dev/dri/" in journal and
+            "Seat opened with backend 'logind'" in journal)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("iso", type=Path)
@@ -169,7 +179,7 @@ def main():
                     time.sleep(0.5)
                 if "Starting ordinary user desktop, uid=1000" not in text:
                     raise RuntimeError("Desktop readiness did not prove ordinary-user session startup")
-                if "WLR_BACKENDS: drm,libinput" not in text:
+                if not guest_drm_input_record(text):
                     raise RuntimeError("Desktop did not use guest DRM/input devices")
                 if "POLLY_SESSION_REGISTERED uid=1000" not in text or "Active=yes" not in text:
                     raise RuntimeError("PAM did not register an active ordinary-user elogind session")
