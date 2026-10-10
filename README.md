@@ -31,7 +31,7 @@ keep the cross-platform `pollyui-engine` separate from optional Linux desktop
 integration. `gui/` contains the library, public headers and `sdk/js/`;
 `sysrt/` contains system capabilities, and `desktop/launcher` assembles the
 formal application runtime. **PollySystemRT** now has a generic `sysrt:ffi`
-native module and JS/config process, clock and Linux filesystem SDKs.
+native module and JS/config process, clock, filesystem and socket SDKs.
 FileSystem SDK calls mirror libc signatures/results through FFI, without text,
 file-size, directory-count or UID policy. The desktop file service composes
 these calls and libcrypto with its UI-specific rules; the old C filesystem
@@ -39,12 +39,15 @@ provider and QuickJS projection are removed. Storage and HTTP
 still use their native implementations; Settings remains Shell-owned.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
-libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?})` returns a callable
+libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?, clearErrors?})` returns a callable
 whose result is `{value, errno, systemError}`; Windows reports `errno:null`
 because separate CRTs do not share errno. Integer widths are explicit,
 64-bit results use BigInt, and native buffers/views have bounded access and
 explicit close semantics. Library/function/pointer ownership prevents wrapper
 collection from releasing resources still in use.
+Error state is cleared before a native call by default. `clearErrors:false`
+lets an error-observer binding read incoming state, for example
+`WSAGetLastError`; it does not change return values or add automatic retries.
 `allocPointers([...])` builds a flat, read-only native input pointer array,
 pins its elements through wrapper GC and rejects calls after an element closes.
 Null termination is explicit. `createCStringArray(strings)` provides a scoped
@@ -97,6 +100,21 @@ callback is added. Do not resume a live QuickJS VM through a raw `fork`.
 Callers own child reaping and OS handle release; disposing bindings does not
 terminate a process or close its OS handle. Other process ABI profiles are
 not implemented; the existing current-PID convenience remains available.
+
+`createNetworkApi()` exposes basic native socket APIs on Linux x86_64
+(glibc/musl) and Windows x64: `socket`, `bind`, `connect`, `listen`, `accept`,
+binary `send/recv` and `sendto/recvfrom`, endpoint/option queries, `shutdown`,
+`poll/WSAPoll`, nonblocking `fcntl/ioctlsocket`, byte-order conversion and
+`inet_pton/inet_ntop`. The Winsock narrow-address names come from actual DLL
+exports, not the `InetPtonA/InetNtopA` header aliases. Sockaddr and poll layouts
+are declarative and target-checked; raw fields retain native/network byte order.
+No payload quota, text decoding, automatic initialization or socket ownership
+policy is added. Callers explicitly perform `WSAStartup/WSACleanup` on Windows,
+close their sockets and handle partial IO, EOF and would-block results. Windows
+socket errors use `WSAGetLastError`; `WSAStartup` returns its error code directly.
+Disposing bindings does not close sockets or clean up Winsock. Calls remain
+synchronous; nonblocking sockets/readiness calls are not a JS async runtime.
+DNS, HTTP, TLS and the existing native fetch/iwd services are not changed.
 
 `pollyui` retains the existing application command. The separate
 `pollyui-playground` example links only the GUI library (Windows output:

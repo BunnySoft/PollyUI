@@ -71,6 +71,17 @@ test('generic FFI has no GUI or domain-specific API dependency', () => {
   assert.doesNotMatch(source, /static JSClassID/);
 });
 
+test('network SDK maps OS APIs without HTTP, socket ownership or desktop policy', () => {
+  const sdk = read('sysrt/sdk/js/network.mjs');
+  assert.match(sdk, /loadNativeApi\(networkBindings\[platform\]\)/);
+  assert.doesNotMatch(sdk, /localStorage|fetch\(|desktop\/|maxBytes|retry|timeout|WSAStartup\(/);
+  const configuration = read('sysrt/bindings/network.mjs');
+  assert.match(configuration, /symbol: 'socket'/);
+  assert.match(configuration, /symbol: 'WSAPoll'/);
+  assert.match(configuration, /WSAGetLastError.*clearErrors: false/);
+  assert.doesNotMatch(read('sysrt/ffi/module.c'), /winsock2|WSAGetLastError|ws2_32/);
+});
+
 test('CLI and desktop composition remain outside the GUI engine', () => {
   assert.match(read('desktop/launcher/main.c'), /pu_application_run\(&options\)/);
   assert.doesNotMatch(read('desktop/launcher/main.c'), /\bJS_(?:NewClass|NewCFunction|SetOpaque)\b/);

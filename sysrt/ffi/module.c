@@ -57,7 +57,7 @@ typedef struct Function {
     Type result, params[SR_MAX_ARGS];
     ffi_type *types[SR_MAX_ARGS];
     unsigned count;
-    int closed;
+    int closed, clear_errors;
     JSClassID pointer_class;
 } Function;
 
@@ -339,10 +339,12 @@ static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
         if (!convert(ctx, function->params[i], argv[i], &values[i], &temporary[i], function->pointer_class)) goto done;
         args[i] = &values[i];
     }
-    errno = 0;
+    if (function->clear_errors) {
+        errno = 0;
 #ifdef _WIN32
-    SetLastError(0);
+        SetLastError(0);
 #endif
+    }
     ffi_call(&function->cif, function->code, &returned, args);
     int native_errno = errno;
 #ifdef _WIN32
@@ -449,7 +451,7 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
         const char *field = JS_AtomToCString(ctx, properties[i].atom);
         if (!field) { fields_ok = 0; break; }
         if (strcmp(field, "result") && strcmp(field, "parameters") && strcmp(field, "abi") &&
-            strcmp(field, "variadic")) {
+            strcmp(field, "variadic") && strcmp(field, "clearErrors")) {
             JS_ThrowTypeError(ctx, "Unsupported signature field: %s", field);
             fields_ok = 0;
         }
@@ -458,6 +460,14 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     }
     JS_FreePropertyEnum(ctx, properties, property_count);
     if (!fields_ok) goto done;
+    JSValue clear = JS_GetPropertyStr(ctx, argv[1], "clearErrors");
+    if (JS_IsException(clear)) goto done;
+    if (!JS_IsUndefined(clear) && !JS_IsBool(clear)) {
+        JS_FreeValue(ctx, clear);
+        JS_ThrowTypeError(ctx, "clearErrors must be boolean"); goto done;
+    }
+    function->clear_errors = JS_IsUndefined(clear) || JS_ToBool(ctx, clear);
+    JS_FreeValue(ctx, clear);
     JSValue returns = JS_GetPropertyStr(ctx, argv[1], "result");
     int ok = !JS_IsException(returns) && type_value(ctx, returns, &function->result);
     JS_FreeValue(ctx, returns);
@@ -523,7 +533,11 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     if (library->closed) { error(ctx, "ERR_FFI_CLOSED", "Native library closed during binding"); goto done; }
 #ifdef _WIN32
     FARPROC code = GetProcAddress((HMODULE)library->handle, name);
-    if (!code) { error(ctx, "ERR_FFI_SYMBOL", "Native symbol is not exported"); goto done; }
+    if (!code) {
+        char message[320];
+        snprintf(message, sizeof(message), "Native symbol is not exported: %s", name);
+        error(ctx, "ERR_FFI_SYMBOL", message); goto done;
+    }
 #else
     dlerror();
     void *code = dlsym(library->handle, name);

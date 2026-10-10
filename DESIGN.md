@@ -81,6 +81,9 @@ SDK loading independent of the app's working directory.
 The basic process SDK now maps native creation/wait/signal APIs; argument
 vectors and pointer fields use generic FFI memory, not a process-specific C
 bridge. Desktop launch/activation policy remains separate.
+The socket SDK follows the same native-mapping boundary for TCP/UDP and
+readiness calls. Protocol services, socket ownership and asynchronous scheduling
+remain above it; native fetch and desktop network services are not yet migrated.
 Callback/asynchronous mechanisms remain unfinished.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.

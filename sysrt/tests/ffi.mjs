@@ -158,6 +158,19 @@ const nativeError = bind('sr_error', 'i32', ['i32'])(13);
 check(nativeError.value === -1, 'Negative native result remains a result');
 check(platform === 'windows' ? nativeError.systemError === 13 && nativeError.errno === null :
   nativeError.errno === 13 && nativeError.systemError === null, 'Error state is captured with its call');
+const observeError = loadBindings({ library: fixtureLibrary, functions: {
+  fail: { symbol: 'sr_error', result: 'i32', parameters: ['i32'] },
+  saved: { symbol: 'sr_saved_error', result: 'i32', parameters: [], clearErrors: false },
+  cleared: { symbol: 'sr_saved_error', result: 'i32', parameters: [] },
+}});
+observeError.call('fail', 17);
+check(observeError.call('saved').value === 17, 'Error observers can preserve incoming native error state');
+observeError.call('fail', 17);
+check(observeError.call('cleared').value === 0, 'Default native error clearing remains unchanged');
+observeError.close();
+for (const clearErrors of [0, null, 'false'])
+  refuses(() => library.bind('sr_saved_error', { result: 'i32', parameters: [], clearErrors }),
+    'Error-clearing metadata must be boolean');
 
 const recordLayout = {
   byteLength: Number(bind('sr_record_size', 'size', [])().value),

@@ -15,8 +15,13 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <poll.h>
 #endif
 #ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #define EXPORT __declspec(dllexport)
 #else
@@ -50,6 +55,55 @@ EXPORT int32_t sr_error(int32_t value)
 #endif
     return -1;
 }
+
+EXPORT int32_t sr_saved_error(void)
+{
+#ifdef _WIN32
+    return (int32_t)GetLastError();
+#else
+    return errno;
+#endif
+}
+
+#if defined(_WIN32) || defined(__linux__)
+EXPORT size_t sr_network_layout(int32_t index)
+{
+    const size_t values[] = {
+        sizeof(struct sockaddr_in), offsetof(struct sockaddr_in, sin_family),
+        offsetof(struct sockaddr_in, sin_port), offsetof(struct sockaddr_in, sin_addr),
+        sizeof(struct sockaddr_in6), offsetof(struct sockaddr_in6, sin6_family),
+        offsetof(struct sockaddr_in6, sin6_port), offsetof(struct sockaddr_in6, sin6_flowinfo),
+        offsetof(struct sockaddr_in6, sin6_addr), offsetof(struct sockaddr_in6, sin6_scope_id),
+#ifdef _WIN32
+        sizeof(WSAPOLLFD), offsetof(WSAPOLLFD, fd), offsetof(WSAPOLLFD, events), offsetof(WSAPOLLFD, revents),
+        sizeof(int), sizeof(SOCKET), sizeof(WSADATA),
+#else
+        sizeof(struct pollfd), offsetof(struct pollfd, fd), offsetof(struct pollfd, events), offsetof(struct pollfd, revents),
+        sizeof(socklen_t), sizeof(int), 0,
+#endif
+    };
+    return index >= 0 && (size_t)index < sizeof(values) / sizeof(*values) ? values[index] : SIZE_MAX;
+}
+
+EXPORT int64_t sr_network_constant(int32_t index)
+{
+    const int64_t values[] = {
+        AF_INET, AF_INET6, SOCK_STREAM, SOCK_DGRAM, IPPROTO_TCP, IPPROTO_UDP,
+#ifdef _WIN32
+        SD_RECEIVE, SD_SEND, SD_BOTH,
+#else
+        SHUT_RD, SHUT_WR, SHUT_RDWR,
+#endif
+        SOL_SOCKET, SO_REUSEADDR, SO_ERROR, SO_TYPE, POLLIN, POLLOUT, POLLERR, POLLHUP, MSG_PEEK,
+#ifdef _WIN32
+        (int32_t)FIONBIO,
+#else
+        MSG_DONTWAIT, MSG_NOSIGNAL, F_GETFL, F_SETFL, O_NONBLOCK,
+#endif
+    };
+    return index >= 0 && (size_t)index < sizeof(values) / sizeof(*values) ? values[index] : INT64_MIN;
+}
+#endif
 
 EXPORT size_t sr_process_layout(int32_t index)
 {
