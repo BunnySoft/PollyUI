@@ -1,9 +1,10 @@
-import { alloc, platform } from 'sysrt:ffi';
+import { alloc, allocPointers, maxBytes, platform } from 'sysrt:ffi';
 import { loadNativeApi } from './sysrt/sdk/js/native.mjs';
 import { monotonicNanoseconds } from './sysrt/sdk/js/clock.mjs';
-import { dbusBindings, dbusConstants as C } from './sysrt/bindings/dbus.mjs';
+import { encodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
+import { dbusBindings, dbusConstants as C, dbusStringBindings } from './sysrt/bindings/dbus.mjs';
 
-let native;
+let native, strings;
 const clients = new Set();
 
 export function createDbusApi() {
@@ -23,14 +24,34 @@ export function shutdownDbus() {
   if (!native) return;
   native.dbus_shutdown();
   native.dispose();
-  native = undefined;
+  strings?.dispose();
+  native = strings = undefined;
 }
 
-function failure(code, message, dbusName = null) {
+function failure(code, message, dbusName = null, dbusMessage = null) {
   const error = new Error(message);
   error.code = code;
   error.dbusName = dbusName;
+  error.dbusMessage = dbusMessage;
   return error;
+}
+
+// Only pass pointers with libdbus's valid NUL-string contract, while their
+// message/DBusError owner is alive. Native strnlen obtains the real extent;
+// memcpy copies that extent into managed memory, never an external FFI read.
+function copyCString(pointer, label) {
+  if (pointer === null) throw failure('ERR_DBUS_DIAGNOSTIC', 'Missing native D-Bus ' + label);
+  const api = strings ??= loadNativeApi(dbusStringBindings);
+  const length = Number(api.strnlen(pointer, maxBytes).value);
+  if (length === maxBytes)
+    throw failure('ERR_DBUS_STRING_OVERFLOW', 'Native D-Bus ' + label + ' exceeds the FFI allocation bound');
+  const output = alloc(length + 1);
+  let copied;
+  try {
+    copied = api.memcpy(output, pointer, length + 1).value;
+    if (copied === null) throw failure('ERR_DBUS_DIAGNOSTIC', 'Native string copy returned NULL');
+    return output.readString(length + 1);
+  } finally { copied?.close(); output.close(); }
 }
 
 function text(value, label) {
@@ -47,9 +68,12 @@ function text(value, label) {
  * process-wide exclusive-library precondition holds. Opaque objects are never
  * adopted with guessed extents. Cancellation only discards the local result,
  * not remote side effects. Terminal outcomes remain stable after close/cancel.
- * Only one uint32 argument and one uint32 reply are supported. Known remote
- * error names are matched natively; arbitrary names/text are not read through
- * unbounded borrowed pointers. Setup failures omit libdbus error strings.
+ * call(target, signature, args, replySignature, timeoutMs=25000) accepts no
+ * argument or one u/b/s/o scalar, and an empty/scalar/fixed scalar tuple reply.
+ * Empty replies have value undefined; tuples have a frozen array value.
+ * Strings and native error diagnostics are copied within their owner's lifetime;
+ * a string exceeding the existing FFI allocation bound is an explicit overflow.
+ * callUint32 is only a compatibility wrapper around this same ticket kernel.
  * Poll enforces the caller's monotonic deadline, since zero-wait libdbus I/O
  * alone does not drive its timeout handlers. This is ERR_DBUS_TIMEOUT, not a
  * fabricated remote NoReply. Poll after the deadline discards even a late reply.
@@ -62,12 +86,38 @@ export function openDbusClient(address) {
   function release(name, pointer) {
     try { value(name, pointer); } finally { pointer.close(); }
   }
+  function errorRecord() {
+    const record = api.createRecord('error');
+    try { value('dbus_error_init', record.pointer); return record; }
+    catch (error) { record.close(); throw error; }
+  }
+  function freeError(record) {
+    try { value('dbus_error_free', record.pointer); } finally { record.close(); }
+  }
+  function readError(record, code, fallback) {
+    if (!value('dbus_error_is_set', record.pointer)) return failure(code, fallback);
+    const namePointer = record.pointer.readPointer(0), messagePointer = record.pointer.readPointer(8);
+    let name;
+    try {
+      name = copyCString(namePointer, 'error name');
+      const message = copyCString(messagePointer, 'error message');
+      return failure(code, message, name, message);
+    } catch (error) {
+      if (error.code !== 'ERR_DBUS_STRING_OVERFLOW') throw error;
+      error.code = 'ERR_DBUS_DIAGNOSTIC_OVERFLOW';
+      error.dbusName = name ?? null;
+      return error;
+    } finally { namePointer?.close(); messagePointer?.close(); }
+  }
   try {
-    connection = value('dbus_connection_open_private', address, null);
-    if (connection === null) throw failure('ERR_DBUS_OPEN', 'Cannot open the explicit D-Bus address');
-    value('dbus_connection_set_exit_on_disconnect', connection, 0);
-    if (!value('dbus_bus_register', connection, null))
-      throw failure('ERR_DBUS_REGISTER', 'D-Bus authentication/Hello failed');
+    const diagnostic = errorRecord();
+    try {
+      connection = value('dbus_connection_open_private', address, diagnostic.pointer);
+      if (connection === null) throw readError(diagnostic, 'ERR_DBUS_OPEN', 'Cannot open the explicit D-Bus address');
+      value('dbus_connection_set_exit_on_disconnect', connection, 0);
+      if (!value('dbus_bus_register', connection, diagnostic.pointer))
+        throw readError(diagnostic, 'ERR_DBUS_REGISTER', 'D-Bus authentication/Hello failed');
+    } finally { freeError(diagnostic); }
   } catch (error) {
     if (connection !== null) {
       try { value('dbus_connection_close', connection); }
@@ -94,31 +144,48 @@ export function openDbusClient(address) {
       throw error;
     }
   }
-  function decode(reply) {
+  function decode(reply, signature) {
     const type = value('dbus_message_get_type', reply);
     if (type === C.MESSAGE_ERROR) {
-      const names = ['NoReply', 'Disconnected', 'ServiceUnknown', 'UnknownMethod',
-        'AccessDenied', 'InvalidArgs', 'Failed'];
-      const name = names.map(name => 'org.freedesktop.DBus.Error.' + name)
-        .find(name => value('dbus_message_is_error', reply, name)) ?? null;
-      return Object.freeze({ state: 'error', error: failure('ERR_DBUS_REMOTE',
-        name ?? 'Remote D-Bus error (arbitrary name/text decoding is unsupported)', name) });
+      const diagnostic = errorRecord();
+      try {
+        if (!value('dbus_set_error_from_message', diagnostic.pointer, reply))
+          throw failure('ERR_DBUS_REPLY', 'D-Bus error message has no native diagnostic');
+        return Object.freeze({ state: 'error',
+          error: readError(diagnostic, 'ERR_DBUS_REMOTE', 'Remote D-Bus error') });
+      } finally { freeError(diagnostic); }
     }
-    if (type !== C.MESSAGE_METHOD_RETURN || !value('dbus_message_has_signature', reply, 'u'))
-      throw failure('ERR_DBUS_SIGNATURE', 'Expected exactly one uint32 D-Bus method return');
+    if (type !== C.MESSAGE_METHOD_RETURN || !value('dbus_message_has_signature', reply, signature))
+      throw failure('ERR_DBUS_SIGNATURE', 'Expected D-Bus method return signature: ' + signature);
+    if (!signature) return Object.freeze({ state: 'reply', value: undefined });
     const iter = api.createRecord('messageIter');
     let output;
     try {
-      output = alloc(4);
+      output = alloc(8);
       if (!value('dbus_message_iter_init', reply, iter.pointer))
         throw failure('ERR_DBUS_SIGNATURE', 'D-Bus reply has no argument');
-      value('dbus_message_iter_get_basic', iter.pointer, output);
-      const number = new DataView(output.read(4)).getUint32(0, true);
-      return Object.freeze({ state: 'reply', value: number });
+      const values = [];
+      for (let index = 0; index < signature.length; index++) {
+        value('dbus_message_iter_get_basic', iter.pointer, output);
+        if (signature[index] === 's' || signature[index] === 'o') {
+          const pointer = output.readPointer();
+          try { values.push(copyCString(pointer, 'reply string')); }
+          finally { pointer?.close(); }
+        } else {
+          const number = new DataView(output.read(4)).getUint32(0, true);
+          if (signature[index] === 'b' && number !== 0 && number !== 1)
+            throw failure('ERR_DBUS_REPLY', 'D-Bus boolean is not canonical');
+          values.push(signature[index] === 'b' ? number === 1 : number);
+        }
+        if (index + 1 < signature.length && !value('dbus_message_iter_next', iter.pointer))
+          throw failure('ERR_DBUS_SIGNATURE', 'D-Bus reply tuple ended early');
+      }
+      return Object.freeze({ state: 'reply',
+        value: values.length === 1 ? values[0] : Object.freeze(values) });
     } finally { output?.close(); iter.close(); }
   }
   const client = Object.freeze({
-    callUint32(target, argument, timeoutMs = 25000) {
+    call(target, signature, args, replySignature, timeoutMs = 25000) {
       live();
       if (!target || typeof target !== 'object' || Array.isArray(target) ||
           Object.keys(target).some(key => !['destination', 'path', 'interface', 'member'].includes(key)))
@@ -133,24 +200,52 @@ export function openDbusClient(address) {
         live();
         if (!value(validator, key, null)) throw new TypeError('Invalid D-Bus target: ' + key);
       }
-      if (!Number.isInteger(argument) || argument < 0 || argument > 0xffffffff)
+      if (!['', 'u', 'b', 's', 'o'].includes(signature) ||
+          typeof replySignature !== 'string' || !/^[ubso]*$/.test(replySignature))
+        throw new TypeError('D-Bus call supports no argument/one u/b/s/o scalar and a fixed scalar reply tuple');
+      if (!value('dbus_signature_validate', replySignature, null))
+        throw new TypeError('Invalid D-Bus reply signature');
+      if (!Array.isArray(args) || args.length !== signature.length)
+        throw new TypeError('D-Bus arguments must match the request signature');
+      const argument = signature ? args[0] : undefined;
+      let encoded;
+      if (signature === 'u' && (!Number.isInteger(argument) || argument < 0 || argument > 0xffffffff))
         throw new RangeError('D-Bus argument must be uint32');
+      if (signature === 'b' && typeof argument !== 'boolean')
+        throw new TypeError('D-Bus boolean argument requires a boolean');
+      if (signature === 's' || signature === 'o') {
+        if (typeof argument !== 'string' || argument.includes('\0'))
+          throw new TypeError('D-Bus string argument requires a string without NUL');
+        encoded = encodeUtf8(argument, maxBytes - 1);
+        live();
+        if (signature === 'o' && !value('dbus_validate_path', argument, null))
+          throw new TypeError('Invalid D-Bus object path argument');
+      }
       if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 0x7fffffff)
         throw new RangeError('D-Bus timeout must be a positive int32 number of milliseconds');
       live();
-      let message = null, iter, input, slot, handle = null;
+      let message = null, iter, input, stringSlot, slot, handle = null;
       let deadline;
       try {
         message = value('dbus_message_new_method_call',
           destination, path, interfaceName, member);
         if (message === null) throw failure('ERR_DBUS_MEMORY', 'Cannot allocate D-Bus method call');
-        iter = api.createRecord('messageIter');
-        input = alloc(4); slot = alloc(8);
-        const bytes = new ArrayBuffer(4);
-        new DataView(bytes).setUint32(0, argument, true); input.write(bytes);
-        value('dbus_message_iter_init_append', message, iter.pointer);
-        if (!value('dbus_message_iter_append_basic', iter.pointer, C.TYPE_UINT32, input))
-          throw failure('ERR_DBUS_MEMORY', 'Cannot append D-Bus uint32 argument');
+        slot = alloc(8);
+        if (signature) {
+          iter = api.createRecord('messageIter');
+          if (encoded) {
+            input = alloc(encoded.length + 1); input.write(encoded.buffer);
+            stringSlot = allocPointers([input]);
+          } else {
+            input = alloc(4);
+            const bytes = new ArrayBuffer(4);
+            new DataView(bytes).setUint32(0, signature === 'b' ? Number(argument) : argument, true);
+            input.write(bytes);
+          }
+          value('dbus_message_iter_init_append', message, iter.pointer);
+          if (!value('dbus_message_iter_append_basic', iter.pointer, signature.charCodeAt(0), stringSlot ?? input))
+            throw failure('ERR_DBUS_MEMORY', 'Cannot append D-Bus scalar argument');
+        }
         deadline = monotonicNanoseconds() + BigInt(timeoutMs) * 1000000n;
         const sent = value('dbus_connection_send_with_reply', connection, message, slot, timeoutMs);
         handle = slot.readPointer();
@@ -162,7 +257,7 @@ export function openDbusClient(address) {
         }
         throw error;
       } finally {
-        slot?.close(); input?.close(); iter?.close();
+        slot?.close(); stringSlot?.close(); input?.close(); iter?.close();
         if (message !== null) release('dbus_message_unref', message);
       }
       let outcome = Object.freeze({ state: 'pending' });
@@ -196,7 +291,7 @@ export function openDbusClient(address) {
               if (value('dbus_pending_call_get_completed', handle)) {
                 reply = value('dbus_pending_call_steal_reply', handle);
                 if (reply === null) throw failure('ERR_DBUS_REPLY', 'Completed D-Bus call has no reply');
-                result = decode(reply);
+                result = decode(reply, replySignature);
               } else {
                 disconnected = !value('dbus_connection_get_is_connected', connection);
               }
@@ -211,6 +306,9 @@ export function openDbusClient(address) {
           return operation.finish(Object.freeze({ state: 'cancelled' }), true);
         },
       });
+    },
+    callUint32(target, argument, timeoutMs = 25000) {
+      return client.call(target, 'u', [argument], 'u', timeoutMs);
     },
     close() { close(); },
   });

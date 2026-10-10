@@ -1,7 +1,7 @@
 import { openDbusClient, createDbusApi, shutdownDbus } from './sysrt/sdk/js/dbus.mjs';
 import { createNetworkApi } from './sysrt/sdk/js/network.mjs';
 import { monotonicNanoseconds, close as closeClock } from './sysrt/sdk/js/clock.mjs';
-import { libc } from 'sysrt:ffi';
+import { libc, maxBytes } from 'sysrt:ffi';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
 
 function check(value, message) { if (!value) throw new Error(message); }
@@ -47,12 +47,14 @@ function client() {
 const target = member => ({
   destination: 'org.polly.Test', path: '/org/polly/Test', interface: 'org.polly.Test', member,
 });
-async function result(ticket, label = 'request') {
-  const deadline = monotonicNanoseconds() + 5000000000n;
+async function result(ticket, label = 'request', pollsPerTurn = 1) {
+  const deadline = monotonicNanoseconds() + 15000000000n;
   let outcome;
   do {
-    outcome = ticket.poll();
-    if (outcome.state !== 'pending') return outcome;
+    for (let index = 0; index < pollsPerTurn; index++) {
+      outcome = ticket.poll();
+      if (outcome.state !== 'pending') return outcome;
+    }
     check(monotonicNanoseconds() < deadline, 'Private D-Bus test deadline: ' + label);
     await pause();
   } while (true);
@@ -62,9 +64,20 @@ async function call(connection, member, argument = 0, timeout = 2000) {
   check(outcome.state === 'reply', member + ': ' + outcome.error);
   return outcome.value;
 }
+async function scalar(connection, target, signature, args, replySignature) {
+  const outcome = await result(connection.call(target, signature, args, replySignature, 10000), target.member);
+  check(outcome.state === 'reply', target.member + ': ' + outcome.error);
+  return outcome.value;
+}
 
 try {
-  refuses(() => openDbusClient('unix:path=/nonexistent-polly-private-bus'), 'ERR_DBUS_OPEN');
+  let setupError;
+  try { openDbusClient('unix:path=/nonexistent-polly-private-bus'); }
+  catch (error) { setupError = error; }
+  check(setupError?.code === 'ERR_DBUS_OPEN' &&
+    setupError.dbusName === 'org.freedesktop.DBus.Error.FileNotFound' &&
+    setupError.dbusMessage.includes('nonexistent-polly-private-bus'),
+    'Setup diagnostic name/message copied before DBusError owner is freed');
   refuses(() => openDbusClient(''));
   refuses(() => openDbusClient('bad\0address'));
   const raw = createDbusApi();
@@ -89,7 +102,9 @@ try {
   check(await call(connection, 'Increment', 0xffffffff) === 0, 'Exact uint32 boundary on the wire');
   const failed = await result(connection.callUint32(target('Fail'), 0));
   check(failed.state === 'error' && failed.error.code === 'ERR_DBUS_REMOTE' &&
-    failed.error.dbusName === null, 'Arbitrary remote error is explicit, without unsafe pointer decoding');
+    failed.error.dbusName === 'org.polly.Test.Failed' &&
+    failed.error.dbusMessage === 'Explicit fixture failure',
+    'Arbitrary remote diagnostic copied while its native error/message owners are alive');
   const unknown = await result(connection.callUint32({
     ...target('Increment'), destination: 'org.polly.Missing',
   }, 0));
@@ -97,6 +112,50 @@ try {
     'Native known remote error name is preserved');
   const wrong = await result(connection.callUint32(target('BadReply'), 0));
   check(wrong.state === 'error' && wrong.error.code === 'ERR_DBUS_SIGNATURE', 'Wrong reply signature is rejected');
+
+  const busTarget = member => ({
+    destination: 'org.freedesktop.DBus', path: '/org/freedesktop/DBus',
+    interface: 'org.freedesktop.DBus', member,
+  });
+  const owner = await scalar(connection, busTarget('GetNameOwner'), 's', ['org.polly.Test'], 's');
+  check(owner.startsWith(':'), 'Real private-bus standard GetNameOwner s->s');
+  const user = await scalar(connection, busTarget('GetConnectionUnixUser'), 's', [owner], 'u');
+  check(user === await scalar(connection, target('User'), '', [], 'u'),
+    'Real private-bus standard GetConnectionUnixUser s->u matches service uid');
+  check(await scalar(connection, target('GetSessionByPID'), 'u', [expectedProcessId], 'o') ===
+    '/org/freedesktop/login1/session/p' + expectedProcessId,
+    'Private fixture GetSessionByPID u->o shape, without system actions');
+  check(await scalar(connection, target('Empty'), '', [], '') === undefined, 'No args / empty reply');
+  check(await scalar(connection, target('Toggle'), 'b', [false], 'b') === true &&
+    await scalar(connection, target('Toggle'), 'b', [true], 'b') === false, 'Canonical boolean argument/reply');
+  for (const text of ['', 'Hello \u4e16\u754c \ud83d\udc07', 'x'.repeat(8192)])
+    check(await scalar(connection, target('Echo'), 's', [text], 's') === text,
+      'UTF-8/empty/long strings round trip without a static extent guess');
+  check(await scalar(connection, target('EchoPath'), 'o', ['/org/polly/Test'], 'o') === '/org/polly/Test',
+    'Object-path argument/reply');
+  const tupleTicket = connection.call(target('Tuple'), '', [], 'ubso');
+  const tuple = await result(tupleTicket);
+  check(tuple.state === 'reply' && Object.isFrozen(tuple.value) && tuple.value.length === 4 &&
+    tuple.value[0] === 7 && tuple.value[1] === true &&
+    tuple.value[2] === 'tuple \u20ac' && tuple.value[3] === '/org/polly/Test',
+    'Fixed scalar tuple is copied and immutable');
+  check(tupleTicket.cancel() === tuple && tupleTicket.poll() === tuple, 'Generic scalar ticket uses existing terminal kernel');
+  const longError = await result(connection.call(target('ErrorSize'), 'u', [8192], '', 10000));
+  check(longError.error?.dbusName === 'org.polly.Test.SizedError' &&
+    longError.error.dbusMessage === 'x'.repeat(8192), 'Diagnostic strings exceed 256 bytes without truncation');
+  const overflow = await result(connection.call(target('ErrorSize'), 'u', [maxBytes + 1], '', 10000),
+    'FFI diagnostic overflow', 64);
+  check(overflow.error?.code === 'ERR_DBUS_DIAGNOSTIC_OVERFLOW' &&
+    overflow.error.dbusName === 'org.polly.Test.SizedError',
+    'Oversized diagnostic explicitly exceeds actual FFI bound: ' + overflow.error?.code + ': ' + overflow.error);
+  for (const [signature, args, reply] of [
+    ['b', [1], 'b'], ['u', [true], 'u'], ['s', ['bad\0string'], 's'],
+    ['s', ['\ud800'], 's'], ['o', ['relative'], 'o'], ['', [1], ''],
+    ['s', [], 's'], ['a', [], 's'], ['s\n', ['unsafe', 1], 's'],
+    ['', [], 'v'], ['', [], 's'.repeat(256)],
+  ]) refuses(() => connection.call(target('Echo'), signature, args, reply));
+  const tupleWrong = await result(connection.call(target('Tuple'), '', [], 's'));
+  check(tupleWrong.error?.code === 'ERR_DBUS_SIGNATURE', 'Fixed tuple signature mismatch is explicit');
 
   const delayed = connection.callUint32(target('Delay'), 17);
   const before = monotonicNanoseconds();

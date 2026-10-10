@@ -54,10 +54,10 @@ with tempfile.TemporaryDirectory(prefix="polly-dbus-private-") as directory:
             [runner, str(repo / "sysrt" / "tests" / "dbus.mjs"), library, actual],
             cwd=repo, env={**os.environ, "DBUS_SESSION_BUS_ADDRESS": "unix:path=/nonexistent-session-bus",
                            "DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/nonexistent-system-bus"},
-            check=True, timeout=45)
+            check=True, timeout=90)
         if bus.poll() is not None or service.poll() is not None:
             raise RuntimeError("Private D-Bus fixture exited unexpectedly")
-        print("PASS: private bus uint32 reply, remote error, timeout, cancellation and no replay")
+        print("PASS: private bus scalar calls, native diagnostics, timeout, cancellation and no replay")
     finally:
         if service is not None:
             stop(service)

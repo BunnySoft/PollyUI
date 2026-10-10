@@ -93,7 +93,7 @@ if (TARGET qjs)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests/dbus-private.py"
                         $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
                         $<TARGET_FILE:polly-sysrt-dbus-service> "${SR_DBUS_DAEMON}")
-                    set_tests_properties(sysrt-dbus-private PROPERTIES TIMEOUT 60
+                    set_tests_properties(sysrt-dbus-private PROPERTIES TIMEOUT 120
                         LABELS "ordinary-native;private-dbus-fixture"
                         ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
                 else()

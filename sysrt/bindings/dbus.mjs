@@ -1,6 +1,16 @@
 export const dbusConstants = Object.freeze({
-  TYPE_UINT32: 117, MESSAGE_METHOD_RETURN: 2, MESSAGE_ERROR: 3,
+  TYPE_UINT32: 117, TYPE_BOOLEAN: 98, TYPE_STRING: 115, TYPE_OBJECT_PATH: 111,
+  MESSAGE_METHOD_RETURN: 2, MESSAGE_ERROR: 3,
 });
+
+export const dbusStringBindings = {
+  library: { glibc: 'libc.so.6', musl: 'libc.musl-x86_64.so.1' },
+  target: { architecture: 'x86_64', pointerSize: 8, longSize: 8 },
+  functions: {
+    length: { symbol: 'strnlen', result: 'size', parameters: ['pointer', 'size'] },
+    copy: { symbol: 'memcpy', result: 'pointer', parameters: ['pointer', 'pointer', 'size'] },
+  },
+};
 
 export const dbusBindings = {
   linux: {
@@ -23,6 +33,11 @@ export const dbusBindings = {
       appendBasic: { symbol: 'dbus_message_iter_append_basic', result: 'u32', parameters: ['pointer', 'i32', 'pointer'] },
       initRead: { symbol: 'dbus_message_iter_init', result: 'u32', parameters: ['pointer', 'pointer'] },
       getBasic: { symbol: 'dbus_message_iter_get_basic', result: 'void', parameters: ['pointer', 'pointer'] },
+      next: { symbol: 'dbus_message_iter_next', result: 'u32', parameters: ['pointer'] },
+      errorInit: { symbol: 'dbus_error_init', result: 'void', parameters: ['pointer'] },
+      errorFree: { symbol: 'dbus_error_free', result: 'void', parameters: ['pointer'] },
+      errorIsSet: { symbol: 'dbus_error_is_set', result: 'u32', parameters: ['pointer'] },
+      errorFromMessage: { symbol: 'dbus_set_error_from_message', result: 'u32', parameters: ['pointer', 'pointer'] },
       send: { symbol: 'dbus_connection_send_with_reply', result: 'u32', parameters: ['pointer', 'pointer', 'pointer', 'i32'] },
       completed: { symbol: 'dbus_pending_call_get_completed', result: 'u32', parameters: ['pointer'] },
       stealReply: { symbol: 'dbus_pending_call_steal_reply', result: 'pointer', parameters: ['pointer'] },
@@ -32,11 +47,17 @@ export const dbusBindings = {
       validPath: { symbol: 'dbus_validate_path', result: 'u32', parameters: ['cstring', 'pointer'] },
       validInterface: { symbol: 'dbus_validate_interface', result: 'u32', parameters: ['cstring', 'pointer'] },
       validMember: { symbol: 'dbus_validate_member', result: 'u32', parameters: ['cstring', 'pointer'] },
+      validSignature: { symbol: 'dbus_signature_validate', result: 'u32', parameters: ['cstring', 'pointer'] },
       shutdown: { symbol: 'dbus_shutdown', result: 'void', parameters: [] },
     },
     // Public stack-allocatable ABI storage, not an extent for a libdbus-owned object.
-    layouts: { messageIter: { byteLength: 72, fields: {
-      storage: { type: 'bytes', offset: 0, byteLength: 72 },
-    } } },
+    layouts: {
+      messageIter: { byteLength: 72, fields: {
+        storage: { type: 'bytes', offset: 0, byteLength: 72 },
+      } },
+      error: { byteLength: 32, fields: {
+        storage: { type: 'bytes', offset: 0, byteLength: 32 },
+      } },
+    },
   },
 };
