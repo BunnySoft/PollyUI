@@ -53,7 +53,7 @@ prove one complete execution/service path before adding broad API coverage.
 | ID | Priority | Task | State / first acceptance | Prerequisites |
 |---|---|---|---|---|
 | RT-01 | P0 | Generic asynchronous native calls | First closed loop implemented: worker -> owning dispatcher -> Promise; scalar/CString inputs, scalar results, explicit errors and joined shutdown. Broader support stays staged | Existing FFI/dispatcher |
-| RT-02 | P0 | Native memory/resource ownership | Managed-buffer async leases implemented: exclusive VM access, GC/close retention and return before settlement. Foreign returned allocations/release functions remain planned; no guessed bounds | RT-01 for async leases |
+| RT-02 | P0 | Native memory/resource ownership | First closed loop implemented: managed async leases plus explicit adoption with byte extent and void(pointer) releaser; alias/GC/close retention. Borrowed views and fallible handle destructors remain staged | RT-01 for async leases |
 | RT-03 | P0 | Native callbacks | Planned: one safe callback path with VM/thread affinity and teardown; no universal callback coverage | RT-01, RT-02 |
 | RT-04 | P0 | ABI metadata generation | Planned: generate one target's signatures/layouts/constants from headers; retain explicit target checks | Independent |
 | RT-05 | P1 | IPC/D-Bus SDK | Planned: one transport/client path over an existing OS library, not a new per-service C bridge | RT-01, RT-02, RT-03 |

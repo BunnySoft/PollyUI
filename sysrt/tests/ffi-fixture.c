@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdatomic.h>
+#include <stdlib.h>
 #if defined(__linux__)
 #include <dirent.h>
 #include <fcntl.h>
@@ -49,6 +50,18 @@ EXPORT void sr_fill(uint8_t *bytes, size_t count, uint8_t value)
 EXPORT void *sr_echo_pointer(void *pointer) { return pointer; }
 EXPORT const char *sr_tail(const char *text) { return text + 1; }
 EXPORT const char *sr_static(void) { return "opaque"; }
+static atomic_int owned_allocations;
+EXPORT void *sr_allocate(size_t size)
+{
+    void *pointer = calloc(size ? size : 1, 1);
+    if (pointer) atomic_fetch_add(&owned_allocations, 1);
+    return pointer;
+}
+EXPORT void sr_release(void *pointer)
+{
+    if (pointer) { free(pointer); atomic_fetch_sub(&owned_allocations, 1); }
+}
+EXPORT int32_t sr_allocations(void) { return atomic_load(&owned_allocations); }
 static void fixture_sleep(int32_t milliseconds)
 {
 #ifdef _WIN32

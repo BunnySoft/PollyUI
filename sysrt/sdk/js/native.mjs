@@ -59,6 +59,7 @@ export function loadBindings(configuration) {
       return lookup(name)(...args);
     },
     callAsync(name, ...args) { return lookup(name).callAsync(...args); },
+    adopt(pointer, byteLength, releaseName) { pointer.adopt(byteLength, lookup(releaseName)); },
     createRecord(name) {
       if (closed) throw new Error('Native bindings are closed');
       const layout = layouts.get(name);
@@ -78,7 +79,7 @@ export function loadNativeApi(configuration) {
   const functions = Object.create(null);
   for (const binding of Object.values(configuration.functions)) {
     if (!binding || typeof binding.symbol !== 'string' ||
-        ['createRecord', 'dispose', 'async'].includes(binding.symbol) || Object.hasOwn(functions, binding.symbol))
+        ['createRecord', 'dispose', 'async', 'adopt'].includes(binding.symbol) || Object.hasOwn(functions, binding.symbol))
       throw new TypeError('Native API requires unique, non-reserved symbol names');
     functions[binding.symbol] = binding;
   }
@@ -87,6 +88,7 @@ export function loadNativeApi(configuration) {
     ...Object.fromEntries(Object.keys(functions).map(symbol => [symbol, (...args) => bindings.call(symbol, ...args)])),
     async: Object.freeze(Object.fromEntries(Object.keys(functions).map(symbol =>
       [symbol, (...args) => bindings.callAsync(symbol, ...args)]))),
+    adopt: (pointer, byteLength, releaseName) => bindings.adopt(pointer, byteLength, releaseName),
     createRecord: name => bindings.createRecord(name),
     dispose: () => bindings.close(),
   });

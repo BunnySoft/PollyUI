@@ -86,7 +86,9 @@ readiness calls. Protocol services, socket ownership and asynchronous scheduling
 remain above it; native fetch and desktop network services are not yet migrated.
 The asynchronous native-call path supports scalar/CString inputs and exclusive
 loans of flat managed buffers, settling through the owning dispatcher.
-Unknown returned allocation ownership, callbacks and native cancellation remain unfinished.
+External allocations can now be explicitly adopted with their byte extent and
+matching void(pointer) releaser. Borrowed external views, callback routing and
+native cancellation remain staged.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 

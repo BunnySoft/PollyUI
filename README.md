@@ -53,7 +53,17 @@ pins its elements through wrapper GC and rejects calls after an element closes.
 Null termination is explicit. `createCStringArray(strings)` provides a scoped
 UTF-8/null-terminated vector for argv/envp. `readPointer(offset?)` reads aligned
 pointer fields from bounded memory; unknown addresses remain opaque, not
-readable native allocations. All pointer-field use is a trusted ABI contract.
+readable native allocations. `pointer.adopt(byteLength, nativeReleaseFunction)`
+explicitly transfers an external allocation into the managed lifetime, using a
+same-context `void(pointer)` releaser; `bindings.adopt(pointer, byteLength, name)`
+and `api.adopt(pointer, byteLength, nativeSymbol)` expose the same operation.
+The allocation base, extent and matching releaser are trusted ABI contracts,
+never guessed. Adopt once before copying aliases; do not manually free it afterward.
+Close revokes managed views; the native releaser runs exactly once after all
+views and in-flight loans retire, including GC. Its library stays loaded even
+after caller close. Borrowed/static pointers and OS handles must not be adopted;
+non-void/fallible release APIs remain explicit caller operations.
+All pointer-field use is a trusted ABI contract.
 Direct calls remain synchronous. `NativeFunction.callAsync(...)`,
 `bindings.callAsync(name, ...)` and `api.async.NativeSymbol(...)` provide the
 explicit worker -> owning dispatcher -> Promise path. Scalar/CString arguments

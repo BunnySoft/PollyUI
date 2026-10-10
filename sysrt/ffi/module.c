@@ -36,6 +36,7 @@ typedef struct Library {
     SrFfi *runtime;
 } Library;
 typedef struct Pointer Pointer;
+typedef struct Function Function;
 typedef struct Memory {
     uint8_t *bytes;
     size_t size;
@@ -43,6 +44,7 @@ typedef struct Memory {
     size_t pointer_count;
     unsigned refs;
     int closed, borrowed;
+    Function *release;
 } Memory;
 struct Pointer {
     void *address;
@@ -52,7 +54,7 @@ struct Pointer {
     int closed, owns;
     unsigned refs;
 };
-typedef struct Function {
+struct Function {
     Library *library;
     void (*code)(void);
     ffi_cif cif;
@@ -63,7 +65,7 @@ typedef struct Function {
     unsigned pending;
     int closed, clear_errors;
     JSClassID pointer_class;
-} Function;
+};
 
 typedef struct AsyncCall AsyncCall;
 struct SrFfi {
@@ -130,12 +132,29 @@ static void release_function(Function *function)
 }
 
 static void release_pointer(Pointer *pointer);
+static void invoke_native(Function *function, Value *returned, void **args, int *native_errno, uint32_t *system_error);
+
+static void finish_function_use(Function *function)
+{
+    if (!--function->pending && function->closed) {
+        release_library(function->library); function->library = NULL;
+    }
+    release_function(function);
+}
 
 static void release_memory(Memory *memory)
 {
     if (memory && !--memory->refs) {
         for (size_t i = 0; i < memory->pointer_count; i++) release_pointer(memory->pointers[i]);
-        free(memory->pointers); free(memory->bytes); free(memory);
+        if (memory->release) {
+            Value pointer = { .pointer = memory->bytes }, returned = {0};
+            void *args[] = { &pointer.pointer };
+            int native_errno;
+            uint32_t system_error;
+            invoke_native(memory->release, &returned, args, &native_errno, &system_error);
+            finish_function_use(memory->release);
+        } else free(memory->bytes);
+        free(memory->pointers); free(memory);
     }
 }
 
@@ -452,10 +471,7 @@ static void destroy_async(JSRuntime *rt, AsyncCall *job)
     for (unsigned i = 0; i < job->borrowed_count; i++) release_memory(job->borrowed[i]);
     for (unsigned i = 0; i < SR_MAX_ARGS; i++) release_memory(job->temporary[i]);
     JS_FreeValueRT(rt, job->settle[0]); JS_FreeValueRT(rt, job->settle[1]);
-    if (!--job->function->pending && job->function->closed) {
-        release_library(job->function->library); job->function->library = NULL;
-    }
-    release_function(job->function); free(job);
+    finish_function_use(job->function); free(job);
 }
 
 static void finish_async(void *user)
@@ -792,6 +808,28 @@ static JSValue close_pointer(JSContext *ctx, JSValueConst self, int argc, JSValu
     return JS_UNDEFINED;
 }
 
+static JSValue adopt_pointer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+{
+    Pointer *pointer = JS_GetOpaque2(ctx, self, classes->pointer);
+    if (!pointer || !pointer_live(ctx, pointer)) return JS_EXCEPTION;
+    if (argc != 2) return JS_ThrowTypeError(ctx, "adopt requires an allocation byte length and void(pointer) release function");
+    if (pointer->memory) return error(ctx, "ERR_FFI_OWNERSHIP", "Only an unowned external pointer can be adopted");
+    size_t length;
+    if (!index_value(ctx, argv[0], SR_MAX_BYTES, &length)) return JS_EXCEPTION;
+    Function *release = JS_GetOpaque2(ctx, argv[1], classes->function);
+    if (!release) return JS_EXCEPTION;
+    if (release->closed || release->library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native release function is closed");
+    if (release->library->runtime->ctx != ctx || release->result != T_VOID || release->count != 1 ||
+        release->params[0] != T_POINTER)
+        return error(ctx, "ERR_FFI_OWNERSHIP", "Release function must belong to this context and have void(pointer) signature");
+    Memory *memory = calloc(1, sizeof(*memory));
+    if (!memory) return JS_ThrowOutOfMemory(ctx);
+    memory->bytes = pointer->address; memory->size = length; memory->refs = 1;
+    memory->release = release; release->refs++; release->pending++;
+    pointer->memory = memory; pointer->length = length; pointer->owns = 1;
+    return JS_UNDEFINED;
+}
+
 static JSValue alloc_buffer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
 {
     (void)self;
@@ -924,7 +962,7 @@ static JSValue read_pointer(JSContext *ctx, JSValueConst self, int argc, JSValue
 
 typedef enum {
     M_OPEN, M_ALLOC, M_ALLOC_POINTERS, M_BIND, M_CLOSE_LIBRARY, M_CLOSE_FUNCTION, M_CLOSE_POINTER,
-    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER, M_CALL_ASYNC
+    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER, M_CALL_ASYNC, M_ADOPT
 } Method;
 
 static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
@@ -947,6 +985,7 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     case M_SLICE: return pointer_slice(ctx, self, argc, argv, &classes);
     case M_READ_POINTER: return read_pointer(ctx, self, argc, argv, &classes);
     case M_CALL_ASYNC: return call_async(ctx, self, argc, argv, &classes);
+    case M_ADOPT: return adopt_pointer(ctx, self, argc, argv, &classes);
     }
     return JS_ThrowInternalError(ctx, "Invalid FFI method");
 }
@@ -958,6 +997,7 @@ static const MethodInfo pointer_methods[] = {
     { "close", 0, M_CLOSE_POINTER }, { "read", 1, M_READ }, { "write", 1, M_WRITE },
     { "readString", 1, M_READ_STRING }, { "slice", 2, M_SLICE },
     { "readPointer", 0, M_READ_POINTER },
+    { "adopt", 2, M_ADOPT },
 };
 #if defined(_WIN32)
 #define SR_PLATFORM "windows"
