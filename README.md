@@ -35,7 +35,10 @@ native module and JS/config process, clock, filesystem and socket SDKs.
 FileSystem SDK calls mirror libc signatures/results through FFI, without text,
 file-size, directory-count or UID policy. The desktop file service composes
 these calls and libcrypto with its UI-specific rules; the old C filesystem
-provider and QuickJS projection are removed. Storage and HTTP
+provider and QuickJS projection are removed. User theme-file and bitmap-resource
+policy also runs in JS over native files; its old C bridge is removed. Bitmap
+decoding and owned in-memory image handles remain generic GUI mechanisms, with
+no SysRT dependency (see [Bitmap resources](gui/sdk/BITMAPS.md)). Storage and HTTP
 still use their native implementations; Settings remains Shell-owned.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with

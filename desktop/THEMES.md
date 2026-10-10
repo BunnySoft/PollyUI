@@ -3,6 +3,10 @@
 PollyShell JavaScript owns theme loading, schema validation, user overrides and
 UI rendering. PollyWM accepts only bounded decoration parameters from the trusted
 Shell. It does not interpret theme files or execute theme code.
+File traversal, ownership checks and resource limits are implemented in
+`shared/theme-resources.mjs` over the native FileSystem SDK; the old theme-file
+C bridge is removed. Every service operation still checks the authorized Shell
+connection. Native file mappings themselves have no theme policy.
 
 ## Data and ownership
 
@@ -129,6 +133,9 @@ not reopened by pathname during drawing. Limits are 4 MiB encoded bytes,
 4096 pixels per dimension and 8 Mi pixels per bitmap, with 16 Mi pixels across
 owned active/staged assets. Replacing or rejecting a staged image releases it.
 Missing, malformed or oversized images leave the previous theme in place.
+Decoding uses the GUI's generic owned
+[`createBitmap`](../gui/sdk/BITMAPS.md) resource, independent of SysRT. Theme paths
+and limits are desktop policy, not built into the decoder.
 
 ## Native and application boundary
 

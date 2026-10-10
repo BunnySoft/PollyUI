@@ -98,7 +98,12 @@ input, and empty/scalar/fixed scalar tuple output. Native strings and diagnostic
 are copied within their owner's lifetime, with explicit overflow rather than
 guessed object bounds. Setup is synchronous; containers/subscriptions and
 remote-service policy remain separate. Existing native desktop services are
-not yet replaced.
+not replaced by this D-Bus client yet.
+The user theme-file/resource service is now JS over native files: descriptor-
+relative traversal, ownership checks, limits and asset policy remain desktop
+concerns, and the old theme-file C bridge is removed. Generic GUI bitmap handles
+own decoding and image-cache lifetime independently of SysRT. Shell still owns
+appearance authority and its prepare/commit/rollback flow.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 
@@ -692,6 +697,11 @@ granted. Apps validate the versioned document and may retain local overrides.
 The Shell stages surfaces and decoded bitmap resources, persists selection and
 requests native application. Rejection retires staged resources and restores
 prior settings/catalog state, reporting any rollback failure explicitly.
+Theme-file traversal and policy execute in JavaScript over the native file SDK,
+with the existing authorized Shell connection checked on every service call.
+Encoded bytes go to the GUI's generic `createBitmap` mechanism; path, size and
+aggregate asset policies do not belong to the decoder. Owned bitmap handles are
+released on close, GC or realm teardown, not on a shared-realm child window's close.
 Transport timeouts can leave commit acknowledgment uncertain and are reported
 as such; rendering remains asynchronous, not a distributed atomic transaction.
 See `desktop/THEMES.md` for the file layout, limits and application API.
