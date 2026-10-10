@@ -10,6 +10,8 @@ import socket
 import subprocess
 import tempfile
 import time
+import base64
+import zlib
 
 
 def main():
@@ -18,7 +20,13 @@ def main():
     parser.add_argument("evidence", type=Path)
     parser.add_argument("--usb", action="store_true")
     parser.add_argument("--memory-mib", type=int, choices=[4096, 8192], default=4096)
+    parser.add_argument("--new-architecture", action="store_true",
+                        help="Inject ordinary-user test source into guest RAM and exercise production Settings/files")
+    parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
     args = parser.parse_args()
+    if args.new_architecture and (not args.harness_revision or len(args.harness_revision) != 40 or
+                                 any(char not in "0123456789abcdef" for char in args.harness_revision)):
+        raise ValueError("New-architecture acceptance requires an explicit full harness revision")
     iso = args.iso.resolve()
     evidence = args.evidence.resolve()
     if evidence.exists():
@@ -33,6 +41,7 @@ def main():
         variables = temporary / "vars.fd"
         shutil.copyfile(firmware / vars_name, variables)
         qmp_path = temporary / "qmp.sock"
+        serial_path = temporary / "serial.sock"
         serial = evidence / "serial.log"
         acceleration = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
         command = [
@@ -43,7 +52,9 @@ def main():
             "-device", "virtio-vga", "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet",
             "-audiodev", "none,id=silent", "-device", "intel-hda", "-device", "hda-duplex,audiodev=silent",
             "-nic", "none", "-display", "none",
-            "-serial", "file:" + str(serial), "-qmp", f"unix:{qmp_path},server=on,wait=off", "-no-reboot",
+            *(["-chardev", f"socket,id=guestserial,path={serial_path},server=on,wait=off,logfile={serial}",
+               "-serial", "chardev:guestserial"] if args.new_architecture else ["-serial", "file:" + str(serial)]),
+            "-qmp", f"unix:{qmp_path},server=on,wait=off", "-no-reboot",
         ]
         if args.usb:
             command += ["-drive", f"if=none,id=liveusb,format=raw,readonly=on,file={iso}",
@@ -54,6 +65,7 @@ def main():
             process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
             connection = None
             stream = None
+            serial_connection = None
             try:
                 deadline = time.monotonic() + 180
                 while not qmp_path.exists():
@@ -82,6 +94,10 @@ def main():
                             return response["return"]
 
                 execute("qmp_capabilities")
+                if args.new_architecture:
+                    serial_connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    serial_connection.settimeout(10)
+                    serial_connection.connect(str(serial_path))
                 while "serial VM baseline" not in (serial.read_text(errors="replace") if serial.exists() else ""):
                     if process.poll() is not None or time.monotonic() > deadline:
                         raise RuntimeError("UEFI firmware did not reach the Live boot menu")
@@ -153,6 +169,106 @@ def main():
                 status = execute("query-status")
                 if status.get("status") != "running":
                     raise RuntimeError("Guest is no longer running")
+                new_architecture = None
+                if args.new_architecture:
+                    def send_text(value):
+                        serial_connection.sendall(value.encode())
+                        time.sleep(0.3)
+
+                    def console():
+                        time.sleep(0.3)
+
+                    def desktop_view():
+                        time.sleep(0.5)
+
+                    wait_log("login:", 30)
+                    send_text("polly\n")
+                    time.sleep(1)
+                    send_text("polly\n")
+                    time.sleep(1)
+                    send_text("logger -t polly-vm-check POLLY_VM_CONSOLE_READY\n")
+                    wait_log("POLLY_VM_CONSOLE_READY", 30)
+                    fixture = {
+                        "guest.py": Path(__file__).with_name("live-newarch-guest.py").read_bytes(),
+                        "files.mjs": Path(__file__).with_name("live-files-guest.mjs").read_bytes(),
+                    }
+                    payload = base64.b64encode(zlib.compress(json.dumps(
+                        {name: value.decode() for name, value in fixture.items()}).encode())).decode()
+                    send_text("umask 077; set -C; : > /tmp/polly-alpha-fixtures.b64\n")
+                    for offset in range(0, len(payload), 1000):
+                        send_text("printf %s '" + payload[offset:offset + 1000] +
+                                  "' >> /tmp/polly-alpha-fixtures.b64\n")
+                    send_text("python3 -I -c \"import base64,zlib,json,pathlib;"
+                              "d=json.loads(zlib.decompress(base64.b64decode(pathlib.Path("
+                              "'/tmp/polly-alpha-fixtures.b64').read_text())));"
+                              "pathlib.Path('/tmp/polly-alpha-guest.py').write_text(d['guest.py']);"
+                              "pathlib.Path('/tmp/polly-alpha-files-guest.mjs').write_text(d['files.mjs'])\"\n")
+                    stages = {}
+
+                    def stage(name):
+                        previous = serial.read_text(errors="replace")
+                        send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + "\n")
+                        deadline = time.monotonic() + 60
+                        prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
+                        while True:
+                            current = serial.read_text(errors="replace")
+                            fresh = current[len(previous):]
+                            if "POLLY_VM_NEWARCH_FAILED=" in fresh:
+                                raise RuntimeError("Guest new-architecture action failed:\n" + fresh[-4000:])
+                            if prefix in fresh:
+                                value = fresh.split(prefix, 1)[1].splitlines()[0].strip()
+                                result = json.loads(value)
+                                stages[name] = result
+                                return result
+                            if process.poll() is not None or time.monotonic() > deadline:
+                                execute("screendump", {"filename": str(evidence / "newarch-failed.ppm")})
+                                raise RuntimeError("Missing actual guest new-architecture result: " + name)
+                            time.sleep(0.2)
+
+                    def press_tab(count):
+                        for _ in range(count):
+                            keys("tab")
+                        keys("ret")
+                        time.sleep(1)
+
+                    stage("prepare")
+                    desktop_view()
+                    execute("screendump", {"filename": str(evidence / "settings-appearance.ppm")})
+                    press_tab(12)
+                    console()
+                    stage("selected")
+                    stage("appearance")
+                    desktop_view()
+                    press_tab(13)
+                    time.sleep(1)
+                    console()
+                    stage("appearance")
+                    desktop_view()
+                    press_tab(13)
+                    console()
+                    stage("user-theme")
+                    stage("appearance")
+                    desktop_view()
+                    press_tab(8)
+                    console()
+                    stage("appearance")
+                    desktop_view()
+                    press_tab(15)
+                    console()
+                    stage("restored")
+                    stage("about")
+                    desktop_view()
+                    execute("screendump", {"filename": str(evidence / "settings-about.ppm")})
+                    keys("alt", "f4")
+                    time.sleep(1)
+                    console()
+                    stage("reopen")
+                    desktop_view()
+                    execute("screendump", {"filename": str(evidence / "settings-reopened.ppm")})
+                    new_architecture = {"harnessRevision": args.harness_revision,
+                                        "fixturesInIso": False, "ordinaryUser": 1000,
+                                        "actualStages": stages,
+                                        "input": "QMP physical USB keyboard and ordinary public Live serial login"}
                 result = {
                     "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,
                     "memoryMiB": args.memory_mib, "vcpus": 2, "disks": [], "network": False,
@@ -163,6 +279,8 @@ def main():
                     "nativeChineseCommit": True, "nativeClipboardPaste": True,
                     "inputCadenceSeconds": 1.0 if acceleration == "tcg" else 0.15,
                     "iso": iso.name, "serialLog": "serial.log", "screenshot": "desktop.ppm",
+                    **({"newArchitecture": new_architecture} if new_architecture else {}),
+                    "termination": "QMP quit, not a guest user power-off assertion",
                 }
                 with iso.open("rb") as source:
                     result["isoSha256"] = hashlib.file_digest(source, "sha256").hexdigest()
@@ -175,6 +293,8 @@ def main():
                     stream.close()
                 if connection is not None:
                     connection.close()
+                if serial_connection is not None:
+                    serial_connection.close()
                 if process.poll() is None:
                     process.terminate()
                     try:
