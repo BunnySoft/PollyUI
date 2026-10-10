@@ -12,6 +12,7 @@ import tempfile
 import time
 import base64
 import zlib
+import threading
 
 
 def main():
@@ -66,6 +67,8 @@ def main():
             connection = None
             stream = None
             serial_connection = None
+            serial_stop = threading.Event()
+            serial_thread = None
             try:
                 deadline = time.monotonic() + 180
                 while not qmp_path.exists():
@@ -98,8 +101,24 @@ def main():
                     serial_connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                     serial_connection.settimeout(10)
                     serial_connection.connect(str(serial_path))
+                    serial_connection.settimeout(0.2)
+
+                    def drain_serial():
+                        while not serial_stop.is_set():
+                            try:
+                                if not serial_connection.recv(8192):
+                                    return
+                            except socket.timeout:
+                                continue
+                            except OSError:
+                                if not serial_stop.is_set():
+                                    raise
+
+                    serial_thread = threading.Thread(target=drain_serial, daemon=True)
+                    serial_thread.start()
                 while "serial VM baseline" not in (serial.read_text(errors="replace") if serial.exists() else ""):
                     if process.poll() is not None or time.monotonic() > deadline:
+                        execute("screendump", {"filename": str(evidence / "failed-firmware.ppm")})
                         raise RuntimeError("UEFI firmware did not reach the Live boot menu")
                     time.sleep(0.1)
                 execute("send-key", {"keys": [{"type": "qcode", "data": "end"}]})
@@ -294,6 +313,9 @@ def main():
                 if connection is not None:
                     connection.close()
                 if serial_connection is not None:
+                    serial_stop.set()
+                    if serial_thread is not None:
+                        serial_thread.join(timeout=1)
                     serial_connection.close()
                 if process.poll() is None:
                     process.terminate()
