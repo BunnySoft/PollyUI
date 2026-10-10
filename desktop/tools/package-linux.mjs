@@ -273,9 +273,9 @@ try {
       'desktop/release/debian/debian.sources', 'desktop/release/debian/backports.sources'] : ['desktop/Containerfile', 'desktop/release/Containerfile'])];
   recipes.push('desktop/release/install/readonly-helper.py', 'desktop/release/install/targets.py',
     'desktop/release/storage/layout.py', 'desktop/release/maintenance/payload.py',
-    'desktop/tools/polly-files.in', 'desktop/tools/polly-file-text.in',
+    'desktop/tools/polly-files.in', 'desktop/tools/polly-file-text.in', 'desktop/tools/polly-settings.in',
     'desktop/release/polly-files.desktop', 'desktop/release/polly-file-text.desktop',
-    'desktop/release/polly-file-text-open.desktop',
+    'desktop/release/polly-file-text-open.desktop', 'desktop/release/polly-settings.desktop',
     'desktop/release/polly-mimeapps.list',
     'desktop/session/greeter-entry', 'desktop/session/greetd-launch.py',
     'desktop/session/setup-broker.py', 'desktop/session/greetd.conf', 'desktop/session/greeter-dependencies.json');

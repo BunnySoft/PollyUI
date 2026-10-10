@@ -13,6 +13,6 @@ test('the UI native flow retains at least seven distinct capture names', () => {
     'revisiting a page overwrites its first PNG; only distinct names count');
   const keyboard = run.indexOf("await capture(settings, 'keyboard-activated-appearance')");
   assert.ok(keyboard > run.indexOf("'ordinary native Enter activates current page'") &&
-    keyboard < run.indexOf('let wmClosed = false'),
+    keyboard < run.indexOf("await signal('fixture-settings-close"),
     'the additional actual capture belongs to the confirmed native-keyboard phase before WM close');
 });

@@ -219,7 +219,7 @@ int main(int argc, char **argv)
     } else {
         CHECK(dbus_bus_request_name(bus, IWD, DBUS_NAME_FLAG_DO_NOT_QUEUE, &failure) == DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER);
         CHECK(dbus_connection_register_fallback(bus, "/", &vtable, NULL));
-        long long deadline = now() + 60000;
+        long long deadline = now() + (multi_network ? 240000 : 60000);
         while (running && now() < deadline) {
             CHECK(dbus_connection_read_write_dispatch(bus, 10));
             if (prompt_deadline && now() >= prompt_deadline) {

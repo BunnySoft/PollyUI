@@ -17,6 +17,15 @@ test('Files and File Text are ordinary Apps entries; the document-only entry is 
   assert.deepEqual(catalog.find(entry => entry.id === 'polly-files.desktop').argv, ['/usr/bin/polly-files']);
 });
 
+test('standalone Settings has an ordinary fixed launcher entry without desktop privilege flags', () => {
+  const entry = parseDesktopEntry(asset('polly-settings.desktop'));
+  assert.equal(entry.name, 'Settings');
+  assert.deepEqual(entry.argv, ['polly-settings']);
+  const wrapper = readFileSync(new URL('../tools/polly-settings.in', import.meta.url), 'utf8');
+  assert.match(wrapper, /--app-id org\.pollyui\.settings/);
+  assert.doesNotMatch(wrapper, /--desktop/);
+});
+
 test('installed document handler uses exact absolute --file %f with literal single filename and no URI/shell expansion', () => {
   const entry = parseDesktopEntry(asset('polly-file-text-open.desktop'), { documentHandlers: true });
   const path = '/private/space "quoted" %u; \u4e2d\u6587.txt';

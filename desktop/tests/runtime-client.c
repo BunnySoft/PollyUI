@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <time.h>
 #include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
 #include <wlr/backend.h>
@@ -411,7 +412,7 @@ static struct PuDesktopView *settings_view(void)
     wl_list_for_each(view, &desktop.views, link) {
         if (view->mapped && !view->geometry_pending && view->toplevel->title &&
             !strcmp(view->toplevel->title, "Settings") &&
-            wl_resource_get_client(view->toplevel->base->resource) == desktop.shell_client) return view;
+            view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings")) return view;
     }
     return NULL;
 }
@@ -605,7 +606,18 @@ static bool window_suite(char *executable, char *script, char *mode)
     unsigned settings_state_sequence = 0;
     pid_t settings_survivor_identity = 0;
     char settings_state_previous[1024] = "";
-    for (int i = 0; i < 16000 && desktop.shell_pid; i++) {
+    bool settings_suite = strstr(script, "settings-") != NULL;
+    struct timespec started;
+    CHECK(clock_gettime(CLOCK_MONOTONIC, &started) == 0);
+    for (int i = 0; desktop.shell_pid && (settings_suite || i < 16000); i++) {
+        if (settings_suite) {
+            struct timespec now;
+            CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+            if (now.tv_sec - started.tv_sec >= 240) {
+                fprintf(stderr, "FAIL: Settings native fixture exceeded its 240-second deadline\n");
+                break;
+            }
+        }
         CHECK(pump());
         CHECK(ordinary_fixture_requests("org.pollyui.file-dialog-window", "PollyUI.FileText",
             "FileDialogFixture.", 10, 10, &file_dialog_sequence, &settings_time));
@@ -794,6 +806,16 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
+            int settings_border, settings_title;
+            if (sscanf(name, "fixture-settings-decoration %d %d", &settings_border, &settings_title) == 2) {
+                struct PuDesktopView *view = settings_view();
+                if (!view) continue;
+                struct wlr_box inset = { .width = 1280, .height = 720 };
+                pu_decoration_inset(view, &inset, false);
+                CHECK(inset.x == settings_border && inset.y == settings_title);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             unsigned settings_open, sequence;
             if (sscanf(name, "fixture-settings-state %u %u", &sequence, &settings_open) == 2) {
                 CHECK(settings_open <= 1 && desktop.shell_pid == settings_shell_identity && desktop.shell_pid > 0);
@@ -809,8 +831,13 @@ static bool window_suite(char *executable, char *script, char *mode)
                 struct PuDesktopView *view;
                 wl_list_for_each(view, &desktop.views, link) {
                     struct wl_client *client = wl_resource_get_client(view->toplevel->base->resource);
-                    if (client == desktop.shell_client && view->toplevel->title &&
+                    if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings") && view->toplevel->title &&
                         !strcmp(view->toplevel->title, "Settings")) {
+                        pid_t settings_pid;
+                        uid_t settings_uid;
+                        wl_client_get_credentials(client, &settings_pid, &settings_uid, NULL);
+                        CHECK(client != desktop.shell_client && settings_uid == 1000 &&
+                            settings_pid > 0 && settings_pid != desktop.shell_pid);
                         settings_mapped += view->mapped;
                         settings_pending += view->geometry_pending;
                     }
@@ -838,10 +865,11 @@ static bool window_suite(char *executable, char *script, char *mode)
                         survivor_buffer_height = view->toplevel->base->surface->current.buffer_height;
                     }
                     if (!view->mapped || view->geometry_pending) continue;
-                    if (client == desktop.shell_client && view->toplevel->title &&
+                    if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollyui.settings") && view->toplevel->title &&
                         !strcmp(view->toplevel->title, "Settings")) found_settings = true;
                 }
                 char diagnostic[1024];
+                CHECK(settings_mapped <= 1);
                 snprintf(diagnostic, sizeof(diagnostic),
                     "SETTINGS_STATE: seq=%u expected_open=%u shell_pid=%ld settings_ready=%d settings_mapped=%u "
                     "settings_pending=%u survivor_lifetime=%d survivor_mapped=%u survivor_pending=%u "
@@ -881,8 +909,19 @@ static bool window_suite(char *executable, char *script, char *mode)
                 continue;
             }
             unsigned code, modifiers;
-            if (sscanf(name, "fixture-settings-key %u %u %u", &sequence, &code, &modifiers) == 3) {
+            bool managed_key = sscanf(name, "fixture-settings-managed-key %u %u %u", &sequence, &code, &modifiers) == 3;
+            if (managed_key || sscanf(name, "fixture-settings-key %u %u %u", &sequence, &code, &modifiers) == 3) {
                 struct PuDesktopView *view = settings_view();
+                if (managed_key) {
+                    view = NULL;
+                    struct PuDesktopView *candidate;
+                    wl_list_for_each(candidate, &desktop.views, link)
+                        if (candidate->mapped && !candidate->geometry_pending && candidate->toplevel->title &&
+                            !strcmp(candidate->toplevel->title, "Desktop control panel") &&
+                            wl_resource_get_client(candidate->toplevel->base->resource) == desktop.shell_client) {
+                            view = candidate; break;
+                        }
+                }
                 CHECK(code <= KEY_MAX && modifiers <= 15);
                 if (!view || sequence <= settings_sequence) continue;
                 CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
@@ -915,14 +954,17 @@ static bool window_suite(char *executable, char *script, char *mode)
                 CHECK(found);
                 wlr_layer_surface_v1_destroy(marker->surface); continue;
             }
-            bool ordinary = sscanf(name, "fixture-xdg-click %u %d %d %u %95s", &serial, &x, &y, &button, target) == 5;
+            bool ordinary = sscanf(name, "fixture-xdg-click %u %d %d %u %95[^\n]", &serial, &x, &y, &button, target) == 5;
             if (!ordinary && sscanf(name, "fixture-click %u %d %d %u %95s", &serial, &x, &y, &button, target) != 5)
                 continue;
             struct PuDesktopLayer *layer;
             struct wlr_scene_tree *tree = NULL;
             if (ordinary) {
-                CHECK(!strcmp(target, "Settings"));
-                struct PuDesktopView *view = settings_view();
+                CHECK(!strcmp(target, "Settings") || !strcmp(target, "Desktop control panel"));
+                struct PuDesktopView *view = NULL, *candidate;
+                wl_list_for_each(candidate, &desktop.views, link)
+                    if (candidate->mapped && !candidate->geometry_pending && candidate->toplevel->title &&
+                        !strcmp(candidate->toplevel->title, target)) { view = candidate; break; }
                 if (!view || serial <= settings_sequence) continue;
                 tree = view->tree;
                 if (desktop.focused != view || desktop.focused_layer) {

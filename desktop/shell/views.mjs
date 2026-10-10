@@ -117,7 +117,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
         paddingLeft: 8, paddingRight: 10, gap: theme.layout.trayGap,
         borderLeftWidth: 1, borderColor: '#095bc9', backgroundColor: '#1285e1',
       } }, lunaBands(theme, 'tray', panel.height),
-        tray?.items.length ? trayView(theme, tray.items, tray.activate, tray.scroll) : null,
+        tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
         notifications ? tool('shell-notifications', 'Notifications ' + notifications.count, 'notification', notifications.open) : null,
         h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: theme.layout.fontSize,
           paddingLeft: 5, flexShrink: 0 } }, clock)));
@@ -138,7 +138,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
-  tray?.items.length ? trayView(theme, tray.items, tray.activate, tray.scroll) : null,
+  tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
   notifications ? button('shell-notifications', 'Notifications ' + notifications.count, theme,
     notifications.open, false, { height: theme.layout.compactButtonHeight }) : null,
   label(clock, panel.text, 12));
@@ -160,7 +160,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
 }
 
-export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '') {
+export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '', themes = DESKTOP_THEMES) {
   const label = labelFor(theme);
   return h('view', { id: 'shell-settings', style: {
     width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
@@ -184,7 +184,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
       ]
     : [
         label('Changes apply now and save in your user preferences.', theme.colors.muted, 11),
-        ...DESKTOP_THEMES.map(preset => button('shell-theme-' + preset.id, preset.name, theme,
+        ...themes.map(preset => button('shell-theme-' + preset.id, preset.name, theme,
           () => select(preset.id), theme.id === preset.id, { height: theme.layout.choiceHeight })),
         label('Negotiated window frames follow this appearance.', theme.colors.muted, 11),
         label('Application-drawn headers keep their own style.', theme.colors.muted, 11),

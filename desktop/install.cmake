@@ -10,18 +10,24 @@ configure_file("${CMAKE_SOURCE_DIR}/desktop/tools/polly-files.in"
     "${CMAKE_BINARY_DIR}/polly-files" @ONLY NEWLINE_STYLE UNIX)
 configure_file("${CMAKE_SOURCE_DIR}/desktop/tools/polly-file-text.in"
     "${CMAKE_BINARY_DIR}/polly-file-text" @ONLY NEWLINE_STYLE UNIX)
+configure_file("${CMAKE_SOURCE_DIR}/desktop/tools/polly-settings.in"
+    "${CMAKE_BINARY_DIR}/polly-settings" @ONLY NEWLINE_STYLE UNIX)
 
 install(TARGETS pollyui RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
 install(PROGRAMS "${CMAKE_BINARY_DIR}/polly-desktop"
     DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
-install(PROGRAMS "${CMAKE_BINARY_DIR}/polly-files" "${CMAKE_BINARY_DIR}/polly-file-text"
+install(PROGRAMS "${CMAKE_BINARY_DIR}/polly-files" "${CMAKE_BINARY_DIR}/polly-file-text" "${CMAKE_BINARY_DIR}/polly-settings"
     DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/polly-files.desktop"
+    "${CMAKE_SOURCE_DIR}/desktop/release/polly-settings.desktop"
     "${CMAKE_SOURCE_DIR}/desktop/release/polly-file-text.desktop"
     "${CMAKE_SOURCE_DIR}/desktop/release/polly-file-text-open.desktop"
     "${CMAKE_SOURCE_DIR}/desktop/release/polly-mimeapps.list"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/apps/files"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/apps" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs" PATTERN "tests" EXCLUDE)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/apps/settings"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/apps" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs" PATTERN "tests" EXCLUDE)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/examples/file-dialog.mjs"
@@ -61,6 +67,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/maintenance/payload.py"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/maintenance"
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/shared/settings-environment.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/file-system.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/native-files.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/theme-resources.mjs"

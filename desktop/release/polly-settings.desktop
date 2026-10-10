@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=Desktop settings
+Comment=Appearance and About; other controls open in the desktop control panel
+Exec=polly-settings
+Icon=preferences-system
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=preferences;desktop;appearance;

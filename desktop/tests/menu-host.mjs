@@ -247,7 +247,14 @@ function fixture(configure = () => {}) {
     removeItem: key => saved.delete(key),
   };
   configure({ native, state, calls, saved });
-  const shell = createDesktopShell({ host, native, storage, report: value => warnings.push(value) }).start();
+  const shell = createDesktopShell({ host, native, storage, report: value => warnings.push(value),
+    settingsFactory(handlers) {
+      state.settingsHandlers = handlers;
+      return { open(page) { calls.push(['settings-open', page]); return 123; },
+        exited(event) { calls.push(['settings-exit', event.pid]); }, close() {},
+        getState: () => ({ pid: 123, connected: true, error: '' }) };
+    },
+  }).start();
   const surface = (kind, output = 1) => shell.getSurfaces().find(item => item.kind === kind && item.output === output).window;
   const done = () => {
     try {
@@ -331,57 +338,49 @@ function settingsScenario(name, run) { scenario('Settings: ' + name, run, settin
 function text(node) { return descendants(node).map(item => item.textContent || item.nodeValue || '').join(' '); }
 function navigate(window, page) { click(find(window, 'shell-settings-page-' + page)); }
 
-settingsScenario('taskbar, desktop and searchable application entry share one ordinary window', f => {
+settingsScenario('taskbar, desktop and searchable application entry share the narrow independent launcher', f => {
   click(find(f.surface('panel'), 'shell-panel-settings'));
-  const settings = f.created.at(-1);
-  assert.equal(settings.options.title, 'Settings');
-  assert.equal(settings.options.layer, undefined);
   click(find(f.surface('panel'), 'shell-panel-settings'));
-  assert.equal(f.created.at(-1), settings);
   domEvent(f.surface('wallpaper').document.body, 'contextmenu', { button: 2 });
-  assert.equal(f.created.at(-1), settings);
   const applications = f.shell.showApplications(2);
   domEvent(find(applications, 'shell-app-search'), 'textinput', { data: 'Settings' });
-  click(find(applications, 'shell-app-org.pollyui.shell.Settings'));
+  click(find(applications, 'shell-app-org.pollyui.settings'));
   assert.equal(applications.closed, true);
-  assert.equal(settings.closed, false);
-  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'Shell action does not launch a privileged public app');
+  assert.deepEqual(f.calls.filter(call => call[0] === 'settings-open'),
+    Array.from({ length: 4 }, () => ['settings-open', 'appearance']));
+  assert.equal(f.created.some(window => window.options.title === 'Settings'), false,
+    'Shell does not create the independent Settings document in its own realm');
 });
 
-settingsScenario('theme choices persist and repaint in place across all preset layouts', f => {
-  const settings = f.shell.showSystemSettings(1);
-  const stale = callback(find(settings, 'shell-theme-bigsur'), 'click');
+settingsScenario('narrow appearance handlers retain all theme effects and real managed page mounts', f => {
   for (const id of ['server2003', 'aqua', 'lion', 'bigsur', 'xp']) {
-    click(find(settings, 'shell-theme-' + id));
-    assert.equal(settings.closed, false);
+    assert.equal(f.state.settingsHandlers.select(id), true);
     assert.equal(f.saved.get('desktop.theme'), id);
-    assert.equal(find(settings, 'shell-theme-' + id).getAttribute('aria-pressed'), 'true');
     assert.equal(f.shell.getState().themeId, id);
+    assert.equal(f.state.settingsHandlers.appearance().themeId, id);
   }
-  stale(event('click'));
-  assert.equal(f.shell.getState().themeId, 'xp', 'retired rendered choices cannot apply a theme');
-  for (const page of ['displays', 'network', 'audio', 'keyboard', 'about', 'appearance']) {
+  const settings = f.shell.showManagedSettings(1, 'displays');
+  for (const page of ['displays', 'network', 'audio', 'keyboard']) {
     navigate(settings, page);
     assert.equal(find(settings, 'shell-settings-page-' + page).getAttribute('aria-current'), 'page');
     const expected = { displays: 'shell-displays', network: 'shell-network-settings', audio: 'shell-audio-settings',
-      keyboard: 'shell-shortcuts', about: 'shell-settings-about', appearance: 'shell-settings' };
+      keyboard: 'shell-shortcuts' };
     assert.ok(find(settings, expected[page]), 'navigation mounts actual page content');
     assert.equal(settings.closed, false);
   }
-  assert.equal(f.created.filter(window => window.options.title === 'Settings').length, 1);
+  assert.equal(f.created.filter(window => window.options.title === 'Desktop control panel').length, 1);
 });
 
 settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-window semantics', f => {
-  const settings = f.shell.showSystemSettings(1);
+  const settings = f.shell.showManagedSettings(1, 'displays');
   key(settings, 'Tab');
   assert.equal(settings.document.activeElement.id, 'shell-system-settings-close');
-  find(settings, 'shell-settings-page-about').focus();
+  find(settings, 'shell-settings-page-audio').focus();
   key(settings, ' ');
-  assert.ok(find(settings, 'shell-settings-about'));
-  find(settings, 'shell-settings-page-appearance').focus();
+  assert.ok(find(settings, 'shell-audio-settings'));
+  find(settings, 'shell-settings-page-keyboard').focus();
   key(settings, 'Enter');
-  find(settings, 'shell-theme-lion').focus(); key(settings, 'Enter');
-  assert.equal(f.shell.getState().themeId, 'lion');
+  assert.ok(find(settings, 'shell-shortcuts'));
   assert.equal(settings.closed, false);
   const child = settings.document.createElement('view');
   child.tabIndex = 0; child.addEventListener('keydown', value => value.preventDefault());
@@ -393,8 +392,24 @@ settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-win
   assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
 });
 
+settingsScenario('retained control panel keeps explicit quick appearance and Power entry points', f => {
+  const panel = f.shell.showManagedSettings(1, 'audio');
+  click(find(panel, 'shell-controls-quick-appearance'));
+  const quick = f.created.at(-1);
+  assert.ok(find(quick, 'shell-theme-xp'));
+  click(find(quick, 'shell-settings-close'));
+  assert.equal(panel.closed, false);
+  click(find(panel, 'shell-controls-power'));
+  const power = f.created.at(-1);
+  assert.ok(find(power, 'shell-power-settings'));
+  click(find(power, 'shell-power-close'));
+  assert.equal(panel.closed, false);
+  assert.equal(f.shell.showSettings(1, true), 123);
+  assert.deepEqual(f.calls.at(-1), ['settings-open', 'about']);
+});
+
 settingsScenario('display edits use guarded apply, Keep persistence and live replacement drafts', f => {
-  const settings = f.shell.showSystemSettings(1, 'displays');
+  const settings = f.shell.showManagedSettings(1, 'displays');
   const field = find(settings, 'shell-output-1-scale');
   field.focus(); key(settings, 'a', { ctrlKey: true });
   domEvent(field, 'textinput', { data: '1.25' });
@@ -422,14 +437,14 @@ settingsScenario('display edits use guarded apply, Keep persistence and live rep
 });
 
 settingsScenario('closing Settings cannot confirm/revert a pending layout or stop its watchdog', f => {
-  const settings = f.shell.showSystemSettings(1, 'displays');
+  const settings = f.shell.showManagedSettings(1, 'displays');
   click(find(settings, 'shell-output-apply'));
   const guard = f.created.at(-1);
   const close = callback(find(settings, 'shell-system-settings-close'), 'click');
   click(find(settings, 'shell-system-settings-close'));
   assert.equal(guard.closed, false);
   assert.equal(f.state.output.pendingToken, 5);
-  const next = f.shell.showSystemSettings(1, 'audio');
+  const next = f.shell.showManagedSettings(1, 'audio');
   close(event('click'));
   assert.equal(next.closed, false);
   key(guard, 'Escape');
@@ -438,7 +453,7 @@ settingsScenario('closing Settings cannot confirm/revert a pending layout or sto
 });
 
 settingsScenario('iwd scan/connect/password/disconnect/forget consume actual revision and target shapes', f => {
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   assert.match(text(settings.document.body), /fixture-wifi/);
   assert.match(text(settings.document.body), /-45 dBm/);
   click(find(settings, 'shell-network-scan-0'));
@@ -461,7 +476,7 @@ settingsScenario('iwd scan/connect/password/disconnect/forget consume actual rev
 });
 
 settingsScenario('Wi-Fi page teardown clears/cancels credentials and retires snapshot callbacks', f => {
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
   f.state.network.revision++; f.native.onNetworkChanged();
   oldScan(event('click'));
@@ -470,7 +485,7 @@ settingsScenario('Wi-Fi page teardown clears/cancels credentials and retires sna
   const password = find(settings, 'shell-network-password');
   password.focus(); domEvent(password, 'textinput', { data: 'fixture-secret' });
   const oldSubmit = callback(find(settings, 'shell-network-auth-submit'), 'click');
-  navigate(settings, 'appearance');
+  navigate(settings, 'audio');
   assert.equal(f.state.network.authentication, null);
   assert.ok(f.calls.some(call => call[0] === 'network-auth' && call[3] === null));
   assert.equal(text(password).includes('fixture-secret'), false);
@@ -481,7 +496,7 @@ settingsScenario('Wi-Fi page teardown clears/cancels credentials and retires sna
 });
 
 settingsScenario('iwd service loss and changed confirmation disable requests without invented readiness', f => {
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   click(find(settings, 'shell-network-connect-0-0'));
   f.state.network.revision++; f.native.onNetworkChanged();
   assert.equal(find(settings, 'shell-network-confirm').getAttribute('aria-disabled'), 'true');
@@ -497,7 +512,7 @@ settingsScenario('iwd service loss and changed confirmation disable requests wit
 });
 
 settingsScenario('PipeWire volume, mute and default devices show progress and save only acknowledgments', f => {
-  const settings = f.shell.showSystemSettings(1, 'audio');
+  const settings = f.shell.showManagedSettings(1, 'audio');
   assert.match(text(settings.document.body), /Private speaker/);
   click(find(settings, 'shell-audio-lower-20'));
   assert.deepEqual(f.calls.find(call => call[0] === 'setAudioVolume'), ['setAudioVolume', 20, 1, 0.9]);
@@ -516,14 +531,14 @@ settingsScenario('PipeWire volume, mute and default devices show progress and sa
 });
 
 settingsScenario('audio policy outlives Settings and persists an acknowledgment after page detach', f => {
-  const settings = f.shell.showSystemSettings(1, 'audio');
+  const settings = f.shell.showManagedSettings(1, 'audio');
   const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
   click(find(settings, 'shell-audio-lower-20'));
   settings.close();
   assert.equal(f.calls.some(call => call[0] === 'stop-audio'), false);
   f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
   assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices[0].volume, 0.9);
-  const next = f.shell.showSystemSettings(1, 'audio');
+  const next = f.shell.showManagedSettings(1, 'audio');
   assert.match(text(next.document.body), /90%/);
   oldMute(event('click'));
   assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
@@ -531,7 +546,7 @@ settingsScenario('audio policy outlives Settings and persists an acknowledgment 
 });
 
 settingsScenario('keyboard changes retain the trusted-layer capture boundary and existing persistence', f => {
-  const settings = f.shell.showSystemSettings(1, 'keyboard');
+  const settings = f.shell.showManagedSettings(1, 'keyboard');
   click(find(settings, 'shell-shortcut-minimize-window'));
   const capture = f.created.at(-1);
   assert.equal(capture.options.layer, 'overlay');
@@ -547,7 +562,7 @@ settingsScenario('keyboard changes retain the trusted-layer capture boundary and
 });
 
 settingsScenario('unsupported capabilities stay visible and About makes no login/version claims', f => {
-  const settings = f.shell.showSystemSettings(1);
+  const settings = f.shell.showManagedSettings(1, 'network');
   delete f.native.startNetwork; delete f.native.startAudio; delete f.native.outputConfiguration; delete f.native.shortcuts;
   for (const page of ['network', 'audio', 'displays', 'keyboard']) {
     navigate(settings, page);
@@ -555,14 +570,14 @@ settingsScenario('unsupported capabilities stay visible and About makes no login
     assert.ok(descendants(settings.document.body).some(node => node.getAttribute('aria-disabled') === 'true'));
   }
   navigate(settings, 'about');
-  assert.match(text(settings.document.body), /version is not exposed/);
-  assert.match(text(settings.document.body), /Input method: disabled/);
-  assert.equal(text(settings.document.body).includes('No login'), false);
+  assert.equal(settings.closed, true);
+  assert.deepEqual(f.calls.at(-1), ['settings-open', 'about']);
+  assert.equal(f.state.settingsHandlers.about().services.inputMethod, 'disabled');
 });
 
 settingsScenario('close/reopen and Shell restart restore listeners and reject old generations', f => {
   const previousNetwork = f.native.onNetworkChanged;
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   const oldNav = callback(find(settings, 'shell-settings-page-appearance'), 'click');
   const oldClose = settings.onclose;
   settings.close();
@@ -571,14 +586,14 @@ settingsScenario('close/reopen and Shell restart restore listeners and reject ol
   assert.equal(f.native.onNetworkChanged, previousNetwork);
   assert.equal(f.timers.size, 0);
   f.shell.start();
-  const next = f.shell.showSystemSettings(1, 'about');
+  const next = f.shell.showManagedSettings(1, 'keyboard');
   oldNav(event('click')); oldClose();
-  assert.ok(find(next, 'shell-settings-about'));
+  assert.ok(find(next, 'shell-shortcuts'));
   assert.equal(next.closed, false);
 });
 
 settingsScenario('late device notifications and detached controls cannot replace a later page', f => {
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
   navigate(settings, 'audio');
   const audioRoot = find(settings, 'shell-audio-settings');
@@ -588,12 +603,12 @@ settingsScenario('late device notifications and detached controls cannot replace
   assert.equal(settings.document.getElementById('shell-network-settings'), null);
   assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
   const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
-  navigate(settings, 'appearance');
-  const appearance = find(settings, 'shell-settings');
+  navigate(settings, 'displays');
+  const displays = find(settings, 'shell-displays');
   f.state.audio.generation++;
   f.state.audio.nodes[0].instance++; f.native.onAudioChanged();
   oldMute(event('click'));
-  assert.equal(find(settings, 'shell-settings'), appearance);
+  assert.equal(find(settings, 'shell-displays'), displays);
   assert.equal(settings.document.getElementById('shell-audio-settings'), null);
   assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
   assert.ok(f.calls.some(call => call[0] === 'previous-network'));
@@ -601,7 +616,7 @@ settingsScenario('late device notifications and detached controls cannot replace
 });
 
 settingsScenario('theme repaint preserves current credential value/focus and unavailable-state retry reports errors', f => {
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
   const input = find(settings, 'shell-network-password');
   input.focus(); domEvent(input, 'textinput', { data: 'fixture-secret' });
@@ -635,7 +650,7 @@ settingsScenario('a long multi-network list mounts ' + kind + ' fields and prese
       f.state.network.authentication = null;
     }
   };
-  const settings = f.shell.showSystemSettings(1, 'network');
+  const settings = f.shell.showManagedSettings(1, 'network');
   assert.ok(find(settings, 'shell-network-connect-0-12'));
   click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
   assert.equal(settings.document.getElementById('shell-network-password'), null);
@@ -811,7 +826,7 @@ scenario('owned wallpaper/panel/dock presses dismiss across outputs without supp
   assert.equal(menu.closed, true);
 });
 
-scenario('launcher toggles remain scoped while Settings buttons reuse a persistent ordinary window', f => {
+scenario('launcher toggles remain scoped while Settings buttons delegate presentation without Shell documents', f => {
   const panel = f.surface('panel');
   click(find(panel, 'shell-menu'));
   const first = f.created.at(-1);
@@ -820,11 +835,8 @@ scenario('launcher toggles remain scoped while Settings buttons reuse a persiste
   assert.equal(first.closed, true);
   assert.ok(f.created.at(-1) === first, 'same opener must not close on press then reopen on click');
   click(find(panel, 'shell-panel-settings'));
-  const appearance = f.created.at(-1);
-  assert.ok(find(appearance, 'shell-system-settings'));
-  assert.equal(appearance.options.layer, undefined);
+  assert.deepEqual(f.calls.at(-1), ['settings-open', 'appearance']);
   click(find(panel, 'shell-menu'));
-  assert.equal(appearance.closed, false, 'ordinary Settings is not dismissed by opening a menu');
   assert.ok(find(f.created.at(-1), 'shell-applications'));
   const applications = f.created.at(-1);
   click(find(f.surface('panel', 2), 'shell-menu'));
@@ -839,10 +851,10 @@ scenario('launcher toggles remain scoped while Settings buttons reuse a persiste
   assert.ok(f.created.at(-1) === current);
   for (const id of ['shell-dock-settings', 'shell-dock-about']) {
     click(find(dock, id)); click(find(dock, id));
-    assert.equal(appearance.closed, false);
-    assert.equal(f.shell.showSystemSettings(1), appearance);
+    assert.equal(f.shell.showSystemSettings(1), 123);
   }
-  assert.ok(find(appearance, 'shell-settings-about'));
+  assert.ok(f.calls.some(call => call[0] === 'settings-open' && call[1] === 'about'));
+  assert.equal(f.created.some(window => window.options.title === 'Settings'), false);
 });
 
 scenario('right-click window and workspace menu triggers still toggle rather than reopen', f => {

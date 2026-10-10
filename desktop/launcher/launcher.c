@@ -72,6 +72,9 @@ static int install_application(JSContext *ctx, const LaunchState *state)
     if (ok && paths->config) ok = JS_SetPropertyStr(ctx, application, "configDir", JS_NewString(ctx, paths->config)) >= 0;
     if (ok && paths->data) ok = JS_SetPropertyStr(ctx, application, "dataDir", JS_NewString(ctx, paths->data)) >= 0;
     if (ok && paths->cache) ok = JS_SetPropertyStr(ctx, application, "cacheDir", JS_NewString(ctx, paths->cache)) >= 0;
+#if defined(__linux__)
+    if (ok) ok = JS_SetPropertyStr(ctx, application, "moduleRoot", JS_NewString(ctx, state->module_root)) >= 0;
+#endif
     for (int i = 0; i < options->argc && ok; i++)
         ok = JS_SetPropertyUint32(ctx, arguments, (uint32_t)i, JS_NewString(ctx, options->argv[i])) >= 0;
     if (ok) ok = JS_SetPropertyStr(ctx, application, "arguments", JS_DupValue(ctx, arguments)) >= 0;

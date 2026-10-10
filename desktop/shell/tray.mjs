@@ -1,10 +1,12 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { isLuna } from './desktop/shell/luna-primitives.mjs';
 
-export function trayView(theme, items, activate, scroll) {
+export function trayView(theme, items, activate, scroll, error = '') {
   return h('view', { id: 'shell-tray', role: 'toolbar',
     style: { flexDirection: 'row', alignItems: 'center', flexShrink: 1,
       maxWidth: theme.layout.trayWidth, gap: theme.layout.trayGap, overflow: 'scroll' } },
+  error ? h('view', { role: 'alert', style: { color: theme.panel.text, fontSize: theme.layout.smallFontSize } },
+    'Tray unavailable') : null,
   ...items.filter(item => item.status !== 'Passive').map(item => {
     const act = (event, kind) => {
       event.stopPropagation();
@@ -39,13 +41,23 @@ export function trayView(theme, items, activate, scroll) {
 }
 
 export function createTray({ native, report, changed, host, theme }) {
-  let items = [], started = false, previous;
+  let items = [], started = false, available = false, previous, errorMessage = '';
   let menu = null, position = null;
   const errors = new Set();
   function closeMenu() {
-    if (menu && !menu.window.closed) menu.window.close();
+    const current = menu;
     menu = null; position = null;
-    if (started) native.closeTrayMenu();
+    if (current && !current.window.closed) current.window.close();
+    if (started && available) {
+      try { native.closeTrayMenu(); }
+      catch (error) { unavailable(error); }
+    }
+  }
+  function unavailable(error) {
+    available = false; items = [];
+    errorMessage = String(error);
+    report('[shell] Tray unavailable: ' + String(error));
+    closeMenu(); changed();
   }
   function menuButton(id, label, callback, enabled = true) {
     const current = theme();
@@ -64,7 +76,10 @@ export function createTray({ native, report, changed, host, theme }) {
     catch (error) { report('[shell] Cannot open tray menu: ' + String(error)); closeMenu(); }
   }
   function paintMenu() {
-    if (!started) return;
+    if (!started || !available) return;
+    try { paintMenuState(); } catch (error) { unavailable(error); }
+  }
+  function paintMenuState() {
     const state = native.trayMenu();
     if (!state.itemId) { if (menu && !menu.window.closed) menu.window.close(); menu = null; return; }
     const output = host.displays().find(output => position && position.x >= output.x && position.x < output.x + output.width &&
@@ -86,7 +101,7 @@ export function createTray({ native, report, changed, host, theme }) {
         layer: 'overlay', keyboard: 'exclusive', anchors: ['top', 'left'], width, height,
         margins: { left: x, top: y }, exclusiveZone: -1, transparent: true });
       menu = { window, geometry };
-      window.onclose = () => { if (menu?.window === window) { menu = null; if (started) native.closeTrayMenu(); } };
+      window.onclose = () => { if (menu?.window === window) closeMenu(); };
       window.document.body.addEventListener('keydown', event => {
         if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
         else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -138,9 +153,7 @@ export function createTray({ native, report, changed, host, theme }) {
       paintMenu();
       changed();
     } catch (error) {
-      items = []; report('[shell] Tray unavailable: ' + String(error));
-      if (menu && !menu.window.closed) menu.window.close();
-      menu = null; changed();
+      unavailable(error);
     }
   }
   const onChanged = () => { refresh(); if (typeof previous === 'function') previous(); };
@@ -149,18 +162,19 @@ export function createTray({ native, report, changed, host, theme }) {
       if (!native?.trayAvailable) return;
       try {
         native.startTray();
-        started = true; previous = native.onTrayChanged; native.onTrayChanged = onChanged;
+        started = available = true; errorMessage = ''; previous = native.onTrayChanged; native.onTrayChanged = onChanged;
         refresh();
       } catch (error) { report('[shell] Cannot start tray: ' + String(error)); }
     },
     stop() {
       if (!started) return;
       closeMenu();
-      started = false; items = []; errors.clear();
+      started = available = false; items = []; errors.clear(); errorMessage = '';
       if (native.onTrayChanged === onChanged) native.onTrayChanged = previous;
       try { native.stopTray(); } catch (error) { report('[shell] Cannot stop tray: ' + String(error)); }
     },
     items: () => items,
+    error: () => errorMessage,
     paint: paintMenu,
     activate(item, kind, x, y) {
       if ((kind === 'menu' || (kind === 'activate' && item.menuOnly)) && item.menu && item.menu !== '/') {

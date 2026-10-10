@@ -2,7 +2,7 @@ import { render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
-import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView } from './desktop/shell/views.mjs';
+import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 import { readDisplayDraft } from './desktop/shell/displays.mjs';
@@ -12,18 +12,19 @@ import { createNetworkSettings } from './desktop/shell/network.mjs';
 import { createAudioSettings } from './desktop/shell/audio.mjs';
 import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
-import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
+import { createWorkspacePersistence, workspaceName, WORKSPACES_KEY } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
-import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView,
-  aboutSettingsView } from './desktop/shell/settings.mjs';
+import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView } from './desktop/shell/settings.mjs';
+import { MANAGED_PAGES, settingsPage } from './desktop/client/settings-contract.mjs';
+import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
 
 export const SHELL_THEME_KEY = 'desktop.theme';
 export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
 
 export function createDesktopShell({ host = window, storage = localStorage, report = console.error,
-  native = typeof desktop === 'undefined' ? null : desktop } = {}) {
+  native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
   const bundles = new Map();
   let themeId = DEFAULT_DESKTOP_THEME;
   let themeAsset = '';
@@ -36,6 +37,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let timer = null;
   let menu = null;
   let settings = null;
+  let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
+  let appearanceRevision = 0;
   let switcher = null;
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
@@ -106,6 +109,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let previousExit = null;
   const exited = event => {
     if (!running) return;
+    settingsBridge?.exited(event);
     if (event.status) {
       error = 'Application exited: ' + event.id + ' (' + event.status + ')';
       errorKind = 'application';
@@ -273,7 +277,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       error || serviceError, () => showSystemSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
-      { items: tray.items(), activate: (item, kind, x, y) => tray.activate(item, kind,
+      { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
           bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
       panel.window.document.body);
@@ -369,6 +373,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
 
   function applySelectedTheme(id) {
     reconcile(id, true);
+    appearanceRevision++;
     error = '';
     errorKind = '';
     closeMenu();
@@ -579,7 +584,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   }
 
   function showSettings(outputId, about = false) {
-    return openMenu(outputId, about ? 'about' : 'appearance');
+    return about ? showSystemSettings(outputId, 'about') : openMenu(outputId, 'appearance');
   }
 
   function currentSettings(current, page = current?.page, revision = current?.viewRevision) {
@@ -608,6 +613,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function navigateSettings(current, page) {
     if (!running || settings !== current || current.window.closed) return;
     if (!SETTINGS_PAGES.includes(page)) throw new RangeError('Unknown Settings page');
+    if (!MANAGED_PAGES.includes(page)) {
+      const output = current.output;
+      closeSystemSettings(current);
+      return showSystemSettings(output, page);
+    }
     if (current.page === page) { repaintSettings(); return; }
     if (menu?.settingsOwner === current) closeMenu();
     detachSettingsPage(current);
@@ -628,14 +638,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     const theme = getDesktopTheme(themeId), owner = current.window.document;
     let content = null, mount = null;
     const unavailable = (title, message) => unavailableSettingsView(theme, title, message);
-    if (page === 'appearance') {
-      content = settingsView(theme, scoped(selectTheme), scoped(() => closeSystemSettings(current)),
-        scoped(() => errorKind === 'theme-files' ? reloadThemes() : refresh(true)), error,
-        false, null, null, null, null, typeof native?.readThemeFiles === 'function' ? {
-          enabled: themeFilesEnabled, reload: scoped(reloadThemes), restore: scoped(restoreThemes),
-        } : null, typeof native?.startPower === 'function' ? scoped(() => showPower(current.output)) : null,
-        true, appearanceStatus);
-    } else if (page === 'displays') {
+    if (page === 'displays') {
       if (typeof native?.outputConfiguration !== 'function') content = unavailable('Displays',
         'Display configuration requires the supported trusted PollyWM output backend.');
       else {
@@ -683,19 +686,20 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
           catch (failure) { shortcutFailure(failure); }
         }),
         scoped(() => closeSystemSettings(current)), errorKind === 'shortcuts' ? error : '');
-    } else content = aboutSettingsView(theme, {
-      services: serviceMonitor.snapshot(), outputs: bundles.size, themeId,
-      applicationId: typeof application === 'undefined' ? 'PollyShell' : application.id,
-    });
+    } else throw new Error('Only managed controls may mount in the Shell');
     render(systemSettingsView(theme, page, scoped(id => navigateSettings(current, id)),
-      scoped(() => closeSystemSettings(current)), content, mount), owner.body);
+      scoped(() => closeSystemSettings(current)), content, mount, 'Desktop control panel', [
+        button('shell-controls-quick-appearance', 'Quick appearance', theme, scoped(() => showSettings(current.output))),
+        typeof native?.startPower === 'function' ? button('shell-controls-power', 'Power', theme,
+          scoped(() => showPower(current.output))) : null,
+      ]), owner.body);
     if (page === 'network') network.refresh();
     if (page === 'audio') audio.paint();
   }
 
-  function showSystemSettings(outputId, page = null) {
+  function showManagedSettings(outputId, page) {
     if (!running) throw new Error('Shell is not running');
-    if (page !== null && !SETTINGS_PAGES.includes(page)) throw new RangeError('Unknown Settings page');
+    settingsPage(page, true);
     const bundle = bundles.get(outputId);
     if (!bundle) throw new RangeError('Unknown shell output');
     closeMenu();
@@ -706,11 +710,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
     try {
       const layout = getDesktopTheme(themeId).layout;
-      const window = host.create({ title: 'Settings',
+      const window = host.create({ title: 'Desktop control panel',
         width: Math.max(1, Math.min(900, bundle.output.width - layout.screenInset * 2)),
         height: Math.max(1, Math.min(650, bundle.output.height - getDesktopTheme(themeId).panel.height - layout.overlayInset * 2)) });
       const current = { window, output: outputId, kind: 'system-settings',
-        page: page || 'appearance', viewRevision: 0, listeners: [], expectedClose: false };
+        page, viewRevision: 0, listeners: [], expectedClose: false };
       settings = current;
       window.onclose = () => closeSystemSettings(current);
       window.document.body.tabIndex = 0;
@@ -728,6 +732,58 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       for (const current of bundles.values()) paint(current, getDesktopTheme(themeId));
       return null;
     }
+  }
+
+  function appearanceSnapshot() {
+    return { version: 1, revision: appearanceRevision, catalogRevision: THEME_REVISION, themeId,
+      catalog: { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES },
+      themeFilesEnabled, themeFilesAvailable: typeof native?.readThemeFiles === 'function',
+      status: appearanceStatus, error: ['settings', 'theme-files'].includes(errorKind) ? error : '' };
+  }
+  function aboutSnapshot() {
+    return { version: 1, services: serviceMonitor.snapshot(), outputs: bundles.size, themeId,
+      applicationId: typeof application === 'undefined' ? 'PollyShell' : application.id,
+      profiles: { display: displayPersistence.status,
+        audio: storage.getItem(AUDIO_PREFERENCES_KEY) === null ? 'No saved audio profile' : 'Saved audio profile',
+        workspace: storage.getItem(WORKSPACES_KEY) === null ? 'No saved workspace profile' : 'Saved workspace profile' } };
+  }
+  function settingsFailure(failure) {
+    error = 'Could not open Settings: ' + String(failure); errorKind = 'settings';
+    report('[shell] ' + error); repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+    return null;
+  }
+  function startSettingsBridge() {
+    const scope = settingsScope;
+    const handlers = { native, appearance: appearanceSnapshot, about: aboutSnapshot,
+      select: selectTheme, reload: reloadThemes, restore: restoreThemes,
+      managed(page) {
+        const panel = showManagedSettings(host.displays()[0]?.id, page);
+        if (!panel) throw new Error(error || 'Desktop control panel did not open');
+      }, report };
+    if (settingsFactory) { settingsBridge = settingsFactory(handlers); return; }
+    if (typeof application === 'undefined') {
+      settingsStartupError = new Error('Independent Settings requires the SysRT private session-bus runtime');
+      return;
+    }
+    settingsReady = import('./desktop/shell/settings-native.mjs').then(({ openShellSettings }) => {
+      if (running && scope === settingsScope) settingsBridge = openShellSettings(handlers);
+    }).catch(failure => { if (scope === settingsScope) settingsStartupError = failure; });
+  }
+  function showSystemSettings(outputId, page = 'appearance') {
+    if (!running) throw new Error('Shell is not running');
+    settingsPage(page);
+    if (!bundles.has(outputId)) throw new RangeError('Unknown shell output');
+    closeMenu();
+    const open = () => {
+      if (!running) throw new Error('Shell stopped before Settings could open');
+      if (!settingsBridge) throw settingsStartupError || new Error('Independent Settings service is unavailable');
+      return settingsBridge.open(page);
+    };
+    try {
+      const result = settingsBridge ? open() : (settingsReady || Promise.resolve()).then(open);
+      return result && typeof result.then === 'function' ? result.catch(settingsFailure) : result;
+    } catch (failure) { return settingsFailure(failure); }
   }
 
   function shortcutFailure(failure) {
@@ -1216,6 +1272,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       notifications.start();
       tray.start();
       audio.start();
+      settingsStartupError = null;
+      startSettingsBridge();
       if (typeof native?.outputConfiguration === 'function') {
         previousOutputsChanged = native.onOutputsChanged;
         native.onOutputsChanged = outputsChanged;
@@ -1226,6 +1284,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     },
     stop() {
       running = false;
+      settingsScope = {};
+      settingsBridge?.close(); settingsBridge = null; settingsReady = null;
       applicationLaunchScope = {};
       serviceMonitor.reset(); serviceError = '';
       notifications.stop();
@@ -1263,9 +1323,11 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       bundles.clear();
       releaseThemeAsset(themeAsset); themeAsset = ''; themeAssetSource = '';
     },
-    selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showManagedSettings,
+    showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
     showNotifications: notifications.show, showNetwork, showAudio, showPower, showLogout, refresh,
     sessionExit,
+    getSettingsState: () => settingsBridge?.getState() || { pid: 0, connected: false, error: String(settingsStartupError || '') },
     getState() {
       const services = serviceMonitor.snapshot();
       return { themeId, error: error || services.error,

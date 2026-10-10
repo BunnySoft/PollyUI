@@ -39,8 +39,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runtime_client", type=Path)
     parser.add_argument("pollyui", type=Path)
-    parser.add_argument("--mode", choices=("ui", "audio", "network", "all"), default="all")
+    parser.add_argument("--mode", choices=("ui", "audio", "network", "installed", "all"), default="all")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--renderer", choices=("raster", "gl"), default="raster")
     args = parser.parse_args()
     modes = ("ui", "audio", "network") if args.mode == "all" else (args.mode,)
     if sys.platform != "linux" or os.geteuid() not in (0, 1000):
@@ -63,7 +64,8 @@ def main():
         if key.startswith(("XDG_", "DBUS_", "POLLY_", "PIPEWIRE_", "WAYLAND_", "SDL_", "PU_", "PULSE_")):
             del environment[key]
     environment.update(SDL_VIDEODRIVER="wayland", SDL_RENDER_DRIVER="software",
-                       WLR_RENDERER="pixman", WLR_BACKENDS="headless", WLR_HEADLESS_OUTPUTS="2")
+                       WLR_RENDERER="pixman", WLR_BACKENDS="headless", WLR_HEADLESS_OUTPUTS="2",
+                       PU_RENDERER=args.renderer)
     try:
         for mode in modes:
             stage = root / mode
@@ -90,6 +92,7 @@ def main():
                                         "--address=unix:path=" + str(run / "bus"), "--print-address"],
                                        env=env, stdout=address_log, stderr=bus_log, preexec_fn=preexec)
                 processes.append(bus)
+                env["POLLY_SETTINGS_TEST_BUS_PID"] = str(bus.pid)
                 wait_socket(run / "bus", bus)
                 deadline = time.monotonic() + 5
                 while not address.read_text().strip():
@@ -97,6 +100,19 @@ def main():
                         raise RuntimeError("Private session bus address was not published")
                     time.sleep(0.01)
                 env["DBUS_SESSION_BUS_ADDRESS"] = env["POLLY_SESSION_BUS_ADDRESS"] = address.read_text().strip()
+                if mode == "ui":
+                    for label, change in (
+                            ("missing-owned", {"POLLY_SESSION_BUS_ADDRESS": ""}),
+                            ("mismatched", {"POLLY_SESSION_BUS_ADDRESS": "unix:path=/must-not-connect"}),
+                            ("wrong-socket", {"POLLY_SESSION_BUS_ADDRESS": "unix:path=" + str(run / "wrong"),
+                                              "DBUS_SESSION_BUS_ADDRESS": "unix:path=" + str(run / "wrong")})):
+                        rejected = subprocess.run(
+                            [str(pollyui), "--app-id", "org.pollyui.settings",
+                             str(repo / "desktop/tests/settings-startup-error.mjs")],
+                            cwd=repo, env=dict(env, SDL_VIDEODRIVER="offscreen", **change),
+                            preexec_fn=preexec, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+                        if rejected.returncode or "PASS: standalone Settings startup error is visible" not in rejected.stdout:
+                            raise RuntimeError("Settings negative startup case failed: " + label + "\n" + rejected.stdout)
                 provider = None
                 if mode == "network":
                     config = stage / "system-bus.conf"
@@ -129,9 +145,22 @@ def main():
                     env.update(PIPEWIRE_REMOTE="polly-audio", POLLY_AUDIO_REMOTE="polly-audio")
                 # Every non-network mode explicitly avoids the host system bus as well.
                 env.setdefault("DBUS_SYSTEM_BUS_ADDRESS", "unix:path=" + str(run / "no-system-bus"))
-                command = [str(runtime_client), str(pollyui), "desktop/tests/settings-shell.mjs", "settings", mode]
-                result = subprocess.run(command, cwd=repo, env=env, preexec_fn=preexec, text=True,
-                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
+                fixture_runtime, cwd = pollyui, repo
+                script = repo / "desktop/tests/settings-shell.mjs"
+                if mode == "installed":
+                    destination = stage / "relocated install"
+                    subprocess.run(["cmake", "--install", str(pollyui.parent), "--prefix", "/usr",
+                                    "--component", "PollyDesktop"], env=dict(env, DESTDIR=str(destination)),
+                                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+                    fixture_runtime = destination / "usr/bin/pollyui"
+                    cwd = destination / "usr/share/pollyui"
+                    script = repo / "desktop/tests/settings-installed-shell.mjs"
+                    entry = destination / "usr/share/applications/polly-settings.desktop"
+                    if "Exec=polly-settings" not in entry.read_text():
+                        raise RuntimeError("Installed standalone Settings desktop entry is missing")
+                command = [str(runtime_client), str(fixture_runtime), str(script), "settings", mode]
+                result = subprocess.run(command, cwd=cwd, env=env, preexec_fn=preexec, text=True,
+                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300)
                 (stage / "native.log").write_text(result.stdout)
                 if result.returncode or f"PASS: native Settings {mode} complete" not in result.stdout or any(
                         marker in result.stdout for marker in ("FAIL:", "Uncaught", "AddressSanitizer", "runtime error:")):
@@ -140,7 +169,7 @@ def main():
                 if provider and provider.wait(timeout=5) != 0:
                     raise RuntimeError("Root-owned synthetic iwd did not acknowledge all operations")
                 captures = list((stage / "cache").rglob("settings-*.png"))
-                if len(captures) < 7:
+                if mode != "installed" and len(captures) < 7:
                     raise RuntimeError("Native Settings screenshots are missing")
                 print(f"PASS: Settings {mode}, Shell/public app UID1000, {len(captures)} native captures")
             finally:

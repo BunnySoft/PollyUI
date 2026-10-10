@@ -582,6 +582,8 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
             "${CMAKE_SOURCE_DIR}/desktop/apps/installer/tests/native-provider.mjs")
         set_tests_properties(desktop-install-target-ui PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-menu-host COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/menu-host.mjs")
+        add_test(NAME desktop-settings-controller COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/apps/settings/tests/settings.mjs")
+        set_tests_properties(desktop-settings-controller PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         set_tests_properties(desktop-menu-host PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-xp-luna-unit COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/xp-luna-unit.mjs")
         set_tests_properties(desktop-xp-luna-unit PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -697,19 +699,19 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog-window-shell.mjs" file-dialog file-dialog)
             set_tests_properties(desktop-file-dialog-window PROPERTIES TIMEOUT 120
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
-            foreach(mode IN ITEMS ui audio)
+            foreach(mode IN ITEMS ui audio installed)
                 add_test(NAME desktop-settings-${mode}
                     COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
                         --mode ${mode} --evidence "${CMAKE_BINARY_DIR}/settings-${mode}-evidence")
-                set_tests_properties(desktop-settings-${mode} PROPERTIES TIMEOUT 120
+                set_tests_properties(desktop-settings-${mode} PROPERTIES TIMEOUT 330
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native")
             endforeach()
             add_test(NAME desktop-settings-network
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
                     --mode network --evidence "${CMAKE_BINARY_DIR}/settings-network-evidence")
-            set_tests_properties(desktop-settings-network PROPERTIES TIMEOUT 120
+            set_tests_properties(desktop-settings-network PROPERTIES TIMEOUT 330
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;synthetic-network")
         endif()
         foreach(renderer IN ITEMS raster gl)

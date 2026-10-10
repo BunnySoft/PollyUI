@@ -1,13 +1,14 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shell/views.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
+import { SETTINGS_APP_ID, SETTINGS_PAGES } from './desktop/client/settings-contract.mjs';
 
-export const SETTINGS_APPLICATION_ID = 'org.pollyui.shell.Settings';
-export const SETTINGS_PAGES = ['appearance', 'displays', 'network', 'audio', 'keyboard', 'about'];
+export const SETTINGS_APPLICATION_ID = SETTINGS_APP_ID;
+export { SETTINGS_PAGES };
 const titles = { appearance: 'Appearance', displays: 'Displays', network: 'Network',
   audio: 'Audio', keyboard: 'Keyboard', about: 'About' };
 
-export function systemSettingsView(theme, page, navigate, close, content, mount = null) {
+export function systemSettingsView(theme, page, navigate, close, content, mount = null, title = 'Settings', controls = []) {
   return h('view', { id: 'shell-system-settings', style: {
     width: '100%', height: '100%', minHeight: 0, backgroundColor: theme.colors.body,
   } },
@@ -15,9 +16,9 @@ export function systemSettingsView(theme, page, navigate, close, content, mount 
     padding: theme.layout.compactPadding, gap: theme.layout.contentGap,
     backgroundColor: theme.colors.surface, borderBottomWidth: theme.layout.borderWidth,
     borderColor: theme.colors.border } },
-    h('view', { style: { color: theme.colors.text, fontSize: theme.layout.largeHeadingFontSize } }, 'Settings'),
+    h('view', { style: { color: theme.colors.text, fontSize: theme.layout.largeHeadingFontSize } }, title),
     h('view', { style: { flexGrow: 1 } }),
-    button('shell-system-settings-close', 'Close', theme, close)),
+    button('shell-system-settings-close', 'Close', theme, close), controls),
   h('view', { style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0, minHeight: 0 } },
     h('view', { role: 'navigation', 'aria-label': 'Settings pages', style: {
       width: 142, flexShrink: 0, padding: theme.layout.controlGap, gap: theme.layout.controlGap,
@@ -48,11 +49,11 @@ export function unavailableSettingsView(theme, title, explanation) {
 export function aboutSettingsView(theme, { services, outputs, themeId, applicationId }) {
   const label = text => h('view', { style: { color: theme.colors.text,
     fontSize: themeTextSize(theme, 12), flexShrink: 0 } }, text);
-  return h('view', { id: 'shell-settings-about', style: { height: '100%', padding: theme.layout.contentPadding,
+  return h('view', { id: 'shell-settings-about', style: { flexShrink: 0, padding: theme.layout.contentPadding,
     gap: theme.layout.contentGap, overflow: 'scroll' } },
     label('PollyDesktop - PollyWM + native PollyUI'),
     label('Development build. Release version is not exposed by this runtime.'),
-    label('Settings owner: ' + applicationId),
+    label('Management owner (Shell): ' + applicationId),
     label('Session: ordinary-user desktop; management stays on the trusted Shell connection.'),
     label('Appearance: ' + themeId + ' | Active displays: ' + outputs),
     label('Input method: ' + services.inputMethod + ' | Private audio: ' + services.audio),
