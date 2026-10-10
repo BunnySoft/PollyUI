@@ -38,6 +38,10 @@ async function run() {
   const initial = desktop.spawnApplication([wrapper, 'appearance'], '/tmp', 'installed-settings-initial-public-open');
   await until(() => exits.has(initial), 'initial public Settings starter exits');
   const elapsed = Date.now() - started, owned = shell.getSettingsState().pid;
+  console.log('SETTINGS_STARTUP_DIAGNOSTIC=' + JSON.stringify({
+    elapsedMs: elapsed, starterPid: initial, starterStatus: exits.get(initial),
+    shellPid: environment.pid, settings: shell.getSettingsState(), reports,
+  }));
   check(exits.get(initial) === 0 && elapsed < 5000 && shell.getSettingsState().connected,
     'installed public Settings Open/Connect/Present and starter exit complete within the original five-second startup bound');
   console.log('SETTINGS_STARTUP_ELAPSED_MS=' + elapsed);
