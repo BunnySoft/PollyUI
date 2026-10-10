@@ -76,6 +76,13 @@ if (TARGET qjs)
         endif()
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             find_program(SR_PYTHON python3 REQUIRED)
+            add_test(NAME sysrt-files-abi-check COMMAND "${SR_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate-files-abi.py"
+                --cc "${CMAKE_C_COMPILER}" --check)
+            add_test(NAME sysrt-files-abi-generator COMMAND "${SR_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/files-abi.py" --cc "${CMAKE_C_COMPILER}")
+            set_tests_properties(sysrt-files-abi-check sysrt-files-abi-generator PROPERTIES TIMEOUT 180
+                LABELS "ordinary-native;generated-abi" ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
             add_test(NAME sysrt-files COMMAND "${SR_PYTHON}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/files-fixture.py"
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)

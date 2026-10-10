@@ -1,5 +1,8 @@
 import { alloc, libc } from 'sysrt:ffi';
 import { createFileSystem, constants as C } from './sysrt/sdk/js/files.mjs';
+import { filesBindings, fileConstants } from './sysrt/bindings/files.mjs';
+import { fileAbiLayouts, fileAbiTarget, nativeFileConstants } from './sysrt/bindings/generated/files-linux-x86_64.mjs';
+import { loadBindings } from './sysrt/sdk/js/native.mjs';
 
 const fs = createFileSystem();
 const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
@@ -8,6 +11,28 @@ function value(result, message) {
   check(result.value >= 0 && result.systemError === null, message + ': errno=' + result.errno);
   return result.value;
 }
+check(filesBindings[libc].layouts === fileAbiLayouts && filesBindings[libc].target === fileAbiTarget,
+  'Native bindings use generated target and layouts');
+for (const [name, constant] of Object.entries(C))
+  check(constant === nativeFileConstants[name], 'Native SDK uses measured ' + name);
+check(filesBindings.glibc.functions.entries.symbol === 'getdents64' &&
+  filesBindings.glibc.functions.entries.result === 'ssize' &&
+  filesBindings.musl.functions.entries.symbol === 'getdents' &&
+  filesBindings.musl.functions.entries.result === 'i32', 'Libc enumeration signatures remain distinct');
+const oracle = loadBindings({ library: fixtureLibrary, functions: {
+  offset: { symbol: 'sr_statx_offset', result: 'size', parameters: ['i32'] },
+}});
+try {
+  const fields = Object.values(fileAbiLayouts.statx.fields);
+  fields.forEach((field, index) =>
+    check(Number(oracle.call('offset', index).value) === field.offset, 'Header statx offset ' + index));
+  check(Number(oracle.call('offset', fields.length).value) === fileAbiLayouts.statx.byteLength, 'Header statx size');
+  Object.values(fileConstants).forEach((constant, index) => {
+    const expected = BigInt(constant) + (constant < 0 ? 18446744073709551616n : 0n);
+    const actual = oracle.call('offset', fields.length + 1 + index).value;
+    check(expected === actual, 'Header desktop constant ' + index + ': expected ' + expected + ', actual ' + actual);
+  });
+} finally { oracle.close(); }
 function home() {
   const pointer = fs.getenv('HOME').value;
   check(pointer !== null, 'Private fixture HOME');
