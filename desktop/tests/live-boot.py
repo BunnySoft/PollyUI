@@ -39,6 +39,14 @@ def fatal_guest_record(raw):
                ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"])
 
 
+def settings_tab_steps(control, user_theme_loaded=False):
+    # Present leaves no active element; the first Tab focuses the tabindex=0 body.
+    positions = {"bigsur": 13, "reload": 14, "xp": 9, "user-theme": 14, "restore": 15}
+    if control == "user-theme" and not user_theme_loaded:
+        raise ValueError("A user theme must be loaded before selecting its native control")
+    return positions[control] + int(user_theme_loaded and control in ("reload", "restore"))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("iso", type=Path)
@@ -323,26 +331,26 @@ def main():
                         return
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-appearance.ppm")})
-                    press_tab(12)
+                    press_tab(settings_tab_steps("bigsur"))
                     console()
                     stage("selected")
                     stage("appearance")
                     desktop_view()
-                    press_tab(13)
+                    press_tab(settings_tab_steps("reload"))
                     time.sleep(1)
                     console()
                     stage("appearance")
                     desktop_view()
-                    press_tab(13)
+                    press_tab(settings_tab_steps("user-theme", True))
                     console()
                     stage("user-theme")
                     stage("appearance")
                     desktop_view()
-                    press_tab(8)
+                    press_tab(settings_tab_steps("xp", True))
                     console()
                     stage("appearance")
                     desktop_view()
-                    press_tab(15)
+                    press_tab(settings_tab_steps("restore", True))
                     console()
                     stage("restored")
                     stage("about")

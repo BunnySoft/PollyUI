@@ -18,6 +18,15 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_settings_present_tab_order_includes_the_document_root(self):
+        self.assertEqual(boot.settings_tab_steps("bigsur"), 13)
+        self.assertEqual(boot.settings_tab_steps("reload"), 14)
+        self.assertEqual(boot.settings_tab_steps("user-theme", True), 14)
+        self.assertEqual(boot.settings_tab_steps("xp", True), 9)
+        self.assertEqual(boot.settings_tab_steps("restore", True), 16)
+        with self.assertRaisesRegex(ValueError, "must be loaded"):
+            boot.settings_tab_steps("user-theme")
+
     def test_drm_backend_record_survives_actual_kernel_console_interleave(self):
         record = ("[ 65.0] polly-session[588]: Loading user-specified backends due to "
                   "W[ 65.076721] hrtimer: interrupt took 17300651 ns\n"
