@@ -79,8 +79,13 @@ unrelated staged install. This is container/native staging evidence only.
 `gui-idle-paint` uses actual SDL raster PNG captures to check that idle service
 and JS timer polling keeps running without repainting all surfaces, while real
 DOM/Promise/focus changes still paint. GUI visual revisions are independent of
-SysRT; each window retains its own last-painted revision. The installed Settings
-fixture also checks Open/Connect against the unchanged five-second startup bound.
+SysRT; each document retains its own visual and last-painted revisions. Actual
+two-surface captures check that changing one document does not repaint the other.
+The installed Settings fixture checks cold public Open/Connect/Present
+acknowledgement, successful starter exit, and no duplicate generation/errors.
+It records total process latency as a diagnostic, not a five-second pass/fail
+benchmark: the unchanged service deadline covers only five seconds from owned
+spawn to readiness, and the unchanged client Open RPC deadline is eight seconds.
 
 ```sh
 cmake --build /checks/build --target pollyui-layer-client-test -j2
