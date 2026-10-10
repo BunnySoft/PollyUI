@@ -36,9 +36,9 @@ remain historical; they do not contain or qualify the new SysRT/Settings work.
 
 | Gate | Required outcome | Current state |
 |---|---|---|
-| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | Idle-repaint root fix integrated; Windows/boundary and Linux GUI checks passed, but actual installed Settings startup failed the combined check. Revised freeze is blocked pending diagnosis |
-| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Initial clean package and exact dependency checks passed; corrected runtime requires a fresh frozen rebuild |
-| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Actual UEFI desktop/input/workspaces and diagnostic Files/JSON evidence obtained; full acceptance blocked by Settings startup until corrected media is tested |
+| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | Corrected alpha.6 source selected: idle polls no longer imply repaint, visual changes invalidate only affected documents. Native GUI and Debug/Release functional startup checks passed; total CLI latency is diagnostic, not the production handshake deadline |
+| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Fresh corrected Release package next; initial `5fc944e` package/media remain preserved, not relabelled |
+| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Old candidate supplied baseline/diagnostic evidence but failed full acceptance. Corrected media must run every normal gate; diagnostic-only passes do not qualify it |
 | Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Initial test ISO content verified but not qualified; no physical-test handoff yet |
 | Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
 

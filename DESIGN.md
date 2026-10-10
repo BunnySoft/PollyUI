@@ -304,9 +304,11 @@ Host: present (swap buffers / flush GPU)
 ```
 
 Idle timers, IPC polls, microtasks and rAF callbacks still execute; running a
-callback is not itself a visual change. Retained text, style, tree, focus and
-bitmap changes advance a visual revision, and each window records its own last
-painted revision. Host input, resize and expose repaint paths remain intact.
+callback is not itself a visual change. Retained text, style, tree and focus
+changes advance the affected document's visual revision; each window records
+its own last painted revision. Moving a node invalidates both document roots.
+Shared bitmap changes use a separate global revision. Host input, resize and
+expose repaint paths remain intact.
 An idle service poll therefore cannot force every surface to repaint; an
 animation that changes the model still requests the necessary frames.
 
