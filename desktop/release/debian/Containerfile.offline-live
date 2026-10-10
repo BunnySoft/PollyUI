@@ -1,0 +1,35 @@
+ARG LIVE_BASE
+FROM ${LIVE_BASE}
+ARG RUNTIME_REVISION
+ARG PRODUCER_REVISION
+ARG BASE_IMAGE_ID
+USER root
+WORKDIR /
+COPY offline-inputs /tmp/polly-offline-inputs
+COPY producer /tmp/polly-producer
+RUN python3 -I -B /tmp/polly-producer/offline-live-overlay.py inputs /tmp/polly-offline-inputs && \
+    test ! -e /usr/sbin/policy-rc.d && \
+    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod 755 /usr/sbin/policy-rc.d && \
+    dpkg -i /tmp/polly-offline-inputs/packages/*.deb && rm /usr/sbin/policy-rc.d
+RUN for path in /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui; do \
+        test ! -L "$path" && test "$(readlink -f "$path")" = "$path" || exit 1; \
+    done && rm -rf /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui
+ADD runtime/pollydesktop-*-debian13-x86_64.tar.gz /
+COPY frozen/desktop/release/live/init /init
+COPY frozen/desktop/release/live/session /usr/bin/polly-live-session
+COPY frozen/desktop/release/live/diagnostics /usr/bin/polly-live-diagnostics
+COPY frozen/desktop/release/live/session-mode /usr/share/pollyui/desktop/tools/live-session-mode.sh
+COPY frozen/desktop/release/live/shell.mjs /usr/share/pollyui/desktop/shell/live.mjs
+COPY frozen/desktop/release/debian/power-dependencies.json /usr/share/pollyui/power-dependencies.json
+COPY runtime/manifest.json runtime/build-inputs.json runtime/runtime-packages.txt /tmp/polly-runtime/
+COPY frozen /tmp/polly-frozen
+RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics \
+        /usr/share/pollyui/desktop/tools/live-session-mode.sh && \
+    chmod 644 /usr/share/pollyui/desktop/shell/live.mjs /usr/share/pollyui/power-dependencies.json && \
+    python3 -I -B /tmp/polly-producer/offline-live-overlay.py overlay /tmp/polly-runtime /tmp/polly-frozen \
+        --runtime-revision "$RUNTIME_REVISION" --producer-revision "$PRODUCER_REVISION" \
+        --base-image "$BASE_IMAGE_ID" --recipe /tmp/polly-producer/Containerfile.offline-live \
+        --offline-inputs /tmp/polly-offline-inputs && \
+    rm -rf /tmp/polly-runtime /tmp/polly-frozen /tmp/polly-producer /tmp/polly-offline-inputs
+ENTRYPOINT []
+CMD ["/bin/sh"]
