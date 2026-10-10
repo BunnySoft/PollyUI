@@ -92,5 +92,7 @@ export const nativeFileConstants = Object.freeze({
   "S_IFMT": 61440,
   "S_IFREG": 32768,
   "S_IFDIR": 16384,
-  "S_IFLNK": 40960
+  "S_IFLNK": 40960,
+  "LOCK_EX": 2,
+  "LOCK_NB": 4
 });

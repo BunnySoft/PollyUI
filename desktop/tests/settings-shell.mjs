@@ -1,6 +1,5 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
-import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
 import { openShellSettings } from './desktop/shell/settings-native.mjs';
 import { openDbusClient } from './sysrt/sdk/js/dbus.mjs';
 import { settingsEnvironment, settingsLaunchSpec } from './desktop/shared/settings-environment.mjs';
@@ -148,13 +147,13 @@ async function audio(settings) {
   await capture(settings, 'audio');
   await click('shell-audio-lower-' + node('Polly-Test-A').id);
   await until(() => Math.abs(node('Polly-Test-A').volume - 0.9) < 0.01 &&
-    localStorage.getItem(AUDIO_PREFERENCES_KEY), 'PipeWire volume echoed and saved');
+    shell.configuration.snapshot.audio, 'PipeWire volume echoed and saved');
   await click('shell-audio-mute-' + node('Polly-Test-Source').id);
   await until(() => node('Polly-Test-Source').muted &&
-    JSON.parse(localStorage.getItem(AUDIO_PREFERENCES_KEY)).devices.some(item => item.name === 'Polly-Test-Source' && item.muted),
+    shell.configuration.snapshot.audio.devices.some(item => item.name === 'Polly-Test-Source' && item.muted),
     'PipeWire microphone mute echoed and saved');
   await click('shell-audio-default-' + node('Polly-Test-B').id);
-  await until(() => JSON.parse(localStorage.getItem(AUDIO_PREFERENCES_KEY)).preferredSink === 'Polly-Test-B',
+  await until(() => shell.configuration.snapshot.audio.preferredSink === 'Polly-Test-B',
     'PipeWire selected output echoed and saved');
   await capture(settings, 'audio-changed');
   check(desktop.audioState().defaultSink === node('Polly-Test-B').id, 'Settings uses existing native default-device policy');
@@ -215,7 +214,7 @@ async function run() {
     if (state.error) throw new Error(state.error);
     return shell.getState().themeId === 'bigsur';
   }, 'independent theme apply');
-  check(localStorage.getItem('desktop.theme') === 'bigsur',
+  check(shell.configuration.snapshot.theme.id === 'bigsur',
     'native theme choice changes the desktop and persists without closing Settings');
   let theme = getDesktopTheme('bigsur');
   await signal('fixture-settings-decoration ' + theme.window.borderWidth + ' ' + theme.window.titleHeight);
@@ -233,7 +232,7 @@ async function run() {
   await appClick('shell-theme-bigsur');
   await until(async () => (await query({ op: 'state' })).error.includes('Synthetic appearance prepare failure'),
     'independent failed operation visibly reported');
-  check(shell.getState().themeId === 'xp' && localStorage.getItem('desktop.theme') === 'xp',
+  check(shell.getState().themeId === 'xp' && shell.configuration.snapshot.theme.id === 'xp',
     'failed independent write leaves the previous actual desktop and saved appearance');
   desktop.configureAppearance = configure;
   reports.length = 0;

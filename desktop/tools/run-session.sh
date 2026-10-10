@@ -112,10 +112,10 @@ printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
         --input-method "$repo/desktop/tools/run-input-method.sh" \
-        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --no-legacy-storage --app-id org.pollyui.shell "$script" "$@" &
 else
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
-        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --app-id org.pollyui.shell "$script" "$@" &
+        --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --no-legacy-storage --app-id org.pollyui.shell "$script" "$@" &
 fi
 pid=$!
 while kill -0 "$pid" 2>/dev/null; do

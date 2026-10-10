@@ -1,4 +1,4 @@
-import { createDesktopShell, SHELL_THEME_KEY } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 
 function check(value, message) {
@@ -24,7 +24,7 @@ async function run() {
     for (const theme of DESKTOP_THEMES) {
       check(shell.selectTheme(theme.id), theme.id + ' theme applied');
       await painted(shell);
-      check(localStorage.getItem(SHELL_THEME_KEY) === theme.id, theme.id + ' persisted in shell data');
+      check(shell.configuration.snapshot.theme.id === theme.id, theme.id + ' persisted in shell configuration');
       const output = shell.getState().outputs[0];
       const surfaces = shell.getSurfaces().filter(surface => surface.output === output);
       check(surfaces.length === (theme.panel.kind === 'dock' ? 3 : 2), theme.id + ' has the expected native surface count');

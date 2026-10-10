@@ -31,6 +31,7 @@ const common = {
     random: { symbol: 'getrandom', result: 'ssize', parameters: ['pointer', 'size', 'u32'] },
     sync: { symbol: 'fsync', result: 'i32', parameters: ['i32'] },
     mode: { symbol: 'fchmod', result: 'i32', parameters: ['i32', 'u32'] },
+    lock: { symbol: 'flock', result: 'i32', parameters: ['i32', 'i32'] },
   },
   layouts: fileAbiLayouts,
 };
@@ -48,6 +49,7 @@ export const fileConstants = Object.freeze({
   basicStatus: C.STATX_BASIC_STATS, readOnly: C.O_RDONLY, readWrite: C.O_RDWR, writeOnly: C.O_WRONLY, create: C.O_CREAT, exclusive: C.O_EXCL,
   nonblock: C.O_NONBLOCK, directory: C.O_DIRECTORY, noFollow: C.O_NOFOLLOW, closeOnExec: C.O_CLOEXEC, pathOnly: C.O_PATH,
   noReplace: C.RENAME_NOREPLACE, typeMask: C.S_IFMT, regular: C.S_IFREG, directoryType: C.S_IFDIR, symbolicLink: C.S_IFLNK,
+  exclusiveLock: C.LOCK_EX, nonblockingLock: C.LOCK_NB,
 });
 
 export const fileSystemConstants = Object.freeze({
@@ -59,4 +61,5 @@ export const fileSystemConstants = Object.freeze({
   O_APPEND: C.O_APPEND, O_NONBLOCK: fileConstants.nonblock, O_DIRECTORY: fileConstants.directory,
   O_NOFOLLOW: fileConstants.noFollow, O_CLOEXEC: fileConstants.closeOnExec, O_PATH: fileConstants.pathOnly,
   RENAME_NOREPLACE: fileConstants.noReplace, SEEK_SET: C.SEEK_SET, SEEK_CUR: C.SEEK_CUR, SEEK_END: C.SEEK_END,
+  LOCK_EX: C.LOCK_EX, LOCK_NB: C.LOCK_NB,
 });

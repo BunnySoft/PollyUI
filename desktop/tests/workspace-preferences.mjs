@@ -1,4 +1,4 @@
-import { WORKSPACES_KEY, workspaceName, readWorkspacePreferences, workspacePreferences,
+import { workspaceName, readWorkspacePreferences, workspacePreferences,
   createWorkspacePersistence } from './desktop/shell/workspaces.mjs';
 
 function check(value, message) {
@@ -33,9 +33,9 @@ rejects(() => workspacePreferences(initial.map(item => ({ ...item, active: true 
 
 let stored = JSON.stringify(preferences), live = initial, writes = 0, restores = 0, failWrite = false;
 const failures = [];
-const storage = {
-  getItem(key) { check(key === WORKSPACES_KEY, 'dedicated workspace preference key'); return stored; },
-  setItem(key, text) { if (failWrite) throw new Error('disk full'); writes++; stored = text; },
+const configuration = {
+  get snapshot() { return { workspace: stored === null ? null : readWorkspacePreferences(stored) }; },
+  update({ workspace }) { if (failWrite) throw new Error('disk full'); writes++; stored = JSON.stringify(workspace); },
 };
 const native = {
   workspaces: () => live,
@@ -45,7 +45,7 @@ const native = {
     return true;
   },
 };
-const create = () => createWorkspacePersistence({ native, storage, failure: error => failures.push(String(error)) });
+const create = () => createWorkspacePersistence({ native, configuration, failure: error => failures.push(String(error)) });
 let persistence = create();
 persistence.start();
 check(restores === 1 && live[1].active && live[0].name === '\u8d44\u6599', 'valid settings restore before first snapshot save');

@@ -15,6 +15,22 @@ with tempfile.TemporaryDirectory(prefix="polly-audio-profile-") as temporary:
                        WLR_RENDERER="pixman", WLR_BACKENDS="headless", WLR_HEADLESS_OUTPUTS="2",
                        PIPEWIRE_REMOTE="polly-audio", POLLY_AUDIO_REMOTE="polly-audio", PULSE_SERVER="disabled:")
     config = Path("desktop/tests/audio.conf").resolve()
+    # A second real source lets the UI deliberately select a recording device
+    # rather than clicking the disabled "Selected default" fallback.
+    private_config = root / "audio.conf"
+    source = """    { factory = adapter args = {
+        factory.name = audiotestsrc
+        node.name = Polly-Test-Other-Source
+        node.description = "Polly alternative source"
+        media.class = Audio/Source
+        audio.channels = 2
+        audio.position = [ FL FR ]
+        adapter.auto-port-config = { mode = dsp monitor = false position = preserve }
+    } }
+"""
+    text = config.read_text()
+    private_config.write_text(text[:text.rfind("]")] + source + text[text.rfind("]"):])
+    config = private_config
     for stage in ("save", "missing", "reload", "unmute", "unmuted", "damaged"):
         run = root / stage
         run.mkdir(mode=0o700)

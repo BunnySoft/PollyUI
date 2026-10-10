@@ -1,4 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const exits = new Map(), surfaces = [];
 let serial = 0, shell;

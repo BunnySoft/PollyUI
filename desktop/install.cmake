@@ -70,6 +70,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/settings-environment.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/file-system.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/native-files.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/shared/configuration-files.mjs"
     "${CMAKE_SOURCE_DIR}/desktop/shared/theme-resources.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/themes"
@@ -111,6 +112,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/third_party/yoga/LICENSE"
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/THEMES.md" "${CMAKE_SOURCE_DIR}/desktop/SESSION.md"
     "${CMAKE_SOURCE_DIR}/desktop/APPLICATIONS.md"
     "${CMAKE_SOURCE_DIR}/desktop/FILE-DIALOGS.md"
+    "${CMAKE_SOURCE_DIR}/desktop/SHELL-CONFIGURATION.md"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
 
 if (BUILD_TESTING)

@@ -1,4 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let shell;

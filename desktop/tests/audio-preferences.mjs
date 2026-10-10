@@ -1,4 +1,4 @@
-import { AUDIO_PREFERENCES_KEY, readAudioPreferences, createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
+import { readAudioPreferences, createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
 function check(value, message) { if (!value) throw new Error('FAIL: ' + message); console.log('PASS: ' + message); }
 function rejects(action, message) { let failed = false; try { action(); } catch { failed = true; } check(failed, message); }
 const speaker = { name: 'speaker', class: 'Audio/Sink', volume: 0.4, muted: true };
@@ -14,10 +14,9 @@ for (const patch of [{ version: 2 }, { extra: true }, { preferredSink: 'x'.repea
 rejects(() => readAudioPreferences(' '.repeat(65537)), 'audio preference document limit is enforced');
 let time = 0, saved = JSON.stringify(profile), failWrite = false, writes = 0;
 const errors = [], requests = [];
-const storage = {
-  getItem(key) { check(key === AUDIO_PREFERENCES_KEY, 'dedicated audio preference key'); return saved; },
-  setItem(key, value) { if (failWrite) throw new Error('disk full'); writes++; saved = value; },
-  removeItem() { saved = null; },
+const configuration = {
+  get snapshot() { return { audio: saved === null ? null : readAudioPreferences(saved) }; },
+  update({ audio }) { if (failWrite) throw new Error('disk full'); writes++; saved = audio === null ? null : JSON.stringify(audio); },
 };
 let state = { ready: true, generation: 1, error: '', preferredSink: '', preferredSource: '', nodes: [
   { ...speaker, id: 10, instance: '31', revision: 1, volume: 1, muted: false },
@@ -25,7 +24,7 @@ let state = { ready: true, generation: 1, error: '', preferredSink: '', preferre
 ] };
 const native = Object.fromEntries(['setAudioVolume', 'setAudioMute', 'setDefaultAudio'].map(operation =>
   [operation, (...args) => requests.push({ operation, args })]));
-const create = () => createAudioPersistence({ native, storage, failure: error => errors.push(String(error)), now: () => time });
+const create = () => createAudioPersistence({ native, configuration, failure: error => errors.push(String(error)), now: () => time });
 let persistence = create();
 persistence.start(); persistence.refresh(state);
 check(requests.length === 6 && writes === 0, 'startup restores volume, mute and selected devices without persisting transient defaults');

@@ -1,5 +1,7 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
-import { DISPLAY_PROFILE_KEY, displayProfile } from './desktop/shell/display-profiles.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
+import { displayProfile } from './desktop/shell/display-profiles.mjs';
+import { openShellConfiguration } from './desktop/shell/configuration-native.mjs';
+import { checkDamagedConfiguration } from './desktop/tests/configuration-damage.mjs';
 const stage = application.arguments[0];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let shell, serial = 0;
@@ -30,12 +32,19 @@ async function keep() {
   await until(() => !desktop.outputConfiguration().pendingToken, 'confirmation applied');
 }
 async function run() {
+  if (stage === 'damaged') {
+    checkDamagedConfiguration();
+    console.log('PASS: display persistence ' + stage);
+    await signal('fixture-success'); window.quit(); return;
+  }
+  const preferences = openShellConfiguration();
   if (stage === 'mismatch') {
-    const saved = JSON.parse(localStorage.getItem(DISPLAY_PROFILE_KEY));
+    const saved = JSON.parse(JSON.stringify(preferences.snapshot.display));
     saved.heads[0].serialNumber = 'different-monitor';
-    localStorage.setItem(DISPLAY_PROFILE_KEY, JSON.stringify(saved));
-  } else if (stage === 'damaged') localStorage.setItem(DISPLAY_PROFILE_KEY, '{broken');
-  const original = localStorage.getItem(DISPLAY_PROFILE_KEY);
+    preferences.update({ display: saved });
+  }
+  const original = JSON.stringify(preferences.snapshot.display);
+  preferences.close();
   shell = start();
   const configuration = desktop.outputConfiguration();
   check(configuration.heads.every(head => head.make === 'Polly fixture' &&
@@ -45,15 +54,15 @@ async function run() {
     const target = configuration.heads[0].id;
     desktop.applyOutputConfiguration({ ...configuration, heads: configuration.heads.map(head =>
       head.id === target ? { ...head, width: 1000, height: 700, refresh: 60000, scale: 1.25, transform: 1, x: 40 } : head) });
-    check(localStorage.getItem(DISPLAY_PROFILE_KEY) === null, 'provisional configuration is never persisted');
+    check(shell.configuration.snapshot.display === null, 'provisional configuration is never persisted');
     await keep();
-    const saved = JSON.parse(localStorage.getItem(DISPLAY_PROFILE_KEY));
+    const saved = shell.configuration.snapshot.display;
     check(saved.heads.some(head => head.width === 1000) && saved.heads.every(head => !('id' in head)),
       'Keep saves confirmed geometry and hardware identity, not runtime handles');
   } else if (stage === 'timeout' || stage === 'keep') {
     check(configuration.pendingToken && configuration.heads.some(head => head.width === 1000 && head.scale === 1.25),
       'fresh session auto-applies matching saved configuration provisionally');
-    check(localStorage.getItem(DISPLAY_PROFILE_KEY) === original, 'startup restore does not rewrite preferences before confirmation');
+    check(JSON.stringify(shell.configuration.snapshot.display) === original, 'startup restore does not rewrite preferences before confirmation');
     if (stage === 'timeout') {
       await until(() => !desktop.outputConfiguration().pendingToken, 'startup watchdog automatic rollback', 23000);
       check(desktop.outputConfiguration().heads.every(head => head.width === 1280 && head.scale === 1),
@@ -66,8 +75,7 @@ async function run() {
   } else {
     check(!configuration.pendingToken && configuration.heads.every(head => head.width === 1280 && head.scale === 1),
       'mismatched or damaged profile keeps safe display layout');
-    check(localStorage.getItem(DISPLAY_PROFILE_KEY) === original, 'unusable saved profile remains untouched');
-    if (stage === 'damaged') check(shell.getState().error.includes('Display settings'), 'damaged profile failure is visible');
+    check(JSON.stringify(shell.configuration.snapshot.display) === original, 'unusable saved profile remains untouched');
   }
   console.log('PASS: display persistence ' + stage);
   await signal('fixture-success');

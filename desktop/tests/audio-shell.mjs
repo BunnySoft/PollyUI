@@ -1,4 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function check(value, message) { if (!value) throw new Error(message); console.log('PASS: ' + message); }
 async function until(predicate, message, timeout = 20000) {

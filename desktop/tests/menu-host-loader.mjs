@@ -1,7 +1,7 @@
 const root = new URL('../../', import.meta.url);
 
 export function resolve(specifier, context, nextResolve) {
-  if (specifier.startsWith('./desktop/') || specifier.startsWith('./gui/sdk/js/'))
+  if (specifier.startsWith('./desktop/') || specifier.startsWith('./gui/sdk/js/') || specifier.startsWith('./sysrt/'))
     return nextResolve(new URL(specifier, root).href, context);
   return nextResolve(specifier, context);
 }

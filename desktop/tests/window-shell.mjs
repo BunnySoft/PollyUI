@@ -1,4 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { BUILTIN_THEME_CATALOG, getDesktopTheme, installThemeCatalog } from './desktop/shell/themes.mjs';
 
 const [mode, executable, script] = application.arguments;

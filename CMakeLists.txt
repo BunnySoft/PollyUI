@@ -436,6 +436,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
     add_test(NAME script-module-errors COMMAND node "${CMAKE_SOURCE_DIR}/gui/tests/script-errors.mjs" $<TARGET_FILE:pollyui>)
     set_tests_properties(script-module-errors PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     if (PU_DESKTOP_SERVICES)
+        add_library(polly-configuration-oracle SHARED desktop/tests/configuration-oracle.c)
+        target_link_libraries(polly-configuration-oracle PRIVATE ${CMAKE_DL_LIBS})
+        target_compile_options(polly-configuration-oracle PRIVATE -Wall -Wextra -Werror)
+        add_test(NAME desktop-shell-configuration-model COMMAND node --test
+            "${CMAKE_SOURCE_DIR}/desktop/tests/configuration.mjs")
+        set_tests_properties(desktop-shell-configuration-model PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "source")
         add_executable(polly-session-bus-test desktop/tests/session-bus.c desktop/native/session-bus.c)
         add_test(NAME desktop-files-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/apps/files/tests/files.mjs")
         add_test(NAME desktop-file-dialog-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog.mjs")

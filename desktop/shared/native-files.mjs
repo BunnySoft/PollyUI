@@ -4,7 +4,7 @@ import { filesBindings, fileConstants as C } from './sysrt/bindings/files.mjs';
 
 export const errors = {
   1: 'EPERM', 2: 'ENOENT', 4: 'EINTR', 5: 'EIO', 9: 'EBADF', 12: 'ENOMEM',
-  13: 'EACCES', 17: 'EEXIST', 20: 'ENOTDIR', 21: 'EISDIR', 22: 'EINVAL', 27: 'EFBIG',
+  11: 'EAGAIN', 13: 'EACCES', 17: 'EEXIST', 20: 'ENOTDIR', 21: 'EISDIR', 22: 'EINVAL', 27: 'EFBIG',
   28: 'ENOSPC', 30: 'EROFS', 36: 'ENAMETOOLONG', 38: 'ENOSYS', 40: 'ELOOP',
   75: 'EOVERFLOW', 84: 'EILSEQ', 95: 'ENOTSUP', 116: 'ESTALE',
 };

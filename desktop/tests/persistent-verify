@@ -15,7 +15,7 @@ if [ -f "$state" ]; then
 fi
 export SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software PU_RENDERER=raster
 fixture=/usr/share/pollyui/desktop/tests/persistent-storage.mjs
-if ! settings=$(/usr/bin/pollyui --app-id org.pollyui.shell "$fixture" settings "$count" 2>&1); then
+if ! settings=$(/usr/bin/pollyui --no-legacy-storage --app-id org.pollyui.shell "$fixture" settings "$count" 2>&1); then
     printf '%s\n' "$settings" >&2
     exit 1
 fi

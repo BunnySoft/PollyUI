@@ -3,7 +3,9 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 
 register('./root-loader.mjs', import.meta.url);
-const { createDesktopShell, SHELL_THEME_KEY } = await import('../shell/shell.mjs');
+const { createDesktopShell } = await import('../shell/shell.mjs');
+const { defaultShellConfiguration } = await import('../shell/configuration.mjs');
+const { memoryConfiguration } = await import('./configuration-memory.mjs');
 const { getDesktopTheme } = await import('../shell/themes.mjs');
 const { DECORATION_METRICS, DECORATION_COLORS, parseThemeFile } = await import('../shell/theme-schema.mjs');
 const { waitForSessionReady } = await import('../shell/health.mjs');
@@ -89,12 +91,8 @@ function schemaRejection(schema, message = 'Unsupported or out-of-range appearan
 }
 function fixture(t, { maximumSchema = 2, initialTheme = 'xp', failure = null } = {}) {
   const created = [], attempts = [], reports = [], saves = [];
-  const preferences = new Map(initialTheme === null ? [] : [[SHELL_THEME_KEY, initialTheme]]);
-  const storage = {
-    getItem: key => preferences.get(key) ?? null,
-    setItem(key, value) { saves.push([key, value]); preferences.set(key, value); },
-    removeItem(key) { saves.push([key, null]); preferences.delete(key); },
-  };
+  const preferences = memoryConfiguration({ ...defaultShellConfiguration(),
+    theme: { id: initialTheme, filesEnabled: true } }, next => saves.push(next));
   const host = {
     close() {},
     displays: () => [1, 2].map(id => ({ id, x: (id - 1) * 800, y: 0, width: 800, height: 600 })),
@@ -121,15 +119,15 @@ function fixture(t, { maximumSchema = 2, initialTheme = 'xp', failure = null } =
       this.committed = parseThemeFile(JSON.stringify({ schemaVersion: 1, theme }));
     },
   };
-  const shell = createDesktopShell({ host, storage, native: backend, report: message => reports.push(message) });
+  const shell = createDesktopShell({ host, configuration: preferences, native: backend, report: message => reports.push(message) });
   t.after(() => shell.stop());
-  return { shell, host, storage, backend, created, attempts, reports, saves, preferences };
+  return { shell, host, backend, created, attempts, reports, saves, preferences };
 }
 
 test('startup without a saved theme applies the default without inventing a preference', t => {
   const f = fixture(t, { initialTheme: null });
   f.shell.start();
-  assert.equal(f.preferences.has(SHELL_THEME_KEY), false);
+  assert.equal(f.preferences.snapshot.theme.id, null);
   assert.equal(f.saves.length, 0);
   assert.equal(f.shell.getState().themeId, 'xp');
 });
@@ -164,7 +162,7 @@ test('rejected theme selection preserves the committed snapshot, live surfaces a
   assert.equal(f.shell.selectTheme('xp'), false);
   assert.deepEqual(f.attempts.map(item => item.words[0]), [1, 2]);
   assert.equal(f.backend.committed, snapshot);
-  assert.equal(f.preferences.get(SHELL_THEME_KEY), 'server2003');
+  assert.equal(f.preferences.snapshot.theme.id, 'server2003');
   assert.equal(f.shell.getState().themeId, 'server2003');
   assert.match(f.shell.getState().error, /Could not apply\/save appearance/);
   assert.ok(surfaces.every(surface => !surface.closed));

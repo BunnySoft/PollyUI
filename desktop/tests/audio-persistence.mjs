@@ -1,5 +1,5 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
-import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
+import { checkDamagedConfiguration } from './desktop/tests/configuration-damage.mjs';
 const stage = application.arguments[0], surfaces = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let shell, serial = 0;
@@ -29,9 +29,13 @@ async function click(id) {
   await signal(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
 }
 const node = name => desktop.audioState().nodes.find(node => node.name === name);
-const saved = () => JSON.parse(localStorage.getItem(AUDIO_PREFERENCES_KEY));
+const saved = () => shell.configuration.snapshot.audio;
 async function run() {
-  if (stage === 'damaged') localStorage.setItem(AUDIO_PREFERENCES_KEY, '{broken');
+  if (stage === 'damaged') {
+    checkDamagedConfiguration();
+    console.log('PASS: audio persistence ' + stage);
+    await signal('fixture-success'); window.quit(); return;
+  }
   shell = createDesktopShell({ host: {
     close: () => window.close(), displays: () => window.displays(),
     create(options) { const surface = window.create(options); surfaces.push({ title: options.title, window: surface }); return surface; },
@@ -41,7 +45,7 @@ async function run() {
   shell.showAudio(shell.getState().outputs[0]);
   if (stage === 'save') {
     await click('shell-audio-lower-' + node('Polly-Test-A').id);
-    await until(() => localStorage.getItem(AUDIO_PREFERENCES_KEY) &&
+    await until(() => saved() &&
       saved().devices.some(node => node.name === 'Polly-Test-A' && Math.abs(node.volume - 0.9) < 0.01), 'confirmed speaker volume persisted');
     await click('shell-audio-default-' + node('Polly-Test-B').id);
     await until(() => saved().preferredSink === 'Polly-Test-B', 'confirmed device selection persisted');
@@ -49,22 +53,21 @@ async function run() {
     await until(() => saved().devices.some(node => node.name === 'Polly-Test-Source' && Math.abs(node.volume - 0.9) < 0.01), 'microphone volume persisted');
     await click('shell-audio-mute-' + node('Polly-Test-Source').id);
     await until(() => saved().devices.find(node => node.name === 'Polly-Test-Source')?.muted === true, 'microphone mute persisted');
+    if (desktop.audioState().defaultSource === node('Polly-Test-Source').id) {
+      await click('shell-audio-default-' + node('Polly-Test-Other-Source').id);
+      await until(() => saved().preferredSource === 'Polly-Test-Other-Source', 'alternative recording device acknowledged');
+    }
     await click('shell-audio-default-' + node('Polly-Test-Source').id);
     await until(() => saved().preferredSource === 'Polly-Test-Source', 'recording device persisted');
     check(saved().devices.every(node => !('id' in node) && !('revision' in node) && !('instance' in node)),
       'saved audio data contains only names/classes and chosen settings');
-  } else if (stage === 'damaged') {
-    check(localStorage.getItem(AUDIO_PREFERENCES_KEY) === '{broken', 'damaged audio preference is not overwritten');
-    await click('shell-audio-forget-settings');
-    await until(() => localStorage.getItem(AUDIO_PREFERENCES_KEY) === null, 'native recovery click committed');
-    check(localStorage.getItem(AUDIO_PREFERENCES_KEY) === null, 'native recovery explicitly removes invalid preferences');
   } else if (stage === 'missing') {
-    const before = localStorage.getItem(AUDIO_PREFERENCES_KEY);
+    const before = JSON.stringify(saved());
     check(!node('Polly-Test-B') && desktop.audioState().defaultSink === node('Polly-Test-A').id,
       'missing saved output leaves the private policy fallback available');
     await until(() => node('Polly-Test-Source').muted &&
       Math.abs(node('Polly-Test-A').volume - 0.9) < 0.01, 'remaining endpoint settings restored');
-    check(localStorage.getItem(AUDIO_PREFERENCES_KEY) === before && saved().preferredSink === 'Polly-Test-B',
+    check(JSON.stringify(saved()) === before && saved().preferredSink === 'Polly-Test-B',
       'fallback never overwrites the absent saved output preference');
   } else {
     const muted = stage !== 'unmuted';

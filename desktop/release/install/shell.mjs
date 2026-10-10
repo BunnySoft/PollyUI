@@ -1,6 +1,7 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { openShellConfiguration } from './desktop/shell/configuration-native.mjs';
 
-const shell = createDesktopShell().start();
+const shell = createDesktopShell({ configuration: openShellConfiguration() }).start();
 const guide = window.create({ title: 'PollyDesktop installed development system', width: 720, height: 420 });
 Object.assign(guide.document.body.style, { padding: 24, gap: 16, backgroundColor: '#f0f2f6' });
 for (const [text, size] of [

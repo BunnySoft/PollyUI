@@ -30,7 +30,7 @@ CONSTANTS = (
     "STATX_BASIC_STATS", "O_RDONLY", "O_RDWR", "O_WRONLY", "O_CREAT", "O_EXCL",
     "O_TRUNC", "O_APPEND", "O_NONBLOCK", "O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC",
     "O_PATH", "RENAME_NOREPLACE", "SEEK_SET", "SEEK_CUR", "SEEK_END",
-    "S_IFMT", "S_IFREG", "S_IFDIR", "S_IFLNK",
+    "S_IFMT", "S_IFREG", "S_IFDIR", "S_IFLNK", "LOCK_EX", "LOCK_NB",
 )
 
 
@@ -48,7 +48,7 @@ def probe_source():
         '#error "FileSystem ABI compiler target must be Linux x86_64/LP64"',
         "#endif",
         "#include <fcntl.h>", "#include <limits.h>", "#include <stddef.h>",
-        "#include <stdio.h>", "#include <sys/stat.h>", "#include <unistd.h>",
+        "#include <stdio.h>", "#include <sys/stat.h>", "#include <sys/file.h>", "#include <unistd.h>",
         '_Static_assert(CHAR_BIT == 8 && sizeof(void *) == 8 && sizeof(long) == 8, "LP64 required");',
     ]
     for name, member, kind in FIELDS:

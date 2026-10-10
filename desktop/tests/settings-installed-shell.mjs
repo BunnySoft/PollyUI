@@ -1,10 +1,12 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { openShellConfiguration } from './desktop/shell/configuration-native.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { settingsEnvironment, settingsLaunchSpec } from './desktop/shared/settings-environment.mjs';
 
 const [mode, executable, script] = application.arguments;
 const exits = new Map(), reports = [];
 let shell = null, sequence = 0;
+let configuration = null;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function check(value, message) { if (!value) throw new Error(message); console.log('PASS: ' + message); }
 async function until(predicate, message) {
@@ -26,7 +28,8 @@ async function run() {
     return;
   }
   desktop.onExit = event => exits.set(event.pid, event.status);
-  shell = createDesktopShell({ report: value => { reports.push(value); console.error(value); } }).start();
+  configuration = openShellConfiguration();
+  shell = createDesktopShell({ configuration, report: value => { reports.push(value); console.error(value); } }).start();
   const survivor = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings-survivor', script, 'survivor'],
     settingsLaunchSpec().cwd, 'installed-settings-survivor');
   const output = shell.getState().outputs[0], environment = settingsEnvironment();
@@ -55,9 +58,9 @@ async function run() {
   desktop.closeWindow(view.id);
   await until(() => exits.has(survivor), 'installed survivor cleanup');
   console.log('PASS: native Settings installed complete');
-  await signal('fixture-success'); shell.stop(); window.quit();
+  await signal('fixture-success'); shell.stop(); configuration.close(); window.quit();
 }
 run().catch(error => {
   console.error('FAIL: ' + String(error) + '\n' + (error.stack || ''));
-  shell?.stop(); window.quit();
+  shell?.stop(); configuration?.close(); window.quit();
 });

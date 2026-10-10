@@ -1,4 +1,5 @@
-import { createDesktopShell, SHELL_THEME_KEY } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { settingsView, panelView, dockView, workspacesView } from './desktop/shell/views.mjs';
 import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
@@ -63,14 +64,14 @@ const fakeHost = {
     return native;
   },
 };
-const storage = {
-  getItem(key) { check(key === SHELL_THEME_KEY, 'dedicated theme storage key'); return saved; },
-  setItem(key, value) {
+const configuration = {
+  get snapshot() { return { ...defaultShellConfiguration(), theme: { id: saved, filesEnabled: true } }; },
+  update({ theme }) {
     if (failStorage) throw new Error('disk full');
-    saved = value;
+    saved = theme.id;
   },
 };
-const shell = createDesktopShell({ host: fakeHost, storage, report: text => warnings.push(text) }).start();
+const shell = createDesktopShell({ host: fakeHost, configuration, report: text => warnings.push(text) }).start();
 const backgrounds = shell.getSurfaces().filter(s => s.kind === 'wallpaper').map(s => s.window);
 let previousPanel = shell.getSurfaces().find(s => s.kind === 'panel').window;
 for (const theme of DESKTOP_THEMES) {
@@ -125,7 +126,7 @@ check(created.every(native => native.closed), 'all shell-owned surfaces close on
 check(warnings.length >= 3, 'failures are logged, not silently ignored');
 
 saved = 'missing-theme';
-const recovered = createDesktopShell({ host: fakeHost, storage, report: text => warnings.push(text) });
+const recovered = createDesktopShell({ host: fakeHost, configuration, report: text => warnings.push(text) });
 check(recovered.getState().themeId === 'xp' && recovered.getState().error, 'unknown saved themes recover with a visible warning');
 
 let selected = '', closed = false;
@@ -153,7 +154,7 @@ const native = {
   onWindowsChanged: originalWindowsChanged,
   configureAppearance(theme) { if (failAppearance) throw new Error('appearance unavailable'); appliedAppearances.push(theme.id); },
 };
-const windowShell = createDesktopShell({ host: fakeHost, storage, native,
+const windowShell = createDesktopShell({ host: fakeHost, configuration, native,
   report: message => warnings.push(message) }).start();
 check(appliedAppearances.join(',') === 'xp', 'initial Shell appearance is sent to the compositor');
 failAppearance = true;
@@ -218,14 +219,14 @@ const shortcutBackend = {
 };
 let failedSave = false;
 try {
-  saveShortcuts(shortcutBackend, { setItem() { throw new Error('disk full'); } },
+  saveShortcuts(shortcutBackend, { update() { throw new Error('disk full'); } },
     [{ action: 'minimize-window', modifiers: 2, key: 'm' }]);
 } catch (error) { failedSave = String(error).includes('disk full'); }
 check(failedSave && currentShortcuts[0].key === 'F9', 'failed shortcut persistence restores the previous compositor bindings');
 
 let service = 'ready';
 const serviceWarnings = [];
-const serviceShell = createDesktopShell({ host: fakeHost, storage, native: {
+const serviceShell = createDesktopShell({ host: fakeHost, configuration, native: {
   sessionServices: () => ({inputMethod:service}),
 }, report: message => serviceWarnings.push(message) }).start();
 serviceShell.refresh(true);

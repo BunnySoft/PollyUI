@@ -92,7 +92,8 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
     const PuLaunchOptions *options = state->options;
     const char *test_storage = getenv("PU_TEST_STORAGE");
     const char *storage = headless ? (test_storage ? test_storage : "build/_localstorage.dat") : state->paths.storage;
-    if (!pu_storage_install(ctx, storage) || !pu_fetch_install(ctx, dispatch)) return 0;
+    if ((headless || !options->no_legacy_storage) && !pu_storage_install(ctx, storage)) return 0;
+    if (!pu_fetch_install(ctx, dispatch)) return 0;
     if ((headless || (!options->greeter_mode && !options->lock_mode && !options->input_method_mode)) &&
         !(state->ffi = sr_ffi_register(ctx, dispatch))) {
         fprintf(stderr, "[sysrt] Cannot register native FFI module\n"); return 0;

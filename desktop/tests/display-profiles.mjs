@@ -1,4 +1,4 @@
-import { DISPLAY_PROFILE_KEY, displayProfile, readDisplayProfile, displayRestorePlan,
+import { displayProfile, readDisplayProfile, displayRestorePlan,
   createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 function check(value, message) { if (!value) throw new Error('FAIL: ' + message); console.log('PASS: ' + message); }
 function rejects(action, message) { let failed = false; try { action(); } catch { failed = true; } check(failed, message); }
@@ -38,22 +38,21 @@ rejects(() => readDisplayProfile(JSON.stringify({ ...profile, extra: 1 })), 'unk
 rejects(() => readDisplayProfile(' '.repeat(65537)), 'profile file limit is enforced');
 let saved = JSON.stringify(profile), calls = 0, claimed = false, failWrite = false;
 const errors = [];
-const storage = {
-  getItem(key) { check(key === DISPLAY_PROFILE_KEY, 'dedicated display profile key'); return saved; },
-  setItem(key, value) { if (failWrite) throw new Error('disk full'); saved = value; },
-  removeItem() { saved = null; },
+const configuration = {
+  get snapshot() { return { display: saved === null ? null : readDisplayProfile(saved) }; },
+  update({ display }) { if (failWrite) throw new Error('disk full'); saved = display === null ? null : JSON.stringify(display); },
 };
 const native = {
   claimOutputStartup() { if (claimed) return false; claimed = true; return true; },
   outputConfiguration: () => changed,
   applyOutputConfiguration(draft) { calls++; check(draft.serial === 999, 'startup apply uses current serial'); return 1; },
 };
-let persistence = createDisplayPersistence({ native, storage, failure: error => errors.push(String(error)) });
+let persistence = createDisplayPersistence({ native, configuration, failure: error => errors.push(String(error)) });
 persistence.start();
 check(calls === 1 && saved === JSON.stringify(profile), 'startup restore is provisional and does not persist by itself');
 persistence.observe({ pendingToken: 0, outcome: 2 });
 check(persistence.status.includes('reverted'), 'profile status follows actual compositor rollback');
-persistence = createDisplayPersistence({ native, storage, failure: error => errors.push(String(error)) });
+persistence = createDisplayPersistence({ native, configuration, failure: error => errors.push(String(error)) });
 persistence.start();
 check(calls === 1, 'new Shell instance cannot automatically retry within the same compositor');
 failWrite = true;

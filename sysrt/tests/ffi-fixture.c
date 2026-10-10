@@ -16,6 +16,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -276,7 +277,7 @@ EXPORT size_t sr_statx_offset(int32_t index)
         offsetof(struct statx, stx_dev_minor), sizeof(struct statx),
         AT_FDCWD, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_EACCESS, STATX_BASIC_STATS,
         O_RDONLY, O_RDWR, O_WRONLY, O_CREAT, O_EXCL, O_NONBLOCK, O_DIRECTORY,
-        O_NOFOLLOW, O_CLOEXEC, O_PATH, RENAME_NOREPLACE, S_IFMT, S_IFREG, S_IFDIR, S_IFLNK,
+        O_NOFOLLOW, O_CLOEXEC, O_PATH, RENAME_NOREPLACE, S_IFMT, S_IFREG, S_IFDIR, S_IFLNK, LOCK_EX, LOCK_NB,
     };
     return index >= 0 && (size_t)index < sizeof(offsets) / sizeof(*offsets) ? offsets[index] : SIZE_MAX;
 }

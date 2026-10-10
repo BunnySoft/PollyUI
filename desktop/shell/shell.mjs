@@ -4,7 +4,7 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISIO
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
-import { SHORTCUTS_KEY, saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
+import { saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 import { readDisplayDraft } from './desktop/shell/displays.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
@@ -12,23 +12,20 @@ import { createNetworkSettings } from './desktop/shell/network.mjs';
 import { createAudioSettings } from './desktop/shell/audio.mjs';
 import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
-import { createWorkspacePersistence, workspaceName, WORKSPACES_KEY } from './desktop/shell/workspaces.mjs';
+import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView } from './desktop/shell/settings.mjs';
 import { MANAGED_PAGES, settingsPage } from './desktop/client/settings-contract.mjs';
-import { AUDIO_PREFERENCES_KEY } from './desktop/shell/audio-preferences.mjs';
-
-export const SHELL_THEME_KEY = 'desktop.theme';
-export const SHELL_THEME_FILES_KEY = 'desktop.theme.files';
-
-export function createDesktopShell({ host = window, storage = localStorage, report = console.error,
+export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
+  if (!configuration) throw new TypeError('Shell requires its typed application configuration');
   const bundles = new Map();
   let themeId = DEFAULT_DESKTOP_THEME;
   let themeAsset = '';
   let themeAssetSource = '';
+  let appliedTheme = null;
   let error = THEME_LOAD_ERROR;
   let errorKind = error ? 'settings' : '';
   const serviceMonitor = createSessionMonitor({ native, report });
@@ -43,7 +40,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
   let previousOutputsChanged = null, lastOutputMessage = '';
-  const displayPersistence = createDisplayPersistence({ native, storage, failure: outputFailure });
+  const displayPersistence = createDisplayPersistence({ native, configuration, failure: outputFailure });
   const outputsChanged = () => {
     if (!running) return;
     updateOutputs();
@@ -69,7 +66,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   let windows = [];
   let workspaces = [];
   let workspaceEditor = null;
-  const workspacePersistence = createWorkspacePersistence({ native, storage, failure: workspaceSettingsFailure });
+  const workspacePersistence = createWorkspacePersistence({ native, configuration, failure: workspaceSettingsFailure });
   let previousWorkspacesChanged = null;
   const workspacesChanged = () => {
     if (!running) return;
@@ -91,7 +88,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const network = createNetworkSettings({ native, report, host, theme: () => getDesktopTheme(themeId) });
-  const audio = createAudioSettings({ native, report, host, storage, theme: () => getDesktopTheme(themeId) });
+  const audio = createAudioSettings({ native, report, host, configuration, theme: () => getDesktopTheme(themeId) });
   const sessionExit = createSessionExitController({ native, report });
   const logout = createLogoutSurface({ controller: sessionExit, host, theme: () => getDesktopTheme(themeId),
     commit: () => {
@@ -121,7 +118,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   };
   let themeFilesEnabled = true;
   if (typeof native?.readThemeFiles === 'function') {
-    themeFilesEnabled = storage.getItem(SHELL_THEME_FILES_KEY) !== 'disabled';
+    themeFilesEnabled = configuration.snapshot.theme.filesEnabled;
     try { installThemeCatalog(themeFilesEnabled ? readUserThemeCatalog(native) : BUILTIN_THEME_CATALOG); }
     catch (failure) {
       installThemeCatalog(BUILTIN_THEME_CATALOG);
@@ -130,7 +127,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       report('[shell] ' + error);
     }
   }
-  const stored = storage.getItem(SHELL_THEME_KEY);
+  const stored = configuration.snapshot.theme.id;
   if (stored !== null) {
     try { getDesktopTheme(stored); themeId = stored; }
     catch (failure) {
@@ -296,12 +293,13 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     }
   }
 
-  function reconcile(nextTheme, persist) {
+  function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
     const theme = getDesktopTheme(nextTheme);
     const outputs = host.displays();
     const staged = [];
     const plans = [];
-    let previousStored, saved = false;
+    const previousAppearance = compositorAppearance, previousTheme = appliedTheme ?? getDesktopTheme(themeId);
+    let configured = false, publicationFailure = null;
     const appearance = nextTheme + ':' + THEME_REVISION;
     const assetSource = nextTheme + '/' + theme.desktop.asset;
     let asset = themeAsset, loadedAsset = false;
@@ -327,24 +325,27 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
         }
         plans.push({ output, surfaces });
       }
-      if (persist) {
-        previousStored = storage.getItem(SHELL_THEME_KEY);
-        storage.setItem(SHELL_THEME_KEY, nextTheme);
-        saved = true;
-      }
       if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
         native.configureAppearance(theme);
         compositorAppearance = appearance;
+        configured = true;
+      }
+      if (persist) {
+        try { configuration.update({ theme: { id: nextTheme, filesEnabled } }); }
+        catch (failure) {
+          if (!failure.committed) throw failure;
+          publicationFailure = failure;
+        }
       }
     } catch (failure) {
       if (loadedAsset) releaseThemeAsset(asset);
       for (const surface of staged) closeSurface(surface);
-      if (saved) {
+      if (configured) {
         try {
-          if (previousStored === null) storage.removeItem(SHELL_THEME_KEY);
-          else storage.setItem(SHELL_THEME_KEY, previousStored);
+          native.configureAppearance(previousTheme);
+          compositorAppearance = previousAppearance;
         } catch (rollback) {
-          throw new Error(String(failure) + '; could not restore saved appearance: ' + String(rollback));
+          throw new Error(String(failure) + '; could not restore native appearance: ' + String(rollback));
         }
       }
       throw failure;
@@ -354,6 +355,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
     themeId = nextTheme;
+    appliedTheme = theme;
+    if (persist) themeFilesEnabled = filesEnabled;
     const previousAsset = themeAsset;
     themeAsset = asset;
     themeAssetSource = assetSource;
@@ -363,6 +366,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
     }
     lastFailure = '';
+    if (publicationFailure) throw publicationFailure;
   }
 
   function releaseThemeAsset(asset) {
@@ -371,8 +375,10 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     catch (failure) { report('[shell] Cannot release theme resource: ' + String(failure)); }
   }
 
-  function applySelectedTheme(id) {
-    reconcile(id, true);
+  function applySelectedTheme(id, filesEnabled = themeFilesEnabled) {
+    let publicationFailure = null;
+    try { reconcile(id, true, filesEnabled); }
+    catch (failure) { if (!failure.committed) throw failure; publicationFailure = failure; }
     appearanceRevision++;
     error = '';
     errorKind = '';
@@ -386,6 +392,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     if (switcher) switcherChanged();
     if (pendingDisplayToken) paintDisplayConfirmation();
     repaintSettings();
+    if (publicationFailure) throw publicationFailure;
   }
 
   function selectTheme(id) {
@@ -400,7 +407,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return true;
     } catch (failure) {
       appearanceStatus = '';
-      error = 'Could not apply/save appearance: ' + String(failure);
+      error = (failure.committed ? 'Appearance applied and saved, but durability confirmation failed: ' :
+        'Could not apply/save appearance: ') + String(failure);
       errorKind = 'settings';
       report('[shell] ' + error);
       repaintMenu();
@@ -411,26 +419,15 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function replaceThemes(catalog, enabled) {
     if (!running) throw new Error('Shell is not running');
     const previous = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
-    const stored = storage.getItem(SHELL_THEME_FILES_KEY);
     const selected = catalog.themes.some(theme => theme.id === themeId) ? themeId : enabled ? null : DEFAULT_DESKTOP_THEME;
     if (!selected) throw new Error('The active theme is missing; restore a packaged theme before removing it');
-    let installed = false, saved = false;
+    let installed = false;
     try {
       installThemeCatalog(catalog); installed = true;
-      storage.setItem(SHELL_THEME_FILES_KEY, enabled ? 'enabled' : 'disabled'); saved = true;
-      applySelectedTheme(selected);
-      themeFilesEnabled = enabled;
+      applySelectedTheme(selected, enabled);
       repaintSettings();
     } catch (failure) {
-      if (installed) installThemeCatalog(previous);
-      if (saved) {
-        try {
-          if (stored === null) storage.removeItem(SHELL_THEME_FILES_KEY);
-          else storage.setItem(SHELL_THEME_FILES_KEY, stored);
-        } catch (rollback) {
-          throw new Error(String(failure) + '; cannot restore theme-file preference: ' + String(rollback));
-        }
-      }
+      if (installed && !failure.committed) installThemeCatalog(previous);
       throw failure;
     }
   }
@@ -445,7 +442,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       return true;
     } catch (failure) {
       appearanceStatus = '';
-      error = 'Could not apply theme files: ' + String(failure);
+      error = (failure.committed ? 'Theme files applied and saved, but durability confirmation failed: ' :
+        'Could not apply theme files: ') + String(failure);
       errorKind = 'theme-files';
       report('[shell] ' + error);
       repaintMenu();
@@ -744,8 +742,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     return { version: 1, services: serviceMonitor.snapshot(), outputs: bundles.size, themeId,
       applicationId: typeof application === 'undefined' ? 'PollyShell' : application.id,
       profiles: { display: displayPersistence.status,
-        audio: storage.getItem(AUDIO_PREFERENCES_KEY) === null ? 'No saved audio profile' : 'Saved audio profile',
-        workspace: storage.getItem(WORKSPACES_KEY) === null ? 'No saved workspace profile' : 'Saved workspace profile' } };
+        audio: configuration.snapshot.audio === null ? 'No saved audio profile' : 'Saved audio profile',
+        workspace: configuration.snapshot.workspace === null ? 'No saved workspace profile' : 'Saved workspace profile' } };
   }
   function settingsFailure(failure) {
     error = 'Could not open Settings: ' + String(failure); errorKind = 'settings';
@@ -820,7 +818,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
   function applyShortcuts(bindings) {
     stopRecording();
     try {
-      shortcutBindings = saveShortcuts(native, storage, bindings);
+      shortcutBindings = saveShortcuts(native, configuration, bindings);
       if (errorKind === 'shortcuts') { error = ''; errorKind = ''; }
       repaintMenu();
       return true;
@@ -863,8 +861,8 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
     native.onWindowSwitcherChanged = switcherChanged;
     try {
       shortcutBindings = native.shortcuts();
-      const stored = storage.getItem(SHORTCUTS_KEY);
-      if (stored !== null) { native.setShortcuts(JSON.parse(stored)); shortcutBindings = native.shortcuts(); }
+      const stored = configuration.snapshot.shortcuts;
+      if (stored !== null) { native.setShortcuts(stored); shortcutBindings = native.shortcuts(); }
     } catch (failure) { shortcutFailure(failure); }
     try { native.enableWindowSwitcher(true); }
     catch (failure) { shortcutFailure(failure); }
@@ -911,7 +909,9 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (keep && errorKind === 'outputs') { error = ''; errorKind = ''; }
       if (keep) {
         try { displayPersistence.save(native.outputConfiguration()); }
-        catch (failure) { outputFailure('Changes were kept, but the startup profile was not saved: ' + String(failure)); }
+        catch (failure) { outputFailure((failure.committed ?
+          'Changes and the startup profile were saved, but durability confirmation failed: ' :
+          'Changes were kept, but the startup profile was not saved: ') + String(failure)); }
       }
       updateOutputs();
     } catch (failure) { outputFailure(failure); }

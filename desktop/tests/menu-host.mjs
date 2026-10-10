@@ -5,6 +5,8 @@ import { test } from 'node:test';
 // Run: node --test .\desktop\tests\menu-host.mjs
 register('./menu-host-loader.mjs', import.meta.url);
 const { createDesktopShell } = await import('./desktop/shell/shell.mjs');
+const { memoryConfiguration, fixtureShortcuts } = await import('./desktop/tests/configuration-memory.mjs');
+const { defaultShellConfiguration } = await import('./desktop/shell/configuration.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -166,7 +168,10 @@ function fixture(configure = () => {}) {
   const timers = new Set();
   globalThis.setInterval = fn => { timers.add(fn); return fn; };
   globalThis.clearInterval = fn => timers.delete(fn);
-  const created = [], warnings = [], expectedWarnings = [], saved = new Map(), calls = [];
+  const created = [], warnings = [], expectedWarnings = [], calls = [];
+  const saved = memoryConfiguration(defaultShellConfiguration(), () => {
+    if (state.configurationFailure) throw state.configurationFailure;
+  });
   const state = {
     failCreate: false,
     outputs: [
@@ -178,7 +183,7 @@ function fixture(configure = () => {}) {
       { id: 7, order: 0, name: 'First', active: true, canRemove: true },
       { id: 9, order: 1, name: 'Second', active: false, canRemove: true },
     ],
-    shortcuts: [{ action: 'minimize-window', label: 'Minimize', modifiers: 4, key: 'F9' }],
+    shortcuts: fixtureShortcuts,
     output: { serial: 1, pendingToken: 0, remainingMs: 15000, heads: [{
       id: 1, name: 'DP-1', make: 'Fixture', model: 'Monitor', serialNumber: 'A123',
       enabled: true, width: 1280, height: 720, refresh: 60000,
@@ -241,13 +246,8 @@ function fixture(configure = () => {}) {
       return window;
     },
   };
-  const storage = {
-    getItem: key => saved.get(key) ?? null,
-    setItem: (key, value) => saved.set(key, value),
-    removeItem: key => saved.delete(key),
-  };
   configure({ native, state, calls, saved });
-  const shell = createDesktopShell({ host, native, storage, report: value => warnings.push(value),
+  const shell = createDesktopShell({ host, native, configuration: saved, report: value => warnings.push(value),
     settingsFactory(handlers) {
       state.settingsHandlers = handlers;
       return { open(page) { calls.push(['settings-open', page]); return 123; },
@@ -355,7 +355,7 @@ settingsScenario('taskbar, desktop and searchable application entry share the na
 settingsScenario('narrow appearance handlers retain all theme effects and real managed page mounts', f => {
   for (const id of ['server2003', 'aqua', 'lion', 'bigsur', 'xp']) {
     assert.equal(f.state.settingsHandlers.select(id), true);
-    assert.equal(f.saved.get('desktop.theme'), id);
+    assert.equal(f.saved.snapshot.theme.id, id);
     assert.equal(f.shell.getState().themeId, id);
     assert.equal(f.state.settingsHandlers.appearance().themeId, id);
   }
@@ -369,6 +369,37 @@ settingsScenario('narrow appearance handlers retain all theme effects and real m
     assert.equal(settings.closed, false);
   }
   assert.equal(f.created.filter(window => window.options.title === 'Desktop control panel').length, 1);
+});
+
+settingsScenario('theme publication failures preserve the real committed state and never replay native rollback', f => {
+  const appearances = [];
+  f.native.configureAppearance = theme => appearances.push(theme.id);
+  f.state.configurationFailure = new Error('fixture save denied');
+  assert.equal(f.state.settingsHandlers.select('bigsur'), false);
+  assert.deepEqual(appearances, ['bigsur', 'xp']);
+  assert.equal(f.shell.getState().themeId, 'xp');
+  assert.equal(f.saved.snapshot.theme.id, null);
+  assert.match(f.state.settingsHandlers.appearance().error, /fixture save denied/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+
+  appearances.length = 0;
+  f.state.configurationFailure = Object.assign(new Error('fixture directory sync failed'), { committed: true });
+  assert.equal(f.state.settingsHandlers.select('bigsur'), false);
+  assert.deepEqual(appearances, ['bigsur'], 'a published choice must not revert the native appearance');
+  assert.equal(f.shell.getState().themeId, 'bigsur');
+  assert.equal(f.saved.snapshot.theme.id, 'bigsur');
+  assert.match(f.state.settingsHandlers.appearance().error, /fixture directory sync failed/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+
+  appearances.length = 0;
+  assert.equal(f.state.settingsHandlers.restore(), false);
+  assert.deepEqual(appearances, ['bigsur'], 'published restore must not roll back the new catalog/native theme');
+  assert.equal(f.shell.getState().themeFilesEnabled, false);
+  assert.deepEqual(f.saved.snapshot.theme, { id: 'bigsur', filesEnabled: false });
+  assert.equal(f.state.settingsHandlers.appearance().themeFilesEnabled, false);
+  assert.match(f.state.settingsHandlers.appearance().error, /fixture directory sync failed/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
 });
 
 settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-window semantics', f => {
@@ -422,10 +453,10 @@ settingsScenario('display edits use guarded apply, Keep persistence and live rep
   assert.ok(find(guard, 'shell-output-confirmation'));
   assert.match(text(guard.document.body), /15 seconds/);
   assert.equal(guard.options.layer, 'overlay');
-  assert.equal(f.saved.has('desktop.outputs.v1'), false);
+  assert.equal(f.saved.snapshot.display, null);
   click(find(guard, 'shell-output-keep'));
   assert.equal(guard.closed, true);
-  assert.ok([...f.saved.keys()].some(key => key.includes('display')));
+  assert.ok(f.saved.snapshot.display);
   assert.ok(find(settings, 'shell-output-1-scale'));
   f.state.output.serial++;
   f.state.output.heads[0].scale = 1.5;
@@ -517,16 +548,16 @@ settingsScenario('PipeWire volume, mute and default devices show progress and sa
   click(find(settings, 'shell-audio-lower-20'));
   assert.deepEqual(f.calls.find(call => call[0] === 'setAudioVolume'), ['setAudioVolume', 20, 1, 0.9]);
   assert.match(text(settings.document.body), /acknowledge and save/);
-  assert.equal(f.saved.has('desktop.audio.v1'), false);
+  assert.equal(f.saved.snapshot.audio, null);
   assert.equal(find(settings, 'shell-audio-mute-20').getAttribute('aria-disabled'), 'true');
   f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
-  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices[0].volume, 0.9);
+  assert.equal(f.saved.snapshot.audio.devices[0].volume, 0.9);
   click(find(settings, 'shell-audio-mute-22'));
   f.state.audio.nodes[2].muted = true; f.state.audio.nodes[2].revision++; f.native.onAudioChanged();
-  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices.find(node => node.name === 'fixture-microphone').muted, true);
+  assert.equal(f.saved.snapshot.audio.devices.find(node => node.name === 'fixture-microphone').muted, true);
   click(find(settings, 'shell-audio-default-21'));
   f.state.audio.defaultSink = 21; f.state.audio.preferredSink = 'fixture-headphones'; f.native.onAudioChanged();
-  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).preferredSink, 'fixture-headphones');
+  assert.equal(f.saved.snapshot.audio.preferredSink, 'fixture-headphones');
   assert.equal(settings.closed, false);
 });
 
@@ -537,7 +568,7 @@ settingsScenario('audio policy outlives Settings and persists an acknowledgment 
   settings.close();
   assert.equal(f.calls.some(call => call[0] === 'stop-audio'), false);
   f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
-  assert.equal(JSON.parse(f.saved.get('desktop.audio.v1')).devices[0].volume, 0.9);
+  assert.equal(f.saved.snapshot.audio.devices[0].volume, 0.9);
   const next = f.shell.showManagedSettings(1, 'audio');
   assert.match(text(next.document.body), /90%/);
   oldMute(event('click'));
@@ -553,7 +584,7 @@ settingsScenario('keyboard changes retain the trusted-layer capture boundary and
   assert.equal(settings.closed, false);
   key(capture, 'm', { ctrlKey: true });
   assert.equal(f.state.shortcuts[0].key, 'm');
-  assert.ok(f.saved.has('desktop.shortcuts.v1'));
+  assert.ok(f.saved.snapshot.shortcuts);
   key(capture, 'Escape');
   assert.equal(capture.closed, true);
   assert.match(text(settings.document.body), /Ctrl\+M/);

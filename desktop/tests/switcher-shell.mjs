@@ -1,5 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
-import { SHORTCUTS_KEY } from './desktop/shell/shortcuts.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -118,7 +117,7 @@ async function run() {
     await key(CTRL, true); await tap(M); await key(CTRL, false);
     await until(() => desktop.shortcuts().find(item => item.action === 'minimize-window').key === 'm',
       'recorded shortcut is applied');
-    check(JSON.parse(localStorage.getItem(SHORTCUTS_KEY)).some(item =>
+    check(shell.configuration.snapshot.shortcuts.some(item =>
       item.action === 'minimize-window' && item.key === 'm' && item.modifiers === 2), 'shortcut is persisted');
     await click(menu, 'shell-shortcuts-close');
     desktop.activateWindow(app('a').id);
@@ -150,7 +149,7 @@ async function run() {
     await key(CTRL, true); await tap(M); await key(CTRL, false);
     check(!app('a').minimized, 'disabled shortcut no longer performs the action');
     desktop.setShortcuts(desktop.shortcutDefaults());
-    check(localStorage.getItem(SHORTCUTS_KEY).includes('"m"'), 'resetting compositor state does not erase saved preferences');
+    check(shell.configuration.snapshot.shortcuts.some(item => item.key === 'm'), 'resetting compositor state does not erase saved preferences');
   } else {
     check(desktop.shortcuts().some(item => item.action === 'minimize-window' && item.key === 'm' && item.modifiers === 2),
       'new Shell reapplies saved shortcuts over compositor defaults');

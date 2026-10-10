@@ -1,4 +1,3 @@
-export const DISPLAY_PROFILE_KEY = 'desktop.displays.v1';
 const identityFields = ['name', 'make', 'model', 'serialNumber'];
 const geometryFields = ['enabled', 'width', 'height', 'refresh', 'scale', 'transform', 'x', 'y', 'adaptiveSync'];
 const fields = [...identityFields, ...geometryFields];
@@ -8,7 +7,8 @@ function keys(value, expected) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).sort().join(',') === [...expected].sort().join(',');
 }
-function validate(profile) {
+export function validateDisplayProfile(profile) {
+  if (byteLength(JSON.stringify(profile)) > 65536) throw new RangeError('Display profiles must fit in 64 KiB');
   if (!keys(profile, ['version', 'heads']) || profile.version !== 1 ||
       !Array.isArray(profile.heads) || !profile.heads.length)
     throw new TypeError('Invalid display profile');
@@ -36,13 +36,13 @@ function validate(profile) {
 export function readDisplayProfile(text) {
   if (typeof text !== 'string' || text.length > 65536 || byteLength(text) > 65536)
     throw new RangeError('Display profiles must fit in 64 KiB');
-  return validate(JSON.parse(text));
+  return validateDisplayProfile(JSON.parse(text));
 }
 export function displayProfile(snapshot) {
   if (snapshot.pendingToken) throw new Error('Unconfirmed display settings cannot be saved');
   const heads = snapshot.heads.map(head => ({ ...select(head, geometryFields),
     ...Object.fromEntries(identityFields.map(field => [field, head[field] ?? ''])) }));
-  return readDisplayProfile(JSON.stringify({ version: 1, heads }));
+  return validateDisplayProfile({ version: 1, heads });
 }
 function hardware(head) { return JSON.stringify(identityFields.slice(1).map(field => head[field])); }
 function unambiguous(profile) {
@@ -51,7 +51,7 @@ function unambiguous(profile) {
     new Set(profile.heads.map(hardware)).size === profile.heads.length;
 }
 export function displayRestorePlan(profile, snapshot) {
-  profile = validate(profile);
+  profile = validateDisplayProfile(profile);
   const current = displayProfile(snapshot);
   if (!unambiguous(profile) || !unambiguous(current))
     return { message: 'Saved layout not applied: display identity is missing or ambiguous.' };
@@ -66,7 +66,7 @@ export function displayRestorePlan(profile, snapshot) {
       ...head, ...profile.heads.find(saved => saved.name === head.name),
     })) } };
 }
-export function createDisplayPersistence({ native, storage, failure }) {
+export function createDisplayPersistence({ native, configuration, failure }) {
   let status = 'Only confirmed display changes are saved for the next session.';
   let restoredToken = 0;
   return {
@@ -74,9 +74,9 @@ export function createDisplayPersistence({ native, storage, failure }) {
       if (typeof native?.claimOutputStartup !== 'function') return;
       try {
         if (!native.claimOutputStartup()) return;
-        const stored = storage.getItem(DISPLAY_PROFILE_KEY);
+        const stored = configuration.snapshot.display;
         if (stored === null) return;
-        const plan = displayRestorePlan(readDisplayProfile(stored), native.outputConfiguration());
+        const plan = displayRestorePlan(stored, native.outputConfiguration());
         if (plan.draft) restoredToken = native.applyOutputConfiguration(plan.draft);
         status = plan.message;
       } catch (error) {
@@ -92,13 +92,14 @@ export function createDisplayPersistence({ native, storage, failure }) {
     },
     save(snapshot) {
       const profile = displayProfile(snapshot);
-      storage.setItem(DISPLAY_PROFILE_KEY, JSON.stringify(profile));
+      configuration.update({ display: profile });
       restoredToken = 0;
       status = unambiguous(profile) ? 'Confirmed layout saved for this exact display combination.' :
         'Layout saved, but missing or ambiguous display identity prevents automatic restoration.';
     },
     forget() {
-      storage.removeItem(DISPLAY_PROFILE_KEY);
+      try { configuration.update({ display: null }); }
+      catch (error) { if (!error.committed) throw error; failure(error); }
       status = 'Saved display layout removed. Current displays are unchanged.';
     },
     get status() { return status; },

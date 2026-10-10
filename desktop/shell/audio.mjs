@@ -3,11 +3,11 @@ import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { createAudioPersistence } from './desktop/shell/audio-preferences.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';
 
-export function createAudioSettings({ native, host, theme, report, storage }) {
+export function createAudioSettings({ native, host, theme, report, configuration }) {
   let started = false, previous, window = null, state = null, error = '';
   let timer = null;
   let root = null, owned = false, attachment = null;
-  const preferences = createAudioPersistence({ native, storage, failure: failure => {
+  const preferences = createAudioPersistence({ native, configuration, failure: failure => {
     error = 'Audio settings: ' + String(failure); report('[shell] ' + error);
   } });
   function close() {

@@ -1,4 +1,3 @@
-export const AUDIO_PREFERENCES_KEY = 'desktop.audio.v1';
 const endpoint = node => node.class === 'Audio/Sink' || node.class === 'Audio/Source' || node.class.startsWith('Audio/Source/');
 const key = node => JSON.stringify([node.class, node.name]);
 const identity = (state, node) => JSON.stringify([state.generation, node.id, node.instance]);
@@ -16,7 +15,11 @@ export function readAudioPreferences(value) {
   if (typeof value !== 'string' || value.length > 65536 ||
       encodeURIComponent(value).replace(/%[0-9A-F]{2}/g, 'x').length > 65536)
     throw new RangeError('Audio preferences must fit in 64 KiB');
-  const result = JSON.parse(value);
+  return validateAudioPreferences(JSON.parse(value));
+}
+export function validateAudioPreferences(result) {
+  if (encodeURIComponent(JSON.stringify(result)).replace(/%[0-9A-F]{2}/g, 'x').length > 65536)
+    throw new RangeError('Audio preferences must fit in 64 KiB');
   if (!object(result, ['version', 'preferredSink', 'preferredSource', 'devices']) || result.version !== 1 ||
       !text(result.preferredSink) || !text(result.preferredSource) || !Array.isArray(result.devices) || result.devices.length > 256)
     throw new TypeError('Invalid audio preferences');
@@ -32,7 +35,7 @@ export function readAudioPreferences(value) {
   return result;
 }
 
-export function createAudioPersistence({ native, storage, failure, now = Date.now }) {
+export function createAudioPersistence({ native, configuration, failure, now = Date.now }) {
   let preferences = empty(), loaded = false, valid = false, dirty = false;
   const seen = new Set(), pending = new Map(), warnings = new Set();
   let generation = null, current = null;
@@ -42,11 +45,12 @@ export function createAudioPersistence({ native, storage, failure, now = Date.no
   function write() {
     if (!dirty) return;
     try {
-      const serialized = JSON.stringify(preferences);
-      readAudioPreferences(serialized);
-      storage.setItem(AUDIO_PREFERENCES_KEY, serialized);
+      configuration.update({ audio: preferences });
       dirty = false;
-    } catch (error) { warn(String(error)); }
+    } catch (error) {
+      if (error.committed) dirty = false;
+      warn(String(error));
+    }
   }
   function updated(action) {
     const result = { ...preferences, devices: preferences.devices.map(node => ({ ...node })) };
@@ -59,7 +63,7 @@ export function createAudioPersistence({ native, storage, failure, now = Date.no
       }
       saved[action.field] = action.value;
     }
-    return readAudioPreferences(JSON.stringify(result));
+    return validateAudioPreferences(result);
   }
   function save(action) {
     preferences = updated(action);
@@ -80,8 +84,7 @@ export function createAudioPersistence({ native, storage, failure, now = Date.no
       if (loaded) return;
       loaded = true;
       try {
-        const saved = storage.getItem(AUDIO_PREFERENCES_KEY);
-        preferences = saved === null ? empty() : readAudioPreferences(saved);
+        preferences = configuration.snapshot.audio ?? empty();
         valid = true;
       } catch (error) { failure(error); }
     },
@@ -143,7 +146,8 @@ export function createAudioPersistence({ native, storage, failure, now = Date.no
       send(current, node, field, field === 'default' ? node.name : target, true);
     },
     forget() {
-      storage.removeItem(AUDIO_PREFERENCES_KEY);
+      try { configuration.update({ audio: null }); }
+      catch (error) { if (!error.committed) throw error; failure(error); }
       preferences = empty(); valid = true; dirty = false; pending.clear(); seen.clear(); warnings.clear();
     },
     stop() {

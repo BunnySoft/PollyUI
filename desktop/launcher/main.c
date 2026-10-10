@@ -56,9 +56,12 @@ int main(int argc, char **argv)
     int input_method_mode = 0;
     int lock_mode = 0;
     int greeter_mode = 0;
+    int no_legacy_storage = 0;
     int index = 1;
     while (index < argc) {
-        if (!strcmp(argv[index], "--app-id")) {
+        if (!strcmp(argv[index], "--no-legacy-storage")) {
+            no_legacy_storage = 1; index++;
+        } else if (!strcmp(argv[index], "--app-id")) {
             if (index + 2 >= argc) { fprintf(stderr, "--app-id requires an ID and an application script\n"); return 2; }
             app_id = argv[index + 1]; index += 2;
         } else if (!strcmp(argv[index], "--greeter")) {
@@ -91,6 +94,7 @@ int main(int argc, char **argv)
         puts("Usage: pollyui [--desktop | --input-method | --session-lock | --greeter] [--app-id ID] app.js [arguments...]\n"
              "       pollyui --test test.js\n"
              "--app-id selects a stable Linux XDG storage namespace.\n"
+             "--no-legacy-storage omits the legacy localStorage service for applications owning their configuration.\n"
              "--desktop explicitly enables Linux application discovery and direct process launching.\n"
              "--input-method enables the separately authorized input-method service.\n"
              "--session-lock enables the separately authorized lock service.\n"
@@ -98,22 +102,26 @@ int main(int argc, char **argv)
         return 0;
     }
     if (index < argc && !strcmp(argv[index], "--test")) {
-        if (app_id || desktop_mode || input_method_mode || lock_mode || greeter_mode || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept service options\n"); return 2; }
+        if (app_id || desktop_mode || input_method_mode || lock_mode || greeter_mode || no_legacy_storage || index + 1 >= argc) { fprintf(stderr, "--test requires a script and does not accept service options\n"); return 2; }
         rc = pu_application_test(argv[index + 1]);
     } else if (index < argc && argv[index][0] == '-') {
         fprintf(stderr, "Unknown option: %s\n", argv[index]); return 2;
     } else if (index < argc) {
         if (desktop_mode + input_method_mode + lock_mode + greeter_mode > 1) { fprintf(stderr, "Service modes are mutually exclusive\n"); return 2; }
+        if (no_legacy_storage && (input_method_mode || lock_mode || greeter_mode)) {
+            fprintf(stderr, "Protected service roles retain their existing storage composition\n"); return 2;
+        }
         PuLaunchOptions options = {
             .script = argv[index], .app_id = app_id,
             .argc = argc - index - 1, .argv = argv + index + 1,
             .desktop_mode = desktop_mode, .input_method_mode = input_method_mode,
             .lock_mode = lock_mode, .greeter_mode = greeter_mode,
+            .no_legacy_storage = no_legacy_storage,
         };
         rc = pu_application_run(&options);
     }
     else
-        if (desktop_mode || input_method_mode || lock_mode || greeter_mode) { fprintf(stderr, "Service modes require an application script\n"); return 2; }
+        if (desktop_mode || input_method_mode || lock_mode || greeter_mode || no_legacy_storage) { fprintf(stderr, "Service options require an application script\n"); return 2; }
         else rc = pu_application_demo();
     pu_gui_shutdown();
     return rc;

@@ -1,5 +1,3 @@
-export const SHORTCUTS_KEY = 'desktop.shortcuts.v1';
-
 export function shortcutText(binding) {
   if (!binding.key) return 'Disabled';
   const parts = [];
@@ -23,16 +21,37 @@ export function shortcutFromEvent(event) {
   };
 }
 
-export function saveShortcuts(native, storage, bindings) {
+export function validateShortcuts(bindings) {
+  if (!Array.isArray(bindings) || bindings.length !== actions.length)
+    throw new TypeError('Invalid shortcut preferences');
+  const seen = new Set();
+  return bindings.map(binding => {
+    if (!binding || typeof binding !== 'object' || Array.isArray(binding) ||
+        Object.keys(binding).sort().join(',') !== 'action,key,modifiers' ||
+        !actions.includes(binding.action) || seen.has(binding.action) ||
+        typeof binding.key !== 'string' || binding.key.includes('\0') ||
+        encodeUtf8(binding.key).length >= 128 || !Number.isInteger(binding.modifiers) ||
+        binding.modifiers < 0 || binding.modifiers > 15)
+      throw new TypeError('Invalid or duplicate shortcut preference');
+    seen.add(binding.action);
+    return { action: binding.action, modifiers: binding.modifiers, key: binding.key };
+  });
+}
+export function saveShortcuts(native, configuration, bindings) {
   const previous = native.shortcuts();
   native.setShortcuts(bindings);
   const applied = native.shortcuts();
   try {
-    storage.setItem(SHORTCUTS_KEY, JSON.stringify(applied.map(({ action, modifiers, key }) => ({ action, modifiers, key }))));
+    configuration.update({ shortcuts: applied.map(({ action, modifiers, key }) => ({ action, modifiers, key })) });
   } catch (failure) {
+    if (failure.committed) throw failure;
     try { native.setShortcuts(previous); }
     catch (rollback) { throw new Error(String(failure) + '; shortcut rollback failed: ' + String(rollback)); }
     throw failure;
   }
   return applied;
 }
+import { encodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
+
+const actions = ['switch-window', 'close-window', 'minimize-window', 'maximize-window',
+  'fullscreen-window', 'previous-workspace', 'next-workspace'];

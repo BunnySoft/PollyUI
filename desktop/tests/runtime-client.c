@@ -594,7 +594,7 @@ static bool settings_lifetime_policy(void)
 
 static bool window_suite(char *executable, char *script, char *mode)
 {
-    char *args[] = { executable, "--desktop", "--app-id", "org.pollyui.window-shell",
+    char *args[] = { executable, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.window-shell",
         script, mode, executable, script, NULL };
     CHECK(pu_desktop_spawn_shell(&desktop, args));
     pid_t settings_shell_identity = desktop.shell_pid;

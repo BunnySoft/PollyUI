@@ -123,6 +123,13 @@ if (TARGET qjs)
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
             set_tests_properties(desktop-theme-resources PROPERTIES TIMEOUT 180
                 LABELS "ordinary-native;private-files-fixture")
+            if (PU_BUILD_LAUNCHER AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES)
+                add_test(NAME desktop-shell-configuration-native COMMAND "${SR_PYTHON}"
+                    "${SR_REPOSITORY_ROOT}/desktop/tests/configuration-native.py"
+                    $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-configuration-oracle>)
+                set_tests_properties(desktop-shell-configuration-native PROPERTIES TIMEOUT 90
+                    WORKING_DIRECTORY "${SR_REPOSITORY_ROOT}" LABELS "ordinary-native;private-files-fixture")
+            endif()
         endif()
     endif()
     add_library(polly-sysrt-qjs STATIC projection/quickjs/storage.c

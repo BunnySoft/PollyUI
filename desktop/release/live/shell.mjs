@@ -1,7 +1,8 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
+import { openShellConfiguration } from './desktop/shell/configuration-native.mjs';
 
-const shell = createDesktopShell().start();
+const shell = createDesktopShell({ configuration: openShellConfiguration() }).start();
 const onWorkspacesChanged = desktop.onWorkspacesChanged;
 desktop.onWorkspacesChanged = () => {
   if (typeof onWorkspacesChanged === 'function') onWorkspacesChanged();

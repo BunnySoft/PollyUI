@@ -1,15 +1,17 @@
 const mode = application.arguments[0];
 if (mode === 'settings') {
   const count = Number(application.arguments[1]);
+  const { openShellConfiguration } = await import('./desktop/shell/configuration-native.mjs');
+  const configuration = openShellConfiguration();
   if (count === 1) {
-    localStorage.setItem('desktop.theme', 'bigsur');
-    localStorage.setItem('desktop.workspaces.v1', JSON.stringify({
+    configuration.update({ theme: { id: 'bigsur', filesEnabled: true }, workspace: {
       version: 1, names: ['Persistent workspace', 'Two', 'Three', 'Four'], active: 0,
-    }));
-  } else if (localStorage.getItem('desktop.theme') !== 'bigsur' ||
-      JSON.parse(localStorage.getItem('desktop.workspaces.v1')).names[0] !== 'Persistent workspace') {
+    } });
+  } else if (configuration.snapshot.theme.id !== 'bigsur' ||
+      configuration.snapshot.workspace.names[0] !== 'Persistent workspace') {
     throw new Error('Shell settings did not survive reboot or slot change');
   }
+  configuration.close();
   console.log('POLLY_SETTINGS_PASS ' + count);
 } else {
   if (application.id !== 'org.example.persistence' || typeof desktop !== 'object' ||

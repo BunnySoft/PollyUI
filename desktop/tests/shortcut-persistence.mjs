@@ -1,10 +1,10 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { saveShortcuts } from './desktop/shell/shortcuts.mjs';
 const mode = application.arguments[0];
 const shell = createDesktopShell().start();
 try {
   if (mode === 'save') {
-    saveShortcuts(desktop, localStorage, desktop.shortcuts().map(binding => binding.action === 'minimize-window' ?
+    saveShortcuts(desktop, shell.configuration, desktop.shortcuts().map(binding => binding.action === 'minimize-window' ?
       { ...binding, modifiers: 2, key: 'm' } : binding));
   } else {
     const binding = desktop.shortcuts().find(binding => binding.action === 'minimize-window');

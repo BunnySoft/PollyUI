@@ -1,4 +1,4 @@
-import { createDesktopShell } from './desktop/shell/shell.mjs';
+import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 let finish;
 const exited = new Promise(resolve => { finish = resolve; });
 desktop.onExit = event => { if (event.id === 'launch-fixture.desktop') finish(event); };

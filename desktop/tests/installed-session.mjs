@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync, existsSync, chmodSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,11 @@ try {
         result.stdout.indexOf('PASS: installed PollyDesktop session ready'), log);
     }
     assert.deepEqual(readdirSync(runtime), [], 'installed session removes owned runtimes');
+    const config = path.join(temporary, 'config/pollyui/org.pollyui.shell/shell-preferences.json');
+    assert.equal(JSON.parse(readFileSync(config, 'utf8')).version, 1);
+    assert.equal(statSync(config).mode & 0o777, 0o600);
+    writeFileSync(path.join(temporary, 'data/pollyui/org.pollyui.shell/localstorage.dat'),
+      'Corrupt old storage must not block the next installed Shell start', { mode: 0o600 });
   }
   const invoke = (name, extra = [], environment = {}) => {
     const runtime = path.join(temporary, name);
