@@ -303,9 +303,12 @@ RenderEngine: build display list from tree, paint to SkSurface
 Host: present (swap buffers / flush GPU)
 ```
 
-Only dirty subtrees recompute. If nothing is dirty and no animation is pending,
-we idle (don't repaint) — event-driven, not a busy 60fps loop, until rAF or an
-animation requests frames.
+Idle timers, IPC polls, microtasks and rAF callbacks still execute; running a
+callback is not itself a visual change. Retained text, style, tree, focus and
+bitmap changes advance a visual revision, and each window records its own last
+painted revision. Host input, resize and expose repaint paths remain intact.
+An idle service poll therefore cannot force every surface to repaint; an
+animation that changes the model still requests the necessary frames.
 
 ---
 

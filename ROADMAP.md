@@ -36,10 +36,10 @@ remain historical; they do not contain or qualify the new SysRT/Settings work.
 
 | Gate | Required outcome | Current state |
 |---|---|---|
-| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | alpha.6 source selected; integrated configuration and package-contract checks passed |
-| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Next: fresh clean-checkout build; preflight test package is not the candidate |
-| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Pending; containers/headless tests are not VM evidence |
-| Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Pending; no new ISO published |
+| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | Initial `5fc944e` candidate exposed an idle-repaint startup defect; root fix integrated, revised freeze pending combination checks |
+| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Initial clean package and exact dependency checks passed; corrected runtime requires a fresh frozen rebuild |
+| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Actual UEFI desktop/input/workspaces and diagnostic Files/JSON evidence obtained; full acceptance blocked by Settings startup until corrected media is tested |
+| Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Initial test ISO content verified but not qualified; no physical-test handoff yet |
 | Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
 
 Use the existing QEMU/OVMF lane; temporary VM boot media is a test candidate,
