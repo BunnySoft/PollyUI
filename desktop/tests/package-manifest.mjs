@@ -3,14 +3,17 @@ import { createHash } from 'node:crypto';
 import { readFileSync, statSync, existsSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
+import { validateRuntimeContract, validateFrozenRuntime, hashFile } from '../tools/package-contract.mjs';
 
 const root = path.resolve(process.argv[2]);
 execFileSync('python3', ['desktop/tests/package-modes.py', root], { stdio: 'inherit' });
 const read = name => readFileSync(path.join(root, name), 'utf8');
 const digest = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 const manifest = JSON.parse(read('manifest.json'));
-if (existsSync(path.join(root, 'build-inputs.json'))) {
-  const inputs = JSON.parse(read('build-inputs.json'));
+assert.ok(existsSync(path.join(root, 'build-inputs.json')), 'Missing build provenance');
+let inputs;
+{
+  inputs = JSON.parse(read('build-inputs.json'));
   assert.equal(inputs.schemaVersion, 1);
   assert.equal(inputs.revision, manifest.revision);
   assert.equal(inputs.dirty, manifest.dirty);
@@ -53,12 +56,18 @@ for (const line of read('SHA256SUMS').trim().split('\n')) {
 }
 const packages = read('runtime-packages.txt');
 for (const name of manifest.debian ? ['libwayland-egl1', 'libegl-mesa0', 'libgl1', 'libgles2', 'pipewire-bin', 'rime-data-luna-pinyin',
-  'file', 'libmagic1t64', 'libmagic-mgc', 'python3', 'libcrypto3t64'] :
+  'file', 'libmagic1t64', 'libmagic-mgc', 'python3'] :
   ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data', 'file', 'python3', 'libcrypto3'])
   assert.ok(packages.split('\n').some(line => line.split('=')[0].split(':')[0] === name), name);
 for (const line of packages.trim().split('\n'))
   assert.match(line, /^[a-z0-9][a-z0-9+_.-]*(?::[a-z0-9-]+)?=[A-Za-z0-9._+~:-]+$/);
 const sbom = JSON.parse(read('sbom.spdx.json'));
+validateRuntimeContract(manifest, inputs, packages, sbom);
+if (process.argv[3] === '--frozen') validateFrozenRuntime(manifest, inputs);
+for (const file of manifest.runtimeContract.installFiles) {
+  const change = manifest.runtimeContract.postprocess.find(item => item.path === file.path);
+  assert.equal(hashFile(path.join(root, 'rootfs', file.path)), change?.after.sha256 || file.sha256, file.path);
+}
 assert.equal(sbom.spdxVersion, 'SPDX-2.3');
 assert.match(sbom.creationInfo.created, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
 const ids = new Set([sbom.SPDXID, ...sbom.packages.map(pkg => pkg.SPDXID)]);
@@ -71,4 +80,4 @@ const refused = spawnSync(process.execPath, ['desktop/tools/package-linux.mjs', 
 assert.notEqual(refused.status, 0);
 assert.match(refused.stderr, /Refusing to overwrite/);
 assert.equal(digest(path.join(root, 'manifest.json')), before);
-console.log('PASS: package payload hashes, artifact checksums, runtime dependencies, inventory and overwrite guard');
+console.log('PASS: new runtime CMake inventory, source/rebuild/ABI provenance, native pins/SBOM, payload hashes and overwrite guard');

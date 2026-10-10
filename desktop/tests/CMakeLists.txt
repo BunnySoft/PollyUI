@@ -1,4 +1,8 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
+add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
+set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 30)
 foreach(protocol IN ITEMS text-input-v3 input-method-v2 virtual-keyboard-v1)
     if (protocol STREQUAL "text-input-v3")
         set(xml "${TEXT_INPUT_XML}")

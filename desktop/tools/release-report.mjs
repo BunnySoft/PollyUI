@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateRuntimeContract } from './package-contract.mjs';
 
 const checksum = /^[0-9a-f]{64}$/;
 const revision = /^[0-9a-f]{40}$/;
@@ -125,11 +126,16 @@ export async function inspectRelease(directory) {
     files = manifest.files.length;
     const packageFile = await file(root, 'runtime-packages.txt');
     requireValue((await lstat(packageFile)).size <= 1024 * 1024, 'Package list exceeds 1 MiB');
-    packages = packageList(await readFile(packageFile, 'utf8'));
+    const packageText = await readFile(packageFile, 'utf8');
+    packages = packageList(packageText);
     const sbom = await json(root, 'sbom.spdx.json');
     requireValue(sbom.spdxVersion === 'SPDX-2.3' && Array.isArray(sbom.packages), 'Missing SPDX package inventory');
     const listed = new Set(sbom.packages.map(pkg => pkg.name + '=' + pkg.versionInfo));
     requireValue(packages.every(pkg => listed.has(pkg.name + '=' + pkg.version)), 'SBOM omits pinned runtime packages');
+    if (manifest.runtimeContract) {
+      requireValue(seen.has('build-inputs.json'), 'New runtime requires checksummed build provenance');
+      validateRuntimeContract(manifest, inputs, packageText, sbom);
+    }
     if (seen.has('local-packages.json')) {
       localPackages = await json(root, 'local-packages.json');
       requireValue(localPackages.schemaVersion === 1 && localPackages.kind === 'polly-rebuilt-debian-packages' &&

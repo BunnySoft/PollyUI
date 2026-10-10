@@ -1,9 +1,10 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
   readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sourceInventory, installedInventory, validateRuntimeContract } from './package-contract.mjs';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const args = process.argv.slice(2);
@@ -22,23 +23,33 @@ const debian = !alpine && existsSync('/etc/debian_version') &&
 if ((!alpine?.startsWith('3.24.') && !debian) || run('uname', ['-m']) !== 'x86_64')
   throw new Error('Runtime packaging supports Alpine 3.24 or Debian trixie on x86_64');
 const distribution = debian ? 'debian13' : 'alpine3.24';
+const mesaCache = debian ? path.resolve(process.env.POLLY_MESA_CACHE || '/opt/pollyui-local-debs/mesa') : null;
 const version = readFileSync(path.join(repo, 'desktop/VERSION'), 'utf8').trim();
 if (!/^\d+\.\d+\.\d+-alpha\.\d+$/.test(version)) throw new Error('Invalid development package version');
-const revision = process.env.POLLY_SOURCE_REVISION || run('git', ['rev-parse', 'HEAD']);
+const sourceGit = spawnSync('git', ['-c', 'safe.directory=' + repo, 'rev-parse', 'HEAD'],
+  { cwd: repo, encoding: 'utf8', timeout: 10000 });
+const gitRevision = sourceGit.status === 0 ? sourceGit.stdout.trim() : null;
+if (!gitRevision && !process.env.POLLY_SOURCE_REVISION)
+  throw new Error('Source Git metadata is unavailable; supply an explicit revision/dirty label for the read-only export');
+const revision = process.env.POLLY_SOURCE_REVISION || gitRevision;
 if (!/^[0-9a-f]{40}$/.test(revision)) throw new Error('Invalid source revision');
+if (gitRevision && revision !== gitRevision) throw new Error('Source revision label differs from actual checkout HEAD');
 if (process.env.POLLY_SOURCE_REVISION && !['0', '1'].includes(process.env.POLLY_SOURCE_DIRTY))
   throw new Error('Externally supplied revision also requires POLLY_SOURCE_DIRTY=0 or 1');
 const dirty = process.env.POLLY_SOURCE_REVISION ? process.env.POLLY_SOURCE_DIRTY === '1' :
-  Boolean(run('git', ['status', '--porcelain', '--untracked-files=normal']));
-run('cmake', ['--build', build, '--target', 'pollyui', 'pollywm', '-j', '2']);
+  Boolean(run('git', ['-c', 'safe.directory=' + repo, 'status', '--porcelain', '--untracked-files=normal']));
+if (gitRevision && process.env.POLLY_SOURCE_DIRTY === '0' &&
+    run('git', ['-c', 'safe.directory=' + repo, 'status', '--porcelain', '--untracked-files=normal']))
+  throw new Error('Clean source label differs from actual dirty checkout');
 const cache = readFileSync(path.join(build, 'CMakeCache.txt'), 'utf8');
 const setting = name => cache.match(new RegExp('^' + name + ':[^=]*=(.*)$', 'm'))?.[1].trim();
 if (path.resolve(setting('CMAKE_HOME_DIRECTORY') || '.') !== repo)
   throw new Error('Build belongs to a different source checkout');
-if (/^CMAKE_(?:(?:C|CXX)_FLAGS|EXE_LINKER_FLAGS)[^:]*:[^=]*=.*-fsanitize=/m.test(cache))
+if (/^CMAKE_(?:(?:C|CXX)_FLAGS|(?:EXE|SHARED|MODULE)_LINKER_FLAGS)[^:]*:[^=]*=.*-fsanitize=/m.test(cache))
   throw new Error('Use a non-sanitized build for the runtime package');
-for (const option of ['PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE'])
+for (const option of ['PU_BUILD_LAUNCHER', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE'])
   if (setting(option) !== 'ON') throw new Error('Distribution requires ' + option + '=ON');
+if (setting('CMAKE_GENERATOR') !== 'Ninja') throw new Error('Runtime packaging requires a private Ninja build tree');
 for (const [name, expected] of [['CMAKE_INSTALL_BINDIR', 'bin'], ['CMAKE_INSTALL_LIBDIR', 'lib'],
   ['CMAKE_INSTALL_DATADIR', 'share']]) {
   const value = setting(name) || (name === 'CMAKE_INSTALL_DATADIR' ? setting('CMAKE_INSTALL_DATAROOTDIR') : '');
@@ -46,18 +57,21 @@ for (const [name, expected] of [['CMAKE_INSTALL_BINDIR', 'bin'], ['CMAKE_INSTALL
 }
 const skia = setting('SKIA_ROOT');
 if (!skia) throw new Error('Build does not record its Skia source');
+const sourcesBefore = sourceInventory(repo);
+const sourceSha256 = files => createHash('sha256').update(JSON.stringify(files)).digest('hex');
 const sourceInputs = [];
 for (const [name, source, expected] of [
   ['skia', skia, '08a5439a6be726021c1c1905d23ce298a3edc5e4'],
   ['sdl', sdl, '8e37db5e797b6167f3a00d697d816a684bd259c7'],
   ['harfbuzz', harfbuzz, '6f4c5cec306d31e6822303f5ba248a14293d588e']]) {
-  if (run('git', ['-C', source, 'rev-parse', 'HEAD']) !== expected)
+  const git = args => run('git', ['-c', 'safe.directory=' + source, '-C', source, ...args]);
+  if (git(['rev-parse', 'HEAD']) !== expected)
     throw new Error('Packaging source does not match the pinned dependency: ' + source);
-  const diff = run('git', ['-C', source, 'diff', '--binary', 'HEAD', '--']);
+  const diff = git(['diff', '--binary', 'HEAD', '--']);
   if (name !== 'sdl' && diff) throw new Error('Unexpected tracked dependency edits: ' + name);
   if (name === 'sdl') {
-    run('git', ['-C', source, 'apply', '--reverse', '--check', path.join(repo, 'desktop/patches/sdl-wayland-sync-lifetime.patch')]);
-    const changed = run('git', ['-C', source, 'diff', '--name-only', 'HEAD', '--']).split('\n').filter(Boolean);
+    git(['apply', '--reverse', '--check', path.join(repo, 'desktop/patches/sdl-wayland-sync-lifetime.patch')]);
+    const changed = git(['diff', '--name-only', 'HEAD', '--']).split('\n').filter(Boolean);
     if (changed.some(file => !['src/video/wayland/SDL_waylandwindow.c', 'src/video/wayland/SDL_waylandwindow.h'].includes(file)))
       throw new Error('Unexpected SDL modified files: ' + changed.join(', '));
   }
@@ -97,7 +111,7 @@ function dependency(spec) {
 }
 const runtimePackages = debian ? [
   'dbus-daemon', 'dbus-bin', 'pipewire-bin', 'libspa-0.2-modules',
-  'file', 'libmagic1t64', 'libmagic-mgc', 'python3', 'libcrypto3t64',
+  'file', 'libmagic1t64', 'libmagic-mgc', 'python3',
   'libegl1', 'libegl-mesa0', 'libgl1', 'libgl1-mesa-dri', 'mesa-vulkan-drivers', 'libgles2', 'libwayland-client0',
   'libwayland-cursor0', 'libwayland-egl1', 'libxkbcommon0', 'xkb-data', 'adwaita-icon-theme',
   'fonts-dejavu-core', 'fonts-noto-core', 'fonts-noto-cjk', 'fonts-noto-color-emoji',
@@ -107,6 +121,20 @@ const runtimePackages = debian ? [
   'xkeyboard-config', 'capitaine-cursors', 'font-dejavu', 'font-noto-cjk', 'font-noto-emoji',
   'font-noto-arabic', 'font-noto-devanagari', 'rime-plum-data', 'foot', 'ca-certificates'];
 for (const name of runtimePackages) dependency(name);
+let mesaInputs;
+if (debian) {
+  readFileSync(path.join(mesaCache, 'local-packages.json'), 'utf8');
+  mesaInputs = JSON.parse(run('python3', [path.join(repo, 'desktop/tools/local-debian-packages.py'), mesaCache]));
+  const pin = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/mesa.json'), 'utf8'));
+  if (mesaInputs.sourceVersion !== pin.sourceVersion || mesaInputs.patchSha256 !== hash(path.join(repo, pin.patch)))
+    throw new Error('Cached SDK Mesa build does not match the declared source correction');
+}
+run('cmake', ['-S', repo, '-B', build]);
+if (/-fsanitize=/.test(readFileSync(path.join(build, 'build.ninja'), 'utf8')))
+  throw new Error('Use a non-sanitized Ninja build for the runtime package');
+run('python3', [path.join(repo, 'sysrt/tools/generate-files-abi.py'), '--cc', setting('CMAKE_C_COMPILER'), '--check']);
+run('cmake', ['--build', build, '--clean-first', '--target', 'pollyui', 'pollywm', '-j', '2'],
+  { timeout: 600000, env: { ...process.env, CCACHE_DISABLE: '1' } });
 
 mkdirSync(path.dirname(output), { recursive: true });
 const staging = mkdtempSync(path.join(path.dirname(output), '.polly-package-'));
@@ -115,6 +143,15 @@ try {
   mkdirSync(root);
   run('cmake', ['--install', build, '--prefix', '/usr', '--component', 'PollyDesktop'],
     { env: { ...process.env, DESTDIR: root } });
+  const installFiles = installedInventory(root, build, sourcesBefore);
+  const postprocess = [];
+  function relocate(relative, rpath) {
+    const file = path.join(root, relative);
+    const before = { sha256: hash(file), size: lstatSync(file).size };
+    run('patchelf', ['--set-rpath', rpath, file]);
+    postprocess.push({ path: relative, tool: 'patchelf', rpath, before,
+      after: { sha256: hash(file), size: lstatSync(file).size } });
+  }
   const licenseRoot = path.join(root, 'usr/share/licenses/pollyui');
   function copy(source, destination) {
     if (!lstatSync(source).isFile()) throw new Error('Expected a regular packaging input: ' + source);
@@ -141,7 +178,8 @@ try {
       path.join(root, 'usr/share/rime-data/default.custom.yaml'));
     copy('/opt/pollyui-wlroots/lib/libwlroots-0.19.so', path.join(root, 'usr/lib/pollyui/libwlroots-0.19.so'));
     copy(realpathSync('/opt/pollyui-input/lib/libinput.so.10'), path.join(root, 'usr/lib/pollyui/libinput.so.10'));
-    run('patchelf', ['--set-rpath', '$ORIGIN', path.join(root, 'usr/lib/pollyui/libwlroots-0.19.so')]);
+    relocate('usr/lib/pollyui/libwlroots-0.19.so', '$ORIGIN');
+    relocate('usr/bin/pollywm', '$ORIGIN/../lib/pollyui');
     copy('/opt/wlroots-0.19.3/LICENSE', path.join(licenseRoot, 'wlroots/LICENSE'));
     copy('/opt/pollyui-input-source/libinput-1.28.1/COPYING', path.join(licenseRoot, 'libinput/COPYING'));
     copy('/opt/pollyui-input-source/libinput-1.28.1/debian/copyright', path.join(licenseRoot, 'libinput/debian-copyright'));
@@ -153,29 +191,52 @@ try {
   copy(path.join(repo, debian ? 'desktop/release/debian/Containerfile.runtime' : 'desktop/release/Containerfile'),
     path.join(staging, 'Containerfile'));
   const binaries = ['usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher', 'usr/bin/polly-app'];
-  if (existsSync(path.join(root, 'usr/bin/polly-auth-check'))) binaries.push('usr/bin/polly-auth-check');
-  for (const binary of binaries) {
-    const libraries = run('ldd', [path.join(root, binary)]);
+  const nativeLibraries = [];
+  const bundledLibraries = [];
+  function libraryOwner(library) {
+    const owner = debian ? run('dpkg-query', ['-S', realpathSync(library)]).split(': /')[0] :
+      run('apk', ['info', '--who-owns', library]).match(/ is owned by (.+)$/)?.[1];
+    const pkg = debian ? packages.get(owner) : [...packages.values()].find(item => item.P + '-' + item.V === owner);
+    if (!pkg) throw new Error('Cannot identify runtime library owner: ' + library);
+    dependency(pkg.P);
+    return { package: pkg.P, version: pkg.V };
+  }
+  function linkedLibraries(binary, executable) {
+    const libraries = run('ldd', [executable]);
     if (/not found|lib(?:glib|gio|gobject)-2\.0|libharfbuzz/.test(libraries))
       throw new Error('Unexpected or missing desktop runtime dependency:\n' + libraries);
     for (const line of libraries.split('\n')) {
       const library = line.match(/(?:=>\s+|^\s*)(\/.*?)\s+\(/)?.[1];
-      if (!library || library.startsWith(root + '/')) continue;
-      const owner = debian ? run('dpkg-query', ['-S', realpathSync(library)]).split(': /')[0] :
-        run('apk', ['info', '--who-owns', library]).match(/ is owned by (.+)$/)?.[1];
-      const pkg = debian ? packages.get(owner) : [...packages.values()].find(item => item.P + '-' + item.V === owner);
-      if (!pkg) throw new Error('Cannot identify runtime library owner: ' + library);
-      dependency(pkg.P);
+      if (!library) continue;
+      if (library.startsWith(root + '/')) {
+        bundledLibraries.push({ binary, soname: line.match(/^\s*(\S+)\s+=>/)?.[1] || path.basename(library),
+          path: path.relative(root, realpathSync(library)).split(path.sep).join('/'), sha256: hash(library) });
+        continue;
+      }
+      nativeLibraries.push({ binary, soname: line.match(/^\s*(\S+)\s+=>/)?.[1] || path.basename(library),
+        ...libraryOwner(library), usage: 'elf-link' });
     }
+  }
+  if (existsSync(path.join(root, 'usr/bin/polly-auth-check'))) binaries.push('usr/bin/polly-auth-check');
+  for (const binary of binaries) linkedLibraries(binary, path.join(root, binary));
+  for (const [source, soname, symbol] of [
+    ['desktop/shared/file-system.mjs', 'libcrypto.so.3', 'SHA256'],
+    ['sysrt/bindings/dbus.mjs', 'libdbus-1.so.3', 'dbus_connection_open_private'],
+  ]) {
+    const binary = 'usr/share/pollyui/' + source;
+    if (!readFileSync(path.join(root, binary), 'utf8').includes("'" + soname + "'"))
+      throw new Error('JS dynamic library contract changed; update packaging: ' + source);
+    const library = run('python3', [path.join(repo, 'desktop/tools/runtime-library.py'), soname, symbol]);
+    nativeLibraries.push({ binary, soname, symbol, ...libraryOwner(library),
+      usage: 'js-dlopen', resolvedFile: library, sha256: hash(library) });
+    linkedLibraries(binary, library);
   }
   const resolved = [...needed].sort().map(name => packages.get(name));
   let localPackages;
   const localArtifacts = [];
   if (debian) {
-    const localRoot = '/opt/pollyui-local-debs/mesa';
-    if (!existsSync(path.join(localRoot, 'local-packages.json')))
-      throw new Error('Rebuild the Debian SDK: the required corrected Mesa package cache is missing');
-    const local = JSON.parse(run('python3', [path.join(repo, 'desktop/tools/local-debian-packages.py'), localRoot]));
+    const localRoot = mesaCache;
+    const local = mesaInputs;
     const mesaPin = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/mesa.json'), 'utf8'));
     if (local.sourceVersion !== mesaPin.sourceVersion || local.patchSha256 !== hash(path.join(repo, mesaPin.patch)))
       throw new Error('Cached SDK Mesa build does not match the declared source correction');
@@ -257,10 +318,22 @@ try {
     }
   }
   inventory(root);
+  const sourcesAfter = sourceInventory(repo);
+  if (sourceSha256(sourcesBefore) !== sourceSha256(sourcesAfter))
+    throw new Error('Source inputs changed during runtime rebuild/install; freeze the checkout before packaging');
+  manifest.runtimeContract = { schemaVersion: 1, kind: 'gui-sysrt-js', installFiles, postprocess,
+    nativeLibraries, bundledLibraries,
+    abi: { path: 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs',
+      sha256: hash(path.join(root, 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs')),
+      target: 'linux-x86_64-lp64', verified: true } };
   writeFileSync(path.join(staging, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   writeFileSync(path.join(staging, 'sbom.spdx.json'), JSON.stringify(sbom, null, 2) + '\n');
-  const recipes = ['CMakeLists.txt', 'desktop/CMakeLists.txt', 'desktop/install.cmake',
-    'desktop/tools/package-linux.mjs', 'desktop/tools/package-tar.py',
+  const recipes = ['CMakeLists.txt', 'desktop/CMakeLists.txt', 'desktop/install.cmake', 'gui/CMakeLists.txt',
+    'shared/CMakeLists.txt', 'sysrt/CMakeLists.txt', 'sysrt/ffi/module.c',
+    'sysrt/tools/generate-files-abi.py', 'sysrt/bindings/generated/files-linux-x86_64.mjs',
+    'desktop/launcher/main.c', 'desktop/launcher/launcher.c', 'desktop/launcher/services.mjs',
+    'desktop/tools/package-linux.mjs', 'desktop/tools/package-contract.mjs', 'desktop/tools/runtime-library.py',
+    'desktop/tools/package-tar.py',
     'desktop/tools/build-skia-linux.sh', 'desktop/tools/skia-linux.gn', 'desktop/tools/build-sdl-linux.sh',
     'desktop/tools/build-harfbuzz-linux.sh', 'desktop/patches/sdl-wayland-sync-lifetime.patch',
     ...(debian ? ['desktop/release/debian/Containerfile', 'desktop/release/debian/Containerfile.sdk',
@@ -280,13 +353,21 @@ try {
     'desktop/session/greeter-entry', 'desktop/session/greetd-launch.py',
     'desktop/session/setup-broker.py', 'desktop/session/greetd.conf', 'desktop/session/greeter-dependencies.json');
   const inputs = { schemaVersion: 1, revision, dirty, architecture: 'x86_64', distribution,
+    ...(debian ? { localPackageCache: { directory: mesaCache,
+      metadataSha256: hash(path.join(mesaCache, 'local-packages.json')),
+      sourceInputsSha256: hash(path.join(mesaCache, 'source-inputs.json')) } } : {}),
+    sourceFiles: sourcesBefore,
+    build: { strategy: 'reconfigure-clean-first', sourceSha256Before: sourceSha256(sourcesBefore),
+      sourceSha256After: sourceSha256(sourcesAfter), revisionSource: gitRevision ? 'git' : 'external-label' },
     dependencies: sourceInputs,
     recipes: recipes.map(file => ({ path: file, sha256: hash(path.join(repo, file)) })),
     configuration: Object.fromEntries(['CMAKE_BUILD_TYPE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER',
-      'PU_HOST', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE',
+      'PU_HOST', 'PU_BUILD_LAUNCHER', 'PU_BUILD_DESKTOP', 'PU_DESKTOP_SERVICES', 'PU_LAYER_SHELL', 'PU_BUILD_IME_ENGINE',
       'PU_BUILD_SESSION_AUTH', 'CMAKE_INSTALL_BINDIR', 'CMAKE_INSTALL_LIBDIR'].map(name => [name, setting(name) || null])),
     limits: ['Recipe hashes identify current packaging inputs, not proof that a cached SDK was built with identical recipes.',
+      'An external revision label is not Git verification; source byte inventories and a clean runtime rebuild are recorded separately.',
       'Sources and distro package archives are not bundled here; availability and byte-for-byte reproducibility are not guaranteed.'] };
+  validateRuntimeContract(manifest, inputs, readFileSync(path.join(staging, 'runtime-packages.txt'), 'utf8'), sbom);
   writeFileSync(path.join(staging, 'build-inputs.json'), JSON.stringify(inputs, null, 2) + '\n');
   const archive = 'pollydesktop-' + version + '-' + distribution + '-x86_64.tar.gz';
   run('python3', [path.join(repo, 'desktop/tools/package-tar.py'), root, path.join(staging, archive)]);

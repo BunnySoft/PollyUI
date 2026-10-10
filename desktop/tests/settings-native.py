@@ -42,7 +42,10 @@ def main():
     parser.add_argument("--mode", choices=("ui", "audio", "network", "installed", "all"), default="all")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--renderer", choices=("raster", "gl"), default="raster")
+    parser.add_argument("--package-root", type=Path, help="Use the verified runtime bundle rootfs instead of reinstalling")
     args = parser.parse_args()
+    if args.package_root and args.mode != "installed":
+        raise ValueError("--package-root requires --mode installed")
     modes = ("ui", "audio", "network") if args.mode == "all" else (args.mode,)
     if sys.platform != "linux" or os.geteuid() not in (0, 1000):
         raise RuntimeError("Run only in the isolated Linux native lane, as root coordinator or UID1000")
@@ -148,10 +151,13 @@ def main():
                 fixture_runtime, cwd = pollyui, repo
                 script = repo / "desktop/tests/settings-shell.mjs"
                 if mode == "installed":
-                    destination = stage / "relocated install"
-                    subprocess.run(["cmake", "--install", str(pollyui.parent), "--prefix", "/usr",
-                                    "--component", "PollyDesktop"], env=dict(env, DESTDIR=str(destination)),
-                                   check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+                    if args.package_root:
+                        destination = args.package_root.resolve(strict=True)
+                    else:
+                        destination = stage / "relocated install"
+                        subprocess.run(["cmake", "--install", str(pollyui.parent), "--prefix", "/usr",
+                                        "--component", "PollyDesktop"], env=dict(env, DESTDIR=str(destination)),
+                                       check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
                     fixture_runtime = destination / "usr/bin/pollyui"
                     cwd = destination / "usr/share/pollyui"
                     script = repo / "desktop/tests/settings-installed-shell.mjs"
