@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import tempfile
 
 
 def check(value, message):
@@ -92,12 +93,55 @@ def launch_settings(page, env, cwd):
     return result
 
 
+def profile_launch(page, env, cwd, shell):
+    check(env["DBUS_SESSION_BUS_ADDRESS"] == env["POLLY_SESSION_BUS_ADDRESS"],
+          "Refuse to monitor an ambient bus")
+    check(env["DBUS_SESSION_BUS_ADDRESS"].startswith("unix:path=" + env["XDG_RUNTIME_DIR"] + "/bus"),
+          "Refuse to monitor a bus outside the production private runtime")
+    selectors = ["type='method_call',interface='org.pollyui.Settings1'",
+                 "type='method_call',interface='org.freedesktop.DBus'",
+                 "type='method_return'", "type='error'"]
+    with tempfile.TemporaryFile(mode="w+b") as output, tempfile.TemporaryFile(mode="w+b") as errors:
+        started = time.monotonic()
+        monitor = subprocess.Popen(["/usr/bin/stdbuf", "-oL", "/usr/bin/dbus-monitor",
+                                    "--session", "--profile", *selectors],
+                                   env=env, stdout=output, stderr=errors)
+        try:
+            time.sleep(0.2)
+            check(monitor.poll() is None, "Owned private-bus header monitor did not start; policy is not relaxed")
+            emit("profile-start", {"shellPid": shell, "monitorPid": monitor.pid,
+                                   "mode": "headers/timestamps/serials only; no message payload",
+                                   "maximumMonitorSeconds": 30})
+            return launch_settings(page, env, cwd)
+        finally:
+            if monitor.poll() is None:
+                monitor.terminate()
+                try:
+                    monitor.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    monitor.kill()
+                    monitor.wait(timeout=2)
+            elapsed = time.monotonic() - started
+            check(elapsed < 30, "Diagnostic header monitor exceeded its explicit 30 second bound")
+            output.seek(0); errors.seek(0)
+            transcript = output.read(65537)
+            check(len(transcript) <= 65536, "Diagnostic header transcript exceeded 64 KiB")
+            lines = transcript.decode(errors="strict").splitlines()
+            check(all(line.startswith(("#", "mc", "mr", "err", "sig")) for line in lines),
+                  "Profile monitor produced non-header output; do not retain message payloads")
+            for index in range(0, len(lines), 20):
+                emit("dbus-profile", {"chunk": index // 20, "headers": lines[index:index + 20]})
+            emit("profile-stop", {"shellPid": shell, "monitorPid": monitor.pid, "exitCode": monitor.returncode,
+                                  "elapsedSeconds": round(elapsed, 2),
+                                  "stderr": errors.read(4096).decode(errors="replace")})
+
+
 def main():
     check(os.getuid() == os.geteuid() == 1000, "Run acceptance only as the ordinary Live user")
     stage = sys.argv[1]
     state_file = Path("/tmp/polly-alpha-acceptance-state.json")
     shell, env = shell_environment()
-    if stage == "prepare":
+    if stage in ("prepare", "prepare-profile"):
         origin = json.loads(Path("/usr/share/pollyui/runtime-origin.json").read_text())
         check(origin["runtimeSourceRevision"] == "5fc944e3d3eb5cb7a4db568e052a9cc4793cc618" and
               origin["runtimeSourceDirty"] is False, "Guest did not boot the frozen runtime")
@@ -119,7 +163,10 @@ def main():
               "FAILED" not in files.stdout, "Actual native Files SDK failed: " + files.stdout)
         emit("files", {"shellPid": shell, "filesNative": True,
                        "configurationFile": str(file), "configuration": value["theme"]})
-        launch_settings("appearance", env, "/tmp")
+        if stage == "prepare-profile":
+            profile_launch("appearance", env, "/tmp", shell)
+        else:
+            launch_settings("appearance", env, "/tmp")
         pid = settings_pid(shell)
         state = {"shellPid": shell, "settingsPid": pid, "configurationFile": str(file), "theme": str(themes)}
         state_file.write_text(json.dumps(state))

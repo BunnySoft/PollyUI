@@ -27,12 +27,16 @@ def main():
     parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
     parser.add_argument("--diagnostic-prepare", action="store_true",
                         help="Capture startup diagnostics only; never publish an acceptance result")
+    parser.add_argument("--profile-settings-startup", action="store_true",
+                        help="One ordinary-user owned-bus header-only startup diagnostic, maximum 30 seconds")
     args = parser.parse_args()
     if args.new_architecture and (not args.harness_revision or len(args.harness_revision) != 40 or
                                  any(char not in "0123456789abcdef" for char in args.harness_revision)):
         raise ValueError("New-architecture acceptance requires an explicit full harness revision")
     if args.diagnostic_prepare and not args.new_architecture:
         raise ValueError("Startup diagnosis requires the ordinary-user new-architecture helper")
+    if args.profile_settings_startup and not args.diagnostic_prepare:
+        raise ValueError("Owned-bus header monitoring is allowed only in explicit startup-only diagnostics")
     iso = args.iso.resolve()
     evidence = args.evidence.resolve()
     if evidence.exists():
@@ -260,14 +264,15 @@ def main():
                         keys("ret")
                         time.sleep(1)
 
-                    stage("prepare")
+                    preparation = "prepare-profile" if args.profile_settings_startup else "prepare"
+                    stage(preparation)
                     if args.diagnostic_prepare:
                         execute("screendump", {"filename": str(evidence / "diagnostic-settings.ppm")})
                         with iso.open("rb") as source:
                             diagnostic_hash = hashlib.file_digest(source, "sha256").hexdigest()
                         (evidence / "diagnostic.json").write_text(json.dumps({
                             "acceptance": False, "isoSha256": diagnostic_hash,
-                            "harnessRevision": args.harness_revision, "prepare": stages["prepare"],
+                            "harnessRevision": args.harness_revision, "prepare": stages[preparation],
                             "limits": "Startup-only diagnostic, not full new-architecture or physical acceptance."
                         }, indent=2) + "\n")
                         execute("quit")
