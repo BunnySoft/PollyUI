@@ -53,8 +53,8 @@ for (const line of read('SHA256SUMS').trim().split('\n')) {
 }
 const packages = read('runtime-packages.txt');
 for (const name of manifest.debian ? ['libwayland-egl1', 'libegl-mesa0', 'libgl1', 'libgles2', 'pipewire-bin', 'rime-data-luna-pinyin',
-  'file', 'libmagic1t64', 'libmagic-mgc', 'python3'] :
-  ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data', 'file', 'python3'])
+  'file', 'libmagic1t64', 'libmagic-mgc', 'python3', 'libcrypto3t64'] :
+  ['wayland-libs-egl', 'mesa-gl', 'mesa-gles', 'pipewire', 'rime-plum-data', 'file', 'python3', 'libcrypto3'])
   assert.ok(packages.split('\n').some(line => line.split('=')[0].split(':')[0] === name), name);
 for (const line of packages.trim().split('\n'))
   assert.match(line, /^[a-z0-9][a-z0-9+_.-]*(?::[a-z0-9-]+)?=[A-Za-z0-9._+~:-]+$/);

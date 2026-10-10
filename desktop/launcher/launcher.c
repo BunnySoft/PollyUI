@@ -7,7 +7,6 @@
 #include "sysrt/ffi/ffi.h"
 #if defined(PU_DESKTOP_SERVICES)
 #include "native/applications.h"
-#include "sysrt/projection/quickjs/files.h"
 #endif
 #if defined(PU_LAYER_SHELL)
 #include "host/sdl/layer_shell.h"
@@ -24,27 +23,41 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(__linux__)
+#include <limits.h>
+#include <string.h>
+#include <unistd.h>
+#ifndef PU_DATA_FROM_BIN
+#define PU_DATA_FROM_BIN "../share/pollyui"
+#endif
+#endif
 
 typedef struct LaunchState {
     const PuLaunchOptions *options;
     PuAppPaths paths;
+#if defined(__linux__)
+    char module_root[PATH_MAX];
+#endif
 } LaunchState;
 
-#if defined(PU_DESKTOP_SERVICES)
-static int install_file_api(JSContext *ctx)
+#if defined(__linux__)
+static int module_root(LaunchState *state)
 {
-    JSValue global = JS_GetGlobalObject(ctx);
-    JSValue api = JS_GetPropertyStr(ctx, global, "desktop");
-    int ready = 0;
-    if (JS_IsUndefined(api)) {
-        JS_FreeValue(ctx, api);
-        api = JS_NewObject(ctx);
+    char executable[PATH_MAX];
+    ssize_t size = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+    if (size < 0) { perror("[runtime] Cannot resolve executable"); return 0; }
+    if ((size_t)size == sizeof(executable) - 1) {
+        fprintf(stderr, "[runtime] Executable path exceeds module-root bound\n"); return 0;
     }
-    if (!JS_IsException(api) && JS_IsObject(api) && pu_files_install(ctx, api))
-        ready = JS_SetPropertyStr(ctx, global, "desktop", JS_DupValue(ctx, api)) >= 0;
-    JS_FreeValue(ctx, api);
-    JS_FreeValue(ctx, global);
-    return ready;
+    executable[size] = 0;
+    char *name = strrchr(executable, '/');
+    if (!name) { fprintf(stderr, "[runtime] Executable path is not absolute\n"); return 0; }
+    *name = 0;
+    int length = snprintf(state->module_root, sizeof(state->module_root), "%s/%s", executable, PU_DATA_FROM_BIN);
+    if (length < 0 || (size_t)length >= sizeof(state->module_root)) {
+        fprintf(stderr, "[runtime] Shared module root exceeds path bound\n"); return 0;
+    }
+    return 1;
 }
 #endif
 
@@ -81,9 +94,6 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
         fprintf(stderr, "[sysrt] Cannot register native FFI module\n"); return 0;
     }
     if (headless) {
-#if defined(PU_DESKTOP_SERVICES)
-        if (!install_file_api(ctx)) { fprintf(stderr, "[files] Cannot install ordinary file APIs\n"); return 0; }
-#endif
         return 1;
     }
     if (!install_application(ctx, state)) {
@@ -104,9 +114,6 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
 #if defined(PU_DESKTOP_SERVICES)
     if (options->desktop_mode && !pu_applications_install(ctx)) {
         fprintf(stderr, "[desktop] Cannot install desktop application APIs\n"); return 0;
-    }
-    if (!options->greeter_mode && !install_file_api(ctx)) {
-        fprintf(stderr, "[files] Cannot install ordinary file APIs\n"); return 0;
     }
 #endif
 #if defined(PU_INPUT_METHOD)
@@ -196,6 +203,9 @@ int pu_application_run(const PuLaunchOptions *options)
         fprintf(stderr, "[application] Invalid launch options\n"); return 2;
     }
     LaunchState state = { .options = options };
+#if defined(__linux__)
+    if (!module_root(&state)) return 1;
+#endif
     if (!pu_app_paths_init(&state.paths, options->script, options->app_id)) return 1;
 #if defined(__linux__)
     const char *sdl_id = getenv("SDL_APP_ID");
@@ -206,6 +216,11 @@ int pu_application_run(const PuLaunchOptions *options)
 #endif
     PuGuiConfig config = {
         .script = options->script, .hooks = &services, .user = &state,
+#if defined(__linux__)
+        .prelude = !options->greeter_mode && !options->lock_mode && !options->input_method_mode ?
+            "./desktop/launcher/services.mjs" : NULL,
+        .module_root = state.module_root,
+#endif
         .keep_alive = options->input_method_mode || options->lock_mode || options->greeter_mode,
         .redact_errors = options->greeter_mode,
     };
@@ -217,7 +232,14 @@ int pu_application_run(const PuLaunchOptions *options)
 int pu_application_test(const char *script)
 {
     LaunchState state = {0};
+#if defined(__linux__)
+    if (!module_root(&state)) return 1;
+#endif
     PuGuiConfig config = { .script = script, .hooks = &services, .user = &state };
+#if defined(__linux__)
+    config.prelude = "./desktop/launcher/services.mjs";
+    config.module_root = state.module_root;
+#endif
     return pu_gui_test(&config);
 }
 

@@ -1,7 +1,7 @@
 # Ordinary application open/save chooser
 
 `desktop/client/file-dialog.mjs` provides an in-parent PollyUI modal, using the
-single shared `desktop.fileSystem` ordinary-user backend and
+single shared SysRT JS/FFI `desktop.fileSystem` ordinary-user SDK and
 `desktop/apps/files/logic/model.mjs`. It does not implement filesystem access, use a Shell
 surface, launch files, or provide a third-party Portal. A missing/old native API
 produces a visible error with Cancel available; it never returns a demo path.
@@ -274,9 +274,9 @@ runs; neither source registration nor old layer-input evidence substitutes.
 those fields truly matched; `FILE_DIALOG_NATIVE_METADATA_MATCH` additionally
 reports the actual native metadata-token comparison. A GUI handshake normally
 crosses a timestamp tick, so this fixture does not fabricate all-field equality.
-The filesystem owner's separate ordinary native/QuickJS regression owns the
-precise same-metadata alias proof; injected UI observations establish only the
-receipt-comparison/reconsent behavior, not OS-level detection.
+The filesystem owner's `sysrt-files` regression checks the production JS/FFI
+SDK with real private files and exact content digests; injected UI observations
+establish only the receipt-comparison/reconsent behavior, not OS-level detection.
 
 Parent integration must register the focused Node selector/native fixture,
 package the client modules plus the single owner's `desktop/apps/files/logic/model.mjs`

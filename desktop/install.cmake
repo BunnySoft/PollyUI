@@ -1,6 +1,7 @@
 include(GNUInstallDirs)
 
 file(RELATIVE_PATH PU_DATA_FROM_BIN "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_DATADIR}/pollyui")
+target_compile_definitions(pollyui PRIVATE PU_DATA_FROM_BIN="${PU_DATA_FROM_BIN}")
 file(RELATIVE_PATH PU_LIB_FROM_BIN "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_LIBDIR}/pollyui")
 set_target_properties(pollyui PROPERTIES INSTALL_RPATH "$ORIGIN/${PU_LIB_FROM_BIN}")
 configure_file("${CMAKE_SOURCE_DIR}/desktop/tools/polly-desktop.in"
@@ -36,6 +37,8 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/sysrt/sdk" "${CMAKE_SOURCE_DIR}/sysrt/bin
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/launcher/services.mjs"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/launcher" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/client"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")

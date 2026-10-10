@@ -67,6 +67,8 @@ static int run(const char *script, const char *fixture, unsigned occupied, int c
     JSContext *ctx = runtime ? JS_NewContext(runtime) : NULL;
     if (!ctx) { if (runtime) JS_FreeRuntime(runtime); return 1; }
     JS_SetMemoryLimit(runtime, 128 * 1024 * 1024);
+    /* Sanitized interpreter frames need room for realistic SDK call depth. */
+    JS_SetMaxStackSize(runtime, 4 * 1024 * 1024);
     JS_SetModuleLoaderFunc(runtime, normalize, load, NULL);
     int failed = 0;
     JSClassID foreign_class = 0;
@@ -85,6 +87,7 @@ static int run(const char *script, const char *fixture, unsigned occupied, int c
     if (!sr_ffi_register(ctx)) failed = 1;
     JSValue global = JS_GetGlobalObject(ctx);
     if (JS_SetPropertyStr(ctx, global, "fixtureLibrary", JS_NewString(ctx, fixture)) < 0) failed = 1;
+    if (JS_SetPropertyStr(ctx, global, "fixtureRun", JS_NewUint32(ctx, occupied + (unsigned)cached)) < 0) failed = 1;
     if (JS_SetPropertyStr(ctx, global, "foreignObject",
         foreign_class ? JS_NewObjectClass(ctx, foreign_class) : JS_NewObject(ctx)) < 0) failed = 1;
 #ifdef _WIN32

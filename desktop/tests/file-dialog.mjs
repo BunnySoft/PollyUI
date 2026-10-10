@@ -459,8 +459,28 @@ test('consumer readback failures report already completed write, cancellation do
   t.after(app.stop);
   const saving = app.save(); await settled(); const dialog = app.getDialog();
   dialog.controller.setName('new.txt'); await dialog.controller.saveSelection(); await saving;
-  assert.match(app.getState().status, /Write completed but readback failed/);
+  assert.match(app.getState().status, /Write was published.*verification or cleanup failed/);
   assert.equal(app.getState().saved, null); assert.equal(f.get(HOME + '/new.txt').text, 'PollyUI saved text');
   const again = app.save(); await settled(); app.getDialog().controller.cancel(); await again;
   assert.match(app.getState().status, /cancelled.*No write/); assert.equal(errors.length, 1);
+});
+
+test('consumer never retries an ESTALE error after the SDK has already published the write', async t => {
+  const { host } = fixtureHost(t), f = fixtureFiles();
+  let requests = 0;
+  f.files.replaceText = () => {
+    requests++;
+    f.put(EXISTING, 'file', { text: 'Published before verification failed.' });
+    throw Object.assign(f.error('ESTALE'), { committed: true });
+  };
+  const app = createFileTextApp({ host, files: f.files, suggestedName: 'hello.txt', reportError() {} }).start();
+  t.after(app.stop);
+  const saving = app.save(); await settled();
+  const dialog = app.getDialog();
+  await dialog.controller.saveSelection(); await dialog.controller.confirmOverwrite();
+  await saving;
+  assert.equal(requests, 1);
+  assert.equal(app.getDialog(), null);
+  assert.match(app.getState().status, /Write was published.*inspect the file before retrying/);
+  assert.equal(f.get(EXISTING).text, 'Published before verification failed.');
 });

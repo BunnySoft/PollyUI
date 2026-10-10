@@ -129,6 +129,7 @@ export function createFileTextApp({ host = window, files,
             await files.writeText(choice.parentPath, choice.name, value, choice.parentIdentity);
         } catch (error) {
           if (!live(token)) { reportError(fileError(error)); return; }
+          if (error.committed) { committed = true; throw error; }
           if (choice.overwrite && error.code === 'ESTALE') {
             initialDirectory = choice.parentPath; suggestedName = choice.name;
             reportError(fileError(error));
@@ -153,7 +154,7 @@ export function createFileTextApp({ host = window, files,
       }
       if (live(token)) status = 'Save cancelled. No write was requested.';
     } catch (error) {
-      report(error, committed ? 'Write completed but readback failed; inspect the file before retrying' : 'Save failed', token);
+      report(error, committed ? 'Write was published, but verification or cleanup failed; inspect the file before retrying' : 'Save failed', token);
     } finally { dialog = null; if (live(token)) { busy = false; paint(); } }
   }
   function stop() {

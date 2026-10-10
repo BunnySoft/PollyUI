@@ -52,6 +52,13 @@ if (TARGET qjs)
         add_test(NAME sysrt-ffi COMMAND polly-sysrt-ffi-test
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/ffi.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         set_tests_properties(sysrt-ffi PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            find_program(SR_PYTHON python3 REQUIRED)
+            add_test(NAME sysrt-files COMMAND "${SR_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/files-fixture.py"
+                $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+            set_tests_properties(sysrt-files PROPERTIES TIMEOUT 180 LABELS "ordinary-native;private-files-fixture")
+        endif()
     endif()
     add_library(polly-sysrt-qjs STATIC projection/quickjs/storage.c
         projection/quickjs/fetch.c providers/app_paths.c)
@@ -68,14 +75,4 @@ if (TARGET qjs)
         pkg_check_modules(CURL REQUIRED IMPORTED_TARGET libcurl>=7.85)
         target_link_libraries(polly-sysrt-qjs PRIVATE PkgConfig::CURL)
     endif()
-endif()
-
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
-    (PU_DESKTOP_SERVICES OR CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR))
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(SYSTEMRT_CRYPTO REQUIRED IMPORTED_TARGET libcrypto)
-    add_library(polly-sysrt-linux-files STATIC providers/linux/files.c)
-    target_include_directories(polly-sysrt-linux-files PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-    target_link_libraries(polly-sysrt-linux-files PRIVATE PkgConfig::SYSTEMRT_CRYPTO)
-    target_compile_options(polly-sysrt-linux-files PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

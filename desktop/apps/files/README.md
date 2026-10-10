@@ -11,16 +11,22 @@ pollyui --desktop --app-id org.pollyui.files desktop/apps/files/main.mjs /absolu
 window neither creates a Shell surface nor acquires trusted Shell management
 authority. The installed `polly-files` launcher resolves the installed data
 directory, uses its absolute entry path and runs from that root for JS imports.
-The application host links `polly-sysrt-linux-files` and compiles
-`sysrt/projection/quickjs/files.c`; the provider has no QuickJS or GUI
-dependency. `desktop/launcher/launcher.c` calls
-`pu_files_install(ctx, desktop_api)` after the optional
-`pu_applications_install`, outside the `PU_LAYER_SHELL` block. Ordinary Linux
-apps without `--desktop` receive an object containing only `desktop.fileSystem`;
-they do not receive spawn, application catalog, window-management or appearance
-management APIs. `--greeter` does not receive this file object.
-The provider links libcrypto for OpenSSL EVP SHA256. No pump, background service
-or shutdown hook is needed for the current synchronous v1 contract.
+`sysrt/sdk/js/files.mjs` implements filesystem semantics over the declarative
+libc/libcrypto signatures and Linux LP64 layouts in `sysrt/bindings/files.mjs`.
+Profiles cover glibc LP64 and packaged musl x86_64; unsupported symbols/ABIs
+fail explicitly. Musl enumeration uses its real `getdents` symbol and int result,
+not glibc's `getdents64`/ssize declaration.
+There is no C filesystem provider or QuickJS filesystem projection. Applications
+may import `fileSystem` directly; `desktop/launcher/services.mjs` also assembles
+it as `desktop.fileSystem` before the application entry. The generic GUI prelude
+hook knows nothing about filesystem or desktop services.
+Shared modules resolve from the runtime's installed data directory before
+application-local files, including when a managed bundle owns the working directory.
+Ordinary Linux apps without `--desktop` receive only this SDK object, not spawn,
+application catalog, window-management or appearance management APIs.
+Greeter, lock and input-method roles receive neither the FFI module nor this SDK
+prelude. SHA256 uses existing OpenSSL EVP through FFI. All descriptors and
+temporary buffers are released within the synchronous operation.
 Install the production `desktop/apps/files` modules, excluding `tests`, and the existing shared
 `desktop/shell/{applications,bundles,documents}.mjs`, shared bundle schema,
 `desktop/client/theme.mjs` and theme-schema dependencies using the normal module
@@ -70,7 +76,7 @@ launched as a managed application. Such packages cannot be renamed in Files.
 
 ## Stable shared contract
 
-`desktop.fileSystem` has `version:1`, `implementation:'posix-ordinary-v1'`,
+`desktop.fileSystem` has `version:1`, `implementation:'linux-ffi-v1'`,
 `maxEntries:1024`, `maxTextBytes:1048576`, `overwrite:true`,
 `textObservation:'sha256-v1'`. The shared
 `desktop/apps/files/logic/model.mjs` supplies `requireFileSystem`, `pathValue`,
@@ -81,8 +87,9 @@ catalog or Node filesystem backend.
 All native calls are **synchronous** and either return a value or throw an
 Error with `code`, `message` and `operation`. EACCES/EPERM/ENOENT/EEXIST/ESTALE/
 EINVAL/EFBIG/ELOOP/ENOTDIR/ENAMETOOLONG/EILSEQ/ENOSPC/EROFS/ENOMEM are
-distinguished; other OS failures use EIO. Argument type/NUL/size violations
-throw TypeError/RangeError. All paths are absolute UTF-8, max 4095 bytes,
+distinguished; unlisted OS errors retain their number as `ERR_OS_<errno>`.
+Invalid paths and text fail explicitly with EINVAL/EILSEQ/EFBIG; wrong argument
+types/counts throw TypeError. All paths are absolute UTF-8, max 4095 bytes,
 without empty, `.` or `..` components. New names are one component of
 1-255 UTF-8 bytes. Path text never undergoes shell or URI reinterpretation.
 
@@ -156,8 +163,9 @@ current content SHA256 and do not have that metadata-only weakness.
 Neither rename nor MIME launch promises protection from a continuously racing
 external writer. There is no exchange/rollback trick or privileged broker.
 Content fsync is not a claim of directory-entry durability across power loss.
-An error after publication may mean the operation already happened; refresh
-and inspect instead of automatically retrying.
+Errors after confirmed publication include `committed:true`, including descriptor
+cleanup or final-observation failures. Refresh and inspect instead of automatically
+retrying; the text consumer never treats such an ESTALE as permission to resubmit.
 
 Ordinary Linux permissions are enforced by the OS, not reimplemented ACLs.
 Counts and bytes are bounded, but libc/local/FUSE I/O can block the UI; awaiting
@@ -169,26 +177,21 @@ implemented. There is no real host HOME enumeration in agent fixtures.
 
 ```sh
 node --test desktop/apps/files/tests/files.mjs
-sh desktop/tests/files-native.sh
+cmake -S sysrt -B build/sysrt -G Ninja
+cmake --build build/sysrt
+ctest --test-dir build/sysrt --output-on-failure -R '^sysrt-files$'
 ```
 
-The first uses explicit injected observations to check UI/controller actions;
-it is not native filesystem or pixel evidence. The second compiles only a
-small C core harness and QuickJS binding harness from the current source and
-executes real ordinary UID/GID 1000 operations in private `/tmp` fixtures.
-Run in the pinned offline SDK with source read-only, not against a user's HOME.
-The harness links existing `-lcrypto`. The in-place edit case samples at most
-64 real writes for an identical-metadata alias, records full native fields and
-whether the alias was actually observed, rejects the old strong token and
-reads back a newly confirmed write.
-It does not forge ctime or edit a user's files.
-One core-test object redirects only `fdopendir` to remove an explicitly known
-empty fixture directory after its real FD has opened; the wrapper then calls
-the real libc function. Actual removed/zero-link inode state produces ENOENT/ESTALE, not
-an empty successful directory. Production and the QuickJS harness have no hook,
-and live hard links (`st_nlink > 1`) remain supported.
-Fixture shell input must use LF line endings. The script prints actual source
-and harness SHA256 hashes. It never builds the engine, image or VM.
+The Node suite injects observations to check UI/controller actions, not native
+filesystem or pixel behavior. `sysrt-files` executes the production JS SDK and
+real OS calls in three independent QuickJS VMs. C test oracles measure the
+actual header layout/constants; they do not implement production filesystem
+semantics. The fixture checks boundaries, strong hashes, collisions, symbolic
+links, hard-link replacement, permissions, staged-file cleanup and descriptor
+lifetime. One test-only enumeration hook retires an explicitly owned directory
+after opening its real FD; ENOENT/ESTALE must not become empty success.
+UID0 checks verify refusal; ordinary runs exercise only private `/tmp` data,
+never a user's HOME. Use the pinned offline SDK and read-only source mount.
 
 `desktop/tests/files-window-client.mjs` is the ordinary-window entry for the
 parent's freshly rebuilt engine/real pointer driver. It requires the native

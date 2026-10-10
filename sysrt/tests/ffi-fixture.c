@@ -1,11 +1,21 @@
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #endif
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include <stdint.h>
+#include <stdio.h>
 #include <stddef.h>
 #include <errno.h>
 #include <string.h>
 #include <stdarg.h>
+#if defined(__linux__)
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #define EXPORT __declspec(dllexport)
@@ -62,6 +72,69 @@ EXPORT size_t sr_variadic_strings(int32_t count, ...)
     va_end(args);
     return size;
 }
+
+#if defined(__linux__)
+EXPORT size_t sr_statx_offset(int32_t index)
+{
+    const size_t offsets[] = {
+        offsetof(struct statx, stx_mask), offsetof(struct statx, stx_nlink),
+        offsetof(struct statx, stx_uid), offsetof(struct statx, stx_gid),
+        offsetof(struct statx, stx_mode), offsetof(struct statx, stx_ino),
+        offsetof(struct statx, stx_size), offsetof(struct statx, stx_ctime.tv_sec),
+        offsetof(struct statx, stx_ctime.tv_nsec), offsetof(struct statx, stx_mtime.tv_sec),
+        offsetof(struct statx, stx_mtime.tv_nsec), offsetof(struct statx, stx_dev_major),
+        offsetof(struct statx, stx_dev_minor), sizeof(struct statx),
+        AT_FDCWD, AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_EACCESS, STATX_BASIC_STATS,
+        O_RDONLY, O_RDWR, O_WRONLY, O_CREAT, O_EXCL, O_NONBLOCK, O_DIRECTORY,
+        O_NOFOLLOW, O_CLOEXEC, O_PATH, RENAME_NOREPLACE, S_IFMT, S_IFREG, S_IFDIR, S_IFLNK,
+    };
+    return index >= 0 && (size_t)index < sizeof(offsets) / sizeof(*offsets) ? offsets[index] : SIZE_MAX;
+}
+static char retiring_path[4096];
+static char failing_close_path[4096];
+EXPORT void sr_fail_close(const char *path)
+{
+    snprintf(failing_close_path, sizeof(failing_close_path), "%s", path);
+}
+EXPORT int32_t sr_checked_close(int32_t fd)
+{
+    if (*failing_close_path) {
+        char descriptor[64], path[4096];
+        snprintf(descriptor, sizeof(descriptor), "/proc/self/fd/%d", fd);
+        ssize_t size = readlink(descriptor, path, sizeof(path) - 1);
+        if (size >= 0) {
+            path[size] = 0;
+            if (!strcmp(path, failing_close_path)) {
+                *failing_close_path = 0;
+                if (close(fd)) return -1;
+                errno = EIO; return -1;
+            }
+        }
+    }
+    return close(fd);
+}
+EXPORT void sr_retire_on_entries(const char *path)
+{
+    snprintf(retiring_path, sizeof(retiring_path), "%s", path);
+}
+#if defined(__GLIBC__)
+EXPORT ssize_t sr_checked_getdents64(int fd, void *buffer, size_t size)
+#else
+EXPORT int sr_checked_getdents(int fd, void *buffer, size_t size)
+#endif
+{
+    if (*retiring_path) {
+        int result = rmdir(retiring_path);
+        *retiring_path = 0;
+        if (result) return -1;
+    }
+#if defined(__GLIBC__)
+    return getdents64(fd, buffer, size);
+#else
+    return getdents(fd, buffer, size);
+#endif
+}
+#endif
 
 typedef struct SrRecord { int8_t tag; int64_t count; double ratio; } SrRecord;
 EXPORT size_t sr_record_size(void) { return sizeof(SrRecord); }

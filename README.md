@@ -31,8 +31,10 @@ keep the cross-platform `pollyui-engine` separate from optional Linux desktop
 integration. `gui/` contains the library, public headers and `sdk/js/`;
 `sysrt/` contains system capabilities, and `desktop/launcher` assembles the
 formal application runtime. **PollySystemRT** now has a generic `sysrt:ffi`
-native module and a JS/config process SDK. Existing file/storage/HTTP modules
-still use their current native implementations; Settings remains Shell-owned.
+native module and JS/config process, clock and Linux filesystem SDKs.
+Filesystem operations now call libc/libcrypto directly through FFI; the old
+C filesystem provider and QuickJS projection are removed. Storage and HTTP
+still use their native implementations; Settings remains Shell-owned.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
 libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?})` returns a callable

@@ -37,16 +37,20 @@ test('shared Host interface and SDL surface adapter have no desktop service depe
   assert.match(read('desktop/launcher/launcher.c'), /pu_layer_set_role_factories\(NULL, NULL\)/);
 });
 
-test('filesystem provider builds without a scripting or GUI projection', () => {
-  for (const path of ['sysrt/providers/linux/files.h', 'sysrt/providers/linux/files.c']) {
-    assert.doesNotMatch(read(path), /\b(?:JSContext|JSValue|JSRuntime|pu_files_install|PU_FILES_CORE_ONLY)\b|quickjs\.h|SDL3|skia/);
-  }
+test('filesystem is a JS/config SDK with no domain-specific native provider or projection', () => {
+  for (const path of ['sysrt/providers/linux/files.h', 'sysrt/providers/linux/files.c',
+    'sysrt/projection/quickjs/files.c', 'sysrt/projection/quickjs/files.h'])
+    assert.equal(existsSync(new URL(path, root)), false, path);
   const build = read('sysrt/CMakeLists.txt');
   assert.match(build, /project\(PollySystemRT LANGUAGES C\)/);
   assert.match(build, /if \(TARGET qjs\)/);
   assert.doesNotMatch(build, /yogacore|pollyui-engine|gui\/src|desktop\/native/);
-  assert.match(read('sysrt/projection/quickjs/files.c'), /pu_files_locations\(&locations\)/);
-  assert.doesNotMatch(read('sysrt/projection/quickjs/files.c'), /\bgetenv\s*\(/);
+  assert.doesNotMatch(build, /polly-sysrt-linux-files|providers\/linux\/files/);
+  const sdk = read('sysrt/sdk/js/files.mjs');
+  assert.match(sdk, /loadBindings\(filesBindings\[libc\]\)/);
+  assert.doesNotMatch(sdk, /document\.|window\.|desktop\/|pu_files_/);
+  assert.match(read('sysrt/bindings/files.mjs'), /symbol: 'statx'/);
+  assert.match(read('desktop/launcher/services.mjs'), /fileSystem.*from '\.\/sysrt\/sdk\/js\/files\.mjs'/);
 });
 
 test('generic FFI has no GUI or domain-specific API dependency', () => {
@@ -69,7 +73,7 @@ test('CLI and desktop composition remain outside the GUI engine', () => {
   assert.equal(existsSync(new URL('src/desktop/applications.c', root)), false);
   assert.ok(existsSync(new URL('desktop/native/applications.c', root)));
   assert.doesNotMatch(cmake, /src\/desktop\/|host\/win32\/window\.h/);
-  assert.match(cmake, /sysrt\/projection\/quickjs\/files\.c/);
+  assert.doesNotMatch(cmake, /sysrt\/projection\/quickjs\/files\.c|polly-files-core-test-adapter/);
   assert.match(read('desktop/launcher/launcher.c'), /pu_gui_run\(&config\)/);
 });
 

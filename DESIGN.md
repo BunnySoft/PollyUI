@@ -72,8 +72,11 @@ Migration: native GUI/SDK/examples/tests now live in `gui`, system capabilities
 in `sysrt`, and execution primitives in `shared`. The GUI library exposes
 context hooks; Linux service assembly stays in `desktop/launcher`. Existing
 Files and installer modules distinguish UI, logic and tests. Mixed active
-integration remains in `desktop/native`. The first generic FFI and JS/config
-SDK path is implemented; callback/asynchronous mechanisms remain unfinished.
+integration remains in `desktop/native`. The generic FFI and JS/config SDK path is implemented, including the Linux
+filesystem SDK; its old C provider/projection are removed. The launcher uses
+a JS service prelude before the app entry; a generic shared-module root makes
+SDK loading independent of the app's working directory.
+Callback/asynchronous mechanisms remain unfinished.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 
