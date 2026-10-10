@@ -45,6 +45,7 @@ if (TARGET qjs)
     if (BUILD_TESTING)
         add_library(polly-sysrt-ffi-fixture SHARED tests/ffi-fixture.c)
         add_executable(polly-sysrt-ffi-test tests/ffi-runner.c)
+        add_executable(polly-sysrt-process-child tests/process-child.c)
         target_link_libraries(polly-sysrt-ffi-test PRIVATE polly-sysrt-ffi)
         if (WIN32)
             target_compile_definitions(polly-sysrt-ffi-test PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -52,6 +53,12 @@ if (TARGET qjs)
         add_test(NAME sysrt-ffi COMMAND polly-sysrt-ffi-test
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/ffi.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         set_tests_properties(sysrt-ffi PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            add_test(NAME sysrt-process COMMAND polly-sysrt-ffi-test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/process-native.mjs"
+                $<TARGET_FILE:polly-sysrt-ffi-fixture> $<TARGET_FILE:polly-sysrt-process-child>)
+            set_tests_properties(sysrt-process PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
+        endif()
         if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             find_program(SR_PYTHON python3 REQUIRED)
             add_test(NAME sysrt-files COMMAND "${SR_PYTHON}"

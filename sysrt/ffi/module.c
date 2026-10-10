@@ -33,19 +33,23 @@ typedef struct Library {
     int closed, wrapped;
     JSClassID function_class, pointer_class;
 } Library;
+typedef struct Pointer Pointer;
 typedef struct Memory {
     uint8_t *bytes;
     size_t size;
+    Pointer **pointers;
+    size_t pointer_count;
     unsigned refs;
     int closed;
 } Memory;
-typedef struct Pointer {
+struct Pointer {
     void *address;
     size_t length;
     Memory *memory;
     Library *library;
     int closed, owns;
-} Pointer;
+    unsigned refs;
+};
 typedef struct Function {
     Library *library;
     void (*code)(void);
@@ -91,9 +95,21 @@ static void release_library(Library *library)
     if (!refs) free(library);
 }
 
+static void release_pointer(Pointer *pointer);
+
 static void release_memory(Memory *memory)
 {
-    if (memory && !--memory->refs) { free(memory->bytes); free(memory); }
+    if (memory && !--memory->refs) {
+        for (size_t i = 0; i < memory->pointer_count; i++) release_pointer(memory->pointers[i]);
+        free(memory->pointers); free(memory->bytes); free(memory);
+    }
+}
+
+static void release_pointer(Pointer *pointer)
+{
+    if (pointer && !--pointer->refs) {
+        release_memory(pointer->memory); release_library(pointer->library); free(pointer);
+    }
 }
 
 static Memory *new_memory(size_t size)
@@ -124,9 +140,7 @@ static void pointer_finalizer(JSRuntime *rt, JSValue value)
 {
     (void)rt;
     Pointer *pointer = JS_GetOpaque(value, JS_GetClassID(value));
-    if (pointer) {
-        release_memory(pointer->memory); release_library(pointer->library); free(pointer);
-    }
+    release_pointer(pointer);
 }
 
 static int pointer_live(JSContext *ctx, Pointer *pointer)
@@ -134,6 +148,12 @@ static int pointer_live(JSContext *ctx, Pointer *pointer)
     if (pointer->closed || (pointer->memory && pointer->memory->closed) ||
         (pointer->library && pointer->library->closed)) {
         error(ctx, "ERR_FFI_CLOSED", "Native pointer or its owner is closed"); return 0;
+    }
+    if (pointer->memory) {
+        for (size_t i = 0; i < pointer->memory->pointer_count; i++) {
+            Pointer *dependency = pointer->memory->pointers[i];
+            if (dependency && !pointer_live(ctx, dependency)) return 0;
+        }
     }
     return 1;
 }
@@ -147,6 +167,7 @@ static JSValue new_pointer(JSContext *ctx, JSClassID class_id, void *address, si
     JSValue value = JS_NewObjectClass(ctx, class_id);
     if (JS_IsException(value)) { free(pointer); return value; }
     pointer->address = address; pointer->length = length;
+    pointer->refs = 1;
     pointer->memory = memory; pointer->library = library; pointer->owns = owns;
     if (memory) memory->refs++;
     if (library) library->refs++;
@@ -569,6 +590,42 @@ static JSValue alloc_buffer(JSContext *ctx, JSValueConst self, int argc, JSValue
     release_memory(memory); return result;
 }
 
+static JSValue alloc_pointers(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsArray(argv[0])) return JS_ThrowTypeError(ctx, "allocPointers requires an array of pointers or null");
+    JSValue length = JS_GetPropertyStr(ctx, argv[0], "length");
+    size_t count = 0;
+    int ok = !JS_IsException(length) && index_value(ctx, length, SR_MAX_BYTES / sizeof(void *), &count);
+    JS_FreeValue(ctx, length);
+    if (!ok) return JS_EXCEPTION;
+    Memory *memory = new_memory(count * sizeof(void *));
+    if (!memory) return JS_ThrowOutOfMemory(ctx);
+    memory->pointers = calloc(count ? count : 1, sizeof(*memory->pointers));
+    if (!memory->pointers) { release_memory(memory); return JS_ThrowOutOfMemory(ctx); }
+    memory->pointer_count = count;
+    for (size_t i = 0; ok && i < count; i++) {
+        JSValue value = JS_GetPropertyUint32(ctx, argv[0], (uint32_t)i);
+        if (JS_IsException(value)) ok = 0;
+        else if (!JS_IsNull(value)) {
+            Pointer *pointer = JS_GetOpaque2(ctx, value, classes->pointer);
+            if (!pointer || !pointer_live(ctx, pointer)) ok = 0;
+            else if (pointer->memory && pointer->memory->pointers) {
+                JS_ThrowTypeError(ctx, "Nested pointer arrays are unsupported"); ok = 0;
+            }
+            else {
+                memory->pointers[i] = pointer; pointer->refs++;
+                memcpy(memory->bytes + i * sizeof(void *), &pointer->address, sizeof(void *));
+            }
+        }
+        JS_FreeValue(ctx, value);
+    }
+    for (size_t i = 0; ok && i < count; i++)
+        if (memory->pointers[i] && !pointer_live(ctx, memory->pointers[i])) ok = 0;
+    JSValue result = ok ? new_pointer(ctx, classes->pointer, memory->bytes, memory->size, memory, NULL, 1) : JS_EXCEPTION;
+    release_memory(memory); return result;
+}
+
 static Pointer *bounded(JSContext *ctx, JSValueConst self, int argc,
                         JSValueConst *argv, size_t *offset, size_t *length, JSClassID pointer_class)
 {
@@ -603,6 +660,7 @@ static JSValue write_buffer(JSContext *ctx, JSValueConst self, int argc, JSValue
     size_t offset, length;
     Pointer *pointer = bounded(ctx, self, argc, lengths, &offset, &length, classes->pointer);
     if (!pointer) return JS_EXCEPTION;
+    if (pointer->memory->pointers) return JS_ThrowTypeError(ctx, "Pointer arrays are read-only input memory");
     if (length) memcpy((uint8_t *)pointer->address + offset, bytes, length);
     return JS_UNDEFINED;
 }
@@ -630,9 +688,29 @@ static JSValue pointer_slice(JSContext *ctx, JSValueConst self, int argc, JSValu
         pointer->memory, pointer->library, 0);
 }
 
+static JSValue read_pointer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+{
+    if (argc > 1) return JS_ThrowTypeError(ctx, "readPointer accepts an optional byte offset");
+    JSValue bounds[] = { JS_NewInt32(ctx, sizeof(void *)), argc ? argv[0] : JS_NewInt32(ctx, 0) };
+    size_t offset, length;
+    Pointer *pointer = bounded(ctx, self, 2, bounds, &offset, &length, classes->pointer);
+    if (!pointer) return JS_EXCEPTION;
+    if (offset % sizeof(void *)) return JS_ThrowRangeError(ctx, "Pointer fields require pointer-aligned offsets");
+    void *address;
+    memcpy(&address, (uint8_t *)pointer->address + offset, sizeof(address));
+    if (!address) return JS_NULL;
+    for (size_t i = 0; i < pointer->memory->pointer_count; i++) {
+        Pointer *dependency = pointer->memory->pointers[i];
+        if (dependency && dependency->address == address)
+            return new_pointer(ctx, classes->pointer, address, dependency->length,
+                dependency->memory, dependency->library, 0);
+    }
+    return new_pointer(ctx, classes->pointer, address, 0, NULL, pointer->library, 0);
+}
+
 typedef enum {
-    M_OPEN, M_ALLOC, M_BIND, M_CLOSE_LIBRARY, M_CLOSE_FUNCTION, M_CLOSE_POINTER,
-    M_READ, M_WRITE, M_READ_STRING, M_SLICE
+    M_OPEN, M_ALLOC, M_ALLOC_POINTERS, M_BIND, M_CLOSE_LIBRARY, M_CLOSE_FUNCTION, M_CLOSE_POINTER,
+    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER
 } Method;
 
 static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
@@ -643,6 +721,7 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     switch ((Method)magic) {
     case M_OPEN: return open_library(ctx, self, argc, argv, &classes);
     case M_ALLOC: return alloc_buffer(ctx, self, argc, argv, &classes);
+    case M_ALLOC_POINTERS: return alloc_pointers(ctx, self, argc, argv, &classes);
     case M_BIND: return bind(ctx, self, argc, argv, &classes);
     case M_CLOSE_LIBRARY: return close_library(ctx, self, argc, argv, &classes);
     case M_CLOSE_FUNCTION: return close_function(ctx, self, argc, argv, &classes);
@@ -651,6 +730,7 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     case M_WRITE: return write_buffer(ctx, self, argc, argv, &classes);
     case M_READ_STRING: return read_string(ctx, self, argc, argv, &classes);
     case M_SLICE: return pointer_slice(ctx, self, argc, argv, &classes);
+    case M_READ_POINTER: return read_pointer(ctx, self, argc, argv, &classes);
     }
     return JS_ThrowInternalError(ctx, "Invalid FFI method");
 }
@@ -661,6 +741,7 @@ static const MethodInfo function_methods[] = { { "close", 0, M_CLOSE_FUNCTION } 
 static const MethodInfo pointer_methods[] = {
     { "close", 0, M_CLOSE_POINTER }, { "read", 1, M_READ }, { "write", 1, M_WRITE },
     { "readString", 1, M_READ_STRING }, { "slice", 2, M_SLICE },
+    { "readPointer", 0, M_READ_POINTER },
 };
 #if defined(_WIN32)
 #define SR_PLATFORM "windows"
@@ -711,6 +792,10 @@ static int module_init(JSContext *ctx, JSModuleDef *module)
         if (ok) {
             JSValue alloc = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC, 3, data);
             if (JS_IsException(alloc) || JS_SetModuleExport(ctx, module, "alloc", alloc) < 0) ok = 0;
+        }
+        if (ok) {
+            JSValue array = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC_POINTERS, 3, data);
+            if (JS_IsException(array) || JS_SetModuleExport(ctx, module, "allocPointers", array) < 0) ok = 0;
         }
     }
     for (unsigned i = 0; i < 3; i++) JS_FreeValue(ctx, data[i]);
@@ -770,6 +855,7 @@ int sr_ffi_register(JSContext *ctx)
     if (JS_SetModulePrivateValue(ctx, module, private) < 0) return 0;
     return JS_AddModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) >= 0 &&
         JS_AddModuleExport(ctx, module, "open") >= 0 && JS_AddModuleExport(ctx, module, "alloc") >= 0 &&
+        JS_AddModuleExport(ctx, module, "allocPointers") >= 0 &&
         JS_AddModuleExport(ctx, module, "callbacks") >= 0 && JS_AddModuleExport(ctx, module, "async") >= 0 &&
         JS_AddModuleExport(ctx, module, "variadics") >= 0;
 }

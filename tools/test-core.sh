@@ -2,7 +2,7 @@
 set -eu
 ui=${1:?Pass the native PollyUI executable}
 node --test tests/module-boundaries.mjs
-ctest --test-dir "$(dirname -- "$ui")" --output-on-failure --no-tests=error -R '^sysrt-ffi$'
+ctest --test-dir "$(dirname -- "$ui")" --output-on-failure --no-tests=error -R '^sysrt-(ffi|process)$'
 temporary=$(mktemp -d)
 cleanup() {
     rm -f "$temporary/storage.dat" "$temporary/output.log"

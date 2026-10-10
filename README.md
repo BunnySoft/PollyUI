@@ -45,6 +45,12 @@ because separate CRTs do not share errno. Integer widths are explicit,
 64-bit results use BigInt, and native buffers/views have bounded access and
 explicit close semantics. Library/function/pointer ownership prevents wrapper
 collection from releasing resources still in use.
+`allocPointers([...])` builds a flat, read-only native input pointer array,
+pins its elements through wrapper GC and rejects calls after an element closes.
+Null termination is explicit. `createCStringArray(strings)` provides a scoped
+UTF-8/null-terminated vector for argv/envp. `readPointer(offset?)` reads aligned
+pointer fields from bounded memory; unknown addresses remain opaque, not
+readable native allocations. All pointer-field use is a trusted ABI contract.
 Calls remain synchronous; callbacks and structures passed by value are
 unsupported. `variadic` declares the number of fixed parameters for a complete
 bound signature using the default C ABI; tail types must explicitly use C
@@ -79,6 +85,18 @@ const fs = createFileSystem();
 const result = fs.openat(C.AT_FDCWD, 'relative/file.bin', C.O_RDONLY, 0);
 // Check result.value/errno; close a successful fd, then dispose the bindings.
 ```
+
+The basic process SDK exposes native calls through `createProcessApi()`:
+Linux x86_64 supports PID/parent/user/group/session observations, `posix_spawn`,
+`posix_spawnp`, `waitpid` and `kill`; Windows x64 supports `CreateProcessW`,
+`OpenProcess`, handle release, wait, exit-code queries and termination.
+Calling conventions, out buffers and return packets remain native. In
+particular, POSIX spawn returns an error number directly; wait may return 0
+with `WNOHANG`. No shell, automatic retry, GUI launch policy, worker offload or
+callback is added. Do not resume a live QuickJS VM through a raw `fork`.
+Callers own child reaping and OS handle release; disposing bindings does not
+terminate a process or close its OS handle. Other process ABI profiles are
+not implemented; the existing current-PID convenience remains available.
 
 `pollyui` retains the existing application command. The separate
 `pollyui-playground` example links only the GUI library (Windows output:

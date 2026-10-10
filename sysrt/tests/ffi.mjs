@@ -1,7 +1,7 @@
-import { open, alloc, platform, libc, architecture, pointerSize, longSize, maxBytes, callbacks, variadics, async as asyncCalls } from 'sysrt:ffi';
+import { open, alloc, allocPointers, platform, libc, architecture, pointerSize, longSize, maxBytes, callbacks, variadics, async as asyncCalls } from 'sysrt:ffi';
 import { currentId, close as closeProcess } from './sysrt/sdk/js/process.mjs';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
-import { createRecord } from './sysrt/sdk/js/memory.mjs';
+import { createRecord, createCStringArray } from './sysrt/sdk/js/memory.mjs';
 import { monotonicNanoseconds, close as closeClock } from './sysrt/sdk/js/clock.mjs';
 import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
@@ -253,6 +253,39 @@ check([...new Uint8Array(buffer.read(8))].every(byte => byte === 90), 'Native wr
 refuses(() => fill(123n, 1, 1), 'Forged pointer');
 const echo = bind('sr_echo_pointer', 'pointer', ['pointer']);
 check(echo(null).value === null, 'Null pointer round-trip');
+let vector;
+{
+  const value = alloc(3);
+  value.write(new Uint8Array([65, 66, 0]).buffer);
+  vector = allocPointers([value, null]);
+  value.owner = vector;
+}
+collect();
+const vectorValue = vector.readPointer();
+check(vectorValue.readString(3) === 'AB' && vector.readPointer(pointerSize) === null,
+  'Pointer vectors pin data across wrapper GC and preserve null slots');
+refuses(() => vector.write(new ArrayBuffer(pointerSize)), 'Pointer arrays cannot be overwritten');
+refuses(() => vector.readPointer(2 * pointerSize), 'Pointer field bound');
+refuses(() => vector.readPointer(1), 'Pointer field alignment');
+refuses(() => allocPointers([vector]), 'Flat pointer arrays do not recursively retain vector graphs');
+vectorValue.close(); vector.close();
+for (const values of [[12], [foreignObject], [undefined]])
+  refuses(() => allocPointers(values), 'Pointer arrays reject forged or foreign values');
+const revoked = alloc(1), revocableVector = allocPointers([revoked]);
+revoked.close();
+refuses(() => echo(revocableVector), 'Closed pointee cannot reach native code', 'ERR_FFI_CLOSED');
+revocableVector.close();
+const duringConstruction = alloc(1);
+const changed = [duringConstruction, null];
+Object.defineProperty(changed, 1, { get() { duringConstruction.close(); return null; } });
+refuses(() => allocPointers(changed), 'Array getters cannot invalidate earlier elements silently', 'ERR_FFI_CLOSED');
+const strings = createCStringArray(['literal', '\u4e2d']);
+const stringPointer = strings.pointer.readPointer(pointerSize);
+check(stringPointer.readString(4) === '\u4e2d', 'JS CString vector contains real UTF-8 pointers');
+strings.close();
+refuses(() => stringPointer.read(1), 'CString vector close revokes pointees', 'ERR_FFI_CLOSED');
+stringPointer.close();
+refuses(() => createCStringArray(['x\0y']), 'CString vector cannot contain NUL');
 const view = buffer.slice(2, 2), echoed = echo(view).value;
 check(echoed.read(2).byteLength === 2, 'Returned view pins its memory');
 refuses(() => echoed.read(3), 'Returned view cannot widen its bound');

@@ -51,6 +51,18 @@ EXPORT int32_t sr_error(int32_t value)
     return -1;
 }
 
+EXPORT size_t sr_process_layout(int32_t index)
+{
+#ifdef _WIN32
+    const size_t values[] = { sizeof(STARTUPINFOW), sizeof(PROCESS_INFORMATION),
+        offsetof(PROCESS_INFORMATION, hProcess), offsetof(PROCESS_INFORMATION, hThread),
+        offsetof(PROCESS_INFORMATION, dwProcessId), offsetof(PROCESS_INFORMATION, dwThreadId) };
+#else
+    const size_t values[] = { sizeof(int32_t) };
+#endif
+    return index >= 0 && (size_t)index < sizeof(values) / sizeof(*values) ? values[index] : SIZE_MAX;
+}
+
 EXPORT double sr_variadic(int32_t bias, int32_t count, ...)
 {
     va_list args;

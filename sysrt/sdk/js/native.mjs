@@ -16,6 +16,7 @@ export function loadBindings(configuration) {
         (target.longSize !== undefined && target.longSize !== longSize))
       throw new Error('Native configuration does not match the host ABI');
   }
+
   const layouts = new Map();
   if (configuration.layouts !== undefined) {
     if (!configuration.layouts || typeof configuration.layouts !== 'object' || Array.isArray(configuration.layouts))
@@ -66,4 +67,20 @@ export function loadBindings(configuration) {
       closed = true;
     },
   };
+}
+
+export function loadNativeApi(configuration) {
+  const functions = Object.create(null);
+  for (const binding of Object.values(configuration.functions)) {
+    if (!binding || typeof binding.symbol !== 'string' ||
+        ['createRecord', 'dispose'].includes(binding.symbol) || Object.hasOwn(functions, binding.symbol))
+      throw new TypeError('Native API requires unique, non-reserved symbol names');
+    functions[binding.symbol] = binding;
+  }
+  const bindings = loadBindings({ ...configuration, functions });
+  return Object.freeze({
+    ...Object.fromEntries(Object.keys(functions).map(symbol => [symbol, (...args) => bindings.call(symbol, ...args)])),
+    createRecord: name => bindings.createRecord(name),
+    dispose: () => bindings.close(),
+  });
 }

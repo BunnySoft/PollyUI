@@ -1,4 +1,4 @@
-import { alloc, maxBytes, pointerSize, longSize } from 'sysrt:ffi';
+import { alloc, allocPointers, maxBytes, pointerSize, longSize } from 'sysrt:ffi';
 import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
 const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
@@ -156,3 +156,31 @@ export function compileLayout(description) {
 }
 
 export function createRecord(description) { return compileLayout(description).create(); }
+
+export function createCStringArray(values) {
+  if (!Array.isArray(values)) throw new TypeError('CString array requires an array of strings');
+  const buffers = [];
+  let pointer;
+  try {
+    for (const value of values) {
+      if (typeof value !== 'string' || value.includes('\0')) throw new TypeError('CString arrays cannot contain NUL');
+      const bytes = encodeUtf8(value, maxBytes - 1);
+      const buffer = alloc(bytes.length + 1);
+      buffers.push(buffer); buffer.write(bytes.buffer);
+    }
+    pointer = allocPointers([...buffers, null]);
+  } catch (error) {
+    for (const buffer of buffers) buffer.close();
+    throw error;
+  }
+  let closed = false;
+  return {
+    get pointer() { if (closed) throw new Error('CString array is closed'); return pointer; },
+    close() {
+      if (closed) return;
+      pointer.close();
+      for (const buffer of buffers) buffer.close();
+      closed = true;
+    },
+  };
+}

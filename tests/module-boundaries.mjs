@@ -47,7 +47,7 @@ test('filesystem is a JS/config SDK with no domain-specific native provider or p
   assert.doesNotMatch(build, /yogacore|pollyui-engine|gui\/src|desktop\/native/);
   assert.doesNotMatch(build, /polly-sysrt-linux-files|providers\/linux\/files/);
   const sdk = read('sysrt/sdk/js/files.mjs');
-  assert.match(sdk, /loadBindings\(\{ \.\.\.description, functions \}\)/);
+  assert.match(sdk, /loadNativeApi\(filesBindings\[libc\]\)/);
   assert.doesNotMatch(sdk, /document\.|window\.|desktop\/|pu_files_/);
   assert.doesNotMatch(sdk, /localStorage|ordinary|geteuid|1048576|maxEntries|maxTextBytes|SHA256|sha256/);
   assert.match(read('sysrt/bindings/files.mjs'), /symbol: 'statx'/);
@@ -65,7 +65,7 @@ test('generic FFI has no GUI or domain-specific API dependency', () => {
   assert.match(source, /ffi_call/);
   assert.match(source, /GetProcAddress/);
   assert.match(source, /dlsym/);
-  assert.match(read('sysrt/sdk/js/process.mjs'), /loadBindings\(processBindings\[platform\]\)/);
+  assert.match(read('sysrt/sdk/js/process.mjs'), /loadNativeApi\(processBindings\[platform\]\)/);
   assert.doesNotMatch(read('sysrt/sdk/js/process.mjs'), /document\.|window\.|desktop/);
   assert.match(cmake, /if \(PU_BUILD_LAUNCHER\)\s+add_subdirectory\(sysrt\)/);
   assert.doesNotMatch(source, /static JSClassID/);

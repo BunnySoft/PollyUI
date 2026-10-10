@@ -78,6 +78,9 @@ preserve OS behavior; bounded text, directory snapshots and ordinary-user
 rules belong to the desktop file service, not SysRT. The launcher uses
 a JS service prelude before the app entry; a generic shared-module root makes
 SDK loading independent of the app's working directory.
+The basic process SDK now maps native creation/wait/signal APIs; argument
+vectors and pointer fields use generic FFI memory, not a process-specific C
+bridge. Desktop launch/activation policy remains separate.
 Callback/asynchronous mechanisms remain unfinished.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.

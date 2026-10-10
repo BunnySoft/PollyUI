@@ -49,6 +49,13 @@ static void report(JSContext *ctx, JSValue exception)
     const char *message = JS_ToCString(ctx, exception);
     fprintf(stderr, "FAIL FFI: %s\n", message ? message : "exception");
     JS_FreeCString(ctx, message);
+    JSValue stack = JS_GetPropertyStr(ctx, exception, "stack");
+    if (!JS_IsException(stack) && !JS_IsUndefined(stack)) {
+        const char *trace = JS_ToCString(ctx, stack);
+        if (trace) fprintf(stderr, "%s\n", trace);
+        JS_FreeCString(ctx, trace);
+    }
+    JS_FreeValue(ctx, stack);
     JS_FreeValue(ctx, exception);
 }
 
@@ -61,7 +68,7 @@ static JSValue collect(JSContext *ctx, JSValueConst self, int argc, JSValueConst
 
 static JSClassID cached_foreign_class;
 
-static int run(const char *script, const char *fixture, unsigned occupied, int cached)
+static int run(const char *script, const char *fixture, const char *child, unsigned occupied, int cached)
 {
     JSRuntime *runtime = JS_NewRuntime();
     JSContext *ctx = runtime ? JS_NewContext(runtime) : NULL;
@@ -87,6 +94,7 @@ static int run(const char *script, const char *fixture, unsigned occupied, int c
     if (!sr_ffi_register(ctx)) failed = 1;
     JSValue global = JS_GetGlobalObject(ctx);
     if (JS_SetPropertyStr(ctx, global, "fixtureLibrary", JS_NewString(ctx, fixture)) < 0) failed = 1;
+    if (child && JS_SetPropertyStr(ctx, global, "processChild", JS_NewString(ctx, child)) < 0) failed = 1;
     if (JS_SetPropertyStr(ctx, global, "fixtureRun", JS_NewUint32(ctx, occupied + (unsigned)cached)) < 0) failed = 1;
     if (JS_SetPropertyStr(ctx, global, "foreignObject",
         foreign_class ? JS_NewObjectClass(ctx, foreign_class) : JS_NewObject(ctx)) < 0) failed = 1;
@@ -120,10 +128,11 @@ static int run(const char *script, const char *fixture, unsigned occupied, int c
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) { fprintf(stderr, "Pass the FFI test module and native fixture library\n"); return 2; }
-    int failed = run(argv[1], argv[2], 0, 0);
-    failed |= run(argv[1], argv[2], 8, 0);
-    failed |= run(argv[1], argv[2], 0, 1);
+    if (argc != 3 && argc != 4) { fprintf(stderr, "Pass the test module, native fixture library and optional child executable\n"); return 2; }
+    const char *child = argc == 4 ? argv[3] : NULL;
+    int failed = run(argv[1], argv[2], child, 0, 0);
+    failed |= run(argv[1], argv[2], child, 8, 0);
+    failed |= run(argv[1], argv[2], child, 0, 1);
     if (!failed) puts("PASS: real libffi calls, VM isolation, memory lifetime and JS/config SDK");
     return failed;
 }
