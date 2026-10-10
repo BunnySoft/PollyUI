@@ -35,14 +35,17 @@ native module and a JS/config process SDK. Existing file/storage/HTTP modules
 still use their current native implementations; Settings remains Shell-owned.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
-libffi. `Library.bind(symbol, {result, parameters, abi?})` returns a callable
+libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?})` returns a callable
 whose result is `{value, errno, systemError}`; Windows reports `errno:null`
 because separate CRTs do not share errno. Integer widths are explicit,
 64-bit results use BigInt, and native buffers/views have bounded access and
 explicit close semantics. Library/function/pointer ownership prevents wrapper
 collection from releasing resources still in use.
-This first implementation is synchronous: callbacks, variadics and structures
-passed by value are unsupported, not emulated. CString arguments are borrowed
+Calls remain synchronous; callbacks and structures passed by value are
+unsupported. `variadic` declares the number of fixed parameters for a complete
+bound signature using the default C ABI; tail types must explicitly use C
+promotions (`i32`/`double` instead of narrow integers/`float`). Each bound
+signature has a fixed argument count, including its variadic tail. CString arguments are borrowed
 for the call; retained data needs an explicitly managed buffer. Unknown native
 allocations stay opaque. ABI descriptions are trusted native-code contracts,
 not an OS sandbox. Ordinary launchers register the module; dedicated greeter,

@@ -32,11 +32,12 @@ export function loadBindings(configuration) {
     for (const [key, description] of Object.entries(configuration.functions)) {
       if (!description || typeof description.symbol !== 'string' || !Array.isArray(description.parameters))
         throw new TypeError('Invalid native function description: ' + key);
-      if (Object.keys(description).some(field => !['symbol', 'result', 'parameters', 'abi'].includes(field)))
+      if (Object.keys(description).some(field => !['symbol', 'result', 'parameters', 'abi', 'variadic'].includes(field)))
         throw new TypeError('Unsupported native function metadata: ' + key);
       functions.set(key, library.bind(description.symbol, {
         result: description.result, parameters: description.parameters,
         ...(description.abi === undefined ? {} : { abi: description.abi }),
+        ...(description.variadic === undefined ? {} : { variadic: description.variadic }),
       }));
     }
   } catch (error) {

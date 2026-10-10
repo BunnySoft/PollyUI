@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <errno.h>
 #include <string.h>
+#include <stdarg.h>
 #ifdef _WIN32
 #include <windows.h>
 #define EXPORT __declspec(dllexport)
@@ -38,6 +39,28 @@ EXPORT int32_t sr_error(int32_t value)
     SetLastError((DWORD)value);
 #endif
     return -1;
+}
+
+EXPORT double sr_variadic(int32_t bias, int32_t count, ...)
+{
+    va_list args;
+    va_start(args, count);
+    double result = bias;
+    for (int32_t i = 0; i < count; i++) {
+        result += va_arg(args, int);
+        result += va_arg(args, double);
+    }
+    va_end(args);
+    return result;
+}
+EXPORT size_t sr_variadic_strings(int32_t count, ...)
+{
+    va_list args;
+    va_start(args, count);
+    size_t size = 0;
+    for (int32_t i = 0; i < count; i++) size += strlen(va_arg(args, const char *));
+    va_end(args);
+    return size;
 }
 
 typedef struct SrRecord { int8_t tag; int64_t count; double ratio; } SrRecord;

@@ -427,7 +427,8 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     for (uint32_t i = 0; i < property_count; i++) {
         const char *field = JS_AtomToCString(ctx, properties[i].atom);
         if (!field) { fields_ok = 0; break; }
-        if (strcmp(field, "result") && strcmp(field, "parameters") && strcmp(field, "abi")) {
+        if (strcmp(field, "result") && strcmp(field, "parameters") && strcmp(field, "abi") &&
+            strcmp(field, "variadic")) {
             JS_ThrowTypeError(ctx, "Unsupported signature field: %s", field);
             fields_ok = 0;
         }
@@ -473,7 +474,29 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     }
     JS_FreeValue(ctx, convention);
     if (!ok) goto done;
-    if (ffi_prep_cif(&function->cif, abi, function->count, native_type(function->result), function->types) != FFI_OK) {
+    JSValue variadic = JS_GetPropertyStr(ctx, argv[1], "variadic");
+    if (JS_IsException(variadic)) goto done;
+    size_t fixed = 0;
+    int variable = !JS_IsUndefined(variadic);
+    if (variable) {
+        ok = index_value(ctx, variadic, function->count, &fixed);
+        if (ok && abi != FFI_DEFAULT_ABI) { JS_ThrowTypeError(ctx, "Variadic calls require the default C ABI"); ok = 0; }
+        if (ok && !fixed) { JS_ThrowRangeError(ctx, "Variadic signatures require a fixed parameter"); ok = 0; }
+        for (unsigned i = (unsigned)fixed; ok && i < function->count; i++) {
+            Type type = function->params[i];
+            if (type == T_FLOAT || type == T_I8 || type == T_U8 || type == T_I16 || type == T_U16) {
+                JS_ThrowTypeError(ctx, "Variadic tails require explicit C promotions: i32 or double");
+                ok = 0;
+            }
+        }
+    }
+    JS_FreeValue(ctx, variadic);
+    if (!ok) goto done;
+    ffi_status prepared = variable ?
+        ffi_prep_cif_var(&function->cif, abi, (unsigned)fixed, function->count,
+            native_type(function->result), function->types) :
+        ffi_prep_cif(&function->cif, abi, function->count, native_type(function->result), function->types);
+    if (prepared != FFI_OK) {
         error(ctx, "ERR_FFI_SIGNATURE", "Cannot prepare native signature"); goto done;
     }
     if (library->closed) { error(ctx, "ERR_FFI_CLOSED", "Native library closed during binding"); goto done; }
@@ -684,7 +707,8 @@ static int module_init(JSContext *ctx, JSModuleDef *module)
     if (!ok) return -1;
     if (JS_SetModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) < 0 ||
         JS_SetModuleExport(ctx, module, "callbacks", JS_NewBool(ctx, 0)) < 0 ||
-        JS_SetModuleExport(ctx, module, "async", JS_NewBool(ctx, 0)) < 0) return -1;
+        JS_SetModuleExport(ctx, module, "async", JS_NewBool(ctx, 0)) < 0 ||
+        JS_SetModuleExport(ctx, module, "variadics", JS_NewBool(ctx, 1)) < 0) return -1;
     return 0;
 }
 
@@ -736,5 +760,6 @@ int sr_ffi_register(JSContext *ctx)
     if (JS_SetModulePrivateValue(ctx, module, private) < 0) return 0;
     return JS_AddModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) >= 0 &&
         JS_AddModuleExport(ctx, module, "open") >= 0 && JS_AddModuleExport(ctx, module, "alloc") >= 0 &&
-        JS_AddModuleExport(ctx, module, "callbacks") >= 0 && JS_AddModuleExport(ctx, module, "async") >= 0;
+        JS_AddModuleExport(ctx, module, "callbacks") >= 0 && JS_AddModuleExport(ctx, module, "async") >= 0 &&
+        JS_AddModuleExport(ctx, module, "variadics") >= 0;
 }

@@ -1,4 +1,4 @@
-import { open, alloc, platform, pointerSize, longSize, maxBytes, callbacks, async as asyncCalls } from 'sysrt:ffi';
+import { open, alloc, platform, libc, pointerSize, longSize, maxBytes, callbacks, variadics, async as asyncCalls } from 'sysrt:ffi';
 import { currentId, close as closeProcess } from './sysrt/sdk/js/process.mjs';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
 import { createRecord } from './sysrt/sdk/js/memory.mjs';
@@ -16,6 +16,7 @@ function refuses(action, message, code) {
 check(pointerSize === 4 || pointerSize === 8, 'Native pointer width is explicit');
 check(longSize === 4 || longSize === 8, 'Native long width is explicit');
 check(callbacks === false && asyncCalls === false, 'Unimplemented features are explicit');
+check(variadics === true, 'Variadic capability is explicit');
 const pid = currentId();
 check(Number.isInteger(pid) && pid === expectedProcessId && currentId() === pid, 'JS process SDK calls the actual OS');
 closeProcess();
@@ -73,7 +74,7 @@ if (platform === 'windows' || platform === 'linux') {
 refuses(() => library.bind('missing_symbol', { result: 'i32', parameters: [] }), 'Unknown export', 'ERR_FFI_SYMBOL');
 refuses(() => library.bind('sr_echo_i8', { result: 'record', parameters: [] }), 'Unsupported structure');
 refuses(() => library.bind('sr_echo_i8', { result: 'i8', parameters: ['void'] }), 'void argument');
-refuses(() => library.bind('sr_echo_i8', { result: 'i8', parameters: ['i8'], variadic: true }), 'Unsupported variadic metadata');
+refuses(() => library.bind('sr_echo_i8', { result: 'i8', parameters: ['i8'], variadic: true }), 'Boolean is not a fixed count');
 refuses(() => library.bind('sr_echo_i8', { result: 'i8', parameters: ['i8'], abi: 'unknown' }), 'Unknown ABI');
 const cases = [
   ['i8', -128, 127], ['u8', 0, 255], ['i16', -32768, 32767], ['u16', 0, 65535],
@@ -111,6 +112,45 @@ check(Number.isNaN(floating(NaN).value) && floating(Infinity).value === Infinity
 check(bind('sr_echo_float', 'float', ['float'])(0.5).value === 0.5, 'Single precision');
 check(bind('sr_mixed', 'double', ['i8', 'u16', 'i32', 'double'])(-1, 65535, -4000, 0.25).value === 61534.25,
   'Mixed register types');
+const varargs = loadBindings({
+  library: fixtureLibrary,
+  functions: {
+    empty: { symbol: 'sr_variadic', result: 'double', parameters: ['i32', 'i32'], variadic: 2 },
+    mixed: { symbol: 'sr_variadic', result: 'double',
+      parameters: ['i32', 'i32', 'i32', 'double', 'i32', 'double'], variadic: 2 },
+    strings: { symbol: 'sr_variadic_strings', result: 'size',
+      parameters: ['i32', 'cstring', 'cstring'], variadic: 1 },
+  },
+});
+check(varargs.call('empty', 7, 0).value === 7, 'Variadic signature allows no tail values');
+check(varargs.call('mixed', 7, 2, -3, 0.25, 12, 1.5).value === 17.75, 'Integer and floating variadic registers');
+check(Number(varargs.call('strings', 2, 'abc', '\u4e2d').value) === 6, 'Variadic UTF-8 pointers keep storage alive');
+varargs.close();
+if (platform === 'windows' || platform === 'linux' || platform === 'macos') {
+  const formatter = loadBindings({
+    library: platform === 'windows' ? 'msvcrt.dll' : platform === 'macos' ?
+      '/usr/lib/libSystem.B.dylib' : libc === 'glibc' ? 'libc.so.6' : 'libc.so',
+    functions: {
+      format: { symbol: platform === 'windows' ? '_snprintf' : 'snprintf', result: 'i32',
+        parameters: ['pointer', 'size', 'cstring', 'i32', 'double', 'cstring'], variadic: 3 },
+    },
+  });
+  const output = alloc(64);
+  try {
+    const result = formatter.call('format', output, 64, '%d/%.2f/%s', 7, 1.25, 'x');
+    check(result.value === 8 && output.readString(64) === '7/1.25/x',
+      'Existing OS CRT variadic API is called with JS/config only');
+  } finally { output.close(); formatter.close(); }
+}
+for (const fixed of [0, -1, 3, 1.5, true])
+  refuses(() => library.bind('sr_variadic', { result: 'double', parameters: ['i32', 'i32'], variadic: fixed }),
+    'Invalid fixed parameter count');
+refuses(() => library.bind('sr_variadic', {
+  result: 'double', parameters: ['i32', 'i32'], variadic: 2, abi: 'stdcall',
+}), 'Variadic calls cannot use stdcall');
+for (const type of ['float', 'i8', 'u8', 'i16', 'u16'])
+  refuses(() => library.bind('sr_variadic', { result: 'double',
+    parameters: ['i32', 'i32', type], variadic: 2 }), 'Implicit promotion is not guessed');
 const nativeError = bind('sr_error', 'i32', ['i32'])(13);
 check(nativeError.value === -1, 'Negative native result remains a result');
 check(platform === 'windows' ? nativeError.systemError === 13 && nativeError.errno === null :
