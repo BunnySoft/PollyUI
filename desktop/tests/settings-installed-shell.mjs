@@ -33,7 +33,10 @@ async function run() {
   const survivor = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings-survivor', script, 'survivor'],
     settingsLaunchSpec().cwd, 'installed-settings-survivor');
   const output = shell.getState().outputs[0], environment = settingsEnvironment();
+  const started = Date.now();
   const owned = await shell.showSystemSettings(output);
+  check(Date.now() - started < 5000 && shell.getSettingsState().connected,
+    'installed Settings Open/Connect completes within the original five-second startup bound');
   check(owned > 0 && owned !== environment.pid, 'installed Shell launches production Settings in its own PID');
   await signal('fixture-settings-state ' + ++sequence + ' 1');
   const wrapper = executable.slice(0, executable.lastIndexOf('/')) + '/polly-settings';

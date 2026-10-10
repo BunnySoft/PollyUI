@@ -17,6 +17,15 @@ add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_HOST STREQUAL "sdl")
+        add_executable(pollyui-idle-paint-test tests/idle-paint.c)
+        target_link_libraries(pollyui-idle-paint-test PRIVATE pollyui-engine)
+        target_compile_definitions(pollyui-idle-paint-test PRIVATE _POSIX_C_SOURCE=200809L)
+        target_compile_options(pollyui-idle-paint-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME gui-idle-paint COMMAND pollyui-idle-paint-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/idle-paint.mjs")
+        set_tests_properties(gui-idle-paint PROPERTIES TIMEOUT 15
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software;PU_RENDERER=raster")
+    endif()
     add_executable(pollyui-context-test tests/context-hooks.c)
     target_link_libraries(pollyui-context-test PRIVATE pollyui-engine)
     add_test(NAME gui-context-hooks COMMAND pollyui-context-test

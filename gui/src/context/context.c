@@ -55,6 +55,7 @@ typedef struct PuApp {
     struct PuApp *next;
     PuWindow *window;
     JSValue handle;
+    uint64_t paint_version;
     int closed, frameless, backdrop, titlebar, is_layer, transparent;
 } PuApp;
 
@@ -86,12 +87,14 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
         double t2 = pu_now_ms();
         fprintf(stderr, "[perf] paint: layout %.2fms  render %.2fms  total %.2fms\n",
                 t1 - t0, t2 - t1, t2 - t0);
+        app->paint_version = pu_node_paint_version();
         return;
     }
     pu_layout_calculate(body, (float)width, (float)height);
     pu_bridge_sync_text_input(app->bridge);
     if (app->transparent) pu_render_tree_transparent(surface, body, scale);
     else pu_render_tree(surface, body, scale);
+    app->paint_version = pu_node_paint_version();
 }
 
 /* Pointer: hit-test against the last computed layout and dispatch the matching
@@ -190,28 +193,29 @@ static double pu_frame_ms(void)
 #endif
 }
 
-/* Frame/wake pump: fire animation callbacks + pending UI-thread work; the
- * window repaints if anything ran (rAF callbacks typically mutate the DOM). */
+/* Idle timers and IPC polling are work, but not visual changes. */
 static int app_async(void *user)
 {
     PuScript *script = user;
-    int n = 0;
     if (g_config->hooks && g_config->hooks->pump) {
         int work = g_config->hooks->pump(g_config->user);
         if (work < 0) {
             g_app_error = g_app_quitting = 1;
             pu_window_keep_alive(0);
             for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
-        } else n += work;
+        }
     }
-    n += pu_script_flush_raf(script, pu_frame_ms());
-    n += pu_script_pump(script);
+    pu_script_flush_raf(script, pu_frame_ms());
+    pu_script_pump(script);
     if (pu_script_failed(script) || (g_redact_errors && g_app_error)) {
         g_app_error = g_app_quitting = 1;
         pu_window_keep_alive(0);
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
     }
-    return n;
+    uint64_t paint_version = pu_node_paint_version();
+    for (PuApp *app = g_apps; app; app = app->next)
+        if (app->paint_version != paint_version) pu_window_redraw(app->window);
+    return 0;
 }
 
 /* Dispatcher waker (called from worker threads): nudge the window to drain. */

@@ -45,6 +45,7 @@ static void bitmap_close(PuBitmap *bitmap)
     while (*slot && *slot != bitmap) slot = &(*slot)->next;
     if (*slot) *slot = bitmap->next;
     pu_image_remove(bitmap->key);
+    pu_node_mark_paint_dirty();
     bitmap->owner = NULL;
     bitmap->next = NULL;
 }
@@ -284,7 +285,8 @@ static int js_style_set(JSContext *ctx, JSValueConst obj, JSAtom atom,
     const char *name = JS_AtomToCString(ctx, atom);
     if (!name) return -1;
     const char *val = JS_ToCString(ctx, value);
-    if (node && val) {
+    const char *previous = node ? pu_style_get(&node->style, name) : NULL;
+    if (node && val && (!previous || strcmp(previous, val))) {
         pu_style_set(&node->style, name, val);
         if (pu_layout_affects(name)) pu_layout_mark_dirty(); /* skip relayout for render-only props */
     }
@@ -796,7 +798,9 @@ int pu_bridge_dispatch_wheel(PuBridge *b, PuNode *target, const PuWheelEvent *ev
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
 {
     for (; n; n = n->parent) {
+        unsigned previous = n->state;
         if (on) n->state |= flag; else n->state &= ~flag;
+        if (previous != n->state) pu_node_mark_paint_dirty();
         if (!up_path) break;
     }
 }

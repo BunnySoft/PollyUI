@@ -76,6 +76,12 @@ For standalone Settings, build `pollyui-layer-client-test` in the same private t
 and run the existing `settings-native.py --mode installed` fixture from an
 unrelated staged install. This is container/native staging evidence only.
 
+`gui-idle-paint` uses actual SDL raster PNG captures to check that idle service
+and JS timer polling keeps running without repainting all surfaces, while real
+DOM/Promise/focus changes still paint. GUI visual revisions are independent of
+SysRT; each window retains its own last-painted revision. The installed Settings
+fixture also checks Open/Connect against the unchanged five-second startup bound.
+
 ```sh
 cmake --build /checks/build --target pollyui-layer-client-test -j2
 python3 -I -B desktop/tests/settings-native.py \

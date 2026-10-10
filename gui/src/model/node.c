@@ -8,7 +8,10 @@
  * needs only the runtime, not a context). Set by the bridge. */
 static JSRuntime *g_rt;
 static PuNode *g_nodes;
+static uint64_t g_paint_version;
 void pu_node_set_runtime(JSRuntime *rt) { g_rt = rt; }
+uint64_t pu_node_paint_version(void) { return g_paint_version; }
+void pu_node_mark_paint_dirty(void) { g_paint_version++; }
 
 static char *pu_strdup(const char *s)
 {
@@ -26,10 +29,12 @@ void pu_style_set(PuStyle *s, const char *name, const char *value)
     if (!name) return;
     for (int i = 0; i < s->count; i++) {
         if (strcmp(s->props[i].name, name) == 0) {
+            if (!strcmp(s->props[i].value, value ? value : "")) return;
             char *nv = pu_strdup(value ? value : "");
             if (!nv) return;
             free(s->props[i].value);
             s->props[i].value = nv;
+            pu_node_mark_paint_dirty();
             return;
         }
     }
@@ -42,7 +47,10 @@ void pu_style_set(PuStyle *s, const char *name, const char *value)
     }
     s->props[s->count].name  = pu_strdup(name);
     s->props[s->count].value = pu_strdup(value ? value : "");
-    if (s->props[s->count].name && s->props[s->count].value) s->count++;
+    if (s->props[s->count].name && s->props[s->count].value) {
+        s->count++;
+        pu_node_mark_paint_dirty();
+    }
 }
 
 const char *pu_style_get(const PuStyle *s, const char *name)
@@ -64,6 +72,7 @@ void pu_style_remove(PuStyle *s, const char *name)
             memmove(&s->props[i], &s->props[i + 1],
                     (size_t)(s->count - i - 1) * sizeof(PuStyleProp));
             s->count--;
+            pu_node_mark_paint_dirty();
             return;
         }
     }
@@ -208,6 +217,7 @@ void pu_node_insert_before(PuNode *parent, PuNode *child, PuNode *ref_node)
         parent->last_child = child;
     }
     parent->child_count++;
+    pu_node_mark_paint_dirty();
 }
 
 void pu_node_append(PuNode *parent, PuNode *child)
@@ -219,6 +229,7 @@ void pu_node_remove(PuNode *parent, PuNode *child)
 {
     if (!parent || !child || child->parent != parent) return;
     pu_unlink(child);
+    pu_node_mark_paint_dirty();
     pu_node_unref(child);   /* lost the tree ref; frees if nothing else holds it */
 }
 
@@ -226,10 +237,12 @@ void pu_node_remove(PuNode *parent, PuNode *child)
 
 void pu_node_set_text(PuNode *n, const char *text)
 {
+    if (!strcmp(n->text ? n->text : "", text ? text : "")) return;
     char *nt = pu_strdup(text ? text : "");
     if (!nt && text) return;
     free(n->text);
     n->text = nt;
+    pu_node_mark_paint_dirty();
 }
 
 /* ---- events ----------------------------------------------------------------*/

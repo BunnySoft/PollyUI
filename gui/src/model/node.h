@@ -89,6 +89,8 @@ void pu_node_set_runtime(JSRuntime *rt);
 /* Release native-held JS callbacks while their runtime is still alive. */
 void pu_node_clear_all_listeners(void);
 void pu_node_clear_tree_listeners(PuNode *root);
+uint64_t pu_node_paint_version(void);
+void pu_node_mark_paint_dirty(void);
 
 /* --- lifetime --- */
 PuNode *pu_node_new(PuNodeType type);
