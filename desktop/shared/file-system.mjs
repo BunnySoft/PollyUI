@@ -1,8 +1,8 @@
-import { alloc, libc } from 'sysrt:ffi';
+import { alloc } from 'sysrt:ffi';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
-import { createFileSystem } from './sysrt/sdk/js/files.mjs';
 import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
-import { filesBindings, fileConstants as C } from './sysrt/bindings/files.mjs';
+import { fileConstants as C } from './sysrt/bindings/files.mjs';
+import { errors, failure, raw, call, usingFD, status } from './desktop/shared/native-files.mjs';
 
 const fileDigestBindings = {
   library: 'libcrypto.so.3', target: { pointerSize: 8, longSize: 8 },
@@ -14,26 +14,7 @@ const fileDigestBindings = {
 };
 const PATH = 4096, NAME = 256, COUNT = 1024, TEXT = 1048576;
 const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
-const errors = {
-  1: 'EPERM', 2: 'ENOENT', 4: 'EINTR', 5: 'EIO', 9: 'EBADF', 12: 'ENOMEM',
-  13: 'EACCES', 17: 'EEXIST', 20: 'ENOTDIR', 21: 'EISDIR', 22: 'EINVAL', 27: 'EFBIG',
-  28: 'ENOSPC', 30: 'EROFS', 36: 'ENAMETOOLONG', 38: 'ENOSYS', 40: 'ELOOP',
-  75: 'EOVERFLOW', 84: 'EILSEQ', 95: 'ENOTSUP', 116: 'ESTALE',
-};
-let native = null, crypto = null, algorithm = null;
-
-function failure(code, syscall = '') {
-  return Object.assign(new Error(code + (syscall ? ': ' + syscall : '')), { code, syscall });
-}
-function backend() {
-  return native ??= createFileSystem();
-}
-function raw(name, ...args) { return backend()[filesBindings[libc].functions[name].symbol](...args); }
-function call(name, ...args) {
-  const result = raw(name, ...args);
-  if (result.value < 0) throw failure(errors[result.errno] ?? 'ERR_OS_' + result.errno, name);
-  return result.value;
-}
+let crypto = null, algorithm = null;
 function ordinary() {
   const uid = call('uid'), gid = call('gid');
   if (!uid || uid !== call('euid') || gid !== call('egid')) throw failure('EPERM');
@@ -69,31 +50,6 @@ function split(path) {
   if (path === '/') throw failure('EINVAL');
   const index = path.lastIndexOf('/');
   return [path.slice(0, index) || '/', path.slice(index + 1)];
-}
-function usingFD(fd, action) {
-  let primary = null;
-  try { return action(fd); }
-  catch (error) { primary = error; throw error; }
-  finally {
-    try { call('close', fd); }
-    catch (cleanup) {
-      if (primary) {
-        throw Object.assign(new Error(primary.message + '; descriptor cleanup failed: ' + cleanup.message),
-          { code: primary.code, cause: primary, cleanup, committed: primary.committed });
-      }
-      throw cleanup;
-    }
-  }
-}
-function status(fd, name = '', flags = C.emptyPath) {
-  const record = backend().createRecord('statx');
-  try {
-    call('status', fd, name, flags, C.basicStatus, record.pointer);
-    const value = record.read();
-    if ((value.mask & C.basicStatus) !== C.basicStatus) throw failure('ENOTSUP', 'statx mask');
-    if (value.mtimeNanos >= 1000000000 || value.ctimeNanos >= 1000000000) throw failure('EIO', 'statx timestamp');
-    return value;
-  } finally { record.close(); }
 }
 function identity(s) {
   return [s.deviceMajor, s.deviceMinor, s.inode, s.links, s.mode.toString(8), s.size,

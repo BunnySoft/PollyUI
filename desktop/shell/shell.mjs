@@ -305,7 +305,7 @@ export function createDesktopShell({ host = window, storage = localStorage, repo
       if (themeAssetSource !== assetSource || persist) {
         asset = '';
         if (theme.desktop.asset) {
-          if (typeof native?.loadThemeAsset !== 'function') throw new Error('Native theme resources are unavailable');
+          if (typeof native?.loadThemeAsset !== 'function') throw new Error('Theme resources are unavailable');
           asset = native.loadThemeAsset(theme.id, theme.desktop.asset);
           loadedAsset = true;
         }

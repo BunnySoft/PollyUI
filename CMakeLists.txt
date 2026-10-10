@@ -324,7 +324,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 desktop/native/output-client.c
                 "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
                 "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
-                desktop/native/shortcut-client.c desktop/native/theme-files.c desktop/native/theme-client.c
+                desktop/native/shortcut-client.c desktop/native/theme-client.c
                 desktop/shared/shortcuts.c desktop/shared/appearance-document.c
                 "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
                 "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"

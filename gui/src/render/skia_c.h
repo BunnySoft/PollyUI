@@ -111,7 +111,8 @@ void pu_surface_fill_gradient(PuSurface *s, float x, float y, float w, float h,
  * to the corner radius. Returns 1 if drawn, 0 if the image couldn't load. */
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius);
-/* Native owned in-memory icons; keys must use the polly-memory: namespace. */
+/* Owned in-memory images; keys must use the polly-memory: namespace.
+ * Bitmap decoding copies PNG/JPEG bytes within the caller's pixel budget. */
 int pu_image_set_argb(const char *key, int width, int height, const uint8_t *bytes, size_t length);
 int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
                         size_t pixel_limit, int *width, int *height);

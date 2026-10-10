@@ -3,6 +3,7 @@
 #include "layout/layout.h"   /* pu_layout_mark_dirty / pu_layout_affects */
 
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,14 @@
 static JSClassID pu_node_class_id;
 static JSClassID pu_style_class_id;
 static JSClassID pu_document_class_id;
+static JSClassID pu_bitmap_class_id;
+
+typedef struct PuBitmap {
+    struct PuBitmap *next;
+    PuBridge *owner;
+    char key[64];
+} PuBitmap;
+static uint64_t bitmap_serial;
 
 struct PuBridge {
     JSContext *ctx;
@@ -26,7 +35,102 @@ struct PuBridge {
     bool input_configured;
     PuTextInputFn input_callback;
     void *input_user;
+    PuBitmap *bitmaps;
 };
+
+static void bitmap_close(PuBitmap *bitmap)
+{
+    if (!bitmap->owner) return;
+    PuBitmap **slot = &bitmap->owner->bitmaps;
+    while (*slot && *slot != bitmap) slot = &(*slot)->next;
+    if (*slot) *slot = bitmap->next;
+    pu_image_remove(bitmap->key);
+    bitmap->owner = NULL;
+    bitmap->next = NULL;
+}
+
+static void bitmap_finalizer(JSRuntime *rt, JSValueConst value)
+{
+    (void)rt;
+    PuBitmap *bitmap = JS_GetOpaque(value, pu_bitmap_class_id);
+    if (!bitmap) return;
+    bitmap_close(bitmap);
+    free(bitmap);
+}
+
+static JSValue js_bitmap_close(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argv;
+    PuBitmap *bitmap = JS_GetOpaque2(ctx, self, pu_bitmap_class_id);
+    if (!bitmap) return JS_EXCEPTION;
+    if (argc) return JS_ThrowTypeError(ctx, "Bitmap close takes no arguments");
+    bitmap_close(bitmap);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_bitmap_closed(JSContext *ctx, JSValueConst self)
+{
+    PuBitmap *bitmap = JS_GetOpaque2(ctx, self, pu_bitmap_class_id);
+    return bitmap ? JS_NewBool(ctx, !bitmap->owner) : JS_EXCEPTION;
+}
+
+static int bitmap_property(JSContext *ctx, JSValueConst object, const char *name, JSValue value)
+{
+    return JS_IsException(value) ? -1 :
+        JS_DefinePropertyValueStr(ctx, object, name, value, JS_PROP_ENUMERABLE);
+}
+
+static JSValue js_create_bitmap(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    PuBridge *owner = JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    if (!owner) return JS_ThrowTypeError(ctx, "GUI bitmap scope is closed");
+    if (argc != 2 || !JS_IsNumber(argv[1]))
+        return JS_ThrowTypeError(ctx, "createBitmap requires bytes and a positive integer pixel limit");
+    double pixels;
+    if (JS_ToFloat64(ctx, &pixels, argv[1]) < 0) return JS_EXCEPTION;
+    if (!isfinite(pixels) || pixels < 1 || pixels > UINT32_MAX || floor(pixels) != pixels)
+        return JS_ThrowRangeError(ctx, "Invalid bitmap pixel limit");
+    if (bitmap_serial == UINT64_MAX) return JS_ThrowRangeError(ctx, "Bitmap keys exhausted");
+
+    size_t offset = 0, length = 0, buffer_length = 0;
+    JSValue buffer;
+    if (JS_IsArrayBuffer(argv[0])) {
+        buffer = JS_DupValue(ctx, argv[0]);
+    } else if (JS_GetTypedArrayType(argv[0]) == JS_TYPED_ARRAY_UINT8) {
+        buffer = JS_GetTypedArrayBuffer(ctx, argv[0], &offset, &length, NULL);
+        if (JS_IsException(buffer)) return buffer;
+    } else {
+        return JS_ThrowTypeError(ctx, "Bitmap bytes must be an ArrayBuffer or Uint8Array");
+    }
+    uint8_t *bytes = JS_GetArrayBuffer(ctx, &buffer_length, buffer);
+    if (!bytes) { JS_FreeValue(ctx, buffer); return JS_EXCEPTION; }
+    if (JS_IsArrayBuffer(argv[0])) length = buffer_length;
+    if (offset > buffer_length || length > buffer_length - offset || !length) {
+        JS_FreeValue(ctx, buffer);
+        return JS_ThrowTypeError(ctx, "Bitmap bytes must not be empty or detached");
+    }
+    PuBitmap *bitmap = calloc(1, sizeof(*bitmap));
+    if (!bitmap) { JS_FreeValue(ctx, buffer); return JS_ThrowOutOfMemory(ctx); }
+    snprintf(bitmap->key, sizeof(bitmap->key), "polly-memory:bitmap-%" PRIu64, ++bitmap_serial);
+    int width, height;
+    int decoded = pu_image_set_bitmap(bitmap->key, bytes + offset, length, (size_t)pixels, &width, &height);
+    JS_FreeValue(ctx, buffer);
+    if (!decoded) { free(bitmap); return JS_ThrowTypeError(ctx, "Cannot decode bitmap within the pixel limit"); }
+    JSValue result = JS_NewObjectClass(ctx, pu_bitmap_class_id);
+    if (JS_IsException(result)) { pu_image_remove(bitmap->key); free(bitmap); return result; }
+    bitmap->owner = owner;
+    bitmap->next = owner->bitmaps;
+    owner->bitmaps = bitmap;
+    JS_SetOpaque(result, bitmap);
+    if (bitmap_property(ctx, result, "key", JS_NewString(ctx, bitmap->key)) < 0 ||
+        bitmap_property(ctx, result, "width", JS_NewInt32(ctx, width)) < 0 ||
+        bitmap_property(ctx, result, "height", JS_NewInt32(ctx, height)) < 0) {
+        JS_FreeValue(ctx, result);
+        return JS_EXCEPTION;
+    }
+    return result;
+}
 
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path);
 static int clear_input(PuBridge *b);
@@ -201,6 +305,7 @@ static const JSClassDef pu_style_class_def = {
     "CSSStyleDeclaration", .finalizer = pu_style_finalizer, .exotic = &pu_style_exotic
 };
 static const JSClassDef pu_document_class_def = { "Document", .finalizer = document_finalizer };
+static const JSClassDef pu_bitmap_class_def = { "Bitmap", .finalizer = bitmap_finalizer };
 
 /* ---- element / node methods ------------------------------------------------*/
 
@@ -1324,6 +1429,21 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     JS_NewClass(rt, pu_node_class_id,  &pu_node_class_def);
     JS_NewClass(rt, pu_style_class_id, &pu_style_class_def);
     JS_NewClass(rt, pu_document_class_id, &pu_document_class_def);
+    if (pu_bitmap_class_id == 0) JS_NewClassID(rt, &pu_bitmap_class_id);
+    if (JS_NewClass(rt, pu_bitmap_class_id, &pu_bitmap_class_def) < 0) {
+        pu_bridge_free(b);
+        return NULL;
+    }
+    JSValue bitmap_proto = JS_NewObject(ctx);
+    if (JS_IsException(bitmap_proto)) { pu_bridge_free(b); return NULL; }
+    def_method(ctx, bitmap_proto, "close", js_bitmap_close, 0);
+    def_get(ctx, bitmap_proto, "closed", js_bitmap_closed);
+    if (JS_HasException(ctx)) {
+        JS_FreeValue(ctx, bitmap_proto);
+        pu_bridge_free(b);
+        return NULL;
+    }
+    JS_SetClassProto(ctx, pu_bitmap_class_id, bitmap_proto);
 
     /* Shared Node prototype: methods + accessors. */
     JSValue node_proto = JS_NewObject(ctx);
@@ -1409,6 +1529,12 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     JS_SetPropertyStr(ctx, global, "document", JS_DupValue(ctx, b->document));
     JS_SetPropertyStr(ctx, global, "measureText",
                       JS_NewCFunction(ctx, js_measure_text, "measureText", 2));
+    JSValue create_bitmap = JS_NewCFunction(ctx, js_create_bitmap, "createBitmap", 2);
+    if (JS_IsException(create_bitmap) || JS_SetPropertyStr(ctx, global, "createBitmap", create_bitmap) < 0) {
+        JS_FreeValue(ctx, global);
+        pu_bridge_free(b);
+        return NULL;
+    }
 #if defined(PU_COMPLEX_TEXT)
     JS_SetPropertyStr(ctx, global, "textBoundaries", JS_NewCFunction(ctx, js_text_boundaries, "textBoundaries", 1));
     JS_SetPropertyStr(ctx, global, "layoutText", JS_NewCFunction(ctx, js_layout_text, "layoutText", 2));
@@ -1467,6 +1593,7 @@ void pu_bridge_release_document(PuBridge *b)
 void pu_bridge_free(PuBridge *b)
 {
     if (!b) return;
+    while (b->bitmaps) bitmap_close(b->bitmaps);
     pu_node_clear_all_listeners();
     JS_SetRuntimeOpaque(JS_GetRuntime(b->ctx), NULL);
     while (b->next) {

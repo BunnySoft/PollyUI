@@ -52,9 +52,22 @@ test('filesystem is a JS/config SDK with no domain-specific native provider or p
   assert.doesNotMatch(sdk, /localStorage|ordinary|geteuid|1048576|maxEntries|maxTextBytes|SHA256|sha256/);
   assert.match(read('sysrt/bindings/files.mjs'), /symbol: 'statx'/);
   const service = read('desktop/shared/file-system.mjs');
-  assert.match(service, /createFileSystem\(\)/);
+  assert.match(read('desktop/shared/native-files.mjs'), /createFileSystem\(\)/);
   assert.match(service, /COUNT = 1024, TEXT = 1048576/);
   assert.match(read('desktop/launcher/services.mjs'), /fileSystem.*from '\.\/desktop\/shared\/file-system\.mjs'/);
+});
+
+test('theme file policy is JS over FileSystem and bitmap decoding belongs to GUI', () => {
+  for (const path of ['desktop/native/theme-files.c', 'desktop/native/theme-files.h'])
+    assert.equal(existsSync(new URL(path, root)), false, path);
+  assert.doesNotMatch(cmake + read('desktop/native/windows.c'), /pu_theme_files_|native\/theme-files/);
+  const service = read('desktop/shared/theme-resources.mjs');
+  assert.match(service, /C\.noFollow/);
+  assert.match(service, /authorize\(\)/);
+  assert.match(read('desktop/launcher/services.mjs'), /desktop\.windows\.bind\(desktop\)/);
+  assert.match(read('desktop/launcher/services.mjs'), /createThemeResources\(windows, globalThis\.createBitmap\)/);
+  assert.doesNotMatch(read('gui/src/bridge/bridge.c'), /#include\s+"(?:sysrt|desktop|native)\//);
+  assert.match(read('gui/src/bridge/bridge.c'), /JS_GetTypedArrayBuffer/);
 });
 
 test('generic FFI has no GUI or domain-specific API dependency', () => {

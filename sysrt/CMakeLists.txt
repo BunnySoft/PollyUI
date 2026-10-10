@@ -111,6 +111,11 @@ if (TARGET qjs)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/files-fixture.py"
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
             set_tests_properties(sysrt-files PROPERTIES TIMEOUT 180 LABELS "ordinary-native;private-files-fixture")
+            add_test(NAME desktop-theme-resources COMMAND "${SR_PYTHON}"
+                "${SR_REPOSITORY_ROOT}/desktop/tests/theme-resources-fixture.py"
+                $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+            set_tests_properties(desktop-theme-resources PROPERTIES TIMEOUT 180
+                LABELS "ordinary-native;private-files-fixture")
         endif()
     endif()
     add_library(polly-sysrt-qjs STATIC projection/quickjs/storage.c

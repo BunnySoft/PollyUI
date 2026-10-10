@@ -2,7 +2,6 @@
 #include "native/applications.h"
 #include "native/shortcut-client.h"
 #include "native/output-client.h"
-#include "native/theme-files.h"
 #include "native/theme-client.h"
 #include "foreign-toplevel-client.h"
 #include "polly-appearance-client.h"
@@ -1084,7 +1083,6 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     for (int i = 0; i < 4; i++)
         if (!property(ctx, api, exit_names[i], JS_NewCFunctionMagic(ctx, session_exit, exit_names[i],
             0, JS_CFUNC_generic_magic, i))) return 0;
-    if (!pu_theme_files_install(ctx, api)) return 0;
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 1))) return 0;
@@ -1139,7 +1137,6 @@ int pu_desktop_windows_pump(void)
 
 void pu_desktop_windows_shutdown(void)
 {
-    pu_theme_files_shutdown();
     pu_theme_client_shutdown();
     pu_shortcut_client_shutdown();
     pu_output_client_shutdown();
