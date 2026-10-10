@@ -10,7 +10,7 @@ Push-Location $repo
 try {
     node --test .\tests\module-boundaries.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Module boundary checks failed' }
-    ctest --test-dir (Split-Path $executablePath) --output-on-failure --no-tests=error -R '^sysrt-(ffi|ownership|async|async-shutdown|async-lifetime|async-ui|process|network)$'
+    ctest --test-dir (Split-Path $executablePath) --output-on-failure --no-tests=error -R '^sysrt-(ffi|ownership|callbacks|callback-shutdown|async|async-shutdown|async-lifetime|async-ui|process|network)$'
     if ($LASTEXITCODE -ne 0) { throw 'Native execution/API checks failed' }
     $env:PU_TEST_STORAGE = $storage
     foreach ($test in Get-Content .\tools\core-tests.txt) {

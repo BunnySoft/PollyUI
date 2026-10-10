@@ -54,8 +54,8 @@ prove one complete execution/service path before adding broad API coverage.
 |---|---|---|---|---|
 | RT-01 | P0 | Generic asynchronous native calls | First closed loop implemented: worker -> owning dispatcher -> Promise; scalar/CString inputs, scalar results, explicit errors and joined shutdown. Broader support stays staged | Existing FFI/dispatcher |
 | RT-02 | P0 | Native memory/resource ownership | First closed loop implemented: managed async leases plus explicit adoption with byte extent and void(pointer) releaser; alias/GC/close retention. Borrowed views and fallible handle destructors remain staged | RT-01 for async leases |
-| RT-03 | P0 | Native callbacks | In progress in an isolated child worktree: one safe callback path with VM/thread affinity and teardown; no universal callback coverage | RT-01, RT-02 |
-| RT-04 | P0 | ABI metadata generation | In progress independently in an isolated child worktree: generate the Linux x86_64 FileSystem layout/constants from headers; retain explicit target checks | Independent |
+| RT-03 | P0 | Native callbacks | First target integrated: scoped same-thread synchronous scalar callbacks, explicit exceptions/thread rejection and teardown. Data-pointer callbacks and retained/asynchronous registrations remain staged | RT-01, RT-02 |
+| RT-04 | P0 | ABI metadata generation | First target integrated: deterministic Linux x86_64 statx layout/file constants from native headers, with generator --check and target/type guards. Other domains/targets remain staged | Independent |
 | RT-05 | P1 | IPC/D-Bus SDK | Planned: one transport/client path over an existing OS library, not a new per-service C bridge | RT-01, RT-02, RT-03 |
 | RT-06 | P1 | Real desktop capability migration | Planned: select one service, migrate logic/callers to JS and remove its replaced C bridge in the same slice | RT-05 |
 | RT-07 | P1 | Independent Settings/application boundary | Planned: separate process and narrow clients; never inherit Shell's private connection | RT-06 |
