@@ -93,6 +93,14 @@ try {
   check(peer.read().port === server.address.read().port, 'Connected peer uses the assigned listener');
   const payload = new Uint8Array([0, 255, 127, 128, 0, 42, 7, 9]), send = buffer(payload.length), received = buffer(payload.length);
   send.write(payload.buffer);
+  const pendingRead = api.async.recv(accepted, received, payload.length, C.MSG_PEEK);
+  let busy = false;
+  try { received.read(payload.length); } catch (error) { busy = error.code === 'ERR_FFI_BUSY'; }
+  check(busy, 'Pending native recv exclusively borrows its buffer');
+  busy = false;
+  try { api.recv(accepted, received, payload.length, C.MSG_PEEK); }
+  catch (error) { busy = error.code === 'ERR_FFI_BUSY'; }
+  check(busy, 'Synchronous native calls cannot reuse a borrowed allocation');
   for (let at = 0; at < payload.length;) {
     const view = send.slice(at, payload.length - at);
     try {
@@ -102,7 +110,7 @@ try {
   }
   const readable = ready(accepted, 5000);
   check(readable.count === 1 && (readable.events & C.POLLIN), 'Native TCP read-ready flags');
-  const peeked = Number(ok(api.recv(accepted, received, payload.length, C.MSG_PEEK), 'TCP peek'));
+  const peeked = Number(ok(await pendingRead, 'Asynchronous TCP peek'));
   check(peeked > 0 && new Uint8Array(received.read(peeked)).join(',') === payload.slice(0, peeked).join(','),
     'Native peek returns bytes without consuming the stream');
   for (let at = 0; at < payload.length;) {

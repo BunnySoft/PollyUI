@@ -56,12 +56,21 @@ pointer fields from bounded memory; unknown addresses remain opaque, not
 readable native allocations. All pointer-field use is a trusted ABI contract.
 Direct calls remain synchronous. `NativeFunction.callAsync(...)`,
 `bindings.callAsync(name, ...)` and `api.async.NativeSymbol(...)` provide the
-first explicit worker -> owning dispatcher -> Promise path. Scalar/CString
-arguments are copied before submission; scalar/void results and native errors
+explicit worker -> owning dispatcher -> Promise path. Scalar/CString arguments
+are copied before submission; flat managed-buffer pointers can be exclusively
+borrowed for the call. Scalar/void results and native errors
 are captured on the worker and settled on the VM thread. Library/function GC
 or explicit close does not unload accepted work before it finishes.
-This prototype rejects pointer arguments/results and thread-local error
-observers before starting a worker. Native callbacks and structures passed by
+All managed aliases are unavailable for VM read/write/slice, synchronous native
+calls or a second borrow until completion (`ERR_FFI_BUSY`). Accepted work pins
+memory through GC/explicit owner close and pins its function/library even if
+the caller drops their last handles. Closing an owner revokes VM access but
+defers allocation release; it is not cancellation. Loans return before Promise
+settlement, including native-error and shutdown paths.
+This stage rejects unknown external pointers, pointer vectors, pointer results
+and thread-local error observers before starting a worker. Raw callers still
+own OS descriptors and must obey native lengths and retained-alias contracts.
+Native callbacks and structures passed by
 value are unsupported. `variadic` declares the number of fixed parameters for a complete
 bound signature using the default C ABI; tail types must explicitly use C
 promotions (`i32`/`double` instead of narrow integers/`float`). Each bound
@@ -121,8 +130,8 @@ policy is added. Callers explicitly perform `WSAStartup/WSACleanup` on Windows,
 close their sockets and handle partial IO, EOF and would-block results. Windows
 socket errors use `WSAGetLastError`; `WSAStartup` returns its error code directly.
 Disposing bindings does not close sockets or clean up Winsock. Calls remain
-synchronous; nonblocking sockets/readiness calls are not themselves a JS async runtime. The generic async
-prototype above is opt-in and currently cannot lend socket buffers.
+synchronous; nonblocking sockets/readiness calls are not themselves a JS async runtime. The generic async path
+is opt-in; caller-owned managed socket buffers can now be borrowed across it.
 DNS, HTTP, TLS and the existing native fetch/iwd services are not changed.
 
 Execution lifetime is selected at composition: `sr_ffi_register(ctx, dispatcher)`

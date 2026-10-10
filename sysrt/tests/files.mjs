@@ -44,9 +44,13 @@ try {
   check(new Uint8Array(buffer.read(2)).join(',') === '0,255', 'NUL and invalid UTF-8 bytes remain binary data');
   const marker = new Uint8Array([9, 8, 7, 6]); buffer.write(marker.buffer);
   const offset = 4294967301n;
-  check(value(fs.pwrite(fd, buffer, 4, offset), 'Positioned write') === 4n, 'Positioned write beyond 4 GiB');
+  const writing = fs.async.pwrite(fd, buffer, 4, offset);
+  let busy = false;
+  try { buffer.read(4); } catch (error) { busy = error.code === 'ERR_FFI_BUSY'; }
+  check(busy, 'Native file write borrows its buffer before completion');
+  check(value(await writing, 'Positioned write') === 4n, 'Positioned write beyond 4 GiB');
   check(value(fs.lseek(fd, 0n, C.SEEK_CUR), 'Current offset') === 2n, 'pwrite does not change file position');
-  value(fs.pread(fd, buffer, 4, offset), 'Positioned read');
+  value(await fs.async.pread(fd, buffer, 4, offset), 'Positioned read');
   check(new Uint8Array(buffer.read(4)).join(',') === '9,8,7,6', 'Exact 64-bit positioned read');
   check(value(fs.lseek(fd, 0n, C.SEEK_CUR), 'Unchanged offset') === 2n, 'pread preserves file position');
   value(fs.ftruncate(fd, 3n), 'Truncate');

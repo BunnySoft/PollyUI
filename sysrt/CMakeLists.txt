@@ -58,7 +58,9 @@ if (TARGET qjs)
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/async.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         add_test(NAME sysrt-async-shutdown COMMAND polly-sysrt-ffi-test
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/async-shutdown.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture> --shutdown)
-        set_tests_properties(sysrt-async sysrt-async-shutdown PROPERTIES TIMEOUT 30
+        add_test(NAME sysrt-async-lifetime COMMAND polly-sysrt-ffi-test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/async-lifetime.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        set_tests_properties(sysrt-async sysrt-async-shutdown sysrt-async-lifetime PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
         if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_test(NAME sysrt-process COMMAND polly-sysrt-ffi-test

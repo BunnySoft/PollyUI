@@ -78,6 +78,32 @@ EXPORT int32_t sr_gate_wait(int32_t value)
     for (int i = 0; i < 1000 && !atomic_load(&gate_open); i++) fixture_sleep(1);
     return atomic_load(&gate_open) ? value : INT32_MIN;
 }
+EXPORT int32_t sr_gate_fill(uint8_t *bytes, size_t size, uint8_t value)
+{
+    if (sr_gate_wait(0) == INT32_MIN) return INT32_MIN;
+    for (size_t i = 0; i < size; i++) bytes[i] = value;
+    return (int32_t)size;
+}
+EXPORT int32_t sr_delay_fill(uint8_t *bytes, size_t size, uint8_t value, int32_t milliseconds)
+{
+    fixture_sleep(milliseconds);
+    for (size_t i = 0; i < size; i++) bytes[i] = value;
+    return (int32_t)size;
+}
+EXPORT int32_t sr_gate_pair(const uint8_t *first, const uint8_t *second)
+{
+    if (sr_gate_wait(0) == INT32_MIN) return INT32_MIN;
+    return first[0] + second[0];
+}
+EXPORT int32_t sr_buffer_error(uint8_t *bytes)
+{
+    bytes[0] = 42;
+    errno = 27;
+#ifdef _WIN32
+    SetLastError(27);
+#endif
+    return -1;
+}
 EXPORT int32_t sr_error(int32_t value)
 {
     errno = value;

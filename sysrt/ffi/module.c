@@ -42,7 +42,7 @@ typedef struct Memory {
     Pointer **pointers;
     size_t pointer_count;
     unsigned refs;
-    int closed;
+    int closed, borrowed;
 } Memory;
 struct Pointer {
     void *address;
@@ -60,6 +60,7 @@ typedef struct Function {
     ffi_type *types[SR_MAX_ARGS];
     unsigned count;
     unsigned refs;
+    unsigned pending;
     int closed, clear_errors;
     JSClassID pointer_class;
 } Function;
@@ -79,6 +80,9 @@ struct AsyncCall {
     Value values[SR_MAX_ARGS], returned;
     void *args[SR_MAX_ARGS];
     Memory *temporary[SR_MAX_ARGS];
+    Memory *borrowed[SR_MAX_ARGS];
+    unsigned borrowed_count;
+    int loans_active;
     JSValue settle[2];
     int native_errno;
     uint32_t system_error;
@@ -121,7 +125,8 @@ static void release_library(Library *library)
 
 static void release_function(Function *function)
 {
-    if (function && !--function->refs) { release_library(function->library); free(function); }
+    if (!function) return;
+    if (!--function->refs) { release_library(function->library); free(function); }
 }
 
 static void release_pointer(Pointer *pointer);
@@ -179,6 +184,9 @@ static int pointer_live(JSContext *ctx, Pointer *pointer)
         error(ctx, "ERR_FFI_CLOSED", "Native pointer or its owner is closed"); return 0;
     }
     if (pointer->memory) {
+        if (pointer->memory->borrowed) {
+            error(ctx, "ERR_FFI_BUSY", "Native memory is borrowed by an asynchronous call"); return 0;
+        }
         for (size_t i = 0; i < pointer->memory->pointer_count; i++) {
             Pointer *dependency = pointer->memory->pointers[i];
             if (dependency && !pointer_live(ctx, dependency)) return 0;
@@ -431,10 +439,22 @@ done:
     return result;
 }
 
+static void return_loans(AsyncCall *job)
+{
+    if (!job->loans_active) return;
+    for (unsigned i = 0; i < job->borrowed_count; i++) job->borrowed[i]->borrowed = 0;
+    job->loans_active = 0;
+}
+
 static void destroy_async(JSRuntime *rt, AsyncCall *job)
 {
+    return_loans(job);
+    for (unsigned i = 0; i < job->borrowed_count; i++) release_memory(job->borrowed[i]);
     for (unsigned i = 0; i < SR_MAX_ARGS; i++) release_memory(job->temporary[i]);
     JS_FreeValueRT(rt, job->settle[0]); JS_FreeValueRT(rt, job->settle[1]);
+    if (!--job->function->pending && job->function->closed) {
+        release_library(job->function->library); job->function->library = NULL;
+    }
     release_function(job->function); free(job);
 }
 
@@ -446,6 +466,7 @@ static void finish_async(void *user)
     AsyncCall **at = &runtime->calls;
     while (*at && *at != job) at = &(*at)->next;
     if (*at) *at = job->next;
+    return_loans(job);
     JSValue value = packet(runtime->ctx, scalar(runtime->ctx, job->function->result, job->returned, 1),
         job->native_errno, job->system_error);
     int rejected = JS_IsException(value);
@@ -475,26 +496,39 @@ static JSValue call_async(JSContext *ctx, JSValueConst self, int argc, JSValueCo
 {
     Function *function = JS_GetOpaque2(ctx, self, classes->function);
     if (!function) return JS_EXCEPTION;
+    if (function->closed) return error(ctx, "ERR_FFI_CLOSED", "Native binding is closed");
     SrFfi *runtime = function->library->runtime;
     if (runtime->ctx != ctx) return error(ctx, "ERR_FFI_ASYNC", "Async calls require their owning context");
     if (runtime->closing) return error(ctx, "ERR_FFI_SHUTDOWN", "Native execution is shutting down");
-    if (function->closed || function->library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native binding is closed");
+    if (function->library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native binding is closed");
     if (argc != (int)function->count) return JS_ThrowTypeError(ctx, "Wrong native argument count");
     if (!function->clear_errors || function->result == T_POINTER)
         return error(ctx, "ERR_FFI_ASYNC", "Async prototype excludes pointer results and thread-local error observers");
-    for (unsigned i = 0; i < function->count; i++)
-        if (function->params[i] == T_POINTER)
-            return error(ctx, "ERR_FFI_ASYNC", "Async prototype excludes pointer arguments");
     AsyncCall *job = calloc(1, sizeof(*job));
     if (!job) return JS_ThrowOutOfMemory(ctx);
-    job->runtime = runtime; job->function = function; function->refs++;
+    job->runtime = runtime; job->function = function; function->refs++; function->pending++;
     job->settle[0] = job->settle[1] = JS_UNDEFINED;
     for (unsigned i = 0; i < function->count; i++) {
         if (!convert(ctx, function->params[i], argv[i], &job->values[i], &job->temporary[i], function->pointer_class)) {
             destroy_async(JS_GetRuntime(ctx), job); return JS_EXCEPTION;
         }
+        if (function->params[i] == T_POINTER && !JS_IsNull(argv[i])) {
+            Pointer *pointer = JS_GetOpaque(argv[i], function->pointer_class);
+            if (!pointer->memory || pointer->memory->pointers) {
+                destroy_async(JS_GetRuntime(ctx), job);
+                return error(ctx, "ERR_FFI_ASYNC", "Async calls require managed flat buffers, not external pointers or pointer arrays");
+            }
+            unsigned index = 0;
+            while (index < job->borrowed_count && job->borrowed[index] != pointer->memory) index++;
+            if (index == job->borrowed_count) {
+                job->borrowed[job->borrowed_count++] = pointer->memory;
+                pointer->memory->refs++;
+            }
+        }
         job->args[i] = &job->values[i];
     }
+    for (unsigned i = 0; i < job->borrowed_count; i++) job->borrowed[i]->borrowed = 1;
+    job->loans_active = 1;
     job->delivery = pu_dispatch_prepare(finish_async, job);
     if (!job->delivery) { destroy_async(JS_GetRuntime(ctx), job); return JS_ThrowOutOfMemory(ctx); }
     JSValue promise = JS_NewPromiseCapability(ctx, job->settle);
@@ -738,7 +772,8 @@ static JSValue close_function(JSContext *ctx, JSValueConst self, int argc, JSVal
     Function *function = JS_GetOpaque2(ctx, self, classes->function);
     if (!function) return JS_EXCEPTION;
     if (!function->closed) {
-        function->closed = 1; release_library(function->library); function->library = NULL;
+        function->closed = 1;
+        if (!function->pending) { release_library(function->library); function->library = NULL; }
     }
     return JS_UNDEFINED;
 }

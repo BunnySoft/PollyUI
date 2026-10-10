@@ -91,7 +91,8 @@ test('asynchronous FFI reuses execution primitives and remains VM-thread confine
   assert.match(read('desktop/launcher/launcher.c'), /sr_ffi_register\(ctx, dispatch\)/);
   assert.match(read('desktop/launcher/launcher.c'), /sr_ffi_shutdown\(state->ffi\)/);
   assert.match(read('sysrt/sdk/js/native.mjs'), /callAsync\(name, \.\.\.args\)/);
-  assert.match(read('sysrt/ffi/module.c'), /Async prototype excludes pointer arguments/);
+  assert.match(read('sysrt/ffi/module.c'), /Async calls require managed flat buffers/);
+  assert.match(read('sysrt/ffi/module.c'), /ERR_FFI_BUSY/);
   assert.match(read('shared/dispatch.c'), /pu_dispatch_submit/);
 });
 
