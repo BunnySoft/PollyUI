@@ -32,14 +32,17 @@ async function run() {
   shell = createDesktopShell({ configuration, report: value => { reports.push(value); console.error(value); } }).start();
   const survivor = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings-survivor', script, 'survivor'],
     settingsLaunchSpec().cwd, 'installed-settings-survivor');
-  const output = shell.getState().outputs[0], environment = settingsEnvironment();
+  const environment = settingsEnvironment();
+  const wrapper = executable.slice(0, executable.lastIndexOf('/')) + '/polly-settings';
   const started = Date.now();
-  const owned = await shell.showSystemSettings(output);
-  check(Date.now() - started < 5000 && shell.getSettingsState().connected,
-    'installed Settings Open/Connect completes within the original five-second startup bound');
+  const initial = desktop.spawnApplication([wrapper, 'appearance'], '/tmp', 'installed-settings-initial-public-open');
+  await until(() => exits.has(initial), 'initial public Settings starter exits');
+  const elapsed = Date.now() - started, owned = shell.getSettingsState().pid;
+  check(exits.get(initial) === 0 && elapsed < 5000 && shell.getSettingsState().connected,
+    'installed public Settings Open/Connect/Present and starter exit complete within the original five-second startup bound');
+  console.log('SETTINGS_STARTUP_ELAPSED_MS=' + elapsed);
   check(owned > 0 && owned !== environment.pid, 'installed Shell launches production Settings in its own PID');
   await signal('fixture-settings-state ' + ++sequence + ' 1');
-  const wrapper = executable.slice(0, executable.lastIndexOf('/')) + '/polly-settings';
   const starter = desktop.spawnApplication([wrapper, 'about'], '/tmp', 'installed-settings-starter');
   await until(() => exits.has(starter), 'relocated starter exits');
   check(exits.get(starter) === 0 && shell.getSettingsState().pid === owned && shell.getSettingsState().page === 'about',
