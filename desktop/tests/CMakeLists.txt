@@ -90,7 +90,7 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" client-header "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel-client.h"
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
-add_executable(pollywm-test-client client.c
+add_executable(pollywm-test-client client.c ../shared/appearance-document.c
     ${IME_TEST_PROTOCOLS}
     "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/ext-workspace.c"
     "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"

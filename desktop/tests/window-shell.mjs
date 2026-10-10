@@ -55,7 +55,6 @@ async function run() {
     window.create({ title: 'Public window-management rejection', width: 160, height: 100 });
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
     rejects(() => desktop.activateWindow(1), 'public connection cannot activate a guessed handle');
-    rejects(() => desktop.setAppearance('xp'), 'public connection cannot change compositor appearance');
     rejects(() => desktop.configureAppearance(getDesktopTheme('xp')), 'public connection cannot submit decoration data');
     window.quit();
     return;
@@ -76,8 +75,9 @@ async function run() {
   }
   await until(() => find()?.active, 'live independent application');
   const id = find().id;
-  rejects(() => desktop.setAppearance('missing'), 'unknown appearance is rejected without losing Shell privilege');
-  rejects(() => desktop.setAppearance('xp\0invalid'), 'appearance identifiers cannot contain embedded NUL');
+  rejects(() => shell.selectTheme('missing'), 'unknown catalog appearance is rejected without losing Shell privilege');
+  rejects(() => desktop.configureAppearance({ ...getDesktopTheme('xp'), id: 'xp\0invalid' }),
+    'appearance identifiers cannot contain embedded NUL');
   const initialFrame = marker('fixture-frame-theme xp');
   await until(() => initialFrame.closed, 'Shell theme reaches real application decorations');
   if (mode === 'initial') await until(() => find()?.title === 'Updated title', 'metadata update');

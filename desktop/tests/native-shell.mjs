@@ -151,7 +151,7 @@ const originalWindowsChanged = () => { notifications++; };
 const native = {
   windows() { if (failWindows) throw new Error('lost connection'); return snapshots.map(item => ({ ...item })); },
   onWindowsChanged: originalWindowsChanged,
-  setAppearance(id) { if (failAppearance) throw new Error('appearance unavailable'); appliedAppearances.push(id); },
+  configureAppearance(theme) { if (failAppearance) throw new Error('appearance unavailable'); appliedAppearances.push(theme.id); },
 };
 const windowShell = createDesktopShell({ host: fakeHost, storage, native,
   report: message => warnings.push(message) }).start();

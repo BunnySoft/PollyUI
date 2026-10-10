@@ -5,6 +5,7 @@
 #include "xdg-decoration-client.h"
 #include "polly-appearance-client.h"
 #include "decoration-themes.h"
+#include "appearance-document.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
 #include "text-input-v3-client.h"
@@ -75,6 +76,8 @@ struct Client {
     struct zwlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct zxdg_decoration_manager_v1 *decoration_manager;
     struct polly_appearance_v1 *appearance;
+    uint32_t appearance_serial, appearance_reply;
+    int appearance_phase, appearance_accepted;
     struct Foreign foreign[16];
     struct ext_workspace_manager_v1 *workspaces;
     struct ext_workspace_group_handle_v1 *workspace_group;
@@ -169,6 +172,60 @@ static void die(const char *message)
 {
     fprintf(stderr, "test-client: %s (%s)\n", message, strerror(errno));
     exit(1);
+}
+
+static void appearance_reply(struct Client *client, uint32_t serial, uint32_t accepted,
+                             const char *message, int phase)
+{
+    client->appearance_reply = serial;
+    client->appearance_accepted = (int)accepted;
+    client->appearance_phase = phase;
+    if (!accepted) fprintf(stderr, "test-client: appearance rejected: %s\n", message);
+}
+static void appearance_prepared(void *data, struct polly_appearance_v1 *appearance,
+                                uint32_t serial, uint32_t accepted, const char *message)
+{ (void)appearance; appearance_reply(data, serial, accepted, message, 1); }
+static void appearance_applied(void *data, struct polly_appearance_v1 *appearance,
+                               uint32_t serial, uint32_t accepted, const char *message)
+{ (void)appearance; appearance_reply(data, serial, accepted, message, 2); }
+static const struct polly_appearance_v1_listener appearance_listener = {
+    .prepared = appearance_prepared, .applied = appearance_applied,
+};
+
+static void configure_appearance(struct Client *client, unsigned index)
+{
+    const struct PuDecorationTheme *theme = &pu_decoration_themes[index];
+    uint32_t words[PU_APPEARANCE_WORDS] = {
+        pu_appearance_schema(theme->luna),
+        theme->left_controls | (theme->round_controls << 1) | (theme->pinstripe << 2) |
+        (theme->horizontal << 3) | (theme->font_family << 4) | (theme->glyphs_hover << 6) |
+        (theme->text_align << 7) | (theme->luna << 9),
+    };
+    unsigned position = 2;
+#define ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
+    words[position++] = (uint32_t)(theme->field * (scale) + 0.5);
+    PU_APPEARANCE_METRICS(ENCODE_METRIC)
+#undef ENCODE_METRIC
+#define ENCODE_COLOR(name) words[position++] = theme->name;
+    PU_APPEARANCE_COLORS(ENCODE_COLOR)
+#undef ENCODE_COLOR
+    /* This native geometry fixture has no JS theme subscribers. */
+    const char document[] = "{}";
+    int fd = pu_appearance_document_create(document, sizeof(document) - 1);
+    if (fd < 0) die("cannot create appearance descriptor");
+    struct wl_array configuration = { .size = sizeof(words), .data = words };
+    if (!++client->appearance_serial) ++client->appearance_serial;
+    uint32_t serial = client->appearance_serial;
+    client->appearance_phase = 0;
+    polly_appearance_v1_prepare(client->appearance, serial, theme->id, &configuration,
+        fd, sizeof(document) - 1);
+    close(fd);
+    if (wl_display_roundtrip(client->display) < 0 || client->appearance_reply != serial ||
+        client->appearance_phase != 1 || !client->appearance_accepted) die("appearance prepare failed");
+    client->appearance_phase = 0;
+    polly_appearance_v1_commit(client->appearance, serial);
+    if (wl_display_roundtrip(client->display) < 0 || client->appearance_reply != serial ||
+        client->appearance_phase != 2 || !client->appearance_accepted) die("appearance commit failed");
 }
 
 static void buffer_release(void *data, struct wl_buffer *buffer)
@@ -670,7 +727,9 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 1);
+        if (version < 2) die("appearance configuration requires protocol version 2");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 2);
+        polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
         client->workspaces = wl_registry_bind(registry, name, &ext_workspace_manager_v1_interface, 1);
@@ -972,7 +1031,7 @@ int main(int argc, char **argv)
         case TEST_APPEARANCE:
             if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_THEME_COUNT)
                 die("invalid appearance request");
-            polly_appearance_v1_set_theme(client.appearance, pu_decoration_themes[request.id].id);
+            configure_appearance(&client, (unsigned)request.id);
             break;
         case TEST_DECORATION:
             if (!window->decoration) die("no decoration");

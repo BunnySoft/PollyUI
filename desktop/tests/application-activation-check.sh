@@ -12,5 +12,5 @@ cc -std=c11 -Wall -Wextra -Werror -isystem third_party/quickjs -I gui/src -I gui
 cc -std=c11 -Wall -Wextra -Wpedantic -Werror -I gui/src -I gui/include -I . -I desktop $(pkg-config --cflags dbus-1) \
   desktop/tests/application-activation-service.c desktop/native/session-bus.c \
   -D_POSIX_C_SOURCE=200809L $(pkg-config --libs dbus-1) -o "$output/application-activation-service"
-node --test desktop/tests/application-activation.mjs desktop/tests/menu-host.mjs desktop/tests/xp-startup-compatibility.mjs
+node --test desktop/tests/application-activation.mjs desktop/tests/menu-host.mjs desktop/tests/xp-startup.mjs
 node desktop/tests/application-activation-fixture.mjs --probe "$output/application-activation-service" "$output"

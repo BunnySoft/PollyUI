@@ -687,26 +687,6 @@ static void theme_feed_bind(struct wl_client *client, void *data, uint32_t versi
     polly_theme_manager_v1_send_changed(resource, state->theme_revision);
 }
 
-static void set_theme(struct wl_client *client, struct wl_resource *resource, const char *name)
-{
-    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
-    struct PuDecorations *state = owner->state;
-    if (client != state->desktop->shell_client) {
-        wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Shell authorization was revoked");
-        return;
-    }
-    for (unsigned i = 0; i < PU_DECORATION_THEME_COUNT; i++) {
-        if (strcmp(name, pu_decoration_themes[i].id)) continue;
-        if (state->theme.id == pu_decoration_themes[i].id) return;
-        state->theme = pu_decoration_themes[i];
-        if (state->document_fd >= 0) close(state->document_fd);
-        state->document_fd = -1; state->document_size = 0;
-        repaint_decorations(state);
-        return;
-    }
-    wl_resource_post_error(resource, POLLY_APPEARANCE_V1_ERROR_UNKNOWN_THEME, "Unknown decoration theme");
-}
-
 static void prepare_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
                           const char *name, struct wl_array *configuration, int32_t document, uint32_t length)
 {
@@ -765,7 +745,7 @@ static void cancel_theme(struct wl_client *client, struct wl_resource *resource,
 }
 
 static const struct polly_appearance_v1_interface appearance_impl = {
-    .destroy = appearance_destroy, .set_theme = set_theme,
+    .destroy = appearance_destroy,
     .prepare = prepare_theme, .commit = commit_theme, .cancel = cancel_theme,
 };
 

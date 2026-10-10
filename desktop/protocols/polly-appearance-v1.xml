@@ -3,18 +3,14 @@
   <interface name="polly_appearance_v1" version="2">
     <description summary="trusted Shell appearance selection">
       This private global is restricted to the compositor-owned Shell connection.
-      Version 1 selects a known decoration theme. Version 2 stages and commits
-      bounded runtime decoration data; neither version exposes window geometry,
+      Version 2 stages and commits bounded runtime decoration data.
+      This interface exposes neither window geometry,
       input injection, filesystem access or arbitrary rendering commands.
     </description>
     <enum name="error">
-      <entry name="unknown_theme" value="0" summary="unknown appearance identifier"/>
       <entry name="unauthorized" value="1" summary="connection is not the trusted Shell"/>
     </enum>
     <request name="destroy" type="destructor"/>
-    <request name="set_theme">
-      <arg name="theme" type="string" summary="known PollyDesktop theme ID"/>
-    </request>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
         Configuration is an array of native-endian uint32 words: schema 1 or 2,
@@ -25,8 +21,8 @@
         hover-only glyphs (64), and text alignment (bits 7-8).
         Numeric schema 2 has the same word count and bounds, and additionally
         permits the bounded Luna painter (512). Schema 1 retains its original
-        flags and generic rendering. Older compositors reject schema 2 through
-        prepared; the Shell must keep the last committed appearance visible.
+        flags and generic rendering. Unsupported data is rejected through
+        prepared; the Shell keeps the last committed appearance visible.
         Name is a bounded identifier. Document is a readable, immutable memfd
         sealed against writes, growth, shrinkage and further seal changes.
         Its exact size is 1-32768 bytes. Data is owned and validated by the
@@ -76,7 +72,7 @@
       <description summary="consume one change notification">
         Exactly one request is allowed after changed. The snapshot may be
         newer than that notification. The unavailable event means that the
-        Shell has not published a runtime theme, or selected legacy decorations.
+        Shell has not published a runtime theme.
       </description>
     </request>
     <event name="changed">

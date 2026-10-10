@@ -11,7 +11,7 @@ cc -std=c11 -Wall -Wextra -Werror -isystem third_party/quickjs -I gui/src -I gui
 cc -std=c11 -Wall -Wextra -Werror -isystem third_party/quickjs -I gui/src -I gui/include -I . -I desktop -DPU_LAYER_SHELL \
   $(pkg-config --cflags dbus-1) -fsyntax-only desktop/native/applications.c
 node --test desktop/tests/document-association.mjs desktop/tests/application-activation.mjs \
-  desktop/tests/menu-host.mjs desktop/tests/xp-startup-compatibility.mjs
+  desktop/tests/menu-host.mjs desktop/tests/xp-startup.mjs
 node --check desktop/tests/document-association-client.mjs
 node --check desktop/tests/document-association-fixture.mjs
 cc -std=c11 -Wall -Wextra -Wpedantic -Werror -I gui/src -I gui/include -I . -I desktop $(pkg-config --cflags dbus-1) \

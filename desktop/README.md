@@ -251,9 +251,9 @@ Shell appearance selection calls `desktop.configureAppearance(theme)` on the
 private connection. JS reads and validates versioned JSON, then prepares and
 commits bounded numeric decoration data and a sealed snapshot descriptor.
 Custom IDs and same-ID edits apply without rebuilding the compositor.
-`desktop.setAppearance(id)` remains a legacy compatibility API. The generated
-C presets are retained for legacy/bootstrap use; generated schema fields keep
-native bounds consistent with the JS validator.
+There is no legacy theme-ID selection or automatic schema downgrade. Generated
+C presets supply the bootstrap appearance and native test oracles; generated
+schema fields keep native bounds consistent with the JS validator.
 
 Caption rasterization uses Fontconfig and FreeType with a bounded face cache
 and scale-aware CPU buffers. This adds neither Skia/SDL/QuickJS/Yoga nor

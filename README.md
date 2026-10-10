@@ -788,11 +788,12 @@ click to toggle maximize, minimize/maximize/close buttons, active/inactive
 colors, and edge/corner resizing. Fullscreen hides decorations; maximized
 content respects both panel reservations and frame extents.
 
-`desktop.setAppearance(themeId)` selects a known decoration theme on the trusted
-Shell connection through the restricted `polly_appearance_v1` global. Shell
-appearance selection calls it automatically. The compositor's C tokens are
-generated from the existing JavaScript themes, not maintained as a second
-palette. Regenerate with `node desktop/tools/generate-decoration-themes.mjs`;
+`desktop.configureAppearance(theme)` prepares and commits bounded decoration
+data and an immutable theme document on the trusted Shell connection through
+the restricted `polly_appearance_v1` global. Custom theme IDs need no compiled
+registry. Legacy ID selection and automatic schema downgrades are removed.
+Bootstrap presets and native bounds are generated from theme data, not
+maintained as a second palette. Regenerate with `node desktop/tools/generate-decoration-themes.mjs`;
 `--check` verifies the committed header. Standalone compositor builds require
 Fontconfig/FreeType but still do not link SDL, Skia, QuickJS, Yoga or GLib/GIO.
 Captions have basic Unicode font fallback, not complex shaping/bidi. Blur,

@@ -204,7 +204,7 @@ previous Shell generation cannot clear or overwrite errors after restart.
 
 ```sh
 node --test desktop/tests/application-activation.mjs \
-  desktop/tests/menu-host.mjs desktop/tests/xp-startup-compatibility.mjs
+  desktop/tests/menu-host.mjs desktop/tests/xp-startup.mjs
 sh desktop/tests/application-activation-check.sh /absolute/evidence
 node desktop/tests/application-activation-fixture.mjs \
   /absolute/rebuilt/pollyui /absolute/evidence/application-activation-service /absolute/evidence

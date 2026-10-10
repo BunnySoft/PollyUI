@@ -63,7 +63,7 @@ test('generic FFI has no GUI or domain-specific API dependency', () => {
   assert.doesNotMatch(source, /static JSClassID/);
 });
 
-test('CLI and legacy desktop composition remain outside the GUI engine', () => {
+test('CLI and desktop composition remain outside the GUI engine', () => {
   assert.match(read('desktop/launcher/main.c'), /pu_application_run\(&options\)/);
   assert.doesNotMatch(read('desktop/launcher/main.c'), /\bJS_(?:NewClass|NewCFunction|SetOpaque)\b/);
   assert.equal(existsSync(new URL('src/desktop/applications.c', root)), false);
@@ -71,6 +71,19 @@ test('CLI and legacy desktop composition remain outside the GUI engine', () => {
   assert.doesNotMatch(cmake, /src\/desktop\/|host\/win32\/window\.h/);
   assert.match(cmake, /sysrt\/projection\/quickjs\/files\.c/);
   assert.match(read('desktop/launcher/launcher.c'), /pu_gui_run\(&config\)/);
+});
+
+test('appearance uses runtime configuration without legacy selection or downgrade paths', () => {
+  const shell = read('desktop/shell/shell.mjs');
+  assert.match(shell, /native\.configureAppearance\(theme\)/);
+  assert.doesNotMatch(shell, /setAppearance|compatibilityTheme|appearanceWarning|startupGeneric/);
+  assert.equal(existsSync(new URL('desktop/shell/appearance-compatibility.mjs', root)), false);
+  assert.equal(existsSync(new URL('desktop/tests/xp-startup-compatibility.mjs', root)), false);
+  assert.doesNotMatch(read('desktop/native/windows.c'), /set_appearance|setAppearance|decoration-themes\.h/);
+  assert.doesNotMatch(read('desktop/compositor/decoration.c'), /\bset_theme\b/);
+  assert.doesNotMatch(read('desktop/protocols/polly-appearance-v1.xml'), /name="set_theme"/);
+  assert.match(cmake, /NAME desktop-xp-startup COMMAND node --test "[^"]*\/xp-startup\.mjs"/);
+  assert.doesNotMatch(cmake, /xp-startup-compatibility/);
 });
 
 test('application logic does not import views or GUI APIs', () => {

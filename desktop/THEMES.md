@@ -6,8 +6,9 @@ Shell. It does not interpret theme files or execute theme code.
 
 ## Data and ownership
 
-`themes/builtin.json` contains the five shipped presets. `themes/fallback.json`
-is a packaged recovery catalog. `shell/theme-schema.mjs` defines schema version
+`resources/themes/builtin.json` contains the five shipped presets.
+`resources/themes/fallback.json` is a packaged recovery catalog.
+`shell/theme-schema.mjs` defines schema version
 1 and validates every supported field. Accepted snapshots are deeply frozen.
 The catalog has `{schemaVersion, default, themes}`; a single user theme has
 `{schemaVersion, theme}`.
@@ -97,15 +98,13 @@ a visible warning rather than claiming that the requested files were applied.
 `"luna"`. Absence preserves the original generic path. Luna is a bounded built-in
 painter, not an executable hook or arbitrary layout template. XP opts in; the
 other presets do not. Native Luna captions use numeric decoration schema 2
-(same word count/bounds, one additional flag). A confirmed unsupported prepare
-reply on cold startup, before any committed Shell appearance, allows one
-schema 1 generic compatibility attempt. Only an acknowledged generic commit
-starts the fallback, with a visible warning and unchanged saved preference.
-Subsequent selections still reject unsupported Luna and retain the live snapshot.
-Missing replies, transport loss, commit rejection/uncertainty and unrelated
-prepare failures do not trigger this fallback. Reference scope, original-art
+(same word count/bounds, one additional flag). Shell and compositor use the
+current configuration API together; there is no legacy theme-ID selection or
+automatic schema downgrade. Rejected startup fails explicitly. Rejected theme
+changes retain the live snapshot and saved preference; transport loss and
+uncertain commits are reported rather than treated as success. Reference scope, original-art
 rights and outstanding native acceptance are documented in
-[Blue Luna](themes/XP-LUNA.md).
+[Blue Luna](resources/themes/XP-LUNA.md).
 
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing
@@ -143,9 +142,9 @@ is not reported as a successful rollback.
 The document is carried in a size-checked, sealed memfd, avoiding Wayland's
 small individual-message limit. It is capped at 32 KiB after serialization.
 PollyWM checks descriptor size, readability and sealing but does not parse JSON.
-The generated C schema lists supported fields and bounds. The generated five
-legacy presets remain for protocol-v1 compatibility and bootstrap only; runtime
-theme IDs and values do not require recompilation.
+The generated C schema lists supported fields and bounds. Generated presets
+provide the compositor bootstrap appearance and native test oracles, not a
+runtime theme-ID registry. Runtime theme IDs and values do not require recompilation.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

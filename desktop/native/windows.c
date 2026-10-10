@@ -6,7 +6,7 @@
 #include "native/theme-client.h"
 #include "foreign-toplevel-client.h"
 #include "polly-appearance-client.h"
-#include "decoration-themes.h"
+#include "appearance-config.h"
 #include "appearance-document.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
@@ -897,27 +897,6 @@ static JSValue session_exit(JSContext *ctx, JSValueConst self, int argc, JSValue
     return result;
 }
 
-static JSValue set_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
-{
-    (void)self;
-    if (!argc || !JS_IsString(argv[0])) return JS_ThrowTypeError(ctx, "An appearance ID is required");
-    size_t length;
-    const char *name = JS_ToCStringLen(ctx, &length, argv[0]);
-    if (!name) return JS_EXCEPTION;
-    const char *selected = NULL;
-    for (size_t i = 0; i < PU_DECORATION_THEME_COUNT; i++)
-        if (strlen(pu_decoration_themes[i].id) == length && !strcmp(name, pu_decoration_themes[i].id))
-            selected = pu_decoration_themes[i].id;
-    JS_FreeCString(ctx, name);
-    if (!selected) return JS_ThrowRangeError(ctx, "Unknown decoration appearance");
-    if (!ensure_control(ctx)) return JS_EXCEPTION;
-    if (!control.appearance) return JS_ThrowTypeError(ctx, "Appearance selection requires a trusted PollyWM connection");
-    polly_appearance_v1_set_theme(control.appearance, selected);
-    if (wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
-        return JS_ThrowInternalError(ctx, "Cannot send decoration appearance");
-    return JS_UNDEFINED;
-}
-
 static int appearance_word(JSContext *ctx, JSValueConst window, const char *name, uint32_t *word,
                            int color, double minimum, double maximum, double scale)
 {
@@ -1108,7 +1087,6 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!pu_theme_files_install(ctx, api)) return 0;
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
-    if (!property(ctx, api, "setAppearance", JS_NewCFunction(ctx, set_appearance, "setAppearance", 1))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 1))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
         !property(ctx, api, "restoreWorkspaces", JS_NewCFunction(ctx, restore_workspaces, "restoreWorkspaces", 2)) ||

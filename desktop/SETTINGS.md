@@ -79,7 +79,7 @@ replacement, late service callbacks, unavailable controls and close/restart
 cleanup. Its DOM/backend are synthetic and certify no native rendering.
 
 ```powershell
-node --test .\desktop\tests\menu-host.mjs .\desktop\tests\xp-startup-compatibility.mjs
+node --test .\desktop\tests\menu-host.mjs .\desktop\tests\xp-startup.mjs
 node .\desktop\tests\xp-luna-unit.mjs
 ```
 

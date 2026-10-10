@@ -4,8 +4,7 @@ import { test } from 'node:test';
 
 register('./root-loader.mjs', import.meta.url);
 const { createDesktopShell, SHELL_THEME_KEY } = await import('../shell/shell.mjs');
-const { getDesktopTheme, BUILTIN_THEME_CATALOG } = await import('../shell/themes.mjs');
-const { genericAppearance, isLunaSchemaRejection } = await import('../shell/appearance-compatibility.mjs');
+const { getDesktopTheme } = await import('../shell/themes.mjs');
 const { DECORATION_METRICS, DECORATION_COLORS, parseThemeFile } = await import('../shell/theme-schema.mjs');
 const { waitForSessionReady } = await import('../shell/health.mjs');
 
@@ -88,7 +87,7 @@ function schemaRejection(schema, message = 'Unsupported or out-of-range appearan
     code: 'ERR_APPEARANCE_SCHEMA_REJECTED', appearanceSchema: schema, compositorMessage: message,
   });
 }
-function fixture(t, { maximumSchema = 1, initialTheme = 'xp', failure = null } = {}) {
+function fixture(t, { maximumSchema = 2, initialTheme = 'xp', failure = null } = {}) {
   const created = [], attempts = [], reports = [], saves = [];
   const preferences = new Map(initialTheme === null ? [] : [[SHELL_THEME_KEY, initialTheme]]);
   const storage = {
@@ -113,7 +112,6 @@ function fixture(t, { maximumSchema = 1, initialTheme = 'xp', failure = null } =
       const words = encode(theme);
       attempts.push({ theme, words });
       if (this.failure) throw this.failure(words);
-      // Exact legacy numeric decoder: schema 1 only, original flags and bounds.
       const validHeader = words[0] <= this.maximumSchema &&
         !(words[1] & ~(words[0] === 1 ? 511 : 1023));
       const validBounds = DECORATION_METRICS.every(([, , minimum, maximum, scale], index) =>
@@ -128,36 +126,7 @@ function fixture(t, { maximumSchema = 1, initialTheme = 'xp', failure = null } =
   return { shell, host, storage, backend, created, attempts, reports, saves, preferences };
 }
 
-test('schema 1-only cold startup recovers four live surfaces with an explicit generic warning', async t => {
-  const before = JSON.stringify(BUILTIN_THEME_CATALOG);
-  const f = fixture(t);
-  f.shell.start();
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [2, 1]);
-  assert.equal(f.attempts[1].words[1] & 512, 0);
-  assert.equal(f.backend.committed.window.surfaceStyle, 'generic');
-  assert.equal(f.shell.getSurfaces().length, 4);
-  assert.equal(f.created.filter(item => !item.closed).length, 4);
-  assert.ok(f.created.slice(0, 4).every(item => item.closed), 'rejected staged surfaces are retired');
-  assert.equal(f.shell.getState().running, true);
-  assert.equal(f.shell.getState().error, '');
-  assert.equal(f.shell.getState().appearanceFallback, true);
-  assert.match(f.shell.getState().warning, /schema 1 generic/);
-  assert.ok(f.reports.some(message => message.includes('Compositor rejected Luna')));
-  assert.equal(f.preferences.get(SHELL_THEME_KEY), 'xp');
-  assert.equal(f.saves.length, 0, 'startup fallback cannot rewrite the saved user selection');
-  assert.equal(JSON.stringify(BUILTIN_THEME_CATALOG), before);
-  for (const surface of f.shell.getSurfaces().filter(item => item.kind === 'panel'))
-    assert.equal(surface.window.document.getElementById('shell-notification-area'), null,
-      'fallback Shell renders the supported generic snapshot rather than Luna');
-  const menu = f.shell.showSettings(1);
-  assert.ok(descendants(menu.document.body).some(node => node.nodeValue?.includes('schema 1 generic')));
-  await waitForSessionReady({ shell: f.shell, native: f.backend, report() {} });
-  f.shell.refresh(true);
-  assert.equal(f.attempts.length, 2, 'refresh must not endlessly retry unsupported Luna');
-  assert.equal(f.backend.committed.window.surfaceStyle, 'generic');
-});
-
-test('fallback does not invent a preference when no saved theme exists', t => {
+test('startup without a saved theme applies the default without inventing a preference', t => {
   const f = fixture(t, { initialTheme: null });
   f.shell.start();
   assert.equal(f.preferences.has(SHELL_THEME_KEY), false);
@@ -165,70 +134,52 @@ test('fallback does not invent a preference when no saved theme exists', t => {
   assert.equal(f.shell.getState().themeId, 'xp');
 });
 
-test('schema 2 normal startup keeps Luna with no compatibility warning', t => {
-  const f = fixture(t, { maximumSchema: 2 });
+test('startup applies Luna once through the current configuration API', async t => {
+  const f = fixture(t);
   f.shell.start();
   assert.deepEqual(f.attempts.map(item => item.words[0]), [2]);
   assert.ok(f.attempts[0].words[1] & 512);
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
-  assert.equal(f.shell.getState().appearanceFallback, false);
-  assert.equal(f.shell.getState().warning, '');
   assert.equal(f.reports.length, 0);
   assert.equal(f.shell.getSurfaces().length, 4);
+  await waitForSessionReady({ shell: f.shell, native: f.backend, report() {} });
+  f.shell.refresh(true);
+  assert.equal(f.attempts.length, 1);
 });
 
-test('explicit generic sends real schema 1; generic and v1 API startup retain their paths', t => {
-  const generic = genericAppearance(getDesktopTheme('xp'));
-  assert.equal(encode(generic)[0], 1);
-  assert.equal(encode(generic)[1] & 512, 0);
-  assert.ok(Object.isFrozen(generic.window));
+test('generic themes use their own supported data, not a downgraded Luna snapshot', t => {
   assert.equal(getDesktopTheme('xp').window.surfaceStyle, 'luna');
   const f = fixture(t, { initialTheme: 'server2003' });
   f.shell.start();
   assert.deepEqual(f.attempts.map(item => item.words[0]), [1]);
-  assert.equal(f.shell.getState().warning, '');
-  const legacy = fixture(t);
-  delete legacy.backend.configureAppearance;
-  legacy.backend.setAppearance = id => { legacy.backend.committed = id; };
-  legacy.shell.start();
-  assert.equal(legacy.backend.committed, 'xp');
-  assert.equal(legacy.shell.getState().appearanceFallback, false);
+  assert.deepEqual(f.backend.committed, getDesktopTheme('server2003'));
+  assert.equal(f.reports.length, 0);
 });
 
-test('running fallback rejects another Luna request and preserves exact live state and preference', t => {
-  const f = fixture(t);
+test('rejected theme selection preserves the committed snapshot, live surfaces and preference', t => {
+  const f = fixture(t, { maximumSchema: 1, initialTheme: 'server2003' });
   f.shell.start();
   const surfaces = f.shell.getSurfaces().map(item => item.window);
   const snapshot = f.backend.committed;
   assert.equal(f.shell.selectTheme('xp'), false);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [2, 1, 2]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [1, 2]);
   assert.equal(f.backend.committed, snapshot);
-  assert.equal(f.preferences.get(SHELL_THEME_KEY), 'xp');
-  assert.equal(f.shell.getState().themeId, 'xp');
-  assert.equal(f.shell.getState().appearanceFallback, true);
+  assert.equal(f.preferences.get(SHELL_THEME_KEY), 'server2003');
+  assert.equal(f.shell.getState().themeId, 'server2003');
   assert.match(f.shell.getState().error, /Could not apply\/save appearance/);
   assert.ok(surfaces.every(surface => !surface.closed));
   assert.ok(f.shell.getSurfaces().every(item => surfaces.includes(item.window)));
-  assert.equal(f.shell.selectTheme('server2003'), true);
-  assert.equal(f.shell.getState().appearanceFallback, false);
-  assert.equal(f.shell.getState().warning, '');
-  const classic = f.backend.committed;
-  assert.equal(f.shell.selectTheme('xp'), false);
-  assert.equal(f.backend.committed, classic);
-  assert.equal(f.preferences.get(SHELL_THEME_KEY), 'server2003');
-  assert.equal(f.shell.getState().themeId, 'server2003');
 });
 
-test('newly supported Luna can be explicitly retried without sticky generic fallback', t => {
-  const f = fixture(t);
+test('recovered backend accepts an explicit theme selection after rejection', t => {
+  const f = fixture(t, { maximumSchema: 1, initialTheme: 'server2003' });
   f.shell.start();
+  assert.equal(f.shell.selectTheme('xp'), false);
   f.backend.maximumSchema = 2;
   assert.equal(f.shell.selectTheme('xp'), true);
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
-  assert.equal(f.shell.getState().appearanceFallback, false);
-  assert.equal(f.shell.getState().warning, '');
   assert.equal(f.shell.getState().error, '');
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [2, 1, 2]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [1, 2, 2]);
 });
 
 for (const [name, failure] of [
@@ -238,59 +189,30 @@ for (const [name, failure] of [
   ['commit rejection', new Error('Appearance commit rejected: No matching prepared appearance')],
   ['unstructured lookalike', new Error('Appearance preparation failed: Unsupported or out-of-range appearance data')],
   ['unrelated structured error', Object.assign(schemaRejection(2), { code: 'ERR_SOMETHING_ELSE' })],
+  ['unsupported Luna data', schemaRejection(2)],
+  ['unsupported schema', schemaRejection(2, 'Unsupported appearance schema')],
   ['schema 1 rejection', schemaRejection(1)],
   ['other compositor reason', schemaRejection(2, 'Appearance descriptor is not sealed')],
 ]) {
-  test('cold startup must not fallback on ' + name, t => {
-    assert.equal(isLunaSchemaRejection(failure), false);
+  test('startup fails without a compatibility retry on ' + name, t => {
     const f = fixture(t, { failure: () => failure });
     assert.throws(() => f.shell.start(), error => error === failure);
     assert.equal(f.attempts.length, 1);
     assert.equal(f.backend.committed, null);
     assert.equal(f.shell.getState().running, false);
-    assert.equal(f.shell.getState().appearanceFallback, false);
     assert.equal(f.shell.getSurfaces().length, 0);
     assert.ok(f.created.every(surface => surface.closed));
     assert.equal(f.saves.length, 0);
   });
 }
 
-test('generic startup rejection still fails visibly rather than success-shaped recovery', t => {
+test('generic startup rejection also fails without retrying a different appearance', t => {
   const genericFailure = new Error('Appearance preparation failed: generic rejected');
-  const f = fixture(t, { failure: words => words[0] === 2 ? schemaRejection(2) : genericFailure });
+  const f = fixture(t, { initialTheme: 'server2003', failure: () => genericFailure });
   assert.throws(() => f.shell.start(), error => error === genericFailure);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [2, 1]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [1]);
   assert.equal(f.shell.getState().running, false);
-  assert.equal(f.shell.getState().appearanceFallback, false);
-  assert.equal(f.shell.getState().warning, '');
   assert.equal(f.backend.committed, null);
   assert.ok(f.created.every(surface => surface.closed));
-});
-
-test('generic fallback commit uncertainty cannot be reported as a successful startup', t => {
-  const uncertain = new Error('Cannot confirm appearance commit; compositor state may have changed');
-  const f = fixture(t, { failure: words => words[0] === 2 ? schemaRejection(2) : uncertain });
-  assert.throws(() => f.shell.start(), error => error === uncertain);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [2, 1]);
-  assert.equal(f.shell.getState().running, false);
-  assert.equal(f.shell.getState().warning, '');
-  assert.ok(f.created.every(surface => surface.closed));
   assert.equal(f.saves.length, 0);
-});
-
-test('an explicit newer unsupported-schema reply supports the same bounded startup path', t => {
-  const f = fixture(t);
-  f.backend.failure = words => {
-    if (words[0] === 2) return schemaRejection(2, 'Unsupported appearance schema');
-    // Successful retry is handled by the actual schema 1 stub below.
-    throw new Error('unexpected failure dispatch');
-  };
-  const configure = f.backend.configureAppearance;
-  f.backend.configureAppearance = function(theme) {
-    if (encode(theme)[0] === 1) this.failure = null;
-    configure.call(this, theme);
-  };
-  f.shell.start();
-  assert.equal(f.backend.committed.window.surfaceStyle, 'generic');
-  assert.equal(f.shell.getSurfaces().length, 4);
 });
