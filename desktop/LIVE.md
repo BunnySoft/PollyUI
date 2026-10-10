@@ -10,6 +10,11 @@ See the [Alpha delivery gate](../ROADMAP.md#new-architecture-alpha-delivery-gate
 and the generated artifact's qualification/provenance records.
 This is permission to begin physical testing, not a physical compatibility pass.
 The generated USB image has not received this run's optical-boot qualification.
+The final optical handoff is under
+`dist\pollydesktop-0.1.0-alpha.6-debian13-c9b1fcd-physical-test\`.
+It includes `qualification.json`, `HANDOFF.txt`, the VM result/logs/screenshots
+and `SHA256SUMS`; all 15 artifact checksums were verified after publication.
+The original candidate remains unchanged in its separate directory.
 
 The VM had 4 GiB RAM, two vCPUs, virtio-vga and no NIC, host audio, host shares or
 additional writable disk. QMP quit did not test guest power-off. Test-only sources
