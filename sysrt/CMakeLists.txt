@@ -96,6 +96,13 @@ if (TARGET qjs)
                     set_tests_properties(sysrt-dbus-private PROPERTIES TIMEOUT 120
                         LABELS "ordinary-native;private-dbus-fixture"
                         ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
+                    add_test(NAME sysrt-dbus-duplex COMMAND "${SR_PYTHON}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/dbus-duplex.py"
+                        $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
+                        "${SR_DBUS_DAEMON}")
+                    set_tests_properties(sysrt-dbus-duplex PROPERTIES TIMEOUT 300
+                        LABELS "ordinary-native;private-dbus-fixture"
+                        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
                 else()
                     message(STATUS "sysrt-dbus-private unavailable: requires dbus-1 headers and dbus-daemon")
                 endif()

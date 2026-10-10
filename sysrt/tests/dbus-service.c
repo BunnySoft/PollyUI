@@ -16,6 +16,8 @@ _Static_assert(DBUS_TYPE_UINT32 == 117 && DBUS_MESSAGE_TYPE_METHOD_RETURN == 2 &
                DBUS_MESSAGE_TYPE_ERROR == 3, "JS D-Bus constants mismatch");
 _Static_assert(DBUS_TYPE_BOOLEAN == 98 && DBUS_TYPE_STRING == 115 &&
                DBUS_TYPE_OBJECT_PATH == 111, "JS D-Bus scalar constants mismatch");
+_Static_assert(DBUS_MESSAGE_TYPE_METHOD_CALL == 1 && DBUS_NAME_FLAG_DO_NOT_QUEUE == 4 &&
+               DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER == 1, "JS D-Bus service constants mismatch");
 
 static int scalar_reply(DBusConnection *connection, DBusMessage *request, int type, const void *payload)
 {
