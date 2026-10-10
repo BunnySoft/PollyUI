@@ -25,10 +25,14 @@ def main():
     parser.add_argument("--new-architecture", action="store_true",
                         help="Inject ordinary-user test source into guest RAM and exercise production Settings/files")
     parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
+    parser.add_argument("--diagnostic-prepare", action="store_true",
+                        help="Capture startup diagnostics only; never publish an acceptance result")
     args = parser.parse_args()
     if args.new_architecture and (not args.harness_revision or len(args.harness_revision) != 40 or
                                  any(char not in "0123456789abcdef" for char in args.harness_revision)):
         raise ValueError("New-architecture acceptance requires an explicit full harness revision")
+    if args.diagnostic_prepare and not args.new_architecture:
+        raise ValueError("Startup diagnosis requires the ordinary-user new-architecture helper")
     iso = args.iso.resolve()
     evidence = args.evidence.resolve()
     if evidence.exists():
@@ -236,11 +240,12 @@ def main():
                         while True:
                             current = serial.read_text(errors="replace")
                             fresh = re.sub(r"\x1b\[[0-9;]*m", "", current[len(previous):])
-                            if "POLLY_VM_NEWARCH_FAILED=" in fresh:
+                            complete = fresh[:fresh.rfind("\n") + 1]
+                            if "POLLY_VM_NEWARCH_FAILED=" in complete:
                                 execute("screendump", {"filename": str(evidence / "newarch-failed.ppm")})
-                                raise RuntimeError("Guest new-architecture action failed:\n" + fresh[-4000:])
-                            if prefix in fresh:
-                                value = fresh.split(prefix, 1)[1].splitlines()[0].strip()
+                                raise RuntimeError("Guest new-architecture action failed:\n" + complete[-6000:])
+                            if prefix in complete:
+                                value = complete.split(prefix, 1)[1].splitlines()[0].strip()
                                 result = json.loads(value)
                                 stages[name] = result
                                 return result
@@ -256,6 +261,19 @@ def main():
                         time.sleep(1)
 
                     stage("prepare")
+                    if args.diagnostic_prepare:
+                        execute("screendump", {"filename": str(evidence / "diagnostic-settings.ppm")})
+                        with iso.open("rb") as source:
+                            diagnostic_hash = hashlib.file_digest(source, "sha256").hexdigest()
+                        (evidence / "diagnostic.json").write_text(json.dumps({
+                            "acceptance": False, "isoSha256": diagnostic_hash,
+                            "harnessRevision": args.harness_revision, "prepare": stages["prepare"],
+                            "limits": "Startup-only diagnostic, not full new-architecture or physical acceptance."
+                        }, indent=2) + "\n")
+                        execute("quit")
+                        process.wait(timeout=10)
+                        print("Completed startup diagnosis only; no acceptance result was published")
+                        return
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-appearance.ppm")})
                     press_tab(12)

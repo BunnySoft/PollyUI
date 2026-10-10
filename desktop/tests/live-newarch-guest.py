@@ -72,8 +72,24 @@ def settings_pid(shell_pid):
 
 
 def emit(stage, result):
-    subprocess.run(["logger", "-t", "polly-vm-check", "POLLY_VM_NEWARCH_" + stage.upper() + "=" +
+    subprocess.run(["logger", "--size", "8192", "-t", "polly-vm-check", "POLLY_VM_NEWARCH_" + stage.upper() + "=" +
                     json.dumps(result, separators=(",", ":"))], check=True)
+
+
+def launch_settings(page, env, cwd):
+    started = time.monotonic()
+    try:
+        result = subprocess.run(["/usr/bin/polly-settings", page], env=env, cwd=cwd, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
+    except subprocess.TimeoutExpired as error:
+        output = error.output or b""
+        if isinstance(output, bytes):
+            output = output.decode(errors="replace")
+        emit("launcher-timeout", {"page": page, "elapsedSeconds": round(time.monotonic() - started, 2),
+                                  "clientOutput": output[-2500:], "processes": process_arguments()})
+        raise
+    check(result.returncode == 0, "Production Settings launcher failed: " + result.stdout[-2500:])
+    return result
 
 
 def main():
@@ -101,9 +117,9 @@ def main():
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
         check(files.returncode == 0 and "POLLY_VM_FILES_NATIVE_OK" in files.stdout and
               "FAILED" not in files.stdout, "Actual native Files SDK failed: " + files.stdout)
-        launch = subprocess.run(["/usr/bin/polly-settings", "appearance"], env=env, cwd="/tmp",
-                                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-        check(launch.returncode == 0, "Production Settings launcher failed: " + launch.stdout)
+        emit("files", {"shellPid": shell, "filesNative": True,
+                       "configurationFile": str(file), "configuration": value["theme"]})
+        launch_settings("appearance", env, "/tmp")
         pid = settings_pid(shell)
         state = {"shellPid": shell, "settingsPid": pid, "configurationFile": str(file), "theme": str(themes)}
         state_file.write_text(json.dumps(state))
@@ -124,23 +140,19 @@ def main():
                 check(value["theme"]["filesEnabled"] is True, "User theme was not read through the JS file path")
             emit(stage, {"shellPid": shell, "settingsPid": state["settingsPid"], "configuration": value["theme"]})
         elif stage == "about":
-            launch = subprocess.run(["/usr/bin/polly-settings", "about"], env=env, cwd="/",
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-            check(launch.returncode == 0 and settings_pid(shell) == state["settingsPid"],
+            launch_settings("about", env, "/")
+            check(settings_pid(shell) == state["settingsPid"],
                   "About did not present in the existing production Settings process")
             emit(stage, {"sameSettingsPid": state["settingsPid"]})
         elif stage == "appearance":
-            launch = subprocess.run(["/usr/bin/polly-settings", "appearance"], env=env, cwd="/tmp",
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-            check(launch.returncode == 0 and settings_pid(shell) == state["settingsPid"],
+            launch_settings("appearance", env, "/tmp")
+            check(settings_pid(shell) == state["settingsPid"],
                   "Appearance did not present in the existing production Settings process")
             emit(stage, {"sameSettingsPid": state["settingsPid"]})
         elif stage == "reopen":
             check(not any("--managed" in args and "org.pollyui.settings" in args
                           for args in process_arguments().values()), "Settings window close did not end its owned process")
-            launch = subprocess.run(["/usr/bin/polly-settings", "appearance"], env=env, cwd="/tmp",
-                                    text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
-            check(launch.returncode == 0, "Production Settings reopen failed")
+            launch_settings("appearance", env, "/tmp")
             pid = settings_pid(shell)
             check(pid != state["settingsPid"], "Closed Settings did not reopen a new generation")
             state["settingsPid"] = pid
