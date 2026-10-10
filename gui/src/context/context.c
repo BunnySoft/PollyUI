@@ -87,14 +87,14 @@ static void app_paint(PuSurface *surface, int width, int height, float scale, vo
         double t2 = pu_now_ms();
         fprintf(stderr, "[perf] paint: layout %.2fms  render %.2fms  total %.2fms\n",
                 t1 - t0, t2 - t1, t2 - t0);
-        app->paint_version = pu_node_paint_version();
+        app->paint_version = pu_node_paint_version(body);
         return;
     }
     pu_layout_calculate(body, (float)width, (float)height);
     pu_bridge_sync_text_input(app->bridge);
     if (app->transparent) pu_render_tree_transparent(surface, body, scale);
     else pu_render_tree(surface, body, scale);
-    app->paint_version = pu_node_paint_version();
+    app->paint_version = pu_node_paint_version(body);
 }
 
 /* Pointer: hit-test against the last computed layout and dispatch the matching
@@ -212,9 +212,9 @@ static int app_async(void *user)
         pu_window_keep_alive(0);
         for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
     }
-    uint64_t paint_version = pu_node_paint_version();
     for (PuApp *app = g_apps; app; app = app->next)
-        if (app->paint_version != paint_version) pu_window_redraw(app->window);
+        if (app->paint_version != pu_node_paint_version(pu_bridge_body(app->bridge)))
+            pu_window_redraw(app->window);
     return 0;
 }
 

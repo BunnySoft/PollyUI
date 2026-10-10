@@ -45,7 +45,7 @@ static void bitmap_close(PuBitmap *bitmap)
     while (*slot && *slot != bitmap) slot = &(*slot)->next;
     if (*slot) *slot = bitmap->next;
     pu_image_remove(bitmap->key);
-    pu_node_mark_paint_dirty();
+    pu_node_mark_paint_dirty(NULL);
     bitmap->owner = NULL;
     bitmap->next = NULL;
 }
@@ -800,7 +800,7 @@ static void node_set_state(PuNode *n, unsigned flag, int on, int up_path)
     for (; n; n = n->parent) {
         unsigned previous = n->state;
         if (on) n->state |= flag; else n->state &= ~flag;
-        if (previous != n->state) pu_node_mark_paint_dirty();
+        if (previous != n->state) pu_node_mark_paint_dirty(n);
         if (!up_path) break;
     }
 }

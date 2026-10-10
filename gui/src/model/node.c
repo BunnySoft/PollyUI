@@ -9,9 +9,20 @@
 static JSRuntime *g_rt;
 static PuNode *g_nodes;
 static uint64_t g_paint_version;
+static uint64_t g_resource_version;
 void pu_node_set_runtime(JSRuntime *rt) { g_rt = rt; }
-uint64_t pu_node_paint_version(void) { return g_paint_version; }
-void pu_node_mark_paint_dirty(void) { g_paint_version++; }
+uint64_t pu_node_paint_version(const PuNode *node)
+{
+    while (node && node->parent) node = node->parent;
+    return node && node->paint_version > g_resource_version ? node->paint_version : g_resource_version;
+}
+void pu_node_mark_paint_dirty(PuNode *node)
+{
+    uint64_t version = ++g_paint_version;
+    if (!node) { g_resource_version = version; return; }
+    while (node->parent) node = node->parent;
+    node->paint_version = version;
+}
 
 static char *pu_strdup(const char *s)
 {
@@ -34,7 +45,7 @@ void pu_style_set(PuStyle *s, const char *name, const char *value)
             if (!nv) return;
             free(s->props[i].value);
             s->props[i].value = nv;
-            pu_node_mark_paint_dirty();
+            if (s->owner) pu_node_mark_paint_dirty(s->owner);
             return;
         }
     }
@@ -49,7 +60,7 @@ void pu_style_set(PuStyle *s, const char *name, const char *value)
     s->props[s->count].value = pu_strdup(value ? value : "");
     if (s->props[s->count].name && s->props[s->count].value) {
         s->count++;
-        pu_node_mark_paint_dirty();
+        if (s->owner) pu_node_mark_paint_dirty(s->owner);
     }
 }
 
@@ -72,7 +83,7 @@ void pu_style_remove(PuStyle *s, const char *name)
             memmove(&s->props[i], &s->props[i + 1],
                     (size_t)(s->count - i - 1) * sizeof(PuStyleProp));
             s->count--;
-            pu_node_mark_paint_dirty();
+            if (s->owner) pu_node_mark_paint_dirty(s->owner);
             return;
         }
     }
@@ -97,6 +108,8 @@ PuNode *pu_node_new(PuNodeType type)
     if (!n) return NULL;
     n->type = type;
     n->ref = 0;
+    n->style.owner = n;
+    n->attrs.owner = n;
     n->tab_index = -1; /* not focusable by default */
     n->js_wrapper = JS_UNDEFINED;
     n->js_style   = JS_UNDEFINED;
@@ -185,6 +198,7 @@ static void pu_unlink(PuNode *child)
 {
     PuNode *p = child->parent;
     if (!p) return;
+    pu_node_mark_paint_dirty(p);
     if (child->prev_sibling) child->prev_sibling->next_sibling = child->next_sibling;
     else                     p->first_child = child->next_sibling;
     if (child->next_sibling) child->next_sibling->prev_sibling = child->prev_sibling;
@@ -217,7 +231,7 @@ void pu_node_insert_before(PuNode *parent, PuNode *child, PuNode *ref_node)
         parent->last_child = child;
     }
     parent->child_count++;
-    pu_node_mark_paint_dirty();
+    pu_node_mark_paint_dirty(parent);
 }
 
 void pu_node_append(PuNode *parent, PuNode *child)
@@ -229,7 +243,7 @@ void pu_node_remove(PuNode *parent, PuNode *child)
 {
     if (!parent || !child || child->parent != parent) return;
     pu_unlink(child);
-    pu_node_mark_paint_dirty();
+    pu_node_mark_paint_dirty(parent);
     pu_node_unref(child);   /* lost the tree ref; frees if nothing else holds it */
 }
 
@@ -242,7 +256,7 @@ void pu_node_set_text(PuNode *n, const char *text)
     if (!nt && text) return;
     free(n->text);
     n->text = nt;
-    pu_node_mark_paint_dirty();
+    pu_node_mark_paint_dirty(n);
 }
 
 /* ---- events ----------------------------------------------------------------*/

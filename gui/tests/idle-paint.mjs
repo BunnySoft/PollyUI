@@ -13,15 +13,21 @@ setTimeout(() => paintProbe('idle-start'), 150);
 setTimeout(() => {
   paintProbe('idle-end');
   if (polls < 20) throw new Error('Idle timer did not continue pumping');
+  const detached = surface.document.createElement('view');
+  detached.textContent = 'not attached to a visible document';
+  detached.style.backgroundColor = '#abcdef';
+}, 500);
+setTimeout(() => {
+  paintProbe('detached');
   body.style.backgroundColor = '#304050';
   Promise.resolve().then(() => { label.textContent = 'changed'; });
-}, 500);
+}, 650);
 setTimeout(() => {
   paintProbe('mutated');
   label.focus();
-}, 650);
+}, 800);
 setTimeout(() => {
   paintProbe('focused');
   clearInterval(timer);
   window.quit();
-}, 800);
+}, 950);

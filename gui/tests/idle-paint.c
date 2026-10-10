@@ -9,7 +9,7 @@
 typedef struct State {
     const char *capture;
     struct timespec last;
-    int frames, idle_start, idle_end, mutated, focused, failed;
+    int frames, idle_start, idle_end, detached, mutated, focused, failed;
 } State;
 
 static State *active;
@@ -33,6 +33,7 @@ static JSValue probe(JSContext *ctx, JSValueConst self, int argc, JSValueConst *
     observe(active);
     if (!strcmp(phase, "idle-start")) active->idle_start = active->frames;
     else if (!strcmp(phase, "idle-end")) active->idle_end = active->frames;
+    else if (!strcmp(phase, "detached")) active->detached = active->frames;
     else if (!strcmp(phase, "mutated")) active->mutated = active->frames;
     else if (!strcmp(phase, "focused")) active->focused = active->frames;
     else active->failed = 1;
@@ -72,10 +73,11 @@ int main(int argc, char **argv)
     unsetenv("PU_CAPTURE_FRAME");
     unlink(file);
     pu_gui_shutdown();
-    printf("Native captured frames: idle=%d mutation=%d focus=%d\n",
-        state.idle_end - state.idle_start, state.mutated - state.idle_end, state.focused - state.mutated);
+    printf("Native captured frames: idle=%d detached=%d mutation=%d focus=%d\n",
+        state.idle_end - state.idle_start, state.detached - state.idle_end,
+        state.mutated - state.detached, state.focused - state.mutated);
     if (result || state.failed || !state.idle_start || state.idle_end - state.idle_start > 2 ||
-        state.mutated <= state.idle_end || state.focused <= state.mutated) {
+        state.detached != state.idle_end || state.mutated <= state.detached || state.focused <= state.mutated) {
         fputs("FAIL: idle polls repainted or a real DOM/Promise/focus change did not paint\n", stderr);
         return 1;
     }

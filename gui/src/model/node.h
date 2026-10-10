@@ -22,6 +22,8 @@ typedef enum PuNodeType {
     PU_NODE_TEXT
 } PuNodeType;
 
+typedef struct PuNode PuNode;
+
 typedef struct PuStyleProp {
     char *name;
     char *value;
@@ -31,6 +33,7 @@ typedef struct PuStyle {
     PuStyleProp *props;
     int          count;
     int          cap;
+    PuNode      *owner;
 } PuStyle;
 
 /* An event listener: an event type + a JS callback (strong ref, owned). */
@@ -39,7 +42,6 @@ typedef struct PuListener {
     JSValue func;
 } PuListener;
 
-typedef struct PuNode PuNode;
 struct PuNode {
     PuNodeType type;
     int        ref;          /* lifetime refcount (§6) */
@@ -71,6 +73,7 @@ struct PuNode {
     float text_wrap_width;   /* width text was wrapped to in measure (0 = none) */
     void *yoga;              /* transient YGNodeRef during a layout pass */
     uint64_t layout_version;
+    uint64_t paint_version;
     float layout_view_width, layout_view_height;
 
     /* Event listeners (DESIGN.md §6). */
@@ -89,8 +92,9 @@ void pu_node_set_runtime(JSRuntime *rt);
 /* Release native-held JS callbacks while their runtime is still alive. */
 void pu_node_clear_all_listeners(void);
 void pu_node_clear_tree_listeners(PuNode *root);
-uint64_t pu_node_paint_version(void);
-void pu_node_mark_paint_dirty(void);
+uint64_t pu_node_paint_version(const PuNode *node);
+/* NULL marks shared bitmap resources; attached node changes stay document-scoped. */
+void pu_node_mark_paint_dirty(PuNode *node);
 
 /* --- lifetime --- */
 PuNode *pu_node_new(PuNodeType type);
