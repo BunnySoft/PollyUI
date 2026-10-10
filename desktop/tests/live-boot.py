@@ -13,6 +13,7 @@ import time
 import base64
 import zlib
 import threading
+import re
 
 
 def main():
@@ -147,9 +148,12 @@ def main():
                     raise RuntimeError("PAM did not register an active ordinary-user elogind session")
                 if any(message in text for message in ["Kernel panic", "PollyDesktop session failed", "Cannot initialize renderer"]):
                     raise RuntimeError("Boot reported a fatal error:\n" + text[-8000:])
-                def wait_log(marker, seconds=30):
+                def wait_log(marker, seconds=30, pattern=False):
                     until = time.monotonic() + seconds
-                    while marker not in serial.read_text(errors="replace"):
+                    while True:
+                        transcript = re.sub(r"\x1b\[[0-9;]*m", "", serial.read_text(errors="replace"))
+                        if (re.search(marker, transcript) if pattern else marker in transcript):
+                            return
                         if process.poll() is not None or time.monotonic() > until:
                             execute("screendump", {"filename": str(evidence / "failed-guest.ppm")})
                             raise RuntimeError("Missing native guest marker: " + marker)
@@ -206,7 +210,7 @@ def main():
                     send_text("polly\n")
                     time.sleep(1)
                     send_text("logger -t polly-vm-check POLLY_VM_CONSOLE_READY\n")
-                    wait_log("POLLY_VM_CONSOLE_READY", 30)
+                    wait_log(r"polly-vm-check\[\d+\]: POLLY_VM_CONSOLE_READY", 30, pattern=True)
                     fixture = {
                         "guest.py": Path(__file__).with_name("live-newarch-guest.py").read_bytes(),
                         "files.mjs": Path(__file__).with_name("live-files-guest.mjs").read_bytes(),
@@ -231,8 +235,9 @@ def main():
                         prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
                         while True:
                             current = serial.read_text(errors="replace")
-                            fresh = current[len(previous):]
+                            fresh = re.sub(r"\x1b\[[0-9;]*m", "", current[len(previous):])
                             if "POLLY_VM_NEWARCH_FAILED=" in fresh:
+                                execute("screendump", {"filename": str(evidence / "newarch-failed.ppm")})
                                 raise RuntimeError("Guest new-architecture action failed:\n" + fresh[-4000:])
                             if prefix in fresh:
                                 value = fresh.split(prefix, 1)[1].splitlines()[0].strip()

@@ -26,10 +26,14 @@ def process_arguments():
     return result
 
 
+def live_shell(args):
+    return ("--desktop" in args and "org.pollyui.shell" in args and
+            "/usr/share/pollyui/desktop/shell/live.mjs" in args)
+
+
 def shell_environment():
     processes = process_arguments()
-    shells = [pid for pid, args in processes.items() if "--desktop-shell" in args and
-              "/usr/share/pollyui/desktop/shell/live.mjs" in args]
+    shells = [pid for pid, args in processes.items() if live_shell(args)]
     check(len(shells) == 1, "Expected exactly one production Live Shell")
     pid = shells[0]
     fields = (Path("/proc") / str(pid) / "environ").read_bytes().rstrip(b"\0").split(b"\0")
