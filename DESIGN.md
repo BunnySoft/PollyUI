@@ -92,6 +92,9 @@ are implemented; foreign-thread/retained callback routing, borrowed external
 views and native cancellation remain staged.
 The first generated ABI path covers Linux x86_64 statx and file constants from
 native headers, with deterministic output and explicit target/type checks.
+The first D-Bus client uses explicit-address libdbus connections and zero-wait
+uint32 request/reply polling; setup is synchronous, and remote services/cancellation
+semantics remain separate. Existing native desktop services are not yet replaced.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 

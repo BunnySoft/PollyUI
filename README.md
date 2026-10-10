@@ -159,6 +159,23 @@ Choose worker-safe functions explicitly. No general callback system, task pool,
 timeout/cancellation API or broad API migration is part of this first slice.
 The staged implementation tasks are tracked in [ROADMAP.md](./ROADMAP.md#sysrt-implementation-task-plan).
 
+The first Linux x86_64 D-Bus client uses existing `libdbus-1` through JS/config,
+not a production domain C bridge. `openDbusClient(explicitAddress)` opens a
+private connection; `callUint32(target, argument, timeoutMs)` returns a ticket
+with `poll()`/`cancel()`. Drive polls from the application's event loop; each
+performs a zero-wait native I/O/dispatch step. Outcomes are cached
+`pending`, `reply` (uint32 value), `error` or `cancelled`. Only one uint32 input
+and output are supported. Opening/authentication/Hello are still synchronous.
+Unknown borrowed error strings are not guessed or read; common remote error
+names are matched natively, other remote errors remain explicit with no name.
+Caller monotonic deadlines report `ERR_DBUS_TIMEOUT`, not a fabricated NoReply.
+Cancellation/close discard local results and never replay requests or roll back
+remote side effects. Close releases pending calls/connections but keeps the
+module's libdbus reference for its global caches. `shutdownDbus()` is explicit
+and requires all SDK clients closed plus exclusive ownership of every libdbus
+user in the process, including other realms/native code. Do not invoke it as
+automatic desktop-host cleanup. This is not a general RPC/service framework.
+
 `createCallback(signature, fn)` (or native `callback`) creates a handle for
 default-ABI scalar/void callbacks. Pass it through a native signature's
 `callback` parameter. A libffi closure exists only during that synchronous call;
