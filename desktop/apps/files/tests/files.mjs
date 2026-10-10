@@ -19,7 +19,7 @@ function fixture() {
   ['/fixture/Documents', []], ['/fixture/unmanaged.app', []]]);
   const operations = [], errors = [];
   const fs = {
-    version: 1, implementation: 'linux-ffi-v1', overwrite: true, textObservation: 'sha256-v1', maxEntries: 1024, maxTextBytes: 1048576,
+    version: 1, implementation: 'desktop-files-v1', overwrite: true, textObservation: 'sha256-v1', maxEntries: 1024, maxTextBytes: 1048576,
     locations: () => ({ home: '/fixture', documents: '/fixture/Documents', downloads: '/fixture/Downloads', desktop: '/fixture/Desktop' }),
     listDirectory(path) {
       operations.push(['list', path]);

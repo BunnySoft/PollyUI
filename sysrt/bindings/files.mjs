@@ -1,6 +1,6 @@
 const common = {
   library: 'libc.so.6',
-  target: { pointerSize: 8, longSize: 8 },
+  target: { architecture: 'x86_64', pointerSize: 8, longSize: 8 },
   functions: {
     uid: { symbol: 'getuid', result: 'u32', parameters: [] },
     euid: { symbol: 'geteuid', result: 'u32', parameters: [] },
@@ -17,6 +17,11 @@ const common = {
     linkTarget: { symbol: 'readlinkat', result: 'ssize', parameters: ['i32', 'cstring', 'pointer', 'size'] },
     read: { symbol: 'read', result: 'ssize', parameters: ['i32', 'pointer', 'size'] },
     write: { symbol: 'write', result: 'ssize', parameters: ['i32', 'pointer', 'size'] },
+    seek: { symbol: 'lseek', result: 'i64', parameters: ['i32', 'i64', 'i32'] },
+    readAt: { symbol: 'pread', result: 'ssize', parameters: ['i32', 'pointer', 'size', 'i64'] },
+    writeAt: { symbol: 'pwrite', result: 'ssize', parameters: ['i32', 'pointer', 'size', 'i64'] },
+    truncate: { symbol: 'ftruncate', result: 'i32', parameters: ['i32', 'i64'] },
+    symlink: { symbol: 'symlinkat', result: 'i32', parameters: ['cstring', 'i32', 'cstring'] },
     mkdir: { symbol: 'mkdirat', result: 'i32', parameters: ['i32', 'cstring', 'u32'] },
     rename: { symbol: 'renameat2', result: 'i32', parameters: ['i32', 'cstring', 'i32', 'cstring', 'u32'] },
     link: { symbol: 'linkat', result: 'i32', parameters: ['i32', 'cstring', 'i32', 'cstring', 'i32'] },
@@ -56,12 +61,13 @@ export const fileConstants = Object.freeze({
   noReplace: 1, typeMask: 0xf000, regular: 0x8000, directoryType: 0x4000, symbolicLink: 0xa000,
 });
 
-export const fileDigestBindings = {
-  library: 'libcrypto.so.3',
-  target: { pointerSize: 8, longSize: 8 },
-  functions: {
-    algorithm: { symbol: 'EVP_sha256', result: 'pointer', parameters: [] },
-    digest: { symbol: 'EVP_Digest', result: 'i32',
-      parameters: ['pointer', 'size', 'pointer', 'pointer', 'pointer', 'pointer'] },
-  },
-};
+export const fileSystemConstants = Object.freeze({
+  AT_FDCWD: fileConstants.currentDirectory, AT_EMPTY_PATH: fileConstants.emptyPath,
+  AT_SYMLINK_NOFOLLOW: fileConstants.noFollowStatus, AT_EACCESS: fileConstants.effectiveAccess,
+  AT_REMOVEDIR: 0x200, STATX_BASIC_STATS: fileConstants.basicStatus,
+  O_RDONLY: fileConstants.readOnly, O_RDWR: fileConstants.readWrite, O_WRONLY: fileConstants.writeOnly,
+  O_CREAT: fileConstants.create, O_EXCL: fileConstants.exclusive, O_TRUNC: 0x200,
+  O_APPEND: 0x400, O_NONBLOCK: fileConstants.nonblock, O_DIRECTORY: fileConstants.directory,
+  O_NOFOLLOW: fileConstants.noFollow, O_CLOEXEC: fileConstants.closeOnExec, O_PATH: fileConstants.pathOnly,
+  RENAME_NOREPLACE: fileConstants.noReplace, SEEK_SET: 0, SEEK_CUR: 1, SEEK_END: 2,
+});

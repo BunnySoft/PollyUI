@@ -61,6 +61,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/maintenance/payload.py"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui/install-targets/maintenance"
     PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/shared/app-bundle.mjs"
+    "${CMAKE_SOURCE_DIR}/desktop/shared/file-system.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/shared" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/themes"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/resources" COMPONENT PollyDesktop

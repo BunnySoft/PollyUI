@@ -16,13 +16,13 @@ No Node, Python, root service or GLib/GIO loop is required by the manager.
 
 Ordinary Linux PollyUI application processes now receive only
 `desktop.fileSystem` by default, including managed PollyUI bundles. This is the
-bounded, synchronous JS/FFI SDK documented in `apps/files/README.md`, not
+bounded, synchronous desktop file service documented in `apps/files/README.md`, not
 desktop management or arbitrary command execution. Explicit `--desktop` still
-installs the existing application/MIME APIs first, then the JS service prelude merges the SDK
+installs the existing application/MIME APIs first, then the JS service prelude merges that service
 without replacing the application object. The dedicated `--greeter` mode gets
 neither file nor desktop management APIs; lock and input-method roles also skip
-the SDK prelude. UID0/setid file operations are refused by the SDK before
-filesystem access. Future filesystem bindings extend JS/config, not a C bridge.
+the service prelude. UID0/setid operations are refused by this desktop service,
+not the native-mapping SDK. Future filesystem bindings extend JS/config, not a C bridge.
 
 ## Confirmed P0 target, not the current implementation
 

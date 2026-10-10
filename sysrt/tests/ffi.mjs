@@ -1,4 +1,4 @@
-import { open, alloc, platform, libc, pointerSize, longSize, maxBytes, callbacks, variadics, async as asyncCalls } from 'sysrt:ffi';
+import { open, alloc, platform, libc, architecture, pointerSize, longSize, maxBytes, callbacks, variadics, async as asyncCalls } from 'sysrt:ffi';
 import { currentId, close as closeProcess } from './sysrt/sdk/js/process.mjs';
 import { loadBindings } from './sysrt/sdk/js/native.mjs';
 import { createRecord } from './sysrt/sdk/js/memory.mjs';
@@ -15,6 +15,9 @@ function refuses(action, message, code) {
 }
 check(pointerSize === 4 || pointerSize === 8, 'Native pointer width is explicit');
 check(longSize === 4 || longSize === 8, 'Native long width is explicit');
+check(['x86_64', 'aarch64', 'x86', 'unsupported'].includes(architecture), 'Host architecture is explicit');
+refuses(() => loadBindings({ library: fixtureLibrary, functions: {},
+  target: { architecture: 'wrong-target' } }), 'Wrong architecture cannot load native bindings');
 check(callbacks === false && asyncCalls === false, 'Unimplemented features are explicit');
 check(variadics === true, 'Variadic capability is explicit');
 const pid = currentId();

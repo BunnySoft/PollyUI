@@ -679,8 +679,18 @@ static const MethodInfo pointer_methods[] = {
 #define SR_PLATFORM "unsupported"
 #define SR_LIBC "unknown"
 #endif
+#if defined(_M_X64) || defined(__x86_64__)
+#define SR_ARCHITECTURE "x86_64"
+#elif defined(_M_ARM64) || defined(__aarch64__)
+#define SR_ARCHITECTURE "aarch64"
+#elif defined(_M_IX86) || defined(__i386__)
+#define SR_ARCHITECTURE "x86"
+#else
+#define SR_ARCHITECTURE "unsupported"
+#endif
 static const JSCFunctionListEntry exports[] = {
     JS_PROP_STRING_DEF("platform", SR_PLATFORM, 0), JS_PROP_STRING_DEF("libc", SR_LIBC, 0),
+    JS_PROP_STRING_DEF("architecture", SR_ARCHITECTURE, 0),
     JS_PROP_INT32_DEF("pointerSize", sizeof(void *), 0),
     JS_PROP_INT32_DEF("longSize", sizeof(long), 0),
     JS_PROP_INT32_DEF("maxBytes", SR_MAX_BYTES, 0),

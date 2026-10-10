@@ -1,4 +1,4 @@
-import { open, platform, libc, pointerSize, longSize } from 'sysrt:ffi';
+import { open, platform, libc, architecture, pointerSize, longSize } from 'sysrt:ffi';
 import { compileLayout } from './sysrt/sdk/js/memory.mjs';
 
 export function loadBindings(configuration) {
@@ -10,7 +10,8 @@ export function loadBindings(configuration) {
   if (configuration.target !== undefined) {
     const target = configuration.target;
     if (!target || typeof target !== 'object' || Array.isArray(target) ||
-        Object.keys(target).some(key => !['pointerSize', 'longSize'].includes(key)) ||
+        Object.keys(target).some(key => !['architecture', 'pointerSize', 'longSize'].includes(key)) ||
+        (target.architecture !== undefined && target.architecture !== architecture) ||
         (target.pointerSize !== undefined && target.pointerSize !== pointerSize) ||
         (target.longSize !== undefined && target.longSize !== longSize))
       throw new Error('Native configuration does not match the host ABI');

@@ -1,11 +1,11 @@
 import { requireFileSystem, childPath, fileEntry } from './desktop/apps/files/logic/model.mjs';
 import { createFileTextApp } from './desktop/client/file-dialog-example.mjs';
 import { requestPrivateMutation } from './desktop/tests/file-dialog-mutation.mjs';
-import { fileSystem } from './sysrt/sdk/js/files.mjs';
+import { fileSystem } from './desktop/shared/file-system.mjs';
 
 const [directory, evidence] = application.arguments;
 const files = requireFileSystem(typeof desktop === 'undefined' ? null : desktop);
-if (files !== fileSystem) throw new Error('Production SysRT filesystem SDK required, not an injected stub');
+if (files !== fileSystem) throw new Error('Production desktop file service required, not an injected stub');
 const parent = files.stat(directory, false);
 const marker = files.stat(childPath(directory, 'fixture-marker.txt'), false);
 if (parent.uid !== 1000 || files.readText(marker.path, marker.identity).text !== 'POLLYUI_FILE_DIALOG_PRIVATE_V1')

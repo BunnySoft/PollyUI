@@ -73,7 +73,9 @@ in `sysrt`, and execution primitives in `shared`. The GUI library exposes
 context hooks; Linux service assembly stays in `desktop/launcher`. Existing
 Files and installer modules distinguish UI, logic and tests. Mixed active
 integration remains in `desktop/native`. The generic FFI and JS/config SDK path is implemented, including the Linux
-filesystem SDK; its old C provider/projection are removed. The launcher uses
+filesystem SDK; its old C provider/projection are removed. Native mappings
+preserve OS behavior; bounded text, directory snapshots and ordinary-user
+rules belong to the desktop file service, not SysRT. The launcher uses
 a JS service prelude before the app entry; a generic shared-module root makes
 SDK loading independent of the app's working directory.
 Callback/asynchronous mechanisms remain unfinished.

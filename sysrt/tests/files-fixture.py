@@ -1,4 +1,4 @@
-"""Run the JS filesystem SDK against private real files, never a C provider."""
+"""Exercise native FileSystem mappings and desktop policy on private real files."""
 import os
 from pathlib import Path
 import subprocess
@@ -34,5 +34,7 @@ with tempfile.TemporaryDirectory(prefix="polly-files-sdk-") as temporary:
             (root / "invalid-name").mkdir()
             descriptor = os.open(os.fsencode(root / "invalid-name") + b"/\xff", os.O_CREAT | os.O_WRONLY, 0o600)
             os.close(descriptor)
-    subprocess.run([runner, str(repo / "sysrt" / "tests" / "files.mjs"), library],
-                   cwd=repo, env={**os.environ, "HOME": str(home)}, check=True, timeout=160)
+    for script in (repo / "sysrt" / "tests" / "files.mjs",
+                   repo / "desktop" / "tests" / "file-system-service.mjs"):
+        subprocess.run([runner, str(script), library],
+                       cwd=repo, env={**os.environ, "HOME": str(home)}, check=True, timeout=160)

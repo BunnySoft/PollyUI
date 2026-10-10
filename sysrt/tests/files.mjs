@@ -1,126 +1,100 @@
-import { fileSystem as fs } from './sysrt/sdk/js/files.mjs';
-import { filesBindings, fileConstants } from './sysrt/bindings/files.mjs';
-import { loadBindings } from './sysrt/sdk/js/native.mjs';
-import { libc } from 'sysrt:ffi';
+import { alloc, libc } from 'sysrt:ffi';
+import { createFileSystem, constants as C } from './sysrt/sdk/js/files.mjs';
 
+const fs = createFileSystem();
+const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 function check(value, message) { if (!value) throw new Error(message); }
-function refuses(action, code) {
-  try { action(); } catch (error) {
-    check(!code || error.code === code, 'Expected ' + code + ', got ' + error.code + ': ' + error.message + '\n' + error.stack);
-    return error;
-  }
-  throw new Error('Expected filesystem refusal');
+function value(result, message) {
+  check(result.value >= 0 && result.systemError === null, message + ': errno=' + result.errno);
+  return result.value;
 }
-const oracle = loadBindings({ library: fixtureLibrary, functions: {
-  offset: { symbol: 'sr_statx_offset', result: 'size', parameters: ['i32'] },
-  retire: { symbol: 'sr_retire_on_entries', result: 'void', parameters: ['cstring'] },
-  failClose: { symbol: 'sr_fail_close', result: 'void', parameters: ['cstring'] },
-  uid: { symbol: 'getuid', result: 'u32', parameters: [] },
-}});
-const configuration = filesBindings[libc];
-const fields = Object.values(configuration.layouts.statx.fields);
-fields.forEach((field, index) =>
-  check(Number(oracle.call('offset', index).value) === field.offset, 'Measured statx field ' + index));
-check(Number(oracle.call('offset', fields.length).value) === configuration.layouts.statx.byteLength, 'Measured statx size');
-Object.values(fileConstants).forEach((value, index) => {
-  const expected = BigInt(value) + (value < 0 ? 18446744073709551616n : 0n);
-  const actual = oracle.call('offset', fields.length + 1 + index).value;
-  check(expected === actual, 'Measured Linux constant ' + index + ': expected ' + expected + ', actual ' + actual);
-});
-check(fs.implementation === 'linux-ffi-v1' && fs.maxEntries === 1024 && fs.maxTextBytes === 1048576, 'New SDK contract');
-if (oracle.call('uid').value === 0) {
-  for (const action of [
-    () => fs.locations(), () => fs.stat('/', false), () => fs.listDirectory('/', null),
-    () => fs.readText('/file', 'token'), () => fs.observeText('/file'),
-    () => fs.writeText('/', 'file', '', 'token'), () => fs.replaceText('/file', '', 'token', 'parent'),
-    () => fs.createDirectory('/', 'folder', 'token'), () => fs.rename('/file', 'new', 'token', 'parent'),
-  ]) refuses(action, 'EPERM');
-} else {
-  // Only this test binding replaces enumeration to retire a real opened directory.
-  configuration.library = fixtureLibrary;
-  configuration.functions.entries.symbol = libc === 'musl' ? 'sr_checked_getdents' : 'sr_checked_getdents64';
-  configuration.functions.close.symbol = 'sr_checked_close';
-  const home = fs.locations().home, root = home + '/run-' + fixtureRun;
-  check(home.startsWith('/tmp/polly-files-sdk-'), 'Explicit private fixture HOME');
-  check(fs.locations().documents === home + '/Documents', 'Environment pointer copied through libc');
-  const inspect = path => fs.stat(path, false), parent = () => inspect(root).identity;
-  const initial = fs.listDirectory(root, null);
-  check(initial.complete && initial.entries.some(entry => entry.name === 'hello.txt'), 'Real directory enumeration');
-  check(inspect('/').name === '/', 'Root metadata');
-  refuses(() => fs.listDirectory(root), null);
-  refuses(() => fs.stat(root, 1), null);
-  refuses(() => fs.stat(root + '\0ignored', false), 'EINVAL');
-  for (const path of [root + '/..', root + '/', 'relative', '/' + 'x'.repeat(4095)])
-    refuses(() => fs.stat(path, false), 'EINVAL');
-  refuses(() => fs.listDirectory(root + '/missing', null), 'ENOENT');
-  refuses(() => fs.createDirectory(root, '../escape', parent()), 'EINVAL');
-  refuses(() => fs.createDirectory(root, 'no-token', null), null);
-  const before = parent();
-  const folder = fs.createDirectory(root, 'Documents', before);
-  check(folder.type === 'directory' && folder.permissions === '0700', 'Owned private directory');
-  refuses(() => fs.createDirectory(root, 'stale', before), 'ESTALE');
-  refuses(() => fs.createDirectory(root, 'Documents', parent()), 'EEXIST');
-  let entry = fs.writeText(root, 'literal %u; \u4e2d.txt', 'hello\n', parent());
-  check(entry.permissions === '0600' && fs.readText(entry.path, entry.identity).text === 'hello\n', 'Actual native text read/write');
-  const known = fs.observeText(entry.path);
-  check(known.identity.endsWith(':5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03'), 'Independent SHA256 vector');
-  check(fs.readText(entry.path, known.identity).identity === known.identity, 'Strong reads preserve content identity');
-  refuses(() => fs.writeText(root, entry.name, 'wrong', parent()), 'EEXIST');
-  refuses(() => fs.replaceText(entry.path, 'weak', entry.identity, parent()), 'EINVAL');
-  entry = fs.replaceText(entry.path, 'replacement', known.identity, parent());
-  check(fs.readText(entry.path, entry.identity).text === 'replacement', 'Confirmed replacement');
-  refuses(() => fs.replaceText(entry.path, 'stale', known.identity, parent()), 'ESTALE');
-  refuses(() => fs.readText(entry.path, known.identity), 'ESTALE');
-  const current = fs.observeText(entry.path);
-  const wrongDigest = current.identity.slice(0, -64) + '0'.repeat(64);
-  refuses(() => fs.readText(entry.path, wrongDigest), 'ESTALE');
-  refuses(() => fs.replaceText(entry.path, 'bad hash', wrongDigest, parent()), 'ESTALE');
-  entry = fs.rename(entry.path, '\u6587\u4ef6 renamed.txt', entry.identity, parent());
-  check(entry.name === '\u6587\u4ef6 renamed.txt', 'Unicode rename');
-  refuses(() => fs.rename(entry.path, 'hello.txt', entry.identity, parent()), 'EEXIST');
-  refuses(() => fs.rename(entry.path, 'wrong', 'wrong identity', parent()), 'ESTALE');
-  check(fs.readText(entry.path, entry.identity).text === 'replacement', 'Collision leaves original content');
-  const linked = inspect(root + '/folder-link');
-  check(linked.type === 'symlink' && linked.targetType === 'directory' && linked.linkTarget === 'target', 'Symbolic-link observation');
-  const followed = fs.stat(linked.path, true);
-  check(followed.path === root + '/target' && followed.type === 'directory', 'Explicit link following is canonical');
-  check(fs.listDirectory(linked.path, followed.identity).path === followed.path, 'Directory link follows to descriptor-owned path');
-  check(inspect(root + '/broken-link').targetError === 'ENOENT', 'Broken link is explicit');
-  check(inspect(root + '/loop-link').targetError === 'ELOOP', 'Link loop is explicit');
-  refuses(() => fs.stat(root + '/loop-link', true), 'ELOOP');
-  refuses(() => fs.readText(root + '/file-link', inspect(root + '/file-link').identity), 'EINVAL');
-  refuses(() => fs.replaceText(root + '/file-link', 'bad', known.identity, parent()), 'ESTALE');
-  refuses(() => fs.listDirectory(root + '/denied', null), 'EACCES');
-  check(!inspect(root + '/denied').readable && !inspect(root + '/denied').writable, 'Effective permissions');
-  refuses(() => fs.readText(root + '/fifo', inspect(root + '/fifo').identity), 'EINVAL');
-  for (const name of ['invalid-utf8', 'nul-text']) refuses(() => fs.readText(root + '/' + name, inspect(root + '/' + name).identity), 'EILSEQ');
-  refuses(() => fs.writeText(root, 'nul', 'x\0y', parent()), 'EILSEQ');
-  refuses(() => fs.writeText(root, 'surrogate', '\ud800', parent()), 'EILSEQ');
-  refuses(() => fs.writeText(root, 'large', 'x'.repeat(1048577), parent()), 'EFBIG');
-  const maximum = fs.writeText(root, 'maximum.txt', 'x'.repeat(1048576), parent());
-  check(fs.readText(maximum.path, maximum.identity).text.length === 1048576, 'Exact text byte bound');
-  oracle.call('failClose', root);
-  check(refuses(() => fs.writeText(root, 'published.txt', 'Published', parent()), 'EIO').committed === true,
-    'Cleanup failure after publication reports its committed outcome');
-  const published = inspect(root + '/published.txt');
-  check(fs.readText(published.path, published.identity).text === 'Published', 'Published outcome is real, not inferred success');
-  refuses(() => fs.readText(root + '/oversized', inspect(root + '/oversized').identity), 'EFBIG');
-  const hard = fs.observeText(root + '/hard-original');
-  fs.replaceText(hard.path, 'independent', hard.identity, parent());
-  check(fs.readText(root + '/hard-other', inspect(root + '/hard-other').identity).text === 'shared', 'Replacement does not truncate other hard links');
-  const many = fs.listDirectory(root + '/many', null);
-  check(many.entries.length === 1024 && !many.complete, 'Directory bound reports incomplete');
-  refuses(() => fs.listDirectory(root + '/invalid-name', null), 'EILSEQ');
-  oracle.call('retire', root + '/retiring');
-  check(['ESTALE', 'ENOENT'].includes(refuses(() => fs.listDirectory(root + '/retiring', null)).code),
-    'Actual directory retirement after open cannot return empty success');
-  check(!fs.listDirectory(root, null).entries.some(item => item.name.startsWith('.polly-save-')), 'Staged files are cleaned on every publication path');
-  const handles = () => fs.listDirectory('/proc/self/fd', null).entries.length;
-  const baseline = handles();
-  for (let i = 0; i < 64; i++) {
-    refuses(() => fs.readText(entry.path, 'stale'), 'ESTALE');
-    refuses(() => fs.replaceText(entry.path, 'stale', known.identity, parent()), 'ESTALE');
-  }
-  check(handles() === baseline, 'Failure paths release native descriptors');
+function home() {
+  const pointer = fs.getenv('HOME').value;
+  check(pointer !== null, 'Private fixture HOME');
+  const size = Number(value(fs.strnlen(pointer, 4096), 'HOME size'));
+  const buffer = alloc(size + 1);
+  try {
+    fs.memcpy(buffer, pointer, size).value.close();
+    const path = buffer.readString(size + 1);
+    check(path.startsWith('/tmp/polly-files-sdk-'), 'Tests only use private fixture data');
+    return path;
+  } finally { pointer.close(); buffer.close(); }
 }
-oracle.close();
+const root = home() + '/native-' + fixtureRun;
+value(fs.mkdirat(C.AT_FDCWD, root, 0o700), 'Native directory create');
+const directory = Number(value(fs.openat(C.AT_FDCWD, root, C.O_RDONLY | C.O_DIRECTORY | C.O_CLOEXEC, 0), 'Directory open'));
+const descriptors = new Set([directory]), buffer = alloc(2 * 1024 * 1024);
+const record = fs.createRecord('statx');
+try {
+  const fd = Number(value(fs.openat(directory, 'binary.dat', C.O_CREAT | C.O_EXCL | C.O_RDWR | C.O_CLOEXEC, 0o600), 'Relative create'));
+  descriptors.add(fd);
+  const chunk = new Uint8Array(2 * 1024 * 1024).fill(0xa5);
+  chunk[0] = 0; chunk[1] = 0xff;
+  buffer.write(chunk.buffer);
+  let total = 0n;
+  while (total < 18n * 1024n * 1024n) {
+    const count = value(fs.write(fd, buffer, chunk.length), 'Raw binary write');
+    check(count > 0n, 'Write makes progress'); total += count;
+  }
+  check(total === 18n * 1024n * 1024n, 'File size exceeds 16 MiB without an SDK quota');
+  value(fs.statx(fd, '', C.AT_EMPTY_PATH, C.STATX_BASIC_STATS, record.pointer), 'Native status');
+  check(record.read().size === total, 'Actual file size');
+  check(value(fs.lseek(fd, 0n, C.SEEK_SET), 'Seek') === 0n, 'Seek preserves exact offsets');
+  check(value(fs.read(fd, buffer, 2), 'Binary read') === 2n, 'Read count is not text length');
+  check(new Uint8Array(buffer.read(2)).join(',') === '0,255', 'NUL and invalid UTF-8 bytes remain binary data');
+  const marker = new Uint8Array([9, 8, 7, 6]); buffer.write(marker.buffer);
+  const offset = 4294967301n;
+  check(value(fs.pwrite(fd, buffer, 4, offset), 'Positioned write') === 4n, 'Positioned write beyond 4 GiB');
+  check(value(fs.lseek(fd, 0n, C.SEEK_CUR), 'Current offset') === 2n, 'pwrite does not change file position');
+  value(fs.pread(fd, buffer, 4, offset), 'Positioned read');
+  check(new Uint8Array(buffer.read(4)).join(',') === '9,8,7,6', 'Exact 64-bit positioned read');
+  check(value(fs.lseek(fd, 0n, C.SEEK_CUR), 'Unchanged offset') === 2n, 'pread preserves file position');
+  value(fs.ftruncate(fd, 3n), 'Truncate');
+  value(fs.statx(fd, '', C.AT_EMPTY_PATH, C.STATX_BASIC_STATS, record.pointer), 'Truncated status');
+  check(record.read().size === 3n, 'Native truncation');
+  value(fs.fsync(fd), 'Sync');
+  const collision = Number(value(fs.openat(directory, 'collision', C.O_CREAT | C.O_EXCL | C.O_WRONLY, 0o600), 'Collision fixture'));
+  descriptors.add(collision);
+  check(fs.renameat2(directory, 'binary.dat', directory, 'collision', C.RENAME_NOREPLACE).errno === 17,
+    'Native no-replace EEXIST is not transformed');
+  value(fs.renameat2(directory, 'binary.dat', directory, 'collision', 0), 'Native overwrite rename');
+  value(fs.linkat(directory, 'collision', directory, 'hard-link', 0), 'Hard link');
+  value(fs.symlinkat('collision', directory, 'symbolic-link'), 'Symbolic link');
+  buffer.write(new ArrayBuffer(32));
+  check(value(fs.readlinkat(directory, 'symbolic-link', buffer, 32), 'Read link') === 9n, 'Native link length');
+  check(buffer.readString(10) === 'collision', 'Literal symbolic-link target');
+  check(fs.openat(directory, 'missing', C.O_RDONLY, 0).value === -1 &&
+    fs.openat(directory, 'missing', C.O_RDONLY, 0).errno === 2, 'OS errors remain result packets');
+  for (let i = 0; i < 1025; i++) {
+    const item = Number(value(fs.openat(directory, 'entry-' + i, C.O_CREAT | C.O_EXCL | C.O_WRONLY, 0o600), 'Enumeration fixture'));
+    value(fs.close(item), 'Close enumeration file');
+  }
+  let entries = 0;
+  const enumerate = libc === 'musl' ? fs.getdents : fs.getdents64;
+  for (;;) {
+    const size = Number(value(enumerate(directory, buffer, chunk.length), 'Native directory records'));
+    if (!size) break;
+    const data = new DataView(buffer.read(size));
+    for (let at = 0; at < size;) {
+      const length = data.getUint16(at + 16, littleEndian);
+      check(length >= 20 && at + length <= size, 'Native directory record bounds');
+      entries++; at += length;
+    }
+  }
+  check(entries > 1024, 'No SDK directory-entry limit');
+  value(fs.unlinkat(directory, 'hard-link', 0), 'Unlink');
+  value(fs.unlinkat(directory, 'symbolic-link', 0), 'Unlink symbolic link');
+  value(fs.unlinkat(directory, 'collision', 0), 'Unlink regular file');
+  for (let i = 0; i < 1025; i++) value(fs.unlinkat(directory, 'entry-' + i, 0), 'Remove fixture file');
+} finally {
+  record.close(); buffer.close();
+  for (const fd of descriptors) value(fs.close(fd), 'Descriptor cleanup');
+  fs.dispose();
+}
+const cleanup = createFileSystem();
+try { value(cleanup.unlinkat(C.AT_FDCWD, root, C.AT_REMOVEDIR), 'Remove empty fixture directory'); }
+finally { cleanup.dispose(); }
+let closed = false;
+try { fs.openat(C.AT_FDCWD, root, C.O_RDONLY, 0); }
+catch (error) { closed = /closed/.test(error.message); }
+check(closed, 'Disposed binding lifetime is explicit');

@@ -50,7 +50,7 @@ export function createFileDialogController({ files = null, settings = {}, onChan
     directory: null, entries: [], complete: true, selection: null, name: config.suggestedName,
     error: initialError || (files ? '' : 'Native ordinary-user filesystem API is unavailable.'),
     confirmation: null });
-  if (files && (files.version !== 1 || files.implementation !== 'linux-ffi-v1' ||
+  if (files && (files.version !== 1 || files.implementation !== 'desktop-files-v1' ||
       !['locations', 'listDirectory', 'stat'].every(key => typeof files[key] === 'function')))
     throw new TypeError('File dialog requires the shared ordinary-user fileSystem version 1');
 

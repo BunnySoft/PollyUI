@@ -28,7 +28,7 @@ export function fixtureFiles({ overwrite = true } = {}) {
     if (!value.writable) throw error('EACCES');
   }
   const files = {
-    version: 1, implementation: 'linux-ffi-v1', maxEntries: 1024, maxTextBytes: 1048576, overwrite,
+    version: 1, implementation: 'desktop-files-v1', maxEntries: 1024, maxTextBytes: 1048576, overwrite,
     textObservation: 'sha256-v1',
     locations() {
       assert.equal(arguments.length, 0, 'locations requires 0 native arguments');

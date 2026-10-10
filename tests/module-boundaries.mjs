@@ -47,10 +47,14 @@ test('filesystem is a JS/config SDK with no domain-specific native provider or p
   assert.doesNotMatch(build, /yogacore|pollyui-engine|gui\/src|desktop\/native/);
   assert.doesNotMatch(build, /polly-sysrt-linux-files|providers\/linux\/files/);
   const sdk = read('sysrt/sdk/js/files.mjs');
-  assert.match(sdk, /loadBindings\(filesBindings\[libc\]\)/);
+  assert.match(sdk, /loadBindings\(\{ \.\.\.description, functions \}\)/);
   assert.doesNotMatch(sdk, /document\.|window\.|desktop\/|pu_files_/);
+  assert.doesNotMatch(sdk, /localStorage|ordinary|geteuid|1048576|maxEntries|maxTextBytes|SHA256|sha256/);
   assert.match(read('sysrt/bindings/files.mjs'), /symbol: 'statx'/);
-  assert.match(read('desktop/launcher/services.mjs'), /fileSystem.*from '\.\/sysrt\/sdk\/js\/files\.mjs'/);
+  const service = read('desktop/shared/file-system.mjs');
+  assert.match(service, /createFileSystem\(\)/);
+  assert.match(service, /COUNT = 1024, TEXT = 1048576/);
+  assert.match(read('desktop/launcher/services.mjs'), /fileSystem.*from '\.\/desktop\/shared\/file-system\.mjs'/);
 });
 
 test('generic FFI has no GUI or domain-specific API dependency', () => {

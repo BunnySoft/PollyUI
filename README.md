@@ -32,8 +32,10 @@ integration. `gui/` contains the library, public headers and `sdk/js/`;
 `sysrt/` contains system capabilities, and `desktop/launcher` assembles the
 formal application runtime. **PollySystemRT** now has a generic `sysrt:ffi`
 native module and JS/config process, clock and Linux filesystem SDKs.
-Filesystem operations now call libc/libcrypto directly through FFI; the old
-C filesystem provider and QuickJS projection are removed. Storage and HTTP
+FileSystem SDK calls mirror libc signatures/results through FFI, without text,
+file-size, directory-count or UID policy. The desktop file service composes
+these calls and libcrypto with its UI-specific rules; the old C filesystem
+provider and QuickJS projection are removed. Storage and HTTP
 still use their native implementations; Settings remains Shell-owned.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
@@ -61,6 +63,22 @@ explicitly. Results use nanosecond units, not a promise of nanosecond resolution
 `-DPU_BUILD_LAUNCHER=OFF` configures the GUI without SysRT/libffi. SysRT itself
 can be built with `cmake -S sysrt -B build/sysrt`; its native ABI tests need no
 Skia, Yoga or SDL.
+
+The basic Linux x86_64 FileSystem SDK exposes `openat`, `close`, `read`, `write`,
+`pread`, `pwrite`, `lseek`, `ftruncate`, `statx`, directory enumeration,
+`mkdirat`, `renameat2`, `linkat`, `symlinkat`, `readlinkat`, `unlinkat`,
+`faccessat`, `fchmod` and `fsync`. Caller-owned descriptors/buffers and the
+native return packet preserve OS semantics; reads/writes may be partial.
+There is no dependency on localStorage and no whole-file or entry-count quota.
+The 16 MiB limit applies to one FFI allocation, not a file; use reusable chunks.
+
+```js
+import { createFileSystem, constants as C } from './sysrt/sdk/js/files.mjs';
+
+const fs = createFileSystem();
+const result = fs.openat(C.AT_FDCWD, 'relative/file.bin', C.O_RDONLY, 0);
+// Check result.value/errno; close a successful fd, then dispose the bindings.
+```
 
 `pollyui` retains the existing application command. The separate
 `pollyui-playground` example links only the GUI library (Windows output:

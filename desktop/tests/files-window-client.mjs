@@ -1,13 +1,13 @@
 import { createFilesApp } from './desktop/apps/files/app.mjs';
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
-import { fileSystem } from './sysrt/sdk/js/files.mjs';
+import { fileSystem } from './desktop/shared/file-system.mjs';
 
 const [root, mode] = application.arguments;
 if (typeof root !== 'string' || !root.startsWith('/tmp/polly-files-window-') ||
     root.slice('/tmp/'.length).includes('/'))
   throw new Error('Files window fixture requires an explicitly staged private /tmp/polly-files-window-* directory');
 const api = requireFileSystem(typeof desktop === 'undefined' ? null : desktop);
-if (api !== fileSystem) throw new Error('Production SysRT filesystem SDK required, not an injected stub');
+if (api !== fileSystem) throw new Error('Production desktop file service required, not an injected stub');
 if (api.locations().home !== root) throw new Error('Private fixture HOME must exactly match the supplied directory');
 const marker = api.stat(root + '/fixture-marker.txt', false);
 if (marker.uid !== 1000 || marker.type !== 'file' ||

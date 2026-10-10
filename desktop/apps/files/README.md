@@ -11,14 +11,19 @@ pollyui --desktop --app-id org.pollyui.files desktop/apps/files/main.mjs /absolu
 window neither creates a Shell surface nor acquires trusted Shell management
 authority. The installed `polly-files` launcher resolves the installed data
 directory, uses its absolute entry path and runs from that root for JS imports.
-`sysrt/sdk/js/files.mjs` implements filesystem semantics over the declarative
-libc/libcrypto signatures and Linux LP64 layouts in `sysrt/bindings/files.mjs`.
-Profiles cover glibc LP64 and packaged musl x86_64; unsupported symbols/ABIs
+`sysrt/sdk/js/files.mjs` exposes native libc calls by their OS symbol names,
+with explicit arguments and unchanged `{value, errno, systemError}` results.
+`sysrt/bindings/files.mjs` supplies signatures and Linux LP64 layouts.
+Profiles cover Linux x86_64 glibc and musl; architecture, pointer/long widths
+and symbols are checked before use. Unsupported symbols/ABIs
 fail explicitly. Musl enumeration uses its real `getdents` symbol and int result,
 not glibc's `getdents64`/ssize declaration.
-There is no C filesystem provider or QuickJS filesystem projection. Applications
-may import `fileSystem` directly; `desktop/launcher/services.mjs` also assembles
-it as `desktop.fileSystem` before the application entry. The generic GUI prelude
+There is no C filesystem provider or QuickJS filesystem projection. Basic SysRT
+calls have no text-size, file-size, enumeration-count or UID restriction and
+do not depend on localStorage. `desktop/shared/file-system.mjs` owns the Files
+UI's bounded text/snapshot, SHA256 observation and ordinary-user policies.
+`desktop/launcher/services.mjs` assembles this service as `desktop.fileSystem`
+before the application entry. The generic GUI prelude
 hook knows nothing about filesystem or desktop services.
 Shared modules resolve from the runtime's installed data directory before
 application-local files, including when a managed bundle owns the working directory.
@@ -76,7 +81,7 @@ launched as a managed application. Such packages cannot be renamed in Files.
 
 ## Stable shared contract
 
-`desktop.fileSystem` has `version:1`, `implementation:'linux-ffi-v1'`,
+`desktop.fileSystem` has `version:1`, `implementation:'desktop-files-v1'`,
 `maxEntries:1024`, `maxTextBytes:1048576`, `overwrite:true`,
 `textObservation:'sha256-v1'`. The shared
 `desktop/apps/files/logic/model.mjs` supplies `requireFileSystem`, `pathValue`,
@@ -170,8 +175,9 @@ retrying; the text consumer never treats such an ESTALE as permission to resubmi
 Ordinary Linux permissions are enforced by the OS, not reimplemented ACLs.
 Counts and bytes are bounded, but libc/local/FUSE I/O can block the UI; awaiting
 the result does not move it into the background or establish a hard deadline.
-No copy/move/trash/search/network mount/XDG portal or arbitrary binary I/O is
-implemented. There is no real host HOME enumeration in agent fixtures.
+The Files app does not expose copy/move/trash/search/network mount/XDG portal
+or binary editing. That is not a restriction on native SysRT binary I/O.
+There is no real host HOME enumeration in agent fixtures.
 
 ## Focused evidence and integration fixture
 
@@ -183,14 +189,18 @@ ctest --test-dir build/sysrt --output-on-failure -R '^sysrt-files$'
 ```
 
 The Node suite injects observations to check UI/controller actions, not native
-filesystem or pixel behavior. `sysrt-files` executes the production JS SDK and
-real OS calls in three independent QuickJS VMs. C test oracles measure the
+filesystem or pixel behavior. `sysrt-files` executes both the native-mapping SDK
+and desktop service with real OS calls in three independent QuickJS VMs.
+C test oracles measure the
 actual header layout/constants; they do not implement production filesystem
-semantics. The fixture checks boundaries, strong hashes, collisions, symbolic
-links, hard-link replacement, permissions, staged-file cleanup and descriptor
+semantics. Native tests read/write binary files over 16 MiB, use exact offsets
+beyond 4 GiB, enumerate over 1024 entries and exercise seek/truncate/delete
+without imposing application quotas. Desktop tests check UI policy boundaries,
+strong hashes, collisions, symbolic links, hard-link replacement, permissions, staged-file cleanup and descriptor
 lifetime. One test-only enumeration hook retires an explicitly owned directory
 after opening its real FD; ENOENT/ESTALE must not become empty success.
-UID0 checks verify refusal; ordinary runs exercise only private `/tmp` data,
+UID0 checks verify native calls still follow OS permissions while the desktop
+service refuses them. Ordinary runs exercise only private `/tmp` data,
 never a user's HOME. Use the pinned offline SDK and read-only source mount.
 
 `desktop/tests/files-window-client.mjs` is the ordinary-window entry for the
