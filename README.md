@@ -30,9 +30,26 @@ The [product boundaries and discussion conclusions](./DESIGN.md#11-product-and-m
 keep the cross-platform `pollyui-engine` separate from optional Linux desktop
 integration. `gui/` contains the library, public headers and `sdk/js/`;
 `sysrt/` contains system capabilities, and `desktop/launcher` assembles the
-formal application runtime. **PollySystemRT** remains incomplete; the existing
-filesystem provider is separated, while some compatibility adapters still mix
-native execution and JS bindings. Settings remains Shell-owned.
+formal application runtime. **PollySystemRT** now has a generic `sysrt:ffi`
+native module and a JS/config process SDK. Existing file/storage/HTTP modules
+still use their current native implementations; Settings remains Shell-owned.
+
+The FFI module loads OS libraries and prepares fixed ABI signatures with
+libffi. `Library.bind(symbol, {result, parameters, abi?})` returns a callable
+whose result is `{value, errno, systemError}`; Windows reports `errno:null`
+because separate CRTs do not share errno. Integer widths are explicit,
+64-bit results use BigInt, and native buffers/views have bounded access and
+explicit close semantics. Library/function/pointer ownership prevents wrapper
+collection from releasing resources still in use.
+This first implementation is synchronous: callbacks, variadics and structures
+passed by value are unsupported, not emulated. CString arguments are borrowed
+for the call; retained data needs an explicitly managed buffer. Unknown native
+allocations stay opaque. ABI descriptions are trusted native-code contracts,
+not an OS sandbox. Ordinary launchers register the module; dedicated greeter,
+lock and input-method roles do not.
+`-DPU_BUILD_LAUNCHER=OFF` configures the GUI without SysRT/libffi. SysRT itself
+can be built with `cmake -S sysrt -B build/sysrt`; its native ABI tests need no
+Skia, Yoga or SDL.
 
 `pollyui` retains the existing application command. The separate
 `pollyui-playground` example links only the GUI library (Windows output:
@@ -91,6 +108,7 @@ The Windows driver discovers the latest installed C++ toolchain through
 `vswhere`, including Community/Professional/Enterprise installations.
 
 ```powershell
+./tools/bootstrap-sysrt.ps1 # one-time: restore pinned static-CRT libffi
 ./tools/fetch_skia.ps1     # one-time: download prebuilt Skia (gitignored)
 ./tools/build.ps1          # configure + build (sets up the MSVC env)
 ./tools/fetch_angle.ps1    # stage ANGLE DLLs for GPU (from installed Chrome/Edge)
@@ -134,7 +152,8 @@ host (`gui/src/host/sdl/window_sdl.c`) and the Metal surface
 
 ```bash
 # tools (Xcode command-line tools must already be installed)
-brew install cmake ninja sdl3
+brew install cmake ninja sdl3 libffi pkg-config
+export PKG_CONFIG_PATH="$(brew --prefix libffi)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 
 # one shot: fetch Skia, configure, build (mirrors tools/build.ps1 on Windows)
 chmod +x tools/build.sh tools/fetch_skia.sh
@@ -212,7 +231,7 @@ For a native Alpine 3.24 development machine:
 
 ```sh
 apk add build-base cmake ninja pkgconf git python3 gn clang18 bash meson sdl3-dev icu-dev \
-    fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev curl-dev \
+    fontconfig-dev freetype-dev libpng-dev libjpeg-turbo-dev libwebp-dev zlib-dev curl-dev libffi-dev \
     font-dejavu font-noto-cjk font-noto-emoji nodejs openssl \
     wayland-dev wayland-protocols wlr-protocols
 

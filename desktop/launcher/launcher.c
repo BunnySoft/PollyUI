@@ -4,6 +4,7 @@
 #include "sysrt/providers/app_paths.h"
 #include "sysrt/projection/quickjs/storage.h"
 #include "sysrt/projection/quickjs/fetch.h"
+#include "sysrt/ffi/ffi.h"
 #if defined(PU_DESKTOP_SERVICES)
 #include "native/applications.h"
 #include "sysrt/projection/quickjs/files.h"
@@ -75,6 +76,10 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
     const char *test_storage = getenv("PU_TEST_STORAGE");
     const char *storage = headless ? (test_storage ? test_storage : "build/_localstorage.dat") : state->paths.storage;
     if (!pu_storage_install(ctx, storage) || !pu_fetch_install(ctx, dispatch)) return 0;
+    if ((headless || (!options->greeter_mode && !options->lock_mode && !options->input_method_mode)) &&
+        !sr_ffi_register(ctx)) {
+        fprintf(stderr, "[sysrt] Cannot register native FFI module\n"); return 0;
+    }
     if (headless) {
 #if defined(PU_DESKTOP_SERVICES)
         if (!install_file_api(ctx)) { fprintf(stderr, "[files] Cannot install ordinary file APIs\n"); return 0; }

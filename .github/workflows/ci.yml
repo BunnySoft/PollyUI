@@ -95,6 +95,7 @@ jobs:
           persist-credentials: false
       - name: Fetch pinned Skia and build
         run: |
+          .\tools\bootstrap-sysrt.ps1
           .\tools\fetch_skia.ps1
           .\tools\build.ps1
       - name: Core UI and WinHTTP
@@ -114,14 +115,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install build dependencies
-        run: brew install cmake ninja sdl3
+        run: brew install cmake ninja sdl3 libffi pkg-config
       - name: Fetch pinned Skia
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash tools/fetch_skia.sh
       - name: Build and check CPU runtime
         run: |
-          bash tools/build.sh
+          PKG_CONFIG_PATH="$(brew --prefix libffi)/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" bash tools/build.sh
           sh tools/test-core.sh "$PWD/build/mac-sdl/pollyui"
           SDL_VIDEODRIVER=dummy SDL_RENDER_DRIVER=software \
             node tools/test-multi-window.mjs "$PWD/build/mac-sdl/pollyui"

@@ -10,6 +10,8 @@ Push-Location $repo
 try {
     node --test .\tests\module-boundaries.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Module boundary checks failed' }
+    ctest --test-dir (Split-Path $executablePath) --output-on-failure --no-tests=error -R '^sysrt-ffi$'
+    if ($LASTEXITCODE -ne 0) { throw 'Native FFI checks failed' }
     $env:PU_TEST_STORAGE = $storage
     foreach ($test in Get-Content .\tools\core-tests.txt) {
         $output = & $executablePath --test $test 2>&1

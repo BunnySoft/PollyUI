@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD 17)            # Skia requires C++17
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PU_BUILD_DESKTOP "Build the experimental Linux Wayland compositor" OFF)
+option(PU_BUILD_LAUNCHER "Build the application launcher with SysRT system capabilities" ON)
 if (PU_BUILD_DESKTOP)
     add_subdirectory(desktop)
 endif()
@@ -75,13 +76,15 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 add_subdirectory(shared)
 add_subdirectory(gui)
-add_subdirectory(sysrt)
+if (PU_BUILD_LAUNCHER)
+    add_subdirectory(sysrt)
 
-add_executable(pollyui
-    desktop/launcher/main.c
-    desktop/launcher/launcher.c
-)
-target_link_libraries(pollyui PRIVATE pollyui-engine polly-sysrt-qjs)
+    add_executable(pollyui
+        desktop/launcher/main.c
+        desktop/launcher/launcher.c
+    )
+    target_link_libraries(pollyui PRIVATE pollyui-engine polly-sysrt-qjs polly-sysrt-ffi)
+endif()
 
 # --- HostEngine backend (the only per-OS C; see docs/PORTING.md §1) ----------
 if (PU_HOST STREQUAL "win32")
@@ -119,7 +122,7 @@ endif()
 
 # Linux builds use the native font/codec libraries selected by skia-linux.gn.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    if (PU_DESKTOP_SERVICES)
+    if (PU_BUILD_LAUNCHER AND PU_DESKTOP_SERVICES)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(SESSION_DBUS REQUIRED IMPORTED_TARGET dbus-1)
         pkg_check_modules(BUNDLE_ARCHIVE REQUIRED IMPORTED_TARGET libarchive)
@@ -173,8 +176,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_SESSION_STATUS_XML}" "${UI_PROTOCOL_DIR}/polly-session-status-client.h"
             COMMAND "${UI_WAYLAND_SCANNER}" private-code "${UI_SESSION_STATUS_XML}" "${UI_PROTOCOL_DIR}/polly-session-status.c"
             DEPENDS "${UI_SESSION_STATUS_XML}" VERBATIM)
-        target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/polly-session-status-client.h"
-            "${UI_PROTOCOL_DIR}/polly-session-status.c")
+        if (PU_BUILD_LAUNCHER)
+            target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/polly-session-status-client.h"
+                "${UI_PROTOCOL_DIR}/polly-session-status.c")
+        endif()
         set(UI_LAYER_XML "${WLR_UI_PROTOCOLS}/unstable/wlr-layer-shell-unstable-v1.xml")
         set(UI_XDG_XML "${WAYLAND_UI_PROTOCOLS}/stable/xdg-shell/xdg-shell.xml")
         add_custom_command(
@@ -200,12 +205,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 DEPENDS "${UI_LOCK_XML}" VERBATIM)
             list(APPEND PU_HOST_PROTOCOLS "${UI_PROTOCOL_DIR}/session-lock-client.h"
                 "${UI_PROTOCOL_DIR}/session-lock.c")
-            target_sources(pollyui PRIVATE desktop/native/lock-client.c)
+            if (PU_BUILD_LAUNCHER)
+                target_sources(pollyui PRIVATE desktop/native/lock-client.c)
+                target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/session")
+                add_dependencies(pollyui polly-auth-check)
+            endif()
             target_sources(pollyui-engine PRIVATE
                 "${UI_PROTOCOL_DIR}/session-lock-client.h" "${UI_PROTOCOL_DIR}/session-lock.c")
-            target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/session")
             target_compile_definitions(pollyui-engine PUBLIC PU_SESSION_LOCK)
-            add_dependencies(pollyui polly-auth-check)
         endif()
         if (PU_BUILD_IME_ENGINE)
             pkg_check_modules(IME_KEYS REQUIRED IMPORTED_TARGET xkbcommon)
@@ -213,7 +220,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             add_custom_command(OUTPUT "${UI_PROTOCOL_DIR}/text-input-v3-client.h"
                 COMMAND "${UI_WAYLAND_SCANNER}" client-header "${UI_TEXT_INPUT_XML}" "${UI_PROTOCOL_DIR}/text-input-v3-client.h"
                 DEPENDS "${UI_TEXT_INPUT_XML}" VERBATIM)
-            target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/text-input-v3-client.h")
+            if (PU_BUILD_LAUNCHER)
+                target_sources(pollyui PRIVATE "${UI_PROTOCOL_DIR}/text-input-v3-client.h")
+            endif()
             foreach(protocol IN ITEMS input-method-v2 virtual-keyboard-v1)
                 if (protocol STREQUAL "input-method-v2")
                     set(xml "${CMAKE_SOURCE_DIR}/desktop/protocols/input-method-unstable-v2.xml")
@@ -228,11 +237,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                     "${UI_PROTOCOL_DIR}/${protocol}.c")
                 target_sources(pollyui-engine PRIVATE "${UI_PROTOCOL_DIR}/${protocol}-client.h" "${UI_PROTOCOL_DIR}/${protocol}.c")
             endforeach()
-            target_sources(pollyui PRIVATE desktop/native/input-method-client.c)
+            if (PU_BUILD_LAUNCHER)
+                target_sources(pollyui PRIVATE desktop/native/input-method-client.c)
+                target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
+            endif()
             target_compile_definitions(pollyui-engine PUBLIC PU_INPUT_METHOD)
-            target_link_libraries(pollyui PRIVATE polly-ime-engine PkgConfig::IME_KEYS)
         endif()
-        if (PU_DESKTOP_SERVICES)
+        if (PU_BUILD_LAUNCHER AND PU_DESKTOP_SERVICES)
             pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET "libpipewire-0.3>=1.4")
             target_link_libraries(pollyui PRIVATE PkgConfig::PIPEWIRE)
             target_sources(pollyui PRIVATE desktop/native/notifications.c desktop/native/tray.c desktop/native/dbus-menu.c
@@ -333,11 +344,15 @@ if (APPLE)
 endif()
 
 # Only composition-specific internal headers; public GUI/SysRT usage is inherited.
-target_include_directories(pollyui PRIVATE gui/src desktop/launcher)
+if (PU_BUILD_LAUNCHER)
+    target_include_directories(pollyui PRIVATE gui/src desktop/launcher)
+endif()
 
 # ScriptEngine + LayoutEngine. yogacore PUBLIC-exports its include dir, so
 # layout.c can `#include <yoga/Yoga.h>`.
-target_link_libraries(pollyui PRIVATE qjs)
+if (PU_BUILD_LAUNCHER)
+    target_link_libraries(pollyui PRIVATE qjs)
+endif()
 
 # skia.lib (Windows) is self-contained: it bundles its own zlib (Cr_z_-prefixed),
 # libpng, freetype, harfbuzz, icu, etc. The macOS/Linux prebuilt instead ships
@@ -391,7 +406,9 @@ if (WIN32)
     # System libs: Win32 (host) + Skia's Windows backends (DirectWrite/GDI/GL/COM).
     target_link_libraries(pollyui-engine PUBLIC
         user32 gdi32 opengl32 ole32 oleaut32 advapi32 dwrite shcore)
-    target_link_libraries(pollyui PRIVATE dbghelp)
+    if (PU_BUILD_LAUNCHER)
+        target_link_libraries(pollyui PRIVATE dbghelp)
+    endif()
 endif()
 
 # Release/GUI build: no console window (console.log mirrors to the debugger via
@@ -400,12 +417,14 @@ endif()
 #   cmake --preset win-clang -DPU_WINDOWED=ON
 option(PU_WINDOWED "Build a GUI app with no console window" OFF)
 if (WIN32 AND PU_WINDOWED)
-    target_compile_definitions(pollyui PRIVATE PU_WINDOWED)
     target_compile_definitions(pollyui-engine PRIVATE PU_WINDOWED)
-    target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    if (PU_BUILD_LAUNCHER)
+        target_compile_definitions(pollyui PRIVATE PU_WINDOWED)
+        target_link_options(pollyui PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup)
+    endif()
 endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHER AND BUILD_TESTING)
     add_test(NAME linux-complex-text COMMAND pollyui --test "${CMAKE_SOURCE_DIR}/gui/tests/complex-text.mjs")
     set_tests_properties(linux-complex-text PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     add_test(NAME linux-text-dependencies COMMAND node "${CMAKE_SOURCE_DIR}/gui/tests/text-dependencies.mjs" $<TARGET_FILE:pollyui>)
@@ -824,7 +843,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND BUILD_TESTING)
     endif()
 endif()
 
-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_DESKTOP_SERVICES AND PU_LAYER_SHELL)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHER AND PU_DESKTOP_SERVICES AND PU_LAYER_SHELL)
     include(desktop/install.cmake)
     if (BUILD_TESTING AND PU_BUILD_SESSION_AUTH)
         foreach(renderer IN ITEMS raster gl)

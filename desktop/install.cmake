@@ -30,6 +30,9 @@ install(FILES "$<TARGET_FILE:SDL3::SDL3>" DESTINATION "${CMAKE_INSTALL_LIBDIR}/p
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/gui/sdk/js"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/gui/sdk"
     COMPONENT PollyDesktop FILES_MATCHING PATTERN "*.js" PATTERN "*.mjs")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/sysrt/sdk" "${CMAKE_SOURCE_DIR}/sysrt/bindings"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/sysrt"
+    COMPONENT PollyDesktop FILES_MATCHING PATTERN "*.mjs")
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")

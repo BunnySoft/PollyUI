@@ -41,4 +41,4 @@ RUN apk add --no-cache dbus dbus-dev
 RUN apk add --no-cache pipewire pipewire-dev pipewire-tools
 
 RUN apk add --no-cache linux-pam-dev
-RUN apk add --no-cache libarchive-dev openssl-dev
+RUN apk add --no-cache libarchive-dev openssl-dev libffi-dev

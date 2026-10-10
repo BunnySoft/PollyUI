@@ -49,6 +49,20 @@ test('filesystem provider builds without a scripting or GUI projection', () => {
   assert.doesNotMatch(read('sysrt/projection/quickjs/files.c'), /\bgetenv\s*\(/);
 });
 
+test('generic FFI has no GUI or domain-specific API dependency', () => {
+  const source = read('sysrt/ffi/module.c');
+  assert.doesNotMatch(source, /#include\s+"(?:gui|desktop|providers)\//);
+  assert.doesNotMatch(source, /\b(?:JS_Call|pu_files_|pu_audio_|pu_network_)/);
+  assert.match(source, /ffi_prep_cif/);
+  assert.match(source, /ffi_call/);
+  assert.match(source, /GetProcAddress/);
+  assert.match(source, /dlsym/);
+  assert.match(read('sysrt/sdk/js/process.mjs'), /loadBindings\(processBindings\[platform\]\)/);
+  assert.doesNotMatch(read('sysrt/sdk/js/process.mjs'), /document\.|window\.|desktop/);
+  assert.match(cmake, /if \(PU_BUILD_LAUNCHER\)\s+add_subdirectory\(sysrt\)/);
+  assert.doesNotMatch(source, /static JSClassID/);
+});
+
 test('CLI and legacy desktop composition remain outside the GUI engine', () => {
   assert.match(read('desktop/launcher/main.c'), /pu_application_run\(&options\)/);
   assert.doesNotMatch(read('desktop/launcher/main.c'), /\bJS_(?:NewClass|NewCFunction|SetOpaque)\b/);

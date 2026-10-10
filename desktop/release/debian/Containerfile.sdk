@@ -43,7 +43,7 @@ RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
     dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-sdk-packages.txt
 ENV ASAN_SYMBOLIZER_PATH=/usr/bin/llvm-symbolizer-19
 COPY release/debian/rime-default.custom.yaml /usr/share/rime-data/default.custom.yaml
-RUN apt-get update -qq && apt-get install -y --no-install-recommends libarchive-dev libssl-dev
+RUN apt-get update -qq && apt-get install -y --no-install-recommends libarchive-dev libssl-dev libffi-dev
 COPY release/debian/build-mesa.py release/debian/mesa.json /opt/pollyui-mesa-recipe/desktop/release/debian/
 COPY patches/mesa-lifetime.patch /opt/pollyui-mesa-recipe/desktop/patches/
 COPY tools/local-debian-packages.py /opt/pollyui-mesa-recipe/desktop/tools/

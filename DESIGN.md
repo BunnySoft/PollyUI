@@ -37,8 +37,15 @@ Discussion conclusions (2026-10-10):
   PollyOS uses it; GUI code must not depend on Linux desktop policy.
 - PollySystemRT is the optional system-capability runtime, not the QuickJS
   ScriptEngine. Borrow stable component boundaries from COM, not its naming,
-  base-object model or remote reference counting. Use typed contracts with
-  explicit resources, tasks, events and failure semantics.
+  base-object model or remote reference counting. The target is JS-first:
+  Application JS -> RuntimeSDK (JS) -> generic QuickJS FFI module -> OS libraries.
+  Use libffi plus platform loading (dlopen/dlsym or LoadLibrary/GetProcAddress),
+  not a handwritten C bridge for each domain.
+- Generated binding descriptions define ABI types/layouts and explicit ownership.
+  JS SDK/services own domain semantics, state machines and policy. Keep native
+  code for generic interop and unavoidable mechanisms; prefer generated thin
+  adapters for macros/inline functions. FFI does not make calls asynchronous or
+  callbacks thread-safe, and does not constitute a sandbox.
 - Separate presentation, application logic and OS implementations regardless
   of whether calls are in-process or IPC. Logic must work without a GUI;
   deployment adapters are selected at the composition root.
@@ -49,8 +56,13 @@ Discussion conclusions (2026-10-10):
   input/lock roles must not move into ordinary application UI.
 - FFI is local; RPC reuses suitable IPC; discovery is not authorization.
   REST/OpenAPI is an explicit external subset, not a mandatory desktop stack.
+  System services can run headless JS logic over the same SDK/FFI; e.g. D-Bus
+  calls use native transport libraries rather than duplicating per-service C bindings.
 - Aim for basic configuration, management and everyday GUI applications,
   not full Windows feature coverage. Prefer sound boundaries over breadth.
+- During development, replace implementations directly: migrate callers and
+  tests and remove superseded code in the same change. Do not maintain legacy
+  APIs, parallel bridges or reference copies; history belongs in Git.
 - Organize by product: `gui/` delivers a library, public headers and `sdk/js/`;
   `sysrt/` and `desktop/` stay separate. GUI context does not own the application.
   `desktop/launcher` assembles the formal runtime; `examples/playground` is a
@@ -59,8 +71,9 @@ Discussion conclusions (2026-10-10):
 Migration: native GUI/SDK/examples/tests now live in `gui`, system capabilities
 in `sysrt`, and execution primitives in `shared`. The GUI library exposes
 context hooks; Linux service assembly stays in `desktop/launcher`. Existing
-Files and installer modules distinguish UI, logic and tests. Legacy mixed
-integration remains in `desktop/native`.
+Files and installer modules distinguish UI, logic and tests. Mixed active
+integration remains in `desktop/native`. The first generic FFI and JS/config
+SDK path is implemented; callback/asynchronous mechanisms remain unfinished.
 The complete runtime and logic/UI extraction remain unfinished. Record stable
 decisions here, not detailed file inventories or speculative implementations.
 
