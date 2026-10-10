@@ -1,13 +1,25 @@
 # Memory-only UEFI development image
 
-**Current candidate:** Debian alpha.5-r2, with the Mesa lifetime correction and
-successful 4 GiB UEFI ISO/virtual-USB preflight. Exact paths, hashes, software
-results and scoped physical feedback are in the
-[PollyOS overview and handoff](../docs/POLLYOS.md); Debian build commands are in
-the [Debian guide](./release/debian/README.md).
+**Current physical-test candidate:** Debian alpha.6, frozen runtime `c9b1fcd`.
+The optical ISO passed complete normal OVMF/KVM acceptance, including ordinary
+seat0 DRM, Chinese input/clipboard/workspaces, native Files/JSON and independent
+Settings selection, user-theme reload/restore, About and close/reopen.
+The ISO is 707723264 bytes; SHA-256:
+`9f34b85523bbfcb3ec8d4ed022fa1c21da380ada6cb7ed10a8b90722dcf2753b`.
+See the [Alpha delivery gate](../ROADMAP.md#new-architecture-alpha-delivery-gate)
+and the generated artifact's qualification/provenance records.
+This is permission to begin physical testing, not a physical compatibility pass.
+The generated USB image has not received this run's optical-boot qualification.
 
-The Alpine alpha.4 commands and first-machine history below are retained as the
-previous physical-validation baseline, not the latest Debian candidate.
+The VM had 4 GiB RAM, two vCPUs, virtio-vga and no NIC, host audio, host shares or
+additional writable disk. QMP quit did not test guest power-off. Test-only sources
+were injected into guest RAM, not installed in the ISO. An additional ttyS0 login
+attempted a second seatless desktop and failed back to its CLI; the primary seat0
+desktop stayed alive through all functional checks. Raw failures and earlier
+unsuccessful attempts remain preserved, not hidden by the passing result.
+
+The Alpine alpha.4 commands and alpha.5-r2 first-machine history below are retained
+as previous physical-validation baselines, not acceptance of alpha.6.
 On 2026-10-07 the user confirmed the Debian alpha.5-r2 candidate boots and runs
 on physical hardware; per-device and endurance results were not separately reported.
 The memory-only format and no-installer/data-persistence limits apply to both.

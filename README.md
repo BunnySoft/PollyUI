@@ -277,11 +277,15 @@ PollyOS combines a minimal Linux base with our own wlroots-based **PollyWM**
 compositor and **PollyShell**, built with PollyUI rather than GNOME/KDE or labwc.
 The historical Debian alpha.5-r2 candidate has bootable UEFI Live media; those
 images do not contain the new SysRT architecture and independent Settings.
-The current delivery goal is a new Debian x86_64 UEFI **Live test Alpha**:
-freeze the integrated runtime, validate it in a real VM, then qualify the final
-ISO for physical-machine testing. See the
+The new Debian x86_64 UEFI **Live test Alpha 0.1.0-alpha.6** now has a clean
+`c9b1fcd` runtime and a complete normal OVMF/KVM acceptance pass, including
+independent Settings, JS file/theme operations and typed Shell configuration.
+The unchanged tested ISO is eligible for physical-machine testing, not yet
+hardware-qualified. It runs from RAM without installing or automatically
+mounting internal disks. See the
 [Alpha delivery gate](./ROADMAP.md#new-architecture-alpha-delivery-gate).
-No new VM or ISO acceptance is claimed yet. A separate
+GPU, networking/audio hardware and ordinary-user shutdown require separate
+physical acceptance; QMP quit in the VM did not test power-off. A separate
 [D1 installed-development virtual disk](./desktop/release/debian/README.md#installed-development-virtual-disk-d1)
 adds A/B systems and persistent user data; a physical-media installer, system
 updates and production session protection remain future work.

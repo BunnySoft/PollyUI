@@ -19,10 +19,10 @@ text are implemented; detailed GPU qualification, advanced IME/text extensions
 and the macOS HTTP backend remain separate.
 See README and `desktop/README.md` for current platform boundaries.
 
-**Current desktop candidate:** Debian 13 trixie amd64 from a debootstrap minbase
-rootfs. Corrected Mesa passes the graphical memory gate; alpha.5-r2 has passed
-UEFI VM preflight and user-reported physical boot/basic operation. Detailed
-per-device and endurance evidence is separate. Keep the Alpine fallback and do
+**Current physical-test candidate:** Debian 13 trixie amd64 alpha.6,
+frozen runtime `c9b1fcd`, has passed complete UEFI/KVM desktop and new-architecture
+acceptance. Actual physical-machine testing remains pending. Historical alpha.5-r2
+physical boot feedback is not evidence for alpha.6. Keep the Alpine fallback and do
 not turn all future features into current release gates.
 See [base selection and maintenance](./docs/desktop-base-maintenance.md).
 
@@ -36,10 +36,10 @@ remain historical; they do not contain or qualify the new SysRT/Settings work.
 
 | Gate | Required outcome | Current state |
 |---|---|---|
-| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | Corrected alpha.6 source selected: idle polls no longer imply repaint, visual changes invalidate only affected documents. Native GUI and Debug/Release functional startup checks passed; total CLI latency is diagnostic, not the production handshake deadline |
-| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Fresh corrected Release package next; initial `5fc944e` package/media remain preserved, not relabelled |
-| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Old candidate supplied baseline/diagnostic evidence but failed full acceptance. Corrected media must run every normal gate; diagnostic-only passes do not qualify it |
-| Physical-test ISO | Produce/check the release ISO for the same frozen revision; boot-test the actual media and record its SHA-256 before handoff | Initial test ISO content verified but not qualified; no physical-test handoff yet |
+| Runtime freeze | Integrated SysRT, JS files/theme resources, independent Appearance/About Settings and Shell JSON preferences; explicit known limits | Clean `c9b1fcd706ccf4770209d7648c2606c7d5d46d4e`; idle/document rendering fixes integrated |
+| Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Fresh Release package, frozen-source checks, 157 payload files and 240 exact dependency pins passed |
+| Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Complete normal OVMF/KVM run passed: Chinese input, clipboard, workspaces, Files/JSON and independent Settings select/reload/user theme/restore/About/close/reopen |
+| Physical-test ISO | Produce/check the release ISO for the same revision; boot-test the actual media and record its SHA-256 before handoff | Same verified optical ISO approved for physical testing: 707723264 bytes, SHA-256 `9f34b85523bbfcb3ec8d4ed022fa1c21da380ada6cb7ed10a8b90722dcf2753b`; no hardware-pass claim |
 | Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
 
 Use the existing QEMU/OVMF lane; temporary VM boot media is a test candidate,
@@ -49,6 +49,14 @@ old runtime binaries. Live runs from RAM: no installation, automatic disk
 mounting or internal-disk writes. Other Settings pages, broad SDK coverage,
 installed-system storage/recovery and exhaustive hardware matrices are not
 added to this Alpha's scope.
+
+The successful VM used 4 GiB RAM, two vCPUs, virtio-vga and no NIC, host audio,
+shared host directory or extra writable disk. QMP quit is not guest power-off
+acceptance. The RAM-only fixture's ttyS0 login attempted a second seatless desktop
+and failed before returning to its CLI; that raw error remains recorded separately
+from the stable main seat0 desktop. Neither serial-login GUI behavior nor physical
+GPU/network/audio is qualified. Earlier failed candidates and diagnostics remain
+preserved; the successful run uses harness `e32ecd6` with no skipped normal gates.
 
 For PollyOS, use the [technical overview](./docs/POLLYOS.md) and the
 **[historical deferred-work ledger](./docs/POLLYOS-BACKLOG.md)**. The ledger maps
