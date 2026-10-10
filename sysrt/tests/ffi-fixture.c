@@ -135,6 +135,60 @@ EXPORT int32_t sr_saved_error(void)
 #endif
 }
 
+static atomic_int callback_visits;
+EXPORT int32_t sr_callback_visits(void) { return atomic_load(&callback_visits); }
+EXPORT int32_t sr_callback_i32(int32_t (*callback)(int32_t), int32_t value, int32_t count)
+{
+    int32_t total = 0;
+    atomic_store(&callback_visits, 0);
+    for (int32_t i = 0; i < count; i++) {
+        total += callback(value + i);
+        atomic_fetch_add(&callback_visits, 1);
+    }
+    return total;
+}
+EXPORT int8_t sr_callback_i8(int8_t (*callback)(int8_t), int8_t value) { return callback(value); }
+EXPORT int64_t sr_callback_i64(int64_t (*callback)(int64_t), int64_t value) { return callback(value); }
+EXPORT double sr_callback_mixed(double (*callback)(int8_t, uint64_t, float, double))
+{
+    return callback(-7, UINT64_MAX, 0.5f, 1.25);
+}
+EXPORT void sr_callback_void(void (*callback)(int32_t), int32_t value) { callback(value); }
+EXPORT int32_t sr_callback_error(int32_t (*callback)(int32_t))
+{
+    errno = 29;
+#ifdef _WIN32
+    SetLastError(29);
+#endif
+    return callback(3);
+}
+typedef struct CallbackThread { int32_t (*callback)(int32_t); } CallbackThread;
+#ifdef _WIN32
+static DWORD WINAPI callback_worker(void *user)
+#else
+static void *callback_worker(void *user)
+#endif
+{
+    CallbackThread *call = user;
+    call->callback(5);
+    return 0;
+}
+EXPORT int32_t sr_callback_thread(int32_t (*callback)(int32_t))
+{
+    CallbackThread call = { callback };
+#ifdef _WIN32
+    HANDLE thread = CreateThread(NULL, 0, callback_worker, &call, 0, NULL);
+    if (!thread) return -1;
+    if (WaitForSingleObject(thread, INFINITE) != WAIT_OBJECT_0) abort();
+    if (!CloseHandle(thread)) abort();
+#else
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, callback_worker, &call)) return -1;
+    if (pthread_join(thread, NULL)) abort();
+#endif
+    return 777;
+}
+
 #if defined(_WIN32) || defined(__linux__)
 EXPORT size_t sr_network_layout(int32_t index)
 {

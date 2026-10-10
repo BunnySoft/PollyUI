@@ -67,6 +67,15 @@ static JSValue collect(JSContext *ctx, JSValueConst self, int argc, JSValueConst
 }
 
 static JSClassID cached_foreign_class;
+typedef struct RunnerState { SrFfi *ffi; } RunnerState;
+
+static JSValue shutdown_native(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    RunnerState *state = JS_GetContextOpaque(ctx);
+    sr_ffi_shutdown(state->ffi);
+    return JS_UNDEFINED;
+}
 
 static int run(const char *script, const char *fixture, const char *child, int shutdown_early, unsigned occupied, int cached)
 {
@@ -79,6 +88,8 @@ static int run(const char *script, const char *fixture, const char *child, int s
     /* Sanitized interpreter frames need room for realistic SDK call depth. */
     JS_SetMaxStackSize(runtime, 4 * 1024 * 1024);
     JS_SetModuleLoaderFunc(runtime, normalize, load, NULL);
+    RunnerState state = {0};
+    JS_SetRuntimeOpaque(runtime, &state); JS_SetContextOpaque(ctx, &state);
     int failed = 0;
     JSClassID foreign_class = 0;
     const JSClassDef foreign_definition = { .class_name = "OtherNativeClass" };
@@ -94,6 +105,7 @@ static int run(const char *script, const char *fixture, const char *child, int s
         foreign_class = id;
     }
     SrFfi *ffi = sr_ffi_register(ctx, dispatcher);
+    state.ffi = ffi;
     if (!ffi) failed = 1;
     JSValue global = JS_GetGlobalObject(ctx);
     if (JS_SetPropertyStr(ctx, global, "fixtureLibrary", JS_NewString(ctx, fixture)) < 0) failed = 1;
@@ -108,6 +120,8 @@ static int run(const char *script, const char *fixture, const char *child, int s
 #endif
     if (JS_SetPropertyStr(ctx, global, "expectedProcessId", JS_NewUint32(ctx, pid)) < 0) failed = 1;
     if (JS_SetPropertyStr(ctx, global, "collect", JS_NewCFunction(ctx, collect, "collect", 0)) < 0) failed = 1;
+    if (JS_SetPropertyStr(ctx, global, "shutdownNative",
+        JS_NewCFunction(ctx, shutdown_native, "shutdownNative", 0)) < 0) failed = 1;
     JS_FreeValue(ctx, global);
     size_t length = 0;
     char *source = failed ? NULL : read_file(script, &length);
@@ -132,6 +146,9 @@ static int run(const char *script, const char *fixture, const char *child, int s
         fprintf(stderr, "FFI fixture did not complete\n"); failed = 1;
     }
     sr_ffi_shutdown(ffi);
+    if (JS_GetRuntimeOpaque(runtime) != &state || JS_GetContextOpaque(ctx) != &state) {
+        fprintf(stderr, "FFI overwrote host VM opaque state\n"); failed = 1;
+    }
     if (pu_dispatch_pending(dispatcher)) { fprintf(stderr, "Native calls leaked dispatcher references\n"); failed = 1; }
     JS_FreeValue(ctx, result);
     JS_FreeContext(ctx); JS_FreeRuntime(runtime);

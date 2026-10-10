@@ -62,6 +62,12 @@ if (TARGET qjs)
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/async-lifetime.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         add_test(NAME sysrt-ownership COMMAND polly-sysrt-ffi-test
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/ownership.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        add_test(NAME sysrt-callbacks COMMAND polly-sysrt-ffi-test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/callbacks.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        add_test(NAME sysrt-callback-shutdown COMMAND polly-sysrt-ffi-test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/callback-shutdown.mjs" $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+        set_tests_properties(sysrt-callbacks sysrt-callback-shutdown PROPERTIES TIMEOUT 30
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
         set_tests_properties(sysrt-ownership PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")
         set_tests_properties(sysrt-async sysrt-async-shutdown sysrt-async-lifetime PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/..")

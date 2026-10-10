@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,13 +15,14 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <pthread.h>
 #endif
 
 #define SR_MAX_ARGS 16
 #define SR_MAX_BYTES (16u * 1024u * 1024u)
 typedef enum {
     T_VOID, T_I8, T_U8, T_I16, T_U16, T_I32, T_U32, T_I64, T_U64,
-    T_FLOAT, T_DOUBLE, T_POINTER, T_CSTRING
+    T_FLOAT, T_DOUBLE, T_POINTER, T_CSTRING, T_CALLBACK
 } Type;
 typedef union {
     ffi_arg word;
@@ -68,12 +70,39 @@ struct Function {
 };
 
 typedef struct AsyncCall AsyncCall;
+typedef struct Callback Callback;
 struct SrFfi {
     JSContext *ctx;
     PuDispatch *dispatch;
     AsyncCall *calls;
+    JSClassID callback_class;
+    unsigned synchronous;
+#ifdef _WIN32
+    DWORD owner;
+#else
+    pthread_t owner;
+#endif
     int closing;
 };
+struct Callback {
+    SrFfi *runtime;
+    Function signature;
+    JSValue function;
+    unsigned active;
+    int closed;
+};
+typedef struct SyncCall {
+    atomic_int foreign_thread;
+    int failed;
+    JSValue exception;
+} SyncCall;
+typedef struct Closure {
+    ffi_closure *closure;
+    void *code;
+    Callback *callback;
+    SyncCall *call;
+    JSValue holder;
+} Closure;
 struct AsyncCall {
     SrFfi *runtime;
     Function *function;
@@ -91,7 +120,7 @@ struct AsyncCall {
     AsyncCall *next;
 };
 
-typedef struct Classes { JSClassID library, function, pointer, runtime; } Classes;
+typedef struct Classes { JSClassID library, function, pointer, runtime, callback; } Classes;
 
 static JSValue error(JSContext *ctx, const char *code, const char *message)
 {
@@ -196,6 +225,18 @@ static void pointer_finalizer(JSRuntime *rt, JSValue value)
     release_pointer(pointer);
 }
 
+static void callback_mark(JSRuntime *rt, JSValueConst value, JS_MarkFunc *mark)
+{
+    Callback *callback = JS_GetOpaque(value, JS_GetClassID(value));
+    if (callback) JS_MarkValue(rt, callback->function, mark);
+}
+
+static void callback_finalizer(JSRuntime *rt, JSValue value)
+{
+    Callback *callback = JS_GetOpaque(value, JS_GetClassID(value));
+    if (callback) { JS_FreeValueRT(rt, callback->function); free(callback); }
+}
+
 static int pointer_live(JSContext *ctx, Pointer *pointer)
 {
     if (pointer->closed || (pointer->memory && pointer->memory->closed) ||
@@ -259,7 +300,7 @@ static int type_value(JSContext *ctx, JSValueConst value, Type *result)
     const char *s = text(ctx, value, 16);
     if (!s) return 0;
     static const char *names[] = { "void", "i8", "u8", "i16", "u16", "i32", "u32",
-        "i64", "u64", "float", "double", "pointer", "cstring" };
+        "i64", "u64", "float", "double", "pointer", "cstring", "callback" };
     int found = 0;
     for (unsigned i = 0; i < sizeof(names) / sizeof(*names); i++)
         if (!strcmp(s, names[i])) { *result = (Type)i; found = 1; break; }
@@ -277,7 +318,7 @@ static ffi_type *native_type(Type type)
     static ffi_type *types[] = { &ffi_type_void, &ffi_type_sint8, &ffi_type_uint8,
         &ffi_type_sint16, &ffi_type_uint16, &ffi_type_sint32, &ffi_type_uint32,
         &ffi_type_sint64, &ffi_type_uint64, &ffi_type_float, &ffi_type_double,
-        &ffi_type_pointer, &ffi_type_pointer };
+        &ffi_type_pointer, &ffi_type_pointer, &ffi_type_pointer };
     return types[type];
 }
 
@@ -377,6 +418,84 @@ static JSValue scalar(JSContext *ctx, Type type, Value value, int promoted)
     }
 }
 
+static void callback_failure(Callback *callback, SyncCall *call)
+{
+    call->failed = 1;
+    call->exception = JS_GetException(callback->runtime->ctx);
+}
+
+static void callback_entry(ffi_cif *cif, void *output, void **args, void *user)
+{
+    Closure *closure = user;
+    Callback *callback = closure->callback;
+    SyncCall *call = closure->call;
+    Function *signature = &callback->signature;
+    size_t size = signature->result == T_VOID ? 0 :
+        signature->result <= T_U32 ? sizeof(ffi_arg) : cif->rtype->size;
+    /* libffi needs an ABI return even on failure; the enclosing call rejects it. */
+    if (size) memset(output, 0, size);
+#ifdef _WIN32
+    int owner = GetCurrentThreadId() == callback->runtime->owner;
+#else
+    int owner = pthread_equal(pthread_self(), callback->runtime->owner);
+#endif
+    if (!owner) {
+        atomic_store(&call->foreign_thread, 1);
+        return;
+    }
+    if (call->failed || atomic_load(&call->foreign_thread)) return;
+    JSContext *ctx = callback->runtime->ctx;
+    if (callback->runtime->closing) {
+        error(ctx, "ERR_FFI_SHUTDOWN", "Native execution is shutting down");
+        callback_failure(callback, call); return;
+    }
+    int saved_errno = errno;
+#ifdef _WIN32
+    DWORD saved_error = GetLastError();
+#endif
+    JSValue values[SR_MAX_ARGS], result = JS_UNDEFINED;
+    unsigned count = 0;
+    for (; count < signature->count; count++) {
+        Value value = {0};
+        memcpy(&value, args[count], signature->types[count]->size);
+        values[count] = scalar(ctx, signature->params[count], value, 0);
+        if (JS_IsException(values[count])) {
+            callback_failure(callback, call); goto done;
+        }
+    }
+    result = JS_Call(ctx, callback->function, JS_UNDEFINED, (int)count, values);
+    if (JS_IsException(result)) { callback_failure(callback, call); goto done; }
+    if (signature->result == T_VOID) {
+        if (!JS_IsUndefined(result)) {
+            error(ctx, "ERR_FFI_CALLBACK_RESULT", "void callbacks must return undefined, not a value or Promise");
+            callback_failure(callback, call);
+        }
+    } else {
+        Value value = {0};
+        Memory *temporary = NULL;
+        if (!convert(ctx, signature->result, result, &value, &temporary, 0)) {
+            callback_failure(callback, call); goto done;
+        }
+        switch (signature->result) {
+        case T_I8: value.word = (ffi_arg)(ffi_sarg)value.i8; break;
+        case T_U8: value.word = value.u8; break;
+        case T_I16: value.word = (ffi_arg)(ffi_sarg)value.i16; break;
+        case T_U16: value.word = value.u16; break;
+        case T_I32: value.word = (ffi_arg)(ffi_sarg)value.i32; break;
+        case T_U32: value.word = value.u32; break;
+        default: break;
+        }
+        memcpy(output, &value, size);
+    }
+done:
+    JS_FreeValue(ctx, result);
+    for (unsigned i = 0; i < count; i++) JS_FreeValue(ctx, values[i]);
+    errno = saved_errno;
+#ifdef _WIN32
+    SetLastError(saved_error);
+#endif
+}
+
 static void invoke_native(Function *function, Value *returned, void **args, int *native_errno, uint32_t *system_error)
 {
     if (function->clear_errors) {
@@ -422,18 +541,64 @@ static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
     if (flags & JS_CALL_FLAG_CONSTRUCTOR) return JS_ThrowTypeError(ctx, "Native functions are not constructors");
     if (function->closed || function->library->closed)
         return error(ctx, "ERR_FFI_CLOSED", "Native function or library is closed");
+    SrFfi *runtime = function->library->runtime;
+    if (runtime->ctx != ctx) return error(ctx, "ERR_FFI_CONTEXT", "Native calls require their owning context");
+    if (runtime->closing) return error(ctx, "ERR_FFI_SHUTDOWN", "Native execution is shutting down");
     if (argc != (int)function->count) return JS_ThrowTypeError(ctx, "Wrong native argument count");
+    int has_callbacks = 0;
+    for (unsigned i = 0; i < function->count; i++)
+        has_callbacks |= function->params[i] == T_CALLBACK;
+    if (has_callbacks) {
+        if (function->result > T_DOUBLE)
+            return error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callback-bearing calls require scalar or void results");
+        for (unsigned i = 0; i < function->count; i++)
+            if (function->params[i] == T_POINTER || function->params[i] == T_CSTRING)
+                return error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callback-bearing calls exclude data pointers and strings");
+    }
     Value values[SR_MAX_ARGS] = {0}, returned = {0};
     void *args[SR_MAX_ARGS] = {0};
     Memory *temporary[SR_MAX_ARGS] = {0};
+    Closure closures[SR_MAX_ARGS] = {0};
+    SyncCall sync = { .exception = JS_UNDEFINED };
+    atomic_init(&sync.foreign_thread, 0);
+    function->refs++; function->pending++; runtime->synchronous++;
     JSValue result = JS_EXCEPTION;
     for (unsigned i = 0; i < function->count; i++) {
-        if (!convert(ctx, function->params[i], argv[i], &values[i], &temporary[i], function->pointer_class)) goto done;
+        if (function->params[i] == T_CALLBACK) {
+            Callback *callback = JS_GetOpaque2(ctx, argv[i], runtime->callback_class);
+            if (!callback) goto done;
+            if (callback->closed) { error(ctx, "ERR_FFI_CLOSED", "Native callback is closed"); goto done; }
+            if (callback->runtime != runtime) {
+                error(ctx, "ERR_FFI_CONTEXT", "Native callback requires its owning context"); goto done;
+            }
+            Closure *closure = &closures[i];
+            closure->callback = callback; closure->call = &sync;
+            closure->holder = JS_DupValue(ctx, argv[i]); callback->active++;
+            closure->closure = ffi_closure_alloc(sizeof(ffi_closure), &closure->code);
+            if (!closure->closure) {
+                error(ctx, "ERR_FFI_CALLBACK", "Cannot allocate executable native callback"); goto done;
+            }
+            if (ffi_prep_closure_loc(closure->closure, &callback->signature.cif,
+                callback_entry, closure, closure->code) != FFI_OK) {
+                error(ctx, "ERR_FFI_CALLBACK", "Cannot prepare native callback"); goto done;
+            }
+            values[i].pointer = closure->code;
+        } else if (!convert(ctx, function->params[i], argv[i], &values[i], &temporary[i], function->pointer_class)) goto done;
         args[i] = &values[i];
     }
     int native_errno;
     uint32_t system_error;
     invoke_native(function, &returned, args, &native_errno, &system_error);
+    if (sync.failed) {
+        result = JS_Throw(ctx, sync.exception); sync.exception = JS_UNDEFINED; goto done;
+    }
+    if (atomic_load(&sync.foreign_thread)) {
+        result = error(ctx, "ERR_FFI_CALLBACK_THREAD", "Native callback ran on a foreign thread; JavaScript was not entered");
+        goto done;
+    }
+    if (runtime->closing) {
+        result = error(ctx, "ERR_FFI_SHUTDOWN", "Native execution shut down during a synchronous call"); goto done;
+    }
     JSValue value;
     if (function->result == T_POINTER) {
         Memory *memory = NULL;
@@ -454,7 +619,17 @@ static JSValue call(JSContext *ctx, JSValueConst object, JSValueConst self,
     } else value = scalar(ctx, function->result, returned, 1);
     result = packet(ctx, value, native_errno, system_error);
 done:
-    for (unsigned i = 0; i < function->count; i++) release_memory(temporary[i]);
+    for (unsigned i = 0; i < function->count; i++) {
+        release_memory(temporary[i]);
+        if (closures[i].callback) {
+            if (closures[i].closure) ffi_closure_free(closures[i].closure);
+            closures[i].callback->active--;
+            JS_FreeValue(ctx, closures[i].holder);
+        }
+    }
+    JS_FreeValue(ctx, sync.exception);
+    finish_function_use(function);
+    if (!--runtime->synchronous && runtime->closing) sr_ffi_shutdown(runtime);
     return result;
 }
 
@@ -520,6 +695,9 @@ static JSValue call_async(JSContext *ctx, JSValueConst self, int argc, JSValueCo
     if (argc != (int)function->count) return JS_ThrowTypeError(ctx, "Wrong native argument count");
     if (!function->clear_errors || function->result == T_POINTER)
         return error(ctx, "ERR_FFI_ASYNC", "Async prototype excludes pointer results and thread-local error observers");
+    for (unsigned i = 0; i < function->count; i++)
+        if (function->params[i] == T_CALLBACK)
+            return error(ctx, "ERR_FFI_ASYNC", "Native callbacks are supported only during synchronous calls");
     AsyncCall *job = calloc(1, sizeof(*job));
     if (!job) return JS_ThrowOutOfMemory(ctx);
     job->runtime = runtime; job->function = function; function->refs++; function->pending++;
@@ -565,8 +743,9 @@ static JSValue call_async(JSContext *ctx, JSValueConst self, int argc, JSValueCo
 
 void sr_ffi_shutdown(SrFfi *runtime)
 {
-    if (!runtime || runtime->closing) return;
+    if (!runtime) return;
     runtime->closing = 1;
+    if (runtime->synchronous) return;
     while (runtime->calls) {
         AsyncCall *job = runtime->calls;
         pu_thread_join(job->thread); job->thread = NULL;
@@ -646,20 +825,13 @@ done:
     return result;
 }
 
-static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+static int prepare_signature(JSContext *ctx, JSValueConst input, Function *function, int callback)
 {
-    Library *library = JS_GetOpaque2(ctx, self, classes->library);
-    if (!library) return JS_EXCEPTION;
-    if (library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native library is closed");
-    if (argc != 2 || !JS_IsObject(argv[1])) return JS_ThrowTypeError(ctx, "bind requires a symbol and signature");
-    const char *name = text(ctx, argv[0], 255);
-    if (!name) return JS_EXCEPTION;
-    Function *function = calloc(1, sizeof(*function));
-    JSValue result = JS_EXCEPTION, params = JS_UNDEFINED;
-    if (!function) { JS_ThrowOutOfMemory(ctx); goto done; }
+    int ready = 0;
+    JSValue params = JS_UNDEFINED;
     JSPropertyEnum *properties = NULL;
     uint32_t property_count = 0;
-    if (JS_GetOwnPropertyNames(ctx, &properties, &property_count, argv[1], JS_GPN_STRING_MASK) < 0) goto done;
+    if (JS_GetOwnPropertyNames(ctx, &properties, &property_count, input, JS_GPN_STRING_MASK) < 0) goto done;
     int fields_ok = 1;
     for (uint32_t i = 0; i < property_count; i++) {
         const char *field = JS_AtomToCString(ctx, properties[i].atom);
@@ -669,25 +841,36 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
             JS_ThrowTypeError(ctx, "Unsupported signature field: %s", field);
             fields_ok = 0;
         }
+        if (callback && (!strcmp(field, "variadic") || !strcmp(field, "clearErrors"))) {
+            error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callbacks exclude variadics and native error metadata");
+            fields_ok = 0;
+        }
         JS_FreeCString(ctx, field);
         if (!fields_ok) break;
     }
     JS_FreePropertyEnum(ctx, properties, property_count);
     if (!fields_ok) goto done;
-    JSValue clear = JS_GetPropertyStr(ctx, argv[1], "clearErrors");
+    JSValue clear = JS_GetPropertyStr(ctx, input, "clearErrors");
     if (JS_IsException(clear)) goto done;
     if (!JS_IsUndefined(clear) && !JS_IsBool(clear)) {
         JS_FreeValue(ctx, clear);
         JS_ThrowTypeError(ctx, "clearErrors must be boolean"); goto done;
     }
     function->clear_errors = JS_IsUndefined(clear) || JS_ToBool(ctx, clear);
+    if (callback && !JS_IsUndefined(clear)) {
+        JS_FreeValue(ctx, clear);
+        error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callbacks exclude native error metadata"); goto done;
+    }
     JS_FreeValue(ctx, clear);
-    JSValue returns = JS_GetPropertyStr(ctx, argv[1], "result");
+    JSValue returns = JS_GetPropertyStr(ctx, input, "result");
     int ok = !JS_IsException(returns) && type_value(ctx, returns, &function->result);
     JS_FreeValue(ctx, returns);
     if (!ok) goto done;
+    if ((callback && function->result > T_DOUBLE) || function->result == T_CALLBACK) {
+        error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callback results must be scalar or void"); goto done;
+    }
     if (function->result == T_CSTRING) { JS_ThrowTypeError(ctx, "Return pointer and decode with an explicit memory bound"); goto done; }
-    params = JS_GetPropertyStr(ctx, argv[1], "parameters");
+    params = JS_GetPropertyStr(ctx, input, "parameters");
     if (JS_IsException(params)) goto done;
     if (!JS_IsArray(params)) { JS_ThrowTypeError(ctx, "Signature parameters must be an array"); goto done; }
     JSValue length = JS_GetPropertyStr(ctx, params, "length");
@@ -702,28 +885,38 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
         JS_FreeValue(ctx, type);
         if (!ok) goto done;
         if (function->params[i] == T_VOID) { JS_ThrowTypeError(ctx, "void is not an argument type"); goto done; }
+        if (callback && function->params[i] > T_DOUBLE) {
+            error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Callback arguments must be scalar"); goto done;
+        }
         function->types[i] = native_type(function->params[i]);
     }
     ffi_abi abi = FFI_DEFAULT_ABI;
-    JSValue convention = JS_GetPropertyStr(ctx, argv[1], "abi");
+    JSValue convention = JS_GetPropertyStr(ctx, input, "abi");
     if (JS_IsException(convention)) goto done;
     if (!JS_IsUndefined(convention)) {
         const char *s = text(ctx, convention, 16);
         if (!s) { JS_FreeValue(ctx, convention); goto done; }
         ok = !strcmp(s, "default");
 #if defined(_WIN32) && (defined(_M_IX86) || defined(__i386__))
-        if (!strcmp(s, "stdcall")) { abi = FFI_STDCALL; ok = 1; }
+        if (!callback && !strcmp(s, "stdcall")) { abi = FFI_STDCALL; ok = 1; }
 #endif
         JS_FreeCString(ctx, s);
         if (!ok) JS_ThrowTypeError(ctx, "Unsupported native calling convention");
     }
     JS_FreeValue(ctx, convention);
     if (!ok) goto done;
-    JSValue variadic = JS_GetPropertyStr(ctx, argv[1], "variadic");
+    JSValue variadic = JS_GetPropertyStr(ctx, input, "variadic");
     if (JS_IsException(variadic)) goto done;
     size_t fixed = 0;
     int variable = !JS_IsUndefined(variadic);
     if (variable) {
+        int has_callback = callback;
+        for (unsigned i = 0; i < function->count; i++) has_callback |= function->params[i] == T_CALLBACK;
+        if (has_callback) {
+            JS_FreeValue(ctx, variadic);
+            error(ctx, "ERR_FFI_CALLBACK_SIGNATURE", "Variadic callbacks and callback-bearing variadic calls are unsupported");
+            goto done;
+        }
         ok = index_value(ctx, variadic, function->count, &fixed);
         if (ok && abi != FFI_DEFAULT_ABI) { JS_ThrowTypeError(ctx, "Variadic calls require the default C ABI"); ok = 0; }
         if (ok && !fixed) { JS_ThrowRangeError(ctx, "Variadic signatures require a fixed parameter"); ok = 0; }
@@ -744,6 +937,56 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     if (prepared != FFI_OK) {
         error(ctx, "ERR_FFI_SIGNATURE", "Cannot prepare native signature"); goto done;
     }
+    ready = 1;
+done:
+    JS_FreeValue(ctx, params);
+    return ready;
+}
+
+static JSValue create_callback(JSContext *ctx, int argc, JSValueConst *argv,
+                               const Classes *classes, SrFfi *runtime)
+{
+    if (runtime->closing) return error(ctx, "ERR_FFI_SHUTDOWN", "Native execution is shutting down");
+    if (argc != 2 || !JS_IsObject(argv[0]) || !JS_IsFunction(ctx, argv[1]))
+        return JS_ThrowTypeError(ctx, "callback requires a scalar signature and JavaScript function");
+    Callback *callback = calloc(1, sizeof(*callback));
+    if (!callback) return JS_ThrowOutOfMemory(ctx);
+    if (!prepare_signature(ctx, argv[0], &callback->signature, 1)) { free(callback); return JS_EXCEPTION; }
+    if (runtime->closing) {
+        free(callback); return error(ctx, "ERR_FFI_SHUTDOWN", "Native execution shut down during callback creation");
+    }
+    JSValue result = JS_NewObjectClass(ctx, classes->callback);
+    if (JS_IsException(result)) { free(callback); return result; }
+    callback->runtime = runtime;
+    callback->function = JS_DupValue(ctx, argv[1]);
+    JS_SetOpaque(result, callback);
+    return result;
+}
+
+static JSValue close_callback(JSContext *ctx, JSValueConst self, const Classes *classes)
+{
+    Callback *callback = JS_GetOpaque2(ctx, self, classes->callback);
+    if (!callback) return JS_EXCEPTION;
+    if (callback->active) return error(ctx, "ERR_FFI_BUSY", "Native callback is in use by a synchronous call");
+    if (!callback->closed) {
+        callback->closed = 1;
+        JS_FreeValue(ctx, callback->function); callback->function = JS_UNDEFINED;
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, const Classes *classes)
+{
+    Library *library = JS_GetOpaque2(ctx, self, classes->library);
+    if (!library) return JS_EXCEPTION;
+    if (library->closed) return error(ctx, "ERR_FFI_CLOSED", "Native library is closed");
+    if (argc != 2 || !JS_IsObject(argv[1])) return JS_ThrowTypeError(ctx, "bind requires a symbol and signature");
+    const char *name = text(ctx, argv[0], 255);
+    if (!name) return JS_EXCEPTION;
+    Function *function = calloc(1, sizeof(*function));
+    JSValue result = JS_EXCEPTION;
+    if (!function) { JS_ThrowOutOfMemory(ctx); goto done; }
+    if (!prepare_signature(ctx, argv[1], function, 0)) goto done;
     if (library->closed) { error(ctx, "ERR_FFI_CLOSED", "Native library closed during binding"); goto done; }
 #ifdef _WIN32
     FARPROC code = GetProcAddress((HMODULE)library->handle, name);
@@ -767,7 +1010,7 @@ static JSValue bind(JSContext *ctx, JSValueConst self, int argc, JSValueConst *a
     function->pointer_class = library->pointer_class;
     JS_SetOpaque(result, function); function = NULL;
 done:
-    JS_FreeValue(ctx, params); free(function); JS_FreeCString(ctx, name);
+    free(function); JS_FreeCString(ctx, name);
     return result;
 }
 
@@ -962,14 +1205,16 @@ static JSValue read_pointer(JSContext *ctx, JSValueConst self, int argc, JSValue
 
 typedef enum {
     M_OPEN, M_ALLOC, M_ALLOC_POINTERS, M_BIND, M_CLOSE_LIBRARY, M_CLOSE_FUNCTION, M_CLOSE_POINTER,
-    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER, M_CALL_ASYNC, M_ADOPT
+    M_READ, M_WRITE, M_READ_STRING, M_SLICE, M_READ_POINTER, M_CALL_ASYNC, M_ADOPT,
+    M_CALLBACK, M_CLOSE_CALLBACK
 } Method;
 
 static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
                         int magic, JSValueConst *data)
 {
     Classes classes = { (JSClassID)JS_VALUE_GET_INT(data[0]),
-        (JSClassID)JS_VALUE_GET_INT(data[1]), (JSClassID)JS_VALUE_GET_INT(data[2]), 0 };
+        (JSClassID)JS_VALUE_GET_INT(data[1]), (JSClassID)JS_VALUE_GET_INT(data[2]), 0,
+        (JSClassID)JS_VALUE_GET_INT(data[4]) };
     switch ((Method)magic) {
     case M_OPEN: return open_library(ctx, self, argc, argv, &classes,
         JS_GetOpaque(data[3], JS_GetClassID(data[3])));
@@ -986,6 +1231,9 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     case M_READ_POINTER: return read_pointer(ctx, self, argc, argv, &classes);
     case M_CALL_ASYNC: return call_async(ctx, self, argc, argv, &classes);
     case M_ADOPT: return adopt_pointer(ctx, self, argc, argv, &classes);
+    case M_CALLBACK: return create_callback(ctx, argc, argv, &classes,
+        JS_GetOpaque(data[3], JS_GetClassID(data[3])));
+    case M_CLOSE_CALLBACK: return close_callback(ctx, self, &classes);
     }
     return JS_ThrowInternalError(ctx, "Invalid FFI method");
 }
@@ -993,6 +1241,7 @@ static JSValue dispatch(JSContext *ctx, JSValueConst self, int argc, JSValueCons
 typedef struct MethodInfo { const char *name; int length; Method method; } MethodInfo;
 static const MethodInfo library_methods[] = { { "bind", 2, M_BIND }, { "close", 0, M_CLOSE_LIBRARY } };
 static const MethodInfo function_methods[] = { { "close", 0, M_CLOSE_FUNCTION }, { "callAsync", 0, M_CALL_ASYNC } };
+static const MethodInfo callback_methods[] = { { "close", 0, M_CLOSE_CALLBACK } };
 static const MethodInfo pointer_methods[] = {
     { "close", 0, M_CLOSE_POINTER }, { "read", 1, M_READ }, { "write", 1, M_WRITE },
     { "readString", 1, M_READ_STRING }, { "slice", 2, M_SLICE },
@@ -1035,30 +1284,34 @@ static const JSCFunctionListEntry exports[] = {
 
 static int module_init(JSContext *ctx, JSModuleDef *module)
 {
-    JSValue private = JS_GetModulePrivateValue(ctx, module), data[4];
-    for (unsigned i = 0; i < 4; i++) data[i] = JS_GetPropertyUint32(ctx, private, i);
+    JSValue private = JS_GetModulePrivateValue(ctx, module), data[5];
+    for (unsigned i = 0; i < 5; i++) data[i] = JS_GetPropertyUint32(ctx, private, i);
     JS_FreeValue(ctx, private);
     int ok = 1;
     for (unsigned i = 0; i < 3; i++)
         if (JS_VALUE_GET_TAG(data[i]) != JS_TAG_INT) ok = 0;
-    if (!JS_IsObject(data[3])) ok = 0;
+    if (!JS_IsObject(data[3]) || JS_VALUE_GET_TAG(data[4]) != JS_TAG_INT) ok = 0;
     if (!ok && !JS_HasException(ctx)) JS_ThrowInternalError(ctx, "Invalid FFI module class state");
     if (ok) {
-        JSValue open = JS_NewCFunctionData(ctx, dispatch, 1, M_OPEN, 4, data);
+        JSValue open = JS_NewCFunctionData(ctx, dispatch, 1, M_OPEN, 5, data);
         if (JS_IsException(open) || JS_SetModuleExport(ctx, module, "open", open) < 0) ok = 0;
         if (ok) {
-            JSValue alloc = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC, 4, data);
+            JSValue alloc = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC, 5, data);
             if (JS_IsException(alloc) || JS_SetModuleExport(ctx, module, "alloc", alloc) < 0) ok = 0;
         }
         if (ok) {
-            JSValue array = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC_POINTERS, 4, data);
+            JSValue array = JS_NewCFunctionData(ctx, dispatch, 1, M_ALLOC_POINTERS, 5, data);
             if (JS_IsException(array) || JS_SetModuleExport(ctx, module, "allocPointers", array) < 0) ok = 0;
         }
+        if (ok) {
+            JSValue callback = JS_NewCFunctionData(ctx, dispatch, 2, M_CALLBACK, 5, data);
+            if (JS_IsException(callback) || JS_SetModuleExport(ctx, module, "callback", callback) < 0) ok = 0;
+        }
     }
-    for (unsigned i = 0; i < 4; i++) JS_FreeValue(ctx, data[i]);
+    for (unsigned i = 0; i < 5; i++) JS_FreeValue(ctx, data[i]);
     if (!ok) return -1;
     if (JS_SetModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) < 0 ||
-        JS_SetModuleExport(ctx, module, "callbacks", JS_NewBool(ctx, 0)) < 0 ||
+        JS_SetModuleExport(ctx, module, "callbacks", JS_NewBool(ctx, 1)) < 0 ||
         JS_SetModuleExport(ctx, module, "async", JS_NewBool(ctx, 1)) < 0 ||
         JS_SetModuleExport(ctx, module, "variadics", JS_NewBool(ctx, 1)) < 0) return -1;
     return 0;
@@ -1069,17 +1322,19 @@ SrFfi *sr_ffi_register(JSContext *ctx, PuDispatch *dispatcher)
     if (!ctx || !dispatcher) return NULL;
     JSRuntime *runtime = JS_GetRuntime(ctx);
     Classes classes = {0};
-    JSClassID *ids[] = { &classes.library, &classes.function, &classes.pointer, &classes.runtime };
+    JSClassID *ids[] = { &classes.library, &classes.function, &classes.pointer, &classes.runtime, &classes.callback };
     const JSClassDef definitions[] = {
         { "NativeLibrary", .finalizer = library_finalizer },
         { "NativeFunction", .finalizer = function_finalizer, .call = call },
         { "NativePointer", .finalizer = pointer_finalizer },
         { "NativeExecution", .finalizer = runtime_finalizer, .gc_mark = runtime_mark },
+        { "NativeCallback", .finalizer = callback_finalizer, .gc_mark = callback_mark },
     };
-    const MethodInfo *methods[] = { library_methods, function_methods, pointer_methods };
+    const MethodInfo *methods[] = { library_methods, function_methods, pointer_methods, NULL, callback_methods };
     const int counts[] = { sizeof(library_methods) / sizeof(*library_methods),
-        sizeof(function_methods) / sizeof(*function_methods), sizeof(pointer_methods) / sizeof(*pointer_methods) };
-    for (unsigned i = 0; i < 4; i++) {
+        sizeof(function_methods) / sizeof(*function_methods), sizeof(pointer_methods) / sizeof(*pointer_methods),
+        0, sizeof(callback_methods) / sizeof(*callback_methods) };
+    for (unsigned i = 0; i < 5; i++) {
         do {
             *ids[i] = 0;
             JS_NewClassID(runtime, ids[i]);
@@ -1089,17 +1344,25 @@ SrFfi *sr_ffi_register(JSContext *ctx, PuDispatch *dispatcher)
     SrFfi *execution = calloc(1, sizeof(*execution));
     if (!execution) { JS_ThrowOutOfMemory(ctx); return NULL; }
     execution->ctx = ctx; execution->dispatch = dispatcher;
+    execution->callback_class = classes.callback;
+#ifdef _WIN32
+    execution->owner = GetCurrentThreadId();
+#else
+    execution->owner = pthread_self();
+#endif
     JSValue state = JS_NewObjectClass(ctx, classes.runtime);
     if (JS_IsException(state)) { free(execution); return NULL; }
     JS_SetOpaque(state, execution);
     JSValue data[] = { JS_NewInt32(ctx, (int32_t)classes.library),
-        JS_NewInt32(ctx, (int32_t)classes.function), JS_NewInt32(ctx, (int32_t)classes.pointer), state };
-    for (unsigned i = 0; i < 3; i++) {
+        JS_NewInt32(ctx, (int32_t)classes.function), JS_NewInt32(ctx, (int32_t)classes.pointer), state,
+        JS_NewInt32(ctx, (int32_t)classes.callback) };
+    for (unsigned i = 0; i < 5; i++) {
+        if (!counts[i]) continue;
         JSValue proto = JS_NewObject(ctx);
         if (JS_IsException(proto)) goto failed;
         for (int j = 0; j < counts[i]; j++) {
             const MethodInfo *method = &methods[i][j];
-            JSValue function = JS_NewCFunctionData(ctx, dispatch, method->length, method->method, 4, data);
+            JSValue function = JS_NewCFunctionData(ctx, dispatch, method->length, method->method, 5, data);
             if (JS_IsException(function) || JS_DefinePropertyValueStr(ctx, proto, method->name, function,
                 JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE) < 0) {
                 JS_FreeValue(ctx, proto); goto failed;
@@ -1111,7 +1374,7 @@ SrFfi *sr_ffi_register(JSContext *ctx, PuDispatch *dispatcher)
     if (!module) goto failed;
     JSValue private = JS_NewArray(ctx);
     if (JS_IsException(private)) goto failed;
-    for (unsigned i = 0; i < 4; i++) {
+    for (unsigned i = 0; i < 5; i++) {
         if (JS_DefinePropertyValueUint32(ctx, private, i, JS_DupValue(ctx, data[i]),
             JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE) < 0) {
             JS_FreeValue(ctx, private); goto failed;
@@ -1121,6 +1384,7 @@ SrFfi *sr_ffi_register(JSContext *ctx, PuDispatch *dispatcher)
     int exported = JS_AddModuleExportList(ctx, module, exports, sizeof(exports) / sizeof(*exports)) >= 0 &&
         JS_AddModuleExport(ctx, module, "open") >= 0 && JS_AddModuleExport(ctx, module, "alloc") >= 0 &&
         JS_AddModuleExport(ctx, module, "allocPointers") >= 0 &&
+        JS_AddModuleExport(ctx, module, "callback") >= 0 &&
         JS_AddModuleExport(ctx, module, "callbacks") >= 0 && JS_AddModuleExport(ctx, module, "async") >= 0 &&
         JS_AddModuleExport(ctx, module, "variadics") >= 0;
     if (!exported) goto failed;

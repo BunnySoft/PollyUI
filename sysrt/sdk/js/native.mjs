@@ -1,6 +1,10 @@
 import { open, platform, libc, architecture, pointerSize, longSize } from 'sysrt:ffi';
 import { compileLayout } from './sysrt/sdk/js/memory.mjs';
 
+// Native code may invoke this only before its synchronous scalar call returns;
+// retaining the address, async calls, data pointers and non-default ABIs are unsupported.
+export { callback as createCallback } from 'sysrt:ffi';
+
 export function loadBindings(configuration) {
   if (!configuration || typeof configuration !== 'object' ||
       Array.isArray(configuration) || !configuration.functions ||
