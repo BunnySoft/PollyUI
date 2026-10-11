@@ -148,6 +148,26 @@ the narrow-window evidence has the same product source content with recorded
 CRLF/LF checkout differences. Earlier timeout runs and pre-correction captures
 remain preserved separately, never combined to manufacture an acceptance pass.
 
+## Next-version candidate: transparency and materials
+
+The user asked to retain the 2026-10-11 material discussion as a candidate for
+the next version. It is **not yet selected for implementation**, assigned a
+release number or included in the accepted Alpha.6 media.
+See [transparency/material conclusions](./DESIGN.md#51-transparency-and-material-discussion)
+for current capabilities, layer ownership and constraints.
+
+| Candidate slice | Concrete deliverable | Scope/status |
+|---|---|---|
+| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Candidate: wire GUI/Host/presentation alpha; existing layer transparency is not sufficient |
+| MT-02 | Cached wallpaper-derived Mica-like base and in-app material composition | Candidate: GUI/Skia plus explicit desktop theme/wallpaper inputs; not live cross-window blur |
+| MT-03 | Regional background acrylic/blur for taskbar, menus and transient surfaces | Candidate: PollyWM render/damage/cache path plus effect requests; not a GUI-only style property |
+
+Prefer MT-01, then MT-02, then MT-03 if the candidate is approved. Keep solid
+fallbacks explicit and validate native pixels, clipping/readability and actual
+render/damage cost before claiming support. Windows' existing DWM setter needs
+visibility and failure handling; it is not proof of a complete effect. No code,
+API, scheduling commitment, version bump or new ISO is implied by this record.
+
 ## Engines & pipeline
 
 | Feature | Status | Notes |

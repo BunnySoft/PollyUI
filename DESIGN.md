@@ -315,6 +315,48 @@ expose repaint paths remain intact.
 An idle service poll therefore cannot force every surface to repaint; an
 animation that changes the model still requests the necessary frames.
 
+### 5.1 Transparency and material discussion
+
+Recorded on 2026-10-11 as a **next-version candidate**, not an approved
+implementation or a claim that the current desktop renders Mica/Acrylic.
+
+| Effect | Current implementation | Required owner/change |
+|---|---|---|
+| Alpha colors and subtree opacity | `#rrggbbaa` and `opacity` work within the rendered window; subtree opacity also fades text/children | Existing GUI drawing; use background alpha when foreground text should remain opaque |
+| Gradients, rounded shapes, shadows and image textures | Existing GUI primitives; shadow blur is not backdrop blur | Combine existing primitives without claiming background sampling |
+| Transparent window composition | Linux layer surfaces have a transparent-clear/Host path; ordinary app windows are not fully wired and normally clear to opaque white | GUI window options, Host surface creation/presentation and compositor alpha contract |
+| Wallpaper-derived Mica-like base | Not implemented as a desktop material | Cached material rendering in GUI, with wallpaper/theme/activation inputs supplied through desktop/Host boundaries |
+| In-app background blur | No exposed background-filter pipeline | GUI/Skia sampling of previously rendered content, filtering and clipped composition |
+| Blur behind another application | No PollyWM background-blur render pass | Compositor-controlled scene sampling, effect regions, damage propagation and caching |
+| Windows native Mica/Acrylic | DWM attribute request exists; transparency/visibility and capability/error reporting are incomplete; SDL backdrop setter is currently a no-op | Windows Host integration, verified presentation and explicit support reporting |
+
+Mica-like wallpaper material and live background acrylic are distinct:
+[Mica](https://learn.microsoft.com/en-us/windows/apps/design/style/mica) is a
+wallpaper/theme-derived opaque base, not a live view of every underlying window.
+[Acrylic](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic)
+can sample in-app content or the composition behind a window. A translucent
+color alone performs neither sampling nor blur.
+
+The preferred implementation order, **if this candidate is selected**, is:
+
+1. Complete ordinary-window transparency end to end, keeping background alpha
+   separate from foreground text opacity and verifying Host presentation.
+2. Add cached wallpaper-derived and in-app materials for Settings/Files;
+   update on relevant wallpaper, theme, activation or content changes.
+3. Add compositor-owned regional background blur for taskbar, menus and
+   transient surfaces when that effect is required.
+
+PollyUI remains OS-policy-independent. An app renders its own content; it must
+not obtain arbitrary other-window buffers or periodically screenshot the desktop
+to fake compositor blur. This work does not require a SysRT/FFI redesign.
+Unsupported platforms, disabled transparency and constrained/software rendering
+need explicit capabilities and a deliberate solid-color fallback, not silent
+success. Regions, clipping, premultiplied alpha, text readability and opaque
+regions must remain consistent. Performance acceptance must measure actual
+rendering and damage behavior: no idle full-screen redraw loop or repeated
+full-screen CPU blur. Backend, cost limits and final API remain decisions for
+the implementation proposal; this discussion does not fix them in advance.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
