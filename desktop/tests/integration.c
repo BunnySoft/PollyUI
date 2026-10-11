@@ -767,6 +767,9 @@ static bool decoration_suite(const char *path)
     CHECK(client->reply.decoration_mode == 1 && !pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
     CHECK(command(client, TEST_DECORATION, 0, 0, 0));
     CHECK(client->reply.decoration_mode == 2 && pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    /* Decoration geometry covers the full work area; constrained maximize has
+     * its own real native window-contract fixture. */
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
     CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
     CHECK(view->mode == PU_DESKTOP_MAXIMIZED);
     CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
@@ -1050,6 +1053,7 @@ static bool layer_suite(const char *path)
     CHECK(layer->tree->node.x == full.x && layer->tree->node.y == full.y);
     CHECK(shell_client.reply.width == full.width && shell_client.reply.height == 32);
     CHECK(desktop.focused == view && !desktop.focused_layer);
+    CHECK(command(&clients[1], TEST_UNCONSTRAINED, 0, 0, 0));
     CHECK(command(&clients[1], TEST_MAXIMIZE, 0, 0, 0));
     CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 32));
     struct TestLayer dock = {
@@ -1465,6 +1469,7 @@ static bool output_suite(struct TestClient *client)
     struct PuDesktopView *view = find_view(2);
     CHECK(view && view->output == extra && view->tree->node.x < 0);
     int x = view->tree->node.x, y = view->tree->node.y;
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
     CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
     CHECK(geometry_is(view, -1000, -100, 800, 600));
     CHECK(resize_output(extra, 1000, 700, 1.25f));
@@ -1507,7 +1512,7 @@ static bool output_suite(struct TestClient *client)
     CHECK(command(client, TEST_UNFULLSCREEN, 0, 0, 0));
     CHECK(geometry_is(view, 0, 0, 240, 160));
 
-    /* A small output must not place even a min-size-constrained window offscreen. */
+    /* Keep a constrained window's origin visible even when its minimum exceeds the output. */
     extra = wlr_headless_add_output(backend, 100, 60);
     CHECK(extra);
     CHECK(wlr_output_layout_add(desktop.layout, extra, 1400, 0));
@@ -1517,14 +1522,14 @@ static bool output_suite(struct TestClient *client)
     view = find_view(2);
     CHECK(view && view->tree->node.x == 1400 && view->tree->node.y == 0);
     CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
-    CHECK(geometry_is(view, 1400, 0, 100, 60));
+    CHECK(geometry_is(view, 1400, 0, 120, 80));
     struct wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, false);
     CHECK(wlr_output_commit_state(extra, &state));
     wlr_output_state_finish(&state);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
-    CHECK(view->output == original && geometry_is(view, 0, 0, 1280, 720));
+    CHECK(view->output == original && geometry_is(view, 0, 0, 600, 400));
     wlr_output_state_init(&state);
     wlr_output_state_set_enabled(&state, true);
     CHECK(wlr_output_commit_state(extra, &state));

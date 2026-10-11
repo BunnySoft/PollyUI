@@ -13,12 +13,17 @@
 
 #include "pollyui/window.h"   /* the shared HostEngine contract */
 #include "render/skia_c.h"
+#include "host/window_contract.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#if defined(__linux__)
+#include <wayland-client.h>
+#endif
 #if defined(PU_LAYER_SHELL)
 #include "host/sdl/layer_shell.h"
 #endif
@@ -39,6 +44,17 @@ extern void pu_macos_tune_live_resize(void *nswindow);
 
 struct PuWindow {
     struct PuWindow *next;
+    struct PuWindow *parent;
+    PuPopup popup;
+    int modal, service;
+    unsigned children, borrows;
+    int closing, request_active;
+    int close_pending, close_external, close_hook_done, native_retired;
+    int destroy_requested, destroying;
+    PuWindowState reported_state;
+    int state_reported;
+    PuWindowStateFn state_fn;
+    void *state_user;
     SDL_Window   *win;
     SDL_Renderer *renderer;   /* raster fallback only */
     SDL_Texture  *tex;        /* raster fallback only */
@@ -94,7 +110,10 @@ static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
 static PuWindow *g_windows;
 static PuWindow *g_mouse_capture;
 static int g_initialized, g_loop_running, g_system_users;
+#define PU_CLOSE_EXTERNAL_ALL
+#include "host/window_close.h"
 static void pu_sync_size(PuWindow *w);
+static void retire_native(PuWindow *w);
 
 static void shutdown_video(void)
 {
@@ -109,6 +128,7 @@ static void fail_window(PuWindow *w, const char *operation)
 {
     SDL_Log("%s failed: %s", operation, SDL_GetError());
     w->exit_code = 1;
+    notify_dependent_failure(w);
     w->running = 0;
 }
 
@@ -118,6 +138,7 @@ void pu_sdl_layer_failed(PuWindow *w, const char *operation) { fail_window(w, op
 
 static int ensure_video(void)
 {
+    if (!SDL_IsMainThread()) { SDL_Log("Window system requires the main UI thread"); return 0; }
     if (!SDL_SetHintWithPriority(SDL_HINT_QUIT_ON_LAST_WINDOW_CLOSE, "0", SDL_HINT_OVERRIDE)) {
         SDL_Log("Cannot select host-managed window lifetime: %s", SDL_GetError());
         return 0;
@@ -141,6 +162,83 @@ static int ensure_video(void)
         return 0;
     }
     return 1;
+}
+
+#if defined(__linux__)
+static void capability_global(void *data, struct wl_registry *registry, uint32_t name,
+                              const char *interface, uint32_t version)
+{
+    (void)registry; (void)name; (void)version;
+    if (!strcmp(interface, "xdg_wm_dialog_v1")) *(int *)data = 1;
+}
+static void capability_remove(void *data, struct wl_registry *registry, uint32_t name)
+{ (void)data; (void)registry; (void)name; }
+#endif
+
+unsigned pu_window_capabilities(void)
+{
+    if (!ensure_video()) return 0;
+    const char *driver = SDL_GetCurrentVideoDriver();
+    unsigned caps = 0;
+    if (!strcmp(driver, "wayland")) {
+        caps = PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_LIMITS;
+#if defined(__linux__)
+        struct wl_display *display = SDL_GetPointerProperty(SDL_GetGlobalProperties(),
+            SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
+        int modal = 0;
+        struct wl_event_queue *queue = display ? wl_display_create_queue(display) : NULL;
+        struct wl_proxy *wrapper = queue ? wl_proxy_create_wrapper(display) : NULL;
+        if (!wrapper) { if (queue) wl_event_queue_destroy(queue); SDL_Log("Cannot query native window capabilities"); return 0; }
+        wl_proxy_set_queue(wrapper, queue);
+        struct wl_registry *registry = wl_display_get_registry((struct wl_display *)wrapper);
+        wl_proxy_wrapper_destroy(wrapper);
+        static const struct wl_registry_listener listener = { capability_global, capability_remove };
+        int ok = registry && !wl_registry_add_listener(registry, &listener, &modal) &&
+            wl_display_roundtrip_queue(display, queue) >= 0;
+        if (registry) wl_registry_destroy(registry);
+        wl_event_queue_destroy(queue);
+        if (!ok) { SDL_Log("Cannot query Wayland modal support"); return 0; }
+        if (modal) caps |= PU_WINDOW_MODAL;
+#endif
+    } else if (!strcmp(driver, "windows") || !strcmp(driver, "cocoa") || !strcmp(driver, "x11")) {
+        caps = PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_MODAL | PU_WINDOW_LIMITS;
+    }
+    return caps;
+}
+
+int pu_window_get_state(PuWindow *w, PuWindowState *state)
+{
+    if (!w || !w->running || !state) { SDL_Log("Window state requires a live window"); return 0; }
+    memset(state, 0, sizeof(*state));
+    if (!SDL_GetWindowSize(w->win, &state->width, &state->height) ||
+        !SDL_GetWindowSizeInPixels(w->win, &state->pixel_width, &state->pixel_height)) {
+        SDL_Log("Cannot query native window size: %s", SDL_GetError()); return 0;
+    }
+    state->scale = SDL_GetWindowPixelDensity(w->win);
+    SDL_WindowFlags flags = SDL_GetWindowFlags(w->win);
+    state->minimized = (flags & SDL_WINDOW_MINIMIZED) != 0;
+    state->maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    state->active = w->active;
+    return state->scale > 0;
+}
+
+void pu_window_set_state(PuWindow *w, PuWindowStateFn fn, void *user)
+{ if (w) { w->state_fn = fn; w->state_user = user; w->state_reported = 0; } }
+
+static void notify_state(void)
+{
+    size_t count;
+    PuWindow **windows = borrow_window_snapshot(&count);
+    for (size_t i = 0; i < count; i++) {
+        PuWindow *w = windows[i];
+        PuWindowState state;
+        if (w->running && w->state_fn && pu_window_get_state(w, &state) &&
+            (!w->state_reported || memcmp(&state, &w->reported_state, sizeof(state)))) {
+            w->reported_state = state; w->state_reported = 1;
+            w->state_fn(&state, w->state_user);
+        }
+    }
+    release_window_snapshot(windows, count);
 }
 
 int pu_window_system_init(void)
@@ -514,7 +612,45 @@ static int create_native(PuWindow *w, const PuWindowConfig *config,
         return 0;
 #endif
     } else {
-        w->win = SDL_CreateWindow(title, width, height, flags);
+        if (config->popup) {
+            flags &= ~SDL_WINDOW_RESIZABLE;
+            flags |= config->popup == PU_POPUP_MENU ? SDL_WINDOW_POPUP_MENU : SDL_WINDOW_TOOLTIP;
+            SDL_PropertiesID props = SDL_CreateProperties();
+            bool ok = props &&
+                SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_X_NUMBER, config->popup_x) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, config->popup_y) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags) &&
+                SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_PARENT_POINTER, config->parent->win);
+            if (ok) w->win = SDL_CreateWindowWithProperties(props);
+            if (props) SDL_DestroyProperties(props);
+        } else {
+            SDL_PropertiesID props = SDL_CreateProperties();
+            bool ok = props &&
+                SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height) &&
+                SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags | SDL_WINDOW_HIDDEN);
+            if (config->parent)
+                ok = ok && SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_PARENT_POINTER, config->parent->win);
+            if (ok) w->win = SDL_CreateWindowWithProperties(props);
+            if (props) SDL_DestroyProperties(props);
+            if (w->win && config->modal && !SDL_SetWindowModal(w->win, true)) {
+                fail_window(w, "Native modal relationship"); return 0;
+            }
+            const PuWindowLimits *s = &config->limits;
+            if (w->win && ((s->min_width || s->min_height) &&
+                !SDL_SetWindowMinimumSize(w->win, s->min_width, s->min_height))) {
+                fail_window(w, "Native minimum size"); return 0;
+            }
+            if (w->win && ((s->max_width || s->max_height) &&
+                !SDL_SetWindowMaximumSize(w->win, s->max_width, s->max_height))) {
+                fail_window(w, "Native maximum size"); return 0;
+            }
+            if (w->win && !SDL_ShowWindow(w->win)) { fail_window(w, "Show native window"); return 0; }
+        }
         if (!w->win) {
             if (!(flags & SDL_WINDOW_OPENGL)) fail_window(w, "SDL_CreateWindow");
             return 0;
@@ -556,6 +692,20 @@ static int create_gl(PuWindow *w, const PuWindowConfig *config, const char *titl
 
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
+    if (!SDL_IsMainThread()) { SDL_Log("Native creation requires the main UI thread"); return NULL; }
+    if (!pu_window_config_valid(cfg)) { SDL_Log("Invalid native window contract"); return NULL; }
+    if (cfg->parent) {
+        PuWindow *parent = g_windows;
+        while (parent && parent != cfg->parent) parent = parent->next;
+        if (!parent || !parent->running || parent->service ||
+            (parent->closing && !parent->request_active) || (!cfg->popup && parent->popup)) {
+            SDL_Log("Parent must be a live compatible window in this Host"); return NULL;
+        }
+    }
+    unsigned required = pu_window_required_capabilities(cfg);
+    if (required && (pu_window_capabilities() & required) != required) {
+        SDL_Log("Requested native window feature is unavailable on this driver/compositor"); return NULL;
+    }
     if (cfg && cfg->layer) {
         const PuLayerConfig *layer = cfg->layer;
         if (cfg->width < 0 || cfg->height < 0 || layer->layer < 0 || layer->layer > 3 ||
@@ -578,12 +728,18 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof *w);
     if (!w) { SDL_Log("Cannot allocate SDL window state"); shutdown_video(); return NULL; }
+    w->borrows = 1;
     w->running = 1;
     w->dirty   = 1;
     w->scale   = 1.0f;
+    w->parent = cfg->parent; w->popup = cfg->popup; w->modal = cfg->modal;
+    if (w->parent) w->parent->children++;
+    w->service = cfg->layer != NULL || cfg->input_popup || cfg->lock_output;
 
     int cw = (cfg && cfg->width  > 0) ? cfg->width  : 960;
     int ch = (cfg && cfg->height > 0) ? cfg->height : 640;
+    cw = pu_window_clamp(cw, cfg->limits.min_width, cfg->limits.max_width);
+    ch = pu_window_clamp(ch, cfg->limits.min_height, cfg->limits.max_height);
     const char *title = (cfg && cfg->title) ? cfg->title : "PollyUI";
 
     SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
@@ -593,7 +749,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 #if defined(__linux__)
     if (strcmp(renderer, "raster") != 0 && !create_gl(w, cfg, title, cw, ch, flags)) {
         SDL_Log("GLES initialization failed: %s", SDL_GetError());
-        if (strcmp(renderer, "gl") == 0 || w->exit_code) { pu_window_destroy(w); return NULL; }
+        if (strcmp(renderer, "gl") == 0 || w->exit_code) { discard_window_creation(w); return NULL; }
 #if defined(PU_LAYER_SHELL)
         pu_layer_unmap(w->layer_surface);
 #endif
@@ -608,11 +764,11 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     }
 #endif
     if (!w->win) {
-        if (!create_native(w, cfg, title, cw, ch, flags)) { pu_window_destroy(w); return NULL; }
+        if (!create_native(w, cfg, title, cw, ch, flags)) { discard_window_creation(w); return NULL; }
     }
 
     recompute_scale(w);
-    if (!w->surface && !create_surface(w)) { pu_window_destroy(w); return NULL; }
+    if (!w->surface && !create_surface(w)) { discard_window_creation(w); return NULL; }
 #if defined(__APPLE__)
     pu_macos_tune_live_resize(SDL_GetPointerProperty(SDL_GetWindowProperties(w->win),
                               SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL));
@@ -621,6 +777,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     g_windows = w;
     w->registered = 1;
     w->active = (SDL_GetWindowFlags(w->win) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    w->borrows--;
     return w;
 }
 
@@ -628,9 +785,11 @@ void pu_window_set_paint  (PuWindow *w, PuPaintFn   fn, void *u){ if(w){w->paint
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *u){ if(w){w->pointer_fn=fn; w->pointer_user=u;} }
 int pu_window_capture_mouse(PuWindow *w, int enabled)
 {
+    if (w && !enabled && w->native_retired && !w->win && !w->mouse_capture) return 1;
     if (!w || !w->win || (enabled && !w->running)) {
         SDL_Log("Mouse capture requires a live window"); return 0;
     }
+    if (enabled && w->popup) { SDL_Log("Explicit native popup capture is unsupported"); return 0; }
     if (enabled && g_mouse_capture && g_mouse_capture != w) {
         SDL_Log("Mouse capture requires exclusive window ownership"); return 0;
     }
@@ -772,16 +931,22 @@ void pu_window_set_titlebar_style(PuWindow *w, int style)
 #endif
 }
 
-void pu_window_minimize(PuWindow *w) { if (w) SDL_MinimizeWindow(w->win); }
+void pu_window_minimize(PuWindow *w)
+{
+    if (!w) return;
+    if (w->popup || w->service) { SDL_Log("Minimize requires an ordinary window"); return; }
+    if (!SDL_MinimizeWindow(w->win)) SDL_Log("Native minimize failed: %s", SDL_GetError());
+}
 void pu_window_maximize_toggle(PuWindow *w)
 {
     if (!w) return;
-    if (SDL_GetWindowFlags(w->win) & SDL_WINDOW_MAXIMIZED) SDL_RestoreWindow(w->win);
-    else SDL_MaximizeWindow(w->win);
+    if (w->popup || w->service) { SDL_Log("Maximize requires an ordinary window"); return; }
+    bool ok = SDL_GetWindowFlags(w->win) & SDL_WINDOW_MAXIMIZED ?
+        SDL_RestoreWindow(w->win) : SDL_MaximizeWindow(w->win);
+    if (!ok) SDL_Log("Native maximize/restore failed: %s", SDL_GetError());
 }
 int  pu_window_is_maximized(PuWindow *w)
 { return (w && (SDL_GetWindowFlags(w->win) & SDL_WINDOW_MAXIMIZED)) ? 1 : 0; }
-void pu_window_close(PuWindow *w) { if (w) w->running = 0; }
 
 void pu_window_wake(PuWindow *w)
 {
@@ -907,8 +1072,7 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             break;
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-            if (!w->close_request_fn || w->close_request_fn(w, w->close_request_user))
-                w->running = 0;
+            pu_window_request_close(w);
             break;
 
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -1083,9 +1247,11 @@ static bool SDLCALL pu_resize_watch(void *userdata, SDL_Event *e)
               e->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
               e->type == SDL_EVENT_WINDOW_EXPOSED) &&
         e->window.windowID == SDL_GetWindowID(w->win)) {
+        w->borrows++;
         pu_sync_size(w);
         pu_sdl_paint(w, NULL);     /* repaint live during the OS resize loop */
         w->dirty = 0;
+        release_close_borrow(w);
     }
     return true;             /* keep delivering the event to the main loop */
 }
@@ -1099,16 +1265,18 @@ int pu_window_run(PuWindow *w)
 static void route_event(const SDL_Event *e)
 {
     if (e->type == SDL_EVENT_QUIT) {
-        pu_window_keep_alive(0);
-        for (PuWindow *w = g_windows; w; w = w->next)
-            if (w->running && (!w->close_request_fn || w->close_request_fn(w, w->close_request_user)))
-                pu_window_close(w);
+        if (coordinate_close_all(1)) pu_window_keep_alive(0);
         return;
     }
     SDL_Window *target = SDL_GetWindowFromEvent(e);
     if (!target) return;
     for (PuWindow *w = g_windows; w; w = w->next) {
-        if (w->running && w->win == target) { handle_event(w, e); return; }
+        if (w->running && w->win == target) {
+            w->borrows++;
+            handle_event(w, e);
+            release_close_borrow(w);
+            return;
+        }
     }
 }
 
@@ -1177,14 +1345,16 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
         }
         /* Closing callbacks may remove themselves or create replacement windows. */
         for (;;) {
+            progress_pending_closes();
             PuWindow *closed = g_windows;
-            while (closed && (closed->running || closed->close_notified)) closed = closed->next;
+            while (closed && (closed->running || closed->close_notified || closed->children || closed->borrows)) closed = closed->next;
             if (!closed) break;
             if (closed->exit_code) result = closed->exit_code;
             closed->close_notified = 1;
-            if (closed->text_started) SDL_StopTextInput(closed->win);
-            SDL_HideWindow(closed->win);
-            if (closed->close_fn) closed->close_fn(closed, closed->close_user);
+            closed->borrows++;
+            retire_native(closed);
+            if (closed->close_fn && !closed->destroy_requested) closed->close_fn(closed, closed->close_user);
+            release_close_borrow(closed);
         }
         PuWindow *live = g_windows;
         while (live && !live->running) live = live->next;
@@ -1196,10 +1366,15 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
         }
         if (frame && frame(user) > 0)
             for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
-        for (PuWindow *w = g_windows; w; w = w->next) {
+        notify_state();
+        size_t count;
+        PuWindow **windows = borrow_window_snapshot(&count);
+        for (size_t i = 0; i < count; i++) {
+            PuWindow *w = windows[i];
             if (w->running && w->async_fn && w->async_fn(w->async_user) > 0) w->dirty = 1;
             if (w->dirty && w->running) { pu_sdl_paint(w, NULL); w->dirty = 0; }
         }
+        release_window_snapshot(windows, count);
     }
 
 #if !defined(__linux__)
@@ -1210,37 +1385,68 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
     return result;
 }
 
+static void retire_native(PuWindow *w)
+{
+    if (w->native_retired) return;
+    w->native_retired = 1;
+    if (w->mouse_capture && !pu_window_capture_mouse(w, 0)) {
+        SDL_Log("Cannot release mouse capture during native retirement");
+        g_mouse_capture = NULL;
+    }
+    if (w->cursor && SDL_GetCursor() == w->cursor &&
+        !SDL_SetCursor(SDL_GetDefaultCursor())) SDL_Log("Cannot restore default cursor: %s", SDL_GetError());
+    PuWindow *parent = w->parent;
+    w->parent = NULL;
+#if defined(PU_LAYER_SHELL)
+    pu_layer_unmap(w->layer_surface);
+#endif
+    if (w->gl_context) SDL_GL_MakeCurrent(w->win, w->gl_context);
+    if (w->surface) pu_surface_destroy(w->surface);
+    if (w->gl_context) SDL_GL_DestroyContext(w->gl_context);
+    if (w->tex) SDL_DestroyTexture(w->tex);
+    if (w->renderer) SDL_DestroyRenderer(w->renderer);
+#if defined(PU_METAL_BACKEND)
+    if (w->metal_view) SDL_Metal_DestroyView(w->metal_view);
+    w->metal_view = NULL;
+#endif
+    if (w->win) SDL_DestroyWindow(w->win);
+#if defined(PU_LAYER_SHELL)
+    pu_layer_destroy(w->layer_surface);
+    w->layer_surface = NULL;
+#endif
+    w->win = NULL; w->surface = NULL; w->gl_context = NULL; w->tex = NULL; w->renderer = NULL;
+    w->mouse_capture = w->implicit_capture = 0;
+    clear_drop(w);
+    for (int i = 0; i < PU_CURSOR_COUNT; i++) { SDL_DestroyCursor(w->cursors[i]); w->cursors[i] = NULL; }
+    w->cursor = NULL;
+    if (parent && !--parent->children && parent->destroy_requested && !parent->borrows)
+        pu_window_destroy(parent);
+}
+
 void pu_window_destroy(PuWindow *w)
 {
-    if (!w) return;
+    if (!w || w->destroying) return;
+    w->destroying = 1;
+    w->destroy_requested = 1;
+    w->running = 0;
+    w->close_notified = 1;
+    w->paint_fn = NULL; w->key_fn = NULL; w->wheel_fn = NULL;
+    w->async_fn = NULL; w->region_fn = NULL; w->state_fn = NULL;
+    w->close_fn = NULL; w->close_request_fn = NULL; w->drop_fn = NULL;
+    w->pointer_fn = NULL; w->activation_fn = NULL;
     if (w->mouse_capture && !pu_window_capture_mouse(w, 0)) {
         SDL_Log("Cannot release mouse capture during window teardown");
         g_mouse_capture = NULL;
     }
     if (w->cursor && SDL_GetCursor() == w->cursor &&
         !SDL_SetCursor(SDL_GetDefaultCursor())) SDL_Log("Cannot restore default cursor: %s", SDL_GetError());
+    if (w->children || w->borrows) { w->destroying = 0; return; }
+    retire_native(w);
     if (w->registered) {
         PuWindow **link = &g_windows;
         while (*link && *link != w) link = &(*link)->next;
         if (*link) *link = w->next;
     }
-#if defined(PU_LAYER_SHELL)
-    pu_layer_unmap(w->layer_surface);
-#endif
-    if (w->gl_context) SDL_GL_MakeCurrent(w->win, w->gl_context);
-    if (w->surface)  pu_surface_destroy(w->surface);
-    if (w->gl_context) SDL_GL_DestroyContext(w->gl_context);
-    if (w->tex)      SDL_DestroyTexture(w->tex);
-    if (w->renderer) SDL_DestroyRenderer(w->renderer);
-#if defined(PU_METAL_BACKEND)
-    if (w->metal_view) SDL_Metal_DestroyView(w->metal_view);
-#endif
-    if (w->win)      SDL_DestroyWindow(w->win);
-#if defined(PU_LAYER_SHELL)
-    pu_layer_destroy(w->layer_surface);
-#endif
-    clear_drop(w);
-    for (int i = 0; i < PU_CURSOR_COUNT; i++) SDL_DestroyCursor(w->cursors[i]);
     free(w);
     shutdown_video();
 }

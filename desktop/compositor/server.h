@@ -57,6 +57,8 @@ struct PuDesktopView {
     struct wl_listener move, resize, maximize, request_fullscreen;
     struct wl_listener minimize, title, app_id, parent;
     struct wl_listener foreign_activate, foreign_minimize, foreign_maximize, foreign_fullscreen, foreign_close;
+    struct wlr_xdg_dialog_v1 *dialog;
+    struct wl_listener dialog_modal, dialog_destroy;
 };
 
 enum PuDesktopGrab {
@@ -82,6 +84,7 @@ struct PuDesktop {
     bool session_exit_pending, session_exit_sealed;
     bool require_session_exit;
     struct wlr_xdg_shell *shell;
+    struct wlr_xdg_wm_dialog_v1 *dialogs;
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct PuDecorations *decorations;
@@ -120,6 +123,7 @@ struct PuDesktop {
     bool shell_exited;
     struct wl_listener new_output, new_input, new_toplevel, new_popup;
     struct wl_listener new_layer;
+    struct wl_listener new_dialog;
     struct wl_listener motion, motion_absolute, button, axis, frame;
     struct wl_listener request_selection;
     struct wl_listener layout_change;

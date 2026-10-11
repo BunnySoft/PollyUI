@@ -71,6 +71,71 @@ void pu_window_destroy    (PuWindow *);
 `app_paint` / `app_pointer` / `app_key` / `app_wheel` / `app_async`. A new
 backend is a drop-in `.c` implementing the same symbols.
 
+### Native window contract
+
+The complete public types are in `pollyui/window.h` (the introductory seam
+above is abbreviated). `PuWindowConfig` adds `parent`, `popup` (`PU_POPUP_NONE`,
+`PU_POPUP_MENU`, `PU_POPUP_TOOLTIP`), `popup_x`/`popup_y`, `modal` and
+`PuWindowLimits limits`. Initialize the struct to zero before filling it.
+Creation borrows the config but retains the native owner relationship.
+Every window/owner operation except `pu_window_wake` belongs to the UI thread.
+Parent pointers are checked against the Host's live registry before dereference.
+Dedicated layer, input-method and lock roles cannot mix with ordinary ownership,
+popup, modal or size limits.
+
+`pu_window_close` is explicit for the addressed window; it coordinates
+descendants through their request hooks. `pu_window_request_close` additionally
+consults the addressed window's own hook, after descendants actually retire.
+They return `PU_CLOSE_DECLINED`, `PU_CLOSE_ACCEPTED` or `PU_CLOSE_PENDING`;
+pending is not acceptance and does not report the owner closed. Declined
+attempts are not retried automatically. Native close notifications precede
+parent closure and are once-only. `pu_window_close_all` is the existing explicit
+forced-quit path and bypasses hooks. `pu_window_destroy` relinquishes the caller's
+window ownership; native resources stay pinned while descendants or callbacks
+still reference them. A callback may destroy another window safely; live
+registries and callback iteration use bounded ownership snapshots.
+
+`pu_window_capabilities`, `pu_window_get_state` and `pu_window_set_state` expose
+driver/compositor capabilities and actual client geometry/state. State callbacks
+are deferred to a loop boundary and may close/create windows. Native size
+changes still drive rendering and the document viewport; notifications never
+replace the native resize path. `width`/`height`, limits and popup offsets are
+logical client units; buffer sizes are physical pixels. Win32 adds the actual
+DPI-dependent nonclient frame when computing `WM_GETMINMAXINFO`; SDL passes
+logical min/max sizes to the native backend. PollyWM applies xdg constraints
+to interactive resize and maximize, not fullscreen.
+
+Wayland modality requires the standard `xdg_wm_dialog_v1` registry global.
+Querying it uses SDL's public display property and a private Wayland event queue,
+without reading SDL internals or changing its listeners. PollyWM implements
+same-client, owner-only modality via wlroots' public dialog objects.
+The current SDL public popup constructor/properties create a real `xdg_popup`
+but do not request `xdg_popup.grab`; explicit grabs are unsupported. Popup
+dismissal is a terminal native notification, not a vetoable save request.
+
+Focused fixtures build with `PU_BUILD_LAUNCHER=OFF`:
+
+```powershell
+cmake --build --preset win-clang --target pollyui-native-window-test pollyui-native-lifetime-test pollyui-close-tree-test pollyui-playground
+ctest --test-dir build\win-clang -R "gui-(win32-window-contract|win32-close-tree|native-window-lifetime|window-contract)" --output-on-failure
+```
+
+For a Linux SDL build configured with `PU_BUILD_DESKTOP=ON`, build
+`pollywm-window-contract-test`, `pollyui-playground`, `pollyui-native-lifetime-test`
+and `pollyui-close-tree-test`, then run
+`ctest --test-dir <build> -R gui-wayland-window-contract --output-on-failure`.
+The bounded fixture uses a real private headless Wayland compositor, an ordinary
+GUI client, native seat input and decoration resize/maximize, mapped popup/parent
+roles, modal close veto, compositor dismissal, and 1.5x logical/buffer geometry.
+Additional bounded cases cover missing-modal feature errors, retained native
+owner resources, multi-level close coordination, native close requests,
+GC-dropped handles, reentrant save/new-child creation, captured input cancellation
+and the separate forced-quit path. ASan/UBSan can instrument these targets with
+compiler/linker flags; prebuilt Skia/SDL/wlroots libraries remain uninstrumented.
+It leaves a constraints PNG in `<build>/native-window-evidence`; it does not
+use a VM, a synthetic DOM close/resize controller, or production trusted roles.
+Headless qualification is not a physical-GPU or macOS execution claim.
+
 ### Interface extensions needed for mobile/touch
 
 The current contract is desktop-shaped. Mobile needs three additive extensions

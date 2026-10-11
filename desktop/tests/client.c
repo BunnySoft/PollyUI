@@ -1182,6 +1182,11 @@ int main(int argc, char **argv)
             wl_surface_commit(window->surface);
             break;
         }
+        case TEST_UNCONSTRAINED:
+            xdg_toplevel_set_min_size(window->toplevel, 0, 0);
+            xdg_toplevel_set_max_size(window->toplevel, 0, 0);
+            wl_surface_commit(window->surface);
+            break;
         case TEST_DESTROY:
             if (request.id == 4) { destroy_window(&client.extra); break; }
             destroy_window(&client.extra);

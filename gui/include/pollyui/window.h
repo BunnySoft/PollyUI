@@ -10,6 +10,26 @@ typedef struct PuSurface PuSurface;
 
 typedef struct PuWindow PuWindow;
 
+typedef enum PuPopup {
+    PU_POPUP_NONE, PU_POPUP_MENU, PU_POPUP_TOOLTIP
+} PuPopup;
+
+typedef struct PuWindowLimits {
+    int min_width, min_height, max_width, max_height; /* Logical client pixels; zero = unset. */
+} PuWindowLimits;
+
+typedef struct PuWindowState {
+    int width, height;           /* Actual logical client size, not the creation request. */
+    int pixel_width, pixel_height;
+    float scale;
+    int minimized, maximized, active;
+} PuWindowState;
+
+enum PuWindowCapability {
+    PU_WINDOW_OWNED = 1, PU_WINDOW_POPUP = 2, PU_WINDOW_MODAL = 4,
+    PU_WINDOW_LIMITS = 8
+};
+
 typedef struct PuLayerConfig {
     int layer;                  /* background=0, bottom=1, top=2, overlay=3 */
     unsigned anchors;           /* top=1, bottom=2, left=4, right=8 */
@@ -29,12 +49,24 @@ typedef struct PuDisplayInfo {
 
 typedef struct PuWindowConfig {
     const char *title;   /* UTF-8; NULL -> "PollyUI" */
-    int         width;   /* client-area width  in pixels */
-    int         height;  /* client-area height in pixels */
+    int         width;   /* requested client-area width in logical pixels */
+    int         height;  /* requested client-area height in logical pixels */
     const PuLayerConfig *layer; /* Linux Wayland only; borrowed during creation */
     int input_popup; /* Dedicated trusted Wayland input-method surface. */
     uint32_t lock_output; /* Dedicated session-lock role on this output, or zero. */
+    PuWindow *parent;     /* Live ordinary window in this Host; immutable after creation. */
+    PuPopup popup;        /* Native popup, never a layer/input-method surface. */
+    int popup_x, popup_y;  /* Logical client coordinates relative to parent. */
+    int modal;            /* Ordinary owned window; blocks native input to parent. */
+    PuWindowLimits limits;
 } PuWindowConfig;
+
+/* Capabilities of the current native driver/compositor; no explicit popup grab. */
+unsigned pu_window_capabilities(void);
+int pu_window_get_state(PuWindow *w, PuWindowState *state);
+typedef void (*PuWindowStateFn)(const PuWindowState *state, void *user);
+/* Delivered at a safe event-loop boundary, initially and whenever actual state changes. */
+void pu_window_set_state(PuWindow *w, PuWindowStateFn fn, void *user);
 
 int pu_window_system_init(void);
 void pu_window_keep_alive(int enabled); /* SDL service loop without visible windows. */
@@ -124,7 +156,17 @@ void pu_window_set_titlebar_style(PuWindow *w, int style);
 void pu_window_minimize(PuWindow *w);
 void pu_window_maximize_toggle(PuWindow *w);
 int  pu_window_is_maximized(PuWindow *w);
-void pu_window_close(PuWindow *w);
+typedef enum PuCloseResult {
+    PU_CLOSE_DECLINED, PU_CLOSE_ACCEPTED, PU_CLOSE_PENDING
+} PuCloseResult;
+/* Explicit close bypasses this window's hook. Owned descendants are requested
+ * leaf-first; PENDING keeps the owner open until native child retirement. */
+int pu_window_close(PuWindow *w);
+/* Native/external close also consults this window's request hook. */
+int pu_window_request_close(PuWindow *w);
+/* Explicit application quit is the existing forced path: no request hooks.
+ * Native resources still retire leaf-first, never via implicit owner destruction. */
+int pu_window_close_all(void);
 
 /* Wake the window (thread-safe) so it drains async deliveries promptly. Used as
  * the dispatcher's waker from worker threads. NULL wakes the shared loop. */
@@ -136,7 +178,8 @@ int pu_window_run(PuWindow *w);
  * of window count, and may create or request closing windows. */
 int pu_window_run_all(PuAsyncFn frame, void *user);
 
-/* Destroy the window and free its resources. Safe to call with NULL. */
+/* Destroy the window. Native resources are retained until children and in-flight
+ * callbacks release them. Safe to call with NULL; do not reuse destroyed pointers. */
 void pu_window_destroy(PuWindow *w);
 
 #endif /* POLLYUI_HOST_WINDOW_H */

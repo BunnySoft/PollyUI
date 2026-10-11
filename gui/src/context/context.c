@@ -1,5 +1,6 @@
 #include "pollyui/context.h"
 #include "pollyui/window.h"
+#include "host/window_contract.h"
 #include "script/script.h"
 #include "bridge/bridge.h"
 #include "host/clipboard.h"
@@ -56,7 +57,7 @@ typedef struct PuApp {
     PuWindow *window;
     JSValue handle;
     uint64_t paint_version;
-    int closed, frameless, backdrop, titlebar, is_layer, transparent;
+    int closed, frameless, backdrop, titlebar, is_layer, transparent, is_popup;
 } PuApp;
 
 static PuApp *g_apps;
@@ -64,6 +65,7 @@ static PuScript *g_app_script;
 static PuBridge *g_app_bridge;
 static JSClassID g_window_class;
 static int g_app_quitting, g_app_error;
+static int g_app_terminating;
 static int g_redact_errors;
 static const PuGuiConfig *g_config;
 static void app_redraw_all(void)
@@ -202,7 +204,7 @@ static int app_async(void *user)
         if (work < 0) {
             g_app_error = g_app_quitting = 1;
             pu_window_keep_alive(0);
-            for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+            pu_window_close_all();
         }
     }
     pu_script_flush_raf(script, pu_frame_ms());
@@ -210,7 +212,7 @@ static int app_async(void *user)
     if (pu_script_failed(script) || (g_redact_errors && g_app_error)) {
         g_app_error = g_app_quitting = 1;
         pu_window_keep_alive(0);
-        for (PuApp *app = g_apps; app; app = app->next) pu_window_close(app->window);
+        pu_window_close_all();
     }
     for (PuApp *app = g_apps; app; app = app->next)
         if (app->paint_version != pu_node_paint_version(pu_bridge_body(app->bridge)))
@@ -239,6 +241,10 @@ static int app_region(int x, int y, void *user)
 static PuApp *window_app(JSContext *ctx, JSValueConst value, int allow_closed)
 {
     PuApp *app = JS_GetOpaque2(ctx, value, g_window_class);
+    if (app && (app->script != g_app_script || pu_script_jsctx(app->script) != ctx)) {
+        JS_ThrowTypeError(ctx, "Window belongs to another JavaScript realm");
+        return NULL;
+    }
     if (app && !allow_closed && (app->closed || (app->window && !pu_window_is_open(app->window)))) {
         JS_ThrowTypeError(ctx, "Window is closed");
         return NULL;
@@ -277,6 +283,39 @@ static int app_activation(int active, void *user)
     JS_FreeValue(ctx, callback);
     pu_script_pump(app->script);
     return 1;
+}
+
+static JSValue window_state_value(JSContext *ctx, const PuWindowState *state)
+{
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) return result;
+    JS_SetPropertyStr(ctx, result, "width", JS_NewInt32(ctx, state->width));
+    JS_SetPropertyStr(ctx, result, "height", JS_NewInt32(ctx, state->height));
+    JS_SetPropertyStr(ctx, result, "pixelWidth", JS_NewInt32(ctx, state->pixel_width));
+    JS_SetPropertyStr(ctx, result, "pixelHeight", JS_NewInt32(ctx, state->pixel_height));
+    JS_SetPropertyStr(ctx, result, "scale", JS_NewFloat64(ctx, state->scale));
+    JS_SetPropertyStr(ctx, result, "minimized", JS_NewBool(ctx, state->minimized));
+    JS_SetPropertyStr(ctx, result, "maximized", JS_NewBool(ctx, state->maximized));
+    JS_SetPropertyStr(ctx, result, "active", JS_NewBool(ctx, state->active));
+    return result;
+}
+
+static void app_state(const PuWindowState *state, void *user)
+{
+    PuApp *app = user;
+    JSContext *ctx = pu_script_jsctx(app->script);
+    JSValue callback = JS_GetPropertyStr(ctx, app->handle, "onstatechange");
+    if (JS_IsException(callback)) app_report(ctx);
+    else if (JS_IsFunction(ctx, callback)) {
+        JSValue argument = window_state_value(ctx, state);
+        JSValue result = JS_IsException(argument) ? JS_EXCEPTION :
+            JS_Call(ctx, callback, app->handle, 1, &argument);
+        if (JS_IsException(result)) app_report(ctx);
+        JS_FreeValue(ctx, result); JS_FreeValue(ctx, argument);
+    } else if (!JS_IsNull(callback) && !JS_IsUndefined(callback)) {
+        JS_ThrowTypeError(ctx, "onstatechange must be a function or null"); app_report(ctx);
+    }
+    JS_FreeValue(ctx, callback);
 }
 
 static void app_retire(PuApp *app, int notify)
@@ -374,6 +413,7 @@ static PuApp *new_app(PuBridge *bridge)
         JS_SetPropertyStr(ctx, app->handle, "onclose", JS_NULL) < 0 ||
         JS_SetPropertyStr(ctx, app->handle, "oncloserequest", JS_NULL) < 0 ||
         JS_SetPropertyStr(ctx, app->handle, "onactivate", JS_NULL) < 0 ||
+        JS_SetPropertyStr(ctx, app->handle, "onstatechange", JS_NULL) < 0 ||
         JS_SetPropertyStr(ctx, app->handle, "ondeactivate", JS_NULL) < 0) {
         JS_SetOpaque(app->handle, NULL);
         JS_FreeValue(ctx, app->handle);
@@ -393,12 +433,18 @@ static int app_text_input(const PuTextInputState *state, int reset, void *user)
 static int open_app(PuApp *app, const PuWindowConfig *config)
 {
     app->is_layer = config->layer != NULL || config->input_popup || config->lock_output;
+    app->is_popup = config->popup != PU_POPUP_NONE;
     app->transparent = config->layer && config->layer->transparent;
     app->window = pu_window_create(config);
     if (!app->window) return 0;
+    if (g_app_quitting || app->closed) {
+        fprintf(stderr, "Application closed this window during native creation\n");
+        return 0;
+    }
     pu_window_set_paint(app->window, app_paint, app);
     pu_window_set_pointer(app->window, app_pointer, app);
     pu_window_set_activation(app->window, app_activation, app);
+    pu_window_set_state(app->window, app_state, app);
     pu_bridge_set_mouse_capture_callback(app->bridge, app_mouse_capture, app);
     pu_window_set_key(app->window, app_key, app);
 #if defined(PU_CLIPBOARD_SDL)
@@ -543,13 +589,72 @@ static int layer_options(JSContext *ctx, JSValueConst options, PuLayerConfig *la
     return 1;
 }
 
+static int native_options(JSContext *ctx, JSValueConst options, PuWindowConfig *config, JSValue *parent)
+{
+    *parent = JS_GetPropertyStr(ctx, options, "parent");
+    if (JS_IsException(*parent)) return 0;
+    if (!JS_IsUndefined(*parent)) {
+        PuApp *owner = window_app(ctx, *parent, 0);
+        if (!owner) return 0;
+        if (owner->script != g_app_script || pu_script_jsctx(owner->script) != ctx ||
+            owner->is_layer || !owner->window) {
+            JS_ThrowTypeError(ctx, "parent must be a live ordinary window in this realm"); return 0;
+        }
+        config->parent = owner->window;
+    }
+    JSValue value = JS_GetPropertyStr(ctx, options, "popup");
+    if (JS_IsException(value)) return 0;
+    if (!JS_IsUndefined(value)) {
+        const char *const roles[] = { "menu", "tooltip", NULL };
+        int role = choice(ctx, value, "popup", roles);
+        if (role < 0) { JS_FreeValue(ctx, value); return 0; }
+        config->popup = (PuPopup)(role + 1);
+    }
+    JS_FreeValue(ctx, value);
+    const char *const booleans[] = { "modal", "popupGrab" };
+    for (int i = 0; i < 2; i++) {
+        value = JS_GetPropertyStr(ctx, options, booleans[i]);
+        if (JS_IsException(value)) return 0;
+        if (!JS_IsUndefined(value) && !JS_IsBool(value)) {
+            JS_FreeValue(ctx, value); JS_ThrowTypeError(ctx, "%s must be a boolean", booleans[i]); return 0;
+        }
+        int enabled = JS_IsBool(value) && JS_ToBool(ctx, value);
+        JS_FreeValue(ctx, value);
+        if (i == 0) config->modal = enabled;
+        else if (enabled) {
+            JS_ThrowTypeError(ctx, "Explicit native popup grabs are unsupported by this Host API"); return 0;
+        }
+    }
+    if (!window_integer(ctx, options, "popupX", INT_MIN, &config->popup_x) ||
+        !window_integer(ctx, options, "popupY", INT_MIN, &config->popup_y) ||
+        !window_integer(ctx, options, "minWidth", 0, &config->limits.min_width) ||
+        !window_integer(ctx, options, "minHeight", 0, &config->limits.min_height) ||
+        !window_integer(ctx, options, "maxWidth", 0, &config->limits.max_width) ||
+        !window_integer(ctx, options, "maxHeight", 0, &config->limits.max_height)) return 0;
+    if (!pu_window_config_valid(config)) {
+        JS_ThrowTypeError(ctx, "Invalid parent, popup, modal or size-constraint combination"); return 0;
+    }
+    if (!config->popup && !JS_IsUndefined(*parent)) {
+        PuApp *owner = window_app(ctx, *parent, 0);
+        if (!owner) return 0;
+        if (owner->is_popup) { JS_ThrowTypeError(ctx, "A popup cannot own an ordinary window"); return 0; }
+    }
+    unsigned required = pu_window_required_capabilities(config);
+    if (required && (pu_window_capabilities() & required) != required) {
+        JS_ThrowInternalError(ctx, "Requested ownership, popup, modal or size-constraint feature is unsupported by this driver/compositor");
+        return 0;
+    }
+    return 1;
+}
+
 static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     if (!window_app(ctx, self, 1)) return JS_EXCEPTION;
-    if (g_app_quitting) return JS_ThrowTypeError(ctx, "Application is quitting");
+    if (g_app_quitting || g_app_terminating) return JS_ThrowTypeError(ctx, "Application is quitting");
     JSValue options = argc ? JS_DupValue(ctx, argv[0]) : JS_NewObject(ctx);
     const char *const names[] = { "title", "width", "height", "layer", "anchors",
-        "exclusiveZone", "keyboard", "output", "margins", "transparent", "inputPopup", "sessionLockOutput", NULL };
+        "exclusiveZone", "keyboard", "output", "margins", "transparent", "inputPopup", "sessionLockOutput",
+        "parent", "popup", "popupX", "popupY", "popupGrab", "modal", "minWidth", "minHeight", "maxWidth", "maxHeight", NULL };
     if (!option_names(ctx, options, names)) { JS_FreeValue(ctx, options); return JS_EXCEPTION; }
     PuWindowConfig config = { .width = 640, .height = 480, .title = "PollyUI" };
     PuLayerConfig layer = {0};
@@ -595,8 +700,7 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
         valid = layer.layer >= 0 && layer_options(ctx, options, &layer);
         config.layer = &layer;
     } else if (valid) {
-        for (int i = 4; names[i]; i++) {
-            if (!strcmp(names[i], "inputPopup") || !strcmp(names[i], "sessionLockOutput")) continue;
+        for (int i = 4; i < 10; i++) {
             JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
             if (JS_IsException(value)) valid = 0;
             else if (!JS_IsUndefined(value)) {
@@ -617,27 +721,36 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
         JS_FreeValue(ctx, options);
         return JS_ThrowTypeError(ctx, "Zero layer dimensions require opposite anchors");
     }
+    JSValue parent = JS_UNDEFINED;
+    if (!native_options(ctx, options, &config, &parent)) {
+        JS_FreeValue(ctx, parent); JS_FreeValue(ctx, options); return JS_EXCEPTION;
+    }
     JSValue title = JS_GetPropertyStr(ctx, options, "title");
     JS_FreeValue(ctx, options);
     const char *text = NULL;
     size_t length = 0;
-    if (JS_IsException(title)) return JS_EXCEPTION;
+    if (JS_IsException(title)) { JS_FreeValue(ctx, parent); return JS_EXCEPTION; }
     if (!JS_IsUndefined(title)) {
         if (!JS_IsString(title)) {
             JS_FreeValue(ctx, title);
+            JS_FreeValue(ctx, parent);
             return JS_ThrowTypeError(ctx, "Window title must be a string");
         }
         text = JS_ToCStringLen(ctx, &length, title);
-        if (!text) { JS_FreeValue(ctx, title); return JS_EXCEPTION; }
+        if (!text) { JS_FreeValue(ctx, parent); JS_FreeValue(ctx, title); return JS_EXCEPTION; }
         if (memchr(text, 0, length)) {
             JS_FreeCString(ctx, text); JS_FreeValue(ctx, title);
+            JS_FreeValue(ctx, parent);
             return JS_ThrowTypeError(ctx, "Window title must not contain NUL");
         }
         config.title = text;
     }
     PuBridge *bridge = pu_bridge_new_document(g_app_bridge);
     PuApp *app = bridge ? new_app(bridge) : NULL;
-    int opened = app && open_app(app, &config);
+    int opened = app && JS_DefinePropertyValueStr(ctx, app->handle, "parent",
+        JS_IsUndefined(parent) ? JS_NULL : JS_DupValue(ctx, parent), JS_PROP_ENUMERABLE) >= 0 &&
+        open_app(app, &config);
+    JS_FreeValue(ctx, parent);
     JS_FreeCString(ctx, text);
     JS_FreeValue(ctx, title);
     if (!opened) {
@@ -651,8 +764,8 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
 static PuApp *toplevel_app(JSContext *ctx, JSValueConst value)
 {
     PuApp *app = window_app(ctx, value, 0);
-    if (app && app->is_layer) {
-        JS_ThrowTypeError(ctx, "Toplevel window controls do not apply to layer surfaces");
+    if (app && (app->is_layer || app->is_popup)) {
+        JS_ThrowTypeError(ctx, "Toplevel window controls do not apply to service or popup surfaces");
         return NULL;
     }
     return app;
@@ -666,12 +779,16 @@ static JSValue jswin_maximize(JSContext *c, JSValueConst t, int n, JSValueConst 
   pu_window_maximize_toggle(app->window); return JS_UNDEFINED; }
 static JSValue jswin_close(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; PuApp *app = window_app(c,t,1); if (!app) return JS_EXCEPTION;
-  app->closed = 1; pu_window_close(app->window); return JS_UNDEFINED; }
+  int result = pu_window_close(app->window);
+  if (result == PU_CLOSE_ACCEPTED) app->closed = 1;
+  return JS_UNDEFINED; }
 static JSValue jswin_quit(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 { (void)n;(void)a; if (!window_app(c,t,1)) return JS_EXCEPTION;
+  if (g_app_quitting) return JS_UNDEFINED;
+  pu_window_close_all();
   g_app_quitting = 1;
   pu_window_keep_alive(0);
-  for (PuApp *app = g_apps; app; app = app->next) { app->closed = 1; pu_window_close(app->window); }
+  for (PuApp *app = g_apps; app; app = app->next) app->closed = 1;
   return JS_UNDEFINED; }
 static JSValue jswin_closed(JSContext *c, JSValueConst t)
 { PuApp *app = window_app(c,t,1); return app ? JS_NewBool(c, app->closed ||
@@ -732,6 +849,31 @@ static JSValue jswin_active(JSContext *ctx, JSValueConst self)
     return app ? JS_NewBool(ctx, !app->closed && pu_window_is_active(app->window)) : JS_EXCEPTION;
 }
 
+static JSValue jswin_state(JSContext *ctx, JSValueConst self)
+{
+    PuApp *app = window_app(ctx, self, 0);
+    if (!app) return JS_EXCEPTION;
+    PuWindowState state;
+    if (!pu_window_get_state(app->window, &state))
+        return JS_ThrowInternalError(ctx, "Cannot query native window state");
+    return window_state_value(ctx, &state);
+}
+
+static JSValue jswin_capabilities(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argc; (void)argv;
+    if (!window_app(ctx, self, 1)) return JS_EXCEPTION;
+    unsigned caps = pu_window_capabilities();
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) return result;
+    JS_SetPropertyStr(ctx, result, "owned", JS_NewBool(ctx, caps & PU_WINDOW_OWNED));
+    JS_SetPropertyStr(ctx, result, "popup", JS_NewBool(ctx, caps & PU_WINDOW_POPUP));
+    JS_SetPropertyStr(ctx, result, "modal", JS_NewBool(ctx, caps & PU_WINDOW_MODAL));
+    JS_SetPropertyStr(ctx, result, "sizeConstraints", JS_NewBool(ctx, caps & PU_WINDOW_LIMITS));
+    JS_SetPropertyStr(ctx, result, "popupGrab", JS_FALSE);
+    return result;
+}
+
 static JSValue jswin_capture(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 {
     PuApp *app = window_app(c,t,0);
@@ -788,6 +930,12 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "quit", JS_NewCFunction(ctx, jswin_quit, "quit", 0));
     JS_SetPropertyStr(ctx, win, "capture", JS_NewCFunction(ctx, jswin_capture, "capture", 1));
     JS_SetPropertyStr(ctx, win, "displays", JS_NewCFunction(ctx, jswin_displays, "displays", 0));
+    JS_SetPropertyStr(ctx, win, "capabilities", JS_NewCFunction(ctx, jswin_capabilities, "capabilities", 0));
+    JSAtom state = JS_NewAtom(ctx, "state");
+    JS_DefinePropertyGetSet(ctx, win, state,
+        JS_NewCFunction2(ctx, (JSCFunction *)jswin_state, "state", 0, JS_CFUNC_getter, 0),
+        JS_UNDEFINED, JS_PROP_ENUMERABLE);
+    JS_FreeAtom(ctx, state);
     JSAtom closed = JS_NewAtom(ctx, "closed");
     JS_DefinePropertyGetSet(ctx, win, closed,
         JS_NewCFunction2(ctx, (JSCFunction *)jswin_closed, "closed", 0, JS_CFUNC_getter, 0),
@@ -819,6 +967,7 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetClassProto(ctx, g_window_class, win);
     PuApp *app = new_app(g_app_bridge);
     if (!app) return NULL;
+    if (JS_DefinePropertyValueStr(ctx, app->handle, "parent", JS_NULL, JS_PROP_ENUMERABLE) < 0) return NULL;
     JSValue g = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, g, "window", JS_DupValue(ctx, app->handle));
     JS_FreeValue(ctx, g);
@@ -1256,6 +1405,7 @@ int pu_gui_run(const PuGuiConfig *config)
     g_app_script = s;
     g_app_bridge = bridge;
     g_app_quitting = g_app_error = 0;
+    g_app_terminating = 0;
     g_redact_errors = config->redact_errors;
     g_config = config;
     int host_ready = pu_window_system_init();
@@ -1286,6 +1436,7 @@ int pu_gui_run(const PuGuiConfig *config)
             rc = pu_window_run_all(app_async, s);
         }
     }
+    g_app_terminating = 1;
     if (pu_script_finish(s)) rc = 1;
     pu_async_shutdown();
     if (config->hooks && config->hooks->stop) config->hooks->stop(config->user);

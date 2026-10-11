@@ -633,8 +633,8 @@ Duplicate element IDs in different documents do not collide. Moving a focused
 node between documents clears its old document's focus; document bodies cannot
 be reparented.
 
-`handle.close()` closes only that window. `handle.closed` reflects a pending or
-completed close, and `onclose` runs once after native teardown. Closing the
+`handle.close()` closes only that independent window. `handle.closed` reflects
+an accepted or completed close, and `onclose` runs once after native teardown. Closing the
 original window does not stop the others. An `onclose` callback may create a
 replacement, even for the last window. `window.quit()` closes the entire
 application and prevents new windows. With no surviving/replacement windows,
@@ -646,8 +646,9 @@ behavior is unchanged. A handler must return literal `true` to close immediately
 `false`, `undefined` or a Promise defers closure while the application presents
 Save/Cancel or completes a save. Promise settlement does **not** automatically
 close the window: after successful save or explicit discard, the application
-calls `handle.close()` itself. Explicit `close()`/`quit()` do not re-enter this
-hook. Throwing logs the native callback error and declines closure. A rejected
+calls `handle.close()` itself. Explicit `close()` does not re-enter its own
+hook; when that window owns children, their hooks are coordinated as described
+below. Explicit `quit()` bypasses all request hooks. Throwing logs the native callback error and declines closure. A rejected
 Promise is explicitly logged and does not close the window; handlers should
 also show their own save error to the user.
 `onclose` remains the once-only notification of actual native teardown.
@@ -675,6 +676,82 @@ node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe
 # Require GPU instead of accepting raster fallback:
 node .\tools\test-multi-window.mjs .\build\win-clang\pollyui.exe --require-gpu
 ```
+
+### Native ownership, popup roles and size constraints
+
+The thin window API projects HostEngine state; it does not implement application
+dialogs, button/menu focus scopes or layout policy:
+
+```js
+const owner = window.create({ title: 'Editor', width: 800, height: 600 });
+const inspector = window.create({
+    parent: owner, title: 'Inspector', width: 320, height: 240,
+    minWidth: 240, minHeight: 160, maxWidth: 640, maxHeight: 480,
+});
+const dialog = window.create({ parent: owner, modal: true, width: 360, height: 220 });
+dialog.onstatechange = state => console.log(state.width, state.height, state.maximized);
+console.log(dialog.parent === owner, dialog.state.pixelWidth, dialog.state.scale);
+```
+
+`parent` is creation-only and read-only on the returned handle. It must identify
+a live ordinary window in this process and JavaScript realm. No raw native
+handles, runtime reparenting or cyclic ownership graphs are exposed. Omitting
+`parent` preserves the existing independent-window behavior. A modal is a real
+native owned window: Win32 disables its owner, and Wayland uses standard
+`xdg-dialog-v1`; PollyWM blocks native keyboard/pointer input to that owner, not
+unrelated application windows. Ordinary modal WM close requests retain the
+existing `oncloserequest` veto/save behavior.
+
+Normal owner closure (including explicit `owner.close()`) requests owned
+descendants leaf-first. A child veto, error or Promise cancels that attempt and
+keeps waiting owners open; Promise settlement and later child close do not
+automatically retry a declined owner attempt. Already-accepted siblings are
+not recreated: this is sequential coordination, not an atomic transaction.
+After acceptance, native child resources and `onclose` notifications retire
+before the parent's request/closure proceeds. While waiting for those
+notifications, `owner.closed` stays false. Applications can check `closed` or
+use `onclose`; `close()` and `quit()` keep their existing undefined return value.
+Callbacks can show a new owned save prompt or create a new child from `onclose`;
+the Host rechecks live dependents, pins owners through callbacks, and does not
+implicitly destroy those new windows. A child may not attach to an owner during
+the active descendant-coordination callback itself, or to a closed owner.
+The explicit application `quit()`/fatal teardown path remains forced and never
+consults veto handlers, but still retires native resources leaf-first.
+
+`popup: 'menu' | 'tooltip'` creates a real native popup with a required `parent`;
+`popupX`/`popupY` are signed logical coordinates in the parent's client area.
+Another popup may own a popup, but cannot own an ordinary window. Tooltips do
+not receive input. These are **ungrabbed popups/popovers**, not a complete menu
+controller: the current SDL public API does not request `xdg_popup.grab`.
+`popupGrab: true` and explicit popup mouse capture fail rather than inventing an
+input serial. Do not assume outside-click dismissal on Wayland. A compositor
+`popup_done` closes the popup and delivers `onclose` once without calling the
+business close-request hook; Win32 native popup deactivation also dismisses it.
+Minimize, maximize and chrome controls do not apply to popup/service roles.
+Popup roles never substitute a layer or the dedicated trusted IME `inputPopup`.
+
+`minWidth`, `minHeight`, `maxWidth` and `maxHeight` are optional, nonnegative
+integer **logical client pixels**; zero means unset. A maximum cannot be below
+the corresponding minimum. Initial size is clamped; native interactive resize
+and maximize honor the limits. No PollyUI minimum is imposed on unconfigured
+ordinary windows. Service roles and popups cannot specify these constraints.
+
+`handle.state` reads actual native geometry: `width`, `height`, `pixelWidth`,
+`pixelHeight`, `scale`, `minimized`, `maximized` and `active`.
+`onstatechange(state)` receives an initial snapshot and changed actual state at
+a safe event-loop boundary, not an optimistic echo of a resize request. A
+minimized window can have zero client geometry. Read the next painted document
+viewport for layout; this notification is not a component resize/layout policy.
+Closed-window state queries fail explicitly.
+
+`window.capabilities()` reports `owned`, `popup`, `modal`, `sizeConstraints` and
+`popupGrab` for the current native driver/compositor. Wayland modal support
+requires advertised `xdg_wm_dialog_v1`, even though SDL alone may report success
+without that global. Unsupported features and native creation failures are
+errors, not successful overlays. Win32 and PollyWM/SDL Wayland native contracts
+have focused native fixtures; macOS/X11 execution is not qualified by those
+fixtures. See [the Host contract](docs/PORTING.md#native-window-contract) for
+the C seam and focused verification commands.
 
 ### Wayland shell surfaces
 

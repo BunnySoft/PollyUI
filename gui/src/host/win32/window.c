@@ -1,5 +1,6 @@
 #include "pollyui/window.h"
 #include "render/skia_c.h"
+#include "host/window_contract.h"
 
 /* Need Windows 10 APIs (per-monitor DPI v2, GetDpiForWindow, ...). */
 #ifndef WINVER
@@ -14,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
+#include <math.h>
 #include <shellscalingapi.h>
 
 /* M0b: the window now paints by clearing a Skia raster surface and blitting its
@@ -26,6 +28,18 @@
 
 struct PuWindow {
     struct PuWindow *next;
+    struct PuWindow *parent;
+    PuPopup popup;
+    int modal, modal_count, modal_restore;
+    unsigned children, borrows;
+    int closing, request_active;
+    int close_pending, close_external, close_hook_done, native_retired;
+    int destroy_requested, destroying;
+    PuWindowLimits limits;
+    PuWindowState reported_state;
+    int state_reported;
+    PuWindowStateFn state_fn;
+    void *state_user;
     HWND       hwnd;
     PuSurface *surface;      /* Skia raster surface, sized to the client (physical px) */
     int        width;        /* client width  in PHYSICAL pixels */
@@ -63,7 +77,62 @@ static DWORD g_ui_thread;
 static int g_loop_running, g_pumping, g_exit_code, g_keep_alive;
 static PuAsyncFn g_frame;
 static void *g_frame_user;
+#include "host/window_close.h"
 static void pump_windows(void);
+static void retire_native(PuWindow *w);
+
+unsigned pu_window_capabilities(void)
+{ return PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_MODAL | PU_WINDOW_LIMITS; }
+
+int pu_window_get_state(PuWindow *w, PuWindowState *state)
+{
+    if (!w || !w->hwnd || !w->running || !state) {
+        fprintf(stderr, "Window state requires a live native window\n"); return 0;
+    }
+    memset(state, 0, sizeof(*state));
+    RECT rect;
+    if (!GetClientRect(w->hwnd, &rect)) {
+        fprintf(stderr, "Cannot query client size: %lu\n", GetLastError()); return 0;
+    }
+    state->scale = w->scale > 0 ? w->scale : 1.0f;
+    state->pixel_width = rect.right; state->pixel_height = rect.bottom;
+    state->width = (int)(rect.right / state->scale);
+    state->height = (int)(rect.bottom / state->scale);
+    state->minimized = IsIconic(w->hwnd) != 0;
+    state->maximized = IsZoomed(w->hwnd) != 0;
+    state->active = w->active;
+    return 1;
+}
+
+void pu_window_set_state(PuWindow *w, PuWindowStateFn fn, void *user)
+{ if (w) { w->state_fn = fn; w->state_user = user; w->state_reported = 0; } }
+
+static void notify_state(void)
+{
+    size_t count;
+    PuWindow **windows = borrow_window_snapshot(&count);
+    for (size_t i = 0; i < count; i++) {
+        PuWindow *w = windows[i];
+        PuWindowState state;
+        if (w->running && w->state_fn && pu_window_get_state(w, &state) &&
+            (!w->state_reported || memcmp(&state, &w->reported_state, sizeof(state)))) {
+            w->reported_state = state; w->state_reported = 1;
+            w->state_fn(&state, w->state_user);
+        }
+    }
+    release_window_snapshot(windows, count);
+}
+
+static SIZE frame_size(PuWindow *w, HWND hwnd)
+{
+    UINT dpi = GetDpiForWindow(hwnd);
+    if (!dpi) dpi = (UINT)(w->scale * 96);
+    RECT frame = {0};
+    AdjustWindowRectExForDpi(&frame, (DWORD)GetWindowLongPtrW(hwnd, GWL_STYLE), FALSE,
+        (DWORD)GetWindowLongPtrW(hwnd, GWL_EXSTYLE), dpi);
+    if (w->frameless) frame.top = 0;
+    return (SIZE){ frame.right - frame.left, frame.bottom - frame.top };
+}
 
 int pu_window_system_init(void)
 {
@@ -294,7 +363,7 @@ static int pu_paint(PuWindow *w, HDC hdc, const char *capture_path)
     return captured;
 }
 
-static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT dispatch_window_message(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     PuWindow *w = (PuWindow *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
@@ -305,13 +374,30 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return DefWindowProcW(hwnd, msg, wp, lp);
     }
     case WM_GETMINMAXINFO: {
-        /* keep a sane minimum so layout doesn't collapse at tiny sizes */
+        if (!w) break;
         MINMAXINFO *mmi = (MINMAXINFO *)lp;
-        float sc = (w && w->scale > 0) ? w->scale : 1.0f;
-        mmi->ptMinTrackSize.x = (LONG)(360 * sc);
-        mmi->ptMinTrackSize.y = (LONG)(280 * sc);
+        float sc = w->scale > 0 ? w->scale : 1.0f;
+        SIZE frame = frame_size(w, hwnd);
+        if (w->limits.min_width) mmi->ptMinTrackSize.x = (LONG)ceil(w->limits.min_width * (double)sc) + frame.cx;
+        if (w->limits.min_height) mmi->ptMinTrackSize.y = (LONG)ceil(w->limits.min_height * (double)sc) + frame.cy;
+        if (w->limits.max_width) {
+            mmi->ptMaxTrackSize.x = (LONG)floor(w->limits.max_width * (double)sc) + frame.cx;
+            mmi->ptMaxSize.x = mmi->ptMaxTrackSize.x;
+            if (mmi->ptMinTrackSize.x > mmi->ptMaxTrackSize.x)
+                mmi->ptMinTrackSize.x = mmi->ptMaxTrackSize.x;
+        }
+        if (w->limits.max_height) {
+            mmi->ptMaxTrackSize.y = (LONG)floor(w->limits.max_height * (double)sc) + frame.cy;
+            mmi->ptMaxSize.y = mmi->ptMaxTrackSize.y;
+            if (mmi->ptMinTrackSize.y > mmi->ptMaxTrackSize.y)
+                mmi->ptMinTrackSize.y = mmi->ptMaxTrackSize.y;
+        }
         return 0;
     }
+    case WM_ACTIVATE:
+        if (w && w->registered && w->popup == PU_POPUP_MENU && LOWORD(wp) == WA_INACTIVE)
+            pu_window_close(w);
+        break;
 
     case WM_NCCALCSIZE:
         /* Frameless: extend the client area over the OS title bar (so the app
@@ -344,6 +430,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         break;
 
     case WM_NCHITTEST:
+        if (w && w->popup == PU_POPUP_TOOLTIP) return HTTRANSPARENT;
         /* Frameless: synthesize resize edges, and ask the app whether the point
          * is in a draggable title-bar region (HTCAPTION) vs interactive (HTCLIENT). */
         if (w && w->frameless) {
@@ -471,8 +558,13 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (w) {
             w->scale = LOWORD(wp) / 96.0f; /* new DPI in wParam */
             RECT *rc = (RECT *)lp;         /* OS-suggested window rect */
+            SIZE frame = frame_size(w, hwnd);
+            int width = pu_window_clamp((int)((rc->right - rc->left - frame.cx) / w->scale),
+                w->limits.min_width, w->limits.max_width);
+            int height = pu_window_clamp((int)((rc->bottom - rc->top - frame.cy) / w->scale),
+                w->limits.min_height, w->limits.max_height);
             SetWindowPos(hwnd, NULL, rc->left, rc->top,
-                         rc->right - rc->left, rc->bottom - rc->top,
+                         (int)(width * w->scale) + frame.cx, (int)(height * w->scale) + frame.cy,
                          SWP_NOZORDER | SWP_NOACTIVATE);
             InvalidateRect(hwnd, NULL, FALSE);
         }
@@ -491,6 +583,8 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 .repeat = down && ((unsigned long)lp & (1UL << 30)),
             };
             int result = w->key_fn(&event, w->key_user);
+            if (down && wp == VK_ESCAPE && w->popup == PU_POPUP_MENU &&
+                !(result & PU_INPUT_PREVENT_DEFAULT)) pu_window_close(w);
             w->suppress_text = down && (result & PU_INPUT_PREVENT_DEFAULT);
             if (result & PU_INPUT_REDRAW) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
             if (msg == WM_KEYDOWN || msg == WM_KEYUP || (result & PU_INPUT_PREVENT_DEFAULT)) return 0;
@@ -570,8 +664,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_CLOSE:
-        if (w && (!w->close_request_fn || w->close_request_fn(w, w->close_request_user)))
-            pu_window_close(w);
+        if (w) pu_window_request_close(w);
         return 0;
     case WM_DESTROY:
         if (w) { w->running = 0; w->hwnd = NULL; }
@@ -580,13 +673,32 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
+static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    PuWindow *w = (PuWindow *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if (w) w->borrows++;
+    LRESULT result = dispatch_window_message(hwnd, msg, wp, lp);
+    if (w) release_close_borrow(w);
+    return result;
+}
+
 PuWindow *pu_window_create(const PuWindowConfig *cfg)
 {
-    if (!cfg) return NULL;
-    if (cfg->layer) { fprintf(stderr, "Layer surfaces require the Linux Wayland host\n"); return NULL; }
+    if (!pu_window_config_valid(cfg)) { fprintf(stderr, "Invalid native window contract\n"); return NULL; }
+    if (cfg->layer || cfg->input_popup || cfg->lock_output) {
+        fprintf(stderr, "Dedicated Wayland roles are unavailable on this Host\n"); return NULL;
+    }
     if (g_windows && g_ui_thread != GetCurrentThreadId()) {
         fprintf(stderr, "All windows must be created on the same UI thread\n");
         return NULL;
+    }
+    if (cfg->parent) {
+        PuWindow *parent = g_windows;
+        while (parent && parent != cfg->parent) parent = parent->next;
+        if (!parent || !parent->running || !parent->hwnd ||
+            (parent->closing && !parent->request_active) || (!cfg->popup && parent->popup)) {
+            fprintf(stderr, "Parent must be a live compatible window in this Host\n"); return NULL;
+        }
     }
 
     /* Per-monitor DPI awareness: render crisply at physical resolution and do
@@ -595,9 +707,12 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 
     PuWindow *w = (PuWindow *)calloc(1, sizeof(PuWindow));
     if (!w) return NULL;
+    w->borrows = 1;
     w->width  = cfg->width;
     w->height = cfg->height;
     w->running = 1;
+    w->parent = cfg->parent; w->popup = cfg->popup; w->modal = cfg->modal; w->limits = cfg->limits;
+    if (w->parent) w->parent->children++;
     g_ui_thread = GetCurrentThreadId();
 
     HINSTANCE hinst = GetModuleHandleW(NULL);
@@ -618,32 +733,52 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (!wtitle || !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, title, -1, wtitle, title_length)) {
         fprintf(stderr, "Cannot create UTF-16 window title\n");
         free(wtitle);
-        free(w);
+        discard_window_creation(w);
         return NULL;
     }
 
     /* Treat the requested size as LOGICAL pixels; scale to physical for the
      * current system DPI so the window is the intended on-screen size. */
-    float s0 = GetDpiForSystem() / 96.0f;
+    float s0 = (cfg->parent ? GetDpiForWindow(cfg->parent->hwnd) : GetDpiForSystem()) / 96.0f;
     if (s0 <= 0.0f) s0 = 1.0f;
+    w->scale = s0;
+    int width = pu_window_clamp(cfg->width, cfg->limits.min_width, cfg->limits.max_width);
+    int height = pu_window_clamp(cfg->height, cfg->limits.min_height, cfg->limits.max_height);
     if (cfg->width <= 0 || cfg->height <= 0 ||
-        (double)cfg->width * s0 > INT_MAX - 256 || (double)cfg->height * s0 > INT_MAX - 256) {
+        (double)width * s0 > INT_MAX - 256 || (double)height * s0 > INT_MAX - 256 ||
+        (double)cfg->limits.min_width * s0 > INT_MAX - 256 ||
+        (double)cfg->limits.min_height * s0 > INT_MAX - 256 ||
+        (double)cfg->limits.max_width * s0 > INT_MAX - 256 ||
+        (double)cfg->limits.max_height * s0 > INT_MAX - 256 ||
+        fabs((double)cfg->popup_x * s0) > INT_MAX / 2 ||
+        fabs((double)cfg->popup_y * s0) > INT_MAX / 2) {
         fprintf(stderr, "Window dimensions exceed the native coordinate range\n");
-        free(wtitle); free(w);
+        free(wtitle); discard_window_creation(w);
         return NULL;
     }
-    RECT rc = { 0, 0, (int)(cfg->width * s0), (int)(cfg->height * s0) };
-    DWORD style = WS_OVERLAPPEDWINDOW;
-    AdjustWindowRect(&rc, style, FALSE);
+    RECT rc = { 0, 0, (int)(width * s0), (int)(height * s0) };
+    DWORD style = cfg->popup ? WS_POPUP : WS_OVERLAPPEDWINDOW;
+    DWORD extended = cfg->popup ? WS_EX_TOOLWINDOW : 0;
+    if (cfg->popup == PU_POPUP_TOOLTIP) extended |= WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
+    AdjustWindowRectExForDpi(&rc, style, FALSE, extended, (UINT)(s0 * 96));
+    POINT position = { CW_USEDEFAULT, CW_USEDEFAULT };
+    if (cfg->popup) {
+        position = (POINT){ (LONG)(cfg->popup_x * s0), (LONG)(cfg->popup_y * s0) };
+        if (!ClientToScreen(cfg->parent->hwnd, &position)) {
+            fprintf(stderr, "Cannot position native popup: %lu\n", GetLastError());
+            free(wtitle); discard_window_creation(w); return NULL;
+        }
+    }
 
     HWND hwnd = CreateWindowExW(
-        0, kClassName, wtitle, style,
-        CW_USEDEFAULT, CW_USEDEFAULT,
+        extended, kClassName, wtitle, style,
+        position.x, position.y,
         rc.right - rc.left, rc.bottom - rc.top,
-        NULL, NULL, hinst, w);
+        cfg->parent ? cfg->parent->hwnd : NULL, NULL, hinst, w);
     free(wtitle);
     if (!hwnd) {
-        free(w);
+        fprintf(stderr, "Native window creation failed: %lu\n", GetLastError());
+        discard_window_creation(w);
         return NULL;
     }
     w->hwnd = hwnd;
@@ -664,16 +799,28 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (!w->surface)
         w->surface = pu_surface_create(w->width, w->height);
     if (!w->surface) {
-        DestroyWindow(hwnd);
-        free(w);
+        discard_window_creation(w);
         return NULL;
     }
 
-    ShowWindow(hwnd, SW_SHOW);
-    UpdateWindow(hwnd);
     w->next = g_windows;
     g_windows = w;
     w->registered = 1;
+    if (cfg->popup == PU_POPUP_TOOLTIP) EnableWindow(hwnd, FALSE);
+    if (w->modal) {
+        if (!w->parent->modal_count++) {
+            w->parent->modal_restore = IsWindowEnabled(w->parent->hwnd) != 0;
+            EnableWindow(w->parent->hwnd, FALSE);
+        }
+    }
+    ShowWindow(hwnd, cfg->popup == PU_POPUP_TOOLTIP ? SW_SHOWNOACTIVATE : SW_SHOW);
+    UpdateWindow(hwnd);
+    if (!w->running || (w->parent && !w->parent->running)) {
+        fprintf(stderr, "Window or owner closed during native creation\n");
+        discard_window_creation(w);
+        return NULL;
+    }
+    w->borrows--;
     return w;
 }
 
@@ -694,9 +841,11 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user)
 
 int pu_window_capture_mouse(PuWindow *w, int enabled)
 {
+    if (w && !enabled && w->native_retired && !w->hwnd && !w->mouse_capture) return 1;
     if (!w || !w->hwnd || (enabled && !w->running)) {
         fprintf(stderr, "[host] Mouse capture requires a live window\n"); return 0;
     }
+    if (enabled && w->popup) { fprintf(stderr, "Explicit native popup capture is unsupported\n"); return 0; }
     if (enabled) {
         if (GetFocus() != w->hwnd) {
             fprintf(stderr, "[host] Mouse capture requires the active window\n"); return 0;
@@ -812,10 +961,14 @@ void pu_window_set_backdrop(PuWindow *w, int type)
  * draw their own caption (the WinUI-style — / ▢ / ✕ controls). */
 void pu_window_set_titlebar_style(PuWindow *w, int style) { (void)w; (void)style; }
 
-void pu_window_minimize(PuWindow *w) { if (w && w->hwnd) ShowWindow(w->hwnd, SW_MINIMIZE); }
-void pu_window_close(PuWindow *w) { if (w) { w->running = 0; pu_window_wake(NULL); } }
+void pu_window_minimize(PuWindow *w)
+{
+    if (w && w->popup) { fprintf(stderr, "Minimize requires an ordinary window\n"); return; }
+    if (w && w->hwnd) ShowWindow(w->hwnd, SW_MINIMIZE);
+}
 void pu_window_maximize_toggle(PuWindow *w)
 {
+    if (w && w->popup) { fprintf(stderr, "Maximize requires an ordinary window\n"); return; }
     if (w && w->hwnd) ShowWindow(w->hwnd, IsZoomed(w->hwnd) ? SW_RESTORE : SW_MAXIMIZE);
 }
 int pu_window_is_maximized(PuWindow *w) { return (w && w->hwnd) ? IsZoomed(w->hwnd) : 0; }
@@ -829,13 +982,16 @@ void pu_window_wake(PuWindow *w)
 static void notify_closed(void)
 {
     for (;;) {
+        progress_pending_closes();
         PuWindow *w = g_windows;
-        while (w && (w->running || w->close_notified)) w = w->next;
+        while (w && (w->running || w->close_notified || w->children || w->borrows)) w = w->next;
         if (!w) break;
-        if (w->exit_code) g_exit_code = w->exit_code;
+        if (w->exit_code) { g_exit_code = w->exit_code; notify_dependent_failure(w); }
         w->close_notified = 1;
-        if (w->hwnd) ShowWindow(w->hwnd, SW_HIDE);
-        if (w->close_fn) w->close_fn(w, w->close_user);
+        w->borrows++;
+        retire_native(w);
+        if (w->close_fn && !w->destroy_requested) w->close_fn(w, w->close_user);
+        release_close_borrow(w);
     }
 }
 
@@ -845,8 +1001,14 @@ static void pump_windows(void)
     g_pumping = 1;
     if (g_frame && g_frame(g_frame_user) > 0)
         for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
-    for (PuWindow *w = g_windows; w; w = w->next)
+    size_t count;
+    PuWindow **windows = borrow_window_snapshot(&count);
+    for (size_t i = 0; i < count; i++) {
+        PuWindow *w = windows[i];
         if (w->running && w->async_fn && w->async_fn(w->async_user) > 0) pu_window_redraw(w);
+    }
+    release_window_snapshot(windows, count);
+    notify_state();
     notify_closed();
     g_pumping = 0;
 }
@@ -892,21 +1054,52 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
     return g_exit_code;
 }
 
-void pu_window_destroy(PuWindow *w)
+static void retire_native(PuWindow *w)
 {
-    if (!w) return;
+    if (w->native_retired) return;
+    w->native_retired = 1;
     if (w->mouse_capture) pu_window_capture_mouse(w, 0);
     if (w->cursor && GetCursor() == w->cursor) SetCursor(LoadCursorW(NULL, IDC_ARROW));
+    PuWindow *parent = w->parent;
+    int restore_focus = w->modal && w->hwnd && GetActiveWindow() == w->hwnd;
+    if (w->registered && w->modal && parent && !--parent->modal_count &&
+        parent->modal_restore && !parent->destroy_requested && parent->hwnd)
+        EnableWindow(parent->hwnd, TRUE);
+    w->parent = NULL;
+    PuSurface *surface = w->surface;
+    w->surface = NULL;
+    pu_surface_destroy(surface);
+    if (w->hwnd) DestroyWindow(w->hwnd);
+    if (restore_focus && parent && parent->running && parent->hwnd &&
+        !parent->destroy_requested && !parent->modal_count && IsWindowEnabled(parent->hwnd)) {
+        SetActiveWindow(parent->hwnd);
+        SetFocus(parent->hwnd);
+    }
+    if (parent && !--parent->children && parent->destroy_requested && !parent->borrows)
+        pu_window_destroy(parent);
+}
+
+void pu_window_destroy(PuWindow *w)
+{
+    if (!w || w->destroying) return;
+    w->destroying = 1;
+    w->destroy_requested = 1;
+    w->running = 0;
+    w->close_notified = 1;
+    w->paint_fn = NULL; w->key_fn = NULL; w->wheel_fn = NULL;
+    w->async_fn = NULL; w->region_fn = NULL; w->state_fn = NULL;
+    w->close_fn = NULL; w->close_request_fn = NULL;
     w->pointer_fn = NULL; w->activation_fn = NULL;
+    if (w->mouse_capture) pu_window_capture_mouse(w, 0);
+    if (w->cursor && GetCursor() == w->cursor) SetCursor(LoadCursorW(NULL, IDC_ARROW));
+    /* Never let DestroyWindow implicitly destroy another live PuWindow. */
+    if (w->children || w->borrows) { w->destroying = 0; return; }
+    retire_native(w);
     w->running = 0;
     if (w->registered) {
         PuWindow **link = &g_windows;
         while (*link && *link != w) link = &(*link)->next;
         if (*link) *link = w->next;
     }
-    PuSurface *surface = w->surface;
-    w->surface = NULL;
-    pu_surface_destroy(surface);
-    if (w->hwnd) DestroyWindow(w->hwnd);
     free(w);
 }

@@ -1,4 +1,8 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+add_executable(pollywm-window-contract-test window-contract.c)
+pkg_check_modules(WINDOW_PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+target_link_libraries(pollywm-window-contract-test PRIVATE pollywm-core PkgConfig::WINDOW_PIXMAN)
+target_compile_options(pollywm-window-contract-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
