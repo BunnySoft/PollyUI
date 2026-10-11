@@ -324,7 +324,7 @@ or ordinary-user shutdown result; QMP quit in the VM did not test power-off. A s
 adds A/B systems and persistent user data; a physical-media installer, system
 updates and production session protection remain future work.
 
-The current source freezes **0.1.0-alpha.7** with modern Shell/Settings/Files,
+The previous source froze **0.1.0-alpha.7** with modern Shell/Settings/Files,
 JS iwd and native mouse capture/cancellation/cursors, plus captured text
 drag-selection, Shift selection, a real draggable Files scrollbar and
 keyboard/focus polish. Fresh package and ISO content checks passed, but complete
@@ -335,6 +335,13 @@ later changes. The [Alpha.7 delivery gate](./ROADMAP.md#alpha7-files-interaction
 tracks the new memory-only physical-test candidate. The system rabbit cursor
 source prototype is now implemented separately after that freeze; it is not
 in the Alpha.7 ISO. Materials remain next-version work.
+
+The current source freezes **0.1.0-alpha.8** with the integrated system rabbit
+cursor and motion/click/drag animations, semantic/client overrides and fallback.
+The user requested a new explicitly labelled candidate ISO; fresh release
+packaging/media generation is pending, with no complete VM or hardware pass
+claimed. See [the Alpha.8 candidate gate](./ROADMAP.md#alpha8-rabbit-cursor-candidate).
+Materials and the cursor upload/editor remain separate work.
 
 Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**
 for design principles, architecture, current capabilities, known limits,

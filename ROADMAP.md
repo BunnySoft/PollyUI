@@ -67,6 +67,23 @@ to explicit remaining subitems, decisions and subsequently completed work.
 This file also contains broader PollyUI framework work, which is not automatically
 a PollyOS release requirement.
 
+## Alpha.8 rabbit cursor candidate
+
+The user requested a committed/pushed rabbit cursor release and a new ISO.
+The selected delivery mode permits an explicitly unqualified candidate; it does
+not turn the previous Alpha.7 failures into acceptance or authorize overwriting
+old images. `desktop/VERSION` freezes `0.1.0-alpha.8` in this revision.
+
+| Gate | Required outcome | State |
+|---|---|---|
+| Source and remote | Integrated rabbit cursor, clean Alpha.8 version freeze, push and verify remote identity | Rabbit implementation `36b7e4b` integrated; version freeze and push in progress |
+| Runtime and assets | Fresh clean-source build; installed rabbit/precision cursor hashes, runtime dependencies and actual Alpha.8 build identity | Pending fresh release build; development native/WSLg evidence is not a release receipt |
+| ISO candidate | New Debian 13 x86_64 UEFI RAM-only image, actual payload checks and unchanged-copy checksum | Pending; no new ISO delivered yet |
+| Acceptance label | Record actual boot checks and any failures; prominently identify missing complete VM/hardware qualification | User explicitly accepts a candidate without full VM acceptance; no pass inferred |
+
+Keep the running user-requested WSLg preview and all previous ISO bytes intact.
+No materials, file-operation expansion or cursor upload/editor is included.
+
 ## Alpha.7 Files interaction and physical-test candidate
 
 The user requested a new physical-test ISO after a small Files interaction

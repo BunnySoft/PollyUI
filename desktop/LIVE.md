@@ -1,5 +1,15 @@
 # Memory-only UEFI development image
 
+**Alpha.8 candidate in preparation:** the user requested committing/pushing the
+system rabbit cursor implementation and generating a fresh ISO, and explicitly
+allowed delivery without complete VM acceptance if that limitation is clear.
+`desktop/VERSION` is now `0.1.0-alpha.8`. The producer must rebuild the exact
+clean freeze commit, verify installed cursor resources and actual build identity,
+and verify the new ISO payload and SHA-256. No Alpha.8 ISO or hardware acceptance
+is claimed yet. Preserve the Alpha.7 candidate and the accepted Alpha.6 image.
+The running `36b7e4b` WSLg preview is a separate build, not Alpha.8 media.
+See [the Alpha.8 gate](../ROADMAP.md#alpha8-rabbit-cursor-candidate).
+
 **Alpha.7 unqualified test candidate:** the user explicitly chose delivery for
 their own physical-machine testing despite incomplete VM acceptance. The ISO
 is under `dist\pollydesktop-0.1.0-alpha.7-debian13-31da563-unqualified-test\`,
@@ -13,7 +23,7 @@ fixture/package and ISO-byte checks do not replace those missing VM gates.
 Original failed/diagnostic evidence is retained, including an incomplete RPC
 export. There is no passing complete VM result or physical-hardware claim.
 
-**Alpha.7 source freeze:** `desktop/VERSION` is `0.1.0-alpha.7`, including the
+**Historical Alpha.7 source freeze:** `31da563` used `0.1.0-alpha.7`, including the
 modern Shell/Settings/Files, JS iwd service, native mouse interaction mechanisms,
 and Files text-selection/scrollbar/keyboard-focus polish. Fresh runtime packaging
 and ISO content verification passed; complete VM qualification remains blocked.
