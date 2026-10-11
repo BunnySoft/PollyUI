@@ -86,6 +86,16 @@ if (TARGET qjs)
                 pkg_check_modules(SR_DBUS QUIET IMPORTED_TARGET dbus-1)
                 find_program(SR_DBUS_DAEMON dbus-daemon)
                 if (SR_DBUS_FOUND AND SR_DBUS_DAEMON)
+                    add_library(polly-sysrt-dbus-oracle SHARED tests/dbus-oracle.c)
+                    target_link_libraries(polly-sysrt-dbus-oracle PRIVATE PkgConfig::SR_DBUS)
+                    target_compile_options(polly-sysrt-dbus-oracle PRIVATE -Wall -Wextra -Wpedantic -Werror)
+                    add_test(NAME sysrt-dbus-endpoint COMMAND "${SR_PYTHON}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/dbus-endpoint.py"
+                        $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-dbus-oracle>
+                        "${SR_DBUS_DAEMON}")
+                    set_tests_properties(sysrt-dbus-endpoint PROPERTIES TIMEOUT 90
+                        LABELS "ordinary-native;private-dbus-fixture"
+                        ENVIRONMENT "PYTHONDONTWRITEBYTECODE=1")
                     add_executable(polly-sysrt-dbus-service tests/dbus-service.c)
                     target_link_libraries(polly-sysrt-dbus-service PRIVATE PkgConfig::SR_DBUS)
                     target_compile_options(polly-sysrt-dbus-service PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -119,82 +119,469 @@ function validateSignature(signature, request = false) {
     throw new TypeError('D-Bus supports no argument/one u/b/s/o scalar and a fixed scalar reply tuple');
 }
 function prepareScalars(signature, args, live) {
-  if (!Array.isArray(args) || args.length !== signature.length)
-    throw new TypeError('D-Bus arguments must match the signature');
-  return Array.from(signature, (type, index) => {
-    const argument = args[index];
+  return prepareArguments(signature, args, live);
+}
+function appendScalars(message, scalars) {
+  appendArguments(message, scalars);
+}
+function readScalars(message, signature) {
+  return readArguments(message, signature);
+}
+
+// This is a deliberately finite protocol subset, not introspection or a general
+// D-Bus type system. Dictionary values are ordered pairs (duplicates stay visible).
+// Variants are { signature, value }; a projection may explicitly skip an unused
+// value before recursing, including native types outside this subset.
+export const dbusSkipped = Object.freeze({ skipped: true });
+function protocolSignature(signature) {
+  if (typeof signature !== 'string' || !value('dbus_signature_validate', signature, null))
+    throw new TypeError('Invalid D-Bus signature');
+  let offset = 0;
+  function node(dictAllowed = false) {
+    const start = offset, type = signature[offset++];
+    let children = [];
+    if ('nubso'.includes(type ?? '\0') || type === 'v') { /* basic or variant */ }
+    else if (type === 'a') children = [node(true)];
+    else if (type === '(' || (type === '{' && dictAllowed)) {
+      const end = type === '(' ? ')' : '}';
+      while (offset < signature.length && signature[offset] !== end) children.push(node());
+      if (signature[offset++] !== end || !children.length ||
+          (type === '{' && (children.length !== 2 || !'nubso'.includes(children[0].type))))
+        throw new TypeError('Unsupported D-Bus container');
+    } else throw new TypeError('Unsupported D-Bus type: ' + type);
+    return { type, children, signature: signature.slice(start, offset) };
+  }
+  const nodes = [];
+  while (offset < signature.length) nodes.push(node());
+  return nodes;
+}
+function prepareArguments(signature, args, live) {
+  function tuple(nodes, items) {
+    if (!Array.isArray(items) || items.length !== nodes.length)
+      throw new TypeError('D-Bus arguments must match the signature');
+    return nodes.map((node, index) => prepare(node, items[index]));
+  }
+  function prepare(node, argument) {
     live();
-    if (type === 'u' && (!Number.isInteger(argument) || argument < 0 || argument > 0xffffffff))
-      throw new RangeError('D-Bus argument must be uint32');
-    if (type === 'b' && typeof argument !== 'boolean')
-      throw new TypeError('D-Bus boolean argument requires a boolean');
-    let encoded;
-    if (type === 's' || type === 'o') {
+    const { type } = node;
+    let encoded, children;
+    if (type === 'a') {
+      if (!Array.isArray(argument)) throw new TypeError('D-Bus array requires an array');
+      children = argument.map(item => prepare(node.children[0], item));
+    } else if (type === '(' || type === '{') children = tuple(node.children, argument);
+    else if (type === 'v') {
+      if (!argument || typeof argument !== 'object' || Array.isArray(argument) ||
+          Object.keys(argument).some(key => !['signature', 'value'].includes(key)))
+        throw new TypeError('D-Bus variant requires signature and value');
+      const nodes = protocolSignature(argument.signature);
+      if (nodes.length !== 1) throw new TypeError('D-Bus variant requires exactly one type');
+      children = [prepare(nodes[0], argument.value)];
+    } else if (type === 'n' || type === 'u') {
+      const min = type === 'n' ? -32768 : 0, max = type === 'n' ? 32767 : 0xffffffff;
+      if (!Number.isInteger(argument) || argument < min || argument > max)
+        throw new RangeError('D-Bus argument is outside ' + type + ' range');
+    } else if (type === 'b') {
+      if (typeof argument !== 'boolean') throw new TypeError('D-Bus boolean requires a boolean');
+    } else {
       if (typeof argument !== 'string' || argument.includes('\0'))
-        throw new TypeError('D-Bus string argument requires a string without NUL');
+        throw new TypeError('D-Bus string requires a string without NUL');
       encoded = encodeUtf8(argument, maxBytes - 1);
       if (type === 'o' && !value('dbus_validate_path', argument, null))
         throw new TypeError('Invalid D-Bus object path argument');
     }
-    return { type, argument, encoded };
-  });
+    return { ...node, argument, encoded, prepared: children };
+  }
+  return tuple(protocolSignature(signature), args);
 }
-function appendScalars(message, scalars) {
-  if (!scalars.length) return;
+function appendArguments(message, arguments_) {
+  function append(iter, item) {
+    const { type, argument, encoded, prepared } = item;
+    if (prepared) {
+      const child = native.createRecord('messageIter');
+      let opened = false, signatureBuffer;
+      try {
+        const contained = type === 'a' ? item.children[0].signature :
+          type === 'v' ? prepared[0].signature : null;
+        if (contained !== null) {
+          const bytes = encodeUtf8(contained, 255);
+          signatureBuffer = alloc(bytes.length + 1); signatureBuffer.write(bytes.buffer);
+        }
+        const nativeType = type === '(' ? C.TYPE_STRUCT : type === '{' ? C.TYPE_DICT_ENTRY : type.charCodeAt(0);
+        if (!value('dbus_message_iter_open_container', iter, nativeType, signatureBuffer ?? null, child.pointer))
+          throw failure('ERR_DBUS_MEMORY', 'Cannot open D-Bus container');
+        opened = true;
+        for (const entry of prepared) append(child.pointer, entry);
+        if (!value('dbus_message_iter_close_container', iter, child.pointer))
+          throw failure('ERR_DBUS_MEMORY', 'Cannot close D-Bus container');
+        opened = false;
+      } finally {
+        try { if (opened) value('dbus_message_iter_abandon_container', iter, child.pointer); }
+        finally { signatureBuffer?.close(); child.close(); }
+      }
+      return;
+    }
+    let input, slot;
+    try {
+      if (encoded) {
+        input = alloc(encoded.length + 1); input.write(encoded.buffer); slot = allocPointers([input]);
+      } else {
+        const bytes = new ArrayBuffer(type === 'n' ? 2 : 4), view = new DataView(bytes);
+        if (type === 'n') view.setInt16(0, argument, true);
+        else view.setUint32(0, type === 'b' ? Number(argument) : argument, true);
+        input = alloc(bytes.byteLength); input.write(bytes);
+      }
+      if (!value('dbus_message_iter_append_basic', iter, type.charCodeAt(0), slot ?? input))
+        throw failure('ERR_DBUS_MEMORY', 'Cannot append D-Bus basic argument');
+    } finally { slot?.close(); input?.close(); }
+  }
+  if (!arguments_.length) return;
   const iter = native.createRecord('messageIter');
   try {
     value('dbus_message_iter_init_append', message, iter.pointer);
-    for (const { type, argument, encoded } of scalars) {
-      let input, stringSlot;
-      try {
-        if (encoded) {
-          input = alloc(encoded.length + 1); input.write(encoded.buffer);
-          stringSlot = allocPointers([input]);
-        } else {
-          input = alloc(4);
-          const bytes = new ArrayBuffer(4);
-          new DataView(bytes).setUint32(0, type === 'b' ? Number(argument) : argument, true);
-          input.write(bytes);
-        }
-        if (!value('dbus_message_iter_append_basic', iter.pointer, type.charCodeAt(0), stringSlot ?? input))
-          throw failure('ERR_DBUS_MEMORY', 'Cannot append D-Bus scalar argument');
-      } finally { stringSlot?.close(); input?.close(); }
-    }
+    for (const item of arguments_) append(iter.pointer, item);
   } finally { iter.close(); }
 }
-function readScalars(message, signature) {
+function readArguments(message, signature, projection) {
   if (!value('dbus_message_has_signature', message, signature))
     throw failure('ERR_DBUS_SIGNATURE', 'Expected D-Bus signature: ' + signature);
-  const values = [];
-  if (!signature) return Object.freeze(values);
+  function tuple(iter, nodes, path) {
+    const values = [];
+    for (const node of nodes) {
+      values.push(read(iter, node, path));
+      value('dbus_message_iter_next', iter);
+    }
+    if (value('dbus_message_iter_get_arg_type', iter))
+      throw failure('ERR_DBUS_SIGNATURE', 'D-Bus tuple has extra arguments');
+    return Object.freeze(values);
+  }
+  function read(iter, node, path) {
+    const { type } = node;
+    const expected = type === '(' ? C.TYPE_STRUCT : type === '{' ? C.TYPE_DICT_ENTRY : type.charCodeAt(0);
+    if (value('dbus_message_iter_get_arg_type', iter) !== expected)
+      throw failure('ERR_DBUS_SIGNATURE', 'D-Bus value has incorrect type');
+    if (projection && projection(Object.freeze(path), node.signature) === false) return dbusSkipped;
+    if (type === 'a' || type === '(' || type === '{' || type === 'v') {
+      const child = native.createRecord('messageIter');
+      try {
+        value('dbus_message_iter_recurse', iter, child.pointer);
+        if (type === 'a') {
+          const entries = [];
+          while (value('dbus_message_iter_get_arg_type', child.pointer)) {
+            entries.push(read(child.pointer, node.children[0], path));
+            value('dbus_message_iter_next', child.pointer);
+          }
+          return Object.freeze(entries);
+        }
+        if (type === '{') {
+          const key = read(child.pointer, node.children[0], path);
+          value('dbus_message_iter_next', child.pointer);
+          const entry = read(child.pointer, node.children[1], [...path, key]);
+          value('dbus_message_iter_next', child.pointer);
+          if (value('dbus_message_iter_get_arg_type', child.pointer))
+            throw failure('ERR_DBUS_SIGNATURE', 'D-Bus dictionary entry has extra values');
+          return Object.freeze([key, entry]);
+        }
+        if (type === '(') return tuple(child.pointer, node.children, path);
+        const pointer = value('dbus_message_iter_get_signature', child.pointer);
+        let contained;
+        try { contained = copyCString(pointer, 'variant signature'); }
+        finally { if (pointer !== null) release('dbus_free', pointer); }
+        const nodes = protocolSignature(contained);
+        if (nodes.length !== 1) throw failure('ERR_DBUS_SIGNATURE', 'D-Bus variant has invalid signature');
+        return Object.freeze({ signature: contained, value: tuple(child.pointer, nodes, path)[0] });
+      } finally { child.close(); }
+    }
+    const output = alloc(8);
+    try {
+      value('dbus_message_iter_get_basic', iter, output);
+      if (type === 's' || type === 'o') {
+        const pointer = output.readPointer();
+        try { return copyCString(pointer, 'basic string'); }
+        finally { pointer?.close(); }
+      }
+      if (type === 'n') return new DataView(output.read(2)).getInt16(0, true);
+      const number = new DataView(output.read(4)).getUint32(0, true);
+      if (type === 'b' && number !== 0 && number !== 1)
+        throw failure('ERR_DBUS_REPLY', 'D-Bus boolean is not canonical');
+      return type === 'b' ? number === 1 : number;
+    } finally { output.close(); }
+  }
+  const nodes = protocolSignature(signature);
+  if (!nodes.length) return Object.freeze([]);
   const iter = native.createRecord('messageIter');
-  let output;
   try {
-    output = alloc(8);
     if (!value('dbus_message_iter_init', message, iter.pointer))
       throw failure('ERR_DBUS_SIGNATURE', 'D-Bus message has no argument');
-    for (let index = 0; index < signature.length; index++) {
-      value('dbus_message_iter_get_basic', iter.pointer, output);
-      if (signature[index] === 's' || signature[index] === 'o') {
-        const pointer = output.readPointer();
-        try { values.push(copyCString(pointer, 'scalar string')); }
-        finally { pointer?.close(); }
-      } else {
-        const number = new DataView(output.read(4)).getUint32(0, true);
-        if (signature[index] === 'b' && number !== 0 && number !== 1)
-          throw failure('ERR_DBUS_REPLY', 'D-Bus boolean is not canonical');
-        values.push(signature[index] === 'b' ? number === 1 : number);
-      }
-      if (index + 1 < signature.length && !value('dbus_message_iter_next', iter.pointer))
-        throw failure('ERR_DBUS_SIGNATURE', 'D-Bus scalar tuple ended early');
-    }
-    return Object.freeze(values);
-  } finally { output?.close(); iter.close(); }
+    return tuple(iter.pointer, nodes, []);
+  } finally { iter.close(); }
 }
 function header(message, field) {
   const pointer = value('dbus_message_get_' + field, message);
   try { return pointer === null ? null : copyCString(pointer, field); }
   finally { pointer?.close(); }
+}
+
+/**
+ * One explicit private connection for calls, declared signals and exported
+ * objects addressed by its unique name (no well-known name claim). poll() is
+ * the sole zero-wait reader and pops at most one message. It routes replies to
+ * tickets and returns a copied signal or retained method request, otherwise
+ * null. Ticket.poll() checks outcome/deadline only; drive endpoint.poll() too.
+ * The scalar adapters below retain their existing narrower contracts.
+ *
+ * Supports n/u/b/s/o, arrays, structs, dictionaries and variants. An optional
+ * reply/signal projection(path, signature) can explicitly skip unused values
+ * before native iterator recursion. No implicit unsupported-type defaults.
+ * Replies expose sender and error name, not arbitrary remote diagnostic bodies.
+ * Cancellation discards local results only. Requests are once-reply/error/close.
+ * Closing resolves all tickets and drops all retained native messages before
+ * releasing the connection. No native dispatch, filter or retained callback.
+ */
+export function openDbusEndpoint(address, options = {}) {
+  native ??= createDbusApi();
+  if (!options || typeof options !== 'object' || Array.isArray(options) ||
+      Object.keys(options).some(key => !['objects', 'signals', 'limits'].includes(key)))
+    throw new TypeError('D-Bus endpoint requires objects, signals and optional native limits');
+  const objects = new Map(), signals = new Map();
+  for (const declaration of options.objects ?? []) {
+    const { path, interface: interfaceName, methods, accept } = declaration;
+    validateText(path, 'dbus_validate_path'); validateText(interfaceName, 'dbus_validate_interface');
+    if (!methods || typeof methods !== 'object' || Array.isArray(methods))
+      throw new TypeError('D-Bus object requires finite method declarations');
+    if (accept !== undefined && typeof accept !== 'function')
+      throw new TypeError('D-Bus admission predicate must be a function');
+    const declared = new Map();
+    for (const [member, method] of Object.entries(methods)) {
+      validateText(member, 'dbus_validate_member');
+      protocolSignature(method.signature); protocolSignature(method.replySignature);
+      declared.set(member, { signature: method.signature, replySignature: method.replySignature });
+    }
+    const key = path + '\n' + interfaceName;
+    if (objects.has(key)) throw new TypeError('Duplicate D-Bus object declaration');
+    objects.set(key, { methods: declared, accept });
+  }
+  for (const signal of options.signals ?? []) {
+    validateText(signal.interface, 'dbus_validate_interface'); validateText(signal.member, 'dbus_validate_member');
+    protocolSignature(signal.signature);
+    if (signal.projection !== undefined && typeof signal.projection !== 'function')
+      throw new TypeError('D-Bus projection must be a function');
+    if (signal.accept !== undefined && typeof signal.accept !== 'function')
+      throw new TypeError('D-Bus admission predicate must be a function');
+    const key = signal.interface + '\n' + signal.member;
+    if (signals.has(key)) throw new TypeError('Duplicate D-Bus signal declaration');
+    signals.set(key, { signature: signal.signature, projection: signal.projection, accept: signal.accept });
+  }
+  const limits = options.limits ?? {};
+  for (const key of Object.keys(limits)) {
+    if (!['receivedBytes', 'messageBytes', 'receivedFDs', 'messageFDs', 'outgoingBytes'].includes(key) ||
+        !Number.isSafeInteger(limits[key]) || limits[key] < 0 ||
+        (key.endsWith('Bytes') && !limits[key]))
+      throw new TypeError('Invalid native D-Bus connection limit');
+  }
+  let connection = openConnection(address), closedError = null;
+  const tickets = new Map(), requests = new Set();
+  let uniqueName;
+  try {
+    for (const [key, method] of [
+      ['receivedBytes', 'dbus_connection_set_max_received_size'],
+      ['messageBytes', 'dbus_connection_set_max_message_size'],
+      ['receivedFDs', 'dbus_connection_set_max_received_unix_fds'],
+      ['messageFDs', 'dbus_connection_set_max_message_unix_fds'],
+    ]) if (limits[key] !== undefined) value(method, connection, BigInt(limits[key]));
+    const pointer = value('dbus_bus_get_unique_name', connection);
+    try { uniqueName = copyCString(pointer, 'unique name'); }
+    finally { pointer?.close(); }
+  } catch (error) { closeConnection(connection); throw error; }
+  function close(error = failure('ERR_DBUS_CLOSED', 'D-Bus endpoint is closed')) {
+    if (closedError) return;
+    closedError = error;
+    try {
+      for (const ticket of tickets.values()) ticket.finish(Object.freeze({ state: 'error', error }));
+      for (const request of requests) request.close();
+    } finally {
+      try { closeConnection(connection); }
+      finally { connection = null; endpoints.delete(endpoint); }
+    }
+  }
+  function live() {
+    if (closedError) throw closedError;
+    if (!value('dbus_connection_get_is_connected', connection)) {
+      const error = failure('ERR_DBUS_DISCONNECTED', 'D-Bus connection is disconnected');
+      close(error); throw error;
+    }
+  }
+  function send(message, serial = null) {
+    live();
+    if (limits.outgoingBytes !== undefined &&
+        value('dbus_connection_get_outgoing_size', connection) >= BigInt(limits.outgoingBytes))
+      throw failure('ERR_DBUS_QUEUE', 'Native D-Bus outgoing queue is full');
+    if (!value('dbus_connection_send', connection, message, serial))
+      throw failure('ERR_DBUS_SEND', 'D-Bus message was not accepted');
+  }
+  function respond(message, noReply, args, name, diagnostic) {
+    live();
+    if (noReply) return Object.freeze({ state: 'suppressed' });
+    const reply = name ? value('dbus_message_new_error', message, name, diagnostic) :
+      value('dbus_message_new_method_return', message);
+    if (reply === null) throw failure('ERR_DBUS_MEMORY', 'Cannot allocate D-Bus response');
+    try {
+      if (!name) appendArguments(reply, args);
+      send(reply); return Object.freeze({ state: 'accepted' });
+    } finally { release('dbus_message_unref', reply); }
+  }
+  const endpoint = Object.freeze({
+    uniqueName,
+    call(target, signature, args, replySignature, timeoutMs = 25000, projection) {
+      live();
+      for (const [field, validator] of [
+        ['destination', 'dbus_validate_bus_name'], ['path', 'dbus_validate_path'],
+        ['interface', 'dbus_validate_interface'], ['member', 'dbus_validate_member'],
+      ]) validateText(target?.[field], validator);
+      protocolSignature(replySignature);
+      if (projection !== undefined && typeof projection !== 'function')
+        throw new TypeError('D-Bus projection must be a function');
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 0x7fffffff)
+        throw new RangeError('D-Bus timeout must be a positive int32 number of milliseconds');
+      const prepared = prepareArguments(signature, args, live);
+      const message = value('dbus_message_new_method_call',
+        target.destination, target.path, target.interface, target.member);
+      if (message === null) throw failure('ERR_DBUS_MEMORY', 'Cannot allocate D-Bus method call');
+      const slot = alloc(4);
+      let serial;
+      try {
+        appendArguments(message, prepared); send(message, slot);
+        serial = new DataView(slot.read(4)).getUint32(0, true);
+      } finally { slot.close(); release('dbus_message_unref', message); }
+      if (!serial || tickets.has(serial)) throw failure('ERR_DBUS_SERIAL', 'Invalid D-Bus request serial');
+      const deadline = monotonicNanoseconds() + BigInt(timeoutMs) * 1000000n;
+      const destination = target.destination;
+      let outcome = Object.freeze({ state: 'pending' }), reply = null;
+      const operation = {
+        finish(result) {
+          if (outcome.state !== 'pending') return outcome;
+          outcome = result; tickets.delete(serial);
+          if (reply !== null) { release('dbus_message_unref', reply); reply = null; }
+          return outcome;
+        },
+        receive(message) {
+          if (reply !== null) return false;
+          reply = message; return true;
+        },
+      };
+      tickets.set(serial, operation);
+      return Object.freeze({
+        poll() {
+          if (outcome.state !== 'pending') return outcome;
+          if (monotonicNanoseconds() >= deadline)
+            return operation.finish(Object.freeze({ state: 'error', error:
+              failure('ERR_DBUS_TIMEOUT', 'D-Bus request exceeded its caller-specified deadline') }));
+          if (reply === null) return outcome;
+          try {
+            const sender = header(reply, 'sender'), type = value('dbus_message_get_type', reply);
+            if (!sender || ((destination.startsWith(':') || destination === 'org.freedesktop.DBus') &&
+                sender !== destination && !(type === C.MESSAGE_ERROR && sender === 'org.freedesktop.DBus')))
+              throw failure('ERR_DBUS_SENDER', 'D-Bus reply has unexpected sender');
+            if (value('dbus_message_contains_unix_fds', reply))
+              throw failure('ERR_DBUS_SIGNATURE', 'D-Bus endpoint does not support file descriptors');
+            if (type === C.MESSAGE_ERROR) {
+              const name = header(reply, 'error_name');
+              if (!name) throw failure('ERR_DBUS_REPLY', 'D-Bus error has no name');
+              return operation.finish(Object.freeze({ state: 'error', sender, error:
+                failure('ERR_DBUS_REMOTE', 'Remote D-Bus error: ' + name, name) }));
+            }
+            const decoded = readArguments(reply, replySignature, projection);
+            return operation.finish(Object.freeze({ state: 'reply', sender,
+              value: decoded.length === 0 ? undefined : decoded.length === 1 ? decoded[0] : decoded }));
+          } catch (error) { return operation.finish(Object.freeze({ state: 'error', error })); }
+        },
+        cancel() { return operation.finish(Object.freeze({ state: 'cancelled' })); },
+      });
+    },
+    notify(target, signature, args) {
+      live();
+      for (const [field, validator] of [
+        ['destination', 'dbus_validate_bus_name'], ['path', 'dbus_validate_path'],
+        ['interface', 'dbus_validate_interface'], ['member', 'dbus_validate_member'],
+      ]) validateText(target?.[field], validator);
+      const prepared = prepareArguments(signature, args, live);
+      const message = value('dbus_message_new_method_call',
+        target.destination, target.path, target.interface, target.member);
+      if (message === null) throw failure('ERR_DBUS_MEMORY', 'Cannot allocate D-Bus notification');
+      try {
+        appendArguments(message, prepared); value('dbus_message_set_no_reply', message, 1); send(message);
+      } finally { release('dbus_message_unref', message); }
+    },
+    poll() {
+      live(); value('dbus_connection_read_write', connection, 0); live();
+      let message = value('dbus_connection_pop_message', connection);
+      if (message === null) return null;
+      try {
+        const type = value('dbus_message_get_type', message);
+        if (type === C.MESSAGE_METHOD_RETURN || type === C.MESSAGE_ERROR) {
+          const ticket = tickets.get(value('dbus_message_get_reply_serial', message));
+          if (ticket?.receive(message)) message = null;
+          return null;
+        }
+        if (type !== C.MESSAGE_METHOD_CALL && type !== C.MESSAGE_SIGNAL) return null;
+        const target = Object.freeze({ destination: header(message, 'destination'), path: header(message, 'path'),
+          interface: header(message, 'interface'), member: header(message, 'member') });
+        const sender = header(message, 'sender');
+        if (!sender || (sender !== 'org.freedesktop.DBus' &&
+            (!sender.startsWith(':') || !value('dbus_validate_bus_name', sender, null))))
+          throw failure('ERR_DBUS_SENDER', 'D-Bus message has no valid sender');
+        if (type === C.MESSAGE_SIGNAL) {
+          const declaration = signals.get(target.interface + '\n' + target.member);
+          if (!declaration || (declaration.accept && !declaration.accept(sender, target))) return null;
+          if (value('dbus_message_contains_unix_fds', message))
+            throw failure('ERR_DBUS_SIGNATURE', 'D-Bus endpoint does not support file descriptors');
+          return Object.freeze({ kind: 'signal', target, sender,
+            args: readArguments(message, declaration.signature, declaration.projection) });
+        }
+        const noReply = Boolean(value('dbus_message_get_no_reply', message));
+        const object = objects.get(target.path + '\n' + target.interface);
+        if (object?.accept && !object.accept(sender, target)) {
+          respond(message, noReply, [], 'org.freedesktop.DBus.Error.AccessDenied', 'D-Bus method caller is not authorized');
+          return null;
+        }
+        if (value('dbus_message_contains_unix_fds', message))
+          throw failure('ERR_DBUS_SIGNATURE', 'D-Bus endpoint does not support file descriptors');
+        const method = object?.methods.get(target.member);
+        if (!method || !value('dbus_message_has_signature', message, method.signature)) {
+          respond(message, noReply, [], 'org.freedesktop.DBus.Error.' + (method ? 'InvalidArgs' : 'UnknownMethod'),
+            method ? 'Incorrect D-Bus argument signature' : 'Unknown D-Bus method');
+          return null;
+        }
+        const args = readArguments(message, method.signature), owned = message;
+        let finished = false;
+        function active() {
+          if (finished) throw failure('ERR_DBUS_REQUEST_CLOSED', 'D-Bus request is already closed');
+          live();
+        }
+        function finish() {
+          if (finished) return;
+          finished = true; requests.delete(request); release('dbus_message_unref', owned);
+        }
+        const request = Object.freeze({
+          kind: 'method', target, sender, noReply, args,
+          reply(args = []) {
+            active(); const prepared = prepareArguments(method.replySignature, args, active);
+            try { return respond(owned, noReply, prepared); } finally { finish(); }
+          },
+          error(name, diagnostic) {
+            active(); validateText(name, 'dbus_validate_error_name');
+            if (typeof diagnostic !== 'string' || diagnostic.includes('\0'))
+              throw new TypeError('D-Bus error text requires a string without NUL');
+            encodeUtf8(diagnostic, maxBytes - 1);
+            try { return respond(owned, noReply, [], name, diagnostic); } finally { finish(); }
+          },
+          close() { finish(); },
+        });
+        requests.add(request); message = null; return request;
+      } finally { if (message !== null) release('dbus_message_unref', message); }
+    },
+    close() { close(); },
+  });
+  endpoints.add(endpoint); return endpoint;
 }
 
 /**
