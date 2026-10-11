@@ -280,12 +280,13 @@ images do not contain the new SysRT architecture and independent Settings.
 The new Debian x86_64 UEFI **Live test Alpha 0.1.0-alpha.6** now has a clean
 `c9b1fcd` runtime and a complete normal OVMF/KVM acceptance pass, including
 independent Settings, JS file/theme operations and typed Shell configuration.
-The unchanged tested ISO is eligible for physical-machine testing, not yet
-hardware-qualified. It runs from RAM without installing or automatically
+The unchanged tested ISO was delivered for physical-machine testing; on
+2026-10-11 the user reported that testing passed. Detailed device/function and
+endurance coverage was not supplied. It runs from RAM without installing or automatically
 mounting internal disks. See the
 [Alpha delivery gate](./ROADMAP.md#new-architecture-alpha-delivery-gate).
-GPU, networking/audio hardware and ordinary-user shutdown require separate
-physical acceptance; QMP quit in the VM did not test power-off. A separate
+The user feedback does not establish a comprehensive GPU/network/audio matrix
+or ordinary-user shutdown result; QMP quit in the VM did not test power-off. A separate
 [D1 installed-development virtual disk](./desktop/release/debian/README.md#installed-development-virtual-disk-d1)
 adds A/B systems and persistent user data; a physical-media installer, system
 updates and production session protection remain future work.

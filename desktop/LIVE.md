@@ -8,7 +8,9 @@ The ISO is 707723264 bytes; SHA-256:
 `9f34b85523bbfcb3ec8d4ed022fa1c21da380ada6cb7ed10a8b90722dcf2753b`.
 See the [Alpha delivery gate](../ROADMAP.md#new-architecture-alpha-delivery-gate)
 and the generated artifact's qualification/provenance records.
-This is permission to begin physical testing, not a physical compatibility pass.
+On 2026-10-11 the user reported that physical-machine testing of this Alpha passed.
+Record this as user-reported acceptance of the delivered image, not independent
+per-device, feature or endurance measurements.
 The generated USB image has not received this run's optical-boot qualification.
 The final optical handoff is under
 `dist\pollydesktop-0.1.0-alpha.6-debian13-c9b1fcd-physical-test\`.

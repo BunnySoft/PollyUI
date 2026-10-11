@@ -21,7 +21,8 @@ See README and `desktop/README.md` for current platform boundaries.
 
 **Current physical-test candidate:** Debian 13 trixie amd64 alpha.6,
 frozen runtime `c9b1fcd`, has passed complete UEFI/KVM desktop and new-architecture
-acceptance. Actual physical-machine testing remains pending. Historical alpha.5-r2
+acceptance. On 2026-10-11 the user reported that alpha.6 physical-machine testing
+passed; per-device, feature and endurance measurements were not specified. Historical alpha.5-r2
 physical boot feedback is not evidence for alpha.6. Keep the Alpine fallback and do
 not turn all future features into current release gates.
 See [base selection and maintenance](./docs/desktop-base-maintenance.md).
@@ -40,7 +41,7 @@ remain historical; they do not contain or qualify the new SysRT/Settings work.
 | Runtime package | Rebuild/install that revision, verify SDK/generated ABI/app resources, runtime dependencies and checksums from a relocated package | Fresh Release package, frozen-source checks, 157 payload files and 240 exact dependency pins passed |
 | Virtual machine | Real UEFI guest boot, ordinary-user desktop, input/windows/Files, independent Settings and configuration behavior; preserve failures and logs | Complete normal OVMF/KVM run passed: Chinese input, clipboard, workspaces, Files/JSON and independent Settings select/reload/user theme/restore/About/close/reopen |
 | Physical-test ISO | Produce/check the release ISO for the same revision; boot-test the actual media and record its SHA-256 before handoff | Published unchanged optical ISO in `dist\pollydesktop-0.1.0-alpha.6-debian13-c9b1fcd-physical-test\`; all 15 artifact checksums verified. ISO SHA-256 `9f34b85523bbfcb3ec8d4ed022fa1c21da380ada6cb7ed10a8b90722dcf2753b`; no hardware-pass claim |
-| Physical acceptance | User tests boot/display/input, applications, actual networking/audio and collects failures on the target machine | Pending; VM success is not hardware qualification |
+| Physical acceptance | User tests the delivered Alpha on the target machine and reports results | User reported physical-machine testing passed on 2026-10-11; detailed per-device/function/endurance coverage was not supplied, so no broader qualification is inferred |
 
 Use the existing QEMU/OVMF lane; temporary VM boot media is a test candidate,
 not physical-release approval. Only one heavy media/VM lane runs against the
@@ -55,7 +56,8 @@ shared host directory or extra writable disk. QMP quit is not guest power-off
 acceptance. The RAM-only fixture's ttyS0 login attempted a second seatless desktop
 and failed before returning to its CLI; that raw error remains recorded separately
 from the stable main seat0 desktop. Neither serial-login GUI behavior nor physical
-GPU/network/audio is qualified. Earlier failed candidates and diagnostics remain
+GPU/network/audio was qualified by that VM run. The later user-reported physical
+test pass does not supply a detailed device matrix. Earlier failed candidates and diagnostics remain
 preserved; the successful run uses harness `e32ecd6` with no skipped normal gates.
 
 For PollyOS, use the [technical overview](./docs/POLLYOS.md) and the
