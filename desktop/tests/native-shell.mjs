@@ -1,7 +1,7 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { settingsView, panelView, dockView, workspacesView } from './desktop/shell/views.mjs';
-import { DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
+import { DESKTOP_THEMES, getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shell/themes.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { saveShortcuts, shortcutFromEvent, shortcutText } from './desktop/shell/shortcuts.mjs';
 
@@ -74,6 +74,7 @@ const configuration = {
 const shell = createDesktopShell({ host: fakeHost, configuration, report: text => warnings.push(text) }).start();
 const backgrounds = shell.getSurfaces().filter(s => s.kind === 'wallpaper').map(s => s.window);
 let previousPanel = shell.getSurfaces().find(s => s.kind === 'panel').window;
+let previousTheme = getDesktopTheme(shell.getState().themeId);
 for (const theme of DESKTOP_THEMES) {
   check(shell.selectTheme(theme.id), theme.id + ' applies to shell');
   check(saved === theme.id && shell.getState().themeId === theme.id, theme.id + ' is persisted');
@@ -82,8 +83,12 @@ for (const theme of DESKTOP_THEMES) {
   check(surfaces.filter(s => s.kind === 'wallpaper').every(s => backgrounds.includes(s.window)),
     'wallpaper handles survive theme changes');
   const panel = surfaces.find(s => s.kind === 'panel').window;
-  if (theme.id === 'server2003') check(panel === previousPanel, 'same-geometry panel is reused');
+  if (theme.panel.kind === previousTheme.panel.kind &&
+      (theme.panel.kind === 'dock' ? theme.layout.menuBarHeight === previousTheme.layout.menuBarHeight :
+        theme.panel.height === previousTheme.panel.height))
+    check(panel === previousPanel, 'same-geometry panel is reused');
   previousPanel = panel;
+  previousTheme = theme;
   check(panel.options.anchors[0] === (theme.panel.kind === 'dock' ? 'top' : 'bottom'),
     theme.id + ' uses the correct screen edge');
   if (theme.panel.kind === 'dock')
@@ -127,7 +132,7 @@ check(warnings.length >= 3, 'failures are logged, not silently ignored');
 
 saved = 'missing-theme';
 const recovered = createDesktopShell({ host: fakeHost, configuration, report: text => warnings.push(text) });
-check(recovered.getState().themeId === 'xp' && recovered.getState().error, 'unknown saved themes recover with a visible warning');
+check(recovered.getState().themeId === DEFAULT_DESKTOP_THEME && recovered.getState().error, 'unknown saved themes recover with a visible warning');
 
 let selected = '', closed = false;
 render(settingsView(getDesktopTheme('xp'), id => { selected = id; }, () => { closed = true; }, () => {}), document.body);

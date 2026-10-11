@@ -1,14 +1,16 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
-import { settingsView, button } from './desktop/shell/views.mjs';
+import { settingsView } from './desktop/shell/views.mjs';
 import { systemSettingsView, aboutSettingsView } from './desktop/shell/settings.mjs';
-import { SETTINGS_APP_ID, SETTINGS_VERSION, MANAGED_PAGES } from './desktop/client/settings-contract.mjs';
+import { SETTINGS_APP_ID, SETTINGS_VERSION, MANAGED_PAGES, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
+import { desktopCommand, desktopIcon, desktopText, settingsCard, horizontal } from './desktop/shell/presentation.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 
 export function createSettingsApp({ client, page = 'appearance', host = window, report = console.error,
   identity = typeof application === 'undefined' ? { id: SETTINGS_APP_ID } : application,
   onStop = () => {} }) {
-  let surface = null, timer = null, stopped = false, revision = 0;
+  let surface = null, timer = null, stopped = false, revision = 0, details = false;
+  const ownBuild = runtimeBuild(identity);
   const controller = createSettingsController({ client, page, changed: paint, report });
   function paint() {
     if (stopped || !surface || surface.closed) return;
@@ -20,7 +22,8 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       if (!controller.getState().busy && !controller.getState().unavailable && controller.getState().appearance)
         return action(...args);
     });
-    const label = text => h('view', { style: { color: theme.colors.text, fontSize: theme.layout.fontSize } }, text);
+    const label = text => desktopText(text, theme.colors.text, 14, { flexShrink: 1 });
+    const build = state.appearance?.build || ownBuild;
     let content;
     if (state.page === 'appearance') {
       content = settingsView(theme, available(controller.select), stop, guarded(controller.refresh),
@@ -30,29 +33,52 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
         null, true, state.busy ? 'Waiting for Shell acknowledgement...' : state.appearance?.status || '',
         state.appearance?.catalog.themes);
     } else if (MANAGED_PAGES.includes(state.page)) {
-      content = h('view', { style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap } },
-        label('This control remains in the trusted desktop Shell.'),
-        label('Settings does not own display, Wi-Fi, audio or keyboard management connections.'),
-        button('settings-open-managed-' + state.page, 'Open in desktop control panel', theme,
-          available(() => controller.managed(state.page))),
-        state.error ? label(state.error) : null);
+      const descriptions = {
+        displays: ['Connected displays', 'Resolution, scale, arrangement and confirmed display profiles.'],
+        network: ['Wi-Fi connections', 'Available networks, connection status and saved Wi-Fi preferences.'],
+        audio: ['Sound devices', 'Outputs, microphones, volume and the preferred audio device.'],
+        keyboard: ['Keyboard shortcuts', 'Choose and record desktop shortcuts for window and workspace actions.'],
+      };
+      content = h('view', { style: { padding: 8, gap: 16, flexShrink: 0 } },
+        settingsCard(theme, descriptions[state.page][0], descriptions[state.page][1], [
+          h('view', { style: { ...horizontal, gap: 14, flexWrap: 'wrap' } },
+            desktopIcon(state.page, theme.colors.accent, 36),
+            desktopCommand('settings-open-managed-' + state.page, 'Open desktop controls', theme,
+              available(() => controller.managed(state.page)), { icon: 'open' })),
+          desktopText('Opens a separate desktop control panel. Settings stays open.', theme.colors.muted, 13),
+        ]),
+        desktopText('These controls are managed by the desktop Shell, not by the Settings application.',
+          theme.colors.muted, 13, { flexShrink: 1 }),
+        state.busy ? h('view', { role: 'status' }, label('Opening desktop controls...')) : null,
+        state.error ? h('view', { role: 'alert' }, label(state.error)) : null);
     } else {
-      content = h('view', { style: { height: '100%', minHeight: 0, overflow: 'scroll' } },
-        label('Settings ' + SETTINGS_VERSION + ' | ' + identity.id),
-        identity.configDir ? label('Application preferences: ' + identity.configDir) : null,
-        identity.dataDir ? label('Application data: ' + identity.dataDir) : null,
-        label('Entry: desktop/apps/settings/main.mjs'),
+      content = h('view', { style: { minHeight: 0, gap: 12, flexShrink: 0 } },
         state.error && state.about ? h('view', { role: 'alert' }, label(state.error)) : null,
         state.about ? aboutSettingsView(theme, state.about) : label(state.error || 'Inspecting the running desktop...'),
-        state.about ? label('Profiles: display ' + state.about.profiles.display + ' | audio ' +
-          state.about.profiles.audio + ' | workspace ' + state.about.profiles.workspace) : null);
+        desktopCommand('settings-about-details', details ? 'Hide technical details' : 'Technical details', theme,
+          guarded(() => { details = !details; paint(); }), { quiet: true, icon: 'info' }),
+        details ? settingsCard(theme, 'Technical details', 'Settings app version is separate from the system release.', [
+          label('Settings application: ' + SETTINGS_VERSION + ' | ' + identity.id),
+          label('Settings runtime: ' + buildLabel(ownBuild)),
+          label('Settings full revision: ' + ownBuild.revision),
+          state.about ? label('Management owner: ' + state.about.applicationId) : null,
+          identity.configDir ? label('Application preferences: ' + identity.configDir) : null,
+          identity.dataDir ? label('Application data: ' + identity.dataDir) : null,
+          label('Entry: desktop/apps/settings/main.mjs'),
+          state.about ? label('Profiles: display ' + state.about.profiles.display + ' | audio ' +
+            state.about.profiles.audio + ' | workspace ' + state.about.profiles.workspace) : null,
+          label('Closing Settings leaves desktop services and other applications running.'),
+        ]) : null);
     }
     const tree = systemSettingsView(theme, state.page, guarded(page => {
       surface.document.activeElement?.blur();
       render(null, surface.document.body);
       controller.navigate(page);
       surface.document.getElementById('shell-settings-page-' + page)?.focus();
-    }), stop, content);
+    }), stop, content, null, 'Settings', [], build);
+    if (JSON.stringify(build) !== JSON.stringify(ownBuild))
+      tree.children.push(h('view', { role: 'status', style: { padding: 8, flexShrink: 0,
+        backgroundColor: theme.colors.selection } }, label('Settings runtime differs: ' + buildLabel(ownBuild))));
     if (state.busy || !state.appearance)
       tree.props['aria-busy'] = 'true';
     function disable(node) {

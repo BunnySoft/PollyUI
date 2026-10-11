@@ -15,6 +15,22 @@ control panel; these controls are **not** independent Settings implementations.
 The Shell keeps the existing native apply/acknowledgement/persistence/rollback
 state machines, and quick-theme menus remain available.
 
+The original Windows-11-inspired presentation uses a persistent sidebar,
+grouped surface cards and illustrated theme previews, rather than full-width
+theme buttons. Theme previews are native primitive artwork, not screenshots
+of hardware; the modern material is solid, not a claim of Mica or blur.
+About keeps system/session information separate from expandable technical paths,
+storage identities and Settings's own application version.
+
+Every page, including loading, unavailable and failed states, retains the
+system release and short build revision/source marker in its footer. Both strict
+snapshots include `build:{version,revision,sourceDirty}` generated from the
+trusted Shell's `application.runtimeVersion/runtimeRevision/runtimeSourceDirty`.
+Unknown revisions and source state remain explicit. About shows the full revision.
+Settings uses its own compiled metadata before the first snapshot, and explicitly
+labels any mismatch between its runtime and the Shell; this is information,
+never an authorization credential or a caller-provided release claim.
+
 Both endpoints require the qualified owned private session bus:
 `POLLY_SESSION_BUS_ADDRESS == DBUS_SESSION_BUS_ADDRESS`, one `unix:path` address
 for the same-UID socket at `$XDG_RUNTIME_DIR/bus`, with a same-UID mode-0700 runtime

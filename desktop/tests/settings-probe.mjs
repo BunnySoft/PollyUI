@@ -3,7 +3,7 @@ import { openDbusService } from './sysrt/sdk/js/dbus.mjs';
 import { settingsEnvironment } from './desktop/shared/settings-environment.mjs';
 
 let endpoint = null, timer = null;
-const app = await startSettingsRuntime({ onStop() {
+const app = await startSettingsRuntime({ host: globalThis.settingsProbeHost || window, onStop() {
   if (timer !== null) clearInterval(timer);
   endpoint?.close();
 } });

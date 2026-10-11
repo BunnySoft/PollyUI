@@ -39,7 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runtime_client", type=Path)
     parser.add_argument("pollyui", type=Path)
-    parser.add_argument("--mode", choices=("ui", "audio", "network", "installed", "all"), default="all")
+    parser.add_argument("--mode", choices=("ui", "ui-narrow", "audio", "network", "installed", "all"), default="all")
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--renderer", choices=("raster", "gl"), default="raster")
     parser.add_argument("--package-root", type=Path, help="Use the verified runtime bundle rootfs instead of reinstalling")

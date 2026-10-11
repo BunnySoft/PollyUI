@@ -376,8 +376,8 @@ settingsScenario('theme publication failures preserve the real committed state a
   f.native.configureAppearance = theme => appearances.push(theme.id);
   f.state.configurationFailure = new Error('fixture save denied');
   assert.equal(f.state.settingsHandlers.select('bigsur'), false);
-  assert.deepEqual(appearances, ['bigsur', 'xp']);
-  assert.equal(f.shell.getState().themeId, 'xp');
+  assert.deepEqual(appearances, ['bigsur', 'modern']);
+  assert.equal(f.shell.getState().themeId, 'modern');
   assert.equal(f.saved.snapshot.theme.id, null);
   assert.match(f.state.settingsHandlers.appearance().error, /fixture save denied/);
   f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
@@ -405,7 +405,7 @@ settingsScenario('theme publication failures preserve the real committed state a
 settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-window semantics', f => {
   const settings = f.shell.showManagedSettings(1, 'displays');
   key(settings, 'Tab');
-  assert.equal(settings.document.activeElement.id, 'shell-system-settings-close');
+  assert.equal(settings.document.activeElement.id, 'shell-settings-page-appearance');
   find(settings, 'shell-settings-page-audio').focus();
   key(settings, ' ');
   assert.ok(find(settings, 'shell-audio-settings'));
@@ -471,12 +471,12 @@ settingsScenario('closing Settings cannot confirm/revert a pending layout or sto
   const settings = f.shell.showManagedSettings(1, 'displays');
   click(find(settings, 'shell-output-apply'));
   const guard = f.created.at(-1);
-  const close = callback(find(settings, 'shell-system-settings-close'), 'click');
-  click(find(settings, 'shell-system-settings-close'));
+  const close = settings.onclose;
+  settings.close();
   assert.equal(guard.closed, false);
   assert.equal(f.state.output.pendingToken, 5);
   const next = f.shell.showManagedSettings(1, 'audio');
-  close(event('click'));
+  close();
   assert.equal(next.closed, false);
   key(guard, 'Escape');
   assert.equal(f.state.output.pendingToken, 0);
@@ -598,7 +598,7 @@ settingsScenario('unsupported capabilities stay visible and About makes no login
   for (const page of ['network', 'audio', 'displays', 'keyboard']) {
     navigate(settings, page);
     assert.match(text(settings.document.body), /unavailable|requires/i);
-    assert.ok(descendants(settings.document.body).some(node => node.getAttribute('aria-disabled') === 'true'));
+    assert.ok(find(settings, 'settings-system-version'), 'unavailable pages still show system identity');
   }
   navigate(settings, 'about');
   assert.equal(settings.closed, true);
@@ -970,7 +970,7 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   const oldChild = callback(find(settings, 'shell-keyboard-settings'), 'click');
   const shortcuts = f.shell.showShortcuts(1);
   oldTheme(event('click')); oldChild(event('click'));
-  assert.equal(f.shell.getState().themeId, 'xp');
+  assert.equal(f.shell.getState().themeId, 'modern');
   assert.equal(shortcuts.closed, false);
 });
 

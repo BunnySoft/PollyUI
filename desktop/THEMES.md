@@ -10,7 +10,12 @@ connection. Native file mappings themselves have no theme policy.
 
 ## Data and ownership
 
-`resources/themes/builtin.json` contains the five shipped presets.
+`resources/themes/builtin.json` contains the original **Polly / Modern** preset
+and five retained classic presets. Modern is the default only for fresh or
+unavailable configuration; saved classic choices and user overrides are not
+silently rewritten. It uses a solid 52px taskbar, spacious native controls and
+original geometric wallpaper/icon artwork. No platform logos/assets, Mica,
+blur or expanded decoration protocol are used.
 `resources/themes/fallback.json` is a packaged recovery catalog.
 `shell/theme-schema.mjs` defines schema version
 1 and validates every supported field. Accepted snapshots are deeply frozen.
@@ -69,7 +74,7 @@ base theme. Arrays replace whole arrays. Unknown fields, IDs, schema versions,
 prototype keys, invalid colors and unsupported geometry are rejected. There are
 no executable hooks, imports, conditionals or recursive inheritance rules.
 
-In **Appearance**, choose **Reload and apply theme files** to load changes and
+In **Appearance**, choose **Reload theme files** to load changes and
 apply them to the selected theme, including changes under the same ID. There is
 no file watcher. **Use packaged themes** restores a shipped appearance and
 persists the choice to ignore user files; it does not delete those files.

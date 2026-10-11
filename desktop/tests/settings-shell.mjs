@@ -180,7 +180,8 @@ async function run() {
   queryClient = openDbusClient(environment.address);
   shell = createDesktopShell({ report: value => { reports.push(value); console.error(value); },
     settingsFactory: handlers => openShellSettings({ ...handlers, launchSpec: {
-      argv: [executable, '--app-id', 'org.pollyui.settings', 'desktop/tests/settings-probe.mjs', '--managed'],
+      argv: [executable, '--app-id', 'org.pollyui.settings', mode === 'ui-narrow' ?
+        'desktop/tests/settings-narrow-probe.mjs' : 'desktop/tests/settings-probe.mjs', '--managed'],
       cwd: environmentPath(),
     } }), host: {
     close: () => window.close(), displays: () => window.displays(),
@@ -216,6 +217,11 @@ async function run() {
   intruder.close();
   await signal('fixture-settings-state ' + ++serial + ' 1');
   await capture(settings, 'appearance');
+  panel.window.capture(application.cacheDir + '/settings-' + mode + '-taskbar.png');
+  const launcher = shell.showApplications(output);
+  await painted();
+  await capture(launcher, 'launcher');
+  launcher.close();
   await click('shell-theme-bigsur');
   await until(async () => {
     const state = await query({ op: 'state' });
@@ -244,8 +250,13 @@ async function run() {
     'failed independent write leaves the previous actual desktop and saved appearance');
   desktop.configureAppearance = configure;
   reports.length = 0;
+  await appClick('shell-theme-modern');
+  await until(() => shell.getState().themeId === 'modern', 'modern theme restored before page review');
+  theme = getDesktopTheme('modern');
+  await signal('fixture-settings-decoration ' + theme.window.borderWidth + ' ' + theme.window.titleHeight);
   for (const page of ['displays', 'network', 'audio', 'keyboard']) {
     await appClick('shell-settings-page-' + page);
+    await capture(settings, 'delegate-' + page);
     await appClick('settings-open-managed-' + page);
     await until(() => surfaces.some(item => !item.window.closed && item.title === 'Desktop control panel'),
       'delegated desktop control panel');
@@ -264,8 +275,10 @@ async function run() {
     await capture(managed, page); managed.close();
     check(!exits.has(firstPid), 'Closing managed ' + page + ' panel retains independent Settings');
   }
-  await appClick('shell-settings-page-about'); await capture(settings, 'about');
+  await appClick('shell-settings-page-about');
   await until(async () => (await query({ op: 'state' })).about?.outputs === 2, 'actual About service/outputs snapshot');
+  await capture(settings, 'about');
+  await appClick('settings-about-details'); await capture(settings, 'about-details');
   const starter = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings',
     'desktop/apps/settings/main.mjs', 'about'], environmentPath(), 'settings-starter');
   await until(() => exits.has(starter), 'standalone entry presentation acknowledgement');
@@ -313,7 +326,7 @@ async function run() {
   await shell.showSystemSettings(output);
   const finalPid = shell.getSettingsState().pid;
   await signal('fixture-settings-state ' + ++serial + ' 1');
-  await appClick('shell-system-settings-close'); await until(() => exits.has(finalPid), 'Settings Close button process exit');
+  await signal('fixture-settings-close ' + ++serial); await until(() => exits.has(finalPid), 'Settings native caption close process exit');
   await signal('fixture-settings-state ' + ++serial + ' 0');
   check(reports.length === 0, 'native Settings has no unexpected Shell errors');
   await shell.showSystemSettings(output);

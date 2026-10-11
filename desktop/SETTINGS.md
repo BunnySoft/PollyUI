@@ -5,9 +5,9 @@ entry in Applications, or the desktop background's context-menu gesture.
 The six navigation entries share an ordinary decorated, resizable **independent
 Settings application**. Appearance and About live in its own process/QuickJS
 realm/event loop. Displays, Network, Audio and Keyboard explicitly offer
-**Open in desktop control panel** and retain their actual controls in a separate
+**Open desktop controls** and retain their actual controls in a separate
 Shell-owned panel. Theme changes,
-other application activity and launcher dismissal do not close it. **Close**,
+other application activity and launcher dismissal do not close it.
 Escape (unless consumed by an input), Alt+F4 and the window-frame close control
 close only Settings. Use its normal taskbar/window-switcher entry to restore a
 minimized Settings window. Launch buttons and `polly-settings` request the same
@@ -22,7 +22,7 @@ owned instance's navigation/presentation; Shell activates its current window.
 | Network | The existing iwd controller shows actual adapters, radio/connection state, RSSI and IP-configuration status. Scan, radio power, connect, masked password/username prompts, disconnect and explicitly confirmed forgetting use the existing revision-bound native requests. An unprovisioned enterprise network remains disabled. The page does not add Bluetooth, VPN or an IP-address backend. |
 | Audio | The existing private PipeWire policy provides endpoint volume, mute and default playback/recording devices. Requests show acknowledgment progress; existing name/class preferences are saved only after the actual service echoes them. Device loss, missing service, unavailable volume/mute and storage errors remain visible. No host audio daemon or WirePlumber is substituted. |
 | Keyboard | Change, disable or reset the existing fixed shortcut catalog in the Shell control panel. Recording opens the existing trusted Shell layer: shortcut suppression is layer-focus-bound, not granted to the independent Settings window. Escape first cancels recording; closing/changing the owning control panel page releases capture. |
-| About | Displays Settings's own development version/identity/directories, current appearance, display count, actual session-service status and existing profile information from a strict Shell snapshot. The runtime does not expose a release version, so the page says so instead of inventing one. Login/lock behavior is deployment-policy-dependent; account/password/administrator actions are explicitly unavailable here. |
+| About | Grouped system build, session and preference cards show the actual system release, full build revision/source state, appearance, display count and service status. Expand Technical details for Settings's separate application version/runtime, identity/directories and saved profile information. Unknown source metadata is explicit. Login/lock behavior remains deployment-policy-dependent; account/password/administrator actions are unavailable here. |
 
 Missing native APIs are visibly unavailable, not fake ready services. Existing
 native APIs can still report an unavailable service, denied operation or missing
@@ -35,6 +35,14 @@ User theme/shortcut/display/audio preferences keep their existing persistence
 contracts and keys. iwd, not Settings, owns saved network credentials and
 connection policy. A memory-only Live session does not gain reboot persistence
 from this window.
+
+All six pages keep the system release and short revision/source marker visible
+in a persistent footer, even while loading or displaying an error. The strict
+Appearance/About snapshots carry the actual Shell build; the Settings runtime
+is labelled separately if it differs. Appearance has a wrapping native preview
+gallery and grouped theme-library controls. Illustrated previews are not
+hardware captures. The shared layout uses original icons, 14px body text, solid
+surfaces and card/list hierarchy; native window captions remain authoritative.
 
 ## Ownership and lifetime
 

@@ -5,6 +5,8 @@ import { displayField, setDisplayField } from './desktop/shell/displays.mjs';
 import { trayView } from './desktop/shell/tray.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
+import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
+import { wallpaper as previewWallpaper } from './desktop/shell/appearance.mjs';
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
@@ -122,6 +124,21 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
         h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: theme.layout.fontSize,
           paddingLeft: 5, flexShrink: 0 } }, clock)));
   }
+  if (theme.id === 'modern') {
+    return h('view', { id: 'shell-panel', style: { ...row, width: '100%', height: '100%',
+      gap: 8, paddingLeft: 12, paddingRight: 16, backgroundColor: panel.from,
+      borderTopWidth: 1, borderColor: theme.colors.border } },
+    desktopCommand('shell-menu', 'Polly', theme, openMenu, { icon: 'apps', quiet: true }),
+    desktopCommand('shell-panel-settings', 'Settings', theme, openSettings, { icon: 'appearance', quiet: true }),
+    workspace ? desktopCommand('shell-workspaces', Array.from(workspace.name).slice(0, 18).join(''), theme,
+      workspace.open, { icon: 'displays', quiet: true, style: { maxWidth: 160, overflow: 'hidden' } }) : null,
+    windowButtons(theme, windows, toggle, actions),
+    error ? desktopText('Needs attention', theme.colors.text, 12) : null,
+    tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
+    notifications ? desktopCommand('shell-notifications', String(notifications.count), theme, notifications.open,
+      { icon: 'info', quiet: true, style: { paddingLeft: 8, paddingRight: 8 } }) : null,
+    desktopText(clock, panel.text, 13));
+  }
   return h('view', { id: 'shell-panel', style: {
     ...row, width: '100%', height: '100%', gap: theme.layout.panelGap,
     paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
@@ -163,12 +180,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
 export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '', themes = DESKTOP_THEMES) {
   const label = labelFor(theme);
   return h('view', { id: 'shell-settings', style: {
-    width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
-    backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    borderRadius: theme.window.radius,
-  } },
+    width: '100%', ...(embedded ? {} : { height: '100%' }), padding: embedded ? 8 : 20, gap: 16, overflow: 'scroll',
+    backgroundColor: theme.colors.body, minHeight: 0, flexShrink: 0,
+  }, onWheel: scrollDesktop },
   h('view', { style: { ...row, gap: theme.layout.contentGap } },
-    label(about ? 'PollyDesktop' : 'Desktop appearance', theme.colors.text, 16),
+    embedded ? null : desktopText(about ? 'PollyDesktop' : 'Desktop appearance', theme.colors.text, 24, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }),
     embedded ? null : button('shell-settings-close', 'Close', theme, close)),
   about
@@ -183,25 +199,52 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Login and locking depend on deployed session policy.', theme.colors.muted, 10),
       ]
     : [
-        label('Changes apply now and save in your user preferences.', theme.colors.muted, 11),
-        ...themes.map(preset => button('shell-theme-' + preset.id, preset.name, theme,
-          () => select(preset.id), theme.id === preset.id, { height: theme.layout.choiceHeight })),
-        label('Negotiated window frames follow this appearance.', theme.colors.muted, 11),
-        label('Application-drawn headers keep their own style.', theme.colors.muted, 11),
-        themeFiles ? label(themeFiles.enabled ? 'User theme files enabled' : 'Using packaged themes', theme.colors.muted, 11) : null,
-        themeFiles ? button('shell-theme-reload', 'Reload and apply theme files', theme, themeFiles.reload) : null,
-        themeFiles ? button('shell-theme-restore', 'Use packaged themes', theme, themeFiles.restore) : null,
+        desktopText('Choose a look for your desktop', theme.colors.text, 18, { fontWeight: 600 }),
+        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, 14),
+        h('view', { id: 'settings-theme-gallery', style: { ...row, flexWrap: 'wrap', gap: 12, alignItems: 'stretch',
+          flexShrink: 0 } }, themes.map(preset => {
+          const sample = preset.desktop ? preset : theme, selected = theme.id === preset.id;
+          const art = h('view', { style: { height: 104, width: '100%', overflow: 'hidden', position: 'relative',
+            borderRadius: 5, pointerEvents: 'none', flexShrink: 0 } },
+          previewWallpaper(sample, 'settings-preview-' + preset.id),
+          h('view', { style: { position: 'absolute', left: '20%', top: 18, width: '66%', height: 64,
+            backgroundColor: sample.colors.surface, borderRadius: sample.window.radius / 2, overflow: 'hidden',
+            borderWidth: 1, borderColor: sample.window.border, pointerEvents: 'none' } },
+            h('view', { style: { height: 16, backgroundColor: sample.window.titleFrom, pointerEvents: 'none' } }),
+            h('view', { style: { ...row, flexGrow: 1, gap: 5, padding: 7, pointerEvents: 'none' } },
+              h('view', { style: { width: 20, height: '100%', backgroundColor: sample.colors.body, pointerEvents: 'none' } }),
+              h('view', { style: { flexGrow: 1, height: 20, backgroundColor: sample.colors.selection, pointerEvents: 'none' } }))),
+          h('view', { style: { position: 'absolute', left: 0, bottom: 0, width: '100%', height: 10,
+            backgroundColor: sample.panel.from, pointerEvents: 'none' } }));
+          const tile = desktopCommand('shell-theme-' + preset.id, preset.name, theme, () => select(preset.id),
+            { selected, style: { flexDirection: 'column', alignItems: 'stretch', height: 166, padding: 10, gap: 8,
+              flexGrow: 1, flexBasis: 168, minWidth: 150, maxWidth: 260 } });
+          tile.children = [art, desktopText(preset.name, theme.colors.text, 14, { pointerEvents: 'none', fontWeight: 600 }),
+            desktopText(selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted, 12,
+              { pointerEvents: 'none' })];
+          return tile;
+        })),
+        desktopText('Theme previews are illustrations, not hardware screenshots. Solid surfaces; no simulated blur.',
+          theme.colors.muted, 12, { flexShrink: 1 }),
+        themeFiles ? settingsCard(theme, 'Theme library', themeFiles.enabled ? 'User theme files enabled' : 'Packaged themes active', [
+          h('view', { style: { ...row, flexWrap: 'wrap', gap: 8 } },
+            desktopCommand('shell-theme-reload', 'Reload theme files', theme, themeFiles.reload, { icon: 'refresh' }),
+            desktopCommand('shell-theme-restore', 'Use packaged themes', theme, themeFiles.restore)),
+        ]) : null,
       ],
   shortcuts ? button('shell-keyboard-settings', 'Keyboard shortcuts', theme, shortcuts) : null,
   displays ? button('shell-display-settings', 'Displays', theme, displays) : null,
   network ? button('shell-network-settings-open', 'Wi-Fi', theme, network) : null,
   audio ? button('shell-audio-settings-open', 'Audio', theme, audio) : null,
   power ? button('shell-power-settings-open', 'Power', theme, power) : null,
-  status ? h('view', { role: 'status', 'aria-live': 'polite' }, label(status, theme.colors.text, 11)) : null,
-  error ? h('view', { role: 'alert', style: { gap: theme.layout.controlGap, padding: theme.layout.serviceButtonPadding, backgroundColor: theme.colors.selection } },
-    label(error, theme.colors.text, 11),
-    button('shell-retry', 'Retry', theme, retry)) : null,
-  label(embedded ? 'Live sessions keep preferences only until reboot.' : 'Escape closes this menu.', theme.colors.muted, 10));
+  status ? h('view', { role: 'status', 'aria-live': 'polite', style: { padding: 12,
+    borderRadius: 6, backgroundColor: theme.colors.selection } }, desktopText(status, theme.colors.text, 14)) : null,
+  error ? h('view', { role: 'alert', style: { gap: 10, padding: 14, borderRadius: 6,
+    borderWidth: 1, borderColor: '#b42318', backgroundColor: theme.colors.surface, flexShrink: 0 } },
+    desktopText(error, theme.colors.text, 14, { flexShrink: 1 }),
+    desktopCommand('shell-retry', 'Refresh status', theme, retry, { icon: 'refresh' })) : null,
+  desktopText(embedded ? 'Preferences in a memory-only Live session reset after reboot.' : 'Escape closes this menu.',
+    theme.colors.muted, 12));
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null) {
@@ -219,7 +262,6 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label('Applications', isLuna(theme) ? theme.window.titleText : theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }), button('shell-app-refresh', 'Refresh', theme, refresh),
     button('shell-app-close', 'Close', theme, close)),
-  logout ? button('shell-app-logout', 'Log out...', theme, logout) : null,
   h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
     style: { padding: theme.layout.serviceButtonPadding, height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, backgroundColor: theme.colors.surface,
       borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
@@ -237,10 +279,14 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
           padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
         } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
           label(entry.unavailable, theme.colors.muted, 10))
-      : button('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id), false,
-          { height: theme.layout.choiceHeight, alignItems: 'flex-start' })),
+      : desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
+          { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
+            quiet: true, style: { height: 54, paddingLeft: 16 } })),
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
+  h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },
+    desktopText('Your applications', theme.colors.muted, 13), h('view', { style: { flexGrow: 1 } }),
+    logout ? desktopCommand('shell-app-logout', 'Log out...', theme, logout, { quiet: true }) : null),
   error ? h('view', { role: 'alert', style: { padding: theme.layout.controlGap, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11)) : null);
 }
@@ -310,17 +356,16 @@ export function workspacesView(theme, workspaces, activate, remove, create, clos
 export function shortcutsView(theme, bindings, recording, record, disable, reset, close, error = '') {
   const label = labelFor(theme);
   return h('view', { id: 'shell-shortcuts', style: {
-    width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
-    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+    width: '100%', height: '100%', minHeight: 0, padding: 8, gap: 16, backgroundColor: theme.colors.body,
   } },
-  h('view', { style: { ...row, gap: theme.layout.controlGap } }, label('Keyboard shortcuts', theme.colors.text, 15),
+  h('view', { style: { ...row, gap: 8, flexWrap: 'wrap' } }, desktopText('Desktop shortcuts', theme.colors.text, 16, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }), button('shell-shortcuts-close', 'Close', theme, close)),
   button('shell-shortcuts-reset', 'Reset defaults', theme, reset),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.contentGap } },
-    bindings.map(binding => h('view', { style: { padding: theme.layout.controlGap, gap: theme.layout.contentGap / 2, flexShrink: 0,
-      borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border } },
-    label(binding.label, theme.colors.text, 12),
-    h('view', { style: { ...row, gap: theme.layout.controlGap } },
+  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 8 }, onWheel: scrollDesktop },
+    bindings.map(binding => h('view', { style: { padding: 14, gap: 8, flexShrink: 0,
+      borderWidth: 1, borderRadius: 8, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
+    desktopText(binding.label, theme.colors.text, 14, { fontWeight: 600 }),
+    h('view', { style: { ...row, gap: 8, flexWrap: 'wrap' } },
       h('view', { style: { flexGrow: 1, flexBasis: 0, overflow: 'hidden', color: theme.colors.text, fontSize: theme.layout.mutedFontSize } },
         recording === binding.action ? 'Press a shortcut...' : shortcutText(binding)),
       button('shell-shortcut-' + binding.action, 'Change', theme, () => record(binding.action)),
@@ -349,21 +394,20 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
   const label = labelFor(theme);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width);
   return h('view', { id: 'shell-displays', style: {
-    width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
-    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.window.radius,
+    width: '100%', height: '100%', minHeight: 0, padding: 8, gap: 16, backgroundColor: theme.colors.body,
   } },
-  h('view', { style: { ...row, gap: theme.layout.controlGap } }, label('Displays', theme.colors.text, 16),
+  h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } }, desktopText('Connected displays', theme.colors.text, 16, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
     button('shell-output-close', 'Close', theme, close)),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.compactPadding } },
-    draft.heads.map(head => h('view', { style: { padding: (theme.layout.controlGap + theme.layout.contentGap) / 2, gap: (theme.layout.controlGap + theme.layout.contentGap) / 2, flexShrink: 0,
-      borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border } },
+  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 12 }, onWheel: scrollDesktop },
+    draft.heads.map(head => h('view', { style: { padding: 16, gap: 12, flexShrink: 0,
+      borderWidth: 1, borderRadius: 8, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
     h('view', { style: { ...row, gap: theme.layout.controlGap } }, label(head.name, theme.colors.text, 12),
       h('view', { style: { flexGrow: 1 } }),
       button('shell-output-' + head.id + '-enabled', head.enabled ? 'On' : 'Off', theme,
         () => { head.enabled = !head.enabled; repaint(); }, head.enabled)),
     head.enabled ? [
-      h('view', { style: { ...row, gap: theme.layout.windowGap } }, field(head, 'width'), label('x', theme.colors.text),
+      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, field(head, 'width'), label('x', theme.colors.text),
         field(head, 'height'),
         head.modes.length ? button('shell-output-' + head.id + '-mode', 'Mode', theme, () => {
           const width = Number(inputs.get('shell-output-' + head.id + '-width')?.value);
@@ -372,16 +416,16 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
           const mode = head.modes[(found + 1) % head.modes.length];
           for (const name of ['width', 'height', 'refresh']) setDisplayField(inputs, head, name, mode[name]);
         }) : null),
-      h('view', { style: { ...row, gap: theme.layout.windowGap } }, label('Scale', theme.colors.text, 11), field(head, 'scale', 62),
+      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Scale', theme.colors.text, 11), field(head, 'scale', 62),
         button('shell-output-' + head.id + '-scale-up', '+', theme, () => {
           const value = Number(inputs.get('shell-output-' + head.id + '-scale')?.value);
           setDisplayField(inputs, head, 'scale', Math.min(4, (Number.isFinite(value) ? value : head.scale) + 0.25));
         }),
         button('shell-output-' + head.id + '-rotate', String((head.transform & 3) * 90) + ' deg', theme,
           () => { head.transform = (head.transform & 4) | ((head.transform + 1) & 3); repaint(); })),
-      h('view', { style: { ...row, gap: theme.layout.windowGap } }, label('X', theme.colors.text, 11), field(head, 'x'),
+      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('X', theme.colors.text, 11), field(head, 'x'),
         label('Y', theme.colors.text, 11), field(head, 'y')),
-      h('view', { style: { ...row, gap: theme.layout.windowGap } }, label('Refresh Hz', theme.colors.text, 11), field(head, 'refresh'),
+      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Refresh Hz', theme.colors.text, 11), field(head, 'refresh'),
         label('0 = auto', theme.colors.muted, 10)),
     ] : label('Enable this display to edit its configuration.', theme.colors.muted, 10)))),
   label('Keep changes within 15 seconds or they revert.', theme.colors.muted, 10),

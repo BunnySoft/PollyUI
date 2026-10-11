@@ -1,67 +1,68 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
-import { button } from './desktop/shell/views.mjs';
-import { themeTextSize } from './desktop/shell/theme-layout.mjs';
-import { SETTINGS_APP_ID, SETTINGS_PAGES } from './desktop/client/settings-contract.mjs';
+import { desktopCommand, desktopIcon, desktopText, settingsCard, horizontal, scrollDesktop } from './desktop/shell/presentation.mjs';
+import { SETTINGS_APP_ID, SETTINGS_PAGES, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
 
 export const SETTINGS_APPLICATION_ID = SETTINGS_APP_ID;
 export { SETTINGS_PAGES };
 const titles = { appearance: 'Appearance', displays: 'Displays', network: 'Network',
   audio: 'Audio', keyboard: 'Keyboard', about: 'About' };
 
-export function systemSettingsView(theme, page, navigate, close, content, mount = null, title = 'Settings', controls = []) {
+export function systemSettingsView(theme, page, navigate, close, content, mount = null, title = 'Settings', controls = [],
+  build = runtimeBuild()) {
   return h('view', { id: 'shell-system-settings', style: {
-    width: '100%', height: '100%', minHeight: 0, backgroundColor: theme.colors.body,
+    width: '100%', height: '100%', minHeight: 0, backgroundColor: theme.colors.body, overflow: 'hidden',
   } },
-  h('view', { style: { flexDirection: 'row', alignItems: 'center', flexShrink: 0,
-    padding: theme.layout.compactPadding, gap: theme.layout.contentGap,
-    backgroundColor: theme.colors.surface, borderBottomWidth: theme.layout.borderWidth,
-    borderColor: theme.colors.border } },
-    h('view', { style: { color: theme.colors.text, fontSize: theme.layout.largeHeadingFontSize } }, title),
-    h('view', { style: { flexGrow: 1 } }),
-    button('shell-system-settings-close', 'Close', theme, close), controls),
   h('view', { style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0, minHeight: 0 } },
     h('view', { role: 'navigation', 'aria-label': 'Settings pages', style: {
-      width: 142, flexShrink: 0, padding: theme.layout.controlGap, gap: theme.layout.controlGap,
-      overflow: 'scroll', backgroundColor: theme.colors.surface,
-      borderRightWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    } }, SETTINGS_PAGES.map(id => {
-      const item = button('shell-settings-page-' + id, titles[id], theme, () => navigate(id), page === id,
-        { height: theme.layout.choiceHeight, alignItems: 'flex-start' });
+      width: 196, minWidth: 142, flexShrink: 1, padding: 12, gap: 6,
+      overflow: 'scroll', backgroundColor: theme.colors.body,
+    }, onWheel: scrollDesktop },
+    h('view', { style: { ...horizontal, gap: 10, height: 64, paddingLeft: 10, flexShrink: 0 } },
+      desktopIcon('appearance', theme.colors.accent, 28), desktopText('Settings', theme.colors.text, 20, { fontWeight: 600 })),
+    SETTINGS_PAGES.map(id => {
+      const item = desktopCommand('shell-settings-page-' + id, titles[id], theme, () => navigate(id),
+        { icon: id, quiet: true, selected: page === id, style: { height: 42 } });
       item.props['aria-current'] = page === id ? 'page' : null;
       return item;
     })),
-    h('view', { id: 'shell-settings-content', role: 'region', 'aria-label': titles[page],
-      style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0 },
-      ...(mount ? { onMount: mount } : {}),
-    }, content)));
+    h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, paddingTop: 18, paddingRight: 20 } },
+      h('view', { style: { ...horizontal, flexShrink: 0, gap: 12, padding: 8, paddingBottom: 18, flexWrap: 'wrap' } },
+        desktopText(titles[page], theme.colors.text, 26, { fontWeight: 600 }),
+        h('view', { style: { flexGrow: 1 } }), controls),
+      h('view', { id: 'shell-settings-content', role: 'region', 'aria-label': titles[page],
+        style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, maxWidth: 900, overflow: 'scroll' },
+        onWheel: scrollDesktop, ...(mount ? { onMount: mount } : {}),
+      }, content))),
+  h('view', { style: { ...horizontal, padding: 10, paddingLeft: 22, gap: 12, flexShrink: 0,
+    borderTopWidth: 1, borderColor: theme.colors.border } },
+    h('view', { id: 'settings-system-version', role: 'status', style: { flexGrow: 1, flexBasis: 0, minWidth: 0 } },
+      desktopText(buildLabel(build), theme.colors.muted, 12, { flexShrink: 1 })),
+    desktopText(title === 'Settings' ? 'Personal preferences' : 'Desktop controls', theme.colors.muted, 12)));
 }
 
 export function unavailableSettingsView(theme, title, explanation) {
-  return h('view', { style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap } },
-    h('view', { style: { color: theme.colors.text, fontSize: theme.layout.sectionFontSize } }, title),
-    h('view', { role: 'status', style: { color: theme.colors.muted,
-      fontSize: themeTextSize(theme, 12) } }, explanation),
-    h('view', { role: 'button', 'aria-disabled': 'true', tabIndex: -1,
-      style: { padding: theme.layout.serviceButtonPadding, color: theme.colors.muted,
-        backgroundColor: theme.colors.surface, opacity: theme.layout.disabledOpacity } }, 'Unavailable in this session'));
+  return settingsCard(theme, title, explanation, [
+    desktopText('Unavailable in this session', theme.colors.muted, 14),
+  ]);
 }
 
-export function aboutSettingsView(theme, { services, outputs, themeId, applicationId }) {
-  const label = text => h('view', { style: { color: theme.colors.text,
-    fontSize: themeTextSize(theme, 12), flexShrink: 0 } }, text);
-  return h('view', { id: 'shell-settings-about', style: { flexShrink: 0, padding: theme.layout.contentPadding,
-    gap: theme.layout.contentGap, overflow: 'scroll' } },
-    label('PollyDesktop - PollyWM + native PollyUI'),
-    label('Development build. Release version is not exposed by this runtime.'),
-    label('Management owner (Shell): ' + applicationId),
-    label('Session: ordinary-user desktop; management stays on the trusted Shell connection.'),
-    label('Appearance: ' + themeId + ' | Active displays: ' + outputs),
-    label('Input method: ' + services.inputMethod + ' | Private audio: ' + services.audio),
-    services.message ? h('view', { role: 'status' }, label(services.message)) : null,
-    label('Login and locking depend on the deployed session policy; this page does not certify either.'),
-    label('Account, password and administrator changes require a separate qualified authentication interface.'),
-    h('view', { role: 'button', 'aria-disabled': 'true', tabIndex: -1,
-      style: { color: theme.colors.muted, opacity: theme.layout.disabledOpacity } }, 'Manage accounts (unavailable here)'),
-    label('Changes use existing user preferences and service profiles. A memory-only Live session does not retain them after reboot.'),
-    label('Closing Settings leaves the desktop, audio policy and other applications running.'));
+export function aboutSettingsView(theme, { services, outputs, themeId, build = runtimeBuild() }) {
+  const label = text => desktopText(text, theme.colors.text, 14);
+  return h('view', { id: 'shell-settings-about', style: { flexShrink: 0, padding: 8, gap: 16 } },
+    settingsCard(theme, 'PollyDesktop', 'An independent desktop built with PollyWM and native PollyUI.', [
+      label('System release: ' + build.version),
+      desktopText('Build: ' + build.revision, theme.colors.muted, 13, { flexShrink: 1 }),
+      label('Source: ' + (build.sourceDirty === null ? 'unknown' : build.sourceDirty ? 'modified working tree' : 'clean')),
+    ]),
+    settingsCard(theme, 'This session', outputs + ' active displays', [
+      label('Appearance: ' + themeId),
+      label('Input method: ' + services.inputMethod + ' | Audio: ' + services.audio),
+      services.message ? h('view', { role: 'status' }, label(services.message)) : null,
+      services.error ? h('view', { role: 'alert' }, label(services.error)) : null,
+    ]),
+    settingsCard(theme, 'Your preferences', 'Changes apply to your current user account.', [
+      desktopText('Memory-only Live sessions retain preferences only until reboot.', theme.colors.muted, 13),
+      desktopText('Account and sign-in management are not available in Settings. Login and locking depend on the deployed session policy.',
+        theme.colors.muted, 13, { flexShrink: 1 }),
+    ]));
 }

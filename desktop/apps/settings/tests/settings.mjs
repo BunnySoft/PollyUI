@@ -3,14 +3,14 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 register('../../../tests/root-loader.mjs', import.meta.url);
 const { BUILTIN_THEME_CATALOG } = await import('./desktop/shell/themes.mjs');
-const { parseAppearance, parseAbout, SETTINGS_APP_ID } = await import('./desktop/client/settings-contract.mjs');
+const { parseAppearance, parseAbout, SETTINGS_APP_ID, runtimeBuild, buildLabel } = await import('./desktop/client/settings-contract.mjs');
 const { createSettingsController } = await import('./desktop/apps/settings/logic/controller.mjs');
 const { createSettingsService } = await import('./desktop/shell/settings-service.mjs');
 const { settingsView } = await import('./desktop/shell/views.mjs');
 const appearance = () => ({ version: 1, revision: 1, catalogRevision: 1, themeId: 'xp',
-  catalog: BUILTIN_THEME_CATALOG, themeFilesEnabled: true, themeFilesAvailable: true, status: '', error: '' });
+  catalog: BUILTIN_THEME_CATALOG, themeFilesEnabled: true, themeFilesAvailable: true, status: '', error: '', build: runtimeBuild() });
 const about = () => ({ version: 1, services: { inputMethod: 'disabled', audio: 'ready', message: '', error: '' },
-  outputs: 2, themeId: 'xp', applicationId: 'org.pollyui.shell',
+  outputs: 2, themeId: 'xp', applicationId: 'org.pollyui.shell', build: runtimeBuild(),
   profiles: { display: 'Confirmed layout saved', audio: 'Saved audio profile', workspace: 'Saved workspace profile' } });
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
 test('shared appearance view uses the explicit remote catalog rather than a Shell module-global list', () => {
@@ -20,6 +20,16 @@ test('shared appearance view uses the explicit remote catalog rather than a Shel
   const nodes = node => [node, ...(node.children || []).flatMap(nodes)];
   const ids = nodes(tree).map(node => node.props.id).filter(id => id?.startsWith('shell-theme-'));
   assert.deepEqual(ids, ['shell-theme-remote-choice']);
+});
+test('system identity has strict source fields, never invents a release, and displays dirty/unknown explicitly', () => {
+  assert.match(buildLabel(runtimeBuild()), /unknown.*source state unknown/);
+  const build = runtimeBuild({ runtimeVersion: '0.1.0-alpha.7', runtimeRevision: 'a'.repeat(40), runtimeSourceDirty: true });
+  assert.match(buildLabel(build), /alpha.7.*aaaaaaaa.*modified/);
+  for (const invalid of [
+    { ...build, extra: 'claimed' }, { ...build, revision: 'short' }, { ...build, sourceDirty: 'clean' },
+    { ...build, version: '\0release' }, { ...build, version: '' },
+  ]) assert.throws(() => parseAppearance(JSON.stringify({ ...appearance(), build: invalid })));
+  assert.equal(parseAbout(JSON.stringify({ ...about(), build })).build.revision, 'a'.repeat(40));
 });
 test('versioned business snapshots reject unknown fields, unsafe data and invented service states', () => {
   assert.equal(parseAppearance(JSON.stringify(appearance())).themeId, 'xp');

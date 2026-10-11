@@ -17,7 +17,7 @@ import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView } from './desktop/shell/settings.mjs';
-import { MANAGED_PAGES, settingsPage } from './desktop/client/settings-contract.mjs';
+import { MANAGED_PAGES, settingsPage, runtimeBuild } from './desktop/client/settings-contract.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
@@ -736,10 +736,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return { version: 1, revision: appearanceRevision, catalogRevision: THEME_REVISION, themeId,
       catalog: { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES },
       themeFilesEnabled, themeFilesAvailable: typeof native?.readThemeFiles === 'function',
-      status: appearanceStatus, error: ['settings', 'theme-files'].includes(errorKind) ? error : '' };
+      status: appearanceStatus, error: ['settings', 'theme-files'].includes(errorKind) ? error : '', build: runtimeBuild() };
   }
   function aboutSnapshot() {
-    return { version: 1, services: serviceMonitor.snapshot(), outputs: bundles.size, themeId,
+    return { version: 1, services: serviceMonitor.snapshot(), outputs: bundles.size, themeId, build: runtimeBuild(),
       applicationId: typeof application === 'undefined' ? 'PollyShell' : application.id,
       profiles: { display: displayPersistence.status,
         audio: configuration.snapshot.audio === null ? 'No saved audio profile' : 'Saved audio profile',

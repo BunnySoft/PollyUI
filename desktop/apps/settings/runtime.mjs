@@ -5,7 +5,7 @@ import { SETTINGS_BUS_NAME, SETTINGS_INSTANCE_NAME, SETTINGS_PATH, SETTINGS_INTE
   daemonTarget } from './desktop/client/settings-contract.mjs';
 import { createSettingsApp } from './desktop/apps/settings/app.mjs';
 
-export async function startSettingsRuntime({ args = application.arguments, onStop = () => {} } = {}) {
+export async function startSettingsRuntime({ args = application.arguments, onStop = () => {}, host = window } = {}) {
   const managed = args[0] === '--managed';
   if (args.length > (managed ? 2 : 1)) throw new TypeError('Settings accepts one page, or --managed and one page');
   const page = settingsPage(args[managed ? 1 : 0] || 'appearance');
@@ -32,7 +32,7 @@ export async function startSettingsRuntime({ args = application.arguments, onSto
       const shellPeer = await settingsPeer(rawClient, shellOwner);
       if (shellPeer.pid !== shellPid || shellPeer.uid !== environment.uid)
         throw new Error('Settings handshake does not match the native Shell service PID');
-      app = createSettingsApp({ client, page: settingsPage(handshake[2]),
+      app = createSettingsApp({ client, host, page: settingsPage(handshake[2]),
         onStop: () => { cleanup(); onStop(); window.quit(); } }).start();
       let pending = false;
       timer = setInterval(() => {
@@ -56,7 +56,7 @@ export async function startSettingsRuntime({ args = application.arguments, onSto
   } catch (error) {
     cleanup();
     const failedClient = { call: () => Promise.reject(error), close() {} };
-    app = createSettingsApp({ client: failedClient, page, onStop: () => { onStop(); window.quit(); } }).start();
+    app = createSettingsApp({ client: failedClient, host, page, onStop: () => { onStop(); window.quit(); } }).start();
     app.controller.fail(error);
   }
   return app;

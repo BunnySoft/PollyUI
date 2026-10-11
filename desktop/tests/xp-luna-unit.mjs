@@ -43,7 +43,7 @@ const overridden = applyThemeOverrides(catalog, JSON.stringify({
 }));
 assert.equal(overridden.themes[0].window.surfaceStyle, 'generic');
 assert.equal(xp.window.surfaceStyle, 'luna');
-for (const theme of catalog.themes.slice(1)) {
+for (const theme of catalog.themes.filter(theme => !['xp', 'modern'].includes(theme.id))) {
   assert.equal(isLuna(theme), false);
   assert.equal(isLuna(theme, 'window'), false);
   assert.equal(isLuna(theme, 'panel'), false);
@@ -116,7 +116,7 @@ assert.equal(rings['.luna-launcher-tint'].style.backgroundColor, '#000000');
 launcherEvents.onMouseup(event);
 assert.equal(rings['.luna-launcher-tint'].style.backgroundColor, '#ffffff');
 const settings = settingsView(xp, action, action, action);
-assert.ok(find(settings, 'shell-theme-xp').props.onMouseenter);
+assert.equal(find(settings, 'shell-theme-xp').props.style.height, 166, 'classic choices use modern preview cards');
 const apps = applicationsView(xp, [], '', action, action, action, action);
 assert.equal(find(apps, 'shell-app-search').props.style.borderRadius, 0);
 const classicPanel = panelView(catalog.themes[1], '10:31 AM', action);

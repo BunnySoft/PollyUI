@@ -8,6 +8,18 @@ export const SETTINGS_INTERFACE = 'org.pollyui.Settings1';
 export const SETTINGS_PAGES = Object.freeze(['appearance', 'displays', 'network', 'audio', 'keyboard', 'about']);
 export const MANAGED_PAGES = Object.freeze(['displays', 'network', 'audio', 'keyboard']);
 export const SETTINGS_VERSION = '0.1 (development)';
+export function runtimeBuild(identity = typeof application === 'undefined' ? {} : application) {
+  return Object.freeze({
+    version: typeof identity.runtimeVersion === 'string' && identity.runtimeVersion ? identity.runtimeVersion : 'unknown',
+    revision: /^[0-9a-f]{40}$/i.test(identity.runtimeRevision || '') ? identity.runtimeRevision : 'unknown',
+    sourceDirty: typeof identity.runtimeSourceDirty === 'boolean' ? identity.runtimeSourceDirty : null,
+  });
+}
+export function buildLabel(build) {
+  return 'PollyDesktop ' + build.version + ' | ' +
+    (build.revision === 'unknown' ? 'revision unknown' : build.revision.slice(0, 8)) +
+    (build.sourceDirty === true ? ' (modified)' : build.sourceDirty === null ? ' (source state unknown)' : '');
+}
 export const SETTINGS_METHODS = Object.freeze({
   Open: { signature: 's', replySignature: 'u' },
   Connect: { signature: '', replySignature: 'uus' },
@@ -50,12 +62,21 @@ function payload(text) {
   boundedText(text, 1024 * 1024, 'snapshot', false);
   return JSON.parse(text);
 }
+function validateBuild(build) {
+  fields(build, ['version', 'revision', 'sourceDirty'], 'runtime build');
+  boundedText(build.version, 80, 'runtime version', false);
+  if (build.revision !== 'unknown' && !/^[0-9a-f]{40}$/i.test(build.revision))
+    throw new TypeError('Invalid runtime revision');
+  if (build.sourceDirty !== null && typeof build.sourceDirty !== 'boolean')
+    throw new TypeError('Invalid runtime source state');
+}
 export function parseAppearance(text) {
   const value = payload(text);
   fields(value, ['version', 'revision', 'catalogRevision', 'themeId', 'catalog',
-    'themeFilesEnabled', 'themeFilesAvailable', 'status', 'error'], 'appearance snapshot');
+    'themeFilesEnabled', 'themeFilesAvailable', 'status', 'error', 'build'], 'appearance snapshot');
   if (value.version !== 1) throw new TypeError('Unsupported Settings snapshot version');
   integer(value.revision, 'appearance revision'); integer(value.catalogRevision, 'catalog revision');
+  validateBuild(value.build);
   settingsThemeId(value.themeId);
   boundedText(value.status, 4096, 'appearance status'); boundedText(value.error, 16384, 'appearance error');
   if (typeof value.themeFilesEnabled !== 'boolean' || typeof value.themeFilesAvailable !== 'boolean')
@@ -66,8 +87,9 @@ export function parseAppearance(text) {
 }
 export function parseAbout(text) {
   const value = payload(text);
-  fields(value, ['version', 'services', 'outputs', 'themeId', 'applicationId', 'profiles'], 'about snapshot');
+  fields(value, ['version', 'services', 'outputs', 'themeId', 'applicationId', 'profiles', 'build'], 'about snapshot');
   if (value.version !== 1) throw new TypeError('Unsupported Settings snapshot version');
+  validateBuild(value.build);
   fields(value.services, ['inputMethod', 'audio', 'message', 'error'], 'service snapshot');
   for (const key of ['inputMethod', 'audio'])
     if (!['unavailable', 'disabled', 'starting', 'ready', 'failed'].includes(value.services[key]))
