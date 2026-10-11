@@ -100,9 +100,21 @@ active increment to be integrated before writing those files.
 
 | Workstream | Current assignment | Boundary |
 |---|---|---|
-| Native windows | Implement owned windows, real application popups, native modal relations and size constraints | Preserve existing ordinary windows, protected roles and close/input lifetimes; no JS widget policy |
-| Outgoing native drag | Parallel read-only API/ownership/interop research | Implementation waits for shared-file coordination; no new Files mutations |
-| Native IME extensions | Parallel read-only surrounding-text/selection/editing protocol research | Preserve Unicode/composition and sensitive-field contracts; no JS editor expansion |
+| Native windows | Integrated `89da564` from coherent child commit `d6f8696`: owned windows, native menu/tooltip popups, owner-local modality, logical size constraints and actual state notifications | Normal owner closure requests descendants leaf-first; a veto/Promise preserves waiting owners, without restoring closed siblings or automatic retry. Explicit quit retains forced semantics with leaf-first native teardown |
+| Outgoing native drag | Read-only API/ownership/interop research completed | Shared-window integration is complete, but Wayland public-proxy coexistence versus an authorized SDL extension still requires a transport decision; no new Files mutations |
+| Native IME extensions | Read-only surrounding-text/selection/editing protocol research completed | SDL lacks public surrounding/delete/transaction transport; choose a single native input owner or a separately authorized SDK extension before implementation. Preserve Unicode/composition and sensitive-field isolation; no JS editor expansion |
+
+Independent mainline integration checks passed seven Windows native/GUI cases
+and six fresh Linux GUI/compositor cases, including actual Wayland roles,
+fractional-scale geometry, modal seat input, close lifetimes and the existing
+input, document-paint, desktop-integration and lock regressions. Original child
+source/artifact hashes were verified without rewriting receipts.
+
+Popups are ungrabbed: explicit popup grabs are unsupported, and Wayland
+outside-click dismissal is not promised. The focused child ASan/UBSan run
+disabled leak detection and did not instrument prebuilt dependencies.
+Physical GPU, Windows ANGLE, macOS and X11 runtime qualification remain outside
+this increment.
 
 GUI automation and system accessibility implementation are not started by
 these workstreams. Materials remain a separate candidate. This work does not
