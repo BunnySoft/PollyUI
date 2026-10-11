@@ -5,6 +5,7 @@ import { openDbusClient } from './sysrt/sdk/js/dbus.mjs';
 import { settingsEnvironment, settingsLaunchSpec } from './desktop/shared/settings-environment.mjs';
 import { getDesktopTheme } from './desktop/shell/themes.mjs';
 import { createSettingsClient, waitSettingsReply } from './desktop/client/settings.mjs';
+import { runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const [mode, executable, script] = application.arguments;
@@ -203,6 +204,11 @@ async function run() {
   }, 'independent Settings test probe');
   const settings = independent, firstPid = shell.getSettingsState().pid;
   const initial = await query({ op: 'state' });
+  const expectedBuild = runtimeBuild(application), expectedLabel = buildLabel(expectedBuild);
+  check(JSON.stringify(initial.appearance.build) === JSON.stringify(expectedBuild) &&
+    initial.versionFooter === expectedLabel,
+    'independent Settings shows the actual system version and source identity');
+  console.log('SETTINGS_SYSTEM_BUILD=' + JSON.stringify(expectedBuild));
   check(firstPid !== environment.pid && initial.pid === firstPid &&
     initial.id === 'org.pollyui.settings' && initial.namespace === initial.id && initial.shellPreference === null &&
     initial.configDir !== application.configDir && initial.dataDir !== application.dataDir,
@@ -256,11 +262,15 @@ async function run() {
   await signal('fixture-settings-decoration ' + theme.window.borderWidth + ' ' + theme.window.titleHeight);
   for (const page of ['displays', 'network', 'audio', 'keyboard']) {
     await appClick('shell-settings-page-' + page);
+    check((await query({ op: 'state' })).versionFooter === expectedLabel,
+      'system build identity stays visible on independent ' + page + ' page');
     await capture(settings, 'delegate-' + page);
     await appClick('settings-open-managed-' + page);
     await until(() => surfaces.some(item => !item.window.closed && item.title === 'Desktop control panel'),
       'delegated desktop control panel');
     const managed = surfaces.findLast(item => !item.window.closed && item.title === 'Desktop control panel').window;
+    check(managed.document.getElementById('settings-system-version')?.textContent === expectedLabel,
+      'managed ' + page + ' panel shows the same actual system build');
     const contentId = { displays: 'shell-displays', keyboard: 'shell-shortcuts',
       network: 'shell-network-settings', audio: 'shell-audio-settings' }[page];
     if (mode === 'network' && page === 'network') await network(managed);
@@ -277,6 +287,11 @@ async function run() {
   }
   await appClick('shell-settings-page-about');
   await until(async () => (await query({ op: 'state' })).about?.outputs === 2, 'actual About service/outputs snapshot');
+  const aboutState = await query({ op: 'state' });
+  check(aboutState.versionFooter === expectedLabel &&
+    JSON.stringify(aboutState.about.build) === JSON.stringify(expectedBuild) &&
+    aboutState.text.includes(expectedBuild.revision),
+    'About shows the full actual revision while retaining the system version footer');
   await capture(settings, 'about');
   await appClick('settings-about-details'); await capture(settings, 'about-details');
   const starter = desktop.spawnApplication([executable, '--app-id', 'org.pollyui.settings',

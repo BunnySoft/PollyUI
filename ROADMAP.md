@@ -127,10 +127,10 @@ system assets. The accepted Alpha.6 demonstrated function, not a finished UX.
 
 | Surface | Concrete change | Preserved boundary |
 |---|---|---|
-| Settings | Consistent sidebar, page headings, grouped setting cards, theme-preview tiles and concise status/error placement; system version/short build SHA visible on every page, full identity in About; development paths move to explicit details | Appearance/About use the existing narrow IPC; four managed pages retain explicit Shell-panel delegation |
-| Shell | Coherent modern taskbar/launcher/menu spacing, typography, original icon treatment and fresh-session modern default | Window/workspace controls, input focus, power confirmation, rollback and user-selected classic themes |
+| Settings | Integrated: sidebar, headings, grouped cards, theme-preview tiles and concise status/errors; system version/short build SHA on every page, full identity in About. Native normal/narrow layout and actual identity checks passed | Appearance/About use the existing narrow IPC; four managed pages retain explicit Shell-panel delegation |
+| Shell | Integrated: modern taskbar/launcher/menu spacing, typography, original icons and fresh-session Modern default | Window/workspace controls, input focus, power confirmation, rollback and user-selected classic themes |
 | Files | Explorer-like navigation/command/address areas and Places sidebar; real name/type/date/size columns instead of per-file buttons and default UID diagnostics | Current native file operations, exact-entry identity and no-clobber/error semantics |
-| Files interaction | Clear selection/focus, double-click/Enter open, navigation shortcuts, sorting and current-folder filtering, context actions and rename behavior | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
+| Files interaction | In progress in the separate Files increment: selection/focus, double-click/Enter open, navigation shortcuts, sorting and current-folder filtering, context actions and rename behavior | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
 
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses

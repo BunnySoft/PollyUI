@@ -44,6 +44,11 @@ only when the JSON file is absent. Other applications' legacy storage and HTTP
 remain native. Settings now has an independent
 process/realm for Appearance and About; Displays, Network, Audio and Keyboard
 retain explicit Shell control-panel entry points.
+Current development adds an original Windows 11-oriented Shell/Settings layout:
+sidebar navigation, grouped cards, illustrated theme choices and a persistent
+system version/build footer. The new Modern preset applies to fresh sessions;
+saved classic-theme choices are preserved. This source change is not included
+in the physically accepted Alpha.6 ISO.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
 libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?, clearErrors?})` returns a callable
@@ -249,8 +254,8 @@ and `runtimeSourceDirty` from its build inputs. The version comes from
 `desktop/VERSION`; the full revision and dirty state are refreshed from actual
 Git metadata on every build, not an externally supplied label. A source export
 without usable Git reports revision `"unknown"` and dirty state `null`, never
-a fabricated clean build. The Settings presentation contract requires the system version and short
-revision on each page, with the complete identity in About; its own application
+a fabricated clean build. Settings displays the system version and short
+revision on every page, with the complete identity in About; its own application
 version is separate from the system build.
 
 Shell is the sole writer of `application.configDir/shell-preferences.json`.

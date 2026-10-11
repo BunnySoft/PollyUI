@@ -36,7 +36,8 @@ if (app) {
         namespace: localStorage.getItem('settings.fixture.namespace'),
         shellPreference: localStorage.getItem('desktop.theme'),
         activeElement: surface.document.activeElement?.id || '',
-        text: surface.document.body.textContent };
+        text: surface.document.body.textContent,
+        versionFooter: surface.document.getElementById('settings-system-version')?.textContent || '' };
       else if (query.op === 'capture') {
         surface.capture(application.cacheDir + '/' + query.name); result = true;
       } else if (query.op === 'control') {
