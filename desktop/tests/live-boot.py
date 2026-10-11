@@ -47,6 +47,7 @@ def settings_tab_steps(control, user_theme_loaded=False):
     return positions[control] + int(user_theme_loaded and control in ("reload", "restore"))
 
 def guest_stage_record(transcript, name):
+    prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
     matches = list(re.finditer(r"polly-vm-check\[\d+\]: " + re.escape(prefix) + r"([^\r\n]*)", transcript))
     if not matches:
         return None
@@ -332,7 +333,6 @@ def main():
                         send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + " " + args.runtime_revision +
                                   (" --rpc-profile" if args.settings_rpc_profile else "") + "\n")
                         deadline = time.monotonic() + 60
-                        prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
                         while True:
                             current = serial.read_text(errors="replace")
                             fresh = re.sub(r"\x1b\[[0-9;]*m", "", current[len(previous):])
