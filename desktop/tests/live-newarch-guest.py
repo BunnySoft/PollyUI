@@ -252,7 +252,8 @@ def main():
         if stage in ("selected", "user-theme", "restored"):
             check(settings_pid(shell) == state["settingsPid"], "Settings operation replaced its owned process")
             expected = {"selected": "bigsur", "user-theme": "alpha-vm", "restored": "xp"}[stage]
-            check(value["theme"]["id"] == expected, "UI theme choice did not persist to actual Shell JSON")
+            check(value["theme"]["id"] == expected, "UI theme choice did not persist to actual Shell JSON: " +
+                  json.dumps({"expected": expected, "actual": value["theme"]}))
             if stage == "restored":
                 check(value["theme"]["filesEnabled"] is False, "Use packaged themes did not persist")
             if stage == "user-theme":

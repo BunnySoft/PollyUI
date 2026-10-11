@@ -41,7 +41,7 @@ def fatal_guest_record(raw):
 
 def settings_tab_steps(control, user_theme_loaded=False):
     # Present leaves no active element; the first Tab focuses the tabindex=0 body.
-    positions = {"bigsur": 13, "reload": 14, "xp": 9, "user-theme": 14, "restore": 15}
+    positions = {"bigsur": 12, "reload": 14, "xp": 8, "user-theme": 14, "restore": 15}
     if control == "user-theme" and not user_theme_loaded:
         raise ValueError("A user theme must be loaded before selecting its native control")
     return positions[control] + int(user_theme_loaded and control in ("reload", "restore"))
