@@ -1,0 +1,1207 @@
+{
+  "author": "PollyUI contributors",
+  "license": "MIT",
+  "masterSize": 32,
+  "themes": {
+    "PollyClassic/alias": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "5b21bfd1701ee522993f516b19fb41a6936b55d63154e9d38357efd4f15d99b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/all-scroll": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "967f98acd00f4f14ad694de705be47e186dcc9757e096deba5774a7d86507a67",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/cell": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "18a603367eb0101d69d5091ba48e6425bad0901b556ea3fc31309e8dfa3c6c3f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/col-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "580f7e5f92118074c3beac8504b5675e7029844116551fdb75a7f6039ddde0ff",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/context-menu": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/copy": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "8003b9b16043d113b5dd62829287068ebba7d96f015566bac64aa2ee6dacc5f4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/crosshair": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "18a603367eb0101d69d5091ba48e6425bad0901b556ea3fc31309e8dfa3c6c3f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/default": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "f6a9a96b4d811b0302efb5c20327d8521778eb416eb9705050a6abd7e080349c",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/e-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "38a98f7c26f2e1346c31045e532a279c19e5cd287c1ad11b775647bb2558625a",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/ew-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "580f7e5f92118074c3beac8504b5675e7029844116551fdb75a7f6039ddde0ff",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/grab": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "69a786106752d72f082733bd131cbc3f4e41aa7d295f3af40c38fb42ec37a8cb",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/grabbing": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "cfe264fb83f40ddbb6737f11185e6fc7b4ec0f31a27e3d50f68a5bff2b4f9d01",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/help": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/move": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "967f98acd00f4f14ad694de705be47e186dcc9757e096deba5774a7d86507a67",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/n-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "0f14f0247e80fb94716fa8d41f4495f95fd2e18f7db1fb3bc16e10b142950729",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/ne-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "b29569a3abc72ccba4a9f1f45f5baff5dec88a80f980d1a745ddf066d7b66348",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/nesw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "82c66483f17743db42dbc9032e227f56aa23a7b9e98c3461528b08d8462258a8",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/no-drop": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "09565209dde119a0b097ab08e5435edd3d7f8259441416216550fcd95ccdc7b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/not-allowed": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "09565209dde119a0b097ab08e5435edd3d7f8259441416216550fcd95ccdc7b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/ns-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a91d67e9d0056d03ba8484f17338807285c391528ee58c1470775e1b53ee9062",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/nw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "80247932d9125b04e919bbe7fabc3053c50aa610c91f855afdfabdd2192a9d8f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/nwse-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "2d387272473b31483464aaa2781d9e2e112ae94a960742f83a992fad59ae929c",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/pointer": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "69a786106752d72f082733bd131cbc3f4e41aa7d295f3af40c38fb42ec37a8cb",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/progress": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/row-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a91d67e9d0056d03ba8484f17338807285c391528ee58c1470775e1b53ee9062",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/s-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "908d505680f069784c5ce6d037a8e4f35876b24c6e6883844c001c8ce614c723",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/se-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "fb3980837e2891a4af3a52ebb4b3a937efa1c5af76d8d34492728a9ff655f71a",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/sw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "57ed350896518f5a95fe0db4acf7f3d4e643b101d31eb724d8d21f8c205a5688",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/text": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "1d13989d7a4591a9e83773f4127474fae86fe908aa4073c7f98f5a3117a2574d",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/vertical-text": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "e338e0950fc964018e5e07a77ef2efb67ec43bb216886a5b4c7c28795e45cee2",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/w-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "861a34da68fd72216651f092cde448262d9085577051f04e891db6cb83de65f3",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/wait": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a6c9b0bf4ece0253c67fe743d7fb504b07adc521425954b198b85b0c9b68149f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/zoom-in": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        13
+      ],
+      "sha256": "b525bcbe102d43d3d42d0f983225abc4b9e0eff83aa2feb4910cfd1ee8449de0",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyClassic/zoom-out": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        13
+      ],
+      "sha256": "7a2421f697194f55b4e3fda7f40e0345869a0fa749c9a83f09595624ba76001e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/alias": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "5b21bfd1701ee522993f516b19fb41a6936b55d63154e9d38357efd4f15d99b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/all-scroll": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "967f98acd00f4f14ad694de705be47e186dcc9757e096deba5774a7d86507a67",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/cell": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "18a603367eb0101d69d5091ba48e6425bad0901b556ea3fc31309e8dfa3c6c3f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/click": {
+      "delayMs": 40,
+      "frames": 5,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "cd0d077b7e59d68bb7d70912a48e6f9842605131a93a3e1d6202c8bc0541a04a",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/col-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "580f7e5f92118074c3beac8504b5675e7029844116551fdb75a7f6039ddde0ff",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/context-menu": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/copy": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "8003b9b16043d113b5dd62829287068ebba7d96f015566bac64aa2ee6dacc5f4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/crosshair": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "18a603367eb0101d69d5091ba48e6425bad0901b556ea3fc31309e8dfa3c6c3f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/default": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "c417543707f3ff2e5ff85824c850fb6caf8012c39d376e30d55f5ad3587577d7",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/drag": {
+      "delayMs": 80,
+      "frames": 4,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "dfdc1805f772131a6afbdfd2d322fd0d7029db7f92664d6c225e0c41234c2ab0",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/drag-copy": {
+      "delayMs": 80,
+      "frames": 4,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "33b6dfe66c6c15ef694f3e824525f596ca83aa15b5654a6d3b193f926bd7118c",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/drag-move": {
+      "delayMs": 80,
+      "frames": 4,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "0320e4dbdbc7ef1492b0cd4922f394b4195e4557ac5459a732b07ec25a2a09ea",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/drag-no-drop": {
+      "delayMs": 80,
+      "frames": 4,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "f279603d366e6c93126c110e33d9da6e483fb8c3654193b8aa277cc54773d8e3",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/e-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "38a98f7c26f2e1346c31045e532a279c19e5cd287c1ad11b775647bb2558625a",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/ew-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "580f7e5f92118074c3beac8504b5675e7029844116551fdb75a7f6039ddde0ff",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/grab": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "69a786106752d72f082733bd131cbc3f4e41aa7d295f3af40c38fb42ec37a8cb",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/grabbing": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "cfe264fb83f40ddbb6737f11185e6fc7b4ec0f31a27e3d50f68a5bff2b4f9d01",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/help": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/motion": {
+      "delayMs": 70,
+      "frames": 4,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "b6441ea1bec2147a6d5060667f1ab6170bfe13fecd17ce684c6a1923c8158a52",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/move": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "967f98acd00f4f14ad694de705be47e186dcc9757e096deba5774a7d86507a67",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/n-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "0f14f0247e80fb94716fa8d41f4495f95fd2e18f7db1fb3bc16e10b142950729",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/ne-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "b29569a3abc72ccba4a9f1f45f5baff5dec88a80f980d1a745ddf066d7b66348",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/nesw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "82c66483f17743db42dbc9032e227f56aa23a7b9e98c3461528b08d8462258a8",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/no-drop": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "09565209dde119a0b097ab08e5435edd3d7f8259441416216550fcd95ccdc7b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/not-allowed": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "09565209dde119a0b097ab08e5435edd3d7f8259441416216550fcd95ccdc7b4",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/ns-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a91d67e9d0056d03ba8484f17338807285c391528ee58c1470775e1b53ee9062",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/nw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "80247932d9125b04e919bbe7fabc3053c50aa610c91f855afdfabdd2192a9d8f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/nwse-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "2d387272473b31483464aaa2781d9e2e112ae94a960742f83a992fad59ae929c",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/pointer": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        5
+      ],
+      "sha256": "69a786106752d72f082733bd131cbc3f4e41aa7d295f3af40c38fb42ec37a8cb",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/press": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        2,
+        18
+      ],
+      "sha256": "f69a96a6f580ff65d3f301a97c7d5f33d79b0536011e0b317f4e93c75b49e6c8",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/progress": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        3,
+        3
+      ],
+      "sha256": "0bef545d3aa2bece1b3d49122d92ab636fe44ce6f06d236b5160461f0838791e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/row-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a91d67e9d0056d03ba8484f17338807285c391528ee58c1470775e1b53ee9062",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/s-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "908d505680f069784c5ce6d037a8e4f35876b24c6e6883844c001c8ce614c723",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/se-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "fb3980837e2891a4af3a52ebb4b3a937efa1c5af76d8d34492728a9ff655f71a",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/sw-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "57ed350896518f5a95fe0db4acf7f3d4e643b101d31eb724d8d21f8c205a5688",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/text": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "1d13989d7a4591a9e83773f4127474fae86fe908aa4073c7f98f5a3117a2574d",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/vertical-text": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "e338e0950fc964018e5e07a77ef2efb67ec43bb216886a5b4c7c28795e45cee2",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/w-resize": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "861a34da68fd72216651f092cde448262d9085577051f04e891db6cb83de65f3",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/wait": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        16,
+        16
+      ],
+      "sha256": "a6c9b0bf4ece0253c67fe743d7fb504b07adc521425954b198b85b0c9b68149f",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/zoom-in": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        13
+      ],
+      "sha256": "b525bcbe102d43d3d42d0f983225abc4b9e0eff83aa2feb4910cfd1ee8449de0",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    },
+    "PollyRabbit/zoom-out": {
+      "delayMs": 0,
+      "frames": 1,
+      "hotspot32": [
+        13,
+        13
+      ],
+      "sha256": "7a2421f697194f55b4e3fda7f40e0345869a0fa749c9a83f09595624ba76001e",
+      "sizes": [
+        24,
+        32,
+        48,
+        64,
+        96
+      ]
+    }
+  }
+}

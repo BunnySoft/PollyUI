@@ -6,12 +6,15 @@
 #include "data-device.h"
 #include "input-method.h"
 #include "wire.h"
+#include "cursor.h"
+#include "session-lock.h"
 
 #include <errno.h>
 #include <drm_fourcc.h>
 #include <fcntl.h>
 #include <linux/input-event-codes.h>
 #include <limits.h>
+#include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,9 +26,12 @@
 #include <wlr/backend.h>
 #include <wlr/backend/headless.h>
 #include <wlr/backend/multi.h>
+#include <wlr/render/wlr_texture.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_keyboard.h>
@@ -60,9 +66,12 @@ static struct TestClient shell_client = { .control = -1 };
 static int checks;
 static uint32_t time_msec;
 static bool nested;
+static bool cursor_only;
+static bool cursor_resources;
 static wl_notify_func_t compositor_new_input;
 static const struct wlr_keyboard_impl keyboard_impl = { .name = "pollywm-test" };
 static const struct wlr_pointer_impl pointer_impl = { .name = "pollywm-test" };
+static void find_headless(struct wlr_backend *backend, void *data);
 
 static void test_input(struct wl_listener *listener, void *data)
 {
@@ -228,6 +237,326 @@ static bool scene_pixel(struct wlr_output *target, uint32_t expected)
     if ((pixel & 0xffffff) != expected)
         fprintf(stderr, "Scene pixel: actual %06x, expected %06x\n", pixel & 0xffffff, expected);
     CHECK((pixel & 0xffffff) == expected);
+    return true;
+}
+
+static uint64_t monotonic_ms(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+
+static bool wait_ms(unsigned duration)
+{
+    uint64_t end = monotonic_ms() + duration;
+    while (monotonic_ms() < end) CHECK(pump());
+    return true;
+}
+
+static bool cursor_pixels(struct wlr_output *output, const char *name, const char *label, int *frame)
+{
+    CHECK(!wl_list_empty(&output->cursors));
+    struct wlr_output_cursor *cursor = wl_container_of(output->cursors.next, cursor, link);
+    if (!strcmp(name, "hidden")) {
+        CHECK(!cursor->enabled && !cursor->texture);
+        return true;
+    }
+    CHECK(cursor->enabled && cursor->texture);
+    uint32_t pixels[256 * 256];
+    CHECK(cursor->texture->width <= 256 && cursor->texture->height <= 256);
+    struct wlr_texture_read_pixels_options options = {
+        .data = pixels, .format = DRM_FORMAT_ARGB8888, .stride = cursor->texture->width * 4,
+    };
+    CHECK(wlr_texture_read_pixels(cursor->texture, &options));
+    int matched = -1;
+    if (!strcmp(name, "client-surface")) {
+        CHECK(cursor->texture->width == 8 && cursor->texture->height == 8);
+        CHECK(cursor->hotspot_x == 2 && cursor->hotspot_y == 3);
+        CHECK((pixels[0] & 0xffffff) == 0x3b82f6);
+    } else {
+        struct wlr_xcursor *asset = wlr_xcursor_manager_get_xcursor(desktop.cursor_theme, name, output->scale);
+        CHECK(asset);
+        for (unsigned i = 0; i < asset->image_count; i++) {
+            struct wlr_xcursor_image *image = asset->images[i];
+            if (image->width == cursor->texture->width && image->height == cursor->texture->height &&
+                !memcmp(image->buffer, pixels, image->width * image->height * 4)) matched = (int)i;
+        }
+        CHECK(matched >= 0);
+        /* Public wlr_output_cursor_set_buffer normalizes integer hotspots via
+         * logical coordinates, then rounds back to output pixels. */
+        CHECK(cursor->hotspot_x == (int)roundf((int)(asset->images[matched]->hotspot_x / output->scale) * output->scale) &&
+              cursor->hotspot_y == (int)roundf((int)(asset->images[matched]->hotspot_y / output->scale) * output->scale));
+        if (frame) *frame = matched;
+    }
+    const char *directory = getenv("POLLY_CURSOR_EVIDENCE");
+    if (directory && label) {
+        char path[PATH_MAX];
+        CHECK(snprintf(path, sizeof(path), "%s/%s.argb", directory, label) < (int)sizeof(path));
+        FILE *file = fopen(path, "wb");
+        CHECK(file);
+        CHECK(fwrite(pixels, 4, cursor->texture->width * cursor->texture->height, file) ==
+              cursor->texture->width * cursor->texture->height);
+        CHECK(fclose(file) == 0);
+        CHECK(snprintf(path, sizeof(path), "%s/native-frames.tsv", directory) < (int)sizeof(path));
+        file = fopen(path, "a");
+        CHECK(file);
+        fprintf(file, "%s\t%s\t%d\t%u\t%u\t%d\t%d\t%llu\n", label, name, matched,
+            cursor->texture->width, cursor->texture->height, cursor->hotspot_x, cursor->hotspot_y,
+            (unsigned long long)monotonic_ms());
+        CHECK(fclose(file) == 0);
+    }
+    return true;
+}
+
+static bool cursor_suite(const char *client_path)
+{
+    CHECK(spawn_client(&clients[0], client_path));
+    CHECK(spawn_client(&clients[1], client_path));
+    struct TestClient *a = &clients[0], *b = &clients[1];
+    CHECK(command(a, TEST_MAP, 1, 0, 0));
+    CHECK(command(b, TEST_MAP, 2, 0, 0));
+    struct PuDesktopView *first = find_view(1), *second = find_view(2);
+    CHECK(first && second && a->reply.cursor_shape_capability && b->reply.cursor_shape_capability);
+    wlr_scene_node_set_position(&first->tree->node, 30, 60);
+    wlr_scene_node_set_position(&second->tree->node, 700, 60);
+    struct wlr_output *output = first->output;
+    motion(50, 80);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(wait_ms(140));
+    CHECK(cursor_pixels(output, "default", "idle", NULL));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    motion(51, 80);
+    CHECK(!strcmp(pu_cursor_selected(&desktop), "motion"));
+    int seen = 0;
+    for (unsigned i = 0; i < 10; i++) {
+        CHECK(wait_ms(35));
+        motion(52 + i, 80);
+        char label[32];
+        snprintf(label, sizeof(label), "run-%02u", i);
+        int frame = -1;
+        CHECK(cursor_pixels(output, "motion", label, &frame));
+        seen |= 1 << frame;
+    }
+    CHECK(seen == 15); /* Repeated motion must not restart frame zero. */
+    CHECK(wait_ms(145));
+    CHECK(cursor_pixels(output, "default", "run-stopped", NULL));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    button(BTN_LEFT, true);
+    CHECK(cursor_pixels(output, "press", "pressed", NULL));
+    button(BTN_LEFT, false);
+    CHECK(!strcmp(pu_cursor_selected(&desktop), "click"));
+    seen = 0;
+    for (unsigned i = 0; i < 5; i++) {
+        char label[32];
+        snprintf(label, sizeof(label), "hop-%02u", i);
+        int frame = -1;
+        CHECK(cursor_pixels(output, "click", label, &frame));
+        seen |= 1 << frame;
+        CHECK(wait_ms(40));
+    }
+    CHECK((seen & 12) == 12 && (seen & 17)); /* Symmetric hop: two heights and ground. */
+    CHECK(wait_ms(30));
+    CHECK(cursor_pixels(output, "default", "hop-finished", NULL));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(wait_ms(110));
+    motion(63, 80);
+    CHECK(wait_ms(100));
+    CHECK(!strcmp(pu_cursor_selected(&desktop), "motion")); /* Hop restores current motion, not stale idle. */
+    CHECK(cursor_pixels(output, "motion", "hop-current-motion", NULL));
+    CHECK(wait_ms(145));
+    button(BTN_LEFT, true);
+    motion(85, 80);
+    CHECK(!strcmp(pu_cursor_selected(&desktop), "drag"));
+    seen = 0;
+    for (unsigned i = 0; i < 9; i++) {
+        char label[32];
+        snprintf(label, sizeof(label), "effort-%02u", i);
+        int frame = -1;
+        CHECK(cursor_pixels(output, "drag", label, &frame));
+        seen |= 1 << frame;
+        CHECK(wait_ms(40));
+    }
+    CHECK(seen == 15);
+    button(BTN_LEFT, false);
+    CHECK(strcmp(pu_cursor_selected(&desktop), "click"));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT));
+    motion(86, 80); button(BTN_LEFT, true); motion(110, 80); button(BTN_LEFT, false);
+    CHECK(cursor_pixels(output, "text", "text-override", NULL));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    CHECK(command(a, TEST_CURSOR_INVALID, 0, 0, 0));
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(b, TEST_CURSOR_SHAPE, 1, a->reply.cursor_enter_serial,
+        WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 1, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(b, TEST_CURSOR_SURFACE, 1, a->reply.cursor_enter_serial, 0));
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SURFACE, 1, 0, 0));
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SURFACE, 0, 0, 0));
+    CHECK(cursor_pixels(output, "hidden", NULL, NULL));
+    motion(111, 80); button(BTN_LEFT, true); motion(125, 80); button(BTN_LEFT, false);
+    CHECK(cursor_pixels(output, "hidden", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SURFACE, 0, 0, 1));
+    CHECK(cursor_pixels(output, "client-surface", "legacy-custom", NULL));
+    motion(126, 80);
+    CHECK(cursor_pixels(output, "client-surface", NULL, NULL));
+    motion(720, 80);
+    CHECK(command(b, TEST_QUERY, 0, 0, 0));
+    CHECK(command(b, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_CROSSHAIR));
+    CHECK(!strcmp(pu_cursor_selected(&desktop), "crosshair"));
+    CHECK(cursor_pixels(output, "crosshair", "crosshair-override", NULL));
+    motion(50, 80);
+    CHECK(cursor_pixels(output, "client-surface", NULL, NULL)); /* Restore actual current owner. */
+    CHECK(command(a, TEST_CURSOR_IMAGE_DESTROY, 0, 0, 0));
+    CHECK(cursor_pixels(output, "hidden", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(command(b, TEST_DRAG_TARGET, 0, 0, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY));
+    button(BTN_LEFT, true);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(a, TEST_DRAG, 0, a->reply.serial, 9));
+    CHECK(pu_data_device_drag_active(&desktop));
+    motion(720, 80);
+    CHECK(command(a, TEST_CURSOR_SURFACE, 0, 0, 0)); /* Actual native drag owner may hide. */
+    CHECK(cursor_pixels(output, "hidden", NULL, NULL));
+    CHECK(command(b, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT));
+    CHECK(cursor_pixels(output, "hidden", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(wait_ms(90));
+    CHECK(cursor_pixels(output, "drag-copy", "native-drag-copy", NULL));
+    CHECK(command(b, TEST_DRAG_TARGET, 0, 0, WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE));
+    CHECK(wait_ms(90));
+    CHECK(cursor_pixels(output, "drag-move", "native-drag-move", NULL));
+    CHECK(command(b, TEST_DRAG_TARGET, 0, 0, 0));
+    CHECK(wait_ms(90));
+    CHECK(cursor_pixels(output, "drag-no-drop", "native-drag-no-drop", NULL));
+    key(KEY_ESC, true); key(KEY_ESC, false);
+    button(BTN_LEFT, false);
+    CHECK(!pu_data_device_drag_active(&desktop));
+    CHECK(wait_ms(145));
+    CHECK(cursor_pixels(output, "crosshair", NULL, NULL));
+    motion(50, 80);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    uint32_t old_enter = a->reply.cursor_enter_serial;
+    motion(720, 80); motion(50, 80);
+    CHECK(command(a, TEST_CURSOR_SHAPE, 1, old_enter, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT));
+    CHECK(strcmp(pu_cursor_selected(&desktop), "text"));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    CHECK(wait_ms(145));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT));
+    button(BTN_LEFT, true);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(a, TEST_MOVE, 0, a->reply.serial, 0));
+    CHECK(desktop.grab == PU_DESKTOP_MOVE);
+    CHECK(cursor_pixels(output, "drag", "window-move", NULL));
+    button(BTN_LEFT, false);
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    button(BTN_LEFT, true);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(a, TEST_RESIZE, 0, a->reply.serial, WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT));
+    CHECK(desktop.grab == PU_DESKTOP_RESIZE);
+    CHECK(cursor_pixels(output, wlr_xcursor_get_resize_name(WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT),
+        "window-resize", NULL));
+    button(BTN_LEFT, false);
+    CHECK(cursor_pixels(output, "text", NULL, NULL));
+    CHECK(command(a, TEST_CURSOR_SHAPE, 0, 0, WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_DEFAULT));
+    struct wlr_output_state scale;
+    wlr_output_state_init(&scale);
+    wlr_output_state_set_scale(&scale, 2);
+    CHECK(wlr_output_commit_state(output, &scale));
+    wlr_output_state_finish(&scale);
+    CHECK(cursor_pixels(output, "default", "scale-2", NULL));
+    struct wlr_output_cursor *native = wl_container_of(output->cursors.next, native, link);
+    CHECK(native->texture->width == 64 && native->hotspot_x == 4 && native->hotspot_y == 36);
+    button(BTN_LEFT, true); motion(65, 80);
+    pu_desktop_isolate_input(&desktop);
+    CHECK(!pu_cursor_timer_active(&desktop));
+    CHECK(cursor_pixels(output, "default", "isolated", NULL));
+    pu_desktop_restore_input(&desktop);
+    motion(50, 80);
+    CHECK(command(a, TEST_QUERY, 0, 0, 0));
+    CHECK(command(a, TEST_CURSOR_SURFACE, 0, 0, 1));
+    button(BTN_LEFT, true);
+    CHECK(command(a, TEST_DESTROY, 0, 0, 0));
+    CHECK(strcmp(pu_cursor_selected(&desktop), "client-surface"));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    button(BTN_LEFT, false);
+    CHECK(command(b, TEST_DESTROY, 0, 0, 0));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    CHECK(command(a, TEST_QUIT, 0, 0, 0));
+    CHECK(command(b, TEST_QUIT, 0, 0, 0));
+    return true;
+}
+
+static bool cursor_resource_suite(void)
+{
+    struct wlr_output_layout_output *entry = wl_container_of(desktop.layout->outputs.next, entry, link);
+    struct wlr_output *output = entry->output;
+    CHECK(cursor_pixels(output, "default", "resource-default", NULL));
+    motion(70, 70);
+    const char *motion_name = (getenv("POLLY_CURSOR_STATIC") && !strcmp(getenv("POLLY_CURSOR_STATIC"), "1")) ||
+        (getenv("POLLY_CURSOR_THEME") && !strcmp(getenv("POLLY_CURSOR_THEME"), "classic")) ? "default" : "motion";
+    CHECK(!strcmp(pu_cursor_selected(&desktop), motion_name));
+    CHECK(cursor_pixels(output, motion_name, "resource-motion", NULL));
+    CHECK(wait_ms(150));
+    CHECK(!pu_cursor_timer_active(&desktop));
+    for (unsigned shape = 1; shape <= WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_ZOOM_OUT; shape++) {
+        const char *name = wlr_cursor_shape_v1_name(shape);
+        pu_cursor_compositor(&desktop, name);
+        CHECK(cursor_pixels(output, name, shape == WP_CURSOR_SHAPE_DEVICE_V1_SHAPE_TEXT ? "resource-text" : NULL, NULL));
+    }
+    const char *previous = pu_cursor_selected(&desktop);
+    pu_cursor_compositor(&desktop, NULL);
+    pu_cursor_compositor(&desktop, "../default");
+    CHECK(!strcmp(pu_cursor_selected(&desktop), previous));
+    pu_cursor_compositor(&desktop, "default");
+    struct wlr_backend *headless = NULL;
+    wlr_multi_for_each_backend(desktop.backend, find_headless, &headless);
+    CHECK(headless);
+    struct wlr_output *extra = wlr_headless_add_output(headless, 640, 480);
+    CHECK(extra);
+    struct wlr_output_state extra_scale;
+    wlr_output_state_init(&extra_scale);
+    wlr_output_state_set_scale(&extra_scale, 2);
+    CHECK(wlr_output_commit_state(extra, &extra_scale));
+    wlr_output_state_finish(&extra_scale);
+    for (unsigned i = 0; i < 3; i++) {
+        float scales[] = {1.5f, 2, 3};
+        struct wlr_output_state scale;
+        wlr_output_state_init(&scale);
+        wlr_output_state_set_scale(&scale, scales[i]);
+        CHECK(wlr_output_commit_state(output, &scale));
+        wlr_output_state_finish(&scale);
+        char label[32];
+        snprintf(label, sizeof(label), "resource-scale-%u", i);
+        CHECK(cursor_pixels(output, "default", label, NULL));
+        struct wlr_output_cursor *native = wl_container_of(output->cursors.next, native, link);
+        CHECK(native->texture->width == (unsigned)(32 * scales[i]));
+        CHECK(cursor_pixels(extra, "default", "resource-other-output", NULL));
+    }
+    wlr_output_destroy(extra);
+    motion(72, 72);
+    wlr_pointer_finish(&pointer);
+    CHECK(!pu_cursor_timer_active(&desktop) && desktop.seat->pointer_state.button_count == 0);
+    wlr_pointer_init(&pointer, &pointer_impl, "test-pointer");
+    wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
+    /* Exercise explicit cursor teardown while both native animation and the
+     * quiet deadline are live, then dispatch after their owning buffers die. */
+    if (!getenv("POLLY_CURSOR_STATIC") &&
+        !(getenv("POLLY_CURSOR_THEME") && !strcmp(getenv("POLLY_CURSOR_THEME"), "classic"))) {
+        motion(74, 74);
+        CHECK(pu_cursor_timer_active(&desktop));
+        CHECK(cursor_pixels(output, "motion", "resource-shutdown-live", NULL));
+        pu_cursor_finish(&desktop);
+        CHECK(!desktop.cursor_state && !desktop.cursor_theme);
+        CHECK(wait_ms(160));
+        struct wlr_output_cursor *native = wl_container_of(output->cursors.next, native, link);
+        CHECK(!native->enabled && !native->texture);
+    }
     return true;
 }
 
@@ -1608,6 +1937,8 @@ int main(int argc, char **argv)
 {
     if (argc != 2 && argc != 3) return 2;
     nested = argc == 3 && strcmp(argv[2], "--nested") == 0;
+    cursor_only = argc == 3 && strcmp(argv[2], "--cursor") == 0;
+    cursor_resources = argc == 3 && strcmp(argv[2], "--cursor-resources") == 0;
     char runtime[] = "/tmp/pollywm-test-XXXXXX";
     if (!mkdtemp(runtime)) { perror("mkdtemp"); return 1; }
     setenv("XDG_RUNTIME_DIR", runtime, 1);
@@ -1618,7 +1949,7 @@ int main(int argc, char **argv)
         setenv("WLR_BACKENDS", "wayland", 1);
     }
     setenv("WLR_RENDERER", "pixman", 1);
-    wlr_log_init(WLR_INFO, NULL);
+    wlr_log_init(cursor_only ? WLR_DEBUG : WLR_INFO, NULL);
     bool ready = pu_desktop_init(&desktop, NULL);
     if (ready) {
         compositor_new_input = desktop.new_input.notify;
@@ -1631,7 +1962,8 @@ int main(int argc, char **argv)
         wlr_pointer_init(&pointer, &pointer_impl, "test-pointer");
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
-        passed = suite(argv[1]);
+        passed = cursor_only ? cursor_suite(argv[1]) :
+            cursor_resources ? cursor_resource_suite() : suite(argv[1]);
         if (!stop_clients(passed)) passed = false;
         wlr_pointer_finish(&pointer);
         if (desktop.grab != PU_DESKTOP_PASSTHROUGH) passed = false;

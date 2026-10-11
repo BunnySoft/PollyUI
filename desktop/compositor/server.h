@@ -77,6 +77,7 @@ struct PuDesktop {
     struct wlr_output_layout *layout;
     struct wlr_cursor *cursor;
     struct wlr_xcursor_manager *cursor_theme;
+    struct PuCursor *cursor_state;
     struct wlr_seat *seat;
     bool session_exit_pending, session_exit_sealed;
     bool require_session_exit;
@@ -120,7 +121,7 @@ struct PuDesktop {
     struct wl_listener new_output, new_input, new_toplevel, new_popup;
     struct wl_listener new_layer;
     struct wl_listener motion, motion_absolute, button, axis, frame;
-    struct wl_listener request_cursor, request_selection;
+    struct wl_listener request_selection;
     struct wl_listener layout_change;
 };
 

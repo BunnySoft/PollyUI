@@ -20,7 +20,9 @@ enum TestCommand {
     TEST_WORKSPACE_MOVE, TEST_WORKSPACE_COMMIT, TEST_TRANSIENT,
     TEST_DRAG, TEST_DRAG_SOURCE_DESTROY, TEST_DRAG_ICON_DESTROY,
     TEST_TEXT_ENABLE, TEST_TEXT_DISABLE, TEST_IME_CREATE, TEST_IME_COMMIT, TEST_IME_POPUP,
-    TEST_IME_FORCE_BIND, TEST_IME_FORWARD
+    TEST_IME_FORCE_BIND, TEST_IME_FORWARD,
+    TEST_CURSOR_SHAPE, TEST_CURSOR_SURFACE, TEST_CURSOR_IMAGE_DESTROY, TEST_DRAG_TARGET,
+    TEST_CURSOR_INVALID
 };
 
 struct TestLayer {
@@ -51,6 +53,8 @@ struct TestReply {
     char text_preedit[128], text_commit[128];
     char foreign_title[128];
     uint32_t serial;
+    uint32_t cursor_enter_serial;
+    int cursor_shape_capability;
 };
 
 #endif

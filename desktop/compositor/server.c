@@ -8,6 +8,7 @@
 #include "output-control.h"
 #include "data-device.h"
 #include "input-method.h"
+#include "cursor.h"
 
 #include <linux/input-event-codes.h>
 #include <limits.h>
@@ -176,7 +177,8 @@ void pu_desktop_isolate_input(struct PuDesktop *desktop)
     }
     wlr_seat_keyboard_notify_clear_focus(desktop->seat);
     wlr_seat_pointer_notify_clear_focus(desktop->seat);
-    wlr_cursor_set_xcursor(desktop->cursor, desktop->cursor_theme, "default");
+    pu_cursor_cancel(desktop);
+    pu_cursor_compositor(desktop, "default");
 }
 
 static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
@@ -405,10 +407,12 @@ static void add_keyboard(struct PuDesktop *desktop, struct wlr_input_device *dev
 
 static void end_grab(struct PuDesktop *desktop)
 {
+    bool active = desktop->grab != PU_DESKTOP_PASSTHROUGH;
     if (desktop->grab == PU_DESKTOP_RESIZE && desktop->grabbed)
         wlr_xdg_toplevel_set_resizing(desktop->grabbed->toplevel, false);
     desktop->grab = PU_DESKTOP_PASSTHROUGH;
     desktop->grabbed = NULL;
+    if (active) pu_cursor_cancel(desktop);
 }
 
 static void pointer_destroy(struct wl_listener *listener, void *data)
@@ -420,9 +424,16 @@ static void pointer_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&entry->destroy.link);
     free(entry);
     if (wl_list_empty(&desktop->pointers)) {
+        pu_data_device_cancel_drag(desktop);
         end_grab(desktop);
         desktop->suppressed_button = 0;
+        while (desktop->seat->pointer_state.button_count) {
+            uint32_t button = desktop->seat->pointer_state.buttons[
+                desktop->seat->pointer_state.button_count - 1].button;
+            wlr_seat_pointer_notify_button(desktop->seat, 0, button, WL_POINTER_BUTTON_STATE_RELEASED);
+        }
         wlr_seat_pointer_notify_clear_focus(desktop->seat);
+        pu_cursor_cancel(desktop);
     }
     update_capabilities(desktop);
 }
@@ -1176,8 +1187,8 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
         wlr_seat_pointer_notify_enter(desktop->seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(desktop->seat, time, sx, sy);
     } else {
-        wlr_cursor_set_xcursor(desktop->cursor, desktop->cursor_theme, pu_decoration_cursor(part));
         wlr_seat_pointer_notify_clear_focus(desktop->seat);
+        pu_cursor_compositor(desktop, pu_decoration_cursor(part));
     }
 }
 
@@ -1187,14 +1198,17 @@ static void cursor_motion(struct wl_listener *listener, void *data)
     struct wlr_pointer_motion_event *event = data;
     wlr_cursor_move(desktop->cursor, &event->pointer->base, event->delta_x, event->delta_y);
     process_motion(desktop, event->time_msec);
+    if (event->delta_x != 0 || event->delta_y != 0) pu_cursor_motion(desktop);
 }
 
 static void cursor_absolute(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, motion_absolute);
     struct wlr_pointer_motion_absolute_event *event = data;
+    double x = desktop->cursor->x, y = desktop->cursor->y;
     wlr_cursor_warp_absolute(desktop->cursor, &event->pointer->base, event->x, event->y);
     process_motion(desktop, event->time_msec);
+    if (x != desktop->cursor->x || y != desktop->cursor->y) pu_cursor_motion(desktop);
 }
 
 static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
@@ -1224,6 +1238,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
         view->resize_pending = true;
         wlr_xdg_toplevel_set_resizing(view->toplevel, true);
     }
+    pu_cursor_refresh(desktop);
 }
 
 static void cursor_button(struct wl_listener *listener, void *data)
@@ -1238,6 +1253,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
             wlr_seat_pointer_notify_button(desktop->seat, event->time_msec, event->button, event->state);
         return;
     }
+    pu_cursor_button(desktop, event->button, pressed);
     if (!pressed && desktop->suppressed_button == event->button) {
         desktop->suppressed_button = 0;
         struct PuDesktopView *view = desktop->decoration_pressed;
@@ -1345,17 +1361,6 @@ static void cursor_frame(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_frame(desktop->seat);
 }
 
-static void request_cursor(struct wl_listener *listener, void *data)
-{
-    struct PuDesktop *desktop = wl_container_of(listener, desktop, request_cursor);
-    struct wlr_seat_pointer_request_set_cursor_event *event = data;
-    if (desktop->grab == PU_DESKTOP_PASSTHROUGH &&
-        (event->seat_client == desktop->seat->pointer_state.focused_client ||
-         (desktop->seat->drag && event->seat_client == desktop->seat->drag->seat_client)))
-        wlr_cursor_set_surface(desktop->cursor, event->surface,
-                               event->hotspot_x, event->hotspot_y);
-}
-
 static void request_selection(struct wl_listener *listener, void *data)
 {
     struct PuDesktop *desktop = wl_container_of(listener, desktop, request_selection);
@@ -1407,7 +1412,12 @@ static void output_commit(struct wl_listener *listener, void *data)
 {
     struct PuDesktopOutput *entry = wl_container_of(listener, entry, commit);
     struct wlr_output_event_commit *event = data;
-    if (entry->desktop->stopping || !(event->state->committed & WLR_OUTPUT_STATE_ENABLED)) return;
+    if (entry->desktop->stopping) return;
+    if ((event->state->committed & WLR_OUTPUT_STATE_SCALE) &&
+        !pu_cursor_load_scale(entry->desktop, entry->output->scale)) {
+        fail(entry->desktop, "Cannot load scaled cursor resources"); return;
+    }
+    if (!(event->state->committed & WLR_OUTPUT_STATE_ENABLED)) return;
     if (entry->output->enabled) {
         if (!wlr_output_layout_get(entry->desktop->layout, entry->output)) attach_output(entry);
     } else {
@@ -1461,6 +1471,9 @@ static void new_output(struct wl_listener *listener, void *data)
     listen(&output->events.commit, &entry->commit, output_commit);
     listen(&output->events.destroy, &entry->destroy, output_destroy);
     desktop->output_count++;
+    if (!pu_cursor_load_scale(desktop, output->scale)) {
+        fail(desktop, "Cannot load output cursor resources"); return;
+    }
     if (!pu_output_control_add(desktop, output)) {
         fail(desktop, "Cannot track output configuration"); return;
     }
@@ -2037,14 +2050,16 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!desktop->windows) { fail(desktop, "Cannot create window scene tree"); return false; }
     desktop->scene_layout = wlr_scene_attach_output_layout(desktop->scene, desktop->layout);
     desktop->cursor = wlr_cursor_create();
-    desktop->cursor_theme = wlr_xcursor_manager_create(NULL, 24);
     desktop->seat = wlr_seat_create(desktop->display, "seat0");
     desktop->shell = wlr_xdg_shell_create(desktop->display, 5);
     desktop->layer_shell = wlr_layer_shell_v1_create(desktop->display, 4);
     desktop->foreign_manager = wlr_foreign_toplevel_manager_v1_create(desktop->display);
-    if (!desktop->scene_layout || !desktop->cursor || !desktop->cursor_theme ||
+    if (!desktop->scene_layout || !desktop->cursor ||
         !desktop->seat || !desktop->shell || !desktop->layer_shell || !desktop->foreign_manager) {
         fail(desktop, "Cannot create cursor, seat or xdg-shell"); return false;
+    }
+    if (!pu_cursor_init(desktop)) {
+        fail(desktop, "Cannot initialize desktop cursor policy"); return false;
     }
     if (!pu_decorations_init(desktop)) {
         fail(desktop, "Cannot initialize window decorations or fonts"); return false;
@@ -2069,9 +2084,6 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
         fail(desktop, "Cannot initialize session locking"); return false;
     }
     wlr_cursor_attach_output_layout(desktop->cursor, desktop->layout);
-    if (!wlr_xcursor_manager_load(desktop->cursor_theme, 1)) {
-        fail(desktop, "Cannot load cursor theme"); return false;
-    }
     listen(&desktop->backend->events.new_output, &desktop->new_output, new_output);
     listen(&desktop->backend->events.new_input, &desktop->new_input, new_input);
     listen(&desktop->shell->events.new_toplevel, &desktop->new_toplevel, new_toplevel);
@@ -2082,7 +2094,6 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     listen(&desktop->cursor->events.button, &desktop->button, cursor_button);
     listen(&desktop->cursor->events.axis, &desktop->axis, cursor_axis);
     listen(&desktop->cursor->events.frame, &desktop->frame, cursor_frame);
-    listen(&desktop->seat->events.request_set_cursor, &desktop->request_cursor, request_cursor);
     listen(&desktop->seat->events.request_set_selection, &desktop->request_selection, request_selection);
     listen(&desktop->layout->events.change, &desktop->layout_change, layout_changed);
 
@@ -2110,7 +2121,7 @@ bool pu_desktop_start(struct PuDesktop *desktop)
         fail(desktop, "Cannot start backend"); return false;
     }
     if (!desktop->output_count) { fail(desktop, "No usable outputs"); return false; }
-    wlr_cursor_set_xcursor(desktop->cursor, desktop->cursor_theme, "default");
+    pu_cursor_refresh(desktop);
     wlr_log(WLR_INFO, "PollyWM ready: WAYLAND_DISPLAY=%s", desktop->socket_name);
     return true;
 }
@@ -2137,7 +2148,6 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     unlisten(&desktop->button);
     unlisten(&desktop->axis);
     unlisten(&desktop->frame);
-    unlisten(&desktop->request_cursor);
     unlisten(&desktop->request_selection);
     unlisten(&desktop->layout_change);
     /* Release imported buffers before disconnecting the nested Wayland backend. */
@@ -2145,7 +2155,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     pu_shortcuts_finish(desktop);
     pu_workspaces_finish(desktop);
     pu_decorations_finish(desktop);
-    if (desktop->cursor_theme) wlr_xcursor_manager_destroy(desktop->cursor_theme);
+    pu_cursor_finish(desktop);
     if (desktop->cursor) wlr_cursor_destroy(desktop->cursor);
     if (desktop->allocator) wlr_allocator_destroy(desktop->allocator);
     if (desktop->renderer) wlr_renderer_destroy(desktop->renderer);

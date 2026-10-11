@@ -194,21 +194,22 @@ API, scheduling commitment, version bump or new ISO is implied by this record.
 ## Next-version requirement: system-level animated rabbit cursor
 
 The user selected this for the version after Alpha.7, **excluded from Alpha.7**.
-Implementation has not begun; the next release number is not yet frozen.
+The first source implementation is present; the next release number is not yet frozen.
 PollyWM supplies the desktop-wide default rabbit cursor: idle, running on
 movement, hopping on click and an effort pose during drag. Application windows may explicitly
 override it with an appropriate cursor; returning to an inheriting region
 restores the system default. This requires custom native/compositor cursor
 images and hotspots, animation state/lifetime handling, output scaling and a
-clear client override contract. Current system-cursor selection alone does not
-implement it. Preserve focused-client authorization, protected-role behavior,
+clear client override contract. The native theme/action module, original
+prebuilt assets and semantic cursor-shape bridge now implement the prototype.
+Preserve focused-client authorization, protected-role behavior,
 static/reduced-motion fallback and cursor-only animation work.
 See [the recorded scope](./DESIGN.md#53-system-level-animated-cursor-candidate).
-The [development/visual assessment](./docs/DESKTOP-CURSOR.md) identifies reuse of
-wlroots animated Xcursors and SDL cursor-shape-v1 support. Overall difficulty is
-medium; state/owner transitions and precise original artwork need more work than
-frame playback. Planned stages are static default/semantic overrides, native
-action animations, then lifecycle/scale/packaging qualification and preferences.
+The [implementation contract](./docs/DESKTOP-CURSOR.md) documents wlroots
+frame playback, DEFAULT/legacy/hidden behavior and actual native cursor-texture
+acceptance. Source-level static/default, action, lifecycle, scale and package
+wiring are implemented. Preferences UI, touch/pen/multi-pointer and hardware/
+new ISO qualification are not included and remain future work.
 
 ## Engines & pipeline
 

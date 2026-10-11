@@ -332,8 +332,9 @@ VM acceptance remains blocked. The user requested the explicitly **unqualified**
 candidate for physical testing; see [its known limits and location](./desktop/LIVE.md).
 The accepted alpha.6 image is unchanged and does not contain these
 later changes. The [Alpha.7 delivery gate](./ROADMAP.md#alpha7-files-interaction-and-physical-test-candidate)
-tracks the new memory-only physical-test candidate. System rabbit cursor
-animation and materials remain separate next-version work.
+tracks the new memory-only physical-test candidate. The system rabbit cursor
+source prototype is now implemented separately after that freeze; it is not
+in the Alpha.7 ISO. Materials remain next-version work.
 
 Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**
 for design principles, architecture, current capabilities, known limits,
@@ -1366,6 +1367,12 @@ automatically erased on deactivation. `window.setCursor(name)` selects an owned
 native system cursor for that window: `arrow`, `text`, `crosshair`, `pointer`,
 `move`, `ew-resize`, `ns-resize`, `nesw-resize`, `nwse-resize`, `not-allowed`,
 or `wait`. Invalid names, unsupported backends and closed windows fail explicitly.
+On PollyWM, SDL's `arrow` is semantic DEFAULT and therefore uses the system
+rabbit theme, including its native input animations; it does not force a classic
+arrow. Text/resize/crosshair and other explicit shapes remain conventional,
+and legacy custom/hidden cursor surfaces are respected. Startup static/classic
+selection and the compatibility boundary are documented in
+[System rabbit cursor](./docs/DESKTOP-CURSOR.md).
 No CSS cursor policy, widgets, outgoing drag/drop or application operations are
 implemented by these mechanisms.
 

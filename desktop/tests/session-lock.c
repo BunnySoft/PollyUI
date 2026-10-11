@@ -1,5 +1,6 @@
 #include "server.h"
 #include "session-lock.h"
+#include "cursor.h"
 #include <signal.h>
 #include <string.h>
 #include <stdio.h>
@@ -74,13 +75,23 @@ int main(int argc, char **argv)
     if (!exited) { kill(public, SIGKILL); waitpid(public, &status, 0); }
     CHECK(exited && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     char *crash[] = {argv[1], "crash", NULL};
+    pu_cursor_motion(&desktop);
+    CHECK(pu_cursor_timer_active(&desktop));
     wlr_seat_pointer_notify_button(desktop.seat, 1, BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
     CHECK(pu_session_lock_spawn(&desktop, crash));
     CHECK(pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
     CHECK(desktop.seat->pointer_state.button_count == 0);
+    CHECK(!pu_cursor_timer_active(&desktop) && !strcmp(pu_cursor_selected(&desktop), "default"));
+    struct wlr_output_layout_output *cursor_output =
+        wl_container_of(desktop.layout->outputs.next, cursor_output, link);
+    struct wlr_output_cursor *native_cursor =
+        wl_container_of(cursor_output->output->cursors.next, native_cursor, link);
+    CHECK(native_cursor->texture && native_cursor->enabled &&
+        native_cursor->hotspot_x == 2 && native_cursor->hotspot_y == 18);
     CHECK(!desktop.seat->keyboard_state.focused_surface && !desktop.seat->pointer_state.focused_surface);
     for (int i = 0; i < 60; i++) tick(&desktop);
     CHECK(pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
+    CHECK(!pu_cursor_timer_active(&desktop));
     desktop.exit_on_shell_failure = true;
     char *failed_shell[] = {"/bin/false", NULL};
     CHECK(pu_desktop_supervise_shell(&desktop, failed_shell, 0));

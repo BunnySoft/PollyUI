@@ -3,6 +3,17 @@ find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
 set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 30)
+find_program(CURSOR_PYTHON_EXECUTABLE python3 REQUIRED)
+add_test(NAME desktop-cursor-assets COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../tools/generate-cursors.py")
+set_tests_properties(desktop-cursor-assets PROPERTIES TIMEOUT 30)
+set(CURSOR_TABLET_XML "${WAYLAND_PROTOCOLS_DIR}/stable/tablet/tablet-v2.xml")
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/cursor-shape-client.h" "${PROTOCOL_DIR}/cursor-shape-client.c"
+    "${PROTOCOL_DIR}/cursor-tablet.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${CURSOR_SHAPE_XML}" "${PROTOCOL_DIR}/cursor-shape-client.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${CURSOR_SHAPE_XML}" "${PROTOCOL_DIR}/cursor-shape-client.c"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${CURSOR_TABLET_XML}" "${PROTOCOL_DIR}/cursor-tablet.c"
+    DEPENDS "${CURSOR_SHAPE_XML}" "${CURSOR_TABLET_XML}" VERBATIM)
 foreach(protocol IN ITEMS text-input-v3 input-method-v2 virtual-keyboard-v1)
     if (protocol STREQUAL "text-input-v3")
         set(xml "${TEXT_INPUT_XML}")
@@ -95,6 +106,8 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c ../shared/appearance-document.c
+    "${PROTOCOL_DIR}/cursor-shape-client.h" "${PROTOCOL_DIR}/cursor-shape-client.c"
+    "${PROTOCOL_DIR}/cursor-tablet.c"
     ${IME_TEST_PROTOCOLS}
     "${PROTOCOL_DIR}/ext-workspace-client.h" "${PROTOCOL_DIR}/ext-workspace.c"
     "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"
@@ -123,6 +136,12 @@ endforeach()
 add_test(NAME desktop-integration
     COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client>)
 set_tests_properties(desktop-integration PROPERTIES TIMEOUT 40)
+add_test(NAME desktop-cursor-native
+    COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client> --cursor)
+set_tests_properties(desktop-cursor-native PROPERTIES TIMEOUT 15)
+add_test(NAME desktop-cursor-resources COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cursor-resources.py" $<TARGET_FILE:pollywm-integration>)
+set_tests_properties(desktop-cursor-resources PROPERTIES TIMEOUT 60)
 add_test(NAME desktop-shell-policy COMMAND pollywm-shell-policy)
 set_tests_properties(desktop-shell-policy PROPERTIES TIMEOUT 20)
 add_test(NAME desktop-cli COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/cli.sh" $<TARGET_FILE:pollywm>)

@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { installedInventory, requiredRuntimeFiles, sourceInventory, validateRuntimeContract,
+import { installedInventory, requiredRuntimeFiles, runtimeSource, sourceInventory, validateRuntimeContract,
   validateFrozenRuntime } from '../tools/package-contract.mjs';
 
 const repo = fileURLToPath(new URL('../..', import.meta.url));
@@ -19,7 +19,7 @@ try {
   const sources = sourceInventory(repo);
   const installedSources = new Map();
   const files = names.map(name => {
-    const source = name.startsWith('usr/share/pollyui/') ? name.slice('usr/share/pollyui/'.length) : null;
+    const source = runtimeSource(name);
     const actual = sources.find(file => file.path === source);
     const bytes = actual ? readFileSync(path.join(repo, source)) : Buffer.from('contract-test-only');
     const file = path.join(stage, name);
@@ -61,11 +61,15 @@ try {
     validateRuntimeContract(candidate, provenance, pins, inventory);
   check();
   assert.throws(() => check({ files }), /legacy packages/);
-  for (const name of ['usr/share/pollyui/sysrt/sdk/js/files.mjs', 'usr/bin/polly-settings', jsonName]) {
+  for (const name of ['usr/share/pollyui/sysrt/sdk/js/files.mjs', 'usr/bin/polly-settings', jsonName,
+    'usr/share/icons/PollyRabbit/cursors/motion', 'usr/share/icons/PollyClassic/cursors/text']) {
     assert.throws(() => check({ ...manifest, files: files.filter(file => file.path !== name) }), /missing or changed/);
   }
   assert.throws(() => check({ ...manifest, runtimeContract: { ...manifest.runtimeContract,
     installFiles: installFiles.filter(file => file.path !== 'usr/bin/polly-settings') } }), /Missing new runtime file/);
+  assert.throws(() => check({ ...manifest, runtimeContract: { ...manifest.runtimeContract,
+    installFiles: installFiles.filter(file => file.path !== 'usr/share/icons/PollyRabbit/cursors/default') } }),
+  /Missing new runtime file/);
   assert.throws(() => check({ ...manifest, files: [...files,
     { path: 'usr/share/pollyui/sysrt/tests/nativeffi-oracle.mjs' }] }), /Test-only payload/);
   assert.throws(() => check({ ...manifest, runtimeContract: { ...manifest.runtimeContract,

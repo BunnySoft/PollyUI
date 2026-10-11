@@ -7,6 +7,15 @@ export const requiredRuntimeFiles = [
   'usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher', 'usr/bin/polly-app',
   'usr/bin/polly-desktop', 'usr/bin/polly-settings', 'usr/share/applications/polly-settings.desktop',
   'usr/lib/pollyui/libSDL3.so.0',
+  'usr/share/pollyui/desktop/resources/icons/cursor-manifest.json',
+  ...['PollyRabbit', 'PollyClassic'].flatMap(theme => [
+    'usr/share/icons/' + theme + '/index.theme',
+    ...('default context-menu help pointer progress wait cell crosshair text vertical-text alias copy move ' +
+      'no-drop not-allowed grab grabbing e-resize n-resize ne-resize nw-resize s-resize se-resize sw-resize ' +
+      'w-resize ew-resize ns-resize nesw-resize nwse-resize col-resize row-resize all-scroll zoom-in zoom-out ' +
+      (theme === 'PollyRabbit' ? 'motion press click drag drag-copy drag-move drag-no-drop' : ''))
+      .trim().split(/\s+/).map(name => 'usr/share/icons/' + theme + '/cursors/' + name),
+  ]),
   ...[
     'desktop/launcher/services.mjs', 'desktop/client/settings.mjs', 'desktop/client/settings-contract.mjs',
     'desktop/shared/settings-environment.mjs', 'desktop/shared/file-system.mjs',
@@ -24,6 +33,13 @@ export const hashFile = file => createHash('sha256').update(readFileSync(file)).
 const relative = name => typeof name === 'string' && name.length > 0 &&
   !/[\\:\u0000-\u001f]/.test(name) && !name.split('/').some(part => !part || part === '.' || part === '..');
 const hashPattern = /^[0-9a-f]{64}$/;
+
+export function runtimeSource(name) {
+  if (name.startsWith('usr/share/pollyui/')) return name.slice('usr/share/pollyui/'.length);
+  if (/^usr\/share\/icons\/Polly(?:Rabbit|Classic)\//.test(name))
+    return 'desktop/resources/icons/' + name.slice('usr/share/icons/'.length);
+  return null;
+}
 
 export function sourceInventory(repo) {
   const files = [];
@@ -55,7 +71,7 @@ export function installedInventory(root, build, sources) {
     const file = path.join(root, name), info = lstatSync(file);
     assert.ok(info.isFile(), 'Missing regular CMake-installed payload: ' + name);
     const sha256 = hashFile(file);
-    const source = name.startsWith('usr/share/pollyui/') ? name.slice('usr/share/pollyui/'.length) : null;
+    const source = runtimeSource(name);
     if (source && sourceHashes.has(source)) {
       assert.equal(sha256, sourceHashes.get(source), 'Installed resource differs from source: ' + source);
     }
@@ -82,7 +98,9 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
   assert.equal(createHash('sha256').update(JSON.stringify(inputs.sourceFiles)).digest('hex'),
     inputs.build.sourceSha256Before, 'Source byte inventory does not match rebuild evidence');
   for (const name of ['sysrt/CMakeLists.txt', 'sysrt/ffi/module.c', 'sysrt/tools/generate-files-abi.py',
-    'desktop/launcher/main.c', 'desktop/launcher/services.mjs', 'desktop/install.cmake'])
+    'desktop/launcher/main.c', 'desktop/launcher/services.mjs', 'desktop/install.cmake',
+    'desktop/compositor/cursor.c', 'desktop/compositor/cursor.h',
+    'desktop/tools/generate-cursors.py', 'desktop/resources/icons/cursor-manifest.json'])
     assert.ok(sourceNames.has(name), 'Missing runtime build input: ' + name);
   assert.ok(['git', 'external-label'].includes(inputs.build.revisionSource), 'Missing revision provenance type');
   const payload = new Map(manifest.files.map(file => [file.path, file]));

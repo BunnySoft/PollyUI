@@ -26,6 +26,10 @@ set(XDG_SHELL_XML "${WAYLAND_PROTOCOLS_DIR}/stable/xdg-shell/xdg-shell.xml")
 set(LAYER_SHELL_XML "${WLR_PROTOCOLS_DIR}/unstable/wlr-layer-shell-unstable-v1.xml")
 set(PROTOCOL_DIR "${CMAKE_CURRENT_BINARY_DIR}/protocols")
 file(MAKE_DIRECTORY "${PROTOCOL_DIR}")
+set(CURSOR_SHAPE_XML "${WAYLAND_PROTOCOLS_DIR}/staging/cursor-shape/cursor-shape-v1.xml")
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/cursor-shape-v1-protocol.h"
+    COMMAND "${WAYLAND_SCANNER}" server-header "${CURSOR_SHAPE_XML}" "${PROTOCOL_DIR}/cursor-shape-v1-protocol.h"
+    DEPENDS "${CURSOR_SHAPE_XML}" VERBATIM)
 set(TEXT_INPUT_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/text-input/text-input-unstable-v3.xml")
 set(INPUT_METHOD_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/input-method-unstable-v2.xml")
 set(VIRTUAL_KEYBOARD_XML "${CMAKE_CURRENT_SOURCE_DIR}/protocols/virtual-keyboard-unstable-v1.xml")
@@ -89,6 +93,8 @@ add_library(pollywm-core STATIC
     compositor/shortcut-control.c
     compositor/output-control.c
     compositor/data-device.c
+    compositor/cursor.c
+    "${PROTOCOL_DIR}/cursor-shape-v1-protocol.h"
     compositor/private-process.c
     compositor/input-method.c
     "${PROTOCOL_DIR}/polly-session-status-server.h" "${PROTOCOL_DIR}/polly-session-status.c"
@@ -108,6 +114,12 @@ add_library(pollywm-core STATIC
     "${PROTOCOL_DIR}/xdg-shell-protocol.h")
 target_include_directories(pollywm-core PUBLIC compositor shared "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-core PUBLIC WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)
+file(RELATIVE_PATH PU_CURSOR_FROM_BIN "${CMAKE_INSTALL_FULL_BINDIR}"
+    "${CMAKE_INSTALL_FULL_DATADIR}/icons")
+target_compile_definitions(pollywm-core PRIVATE
+    PU_CURSOR_FROM_BIN="${PU_CURSOR_FROM_BIN}"
+    PU_CURSOR_BUILD_DIR="${CMAKE_BINARY_DIR}"
+    PU_CURSOR_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
 target_compile_options(pollywm-core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(pollywm-core PUBLIC
     PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER PkgConfig::XKBCOMMON PkgConfig::DECORATION_FONTS m)
@@ -118,6 +130,10 @@ target_link_libraries(pollywm PRIVATE pollywm-core)
 target_compile_options(pollywm PRIVATE -Wall -Wextra -Wpedantic -Werror)
 set_target_properties(pollywm PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
 install(TARGETS pollywm RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
+install(DIRECTORY resources/icons/PollyRabbit resources/icons/PollyClassic
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons" COMPONENT PollyDesktop)
+install(FILES resources/icons/cursor-manifest.json
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/resources/icons" COMPONENT PollyDesktop)
 
 option(PU_BUILD_IME_ENGINE "Build the independent Rime input engine" OFF)
 if (PU_BUILD_IME_ENGINE)

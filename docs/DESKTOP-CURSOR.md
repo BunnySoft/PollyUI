@@ -1,17 +1,17 @@
-# System rabbit cursor: next-version assessment
+# System rabbit cursor
 
-Recorded on 2026-10-11. The user selected a **system/desktop default rabbit
-cursor, overridable by windows**, for the version after Alpha.7. This is a
-design assessment, not implemented functionality or a frozen release/version
-number. Alpha.7 remains Files interaction polish and a separately qualified ISO.
+PollyWM now supplies an original rabbit as the **system/desktop theme default**,
+with running, click-hop and held-movement effort animation. It is a native
+wlroots cursor, not a hidden pointer plus an application overlay. This source
+implementation is after the Alpha.7 freeze; it does not change Alpha.7 media,
+its qualification, or `desktop/VERSION`.
 
-## Proposed initial design
+## Resources and configuration
 
-Use one named Xcursor theme directory, not a hierarchy of shape/animation
-subdirectories or an image-recognition scheme:
+The installed layout is a conventional flat Xcursor theme:
 
 ```text
-PollyRabbit\
+usr\share\icons\PollyRabbit\
   index.theme
   cursors\
     default
@@ -19,196 +19,161 @@ PollyRabbit\
     press
     click
     drag
+    drag-copy
+    drag-move
+    drag-no-drop
     text
     ew-resize
     ns-resize
-    nesw-resize
-    nwse-resize
-    not-allowed
+    ...
+usr\share\icons\PollyClassic\
+  index.theme
+  cursors\...
 ```
 
-Each file is an Xcursor resource containing one or more frames and appropriate
-sizes. `default`, `text` and the resize/permission names use existing cursor
-conventions. `motion`, `press`, `click` and `drag` are PollyOS-specific action
-resource names, not new Wayland protocol enum values. No `idle` resource is
-required: the default resting image is named `default`.
+All 34 cursor-shape-v1 semantic names have resources. `motion`, `press`, `click`,
+`drag` and the three native drag feedback variants are theme resource names,
+**not new protocol enum values**. PollyClassic contains conventional precision
+and status shapes and a classic default arrow.
 
-PollyWM owns selection: resting selects `default`, pointer movement selects
-`motion`, a held button selects `press`, movement beyond click slop selects
-`drag`, and an uncancelled click selects `click` for one short animation.
-Completion recomputes the current state. A text/resize/client-custom override
-keeps its own cursor instead of being replaced by those rabbit actions.
-Motion and drag may loop; click has a compositor-owned completion deadline.
+The baseline is 32 logical pixels, with prebuilt 24/32/48/64/96 pixel images.
+Output scale loading selects the closest available size through the native
+manager. 1x, 1.5x, 2x and 3x are covered by the fixture; other scales use the
+closest resource, not a claimed arbitrary-DPI hardware qualification.
+Every rabbit frame uses the same hotspot, `(2,18)` in the 32px master. The body
+can jump while the high-contrast input tip stays fixed. Fractional-scale
+hotspots follow the public wlroots integer normalization; they never change
+with animation frames.
 
-Missing rabbit action resources fall back to the selected theme's `default`.
-Missing precision shapes fall back to the matching conventional built-in
-shape, not a default rabbit. A missing/broken default theme falls back to the
-conventional built-in default with diagnostics. The first implementation uses
-packaged original assets; a user-upload/theme editor is not part of it.
+Startup environment configuration:
 
-Settings/Shell may later choose theme, size and static-animation mode. Per-input
-selection and resource/timer lifecycle stay native, not in per-app JS listeners.
-Keep the hotspot fixed throughout rabbit animation. This is the proposal for
-the next version, not code or cursor artwork already delivered.
-
-## Existing substrate and actual gaps
-
-The current compositor already owns `wlr_cursor`, an Xcursor manager, pointer
-motion/buttons, window move/resize and native data-device drag lifetimes.
-It currently creates the theme manager with an unspecified theme and size 24.
-Compositor decoration edges select resize cursors; authorized pointer clients
-or the native drag owner may submit a cursor surface.
-
-The installed wlroots 0.19.3 implementation already advances multi-frame
-Xcursors using image delays, updates output cursor buffers and loads scaled
-themes. Re-selecting the same manager/name is a no-op, so frequent motion does
-not need to restart animation. Its public cursor-shape-v1 manager provides
-semantic shape requests. The pinned SDL Wayland backend already negotiates
-that protocol and maps its system cursors to default/text/resize/etc. shapes.
-PollyWM does not currently create the cursor-shape manager.
-
-Consequently, this does **not** require a new GUI renderer, shader/material
-pipeline, SysRT/FFI service, private OS mouse hook or patches to wlroots/SDL.
-Generic custom-image cursor APIs in PollyUI's Win32/SDL hosts are not a
-prerequisite for a PollyOS-wide default theme. They are a separate capability
-if applications later need arbitrary custom cursors outside PollyWM.
-
-Main gaps:
-
-- An original packaged rabbit Xcursor theme, with static and animated variants,
-  stable hotspots, multiple sizes and conventional precision cursors.
-- A compositor-owned input state machine selecting theme variants and retiring
-  one-shot actions without resetting every frame.
-- Semantic cursor-shape handling, focus/grab authorization and restoration of
-  the correct owner on leave, client loss, lock, cancellation and output change.
-- Install/release inventory, preferences and fallback behavior; cursor-specific
-  native acceptance, not screenshots of an app overlay.
-
-## Native modification boundary
-
-| Surface | Expected modification | Difficulty |
+| Variable | Values | Behavior |
 |---|---|---|
-| `desktop/compositor/server.c`, `server.h` | Centralize cursor choice; route motion/buttons, enter/leave, move/resize, isolation and shutdown; register cursor-shape manager | Medium |
-| Small compositor cursor module | Own action/owner state, one-shot deadlines, animation transitions, fallback and timer/resource teardown; reuse wlroots frame animation | Medium |
-| `desktop/compositor/data-device.c` | Observe confirmed native drag start/end/cancel without changing transfer authorization or file operations | Low to medium |
-| Session-lock and decoration integration | Preserve protected surfaces and resize direction cues; clear pre-lock client/action state | Medium |
-| Original cursor assets and build tooling | SVG/master artwork to prebuilt ARGB Xcursor frames, sizes, aliases, manifest and hotspots; verify installed data | Medium |
-| `desktop/install.cmake`, package/live checks | Include cursor resources in relocation, frozen-input hashes and ISO payload checks | Low to medium |
-| Host/SDK compatibility | Use existing system shape requests; clarify theme-default versus explicit legacy arrow semantics if extending the API | Small, but behavior-sensitive |
-| Settings/Shell preferences | Theme/size/static-mode selection using JS configuration and narrow trusted configuration delivery; not per-motion JS callbacks | Can follow the core implementation |
+| `POLLY_CURSOR_THEME` | unset or `PollyRabbit` | Packaged original rabbit theme |
+| `POLLY_CURSOR_THEME` | `classic` | Packaged conventional theme; no input-action animation |
+| `POLLY_CURSOR_THEME` | absolute theme directory | Read known flat `cursors\` names from that directory |
+| `POLLY_CURSOR_STATIC` | unset/`0`, or `1` | Enable animation, or static rabbit/reduced motion |
 
-The default artwork/theme selection can remain JS/configuration policy.
-Realtime ownership, input event observation, authorization, lifecycle and
-native cursor updates belong to C/PollyWM. Do not add application business
-state machines to native code. A custom protocol is not the first choice when
-the standard cursor-shape protocol supplies the required shape semantics.
+Invalid settings fail startup explicitly. The packaged root is executable-relative,
+so a relocated installation works without a source checkout. Only executables
+inside the configured build directory use source-tree resources. No global
+`XCURSOR_PATH`, host Xcursor configuration, or client environment is overwritten.
+Settings theme editors, upload UI, size preferences and a live configuration
+protocol are deliberately deferred.
+
+`desktop\tools\generate-cursors.py` is the original procedural pixel master.
+It uses only Python's standard library. `--write` deterministically regenerates
+the committed Xcursor files and `cursor-manifest.json`; without that switch it
+checks exact bytes. Runtime never runs the generator or decodes SVG.
+The artwork is original MIT-licensed repository work, not downloaded assets.
+
+## Selection and animation
+
+`desktop\compositor\cursor.c` owns native input feedback, owner state, resource
+loading and completion deadlines. wlroots advances Xcursor frames. Re-selecting
+the same manager/name does not restart playback on every mouse motion.
+
+| State | Resource and lifetime |
+|---|---|
+| Idle | `default`, one static image; no armed action or frame-animation timer |
+| Motion | Four distinct `motion` poses at 70ms/frame; stop after 120ms without motion |
+| Primary button held | Static crouched `press` |
+| Primary release below 5px click slop | Five-frame, 200ms `click`; one hop, no queue or delayed input |
+| Held movement beyond slop | Four `drag` effort poses at 80ms/frame; no file-operation badge |
+| Compositor window move | Effort pose for the actual grab lifetime |
+| Compositor resize | The corresponding conventional directional cursor, not a rabbit pose |
+| Confirmed native data drag | Actual origin ownership; copy/move/no-drop feedback when native source negotiation supplies it |
+| Wheel | Does not start a run or hop |
+
+Repeated clicks replace, rather than queue, a hop. Other mouse buttons still
+show press/effort feedback but do not trigger the primary hop. Completion
+recomputes the current owner/action, never restores a cached stale cursor.
+These are input feedback animations, not proof that an application operation
+succeeded. Native drag action is sampled at 80ms intervals **only during the
+confirmed drag**, because wlroots exposes the action as source state rather
+than an action-change signal. No idle or global JS polling is used.
+
+Reduced motion keeps the resting rabbit and still supplies static native drag
+status indicators. Classic mode uses conventional status shapes. Lock surfaces
+do not receive mouse-action animations. Input isolation, last-pointer loss,
+cancelled native drag, client/image destruction and grab teardown retire pending
+feedback. Shutdown unsets the cursor image before freeing themes, removing both
+compositor deadlines and wlroots frame timers.
 
 ## Ownership and compatibility
 
-The rabbit is the theme's **default semantic cursor**, not a forced replacement
-for every cursor on the screen. Prefer this order:
+The standard `cursor-shape-v1` manager is advertised to ordinary pointer clients.
+The pinned SDL backend already negotiates it; wlroots/SDL themselves are not
+patched. A request must come from the current seat's focused pointer owner or
+actual native drag origin, with that owner's current enter serial (or the
+authorized drag serial). Foreign, zero, stale and unsupported-device requests
+are rejected. Protected lock roles retain their existing admission boundary.
 
-1. Protected/compositor interaction requirements, including precise resize
-   directions and native drag result semantics.
-2. Authorized explicit client shape or custom cursor surface, including an
-   intentional hidden cursor. A null cursor is not permission to restore a rabbit.
-3. The system rabbit default and its current action animation.
+Priority is compositor resize/move and protection, then the current authorized
+client's explicit semantic/custom/hidden cursor, then the system default.
+Text, directional resize, crosshair, permission and other non-default semantics
+do not acquire rabbit mouse-action animation. Each live surface's requested
+state is retained and restored when that surface becomes current again;
+destruction removes it. The drag source owns its cursor, not the hovered drop
+target.
 
-Leaving an override must recompute the cursor for the *current* surface and
-state, rather than unconditionally selecting the rabbit. Entering an override
-retires any old hop/effort animation so it cannot reappear on that client.
-Retain the current focused-client/native-drag-owner admission boundary and
-validate input serials through the standard protocol path.
+An authorized `wl_pointer.set_cursor(NULL)` means **intentional hiding**, not
+inheritance. An arbitrary legacy image/hotspot is respected and not inspected
+for image recognition. Destroying an explicit image leaves that owner's cursor
+hidden until another request. Legacy image clients cannot be promised
+compositor-owned rabbit action animation.
 
-Legacy `wl_pointer.set_cursor` carries an image surface/hotspot, not a shape
-name. Never compare pixels, ignore a valid client image or reinterpret hiding
-as inheritance. Such clients may receive a matching installed Xcursor theme
-through ordinary theme/environment integration, but arbitrary old client
-surfaces cannot be guaranteed to participate in compositor action animation.
-The pinned SDL clients can use cursor-shape-v1 when PollyWM advertises it.
+The existing `window.setCursor('arrow')` maps through SDL to semantic DEFAULT,
+so it now selects the **theme default rabbit**, not a forced classic arrow.
+The protocol cannot recover a distinct classic-arrow intent that the SDK did
+not send. Choose `POLLY_CURSOR_THEME=classic` for that system theme instead;
+no new GUI API or per-window classic-arrow override is introduced here.
 
-There is also an API compatibility decision: SDL maps the current
-`window.setCursor('arrow')` to the standard DEFAULT shape. A themed DEFAULT
-naturally becomes a rabbit; it does not distinguish "inherit this system theme"
-from "force the old classic arrow." Document that intentional behavior change,
-or add an explicit classic-arrow override if needed. Do not claim that the
-existing protocol can recover that missing intent.
+## Fallback and packaging
 
-## Actions and proposed artwork
+The small directory loader bounds file size, TOC and selected frame counts,
+dimensions, chunk versions/lengths, hotspots, delays and premultiplied ARGB.
+It reads resources only on startup or first use of an output scale, never on
+each mouse event. It installs owned image buffers into public wlroots theme/
+manager objects and uses their normal destruction APIs.
 
-These are initial visual/timing recommendations, not measured performance or
-fixed implementation requirements.
+A missing or invalid action falls back to that scale's theme `default`, with
+a diagnostic. A missing default disables that scale's rabbit action resources
+and uses the packaged conventional default. Missing precision shapes use their
+matching PollyClassic resource, never a rabbit. If even packaged conventional
+resources are unavailable, matching standard wlroots conventional fallback
+families are attempted; absence of a usable matching shape fails explicitly.
+Malformed, missing and conventional-fallback cases are not silent successes.
 
-| Input/state | Rabbit treatment | Trigger and exit rule |
-|---|---|---|
-| Idle default | Small side-facing rabbit with upright ears; static resting pose | No active overriding shape or action; avoid perpetual idle animation |
-| Moving | Running legs with slight ear motion, not a bouncing hotspot | Loop only while movement continues; propose about 12-16 frames/second and 100-150 ms quiet hysteresis |
-| Button held without drag | Small crouch/compression | Press starts immediately; release/cancel ends it; do not claim a click has completed yet |
-| Primary click | One short in-place hop and landing | Valid release below drag threshold; propose 150-220 ms; completion returns to current state, not stale idle |
-| Double click | Merge into one crisp hop/ear accent | Do not queue two long animations or delay application double-click delivery |
-| Secondary click | Subtle ear flick rather than a large jump | Keep menu placement and pointer visibility clear; no unsupported operation/success meaning |
-| Held movement / window move | Leaning, pushing/effort pose | Generic held movement may enter after threshold; confirmed window/native drag uses its actual lifecycle; reset on release/cancel/loss |
-| Native data drag | Effort pose plus the established allowed/copy/move/forbidden indicator when known | Follow negotiated native action; do not infer file copy or promise transfer success from mouse motion |
-| Wheel/trackpad scrolling | Keep current precise default, optionally a tiny ear accent | Do not run or jump for every wheel tick; momentum is not pointer motion |
-| Text / resize / crosshair | Preserve familiar I-beam, directional arrows or crosshair; optional restrained rabbit decoration | Explicit semantic shape wins; text selection and resize targets must remain precise |
-| Busy | Familiar progress cue with optional rabbit motif | Only explicit busy/progress state; never infer busy because an app is slow or the pointer is stationary |
-| Cancel / client loss / lock | Clear pending action and select the valid new owner's cursor | No stuck pushing pose, queued hop or stale client surface |
+CMake installs both themes and metadata. Package required-file inventories
+include every shipped cursor name; source-to-install hash checks explicitly
+map `usr\share\icons\PollyRabbit` and `PollyClassic` to their original source
+resources. Cursor sources, generator and metadata enter runtime source hashes.
+No ISO rebuild or receipt mutation is required by this source change.
 
-Compositor input can observe a held drag, but cannot know whether it is moving
-a file, adjusting a slider or selecting text. Shape overrides preserve those
-distinctions where supplied. Animations are feedback for input, not receipts
-for successful application work. Touch/pen gestures and a per-device cursor
-system are outside the initial mouse scope.
+## Native checks and evidence
 
-### Visual constraints
+The bounded `desktop-cursor-native` fixture reuses the real Wayland test client
+and physical-style native pointer events. It reads **actual
+`wlr_output_cursor` textures** through the public texture readback API and
+compares their pixels/hotspots with loaded Xcursor frames. It covers movement
+without playback resets, the hop and completion, effort, semantic and legacy/
+hidden overrides, invalid owner/serial admission, native copy/move/no-drop
+negotiation, cancellation, current-owner restoration, scale changes and input
+isolation. Existing integration/session-lock fixtures cover grab and protected
+role lifetimes; cursor-specific lock assertions check timer retirement and
+the native cursor.
 
-- Use original compact 2D artwork, not a large mascot sticker. Start by comparing
-  24 and 32 logical-pixel canvases at scale 1; include larger physical assets for
-  scaled outputs. Final size follows actual legibility/precision review.
-- Fix one hotspot for each semantic family and keep it invariant across frames.
-  A small high-contrast tip/nose marker anchors the click point; animate the
-  body around it. Do not make the actual input position jump with the rabbit.
-- Keep a stable canvas/bounds, crisp dark outline, light inner separation and
-  restrained accent color so the cursor survives light/dark/busy backgrounds.
-- Changing facing direction must not move the hotspot. Two direction variants
-  are enough initially; eight-direction animation multiplies artwork/testing
-  without improving basic interaction.
-- Prepare roughly four to six frames for run and hop, and fewer for effort/
-  press, then refine from actual pixels. SVG can be the source asset, but runtime
-  should use validated, prebuilt cursor frames rather than decoding SVG per tick.
-- Provide a static rabbit/reduced-motion mode and an explicit conventional
-  cursor fallback. Missing/malformed theme data must produce visible diagnostics.
+`desktop-cursor-resources` independently parses committed Xcursor files,
+checks all frames/scale metadata and original hashes, then compares actual C
+loader/output texture bytes for normal, static, classic, missing and malformed
+themes. `desktop-cursor-assets` checks deterministic regeneration.
 
-## Effort and staged delivery
-
-Overall assessment: **medium difficulty** for a polished PollyOS default, not
-a kernel or GUI rewrite. Static rabbit plus native resize/text fallbacks is
-low-to-medium difficulty. Action-dependent animation with correct client
-overrides, cancellation and mixed-DPI qualification is medium-to-high within
-this feature; ownership/compatibility and small-scale artwork are the hardest
-parts, not frame playback.
-
-For planning only, allow approximately **10-15 focused engineering days** for
-the default/shape bridge, action state machine, packaging and native acceptance,
-plus **3-5 artwork days** that may overlap. This is an estimate, not a delivery
-commitment: it excludes arbitrary user cursor uploads, animated cursors for
-Windows/macOS, a broad theme editor, touch/pen and a full hardware matrix.
-
-Suggested sequence:
-
-1. Ship and verify a static rabbit theme plus standard shape overrides,
-   focused-client authorization, scale/hotspot behavior and fallback.
-2. Add movement, press, hop and effort state transitions using native input;
-   reuse existing Xcursor loops and compositor deadlines for one-shot completion.
-3. Qualify cancellation, hidden/custom/legacy client cursors, role transitions,
-   mixed scales, software cursor paths and actual ISO resources. Then expose
-   size/static-mode preferences without blocking the core mechanism.
-
-Acceptance should check native cursor frames, hotspots and input timing, not
-only compositor screenshots: hardware cursor planes may not appear in a normal
-framebuffer capture. Measure cursor updates and output damage; hardware cursor
-use is backend-dependent, so software fallback must also be covered. Idle state
-must not run a continuous desktop animation loop. Pointer events must remain
-immediate and not wait for an animation to finish.
-
-No runtime code, asset pack, new version bump or ISO was created by this assessment.
+For persistent evidence, set the **test-only fixture**
+`POLLY_CURSOR_EVIDENCE` to an existing output directory, run the native fixture,
+then use `cursor-resources.py ... --render-only <directory>` to produce PNGs
+and `native-frames.json` from recorded ARGB bytes. Contact sheets identify
+cursor-plane/source-asset evidence, not framebuffer screenshots.
+Normal framebuffer captures may omit a hardware cursor. Headless Pixman
+software-cursor checks do not qualify hardware cursor planes, a real machine,
+all platforms, or an ISO. Touch, pen and multi-pointer behavior remain deferred.

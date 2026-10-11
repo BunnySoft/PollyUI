@@ -11,6 +11,7 @@
 #include "text-input-v3-client.h"
 #include "input-method-v2-client.h"
 #include "virtual-keyboard-v1-client.h"
+#include "cursor-shape-client.h"
 
 #include <errno.h>
 #include <poll.h>
@@ -86,6 +87,11 @@ struct Client {
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
     struct wl_pointer *pointer;
+    struct wp_cursor_shape_manager_v1 *cursor_manager;
+    struct wp_cursor_shape_device_v1 *cursor_device;
+    struct wl_surface *cursor_surface;
+    struct wl_data_offer *drag_offer;
+    uint32_t drag_offer_serial, drag_action;
     struct wl_subcompositor *subcompositor;
     struct wl_data_device_manager *data_manager;
     struct wl_data_device *data_device;
@@ -244,12 +250,20 @@ static void source_send(void *data, struct wl_data_source *source, const char *m
 { (void)data; (void)source; (void)mime; close(fd); }
 static void source_cancelled(void *data, struct wl_data_source *source)
 { (void)source; ((struct Client *)data)->reply.drag_cancelled++; }
+static void source_done(void *data, struct wl_data_source *source) { (void)data; (void)source; }
+static void source_action(void *data, struct wl_data_source *source, uint32_t action)
+{ (void)data; (void)source; (void)action; }
 static const struct wl_data_source_listener source_listener = {
     .target = source_target, .send = source_send, .cancelled = source_cancelled,
+    .dnd_drop_performed = source_done, .dnd_finished = source_done, .action = source_action,
 };
 static void offer_mime(void *data, struct wl_data_offer *offer, const char *mime)
 { (void)data; (void)offer; (void)mime; }
-static const struct wl_data_offer_listener offer_listener = { .offer = offer_mime };
+static void offer_action(void *data, struct wl_data_offer *offer, uint32_t action)
+{ (void)data; (void)offer; (void)action; }
+static const struct wl_data_offer_listener offer_listener = {
+    .offer = offer_mime, .source_actions = offer_action, .action = offer_action,
+};
 static void device_offer(void *data, struct wl_data_device *device, struct wl_data_offer *offer)
 {
     (void)device;
@@ -260,7 +274,15 @@ static void device_offer(void *data, struct wl_data_device *device, struct wl_da
 }
 static void device_enter(void *data, struct wl_data_device *device, uint32_t serial,
     struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y, struct wl_data_offer *offer)
-{ (void)data; (void)device; (void)serial; (void)surface; (void)x; (void)y; (void)offer; }
+{
+    (void)device; (void)surface; (void)x; (void)y;
+    struct Client *client = data;
+    client->drag_offer = offer; client->drag_offer_serial = serial;
+    if (offer && client->drag_action) {
+        wl_data_offer_accept(offer, serial, "text/plain");
+        wl_data_offer_set_actions(offer, client->drag_action, client->drag_action);
+    }
+}
 static void device_leave(void *data, struct wl_data_device *device) { (void)data; (void)device; }
 static void device_motion(void *data, struct wl_data_device *device, uint32_t time, wl_fixed_t x, wl_fixed_t y)
 { (void)data; (void)device; (void)time; (void)x; (void)y; }
@@ -486,7 +508,10 @@ static const struct wl_keyboard_listener keyboard_listener = {
 
 static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
                           struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y)
-{ (void)data; (void)pointer; (void)serial; (void)surface; (void)x; (void)y; }
+{
+    (void)pointer; (void)surface; (void)x; (void)y;
+    ((struct Client *)data)->reply.cursor_enter_serial = serial;
+}
 static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial, struct wl_surface *surface)
 { (void)data; (void)pointer; (void)serial; (void)surface; }
 static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time, wl_fixed_t x, wl_fixed_t y)
@@ -721,9 +746,13 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, wl_subcompositor_interface.name) == 0)
         client->subcompositor = wl_registry_bind(registry, name, &wl_subcompositor_interface, 1);
     else if (strcmp(interface, wl_data_device_manager_interface.name) == 0)
-        client->data_manager = wl_registry_bind(registry, name, &wl_data_device_manager_interface, 1);
+        client->data_manager = wl_registry_bind(registry, name, &wl_data_device_manager_interface, 3);
     else if (strcmp(interface, wl_shm_interface.name) == 0)
         client->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+    else if (strcmp(interface, wp_cursor_shape_manager_v1_interface.name) == 0) {
+        client->cursor_manager = wl_registry_bind(registry, name, &wp_cursor_shape_manager_v1_interface, 1);
+        client->reply.cursor_shape_capability = 1;
+    }
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
@@ -777,6 +806,48 @@ static void global_remove(void *data, struct wl_registry *registry, uint32_t nam
     }
 }
 static const struct wl_registry_listener registry_listener = { .global = global, .global_remove = global_remove };
+
+struct CursorProbe {
+    struct wp_cursor_shape_manager_v1 *manager;
+    struct wl_seat *seat;
+};
+static void cursor_probe_global(void *data, struct wl_registry *registry,
+    uint32_t name, const char *interface, uint32_t version)
+{
+    (void)version;
+    struct CursorProbe *probe = data;
+    if (!strcmp(interface, wp_cursor_shape_manager_v1_interface.name))
+        probe->manager = wl_registry_bind(registry, name, &wp_cursor_shape_manager_v1_interface, 1);
+    else if (!strcmp(interface, wl_seat_interface.name))
+        probe->seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+}
+static void cursor_probe_capabilities(void *data, struct wl_seat *seat, uint32_t caps)
+{ (void)data; (void)seat; (void)caps; }
+static void cursor_probe_name(void *data, struct wl_seat *seat, const char *name)
+{ (void)data; (void)seat; (void)name; }
+static void invalid_cursor_shape(const char *socket)
+{
+    struct wl_display *display = wl_display_connect(socket);
+    if (!display) die("cursor probe connect");
+    struct CursorProbe probe = {0};
+    struct wl_registry *registry = wl_display_get_registry(display);
+    const struct wl_registry_listener listener = {.global = cursor_probe_global, .global_remove = global_remove};
+    wl_registry_add_listener(registry, &listener, &probe);
+    if (wl_display_roundtrip(display) < 0 || !probe.manager || !probe.seat) die("cursor probe registry");
+    const struct wl_seat_listener seat_listener = {
+        .capabilities = cursor_probe_capabilities, .name = cursor_probe_name,
+    };
+    wl_seat_add_listener(probe.seat, &seat_listener, &probe);
+    struct wl_pointer *pointer = wl_seat_get_pointer(probe.seat);
+    struct wp_cursor_shape_device_v1 *device = wp_cursor_shape_manager_v1_get_pointer(probe.manager, pointer);
+    wp_cursor_shape_device_v1_set_shape(device, 0, 0);
+    if (wl_display_roundtrip(display) >= 0 || wl_display_get_error(display) != EPROTO)
+        die("invalid cursor shape accepted");
+    wp_cursor_shape_device_v1_destroy(device);
+    wp_cursor_shape_manager_v1_destroy(probe.manager);
+    wl_pointer_destroy(pointer); wl_seat_destroy(probe.seat);
+    wl_registry_destroy(registry); wl_display_disconnect(display);
+}
 
 static void decoration_configure(void *data, struct zxdg_toplevel_decoration_v1 *decoration, uint32_t mode)
 {
@@ -936,6 +1007,38 @@ int main(int argc, char **argv)
             request.command == TEST_WORKSPACE_MOVE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_CURSOR_INVALID: invalid_cursor_shape(argv[1]); break;
+        case TEST_DRAG_TARGET:
+            client.drag_action = request.edges;
+            if (!client.data_device) {
+                client.data_device = wl_data_device_manager_get_data_device(client.data_manager, client.seat);
+                wl_data_device_add_listener(client.data_device, &device_listener, &client);
+            }
+            if (client.drag_offer) {
+                wl_data_offer_accept(client.drag_offer, client.drag_offer_serial,
+                    client.drag_action ? "text/plain" : NULL);
+                wl_data_offer_set_actions(client.drag_offer, client.drag_action, client.drag_action);
+            }
+            break;
+        case TEST_CURSOR_SHAPE:
+            if (!client.cursor_device)
+                client.cursor_device = wp_cursor_shape_manager_v1_get_pointer(client.cursor_manager, client.pointer);
+            wp_cursor_shape_device_v1_set_shape(client.cursor_device,
+                request.id ? request.serial : client.reply.cursor_enter_serial, request.edges);
+            break;
+        case TEST_CURSOR_SURFACE:
+            if (request.edges && !client.cursor_surface) {
+                client.cursor_surface = wl_compositor_create_surface(client.compositor);
+                wl_surface_attach(client.cursor_surface, make_buffer(&client, 8, 8), 0, 0);
+                wl_surface_commit(client.cursor_surface);
+            }
+            wl_pointer_set_cursor(client.pointer, request.id ? request.serial : client.reply.cursor_enter_serial,
+                request.edges ? client.cursor_surface : NULL, 2, 3);
+            break;
+        case TEST_CURSOR_IMAGE_DESTROY:
+            if (client.cursor_surface) wl_surface_destroy(client.cursor_surface);
+            client.cursor_surface = NULL;
+            break;
         case TEST_TEXT_ENABLE:
             if (!client.text_input) {
                 client.text_input = zwp_text_input_manager_v3_get_text_input(client.text_manager, client.seat);
@@ -999,6 +1102,8 @@ int main(int argc, char **argv)
                 client.data_source = wl_data_device_manager_create_data_source(client.data_manager);
                 wl_data_source_add_listener(client.data_source, &source_listener, &client);
                 wl_data_source_offer(client.data_source, "text/plain");
+                if (request.edges & 8) wl_data_source_set_actions(client.data_source,
+                    WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE);
             }
             destroy_drag_icon(&client);
             if (request.edges) client.drag_icon = wl_compositor_create_surface(client.compositor);
@@ -1164,6 +1269,9 @@ int main(int argc, char **argv)
     destroy_window(&client.popup);
     destroy_window(&client.window);
     if (client.pointer) wl_pointer_destroy(client.pointer);
+    if (client.cursor_device) wp_cursor_shape_device_v1_destroy(client.cursor_device);
+    if (client.cursor_manager) wp_cursor_shape_manager_v1_destroy(client.cursor_manager);
+    if (client.cursor_surface) wl_surface_destroy(client.cursor_surface);
     if (client.keyboard) wl_keyboard_destroy(client.keyboard);
     if (client.seat) wl_seat_destroy(client.seat);
     xdg_wm_base_destroy(client.wm);

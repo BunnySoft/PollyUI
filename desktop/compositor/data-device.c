@@ -1,6 +1,7 @@
 #include "data-device.h"
 #include "server.h"
 #include "shortcut-control.h"
+#include "cursor.h"
 #include <stdlib.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
@@ -71,6 +72,7 @@ static void drag_destroyed(struct wl_listener *listener, void *data)
     wl_list_remove(&drag->origin_destroy.link);
     wlr_scene_node_destroy(&drag->tree->node);
     free(drag);
+    pu_cursor_drag(desktop, NULL);
     pu_desktop_restore_input(desktop);
 }
 static void origin_destroyed(struct wl_listener *listener, void *data)
@@ -99,6 +101,7 @@ static void started(struct wl_listener *listener, void *data)
     state->drag = drag;
     drag->destroy.notify = drag_destroyed; wl_signal_add(&source->events.destroy, &drag->destroy);
     drag->origin_destroy.notify = origin_destroyed; wl_signal_add(&drag->origin->events.destroy, &drag->origin_destroy);
+    pu_cursor_drag(state->desktop, drag->origin);
     pu_data_device_motion(state->desktop);
 }
 

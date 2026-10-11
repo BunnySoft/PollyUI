@@ -384,10 +384,10 @@ outgoing native drag-and-drop support. See the [public input contract](./README.
 
 The user clarified on 2026-10-11 that the rabbit cursor is the **system/desktop
 default**, not an application overlay. The user selected it for the version
-after Alpha.7; implementation and the exact release number are not frozen.
+after Alpha.7; the source prototype is implemented, while the exact next release number is not frozen.
 It is not part of the Alpha.7 Files/ISO scope.
 
-PollyWM would own the default cursor theme and its animation: an idle rabbit,
+PollyWM owns the default cursor theme and its animation: an idle rabbit,
 running while moving, hopping on a click, and an effort pose while dragging.
 The compositor observes the input lifecycle; individual apps do not need
 global mouse listeners or access to other apps' content. Cancellation, released
@@ -402,14 +402,15 @@ roles and compositor resize cursors keep their required behavior.
 
 Use actual native/compositor cursor images with correct hotspots, transparent
 pixels, output scaling and frame timing, not a hidden pointer plus an app-drawn
-sprite. Custom image/frame resource ownership, the animation state machine,
-theme selection and override/inheritance contract remain unimplemented.
+sprite. `desktop/compositor/cursor.c` supplies directory theme loading,
+native action/owner lifetimes and standard cursor-shape-v1 requests, with
+original prebuilt multiscale resources and startup static/classic configuration.
 Provide a static/reduced-motion fallback and bound animation work to cursor
-updates rather than continuously repainting the desktop. Original rabbit assets
-and final timing/style are decisions for that future implementation.
-The [development and visual assessment](./docs/DESKTOP-CURSOR.md) records the
-verified wlroots animation/SDL cursor-shape substrate, compatibility boundary,
-proposed action artwork, modification scope and planning estimate.
+updates rather than continuously repainting the desktop. Running and effort
+use four distinct poses; primary release uses a 200ms hop with a fixed hotspot.
+The [cursor implementation contract](./docs/DESKTOP-CURSOR.md) records configuration,
+fallback, native pixel/owner qualification and the legacy/DEFAULT compatibility
+boundary. Settings/upload UI and hardware/ISO qualification remain separate.
 
 ---
 

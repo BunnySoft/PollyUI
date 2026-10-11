@@ -11,6 +11,14 @@ try {
   const root = path.join(temporary, 'staged');
   execFileSync('cmake', ['--install', build, '--prefix', '/usr', '--component', 'PollyDesktop'],
     { env: { ...process.env, DESTDIR: root }, timeout: 20000, stdio: 'pipe' });
+  const sourceIcons = fileURLToPath(new URL('../resources/icons/', import.meta.url));
+  for (const theme of ['PollyRabbit', 'PollyClassic']) {
+    for (const name of ['index.theme', ...readdirSync(path.join(sourceIcons, theme, 'cursors'))
+      .map(cursor => path.join('cursors', cursor))]) {
+      assert.deepEqual(readFileSync(path.join(root, 'usr/share/icons', theme, name)),
+        readFileSync(path.join(sourceIcons, theme, name)), 'Installed cursor bytes: ' + theme + '/' + name);
+    }
+  }
   const program = path.join(root, 'usr/bin/polly-desktop');
   const manager = path.join(root, 'usr/bin/polly-app');
   if (existsSync(manager)) {
@@ -39,6 +47,8 @@ try {
     assert.equal(result.error, undefined, String(result.error));
     assert.equal(result.status, 0, log);
     assert.match(log, /PASS: installed PollyDesktop session ready/);
+    assert.ok(log.includes('Cursor theme ' + root + '/usr/bin/../share/icons/PollyRabbit'),
+      'Relocated compositor must use installed cursors, not the build checkout: ' + log);
     assert.doesNotMatch(log, /AddressSanitizer|LeakSanitizer|Uncaught|did not exit|Failed to create|SDL_Init failed/);
     assert.match(log, /\[health\] shell=ready ime=(ready|disabled) audio=ready/);
     if (imeEnabled) {

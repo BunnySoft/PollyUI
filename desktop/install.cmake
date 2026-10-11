@@ -118,6 +118,8 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/THEMES.md" "${CMAKE_SOURCE_DIR}/deskt
     "${CMAKE_SOURCE_DIR}/desktop/FILE-DIALOGS.md"
     "${CMAKE_SOURCE_DIR}/desktop/SHELL-CONFIGURATION.md"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
+install(FILES "${CMAKE_SOURCE_DIR}/docs/DESKTOP-CURSOR.md"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
 
 if (BUILD_TESTING)
     add_test(NAME desktop-installed-session COMMAND node
