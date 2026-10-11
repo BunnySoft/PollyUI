@@ -224,6 +224,33 @@ the narrow-window evidence has the same product source content with recorded
 CRLF/LF checkout differences. Earlier timeout runs and pre-correction captures
 remain preserved separately, never combined to manufacture an acceptance pass.
 
+## Beta candidates: animated desktop and desktop icons
+
+Recorded at the user's request on 2026-10-12. These are **Beta candidates**,
+not implementation authorization, a frozen Beta scope or current Alpha release
+gates. No version bump, media rebuild or change to historical receipts is implied.
+
+| ID | Candidate requirement | Implementation boundary |
+|---|---|---|
+| BD-01 | Animated desktop companion: a character that can move across the screen, follow configurable paths and change movement/actions in response to events | JS controls paths and behavior; reusable native position, transparent presentation and input-region mechanisms support rendering. Transparent pixels must not block underlying applications; interactive regions are explicit. Not a new cursor mode or permission for arbitrary apps to create privileged overlay surfaces |
+| BD-02 | Procedural animated wallpaper: animated geometry and graphics-API drawing, including game-like effects, alongside existing static images | Reuse the background layer; simple node transforms already have building blocks, but a general JS drawing surface/API is not yet implemented. Keep icons and selection above the animated background |
+| BD-03 | Video wallpaper with playback and looping | Native decoding, playback timing and frame presentation with thin JS controls; avoid decoding or copying every full frame in JS. Video playback and hardware acceleration are not currently delivered or qualified |
+| BD-04 | Desktop App icons/shortcuts: icon and label, single-click selection, double-click/Enter launch, context menu, internal drag-rearrangement, grid alignment/sorting and saved positions | Reuse the application catalog/launcher and stable App IDs. Removing a shortcut does not uninstall the App. A real desktop file directory and file mutation operations are separate scope, not implied by this candidate |
+| BD-05 | Desktop marquee and multi-selection: left-button drag on empty desktop draws a translucent rectangle; support single selection, additive/toggle selection, ordered-range selection, select-all, keyboard navigation and Escape cancellation | Use native mouse capture/cancel with a JS selection model and one consistent desktop modifier convention. Clear active gestures on capture loss, surface retirement or output removal; do not leave stale selection rectangles |
+
+If selected, build desktop selection/icons and simple companion/image-frame or
+node-based wallpaper animation before broader drawing/video capabilities.
+Animation needs static/reduced-motion fallback and lock/invisibility-aware
+pause or reduced frame rate. Position/input geometry must account for output
+scale and display changes; cross-output gestures require explicit handling,
+not an assumed global mouse grab.
+
+Internal icon rearrangement and marquee selection do not depend on outgoing
+cross-application drag-and-drop. Dragging a desktop shortcut into another App
+requires a separate Shell-layer authorization and payload contract: the
+currently approved outgoing-drag increment is ordinary-window COPY only.
+These candidates do not expand that active increment or start new child sessions.
+
 ## Next-version candidate: transparency and materials
 
 The user asked to retain the 2026-10-11 material discussion as a candidate for
