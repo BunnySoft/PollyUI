@@ -18,6 +18,7 @@ async function query(value) {
 }
 const startedAt = Date.now();
 function diagnose(stage) {
+  const network = typeof desktop.networkState === 'function' ? desktop.networkState() : null;
   const windows = desktop.windows().filter(item => item.title === 'Settings' ||
     item.appId === 'org.pollyui.settings-survivor').map(item => ({
       id: item.id, settings: item.title === 'Settings', survivor: item.appId === 'org.pollyui.settings-survivor',
@@ -30,6 +31,13 @@ function diagnose(stage) {
       closed: item.window.closed,
       activeElement: item.window.closed ? '' : item.window.document.activeElement?.id || '',
     })), windows,
+    network: network && { ready: network.ready, registered: network.registered,
+      revision: network.revision, operation: network.operation, refreshing: network.refreshing,
+      prompt: network.authentication?.id, kind: network.authentication?.kind },
+    managed: surfaces.filter(item => !item.window.closed && item.title === 'Desktop control panel').map(item => {
+      const document = item.window.document, submit = document.getElementById('shell-network-auth-submit');
+      return { focus: document.activeElement?.id, submit: submit?.getBoundingClientRect() };
+    }),
   }));
 }
 function check(value, message) {
@@ -249,7 +257,7 @@ async function run() {
     else if (['displays', 'keyboard'].includes(page)) check(managed.document.getElementById(contentId),
       'independent Settings delegates actual ' + page + ' controls');
     if (page === 'network' && mode !== 'network') {
-      check(reports.length === 1 && reports[0].includes('no-system-bus'),
+      check(reports.length === 1 && reports[0].includes('org.freedesktop.DBus.Error.FileNotFound'),
         'missing isolated iwd is explicitly reported without inventing readiness');
       reports.length = 0;
     }

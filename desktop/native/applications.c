@@ -9,7 +9,6 @@
 #include "native/windows.h"
 #include "native/notifications.h"
 #include "native/tray.h"
-#include "native/network.h"
 #include "native/audio.h"
 #include "native/power.h"
 #endif
@@ -671,7 +670,6 @@ int pu_applications_install(JSContext *ctx)
     if (!pu_desktop_windows_install(ctx, desktop_api)) return 0;
     if (!pu_notifications_install(ctx, desktop_api)) return 0;
     if (!pu_tray_install(ctx, desktop_api)) return 0;
-    if (!pu_network_install(ctx, desktop_api)) return 0;
     if (!pu_audio_install(ctx, desktop_api)) return 0;
     if (!pu_power_install(ctx, desktop_api)) return 0;
 #endif
@@ -718,7 +716,6 @@ int pu_applications_pump(void)
     worked += pu_desktop_windows_pump();
     worked += pu_notifications_pump();
     worked += pu_tray_pump();
-    worked += pu_network_pump();
     worked += pu_audio_pump();
     worked += pu_power_pump();
 #endif
@@ -738,7 +735,6 @@ void pu_applications_shutdown(void)
 #if defined(PU_LAYER_SHELL)
     pu_power_shutdown();
     pu_audio_shutdown();
-    pu_network_shutdown();
     pu_tray_shutdown();
     pu_notifications_shutdown();
     pu_desktop_windows_shutdown();

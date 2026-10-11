@@ -34,13 +34,14 @@ Do not make arbitrary numeric addresses readable or claim interruptible native
 calls as a shortcut. Shutdown still waits for accepted work; cancellation does
 not undo OS side effects. Native ABI metadata remains trusted code, not a sandbox.
 
-## D-Bus SDK gaps required by iwd
+## D-Bus SDK capabilities required by iwd
 
 These are protocol/connection features, not changes to libffi itself. The
 consumer-required transport slice is now integrated: `openDbusEndpoint` supports
 the shapes below on a single-reader connection. Existing scalar client/service
-adapters remain unchanged. The JS iwd service and old C bridge removal are still
-in progress; transport acceptance alone is not service-migration completion.
+adapters remain unchanged, accepting empty or one `u/b/s/o` request and fixed
+scalar replies. The JS iwd replacement uses the additional endpoint; it does
+not turn those adapters into a general introspection/parser/FD API.
 
 | Required feature | Actual iwd call/message |
 |---|---|
@@ -70,7 +71,7 @@ Unix-FD transport and general introspection are not added by this slice.
 
 | Domain | Current implementation still active | Concrete next work |
 |---|---|---|
-| Wi-Fi | `desktop/native/network.c/.h`, existing Shell control panel | First selected slice: JS iwd state/agent service, migrate current callers and delete the bridge |
+| Wi-Fi | `desktop/services/network.mjs`, existing Shell control panel | JS iwd state/agent service replaces the deleted `network.c/.h`; existing callers/API remain compatible |
 | Audio | `desktop/native/audio.c`, Shell PipeWire routing/persistence policy | Requires native event/record mechanisms; not covered by the scalar D-Bus client |
 | Displays / shortcuts | `output-client.c`, `shortcut-client.c`, Shell guarded controls | Wayland objects/listeners and guarded transactions; compositor watchdogs stay authoritative |
 | Power | `desktop/native/power.c` | Preserve login-service owner, seat, capability and uncertain-action semantics when replacing the client |
@@ -106,3 +107,14 @@ or a simultaneous migration of all Settings pages.
 The exit criterion is an actual JS Wi-Fi backend with the current supported
 operations intact and the replaced C bridge absent. A codec prototype, an
 independent UI still calling the old backend, or a passed mock is not completion.
+
+The replacement is implemented in [Shell-owned Wi-Fi/iwd](../desktop/NETWORK.md).
+It uses one verified system-bus connection for agent requests and RPC, retains
+current scan/radio/connect/credential/cancel/disconnect/forget behavior, and
+removes the production C bridge and native lifecycle/build hooks. Unknown
+interfaces/properties are explicitly projected away; unsupported used types fail.
+Existing root-owned private iwd Shell/Settings fixtures remain the operation
+oracle. Standalone glibc/musl private-bus tests cover containers, sender admission,
+same-connection agent/RPC/signal routing, ABI, deadlines and closure/GC/FD
+lifetime; the glibc endpoint lane also runs under Valgrind. This is source-level
+migration evidence only, not a new ISO or physical-radio test.

@@ -270,7 +270,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
             pkg_check_modules(PIPEWIRE REQUIRED IMPORTED_TARGET "libpipewire-0.3>=1.4")
             target_link_libraries(pollyui PRIVATE PkgConfig::PIPEWIRE)
             target_sources(pollyui PRIVATE desktop/native/notifications.c desktop/native/tray.c desktop/native/dbus-menu.c
-                desktop/native/network.c desktop/native/audio.c desktop/native/power.c)
+                desktop/native/audio.c desktop/native/power.c)
             if (BUILD_TESTING)
                 add_executable(polly-power-test desktop/tests/power-service.c desktop/native/session-bus.c)
                 target_include_directories(polly-power-test PRIVATE "${CMAKE_SOURCE_DIR}" desktop)
@@ -596,6 +596,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
             "${CMAKE_SOURCE_DIR}/desktop/tests/network-state.py" "${CMAKE_SOURCE_DIR}")
         set_tests_properties(desktop-network-state PROPERTIES TIMEOUT 30
             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container")
+        if (TARGET polly-iwd-test AND TARGET polly-sysrt-ffi-test)
+            add_test(NAME desktop-network-service COMMAND python3 -I -B
+                "${CMAKE_SOURCE_DIR}/desktop/tests/network-service.py"
+                $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
+                $<TARGET_FILE:polly-iwd-test>)
+            set_tests_properties(desktop-network-service PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;synthetic-network")
+        endif()
         add_test(NAME desktop-storage-network-image COMMAND python3 -I -B
             "${CMAKE_SOURCE_DIR}/desktop/tests/storage-network-image.py" "${CMAKE_SOURCE_DIR}")
         set_tests_properties(desktop-storage-network-image PROPERTIES TIMEOUT 30

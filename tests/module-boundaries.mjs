@@ -117,6 +117,23 @@ test('D-Bus client stays JS/config-only with explicit connections and library te
   assert.doesNotMatch(library[1], /dbus/);
 });
 
+test('Wi-Fi policy is Shell-owned JS and its production C bridge is removed', () => {
+  for (const path of ['desktop/native/network.c', 'desktop/native/network.h'])
+    assert.equal(existsSync(new URL(path, root)), false, path);
+  assert.doesNotMatch(cmake + read('desktop/native/applications.c'), /native\/network|pu_network_/);
+  const service = read('desktop/services/network.mjs');
+  assert.match(service, /openDbusEndpoint/);
+  assert.match(service, /authorize\(\)/);
+  assert.match(service, /outcome\.value !== 0/);
+  assert.match(service, /sender === owner/);
+  assert.match(service, /monotonicNanoseconds/);
+  assert.doesNotMatch(service, /shutdownDbus|dbus_shutdown|localStorage|DBUS_SESSION_BUS_ADDRESS/);
+  assert.match(read('desktop/launcher/services.mjs'), /createNetworkService\(windows, systemBusAddress, desktop\)/);
+  assert.match(read('desktop/install.cmake'), /desktop\/services/);
+  for (const path of ['sysrt/sdk/js/dbus.mjs', 'sysrt/bindings/dbus.mjs'])
+    assert.doesNotMatch(read(path), /net\.connman\.iwd|MAX_DEVICES|MAX_NETWORKS|NetworkAgent/);
+});
+
 test('asynchronous FFI reuses execution primitives and remains VM-thread confined', () => {
   const build = read('sysrt/CMakeLists.txt');
   assert.match(build, /polly-sysrt-ffi PUBLIC qjs polly-execution/);
