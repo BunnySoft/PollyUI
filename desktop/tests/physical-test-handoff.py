@@ -18,12 +18,13 @@ class Guard(unittest.TestCase):
         revision = "b" * 40
         expected = {"version": "0.1.0-alpha.7", "revision": revision, "sourceDirty": False}
         result = {"newArchitecture": {"actualStages": {
-            name: {"runningBuild": {owner: expected for owner in ("about", "appearance", "probe")}}
-            for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen")}}}
+            name: {"runningBuild": {"probe": expected}}
+            for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen",
+                         "page-displays", "page-network", "page-audio", "page-keyboard")}}}
         with self.assertRaisesRegex(ValueError, "production Files"):
             handoff.validate_alpha7(result, revision)
         bad = copy.deepcopy(result)
-        bad["newArchitecture"]["actualStages"]["about"]["runningBuild"]["about"]["sourceDirty"] = True
+        bad["newArchitecture"]["actualStages"]["about"]["runningBuild"]["probe"]["sourceDirty"] = True
         with self.assertRaisesRegex(ValueError, "actual frozen"):
             handoff.validate_alpha7(bad, revision)
         result["newArchitecture"]["actualStages"]["files-entry"] = {"productionResource": True}

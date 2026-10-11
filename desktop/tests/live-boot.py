@@ -360,6 +360,10 @@ def main():
                     stage("about")
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-about.ppm")})
+                    for page in ("displays", "network", "audio", "keyboard"):
+                        stage("page-" + page)
+                        desktop_view()
+                        execute("screendump", {"filename": str(evidence / ("settings-" + page + ".ppm"))})
                     keys("alt", "f4")
                     time.sleep(1)
                     console()

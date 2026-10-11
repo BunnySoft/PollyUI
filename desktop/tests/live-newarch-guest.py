@@ -269,6 +269,13 @@ def main():
             check(settings_pid(shell) == state["settingsPid"],
                   "Appearance did not present in the existing production Settings process")
             emit(stage, {"sameSettingsPid": state["settingsPid"], "runningBuild": running_build(env, sys.argv[2])})
+        elif stage in ("page-displays", "page-network", "page-audio", "page-keyboard"):
+            page = stage.removeprefix("page-")
+            launch_settings(page, env, "/tmp")
+            check(settings_pid(shell) == state["settingsPid"],
+                  "Settings page changed its actual owned process: " + page)
+            emit(stage, {"sameSettingsPid": state["settingsPid"], "page": page,
+                         "runningBuild": running_build(env, sys.argv[2])})
         elif stage == "reopen":
             check(not any("--managed" in args and "org.pollyui.settings" in args
                           for args in process_arguments().values()), "Settings window close did not end its owned process")

@@ -141,10 +141,12 @@ storage enumeration and its GPT/ESP, not just an optical boot of the same files.
 The fixture explicitly selects the serial VM menu entry; physical boots keep
 local logs rather than depending on a serial port.
 
-For Alpha.7, the ordinary-user RAM fixtures also read the production Shell's
-About/Appearance build snapshots and check the exact frozen revision, release
-and clean-source state against the explicitly selected runtime. Settings captures
-retain the visible release footer and About text. A separate production Files
+For Alpha.7, the ordinary-user RAM fixtures check the actual installed runtime's
+application metadata against the explicitly selected frozen revision, release
+and clean-source state. Production GetAbout/GetAppearance remains restricted to
+the current owned Settings PID; an external probe does not bypass that boundary.
+Settings captures retain the visible release footer and full About build text
+for independent visual review. A separate production Files
 window is observed, not controlled through its controller: QMP USB pointer/key
 events exercise outside-window text capture, clipboard selection, Shift editing,
 scrollbar capture/release, viewport paging, focus and disposal. These bounded VM

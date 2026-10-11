@@ -50,9 +50,10 @@ def validate_alpha7(result, revision):
     actual = result["newArchitecture"]
     stages = actual["actualStages"]
     expected = {"version": "0.1.0-alpha.7", "revision": revision, "sourceDirty": False}
-    for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen"):
+    for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen",
+                 "page-displays", "page-network", "page-audio", "page-keyboard"):
         observed = stages.get(name, {}).get("runningBuild", {})
-        if any(observed.get(owner) != expected for owner in ("about", "appearance", "probe")):
+        if observed.get("probe") != expected:
             raise ValueError("Missing actual frozen Alpha.7 runtime snapshot: " + name)
     if stages.get("files-entry", {}).get("productionResource") is not True or \
             stages.get("files-entry-closed", {}).get("closed") is not True:
@@ -141,7 +142,8 @@ def main():
         for artifact in ("result.json", "serial.log", "qemu.log", "desktop.png", "workspace2.png",
                          "settings-appearance.png", "settings-about.png", "settings-reopened.png",
                          *(("files-installed-entry.png", "files-ready.png", "files-text-selection.png",
-                            "files-scrollbar-bottom.png") if runtime["version"] == "0.1.0-alpha.7" else ())):
+                            "files-scrollbar-bottom.png", "settings-displays.png", "settings-network.png",
+                            "settings-audio.png", "settings-keyboard.png") if runtime["version"] == "0.1.0-alpha.7" else ())):
             shutil.copyfile(args.evidence / artifact, evidence / artifact)
         raw = (evidence / "serial.log").read_text(errors="replace")
         session_failures = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in raw.splitlines()
@@ -160,6 +162,7 @@ def main():
             "baseImageID": origin["baseImageID"], "runtimeImageID": origin["runtimeImageID"],
             "rootExportSha256": origin["rootExportSha256"],
             "scope": "Primary ordinary-user seat0 desktop and all recorded application acceptance stages.",
+            "buildUiObservation": "Actual installed application metadata is checked per stage; production Settings About/footer screenshots require independent visual review. Cross-PID GetAbout/GetAppearance access remains denied.",
             "rawSessionFailuresPreserved": session_failures,
             **({"runtimeQualificationSha256": digest(staging / "runtime-qualification.json"),
                 "runtimeQualification": native} if native is not None else {}),
