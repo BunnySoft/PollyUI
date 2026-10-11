@@ -19,6 +19,7 @@ sysrt/tests/storage-values.mjs
 gui/tests/reconciler.mjs
 gui/tests/vue.mjs
 gui/tests/textinput.mjs
+gui/tests/scrollbar.mjs
 gui/tests/inputcaret.mjs
 gui/tests/input-events.mjs
 gui/tests/pointer-events.mjs

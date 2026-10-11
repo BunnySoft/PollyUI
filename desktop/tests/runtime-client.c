@@ -4,6 +4,7 @@
 #include "workspace.h"
 #include "data-device.h"
 #include "input-method.h"
+#include "shortcut-control.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -568,7 +569,7 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             fixture_pointer_click(sx + restore_x, sy + restore_y, *time += 3, 0);
             continue; // No pointer is retained across the next event-loop settle.
         }
-        int x, y, delta, used = 0, end_x, end_y;
+        int x, y, delta, used = 0, end_x, end_y, code = 0, modifiers = 0;
         bool context_click = sscanf(action, "context %d %d%n", &x, &y, &used) == 2 && !action[used];
         bool double_click = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
             sscanf(action, "doubleclick %d %d%n", &x, &y, &used) == 2 && !action[used];
@@ -576,7 +577,13 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             sscanf(action, "gesture %d %d %d %d%n", &x, &y, &end_x, &end_y, &used) == 4 && !action[used];
         bool press = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
             sscanf(action, "press %d %d%n", &x, &y, &used) == 2 && !action[used];
-        if (gesture || press) {
+        bool press_key = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "presskey %d %d %d %d%n", &x, &y, &code, &modifiers, &used) == 4 && !action[used];
+        bool press_focus = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "pressfocus %d %d%n", &x, &y, &used) == 2 && !action[used];
+        bool press_close = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "pressclose %d %d%n", &x, &y, &used) == 2 && !action[used];
+        if (gesture || press || press_key || press_focus || press_close) {
             int width = view->toplevel->base->geometry.width, height = view->toplevel->base->geometry.height;
             CHECK(x >= 0 && y >= 0 && x < width && y < height);
             if (gesture) CHECK(end_x >= -64 && end_y >= -64 && end_x <= width + 64 && end_y <= height + 64);
@@ -594,6 +601,24 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
                 wlr_pointer_notify_button(&pointer, &button);
                 wl_signal_emit_mutable(&pointer.events.frame, NULL);
                 CHECK(wait_client_color(client, x, y, 0x3060c0));
+            } else if (press_key || press_focus) {
+                if (press_key) {
+                    CHECK(code > 0 && code <= KEY_MAX && modifiers >= 0 && modifiers <= 15);
+                    fixture_keyboard((unsigned)code, (unsigned)modifiers, time);
+                } else {
+                    // Actual Wayland keyboard deactivation while the native button grab is live.
+                    struct PuDesktopView *focus = ordinary_fixture_view(client, app_id, marker_title);
+                    CHECK(focus && focus->workspace_window);
+                    pu_desktop_focus_mapped(&desktop, focus->workspace_window);
+                }
+                CHECK(wait_client_color(client, x, y, 0x3060c0));
+                button.time_msec = ++*time; button.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                wlr_pointer_notify_button(&pointer, &button);
+                wl_signal_emit_mutable(&pointer.events.frame, NULL);
+            } else if (press_close) {
+                struct PuDesktopView *closing = ordinary_fixture_view(client, app_id, title);
+                CHECK(closing);
+                wlr_xdg_toplevel_send_close(closing->toplevel);
             }
         } else if (context_click || double_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&

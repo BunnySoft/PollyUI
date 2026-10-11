@@ -201,9 +201,18 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     selection.type === 'symlink' ? label('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
       selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''), 'muted', { fontSize: 12 }) : null,
     ) : null;
+  const listRegion = h('view', { id: 'files-list-region', style: { position: 'relative', flexGrow: 1,
+    flexBasis: 0, minWidth: 0, minHeight: 0 } }, list,
+    h('view', { id: 'files-scrollbar', role: 'scrollbar', 'aria-label': 'Scroll files and folders',
+      'aria-controls': 'files-list', 'aria-orientation': 'vertical', tabIndex: -1,
+      style: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 10,
+        backgroundColor: color('body'), opacity: 0, pointerEvents: 'none', borderRadius: 5 },
+      focusStyle: { backgroundColor: color('selection') } },
+      h('view', { id: 'files-scroll-thumb', style: { position: 'absolute', left: 2, top: 0, width: 4,
+        height: 28, borderRadius: 2, backgroundColor: color('muted'), pointerEvents: 'none' } })));
   const viewport = h('view', { id: 'files-viewport', style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0,
     flexShrink: 1, minHeight: 100, overflow: 'hidden' } }, sidebar,
-    h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0 } }, columns, list), details);
+    h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0 } }, columns, listRegion), details);
   const footer = h('view', { id: 'files-status', role: 'status', style: { ...horizontal, flexShrink: 0,
     padding: 10, paddingLeft: 16, gap: 12, borderTopWidth: 1, borderColor: color('border'), flexWrap: 'wrap' } },
     desktopText(state.phase === 'working' ? 'Applying operation...' : state.phase === 'opening' ? 'Opening...' :

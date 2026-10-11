@@ -48,9 +48,20 @@ selection. Arrow keys, Home and End move through the visible sorted/filtered row
 F2 focuses the inline rename field, Enter explicitly confirms, and Escape cancels
 and restores row focus. F5 refreshes, Alt+Left/Right navigate history, Alt+Up goes
 to the parent, and Ctrl+L/Alt+D opens an editable absolute address.
+The first ready snapshot receives list focus, so these keys work before a
+pointer click. Deferred reveal/focus work cannot steal a later input click.
+Retired address/name inputs are explicitly detached, including when their
+reconciler slot is reused for breadcrumbs or ordinary row contents.
 The original modern layout has a Places sidebar, navigation/address bar,
 command bar, Name/Modified/Type/Size columns and continuous native wheel scrolling
-through the bounded snapshot. Column headers toggle ascending/descending order;
+through the bounded snapshot. The right-edge scrollbar drags the actual list
+offset with native mouse capture, pages one viewport on a track press, and
+supports arrows, Page Up/Down, Home and End when focused. Its proportional thumb
+has a 28px minimum and clamps at both ends; short/empty lists hide the rail.
+The 10px overlay occupies existing trailing padding, without subtracting width
+from the file rows or metadata columns, including 640/680px windows. Wheel,
+keyboard row revelation, filtering and layout changes keep the thumb synchronized.
+Column headers toggle ascending/descending order;
 folders remain first. **Filter this folder** matches loaded names only, never
 starts a full-disk search or reads file contents. Filtering hides an unmatched
 selection rather than leaving invisible commands actionable. A directory containing
@@ -58,6 +69,19 @@ more than 1024 entries is explicitly **partial**, never presented as complete.
 The bounded file-list viewport uses the engine's explicit `flexGrow` and
 `flexBasis` properties, not unsupported CSS `flex` shorthand. Rows overflow
 inside that viewport; status and partial/error notices remain within the window.
+
+Filter, address and inline name fields use the same SDK text input, not a second
+editor. Captured dragging continues outside the field/window and release records
+the final position. Shift+Left/Right/Home/End and Shift-click extend the current
+anchor; an unmodified arrow collapses a selection to its corresponding edge.
+Long text scrolls horizontally to keep the caret visible, and pointer hit testing
+uses the actual viewport rectangle even inside a vertically scrolled list.
+Inputs show themed focus borders and select a native text cursor on hover/drag.
+Blur, native cancellation, capture loss and detach terminate dragging without
+publishing a cancelled primary selection or applying late motion/release.
+List gestures are also retired on UI-generation changes and window close.
+This adds no file operations, multi-selection, rubber-band selection or outgoing
+drag/drop.
 
 Rows show name, type, file size and a local-calendar modification date. Properties
 retains the full name/path, exact timestamp, permission mode, UID/GID, link target
@@ -192,6 +216,20 @@ or binary editing. That is not a restriction on native SysRT binary I/O.
 There is no real host HOME enumeration in agent fixtures.
 
 ## Focused evidence and integration fixture
+
+`gui-textinput` and `gui-scrollbar` exercise the SDK using the explicitly
+headless capture adapter; these are not native-input claims. Independent
+`desktop-files-text`, `desktop-files-text-lifecycle` and `desktop-files-scrollbar`
+flows each keep an independent 60-second CTest budget and use actual ordinary
+UID/GID1000 Wayland input through the shared native driver, including same-batch
+plain clicks, held outside-window dragging, keyboard selection/scrolling,
+focus-loss cancellation, production control detach and WM close during capture.
+The text flow edits via native clipboard shortcuts (no IME is running in that
+fixture); committed text/preedit are covered by the existing SDK tests.
+Each focused flow retains three actual app-buffer PNGs and raw input/close
+receipts, source/runtime/driver hashes and private synthetic HOME. `--small`
+uses 680px and interaction-only `--narrow` uses 640px; the old browser/details
+journeys, business assertions and supervisor deadlines remain unchanged.
 
 ```sh
 node --test desktop/apps/files/tests/files.mjs

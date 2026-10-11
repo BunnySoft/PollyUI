@@ -22,6 +22,17 @@ STAGES = {
 MOUSE_STAGES = ["home-browser", "empty-folder", "before-wm-close"]
 INPUT_STAGES = ["input-ready", "capture-released", "before-wm-close"]
 INPUT_EVIDENCE = ["capture", "outsideMotion", "release", "clickSuppressed", "cancellation", "cursor", "activation"]
+INTERACTION_STAGES = {
+    "text": ["text-selection", "text-focus-restored", "before-wm-close"],
+    "text-lifecycle": ["text-address-long", "text-focus-restored", "before-wm-close"],
+    "scrollbar": ["scrollbar-top", "scrollbar-bottom", "before-wm-close"],
+}
+INTERACTION_EVIDENCE = {
+    "text": ["capture", "outsideMotion", "release", "shiftSelection", "focus", "cursor", "focusCancel", "closeCancel"],
+    "text-lifecycle": ["capture", "focus", "cursor", "horizontalScroll", "detach", "focusCancel", "closeCancel"],
+    "scrollbar": ["capture", "outsideMotion", "release", "page", "keyboard", "wheelSync",
+                  "bounds", "metadata", "detach", "focusCancel", "closeCancel"],
+}
 REQUIRED_EVIDENCE = {
     "browser": ["documents", "returnedHome", "folderCreated", "folderRenamed", "documentOpenRequested",
                 "cancelled", "wheel", "keyboardRename", "history", "sort", "context", "filter", "address"],
@@ -35,6 +46,7 @@ def source_hashes(repo):
         "desktop/apps/files/logic/model.mjs", "desktop/apps/files/ui/view.mjs",
         "desktop/apps/files/ui/format.mjs", "desktop/shell/presentation.mjs",
         "gui/sdk/js/textinput.mjs", "desktop/tests/files-window-client.mjs",
+        "gui/sdk/js/scrollbar.mjs", "desktop/tests/files-interactions.mjs",
         "desktop/tests/files-window-shell.mjs", "desktop/tests/runtime-client.c",
         "desktop/tests/files-window.py",
         "gui/include/pollyui/input.h", "gui/include/pollyui/window.h",
@@ -44,11 +56,12 @@ def source_hashes(repo):
     return {path: hashlib.sha256((repo / path).read_bytes()).hexdigest() for path in paths}
 
 
-def driver_command(repo, driver, runtime, small=False, details=False, mouse=False, native_input=False):
+def driver_command(repo, driver, runtime, small=False, details=False, mouse=False, native_input=False, interaction=None, narrow=False):
     return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
             'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
             "polly-files-fixture", str(driver), str(runtime),
             str(repo / "desktop/tests/files-window-shell.mjs"), "files-window",
+            interaction + ("-narrow" if narrow else "-small" if small else "") if interaction else
             "input" if native_input else "mouse" if mouse else
             ("details-small" if small else "details") if details else ("small" if small else "initial")]
 
@@ -136,10 +149,13 @@ def main():
     parser.add_argument("runtime", type=Path)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--small", action="store_true")
-    parser.add_argument("--flow", choices=("all", "browser", "details", "mouse", "input"), default="all")
+    parser.add_argument("--narrow", action="store_true")
+    parser.add_argument("--flow", choices=("all", "browser", "details", "mouse", "input", "text", "text-lifecycle", "scrollbar"), default="all")
     args = parser.parse_args()
     if args.flow in ("mouse", "input") and args.small:
         raise ValueError("The focused mouse/input flows use the normal window size")
+    if args.narrow and (args.flow not in INTERACTION_STAGES or args.small):
+        raise ValueError("The 640px narrow option is only for independent interaction flows")
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (1000, 1000, 1000, 1000):
         raise PermissionError("Files native acceptance requires actual ordinary UID/GID1000")
     if not args.driver.is_absolute() or not args.runtime.is_absolute() or not args.evidence.is_absolute():
@@ -183,7 +199,8 @@ def main():
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
     command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details",
-                             args.flow == "mouse", args.flow == "input")
+                             args.flow == "mouse", args.flow == "input",
+                             args.flow if args.flow in INTERACTION_STAGES else None, args.narrow)
     sources = source_hashes(repo)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
@@ -209,7 +226,7 @@ def main():
             raise RuntimeError("Files native fixture timed out; original private evidence retained") from error
     retain_fixture_home(root, evidence)
     text = (evidence / "native.log").read_text(errors="replace")
-    if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text:
+    if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text or "Uncaught" in text:
         report_native_failure(evidence)
         raise RuntimeError("Actual Files native fixture failed; original private evidence retained")
     if source_hashes(repo) != sources:
@@ -217,15 +234,16 @@ def main():
     for marker in ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:"):
         if marker not in text:
             raise RuntimeError("Missing actual Files action/normal-close receipt: " + marker)
-    if args.flow not in ("mouse", "input"):
+    if args.flow not in ("mouse", "input", "text", "text-lifecycle", "scrollbar"):
         receipt = json.loads((root / "mime-result.json").read_text())
         if receipt != {"uid": 1000, "argv": [str(document)], "cwd": str(repo), "text": document.read_text()}:
             raise RuntimeError("Actual MIME helper argv/cwd/ordinary UID/read content differs from the fixture")
         (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_bytes = (root / "files-window-result.json").read_bytes()
     result = json.loads(receipt_bytes)
-    stages = INPUT_STAGES if args.flow == "input" else MOUSE_STAGES if args.flow == "mouse" else STAGES[args.flow]
-    required = INPUT_EVIDENCE if args.flow == "input" else \
+    stages = INTERACTION_STAGES[args.flow] if args.flow in INTERACTION_STAGES else \
+        INPUT_STAGES if args.flow == "input" else MOUSE_STAGES if args.flow == "mouse" else STAGES[args.flow]
+    required = INTERACTION_EVIDENCE[args.flow] if args.flow in INTERACTION_EVIDENCE else INPUT_EVIDENCE if args.flow == "input" else \
         ["singleClick", "doubleClick", "documents", "returnedHome"] if args.flow == "mouse" else REQUIRED_EVIDENCE[args.flow]
     if result.get("flow") != args.flow or result.get("passed") is not True or result.get("closeObserved") is not True or \
             any(result.get("evidence", {}).get(key) is not True for key in required):
@@ -249,12 +267,13 @@ def main():
         with (evidence / path.name).open("xb") as destination:
             destination.write(data)
         if (width, height) != (capture["width"], capture["height"]) or \
-                width != (680 if args.small else 1040) or not 320 <= height <= (540 if args.small else 760):
+                width != (640 if args.narrow else 680 if args.small else 1040) or not 320 <= height <= (540 if args.small or args.narrow else 760):
             raise RuntimeError("PNG dimensions differ from the actual laid-out native window (including compositor size clamps)")
         images.append({**capture, "sha256": hashlib.sha256(data).hexdigest(), "width": width, "height": height})
     (evidence / "files-window-result.json").write_bytes(receipt_bytes)
     (evidence / "captures.json").write_text(json.dumps(images, indent=2) + "\n")
-    print("PASS: actual UID1000 native capture/outside motion/release/cancel/cursor/activation and WM-close" if args.flow == "input" else
+    print("PASS: actual UID1000 native Files " + args.flow + " capture/outside motion/release/keyboard/detach/focus-loss/WM-close" if args.flow in INTERACTION_STAGES else
+          "PASS: actual UID1000 native capture/outside motion/release/cancel/cursor/activation and WM-close" if args.flow == "input" else
           "PASS: actual UID1000 Files single/double-click navigation and WM-close" if args.flow == "mouse" else
           "PASS: actual UID1000 Files pointer/wheel/keyboard/WM-close and separate MIME helper read receipt")
 

@@ -631,21 +631,24 @@ int pu_window_capture_mouse(PuWindow *w, int enabled)
     if (!w || !w->win || (enabled && !w->running)) {
         SDL_Log("Mouse capture requires a live window"); return 0;
     }
-    if (enabled && ((g_mouse_capture && g_mouse_capture != w) || SDL_GetMouseFocus() != w->win)) {
-        SDL_Log("Mouse capture requires this window's mouse focus and exclusive ownership"); return 0;
+    if (enabled && g_mouse_capture && g_mouse_capture != w) {
+        SDL_Log("Mouse capture requires exclusive window ownership"); return 0;
     }
     if (!enabled && g_mouse_capture != w) { w->mouse_capture = 0; return 1; }
     const char *driver = SDL_GetCurrentVideoDriver();
     if (driver && !strcmp(driver, "wayland")) {
-        /* Wayland owns the button grab; SDL exposes it as a window flag.
-         * This is capture only for that live grab, not a global pointer lock. */
-        if (enabled && (!w->pressed_buttons ||
-                !(SDL_GetWindowFlags(w->win) & SDL_WINDOW_MOUSE_CAPTURE))) {
-            SDL_Log("Wayland mouse capture requires a live native button grab"); return 0;
+        /* SDL may already have pumped a native UP/leave when dispatching its
+         * queued DOWN. Bind logical capture to this window's delivered button
+         * sequence, not the queue-end window flags. Never extend Wayland's grab. */
+        if (enabled && !w->pressed_buttons) {
+            SDL_Log("Wayland mouse capture requires a delivered native button press"); return 0;
         }
         w->mouse_capture = w->implicit_capture = enabled != 0;
         g_mouse_capture = enabled ? w : NULL;
         return 1;
+    }
+    if (enabled && SDL_GetMouseFocus() != w->win) {
+        SDL_Log("Mouse capture requires this window's mouse focus"); return 0;
     }
     if (!SDL_CaptureMouse(enabled != 0)) {
         SDL_Log("SDL_CaptureMouse failed: %s", SDL_GetError()); return 0;
@@ -1035,7 +1038,7 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             break;
         case SDL_EVENT_WINDOW_MOUSE_LEAVE:
             if (w->mouse_capture) {
-                if (w->implicit_capture && !(SDL_GetWindowFlags(w->win) & SDL_WINDOW_MOUSE_CAPTURE)) {
+                if (w->implicit_capture && !w->pressed_buttons) {
                     PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1, .reason = "capture-lost" };
                     if (w->pointer_fn && w->pointer_fn(&event, w->pointer_user)) w->dirty = 1;
                     if (w->mouse_capture && !pu_window_capture_mouse(w, 0))

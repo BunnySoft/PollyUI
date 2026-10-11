@@ -739,6 +739,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     --flow input --evidence "${CMAKE_BINARY_DIR}/native-mouse-evidence")
             set_tests_properties(desktop-native-mouse PROPERTIES TIMEOUT 60
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+            foreach(interaction IN ITEMS text text-lifecycle scrollbar)
+                add_test(NAME desktop-files-${interaction}
+                    COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
+                        $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                        --flow ${interaction} --evidence "${CMAKE_BINARY_DIR}/files-${interaction}-evidence")
+                set_tests_properties(desktop-files-${interaction} PROPERTIES TIMEOUT 60
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+            endforeach()
             add_test(NAME desktop-files-window-manifest
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window-manifest.py")
             set_tests_properties(desktop-files-window-manifest PROPERTIES TIMEOUT 15)

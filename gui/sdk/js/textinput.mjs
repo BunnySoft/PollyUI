@@ -5,7 +5,7 @@
 //   import { createTextInput } from './gui/sdk/js/textinput.mjs';
 //   const input = createTextInput({ value: 'Hello', width: 280 });
 //   document.body.appendChild(input.root);
-// Pass document: handle.document when embedding in another native window.
+// Pass window: handle when embedding in another native window (document and cursor).
 
 import { previousTextIndex, nextTextIndex, clampTextIndex } from './gui/sdk/js/textindex.mjs';
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
@@ -17,7 +17,8 @@ const el = (owner, tag, style) => {
 };
 
 export function createTextInput(opts = {}) {
-  const owner = opts.document ?? document;
+  const surface = opts.window ?? (typeof window !== 'undefined' && (!opts.document || opts.document === window.document) ? window : null);
+  const owner = opts.document ?? surface?.document ?? document;
   let fontSize = opts.fontSize ?? 18;
   const padding  = opts.padding ?? 8;
   const width    = opts.width ?? 240;
@@ -27,22 +28,23 @@ export function createTextInput(opts = {}) {
   const secure = purpose === 'password' || purpose === 'pin';
   const displayed = value => secure ? '\u2022'.repeat(Array.from(value).length) : value;
 
-  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false, composition: null };
+  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false, hovered: false, composition: null };
   st.caret = st.value.length;
 
   const root = el(owner, 'view', {
     width, height: fontSize + padding * 2, backgroundColor: opts.background ?? '#ffffff',
     borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1',
     position: 'relative', overflow: 'hidden', paddingLeft: padding, paddingTop: padding,
+    'focus:borderColor': opts.focusColor ?? '#2563eb',
   });
   root.tabIndex = 0;
 
-  const highlight = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2 });
-  const textEl = el(owner, 'view', { color, fontSize });
+  const highlight = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2, pointerEvents: 'none' });
+  const textEl = el(owner, 'view', { color, fontSize, pointerEvents: 'none', flexShrink: 0 });
   const textNode = owner.createTextNode(displayed(st.value));
   textEl.appendChild(textNode);
-  const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent' });
-  const underline = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2 });
+  const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent', pointerEvents: 'none' });
+  const underline = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2, pointerEvents: 'none' });
 
   root.appendChild(highlight);  // behind the text
   root.appendChild(textEl);
@@ -65,7 +67,7 @@ export function createTextInput(opts = {}) {
 
   function paintRanges(container, ranges, y, height, color) {
     while (container.childNodes.length > ranges.length) container.removeChild(container.lastChild);
-    while (container.childNodes.length < ranges.length) container.appendChild(el(owner, 'view', { position: 'absolute' }));
+    while (container.childNodes.length < ranges.length) container.appendChild(el(owner, 'view', { position: 'absolute', pointerEvents: 'none' }));
     ranges.forEach((range, index) => Object.assign(container.childNodes[index].style, {
       left: padding + range.x, top: y, width: range.width, height, backgroundColor: color,
     }));
@@ -78,23 +80,42 @@ export function createTextInput(opts = {}) {
     caret.style.left = String(padding + xOf(cursor, value));
     caret.style.backgroundColor = st.focused && (!composition || composition.cursor >= 0) ? color : 'transparent';
     const geometry = textGeometry(displayed(value), fontSize);
+    const innerWidth = root.offsetWidth - padding * 2 - 2;
+    if (innerWidth > 0) {
+      const x = xOf(cursor, value), current = Number(root.scrollLeft);
+      root.scrollLeft = Math.max(0, Math.min(Math.max(0, geometry.width - innerWidth),
+        x < current ? x : x > current + innerWidth ? x - innerWidth : current));
+    }
     paintRanges(underline, composition ? geometry.ranges(displayIndex(value, composition.start),
       displayIndex(value, composition.start + composition.text.length)) : [], padding + fontSize, 1, color);
     const r = composition ? null : selRange();
     paintRanges(highlight, r && st.focused ? geometry.ranges(displayIndex(value, r[0]), displayIndex(value, r[1])) : [],
       padding, fontSize, selColor);
-    if (st.focused && owner.activeElement === root)
+    if (st.focused && owner.activeElement === root && root.ownerDocument === owner && !surface?.closed)
       root.setInputMethod({ purpose, x: padding + xOf(cursor, value), y: padding, width: 2, height: fontSize });
   }
 
-  const localXFrom = (clientX) => clientX - (root.offsetLeft + padding) + (parseFloat(root.scrollLeft) || 0);
+  const localXFrom = clientX => clientX - root.getBoundingClientRect().x - padding + Number(root.scrollLeft);
+  const cursor = name => { if (surface && !surface.closed) surface.setCursor(name); };
+  function endDrag(release = false) {
+    const dragging = st.dragging;
+    st.dragging = false;
+    if (release && dragging) root.releaseMouseCapture();
+    if (st.anchor === st.caret) st.anchor = null;
+    if (dragging) cursor(st.hovered ? 'text' : 'arrow');
+  }
 
   root.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     if (st.composition) root.cancelComposition();
     const i = indexAtX(localXFrom(e.clientX));
-    st.caret = i; st.anchor = i; st.dragging = true; st.focused = true;
+    if (!e.shiftKey) st.anchor = i;
+    else if (st.anchor === null) st.anchor = st.caret;
+    st.caret = i;
     root.focus();
+    root.setMouseCapture();
+    st.dragging = true;
+    cursor('text');
     render();
   });
   root.addEventListener('mousemove', (e) => {
@@ -103,14 +124,18 @@ export function createTextInput(opts = {}) {
     render();
   });
   root.addEventListener('mouseup', e => {
-    if (e.button !== 0) return;
-    st.dragging = false;
-    if (st.anchor === st.caret) st.anchor = null;
+    if (e.button !== 0 || !st.dragging) return;
+    st.caret = indexAtX(localXFrom(e.clientX));
+    endDrag(true);
     const selection = selRange();
     if (!secure && selection && typeof clipboard !== 'undefined' && clipboard.supportsPrimary)
       clipboard.writePrimaryText(st.value.slice(selection[0], selection[1]));
     render();
   });
+  root.addEventListener('mouseenter', () => { st.hovered = true; cursor('text'); });
+  root.addEventListener('mouseleave', () => { st.hovered = false; if (!st.dragging) cursor('arrow'); });
+  root.addEventListener('mousecancel', () => { st.hovered = false; endDrag(); cursor('arrow'); render(); });
+  root.addEventListener('lostmousecapture', () => { endDrag(); render(); });
   root.addEventListener('auxclick', e => {
     if (e.button !== 1 || typeof clipboard === 'undefined' || !clipboard.supportsPrimary) return;
     e.preventDefault();
@@ -121,7 +146,7 @@ export function createTextInput(opts = {}) {
     render();
   });
   root.addEventListener('focus', () => { st.focused = true; render(); });
-  root.addEventListener('blur',  () => { st.focused = false; render(); });
+  root.addEventListener('blur',  () => { st.focused = false; endDrag(true); render(); });
   root.addEventListener('compositionstart', () => {
     const [start, end] = selRange() || [st.caret, st.caret];
     st.composition = { start, end, text: '', cursor: 0 };
@@ -141,6 +166,7 @@ export function createTextInput(opts = {}) {
   });
 
   function replaceSelection(insert) {
+    endDrag(true);
     const r = selRange();
     const [s, e] = r ? r : [st.caret, st.caret];
     st.value = st.value.slice(0, s) + insert + st.value.slice(e);
@@ -150,6 +176,8 @@ export function createTextInput(opts = {}) {
 
   root.addEventListener('keydown', (e) => {
     const k = e.key;
+    if (k === 'Escape' || ['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Backspace', 'Delete'].includes(k) ||
+      ((e.ctrlKey || e.metaKey) && !e.altKey && ['a', 'x', 'v'].includes(k.toLowerCase()))) endDrag(true);
     if (st.composition && (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Backspace', 'Delete'].includes(k) ||
       ((e.ctrlKey || e.metaKey) && !e.altKey && ['a', 'c', 'x', 'v'].includes(k.toLowerCase()))))
       root.cancelComposition();
@@ -169,10 +197,14 @@ export function createTextInput(opts = {}) {
         render(); return;
       }
     }
-    if (k === 'ArrowLeft')       { st.caret = previousTextIndex(st.value, st.caret); st.anchor = null; }
-    else if (k === 'ArrowRight') { st.caret = nextTextIndex(st.value, st.caret); st.anchor = null; }
-    else if (k === 'Home')       { st.caret = 0; st.anchor = null; }
-    else if (k === 'End')        { st.caret = st.value.length; st.anchor = null; }
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) {
+      const selected = selRange();
+      if (e.shiftKey) { if (st.anchor === null) st.anchor = st.caret; }
+      else st.anchor = null;
+      st.caret = k === 'Home' ? 0 : k === 'End' ? st.value.length :
+        selected && !e.shiftKey ? selected[k === 'ArrowLeft' ? 0 : 1] :
+          k === 'ArrowLeft' ? previousTextIndex(st.value, st.caret) : nextTextIndex(st.value, st.caret);
+    }
     else if (k === 'Backspace') {
       const r = selRange();
       if (r) { st.value = st.value.slice(0, r[0]) + st.value.slice(r[1]); st.caret = r[0]; st.anchor = null; }
@@ -197,7 +229,7 @@ export function createTextInput(opts = {}) {
   return {
     root,
     get value() { return st.value; },
-    set value(v) { if (st.composition) root.cancelComposition(); st.value = String(v); st.caret = st.value.length; st.anchor = null; render(); },
+    set value(v) { endDrag(true); if (st.composition) root.cancelComposition(); st.value = String(v); st.caret = st.value.length; st.anchor = null; render(); },
     getCaret: () => st.caret,
     getSelection: () => selRange(),
     selectAll: () => { st.anchor = 0; st.caret = st.value.length; st.focused = true; render(); },
@@ -209,7 +241,7 @@ export function createTextInput(opts = {}) {
           if (!Number.isFinite(value) || value < (key === 'fontSize' ? 8 : 0) ||
             value > (key === 'fontSize' ? 64 : 256))
             throw new RangeError('Invalid input appearance metric: ' + key);
-        } else if (!['color', 'selectionColor', 'background', 'borderColor'].includes(key) ||
+        } else if (!['color', 'selectionColor', 'background', 'borderColor', 'focusColor'].includes(key) ||
           typeof value !== 'string' || !value.length || value.length > 64)
           throw new TypeError('Invalid input appearance field: ' + key);
       }
@@ -217,6 +249,7 @@ export function createTextInput(opts = {}) {
       if (Object.hasOwn(values, 'selectionColor')) selColor = values.selectionColor;
       if (Object.hasOwn(values, 'background')) root.style.backgroundColor = values.background;
       if (Object.hasOwn(values, 'borderColor')) root.style.borderColor = values.borderColor;
+      if (Object.hasOwn(values, 'focusColor')) root.style['focus:borderColor'] = values.focusColor;
       if (Object.hasOwn(values, 'borderRadius')) root.style.borderRadius = values.borderRadius;
       if (Object.hasOwn(values, 'fontSize')) {
         fontSize = values.fontSize;

@@ -2,6 +2,7 @@ import { createFilesApp } from './desktop/apps/files/app.mjs';
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 import { fileSystem } from './desktop/shared/file-system.mjs';
 import { visibleEntries } from './desktop/apps/files/ui/format.mjs';
+import { runFilesInteractions, interactionEvidence, interactionStages } from './desktop/tests/files-interactions.mjs';
 
 const [root, mode] = application.arguments;
 if (typeof root !== 'string' || !root.startsWith('/tmp/polly-files-window-') ||
@@ -15,28 +16,31 @@ if (marker.uid !== 1000 || marker.type !== 'file' ||
     api.readText(marker.path, marker.identity).text !== 'POLLY-FILES-PRIVATE-WINDOW-V1\n')
   throw new Error('Private fixture marker missing; no host enumeration is permitted');
 
-const driving = ['--drive', '--drive-small', '--details', '--details-small', '--mouse', '--input'].includes(mode);
+const interaction = mode.startsWith('--text-lifecycle') ? 'text-lifecycle' :
+  mode.startsWith('--text') ? 'text' : mode.startsWith('--scrollbar') ? 'scrollbar' : null;
+const driving = ['--drive', '--drive-small', '--details', '--details-small', '--mouse', '--input'].includes(mode) || !!interaction;
 const details = mode === '--details' || mode === '--details-small';
 const mouse = mode === '--mouse';
 const input = mode === '--input';
-const flow = input ? 'input' : mouse ? 'mouse' : details ? 'details' : 'browser';
+const flow = interaction || (input ? 'input' : mouse ? 'mouse' : details ? 'details' : 'browser');
 const app = createFilesApp({ initialPath: root, optInTheme: false, host: {
-  close: () => window.close(), create: options => window.create(mode.endsWith('-small') ?
-    { ...options, width: 680, height: 540 } : options),
+  close: () => window.close(), create: options => window.create(mode.endsWith('-narrow') ?
+    { ...options, width: 640, height: 540 } : mode.endsWith('-small') ? { ...options, width: 680, height: 540 } : options),
 } }).start();
-const evidence = input ? { capture: false, outsideMotion: false, release: false, clickSuppressed: false,
+const evidence = interaction ? interactionEvidence(flow) : input ? { capture: false, outsideMotion: false, release: false, clickSuppressed: false,
   cancellation: false, cursor: false, activation: false } :
   mouse ? { singleClick: false, doubleClick: false, documents: false, returnedHome: false } :
   details ? { documentOpenRequested: false, filter: false, address: false, properties: false } :
   { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
   documentOpenRequested: false, cancelled: false, wheel: false, keyboardRename: false, history: false,
   sort: false, context: false, filter: false, address: false };
-const captureStages = input ? ['input-ready', 'capture-released', 'before-wm-close'] :
+const captureStages = interaction ? interactionStages(flow) : input ? ['input-ready', 'capture-released', 'before-wm-close'] :
   mouse ? ['home-browser', 'empty-folder', 'before-wm-close'] :
   details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
   ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
     'rename-edit', 'renamed-folder', 'before-wm-close'];
 const captures = [];
+const interactionSamples = [];
 let ticks = 0, last = '', previousDialog = false, passed = false;
 const renamedName = driving ? 'New folde' : 'Renamed folder';
 let closeObserved = false;
@@ -48,7 +52,7 @@ function bounds(node) {
 function observe() {
   const state = app.controller.getState(), surface = app.getWindow();
   if (!surface || state.phase !== 'ready') return;
-  if (input) return;
+  if (input || interaction) return;
   if (!details) {
     evidence.documents ||= state.path === root + '/Documents';
     evidence.returnedHome ||= evidence.documents && state.path === root;
@@ -72,7 +76,7 @@ surface.onclose = () => {
     try {
       api.writeText(root, 'files-window-result.json', JSON.stringify({
         version: 1, native: true, root, flow, passed: true, closeObserved, evidence,
-        appId: 'org.pollyui.files-window-fixture', renamedName, captures,
+        appId: 'org.pollyui.files-window-fixture', renamedName, captures, interactionSamples,
       }), api.stat(root, false).identity);
       console.log('FILES_WINDOW_CLOSE_PASS: real ordinary Files window disposed; actual close receipt persisted');
     } catch (error) { console.error('FILES_WINDOW_FAIL: cannot persist actual close receipt: ' + error); }
@@ -104,7 +108,7 @@ const timer = setInterval(() => {
       message: state.message, dialog: state.dialog?.kind ?? null, activeElement: document.activeElement?.id || '', evidence, controls });
     if (receipt !== last) { console.log('FILES_WINDOW_STATE: ' + receipt); last = receipt; }
     if (!passed && driving && Object.values(evidence).every(Boolean)) {
-      if (!details && !mouse && !input && api.stat(root + '/' + renamedName, false).type !== 'directory')
+      if (!details && !mouse && !input && !interaction && api.stat(root + '/' + renamedName, false).type !== 'directory')
         throw new Error('Actual renamed directory must exist, not only an optimistic UI row');
       passed = true;
       console.log(input ? 'FILES_WINDOW_ACTIONS_PASS: native input foundation' :
@@ -203,7 +207,12 @@ async function drive() {
   }
   const state = () => app.controller.getState();
   await until(() => state().phase === 'ready' && state().path === root, 'private initial folder');
-  if (input) {
+  if (interaction) {
+    await runFilesInteractions({ app, flow, evidence, samples: interactionSamples, until, request, click, wheel,
+      captureFrame, close: () => { closingViaDriver = true; } });
+    await until(() => closeObserved, 'actual interaction WM close callback');
+    return;
+  } else if (input) {
     const surface = app.getWindow(), document = surface.document;
     const probe = document.createElement('view');
     probe.id = 'native-capture-probe';

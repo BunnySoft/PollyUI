@@ -1,7 +1,9 @@
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 
 const [mode, runtime, ownScript] = application.arguments;
-if (!['initial', 'small', 'details', 'details-small', 'mouse', 'input'].includes(mode) || typeof runtime !== 'string' || !runtime.startsWith('/') ||
+if (!['initial', 'small', 'details', 'details-small', 'mouse', 'input', 'text', 'text-small', 'text-narrow',
+  'text-lifecycle', 'text-lifecycle-small', 'text-lifecycle-narrow',
+  'scrollbar', 'scrollbar-small', 'scrollbar-narrow'].includes(mode) || typeof runtime !== 'string' || !runtime.startsWith('/') ||
     typeof ownScript !== 'string' || !ownScript.endsWith('/files-window-shell.mjs'))
   throw new Error('Trusted Files fixture supervisor requires initial, absolute rebuilt runtime and its own script');
 const api = requireFileSystem(desktop), root = api.locations().home;
@@ -22,9 +24,11 @@ async function run() {
   const details = mode.startsWith('details');
   const mouse = mode === 'mouse';
   const input = mode === 'input';
+  const interaction = mode.startsWith('text-lifecycle') ? 'text-lifecycle' :
+    mode.startsWith('text') ? 'text' : mode.startsWith('scrollbar') ? 'scrollbar' : null;
   const client = ownScript.slice(0, -'files-window-shell.mjs'.length) + 'files-window-client.mjs';
   const pid = desktop.spawnApplication([runtime, '--desktop', '--app-id', 'org.pollyui.files-window-fixture',
-    client, root, input ? '--input' : mouse ? '--mouse' : details ? mode === 'details-small' ? '--details-small' : '--details' :
+    client, root, interaction ? '--' + mode : input ? '--input' : mouse ? '--mouse' : details ? mode === 'details-small' ? '--details-small' : '--details' :
       mode === 'small' ? '--drive-small' : '--drive'], '', 'ordinary Files native pointer fixture');
   await until(() => exits.has(pid), 'ordinary Files child exit');
   if (exits.get(pid) !== 0) throw new Error('Ordinary Files fixture exited ' + exits.get(pid));
@@ -33,16 +37,24 @@ async function run() {
   if (receipt.version !== 1 || receipt.native !== true || receipt.root !== root || receipt.passed !== true ||
       receipt.closeObserved !== true || receipt.appId !== 'org.pollyui.files-window-fixture' ||
       receipt.renamedName !== 'New folde' ||
-      receipt.flow !== (input ? 'input' : mouse ? 'mouse' : details ? 'details' : 'browser') ||
-      (input ? ['capture', 'outsideMotion', 'release', 'clickSuppressed', 'cancellation', 'cursor', 'activation'] :
+      receipt.flow !== (interaction || (input ? 'input' : mouse ? 'mouse' : details ? 'details' : 'browser')) ||
+      (interaction === 'text' ? ['capture', 'outsideMotion', 'release', 'shiftSelection', 'focus', 'cursor',
+        'focusCancel', 'closeCancel'] :
+        interaction === 'text-lifecycle' ? ['capture', 'focus', 'cursor', 'horizontalScroll', 'detach', 'focusCancel', 'closeCancel'] :
+        interaction === 'scrollbar' ? ['capture', 'outsideMotion', 'release', 'page', 'keyboard', 'wheelSync',
+          'bounds', 'metadata', 'detach', 'focusCancel', 'closeCancel'] :
+        input ? ['capture', 'outsideMotion', 'release', 'clickSuppressed', 'cancellation', 'cursor', 'activation'] :
         mouse ? ['singleClick', 'doubleClick', 'documents', 'returnedHome'] :
         details ? ['documentOpenRequested', 'filter', 'address', 'properties'] :
         ['documents', 'returnedHome', 'folderCreated', 'folderRenamed', 'documentOpenRequested',
           'cancelled', 'wheel', 'keyboardRename', 'history', 'sort', 'context', 'filter', 'address'])
         .some(key => receipt.evidence?.[key] !== true) ||
-      (!details && !mouse && !input && api.stat(root + '/' + receipt.renamedName, false).type !== 'directory'))
+      (!details && !mouse && !input && !interaction && api.stat(root + '/' + receipt.renamedName, false).type !== 'directory'))
     throw new Error('Actual ordinary Files action/close/filesystem receipt is incomplete');
-  const stages = input ? ['input-ready', 'capture-released', 'before-wm-close'] :
+  const stages = interaction === 'text' ? ['text-selection', 'text-focus-restored', 'before-wm-close'] :
+    interaction === 'text-lifecycle' ? ['text-address-long', 'text-focus-restored', 'before-wm-close'] :
+    interaction === 'scrollbar' ? ['scrollbar-top', 'scrollbar-bottom', 'before-wm-close'] :
+    input ? ['input-ready', 'capture-released', 'before-wm-close'] :
     mouse ? ['home-browser', 'empty-folder', 'before-wm-close'] :
     details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
     ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',

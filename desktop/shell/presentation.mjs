@@ -1,4 +1,5 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
+import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
@@ -84,7 +85,7 @@ export function scrollDesktop(event, horizontalScroll = false) {
   const axis = horizontalScroll ? 'Left' : 'Top', extent = horizontalScroll ? 'Width' : 'Height';
   const end = node.childNodes.reduce((maximum, child) => Math.max(maximum,
     child['offset' + axis] + child['offset' + extent] - node['offset' + axis]), 0);
-  const maximum = Math.max(0, end - node['offset' + extent]);
+  const maximum = horizontalScroll ? Math.max(0, end - node['offset' + extent]) : verticalScrollMetrics(node).maximum;
   node['scroll' + axis] = Math.max(0, Math.min(maximum,
     Number(node['scroll' + axis]) + (horizontalScroll ? event.deltaX || event.deltaY : event.deltaY)));
 }

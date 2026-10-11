@@ -1331,10 +1331,13 @@ cancels the interaction with bubbling `mousecancel` and a `reason`. Cancellation
 clears ownership/buttons before notifying listeners, so it cannot reacquire or
 replay the cancelled press. Closed documents cannot acquire capture.
 
-Win32 uses `SetCapture` / `ReleaseCapture`. Wayland uses its verified live
-button grab (`SDL_WINDOW_MOUSE_CAPTURE`), which continues outside the window
-until all buttons are released; releasing DOM capture does not override the
-compositor's protocol grab. Other SDL backends use `SDL_CaptureMouse`.
+Win32 uses `SetCapture` / `ReleaseCapture`. Wayland uses its native implicit
+button grab, which continues outside the window until all buttons are released.
+Logical capture is bound to this window's delivered native DOWN through
+UP/cancel sequence: SDL may have pumped the whole batch and already cleared
+`SDL_WINDOW_MOUSE_CAPTURE`/mouse focus when JS handles its queued DOWN.
+It does not extend or override the compositor's protocol grab. Other SDL
+backends use `SDL_CaptureMouse`.
 Unavailable capture throws instead of silently behaving like capture.
 These are mouse-only APIs, not a complete multi-pointer/touch contract.
 
@@ -1361,6 +1364,19 @@ checks actual Win32 handles/cursors and thread-local focus without moving the
 physical pointer. The private `desktop-native-mouse` journey uses real Wayland
 pointer delivery and actual rendered acknowledgements to check capture outside
 the application, release, cancellation, cursor creation and normal close.
+
+`createTextInput({window: handle})` uses that window's document and native text
+cursor (an explicit `document` remains supported). Its captured selection ends
+on release, blur, cancellation or detach; cancelled releases do not publish
+primary selection. Shift arrows/Home/End and Shift-click extend an anchor, plain
+arrows collapse a selection, and long lines reveal the caret via `scrollLeft`.
+`focusColor` is also accepted by `setAppearance`. The small SDK vertical
+scrollbar helper uses the same capture lifecycle and actual unscrolled layout
+geometry as desktop wheel scrolling, not virtual pagination. Files supplies its
+existing bounded list and overlay rail. `gui-textinput`/`gui-scrollbar` are
+headless tests; the independent native `desktop-files-text`/`desktop-files-text-lifecycle`/`desktop-files-scrollbar`
+journeys cover those actual production widgets without lengthening the old
+Files browser/details flows.
 
 ### Clipboard and incoming drops
 

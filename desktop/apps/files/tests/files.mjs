@@ -318,6 +318,23 @@ test('column sorting and folder-local filtering preserve exact identities and re
   assert.equal(controller.getState().dialog, null);
   assert.equal(operations.filter(item => item[0] === 'rename').length, 0);
 });
+test('overlay scrollbar preserves continuous list and metadata widths at normal and narrow sizes', async () => {
+  const { controller } = fixture(); await controller.start();
+  for (const width of [1040, 680, 640]) {
+    const nodes = flatten(filesView(controller.getState(), controller, { width, height: 540 }));
+    const region = nodes.find(node => node.props?.id === 'files-list-region');
+    const list = nodes.find(node => node.props?.id === 'files-list');
+    const rail = nodes.find(node => node.props?.id === 'files-scrollbar');
+    assert.deepEqual(region.children.map(node => node.props.id), ['files-list', 'files-scrollbar']);
+    assert.equal(rail.props.style.position, 'absolute'); assert.equal(rail.props.style.width, 10);
+    assert.equal(rail.props['aria-controls'], 'files-list');
+    assert.equal(list.props.style.padding, 4);
+    assert.ok(!Object.hasOwn(list.props.style, 'paddingRight'));
+    const row = nodes.find(node => node.props?.id === 'files-entry-0');
+    assert.deepEqual(row.children.map(node => node.props.style.width), ['44%', '23%', '21%', '12%']);
+    assert.equal(nodes.filter(node => node.props?.id?.startsWith('files-entry-')).length, visibleEntries(controller.getState()).length);
+  }
+});
 test('keyboard movement follows the sorted filtered rows, address mode and inline rename do not swallow input keys', async () => {
   const { controller } = fixture(); await controller.start();
   controller.filter('中文');
@@ -361,7 +378,7 @@ test('fixture close marker follows persisted callback receipt without needing a 
     const calls = [], evidence = { actualAction: true }, captures = mode === 'incomplete-captures' ? [] : ['actual.png'];
     const surface = { onclose() { calls.push('original-close'); } };
     const context = { app: { getWindow: () => surface, controller: { getState: () => ({ phase: 'disposed' }) } },
-      evidence, captures, captureStages: ['only-stage'], mode: '--drive', driving: true, details: false, flow: 'browser',
+      evidence, captures, interactionSamples: [], captureStages: ['only-stage'], mode: '--drive', driving: true, details: false, flow: 'browser',
       closingViaDriver: mode !== 'no-driver-close',
       driveFailed: mode === 'drive-failed', root: '/tmp/polly-files-window-unit', renamedName: 'New folde',
       console: { log(message) { calls.push(message); }, error(message) { calls.push(message); } },
