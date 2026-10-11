@@ -119,6 +119,25 @@ or merely moving UI while retaining its old backend.
 SM-01 does not add a root service, change system authorization policy, migrate
 other Settings pages or rebuild the physically accepted Alpha.6 media.
 
+## Modern desktop presentation and interaction
+
+The user selected Windows 11 as the layout/style direction for Settings, Shell
+and Files. Implement original components and icons over PollyUI, not copied
+system assets. The accepted Alpha.6 demonstrated function, not a finished UX.
+
+| Surface | Concrete change | Preserved boundary |
+|---|---|---|
+| Settings | Consistent sidebar, page headings, grouped setting cards, theme-preview tiles and concise status/error placement; development paths move to explicit details | Appearance/About use the existing narrow IPC; four managed pages retain explicit Shell-panel delegation |
+| Shell | Coherent modern taskbar/launcher/menu spacing, typography, original icon treatment and fresh-session modern default | Window/workspace controls, input focus, power confirmation, rollback and user-selected classic themes |
+| Files | Explorer-like navigation/command/address areas and Places sidebar; real name/type/date/size columns instead of per-file buttons and default UID diagnostics | Current native file operations, exact-entry identity and no-clobber/error semantics |
+| Files interaction | Clear selection/focus, double-click/Enter open, navigation shortcuts, sorting and current-folder filtering, context actions and rename behavior | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
+
+One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
+and composition. Their code ownership is kept separate. Visual acceptance uses
+actual rendered windows and layout/interaction checks, not screenshots of a
+mock or a theme-color-only change. No production blur/GPU effect is claimed
+without a working implementation. Existing Alpha artifacts remain untouched.
+
 ## Engines & pipeline
 
 | Feature | Status | Notes |
