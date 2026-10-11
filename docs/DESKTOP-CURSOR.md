@@ -5,6 +5,52 @@ cursor, overridable by windows**, for the version after Alpha.7. This is a
 design assessment, not implemented functionality or a frozen release/version
 number. Alpha.7 remains Files interaction polish and a separately qualified ISO.
 
+## Proposed initial design
+
+Use one named Xcursor theme directory, not a hierarchy of shape/animation
+subdirectories or an image-recognition scheme:
+
+```text
+PollyRabbit\
+  index.theme
+  cursors\
+    default
+    motion
+    press
+    click
+    drag
+    text
+    ew-resize
+    ns-resize
+    nesw-resize
+    nwse-resize
+    not-allowed
+```
+
+Each file is an Xcursor resource containing one or more frames and appropriate
+sizes. `default`, `text` and the resize/permission names use existing cursor
+conventions. `motion`, `press`, `click` and `drag` are PollyOS-specific action
+resource names, not new Wayland protocol enum values. No `idle` resource is
+required: the default resting image is named `default`.
+
+PollyWM owns selection: resting selects `default`, pointer movement selects
+`motion`, a held button selects `press`, movement beyond click slop selects
+`drag`, and an uncancelled click selects `click` for one short animation.
+Completion recomputes the current state. A text/resize/client-custom override
+keeps its own cursor instead of being replaced by those rabbit actions.
+Motion and drag may loop; click has a compositor-owned completion deadline.
+
+Missing rabbit action resources fall back to the selected theme's `default`.
+Missing precision shapes fall back to the matching conventional built-in
+shape, not a default rabbit. A missing/broken default theme falls back to the
+conventional built-in default with diagnostics. The first implementation uses
+packaged original assets; a user-upload/theme editor is not part of it.
+
+Settings/Shell may later choose theme, size and static-animation mode. Per-input
+selection and resource/timer lifecycle stay native, not in per-app JS listeners.
+Keep the hotspot fixed throughout rabbit animation. This is the proposal for
+the next version, not code or cursor artwork already delivered.
+
 ## Existing substrate and actual gaps
 
 The current compositor already owns `wlr_cursor`, an Xcursor manager, pointer
