@@ -327,8 +327,10 @@ updates and production session protection remain future work.
 The current source freezes **0.1.0-alpha.7** with modern Shell/Settings/Files,
 JS iwd and native mouse capture/cancellation/cursors, plus captured text
 drag-selection, Shift selection, a real draggable Files scrollbar and
-keyboard/focus polish. Fresh package/ISO construction and VM acceptance are
-pending; the accepted alpha.6 image is unchanged and does not contain these
+keyboard/focus polish. Fresh package and ISO content checks passed, but complete
+VM acceptance remains blocked. The user requested the explicitly **unqualified**
+candidate for physical testing; see [its known limits and location](./desktop/LIVE.md).
+The accepted alpha.6 image is unchanged and does not contain these
 later changes. The [Alpha.7 delivery gate](./ROADMAP.md#alpha7-files-interaction-and-physical-test-candidate)
 tracks the new memory-only physical-test candidate. System rabbit cursor
 animation and materials remain separate next-version work.

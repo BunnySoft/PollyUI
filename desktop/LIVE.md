@@ -1,10 +1,23 @@
 # Memory-only UEFI development image
 
+**Alpha.7 unqualified test candidate:** the user explicitly chose delivery for
+their own physical-machine testing despite incomplete VM acceptance. The ISO
+is under `dist\pollydesktop-0.1.0-alpha.7-debian13-31da563-unqualified-test\`,
+707733504 bytes, SHA-256
+`25a031343d84850bd738ea8a1f0a07342abe797effb3253d68869891fb7e17b4`.
+Read `UNQUALIFIED-NOT-FOR-ACCEPTED-HANDOFF.txt` and `candidate-status.json`.
+This is not a fully accepted image: VM keyboard theme selection was inconsistent,
+one Settings reopen exceeded its existing 20-second bound with unresolved cause,
+and the new ISO-level Files interaction journey was not completed. Native
+fixture/package and ISO-byte checks do not replace those missing VM gates.
+Original failed/diagnostic evidence is retained, including an incomplete RPC
+export. There is no passing complete VM result or physical-hardware claim.
+
 **Alpha.7 source freeze:** `desktop/VERSION` is `0.1.0-alpha.7`, including the
 modern Shell/Settings/Files, JS iwd service, native mouse interaction mechanisms,
-and Files text-selection/scrollbar/keyboard-focus polish. Fresh runtime packaging,
-new UEFI media and actual VM qualification are pending; no Alpha.7 ISO or
-physical-machine pass is claimed here. The release producer must use the exact
+and Files text-selection/scrollbar/keyboard-focus polish. Fresh runtime packaging
+and ISO content verification passed; complete VM qualification remains blocked.
+No physical-machine pass is claimed here. The release producer used the exact
 clean freeze commit and record actual build identity, not reuse alpha.6 binaries.
 No extra file operations, animated rabbit cursor or materials are in this scope.
 See the [Alpha.7 gate](../ROADMAP.md#alpha7-files-interaction-and-physical-test-candidate).

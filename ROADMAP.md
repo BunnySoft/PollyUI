@@ -74,15 +74,16 @@ polish. The selected scope is captured text drag-selection, a genuinely
 draggable list scrollbar, and keyboard/focus feedback. No new file operations,
 multi-selection, outgoing drag-and-drop or custom animated cursors are included.
 The native mouse mechanisms and Files/SDK polish are integrated. The source
-version is frozen as `0.1.0-alpha.7`; fresh package/media and VM qualification
-remain pending. This is not a claim that a new ISO has already passed.
+version is frozen as `0.1.0-alpha.7`. Fresh package/media content checks passed,
+but full VM acceptance is blocked. The user explicitly chose the unqualified
+candidate for their own physical-machine testing; this is not an accepted release.
 
 | Gate | Required outcome | State |
 |---|---|---|
 | Files polish | Real drag-selection and scrollbar input, cancellation/lifetime and keyboard/focus behavior, with existing file operation semantics preserved | Integrated `f49dffd`: eight native journeys / 29 PNGs at normal/narrow sizes; parent verified original hashes/EOL-only source differences and Windows/Linux integration. Paired-click/cancellation fixture corrections `592895f` also passed |
 | Runtime freeze | Integrate the qualified changes, set `desktop/VERSION` to `0.1.0-alpha.7`, and record the clean source revision | Version freeze in this revision; the media producer must clone its exact clean Git commit and preserve that full SHA in runtime/package/ISO provenance |
-| Package and media | Fresh frozen build, install/dependency/provenance checks and a new Debian 13 x86_64 UEFI RAM-only ISO | Preflight complete; fresh build/media next, no new qualified ISO yet |
-| VM and handoff | Normal boot/application acceptance against the actual ISO, then deliver those same bytes with hashes, logs and qualification records | Pending; no Alpha.7 physical-machine acceptance is claimed |
+| Package and media | Fresh frozen build, install/dependency/provenance checks and a new Debian 13 x86_64 UEFI RAM-only ISO | Clean runtime `31da563`, native package checks and 167 runtime/overlay ISO files verified; ISO SHA-256 `25a031343d84850bd738ea8a1f0a07342abe797effb3253d68869891fb7e17b4` |
+| VM and handoff | Normal boot/application acceptance against the actual ISO, then deliver those same bytes with hashes, logs and qualification records | **Blocked:** inconsistent Settings keyboard theme selection, one unresolved 20-second reopen timeout, and incomplete ISO Files interaction sequence. User requested the explicitly unqualified candidate in `dist\pollydesktop-0.1.0-alpha.7-debian13-31da563-unqualified-test\`; no complete VM or hardware pass claimed |
 
 Only one media/VM lane runs after the freeze. The accepted alpha.6 ISO and its
 evidence stay unchanged in their own directory. Alpha.7 uses a new output
