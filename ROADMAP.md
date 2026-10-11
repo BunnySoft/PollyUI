@@ -90,6 +90,24 @@ The earlier user-requested WSLg preview exited independently; do not restart it
 or confuse it with the new media. Preserve its archive and all previous ISO bytes.
 No materials, file-operation expansion or cursor upload/editor is included.
 
+## Native GUI contract workstreams
+
+The user selected native window ownership, application popup/modal relations
+and size constraints as the next implementation on 2026-10-11. Work uses
+isolated child sessions: non-conflicting changes may run in parallel; work
+sharing Host/Bridge files first performs read-only research and waits for the
+active increment to be integrated before writing those files.
+
+| Workstream | Current assignment | Boundary |
+|---|---|---|
+| Native windows | Implement owned windows, real application popups, native modal relations and size constraints | Preserve existing ordinary windows, protected roles and close/input lifetimes; no JS widget policy |
+| Outgoing native drag | Parallel read-only API/ownership/interop research | Implementation waits for shared-file coordination; no new Files mutations |
+| Native IME extensions | Parallel read-only surrounding-text/selection/editing protocol research | Preserve Unicode/composition and sensitive-field contracts; no JS editor expansion |
+
+GUI automation and system accessibility implementation are not started by
+these workstreams. Materials remain a separate candidate. This work does not
+change the delivered Alpha.8 ISO, version freeze or its original receipts.
+
 ## Alpha.7 Files interaction and physical-test candidate
 
 The user requested a new physical-test ISO after a small Files interaction
