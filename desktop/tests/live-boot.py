@@ -269,6 +269,8 @@ def main():
                     fixture = {
                         "guest.py": Path(__file__).with_name("live-newarch-guest.py").read_bytes(),
                         "files.mjs": Path(__file__).with_name("live-files-guest.mjs").read_bytes(),
+                        "settings.mjs": Path(__file__).with_name("live-settings-guest.mjs").read_bytes(),
+                        "interactions.mjs": Path(__file__).with_name("live-files-interactions-guest.mjs").read_bytes(),
                     }
                     payload = base64.b64encode(zlib.compress(json.dumps(
                         {name: value.decode() for name, value in fixture.items()}).encode())).decode()
@@ -280,7 +282,9 @@ def main():
                               "d=json.loads(zlib.decompress(base64.b64decode(pathlib.Path("
                               "'/tmp/polly-alpha-fixtures.b64').read_text())));"
                               "pathlib.Path('/tmp/polly-alpha-guest.py').write_text(d['guest.py']);"
-                              "pathlib.Path('/tmp/polly-alpha-files-guest.mjs').write_text(d['files.mjs'])\"\n")
+                              "pathlib.Path('/tmp/polly-alpha-files-guest.mjs').write_text(d['files.mjs']);"
+                              "pathlib.Path('/tmp/polly-alpha-settings-guest.mjs').write_text(d['settings.mjs']);"
+                              "pathlib.Path('/tmp/polly-alpha-files-interactions-guest.mjs').write_text(d['interactions.mjs'])\"\n")
                     stages = {}
 
                     def stage(name):
@@ -362,10 +366,120 @@ def main():
                     stage("reopen")
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-reopened.ppm")})
+                    files_interactions = {}
+                    stage("files-entry")
+                    wait_log("Mapped org.pollyui.files", 10)
+                    time.sleep(1)
+                    keys("end")
+                    execute("screendump", {"filename": str(evidence / "files-installed-entry.ppm")})
+                    keys("alt", "f4")
+                    stage("files-entry-closed")
+                    stage("files-start")
+                    execute("screendump", {"filename": str(evidence / "files-ready.ppm")})
+                    with (evidence / "files-ready.ppm").open("rb") as image:
+                        check_header = image.readline()
+                        if check_header != b"P6\n":
+                            raise RuntimeError("Unexpected native VM screenshot format")
+                        dimensions = image.readline()
+                        while dimensions.startswith(b"#"):
+                            dimensions = image.readline()
+                        screen_width, screen_height = map(int, dimensions.split())
+
+                    def pointer(x, y, button=None):
+                        events = [{"type": "abs", "data": {"axis": "x", "value":
+                                   round(x / (screen_width - 1) * 32767)}},
+                                  {"type": "abs", "data": {"axis": "y", "value":
+                                   round(y / (screen_height - 1) * 32767)}}]
+                        if button is not None:
+                            events.append({"type": "btn", "data": {"down": button, "button": "left"}})
+                        execute("input-send-event", {"events": events})
+                        time.sleep(0.2)
+
+                    pointer(screen_width // 2, screen_height // 2)
+                    observed = stage("files-state")
+                    if observed["phase"] != "ready" or observed["error"] or not observed["pointer"]:
+                        raise RuntimeError("Actual Files window did not receive native pointer calibration")
+                    offset_x = screen_width // 2 - observed["pointer"]["x"]
+                    offset_y = screen_height // 2 - observed["pointer"]["y"]
+
+                    def control_point(state, name):
+                        rect = state["controls"][name]
+                        return offset_x + rect["x"] + rect["width"] / 2, offset_y + rect["y"] + rect["height"] / 2
+
+                    pointer(*control_point(observed, "filter"), True)
+                    pointer(*control_point(observed, "filter"), False)
+                    keys("ctrl", "v")
+                    observed = stage("files-state")
+                    if observed["filter"] != "row" or observed["activeElement"] != "files-filter":
+                        raise RuntimeError("Native Files paste/focus did not edit the real filter")
+                    y = offset_y + observed["controls"]["filter"]["y"] + observed["controls"]["filter"]["height"] / 2
+                    pointer(offset_x + observed["textStartX"], y, True)
+                    pointer(offset_x + observed["width"] + 12, y)
+                    held = stage("files-state")
+                    if not held["controls"]["filter"]["capture"] or not any(
+                            event["id"] == "filter" and event["type"] == "mousemove" and
+                            event["buttons"] == 1 and event["x"] > held["width"] for event in held["events"]):
+                        raise RuntimeError("Real USB pointer did not retain Files text capture outside its surface")
+                    pointer(offset_x + observed["width"] + 12, y, False)
+                    keys("ctrl", "c")
+                    released = stage("files-state")
+                    if released["clipboard"] != "ow" or released["controls"]["filter"]["capture"] or not any(
+                            event["id"] == "filter" and event["type"] == "lostmousecapture" for event in released["events"]):
+                        raise RuntimeError("Actual Files captured selection/release/clipboard failed")
+                    execute("screendump", {"filename": str(evidence / "files-text-selection.ppm")})
+                    files_interactions["textCapture"] = {"held": held, "released": released}
+                    keys("backspace")
+                    edited = stage("files-state")
+                    if edited["filter"] != "r":
+                        raise RuntimeError("Native keyboard did not replace the actual dragged selection")
+                    keys("ctrl", "v")
+                    keys("shift", "left")
+                    keys("ctrl", "c")
+                    shifted = stage("files-state")
+                    if shifted["filter"] != "row" or shifted["clipboard"] != "w" or shifted["activeElement"] != "files-filter":
+                        raise RuntimeError("Actual Files Shift selection/keyboard focus failed")
+                    files_interactions["keyboardFocus"] = shifted
+                    keys("ctrl", "a")
+                    keys("backspace")
+                    observed = stage("files-state")
+                    if observed["filter"] != "" or observed["metrics"]["maximum"] <= 0:
+                        raise RuntimeError("Real Files list did not expose scrollable synthetic rows")
+                    x, y = control_point(observed, "scroll-thumb")
+                    pointer(x, y, True)
+                    track = observed["controls"]["scrollbar"]
+                    pointer(offset_x + observed["width"] + 12, offset_y + track["y"] + track["height"] + 12)
+                    held = stage("files-state")
+                    if not held["controls"]["scrollbar"]["capture"] or held["metrics"]["value"] != held["metrics"]["maximum"]:
+                        raise RuntimeError("Real Files scrollbar drag did not capture and clamp at actual list bottom")
+                    pointer(offset_x + observed["width"] + 12, offset_y + track["y"] + track["height"] + 12, False)
+                    released = stage("files-state")
+                    if released["controls"]["scrollbar"]["capture"] or not any(
+                            event["id"] == "scrollbar" and event["type"] == "lostmousecapture" for event in released["events"]):
+                        raise RuntimeError("Real Files scrollbar did not release native capture")
+                    execute("screendump", {"filename": str(evidence / "files-scrollbar-bottom.ppm")})
+                    files_interactions["scrollbarCapture"] = {"held": held, "released": released}
+                    keys("home")
+                    homed = stage("files-state")
+                    if homed["metrics"]["value"] != 0 or homed["activeElement"] != "files-scrollbar":
+                        raise RuntimeError("Native scrollbar Home/focus did not restore actual list top")
+                    keys("pgdn")
+                    paged = stage("files-state")
+                    if abs(paged["metrics"]["value"] - paged["metrics"]["height"]) > 0.1:
+                        raise RuntimeError("Native scrollbar PageDown did not use the actual viewport")
+                    if paged["controls"]["list"]["width"] != paged["controls"]["columns"]["width"] or \
+                            paged["controls"]["scrollbar"]["width"] != 10:
+                        raise RuntimeError("Actual overlay scrollbar changed list/header width or rail contract")
+                    files_interactions["scrollbarKeyboard"] = {"home": homed, "pageDown": paged}
+                    keys("alt", "f4")
+                    closed = stage("files-state")
+                    if closed.get("stopped") is not True or closed["phase"] != "disposed":
+                        raise RuntimeError("Native Files close did not dispose the actual production app")
+                    files_interactions["closed"] = closed
                     new_architecture = {"harnessRevision": args.harness_revision,
                                         "runtimeSourceRevision": args.runtime_revision,
                                         "fixturesInIso": False, "ordinaryUser": 1000,
                                         "actualStages": stages,
+                                        "filesInteractions": files_interactions,
                                         "input": "QMP physical USB keyboard and ordinary public Live serial login"}
                 result = {
                     "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,

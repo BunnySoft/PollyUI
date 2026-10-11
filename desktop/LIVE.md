@@ -141,6 +141,16 @@ storage enumeration and its GPT/ESP, not just an optical boot of the same files.
 The fixture explicitly selects the serial VM menu entry; physical boots keep
 local logs rather than depending on a serial port.
 
+For Alpha.7, the ordinary-user RAM fixtures also read the production Shell's
+About/Appearance build snapshots and check the exact frozen revision, release
+and clean-source state against the explicitly selected runtime. Settings captures
+retain the visible release footer and About text. A separate production Files
+window is observed, not controlled through its controller: QMP USB pointer/key
+events exercise outside-window text capture, clipboard selection, Shift editing,
+scrollbar capture/release, viewport paging, focus and disposal. These bounded VM
+checks complement the independent normal/narrow native Files qualification;
+they do not qualify physical input devices or install fixtures in the ISO.
+
 The original seatd baseline and its PAM/elogind successor were both verified with
 OVMF/KVM, virtio-vga, 1280x800, Pixman compositor and
 raster PollyUI. Rime and private audio start with the desktop, but this boot

@@ -106,6 +106,17 @@ def launch_settings(page, env, cwd):
     return result
 
 
+def running_build(env, revision):
+    result = subprocess.run(["/usr/bin/pollyui", "--app-id", "org.pollyui.alpha-build",
+                             "/tmp/polly-alpha-settings-guest.mjs", revision],
+                            env=env, cwd="/usr/share/pollyui", text=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
+    prefix = "POLLY_VM_SETTINGS_BUILD="
+    check(result.returncode == 0 and prefix in result.stdout,
+          "Actual running Shell build snapshot failed: " + result.stdout)
+    return json.loads(result.stdout.split(prefix, 1)[1].splitlines()[0])
+
+
 def profile_launch(page, env, cwd, shell):
     check(env["DBUS_SESSION_BUS_ADDRESS"] == env["POLLY_SESSION_BUS_ADDRESS"],
           "Refuse to monitor an ambient bus")
@@ -154,7 +165,56 @@ def main():
     stage = sys.argv[1]
     state_file = Path("/tmp/polly-alpha-acceptance-state.json")
     shell, env = shell_environment()
-    if stage in ("prepare", "prepare-profile"):
+    if stage == "files-entry":
+        root = Path("/tmp/polly-alpha-entry")
+        root.mkdir(mode=0o700)
+        for index in range(96):
+            (root / f"row-{index:03}.txt").write_text("Synthetic installed Files entry row.\n")
+        with (root / "entry.log").open("x") as log:
+            child = subprocess.Popen(["/usr/bin/polly-files", str(root)], env=env, cwd="/",
+                                     stdout=log, stderr=subprocess.STDOUT)
+        deadline = time.monotonic() + 10
+        while True:
+            args = process_arguments().get(child.pid, [])
+            if "--desktop" in args and "org.pollyui.files" in args and \
+                    "/usr/share/pollyui/desktop/apps/files/main.mjs" in args:
+                break
+            check(child.poll() is None and time.monotonic() < deadline,
+                  "Installed Files entry did not launch its actual production resource")
+            time.sleep(0.1)
+        (root / "pid").write_text(str(child.pid))
+        emit(stage, {"pid": child.pid, "args": args, "cwd": "/",
+                     "entry": "/usr/bin/polly-files", "productionResource": True})
+    elif stage == "files-entry-closed":
+        root = Path("/tmp/polly-alpha-entry")
+        check(int((root / "pid").read_text()) not in process_arguments(),
+              "Actual installed Files process remained after native WM close")
+        log = (root / "entry.log").read_text()
+        check(not any(marker in log for marker in ("Uncaught", "[files]", "FAILED")),
+              "Actual installed Files entry reported a resource/startup error: " + log)
+        emit(stage, {"closed": True, "nativeLog": log[-2000:]})
+    elif stage == "files-start":
+        root = Path("/tmp/polly-alpha-interactions")
+        root.mkdir(mode=0o700)
+        for index in range(96):
+            (root / f"row-{index:03}.txt").write_text("Synthetic RAM-only Alpha.7 Files row.\n")
+        log = (root / "native.log").open("x")
+        child = subprocess.Popen(["/usr/bin/pollyui", "--app-id", "org.pollyui.alpha-interactions",
+                                  "/tmp/polly-alpha-files-interactions-guest.mjs", str(root)],
+                                 env=env, cwd="/usr/share/pollyui", stdout=log, stderr=subprocess.STDOUT)
+        log.close()
+        deadline = time.monotonic() + 10
+        while not (root / "observed.json").exists():
+            check(child.poll() is None and time.monotonic() < deadline,
+                  "Native production Files observer failed to start: " + (root / "native.log").read_text())
+            time.sleep(0.1)
+        emit(stage, {"pid": child.pid, "source": "production createFilesApp; observation only; QMP USB input"})
+    elif stage == "files-state":
+        root = Path("/tmp/polly-alpha-interactions")
+        check("FAILED" not in (root / "native.log").read_text(),
+              "Native production Files observer reported failure")
+        emit(stage, json.loads((root / "observed.json").read_text()))
+    elif stage in ("prepare", "prepare-profile"):
         origin = json.loads(Path("/usr/share/pollyui/runtime-origin.json").read_text())
         check_runtime_origin(origin, sys.argv[2])
         file, value = configuration()
@@ -183,6 +243,7 @@ def main():
         state_file.write_text(json.dumps(state))
         state_file.chmod(0o600)
         emit(stage, {**state, "filesNative": True, "configuration": value["theme"],
+                     "runningBuild": running_build(env, sys.argv[2]),
                      "runtimeManifestSha256": origin["runtimeManifestSha256"]})
     else:
         state = json.loads(state_file.read_text())
@@ -196,17 +257,18 @@ def main():
                 check(value["theme"]["filesEnabled"] is False, "Use packaged themes did not persist")
             if stage == "user-theme":
                 check(value["theme"]["filesEnabled"] is True, "User theme was not read through the JS file path")
-            emit(stage, {"shellPid": shell, "settingsPid": state["settingsPid"], "configuration": value["theme"]})
+            emit(stage, {"shellPid": shell, "settingsPid": state["settingsPid"], "configuration": value["theme"],
+                         "runningBuild": running_build(env, sys.argv[2])})
         elif stage == "about":
             launch_settings("about", env, "/")
             check(settings_pid(shell) == state["settingsPid"],
                   "About did not present in the existing production Settings process")
-            emit(stage, {"sameSettingsPid": state["settingsPid"]})
+            emit(stage, {"sameSettingsPid": state["settingsPid"], "runningBuild": running_build(env, sys.argv[2])})
         elif stage == "appearance":
             launch_settings("appearance", env, "/tmp")
             check(settings_pid(shell) == state["settingsPid"],
                   "Appearance did not present in the existing production Settings process")
-            emit(stage, {"sameSettingsPid": state["settingsPid"]})
+            emit(stage, {"sameSettingsPid": state["settingsPid"], "runningBuild": running_build(env, sys.argv[2])})
         elif stage == "reopen":
             check(not any("--managed" in args and "org.pollyui.settings" in args
                           for args in process_arguments().values()), "Settings window close did not end its owned process")
@@ -215,7 +277,8 @@ def main():
             check(pid != state["settingsPid"], "Closed Settings did not reopen a new generation")
             state["settingsPid"] = pid
             state_file.write_text(json.dumps(state))
-            emit(stage, {"shellPid": shell, "newSettingsPid": pid, "configuration": value["theme"]})
+            emit(stage, {"shellPid": shell, "newSettingsPid": pid, "configuration": value["theme"],
+                         "runningBuild": running_build(env, sys.argv[2])})
         else:
             raise ValueError("Unknown acceptance stage")
 
