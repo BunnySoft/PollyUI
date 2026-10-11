@@ -29,6 +29,12 @@ struct PuBridge {
     PuNode    *hovered;   /* element under the pointer (for enter/leave), or NULL */
     PuNode    *click_target;
     bool       double_click;
+    PuNode    *pressed[5], *released[5], *captured;
+    float      press_x[5], press_y[5];
+    unsigned   mouse_buttons, dragged;
+    bool       cancelling_mouse;
+    PuMouseCaptureFn capture_callback;
+    void      *capture_user;
     PuBridge  *root, *next;
     JSValue    document;
     bool       native_owned;
@@ -138,6 +144,7 @@ static JSValue js_create_bitmap(JSContext *ctx, JSValueConst self, int argc, JSV
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path);
 static int clear_input(PuBridge *b);
 static void end_composition(PuBridge *b, const char *text);
+static int release_mouse_capture(PuBridge *b);
 
 static PuBridge *document_for_node(JSContext *ctx, PuNode *node)
 {
@@ -155,6 +162,15 @@ static void reset_detached_input(JSContext *ctx)
     for (;;) {
         int changed = 0;
         for (PuBridge *b = root; b; b = b->next) {
+            int detached_mouse = b->captured && document_for_node(ctx, b->captured) != b;
+            for (int i = 0; i < 5; i++)
+                detached_mouse |= (b->pressed[i] && document_for_node(ctx, b->pressed[i]) != b) ||
+                    (b->released[i] && document_for_node(ctx, b->released[i]) != b);
+            if (detached_mouse && !b->cancelling_mouse) {
+                pu_bridge_cancel_mouse(b, "node-detached");
+                changed = 1;
+                break;
+            }
             PuNode **slot = b->focused && document_for_node(ctx, b->focused) != b ?
                 &b->focused : b->hovered && document_for_node(ctx, b->hovered) != b ? &b->hovered :
                 b->click_target && document_for_node(ctx, b->click_target) != b ? &b->click_target : NULL;
@@ -187,6 +203,11 @@ static void free_document(PuBridge *b)
     pu_node_unref(b->input_owner);
     pu_node_unref(b->composition);
     pu_node_unref(b->click_target);
+    pu_node_unref(b->captured);
+    for (int i = 0; i < 5; i++) {
+        pu_node_unref(b->pressed[i]);
+        pu_node_unref(b->released[i]);
+    }
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); }
     pu_node_unref(b->body);
@@ -622,6 +643,8 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
             JS_SetPropertyStr(ctx, ev, "button", JS_NewInt32(ctx, data->pointer->button));
             JS_SetPropertyStr(ctx, ev, "buttons", JS_NewUint32(ctx, data->pointer->buttons));
             JS_SetPropertyStr(ctx, ev, "detail", JS_NewInt32(ctx, data->pointer->detail));
+            if (data->pointer->reason)
+                JS_SetPropertyStr(ctx, ev, "reason", JS_NewString(ctx, data->pointer->reason));
         }
         if (data->wheel) {
             JS_SetPropertyStr(ctx, ev, "deltaX", JS_NewFloat64(ctx, data->wheel->delta_x));
@@ -734,9 +757,148 @@ int pu_bridge_dispatch_key(PuBridge *b, const PuKeyEvent *event)
  * mouseleave/mouseenter (non-bubbling) as the hovered element changes. */
 static void node_set_state(PuNode *n, unsigned flag, int on, int up_path); /* fwd */
 
+void pu_bridge_set_mouse_capture_callback(PuBridge *b, PuMouseCaptureFn callback, void *user)
+{
+    b->capture_callback = callback;
+    b->capture_user = user;
+}
+int pu_bridge_has_mouse_capture(PuBridge *b) { return b && b->captured != NULL; }
+
+static int release_mouse_capture(PuBridge *b)
+{
+    PuNode *node = b->captured;
+    if (!node) return 1;
+    b->captured = NULL;
+    int result = b->capture_callback && b->capture_callback(0, b->capture_user);
+    dispatch_impl(b, node, "lostmousecapture", NULL, 1);
+    pu_node_unref(node);
+    return result;
+}
+
+void pu_bridge_cancel_mouse(PuBridge *b, const char *reason)
+{
+    if (!b || b->cancelling_mouse) return;
+    JSValue keep = JS_DupValue(b->ctx, b->document);
+    b->cancelling_mouse = true;
+    PuNode *targets[6] = { b->captured };
+    b->captured = NULL;
+    for (int i = 0; i < 5; i++) {
+        targets[i + 1] = b->pressed[i];
+        b->pressed[i] = NULL;
+        pu_node_unref(b->released[i]); b->released[i] = NULL;
+    }
+    b->mouse_buttons = b->dragged = 0;
+    b->double_click = false;
+    pu_node_unref(b->click_target); b->click_target = NULL;
+    if (targets[0] && b->capture_callback && !b->capture_callback(0, b->capture_user))
+        fprintf(stderr, "[gui] Cannot release cancelled mouse capture\n");
+    PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1, .reason = reason };
+    for (int i = 0; i < 6; i++) {
+        int duplicate = 0;
+        for (int j = 0; j < i; j++) if (targets[j] == targets[i]) duplicate = 1;
+        if (targets[i] && !duplicate)
+            dispatch_impl(b, targets[i], "mousecancel", &(PuEventData){ .pointer = &event }, 1);
+    }
+    if (targets[0]) dispatch_impl(b, targets[0], "lostmousecapture", NULL, 1);
+    for (int i = 0; i < 6; i++) pu_node_unref(targets[i]);
+    b->cancelling_mouse = false;
+    JS_FreeValue(b->ctx, keep);
+}
+
+static PuBridge *mouse_document(JSContext *ctx, JSValueConst self)
+{
+    PuNode *node = self_node(self);
+    PuBridge *b = document_for_node(ctx, node);
+    if (!b || !b->native_owned || !b->capture_callback) {
+        JS_ThrowTypeError(ctx, "Mouse capture requires a live attached document");
+        return NULL;
+    }
+    return b;
+}
+
+static JSValue js_node_setMouseCapture(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argv;
+    if (argc) return JS_ThrowTypeError(ctx, "setMouseCapture takes no arguments");
+    PuBridge *b = mouse_document(ctx, self);
+    if (!b) return JS_EXCEPTION;
+    if (!b->mouse_buttons || b->cancelling_mouse)
+        return JS_ThrowTypeError(ctx, "Mouse capture requires an active mouse press");
+    PuNode *node = self_node(self);
+    if (b->captured == node) return JS_UNDEFINED;
+    if (b->captured && !release_mouse_capture(b))
+        return JS_ThrowInternalError(ctx, "Cannot release previous native mouse capture");
+    if (b->captured)
+        return JS_ThrowTypeError(ctx, "Mouse capture changed during the release callback");
+    if (!b->mouse_buttons || document_for_node(ctx, node) != b)
+        return JS_ThrowTypeError(ctx, "Mouse interaction ended while changing capture");
+    if (!b->capture_callback || !b->capture_callback(1, b->capture_user))
+        return JS_ThrowInternalError(ctx, "Native mouse capture is unavailable or failed");
+    b->captured = node; pu_node_ref(node);
+    dispatch_impl(b, node, "gotmousecapture", NULL, 1);
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_releaseMouseCapture(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argv;
+    if (argc) return JS_ThrowTypeError(ctx, "releaseMouseCapture takes no arguments");
+    PuBridge *b = mouse_document(ctx, self);
+    if (!b) return JS_EXCEPTION;
+    if (b->captured == self_node(self) && !release_mouse_capture(b))
+        return JS_ThrowInternalError(ctx, "Cannot release native mouse capture");
+    return JS_UNDEFINED;
+}
+
+static JSValue js_node_hasMouseCapture(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)argv;
+    if (argc) return JS_ThrowTypeError(ctx, "hasMouseCapture takes no arguments");
+    PuBridge *b = mouse_document(ctx, self);
+    return b ? JS_NewBool(ctx, b->captured == self_node(self)) : JS_EXCEPTION;
+}
+
 int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent *event)
 {
     if (!b) return 0;
+    if (event->type == PU_POINTER_CANCEL) {
+        pu_bridge_cancel_mouse(b, event->reason ? event->reason : "host-cancelled");
+        return 1;
+    }
+    if (b->cancelling_mouse) return 0;
+    if (target && document_for_node(b->ctx, target) != b) target = NULL;
+    int button = event->button;
+    unsigned mask = pu_button_mask(button);
+    if (event->type == PU_POINTER_DOWN && mask) {
+        pu_node_unref(b->pressed[button]);
+        pu_node_unref(b->released[button]); b->released[button] = NULL;
+        b->pressed[button] = b->captured ? b->captured : target;
+        pu_node_ref(b->pressed[button]);
+        b->press_x[button] = event->x; b->press_y[button] = event->y;
+        b->dragged &= ~mask;
+        b->mouse_buttons |= mask;
+    } else if (event->type == PU_POINTER_MOVE) {
+        for (int i = 0; i < 5; i++)
+            if (b->pressed[i] && (fabsf(event->x - b->press_x[i]) >= 4 ||
+                                 fabsf(event->y - b->press_y[i]) >= 4))
+                b->dragged |= pu_button_mask(i);
+    } else if (event->type == PU_POINTER_UP && mask) {
+        pu_node_unref(b->released[button]); b->released[button] = NULL;
+        if (fabsf(event->x - b->press_x[button]) >= 4 || fabsf(event->y - b->press_y[button]) >= 4)
+            b->dragged |= mask;
+        if (b->pressed[button] && target == b->pressed[button] && !(b->dragged & mask) &&
+                document_for_node(b->ctx, target) == b) {
+            b->released[button] = target; pu_node_ref(target);
+        }
+        pu_node_unref(b->pressed[button]); b->pressed[button] = NULL;
+        b->mouse_buttons &= ~mask;
+    } else if (event->type == PU_POINTER_CLICK || event->type == PU_POINTER_CONTEXT_MENU ||
+               event->type == PU_POINTER_AUXCLICK) {
+        int accepted = mask && target && target == b->released[button] &&
+            document_for_node(b->ctx, target) == b;
+        if (mask) { pu_node_unref(b->released[button]); b->released[button] = NULL; }
+        if (!accepted) { b->double_click = false; return 0; }
+    }
     if (event->type == PU_POINTER_CLICK && event->button == 0) {
         b->double_click = event->detail == 2 && target && target == b->click_target;
         pu_node_ref(target);
@@ -761,7 +923,13 @@ int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent
         if (target) dispatch_impl(b, target, "mouseenter", &data, 0);
         hover_changed = 1; /* hover:* overrides changed -> the host should repaint */
     }
-    if (target) dispatch_impl(b, target, type, &data, 1);
+    PuNode *receiver = b->captured && (event->type == PU_POINTER_MOVE ||
+        event->type == PU_POINTER_DOWN || event->type == PU_POINTER_UP) ? b->captured : target;
+    pu_node_ref(receiver);
+    if (receiver) dispatch_impl(b, receiver, type, &data, 1);
+    pu_node_unref(receiver);
+    if (event->type == PU_POINTER_UP && !b->mouse_buttons && !release_mouse_capture(b))
+        if (b->capture_callback) fprintf(stderr, "[gui] Cannot release completed mouse capture\n");
     return hover_changed;
 }
 
@@ -1473,6 +1641,9 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_method(ctx, node_proto, "removeChild",  js_node_removeChild,  1);
     def_method(ctx, node_proto, "insertBefore", js_node_insertBefore, 2);
     def_method(ctx, node_proto, "addEventListener",    js_node_addEventListener,    2);
+    def_method(ctx, node_proto, "setMouseCapture", js_node_setMouseCapture, 0);
+    def_method(ctx, node_proto, "releaseMouseCapture", js_node_releaseMouseCapture, 0);
+    def_method(ctx, node_proto, "hasMouseCapture", js_node_hasMouseCapture, 0);
     def_method(ctx, node_proto, "removeEventListener", js_node_removeEventListener, 2);
     def_method(ctx, node_proto, "focus", js_node_focus, 0);
     def_method(ctx, node_proto, "blur",  js_node_blur,  0);
@@ -1601,6 +1772,8 @@ JSValue pu_bridge_document(PuBridge *b) { return JS_DupValue(b->ctx, b->document
 void pu_bridge_release_document(PuBridge *b)
 {
     if (!b || !b->native_owned) return;
+    pu_bridge_cancel_mouse(b, "window-closed");
+    b->capture_callback = NULL; b->capture_user = NULL;
     b->input_callback = NULL; b->input_user = NULL;
     pu_node_unref(b->input_owner); b->input_owner = NULL;
     pu_node_unref(b->composition); b->composition = NULL;

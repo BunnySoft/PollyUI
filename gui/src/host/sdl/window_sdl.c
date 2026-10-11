@@ -61,6 +61,10 @@ struct PuWindow {
     int           presented;
     int           suppress_text;
     unsigned      pressed_buttons;
+    int           mouse_capture, implicit_capture, active;
+    SDL_Cursor   *cursors[PU_CURSOR_COUNT], *cursor;
+    PuActivationFn activation_fn;
+    void         *activation_user;
     int           registered, close_notified, text_started;
     int           text_managed;
     int           preedit_active;
@@ -88,6 +92,7 @@ struct PuWindow {
 
 static Uint32 g_wake_event = (Uint32)-1;   /* registered user event for wake */
 static PuWindow *g_windows;
+static PuWindow *g_mouse_capture;
 static int g_initialized, g_loop_running, g_system_users;
 static void pu_sync_size(PuWindow *w);
 
@@ -615,11 +620,63 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     w->next = g_windows;
     g_windows = w;
     w->registered = 1;
+    w->active = (SDL_GetWindowFlags(w->win) & SDL_WINDOW_INPUT_FOCUS) != 0;
     return w;
 }
 
 void pu_window_set_paint  (PuWindow *w, PuPaintFn   fn, void *u){ if(w){w->paint_fn=fn;   w->paint_user=u;   w->dirty=1;} }
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *u){ if(w){w->pointer_fn=fn; w->pointer_user=u;} }
+int pu_window_capture_mouse(PuWindow *w, int enabled)
+{
+    if (!w || !w->win || (enabled && !w->running)) {
+        SDL_Log("Mouse capture requires a live window"); return 0;
+    }
+    if (enabled && ((g_mouse_capture && g_mouse_capture != w) || SDL_GetMouseFocus() != w->win)) {
+        SDL_Log("Mouse capture requires this window's mouse focus and exclusive ownership"); return 0;
+    }
+    if (!enabled && g_mouse_capture != w) { w->mouse_capture = 0; return 1; }
+    const char *driver = SDL_GetCurrentVideoDriver();
+    if (driver && !strcmp(driver, "wayland")) {
+        /* Wayland owns the button grab; SDL exposes it as a window flag.
+         * This is capture only for that live grab, not a global pointer lock. */
+        if (enabled && (!w->pressed_buttons ||
+                !(SDL_GetWindowFlags(w->win) & SDL_WINDOW_MOUSE_CAPTURE))) {
+            SDL_Log("Wayland mouse capture requires a live native button grab"); return 0;
+        }
+        w->mouse_capture = w->implicit_capture = enabled != 0;
+        g_mouse_capture = enabled ? w : NULL;
+        return 1;
+    }
+    if (!SDL_CaptureMouse(enabled != 0)) {
+        SDL_Log("SDL_CaptureMouse failed: %s", SDL_GetError()); return 0;
+    }
+    w->mouse_capture = enabled != 0;
+    g_mouse_capture = enabled ? w : NULL;
+    return 1;
+}
+void pu_window_set_activation(PuWindow *w, PuActivationFn fn, void *u)
+{ if (w) { w->activation_fn = fn; w->activation_user = u; } }
+int pu_window_is_active(PuWindow *w)
+{ return w && w->running && w->active; }
+int pu_window_set_cursor(PuWindow *w, PuCursor cursor)
+{
+    static const SDL_SystemCursor shapes[] = { SDL_SYSTEM_CURSOR_DEFAULT, SDL_SYSTEM_CURSOR_TEXT,
+        SDL_SYSTEM_CURSOR_CROSSHAIR, SDL_SYSTEM_CURSOR_POINTER, SDL_SYSTEM_CURSOR_MOVE,
+        SDL_SYSTEM_CURSOR_EW_RESIZE, SDL_SYSTEM_CURSOR_NS_RESIZE, SDL_SYSTEM_CURSOR_NESW_RESIZE,
+        SDL_SYSTEM_CURSOR_NWSE_RESIZE, SDL_SYSTEM_CURSOR_NOT_ALLOWED, SDL_SYSTEM_CURSOR_WAIT };
+    if (!w || !w->running || !w->win || cursor < 0 || cursor >= PU_CURSOR_COUNT) {
+        SDL_Log("Invalid cursor or closed window"); return 0;
+    }
+    SDL_Cursor *handle = w->cursors[cursor];
+    if (!handle) handle = SDL_CreateSystemCursor(shapes[cursor]);
+    if (!handle) { SDL_Log("SDL_CreateSystemCursor failed: %s", SDL_GetError()); return 0; }
+    w->cursors[cursor] = handle;
+    if ((w->mouse_capture || SDL_GetMouseFocus() == w->win) && !SDL_SetCursor(handle)) {
+        SDL_Log("SDL_SetCursor failed: %s", SDL_GetError()); return 0;
+    }
+    w->cursor = handle;
+    return 1;
+}
 void pu_window_set_key    (PuWindow *w, PuKeyFn     fn, void *u){ if(w){w->key_fn=fn;     w->key_user=u;} }
 void pu_window_set_wheel  (PuWindow *w, PuWheelFn   fn, void *u){ if(w){w->wheel_fn=fn;   w->wheel_user=u;} }
 void pu_window_set_drop(PuWindow *w, PuDropFn fn, void *u)
@@ -951,6 +1008,15 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             w->suppress_text = 0;
             w->pressed_buttons = 0;
+            {
+                int changed = w->active;
+                w->active = 0;
+                PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1, .reason = "focus-lost" };
+                if (w->pointer_fn && w->pointer_fn(&event, w->pointer_user)) w->dirty = 1;
+                if (w->mouse_capture && !pu_window_capture_mouse(w, 0))
+                    fail_window(w, "Release mouse capture on focus loss");
+                if (changed && w->activation_fn && w->activation_fn(0, w->activation_user)) w->dirty = 1;
+            }
             w->text_epoch = SDL_GetTicksNS();
             if (w->key_fn && w->preedit_active) {
                 w->preedit_active = 0;
@@ -958,7 +1024,25 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
                 if (w->key_fn(&event, w->key_user) & PU_INPUT_REDRAW) w->dirty = 1;
             }
             break;
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            if (w->active) break;
+            w->active = 1;
+            if (w->activation_fn && w->activation_fn(1, w->activation_user)) w->dirty = 1;
+            break;
+        case SDL_EVENT_WINDOW_MOUSE_ENTER:
+            if (!SDL_SetCursor(w->cursor ? w->cursor : SDL_GetDefaultCursor()))
+                fail_window(w, "Restore window cursor");
+            break;
         case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+            if (w->mouse_capture) {
+                if (w->implicit_capture && !(SDL_GetWindowFlags(w->win) & SDL_WINDOW_MOUSE_CAPTURE)) {
+                    PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1, .reason = "capture-lost" };
+                    if (w->pointer_fn && w->pointer_fn(&event, w->pointer_user)) w->dirty = 1;
+                    if (w->mouse_capture && !pu_window_capture_mouse(w, 0))
+                        fail_window(w, "Release lost mouse capture");
+                }
+                break;
+            }
             if (w->pointer_fn) {
                 PuPointerEvent event = { .type = PU_POINTER_MOVE, .x = -1, .y = -1, .button = -1 };
                 if (w->pointer_fn(&event, w->pointer_user)) w->dirty = 1;
@@ -1126,6 +1210,12 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
+    if (w->mouse_capture && !pu_window_capture_mouse(w, 0)) {
+        SDL_Log("Cannot release mouse capture during window teardown");
+        g_mouse_capture = NULL;
+    }
+    if (w->cursor && SDL_GetCursor() == w->cursor &&
+        !SDL_SetCursor(SDL_GetDefaultCursor())) SDL_Log("Cannot restore default cursor: %s", SDL_GetError());
     if (w->registered) {
         PuWindow **link = &g_windows;
         while (*link && *link != w) link = &(*link)->next;
@@ -1147,6 +1237,7 @@ void pu_window_destroy(PuWindow *w)
     pu_layer_destroy(w->layer_surface);
 #endif
     clear_drop(w);
+    for (int i = 0; i < PU_CURSOR_COUNT; i++) SDL_DestroyCursor(w->cursors[i]);
     free(w);
     shutdown_video();
 }

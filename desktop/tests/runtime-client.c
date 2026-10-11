@@ -450,6 +450,35 @@ static void fixture_pointer_click(int x, int y, uint32_t time, unsigned button)
     wl_signal_emit_mutable(&pointer.events.frame, NULL);
 }
 
+static struct PuDesktopView *ordinary_fixture_view(struct wl_client *client, const char *app_id, const char *title);
+
+static bool fixture_client_color(struct wl_client *client, int x, int y, uint32_t expected)
+{
+    struct PuDesktopView *view = ordinary_fixture_view(client, "org.pollyui.files-window-fixture", "Files");
+    if (!view) return false;
+    struct wlr_surface *surface = view->toplevel->base->surface;
+    if (x < 0 || y < 0 || x >= surface->current.width || y >= surface->current.height ||
+        surface->current.buffer_width != surface->current.width || !surface->buffer) return false;
+    void *pixels; uint32_t format, color = 0; size_t stride;
+    struct wlr_buffer *buffer = surface->buffer->source;
+    if (!wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride))
+        return false;
+    memcpy(&color, (char *)pixels + y * stride + x * 4, sizeof(color));
+    wlr_buffer_end_data_ptr_access(buffer);
+    return (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888) &&
+        (color & 0xffffff) == expected;
+}
+
+static bool wait_client_color(struct wl_client *client, int x, int y, uint32_t expected)
+{
+    for (int i = 0; i < 1000; i++) {
+        CHECK(pump());
+        if (fixture_client_color(client, x, y, expected)) return true;
+    }
+    fprintf(stderr, "Native pointer fixture did not render expected color %06x\n", expected);
+    return false;
+}
+
 static void fixture_keyboard(unsigned code, unsigned modifiers, uint32_t *time)
 {
     const unsigned modifier_keys[] = { KEY_LEFTSHIFT, KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFTMETA };
@@ -539,11 +568,34 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             fixture_pointer_click(sx + restore_x, sy + restore_y, *time += 3, 0);
             continue; // No pointer is retained across the next event-loop settle.
         }
-        int x, y, delta, used = 0;
+        int x, y, delta, used = 0, end_x, end_y;
         bool context_click = sscanf(action, "context %d %d%n", &x, &y, &used) == 2 && !action[used];
         bool double_click = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
             sscanf(action, "doubleclick %d %d%n", &x, &y, &used) == 2 && !action[used];
-        if (context_click || double_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
+        bool gesture = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "gesture %d %d %d %d%n", &x, &y, &end_x, &end_y, &used) == 4 && !action[used];
+        bool press = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "press %d %d%n", &x, &y, &used) == 2 && !action[used];
+        if (gesture || press) {
+            int width = view->toplevel->base->geometry.width, height = view->toplevel->base->geometry.height;
+            CHECK(x >= 0 && y >= 0 && x < width && y < height);
+            if (gesture) CHECK(end_x >= -64 && end_y >= -64 && end_x <= width + 64 && end_y <= height + 64);
+            *last = sequence;
+            fixture_pointer_motion(sx + x, sy + y, ++*time);
+            struct wlr_pointer_button_event button = { .pointer = &pointer, .time_msec = ++*time,
+                .button = BTN_LEFT, .state = WL_POINTER_BUTTON_STATE_PRESSED };
+            wlr_pointer_notify_button(&pointer, &button);
+            wl_signal_emit_mutable(&pointer.events.frame, NULL);
+            CHECK(wait_client_color(client, x, y, 0xc04020));
+            if (gesture) {
+                fixture_pointer_motion(sx + end_x, sy + end_y, ++*time);
+                CHECK(wait_client_color(client, x, y, 0x20c040));
+                button.time_msec = ++*time; button.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                wlr_pointer_notify_button(&pointer, &button);
+                wl_signal_emit_mutable(&pointer.events.frame, NULL);
+                CHECK(wait_client_color(client, x, y, 0x3060c0));
+            }
+        } else if (context_click || double_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
                 y < view->toplevel->base->geometry.height);
             *last = sequence;

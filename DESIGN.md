@@ -357,6 +357,29 @@ rendering and damage behavior: no idle full-screen redraw loop or repeated
 full-screen CPU blur. Backend, cost limits and final API remain decisions for
 the implementation proposal; this discussion does not fix them in advance.
 
+### 5.2 Native mouse ownership
+
+Mouse state belongs to each `PuBridge` document, not the shared JS realm.
+The bridge retains pressed/released targets and one capture owner. Native
+mouse capture is obtained through a Host callback only during an active press;
+the bridge routes subsequent down/move/up events and retires capture on the
+last release. A detached/retired document cannot reuse an old press. Native
+release-generated activation requires a matching target and remains cancelled
+after a drag exceeds the current four-logical-pixel click slop.
+
+Cancellation is a separate input event, not a fabricated mouseup. It clears
+pressed/released/capture state before JS callbacks, carries an explicit reason,
+and emits capture loss once. Host focus loss, capture loss, node detachment and
+window retirement use that same path. Win32 capture uses OS handles; Wayland
+capture is constrained to its live implicit button grab, never a client-created
+global pointer grab. Capability failures remain explicit.
+
+The Host also owns system cursor resources and reports window activation.
+JS selects a cursor and implements widget/gesture/selection policy; GUI native
+code does not implement list selection, file operations, menus or drag payload
+policy. The mouse-only capture API deliberately does not imply touch, pen or
+outgoing native drag-and-drop support. See the [public input contract](./README.md#native-mouse-interaction-mechanisms).
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)

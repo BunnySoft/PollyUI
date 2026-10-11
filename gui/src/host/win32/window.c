@@ -39,6 +39,10 @@ struct PuWindow {
     void       *key_user;
     int         suppress_text;
     int         click_counts[5];
+    int         mouse_capture, active;
+    HCURSOR     cursor;
+    PuActivationFn activation_fn;
+    void       *activation_user;
     wchar_t     pending_surrogate;
     PuWheelFn   wheel_fn;     /* optional wheel callback */
     void       *wheel_user;
@@ -515,8 +519,35 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
 
+    case WM_SETFOCUS:
     case WM_KILLFOCUS:
-        if (w) { w->pending_surrogate = 0; w->suppress_text = 0; }
+        if (w) {
+            int active = msg == WM_SETFOCUS;
+            w->active = active;
+            if (!active) {
+                w->pending_surrogate = 0; w->suppress_text = 0;
+                PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1, .reason = "focus-lost" };
+                if (w->pointer_fn) w->pointer_fn(&event, w->pointer_user);
+                if (w->mouse_capture) pu_window_capture_mouse(w, 0);
+            }
+            if (w->activation_fn && w->activation_fn(active, w->activation_user)) pu_window_redraw(w);
+        }
+        break;
+    case WM_CANCELMODE:
+    case WM_CAPTURECHANGED:
+        if (w && (msg == WM_CANCELMODE || w->mouse_capture)) {
+            w->mouse_capture = 0;
+            PuPointerEvent event = { .type = PU_POINTER_CANCEL, .button = -1,
+                .reason = msg == WM_CANCELMODE ? "host-cancelled" : "capture-lost" };
+            if (w->pointer_fn) w->pointer_fn(&event, w->pointer_user);
+            if (GetCapture() == hwnd) ReleaseCapture();
+        }
+        break;
+    case WM_SETCURSOR:
+        if (w && LOWORD(lp) == HTCLIENT && w->cursor) {
+            SetCursor(w->cursor);
+            return TRUE;
+        }
         break;
     case WM_MOUSELEAVE:
         if (w && w->pointer_fn) {
@@ -659,6 +690,49 @@ void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user)
     if (!w) return;
     w->pointer_fn = fn;
     w->pointer_user = user;
+}
+
+int pu_window_capture_mouse(PuWindow *w, int enabled)
+{
+    if (!w || !w->hwnd || (enabled && !w->running)) {
+        fprintf(stderr, "[host] Mouse capture requires a live window\n"); return 0;
+    }
+    if (enabled) {
+        if (GetFocus() != w->hwnd) {
+            fprintf(stderr, "[host] Mouse capture requires the active window\n"); return 0;
+        }
+        SetCapture(w->hwnd);
+        w->mouse_capture = GetCapture() == w->hwnd;
+        if (!w->mouse_capture) fprintf(stderr, "[host] SetCapture failed\n");
+        return w->mouse_capture;
+    }
+    w->mouse_capture = 0;
+    if (GetCapture() != w->hwnd) return 1;
+    int released = ReleaseCapture() != 0;
+    if (!released) fprintf(stderr, "[host] ReleaseCapture failed: %lu\n", GetLastError());
+    return released;
+}
+
+void pu_window_set_activation(PuWindow *w, PuActivationFn fn, void *user)
+{ if (w) { w->activation_fn = fn; w->activation_user = user; } }
+int pu_window_is_active(PuWindow *w) { return w && w->running && w->active; }
+
+int pu_window_set_cursor(PuWindow *w, PuCursor cursor)
+{
+    static const LPCWSTR names[] = { IDC_ARROW, IDC_IBEAM, IDC_CROSS, IDC_HAND,
+        IDC_SIZEALL, IDC_SIZEWE, IDC_SIZENS, IDC_SIZENESW, IDC_SIZENWSE, IDC_NO, IDC_WAIT };
+    if (!w || !w->running || !w->hwnd || cursor < 0 || cursor >= PU_CURSOR_COUNT) {
+        fprintf(stderr, "[host] Invalid cursor or closed window\n"); return 0;
+    }
+    HCURSOR handle = LoadCursorW(NULL, names[cursor]);
+    if (!handle) { fprintf(stderr, "[host] LoadCursor failed: %lu\n", GetLastError()); return 0; }
+    w->cursor = handle;
+    POINT point;
+    RECT client;
+    if (w->mouse_capture || (GetCursorPos(&point) && WindowFromPoint(point) == w->hwnd &&
+            ScreenToClient(w->hwnd, &point) && GetClientRect(w->hwnd, &client) && PtInRect(&client, point)))
+        SetCursor(handle);
+    return 1;
 }
 
 void pu_window_set_key(PuWindow *w, PuKeyFn fn, void *user)
@@ -821,6 +895,9 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
 void pu_window_destroy(PuWindow *w)
 {
     if (!w) return;
+    if (w->mouse_capture) pu_window_capture_mouse(w, 0);
+    if (w->cursor && GetCursor() == w->cursor) SetCursor(LoadCursorW(NULL, IDC_ARROW));
+    w->pointer_fn = NULL; w->activation_fn = NULL;
     w->running = 0;
     if (w->registered) {
         PuWindow **link = &g_windows;

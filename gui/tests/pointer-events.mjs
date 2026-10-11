@@ -55,12 +55,16 @@ check('double click follows both primary click sequences', sequence.join(',') ==
 host.mouse('dblclick', 22, 22);
 check('double click is consumed once', sequence.length === 7);
 host.click(22, 22);
+host.mouse('mousedown', 220, 80, { detail: 2 });
+host.mouse('mouseup', 220, 80, { detail: 2 });
 host.mouse('click', 220, 80, { detail: 2 });
 host.mouse('dblclick', 220, 80);
 check('nearby clicks on different targets cannot double click the old target',
   !sequence.slice(7).some(value => value.startsWith('dblclick')));
-host.mouse('click', 22, 22, { detail: 1 });
-host.mouse('click', 22, 22, { button: 2, detail: 2 });
+host.click(22, 22);
+host.mouse('mousedown', 22, 22, { button: 2, detail: 2 });
+host.mouse('mouseup', 22, 22, { button: 2, detail: 2 });
+host.mouse('contextmenu', 22, 22, { button: 2, detail: 2 });
 host.mouse('dblclick', 22, 22, { button: 2 });
 check('secondary button cannot activate double click',
   sequence.filter(value => value === 'dblclick:2').length === 1);
@@ -85,6 +89,8 @@ removing.addEventListener('click', e => { if (e.detail === 2) document.body.remo
 document.body.appendChild(removing);
 host.render();
 host.click(320, 20);
+host.mouse('mousedown', 320, 20, { detail: 2 });
+host.mouse('mouseup', 320, 20, { detail: 2 });
 host.mouse('click', 320, 20, { detail: 2 });
 host.mouse('dblclick', 320, 20);
 check('removed second-click target cannot receive double click', !detachedDouble);

@@ -20,6 +20,8 @@ STAGES = {
     "details": ["long-name-properties", "no-matches", "filtered-folder"],
 }
 MOUSE_STAGES = ["home-browser", "empty-folder", "before-wm-close"]
+INPUT_STAGES = ["input-ready", "capture-released", "before-wm-close"]
+INPUT_EVIDENCE = ["capture", "outsideMotion", "release", "clickSuppressed", "cancellation", "cursor", "activation"]
 REQUIRED_EVIDENCE = {
     "browser": ["documents", "returnedHome", "folderCreated", "folderRenamed", "documentOpenRequested",
                 "cancelled", "wheel", "keyboardRename", "history", "sort", "context", "filter", "address"],
@@ -35,16 +37,20 @@ def source_hashes(repo):
         "gui/sdk/js/textinput.mjs", "desktop/tests/files-window-client.mjs",
         "desktop/tests/files-window-shell.mjs", "desktop/tests/runtime-client.c",
         "desktop/tests/files-window.py",
+        "gui/include/pollyui/input.h", "gui/include/pollyui/window.h",
+        "gui/src/bridge/bridge.c", "gui/src/bridge/bridge.h",
+        "gui/src/context/context.c", "gui/src/host/sdl/window_sdl.c", "gui/src/host/win32/window.c",
     ]
     return {path: hashlib.sha256((repo / path).read_bytes()).hexdigest() for path in paths}
 
 
-def driver_command(repo, driver, runtime, small=False, details=False, mouse=False):
+def driver_command(repo, driver, runtime, small=False, details=False, mouse=False, native_input=False):
     return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
             'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
             "polly-files-fixture", str(driver), str(runtime),
             str(repo / "desktop/tests/files-window-shell.mjs"), "files-window",
-            "mouse" if mouse else ("details-small" if small else "details") if details else ("small" if small else "initial")]
+            "input" if native_input else "mouse" if mouse else
+            ("details-small" if small else "details") if details else ("small" if small else "initial")]
 
 
 def retain_fixture_home(root, evidence):
@@ -130,10 +136,10 @@ def main():
     parser.add_argument("runtime", type=Path)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--small", action="store_true")
-    parser.add_argument("--flow", choices=("all", "browser", "details", "mouse"), default="all")
+    parser.add_argument("--flow", choices=("all", "browser", "details", "mouse", "input"), default="all")
     args = parser.parse_args()
-    if args.flow == "mouse" and args.small:
-        raise ValueError("The focused mouse flow uses the normal window size")
+    if args.flow in ("mouse", "input") and args.small:
+        raise ValueError("The focused mouse/input flows use the normal window size")
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (1000, 1000, 1000, 1000):
         raise PermissionError("Files native acceptance requires actual ordinary UID/GID1000")
     if not args.driver.is_absolute() or not args.runtime.is_absolute() or not args.evidence.is_absolute():
@@ -176,7 +182,8 @@ def main():
                        XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
-    command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details", args.flow == "mouse")
+    command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details",
+                             args.flow == "mouse", args.flow == "input")
     sources = source_hashes(repo)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
@@ -210,15 +217,16 @@ def main():
     for marker in ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:"):
         if marker not in text:
             raise RuntimeError("Missing actual Files action/normal-close receipt: " + marker)
-    if args.flow != "mouse":
+    if args.flow not in ("mouse", "input"):
         receipt = json.loads((root / "mime-result.json").read_text())
         if receipt != {"uid": 1000, "argv": [str(document)], "cwd": str(repo), "text": document.read_text()}:
             raise RuntimeError("Actual MIME helper argv/cwd/ordinary UID/read content differs from the fixture")
         (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_bytes = (root / "files-window-result.json").read_bytes()
     result = json.loads(receipt_bytes)
-    stages = MOUSE_STAGES if args.flow == "mouse" else STAGES[args.flow]
-    required = ["singleClick", "doubleClick", "documents", "returnedHome"] if args.flow == "mouse" else REQUIRED_EVIDENCE[args.flow]
+    stages = INPUT_STAGES if args.flow == "input" else MOUSE_STAGES if args.flow == "mouse" else STAGES[args.flow]
+    required = INPUT_EVIDENCE if args.flow == "input" else \
+        ["singleClick", "doubleClick", "documents", "returnedHome"] if args.flow == "mouse" else REQUIRED_EVIDENCE[args.flow]
     if result.get("flow") != args.flow or result.get("passed") is not True or result.get("closeObserved") is not True or \
             any(result.get("evidence", {}).get(key) is not True for key in required):
         raise RuntimeError("Native Files action/close receipt differs from the requested flow")
@@ -246,7 +254,8 @@ def main():
         images.append({**capture, "sha256": hashlib.sha256(data).hexdigest(), "width": width, "height": height})
     (evidence / "files-window-result.json").write_bytes(receipt_bytes)
     (evidence / "captures.json").write_text(json.dumps(images, indent=2) + "\n")
-    print("PASS: actual UID1000 Files single/double-click navigation and WM-close" if args.flow == "mouse" else
+    print("PASS: actual UID1000 native capture/outside motion/release/cancel/cursor/activation and WM-close" if args.flow == "input" else
+          "PASS: actual UID1000 Files single/double-click navigation and WM-close" if args.flow == "mouse" else
           "PASS: actual UID1000 Files pointer/wheel/keyboard/WM-close and separate MIME helper read receipt")
 
 

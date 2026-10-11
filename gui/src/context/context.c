@@ -106,7 +106,7 @@ static int app_pointer(const PuPointerEvent *event, void *user)
     pu_node_ref(target);
 
     int state_changed = 0; /* hover/focus flag changes repaint natively (no re-render) */
-    if (event->type == PU_POINTER_DOWN) {
+    if (event->type == PU_POINTER_DOWN && !pu_bridge_has_mouse_capture(app->bridge)) {
         /* Click-to-focus on press: focus the nearest focusable ancestor (or blur). */
         PuNode *f = target;
         while (f && f->tab_index < 0) f = f->parent;
@@ -257,6 +257,28 @@ static void app_report(JSContext *ctx)
     g_app_error = 1;
 }
 
+static int app_mouse_capture(int enabled, void *user)
+{ PuApp *app = user; return pu_window_capture_mouse(app->window, enabled); }
+
+static int app_activation(int active, void *user)
+{
+    PuApp *app = user;
+    JSContext *ctx = pu_script_jsctx(app->script);
+    const char *name = active ? "onactivate" : "ondeactivate";
+    JSValue callback = JS_GetPropertyStr(ctx, app->handle, name);
+    if (JS_IsException(callback)) app_report(ctx);
+    else if (JS_IsFunction(ctx, callback)) {
+        JSValue result = JS_Call(ctx, callback, app->handle, 0, NULL);
+        if (JS_IsException(result)) app_report(ctx);
+        JS_FreeValue(ctx, result);
+    } else if (!JS_IsNull(callback) && !JS_IsUndefined(callback)) {
+        JS_ThrowTypeError(ctx, "%s must be a function or null", name); app_report(ctx);
+    }
+    JS_FreeValue(ctx, callback);
+    pu_script_pump(app->script);
+    return 1;
+}
+
 static void app_retire(PuApp *app, int notify)
 {
     JSContext *ctx = pu_script_jsctx(app->script);
@@ -264,6 +286,8 @@ static void app_retire(PuApp *app, int notify)
     while (*link && *link != app) link = &(*link)->next;
     if (*link) *link = app->next;
     app->closed = 1;
+    pu_bridge_cancel_mouse(app->bridge, "window-closed");
+    pu_bridge_set_mouse_capture_callback(app->bridge, NULL, NULL);
     pu_bridge_set_text_input_callback(app->bridge, NULL, NULL);
     pu_window_destroy(app->window);
     app->window = NULL;
@@ -348,7 +372,9 @@ static PuApp *new_app(PuBridge *bridge)
     if (JS_DefinePropertyValueStr(ctx, app->handle, "document", pu_bridge_document(bridge),
             JS_PROP_ENUMERABLE) < 0 ||
         JS_SetPropertyStr(ctx, app->handle, "onclose", JS_NULL) < 0 ||
-        JS_SetPropertyStr(ctx, app->handle, "oncloserequest", JS_NULL) < 0) {
+        JS_SetPropertyStr(ctx, app->handle, "oncloserequest", JS_NULL) < 0 ||
+        JS_SetPropertyStr(ctx, app->handle, "onactivate", JS_NULL) < 0 ||
+        JS_SetPropertyStr(ctx, app->handle, "ondeactivate", JS_NULL) < 0) {
         JS_SetOpaque(app->handle, NULL);
         JS_FreeValue(ctx, app->handle);
         free(app);
@@ -372,6 +398,8 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
     if (!app->window) return 0;
     pu_window_set_paint(app->window, app_paint, app);
     pu_window_set_pointer(app->window, app_pointer, app);
+    pu_window_set_activation(app->window, app_activation, app);
+    pu_bridge_set_mouse_capture_callback(app->bridge, app_mouse_capture, app);
     pu_window_set_key(app->window, app_key, app);
 #if defined(PU_CLIPBOARD_SDL)
     if (!pu_bridge_set_text_input_callback(app->bridge, app_text_input, app)) return 0;
@@ -677,6 +705,33 @@ static JSValue jswin_titlebarstyle(JSContext *c, JSValueConst t, int n, JSValueC
     return JS_UNDEFINED;
 }
 
+static JSValue jswin_cursor(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    PuApp *app = window_app(ctx, self, 0);
+    if (!app) return JS_EXCEPTION;
+    if (argc != 1 || !JS_IsString(argv[0]))
+        return JS_ThrowTypeError(ctx, "setCursor requires one cursor name");
+    static const char *names[] = { "arrow", "text", "crosshair", "pointer", "move",
+        "ew-resize", "ns-resize", "nesw-resize", "nwse-resize", "not-allowed", "wait" };
+    size_t length;
+    const char *name = JS_ToCStringLen(ctx, &length, argv[0]);
+    if (!name) return JS_EXCEPTION;
+    int cursor = -1;
+    for (int i = 0; i < PU_CURSOR_COUNT; i++)
+        if (length == strlen(names[i]) && !memcmp(name, names[i], length)) cursor = i;
+    JS_FreeCString(ctx, name);
+    if (cursor < 0) return JS_ThrowTypeError(ctx, "Unknown cursor name");
+    if (!pu_window_set_cursor(app->window, (PuCursor)cursor))
+        return JS_ThrowInternalError(ctx, "Native cursor is unavailable or failed");
+    return JS_UNDEFINED;
+}
+
+static JSValue jswin_active(JSContext *ctx, JSValueConst self)
+{
+    PuApp *app = window_app(ctx, self, 1);
+    return app ? JS_NewBool(ctx, !app->closed && pu_window_is_active(app->window)) : JS_EXCEPTION;
+}
+
 static JSValue jswin_capture(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 {
     PuApp *app = window_app(c,t,0);
@@ -745,6 +800,12 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "setFrameless",  JS_NewCFunction(ctx, jswin_frameless, "setFrameless", 1));
     JS_SetPropertyStr(ctx, win, "setBackdrop",   JS_NewCFunction(ctx, jswin_backdrop, "setBackdrop", 1));
     JS_SetPropertyStr(ctx, win, "setTitleBarStyle", JS_NewCFunction(ctx, jswin_titlebarstyle, "setTitleBarStyle", 1));
+    JS_SetPropertyStr(ctx, win, "setCursor", JS_NewCFunction(ctx, jswin_cursor, "setCursor", 1));
+    JSAtom active = JS_NewAtom(ctx, "active");
+    JS_DefinePropertyGetSet(ctx, win, active,
+        JS_NewCFunction2(ctx, (JSCFunction *)jswin_active, "active", 0, JS_CFUNC_getter, 0),
+        JS_UNDEFINED, JS_PROP_ENUMERABLE);
+    JS_FreeAtom(ctx, active);
     /* OS identity so apps can render OS-appropriate chrome (e.g. macOS
      * traffic-light buttons on the left vs Windows controls on the right). */
 #if defined(_WIN32)
@@ -861,13 +922,14 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     if (argc >= 3) JS_ToFloat64(ctx, &y, argv[2]);
     PuPointerEvent event = { .x = (float)x, .y = (float)y };
     int found = 0;
-    for (int i = PU_POINTER_CLICK; i <= PU_POINTER_DOUBLE_CLICK; i++) {
+    for (int i = PU_POINTER_CLICK; i <= PU_POINTER_CANCEL; i++) {
         if (!strcmp(type, pu_pointer_name((PuPointerType)i))) { event.type = (PuPointerType)i; found = 1; break; }
     }
     JS_FreeCString(ctx, type);
     if (!found) return JS_ThrowTypeError(ctx, "Unsupported pointer event type");
     event.button = event.type == PU_POINTER_MOVE ? -1 : event.type == PU_POINTER_CONTEXT_MENU ? 2 : 0;
-    event.detail = event.type == PU_POINTER_MOVE ? 0 : event.type == PU_POINTER_DOUBLE_CLICK ? 2 : 1;
+    event.detail = event.type == PU_POINTER_MOVE || event.type == PU_POINTER_CANCEL ? 0 :
+        event.type == PU_POINTER_DOUBLE_CLICK ? 2 : 1;
     if (argc >= 4) {
         if (!input_modifiers(ctx, argv[3], &event.modifiers)) return JS_EXCEPTION;
         JSValue value = JS_GetPropertyStr(ctx, argv[3], "button");
@@ -899,7 +961,9 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);
     PuNode *target = pu_node_hit_test(body, (float)x, (float)y);
+    pu_node_ref(target);
     pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
+    pu_node_unref(target);
     pu_script_run_loop(g_test->script);
     test_render();
     return JS_NewBool(ctx, target != NULL);
@@ -1102,6 +1166,9 @@ static int run_entry(PuScript *script, const PuGuiConfig *config)
     return pu_script_run_file(script, config->script);
 }
 
+static int test_mouse_capture(int enabled, void *user)
+{ (void)enabled; (void)user; return 1; }
+
 int pu_gui_test(const PuGuiConfig *config)
 {
     if (!config || !config->script) {
@@ -1144,6 +1211,7 @@ int pu_gui_test(const PuGuiConfig *config)
       if ((e = getenv("PU_TEST_H"))) host.height = atoi(e); }
     host.surface = pu_surface_create(host.width, host.height);
     g_test = &host;
+    pu_bridge_set_mouse_capture_callback(b, test_mouse_capture, NULL);
 
     install_host(pu_script_jsctx(s), host.width, host.height);
 

@@ -62,6 +62,19 @@ void pu_window_set_paint(PuWindow *w, PuPaintFn fn, void *user);
 
 /* Install the pointer (mouse) callback. */
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *user);
+/* UI-thread capture of the current mouse interaction. Failure is reported
+ * by the Host and returns zero; it must not be treated as successful capture. */
+int pu_window_capture_mouse(PuWindow *w, int enabled);
+typedef int (*PuActivationFn)(int active, void *user);
+void pu_window_set_activation(PuWindow *w, PuActivationFn fn, void *user);
+int pu_window_is_active(PuWindow *w);
+typedef enum PuCursor {
+    PU_CURSOR_ARROW, PU_CURSOR_TEXT, PU_CURSOR_CROSSHAIR, PU_CURSOR_POINTER,
+    PU_CURSOR_MOVE, PU_CURSOR_RESIZE_EW, PU_CURSOR_RESIZE_NS,
+    PU_CURSOR_RESIZE_NESW, PU_CURSOR_RESIZE_NWSE, PU_CURSOR_NOT_ALLOWED,
+    PU_CURSOR_WAIT, PU_CURSOR_COUNT
+} PuCursor;
+int pu_window_set_cursor(PuWindow *w, PuCursor cursor);
 
 /* Physical key and committed-text events are separate. Return PuInputResult
  * flags; PREVENT_DEFAULT suppresses the key's following text submission. */

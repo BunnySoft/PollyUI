@@ -175,6 +175,7 @@ API, scheduling commitment, version bump or new ISO is implied by this record.
 | HostEngine — Win32 window, event loop, resize | ✅ | `gui/src/host/win32`; smooth live-resize (double-pump + authoritative size) |
 | **Frameless window / custom title bar** | ✅ | `WM_NCCALCSIZE`+`WM_NCHITTEST`; keeps resize/snap; `appRegion:drag` |
 | **JS `window` controls** (minimize/maximize/close/setFrameless/setBackdrop) | ✅ | global `window` object in the windowed app |
+| **Native mouse capture / cancellation / cursor** | ✅ | Document-owned capture and click lifecycle; Win32 OS capture and Wayland live button grab; activation callbacks and native system cursors. JS widgets/gestures remain separate; see [input contract](./README.md#native-mouse-interaction-mechanisms) |
 | **Mica / Acrylic backdrop** (Win11 DWM) | 🟡 | `DwmSetWindowAttribute` set; visible Mica needs a transparent surface |
 | Per-monitor **DPI awareness** (logical px → physical) | ✅ | `WM_DPICHANGED`, scale in render + hit-test |
 | **Surface seam abstraction** (`create_gpu`/`create_metal`) | ✅ | opaque native handle; ready for SDL3/macOS/Linux |

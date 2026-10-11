@@ -1319,6 +1319,49 @@ native double-click folder navigation, Up and WM close over the existing
 private real-input fixture. Its focused 60-second CTest budget does not add
 steps or relax deadlines in the existing browser/details journeys.
 
+### Native mouse interaction mechanisms
+
+Attached nodes in a live document expose `setMouseCapture()`,
+`releaseMouseCapture()` and `hasMouseCapture()` (no arguments). Capture requires
+an active mouse press in that document. Subsequent mouse down/move/up events
+route to the capture owner; `gotmousecapture` / `lostmousecapture` bubble.
+The last button release automatically releases capture. Detaching the press or
+capture owner, closing its window, native focus loss or external capture loss
+cancels the interaction with bubbling `mousecancel` and a `reason`. Cancellation
+clears ownership/buttons before notifying listeners, so it cannot reacquire or
+replay the cancelled press. Closed documents cannot acquire capture.
+
+Win32 uses `SetCapture` / `ReleaseCapture`. Wayland uses its verified live
+button grab (`SDL_WINDOW_MOUSE_CAPTURE`), which continues outside the window
+until all buttons are released; releasing DOM capture does not override the
+compositor's protocol grab. Other SDL backends use `SDL_CaptureMouse`.
+Unavailable capture throws instead of silently behaving like capture.
+These are mouse-only APIs, not a complete multi-pointer/touch contract.
+
+Native release-generated `click`, `auxclick` and `contextmenu` require an
+uncancelled press/release on the same attached native node. Movement of at least
+four logical pixels on either axis suppresses activation, including a drag
+that returns to its origin. This is the current GUI click slop, not a gesture
+recognizer or application selection policy. Application item identities still
+need their own stale-data guards.
+
+`window.active` reports native keyboard activation. `window.onactivate` and
+`window.ondeactivate` accept a function or null; deactivation follows mouse
+cancellation. DOM keyboard focus remains window-local rather than being
+automatically erased on deactivation. `window.setCursor(name)` selects an owned
+native system cursor for that window: `arrow`, `text`, `crosshair`, `pointer`,
+`move`, `ew-resize`, `ns-resize`, `nesw-resize`, `nwse-resize`, `not-allowed`,
+or `wait`. Invalid names, unsupported backends and closed windows fail explicitly.
+No CSS cursor policy, widgets, outgoing drag/drop or application operations are
+implemented by these mechanisms.
+
+`gui-mouse-capture` uses the explicitly synthetic headless capture adapter;
+`gui-mouse-contract` checks failure and document ownership; `gui-win32-mouse`
+checks actual Win32 handles/cursors and thread-local focus without moving the
+physical pointer. The private `desktop-native-mouse` journey uses real Wayland
+pointer delivery and actual rendered acknowledgements to check capture outside
+the application, release, cancellation, cursor creation and normal close.
+
 ### Clipboard and incoming drops
 
 `clipboard.writeText(text)` / `readText()` use the native application clipboard.

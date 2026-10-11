@@ -38,7 +38,7 @@ typedef struct PuTextInputState {
 
 typedef enum PuPointerType {
     PU_POINTER_CLICK, PU_POINTER_DOWN, PU_POINTER_UP, PU_POINTER_MOVE,
-    PU_POINTER_CONTEXT_MENU, PU_POINTER_AUXCLICK, PU_POINTER_DOUBLE_CLICK
+    PU_POINTER_CONTEXT_MENU, PU_POINTER_AUXCLICK, PU_POINTER_DOUBLE_CLICK, PU_POINTER_CANCEL
 } PuPointerType;
 
 typedef struct PuPointerEvent {
@@ -48,6 +48,7 @@ typedef struct PuPointerEvent {
     unsigned buttons;    /* left=1, right=2, middle=4, back=8, forward=16 */
     unsigned modifiers;
     int detail;          /* Native click count; zero for motion. */
+    const char *reason;  /* CANCEL reason, borrowed during the callback. */
 } PuPointerEvent;
 
 typedef struct PuWheelEvent {
@@ -76,6 +77,7 @@ static inline const char *pu_pointer_name(PuPointerType type)
     case PU_POINTER_CONTEXT_MENU: return "contextmenu";
     case PU_POINTER_AUXCLICK: return "auxclick";
     case PU_POINTER_DOUBLE_CLICK: return "dblclick";
+    case PU_POINTER_CANCEL: return "mousecancel";
     }
     return "unknown";
 }

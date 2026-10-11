@@ -15,20 +15,24 @@ if (marker.uid !== 1000 || marker.type !== 'file' ||
     api.readText(marker.path, marker.identity).text !== 'POLLY-FILES-PRIVATE-WINDOW-V1\n')
   throw new Error('Private fixture marker missing; no host enumeration is permitted');
 
-const driving = ['--drive', '--drive-small', '--details', '--details-small', '--mouse'].includes(mode);
+const driving = ['--drive', '--drive-small', '--details', '--details-small', '--mouse', '--input'].includes(mode);
 const details = mode === '--details' || mode === '--details-small';
 const mouse = mode === '--mouse';
-const flow = mouse ? 'mouse' : details ? 'details' : 'browser';
+const input = mode === '--input';
+const flow = input ? 'input' : mouse ? 'mouse' : details ? 'details' : 'browser';
 const app = createFilesApp({ initialPath: root, optInTheme: false, host: {
   close: () => window.close(), create: options => window.create(mode.endsWith('-small') ?
     { ...options, width: 680, height: 540 } : options),
 } }).start();
-const evidence = mouse ? { singleClick: false, doubleClick: false, documents: false, returnedHome: false } :
+const evidence = input ? { capture: false, outsideMotion: false, release: false, clickSuppressed: false,
+  cancellation: false, cursor: false, activation: false } :
+  mouse ? { singleClick: false, doubleClick: false, documents: false, returnedHome: false } :
   details ? { documentOpenRequested: false, filter: false, address: false, properties: false } :
   { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
   documentOpenRequested: false, cancelled: false, wheel: false, keyboardRename: false, history: false,
   sort: false, context: false, filter: false, address: false };
-const captureStages = mouse ? ['home-browser', 'empty-folder', 'before-wm-close'] :
+const captureStages = input ? ['input-ready', 'capture-released', 'before-wm-close'] :
+  mouse ? ['home-browser', 'empty-folder', 'before-wm-close'] :
   details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
   ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
     'rename-edit', 'renamed-folder', 'before-wm-close'];
@@ -44,6 +48,7 @@ function bounds(node) {
 function observe() {
   const state = app.controller.getState(), surface = app.getWindow();
   if (!surface || state.phase !== 'ready') return;
+  if (input) return;
   if (!details) {
     evidence.documents ||= state.path === root + '/Documents';
     evidence.returnedHome ||= evidence.documents && state.path === root;
@@ -99,10 +104,11 @@ const timer = setInterval(() => {
       message: state.message, dialog: state.dialog?.kind ?? null, activeElement: document.activeElement?.id || '', evidence, controls });
     if (receipt !== last) { console.log('FILES_WINDOW_STATE: ' + receipt); last = receipt; }
     if (!passed && driving && Object.values(evidence).every(Boolean)) {
-      if (!details && !mouse && api.stat(root + '/' + renamedName, false).type !== 'directory')
+      if (!details && !mouse && !input && api.stat(root + '/' + renamedName, false).type !== 'directory')
         throw new Error('Actual renamed directory must exist, not only an optimistic UI row');
       passed = true;
-      console.log(mouse ? 'FILES_WINDOW_ACTIONS_PASS: native single/double-click folder navigation' :
+      console.log(input ? 'FILES_WINDOW_ACTIONS_PASS: native input foundation' :
+        mouse ? 'FILES_WINDOW_ACTIONS_PASS: native single/double-click folder navigation' :
         'FILES_WINDOW_ACTIONS_PASS: native ordinary browser/new-folder/rename/MIME Open/cancel/wheel');
     }
   } catch (error) {
@@ -197,7 +203,64 @@ async function drive() {
   }
   const state = () => app.controller.getState();
   await until(() => state().phase === 'ready' && state().path === root, 'private initial folder');
-  if (mouse) {
+  if (input) {
+    const surface = app.getWindow(), document = surface.document;
+    const probe = document.createElement('view');
+    probe.id = 'native-capture-probe';
+    Object.assign(probe.style, { position: 'absolute', left: 20, top: 20, width: 80, height: 80,
+      backgroundColor: '#808080', zIndex: 100 });
+    document.body.appendChild(probe);
+    let clicks = 0, captures = 0, releases = 0;
+    probe.addEventListener('mousedown', () => {
+      probe.setMouseCapture();
+      if (!probe.hasMouseCapture()) throw new Error('Native capture did not acquire the probe');
+      evidence.capture = true;
+      probe.style.backgroundColor = '#c04020';
+    });
+    probe.addEventListener('gotmousecapture', () => captures++);
+    probe.addEventListener('lostmousecapture', () => releases++);
+    probe.addEventListener('mousemove', event => {
+      if (event.clientX <= document.body.offsetWidth) return;
+      if (!probe.hasMouseCapture() || event.buttons !== 1) throw new Error('Outside motion lost native capture/buttons');
+      evidence.outsideMotion = true;
+      probe.style.backgroundColor = '#20c040';
+    });
+    probe.addEventListener('mouseup', () => {
+      evidence.release = true;
+      probe.style.backgroundColor = '#3060c0';
+    });
+    probe.addEventListener('click', () => clicks++);
+    probe.addEventListener('mousecancel', event => {
+      if (!['focus-lost', 'window-closed'].includes(event.reason) || probe.hasMouseCapture())
+        throw new Error('Native cancellation reason/state is invalid');
+      if (event.reason === 'focus-lost' && surface.active)
+        throw new Error('Native activation remained active during focus-loss cancellation');
+      evidence.cancellation = true;
+    });
+    surface.onactivate = () => {
+      if (!surface.active) throw new Error('Activation event does not match native active state');
+      evidence.activation = true;
+    };
+    surface.ondeactivate = () => {
+      if (surface.active) throw new Error('Deactivation event does not match native active state');
+      evidence.activation = true;
+    };
+    for (const cursor of ['arrow', 'text', 'crosshair', 'pointer', 'move', 'ew-resize',
+      'ns-resize', 'nesw-resize', 'nwse-resize', 'not-allowed', 'wait']) surface.setCursor(cursor);
+    surface.setCursor('arrow');
+    evidence.cursor = true;
+    await captureFrame('input-ready');
+    const rect = bounds(probe);
+    const x = Math.round(rect.x + rect.width / 2), y = Math.round(rect.y + rect.height / 2);
+    await request('gesture ' + x + ' ' + y + ' ' + (document.body.offsetWidth + 12) + ' ' + y);
+    await until(() => releases === 1 && captures === 1 && !probe.hasMouseCapture(), 'native outside-window capture/release');
+    if (clicks) throw new Error('Native drag release fabricated a click');
+    evidence.clickSuppressed = true;
+    await captureFrame('capture-released');
+    await request('press ' + x + ' ' + y);
+    await until(() => probe.hasMouseCapture() && captures === 2, 'native active capture before cancellation');
+    await captureFrame('before-wm-close');
+  } else if (mouse) {
   await captureFrame('home-browser');
   const folderRow = visibleEntries(state()).findIndex(entry => entry.path === root + '/Documents');
   if (folderRow < 0) throw new Error('Actual Documents entry is required for native double click');
@@ -325,8 +388,9 @@ async function drive() {
   if (!details) await captureFrame('before-wm-close');
   }
   observe();
-  if (!Object.values(evidence).every(Boolean)) throw new Error('Missing actual Files action evidence: ' + JSON.stringify(evidence));
-  console.log(mouse ? 'FILES_WINDOW_DRIVE_PASS: native single click selects; double click opens actual folder; Up returns Home' :
+  if (!input && !Object.values(evidence).every(Boolean)) throw new Error('Missing actual Files action evidence: ' + JSON.stringify(evidence));
+  console.log(input ? 'FILES_WINDOW_DRIVE_PASS: native capture, outside motion, release, cursor; closing with an active interaction' :
+    mouse ? 'FILES_WINDOW_DRIVE_PASS: native single click selects; double click opens actual folder; Up returns Home' :
     'FILES_WINDOW_DRIVE_PASS: native pointer/wheel/name-focus/Backspace/history/MIME-dispatch; helper receipt verified externally');
   closingViaDriver = true;
   await request('close');

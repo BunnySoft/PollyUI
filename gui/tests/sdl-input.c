@@ -8,7 +8,7 @@
 static PuWindow *window;
 static SDL_WindowID window_id;
 static int received, pointers, wheels, failed, ticks;
-static int preedits, cancellations;
+static int preedits, cancellations, mouse_cancels, activations;
 static int drop_enters, drop_motions, drops, drop_leaves, drop_errors;
 static char *large_drop;
 static const char committed[] = "\xe4\xb8\xad\xe6\x96\x87\xf0\x9f\x98\x80";
@@ -68,6 +68,12 @@ static int on_key(const PuKeyEvent *event, void *user)
 static int on_pointer(const PuPointerEvent *event, void *user)
 {
     (void)user;
+    if (event->type == PU_POINTER_CANCEL) {
+        check(event->reason && !strcmp(event->reason, "focus-lost"), "native focus loss cancels mouse input");
+        check(!pu_window_is_active(window), "native activation is cleared before mouse cancellation");
+        mouse_cancels++;
+        return PU_INPUT_REDRAW;
+    }
     if (received < 9) return 0;
     switch (pointers++) {
     case 0: check(event->type == PU_POINTER_DOWN && event->button == 2 && event->buttons == 2 &&
@@ -92,6 +98,14 @@ static int on_pointer(const PuPointerEvent *event, void *user)
     default: check(0, "unexpected pointer event");
     }
     return PU_INPUT_REDRAW;
+}
+
+static int on_activation(int active, void *user)
+{
+    (void)user;
+    check(pu_window_is_active(window) == active, "activation query matches the delivered native event");
+    activations++;
+    return 0;
 }
 
 static int on_wheel(const PuWheelEvent *event, void *user)
@@ -169,6 +183,7 @@ static int tick(void *user)
 {
     (void)user;
     if (ticks++ == 0) {
+        activations = mouse_cancels = 0;
         PuTextInputState input = { .enabled = 1, .purpose = 1, .x = 11, .y = 19, .width = 2, .height = 18 };
         check(pu_window_set_text_input(window, &input, 1), "configure sensitive text input");
         SDL_Rect rect;
@@ -230,6 +245,12 @@ static int tick(void *user)
         event.wheel.x = 0.5f; event.wheel.y = -0.25f;
         event.wheel.mouse_x = 12.5f; event.wheel.mouse_y = 23.0f;
         check(SDL_PushEvent(&event), "queue wheel");
+        SDL_zero(event);
+        event.window.windowID = window_id;
+        event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        check(SDL_PushEvent(&event), "queue focus loss");
+        event.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
+        check(SDL_PushEvent(&event), "queue focus gain");
         push_drop(SDL_EVENT_DROP_BEGIN, NULL);
         push_drop(SDL_EVENT_DROP_POSITION, NULL);
         push_drop(SDL_EVENT_DROP_FILE, "/tmp/one");
@@ -268,6 +289,7 @@ int main(void)
     SDL_free(windows);
     pu_window_set_key(window, on_key, NULL);
     pu_window_set_pointer(window, on_pointer, NULL);
+    pu_window_set_activation(window, on_activation, NULL);
     pu_window_set_wheel(window, on_wheel, NULL);
     pu_window_set_drop(window, on_drop, NULL);
     pu_window_set_async(window, tick, NULL);
@@ -284,6 +306,7 @@ int main(void)
     check(received == 9, "exactly one event for each key or committed text");
     check(preedits == 1 && cancellations == 1, "exact preedit and cancellation event sequence");
     check(pointers == 11 && wheels == 1, "exact pointer/wheel event sequence");
+    check(mouse_cancels == 1 && activations == 2, "exact focus cancellation and activation sequence");
     check(drop_enters == 4 && drop_motions == 1 && drops == 1 && drop_leaves == 1 && drop_errors == 2,
           "exact drop sequence with bounded payload rejection");
     if (!result && !failed) puts("PASS: SDL native keyboard/text adapter");

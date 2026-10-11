@@ -26,6 +26,11 @@ void      pu_bridge_release_document(PuBridge *b);
 typedef int (*PuTextInputFn)(const PuTextInputState *state, int reset, void *user);
 int pu_bridge_set_text_input_callback(PuBridge *bridge, PuTextInputFn callback, void *user);
 int pu_bridge_sync_text_input(PuBridge *bridge);
+typedef int (*PuMouseCaptureFn)(int enabled, void *user);
+void pu_bridge_set_mouse_capture_callback(PuBridge *bridge, PuMouseCaptureFn callback, void *user);
+/* Cancels the active mouse interactions and releases capture before callbacks. */
+void pu_bridge_cancel_mouse(PuBridge *bridge, const char *reason);
+int pu_bridge_has_mouse_capture(PuBridge *bridge);
 
 /* The document body element (root of the user's tree). */
 PuNode *pu_bridge_body(PuBridge *b);
