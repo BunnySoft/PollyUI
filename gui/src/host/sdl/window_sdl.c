@@ -13,6 +13,7 @@
 
 #include "pollyui/window.h"   /* the shared HostEngine contract */
 #include "render/skia_c.h"
+#include "host/drag_internal.h"
 #include "host/window_contract.h"
 
 #include <SDL3/SDL.h>
@@ -45,6 +46,7 @@ extern void pu_macos_tune_live_resize(void *nswindow);
 struct PuWindow {
     struct PuWindow *next;
     struct PuWindow *parent;
+    PuDragOwner *drag_owner;
     PuPopup popup;
     int modal, service;
     unsigned children, borrows;
@@ -118,6 +120,9 @@ static void retire_native(PuWindow *w);
 static void shutdown_video(void)
 {
     if (g_initialized && !g_windows && !g_loop_running && !g_system_users) {
+#if defined(PU_DRAG_WAYLAND)
+        pu_wayland_drag_shutdown();
+#endif
         SDL_Quit();
         g_initialized = 0;
         g_wake_event = (Uint32)-1;
@@ -776,6 +781,18 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     w->next = g_windows;
     g_windows = w;
     w->registered = 1;
+#if defined(PU_DRAG_WAYLAND)
+    if (w->modal && w->parent) pu_wayland_drag_suspend(w->parent->drag_owner);
+    if (!w->service && !w->popup && !w->modal) {
+        w->drag_owner = pu_drag_owner_new(w);
+        if (w->drag_owner) {
+            SDL_PropertiesID props = SDL_GetWindowProperties(w->win);
+            pu_wayland_drag_attach(w->drag_owner,
+                SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL),
+                SDL_GetPointerProperty(props, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL));
+        }
+    }
+#endif
     w->active = (SDL_GetWindowFlags(w->win) & SDL_WINDOW_INPUT_FOCUS) != 0;
     w->borrows--;
     return w;
@@ -783,6 +800,33 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
 
 void pu_window_set_paint  (PuWindow *w, PuPaintFn   fn, void *u){ if(w){w->paint_fn=fn;   w->paint_user=u;   w->dirty=1;} }
 void pu_window_set_pointer(PuWindow *w, PuPointerFn fn, void *u){ if(w){w->pointer_fn=fn; w->pointer_user=u;} }
+int pu_window_drag_supported(PuWindow *w)
+{
+#if defined(PU_DRAG_WAYLAND)
+    if (!w || !w->running || w->service || w->popup || w->modal) return 0;
+    if (!w->win || (SDL_GetWindowFlags(w->win) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED))) return 0;
+    if (w->drag_owner && w->drag_owner->native != SDL_GetPointerProperty(
+        SDL_GetWindowProperties(w->win), SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL)) {
+        pu_wayland_drag_close(w->drag_owner);
+        return 0;
+    }
+    for (PuWindow *child = g_windows; child; child = child->next)
+        if (child->running && child->modal && child->parent == w) return 0;
+    return pu_wayland_drag_supported(w->drag_owner);
+#else
+    (void)w; return 0;
+#endif
+}
+PuDragSession *pu_window_start_drag(PuWindow *w, PuDragInput *input,
+    const PuDragItem *items, size_t count, PuDragFn callback, void *user)
+{
+    if (!pu_window_drag_supported(w)) { pu_drag_fail("Native COPY drag requires a supported ordinary Wayland window"); return NULL; }
+#if defined(PU_DRAG_WAYLAND)
+    return pu_wayland_drag_start(w->drag_owner, input, items, count, callback, user);
+#else
+    (void)input; (void)items; (void)count; (void)callback; (void)user; return NULL;
+#endif
+}
 int pu_window_capture_mouse(PuWindow *w, int enabled)
 {
     if (w && !enabled && w->native_retired && !w->win && !w->mouse_capture) return 1;
@@ -1063,6 +1107,12 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
      * points). So pass them straight through — do NOT divide by the DPI scale,
      * or clicks land at a fraction of their position on HiDPI displays. */
     switch (e->type) {
+#if defined(PU_DRAG_WAYLAND)
+        case SDL_EVENT_WINDOW_HIDDEN:
+        case SDL_EVENT_WINDOW_MINIMIZED:
+            pu_wayland_drag_suspend(w->drag_owner);
+            break;
+#endif
         case SDL_EVENT_DROP_BEGIN:
         case SDL_EVENT_DROP_POSITION:
         case SDL_EVENT_DROP_FILE:
@@ -1089,7 +1139,12 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
                 .detail = e->button.clicks ? e->button.clicks : 1,
             };
             if (w->pointer_fn) {
+                event.drag_input = down && e->button.which != SDL_TOUCH_MOUSEID && w->drag_owner ?
+                    w->drag_owner->input : NULL;
+                pu_drag_input_ref(event.drag_input);
                 int changed = w->pointer_fn(&event, w->pointer_user);
+                pu_drag_input_unref(event.drag_input);
+                event.drag_input = NULL;
                 if (!down) {
                     event.type = button == 0 ? PU_POINTER_CLICK :
                                  button == 2 ? PU_POINTER_CONTEXT_MENU : PU_POINTER_AUXCLICK;
@@ -1108,8 +1163,11 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
             PuPointerEvent event = {
                 .type = PU_POINTER_MOVE, .x = e->motion.x, .y = e->motion.y,
                 .button = -1, .buttons = w->pressed_buttons, .modifiers = key_modifiers(SDL_GetModState()),
+                .drag_input = e->motion.which != SDL_TOUCH_MOUSEID && w->drag_owner ? w->drag_owner->input : NULL,
             };
+            pu_drag_input_ref(event.drag_input);
             if (w->pointer_fn && w->pointer_fn(&event, w->pointer_user) > 0) w->dirty = 1;
+            pu_drag_input_unref(event.drag_input);
             break;
         }
         case SDL_EVENT_MOUSE_WHEEL:
@@ -1356,6 +1414,9 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
             if (closed->close_fn && !closed->destroy_requested) closed->close_fn(closed, closed->close_user);
             release_close_borrow(closed);
         }
+#if defined(PU_DRAG_WAYLAND)
+        pu_wayland_drag_pump();
+#endif
         PuWindow *live = g_windows;
         while (live && !live->running) live = live->next;
         if (!live && !keep_alive) break;
@@ -1364,6 +1425,9 @@ int pu_window_run_all(PuAsyncFn frame, void *user)
             route_event(&e);
             while (SDL_PollEvent(&e)) route_event(&e);
         }
+#if defined(PU_DRAG_WAYLAND)
+        pu_wayland_drag_pump();
+#endif
         if (frame && frame(user) > 0)
             for (PuWindow *w = g_windows; w; w = w->next) pu_window_redraw(w);
         notify_state();
@@ -1389,6 +1453,11 @@ static void retire_native(PuWindow *w)
 {
     if (w->native_retired) return;
     w->native_retired = 1;
+#if defined(PU_DRAG_WAYLAND)
+    pu_wayland_drag_close(w->drag_owner);
+#else
+    pu_drag_owner_close(w->drag_owner);
+#endif
     if (w->mouse_capture && !pu_window_capture_mouse(w, 0)) {
         SDL_Log("Cannot release mouse capture during native retirement");
         g_mouse_capture = NULL;
@@ -1447,6 +1516,7 @@ void pu_window_destroy(PuWindow *w)
         while (*link && *link != w) link = &(*link)->next;
         if (*link) *link = w->next;
     }
+    pu_drag_owner_unref(w->drag_owner);
     free(w);
     shutdown_video();
 }

@@ -7,16 +7,45 @@ add_library(pollyui-engine STATIC
     src/model/node.c
     src/bridge/bridge.c
     src/host/clipboard.c
+    src/host/drag.c
+    src/host/drag_js.c
     src/layout/layout.c
 )
 target_include_directories(pollyui-engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${SKIA_ROOT}")
 target_link_libraries(pollyui-engine PUBLIC qjs yogacore polly-execution)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set_source_files_properties(src/host/drag.c src/host/drag_js.c src/host/sdl/drag_wayland.c
+        PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")
+endif()
 
 add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    add_executable(pollyui-drag-core-test tests/drag-core.c)
+    target_include_directories(pollyui-drag-core-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pollyui-drag-core-test PRIVATE pollyui-engine)
+    add_test(NAME gui-drag-core COMMAND pollyui-drag-core-test)
+    set_tests_properties(gui-drag-core PROPERTIES TIMEOUT 10)
+    if (WIN32)
+        add_test(NAME gui-drag-unsupported COMMAND pollyui-playground
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/drag-unsupported.mjs")
+        set_tests_properties(gui-drag-unsupported PROPERTIES TIMEOUT 15 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_HOST STREQUAL "sdl" AND PU_BUILD_DESKTOP)
+        add_executable(pollyui-drag-client tests/drag-client.c tests/drag-receiver.c
+            "${CMAKE_BINARY_DIR}/desktop/protocols/xdg-shell-protocol.c")
+        target_include_directories(pollyui-drag-client PRIVATE "${CMAKE_BINARY_DIR}/desktop/protocols")
+        target_link_libraries(pollyui-drag-client PRIVATE pollyui-engine)
+        target_compile_definitions(pollyui-drag-client PRIVATE _POSIX_C_SOURCE=200809L)
+        add_executable(pollyui-drag-native-test ../desktop/tests/drag-source.c)
+        target_link_libraries(pollyui-drag-native-test PRIVATE pollywm-core)
+        add_test(NAME gui-wayland-drag-copy COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/drag-source.sh"
+            $<TARGET_FILE:pollyui-drag-native-test> $<TARGET_FILE:pollyui-drag-client>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/drag-source.mjs")
+        set_tests_properties(gui-wayland-drag-copy PROPERTIES TIMEOUT 180 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    endif()
     if ((WIN32 AND PU_HOST STREQUAL "win32") OR (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_HOST STREQUAL "sdl"))
         add_executable(pollyui-native-lifetime-test tests/native-window-lifetime.c)
         add_executable(pollyui-close-tree-test tests/window-close-driver.c)

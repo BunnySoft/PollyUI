@@ -34,6 +34,7 @@ int pu_bridge_has_mouse_capture(PuBridge *bridge);
 
 /* The document body element (root of the user's tree). */
 PuNode *pu_bridge_body(PuBridge *b);
+int pu_bridge_contains_node(PuBridge *bridge, PuNode *node);
 
 /* Dispatch a pointer event (mousedown/mouseup/mousemove/click) at `target`,
  * carrying clientX/clientY. mousemove also emits mouseenter/mouseleave as the

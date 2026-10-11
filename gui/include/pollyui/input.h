@@ -1,6 +1,7 @@
 #ifndef POLLYUI_HOST_INPUT_H
 #define POLLYUI_HOST_INPUT_H
 #include <stddef.h>
+typedef struct PuDragInput PuDragInput;
 
 enum PuModifiers {
     PU_MOD_SHIFT = 1u << 0,
@@ -49,6 +50,7 @@ typedef struct PuPointerEvent {
     unsigned modifiers;
     int detail;          /* Native click count; zero for motion. */
     const char *reason;  /* CANCEL reason, borrowed during the callback. */
+    PuDragInput *drag_input; /* Borrowed native credential; NULL for synthetic/unsupported input. */
 } PuPointerEvent;
 
 typedef struct PuWheelEvent {

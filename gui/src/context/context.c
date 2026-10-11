@@ -4,6 +4,7 @@
 #include "script/script.h"
 #include "bridge/bridge.h"
 #include "host/clipboard.h"
+#include "host/drag_js.h"
 #include "layout/layout.h"
 #include "render/render.h"
 #include "model/node.h"
@@ -199,6 +200,7 @@ static double pu_frame_ms(void)
 static int app_async(void *user)
 {
     PuScript *script = user;
+    pu_drag_js_pump();
     if (g_config->hooks && g_config->hooks->pump) {
         int work = g_config->hooks->pump(g_config->user);
         if (work < 0) {
@@ -320,6 +322,7 @@ static void app_state(const PuWindowState *state, void *user)
 
 static void app_retire(PuApp *app, int notify)
 {
+    pu_drag_js_close(app->bridge);
     JSContext *ctx = pu_script_jsctx(app->script);
     PuApp **link = &g_apps;
     while (*link && *link != app) link = &(*link)->next;
@@ -871,7 +874,17 @@ static JSValue jswin_capabilities(JSContext *ctx, JSValueConst self, int argc, J
     JS_SetPropertyStr(ctx, result, "modal", JS_NewBool(ctx, caps & PU_WINDOW_MODAL));
     JS_SetPropertyStr(ctx, result, "sizeConstraints", JS_NewBool(ctx, caps & PU_WINDOW_LIMITS));
     JS_SetPropertyStr(ctx, result, "popupGrab", JS_FALSE);
+    PuApp *app = window_app(ctx, self, 1);
+    JS_SetPropertyStr(ctx, result, "dragCopy", JS_NewBool(ctx, app && pu_window_drag_supported(app->window)));
     return result;
+}
+static JSValue jswin_start_drag(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    PuApp *app = window_app(ctx, self, 0);
+    if (!app) return JS_EXCEPTION;
+    if (pu_script_jsctx(app->script) != ctx)
+        return JS_ThrowTypeError(ctx, "Native drag requires the owning GUI realm");
+    return pu_drag_js_start(ctx, app->bridge, app->window, argc, argv);
 }
 
 static JSValue jswin_capture(JSContext *c, JSValueConst t, int n, JSValueConst *a)
@@ -921,6 +934,7 @@ static JSValue jswin_displays(JSContext *ctx, JSValueConst self, int argc, JSVal
 /* Install one shared realm; each native window has its own document and controls. */
 static PuApp *install_window_api(JSContext *ctx)
 {
+    if (!pu_drag_js_install(ctx)) return NULL;
     JSRuntime *runtime = JS_GetRuntime(ctx);
     if (!g_window_class) JS_NewClassID(runtime, &g_window_class);
     const JSClassDef definition = { "Window", .finalizer = window_finalizer };
@@ -949,6 +963,7 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "setBackdrop",   JS_NewCFunction(ctx, jswin_backdrop, "setBackdrop", 1));
     JS_SetPropertyStr(ctx, win, "setTitleBarStyle", JS_NewCFunction(ctx, jswin_titlebarstyle, "setTitleBarStyle", 1));
     JS_SetPropertyStr(ctx, win, "setCursor", JS_NewCFunction(ctx, jswin_cursor, "setCursor", 1));
+    JS_SetPropertyStr(ctx, win, "startDrag", JS_NewCFunction(ctx, jswin_start_drag, "startDrag", 1));
     JSAtom active = JS_NewAtom(ctx, "active");
     JS_DefinePropertyGetSet(ctx, win, active,
         JS_NewCFunction2(ctx, (JSCFunction *)jswin_active, "active", 0, JS_CFUNC_getter, 0),
@@ -1369,6 +1384,7 @@ int pu_gui_test(const PuGuiConfig *config)
     else fprintf(stderr, "[render] Failed to create headless surface\n");
     if (rc == 0) pu_script_run_loop(s); /* async-aware: waits for workers/tasks */
     if (pu_script_finish(s)) rc = 1;
+    pu_drag_js_shutdown(pu_script_jsctx(s));
 
     g_test = NULL;
     pu_clipboard_shutdown();
@@ -1438,6 +1454,7 @@ int pu_gui_run(const PuGuiConfig *config)
     }
     g_app_terminating = 1;
     if (pu_script_finish(s)) rc = 1;
+    pu_drag_js_shutdown(pu_script_jsctx(s));
     pu_async_shutdown();
     if (config->hooks && config->hooks->stop) config->hooks->stop(config->user);
     pu_window_keep_alive(0);

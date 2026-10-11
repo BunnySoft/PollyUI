@@ -1525,9 +1525,72 @@ executed, moved or deleted automatically.
 
 This is an incoming native-drop API, **not** browser DataTransfer: SDL controls
 protocol acceptance, `preventDefault()` does not negotiate native actions, and
-no PollyUI outgoing drag-source API or automatic text-input drop insertion is
-implemented yet. `dragenter` announces a window-level transfer; SDL provides
+automatic text-input drop insertion is not implemented. `dragenter` announces a window-level transfer; SDL provides
 no distinct leave notification, so an empty completion becomes `dragleave`.
+
+### Native COPY drag sources
+
+Ordinary SDL-Wayland windows expose `window.capabilities().dragCopy` and
+`window.startDrag({input, items})`. The API projects the backend-neutral C contract
+in `pollyui/drag.h`; it does not expose Wayland serials, surfaces or file descriptors.
+Raw Win32, macOS, X11, the memory-only `--test` realm, popup/modal/service windows, touch and
+multiple pointer seats are unsupported for this first increment.
+The Windows/OLE backend is explicitly deferred, not part of this delivery.
+
+```js
+let drag; // Retain the operation until completion; collecting it cancels.
+document.body.addEventListener('mousedown', event => {
+  drag = window.startDrag({
+    input: event.dragInput,
+    items: [{type: 'text/plain;charset=utf-8', data: 'Hello from PollyUI'}]
+  });
+  drag.finished.then(result => {
+    console.log(result.status, result.action, result.reason);
+    drag = null;
+  }, error => console.error(error));
+});
+// drag?.cancel(); // Idempotent; an already-completed COPY is not overwritten.
+```
+
+`dragInput` is a read-only opaque credential on a genuine native down/motion
+event. It belongs to the exact window/document and current single held press.
+It may be retained while that press is held, but cannot be forged, reused,
+transferred to another document, or used after release, detachment, closure or
+seat loss. Payload getters are revalidated before admission; synthetic DOM/test
+events do not grant permission. Starting transfers capture/click ownership to
+the native drag and cancels the old DOM mouse interaction.
+
+Each item has a distinct printable ASCII MIME `type` and `data`. Strings require
+`text/plain` or `text/plain;charset=utf-8`; plain-text bytes must also be valid
+UTF-8 without NUL. ArrayBuffer and typed-array views supply their exact visible
+bytes, including empty binary data. C owns immutable copies, so subsequent
+mutation, buffer release or GC cannot alter the transfer. There is no new
+16-MiB/16-format outgoing quota: allocation/size overflow, malformed MIME names
+and native wire representability errors are reported, not silently truncated.
+Applications remain responsible for their own resource budgets.
+
+`finished` resolves to `{status: 'copied', action: 'copy', reason: null}` only
+after native COPY negotiation and recipient finish, or to
+`{status: 'cancelled', action: null, reason}` for cancellation. Connection,
+seat and send failures reject with an Error. Physical drop is not completion;
+late cancellation cannot overwrite success. Closing an owner, detaching the
+source node, explicit cancellation or collecting the operation cancels pending
+work; a still-live returned Promise also settles after operation collection.
+GUI shutdown stops native work before disposing the VM. All results are delivered
+on the owning UI thread.
+
+The first backend uses the same SDL-owned Wayland connection, its own public
+protocol proxies, a dedicated pure-C source queue/worker and passive mirrored
+offers retired **after** SDL's complete event pump. This avoids default-queue
+self-drop deadlock and premature mirror destruction cancelling another offer.
+The native icon is NULL. The existing SDL recipient negotiates COPY and exposes
+only text/file incoming events; arbitrary MIME bytes need a native recipient
+supporting that format. No MOVE, file copy/delete, URI permission grant,
+temporary export, portal broker or SysRT dependency is added.
+
+Real JS-to-native text/binary, self-drop, role reversal, credentials, loss/GC,
+backpressure and clipboard coexistence are qualified on the pinned SDL 3.4.10 /
+wlroots 0.19.3 PollyWM stack. This is not a general-compositor guarantee.
 
 ### HTTP and application data
 

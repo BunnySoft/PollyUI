@@ -1,6 +1,7 @@
 #include "bridge/bridge.h"
 #include "render/skia_c.h"   /* pu_text_measure for the global measureText() */
 #include "layout/layout.h"   /* pu_layout_mark_dirty / pu_layout_affects */
+#include "host/drag_js.h"
 
 #include <stdint.h>
 #include <inttypes.h>
@@ -154,6 +155,10 @@ static PuBridge *document_for_node(JSContext *ctx, PuNode *node)
     for (PuBridge *b = root; b; b = b->next)
         if (b->body == node) return b;
     return NULL;
+}
+int pu_bridge_contains_node(PuBridge *bridge, PuNode *node)
+{
+    return bridge && bridge->native_owned && document_for_node(bridge->ctx, node) == bridge;
 }
 
 static void reset_detached_input(JSContext *ctx)
@@ -640,6 +645,8 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
             JS_SetPropertyStr(ctx, ev, "clientY", JS_NewFloat64(ctx, data->pointer ? data->pointer->y : data->wheel->y));
         }
         if (data->pointer) {
+            JS_DefinePropertyValueStr(ctx, ev, "dragInput",
+                pu_drag_js_input(ctx, b, target, data->pointer->drag_input), JS_PROP_ENUMERABLE);
             JS_SetPropertyStr(ctx, ev, "button", JS_NewInt32(ctx, data->pointer->button));
             JS_SetPropertyStr(ctx, ev, "buttons", JS_NewUint32(ctx, data->pointer->buttons));
             JS_SetPropertyStr(ctx, ev, "detail", JS_NewInt32(ctx, data->pointer->detail));

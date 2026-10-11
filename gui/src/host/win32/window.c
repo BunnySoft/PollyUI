@@ -1,5 +1,15 @@
 #include "pollyui/window.h"
 #include "render/skia_c.h"
+#include "host/drag_internal.h"
+
+int pu_window_drag_supported(PuWindow *w) { (void)w; return 0; }
+PuDragSession *pu_window_start_drag(PuWindow *w, PuDragInput *input,
+    const PuDragItem *items, size_t count, PuDragFn callback, void *user)
+{
+    (void)w; (void)input; (void)items; (void)count; (void)callback; (void)user;
+    pu_drag_fail("Native COPY drag is unsupported by the Win32 host");
+    return NULL;
+}
 #include "host/window_contract.h"
 
 /* Need Windows 10 APIs (per-monitor DPI v2, GetDpiForWindow, ...). */

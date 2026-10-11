@@ -136,6 +136,55 @@ It leaves a constraints PNG in `<build>/native-window-evidence`; it does not
 use a VM, a synthetic DOM close/resize controller, or production trusted roles.
 Headless qualification is not a physical-GPU or macOS execution claim.
 
+### Native drag-source seam
+
+`pollyui/drag.h` defines platform-neutral `PuDragItem`, opaque `PuDragInput` and
+`PuDragSession`, COPY completion/cancellation/error results, UI-thread callbacks,
+explicit cancellation and reference release. `pu_window_drag_supported` and
+`pu_window_start_drag` are the per-Host seam. A native pointer event borrows its
+credential; C consumers retain/release it explicitly. Payloads are deep-copied.
+Clear a callback before disposing its user/VM; releasing a pending session cancels
+it, while the backend retains the snapshot until native cleanup. There are no
+Wayland/COM/native-handle types in the public API.
+
+The initial SDL-Wayland backend takes native handles from the exact `PuWindow`,
+not a global window search. Its own seat/pointer/data-device proxies share SDL's
+connection and never replace SDL listeners. Only one current pointer seat and an
+exact still-held origin are admitted. Credentials retain an independent owner
+generation across window destruction and address reuse. Popup, modal, special
+roles, multi-button/touch and unsupported drivers reject explicitly.
+
+Wayland source callbacks run on a dedicated public event queue with a pure-C
+worker. Nonblocking partial sends handle EINTR/EAGAIN/EPIPE without entering JS
+or blocking the UI on a recipient. The owning loop samples completion under the
+backend lock and invokes callbacks without it. Registry/seat/connection loss
+invalidates credentials and terminates pending work. Teardown joins the worker
+before destroying its sources, proxies, queue or borrowed SDL display.
+
+Additional data devices receive mirrored offers: they are passive and cannot
+accept, change actions, receive or finish. Leave/drop/replacement only marks
+retirement; actual destruction is after SDL's entire native pump. Default-queue
+source delivery fails for synchronous SDL self-drop, and immediate mirror
+destruction can cancel the real source. Both negative cases remain in the
+original feasibility evidence; neither is the product implementation.
+
+Build the GUI with `PU_BUILD_LAUNCHER=OFF`, `PU_BUILD_DESKTOP=OFF` and optionally
+`PU_LAYER_SHELL=OFF`; this backend requires only wayland-client plus the existing
+SDL/GUI dependencies, not wlroots or SysRT. Other Hosts retain the same contract
+with an unsupported capability/error, not a fake successful drag. Future native
+backends can implement this seam without changing JS's opaque credentials.
+The Windows/OLE implementation is explicitly deferred.
+
+`gui-wayland-drag-copy` exercises actual JS application origins and native/SDL
+recipients in a bounded headless PollyWM fixture. It includes UTF-8, offset binary
+views, empty and 17-MiB payloads, stale/foreign/reused input, capture, self-drop,
+role reversal, cancelled/error terminals, GC/owner close, seat/global/connection
+loss, backpressure and clipboard regression. The forced-global-loss fixture
+retires the production clients but exits its faulted server process without a
+second wlroots removal of the same global. Qualification is COPY/no-icon on the
+pinned SDL 3.4.10/wlroots 0.19.3 stack, not every compositor or platform. See the
+[JS contract](../README.md#native-copy-drag-sources) for results and permission limits.
+
 ### Interface extensions needed for mobile/touch
 
 The current contract is desktop-shaped. Mobile needs three additive extensions
