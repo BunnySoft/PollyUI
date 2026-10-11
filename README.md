@@ -338,9 +338,13 @@ in the Alpha.7 ISO. Materials remain next-version work.
 
 The current source freezes **0.1.0-alpha.8** with the integrated system rabbit
 cursor and motion/click/drag animations, semantic/client overrides and fallback.
-The user requested a new explicitly labelled candidate ISO; fresh release
-packaging/media generation is pending, with no complete VM or hardware pass
-claimed. See [the Alpha.8 candidate gate](./ROADMAP.md#alpha8-rabbit-cursor-candidate).
+The explicitly labelled candidate ISO is available under
+`dist\pollydesktop-0.1.0-alpha.8-debian13-a357a7d-candidate\`. Fresh release
+packaging, actual ISO content and one UEFI/KVM boot/input baseline passed;
+complete VM and physical-hardware qualification remain false. The first
+additional native-mouse check failed and is recorded rather than declared fixed.
+See [the Alpha.8 candidate gate](./ROADMAP.md#alpha8-rabbit-cursor-candidate)
+and the candidate warning/checksums before physical testing.
 Materials and the cursor upload/editor remain separate work.
 
 Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**

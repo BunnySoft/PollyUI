@@ -33,6 +33,11 @@ below have not been fully retested or declared fixed. Preserve all older images
 and failures. The earlier `36b7e4b` WSLg preview exited independently; it is a
 separate build, not Alpha.8 media, and was not restarted.
 See [the Alpha.8 gate](../ROADMAP.md#alpha8-rabbit-cursor-candidate).
+After publication, the parent independently verified all 48 delivery checksums,
+the same ISO bytes, all 246 runtime/overlay files in the actual initramfs, and
+the 77 installed cursor-theme files against source and package hashes. The
+baseline result and original desktop/workspace screenshots were also reviewed.
+These integrity checks do not change the candidate's incomplete-acceptance label.
 
 **Alpha.7 unqualified test candidate:** the user explicitly chose delivery for
 their own physical-machine testing despite incomplete VM acceptance. The ISO
