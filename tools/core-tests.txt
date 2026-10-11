@@ -27,6 +27,7 @@ gui/tests/clipboard.mjs
 gui/tests/composition.mjs
 gui/tests/teardown.mjs
 desktop/tests/desktop-appearance.mjs
+desktop/tests/desktop-command.mjs
 desktop/tests/theme-configuration.mjs
 desktop/tests/desktop-theme-client.mjs
 desktop/tests/native-shell.mjs
