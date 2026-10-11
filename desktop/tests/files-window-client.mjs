@@ -15,17 +15,21 @@ if (marker.uid !== 1000 || marker.type !== 'file' ||
     api.readText(marker.path, marker.identity).text !== 'POLLY-FILES-PRIVATE-WINDOW-V1\n')
   throw new Error('Private fixture marker missing; no host enumeration is permitted');
 
-const driving = ['--drive', '--drive-small', '--details', '--details-small'].includes(mode);
+const driving = ['--drive', '--drive-small', '--details', '--details-small', '--mouse'].includes(mode);
 const details = mode === '--details' || mode === '--details-small';
+const mouse = mode === '--mouse';
+const flow = mouse ? 'mouse' : details ? 'details' : 'browser';
 const app = createFilesApp({ initialPath: root, optInTheme: false, host: {
   close: () => window.close(), create: options => window.create(mode.endsWith('-small') ?
     { ...options, width: 680, height: 540 } : options),
 } }).start();
-const evidence = details ? { documentOpenRequested: false, filter: false, address: false, properties: false } :
+const evidence = mouse ? { singleClick: false, doubleClick: false, documents: false, returnedHome: false } :
+  details ? { documentOpenRequested: false, filter: false, address: false, properties: false } :
   { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
   documentOpenRequested: false, cancelled: false, wheel: false, keyboardRename: false, history: false,
   sort: false, context: false, filter: false, address: false };
-const captureStages = details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
+const captureStages = mouse ? ['home-browser', 'empty-folder', 'before-wm-close'] :
+  details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
   ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
     'rename-edit', 'renamed-folder', 'before-wm-close'];
 const captures = [];
@@ -43,14 +47,16 @@ function observe() {
   if (!details) {
     evidence.documents ||= state.path === root + '/Documents';
     evidence.returnedHome ||= evidence.documents && state.path === root;
-    evidence.folderCreated ||= state.message === 'Created folder: New folder';
-    evidence.folderRenamed ||= state.message === 'Renamed to: ' + renamedName;
-    evidence.cancelled ||= previousDialog && !state.dialog && !state.message;
+    if (!mouse) {
+      evidence.folderCreated ||= state.message === 'Created folder: New folder';
+      evidence.folderRenamed ||= state.message === 'Renamed to: ' + renamedName;
+      evidence.cancelled ||= previousDialog && !state.dialog && !state.message;
+    }
   }
-  evidence.documentOpenRequested ||= state.message === 'Open requested: literal %u; 中文.txt';
+  if (!mouse) evidence.documentOpenRequested ||= state.message === 'Open requested: literal %u; 中文.txt';
   previousDialog = !!state.dialog;
   const list = surface.document.getElementById('files-list');
-  if (!details) evidence.wheel ||= list && Number(list.scrollTop) > 0;
+  if (!details && !mouse) evidence.wheel ||= list && Number(list.scrollTop) > 0;
 }
 const surface = app.getWindow(), originalClose = surface.onclose;
 surface.onclose = () => {
@@ -60,7 +66,7 @@ surface.onclose = () => {
   if (driving && complete && closeObserved && closingViaDriver && !driveFailed) {
     try {
       api.writeText(root, 'files-window-result.json', JSON.stringify({
-        version: 1, native: true, root, flow: details ? 'details' : 'browser', passed: true, closeObserved, evidence,
+        version: 1, native: true, root, flow, passed: true, closeObserved, evidence,
         appId: 'org.pollyui.files-window-fixture', renamedName, captures,
       }), api.stat(root, false).identity);
       console.log('FILES_WINDOW_CLOSE_PASS: real ordinary Files window disposed; actual close receipt persisted');
@@ -93,10 +99,11 @@ const timer = setInterval(() => {
       message: state.message, dialog: state.dialog?.kind ?? null, activeElement: document.activeElement?.id || '', evidence, controls });
     if (receipt !== last) { console.log('FILES_WINDOW_STATE: ' + receipt); last = receipt; }
     if (!passed && driving && Object.values(evidence).every(Boolean)) {
-      if (!details && api.stat(root + '/' + renamedName, false).type !== 'directory')
+      if (!details && !mouse && api.stat(root + '/' + renamedName, false).type !== 'directory')
         throw new Error('Actual renamed directory must exist, not only an optimistic UI row');
       passed = true;
-      console.log('FILES_WINDOW_ACTIONS_PASS: native ordinary browser/new-folder/rename/MIME Open/cancel/wheel');
+      console.log(mouse ? 'FILES_WINDOW_ACTIONS_PASS: native single/double-click folder navigation' :
+        'FILES_WINDOW_ACTIONS_PASS: native ordinary browser/new-folder/rename/MIME Open/cancel/wheel');
     }
   } catch (error) {
     driveFailed = true;
@@ -132,13 +139,13 @@ async function drive() {
     await until(() => ack, 'native marker ACK ' + command);
     console.log('FILES_WINDOW_INPUT: ' + JSON.stringify({ sequence, command, elapsedMs: Date.now() - started }));
   }
-  async function click(id, rightEnd = false) {
+  async function click(id, rightEnd = false, action = 'click') {
     await until(() => {
       const node = app.getWindow()?.document.getElementById(id);
       return node && bounds(node).width > 0 && bounds(node).height > 0;
     }, 'mapped actual control ' + id);
     const rect = bounds(app.getWindow().document.getElementById(id));
-    await request('click ' + Math.round(rect.x + (rightEnd ? rect.width - 5 : rect.width / 2)) +
+    await request(action + ' ' + Math.round(rect.x + (rightEnd ? rect.width - 5 : rect.width / 2)) +
       ' ' + Math.round(rect.y + rect.height / 2));
   }
   async function wheel(delta) {
@@ -190,6 +197,29 @@ async function drive() {
   }
   const state = () => app.controller.getState();
   await until(() => state().phase === 'ready' && state().path === root, 'private initial folder');
+  if (mouse) {
+  await captureFrame('home-browser');
+  const folderRow = visibleEntries(state()).findIndex(entry => entry.path === root + '/Documents');
+  if (folderRow < 0) throw new Error('Actual Documents entry is required for native double click');
+  const folderNode = app.getWindow().document.getElementById('files-entry-' + folderRow);
+  if (!folderNode || folderNode.getAttribute('data-path') !== root + '/Documents')
+    throw new Error('Rendered Documents row is required for native double click');
+  const folderBounds = bounds(folderNode), listBounds = bounds(app.getWindow().document.getElementById('files-list'));
+  if (folderBounds.y < listBounds.y || folderBounds.y + folderBounds.height > listBounds.y + listBounds.height)
+    throw new Error('Native double-click target must be fully visible in the actual list');
+  await click(folderNode.id);
+  await until(() => state().selection?.path === root + '/Documents', 'single click selects the actual folder');
+  if (state().path !== root) throw new Error('Single click must not navigate');
+  evidence.singleClick = true;
+  await click(folderNode.id, false, 'doubleclick');
+  await until(() => state().phase === 'ready' && state().path === root + '/Documents', 'native double-click folder navigation');
+  if (api.stat(state().path, false).type !== 'directory') throw new Error('Double click must reach a real directory');
+  evidence.doubleClick = true;
+  await captureFrame('empty-folder');
+  await click('files-parent');
+  await until(() => state().phase === 'ready' && state().path === root, 'Up after double-click navigation');
+  await captureFrame('before-wm-close');
+  } else {
   if (!details) {
   await captureFrame('home-browser');
   await click('files-place-documents');
@@ -293,9 +323,11 @@ async function drive() {
   await click('files-open');
   await until(() => state().message === 'Open requested: literal %u; 中文.txt', 'actual standard MIME dispatch');
   if (!details) await captureFrame('before-wm-close');
+  }
   observe();
   if (!Object.values(evidence).every(Boolean)) throw new Error('Missing actual Files action evidence: ' + JSON.stringify(evidence));
-  console.log('FILES_WINDOW_DRIVE_PASS: native pointer/wheel/name-focus/Backspace/history/MIME-dispatch; helper receipt verified externally');
+  console.log(mouse ? 'FILES_WINDOW_DRIVE_PASS: native single click selects; double click opens actual folder; Up returns Home' :
+    'FILES_WINDOW_DRIVE_PASS: native pointer/wheel/name-focus/Backspace/history/MIME-dispatch; helper receipt verified externally');
   closingViaDriver = true;
   await request('close');
   await until(() => closeObserved, 'actual WM close callback');

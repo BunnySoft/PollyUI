@@ -44,6 +44,27 @@ let invalid = false;
 try { host.mouse('mousedown', 10, 10, { button: 9 }); } catch (e) { invalid = e instanceof RangeError; }
 check('invalid pointer metadata is rejected', invalid);
 
+const sequence = [];
+for (const type of ['mousedown', 'mouseup', 'click', 'dblclick'])
+  root.addEventListener(type, e => { sequence.push(e.type + ':' + e.detail); });
+host.click(22, 22);
+for (const type of ['mousedown', 'mouseup', 'click', 'dblclick'])
+  host.mouse(type, 22, 22, { detail: 2 });
+check('double click follows both primary click sequences', sequence.join(',') ===
+  'mousedown:1,mouseup:1,click:1,mousedown:2,mouseup:2,click:2,dblclick:2');
+host.mouse('dblclick', 22, 22);
+check('double click is consumed once', sequence.length === 7);
+host.click(22, 22);
+host.mouse('click', 220, 80, { detail: 2 });
+host.mouse('dblclick', 220, 80);
+check('nearby clicks on different targets cannot double click the old target',
+  !sequence.slice(7).some(value => value.startsWith('dblclick')));
+host.mouse('click', 22, 22, { detail: 1 });
+host.mouse('click', 22, 22, { button: 2, detail: 2 });
+host.mouse('dblclick', 22, 22, { button: 2 });
+check('secondary button cannot activate double click',
+  sequence.filter(value => value === 'dblclick:2').length === 1);
+
 (function () {
   const node = document.createElement('view');
   node.id = 'removing-wheel-target';
@@ -56,4 +77,15 @@ host.render();
 host.scroll(320, 20, 10);
 check('wheel target can remove itself without invalidating dispatch',
   document.getElementById('removing-wheel-target') === null);
+const removing = document.createElement('view');
+Object.assign(removing.style, { position: 'absolute', left: 300, top: 0, width: 80, height: 80 });
+let detachedDouble = false;
+removing.addEventListener('dblclick', () => { detachedDouble = true; });
+removing.addEventListener('click', e => { if (e.detail === 2) document.body.removeChild(removing); });
+document.body.appendChild(removing);
+host.render();
+host.click(320, 20);
+host.mouse('click', 320, 20, { detail: 2 });
+host.mouse('dblclick', 320, 20);
+check('removed second-click target cannot receive double click', !detachedDouble);
 console.log(passed + ' pointer-event assertions passed');

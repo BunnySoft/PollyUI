@@ -27,6 +27,8 @@ struct PuBridge {
     PuNode    *body;
     PuNode    *focused;   /* currently focused element, or NULL */
     PuNode    *hovered;   /* element under the pointer (for enter/leave), or NULL */
+    PuNode    *click_target;
+    bool       double_click;
     PuBridge  *root, *next;
     JSValue    document;
     bool       native_owned;
@@ -154,14 +156,17 @@ static void reset_detached_input(JSContext *ctx)
         int changed = 0;
         for (PuBridge *b = root; b; b = b->next) {
             PuNode **slot = b->focused && document_for_node(ctx, b->focused) != b ?
-                &b->focused : b->hovered && document_for_node(ctx, b->hovered) != b ? &b->hovered : NULL;
+                &b->focused : b->hovered && document_for_node(ctx, b->hovered) != b ? &b->hovered :
+                b->click_target && document_for_node(ctx, b->click_target) != b ? &b->click_target : NULL;
             if (!slot) continue;
             JSValue keep = JS_DupValue(ctx, b->document);
             PuNode *node = *slot;
             bool focus = slot == &b->focused;
+            bool hover = slot == &b->hovered;
             *slot = NULL;
             if (focus) clear_input(b);
-            node_set_state(node, focus ? PU_STATE_FOCUS : PU_STATE_HOVER, 0, !focus);
+            if (focus || hover) node_set_state(node, focus ? PU_STATE_FOCUS : PU_STATE_HOVER, 0, hover);
+            else b->double_click = false;
             pu_node_unref(node);
             JS_FreeValue(ctx, keep);
             changed = 1;
@@ -181,6 +186,7 @@ static void free_document(PuBridge *b)
 {
     pu_node_unref(b->input_owner);
     pu_node_unref(b->composition);
+    pu_node_unref(b->click_target);
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); }
     pu_node_unref(b->body);
@@ -615,6 +621,7 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         if (data->pointer) {
             JS_SetPropertyStr(ctx, ev, "button", JS_NewInt32(ctx, data->pointer->button));
             JS_SetPropertyStr(ctx, ev, "buttons", JS_NewUint32(ctx, data->pointer->buttons));
+            JS_SetPropertyStr(ctx, ev, "detail", JS_NewInt32(ctx, data->pointer->detail));
         }
         if (data->wheel) {
             JS_SetPropertyStr(ctx, ev, "deltaX", JS_NewFloat64(ctx, data->wheel->delta_x));
@@ -730,6 +737,17 @@ static void node_set_state(PuNode *n, unsigned flag, int on, int up_path); /* fw
 int pu_bridge_dispatch_pointer(PuBridge *b, PuNode *target, const PuPointerEvent *event)
 {
     if (!b) return 0;
+    if (event->type == PU_POINTER_CLICK && event->button == 0) {
+        b->double_click = event->detail == 2 && target && target == b->click_target;
+        pu_node_ref(target);
+        pu_node_unref(b->click_target);
+        b->click_target = target;
+    } else if (event->type == PU_POINTER_DOUBLE_CLICK) {
+        bool accepted = b->double_click && event->button == 0 && target &&
+            target == b->click_target && document_for_node(b->ctx, target) == b;
+        b->double_click = false;
+        if (!accepted) return 0;
+    }
     const char *type = pu_pointer_name(event->type);
     PuEventData data = { .pointer = event };
 
@@ -1588,6 +1606,7 @@ void pu_bridge_release_document(PuBridge *b)
     pu_node_unref(b->composition); b->composition = NULL;
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); b->focused = NULL; }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); b->hovered = NULL; }
+    pu_node_unref(b->click_target); b->click_target = NULL; b->double_click = false;
     pu_node_clear_tree_listeners(b->body);
     if (b == b->root) return; /* The global document belongs to the shared realm. */
     b->native_owned = false;

@@ -1294,7 +1294,11 @@ consume surrounding text.
 
 Pointer events expose fractional `clientX/clientY`, `button`, `buttons` and
 modifiers. Only the primary button generates `click`; secondary release generates
-`contextmenu`, other buttons `auxclick`. `button` is -1 for motion, otherwise
+`contextmenu`, other buttons `auxclick`. Primary double clicks deliver the second
+`click` followed by `dblclick`, with native `detail=2`; Win32 uses the system
+double-click recognition and SDL uses its native click count. The bridge requires
+the same still-attached target across both clicks; a replaced/removed target
+cannot inherit an activation. `button` is -1 for motion, otherwise
 left/middle/right/back/forward = 0/1/2/3/4; `buttons` uses masks 1/4/2/8/16.
 Wheel deltas are logical pixels (`deltaMode=0`), with both `deltaX` and `deltaY`;
 `preventDefault()` cancels the nearest scroll container's default scrolling.
@@ -1302,7 +1306,7 @@ Wheel deltas are logical pixels (`deltaMode=0`), with both `deltaX` and `deltaY`
 The headless harness keeps `host.key('a')` as keydown plus a convenient text
 commit. `host.key('a', 'keydown', {code:'KeyA', ctrlKey:true, repeat:true,
 text:false})` sends a physical event only. `host.text('text')` submits a whole
-string. `host.mouse(type,x,y,{button,buttons,...modifiers})` and
+string. `host.mouse(type,x,y,{button,buttons,detail,...modifiers})` and
 `host.scroll(x,y,deltaY,deltaX,{...modifiers})` expose richer pointer/wheel input.
 `host.compose(text, selectionStart, selectionLength)` submits preedit in tests.
 Top-level `.mjs` exceptions and rejected or unfinished top-level `await`
@@ -1310,6 +1314,10 @@ evaluations now fail with a nonzero exit status rather than ending silently.
 `gui/tests/input-events.mjs`, `gui/tests/pointer-events.mjs` and the Linux SDL adapter
 test cover these contracts; the latter queues synthetic SDL events and is not
 physical-device or locale-layout qualification.
+`desktop-files-double-click` separately exercises ordinary Files row selection,
+native double-click folder navigation, Up and WM close over the existing
+private real-input fixture. Its focused 60-second CTest budget does not add
+steps or relax deadlines in the existing browser/details journeys.
 
 ### Clipboard and incoming drops
 

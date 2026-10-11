@@ -862,6 +862,7 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
                 .type = down ? PU_POINTER_DOWN : PU_POINTER_UP,
                 .x = e->button.x, .y = e->button.y, .button = button,
                 .buttons = w->pressed_buttons, .modifiers = key_modifiers(SDL_GetModState()),
+                .detail = e->button.clicks ? e->button.clicks : 1,
             };
             if (w->pointer_fn) {
                 int changed = w->pointer_fn(&event, w->pointer_user);
@@ -869,6 +870,10 @@ static void handle_event(PuWindow *w, const SDL_Event *e)
                     event.type = button == 0 ? PU_POINTER_CLICK :
                                  button == 2 ? PU_POINTER_CONTEXT_MENU : PU_POINTER_AUXCLICK;
                     changed |= w->pointer_fn(&event, w->pointer_user);
+                    if (button == 0 && event.detail == 2) {
+                        event.type = PU_POINTER_DOUBLE_CLICK;
+                        changed |= w->pointer_fn(&event, w->pointer_user);
+                    }
                 }
                 if (changed > 0) w->dirty = 1;
             }

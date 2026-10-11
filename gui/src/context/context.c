@@ -835,7 +835,7 @@ static JSValue host_click(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     pu_bridge_set_focus(g_test->bridge, f); /* click-to-focus */
 
     /* A real click is mousedown -> mouseup -> click. */
-    PuPointerEvent event = { .type = PU_POINTER_DOWN, .x = (float)x, .y = (float)y, .button = 0, .buttons = 1 };
+    PuPointerEvent event = { .type = PU_POINTER_DOWN, .x = (float)x, .y = (float)y, .button = 0, .buttons = 1, .detail = 1 };
     pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
     event.type = PU_POINTER_UP; event.buttons = 0;
     pu_bridge_dispatch_pointer(g_test->bridge, target, &event);
@@ -861,12 +861,13 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
     if (argc >= 3) JS_ToFloat64(ctx, &y, argv[2]);
     PuPointerEvent event = { .x = (float)x, .y = (float)y };
     int found = 0;
-    for (int i = PU_POINTER_CLICK; i <= PU_POINTER_AUXCLICK; i++) {
+    for (int i = PU_POINTER_CLICK; i <= PU_POINTER_DOUBLE_CLICK; i++) {
         if (!strcmp(type, pu_pointer_name((PuPointerType)i))) { event.type = (PuPointerType)i; found = 1; break; }
     }
     JS_FreeCString(ctx, type);
     if (!found) return JS_ThrowTypeError(ctx, "Unsupported pointer event type");
     event.button = event.type == PU_POINTER_MOVE ? -1 : event.type == PU_POINTER_CONTEXT_MENU ? 2 : 0;
+    event.detail = event.type == PU_POINTER_MOVE ? 0 : event.type == PU_POINTER_DOUBLE_CLICK ? 2 : 1;
     if (argc >= 4) {
         if (!input_modifiers(ctx, argv[3], &event.modifiers)) return JS_EXCEPTION;
         JSValue value = JS_GetPropertyStr(ctx, argv[3], "button");
@@ -886,6 +887,14 @@ static JSValue host_mouse(JSContext *ctx, JSValueConst this_val, int argc, JSVal
         if (result < 0) return JS_EXCEPTION;
         if (buttons > 31) return JS_ThrowRangeError(ctx, "buttons must be a five-button bitmask");
         event.buttons = buttons;
+        value = JS_GetPropertyStr(ctx, argv[3], "detail");
+        if (JS_IsException(value)) return JS_EXCEPTION;
+        int32_t detail = event.detail;
+        result = JS_IsUndefined(value) ? 0 : JS_ToInt32(ctx, &detail, value);
+        JS_FreeValue(ctx, value);
+        if (result < 0) return JS_EXCEPTION;
+        if (detail < 0 || detail > 255) return JS_ThrowRangeError(ctx, "detail must be 0..255");
+        event.detail = detail;
     } else if (event.type == PU_POINTER_DOWN) event.buttons = 1;
     PuNode *body = pu_bridge_body(g_test->bridge);
     pu_layout_calculate(body, (float)g_test->width, (float)g_test->height);

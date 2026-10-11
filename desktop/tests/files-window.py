@@ -19,6 +19,7 @@ STAGES = {
                 "rename-edit", "renamed-folder", "before-wm-close"],
     "details": ["long-name-properties", "no-matches", "filtered-folder"],
 }
+MOUSE_STAGES = ["home-browser", "empty-folder", "before-wm-close"]
 REQUIRED_EVIDENCE = {
     "browser": ["documents", "returnedHome", "folderCreated", "folderRenamed", "documentOpenRequested",
                 "cancelled", "wheel", "keyboardRename", "history", "sort", "context", "filter", "address"],
@@ -38,12 +39,12 @@ def source_hashes(repo):
     return {path: hashlib.sha256((repo / path).read_bytes()).hexdigest() for path in paths}
 
 
-def driver_command(repo, driver, runtime, small=False, details=False):
+def driver_command(repo, driver, runtime, small=False, details=False, mouse=False):
     return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
             'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
             "polly-files-fixture", str(driver), str(runtime),
             str(repo / "desktop/tests/files-window-shell.mjs"), "files-window",
-            ("details-small" if small else "details") if details else ("small" if small else "initial")]
+            "mouse" if mouse else ("details-small" if small else "details") if details else ("small" if small else "initial")]
 
 
 def retain_fixture_home(root, evidence):
@@ -129,8 +130,10 @@ def main():
     parser.add_argument("runtime", type=Path)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--small", action="store_true")
-    parser.add_argument("--flow", choices=("all", "browser", "details"), default="all")
+    parser.add_argument("--flow", choices=("all", "browser", "details", "mouse"), default="all")
     args = parser.parse_args()
+    if args.flow == "mouse" and args.small:
+        raise ValueError("The focused mouse flow uses the normal window size")
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (1000, 1000, 1000, 1000):
         raise PermissionError("Files native acceptance requires actual ordinary UID/GID1000")
     if not args.driver.is_absolute() or not args.runtime.is_absolute() or not args.evidence.is_absolute():
@@ -173,7 +176,7 @@ def main():
                        XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
-    command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details")
+    command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details", args.flow == "mouse")
     sources = source_hashes(repo)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
@@ -207,13 +210,18 @@ def main():
     for marker in ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:"):
         if marker not in text:
             raise RuntimeError("Missing actual Files action/normal-close receipt: " + marker)
-    receipt = json.loads((root / "mime-result.json").read_text())
-    if receipt != {"uid": 1000, "argv": [str(document)], "cwd": str(repo), "text": document.read_text()}:
-        raise RuntimeError("Actual MIME helper argv/cwd/ordinary UID/read content differs from the fixture")
-    (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
+    if args.flow != "mouse":
+        receipt = json.loads((root / "mime-result.json").read_text())
+        if receipt != {"uid": 1000, "argv": [str(document)], "cwd": str(repo), "text": document.read_text()}:
+            raise RuntimeError("Actual MIME helper argv/cwd/ordinary UID/read content differs from the fixture")
+        (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_bytes = (root / "files-window-result.json").read_bytes()
     result = json.loads(receipt_bytes)
-    stages = STAGES[args.flow]
+    stages = MOUSE_STAGES if args.flow == "mouse" else STAGES[args.flow]
+    required = ["singleClick", "doubleClick", "documents", "returnedHome"] if args.flow == "mouse" else REQUIRED_EVIDENCE[args.flow]
+    if result.get("flow") != args.flow or result.get("passed") is not True or result.get("closeObserved") is not True or \
+            any(result.get("evidence", {}).get(key) is not True for key in required):
+        raise RuntimeError("Native Files action/close receipt differs from the requested flow")
     if [capture["stage"] for capture in result["captures"]] != stages:
         raise RuntimeError("Native Files capture order differs from its independent " + args.flow + " flow")
     images = []
@@ -238,7 +246,8 @@ def main():
         images.append({**capture, "sha256": hashlib.sha256(data).hexdigest(), "width": width, "height": height})
     (evidence / "files-window-result.json").write_bytes(receipt_bytes)
     (evidence / "captures.json").write_text(json.dumps(images, indent=2) + "\n")
-    print("PASS: actual UID1000 Files pointer/wheel/keyboard/WM-close and separate MIME helper read receipt")
+    print("PASS: actual UID1000 Files single/double-click navigation and WM-close" if args.flow == "mouse" else
+          "PASS: actual UID1000 Files pointer/wheel/keyboard/WM-close and separate MIME helper read receipt")
 
 
 if __name__ == "__main__":

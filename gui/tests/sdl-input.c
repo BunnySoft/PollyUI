@@ -77,6 +77,18 @@ static int on_pointer(const PuPointerEvent *event, void *user)
     case 2: check(event->type == PU_POINTER_UP && event->buttons == 0, "right button release"); break;
     case 3: check(event->type == PU_POINTER_CONTEXT_MENU && event->button == 2,
                   "right click is contextmenu, not primary click"); break;
+    case 4: case 7:
+        check(event->type == PU_POINTER_DOWN && event->button == 0 &&
+              event->detail == (pointers == 5 ? 1 : 2), "native primary click press count"); break;
+    case 5: case 8:
+        check(event->type == PU_POINTER_UP && event->buttons == 0 &&
+              event->detail == (pointers == 6 ? 1 : 2), "native primary click release count"); break;
+    case 6: case 9:
+        check(event->type == PU_POINTER_CLICK && event->detail == (pointers == 7 ? 1 : 2),
+              "both primary clicks are delivered"); break;
+    case 10:
+        check(event->type == PU_POINTER_DOUBLE_CLICK && event->detail == 2 &&
+              event->button == 0, "native double click follows the second release/click"); break;
     default: check(0, "unexpected pointer event");
     }
     return PU_INPUT_REDRAW;
@@ -202,6 +214,16 @@ static int tick(void *user)
         event.button.button = SDL_BUTTON_RIGHT;
         event.button.x = 12.5f; event.button.y = 23.0f;
         check(SDL_PushEvent(&event), "queue right release");
+        for (int count = 1; count <= 2; count++) {
+            SDL_zero(event);
+            event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+            event.button.windowID = window_id;
+            event.button.button = SDL_BUTTON_LEFT; event.button.clicks = count;
+            event.button.x = 12.5f; event.button.y = 23.0f;
+            check(SDL_PushEvent(&event), "queue primary click press");
+            event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+            check(SDL_PushEvent(&event), "queue primary click release");
+        }
         SDL_zero(event);
         event.type = SDL_EVENT_MOUSE_WHEEL;
         event.wheel.windowID = window_id;
@@ -261,7 +283,7 @@ int main(void)
     pu_render_shutdown();
     check(received == 9, "exactly one event for each key or committed text");
     check(preedits == 1 && cancellations == 1, "exact preedit and cancellation event sequence");
-    check(pointers == 4 && wheels == 1, "exact pointer/wheel event sequence");
+    check(pointers == 11 && wheels == 1, "exact pointer/wheel event sequence");
     check(drop_enters == 4 && drop_motions == 1 && drops == 1 && drop_leaves == 1 && drop_errors == 2,
           "exact drop sequence with bounded payload rejection");
     if (!result && !failed) puts("PASS: SDL native keyboard/text adapter");

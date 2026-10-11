@@ -38,6 +38,7 @@ struct PuWindow {
     PuKeyFn     key_fn;       /* optional keyboard callback */
     void       *key_user;
     int         suppress_text;
+    int         click_counts[5];
     wchar_t     pending_surrogate;
     PuWheelFn   wheel_fn;     /* optional wheel callback */
     void       *wheel_user;
@@ -389,12 +390,16 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
+    case WM_LBUTTONDBLCLK:
     case WM_RBUTTONDOWN:
     case WM_RBUTTONUP:
+    case WM_RBUTTONDBLCLK:
     case WM_MBUTTONDOWN:
     case WM_MBUTTONUP:
+    case WM_MBUTTONDBLCLK:
     case WM_XBUTTONDOWN:
     case WM_XBUTTONUP:
+    case WM_XBUTTONDBLCLK:
     case WM_MOUSEMOVE:
         if (w && w->pointer_fn) {
             float scale = w->scale > 0 ? w->scale : 1.0f;
@@ -409,18 +414,26 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 event.type = PU_POINTER_MOVE;
                 changed = w->pointer_fn(&event, w->pointer_user);
             } else {
-                event.button = (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP) ? 0 :
-                    (msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP) ? 1 :
-                    (msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP) ? 2 :
+                event.button = (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_LBUTTONDBLCLK) ? 0 :
+                    (msg == WM_MBUTTONDOWN || msg == WM_MBUTTONUP || msg == WM_MBUTTONDBLCLK) ? 1 :
+                    (msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP || msg == WM_RBUTTONDBLCLK) ? 2 :
                     (GET_XBUTTON_WPARAM(wp) == XBUTTON1 ? 3 : 4);
+                int twice = msg == WM_LBUTTONDBLCLK || msg == WM_MBUTTONDBLCLK ||
+                            msg == WM_RBUTTONDBLCLK || msg == WM_XBUTTONDBLCLK;
                 int down = msg == WM_LBUTTONDOWN || msg == WM_MBUTTONDOWN ||
-                           msg == WM_RBUTTONDOWN || msg == WM_XBUTTONDOWN;
+                           msg == WM_RBUTTONDOWN || msg == WM_XBUTTONDOWN || twice;
+                if (down) w->click_counts[event.button] = twice ? 2 : 1;
+                event.detail = w->click_counts[event.button];
                 event.type = down ? PU_POINTER_DOWN : PU_POINTER_UP;
                 changed = w->pointer_fn(&event, w->pointer_user);
                 if (!down) {
                     event.type = event.button == 0 ? PU_POINTER_CLICK :
                                  event.button == 2 ? PU_POINTER_CONTEXT_MENU : PU_POINTER_AUXCLICK;
                     changed |= w->pointer_fn(&event, w->pointer_user);
+                    if (event.button == 0 && event.detail == 2) {
+                        event.type = PU_POINTER_DOUBLE_CLICK;
+                        changed |= w->pointer_fn(&event, w->pointer_user);
+                    }
                 }
             }
             /* Repaint only when the handler actually changed the DOM, and do it
@@ -430,7 +443,7 @@ static LRESULT CALLBACK pu_wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
              * relayout+repaint, and a click paints immediately. */
             if (changed) { InvalidateRect(hwnd, NULL, FALSE); UpdateWindow(hwnd); }
         }
-        return (msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP) ? TRUE : 0;
+        return (msg == WM_XBUTTONDOWN || msg == WM_XBUTTONUP || msg == WM_XBUTTONDBLCLK) ? TRUE : 0;
 
     case WM_MOUSEWHEEL:
     case WM_MOUSEHWHEEL:
@@ -561,7 +574,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     WNDCLASSEXW wc;
     memset(&wc, 0, sizeof(wc));
     wc.cbSize        = sizeof(wc);
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.style         = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wc.lpfnWndProc   = pu_wndproc;
     wc.hInstance     = hinst;
     wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);

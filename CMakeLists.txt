@@ -727,6 +727,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     --evidence "${CMAKE_BINARY_DIR}/files-window-evidence")
             set_tests_properties(desktop-files-window PROPERTIES TIMEOUT 360
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+            add_test(NAME desktop-files-double-click
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
+                    $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                    --flow mouse --evidence "${CMAKE_BINARY_DIR}/files-mouse-evidence")
+            set_tests_properties(desktop-files-double-click PROPERTIES TIMEOUT 60
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
             add_test(NAME desktop-files-window-manifest
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window-manifest.py")
             set_tests_properties(desktop-files-window-manifest PROPERTIES TIMEOUT 15)

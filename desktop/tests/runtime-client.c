@@ -541,13 +541,16 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
         }
         int x, y, delta, used = 0;
         bool context_click = sscanf(action, "context %d %d%n", &x, &y, &used) == 2 && !action[used];
-        if (context_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
+        bool double_click = !strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "doubleclick %d %d%n", &x, &y, &used) == 2 && !action[used];
+        if (context_click || double_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
                 y < view->toplevel->base->geometry.height);
             *last = sequence;
             fixture_pointer_motion(sx + x, sy + y, ++*time);
             CHECK(desktop.seat->pointer_state.focused_surface == view->toplevel->base->surface);
             fixture_pointer_click(sx + x, sy + y, *time += 3, context_click ? 2 : 0);
+            if (double_click) fixture_pointer_click(sx + x, sy + y, *time += 3, 0);
         } else if (sscanf(action, "wheel %d %d %d%n", &x, &y, &delta, &used) == 3 && !action[used]) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
                 y < view->toplevel->base->geometry.height && delta >= -10000 && delta <= 10000);
