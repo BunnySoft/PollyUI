@@ -188,8 +188,9 @@ remote side effects. Close releases pending calls/connections but keeps the
 module's libdbus reference for its global caches. `shutdownDbus()` is explicit
 and requires all SDK endpoints closed plus exclusive ownership of every libdbus
 user in the process, including other realms/native code. Do not invoke it as
-automatic desktop-host cleanup. Containers, variants and subscriptions are
-not implemented; this is not a general RPC/service framework.
+automatic desktop-host cleanup. These client/service adapters remain scalar;
+the single-reader endpoint below adds the consumer-required container and
+signal subset, not a general RPC/service framework.
 
 `openDbusService(address, {name, path, interface, methods})` supplies a minimal
 JS service on a separate private connection. Each method declares `signature`
@@ -206,8 +207,17 @@ responses. Invalid targets/signatures receive native errors without admission.
 Disconnect or a validated daemon NameLost closes admission without reconnect.
 Forced authentic NameLost was not exercised; peer-spoofed NameLost was.
 Unique sender metadata is not authorization: Settings/Shell policy must remain
-above this transport. Introspection, containers, Unix FDs, general signals and
-automatic Promise handlers are not implemented.
+above this transport. This service adapter has no introspection, containers,
+general signals, Unix FDs or automatic Promise handlers.
+
+`openDbusEndpoint(address, {objects, signals, limits})` now supports the iwd
+transport subset on one private connection: outgoing calls, exported agent
+methods and declared signals share a single reader. It supports `n/u/b/s/o`,
+arrays, structs, dictionaries and variants, with copied headers, explicit
+pre-decode admission/projection and native message ownership. Drive
+`endpoint.poll()` as well as ticket outcomes; two independent readers must not
+consume the connection. This protocol capability does not itself replace the
+current C Wi-Fi backend. See [D-Bus SDK contracts](docs/DBUS-SDK.md).
 
 **Independent Settings (first application slice).**
 

@@ -36,9 +36,11 @@ not undo OS side effects. Native ABI metadata remains trusted code, not a sandbo
 
 ## D-Bus SDK gaps required by iwd
 
-These are protocol/connection features, not changes to libffi itself. The current
-high-level client/service accepts empty or one `u/b/s/o` request and fixed scalar
-replies; signals and containers are not exposed.
+These are protocol/connection features, not changes to libffi itself. The
+consumer-required transport slice is now integrated: `openDbusEndpoint` supports
+the shapes below on a single-reader connection. Existing scalar client/service
+adapters remain unchanged. The JS iwd service and old C bridge removal are still
+in progress; transport acceptance alone is not service-migration completion.
 
 | Required feature | Actual iwd call/message |
 |---|---|
@@ -55,6 +57,14 @@ method routing must not consume one another's messages. Do not emulate native
 filters with unsupported retained FFI callbacks or share a connection with two
 independent readers. Generic transport stays free of iwd's device/queue/UI limits.
 Credential payloads and arbitrary remote error bodies must not enter logs.
+The endpoint's supported subset is `n/u/b/s/o`, arrays, structs, dictionaries
+and variants. Unused fields can be explicitly projected out before recursion;
+unsupported values are not silently decoded. Its copied-header admission runs
+before payload decoding. These rules and exact lifecycle APIs are documented
+in [D-Bus SDK connection contracts](./DBUS-SDK.md).
+The integrated native tests passed on glibc with ASan/UBSan and on musl,
+including the existing scalar and duplex routes. Retained FFI callbacks,
+Unix-FD transport and general introspection are not added by this slice.
 
 ## Desktop migration inventory
 
