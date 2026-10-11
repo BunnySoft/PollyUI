@@ -361,7 +361,7 @@ test('fixture close marker follows persisted callback receipt without needing a 
     const calls = [], evidence = { actualAction: true }, captures = mode === 'incomplete-captures' ? [] : ['actual.png'];
     const surface = { onclose() { calls.push('original-close'); } };
     const context = { app: { getWindow: () => surface, controller: { getState: () => ({ phase: 'disposed' }) } },
-      evidence, captures, captureStages: ['only-stage'], mode: '--drive', driving: true, closingViaDriver: mode !== 'no-driver-close',
+      evidence, captures, captureStages: ['only-stage'], mode: '--drive', driving: true, details: false, closingViaDriver: mode !== 'no-driver-close',
       driveFailed: mode === 'drive-failed', root: '/tmp/polly-files-window-unit', renamedName: 'New folde',
       console: { log(message) { calls.push(message); }, error(message) { calls.push(message); } },
       api: { stat() { return { identity: 'parent-observation' }; }, writeText(parent, name, text, expected) {

@@ -15,16 +15,19 @@ if (marker.uid !== 1000 || marker.type !== 'file' ||
     api.readText(marker.path, marker.identity).text !== 'POLLY-FILES-PRIVATE-WINDOW-V1\n')
   throw new Error('Private fixture marker missing; no host enumeration is permitted');
 
-const driving = mode === '--drive' || mode === '--drive-small';
+const driving = ['--drive', '--drive-small', '--details', '--details-small'].includes(mode);
+const details = mode === '--details' || mode === '--details-small';
 const app = createFilesApp({ initialPath: root, optInTheme: false, host: {
-  close: () => window.close(), create: options => window.create(mode === '--drive-small' ?
+  close: () => window.close(), create: options => window.create(mode.endsWith('-small') ?
     { ...options, width: 680, height: 540 } : options),
 } }).start();
-const evidence = { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
+const evidence = details ? { documentOpenRequested: false, filter: false, address: false, properties: false } :
+  { documents: false, returnedHome: false, folderCreated: false, folderRenamed: false,
   documentOpenRequested: false, cancelled: false, wheel: false, keyboardRename: false, history: false,
   sort: false, context: false, filter: false, address: false };
-const captureStages = ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
-  'rename-edit', 'renamed-folder', 'long-name-properties', 'no-matches', 'filtered-folder', 'before-wm-close'];
+const captureStages = details ? ['long-name-properties', 'no-matches', 'filtered-folder'] :
+  ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
+    'rename-edit', 'renamed-folder', 'before-wm-close'];
 const captures = [];
 let ticks = 0, last = '', previousDialog = false, passed = false;
 const renamedName = driving ? 'New folde' : 'Renamed folder';
@@ -37,15 +40,17 @@ function bounds(node) {
 function observe() {
   const state = app.controller.getState(), surface = app.getWindow();
   if (!surface || state.phase !== 'ready') return;
-  evidence.documents ||= state.path === root + '/Documents';
-  evidence.returnedHome ||= evidence.documents && state.path === root;
-  evidence.folderCreated ||= state.message === 'Created folder: New folder';
-  evidence.folderRenamed ||= state.message === 'Renamed to: ' + renamedName;
+  if (!details) {
+    evidence.documents ||= state.path === root + '/Documents';
+    evidence.returnedHome ||= evidence.documents && state.path === root;
+    evidence.folderCreated ||= state.message === 'Created folder: New folder';
+    evidence.folderRenamed ||= state.message === 'Renamed to: ' + renamedName;
+    evidence.cancelled ||= previousDialog && !state.dialog && !state.message;
+  }
   evidence.documentOpenRequested ||= state.message === 'Open requested: literal %u; 中文.txt';
-  evidence.cancelled ||= previousDialog && !state.dialog && !state.message;
   previousDialog = !!state.dialog;
   const list = surface.document.getElementById('files-list');
-  evidence.wheel ||= list && Number(list.scrollTop) > 0;
+  if (!details) evidence.wheel ||= list && Number(list.scrollTop) > 0;
 }
 const surface = app.getWindow(), originalClose = surface.onclose;
 surface.onclose = () => {
@@ -55,7 +60,7 @@ surface.onclose = () => {
   if (driving && complete && closeObserved && closingViaDriver && !driveFailed) {
     try {
       api.writeText(root, 'files-window-result.json', JSON.stringify({
-        version: 1, native: true, root, passed: true, closeObserved, evidence,
+        version: 1, native: true, root, flow: details ? 'details' : 'browser', passed: true, closeObserved, evidence,
         appId: 'org.pollyui.files-window-fixture', renamedName, captures,
       }), api.stat(root, false).identity);
       console.log('FILES_WINDOW_CLOSE_PASS: real ordinary Files window disposed; actual close receipt persisted');
@@ -88,7 +93,7 @@ const timer = setInterval(() => {
       message: state.message, dialog: state.dialog?.kind ?? null, activeElement: document.activeElement?.id || '', evidence, controls });
     if (receipt !== last) { console.log('FILES_WINDOW_STATE: ' + receipt); last = receipt; }
     if (!passed && driving && Object.values(evidence).every(Boolean)) {
-      if (api.stat(root + '/' + renamedName, false).type !== 'directory')
+      if (!details && api.stat(root + '/' + renamedName, false).type !== 'directory')
         throw new Error('Actual renamed directory must exist, not only an optimistic UI row');
       passed = true;
       console.log('FILES_WINDOW_ACTIONS_PASS: native ordinary browser/new-folder/rename/MIME Open/cancel/wheel');
@@ -115,6 +120,7 @@ async function drive() {
     throw new Error('Real Files input timed out: ' + description);
   }
   async function request(command) {
+    const started = Date.now();
     const context = app.getWindow()?.document.getElementById('files-context');
     if (context && command !== 'close') {
       const rect = bounds(context);
@@ -124,6 +130,7 @@ async function drive() {
     let ack = false;
     marker.onclose = () => { ack = true; };
     await until(() => ack, 'native marker ACK ' + command);
+    console.log('FILES_WINDOW_INPUT: ' + JSON.stringify({ sequence, command, elapsedMs: Date.now() - started }));
   }
   async function click(id, rightEnd = false) {
     await until(() => {
@@ -183,6 +190,7 @@ async function drive() {
   }
   const state = () => app.controller.getState();
   await until(() => state().phase === 'ready' && state().path === root, 'private initial folder');
+  if (!details) {
   await captureFrame('home-browser');
   await click('files-place-documents');
   await until(() => state().phase === 'ready' && state().path === root + '/Documents', 'Documents navigation');
@@ -237,18 +245,22 @@ async function drive() {
   await request('key enter');
   await until(() => state().phase === 'ready' && state().selection?.name === renamedName, 'actual rename and rescan');
   await captureFrame('renamed-folder');
-  const longIndex = visibleEntries(state()).findIndex(entry => entry.name.startsWith('Long project'));
-  const longId = 'files-entry-' + longIndex;
-  await wheel(-400);
-  for (let attempt = 0; attempt < 32; attempt++) {
-    const row = bounds(app.getWindow().document.getElementById(longId)), list = bounds(app.getWindow().document.getElementById('files-list'));
-    if (row.y + row.height / 2 >= list.y && row.y + row.height / 2 < list.y + list.height) break;
-    await wheel(row.y < list.y ? -240 : 240);
+  } else {
+    await click('files-entry-0');
+    await until(() => state().selection && app.getWindow().document.activeElement?.id?.startsWith('files-entry-'),
+      'detail flow owns actual row keyboard focus');
   }
-  await click(longId);
+  if (details) {
+  const longIndex = visibleEntries(state()).findIndex(entry => entry.name.startsWith('Long project'));
+  await request('keycode 102 0');
+  await until(() => state().selection?.path === visibleEntries(state())[0].path, 'Home selects first current row');
+  await request('keys 108 0 ' + longIndex);
+  await until(() => state().selection?.path === visibleEntries(state())[longIndex].path, 'native Down selects exact long-name row');
   await click('files-properties');
   await captureFrame('long-name-properties');
   await click('files-details-close');
+  evidence.properties = true;
+  }
   await request('keycode 38 2');
   await until(() => state().address === root && app.getWindow().document.activeElement?.id === 'files-address', 'Ctrl+L editable actual path');
   await request('key escape'); await until(() => state().address === null, 'cancel address edit');
@@ -257,10 +269,10 @@ async function drive() {
   clipboard.writeText('row-zzz');
   await request('keycode 47 2');
   await until(() => !visibleEntries(state()).length && app.getWindow().document.getElementById('files-no-matches'), 'no matching names differs from empty folder');
-  await captureFrame('no-matches');
-  for (let index = 0; index < 3; index++) await request('key backspace');
+  if (details) await captureFrame('no-matches');
+  await request('keys 14 0 3');
   await until(() => state().filter === 'row-' && visibleEntries(state()).length === 96 && !state().selection, 'folder-local name filter');
-  await captureFrame('filtered-folder');
+  if (details) await captureFrame('filtered-folder');
   await click('files-filter-clear');
   await until(() => state().filter === '' && visibleEntries(state()).length === state().snapshot.entries.length, 'clear folder filter');
   evidence.filter = true;
@@ -270,10 +282,8 @@ async function drive() {
   await until(() => app.getWindow().document.activeElement?.id === 'files-list', 'cleared filter returns keyboard focus to list');
   await request('keycode 102 0');
   await until(() => state().selection?.path === visibleEntries(state())[0].path, 'Home selects first visible row');
-  for (let at = 1; at <= index; at++) {
-    await request('keycode 108 0');
-    await until(() => state().selection?.path === visibleEntries(state())[at].path, 'ArrowDown selects visible row ' + at);
-  }
+  await request('keys 108 0 ' + index);
+  await until(() => state().selection?.path === visibleEntries(state())[index].path, 'native Down follows actual sorted list order');
   await until(() => {
     const row = bounds(app.getWindow().document.getElementById(rowId)), list = bounds(app.getWindow().document.getElementById('files-list'));
     return row.y >= list.y && row.y + row.height <= list.y + list.height;
@@ -282,7 +292,7 @@ async function drive() {
   await until(() => state().selection?.name === 'literal %u; 中文.txt', 'explicit actual document selection');
   await click('files-open');
   await until(() => state().message === 'Open requested: literal %u; 中文.txt', 'actual standard MIME dispatch');
-  await captureFrame('before-wm-close');
+  if (!details) await captureFrame('before-wm-close');
   observe();
   if (!Object.values(evidence).every(Boolean)) throw new Error('Missing actual Files action evidence: ' + JSON.stringify(evidence));
   console.log('FILES_WINDOW_DRIVE_PASS: native pointer/wheel/name-focus/Backspace/history/MIME-dispatch; helper receipt verified externally');

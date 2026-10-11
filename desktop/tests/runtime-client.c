@@ -581,6 +581,12 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
             *last = sequence;
             fixture_keyboard((unsigned)x, (unsigned)y, time);
+        } else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "keys %d %d %d%n", &x, &y, &delta, &used) == 3 && !action[used]) {
+            CHECK(x > 0 && x <= KEY_MAX && y >= 0 && y <= 15 && delta > 0 && delta <= 32);
+            CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+            *last = sequence;
+            for (int at = 0; at < delta; at++) fixture_keyboard((unsigned)x, (unsigned)y, time);
         } else if (!strcmp(action, "close")) {
             *last = sequence;
             wlr_xdg_toplevel_send_close(view->toplevel);

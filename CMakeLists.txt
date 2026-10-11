@@ -725,8 +725,11 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
                     --evidence "${CMAKE_BINARY_DIR}/files-window-evidence")
-            set_tests_properties(desktop-files-window PROPERTIES TIMEOUT 180
+            set_tests_properties(desktop-files-window PROPERTIES TIMEOUT 360
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
+            add_test(NAME desktop-files-window-manifest
+                COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window-manifest.py")
+            set_tests_properties(desktop-files-window-manifest PROPERTIES TIMEOUT 15)
             add_test(NAME desktop-file-dialog-window
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

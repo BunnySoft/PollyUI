@@ -251,10 +251,18 @@ application rendered or consumed a document. Source syntax checks do not prove
 the optional drive mode or new engine pixels/input.
 
 Stage an ordinary-user `HOME/evidence` directory before starting the fixture.
-The drive captures eleven named PNGs there using the current live app window's
-native `capture(path)` API: Home, empty directory, scrolled list, created folder,
-context menu, inline rename, renamed folder, long-name Properties, filtered rows,
-no matches and before WM close. Native Ctrl+V pastes a synthetic filter through
+The default `files-window.py` command runs two independent, self-contained flows,
+each with a fresh private HOME, application, native supervisor, MIME consumer and
+WM-close receipt. The browser flow captures Home, empty directory, scrolled list,
+created folder, context menu, inline rename, renamed folder and before WM close.
+The details flow captures long-name Properties, no matches and filtered rows.
+Both flows verify the filter/address/keyboard selection and actual MIME dispatch.
+Each retains the original 120-second native supervisor and 150-second wrapper
+deadlines. The outer single-flow limit is 180 seconds; the default CTest envelope
+is 360 seconds for both independent flows, rather than forcing every visual stage
+and repeatedly initialized marker window into one 120-second session.
+
+Native Ctrl+V pastes a synthetic filter through
 the private Wayland clipboard (the isolated fixture has no input-method process);
 this certifies keyboard paste/filter behavior, not IME character entry.
 `files-window.py --small` repeats the real app at 680x540. Normal requested height
@@ -267,3 +275,14 @@ These are presented app-buffer artifacts, not a compositor/host screenshot,
 physical-GPU proof or a source-only claim that captures have already passed.
 Capturing in the pre-staged child directory avoids modifying the browser's
 root directory identity while creation/rename confirmations are pending.
+
+`--flow browser` or `--flow details` selects a single independent flow for a
+targeted regression; the default runs **both**, with no silent skip.
+`aggregate.json` is written only after both current runs pass: required action
+receipts, normal close, exact stage sets, PNG hashes, each flow's separate MIME
+consumer result and fresh HOME must agree. Runtime, input-driver and source
+hashes must match across flows. Each flow retains `inputs.json`, `native.log`,
+`captures.json`, its close receipt and actual elapsed time. The eleven images
+are attributed to their own flow, never assembled from historical failed runs.
+`files-window-manifest.py` tests aggregation rejection using synthetic bytes;
+it does not certify native input or rendering.

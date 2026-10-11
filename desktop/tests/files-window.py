@@ -12,13 +12,38 @@ import struct
 import tempfile
 import shutil
 import sys
+import time
+
+STAGES = {
+    "browser": ["home-browser", "empty-folder", "scrolled-list", "new-folder", "context-menu",
+                "rename-edit", "renamed-folder", "before-wm-close"],
+    "details": ["long-name-properties", "no-matches", "filtered-folder"],
+}
+REQUIRED_EVIDENCE = {
+    "browser": ["documents", "returnedHome", "folderCreated", "folderRenamed", "documentOpenRequested",
+                "cancelled", "wheel", "keyboardRename", "history", "sort", "context", "filter", "address"],
+    "details": ["documentOpenRequested", "filter", "address", "properties"],
+}
 
 
-def driver_command(repo, driver, runtime, small=False):
+def source_hashes(repo):
+    paths = [
+        "desktop/apps/files/app.mjs", "desktop/apps/files/logic/controller.mjs",
+        "desktop/apps/files/logic/model.mjs", "desktop/apps/files/ui/view.mjs",
+        "desktop/apps/files/ui/format.mjs", "desktop/shell/presentation.mjs",
+        "gui/sdk/js/textinput.mjs", "desktop/tests/files-window-client.mjs",
+        "desktop/tests/files-window-shell.mjs", "desktop/tests/runtime-client.c",
+        "desktop/tests/files-window.py",
+    ]
+    return {path: hashlib.sha256((repo / path).read_bytes()).hexdigest() for path in paths}
+
+
+def driver_command(repo, driver, runtime, small=False, details=False):
     return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
             'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
             "polly-files-fixture", str(driver), str(runtime),
-            str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "small" if small else "initial"]
+            str(repo / "desktop/tests/files-window-shell.mjs"), "files-window",
+            ("details-small" if small else "details") if details else ("small" if small else "initial")]
 
 
 def retain_fixture_home(root, evidence):
@@ -41,12 +66,70 @@ def report_native_failure(evidence):
     print(text[-65536:], file=sys.stderr)
 
 
+def aggregate_flows(evidence, elapsed):
+    flows = []
+    for flow, stages in STAGES.items():
+        directory = evidence / flow
+        inputs = json.loads((directory / "inputs.json").read_text())
+        receipt = json.loads((directory / "files-window-result.json").read_text())
+        captures = json.loads((directory / "captures.json").read_text())
+        log = (directory / "native.log").read_text(errors="replace")
+        if inputs.get("flow") != flow or inputs.get("uid") != 1000 or receipt.get("flow") != flow or \
+                receipt.get("passed") is not True or receipt.get("native") is not True or \
+                receipt.get("closeObserved") is not True or not receipt.get("evidence") or \
+                any(receipt["evidence"].get(key) is not True for key in REQUIRED_EVIDENCE[flow]) or \
+                receipt.get("root") != inputs.get("root") or \
+                [capture["stage"] for capture in receipt.get("captures", [])] != stages or \
+                [capture["stage"] for capture in captures] != stages or \
+                any(marker not in log for marker in
+                    ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:")) or \
+                "FILES_WINDOW_FAIL:" in log or "FILES_WINDOW_SUPERVISOR_FAIL:" in log:
+            raise RuntimeError("Cannot aggregate an incomplete or failed native Files flow: " + flow)
+        for capture in captures:
+            image = directory / ("files-" + capture["stage"] + ".png")
+            if hashlib.sha256(image.read_bytes()).hexdigest() != capture["sha256"]:
+                raise RuntimeError("Native Files capture changed before aggregation: " + flow)
+        mime = json.loads((directory / "mime-result.json").read_text())
+        if mime.get("uid") != 1000 or mime.get("argv") != [inputs["root"] + "/literal %u; \u4e2d\u6587.txt"] or \
+                mime.get("cwd") != inputs.get("cwd") or mime.get("text") != "Synthetic private Files MIME content.\n":
+            raise RuntimeError("Native Files separate consumer receipt differs from its own fresh flow: " + flow)
+        flows.append({"id": flow, "elapsedMs": elapsed[flow], "inputs": inputs, "receipt": receipt,
+                      "captures": captures, "mime": mime})
+    if flows[0]["inputs"]["root"] == flows[1]["inputs"]["root"] or any(
+            flows[0]["inputs"][key] != flows[1]["inputs"][key]
+            for key in ("driverSha256", "runtimeSha256", "sourceSha256")):
+        raise RuntimeError("Native Files flows need distinct fresh HOME directories and identical source/runtime/driver")
+    return {"version": 2, "passed": True, "flows": flows}
+
+
+def run_flows(args, evidence):
+    elapsed = {}
+    for flow in STAGES:
+        command = [sys.executable, str(Path(__file__).resolve()), str(args.driver), str(args.runtime),
+                   "--flow", flow, "--evidence", str(evidence / flow)]
+        if args.small:
+            command.append("--small")
+        started = time.monotonic()
+        # Each independent process keeps the existing native supervisor and wrapper deadlines.
+        result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+        elapsed[flow] = round((time.monotonic() - started) * 1000)
+        (evidence / (flow + "-run.log")).write_text(result.stdout)
+        if result.returncode:
+            print(result.stdout, file=sys.stderr)
+            raise RuntimeError("Native Files " + flow + " flow failed; no aggregate PASS is produced")
+    aggregate = aggregate_flows(evidence, elapsed)
+    (evidence / "aggregate.json").write_text(json.dumps(aggregate, indent=2) + "\n")
+    print("PASS: independent native Files browser/details flows, eleven current-source captures, "
+          "separate HOME/MIME/WM-close receipts; " + json.dumps(elapsed))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("driver", type=Path)
     parser.add_argument("runtime", type=Path)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--small", action="store_true")
+    parser.add_argument("--flow", choices=("all", "browser", "details"), default="all")
     args = parser.parse_args()
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (1000, 1000, 1000, 1000):
         raise PermissionError("Files native acceptance requires actual ordinary UID/GID1000")
@@ -55,6 +138,9 @@ def main():
     repo = Path(__file__).resolve().parents[2]
     evidence = args.evidence
     evidence.mkdir(parents=True, exist_ok=False)
+    if args.flow == "all":
+        run_flows(args, evidence)
+        return
     root = Path(tempfile.mkdtemp(prefix="polly-files-window-"))
     for name in ("Documents", "Downloads", "Desktop", "config", "data", "data/applications",
                  "state", "cache", "share", "evidence"):
@@ -87,11 +173,13 @@ def main():
                        XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
-    command = driver_command(repo, args.driver, args.runtime, args.small)
+    command = driver_command(repo, args.driver, args.runtime, args.small, args.flow == "details")
+    sources = source_hashes(repo)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
         "driverSha256": hashlib.sha256(args.driver.read_bytes()).hexdigest(),
         "runtimeSha256": hashlib.sha256(args.runtime.read_bytes()).hexdigest(),
+        "flow": args.flow, "sourceSha256": sources,
         "syntheticMetadataOnly": True, "hostEnumeration": False,
     }, indent=2) + "\n")
     with (evidence / "native.log").open("wb") as log:
@@ -114,6 +202,8 @@ def main():
     if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text:
         report_native_failure(evidence)
         raise RuntimeError("Actual Files native fixture failed; original private evidence retained")
+    if source_hashes(repo) != sources:
+        raise RuntimeError("Native Files source changed while the independent flow was running")
     for marker in ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:"):
         if marker not in text:
             raise RuntimeError("Missing actual Files action/normal-close receipt: " + marker)
@@ -123,10 +213,9 @@ def main():
     (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_bytes = (root / "files-window-result.json").read_bytes()
     result = json.loads(receipt_bytes)
-    stages = ["home-browser", "empty-folder", "scrolled-list", "new-folder", "context-menu",
-              "rename-edit", "renamed-folder", "long-name-properties", "no-matches", "filtered-folder", "before-wm-close"]
+    stages = STAGES[args.flow]
     if [capture["stage"] for capture in result["captures"]] != stages:
-        raise RuntimeError("Native Files capture order is not the fixed six-stage contract")
+        raise RuntimeError("Native Files capture order differs from its independent " + args.flow + " flow")
     images = []
     for capture in result["captures"]:
         path = root / "evidence" / ("files-" + capture["stage"] + ".png")
