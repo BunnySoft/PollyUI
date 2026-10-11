@@ -1,4 +1,5 @@
 #include "launcher.h"
+#include "polly-runtime-build-info.h"
 #include "pollyui/context.h"
 #include "pollyui/window.h"
 #include "sysrt/providers/app_paths.h"
@@ -69,6 +70,10 @@ static int install_application(JSContext *ctx, const LaunchState *state)
     JSValue application = JS_NewObject(ctx), arguments = JS_NewArray(ctx);
     int ok = !JS_IsException(application) && !JS_IsException(arguments);
     if (ok) ok = JS_SetPropertyStr(ctx, application, "id", JS_NewString(ctx, paths->id)) >= 0;
+    if (ok) ok = JS_SetPropertyStr(ctx, application, "runtimeVersion", JS_NewString(ctx, PU_RUNTIME_VERSION)) >= 0;
+    if (ok) ok = JS_SetPropertyStr(ctx, application, "runtimeRevision", JS_NewString(ctx, PU_RUNTIME_REVISION)) >= 0;
+    if (ok) ok = JS_SetPropertyStr(ctx, application, "runtimeSourceDirty",
+        PU_RUNTIME_SOURCE_DIRTY < 0 ? JS_NULL : JS_NewBool(ctx, PU_RUNTIME_SOURCE_DIRTY)) >= 0;
     if (ok && paths->config) ok = JS_SetPropertyStr(ctx, application, "configDir", JS_NewString(ctx, paths->config)) >= 0;
     if (ok && paths->data) ok = JS_SetPropertyStr(ctx, application, "dataDir", JS_NewString(ctx, paths->data)) >= 0;
     if (ok && paths->cache) ok = JS_SetPropertyStr(ctx, application, "cacheDir", JS_NewString(ctx, paths->cache)) >= 0;

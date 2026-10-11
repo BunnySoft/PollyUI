@@ -231,6 +231,15 @@ policies remain in Shell; closing Settings does not stop them or other apps.
 This is an owned-process boundary, not a sandbox against same-UID/ptrace
 attackers. See [Settings](desktop/SETTINGS.md) for controls and lifecycle.
 
+The application host exposes `application.runtimeVersion`, `runtimeRevision`
+and `runtimeSourceDirty` from its build inputs. The version comes from
+`desktop/VERSION`; the full revision and dirty state are refreshed from actual
+Git metadata on every build, not an externally supplied label. A source export
+without usable Git reports revision `"unknown"` and dirty state `null`, never
+a fabricated clean build. The Settings presentation contract requires the system version and short
+revision on each page, with the complete identity in About; its own application
+version is separate from the system build.
+
 Shell is the sole writer of `application.configDir/shell-preferences.json`.
 Its versioned object stores theme, audio, display, workspace and shortcut
 preferences, validated and deeply frozen in JS. Native file operations provide

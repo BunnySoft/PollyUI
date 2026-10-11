@@ -83,8 +83,27 @@ if (PU_BUILD_LAUNCHER)
         desktop/launcher/main.c
         desktop/launcher/launcher.c
     )
+    find_package(Git QUIET)
+    set(PU_BUILD_INFO_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/polly-runtime-build-info.h")
+    add_custom_target(polly-runtime-build-info
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSOURCE_ROOT=${CMAKE_SOURCE_DIR}"
+            "-DOUTPUT_FILE=${PU_BUILD_INFO_HEADER}"
+            "-DGIT_EXECUTABLE=${GIT_EXECUTABLE}"
+            -P "${CMAKE_SOURCE_DIR}/desktop/launcher/build-info.cmake"
+        BYPRODUCTS "${PU_BUILD_INFO_HEADER}"
+        VERBATIM)
+    add_dependencies(pollyui polly-runtime-build-info)
+    target_include_directories(pollyui PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
     target_link_libraries(pollyui PRIVATE pollyui-engine polly-sysrt-qjs polly-sysrt-ffi)
     if (BUILD_TESTING)
+        find_program(PU_BUILD_INFO_NODE node)
+        if (PU_BUILD_INFO_NODE AND GIT_FOUND)
+            add_test(NAME application-build-info COMMAND "${PU_BUILD_INFO_NODE}" --test
+                "${CMAKE_SOURCE_DIR}/tests/build-info.mjs")
+            set_tests_properties(application-build-info PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
         add_test(NAME sysrt-async-ui COMMAND node "${CMAKE_SOURCE_DIR}/sysrt/tests/async-ui.mjs"
             $<TARGET_FILE:pollyui> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
         set_tests_properties(sysrt-async-ui PROPERTIES TIMEOUT 20 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
@@ -640,7 +659,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
             target_compile_options(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,COMPILE_OPTIONS>)
             target_link_options(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,LINK_OPTIONS>)
             target_link_libraries(pollyui-readonly-fixture PRIVATE $<TARGET_PROPERTY:pollyui,LINK_LIBRARIES>)
-            add_dependencies(pollyui-readonly-fixture pollyui-app-launcher polly-app)
+            add_dependencies(pollyui-readonly-fixture polly-runtime-build-info pollyui-app-launcher polly-app)
             add_test(NAME desktop-install-readonly-window
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/install-readonly-window.sh"
                     $<TARGET_FILE:pollywm> $<TARGET_FILE:pollyui>
