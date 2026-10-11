@@ -417,8 +417,8 @@ boundary. Settings/upload UI and hardware/ISO qualification remain separate.
 Confirmed on 2026-10-12: outgoing drag-and-drop is a **GUI framework
 capability with a common interface and separate OS Host implementations**,
 not a PollyOS-only service or a platform protocol exposed to application JS.
-The common contract is being implemented; this section records the design,
-not a claim that all backends or the first product increment are delivered.
+The common contract and initial Wayland COPY backend are integrated in
+`2ef182f`; this does not claim that all backends are implemented.
 
 ```text
 Application JS: choose payloads and respond to completion
@@ -444,13 +444,13 @@ remain backend implementation details.
 
 | Backend | Native responsibility | Implementation status |
 |---|---|---|
-| Linux Wayland | Real press serial/seat/origin validation, MIME offers, pipe transfer, protocol order, SDL coexistence and connection/resource lifetimes | First approved increment is in progress: ordinary windows, COPY, text and binary payloads, no custom drag icon |
+| Linux Wayland | Real press serial/seat/origin validation, MIME offers, pipe transfer, protocol order, SDL coexistence and connection/resource lifetimes | First increment integrated: ordinary windows, COPY, text and binary payloads, no custom drag icon |
 | Windows | OLE `IDataObject`/`IDropSource`/`DoDragDrop`, platform format mapping, COM/data ownership and UI-message reentrancy with safe window retirement | **Explicitly deferred**; a future backend will implement the same GUI contract. Building the Windows Host is not evidence of Windows outgoing-drag support |
 | macOS / Linux X11 | Their own native drag mechanisms and format/lifetime adaptation | Future backend work, not included or claimed by Wayland support |
 
 The bounded public-Wayland spike was conditionally successful on pinned SDL
-3.4.10 / wlroots 0.19.3 / PollyWM, without SDK changes. Its product design must
-preserve a dedicated native source queue and pure-C sender worker for self-drop,
+3.4.10 / wlroots 0.19.3 / PollyWM, without SDK changes. The integrated backend
+preserves a dedicated native source queue and pure-C sender worker for self-drop,
 and passive mirrored offers retired only after SDL's complete event pump.
 Worker code never calls QuickJS or SDL UI operations; it marshals results to
 the UI thread and is stopped/joined before borrowed display resources retire.
@@ -719,7 +719,7 @@ drop chunks into per-window bounded aggregates and synchronously dispatches
 completed payloads into that window's DOM. Incoming files remain path strings,
 not automatically authorized file access. Outgoing PollyUI drag sources follow
 the [cross-platform GUI contract](#54-cross-platform-native-drag-and-drop):
-the first Wayland COPY backend is in progress and Windows OLE is deferred.
+the first Wayland COPY backend is integrated and Windows OLE is deferred.
 Clipboard persistence and full browser DataTransfer remain separate work.
 
 ### Native multi-window runtime

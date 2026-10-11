@@ -101,7 +101,7 @@ active increment to be integrated before writing those files.
 | Workstream | Current assignment | Boundary |
 |---|---|---|
 | Native windows | Integrated `89da564` from coherent child commit `d6f8696`: owned windows, native menu/tooltip popups, owner-local modality, logical size constraints and actual state notifications | Normal owner closure requests descendants leaf-first; a veto/Promise preserves waiting owners, without restoring closed siblings or automatic retry. Explicit quit retains forced semantics with leaf-first native teardown |
-| Outgoing native drag | Common GUI C/JS contract and first Wayland backend in progress; public-interface coexistence spike conditionally passed on the pinned SDL/PollyWM stack without SDK changes | User approved ordinary-window COPY with text/binary payloads only. Preserve native source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
+| Outgoing native drag | Integrated `2ef182f` from coherent child commit `c2cb1b0`: common GUI C/JS contract and first Wayland COPY backend; public-interface coexistence requires no SDK changes | Ordinary-window COPY with immutable text/binary payloads, opaque native press credentials, cancellation and UI-thread completion. Dedicated source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
 | Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
 | Native IME extensions | Read-only surrounding-text/selection/editing protocol research completed | SDL lacks public surrounding/delete/transaction transport; choose a single native input owner or a separately authorized SDK extension before implementation. Preserve Unicode/composition and sensitive-field isolation; no JS editor expansion |
 
@@ -109,6 +109,18 @@ The [cross-platform drag design](./DESIGN.md#54-cross-platform-native-drag-and-d
 separates application payload policy, the shared GUI session/credential/lifetime
 contract and OS-specific Host implementations. Windows OLE, macOS and X11 are
 not part of the currently approved Wayland implementation.
+
+The integrated drag increment independently passed ten Windows and ten fresh
+Linux mainline checks. The Linux drag fixture executed all 27 native scenarios,
+including real JS initiation, native/SDL/self reception, byte-exact typed views,
+17-MiB transfer, backpressure, credential rejection, GC/owner closure and
+seat/connection loss; the GC receipt confirmed the returned Promise settled
+as cancellation. Windows checked the common contract, explicit unsupported
+behavior and existing window/input lifetimes, not OLE interoperability.
+Original child artifacts and 147 compiled-source blob receipts were verified;
+its 27-case ASan/UBSan run kept leak detection off and prebuilt SDK libraries
+uninstrumented. Qualification remains limited to the pinned SDL 3.4.10 /
+wlroots 0.19.3 PollyWM stack, not all compositors or platforms.
 
 Independent mainline integration checks passed seven Windows native/GUI cases
 and six fresh Linux GUI/compositor cases, including actual Wayland roles,
