@@ -14,6 +14,23 @@ spec.loader.exec_module(handoff)
 
 
 class Guard(unittest.TestCase):
+    def test_alpha7_rejects_missing_running_build_and_native_input_observations(self):
+        revision = "b" * 40
+        expected = {"version": "0.1.0-alpha.7", "revision": revision, "sourceDirty": False}
+        result = {"newArchitecture": {"actualStages": {
+            name: {"runningBuild": {owner: expected for owner in ("about", "appearance", "probe")}}
+            for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen")}}}
+        with self.assertRaisesRegex(ValueError, "production Files"):
+            handoff.validate_alpha7(result, revision)
+        bad = copy.deepcopy(result)
+        bad["newArchitecture"]["actualStages"]["about"]["runningBuild"]["about"]["sourceDirty"] = True
+        with self.assertRaisesRegex(ValueError, "actual frozen"):
+            handoff.validate_alpha7(bad, revision)
+        result["newArchitecture"]["actualStages"]["files-entry"] = {"productionResource": True}
+        result["newArchitecture"]["actualStages"]["files-entry-closed"] = {"closed": True}
+        with self.assertRaisesRegex(ValueError, "Incomplete native"):
+            handoff.validate_alpha7(result, revision)
+
     def test_full_gate_and_exact_identity_required(self):
         stages = {"prepare": {"filesNative": True, "shellPid": 10, "settingsPid": 20},
                   "about": {"sameSettingsPid": 20},

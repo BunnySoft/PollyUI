@@ -46,6 +46,37 @@ def validate_result(result, revision, harness, sha):
         raise ValueError("About or same-session Settings reopen did not pass")
 
 
+def validate_alpha7(result, revision):
+    actual = result["newArchitecture"]
+    stages = actual["actualStages"]
+    expected = {"version": "0.1.0-alpha.7", "revision": revision, "sourceDirty": False}
+    for name in ("prepare", "selected", "user-theme", "restored", "about", "appearance", "reopen"):
+        observed = stages.get(name, {}).get("runningBuild", {})
+        if any(observed.get(owner) != expected for owner in ("about", "appearance", "probe")):
+            raise ValueError("Missing actual frozen Alpha.7 runtime snapshot: " + name)
+    if stages.get("files-entry", {}).get("productionResource") is not True or \
+            stages.get("files-entry-closed", {}).get("closed") is not True:
+        raise ValueError("Missing installed production Files entry/close qualification")
+    files = actual.get("filesInteractions", {})
+    try:
+        text, scroll = files["textCapture"], files["scrollbarCapture"]
+        keyboard, paging = files["keyboardFocus"], files["scrollbarKeyboard"]
+        valid = (text["held"]["controls"]["filter"]["capture"] is True and
+                 text["released"]["controls"]["filter"]["capture"] is False and
+                 text["released"]["clipboard"] == "ow" and keyboard["clipboard"] == "w" and
+                 keyboard["filter"] == "row" and keyboard["activeElement"] == "files-filter" and
+                 scroll["held"]["controls"]["scrollbar"]["capture"] is True and
+                 scroll["held"]["metrics"]["value"] == scroll["held"]["metrics"]["maximum"] > 0 and
+                 scroll["released"]["controls"]["scrollbar"]["capture"] is False and
+                 paging["home"]["metrics"]["value"] == 0 and
+                 abs(paging["pageDown"]["metrics"]["value"] - paging["pageDown"]["metrics"]["height"]) <= 0.1 and
+                 files["closed"]["stopped"] is True and files["closed"]["phase"] == "disposed")
+    except (KeyError, TypeError) as error:
+        raise ValueError("Incomplete native Alpha.7 Files observation") from error
+    if not valid:
+        raise ValueError("Native Alpha.7 Files interactions did not satisfy the acceptance gates")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("media", "runtime", "evidence", "output"):
@@ -53,6 +84,8 @@ def main():
     parser.add_argument("--runtime-revision", required=True)
     parser.add_argument("--harness-revision", required=True)
     parser.add_argument("--iso-sha256", required=True)
+    parser.add_argument("--runtime-qualification", type=Path,
+                        help="Retained build/native qualification receipt, separate from the frozen package")
     parser.add_argument("--approved-for-physical-test", action="store_true")
     args = parser.parse_args()
     if not args.approved_for_physical_test:
@@ -65,6 +98,16 @@ def main():
     result = json.loads((args.evidence / "result.json").read_text())
     validate_result(result, args.runtime_revision, args.harness_revision, args.iso_sha256)
     runtime = json.loads((args.runtime / "manifest.json").read_text())
+    if runtime["version"] == "0.1.0-alpha.7":
+        validate_alpha7(result, args.runtime_revision)
+        if not args.runtime_qualification:
+            raise ValueError("Alpha.7 handoff requires its separate actual native build qualification receipt")
+    native = None
+    if args.runtime_qualification:
+        native = json.loads(args.runtime_qualification.read_text())
+        if native.get("runtimeSourceRevision") != args.runtime_revision or \
+                native.get("runtimeManifestSha256") != digest(args.runtime / "manifest.json"):
+            raise ValueError("Native qualification receipt differs from the approved frozen runtime")
     inputs = json.loads((args.runtime / "build-inputs.json").read_text())
     origin = json.loads((args.media / "candidate-origin.json").read_text())
     if runtime["revision"] != args.runtime_revision or runtime["dirty"] is not False or \
@@ -91,10 +134,14 @@ def main():
                                  (args.runtime / "manifest.json", "runtime-manifest.json"),
                                  (args.runtime / "build-inputs.json", "runtime-build-inputs.json")):
             shutil.copyfile(original, staging / target)
+        if native is not None:
+            shutil.copyfile(args.runtime_qualification, staging / "runtime-qualification.json")
         evidence = staging / "vm-evidence"
         evidence.mkdir()
         for artifact in ("result.json", "serial.log", "qemu.log", "desktop.png", "workspace2.png",
-                         "settings-appearance.png", "settings-about.png", "settings-reopened.png"):
+                         "settings-appearance.png", "settings-about.png", "settings-reopened.png",
+                         *(("files-installed-entry.png", "files-ready.png", "files-text-selection.png",
+                            "files-scrollbar-bottom.png") if runtime["version"] == "0.1.0-alpha.7" else ())):
             shutil.copyfile(args.evidence / artifact, evidence / artifact)
         raw = (evidence / "serial.log").read_text(errors="replace")
         session_failures = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in raw.splitlines()
@@ -103,6 +150,8 @@ def main():
             "schemaVersion": 1, "stage": "physical-test-eligible-not-hardware-qualified",
             "eligibleForPhysicalTesting": True, "physicalHardwareVerified": False,
             "runtimeSourceRevision": args.runtime_revision, "harnessRevision": args.harness_revision,
+            "mediaProducerRevision": origin["mediaProducerRevision"],
+            "overlayProducerRevision": origin["overlayProducerRevision"],
             "iso": {"name": name, "sha256": args.iso_sha256, "bytes": source.stat().st_size},
             "sameBytesAsAcceptedUefiOpticalMedia": True, "vmResultSha256": digest(evidence / "result.json"),
             "runtimeManifestSha256": origin["runtimeManifestSha256"],
@@ -112,6 +161,8 @@ def main():
             "rootExportSha256": origin["rootExportSha256"],
             "scope": "Primary ordinary-user seat0 desktop and all recorded application acceptance stages.",
             "rawSessionFailuresPreserved": session_failures,
+            **({"runtimeQualificationSha256": digest(staging / "runtime-qualification.json"),
+                "runtimeQualification": native} if native is not None else {}),
             "references": {"candidate": str(args.media), "runtime": str(args.runtime),
                            "fullVmEvidence": str(args.evidence)},
             "limits": [
@@ -120,7 +171,7 @@ def main():
                 "The 4 GiB/2-vCPU virtio guest is a test configuration, not a proven hardware minimum.",
                 "No guest NIC or host audio; VM success does not qualify physical network/audio signals.",
                 "QMP quit is not an ordinary guest user power-off test.",
-                "Secondary ttyS0 login session3 has no seat; its desktop attempt fails with status1 before returning CLI.",
+                "Any secondary serial-login desktop failures remain verbatim in rawSessionFailuresPreserved; only primary seat0 is qualified.",
                 "The primary Shell PID is independently stable throughout the accepted Settings/JSON stages.",
                 "USB image boot was not tested in this run and is not qualified by this optical ISO handoff.",
                 "Historical failures/diagnostics remain retained; raw logs are not error-free.",
