@@ -59,6 +59,8 @@ def main():
     parser.add_argument("--runtime-revision", help="Exact frozen runtime commit required by the guest origin receipt")
     parser.add_argument("--settings-geometry-approvals", type=Path,
                         help="Fresh screenshot-bound approvals for five neutral Settings header clicks")
+    parser.add_argument("--settings-rpc-profile", action="store_true",
+                        help="Diagnostic only: bounded private-bus headers/PID maps and original-deadline starter logs")
     parser.add_argument("--diagnostic-prepare", action="store_true",
                         help="Capture startup diagnostics only; never publish an acceptance result")
     parser.add_argument("--profile-settings-startup", action="store_true",
@@ -75,11 +77,23 @@ def main():
         raise ValueError("Startup diagnosis requires the ordinary-user new-architecture helper")
     if args.profile_settings_startup and not args.diagnostic_prepare:
         raise ValueError("Owned-bus header monitoring is allowed only in explicit startup-only diagnostics")
+    if args.settings_rpc_profile and (not args.new_architecture or args.diagnostic_prepare):
+        raise ValueError("RPC phase diagnosis requires the full ordinary-user scenario, not startup-only diagnostics")
     iso = args.iso.resolve()
     evidence = args.evidence.resolve()
     if evidence.exists():
         raise ValueError("Refusing to overwrite prior boot evidence")
     evidence.mkdir(parents=True)
+    if args.settings_rpc_profile:
+        with iso.open("rb") as source:
+            planned_hash = hashlib.file_digest(source, "sha256").hexdigest()
+        (evidence / "rpc-diagnostic-plan.json").write_text(json.dumps({
+            "acceptance": False, "isoSha256": planned_hash, "runtimeSourceRevision": args.runtime_revision,
+            "harnessRevision": args.harness_revision, "observer": "dbus-monitor --profile; no application payloads",
+            "maximumObserverSeconds": 360, "launcherDeadlineSeconds": 20,
+            "skippedPreReopenAcceptanceGates": [], "laterFilesInteractionStages": "not run in this phase diagnostic",
+            "limits": "Observer/query processes can affect timing; never normal or physical qualification."
+        }, indent=2) + "\n")
     if args.diagnostic_prepare:
         with iso.open("rb") as source:
             planned_hash = hashlib.file_digest(source, "sha256").hexdigest()
@@ -275,6 +289,7 @@ def main():
                         "files.mjs": Path(__file__).with_name("live-files-guest.mjs").read_bytes(),
                         "settings.mjs": Path(__file__).with_name("live-settings-guest.mjs").read_bytes(),
                         "interactions.mjs": Path(__file__).with_name("live-files-interactions-guest.mjs").read_bytes(),
+                        "mapper.py": Path(__file__).with_name("live-rpc-mapper.py").read_bytes(),
                     }
                     payload = base64.b64encode(zlib.compress(json.dumps(
                         {name: value.decode() for name, value in fixture.items()}).encode())).decode()
@@ -288,12 +303,15 @@ def main():
                               "pathlib.Path('/tmp/polly-alpha-guest.py').write_text(d['guest.py']);"
                               "pathlib.Path('/tmp/polly-alpha-files-guest.mjs').write_text(d['files.mjs']);"
                               "pathlib.Path('/tmp/polly-alpha-settings-guest.mjs').write_text(d['settings.mjs']);"
-                              "pathlib.Path('/tmp/polly-alpha-files-interactions-guest.mjs').write_text(d['interactions.mjs'])\"\n")
+                              "pathlib.Path('/tmp/polly-alpha-files-interactions-guest.mjs').write_text(d['interactions.mjs']);"
+                              "pathlib.Path('/tmp/polly-alpha-rpc-mapper.py').write_text(d['mapper.py'])\"\n")
                     stages = {}
+                    rpc_collected = False
 
                     def stage(name):
                         previous = serial.read_text(errors="replace")
-                        send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + " " + args.runtime_revision + "\n")
+                        send_text("python3 -I -B /tmp/polly-alpha-guest.py " + name + " " + args.runtime_revision +
+                                  (" --rpc-profile" if args.settings_rpc_profile else "") + "\n")
                         deadline = time.monotonic() + 60
                         prefix = "POLLY_VM_NEWARCH_" + name.upper() + "="
                         while True:
@@ -302,6 +320,8 @@ def main():
                             complete = fresh[:fresh.rfind("\n") + 1]
                             if "POLLY_VM_NEWARCH_FAILED=" in complete:
                                 execute("screendump", {"filename": str(evidence / "newarch-failed.ppm")})
+                                if args.settings_rpc_profile and name != "collect-rpc-profile":
+                                    collect_rpc_diagnostic(name)
                                 raise RuntimeError("Guest new-architecture action failed:\n" + complete[-6000:])
                             if prefix in complete:
                                 value = complete.split(prefix, 1)[1].splitlines()[0].strip()
@@ -310,8 +330,52 @@ def main():
                                 return result
                             if process.poll() is not None or time.monotonic() > deadline:
                                 execute("screendump", {"filename": str(evidence / "newarch-failed.ppm")})
+                                if args.settings_rpc_profile and name != "collect-rpc-profile":
+                                    collect_rpc_diagnostic(name)
                                 raise RuntimeError("Missing actual guest new-architecture result: " + name)
                             time.sleep(0.2)
+
+                    def collect_rpc_diagnostic(failed_stage=None):
+                        nonlocal rpc_collected
+                        if rpc_collected:
+                            return
+                        rpc_collected = True
+                        try:
+                            collected = stage("collect-rpc-profile")
+                            transcript = re.sub(r"\x1b\[[0-9;]*m", "", serial.read_text(errors="replace"))
+                            pattern = r"polly-vm-check\[\d+\]: POLLY_VM_NEWARCH_RPC-EXPORT-PART=(\{[^\r\n]*\})"
+                            chunks = [json.loads(match[1]) for match in re.finditer(pattern, transcript)]
+                            if len(chunks) != collected["parts"] or sorted(item["index"] for item in chunks) != list(range(collected["parts"])):
+                                raise RuntimeError("Incomplete original diagnostic export packets")
+                            packed = base64.b64decode("".join(item["data"] for item in sorted(chunks, key=lambda item: item["index"])),
+                                                     validate=True)
+                            if hashlib.sha256(packed).hexdigest() != collected["compressedSha256"]:
+                                raise RuntimeError("Diagnostic export packet bytes differ")
+                            decoded = json.loads(zlib.decompress(packed))
+                            if decoded["acceptance"] is not False:
+                                raise RuntimeError("Diagnostic export mislabels qualification")
+                            directory = evidence / "rpc-profile"
+                            directory.mkdir()
+                            for name, content in decoded["files"].items():
+                                if not re.fullmatch(r"[A-Za-z0-9._-]+", name):
+                                    raise RuntimeError("Invalid diagnostic retained filename")
+                                (directory / name).write_bytes(base64.b64decode(content, validate=True))
+                            receipt = {"acceptance": False, "failedStage": failed_stage,
+                                       "reopenCompleted": failed_stage is None, "runtimeSourceRevision": args.runtime_revision,
+                                       "harnessRevision": args.harness_revision, "collection": collected,
+                                       "actualStages": stages, "filesInteractionsRun": False,
+                                       "limits": "Header/query observer diagnosis only, never no-probe normal qualification."}
+                            with iso.open("rb") as source:
+                                receipt["isoSha256"] = hashlib.file_digest(source, "sha256").hexdigest()
+                            (evidence / "rpc-diagnostic.json").write_text(json.dumps(receipt, indent=2) + "\n")
+                        except Exception as error:
+                            (evidence / "rpc-collection-failed.json").write_text(json.dumps({
+                                "acceptance": False, "failedStage": failed_stage, "error": str(error),
+                                "missingEvidence": "Guest diagnostic export was incomplete; raw serial is retained."
+                            }, indent=2) + "\n")
+                            print("Diagnostic evidence collection failed explicitly: " + str(error), flush=True)
+                            if failed_stage is None:
+                                raise
 
                     input_geometry = {}
 
@@ -423,6 +487,12 @@ def main():
                     stage("reopen")
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-reopened.ppm")})
+                    if args.settings_rpc_profile:
+                        collect_rpc_diagnostic()
+                        execute("quit")
+                        process.wait(timeout=10)
+                        print("Completed bounded RPC phase diagnosis only; no normal acceptance result was published")
+                        return
                     files_interactions = {}
                     stage("files-entry")
                     wait_log("Mapped org.pollyui.files", 10)

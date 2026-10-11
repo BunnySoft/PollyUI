@@ -158,6 +158,15 @@ scrollbar capture/release, viewport paging, focus and disposal. These bounded VM
 checks complement the independent normal/narrow native Files qualification;
 they do not qualify physical input devices or install fixtures in the ISO.
 
+The optional `--settings-rpc-profile` lane is explicitly **diagnostic, not
+acceptance**. It retains private-session `dbus-monitor --profile` headers, bounded
+standard daemon PID/UID queries, exact public-starter PIDs and full logs while
+keeping the 20-second launcher deadline. It preserves the ordinary boot/input/
+theme/page prerequisites, stops after reopen or its first failure, and exports
+only fixed non-credential process-environment keys. Observer lifetime is bounded
+to 360 seconds. It writes `rpc-diagnostic.json`, never a passing `result.json`;
+no instrumented production JavaScript, ambient bus or package installation is used.
+
 The original seatd baseline and its PAM/elogind successor were both verified with
 OVMF/KVM, virtio-vga, 1280x800, Pixman compositor and
 raster PollyUI. Rime and private audio start with the desktop, but this boot

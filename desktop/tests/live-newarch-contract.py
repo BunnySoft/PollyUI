@@ -18,6 +18,15 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_rpc_phase_diagnostic_keeps_original_deadline_and_no_acceptance_label(self):
+        source = Path(__file__).with_name("live-boot.py").read_text()
+        self.assertIn('"acceptance": False, "failedStage": failed_stage', source)
+        self.assertIn('"launcherDeadlineSeconds": 20', source)
+        self.assertIn("no normal acceptance result was published", source)
+        guest_source = Path(__file__).with_name("live-newarch-guest.py").read_text()
+        self.assertIn('["/usr/bin/stdbuf", "-oL", "/usr/bin/dbus-monitor", "--session", "--profile"]', guest_source)
+        self.assertIn("20 - (time.monotonic() - started)", guest_source)
+        self.assertNotIn('"--monitor"', guest_source)
     def test_settings_native_neutral_click_establishes_the_document_root_origin(self):
         self.assertEqual(boot.settings_tab_steps("bigsur"), 11)
         self.assertEqual(boot.settings_tab_steps("reload"), 13)

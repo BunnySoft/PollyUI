@@ -9,6 +9,83 @@ import sys
 import time
 import tempfile
 import re
+import base64
+import zlib
+import signal
+
+RPC_ROOT = Path("/tmp/polly-alpha-rpc")
+
+
+def rpc_enabled():
+    return len(sys.argv) > 3 and sys.argv[3] == "--rpc-profile"
+
+
+def start_rpc_profile(env, shell):
+    check(env["DBUS_SESSION_BUS_ADDRESS"] == env["POLLY_SESSION_BUS_ADDRESS"] and
+          env["DBUS_SESSION_BUS_ADDRESS"].startswith("unix:path=" + env["XDG_RUNTIME_DIR"] + "/bus"),
+          "Refuse an ambient or unowned profile bus")
+    RPC_ROOT.mkdir(mode=0o700)
+    processes = []
+    for name, command in (
+            ("profile", ["/usr/bin/stdbuf", "-oL", "/usr/bin/dbus-monitor", "--session", "--profile"]),
+            ("identities", ["/usr/bin/python3", "-I", "-B", "/tmp/polly-alpha-rpc-mapper.py"])):
+        with (RPC_ROOT / (name + ".log")).open("x") as output, (RPC_ROOT / (name + ".stderr")).open("x") as errors:
+            process = subprocess.Popen(["/usr/bin/timeout", "--kill-after=2s", "360s", *command],
+                                       env=env, stdout=output, stderr=errors, start_new_session=True)
+        processes.append({"kind": name, "pid": process.pid, "processGroup": process.pid, "command": command})
+        time.sleep(0.2)
+        check(process.poll() is None, "Private diagnostic observer failed: " + name)
+    state = {"acceptance": False, "shellPid": shell, "startedWallTime": time.time(),
+             "maximumObserverSeconds": 360, "processes": processes,
+             "environment": {key: env[key] for key in ("HOME", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY",
+                                                       "DBUS_SESSION_BUS_ADDRESS", "POLLY_SESSION_BUS_ADDRESS") if key in env}}
+    (RPC_ROOT / "observers.json").write_text(json.dumps(state))
+    emit("rpc-observers", state)
+
+
+def collect_rpc_profile(env, shell):
+    state = json.loads((RPC_ROOT / "observers.json").read_text())
+    check(state["shellPid"] == shell, "Primary Shell changed during RPC diagnostic")
+    for observer in state["processes"]:
+        status = Path("/proc") / str(observer["pid"]) / "status"
+        if status.exists():
+            check(re.search(r"^Uid:\s+1000\s+1000\s+1000\s+1000$", status.read_text(), re.M),
+                  "Refuse to stop a foreign diagnostic observer")
+            command = (status.parent / "cmdline").read_bytes()
+            check(b"/usr/bin/timeout\0" in command and b"360s\0" in command,
+                  "Diagnostic observer PID changed")
+            os.killpg(observer["processGroup"], signal.SIGTERM)
+    time.sleep(0.2)
+    profile = (RPC_ROOT / "profile.log").read_text()
+    check(all(not line or line.startswith(("#", "mc", "mr", "err", "sig")) for line in profile.splitlines()),
+          "Profile output is not header-only; refuse export")
+    files = {}
+    total = 0
+    for file in RPC_ROOT.iterdir():
+        if file.is_file():
+            data = file.read_bytes()
+            total += len(data)
+            check(total <= 4 * 1024 * 1024, "RPC diagnostic export exceeded 4 MiB")
+            files[file.name] = base64.b64encode(data).decode()
+    acceptance = Path("/tmp/polly-alpha-acceptance-state.json")
+    if acceptance.exists():
+        files["acceptance-state.json"] = base64.b64encode(acceptance.read_bytes()).decode()
+    processes = {}
+    wanted = ("HOME", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS",
+              "POLLY_SESSION_BUS_ADDRESS", "SDL_VIDEODRIVER", "SDL_RENDER_DRIVER", "PU_RENDERER")
+    for pid, args in process_arguments().items():
+        fields = (Path("/proc") / str(pid) / "environ").read_bytes().rstrip(b"\0").split(b"\0")
+        values = dict(item.decode().split("=", 1) for item in fields if b"=" in item)
+        processes[pid] = {"args": args, "environment": {key: values[key] for key in wanted if key in values}}
+    files["actual-processes.json"] = base64.b64encode(json.dumps(processes).encode()).decode()
+    packed = zlib.compress(json.dumps({"acceptance": False, "files": files}).encode())
+    encoded = base64.b64encode(packed).decode()
+    parts = [encoded[index:index + 4000] for index in range(0, len(encoded), 4000)]
+    for index, part in enumerate(parts):
+        emit("rpc-export-part", {"index": index, "total": len(parts), "data": part})
+    emit("collect-rpc-profile", {"acceptance": False, "parts": len(parts),
+                                "compressedSha256": hashlib.sha256(packed).hexdigest(),
+                                "bytes": total, "shellPid": shell})
 
 
 def check(value, message):
@@ -92,6 +169,29 @@ def emit(stage, result):
 
 def launch_settings(page, env, cwd):
     started = time.monotonic()
+    if rpc_enabled():
+        target = RPC_ROOT / ("starter-" + str(time.time_ns()) + ".log")
+        with target.open("xb") as output:
+            child = subprocess.Popen(["/usr/bin/polly-settings", page], env=env, cwd=cwd,
+                                     stdout=output, stderr=subprocess.STDOUT)
+            emit("launcher-spawn", {"page": page, "starterPid": child.pid, "argv": ["/usr/bin/polly-settings", page],
+                                    "wallTime": time.time(), "deadlineSeconds": 20, "log": target.name})
+            remaining = max(0, 20 - (time.monotonic() - started))
+            try:
+                child.wait(timeout=remaining)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.wait()
+                captured = target.read_text(errors="replace")
+                emit("launcher-timeout", {"page": page, "starterPid": child.pid,
+                                         "elapsedSeconds": round(time.monotonic() - started, 3),
+                                         "clientOutput": captured, "processes": process_arguments(), "log": target.name})
+                raise
+        captured = target.read_text(errors="replace")
+        emit("launcher-exit", {"page": page, "starterPid": child.pid, "status": child.returncode,
+                               "elapsedSeconds": round(time.monotonic() - started, 3), "log": target.name})
+        check(child.returncode == 0, "Production Settings launcher failed: " + captured)
+        return subprocess.CompletedProcess(child.args, child.returncode, captured)
     try:
         result = subprocess.run(["/usr/bin/polly-settings", page], env=env, cwd=cwd, text=True,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=20)
@@ -165,7 +265,10 @@ def main():
     stage = sys.argv[1]
     state_file = Path("/tmp/polly-alpha-acceptance-state.json")
     shell, env = shell_environment()
-    if stage == "files-entry":
+    if stage == "collect-rpc-profile":
+        check(rpc_enabled(), "Profile collection requires an explicit diagnostic flag")
+        collect_rpc_profile(env, shell)
+    elif stage == "files-entry":
         root = Path("/tmp/polly-alpha-entry")
         root.mkdir(mode=0o700)
         for index in range(96):
@@ -215,6 +318,8 @@ def main():
               "Native production Files observer reported failure")
         emit(stage, json.loads((root / "observed.json").read_text()))
     elif stage in ("prepare", "prepare-profile"):
+        if rpc_enabled():
+            start_rpc_profile(env, shell)
         origin = json.loads(Path("/usr/share/pollyui/runtime-origin.json").read_text())
         check_runtime_origin(origin, sys.argv[2])
         file, value = configuration()
