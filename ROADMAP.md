@@ -189,6 +189,19 @@ render/damage cost before claiming support. Windows' existing DWM setter needs
 visibility and failure handling; it is not proof of a complete effect. No code,
 API, scheduling commitment, version bump or new ISO is implied by this record.
 
+## Deferred candidate: system-level animated rabbit cursor
+
+The user selected this as an independent follow-up, **excluded from Alpha.7**.
+PollyWM supplies the desktop-wide default rabbit cursor: idle, running on
+movement, hopping on click and an effort pose during drag. Windows may explicitly
+override it with an appropriate cursor; returning to an inheriting region
+restores the system default. This requires custom native/compositor cursor
+images and hotspots, animation state/lifetime handling, output scaling and a
+clear client override contract. Current system-cursor selection alone does not
+implement it. Preserve focused-client authorization, protected-role behavior,
+static/reduced-motion fallback and cursor-only animation work.
+See [the recorded scope](./DESIGN.md#53-system-level-animated-cursor-candidate).
+
 ## Engines & pipeline
 
 | Feature | Status | Notes |

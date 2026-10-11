@@ -380,6 +380,33 @@ code does not implement list selection, file operations, menus or drag payload
 policy. The mouse-only capture API deliberately does not imply touch, pen or
 outgoing native drag-and-drop support. See the [public input contract](./README.md#native-mouse-interaction-mechanisms).
 
+### 5.3 System-level animated cursor candidate
+
+The user clarified on 2026-10-11 that the rabbit cursor is the **system/desktop
+default**, not an application overlay. The user deferred it to an independent
+follow-up; it is not part of the Alpha.7 Files/ISO scope.
+
+PollyWM would own the default cursor theme and its animation: an idle rabbit,
+running while moving, hopping on a click, and an effort pose while dragging.
+The compositor observes the input lifecycle; individual apps do not need
+global mouse listeners or access to other apps' content. Cancellation, released
+buttons and client loss must retire the corresponding animation state.
+
+Windows may override the default with an explicit cursor request, for example
+text or resize, and leaving that region restores the system default. The
+implementation must distinguish inheritance from an explicit client cursor
+request instead of replacing every client cursor with a rabbit. The existing
+focused-client authorization for cursor requests must remain intact; protected
+roles and compositor resize cursors keep their required behavior.
+
+Use actual native/compositor cursor images with correct hotspots, transparent
+pixels, output scaling and frame timing, not a hidden pointer plus an app-drawn
+sprite. Custom image/frame resource ownership, the animation state machine,
+theme selection and override/inheritance contract remain unimplemented.
+Provide a static/reduced-motion fallback and bound animation work to cursor
+updates rather than continuously repainting the desktop. Original rabbit assets
+and final timing/style are decisions for that future implementation.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
