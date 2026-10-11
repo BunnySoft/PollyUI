@@ -40,8 +40,8 @@ def fatal_guest_record(raw):
 
 
 def settings_tab_steps(control, user_theme_loaded=False):
-    # Present leaves no active element; the first Tab focuses the tabindex=0 body.
-    positions = {"bigsur": 12, "reload": 14, "xp": 8, "user-theme": 14, "restore": 15}
+    # A real neutral content-header click establishes the tabindex=0 body origin.
+    positions = {"bigsur": 11, "reload": 13, "xp": 7, "user-theme": 13, "restore": 14}
     if control == "user-theme" and not user_theme_loaded:
         raise ValueError("A user theme must be loaded before selecting its native control")
     return positions[control] + int(user_theme_loaded and control in ("reload", "restore"))
@@ -57,6 +57,8 @@ def main():
                         help="Inject ordinary-user test source into guest RAM and exercise production Settings/files")
     parser.add_argument("--harness-revision", help="Exact separate producer/test commit, never the runtime source label")
     parser.add_argument("--runtime-revision", help="Exact frozen runtime commit required by the guest origin receipt")
+    parser.add_argument("--settings-geometry-approvals", type=Path,
+                        help="Fresh screenshot-bound approvals for five neutral Settings header clicks")
     parser.add_argument("--diagnostic-prepare", action="store_true",
                         help="Capture startup diagnostics only; never publish an acceptance result")
     parser.add_argument("--profile-settings-startup", action="store_true",
@@ -67,6 +69,8 @@ def main():
         raise ValueError("New-architecture acceptance requires an explicit full harness revision")
     if args.new_architecture and (not args.runtime_revision or not re.fullmatch(r"[0-9a-f]{40}", args.runtime_revision)):
         raise ValueError("New-architecture acceptance requires an explicit full frozen runtime revision")
+    if args.new_architecture and not args.diagnostic_prepare and not args.settings_geometry_approvals:
+        raise ValueError("Normal acceptance requires actual screenshot review before neutral Settings input")
     if args.diagnostic_prepare and not args.new_architecture:
         raise ValueError("Startup diagnosis requires the ordinary-user new-architecture helper")
     if args.profile_settings_startup and not args.diagnostic_prepare:
@@ -309,11 +313,60 @@ def main():
                                 raise RuntimeError("Missing actual guest new-architecture result: " + name)
                             time.sleep(0.2)
 
-                    def press_tab(count):
+                    input_geometry = {}
+
+                    def neutral_settings(control):
+                        before = evidence / ("settings-input-" + control + "-before.ppm")
+                        execute("screendump", {"filename": str(before)})
+                        with before.open("rb") as image:
+                            if image.readline() != b"P6\n":
+                                raise RuntimeError("Unexpected native neutral-input snapshot")
+                            line = image.readline()
+                            while line.startswith(b"#"):
+                                line = image.readline()
+                            width, height = map(int, line.split())
+                        if (width, height) != (1280, 800):
+                            raise RuntimeError("Neutral Settings geometry requires actual 1280x800 review")
+                        with before.open("rb") as source:
+                            snapshot_hash = hashlib.file_digest(source, "sha256").hexdigest()
+                        args.settings_geometry_approvals.mkdir(parents=True, exist_ok=True)
+                        plan = {"control": control, "snapshot": before.name, "sha256": snapshot_hash,
+                                "width": width, "height": height, "action": "neutral left down/up, then native Tab/Enter",
+                                "requirement": "Point must be inside the actual noninteractive Settings content header, not caption/navigation/cards."}
+                        (evidence / ("settings-input-" + control + "-plan.json")).write_text(json.dumps(plan, indent=2) + "\n")
+                        approval = args.settings_geometry_approvals / (control + ".json")
+                        deadline = time.monotonic() + 60
+                        print("Await native Settings header geometry review: " + str(before), flush=True)
+                        while not approval.exists():
+                            if process.poll() is not None or time.monotonic() > deadline:
+                                raise RuntimeError("No screenshot-bound neutral Settings geometry approval: " + control)
+                            time.sleep(0.1)
+                        reviewed = json.loads(approval.read_text())
+                        if reviewed.get("snapshotSha256") != snapshot_hash or reviewed.get("headerNoninteractive") is not True:
+                            raise RuntimeError("Neutral geometry approval does not match the actual native screenshot")
+                        x, y = reviewed["x"], reviewed["y"]
+                        if not isinstance(x, int) or not isinstance(y, int) or not (0 <= x < width and 0 <= y < height):
+                            raise RuntimeError("Neutral geometry approval is outside the actual screen")
+                        events = [{"type": "abs", "data": {"axis": "x", "value": round(x / (width - 1) * 32767)}},
+                                  {"type": "abs", "data": {"axis": "y", "value": round(y / (height - 1) * 32767)}},
+                                  {"type": "btn", "data": {"button": "left", "down": True}}]
+                        execute("input-send-event", {"events": events})
+                        time.sleep(0.1)
+                        execute("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
+                        time.sleep(0.2)
+                        execute("screendump", {"filename": str(evidence / ("settings-input-" + control + "-neutral.ppm"))})
+                        input_geometry[control] = {**plan, "review": reviewed, "nativeButtonPair": True,
+                                                   "focusOrigin": "nearest focusable ancestor is the production Settings body"}
+
+                    def press_tab(control, user_theme_loaded=False):
+                        neutral_settings(control)
+                        count = settings_tab_steps(control, user_theme_loaded)
                         for _ in range(count):
                             keys("tab")
                         keys("ret")
                         time.sleep(1)
+                        execute("screendump", {"filename": str(evidence / ("settings-input-" + control + "-after.ppm"))})
+                        input_geometry[control]["tabSteps"] = count
 
                     preparation = "prepare-profile" if args.profile_settings_startup else "prepare"
                     stage(preparation)
@@ -335,26 +388,26 @@ def main():
                         return
                     desktop_view()
                     execute("screendump", {"filename": str(evidence / "settings-appearance.ppm")})
-                    press_tab(settings_tab_steps("bigsur"))
+                    press_tab("bigsur")
                     console()
                     stage("selected")
                     stage("appearance")
                     desktop_view()
-                    press_tab(settings_tab_steps("reload"))
+                    press_tab("reload")
                     time.sleep(1)
                     console()
                     stage("appearance")
                     desktop_view()
-                    press_tab(settings_tab_steps("user-theme", True))
+                    press_tab("user-theme", True)
                     console()
                     stage("user-theme")
                     stage("appearance")
                     desktop_view()
-                    press_tab(settings_tab_steps("xp", True))
+                    press_tab("xp", True)
                     console()
                     stage("appearance")
                     desktop_view()
-                    press_tab(settings_tab_steps("restore", True))
+                    press_tab("restore", True)
                     console()
                     stage("restored")
                     stage("about")
@@ -484,6 +537,7 @@ def main():
                                         "fixturesInIso": False, "ordinaryUser": 1000,
                                         "actualStages": stages,
                                         "filesInteractions": files_interactions,
+                                        "settingsInputGeometry": input_geometry,
                                         "input": "QMP physical USB keyboard and ordinary public Live serial login"}
                 result = {
                     "ready": True, "firmware": "OVMF UEFI", "acceleration": acceleration,

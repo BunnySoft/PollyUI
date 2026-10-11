@@ -59,6 +59,14 @@ def validate_alpha7(result, revision):
             stages.get("files-entry-closed", {}).get("closed") is not True:
         raise ValueError("Missing installed production Files entry/close qualification")
     files = actual.get("filesInteractions", {})
+    geometry = actual.get("settingsInputGeometry", {})
+    for control, count in (("bigsur", 11), ("reload", 13), ("user-theme", 13), ("xp", 7), ("restore", 15)):
+        observed = geometry.get(control, {})
+        review = observed.get("review", {})
+        if observed.get("nativeButtonPair") is not True or observed.get("tabSteps") != count or \
+                review.get("headerNoninteractive") is not True or review.get("snapshotSha256") != observed.get("sha256") or \
+                not re.fullmatch(r"[0-9a-f]{64}", observed.get("sha256", "")):
+            raise ValueError("Missing screenshot-bound deterministic Settings input origin: " + control)
     try:
         text, scroll = files["textCapture"], files["scrollbarCapture"]
         keyboard, paging = files["keyboardFocus"], files["scrollbarKeyboard"]
@@ -145,6 +153,11 @@ def main():
                             "files-scrollbar-bottom.png", "settings-displays.png", "settings-network.png",
                             "settings-audio.png", "settings-keyboard.png") if runtime["version"] == "0.1.0-alpha.7" else ())):
             shutil.copyfile(args.evidence / artifact, evidence / artifact)
+        if runtime["version"] == "0.1.0-alpha.7":
+            for control in ("bigsur", "reload", "user-theme", "xp", "restore"):
+                for moment in ("before", "neutral", "after"):
+                    artifact = "settings-input-" + control + "-" + moment + ".png"
+                    shutil.copyfile(args.evidence / artifact, evidence / artifact)
         raw = (evidence / "serial.log").read_text(errors="replace")
         session_failures = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in raw.splitlines()
                             if "PollyDesktop session failed" in line]

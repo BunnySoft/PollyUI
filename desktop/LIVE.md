@@ -146,7 +146,12 @@ application metadata against the explicitly selected frozen revision, release
 and clean-source state. Production GetAbout/GetAppearance remains restricted to
 the current owned Settings PID; an external probe does not bypass that boundary.
 Settings captures retain the visible release footer and full About build text
-for independent visual review. A separate production Files
+for independent visual review. Each theme keyboard action first uses a real
+neutral content-header pointer press/release, with a fresh screenshot-bound
+geometry approval (`--settings-geometry-approvals DIRECTORY`). This establishes
+the native body focus origin without invoking a theme control. Before, neutral
+and after snapshots remain evidence; stale approvals are refused, and original
+guest-action deadlines are unchanged. A separate production Files
 window is observed, not controlled through its controller: QMP USB pointer/key
 events exercise outside-window text capture, clipboard selection, Shift editing,
 scrollbar capture/release, viewport paging, focus and disposal. These bounded VM

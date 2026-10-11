@@ -29,7 +29,7 @@ class Guard(unittest.TestCase):
             handoff.validate_alpha7(bad, revision)
         result["newArchitecture"]["actualStages"]["files-entry"] = {"productionResource": True}
         result["newArchitecture"]["actualStages"]["files-entry-closed"] = {"closed": True}
-        with self.assertRaisesRegex(ValueError, "Incomplete native"):
+        with self.assertRaisesRegex(ValueError, "deterministic Settings"):
             handoff.validate_alpha7(result, revision)
 
     def test_full_gate_and_exact_identity_required(self):
