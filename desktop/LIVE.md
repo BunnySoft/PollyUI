@@ -163,6 +163,11 @@ click before its one Alt+F4 close request. Its original PID must disappear withi
 close request or process kill. These new safety/observation steps increase the
 maximum harness work time; they do not extend product RPC deadlines or the
 Files observer's 60-second lifetime.
+Observer startup must report a ready production view with laid-out controls within
+its existing 10-second startup bound, not merely create a snapshot file. Complete
+guest JSON records are rejected above the 8192 UTF-8 byte logger limit, counting
+the marker prefix and complete JSON; they are never silently shortened. Native Files gesture
+coordinates are checked against the actual screenshot and calibrated client bounds.
 
 The optional `--settings-rpc-profile` lane is explicitly **diagnostic, not
 acceptance**. It retains private-session `dbus-monitor --profile` headers, bounded

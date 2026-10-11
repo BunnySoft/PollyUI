@@ -14,6 +14,15 @@ import base64
 import zlib
 import threading
 import re
+import math
+
+
+def native_pointer_position(x, y, width, height):
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+               for value in (x, y, width, height)) or width <= 1 or height <= 1 or \
+            not (0 <= x <= width - 1 and 0 <= y <= height - 1):
+        raise RuntimeError("Native pointer point lies outside finite actual screenshot bounds: " + str((x, y, width, height)))
+    return round(x / (width - 1) * 32767), round(y / (height - 1) * 32767)
 
 
 def acceptance_input_required(diagnostic_prepare, profile_settings_startup):
@@ -436,8 +445,9 @@ def main():
                         x, y = reviewed["x"], reviewed["y"]
                         if not isinstance(x, int) or not isinstance(y, int) or not (0 <= x < width and 0 <= y < height):
                             raise RuntimeError("Neutral geometry approval is outside the actual screen")
-                        events = [{"type": "abs", "data": {"axis": "x", "value": round(x / (width - 1) * 32767)}},
-                                  {"type": "abs", "data": {"axis": "y", "value": round(y / (height - 1) * 32767)}},
+                        native_x, native_y = native_pointer_position(x, y, width, height)
+                        events = [{"type": "abs", "data": {"axis": "x", "value": native_x}},
+                                  {"type": "abs", "data": {"axis": "y", "value": native_y}},
                                   {"type": "btn", "data": {"button": "left", "down": True}}]
                         execute("input-send-event", {"events": events})
                         time.sleep(0.1)
@@ -540,10 +550,11 @@ def main():
                         screen_width, screen_height = map(int, dimensions.split())
 
                     def pointer(x, y, button=None):
+                        native_x, native_y = native_pointer_position(x, y, screen_width, screen_height)
                         events = [{"type": "abs", "data": {"axis": "x", "value":
-                                   round(x / (screen_width - 1) * 32767)}},
+                                   native_x}},
                                   {"type": "abs", "data": {"axis": "y", "value":
-                                   round(y / (screen_height - 1) * 32767)}}]
+                                   native_y}}]
                         if button is not None:
                             events.append({"type": "btn", "data": {"down": button, "button": "left"}})
                         execute("input-send-event", {"events": events})
@@ -555,6 +566,10 @@ def main():
                         raise RuntimeError("Actual Files window did not receive native pointer calibration")
                     offset_x = screen_width // 2 - observed["pointer"]["x"]
                     offset_y = screen_height // 2 - observed["pointer"]["y"]
+                    if not (offset_x >= 0 and offset_y >= 0 and
+                            offset_x + observed["width"] + 12 < screen_width and
+                            offset_y + observed["height"] + 12 < screen_height):
+                        raise RuntimeError("Calibrated Files body/outside gesture does not fit the actual native screenshot")
 
                     def control_point(state, name):
                         rect = state["controls"][name]

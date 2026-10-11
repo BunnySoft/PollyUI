@@ -46,6 +46,37 @@ def wait_observer_disposed(read, clock=time.monotonic, sleep=time.sleep):
         sleep(0.1)
 
 
+def files_observer_ready(observed):
+    if not isinstance(observed, dict):
+        return False
+    if observed.get("error") or observed.get("phase") == "error":
+        raise RuntimeError("Native Files observer startup failed: " + json.dumps(observed))
+    controls = observed.get("controls", {})
+    return (observed.get("phase") == "ready" and observed.get("width", 0) > 0 and observed.get("height", 0) > 0 and
+            all(controls.get(name, {}).get("width", 0) > 0 and controls.get(name, {}).get("height", 0) > 0
+                for name in ("filter", "list", "scrollbar", "scroll-thumb", "columns")) and
+            (observed.get("metrics") or {}).get("maximum", 0) > 0)
+
+
+def wait_files_observer_ready(read, alive, clock=time.monotonic, sleep=time.sleep):
+    deadline = clock() + 10
+    observed = None
+    while True:
+        observed = read()
+        if files_observer_ready(observed):
+            return observed
+        if not alive() or clock() >= deadline:
+            raise RuntimeError("Native Files observer did not become laid-out ready within 10 seconds: " + json.dumps(observed))
+        sleep(0.1)
+
+
+def stage_message(stage, result):
+    message = "POLLY_VM_NEWARCH_" + stage.upper() + "=" + json.dumps(result, separators=(",", ":"))
+    if len(message.encode("utf-8")) > 8192:
+        raise RuntimeError("Native guest stage record exceeds the 8192-byte payload bound: " + stage)
+    return message
+
+
 def rpc_enabled():
     return len(sys.argv) > 3 and sys.argv[3] == "--rpc-profile"
 
@@ -193,8 +224,7 @@ def settings_pid(shell_pid):
 
 
 def emit(stage, result):
-    subprocess.run(["logger", "--size", "8192", "-t", "polly-vm-check", "POLLY_VM_NEWARCH_" + stage.upper() + "=" +
-                    json.dumps(result, separators=(",", ":"))], check=True)
+    subprocess.run(["logger", "--size", "8192", "-t", "polly-vm-check", stage_message(stage, result)], check=True)
 
 
 def launch_settings(page, env, cwd):
@@ -341,12 +371,14 @@ def main():
                                   "/tmp/polly-alpha-files-interactions-guest.mjs", str(root)],
                                  env=env, cwd="/usr/share/pollyui", stdout=log, stderr=subprocess.STDOUT)
         log.close()
-        deadline = time.monotonic() + 10
-        while not (root / "observed.json").exists():
-            check(child.poll() is None and time.monotonic() < deadline,
-                  "Native production Files observer failed to start: " + (root / "native.log").read_text())
-            time.sleep(0.1)
-        emit(stage, {"pid": child.pid, "source": "production createFilesApp; observation only; QMP USB input"})
+        def read():
+            check("FAILED" not in (root / "native.log").read_text(),
+                  "Native production Files observer failed: " + (root / "native.log").read_text())
+            file = root / "observed.json"
+            return json.loads(file.read_text()) if file.exists() else None
+        observed = wait_files_observer_ready(read, lambda: child.poll() is None)
+        emit(stage, {"pid": child.pid, "ready": True, "width": observed["width"], "height": observed["height"],
+                     "source": "production createFilesApp; observation only; QMP USB input"})
     elif stage == "files-state":
         root = Path("/tmp/polly-alpha-interactions")
         check("FAILED" not in (root / "native.log").read_text(),

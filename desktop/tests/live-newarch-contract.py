@@ -18,6 +18,48 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_stage_payload_size_refuses_oversize_without_truncation(self):
+        base = guest.stage_message("files-state", {"text": ""})
+        size = 8192 - len(base.encode())
+        message = guest.stage_message("files-state", {"text": "x" * size})
+        self.assertEqual(len(message.encode()), 8192)
+        self.assertEqual(json.loads(message.split("=", 1)[1])["text"], "x" * size)
+        with self.assertRaisesRegex(RuntimeError, "8192-byte"):
+            guest.stage_message("files-state", {"text": "x" * (size + 1)})
+        unicode_base = guest.stage_message("files-state", {"text": "\u4e2d"})
+        padding = 8192 - len(unicode_base.encode("utf-8"))
+        self.assertEqual(len(guest.stage_message("files-state", {"text": "\u4e2d" + "x" * padding}).encode()), 8192)
+        with self.assertRaisesRegex(RuntimeError, "8192-byte"):
+            guest.stage_message("files-state", {"text": "\u4e2d" + "x" * (padding + 1)})
+
+    def test_files_start_waits_for_real_layout_not_snapshot_existence(self):
+        tick = [0.0]
+        sleep = lambda seconds: tick.__setitem__(0, tick[0] + seconds)
+        clock = lambda: tick[0]
+        ready = {"phase": "ready", "width": 760, "height": 540,
+                 "controls": {name: {"width": 10, "height": 20} for name in
+                              ("filter", "list", "scrollbar", "scroll-thumb", "columns")},
+                 "metrics": {"maximum": 4000}, "error": ""}
+        self.assertFalse(guest.files_observer_ready({"phase": "loading"}))
+        self.assertFalse(guest.files_observer_ready({**ready, "controls": {}}))
+        self.assertIs(guest.wait_files_observer_ready(
+            lambda: {"phase": "loading"} if tick[0] < 0.2 else ready, lambda: True, clock, sleep), ready)
+        with self.assertRaisesRegex(RuntimeError, "startup failed"):
+            guest.files_observer_ready({"phase": "error", "error": "native failure"})
+        tick[0] = 0
+        with self.assertRaisesRegex(RuntimeError, "within 10 seconds"):
+            guest.wait_files_observer_ready(lambda: None, lambda: True, clock, sleep)
+        self.assertLess(tick[0], 10.2)
+        with self.assertRaisesRegex(RuntimeError, "within 10 seconds"):
+            guest.wait_files_observer_ready(lambda: None, lambda: False, clock, sleep)
+
+    def test_native_pointer_coordinates_are_finite_and_inside_actual_screen(self):
+        self.assertEqual(boot.native_pointer_position(0, 0, 1280, 800), (0, 0))
+        self.assertEqual(boot.native_pointer_position(1279, 799, 1280, 800), (32767, 32767))
+        for x, y in ((1280, 0), (0, 800), (-1, 0), (0, -1), (float("nan"), 0), (0, float("inf"))):
+            with self.subTest(point=(x, y)), self.assertRaisesRegex(RuntimeError, "finite actual"):
+                boot.native_pointer_position(x, y, 1280, 800)
+
     def test_stage_json_accepts_only_a_complete_object_and_separate_kernel_record(self):
         value = {"closed": True, "nativeLog": "original\nwarnings", "exitObservation": {
             "originalPid": 2730, "elapsedSeconds": 0.243, "maximumWaitSeconds": 10}}
