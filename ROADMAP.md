@@ -129,14 +129,23 @@ system assets. The accepted Alpha.6 demonstrated function, not a finished UX.
 |---|---|---|
 | Settings | Integrated: sidebar, headings, grouped cards, theme-preview tiles and concise status/errors; system version/short build SHA on every page, full identity in About. Native normal/narrow layout and actual identity checks passed | Appearance/About use the existing narrow IPC; four managed pages retain explicit Shell-panel delegation |
 | Shell | Integrated: modern taskbar/launcher/menu spacing, typography, original icons and fresh-session Modern default | Window/workspace controls, input focus, power confirmation, rollback and user-selected classic themes |
-| Files | Explorer-like navigation/command/address areas and Places sidebar; real name/type/date/size columns instead of per-file buttons and default UID diagnostics | Current native file operations, exact-entry identity and no-clobber/error semantics |
-| Files interaction | In progress in the separate Files increment: selection/focus, double-click/Enter open, navigation shortcuts, sorting and current-folder filtering, context actions and rename behavior | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
+| Files | Integrated Explorer-like navigation/command/address areas and Places sidebar; Name/Modified/Type/Size columns, Properties for complete metadata | Current native file operations, exact-entry identity and no-clobber/error semantics |
+| Files interaction | Implementation integrated: single selection/focus, open, navigation, sorting, loaded-name filtering, context actions and inline rename. Current normal/narrow full native qualification is pending a test-driver overhead fix after the 120-second fixture deadline was reached | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
 
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses
 actual rendered windows and layout/interaction checks, not screenshots of a
 mock or a theme-color-only change. No production blur/GPU effect is claimed
 without a working implementation. Existing Alpha artifacts remain untouched.
+Files' earlier normal-window successful captures predate the final Properties
+layout correction; they do not certify that correction. Current narrow-window
+captures show the corrected layout and successful operations, but do not replace
+a complete native input/lifecycle pass. Test evidence is kept with its actual
+source/runtime/driver identity rather than silently relabelled.
+Current native fixture traces show repeated marker-window setup and redundant
+scroll inputs consuming its deadline after successful file operations. The
+driver is being tightened to reduce that overhead without changing the timeout,
+using controller shortcuts or omitting file/selection/lifecycle assertions.
 
 ## Engines & pipeline
 

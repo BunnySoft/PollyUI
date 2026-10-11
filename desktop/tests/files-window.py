@@ -11,6 +11,7 @@ import stat
 import struct
 import tempfile
 import shutil
+import sys
 
 
 def driver_command(repo, driver, runtime, small=False):
@@ -32,6 +33,12 @@ def retain_fixture_home(root, evidence):
             marker.read_text() != "POLLY-FILES-PRIVATE-WINDOW-V1\n":
         raise PermissionError("Refusing to retain an unqualified or non-synthetic Files HOME")
     shutil.copytree(root, evidence / "retained-home", symlinks=True)
+
+
+def report_native_failure(evidence):
+    text = (evidence / "native.log").read_text(errors="replace")
+    print("Retained private Files evidence: " + str(evidence), file=sys.stderr)
+    print(text[-65536:], file=sys.stderr)
 
 
 def main():
@@ -100,10 +107,12 @@ def main():
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=5)
             retain_fixture_home(root, evidence)
+            report_native_failure(evidence)
             raise RuntimeError("Files native fixture timed out; original private evidence retained") from error
     retain_fixture_home(root, evidence)
     text = (evidence / "native.log").read_text(errors="replace")
     if process.returncode or "FILES_WINDOW_FAIL:" in text or "FILES_WINDOW_SUPERVISOR_FAIL:" in text:
+        report_native_failure(evidence)
         raise RuntimeError("Actual Files native fixture failed; original private evidence retained")
     for marker in ("FILES_WINDOW_DRIVE_PASS:", "FILES_WINDOW_CLOSE_PASS:", "FILES_WINDOW_SUPERVISOR_PASS:"):
         if marker not in text:

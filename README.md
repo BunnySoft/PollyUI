@@ -49,6 +49,12 @@ sidebar navigation, grouped cards, illustrated theme choices and a persistent
 system version/build footer. The new Modern preset applies to fresh sessions;
 saved classic-theme choices are preserved. This source change is not included
 in the physically accepted Alpha.6 ISO.
+Files also has an Explorer-like navigation/address bar, Places sidebar,
+Name/Modified/Type/Size columns, continuous scrolling, folder-first sorting,
+loaded-name filtering, contextual actions and inline rename. Detailed metadata
+belongs in Properties instead of every row. This is single-selection browsing;
+cut/copy/paste, deletion, Trash and full-disk search are not implemented.
+See [Files](desktop/apps/files/README.md) for the operation and snapshot limits.
 
 The FFI module loads OS libraries and prepares fixed ABI signatures with
 libffi. `Library.bind(symbol, {result, parameters, abi?, variadic?, clearErrors?})` returns a callable
