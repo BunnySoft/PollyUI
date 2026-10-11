@@ -49,6 +49,14 @@ class Contract(unittest.TestCase):
             legacy.write_text("synthetic-only")
             with self.assertRaisesRegex(ValueError, "Old/unlisted"):
                 overlay.verify_namespaces(root, set(expected))
+            legacy.unlink()
+            for theme in ("PollyRabbit", "PollyClassic"):
+                stale = root / "usr/share/icons" / theme / "cursors/old-fixture"
+                stale.parent.mkdir(parents=True)
+                stale.write_bytes(b"synthetic-only")
+                with self.assertRaisesRegex(ValueError, "Old/unlisted"):
+                    overlay.verify_namespaces(root, set(expected))
+                stale.unlink()
 
     def test_real_deb_and_tampering(self):
         with tempfile.TemporaryDirectory() as temporary:

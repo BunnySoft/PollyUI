@@ -50,6 +50,12 @@ class CpioContract(unittest.TestCase):
                     (entry(name, data), "omits the actual"),
                     (entry(name, data) * 2 + receipt, "Duplicate runtime"),
                     (entry(name, data) + receipt * 2, "Duplicate initramfs"),
+                    (entry(name, data) + entry("usr/share/pollyui/runtime-origin.json",
+                                              json.dumps(origin).encode(), uid=1000), "ownership/mode"),
+                    (entry(name, data) + receipt + entry("usr/share/icons/PollyRabbit/cursors/stale"),
+                     "Old/unlisted"),
+                    (entry(name, data) + receipt + entry("usr/share/icons/PollyClassic/cursors/stale",
+                                                        mode=stat.S_IFLNK | 0o777), "Old/unlisted"),
                     (entry(name, data) + entry("usr/share/pollyui/runtime-origin.json", b"{}"),
                      "origin receipt differs")):
                 with self.subTest(message=message):

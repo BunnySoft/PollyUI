@@ -11,6 +11,10 @@ import subprocess
 import tempfile
 
 
+NAMESPACES = ("usr/share/pollyui", "usr/lib/pollyui", "usr/share/licenses/pollyui",
+              "usr/share/doc/pollyui", "usr/share/icons/PollyRabbit", "usr/share/icons/PollyClassic")
+
+
 def digest(path):
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
@@ -33,6 +37,12 @@ def check_initramfs(path, expected, origin):
             source.read(-(110 + namesize) % 4)
             if name == "TRAILER!!!":
                 break
+            origin_entry = name == "usr/share/pollyui/runtime-origin.json"
+            if (stat.S_ISREG(mode) or stat.S_ISLNK(mode)) and name not in expected and not origin_entry and any(
+                    name == namespace or name.startswith(namespace + "/") for namespace in NAMESPACES):
+                raise ValueError("Old/unlisted Polly runtime file in ISO: " + name)
+            if origin_entry and (not stat.S_ISREG(mode) or uid or gid or stat.S_IMODE(mode) != 0o644):
+                raise ValueError("Invalid ISO origin receipt ownership/mode")
             if name in expected:
                 if name in found:
                     raise ValueError("Duplicate runtime initramfs entry: " + name)
@@ -42,7 +52,7 @@ def check_initramfs(path, expected, origin):
                         stat.S_IMODE(mode) != int(record["mode"], 8) or size != record["size"]):
                     raise ValueError("ISO runtime metadata differs from frozen payload: " + name)
             result = hashlib.sha256()
-            captured = bytearray() if name == "usr/share/pollyui/runtime-origin.json" else None
+            captured = bytearray() if origin_entry else None
             remaining = size
             while remaining:
                 block = source.read(min(remaining, 1024 * 1024))

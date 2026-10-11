@@ -24,7 +24,7 @@ OVERLAYS = {
     "usr/share/pollyui/power-dependencies.json": "desktop/release/debian/power-dependencies.json",
 }
 NAMESPACES = ("usr/share/pollyui", "usr/lib/pollyui", "usr/share/licenses/pollyui",
-              "usr/share/doc/pollyui")
+              "usr/share/doc/pollyui", "usr/share/icons/PollyRabbit", "usr/share/icons/PollyClassic")
 
 
 def digest(file):

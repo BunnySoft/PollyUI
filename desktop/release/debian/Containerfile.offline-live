@@ -11,9 +11,11 @@ RUN python3 -I -B /tmp/polly-producer/offline-live-overlay.py inputs /tmp/polly-
     test ! -e /usr/sbin/policy-rc.d && \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d && chmod 755 /usr/sbin/policy-rc.d && \
     dpkg -i /tmp/polly-offline-inputs/packages/*.deb && rm /usr/sbin/policy-rc.d
-RUN for path in /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui; do \
+RUN for path in /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui \
+        /usr/share/icons/PollyRabbit /usr/share/icons/PollyClassic; do \
         test ! -L "$path" && test "$(readlink -f "$path")" = "$path" || exit 1; \
-    done && rm -rf /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui
+    done && rm -rf /usr/share/pollyui /usr/lib/pollyui /usr/share/licenses/pollyui /usr/share/doc/pollyui \
+        /usr/share/icons/PollyRabbit /usr/share/icons/PollyClassic
 ADD runtime/pollydesktop-*-debian13-x86_64.tar.gz /
 COPY frozen/desktop/release/live/init /init
 COPY frozen/desktop/release/live/session /usr/bin/polly-live-session

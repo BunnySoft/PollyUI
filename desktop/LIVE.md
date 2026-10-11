@@ -134,6 +134,19 @@ The runtime dependency/license inventory and the Live guest package inventory
 are not substitutes for a completed redistribution/source-compliance audit.
 No external release is uploaded by this script.
 
+For the frozen offline Debian candidate path, use immutable local image IDs,
+`--pull=never` and `--network=none`, and compare every new runtime package pin
+against the actual base inventory before assembling the exact cached delta.
+`Containerfile.offline-live` clears only the owned Polly runtime namespaces,
+including `usr/share/icons/PollyRabbit` and `usr/share/icons/PollyClassic`;
+`offline-live-overlay.py` rejects any old or unlisted file in those namespaces.
+`verify-live-runtime.py` independently streams the actual ISO initramfs and
+checks every packaged runtime/overlay file's bytes, mode and owner, the origin
+receipt, and unexpected Polly files, including cursor assets outside
+`usr/share/pollyui`. Preserve separate runtime-freeze and media-producer revisions:
+a producer-only integrity fix does not change the frozen runtime identity.
+These checks do not establish boot, complete VM or physical-hardware acceptance.
+
 ## Validate in a disposable guest
 
 The boot fixture uses OVMF, 4 GiB RAM, two virtual CPUs, virtio-vga and emulated
