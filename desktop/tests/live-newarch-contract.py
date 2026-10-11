@@ -18,6 +18,28 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_stage_json_accepts_only_a_complete_object_and_separate_kernel_record(self):
+        value = {"closed": True, "nativeLog": "original\nwarnings", "exitObservation": {
+            "originalPid": 2730, "elapsedSeconds": 0.243, "maximumWaitSeconds": 10}}
+        prefix = "[ 271.183010] polly-vm-check[3023]: POLLY_VM_NEWARCH_FILES-ENTRY-CLOSED="
+        payload = json.dumps(value, separators=(",", ":"))
+        kernel = ("[  271.739673] clocksource: Long readout interval, skipping watchdog check: "
+                  "cs_nsec: 1009225182 wd_nsec: 1009225105")
+        self.assertEqual(boot.guest_stage_record(prefix + payload + kernel, "files-entry-closed")[0], value)
+        self.assertEqual(boot.guest_stage_record(prefix + payload, "files-entry-closed")[0], value)
+        for suffix in ("garbage", '{"closed":false}', "[not-a-timestamp] clocksource: warning"):
+            with self.subTest(suffix=suffix), self.assertRaises(ValueError):
+                boot.guest_stage_record(prefix + payload + suffix, "files-entry-closed")
+        with self.assertRaises(ValueError):
+            boot.guest_stage_record(prefix + payload[:-1], "files-entry-closed")
+        with self.assertRaises(ValueError):
+            boot.guest_stage_record(prefix + "[]", "files-entry-closed")
+        with self.assertRaises(ValueError):
+            boot.guest_stage_record(prefix + payload + "\n" + prefix + payload, "files-entry-closed")
+        self.assertIsNone(boot.guest_stage_record("echo " + prefix.split(": ", 1)[1] + payload, "files-entry-closed"))
+        with self.assertRaises(RuntimeError):
+            boot.guest_stage_record(prefix + payload + "[ 272.0] Kernel panic - not syncing", "files-entry-closed")
+
     def test_original_process_exit_wait_is_bounded_and_ignores_other_pids(self):
         tick = [0.0]
         sleep = lambda seconds: tick.__setitem__(0, tick[0] + seconds)

@@ -46,6 +46,25 @@ def settings_tab_steps(control, user_theme_loaded=False):
         raise ValueError("A user theme must be loaded before selecting its native control")
     return positions[control] + int(user_theme_loaded and control in ("reload", "restore"))
 
+def guest_stage_record(transcript, name):
+    matches = list(re.finditer(r"polly-vm-check\[\d+\]: " + re.escape(prefix) + r"([^\r\n]*)", transcript))
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ValueError("Duplicate guest stage record: " + name)
+    record = matches[0][1].strip()
+    value, end = json.JSONDecoder().raw_decode(record)
+    if not isinstance(value, dict):
+        raise ValueError("Guest stage result must be an object: " + name)
+    trailing = record[end:].strip()
+    if trailing and not re.fullmatch(r"\[\s*\d+\.\d+\]\s+[A-Za-z][^{}\r\n]*", trailing):
+        raise ValueError("Unexpected data after guest stage record: " + name)
+    # Preserve the original mixed record for diagnostics; a kernel suffix never
+    # suppresses a fatal error or changes the application result.
+    if fatal_guest_record(transcript):
+        raise RuntimeError("Fatal guest error while receiving stage: " + name)
+    return value, matches[0][0], trailing
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -323,9 +342,14 @@ def main():
                                 if args.settings_rpc_profile and name != "collect-rpc-profile":
                                     collect_rpc_diagnostic(name)
                                 raise RuntimeError("Guest new-architecture action failed:\n" + complete[-6000:])
-                            if prefix in complete:
-                                value = complete.split(prefix, 1)[1].splitlines()[0].strip()
-                                result = json.loads(value)
+                            record = guest_stage_record(complete, name)
+                            if record is not None:
+                                result, raw_record, interleaved = record
+                                if interleaved:
+                                    (evidence / ("stage-" + name + "-interleave.json")).write_text(json.dumps({
+                                        "stage": name, "rawRecord": raw_record, "kernelSuffix": interleaved,
+                                        "originalSerialPreserved": True,
+                                    }, indent=2) + "\n")
                                 stages[name] = result
                                 return result
                             if process.poll() is not None or time.monotonic() > deadline:

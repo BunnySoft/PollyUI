@@ -173,6 +173,13 @@ only fixed non-credential process-environment keys. Observer lifetime is bounded
 to 360 seconds. It writes `rpc-diagnostic.json`, never a passing `result.json`;
 no instrumented production JavaScript, ambient bus or package installation is used.
 
+Guest action records must contain one complete JSON object from the actual
+`polly-vm-check` logger. A timestamped kernel record appended on the same console
+line is retained separately without changing the action result; arbitrary
+suffixes, extra JSON, duplicates and truncated objects fail. The original raw
+serial remains intact, and fatal records in the action's fresh log window are
+not hidden by parsing.
+
 The original seatd baseline and its PAM/elogind successor were both verified with
 OVMF/KVM, virtio-vga, 1280x800, Pixman compositor and
 raster PollyUI. Rime and private audio start with the desktop, but this boot
