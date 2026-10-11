@@ -1,5 +1,12 @@
 # Memory-only UEFI development image
 
+**Alpha.8 physical feedback (2026-10-11):** the user reported that actual testing
+of the delivered Alpha.8 ISO passed. Record this as user-reported physical
+acceptance, not an independently measured hardware/cursor-plane, per-feature or
+endurance matrix. The exact delivered ISO and candidate receipts below remain
+unchanged. Complete automated VM acceptance is still absent, and the retained
+native-mouse failure and earlier Alpha.7 issues are not retroactively resolved.
+
 **Alpha.8 candidate published, not fully qualified:** the user's selected
 candidate mode permits delivery without complete VM acceptance. The ISO is under
 `dist\pollydesktop-0.1.0-alpha.8-debian13-a357a7d-candidate\`,
@@ -28,7 +35,9 @@ paint assertion and was not rerun or declared passed. Its raw CTest log remains,
 but its original private HOME/screenshots were lost after an evidence-export
 failure; no reconstruction is claimed. The final second build's native tar
 archives preserve modes/owners despite Windows directory-copy failures.
-Complete VM and physical acceptance remain false, and historical Alpha.7 issues
+At delivery, complete VM and physical acceptance were unverified. The later
+user-reported physical feedback above does not change those original receipts;
+complete VM acceptance remains absent, and historical Alpha.7 issues
 below have not been fully retested or declared fixed. Preserve all older images
 and failures. The earlier `36b7e4b` WSLg preview exited independently; it is a
 separate build, not Alpha.8 media, and was not restarted.
@@ -61,7 +70,7 @@ clean freeze commit and record actual build identity, not reuse alpha.6 binaries
 No extra file operations, animated rabbit cursor or materials are in this scope.
 See the [Alpha.7 gate](../ROADMAP.md#alpha7-files-interaction-and-physical-test-candidate).
 
-**Latest physically accepted image:** Debian alpha.6, frozen runtime `c9b1fcd`.
+**Historical physically accepted image:** Debian alpha.6, frozen runtime `c9b1fcd`.
 The optical ISO passed complete normal OVMF/KVM acceptance, including ordinary
 seat0 DRM, Chinese input/clipboard/workspaces, native Files/JSON and independent
 Settings selection, user-theme reload/restore, About and close/reopen.

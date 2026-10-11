@@ -19,11 +19,15 @@ text are implemented; detailed GPU qualification, advanced IME/text extensions
 and the macOS HTTP backend remain separate.
 See README and `desktop/README.md` for current platform boundaries.
 
-**Latest physically accepted image:** Debian 13 trixie amd64 alpha.6,
-frozen runtime `c9b1fcd`, has passed complete UEFI/KVM desktop and new-architecture
-acceptance. On 2026-10-11 the user reported that alpha.6 physical-machine testing
-passed; per-device, feature and endurance measurements were not specified. Historical alpha.5-r2
-physical boot feedback is not evidence for alpha.6. Keep the Alpine fallback and do
+**Latest user-reported physical acceptance:** Debian 13 trixie amd64 alpha.8,
+frozen runtime `a357a7d`, ISO SHA-256
+`07e1fe3292275a577ff20d9d44d62d4d5981c4d6b312d1cc828ad8d14eeeadb4`.
+On 2026-10-11 the user reported that actual testing passed. Per-device, feature
+and endurance measurements were not specified. This feedback does not turn the
+recorded baseline-only VM checks into complete automation acceptance or resolve
+the retained native-mouse/Alpha.7 failures. Alpha.6's earlier complete VM and
+user-reported physical acceptance remain separate historical evidence.
+Keep the Alpine fallback and do
 not turn all future features into current release gates.
 See [base selection and maintenance](./docs/desktop-base-maintenance.md).
 
@@ -80,6 +84,7 @@ old images. `desktop/VERSION` freezes `0.1.0-alpha.8` in this revision.
 | Runtime and assets | Fresh clean-source build; installed rabbit/precision cursor hashes, runtime dependencies and actual Alpha.8 build identity | Actual private clean Git Release build, compiled version/full revision/false dirty, frozen package and 12 core native checks passed; 240 pins compared anew; all 75 Xcursor files and two theme indexes verified. Extra first-build native-mouse check failed, unresolved and not rerun |
 | ISO candidate | New Debian 13 x86_64 UEFI RAM-only image, actual payload checks and unchanged-copy checksum | Published `dist\pollydesktop-0.1.0-alpha.8-debian13-a357a7d-candidate\`; 707868672 bytes, SHA-256 `07e1fe3292275a577ff20d9d44d62d4d5981c4d6b312d1cc828ad8d14eeeadb4`; actual ISO verified 246 runtime/overlay files plus origin, including cursors. Separate producer `d2a41b59f7ee0ac77529dc10e426923b00015018` |
 | Acceptance label | Record actual boot checks and any failures; prominently identify missing complete VM/hardware qualification | One ordinary optical OVMF/KVM boot/IME/clipboard/workspace baseline passed; complete VM and physical qualification remain false. Candidate warning/status, first native-mouse failure, export failures and missing first private HOME are explicit; no full Settings/Files matrix rerun |
+| Physical feedback | User exercises the delivered candidate on their machine | User reported actual testing passed on 2026-10-11. Scope/hardware details were not supplied; retain original candidate receipts and failed automation evidence unchanged |
 
 The earlier user-requested WSLg preview exited independently; do not restart it
 or confuse it with the new media. Preserve its archive and all previous ISO bytes.

@@ -345,6 +345,10 @@ complete VM and physical-hardware qualification remain false. The first
 additional native-mouse check failed and is recorded rather than declared fixed.
 See [the Alpha.8 candidate gate](./ROADMAP.md#alpha8-rabbit-cursor-candidate)
 and the candidate warning/checksums before physical testing.
+On 2026-10-11 the user reported that actual Alpha.8 testing passed. This is
+user-reported physical acceptance, not a detailed independent hardware matrix
+or a replacement for the retained incomplete/failed automation records.
+The delivered ISO bytes and original candidate status are unchanged.
 Materials and the cursor upload/editor remain separate work.
 
 Start with the **[PollyOS technical overview and handoff guide (中文)](./docs/POLLYOS.md)**
