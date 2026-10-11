@@ -157,6 +157,12 @@ events exercise outside-window text capture, clipboard selection, Shift editing,
 scrollbar capture/release, viewport paging, focus and disposal. These bounded VM
 checks complement the independent normal/narrow native Files qualification;
 they do not qualify physical input devices or install fixtures in the ISO.
+The installed Files entry also gets a screenshot-reviewed neutral native focus
+click before its one Alt+F4 close request. Its original PID must disappear within
+10 seconds; observer disposal has the same bounded read-only wait, without another
+close request or process kill. These new safety/observation steps increase the
+maximum harness work time; they do not extend product RPC deadlines or the
+Files observer's 60-second lifetime.
 
 The optional `--settings-rpc-profile` lane is explicitly **diagnostic, not
 acceptance**. It retains private-session `dbus-monitor --profile` headers, bounded

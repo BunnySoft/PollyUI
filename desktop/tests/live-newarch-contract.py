@@ -18,6 +18,36 @@ boot_spec.loader.exec_module(boot)
 
 
 class Protocol(unittest.TestCase):
+    def test_original_process_exit_wait_is_bounded_and_ignores_other_pids(self):
+        tick = [0.0]
+        sleep = lambda seconds: tick.__setitem__(0, tick[0] + seconds)
+        clock = lambda: tick[0]
+        def eventual():
+            return {10: ["pollyui"], 20: ["unrelated"]} if tick[0] < 0.3 else {20: ["unrelated"]}
+        result = guest.wait_process_gone(10, eventual, clock, sleep)
+        self.assertEqual(result["originalPid"], 10)
+        self.assertEqual(result["actualProcesses"], {20: ["unrelated"]})
+        self.assertLess(result["elapsedSeconds"], 1)
+        tick[0] = 0
+        with self.assertRaisesRegex(RuntimeError, "within 10 seconds"):
+            guest.wait_process_gone(10, lambda: {10: ["original"]}, clock, sleep)
+        self.assertLess(tick[0], 10.2)
+
+    def test_observer_disposal_wait_keeps_error_and_missing_state_explicit(self):
+        tick = [0.0]
+        sleep = lambda seconds: tick.__setitem__(0, tick[0] + seconds)
+        clock = lambda: tick[0]
+        result = guest.wait_observer_disposed(
+            lambda: {"phase": "ready", "stopped": False} if tick[0] < 0.2 else {"phase": "disposed", "stopped": True},
+            clock, sleep)
+        self.assertTrue(result["stopped"])
+        with self.assertRaisesRegex(RuntimeError, "reported an error"):
+            guest.wait_observer_disposed(lambda: {"error": "native failure"}, clock, sleep)
+        tick[0] = 0
+        with self.assertRaisesRegex(RuntimeError, "within 10 seconds"):
+            guest.wait_observer_disposed(lambda: None, clock, sleep)
+        self.assertLess(tick[0], 10.2)
+
     def test_rpc_phase_diagnostic_keeps_original_deadline_and_no_acceptance_label(self):
         source = Path(__file__).with_name("live-boot.py").read_text()
         self.assertIn('"acceptance": False, "failedStage": failed_stage', source)

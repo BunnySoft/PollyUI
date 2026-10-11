@@ -59,6 +59,10 @@ def validate_alpha7(result, revision):
             stages.get("files-entry-closed", {}).get("closed") is not True:
         raise ValueError("Missing installed production Files entry/close qualification")
     files = actual.get("filesInteractions", {})
+    focus = files.get("installedEntryFocus", {})
+    if focus.get("nativeButtonPair") is not True or focus.get("review", {}).get("headerNoninteractive") is not True or \
+            focus.get("review", {}).get("snapshotSha256") != focus.get("sha256"):
+        raise ValueError("Missing actual screenshot-reviewed installed Files focus precondition")
     geometry = actual.get("settingsInputGeometry", {})
     for control, count in (("bigsur", 11), ("reload", 13), ("user-theme", 13), ("xp", 7), ("restore", 15)):
         observed = geometry.get(control, {})
@@ -108,6 +112,9 @@ def main():
     validate_result(result, args.runtime_revision, args.harness_revision, args.iso_sha256)
     runtime = json.loads((args.runtime / "manifest.json").read_text())
     if runtime["version"] == "0.1.0-alpha.7":
+        for moment in ("before", "neutral"):
+            artifact = "files-focus-files-entry-" + moment + ".png"
+            shutil.copyfile(args.evidence / artifact, evidence / artifact)
         validate_alpha7(result, args.runtime_revision)
         if not args.runtime_qualification:
             raise ValueError("Alpha.7 handoff requires its separate actual native build qualification receipt")

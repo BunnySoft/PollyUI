@@ -16,6 +16,36 @@ import signal
 RPC_ROOT = Path("/tmp/polly-alpha-rpc")
 
 
+def wait_process_gone(pid, processes=None, clock=time.monotonic, sleep=time.sleep):
+    processes = process_arguments if processes is None else processes
+    started = clock()
+    deadline = started + 10
+    while True:
+        current = processes()
+        if pid not in current:
+            return {"originalPid": pid, "elapsedSeconds": round(clock() - started, 3),
+                    "actualProcesses": current, "maximumWaitSeconds": 10}
+        if clock() >= deadline:
+            raise RuntimeError("Original process did not exit within 10 seconds: " +
+                               json.dumps({"originalPid": pid, "actualProcesses": current}))
+        sleep(0.1)
+
+
+def wait_observer_disposed(read, clock=time.monotonic, sleep=time.sleep):
+    started = clock()
+    deadline = started + 10
+    while True:
+        observed = read()
+        if observed is not None:
+            if observed.get("error"):
+                raise RuntimeError("Native Files observer reported an error: " + str(observed["error"]))
+            if observed.get("stopped") is True and observed.get("phase") == "disposed":
+                return observed
+        if clock() >= deadline:
+            raise RuntimeError("Native Files observer did not dispose within 10 seconds: " + json.dumps(observed))
+        sleep(0.1)
+
+
 def rpc_enabled():
     return len(sys.argv) > 3 and sys.argv[3] == "--rpc-profile"
 
@@ -290,12 +320,17 @@ def main():
                      "entry": "/usr/bin/polly-files", "productionResource": True})
     elif stage == "files-entry-closed":
         root = Path("/tmp/polly-alpha-entry")
-        check(int((root / "pid").read_text()) not in process_arguments(),
-              "Actual installed Files process remained after native WM close")
+        pid = int((root / "pid").read_text())
+        try:
+            exited = wait_process_gone(pid)
+        except RuntimeError:
+            emit("files-close-timeout", {"originalPid": pid, "actualProcesses": process_arguments(),
+                                         "nativeLog": (root / "entry.log").read_text()})
+            raise
         log = (root / "entry.log").read_text()
         check(not any(marker in log for marker in ("Uncaught", "[files]", "FAILED")),
               "Actual installed Files entry reported a resource/startup error: " + log)
-        emit(stage, {"closed": True, "nativeLog": log[-2000:]})
+        emit(stage, {"closed": True, "nativeLog": log, "exitObservation": exited})
     elif stage == "files-start":
         root = Path("/tmp/polly-alpha-interactions")
         root.mkdir(mode=0o700)
@@ -317,6 +352,20 @@ def main():
         check("FAILED" not in (root / "native.log").read_text(),
               "Native production Files observer reported failure")
         emit(stage, json.loads((root / "observed.json").read_text()))
+    elif stage == "files-closed":
+        root = Path("/tmp/polly-alpha-interactions")
+        def read():
+            log = (root / "native.log").read_text()
+            check("FAILED" not in log, "Native Files observer reported failure: " + log)
+            file = root / "observed.json"
+            return json.loads(file.read_text()) if file.exists() else None
+        try:
+            observed = wait_observer_disposed(read)
+        except RuntimeError:
+            emit("files-close-timeout", {"actualProcesses": process_arguments(), "nativeLog": (root / "native.log").read_text(),
+                                         "observed": read()})
+            raise
+        emit(stage, {**observed, "nativeLog": (root / "native.log").read_text(), "maximumWaitSeconds": 10})
     elif stage in ("prepare", "prepare-profile"):
         if rpc_enabled():
             start_rpc_profile(env, shell)

@@ -379,8 +379,9 @@ def main():
 
                     input_geometry = {}
 
-                    def neutral_settings(control):
-                        before = evidence / ("settings-input-" + control + "-before.ppm")
+                    def reviewed_neutral_input(control, prefix="settings-input", requirement=None):
+                        requirement = requirement or "Point must be inside the actual noninteractive Settings content header, not caption/navigation/cards."
+                        before = evidence / (prefix + "-" + control + "-before.ppm")
                         execute("screendump", {"filename": str(before)})
                         with before.open("rb") as image:
                             if image.readline() != b"P6\n":
@@ -396,8 +397,8 @@ def main():
                         args.settings_geometry_approvals.mkdir(parents=True, exist_ok=True)
                         plan = {"control": control, "snapshot": before.name, "sha256": snapshot_hash,
                                 "width": width, "height": height, "action": "neutral left down/up, then native Tab/Enter",
-                                "requirement": "Point must be inside the actual noninteractive Settings content header, not caption/navigation/cards."}
-                        (evidence / ("settings-input-" + control + "-plan.json")).write_text(json.dumps(plan, indent=2) + "\n")
+                                "requirement": requirement}
+                        (evidence / (prefix + "-" + control + "-plan.json")).write_text(json.dumps(plan, indent=2) + "\n")
                         approval = args.settings_geometry_approvals / (control + ".json")
                         deadline = time.monotonic() + 60
                         print("Await native Settings header geometry review: " + str(before), flush=True)
@@ -418,12 +419,12 @@ def main():
                         time.sleep(0.1)
                         execute("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
                         time.sleep(0.2)
-                        execute("screendump", {"filename": str(evidence / ("settings-input-" + control + "-neutral.ppm"))})
-                        input_geometry[control] = {**plan, "review": reviewed, "nativeButtonPair": True,
-                                                   "focusOrigin": "nearest focusable ancestor is the production Settings body"}
+                        execute("screendump", {"filename": str(evidence / (prefix + "-" + control + "-neutral.ppm"))})
+                        return {**plan, "review": reviewed, "nativeButtonPair": True,
+                                "focusOrigin": "real native press establishes the current window's nearest focusable ancestor"}
 
                     def press_tab(control, user_theme_loaded=False):
-                        neutral_settings(control)
+                        input_geometry[control] = reviewed_neutral_input(control)
                         count = settings_tab_steps(control, user_theme_loaded)
                         for _ in range(count):
                             keys("tab")
@@ -497,6 +498,8 @@ def main():
                     stage("files-entry")
                     wait_log("Mapped org.pollyui.files", 10)
                     time.sleep(1)
+                    files_entry_focus = reviewed_neutral_input("files-entry", "files-focus",
+                        "Point must be inside an actual inert Files toolbar gap or Places heading; Path is an interactive button and forbidden.")
                     keys("end")
                     execute("screendump", {"filename": str(evidence / "files-installed-entry.ppm")})
                     keys("alt", "f4")
@@ -598,10 +601,11 @@ def main():
                         raise RuntimeError("Actual overlay scrollbar changed list/header width or rail contract")
                     files_interactions["scrollbarKeyboard"] = {"home": homed, "pageDown": paged}
                     keys("alt", "f4")
-                    closed = stage("files-state")
+                    closed = stage("files-closed")
                     if closed.get("stopped") is not True or closed["phase"] != "disposed":
                         raise RuntimeError("Native Files close did not dispose the actual production app")
                     files_interactions["closed"] = closed
+                    files_interactions["installedEntryFocus"] = files_entry_focus
                     new_architecture = {"harnessRevision": args.harness_revision,
                                         "runtimeSourceRevision": args.runtime_revision,
                                         "fixturesInIso": False, "ordinaryUser": 1000,
