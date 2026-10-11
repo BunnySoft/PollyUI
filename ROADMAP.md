@@ -19,7 +19,7 @@ text are implemented; detailed GPU qualification, advanced IME/text extensions
 and the macOS HTTP backend remain separate.
 See README and `desktop/README.md` for current platform boundaries.
 
-**Current physical-test candidate:** Debian 13 trixie amd64 alpha.6,
+**Latest physically accepted image:** Debian 13 trixie amd64 alpha.6,
 frozen runtime `c9b1fcd`, has passed complete UEFI/KVM desktop and new-architecture
 acceptance. On 2026-10-11 the user reported that alpha.6 physical-machine testing
 passed; per-device, feature and endurance measurements were not specified. Historical alpha.5-r2
@@ -73,14 +73,15 @@ The user requested a new physical-test ISO after a small Files interaction
 polish. The selected scope is captured text drag-selection, a genuinely
 draggable list scrollbar, and keyboard/focus feedback. No new file operations,
 multi-selection, outgoing drag-and-drop or custom animated cursors are included.
-The native mouse mechanisms are integrated; the application/SDK changes and
-new release qualification remain in progress.
+The native mouse mechanisms and Files/SDK polish are integrated. The source
+version is frozen as `0.1.0-alpha.7`; fresh package/media and VM qualification
+remain pending. This is not a claim that a new ISO has already passed.
 
 | Gate | Required outcome | State |
 |---|---|---|
-| Files polish | Real drag-selection and scrollbar input, cancellation/lifetime and keyboard/focus behavior, with existing file operation semantics preserved | In progress |
-| Runtime freeze | Integrate the qualified changes, set `desktop/VERSION` to `0.1.0-alpha.7`, and record the clean source revision | Pending Files acceptance; the current source version is still alpha.6 |
-| Package and media | Fresh frozen build, install/dependency/provenance checks and a new Debian 13 x86_64 UEFI RAM-only ISO | Read-only preflight; no new qualified ISO yet |
+| Files polish | Real drag-selection and scrollbar input, cancellation/lifetime and keyboard/focus behavior, with existing file operation semantics preserved | Integrated `f49dffd`: eight native journeys / 29 PNGs at normal/narrow sizes; parent verified original hashes/EOL-only source differences and Windows/Linux integration. Paired-click/cancellation fixture corrections `592895f` also passed |
+| Runtime freeze | Integrate the qualified changes, set `desktop/VERSION` to `0.1.0-alpha.7`, and record the clean source revision | Version freeze in this revision; the media producer must clone its exact clean Git commit and preserve that full SHA in runtime/package/ISO provenance |
+| Package and media | Fresh frozen build, install/dependency/provenance checks and a new Debian 13 x86_64 UEFI RAM-only ISO | Preflight complete; fresh build/media next, no new qualified ISO yet |
 | VM and handoff | Normal boot/application acceptance against the actual ISO, then deliver those same bytes with hashes, logs and qualification records | Pending; no Alpha.7 physical-machine acceptance is claimed |
 
 Only one media/VM lane runs after the freeze. The accepted alpha.6 ISO and its

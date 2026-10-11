@@ -1,6 +1,15 @@
 # Memory-only UEFI development image
 
-**Current physical-test candidate:** Debian alpha.6, frozen runtime `c9b1fcd`.
+**Alpha.7 source freeze:** `desktop/VERSION` is `0.1.0-alpha.7`, including the
+modern Shell/Settings/Files, JS iwd service, native mouse interaction mechanisms,
+and Files text-selection/scrollbar/keyboard-focus polish. Fresh runtime packaging,
+new UEFI media and actual VM qualification are pending; no Alpha.7 ISO or
+physical-machine pass is claimed here. The release producer must use the exact
+clean freeze commit and record actual build identity, not reuse alpha.6 binaries.
+No extra file operations, animated rabbit cursor or materials are in this scope.
+See the [Alpha.7 gate](../ROADMAP.md#alpha7-files-interaction-and-physical-test-candidate).
+
+**Latest physically accepted image:** Debian alpha.6, frozen runtime `c9b1fcd`.
 The optical ISO passed complete normal OVMF/KVM acceptance, including ordinary
 seat0 DRM, Chinese input/clipboard/workspaces, native Files/JSON and independent
 Settings selection, user-theme reload/restore, About and close/reopen.
