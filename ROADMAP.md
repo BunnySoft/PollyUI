@@ -425,6 +425,11 @@ new ISO qualification are not included and remain future work.
 
 ## Tooling & infra
 
+The user deferred the Playwright-style GUI automation adapter on 2026-10-11.
+When resumed, follow browser/Playwright locator, action and waiting conventions;
+no detailed protocol design or implementation is scheduled now. Keep existing
+test harnesses; this adapter is separate from system accessibility bridging.
+
 | Feature | Status | Notes |
 |---|---|---|
 | **Headless test harness** (`--test`; click/mouse/scroll/key/render(ts)/flush/pixel/save) | ✅ | deterministic, **283 assertions**; `PU_TEST_W/H` viewport, `PU_PERF` tracing |
