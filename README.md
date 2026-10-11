@@ -155,7 +155,8 @@ socket errors use `WSAGetLastError`; `WSAStartup` returns its error code directl
 Disposing bindings does not close sockets or clean up Winsock. Calls remain
 synchronous; nonblocking sockets/readiness calls are not themselves a JS async runtime. The generic async path
 is opt-in; caller-owned managed socket buffers can now be borrowed across it.
-DNS, HTTP, TLS and the existing native fetch/iwd services are not changed.
+DNS, HTTP, TLS and the existing native fetch service are not changed by the
+socket SDK. The iwd service separately uses JS over the D-Bus endpoint.
 
 Execution lifetime is selected at composition: `sr_ffi_register(ctx, dispatcher)`
 returns a VM-scoped handle, and `sr_ffi_shutdown(handle)` must run on its owning
@@ -216,8 +217,10 @@ methods and declared signals share a single reader. It supports `n/u/b/s/o`,
 arrays, structs, dictionaries and variants, with copied headers, explicit
 pre-decode admission/projection and native message ownership. Drive
 `endpoint.poll()` as well as ticket outcomes; two independent readers must not
-consume the connection. This protocol capability does not itself replace the
-current C Wi-Fi backend. See [D-Bus SDK contracts](docs/DBUS-SDK.md).
+consume the connection. The Shell-owned JS Wi-Fi service now uses this endpoint;
+its old production C bridge and native lifecycle hooks are removed.
+See [D-Bus SDK contracts](docs/DBUS-SDK.md) and
+[Wi-Fi/iwd service](desktop/NETWORK.md).
 
 **Independent Settings (first application slice).**
 
@@ -876,7 +879,8 @@ Legacy XEmbed trays still require future Xwayland compatibility.
 ### Wi-Fi settings with iwd
 
 The appearance/settings menu's **Wi-Fi** entry opens a native settings surface
-backed by `net.connman.iwd` on the **system bus**, separate from the private
+backed by the JS service in `desktop/services/network.mjs` and
+`net.connman.iwd` on the **system bus**, separate from the private
 session bus used for notifications/tray. It discovers station devices, ordered
 networks and RSSI; supports scan, radio power, connect/disconnect and forgetting
 a discovered saved network. iwd owns association, DHCP/address configuration
@@ -887,9 +891,11 @@ is root before registering its agent or forwarding requests. Calls and agent
 prompts remain pinned to that owner. Agent requests are accepted only from it
 and only for the currently user-requested connection. A service restart clears
 old devices, actions and credential prompts, then re-verifies the new owner.
-Discovery and operations are asynchronous with native deadlines and bounded
+Discovery and operations are driven by zero-wait JS event-loop polling, with
+OS-monotonic deadlines and bounded
 queues/models; a missing system bus, denied policy or missing daemon is an
-explicit unavailable/error state, not a successful empty connection.
+explicit unavailable/error state, not a successful empty connection. The old
+`desktop/native/network.c/.h` implementation is deleted; there is no C fallback.
 
 Connect confirmation warns that **iwd can save credentials and enable automatic
 reconnection**. Authentication fields are masked, automatically focused and

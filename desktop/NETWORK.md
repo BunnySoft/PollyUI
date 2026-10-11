@@ -82,3 +82,22 @@ The production `desktop/native/network.c/.h` bridge and its native install,
 pump, shutdown and build hooks are removed. Native session-bus/audio/power
 users remain active. Source/private-fixture validation is **not** a new ISO or
 physical-radio acceptance claim; the accepted Alpha.6 artifacts are unchanged.
+
+## Isolated native validation
+
+The root-coordinated `desktop-network-service` and `desktop-settings-network`
+fixtures require UID/GID 1000 to resolve through the disposable container's NSS.
+Starting this SDK container as UID1000 creates Podman's temporary user mapping;
+the root coordinator can then run with `podman exec --user 0:0`, while the
+fixtures drop application privileges back to UID1000. A root-created container
+without that mapping needs an explicit private test account before the lane.
+Do not add host accounts or change the shared SDK image to satisfy this test.
+Missing NSS identity can make D-Bus authentication fail before any service
+operation; it is not evidence that a root-owner check should be relaxed.
+
+The integrated JS service, raster/GL network Shell flows and Settings network
+flow passed with that prerequisite. The endpoint's glibc sanitizer/musl and
+Valgrind evidence covers its real private-bus ownership/routing contracts.
+Earlier C/JS fixture runs intermittently lost the control-panel window at
+different steps; the cause was not established. Their diagnostics remain
+preserved separately from the final probe-free successful runs.

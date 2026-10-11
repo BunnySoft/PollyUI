@@ -112,7 +112,7 @@ or merely moving UI while retaining its old backend.
 
 | Slice | Deliverable | State / prerequisites |
 |---|---|---|
-| SM-01 | JS Wi-Fi/iwd service replaces `desktop/native/network.c/.h`; existing scan/radio/connect/credentials/cancel/disconnect/forget and owner-loss behavior retained | Required D-Bus container/tuple/signal/same-connection agent transport integrated; full JS iwd replacement and old-bridge deletion are still in the implementation workstream |
+| SM-01 | JS Wi-Fi/iwd service replaces `desktop/native/network.c/.h`; existing scan/radio/connect/credentials/cancel/disconnect/forget and owner-loss behavior retained | Complete: JS service/transport integrated, old C bridge and hooks removed; native service, raster/GL Shell and ordinary-user Settings network flows passed |
 | SM-02 | Independent Settings Wi-Fi page uses a narrow service client | Later, after SM-01; moving UI alone is not backend replacement |
 | SM-03 | Next selected OS service replaces its domain bridge | Not started; choose the consumer before adding PipeWire/Wayland callback mechanisms |
 

@@ -84,7 +84,8 @@ vectors and pointer fields use generic FFI memory, not a process-specific C
 bridge. Desktop launch/activation policy remains separate.
 The socket SDK follows the same native-mapping boundary for TCP/UDP and
 readiness calls. Protocol services, socket ownership and asynchronous scheduling
-remain above it; native fetch and desktop network services are not yet migrated.
+remain above it; native fetch is not yet migrated. The Wi-Fi/iwd service now
+uses JS domain logic over the D-Bus endpoint rather than a domain C bridge.
 The asynchronous native-call path supports scalar/CString inputs and exclusive
 loans of flat managed buffers, settling through the owning dispatcher.
 External allocations can now be explicitly adopted with their byte extent and
@@ -97,13 +98,15 @@ The first D-Bus client uses explicit-address libdbus connections and zero-wait
 scalar request/reply polling: no argument or one uint32/bool/string/object-path
 input, and empty/scalar/fixed scalar tuple output. Native strings and diagnostics
 are copied within their owner's lifetime, with explicit overflow rather than
-guessed object bounds. Setup is synchronous; containers/subscriptions and
-remote-service policy remain separate. A minimal JS service endpoint now uses
+guessed object bounds. Setup is synchronous; a separate single-reader endpoint
+adds the container, declared-signal and same-connection agent subset needed by
+iwd. Remote-service policy remains separate. A minimal JS service endpoint uses
 a separate private connection and zero-wait receive polling, with explicit
 request-message ownership and single-use replies/errors. Native send acceptance
 is not delivery; sender identity is not application authorization. Name claims
 do not replace existing owners or queue, and disconnect/name loss does not
-reconnect. Existing native desktop services are not replaced by this IPC yet.
+reconnect. The iwd replacement uses the single-reader route; audio, power,
+notifications and the other native desktop clients remain active.
 The user theme-file/resource service is now JS over native files: descriptor-
 relative traversal, ownership checks, limits and asset policy remain desktop
 concerns, and the old theme-file C bridge is removed. Generic GUI bitmap handles
@@ -508,7 +511,10 @@ trees are parsed into bounded flat records, validating types, IDs and depth
 before exposing a snapshot. Only visible enabled current entries can send the
 fixed clicked event; layout changes and owner loss invalidate prior revisions.
 
-iwd uses a separate system-bus connection. Discovery first verifies the
+iwd is implemented in `desktop/services/network.mjs`, with the production
+network C bridge and lifecycle hooks removed. Its JS state machine uses one
+separate system-bus connection for RPC, signals and the interactive agent.
+Discovery first verifies the
 service's unique owner and root UID; only then can that owner call the
 interactive agent. Current-model revisions constrain actions, and prompt
 tokens constrain credential replies. A connection initiated by the user owns
