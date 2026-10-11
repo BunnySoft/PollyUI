@@ -101,8 +101,14 @@ active increment to be integrated before writing those files.
 | Workstream | Current assignment | Boundary |
 |---|---|---|
 | Native windows | Integrated `89da564` from coherent child commit `d6f8696`: owned windows, native menu/tooltip popups, owner-local modality, logical size constraints and actual state notifications | Normal owner closure requests descendants leaf-first; a veto/Promise preserves waiting owners, without restoring closed siblings or automatic retry. Explicit quit retains forced semantics with leaf-first native teardown |
-| Outgoing native drag | Read-only API/ownership/interop research completed | Shared-window integration is complete, but Wayland public-proxy coexistence versus an authorized SDL extension still requires a transport decision; no new Files mutations |
+| Outgoing native drag | Common GUI C/JS contract and first Wayland backend in progress; public-interface coexistence spike conditionally passed on the pinned SDL/PollyWM stack without SDK changes | User approved ordinary-window COPY with text/binary payloads only. Preserve native source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
+| Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
 | Native IME extensions | Read-only surrounding-text/selection/editing protocol research completed | SDL lacks public surrounding/delete/transaction transport; choose a single native input owner or a separately authorized SDK extension before implementation. Preserve Unicode/composition and sensitive-field isolation; no JS editor expansion |
+
+The [cross-platform drag design](./DESIGN.md#54-cross-platform-native-drag-and-drop)
+separates application payload policy, the shared GUI session/credential/lifetime
+contract and OS-specific Host implementations. Windows OLE, macOS and X11 are
+not part of the currently approved Wayland implementation.
 
 Independent mainline integration checks passed seven Windows native/GUI cases
 and six fresh Linux GUI/compositor cases, including actual Wayland roles,

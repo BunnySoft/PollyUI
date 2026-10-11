@@ -412,6 +412,58 @@ The [cursor implementation contract](./docs/DESKTOP-CURSOR.md) records configura
 fallback, native pixel/owner qualification and the legacy/DEFAULT compatibility
 boundary. Settings/upload UI and hardware/ISO qualification remain separate.
 
+### 5.4 Cross-platform native drag-and-drop
+
+Confirmed on 2026-10-12: outgoing drag-and-drop is a **GUI framework
+capability with a common interface and separate OS Host implementations**,
+not a PollyOS-only service or a platform protocol exposed to application JS.
+The common contract is being implemented; this section records the design,
+not a claim that all backends or the first product increment are delivered.
+
+```text
+Application JS: choose payloads and respond to completion
+        |
+Thin JS projection / common GUI C drag contract
+        |
+Host backend: Wayland | Windows OLE (deferred) | future macOS / X11
+        |
+Native OS drag service or compositor
+```
+
+The common contract defines opaque input credentials, copied immutable typed
+payloads, a drag session, cancellation and terminal results. Credentials bind
+to the actual originating window/document/realm and live native press;
+applications cannot fabricate or reuse a protocol serial. Payload views use
+their exact byte ranges, not a borrowed JS backing store. Completion is
+delivered once on the owning UI thread, with explicit cancellation/error paths
+and native resources retained until safe teardown. A physical drop is not by
+itself successful completion. Capabilities describe each backend's actual
+support; unsupported requests fail explicitly rather than succeeding as no-ops.
+Wayland surfaces/serials/file descriptors and Windows COM/STGMEDIUM details
+remain backend implementation details.
+
+| Backend | Native responsibility | Implementation status |
+|---|---|---|
+| Linux Wayland | Real press serial/seat/origin validation, MIME offers, pipe transfer, protocol order, SDL coexistence and connection/resource lifetimes | First approved increment is in progress: ordinary windows, COPY, text and binary payloads, no custom drag icon |
+| Windows | OLE `IDataObject`/`IDropSource`/`DoDragDrop`, platform format mapping, COM/data ownership and UI-message reentrancy with safe window retirement | **Explicitly deferred**; a future backend will implement the same GUI contract. Building the Windows Host is not evidence of Windows outgoing-drag support |
+| macOS / Linux X11 | Their own native drag mechanisms and format/lifetime adaptation | Future backend work, not included or claimed by Wayland support |
+
+The bounded public-Wayland spike was conditionally successful on pinned SDL
+3.4.10 / wlroots 0.19.3 / PollyWM, without SDK changes. Its product design must
+preserve a dedicated native source queue and pure-C sender worker for self-drop,
+and passive mirrored offers retired only after SDL's complete event pump.
+Worker code never calls QuickJS or SDL UI operations; it marshals results to
+the UI thread and is stopped/joined before borrowed display resources retire.
+These are Wayland backend mechanisms, not requirements for every OS backend
+or a general-compositor compatibility guarantee.
+
+Files and Shell still own file/shortcut policy. Native COPY transport neither
+reads or deletes files nor grants access to a referenced URI, and completion
+does not automatically mean a file operation succeeded. MOVE, Files mutations,
+custom icons and Shell/protected-layer drag origins are outside the first
+increment. Adding the common interface does not authorize those features or
+start the deferred Windows implementation.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
@@ -665,8 +717,10 @@ PollyWM validates standard pointer-drag origins and serials, owns icon scene
 nodes and restores input when the wlroots drag ends. The SDL adapter copies
 drop chunks into per-window bounded aggregates and synchronously dispatches
 completed payloads into that window's DOM. Incoming files remain path strings,
-not automatically authorized file access. Outgoing PollyUI drag sources,
-clipboard persistence and full browser DataTransfer are separate work.
+not automatically authorized file access. Outgoing PollyUI drag sources follow
+the [cross-platform GUI contract](#54-cross-platform-native-drag-and-drop):
+the first Wayland COPY backend is in progress and Windows OLE is deferred.
+Clipboard persistence and full browser DataTransfer remain separate work.
 
 ### Native multi-window runtime
 
