@@ -6,7 +6,7 @@
 
 static PuWindow *windows[4];
 static SDL_WindowID ids[4];
-static int painted[4], keys[4], pointers[4], wheels[4], closed[4];
+static int painted[4], keys[4], pointers[4], wheels[4], closed[4], cancelled[4];
 static int close_requests[4], close_retried;
 static int failed, ticks, phase;
 static int indices[] = { 0, 1, 2, 3 };
@@ -35,8 +35,14 @@ static int key(const PuKeyEvent *event, void *user)
 
 static int pointer(const PuPointerEvent *event, void *user)
 {
-    if (event->x == -1 && event->y == -1) return 0; /* Native leave notifications are expected. */
     int index = *(int *)user;
+    if (event->type == PU_POINTER_CANCEL) {
+        check(event->reason && !strcmp(event->reason, "focus-lost") && event->button == -1 &&
+            event->buttons == 0, "focus cancellation is a distinct window-scoped control event");
+        cancelled[index]++;
+        return 0;
+    }
+    if (event->x == -1 && event->y == -1) return 0; /* Native leave notifications are expected. */
     pointers[index]++;
     check(index == 1, "pointer event belongs only to its addressed window");
     return PU_INPUT_REDRAW;
@@ -127,6 +133,8 @@ static int frame(void *user)
         check(close_requests[0] == 2, "accepted external close is followed by one actual close notification");
         check(keys[0] == 0 && keys[1] == 2 && pointers[1] == 1 && wheels[1] == 1,
               "events are delivered exactly once, without cross-window leakage");
+        check(pointers[0] == 0 && pointers[2] == 0 && pointers[3] == 0,
+              "control cancellations do not fabricate pointer input on other windows");
         check(pu_window_is_open(windows[1]) && painted[1], "second window survives the first");
         SDL_SetHintWithPriority(SDL_HINT_RENDER_DRIVER, "pollyui-invalid", SDL_HINT_OVERRIDE);
         PuWindowConfig config = { .title = "Expected creation failure", .width = 360, .height = 280 };

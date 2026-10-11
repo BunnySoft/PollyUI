@@ -52,6 +52,8 @@ check(input.value === '', 'Ctrl+X cuts only after copying');
 host.key('v', 'keydown', { ctrlKey: true });
 check(input.value === 'Copy \ud83d\ude42 \u4e2d\u6587', 'Ctrl+V pastes text into the input');
 clipboard.writePrimaryText('primary ');
+host.mouse('mousedown', input.root.offsetLeft + 8, input.root.offsetTop + 8, { button: 1 });
+host.mouse('mouseup', input.root.offsetLeft + 8, input.root.offsetTop + 8, { button: 1 });
 host.mouse('auxclick', input.root.offsetLeft + 8, input.root.offsetTop + 8, { button: 1 });
 check(input.value.startsWith('primary '), 'middle click inserts primary selection');
 check(clipboard.readText() === 'Copy \ud83d\ude42 \u4e2d\u6587', 'primary selection is independent of the clipboard');
