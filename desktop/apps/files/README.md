@@ -42,17 +42,28 @@ layout. Do not expose trusted-shell globals to this ordinary application.
 Home, Documents, Downloads and Desktop are conventional paths under the
 process's explicit `HOME`; nonexistent paths fail visibly and are not created.
 The sidebar, breadcrumbs, Up, Back, Forward and Refresh navigate real directory
-snapshots. There is no preselected entry. Select a row, then Open selected, or
-double-click it. Arrow keys select entries; Enter opens, F2 begins rename,
-F5 refreshes, Alt+Left/Right navigate history and Escape dismisses confirmation.
-Lists have 64-row pages with native wheel scrolling. A directory containing
+snapshots. There is no preselected entry. Single-click selects; double-click or
+Enter opens. The command bar and right-click/Shift+F10 menu operate on that exact
+selection. Arrow keys, Home and End move through the visible sorted/filtered rows;
+F2 focuses the inline rename field, Enter explicitly confirms, and Escape cancels
+and restores row focus. F5 refreshes, Alt+Left/Right navigate history, Alt+Up goes
+to the parent, and Ctrl+L/Alt+D opens an editable absolute address.
+The original modern layout has a Places sidebar, navigation/address bar,
+command bar, Name/Modified/Type/Size columns and continuous native wheel scrolling
+through the bounded snapshot. Column headers toggle ascending/descending order;
+folders remain first. **Filter this folder** matches loaded names only, never
+starts a full-disk search or reads file contents. Filtering hides an unmatched
+selection rather than leaving invisible commands actionable. A directory containing
 more than 1024 entries is explicitly **partial**, never presented as complete.
 The bounded file-list viewport uses the engine's explicit `flexGrow` and
 `flexBasis` properties, not unsupported CSS `flex` shorthand. Rows overflow
-inside that viewport; the page controls stay below it within the window.
+inside that viewport; status and partial/error notices remain within the window.
 
-Rows show real name, type, bytes, modification time, permission mode, UID and
-actual effective-UID read/write accessibility. Empty and permission-denied
+Rows show name, type, file size and a local-calendar modification date. Properties
+retains the full name/path, exact timestamp, permission mode, UID/GID, link target
+and actual effective-UID read/write accessibility. Long row labels are clipped,
+not replaced with an invented shortened path; Properties exposes the full value.
+Empty, no filter matches, loading and permission-denied
 states differ. New folder offers the editable default `New folder` and creates mode 0700.
 Rename shows the exact selected path and requires explicit confirmation;
 it only changes a name within that directory and never replaces a destination.
@@ -175,7 +186,8 @@ retrying; the text consumer never treats such an ESTALE as permission to resubmi
 Ordinary Linux permissions are enforced by the OS, not reimplemented ACLs.
 Counts and bytes are bounded, but libc/local/FUSE I/O can block the UI; awaiting
 the result does not move it into the background or establish a hard deadline.
-The Files app does not expose copy/move/trash/search/network mount/XDG portal
+The Files app does not expose file cut/copy/paste/delete/trash, global search,
+network mounts, XDG portals
 or binary editing. That is not a restriction on native SysRT binary I/O.
 There is no real host HOME enumeration in agent fixtures.
 
@@ -213,8 +225,11 @@ Native pixel/input acceptance remains separate from the source-only harnesses.
 The optional `--drive` mode uses the Settings-owned test input driver, not JS
 event dispatch: public same-client `FilesFixture.<seq>.click`, `wheel`, `key`
 and `close` markers target only app ID `org.pollyui.files-window-fixture`,
-title `Files`. `[6,6]` is neutral root padding under every inline confirmation.
-Only Enter/Escape/Tab/Shift+Tab and the Files-specific Backspace key are needed.
+title `Files`. Ordinary marker windows briefly take WM focus; the driver restores
+it with a real pointer click on neutral padding. For an open context menu, the
+app reports its actual laid-out padding point so restoration does not dismiss
+the menu. F2/Enter/Escape/Backspace and modifier keycodes travel through the real
+compositor/SDL input path, not product action callbacks.
 The fixture creates the default folder, clicks the actual rename input's right
 end and presses real Backspace to rename `New folder` to `New folde`; it checks
 real input focus and the real resulting directory. Public markers await driver
@@ -236,9 +251,15 @@ application rendered or consumed a document. Source syntax checks do not prove
 the optional drive mode or new engine pixels/input.
 
 Stage an ordinary-user `HOME/evidence` directory before starting the fixture.
-The drive captures six named PNGs there using the current live app window's
-native `capture(path)` API: Home, scrolled list, created folder, rename edit,
-renamed folder and before WM close. It records stage/state/path/bytes only after
+The drive captures eleven named PNGs there using the current live app window's
+native `capture(path)` API: Home, empty directory, scrolled list, created folder,
+context menu, inline rename, renamed folder, long-name Properties, filtered rows,
+no matches and before WM close. Native Ctrl+V pastes a synthetic filter through
+the private Wayland clipboard (the isolated fixture has no input-method process);
+this certifies keyboard paste/filter behavior, not IME character entry.
+`files-window.py --small` repeats the real app at 680x540. Normal requested height
+may be clamped by the compositor; PNG dimensions are compared to the actual
+laid-out window, not an assumed 760px buffer. It records stage/state/path/bytes only after
 that API succeeds and the real file exists. No captures occur after closing.
 The supervisor verifies exact private paths and actual file sizes; the parent
 must independently validate PNG headers/hashes and inspect stage contents.

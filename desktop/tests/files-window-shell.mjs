@@ -1,7 +1,7 @@
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 
 const [mode, runtime, ownScript] = application.arguments;
-if (mode !== 'initial' || typeof runtime !== 'string' || !runtime.startsWith('/') ||
+if (!['initial', 'small'].includes(mode) || typeof runtime !== 'string' || !runtime.startsWith('/') ||
     typeof ownScript !== 'string' || !ownScript.endsWith('/files-window-shell.mjs'))
   throw new Error('Trusted Files fixture supervisor requires initial, absolute rebuilt runtime and its own script');
 const api = requireFileSystem(desktop), root = api.locations().home;
@@ -21,7 +21,7 @@ async function until(predicate, description) {
 async function run() {
   const client = ownScript.slice(0, -'files-window-shell.mjs'.length) + 'files-window-client.mjs';
   const pid = desktop.spawnApplication([runtime, '--desktop', '--app-id', 'org.pollyui.files-window-fixture',
-    client, root, '--drive'], '', 'ordinary Files native pointer fixture');
+    client, root, mode === 'small' ? '--drive-small' : '--drive'], '', 'ordinary Files native pointer fixture');
   await until(() => exits.has(pid), 'ordinary Files child exit');
   if (exits.get(pid) !== 0) throw new Error('Ordinary Files fixture exited ' + exits.get(pid));
   const entry = api.stat(root + '/files-window-result.json', false);
@@ -30,10 +30,11 @@ async function run() {
       receipt.closeObserved !== true || receipt.appId !== 'org.pollyui.files-window-fixture' ||
       receipt.renamedName !== 'New folde' ||
       ['documents', 'returnedHome', 'folderCreated', 'folderRenamed', 'documentOpenRequested',
-        'cancelled', 'wheel', 'keyboardRename', 'history'].some(key => receipt.evidence?.[key] !== true) ||
+        'cancelled', 'wheel', 'keyboardRename', 'history', 'sort', 'context', 'filter', 'address'].some(key => receipt.evidence?.[key] !== true) ||
       api.stat(root + '/' + receipt.renamedName, false).type !== 'directory')
     throw new Error('Actual ordinary Files action/close/filesystem receipt is incomplete');
-  const stages = ['home-browser', 'scrolled-list', 'new-folder', 'rename-edit', 'renamed-folder', 'before-wm-close'];
+  const stages = ['home-browser', 'empty-folder', 'scrolled-list', 'new-folder', 'context-menu',
+    'rename-edit', 'renamed-folder', 'long-name-properties', 'no-matches', 'filtered-folder', 'before-wm-close'];
   if (!Array.isArray(receipt.captures) || receipt.captures.length !== stages.length)
     throw new Error('Private app-buffer capture receipt is incomplete');
   for (const [index, capture] of receipt.captures.entries()) {

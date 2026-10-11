@@ -504,6 +504,8 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
         char request[256];
         CHECK(strlen(marker->toplevel->title) < sizeof(request));
         strcpy(request, marker->toplevel->title);
+        char marker_title[256];
+        strcpy(marker_title, request);
         const char *digits = request + prefix_length;
         CHECK(*digits >= '0' && *digits <= '9');
         char *end;
@@ -512,7 +514,15 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
         CHECK(!errno && parsed > 0 && parsed <= UINT_MAX && *end == '.');
         unsigned sequence = (unsigned)parsed;
         if (sequence <= *last) continue;
-        const char *action = end + 1;
+        char *action = end + 1;
+        int restore_x = focus_x, restore_y = focus_y, restore_used = 0;
+        char *restore = strstr(action, " focus ");
+        if (restore) {
+            CHECK(!strcmp(app_id, "org.pollyui.files-window-fixture"));
+            CHECK(sscanf(restore, " focus %d %d%n", &restore_x, &restore_y, &restore_used) == 2 &&
+                !restore[restore_used]);
+            *restore = '\0';
+        }
         struct wl_client *client = wl_resource_get_client(marker->toplevel->base->resource);
         pid_t pid; uid_t uid;
         wl_client_get_credentials(client, &pid, &uid, NULL);
@@ -523,18 +533,21 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
         int sx, sy;
         CHECK(wlr_scene_node_coords(&view->tree->node, &sx, &sy));
         if (strcmp(action, "close") && (desktop.focused != view || desktop.focused_layer)) {
-            // Each fixture declares a root padding/mask point with no business or dismissal handler.
-            fixture_pointer_click(sx + focus_x, sy + focus_y, *time += 3, 0);
+            CHECK(restore_x >= 0 && restore_y >= 0 && restore_x < view->toplevel->base->geometry.width &&
+                restore_y < view->toplevel->base->geometry.height);
+            // The app reports a real neutral padding point, including inside an open context menu.
+            fixture_pointer_click(sx + restore_x, sy + restore_y, *time += 3, 0);
             continue; // No pointer is retained across the next event-loop settle.
         }
         int x, y, delta, used = 0;
-        if (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used]) {
+        bool context_click = sscanf(action, "context %d %d%n", &x, &y, &used) == 2 && !action[used];
+        if (context_click || (sscanf(action, "click %d %d%n", &x, &y, &used) == 2 && !action[used])) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
                 y < view->toplevel->base->geometry.height);
             *last = sequence;
             fixture_pointer_motion(sx + x, sy + y, ++*time);
             CHECK(desktop.seat->pointer_state.focused_surface == view->toplevel->base->surface);
-            fixture_pointer_click(sx + x, sy + y, *time += 3, 0);
+            fixture_pointer_click(sx + x, sy + y, *time += 3, context_click ? 2 : 0);
         } else if (sscanf(action, "wheel %d %d %d%n", &x, &y, &delta, &used) == 3 && !action[used]) {
             CHECK(x >= 0 && y >= 0 && x < view->toplevel->base->geometry.width &&
                 y < view->toplevel->base->geometry.height && delta >= -10000 && delta <= 10000);
@@ -554,16 +567,26 @@ static bool ordinary_fixture_requests(const char *app_id, const char *title, con
             else if (!strcmp(action + 4, "shift-tab")) { code = KEY_TAB; modifiers = 1; }
             else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
                 !strcmp(action + 4, "backspace")) code = KEY_BACKSPACE;
+            else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
+                !strcmp(action + 4, "f2")) code = KEY_F2;
+            else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
+                !strcmp(action + 4, "f5")) code = KEY_F5;
             else CHECK(false);
             CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
             *last = sequence;
             fixture_keyboard(code, modifiers, time);
+        } else if (!strcmp(app_id, "org.pollyui.files-window-fixture") &&
+            sscanf(action, "keycode %d %d%n", &x, &y, &used) == 2 && !action[used]) {
+            CHECK(x > 0 && x <= KEY_MAX && y >= 0 && y <= 15);
+            CHECK(desktop.seat->keyboard_state.focused_surface == view->toplevel->base->surface);
+            *last = sequence;
+            fixture_keyboard((unsigned)x, (unsigned)y, time);
         } else if (!strcmp(action, "close")) {
             *last = sequence;
             wlr_xdg_toplevel_send_close(view->toplevel);
         } else CHECK(false);
         // Native actions can retire either window; resolve the copied marker title again.
-        acknowledge_ordinary_fixture_marker(pid, app_id, request);
+        acknowledge_ordinary_fixture_marker(pid, app_id, marker_title);
     }
     return true;
 }
@@ -606,7 +629,7 @@ static bool window_suite(char *executable, char *script, char *mode)
     unsigned settings_state_sequence = 0;
     pid_t settings_survivor_identity = 0;
     char settings_state_previous[1024] = "";
-    bool settings_suite = strstr(script, "settings-") != NULL;
+    bool settings_suite = strstr(script, "settings-") != NULL || strstr(script, "files-window") != NULL;
     struct timespec started;
     CHECK(clock_gettime(CLOCK_MONOTONIC, &started) == 0);
     for (int i = 0; desktop.shell_pid && (settings_suite || i < 16000); i++) {
@@ -614,7 +637,7 @@ static bool window_suite(char *executable, char *script, char *mode)
             struct timespec now;
             CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
             if (now.tv_sec - started.tv_sec >= 240) {
-                fprintf(stderr, "FAIL: Settings native fixture exceeded its 240-second deadline\n");
+                fprintf(stderr, "FAIL: Native interactive fixture exceeded its 240-second deadline\n");
                 break;
             }
         }

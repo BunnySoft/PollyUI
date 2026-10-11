@@ -13,11 +13,11 @@ import tempfile
 import shutil
 
 
-def driver_command(repo, driver, runtime):
+def driver_command(repo, driver, runtime, small=False):
     return ["sh", str(repo / "desktop/tests/runtime-client.sh"), "sh", "-c",
             'export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_CACHE_HOME="$HOME/cache"; exec "$@"',
             "polly-files-fixture", str(driver), str(runtime),
-            str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "initial"]
+            str(repo / "desktop/tests/files-window-shell.mjs"), "files-window", "small" if small else "initial"]
 
 
 def retain_fixture_home(root, evidence):
@@ -39,6 +39,7 @@ def main():
     parser.add_argument("driver", type=Path)
     parser.add_argument("runtime", type=Path)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--small", action="store_true")
     args = parser.parse_args()
     if (os.getuid(), os.geteuid(), os.getgid(), os.getegid()) != (1000, 1000, 1000, 1000):
         raise PermissionError("Files native acceptance requires actual ordinary UID/GID1000")
@@ -59,6 +60,7 @@ def main():
     (root / "fixture-marker.txt").chmod(0o600)
     document = root / "literal %u; \u4e2d\u6587.txt"
     document.write_text("Synthetic private Files MIME content.\n", encoding="utf8")
+    (root / ("Long project \u9879\u76ee\u8d44\u6599 - " + "readable-segment-" * 9 + ".txt")).write_text("Synthetic long-name fixture.\n")
     for index in range(96):
         (root / f"row-{index:03}.txt").write_text("Synthetic bounded list row.\n")
     helper = root / "mime-helper.py"
@@ -78,7 +80,7 @@ def main():
                        XDG_DATA_HOME=str(root / "data"), XDG_STATE_HOME=str(root / "state"),
                        XDG_CACHE_HOME=str(root / "cache"), XDG_DATA_DIRS=str(root / "share"),
                        PU_RENDERER="raster")
-    command = driver_command(repo, args.driver, args.runtime)
+    command = driver_command(repo, args.driver, args.runtime, args.small)
     (evidence / "inputs.json").write_text(json.dumps({
         "uid": os.getuid(), "root": str(root), "command": command, "cwd": str(repo),
         "driverSha256": hashlib.sha256(args.driver.read_bytes()).hexdigest(),
@@ -112,7 +114,8 @@ def main():
     (evidence / "mime-result.json").write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_bytes = (root / "files-window-result.json").read_bytes()
     result = json.loads(receipt_bytes)
-    stages = ["home-browser", "scrolled-list", "new-folder", "rename-edit", "renamed-folder", "before-wm-close"]
+    stages = ["home-browser", "empty-folder", "scrolled-list", "new-folder", "context-menu",
+              "rename-edit", "renamed-folder", "long-name-properties", "no-matches", "filtered-folder", "before-wm-close"]
     if [capture["stage"] for capture in result["captures"]] != stages:
         raise RuntimeError("Native Files capture order is not the fixed six-stage contract")
     images = []
@@ -131,6 +134,9 @@ def main():
             raise RuntimeError("Native Files capture has invalid dimensions")
         with (evidence / path.name).open("xb") as destination:
             destination.write(data)
+        if (width, height) != (capture["width"], capture["height"]) or \
+                width != (680 if args.small else 1040) or not 320 <= height <= (540 if args.small else 760):
+            raise RuntimeError("PNG dimensions differ from the actual laid-out native window (including compositor size clamps)")
         images.append({**capture, "sha256": hashlib.sha256(data).hexdigest(), "width": width, "height": height})
     (evidence / "files-window-result.json").write_bytes(receipt_bytes)
     (evidence / "captures.json").write_text(json.dumps(images, indent=2) + "\n")

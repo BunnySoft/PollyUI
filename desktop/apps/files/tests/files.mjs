@@ -9,6 +9,9 @@ const { createFilesController } = await import('../logic/controller.mjs');
 const { filesView } = await import('../ui/view.mjs');
 const { createFilesApp } = await import('../app.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
+const { visibleEntries } = await import('../ui/format.mjs');
+// Source-only layout tests inject font metrics; native fixtures measure actual shaped text.
+globalThis.measureText = value => String(value).length * 7;
 
 const entry = (path, type = 'file', extra = {}) => ({ path, type, name: path.split('/').at(-1) || '/',
   identity: path + ':1', bytes: 6, mtimeMs: 1000, permissions: '0600', uid: 1000, gid: 1000,
@@ -191,14 +194,12 @@ test('stale arrow view callback cannot page a new directory after failed capture
   await controller.navigate('/fixture/Documents');
   const current = controller.getState(), operationCount = operations.length;
   oldTree.props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
-  assert.equal(controller.getState().page, 0);
   assert.equal(controller.getState().selection, null);
   assert.equal(controller.getState().path, current.path);
   assert.equal(controller.getState().generation, current.generation);
   assert.equal(operations.length, operationCount);
   const selected = select(controller, controller.getState().snapshot.entries[63].path);
   filesView(controller.getState(), controller).props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
-  assert.equal(controller.getState().page, 1);
   assert.equal(controller.getState().selection.path, '/fixture/Documents/entry-064');
   assert.notEqual(controller.getState().selection.path, selected.path);
 });
@@ -260,29 +261,28 @@ test('changed managed registry cannot launch a different version from the select
   assert.match(controller.getState().error, /version changed.*Refresh/);
   await controller.refresh(); assert.equal(controller.getState().applications[0].path, '/fixture/new-version.app');
 });
-test('partial snapshot is labelled partial, pages are bounded and keyboard/wheel callbacks exist', async () => {
+test('partial snapshot stays labelled and continuously scrolls all loaded rows without pagination', async () => {
   const { controller, fs } = fixture(), list = fs.listDirectory;
   fs.listDirectory = path => ({ ...list(path), complete: false,
     entries: Array.from({ length: 130 }, (_, index) => entry('/fixture/entry-' + index)) });
   await controller.start();
   let tree = filesView(controller.getState(), controller), nodes = flatten(tree);
   assert.ok(nodes.some(node => node.props?.id === 'files-partial'));
-  assert.equal(nodes.filter(node => node.props?.role === 'option').length, 64);
+  assert.equal(nodes.filter(node => node.props?.role === 'option').length, 130);
   assert.equal(typeof nodes.find(node => node.props?.id === 'files-list').props.onWheel, 'function');
   tree.props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
   assert.ok(controller.getState().selection);
-  controller.page(2); nodes = flatten(filesView(controller.getState(), controller));
-  assert.equal(nodes.filter(node => node.props?.role === 'option').length, 2);
+  assert.ok(!nodes.some(node => node.props?.id === 'files-page-next'));
 });
 test('native Files viewport uses supported flex dimensions so rows do not expand the window', async () => {
   const { controller } = fixture(); await controller.start();
   const tree = filesView(controller.getState(), controller), nodes = flatten(tree);
   const list = nodes.find(node => node.props?.id === 'files-list');
-  const viewport = nodes.find(node => node.children.includes(list));
+  const viewport = nodes.find(node => node.props?.id === 'files-viewport');
   assert.equal(viewport.props.style.flexGrow, 1);
   assert.equal(viewport.props.style.flexBasis, 0);
   assert.equal(viewport.props.style.flexShrink, 1);
-  assert.equal(viewport.props.style.minHeight, 120);
+  assert.equal(viewport.props.style.minHeight, 100);
   assert.equal(viewport.props.style.overflow, 'hidden');
   assert.equal(list.props.style.flexGrow, 1);
   assert.equal(list.props.style.flexBasis, 0);
@@ -291,8 +291,53 @@ test('native Files viewport uses supported flex dimensions so rows do not expand
   assert.equal(list.props.style.overflow, 'scroll');
   assert.equal(tree.props.style.overflow, 'hidden');
   assert.ok(nodes.every(node => !Object.hasOwn(node.props?.style ?? {}, 'flex')));
-  const footer = nodes.find(node => node.children.some(child => child.props?.id === 'files-page-status'));
+  const footer = nodes.find(node => node.props?.id === 'files-status');
   assert.equal(footer.props.style.flexShrink, 0);
+});
+test('column sorting and folder-local filtering preserve exact identities and retire old row/context callbacks', async () => {
+  const { controller, operations } = fixture(); await controller.start();
+  const chosen = select(controller, '/fixture/literal %u; 中文.txt');
+  const stale = flatten(filesView(controller.getState(), controller)).find(node => node.props?.id === 'files-rename');
+  const initial = controller.getState();
+  assert.equal(controller.sortBy('size'), true);
+  assert.equal(controller.getState().selection.identity, chosen.identity);
+  assert.equal(controller.getState().sort.direction, 1);
+  controller.sortBy('size'); assert.equal(controller.getState().sort.direction, -1);
+  assert.equal(visibleEntries(controller.getState())[0].type, 'directory', 'folders always precede files');
+  stale.props.onClick({ button: 0, stopPropagation() {} });
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(controller.filter('中文'), true);
+  assert.equal(visibleEntries(controller.getState()).length, 1);
+  assert.equal(controller.getState().snapshot, initial.snapshot, 'filter never performs another filesystem search');
+  assert.equal(controller.getState().selection.identity, chosen.identity);
+  controller.showContext(chosen.path, chosen.identity, 20, 20);
+  const menu = flatten(filesView(controller.getState(), controller)).find(node => node.props?.id === 'files-context-rename');
+  controller.filter('Documents');
+  assert.equal(controller.getState().selection, null, 'hidden selection cannot remain an actionable target');
+  menu.props.onClick({ button: 0, stopPropagation() {} });
+  assert.equal(controller.getState().dialog, null);
+  assert.equal(operations.filter(item => item[0] === 'rename').length, 0);
+});
+test('keyboard movement follows the sorted filtered rows, address mode and inline rename do not swallow input keys', async () => {
+  const { controller } = fixture(); await controller.start();
+  controller.filter('中文');
+  filesView(controller.getState(), controller).props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
+  assert.equal(controller.getState().selection.name, 'literal %u; 中文.txt');
+  const generation = controller.getState().generation;
+  filesView(controller.getState(), controller).props.onKeydown({
+    key: 'ArrowUp', target: { id: 'files-filter' }, preventDefault() { throw new Error('input key swallowed'); } });
+  assert.equal(controller.getState().generation, generation);
+  filesView(controller.getState(), controller).props.onKeydown({ key: 'F2', preventDefault() {} });
+  const nodes = flatten(filesView(controller.getState(), controller));
+  assert.ok(nodes.find(node => node.props?.id === 'files-entry-0').children
+    .some(node => flatten(node).some(child => child.props?.id === 'files-name')));
+  assert.equal(nodes.find(node => node.props?.id === 'files-confirmation').props['aria-modal'], 'false');
+  controller.cancel(); controller.editAddress();
+  controller.editAddress('/fixture/Documents');
+  await filesView(controller.getState(), controller).props.onKeydown({
+    key: 'Enter', target: { id: 'files-address' }, preventDefault() {} });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.getState().path, '/fixture/Documents');
 });
 test('native Files wheel scroll clamps bounded viewport using absolute unscrolled child geometry', async () => {
   const { controller } = fixture(); await controller.start();
@@ -316,7 +361,7 @@ test('fixture close marker follows persisted callback receipt without needing a 
     const calls = [], evidence = { actualAction: true }, captures = mode === 'incomplete-captures' ? [] : ['actual.png'];
     const surface = { onclose() { calls.push('original-close'); } };
     const context = { app: { getWindow: () => surface, controller: { getState: () => ({ phase: 'disposed' }) } },
-      evidence, captures, captureStages: ['only-stage'], mode: '--drive', closingViaDriver: mode !== 'no-driver-close',
+      evidence, captures, captureStages: ['only-stage'], mode: '--drive', driving: true, closingViaDriver: mode !== 'no-driver-close',
       driveFailed: mode === 'drive-failed', root: '/tmp/polly-files-window-unit', renamedName: 'New folde',
       console: { log(message) { calls.push(message); }, error(message) { calls.push(message); } },
       api: { stat() { return { identity: 'parent-observation' }; }, writeText(parent, name, text, expected) {

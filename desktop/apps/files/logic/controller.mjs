@@ -4,7 +4,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
   reportError = message => console.error('[files] ' + message) } = {}) {
   let disposed = false, serial = 0, history = [], position = -1;
   let state = { phase: 'idle', generation: 0, path: '', snapshot: null, selection: null,
-    locations: null, error: '', message: '', dialog: null, openWith: null, page: 0,
+    locations: null, error: '', message: '', dialog: null, openWith: null,
+    sort: { key: 'name', direction: 1 }, filter: '', context: null, properties: false, address: null,
     applications: [], applicationError: '', canBack: false, canForward: false };
   function update(fields) {
     if (disposed) return;
@@ -39,7 +40,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     if (disposed) return false;
     const request = ++serial;
     update({ phase: 'loading', generation: state.generation + 1, path, snapshot: null,
-      selection: null, dialog: null, openWith: null, error: '', message: '', page: 0 });
+      selection: null, dialog: null, openWith: null, error: '', message: '', filter: '',
+      context: null, properties: false, address: null });
     try {
       pathValue(path);
       // Native v1 is synchronous; awaiting also permits explicitly injected test providers.
@@ -93,7 +95,42 @@ export function createFilesController({ api, launcher = null, onChange = () => {
       if (!valid(generation) || state.phase !== 'ready') return false;
       const entry = state.snapshot.entries.find(item => item.path === path && item.identity === identity);
       if (!entry) return false;
-      update({ generation: state.generation + 1, selection: entry, dialog: null, openWith: null, error: '', message: '' });
+      update({ generation: state.generation + 1, selection: entry, dialog: null, openWith: null, context: null, error: '', message: '' });
+      return true;
+    },
+    sortBy(key, generation = state.generation) {
+      if (!valid(generation) || state.phase !== 'ready' || state.dialog || state.openWith) return false;
+      if (!['name', 'type', 'modified', 'size'].includes(key)) throw new TypeError('Unknown file-list sort column');
+      update({ generation: state.generation + 1, sort: { key,
+        direction: state.sort.key === key ? -state.sort.direction : 1 }, context: null });
+      return true;
+    },
+    filter(value, generation = state.generation) {
+      if (!valid(generation) || state.phase !== 'ready' || state.dialog || state.openWith) return false;
+      if (typeof value !== 'string' || Array.from(value).length > 128 || /[\x00-\x1f\x7f]/.test(value))
+        throw new TypeError('Folder filter must be at most 128 characters without control characters');
+      const selection = state.selection?.name.toLowerCase().includes(value.toLowerCase()) ? state.selection : null;
+      update({ generation: state.generation + 1, filter: value, selection, context: null, message: '' });
+      return true;
+    },
+    editAddress(value = null, generation = state.generation) {
+      if (!valid(generation) || ['working', 'opening'].includes(state.phase) || state.dialog || state.openWith) return false;
+      if (value === null) update({ generation: state.generation + 1, address: state.path, context: null });
+      else {
+        if (typeof value !== 'string' || value.length > 4095) throw new TypeError('Address is too long');
+        update({ address: value });
+      }
+      return true;
+    },
+    showContext(path, identity, x, y, generation = state.generation) {
+      if (!controller.select(path, identity, generation)) return false;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new TypeError('Context menu requires finite coordinates');
+      update({ context: { path, identity, x, y } });
+      return true;
+    },
+    showProperties(generation = state.generation, identity = state.selection?.identity) {
+      if (!selected(generation, identity)) return false;
+      update({ generation: state.generation + 1, properties: true, context: null, dialog: null, openWith: null });
       return true;
     },
     async open(generation = state.generation, identity = state.selection?.identity, followLink = false) {
@@ -175,7 +212,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     beginCreate(generation = state.generation) {
       if (!valid(generation) || state.phase !== 'ready') return false;
       const next = state.generation + 1;
-      update({ generation: next, dialog: { kind: 'create', name: 'New folder', generation: next }, openWith: null, error: '' });
+      update({ generation: next, dialog: { kind: 'create', name: 'New folder', generation: next }, context: null,
+        properties: false, openWith: null, error: '' });
       return true;
     },
     beginRename(generation = state.generation, identity = state.selection?.identity) {
@@ -186,7 +224,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         return false;
       }
       const next = state.generation + 1;
-      update({ generation: next, dialog: { kind: 'rename', name: entry.name, entry, generation: next }, openWith: null, error: '' });
+      update({ generation: next, dialog: { kind: 'rename', name: entry.name, entry, generation: next }, context: null,
+        properties: false, openWith: null, error: '' });
       return true;
     },
     editName(name, generation = state.generation) {
@@ -226,13 +265,9 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         serial++;
         update({ generation: state.generation + 1, phase: 'ready', dialog: null, openWith: null,
           error: 'Open UI dismissed; delivery may already have occurred. No automatic retry.' });
-      } else update({ generation: state.generation + 1, dialog: null, openWith: null, error: '' });
+      } else update({ generation: state.generation + 1, dialog: null, openWith: null, context: null,
+        properties: false, address: null });
       return true;
-    },
-    page(index, generation = state.generation) {
-      if (!valid(generation) || state.phase !== 'ready' || !Number.isInteger(index) || index < 0 ||
-          index > Math.max(0, Math.ceil(state.snapshot.entries.length / 64) - 1)) return false;
-      update({ page: index }); return true;
     },
     dispose() {
       if (disposed) return;

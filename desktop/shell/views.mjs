@@ -200,7 +200,8 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
       ]
     : [
         desktopText('Choose a look for your desktop', theme.colors.text, 18, { fontWeight: 600 }),
-        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, 14),
+        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, 14,
+          { flexShrink: 1, minWidth: 0 }),
         h('view', { id: 'settings-theme-gallery', style: { ...row, flexWrap: 'wrap', gap: 12, alignItems: 'stretch',
           flexShrink: 0 } }, themes.map(preset => {
           const sample = preset.desktop ? preset : theme, selected = theme.id === preset.id;
