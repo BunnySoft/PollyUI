@@ -76,12 +76,13 @@ old images. `desktop/VERSION` freezes `0.1.0-alpha.8` in this revision.
 
 | Gate | Required outcome | State |
 |---|---|---|
-| Source and remote | Integrated rabbit cursor, clean Alpha.8 version freeze, push and verify remote identity | Rabbit implementation `36b7e4b` integrated; version freeze and push in progress |
-| Runtime and assets | Fresh clean-source build; installed rabbit/precision cursor hashes, runtime dependencies and actual Alpha.8 build identity | Pending fresh release build; development native/WSLg evidence is not a release receipt |
-| ISO candidate | New Debian 13 x86_64 UEFI RAM-only image, actual payload checks and unchanged-copy checksum | Pending; no new ISO delivered yet |
-| Acceptance label | Record actual boot checks and any failures; prominently identify missing complete VM/hardware qualification | User explicitly accepts a candidate without full VM acceptance; no pass inferred |
+| Source and remote | Integrated rabbit cursor, clean Alpha.8 version freeze, push and verify remote identity | Frozen/pushed `a357a7dce3b1da11c5881ab354912c6e18159a9a`, version `0.1.0-alpha.8`; rabbit implementation `36b7e4b` included |
+| Runtime and assets | Fresh clean-source build; installed rabbit/precision cursor hashes, runtime dependencies and actual Alpha.8 build identity | Actual private clean Git Release build, compiled version/full revision/false dirty, frozen package and 12 core native checks passed; 240 pins compared anew; all 75 Xcursor files and two theme indexes verified. Extra first-build native-mouse check failed, unresolved and not rerun |
+| ISO candidate | New Debian 13 x86_64 UEFI RAM-only image, actual payload checks and unchanged-copy checksum | Published `dist\pollydesktop-0.1.0-alpha.8-debian13-a357a7d-candidate\`; 707868672 bytes, SHA-256 `07e1fe3292275a577ff20d9d44d62d4d5981c4d6b312d1cc828ad8d14eeeadb4`; actual ISO verified 246 runtime/overlay files plus origin, including cursors. Separate producer `d2a41b59f7ee0ac77529dc10e426923b00015018` |
+| Acceptance label | Record actual boot checks and any failures; prominently identify missing complete VM/hardware qualification | One ordinary optical OVMF/KVM boot/IME/clipboard/workspace baseline passed; complete VM and physical qualification remain false. Candidate warning/status, first native-mouse failure, export failures and missing first private HOME are explicit; no full Settings/Files matrix rerun |
 
-Keep the running user-requested WSLg preview and all previous ISO bytes intact.
+The earlier user-requested WSLg preview exited independently; do not restart it
+or confuse it with the new media. Preserve its archive and all previous ISO bytes.
 No materials, file-operation expansion or cursor upload/editor is included.
 
 ## Alpha.7 Files interaction and physical-test candidate

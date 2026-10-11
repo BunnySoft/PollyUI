@@ -1,13 +1,37 @@
 # Memory-only UEFI development image
 
-**Alpha.8 candidate in preparation:** the user requested committing/pushing the
-system rabbit cursor implementation and generating a fresh ISO, and explicitly
-allowed delivery without complete VM acceptance if that limitation is clear.
-`desktop/VERSION` is now `0.1.0-alpha.8`. The producer must rebuild the exact
-clean freeze commit, verify installed cursor resources and actual build identity,
-and verify the new ISO payload and SHA-256. No Alpha.8 ISO or hardware acceptance
-is claimed yet. Preserve the Alpha.7 candidate and the accepted Alpha.6 image.
-The running `36b7e4b` WSLg preview is a separate build, not Alpha.8 media.
+**Alpha.8 candidate published, not fully qualified:** the user's selected
+candidate mode permits delivery without complete VM acceptance. The ISO is under
+`dist\pollydesktop-0.1.0-alpha.8-debian13-a357a7d-candidate\`,
+707868672 bytes, SHA-256
+`07e1fe3292275a577ff20d9d44d62d4d5981c4d6b312d1cc828ad8d14eeeadb4`.
+Read `CANDIDATE-NOT-FULLY-QUALIFIED.txt`, `candidate-status.json`,
+`candidate-origin.json`, `retained-provenance.json` and `SHA256SUMS`.
+The actual clean Git Release runtime is `0.1.0-alpha.8` /
+`a357a7dce3b1da11c5881ab354912c6e18159a9a`; its compiled application identity
+and frozen package checks passed. All 240 package pins were compared anew:
+237 match the immutable base and three exact cached file/libmagic inputs supply
+the delta. Actual ISO streaming verified 240 runtime files plus six overlays,
+their modes/owners and origin receipt, including all 75 Xcursor files and two
+theme indexes under `usr/share/icons/PollyRabbit` and `PollyClassic`.
+The overlay/ISO integrity producer is separately
+`d2a41b59f7ee0ac77529dc10e426923b00015018`; the ISO builder and baseline harness
+remain at the frozen runtime revision.
+
+One normal optical OVMF/KVM baseline passed: 4 GiB, two vCPUs, ordinary seat0
+DRM/PAM, Chinese IME commit, native clipboard and workspace switching. No writable
+guest disk, NIC, host share, host audio or physical device was attached. This is
+**baseline boot/input only**, not complete Settings/theme/Files VM acceptance or
+physical hardware cursor-plane qualification. Twelve core native checks passed;
+the first build's additional `desktop-native-mouse` failed its expected `c04020`
+paint assertion and was not rerun or declared passed. Its raw CTest log remains,
+but its original private HOME/screenshots were lost after an evidence-export
+failure; no reconstruction is claimed. The final second build's native tar
+archives preserve modes/owners despite Windows directory-copy failures.
+Complete VM and physical acceptance remain false, and historical Alpha.7 issues
+below have not been fully retested or declared fixed. Preserve all older images
+and failures. The earlier `36b7e4b` WSLg preview exited independently; it is a
+separate build, not Alpha.8 media, and was not restarted.
 See [the Alpha.8 gate](../ROADMAP.md#alpha8-rabbit-cursor-candidate).
 
 **Alpha.7 unqualified test candidate:** the user explicitly chose delivery for
