@@ -67,6 +67,27 @@ to explicit remaining subitems, decisions and subsequently completed work.
 This file also contains broader PollyUI framework work, which is not automatically
 a PollyOS release requirement.
 
+## Alpha.7 Files interaction and physical-test candidate
+
+The user requested a new physical-test ISO after a small Files interaction
+polish. The selected scope is captured text drag-selection, a genuinely
+draggable list scrollbar, and keyboard/focus feedback. No new file operations,
+multi-selection, outgoing drag-and-drop or custom animated cursors are included.
+The native mouse mechanisms are integrated; the application/SDK changes and
+new release qualification remain in progress.
+
+| Gate | Required outcome | State |
+|---|---|---|
+| Files polish | Real drag-selection and scrollbar input, cancellation/lifetime and keyboard/focus behavior, with existing file operation semantics preserved | In progress |
+| Runtime freeze | Integrate the qualified changes, set `desktop/VERSION` to `0.1.0-alpha.7`, and record the clean source revision | Pending Files acceptance; the current source version is still alpha.6 |
+| Package and media | Fresh frozen build, install/dependency/provenance checks and a new Debian 13 x86_64 UEFI RAM-only ISO | Read-only preflight; no new qualified ISO yet |
+| VM and handoff | Normal boot/application acceptance against the actual ISO, then deliver those same bytes with hashes, logs and qualification records | Pending; no Alpha.7 physical-machine acceptance is claimed |
+
+Only one media/VM lane runs after the freeze. The accepted alpha.6 ISO and its
+evidence stay unchanged in their own directory. Alpha.7 uses a new output
+directory, keeps the no-installer/no-automatic-disk-write Live contract, and
+must show its actual version and build identity in Settings.
+
 The headless test suite (`pollyui --test tests/<name>`) currently covers **283
 assertions** across rendering, layout, DOM, events, runtime, networking,
 persistence, and the JS framework layer (Vue reactivity, ~86 components, the SFC
