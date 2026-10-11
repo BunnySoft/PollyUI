@@ -383,8 +383,9 @@ outgoing native drag-and-drop support. See the [public input contract](./README.
 ### 5.3 System-level animated cursor candidate
 
 The user clarified on 2026-10-11 that the rabbit cursor is the **system/desktop
-default**, not an application overlay. The user deferred it to an independent
-follow-up; it is not part of the Alpha.7 Files/ISO scope.
+default**, not an application overlay. The user selected it for the version
+after Alpha.7; implementation and the exact release number are not frozen.
+It is not part of the Alpha.7 Files/ISO scope.
 
 PollyWM would own the default cursor theme and its animation: an idle rabbit,
 running while moving, hopping on a click, and an effort pose while dragging.
@@ -392,7 +393,7 @@ The compositor observes the input lifecycle; individual apps do not need
 global mouse listeners or access to other apps' content. Cancellation, released
 buttons and client loss must retire the corresponding animation state.
 
-Windows may override the default with an explicit cursor request, for example
+Application windows may override the default with an explicit cursor request, for example
 text or resize, and leaving that region restores the system default. The
 implementation must distinguish inheritance from an explicit client cursor
 request instead of replacing every client cursor with a rabbit. The existing
@@ -406,6 +407,9 @@ theme selection and override/inheritance contract remain unimplemented.
 Provide a static/reduced-motion fallback and bound animation work to cursor
 updates rather than continuously repainting the desktop. Original rabbit assets
 and final timing/style are decisions for that future implementation.
+The [development and visual assessment](./docs/DESKTOP-CURSOR.md) records the
+verified wlroots animation/SDL cursor-shape substrate, compatibility boundary,
+proposed action artwork, modification scope and planning estimate.
 
 ---
 
