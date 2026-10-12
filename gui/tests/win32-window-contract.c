@@ -40,9 +40,12 @@ static int cancel_creation(int active, void *user)
     if (!active && !creation_cancelled++) pu_window_destroy(user);
     return 0;
 }
-int main(void)
+int main(int argc, char **argv)
 {
-    PuWindowConfig config = { .title = "Contract Win32 owner", .width = 300, .height = 220 };
+    int transparent = argc == 2 && !strcmp(argv[1], "--transparent");
+    if (argc != 1 && !transparent) return 2;
+    PuWindowConfig config = { .title = "Contract Win32 owner", .width = 300, .height = 220,
+        .transparent = transparent };
     PuWindow *owner = pu_window_create(&config);
     check(owner != NULL, "ordinary owner created");
     if (!owner) return 1;
@@ -57,7 +60,8 @@ int main(void)
         !(GetWindowLongPtrW(handle(owned_config.title), GWL_STYLE) & WS_CHILD),
         "ordinary ownership is a native toplevel owner relation, not modality or embedding");
     pu_window_destroy(owned);
-    PuWindowConfig rollback_config = { .title = "Contract rollback owner", .width = 240, .height = 160 };
+    PuWindowConfig rollback_config = { .title = "Contract rollback owner", .width = 240, .height = 160,
+        .transparent = transparent };
     PuWindow *rollback_owner = pu_window_create(&rollback_config);
     HWND rollback_hwnd = handle(rollback_config.title);
     check(rollback_owner != NULL, "creation reentrancy fixture owner exists");
@@ -108,7 +112,7 @@ int main(void)
     pu_window_set_frameless(sized, 0);
     pu_window_set_state(sized, state, sized);
     config = (PuWindowConfig){ .title = "Contract Win32 modal", .width = 260, .height = 180,
-        .parent = owner, .modal = 1 };
+        .parent = owner, .modal = 1, .transparent = transparent };
     modal = pu_window_create(&config);
     SetActiveWindow(handle(config.title)); SetFocus(handle(config.title));
     check(modal && GetWindow(handle(config.title), GW_OWNER) == hwnd && !IsWindowEnabled(hwnd),

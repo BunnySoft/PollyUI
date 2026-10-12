@@ -744,7 +744,7 @@ minimized window can have zero client geometry. Read the next painted document
 viewport for layout; this notification is not a component resize/layout policy.
 Closed-window state queries fail explicitly.
 
-`window.capabilities()` reports `owned`, `popup`, `modal`, `sizeConstraints` and
+`window.capabilities()` reports `owned`, `popup`, `modal`, `sizeConstraints`, `transparent` and
 `popupGrab` for the current native driver/compositor. Wayland modal support
 requires advertised `xdg_wm_dialog_v1`, even though SDL alone may report success
 without that global. Unsupported features and native creation failures are
@@ -771,10 +771,18 @@ layers retain their existing separate transparent option. Alpha does not create
 an input shape or enable click-through.
 
 The SDL Wayland Host supports `PU_RENDERER=auto`, `gl` and `raster` using
-premultiplied buffer alpha. Unsupported drivers/backends fail explicitly rather
-than creating an opaque substitute. Windows and other SDL drivers currently
-report ordinary transparency unsupported. See [porting](docs/PORTING.md#ordinary-window-alpha)
-for presentation details and the bounded native compositor qualification.
+premultiplied buffer alpha. The raw Win32 Host has an explicit Skia raster /
+DirectComposition path (`auto` or `raster`), with ordinary native frames and
+rectangular input; it does not implement transparent ANGLE/GL windows.
+Unsupported drivers/backends fail explicitly rather than creating an opaque
+substitute. Other SDL drivers still report ordinary transparency unsupported.
+
+Wayland has bounded native composed-pixel qualification. **Windows composed
+pixels are not yet qualified**: the validation session denied Desktop Duplication
+access; API success, surface PNGs and native-window contract tests do not prove
+desktop alpha. Windows capability reports runtime composition availability,
+not certification of a desktop/GPU. See [porting](docs/PORTING.md#ordinary-window-alpha)
+for presentation details, limits and the native verification fixture.
 
 ### Wayland shell surfaces
 

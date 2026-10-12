@@ -1,4 +1,4 @@
-// RenderEngine — Skia shim implementation (the sole .cpp in PollyUI).
+// RenderEngine — Skia shim implementation.
 // Compiled as C++ against Skia's headers; exposes only the extern "C" API in
 // skia_c.h. See DESIGN.md §3.
 

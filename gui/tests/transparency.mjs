@@ -58,6 +58,7 @@ if (!window.capabilities().transparent) {
     tile(modal.document, 120, 20, 40, 40, '#20e080');
     modal.onclose = () => modalClosed++;
     framed.oncloserequest = () => {
+        if (globalThis.nativeAlphaAbort) return true;
         check(captured && released && !framed.document.body.hasMouseCapture(),
             'transparent pixels remain interactive and native capture releases');
         check(framed.state.width === framed.document.body.offsetWidth &&
@@ -68,14 +69,20 @@ if (!window.capabilities().transparent) {
         return true;
     };
     framed.onclose = () => {
+        if (globalThis.nativeAlphaAbort) return;
         check(!marker.closed, 'transparent owned leaf retires before owner notification');
         marker.close();
         opaque.close();
     };
     opaque.onclose = () => {
+        if (globalThis.nativeAlphaAbort) return;
         check(modalClosed === 1 && modal.closed, 'transparent modal retires once with its opaque owner');
         frameless.close();
         window.quit();
     };
+    if (typeof globalThis.nativeAlphaEvidence === 'string') {
+        marker.capture(nativeAlphaEvidence + '-marker.png');
+        framed.capture(nativeAlphaEvidence + '-framed.png');
+    }
     setTimeout(() => { throw new Error('Native transparency fixture timed out'); }, 12000);
 }

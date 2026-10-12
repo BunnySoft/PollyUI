@@ -112,7 +112,8 @@ endif()
 
 # --- HostEngine backend (the only per-OS C; see docs/PORTING.md §1) ----------
 if (PU_HOST STREQUAL "win32")
-    target_sources(pollyui-engine PRIVATE gui/src/host/win32/window.c)
+    target_sources(pollyui-engine PRIVATE gui/src/host/win32/window.c gui/src/host/win32/composition.cpp)
+    target_link_libraries(pollyui-engine PUBLIC d3d11 dxgi dcomp dwmapi)
 elseif (PU_HOST STREQUAL "sdl")
     target_sources(pollyui-engine PRIVATE gui/src/host/sdl/window_sdl.c)
     target_compile_definitions(pollyui-engine PRIVATE PU_CLIPBOARD_SDL)

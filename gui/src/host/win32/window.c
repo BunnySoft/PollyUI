@@ -11,6 +11,7 @@ PuDragSession *pu_window_start_drag(PuWindow *w, PuDragInput *input,
     return NULL;
 }
 #include "host/window_contract.h"
+#include "host/win32/composition.h"
 
 /* Need Windows 10 APIs (per-monitor DPI v2, GetDpiForWindow, ...). */
 #ifndef WINVER
@@ -52,6 +53,8 @@ struct PuWindow {
     void *state_user;
     HWND       hwnd;
     PuSurface *surface;      /* Skia raster surface, sized to the client (physical px) */
+    PuWinComposition *composition;
+    int transparent;
     int        width;        /* client width  in PHYSICAL pixels */
     int        height;       /* client height in PHYSICAL pixels */
     float      scale;        /* physical / logical (DPI scale), e.g. 1.5 at 150% */
@@ -91,8 +94,18 @@ static void *g_frame_user;
 static void pump_windows(void);
 static void retire_native(PuWindow *w);
 
+static int transparent_render_policy(void)
+{
+    const char *renderer = getenv("PU_RENDERER");
+    return !renderer || !strcmp(renderer, "auto") || !strcmp(renderer, "raster");
+}
+
 unsigned pu_window_capabilities(void)
-{ return PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_MODAL | PU_WINDOW_LIMITS; }
+{
+    unsigned caps = PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_MODAL | PU_WINDOW_LIMITS;
+    if (transparent_render_policy() && pu_win_composition_supported()) caps |= PU_WINDOW_TRANSPARENT;
+    return caps;
+}
 
 int pu_window_get_state(PuWindow *w, PuWindowState *state)
 {
@@ -313,10 +326,20 @@ static const char *key_name(WPARAM vk, LPARAM lp, char *buffer, int size)
 
 static const wchar_t *kClassName = L"PollyUIWindowClass";
 
+static int fail_presentation(PuWindow *w, const char *operation)
+{
+    fprintf(stderr, "[host] Transparent window %s failed; native presentation stopped\n", operation);
+    w->exit_code = 1;
+    notify_dependent_failure(w);
+    w->running = 0;
+    return 0;
+}
+
 /* Render one frame into the Skia surface and blit it to hdc. */
 static int pu_paint(PuWindow *w, HDC hdc, const char *capture_path)
 {
     if (!w->surface || !w->running) return 0;
+    if (w->transparent && !pu_surface_valid(w->surface)) return fail_presentation(w, "raster surface");
     if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return 0; }
 
     float scale = w->scale > 0 ? w->scale : 1.0f;
@@ -326,7 +349,8 @@ static int pu_paint(PuWindow *w, HDC hdc, const char *capture_path)
         w->paint_fn(w->surface, lw, lh, scale, w->paint_user);
     } else {
         /* Built-in demo (M0b): dark slate + centered PollyUI-blue card. */
-        pu_surface_clear(w->surface, 0x10, 0x12, 0x18, 0xFF);
+        if (w->transparent) pu_surface_clear(w->surface, 0, 0, 0, 0);
+        else pu_surface_clear(w->surface, 0x10, 0x12, 0x18, 0xFF);
         float cw = (float)w->width, ch = (float)w->height;
         float rw = 320.0f, rh = 200.0f;
         pu_surface_fill_rect(w->surface, (cw - rw) * 0.5f, (ch - rh) * 0.5f, rw, rh,
@@ -336,6 +360,13 @@ static int pu_paint(PuWindow *w, HDC hdc, const char *capture_path)
     if (!pu_surface_make_current(w->surface)) { w->running = 0; w->exit_code = 1; return 0; }
     int captured = !capture_path || pu_surface_save_png(w->surface, capture_path);
     if (!captured) fprintf(stderr, "Cannot capture rendered frame to %s\n", capture_path);
+    if (w->transparent) {
+        if (!pu_win_composition_present(w->composition, pu_surface_pixels(w->surface),
+            pu_surface_width(w->surface), pu_surface_height(w->surface), pu_surface_row_bytes(w->surface)))
+            return fail_presentation(w, "composition");
+        w->presented = 1;
+        return captured;
+    }
     w->presented = 1;
     if (pu_surface_is_gl(w->surface)) {
         static int perf = -1;
@@ -698,8 +729,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (cfg->layer || cfg->input_popup || cfg->lock_output) {
         fprintf(stderr, "Dedicated Wayland roles are unavailable on this Host\n"); return NULL;
     }
-    if (cfg->transparent) {
-        fprintf(stderr, "Ordinary per-pixel transparency is unavailable on this Host\n"); return NULL;
+    if (cfg->transparent && (!transparent_render_policy() || !pu_win_composition_supported())) {
+        fprintf(stderr, "Ordinary transparency requires available DirectComposition and auto/raster rendering (not GL)\n");
+        return NULL;
     }
     if (g_windows && g_ui_thread != GetCurrentThreadId()) {
         fprintf(stderr, "All windows must be created on the same UI thread\n");
@@ -724,6 +756,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     w->width  = cfg->width;
     w->height = cfg->height;
     w->running = 1;
+    w->transparent = cfg->transparent;
     w->parent = cfg->parent; w->popup = cfg->popup; w->modal = cfg->modal; w->limits = cfg->limits;
     if (w->parent) w->parent->children++;
     g_ui_thread = GetCurrentThreadId();
@@ -772,6 +805,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     RECT rc = { 0, 0, (int)(width * s0), (int)(height * s0) };
     DWORD style = cfg->popup ? WS_POPUP : WS_OVERLAPPEDWINDOW;
     DWORD extended = cfg->popup ? WS_EX_TOOLWINDOW : 0;
+    if (cfg->transparent) extended |= WS_EX_NOREDIRECTIONBITMAP;
     if (cfg->popup == PU_POPUP_TOOLTIP) extended |= WS_EX_NOACTIVATE | WS_EX_TRANSPARENT;
     AdjustWindowRectExForDpi(&rc, style, FALSE, extended, (UINT)(s0 * 96));
     POINT position = { CW_USEDEFAULT, CW_USEDEFAULT };
@@ -808,12 +842,17 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     /* Prefer a GPU surface; fall back to raster (CPU + blit) if GL is unavailable.
      * The handle is opaque (here an HWND); other host backends pass their own
      * native window handle to the same seam — see docs/PORTING.md §2. */
-    w->surface = pu_surface_create_gpu((void *)hwnd, w->width, w->height);
+    if (!w->transparent) w->surface = pu_surface_create_gpu((void *)hwnd, w->width, w->height);
     if (!w->surface)
         w->surface = pu_surface_create(w->width, w->height);
     if (!w->surface) {
+        fprintf(stderr, "Cannot allocate native window rendering surface\n");
         discard_window_creation(w);
         return NULL;
+    }
+    if (w->transparent) {
+        w->composition = pu_win_composition_create(hwnd);
+        if (!w->composition) { discard_window_creation(w); return NULL; }
     }
 
     w->next = g_windows;
@@ -1081,6 +1120,8 @@ static void retire_native(PuWindow *w)
     w->parent = NULL;
     PuSurface *surface = w->surface;
     w->surface = NULL;
+    pu_win_composition_destroy(w->composition);
+    w->composition = NULL;
     pu_surface_destroy(surface);
     if (w->hwnd) DestroyWindow(w->hwnd);
     if (restore_focus && parent && parent->running && parent->hwnd &&

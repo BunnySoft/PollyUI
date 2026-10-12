@@ -68,10 +68,26 @@ if (BUILD_TESTING)
         endif()
     endif()
     if (WIN32 AND PU_HOST STREQUAL "win32")
+        add_executable(pollyui-win32-transparency-test tests/win32-transparency.c tests/win32-desktop-pixel.cpp)
+        target_include_directories(pollyui-win32-transparency-test PRIVATE src)
+        target_link_libraries(pollyui-win32-transparency-test PRIVATE pollyui-engine)
+        foreach(policy IN ITEMS auto raster)
+            add_test(NAME gui-win32-transparency-${policy} COMMAND pollyui-win32-transparency-test
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")
+            set_tests_properties(gui-win32-transparency-${policy} PROPERTIES TIMEOUT 20
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${policy}"
+                SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)
+        endforeach()
+        add_test(NAME gui-win32-transparency-unsupported COMMAND pollyui-playground
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")
+        set_tests_properties(gui-win32-transparency-unsupported PROPERTIES TIMEOUT 15
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=gl")
         add_executable(pollyui-native-window-test tests/win32-window-contract.c)
         target_link_libraries(pollyui-native-window-test PRIVATE pollyui-engine)
         add_test(NAME gui-win32-window-contract COMMAND pollyui-native-window-test)
         set_tests_properties(gui-win32-window-contract PROPERTIES TIMEOUT 15)
+        add_test(NAME gui-win32-transparent-window-contract COMMAND pollyui-native-window-test --transparent)
+        set_tests_properties(gui-win32-transparent-window-contract PROPERTIES TIMEOUT 15 ENVIRONMENT "PU_RENDERER=raster")
         add_executable(pollyui-native-mouse-test tests/win32-mouse.c)
         target_link_libraries(pollyui-native-mouse-test PRIVATE pollyui-engine)
         add_test(NAME gui-win32-mouse COMMAND pollyui-native-mouse-test)

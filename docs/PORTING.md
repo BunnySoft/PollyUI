@@ -163,9 +163,52 @@ and transparent ordinary clients over a two-color native marker window. It reads
 the composed output (not merely a client PNG), requires alpha-zero/half/opaque
 colors within two 8-bit channel values, checks opaque text pixels, movement,
 resized buffers, empty opaque/nonempty input regions, frames, owned/modal lifecycle
-and actual native pointer/capture delivery. This bounds software-compositor
-qualification; it does not claim physical GPU execution. Win32 and other SDL
-drivers currently reject ordinary transparency.
+and actual native pointer/capture delivery. Raster tests include SDL's default
+GL presentation and its software SHM presentation. This bounds software-compositor
+qualification; it does not claim physical GPU execution.
+
+The raw Win32 Host uses a backend-private C++ COM helper with an opaque C seam.
+Ordinary transparent HWNDs use `WS_EX_NOREDIRECTIONBITMAP`, retaining the existing
+native nonclient frame, owner, modal, DPI, resizing and hit-test behavior. They
+render into Skia raster BGRA8 and upload the complete premultiplied frame to an
+`IDCompositionSurface` (`DXGI_ALPHA_MODE_PREMULTIPLIED`). The helper uses a WARP
+device deliberately; this is not Skia hardware GPU rendering or ANGLE. Update
+offsets and dimensions are checked, resized surfaces are replaced only after a
+successful commit, and each HWND retires its own composition resources.
+Unavailable desktop composition or invalid/GL renderer policy rejects creation.
+Create/surface/upload/device/commit failures have explicit diagnostics; frame
+failure closes the affected native window with a nonzero loop result. There is
+no opaque fallback for a transparent request. Default opaque windows retain
+their existing GPU-then-raster/blit policy. Other SDL drivers are unsupported.
+
+Build `pollyui-win32-transparency-test`, `pollyui-native-window-test` and
+`pollyui-playground`, then run:
+
+```powershell
+ctest --test-dir <build> -R "gui-win32-(transparency|transparent-window-contract)" -V
+```
+
+The Windows fixture runs the same JS color/foreground document over its own
+native marker windows, probes only owned points, and copies only one output pixel
+at a time to CPU memory using Desktop Duplication. It never saves the desktop or
+activates another application. It requires the same alpha-zero/half/opaque/text,
+movement, resize, native caption, input/capture and owner/modal close criteria as
+the Wayland fixture. Windows input checks use addressed native mouse messages
+and the real capture HWND; they do not move the user's physical pointer.
+Run it in an interactive desktop session permitting capture
+of these own fixture windows. `E_ACCESSDENIED` is an explicit **SKIP (77), not
+PASS**; mismatched colors or presentation failures are failures. An optional
+second executable argument saves auxiliary Skia PNGs; these are not native proof.
+
+**Windows native composition remains unqualified in the current validation
+environment.** Own HWNDs were visible, uncloaked, on the Default input/thread
+desktop; the marker's own DC/Skia surface contained the correct colors, but screen
+GDI reads were white and `DuplicateOutput` returned `0x80070005`. The separate
+transparent-window native contract fixture can still check real HWND lifecycle,
+limits, resize/maximize, native/custom frame geometry and owned/modal relationships
+without claiming composed pixels. Native-DPI geometry uses the current monitor;
+this does not certify cross-monitor/fractional-DPI desktop pixels or a hardware
+GPU. MT-01 needs a successful Windows composed-output run before full qualification.
 
 ### Native drag-source seam
 
