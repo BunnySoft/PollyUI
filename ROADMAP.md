@@ -104,7 +104,7 @@ active increment to be integrated before writing those files.
 | Outgoing native drag | Integrated `2ef182f` from coherent child commit `c2cb1b0`: common GUI C/JS contract and first Wayland COPY backend; public-interface coexistence requires no SDK changes | Ordinary-window COPY with immutable text/binary payloads, opaque native press credentials, cancellation and UI-thread completion. Dedicated source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
 | Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
 | Native IME extensions | Read-only research completed; explicitly deferred to Beta by the user on 2026-10-12 | No implementation or transport spike in this round. Existing Rime preedit/candidate/commit stays unchanged. Reopening requires a single native input owner or separately authorized SDK extension, accurate Unicode/selection transactions and sensitive-field isolation |
-| Ordinary-window transparency (MT-01) | Wayland integrated in `dd40d03`; Windows implementation preserved in child `dca78a0`, not integrated pending user-run composed-output acceptance | Windows capture returned `E_ACCESSDENIED`; native-window contracts are not composed-pixel proof. User chose interactive own-fixture verification before deciding integration. Whole MT-01 remains incomplete |
+| Ordinary-window transparency (MT-01) | Wayland integrated in `dd40d03`; Windows raster/DirectComposition integrated in `f59e692`, verifier fixes/diagnostics in `190faf8`/`c17c60a` | User confirmed manual visual alpha blending and rectangular input, then approved integration/push. Windows automatic exact-pixel qualification remains pending; native contracts, reference-only diagnostics and manual observations are not an automated composed-pixel PASS |
 | Desktop icons and selection (BD-04/BD-05) | Integrated `cbe4000` and `0881e09`, including selected-only layout ownership | JS App shortcuts, internal arrangement/persistence and captured marquee/multi-selection. No shared Host/render writes, file mutations, uninstall or cross-application Shell dragging |
 
 Desktop shortcuts start empty and are added from Polly > Applications. Ctrl/Shift,
@@ -305,7 +305,7 @@ for current capabilities, layer ownership and constraints.
 
 | Candidate slice | Concrete deliverable | Scope/status |
 |---|---|---|
-| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Wayland integrated in `dd40d03`; Windows child `dca78a0` awaits user composed-output acceptance and is not integrated. Shared strict opt-in flag; transparent popups/input shapes remain outside this increment |
+| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Implementation integrated: Wayland `dd40d03`, Windows `f59e692` with `190faf8`/`c17c60a`; Windows manually accepted by the user, automatic pixel qualification still pending. Shared strict opt-in flag; transparent popups/input shapes remain outside this increment |
 | MT-02 | Cached wallpaper-derived Mica-like base and in-app material composition | Candidate: GUI/Skia plus explicit desktop theme/wallpaper inputs; not live cross-window blur |
 | MT-03 | Regional background acrylic/blur for taskbar, menus and transient surfaces | Candidate: PollyWM render/damage/cache path plus effect requests; not a GUI-only style property |
 
@@ -314,9 +314,13 @@ raster with SDL OpenGL/software presentation and Skia GL/auto at 1x/1.5x.
 Actual zero/half/opaque alpha pixels, opaque text, changed underlying colors
 after movement, native resize, frame/frameless, owned/modal closure and
 rectangular input/capture were checked. Mainline Linux eight-case CTest and
-Windows nine-case compatibility runs passed; Windows transparency still
-reports unsupported until its backend is delivered. This is software-renderer
-qualification, not physical-GPU evidence or completion of the whole MT-01 item.
+Windows nine-case compatibility runs passed at that Wayland-only milestone.
+The subsequently integrated Windows backend has native lifecycle/shared-contract
+checks and user-reported manual functional acceptance. Its strict automated
+verifier still fails an early opaque reference before alpha assertions; bounded
+reference-only diagnostics do not replace those assertions. Implementation and
+manual acceptance therefore do not imply complete Windows pixel, hardware-GPU
+or cross-monitor qualification.
 
 Prefer MT-01, then MT-02, then MT-03 if the candidate is approved. Keep solid
 fallbacks explicit and validate native pixels, clipping/readability and actual

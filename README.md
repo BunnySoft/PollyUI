@@ -783,6 +783,11 @@ access; API success, surface PNGs and native-window contract tests do not prove
 desktop alpha. Windows capability reports runtime composition availability,
 not certification of a desktop/GPU. See [porting](docs/PORTING.md#ordinary-window-alpha)
 for presentation details, limits and the native verification fixture.
+On 2026-10-12 the user confirmed that the persistent manual demo blended
+transparent pixels over its backdrop, kept the opaque control opaque and
+retained rectangular non-click-through input, then approved integration.
+This is manual functional acceptance, not a replacement for the pending
+automatic composed-pixel checks.
 
 ### Wayland shell surfaces
 

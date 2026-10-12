@@ -201,16 +201,19 @@ specifically for dialect sprawl (C++11/14/17/20/23, multiple idioms for every
 task) — a permanent maintenance tax — despite minimizing glue.
 
 - **QuickJS is C, Yoga has a first-class C API, Skia is C++.** Two of the three
-  libraries are used natively from C with zero binding layer. Only Skia needs
-  glue (see below).
+  libraries are used natively from C. Skia and the Windows composition backend
+  use narrow C++ adapters behind C interfaces (see below).
 - **Why C wins for our criteria:** one obvious way to write things (readable),
   identical codegen/performance to C++, and a standard (C11/C17) that has been
   stable for a decade and doesn't move under us. QuickJS and Skia are
   themselves proof that C-style code reaches top-tier performance.
 - **The cost — Skia:** Skia has no first-class C API, so we write **one thin
   `extern "C"` C++ shim** (`gui/src/render/skia_c.cpp`) exposing just the draw calls
-  we need. It is the *only* `.cpp` in the tree; everything else (host, model,
-  bridge, layout, script) is plain C. The maintained C++ surface is near zero.
+  we need. Windows per-pixel presentation additionally uses the backend-private
+  `gui/src/host/win32/composition.cpp` COM adapter with an opaque C seam;
+  native capture tests have their own C++ helper. The model, bridge, layout,
+  script and Host orchestration remain C; native SDK types do not enter the
+  public GUI contract.
   (Alternative: the third-party `sk4d` C API → no C++ at all, at the cost of
   Skia's C-API ceiling. We start with our own shim for full control.)
 - **Manual memory:** the lifetime-heavy bridge (§6) is managed the way QuickJS
@@ -329,7 +332,7 @@ Mica-like materials and background blur (MT-02/MT-03) remain unselected.
 |---|---|---|
 | Alpha colors and subtree opacity | `#rrggbbaa` and `opacity` work within the rendered window; subtree opacity also fades text/children | Existing GUI drawing; use background alpha when foreground text should remain opaque |
 | Gradients, rounded shapes, shadows and image textures | Existing GUI primitives; shadow blur is not backdrop blur | Combine existing primitives without claiming background sampling |
-| Transparent window composition | Layer transparency is retained; ordinary Wayland per-pixel alpha is integrated in `dd40d03`. Windows implementation is retained in child `dca78a0`, pending user-run composed-output acceptance before integration. Default app windows still clear to opaque white | Shared GUI options/render semantics, separate Host presentation and compositor alpha contract; transparent popup/input-shape extensions are not included |
+| Transparent window composition | Layer transparency is retained; ordinary Wayland per-pixel alpha is integrated in `dd40d03`, Windows raster/DirectComposition in `f59e692` with verifier updates `190faf8`/`c17c60a`. The user confirmed manual visual blending and rectangular input and approved integration; Windows automatic exact-pixel qualification remains incomplete. Default app windows still clear to opaque white | Shared GUI options/render semantics, separate Host presentation and compositor alpha contract; transparent popup/input-shape extensions are not included |
 | Wallpaper-derived Mica-like base | Not implemented as a desktop material | Cached material rendering in GUI, with wallpaper/theme/activation inputs supplied through desktop/Host boundaries |
 | In-app background blur | No exposed background-filter pipeline | GUI/Skia sampling of previously rendered content, filtering and clipped composition |
 | Blur behind another application | No PollyWM background-blur render pass | Compositor-controlled scene sampling, effect regions, damage propagation and caching |

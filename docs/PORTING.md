@@ -248,6 +248,12 @@ without claiming composed pixels. Native-DPI geometry uses the current monitor;
 this does not certify cross-monitor/fractional-DPI desktop pixels or a hardware
 GPU. MT-01 needs a successful Windows composed-output run before full qualification.
 
+The user subsequently exercised a persistent three-window manual demo,
+confirmed opaque-versus-alpha blending and rectangular input without
+click-through, and approved integration on 2026-10-12. That manual functional
+acceptance is recorded separately: the early opaque-reference mismatch and
+incomplete automatic pixel qualification remain explicit, not relabelled PASS.
+
 ### Native drag-source seam
 
 `pollyui/drag.h` defines platform-neutral `PuDragItem`, opaque `PuDragInput` and

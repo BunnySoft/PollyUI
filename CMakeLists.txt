@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-# C for the engine; CXX only for the Skia shim, skia_c.cpp (DESIGN.md §3).
+# C for the engine; CXX for narrow Skia/Win32 COM adapters and native tests (DESIGN.md §3).
 project(PollyUI LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
