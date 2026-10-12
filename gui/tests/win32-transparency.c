@@ -19,6 +19,8 @@ static PuTestDesktopCapture *capture;
 static JSContext *script_context;
 static LARGE_INTEGER present_after;
 static ULONGLONG capture_deadline;
+static int reference_chart;
+static ULONGLONG observe_after;
 static void begin_capture_phase(void)
 {
     QueryPerformanceCounter(&present_after);
@@ -175,11 +177,84 @@ static void visibility(HWND hwnd)
 {
     DWORD cloaked = 0;
     HRESULT result = DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
-    RECT bounds = {0};
+    RECT bounds = {0}, outer = {0};
+    GetWindowRect(hwnd, &outer);
     DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds, sizeof(bounds));
-    printf("NATIVE: HWND=%p visible=%d iconic=%d cloaked=%lu status=%08lx DWM-bounds=%ld,%ld,%ld,%ld\n",
+    printf("NATIVE: HWND=%p visible=%d iconic=%d cloaked=%lu status=%08lx "
+        "outer=%ld,%ld,%ld,%ld DWM-bounds=%ld,%ld,%ld,%ld\n",
         (void *)hwnd, IsWindowVisible(hwnd), IsIconic(hwnd), cloaked, (unsigned long)result,
+        outer.left, outer.top, outer.right, outer.bottom,
         bounds.left, bounds.top, bounds.right, bounds.bottom);
+}
+static int reference_points(const char *scene)
+{
+    const int xs[] = { 20, 300, 500, 800 };
+    const int ys[] = { 100, 300, 550 };
+    HWND others[] = { framed, frameless, opaque, modal };
+    printf("REFERENCE: scene=%s (diagnosis only; alpha acceptance is not tested)\n", scene);
+    visibility(marker);
+    for (int i = 0; i < 4; i++) visibility(others[i]);
+    marker_baseline();
+    for (int y = 0; y < 3; y++) for (int x = 0; x < 4; x++) {
+        POINT p = point(marker, xs[x], ys[y]);
+        int covered = 0;
+        for (int i = 0; i < 4; i++) {
+            RECT rect;
+            CHECK(GetWindowRect(others[i], &rect));
+            if (IsWindowVisible(others[i]) && PtInRect(&rect, p)) covered = 1;
+        }
+        if (covered || WindowFromPoint(p) != marker) {
+            printf("REFERENCE: scene=%s logical=%d,%d covered; not sampled\n", scene, xs[x], ys[y]);
+            continue;
+        }
+        COLORREF actual;
+        CHECK(pu_test_desktop_pixel(capture, p.x, p.y, &actual));
+        unsigned expected = xs[x] < 450 ? 0x204080 : 0x802040;
+        printf("REFERENCE: scene=%s logical=%d,%d desktop=%ld,%ld actual=%02x%02x%02x "
+            "expected=%06x delta=%d,%d,%d within-tolerance2=%d\n", scene, xs[x], ys[y], p.x, p.y,
+            GetRValue(actual), GetGValue(actual), GetBValue(actual), expected,
+            (int)GetRValue(actual) - (int)((expected >> 16) & 255),
+            (int)GetGValue(actual) - (int)((expected >> 8) & 255),
+            (int)GetBValue(actual) - (int)(expected & 255), color_near(actual, expected));
+    }
+    return 0;
+}
+static int suppress_fixture_close_checks(void)
+{
+    JSValue global = JS_GetGlobalObject(script_context);
+    int result = JS_SetPropertyStr(script_context, global, "nativeAlphaAbort", JS_TRUE);
+    JS_FreeValue(script_context, global);
+    CHECK(result >= 0);
+    return 0;
+}
+static int pump_reference(void)
+{
+    CHECK(SUCCEEDED(DwmFlush()));
+    if (GetTickCount64() < observe_after) return 0;
+    int fresh = fresh_capture();
+    if (fresh <= 0) return fresh;
+    if (stage == 10) {
+        CHECK(reference_points("marker-only") == 0);
+        begin_capture_phase();
+        HWND others[] = { framed, frameless, opaque, modal };
+        for (int i = 0; i < 4; i++) {
+            ShowWindow(others[i], SW_SHOWNOACTIVATE);
+            CHECK(IsWindowVisible(others[i]));
+        }
+        stage = 11;
+    } else if (stage == 11) {
+        CHECK(reference_points("all-own-windows") == 0);
+        begin_capture_phase();
+        CHECK(move_client(opaque, origin.x + (int)(600 * scale), origin.y + (int)(20 * scale), 0, 0) == 0);
+        stage = 12;
+    } else {
+        CHECK(reference_points("opaque-window-moved-up") == 0);
+        CHECK(suppress_fixture_close_checks() == 0);
+        stage = 13;
+        pu_window_close_all();
+    }
+    observe_after = GetTickCount64() + 500;
+    return 0;
 }
 static int pump_native(void *user)
 {
@@ -206,7 +281,19 @@ static int pump_native(void *user)
         CHECK(move_client(frameless, origin.x + (int)(20 * scale), origin.y + (int)(290 * scale), 0, 0) == 0);
         CHECK(move_client(opaque, origin.x + (int)(700 * scale), origin.y + (int)(340 * scale), 0, 0) == 0);
         CHECK(move_client(modal, origin.x + (int)(350 * scale), origin.y + (int)(300 * scale), 0, 0) == 0);
+        if (reference_chart) {
+            HWND others[] = { framed, frameless, opaque, modal };
+            for (int i = 0; i < 4; i++) {
+                ShowWindow(others[i], SW_HIDE);
+                CHECK(!IsWindowVisible(others[i]));
+            }
+            stage = 10;
+            observe_after = GetTickCount64() + 500;
+            return 0;
+        }
         stage = 1; ticks = 0;
+    } else if (stage >= 10 && stage <= 12) {
+        return pump_reference();
     } else if (stage == 1) {
         CHECK(SUCCEEDED(DwmFlush()));
         if (++ticks < 4) return 0;
@@ -270,9 +357,7 @@ static int pump(void *user)
 {
     int result = pump_native(user);
     if (result < 0) {
-        JSValue global = JS_GetGlobalObject(script_context);
-        JS_SetPropertyStr(script_context, global, "nativeAlphaAbort", JS_TRUE);
-        JS_FreeValue(script_context, global);
+        suppress_fixture_close_checks();
     }
     return result;
 }
@@ -291,8 +376,10 @@ int main(int argc, char **argv)
         return 0;
     }
     if (argc != 2 && argc != 3) return 2;
+    reference_chart = argc == 3 && !strcmp(argv[2], "--reference-chart");
     const PuGuiHooks hooks = { .install = install, .pump = pump };
-    const PuGuiConfig config = { .script = argv[1], .hooks = &hooks, .user = argc == 3 ? argv[2] : NULL };
+    const PuGuiConfig config = { .script = argv[1], .hooks = &hooks,
+        .user = argc == 3 && !reference_chart ? argv[2] : NULL };
     puts("PRECHECK: the next two Host diagnostics exercise intentionally invalid arguments");
     CHECK(!pu_win_composition_create(NULL) && !pu_win_composition_present(NULL, NULL, 1, 1, 4));
     desktop_identity();
@@ -305,6 +392,11 @@ int main(int argc, char **argv)
     if (pu_test_desktop_capture_denied()) {
         puts("SKIP: desktop capture access denied; native composition is NOT qualified by surface PNG/API success");
         return 77;
+    }
+    if (reference_chart) {
+        CHECK(!result && stage == 13);
+        puts("DIAGNOSTIC COMPLETE: reference chart only; native alpha is NOT qualified (exit78)");
+        return 78;
     }
     CHECK(!result && stage == 5);
     puts("PASS: native Windows raster/DirectComposition ordinary alpha, frame, move, resize, opaque text, input, capture and owned/modal close");

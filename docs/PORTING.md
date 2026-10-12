@@ -208,6 +208,21 @@ of these own fixture windows. `E_ACCESSDENIED` is an explicit **SKIP (77), not
 PASS**; mismatched colors or presentation failures are failures. An optional
 second executable argument saves auxiliary Skia PNGs; these are not native proof.
 
+For bounded reference-color diagnosis, run the executable with the script and
+`--reference-chart` as its two arguments instead. This diagnostic hides only the
+other fixture HWNDs, records a two-color marker-only grid, shows those HWNDs in
+their normal fixture positions, then moves the fixture's opaque window upward
+and records the grid again. Each scene has one fresh-frame sample after a fixed
+500ms setup interval with no further fixture geometry changes; the GUI loop
+continues pumping. The re-shown windows use `SW_SHOWNOACTIVATE`, so this controlled
+scene does not establish identical activation/shadow state to the initial scene.
+Points inside other
+visible fixture outer rectangles or outside the marker's native hit-test area
+are not read. Uncovered points report measured RGB/channel deltas and unchanged
+tolerance2, without retrying until expected colors happen to appear. Successful
+diagnostic completion returns **78, not the native verifier's PASS (0)**, and
+does not test or qualify transparency. All own windows retire on exit.
+
 **Windows native composition remains unqualified in the current validation
 environment.** Own HWNDs were visible, uncloaked, on the Default input/thread
 desktop; the marker's own DC/Skia surface contained the correct colors, but screen
@@ -215,7 +230,18 @@ GDI reads were white and `DuplicateOutput` returned `0x80070005`. A later diagno
 reproduction of the user's old-fixture black-marker failure acquired only a
 pointer-update notification and read its zero-filled image. This fixture timing defect is corrected
 by the desktop-present gate above; correcting it does not itself qualify the
-Windows composition path, and requires a new native run with the corrected binary.
+Windows composition path. A later user run obtained a real fresh frame, but an
+opaque purple reference read `7b1f3e` rather than `802040` and failed tolerance2
+before any transparent-window assertions. Bounded marker-only, re-shown-own-scene
+and moved-opaque-window diagnostics at DPI144 subsequently preserved every
+uncovered reference RGB exactly after their fixed setup interval. This proves
+that this server-side Desktop Duplication path can preserve these colors; it
+does not establish the cause of the earlier reference difference, certify RDP
+client display/encoding, or qualify the alpha path. Failed experiments disabling
+only own-window DWM transitions did not resolve the early reference difference
+and are not used by the formal verifier. A successful full native run remains
+required; neither near-colored reference pixels nor diagnostic exit78 substitute
+for it.
 The separate transparent-window native contract fixture can still check real HWND lifecycle,
 limits, resize/maximize, native/custom frame geometry and owned/modal relationships
 without claiming composed pixels. Native-DPI geometry uses the current monitor;
