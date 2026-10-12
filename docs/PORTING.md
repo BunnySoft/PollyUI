@@ -191,7 +191,15 @@ ctest --test-dir <build> -R "gui-win32-(transparency|transparent-window-contract
 The Windows fixture runs the same JS color/foreground document over its own
 native marker windows, probes only owned points, and copies only one output pixel
 at a time to CPU memory using Desktop Duplication. It never saves the desktop or
-activates another application. It requires the same alpha-zero/half/opaque/text,
+activates another application. Capture starts before positioning the own fixture
+windows. Each geometry/input phase records a QPC presentation fence; the GUI loop
+continues pumping while a nonblocking capture waits, for at most two seconds, for
+a desktop-present image at or after that fence. Pointer-only updates
+(`LastPresentTime == 0`, `AccumulatedFrames == 0`) and older images are not sampled.
+The capture texture must be single-sampled BGRA8; frame timing, format, crop and
+marker-client DC diagnostics are logged without saving other window content.
+`gui-win32-desktop-frame-contract` tests the metadata gate only, not native pixels.
+The native fixture still requires the same alpha-zero/half/opaque/text,
 movement, resize, native caption, input/capture and owner/modal close criteria as
 the Wayland fixture. Windows input checks use addressed native mouse messages
 and the real capture HWND; they do not move the user's physical pointer.
@@ -203,8 +211,12 @@ second executable argument saves auxiliary Skia PNGs; these are not native proof
 **Windows native composition remains unqualified in the current validation
 environment.** Own HWNDs were visible, uncloaked, on the Default input/thread
 desktop; the marker's own DC/Skia surface contained the correct colors, but screen
-GDI reads were white and `DuplicateOutput` returned `0x80070005`. The separate
-transparent-window native contract fixture can still check real HWND lifecycle,
+GDI reads were white and `DuplicateOutput` returned `0x80070005`. A later diagnostic
+reproduction of the user's old-fixture black-marker failure acquired only a
+pointer-update notification and read its zero-filled image. This fixture timing defect is corrected
+by the desktop-present gate above; correcting it does not itself qualify the
+Windows composition path, and requires a new native run with the corrected binary.
+The separate transparent-window native contract fixture can still check real HWND lifecycle,
 limits, resize/maximize, native/custom frame geometry and owned/modal relationships
 without claiming composed pixels. Native-DPI geometry uses the current monitor;
 this does not certify cross-monitor/fractional-DPI desktop pixels or a hardware

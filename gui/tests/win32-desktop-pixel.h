@@ -5,8 +5,12 @@
 extern "C" {
 #endif
 typedef struct PuTestDesktopCapture PuTestDesktopCapture;
+static inline int pu_test_desktop_frame_fresh(long long present, unsigned accumulated, long long fence)
+{ return present > 0 && accumulated > 0 && present >= fence; }
 PuTestDesktopCapture *pu_test_desktop_capture_create(HWND fixture);
-int pu_test_desktop_capture_refresh(PuTestDesktopCapture *capture);
+/* 1 = desktop image presented after the fence, 2 = pending (no fresh image),
+ * 0 = failure. Pointer-only notifications are never sampled as desktop pixels. */
+int pu_test_desktop_capture_refresh(PuTestDesktopCapture *capture, long long present_after);
 /* Caller verifies fixture ownership. Only this one pixel is copied to CPU memory. */
 int pu_test_desktop_pixel(PuTestDesktopCapture *capture, int x, int y, COLORREF *color);
 void pu_test_desktop_capture_destroy(PuTestDesktopCapture *capture);

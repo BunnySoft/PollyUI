@@ -71,6 +71,8 @@ if (BUILD_TESTING)
         add_executable(pollyui-win32-transparency-test tests/win32-transparency.c tests/win32-desktop-pixel.cpp)
         target_include_directories(pollyui-win32-transparency-test PRIVATE src)
         target_link_libraries(pollyui-win32-transparency-test PRIVATE pollyui-engine)
+        add_test(NAME gui-win32-desktop-frame-contract COMMAND pollyui-win32-transparency-test --capture-contract)
+        set_tests_properties(gui-win32-desktop-frame-contract PROPERTIES TIMEOUT 10)
         foreach(policy IN ITEMS auto raster)
             add_test(NAME gui-win32-transparency-${policy} COMMAND pollyui-win32-transparency-test
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")

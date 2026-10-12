@@ -13,6 +13,7 @@ struct PuTestDesktopCapture {
     ComPtr<ID3D11Texture2D> frame, pixel;
     DXGI_OUTPUT_DESC output = {};
     bool acquired = false;
+    unsigned pixels_read = 0;
 };
 static bool check(HRESULT hr, const char *operation, bool capture_permission = false)
 {
@@ -69,7 +70,7 @@ extern "C" PuTestDesktopCapture *pu_test_desktop_capture_create(HWND fixture)
         c->output.DesktopCoordinates.right, c->output.DesktopCoordinates.bottom);
     return c;
 }
-extern "C" int pu_test_desktop_capture_refresh(PuTestDesktopCapture *c)
+extern "C" int pu_test_desktop_capture_refresh(PuTestDesktopCapture *c, long long present_after)
 {
     if (!c) return 0;
     if (c->acquired) {
@@ -79,9 +80,36 @@ extern "C" int pu_test_desktop_capture_refresh(PuTestDesktopCapture *c)
     }
     DXGI_OUTDUPL_FRAME_INFO info = {};
     ComPtr<IDXGIResource> resource;
-    if (!check(c->duplication->AcquireNextFrame(500, &info, &resource), "acquire composed frame", true)) return 0;
+    HRESULT acquired = c->duplication->AcquireNextFrame(0, &info, &resource);
+    if (acquired == DXGI_ERROR_WAIT_TIMEOUT) return 2;
+    if (!check(acquired, "acquire composed frame", true)) return 0;
     c->acquired = true;
-    return check(resource.As(&c->frame), "composed texture") ? 1 : 0;
+    if (!pu_test_desktop_frame_fresh(info.LastPresentTime.QuadPart, info.AccumulatedFrames, present_after)) {
+        std::printf("CAPTURE: pending desktop image present-qpc=%lld fence=%lld "
+            "mouse-qpc=%lld accumulated=%u (not sampled)\n", info.LastPresentTime.QuadPart,
+            present_after, info.LastMouseUpdateTime.QuadPart, info.AccumulatedFrames);
+        return 2;
+    }
+    if (!check(resource.As(&c->frame), "composed texture")) return 0;
+    D3D11_TEXTURE2D_DESC desc;
+    c->frame->GetDesc(&desc);
+    LARGE_INTEGER now, frequency;
+    QueryPerformanceCounter(&now); QueryPerformanceFrequency(&frequency);
+    std::printf("CAPTURE: present-qpc=%lld fence=%lld mouse-qpc=%lld now-qpc=%lld frequency=%lld "
+        "accumulated=%u protected=%d coalesced=%d texture=%ux%u format=%u mips=%u array=%u "
+        "samples=%u/%u usage=%u bind=%u cpu=%u misc=%u\n",
+        info.LastPresentTime.QuadPart, present_after, info.LastMouseUpdateTime.QuadPart,
+        now.QuadPart, frequency.QuadPart,
+        info.AccumulatedFrames, info.ProtectedContentMaskedOut, info.RectsCoalesced,
+        desc.Width, desc.Height, static_cast<unsigned>(desc.Format), desc.MipLevels, desc.ArraySize,
+        desc.SampleDesc.Count, desc.SampleDesc.Quality, static_cast<unsigned>(desc.Usage),
+        desc.BindFlags, desc.CPUAccessFlags, desc.MiscFlags);
+    if (desc.Format != DXGI_FORMAT_B8G8R8A8_UNORM || desc.SampleDesc.Count != 1 ||
+        desc.SampleDesc.Quality != 0 || !desc.MipLevels || !desc.ArraySize) {
+        std::fprintf(stderr, "FAIL unexpected desktop texture format or subresource layout\n");
+        return 0;
+    }
+    return check(c->device->GetDeviceRemovedReason(), "capture device status") ? 1 : 0;
 }
 extern "C" int pu_test_desktop_pixel(PuTestDesktopCapture *c, int x, int y, COLORREF *color)
 {
@@ -95,10 +123,18 @@ extern "C" int pu_test_desktop_pixel(PuTestDesktopCapture *c, int x, int y, COLO
     c->context->CopySubresourceRegion(c->pixel.Get(), 0, 0, 0, 0, c->frame.Get(), 0, &box);
     D3D11_MAPPED_SUBRESOURCE mapped;
     if (!check(c->context->Map(c->pixel.Get(), 0, D3D11_MAP_READ, 0, &mapped), "read fixture pixel")) return 0;
+    if (!mapped.pData || mapped.RowPitch < 4) {
+        std::fprintf(stderr, "FAIL invalid one-pixel mapped data layout\n");
+        c->context->Unmap(c->pixel.Get(), 0);
+        return 0;
+    }
     const auto *bgra = static_cast<const unsigned char *>(mapped.pData);
+    if (c->pixels_read++ < 8)
+        std::printf("CAPTURE: crop=%d,%d 1x1 mapped-pitch=%u BGRA=%02x,%02x,%02x,%02x\n",
+            x, y, mapped.RowPitch, bgra[0], bgra[1], bgra[2], bgra[3]);
     *color = RGB(bgra[2], bgra[1], bgra[0]);
     c->context->Unmap(c->pixel.Get(), 0);
-    return 1;
+    return check(c->device->GetDeviceRemovedReason(), "capture copy status") ? 1 : 0;
 }
 extern "C" void pu_test_desktop_capture_destroy(PuTestDesktopCapture *c)
 {
