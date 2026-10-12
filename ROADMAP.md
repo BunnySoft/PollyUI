@@ -147,7 +147,12 @@ input, document-paint, desktop-integration and lock regressions. Original child
 source/artifact hashes were verified without rewriting receipts.
 
 Popups are ungrabbed: explicit popup grabs are unsupported, and Wayland
-outside-click dismissal is not promised. The focused child ASan/UBSan run
+outside-click dismissal is not promised. On 2026-10-13 the user retained
+Web-style window-local menu/dialog controls and declined the proposed native
+popup grab and automatic control-to-window wiring. Those optional mechanisms
+are not current missing-work gates; existing native modal/popup APIs and Shell
+surface roles remain unchanged. See [the presentation decision](./DESIGN.md#55-window-local-menus-and-dialogs).
+The focused child ASan/UBSan run
 disabled leak detection and did not instrument prebuilt dependencies.
 Physical GPU, Windows ANGLE, macOS and X11 runtime qualification remain outside
 this increment.

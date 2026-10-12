@@ -472,6 +472,19 @@ custom icons and Shell/protected-layer drag origins are outside the first
 increment. Adding the common interface does not authorize those features or
 start the deferred Windows implementation.
 
+### 5.5 Window-local menus and dialogs
+
+On 2026-10-13 the user chose to retain Web-style window-local DOM/overlay
+presentation for menu, Popover and dialog controls. Existing `NModal`,
+`NDropdown` and `NOverlayHost` do not automatically create additional OS
+windows. Their UI interaction policy remains in JS.
+
+The native owned/modal/popup APIs remain available for explicitly requested
+application windows. Native popup grab and automatic menu/dialog-to-window
+wiring were declined for this round; they are not required completion gates
+or implicitly authorized follow-up work. Existing Shell surface roles are
+unchanged. This decision does not remove the implemented native window APIs.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
