@@ -3,26 +3,30 @@ import { validateAudioPreferences, readAudioPreferences } from './desktop/shell/
 import { validateDisplayProfile, readDisplayProfile } from './desktop/shell/display-profiles.mjs';
 import { validateWorkspacePreferences, readWorkspacePreferences } from './desktop/shell/workspaces.mjs';
 import { validateShortcuts } from './desktop/shell/shortcuts.mjs';
+import { validateDesktopShortcuts } from './desktop/shell/desktop-shortcuts.mjs';
 
 export const SHELL_CONFIGURATION_FILE = 'shell-preferences.json';
 export function defaultShellConfiguration() {
-  return { version: 1, theme: { id: null, filesEnabled: true },
-    audio: null, display: null, workspace: null, shortcuts: null };
+  return { version: 2, theme: { id: null, filesEnabled: true },
+    audio: null, display: null, workspace: null, shortcuts: null,
+    desktop: { version: 1, shortcuts: [] } };
 }
 function keys(value, expected) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).sort().join(',') === expected;
 }
 export function validateShellConfiguration(value) {
-  if (!keys(value, 'audio,display,shortcuts,theme,version,workspace') || value.version !== 1 ||
+  const legacy = value?.version === 1 && keys(value, 'audio,display,shortcuts,theme,version,workspace');
+  if ((!legacy && (!keys(value, 'audio,desktop,display,shortcuts,theme,version,workspace') || value.version !== 2)) ||
       !keys(value.theme, 'filesEnabled,id') || typeof value.theme.filesEnabled !== 'boolean' ||
       (value.theme.id !== null && (typeof value.theme.id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.theme.id))))
     throw new TypeError('Invalid or unsupported Shell configuration schema');
-  return { version: 1, theme: { ...value.theme },
+  return { version: 2, theme: { ...value.theme },
     audio: value.audio === null ? null : validateAudioPreferences(value.audio),
     display: value.display === null ? null : validateDisplayProfile(value.display),
     workspace: value.workspace === null ? null : validateWorkspacePreferences(value.workspace),
-    shortcuts: value.shortcuts === null ? null : validateShortcuts(value.shortcuts) };
+    shortcuts: value.shortcuts === null ? null : validateShortcuts(value.shortcuts),
+    desktop: legacy ? { version: 1, shortcuts: [] } : validateDesktopShortcuts(value.desktop) };
 }
 function freeze(value) {
   if (value && typeof value === 'object') {
@@ -84,7 +88,12 @@ export function createShellConfiguration(files, readLegacy) {
   try {
     const bytes = files.read();
     if (bytes === null) publish(migrateShellConfiguration(readLegacy()), true);
-    else current = snapshot(JSON.parse(decodeUtf8(bytes)));
+    else {
+      const parsed = JSON.parse(decodeUtf8(bytes));
+      const migrated = snapshot(parsed);
+      if (parsed.version === 1) publish(migrated);
+      else current = migrated;
+    }
   } catch (error) {
     try { files.close(); }
     catch (cleanup) {

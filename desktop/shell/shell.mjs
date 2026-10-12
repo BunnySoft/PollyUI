@@ -2,7 +2,7 @@ import { render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
-import { wallpaper, panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView, button } from './desktop/shell/views.mjs';
+import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, shortcutsView, switcherView, displaysView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
 import { saveShortcuts, shortcutFromEvent } from './desktop/shell/shortcuts.mjs';
 import { readDisplayDraft } from './desktop/shell/displays.mjs';
@@ -18,6 +18,9 @@ import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID, SETTINGS_PAGES, systemSettingsView, unavailableSettingsView } from './desktop/shell/settings.mjs';
 import { MANAGED_PAGES, settingsPage, runtimeBuild } from './desktop/client/settings-contract.mjs';
+import { outputIdentity, outputKey, desktopOutputIdentity, desktopArea, layoutDesktop, gridPoint } from './desktop/shell/desktop-shortcuts.mjs';
+import { createDesktopInteraction, bindDesktopInteraction } from './desktop/shell/desktop-interactions.mjs';
+import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
@@ -83,6 +86,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
   };
   const launcher = native ? createApplicationLauncher(native, report) : null;
   let applicationLaunchScope = {};
+  let desktopStatus = '';
+  let lastCatalogPoll = 0;
+  let iconResources = null, iconLoading = false, iconLoadError = null, iconScope = {};
+  const desktopImages = new Map(), desktopImageErrors = new Map();
   const notifications = createNotificationSurfaces({ host, native, theme: () => getDesktopTheme(themeId), report,
     changed: () => { for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId)); } });
   const tray = createTray({ native, report, host, theme: () => getDesktopTheme(themeId),
@@ -150,6 +157,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function releaseSurface(surface) {
+    surface.desktopBinding?.stop();
+    surface.desktopBinding = null;
     for (const remove of surface.listeners.splice(0)) remove();
     surface.window.document.activeElement?.blur();
     surface.displayInputs?.clear();
@@ -208,12 +217,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
       // Only these owned documents deliver this event; foreign application presses need a native popup API.
       if (!menuOpener(surface, event)) closeMenu();
     });
-    if (kind === 'wallpaper') listen(surface, 'contextmenu', event => {
-      if (!running || surface.expectedClose || nativeWindow.closed ||
-          bundles.get(output.id)?.surfaces.wallpaper !== surface) return;
-      event.preventDefault();
-      showSystemSettings(output.id);
-    });
+    if (kind === 'wallpaper') {
+      nativeWindow.document.body.tabIndex = 0;
+      surface.desktopController = createDesktopInteraction({
+        changed: () => {
+          const bundle = bundles.get(surface.output);
+          if (running && bundle?.surfaces.wallpaper === surface && !nativeWindow.closed) paintDesktop(bundle);
+        },
+        save: items => saveDesktopPositions(surface.output, items),
+        launch: id => launchApplication(id, surface.output),
+        context: () => openMenu(surface.output, 'desktop'),
+        failure: desktopFailure,
+      });
+      surface.desktopBinding = bindDesktopInteraction(nativeWindow.document.body, surface.desktopController, desktopFailure);
+    }
     nativeWindow.onclose = () => {
       releaseMenu(surface);
       releaseSurface(surface);
@@ -249,7 +266,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const layout = theme.layout;
     const result = {
       wallpaper: { layer: 'background', width: 0, height: 0,
-        anchors: ['top', 'bottom', 'left', 'right'], exclusiveZone: -1 },
+        anchors: ['top', 'bottom', 'left', 'right'], exclusiveZone: -1, keyboard: 'on-demand' },
       panel: { layer: 'top', width: 0, height: dock ? layout.menuBarHeight : theme.panel.height,
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height },
     };
@@ -262,6 +279,167 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return result;
   }
 
+  function desktopCatalog() {
+    return [{ id: SETTINGS_APPLICATION_ID, name: 'Settings', genericName: 'System settings',
+      comment: 'Appearance, displays, Wi-Fi, audio and keyboard', keywords: ['preferences', 'desktop'] },
+    ...applications.filter(entry => entry.id !== SETTINGS_APPLICATION_ID)];
+  }
+
+  function shortcutsFor(bundle) {
+    const connected = new Set([...bundles.values()].filter(item => item.identity).map(item => outputKey(item.identity)));
+    const first = bundles.values().next().value;
+    return configuration.snapshot.desktop.shortcuts.filter(item =>
+      (bundle.identity && outputKey(item.output) === outputKey(bundle.identity)) ||
+      (!connected.has(outputKey(item.output)) && bundle === first));
+  }
+
+  function areaFor(bundle) {
+    const theme = getDesktopTheme(themeId), body = bundle.surfaces.wallpaper.window.document.body;
+    return desktopArea(body.offsetWidth || bundle.output.width, body.offsetHeight || bundle.output.height,
+      theme.panel.kind === 'dock' ? theme.layout.menuBarHeight : 0,
+      theme.panel.height + (theme.panel.kind === 'dock' ? theme.panel.inset : 0));
+  }
+
+  function paintDesktop(bundle, theme = getDesktopTheme(themeId)) {
+    const surface = bundle.surfaces.wallpaper;
+    if (surface.window.closed) return;
+    const area = areaFor(bundle), shortcuts = shortcutsFor(bundle), items = layoutDesktop(shortcuts, area);
+    surface.desktopController.update(items, area);
+    const overflow = shortcuts.length - items.length;
+    const displaced = shortcuts.some(item => !bundle.identity || outputKey(item.output) !== outputKey(bundle.identity));
+    syncDesktopIcons();
+    const imageError = items.map(item => desktopImageErrors.get(item.id)?.message).find(Boolean);
+    const message = desktopStatus || (errorKind === 'application' ? error : '') || imageError ||
+      (overflow ? overflow + ' shortcut(s) do not fit. Right-click to manage them or enlarge this output.' :
+        displaced ? 'Disconnected display shortcuts are shown here temporarily. Move to save their new display.' : '');
+    render(desktopView(theme, themeAsset, surface.desktopController.state, desktopCatalog(), message, desktopImages),
+      surface.window.document.body);
+  }
+
+  function syncDesktopIcons() {
+    const ids = new Set(configuration.snapshot.desktop.shortcuts.map(item => item.id));
+    const entries = applications.filter(entry => ids.has(entry.id) && entry.icon &&
+      (entry.id.startsWith('bundle:') || entry.icon.startsWith('/')));
+    if (!iconResources && entries.length && !iconLoading) {
+      iconLoading = true;
+      const scope = iconScope;
+      import('./desktop/shell/desktop-icon-resources.mjs').then(module => {
+        if (!running || scope !== iconScope) return;
+        if (typeof globalThis.createBitmap !== 'function') throw new Error('GUI bitmap decoding is unavailable');
+        iconResources = module.createDesktopIconResources(globalThis.createBitmap);
+        iconLoading = false;
+        for (const bundle of bundles.values()) paintDesktop(bundle);
+      }).catch(failure => {
+        if (!running || scope !== iconScope) return;
+        iconLoadError = failure;
+        for (const entry of entries) iconFailure(entry, failure);
+        // Do not retry a failed module import on every Shell repaint.
+        for (const bundle of bundles.values()) paintDesktop(bundle);
+      });
+    }
+    if (!iconResources) {
+      if (iconLoadError) for (const entry of entries)
+        if (desktopImageErrors.get(entry.id)?.path !== entry.icon) iconFailure(entry, iconLoadError);
+      return;
+    }
+    iconResources.retain(entries);
+    for (const id of [...desktopImages.keys()]) if (!entries.some(entry => entry.id === id)) desktopImages.delete(id);
+    for (const id of [...desktopImageErrors.keys()]) if (!entries.some(entry => entry.id === id)) desktopImageErrors.delete(id);
+    for (const entry of entries) {
+      if (desktopImageErrors.get(entry.id)?.path === entry.icon) continue;
+      try { desktopImages.set(entry.id, iconResources.load(entry)); desktopImageErrors.delete(entry.id); }
+      catch (failure) { desktopImages.delete(entry.id); iconFailure(entry, failure); }
+    }
+  }
+
+  function iconFailure(entry, failure) {
+    const message = 'Cannot load ' + entry.name + ' icon; using original fallback artwork. ' + String(failure);
+    desktopImageErrors.set(entry.id, { path: entry.icon, message });
+    report('[shell] ' + message);
+  }
+
+  function cancelDesktopInteractions() {
+    for (const bundle of bundles.values()) bundle.surfaces.wallpaper.desktopBinding?.cancel();
+  }
+
+  function desktopFailure(failure) {
+    desktopStatus = (failure.committed ? 'Desktop shortcuts published, but durability confirmation failed: ' :
+      'Desktop shortcut change did not complete: ') + String(failure);
+    report('[shell] ' + desktopStatus);
+    for (const bundle of bundles.values()) paintDesktop(bundle);
+    repaintMenu();
+  }
+
+  function publishDesktop(shortcuts) {
+    configuration.update({ desktop: { version: 1, shortcuts } });
+    desktopStatus = '';
+  }
+
+  function desktopChange(action) {
+    cancelDesktopInteractions();
+    try { action(); }
+    catch (failure) { desktopFailure(failure); return false; }
+    for (const bundle of bundles.values()) paintDesktop(bundle);
+    repaintMenu();
+    return true;
+  }
+
+  function saveDesktopPositions(outputId, items) {
+    const bundle = bundles.get(outputId);
+    if (!bundle?.identity) throw new Error('This output has no stable identity; positions cannot be saved');
+    const positions = new Map(items.map(item => [item.id, item]));
+    publishDesktop(configuration.snapshot.desktop.shortcuts.map(item => positions.has(item.id) ?
+      { ...item, output: bundle.identity, x: positions.get(item.id).x, y: positions.get(item.id).y } : item));
+  }
+
+  function addDesktopShortcut(outputId, id) {
+    if (!running) throw new Error('Shell is not running');
+    return desktopChange(() => {
+      if (configuration.snapshot.desktop.shortcuts.some(item => item.id === id)) return;
+      if (id !== SETTINGS_APPLICATION_ID) {
+        if (!launcher) throw new Error('Application discovery requires --desktop');
+        applications = launcher.refresh();
+      }
+      const entry = desktopCatalog().find(entry => entry.id === id);
+      if (!entry || entry.unavailable) throw new Error(entry?.unavailable || 'Application is no longer available');
+      const bundle = bundles.get(outputId);
+      if (!bundle?.identity) throw new Error('This output has no stable identity; shortcuts cannot be saved');
+      const area = areaFor(bundle), existing = layoutDesktop(shortcutsFor(bundle), area);
+      if (shortcutsFor(bundle).length >= area.rows * area.columns) throw new Error('This desktop grid is full');
+      const occupied = new Set(existing.map(item => item.x + ':' + item.y));
+      let point = null;
+      for (let row = 0; row < area.rows && !point; row++) for (let column = 0; column < area.columns; column++) {
+        const candidate = gridPoint(area, column, row);
+        if (!occupied.has(candidate.x + ':' + candidate.y)) { point = candidate; break; }
+      }
+      if (!point) throw new Error('This desktop grid is full');
+      publishDesktop([...configuration.snapshot.desktop.shortcuts,
+        { id: entry.id, name: entry.name, output: bundle.identity, ...point }]);
+    });
+  }
+
+  function removeDesktopShortcuts(ids) {
+    if (!running) throw new Error('Shell is not running');
+    return desktopChange(() => {
+      const removing = new Set(ids);
+      publishDesktop(configuration.snapshot.desktop.shortcuts.filter(item => !removing.has(item.id)));
+    });
+  }
+
+  function sortDesktopShortcuts(outputId) {
+    if (!running) throw new Error('Shell is not running');
+    return desktopChange(() => {
+      const bundle = bundles.get(outputId);
+      if (!bundle) throw new Error('Desktop output is no longer connected');
+      const area = areaFor(bundle), catalog = new Map(desktopCatalog().map(entry => [entry.id, entry]));
+      const shortcuts = [...shortcutsFor(bundle)].sort((a, b) =>
+        (catalog.get(a.id)?.name || a.name).localeCompare(catalog.get(b.id)?.name || b.name) || a.id.localeCompare(b.id));
+      if (shortcuts.length > area.rows * area.columns) throw new Error('Enlarge this output or remove shortcuts before sorting');
+      const items = shortcuts.map((item, i) => ({ ...item, ...gridPoint(area, i % area.columns, Math.floor(i / area.columns)) }));
+      saveDesktopPositions(outputId, items);
+    });
+  }
+
   function paint(bundle, theme) {
     const { wallpaper: background, panel, dock } = bundle.surfaces;
     const listed = visibleWindows();
@@ -269,7 +447,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const workspaceControl = typeof native?.workspaces === 'function' ? {
       name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
     } : null;
-    if (!background.window.closed) render(wallpaper(theme, 'shell-wallpaper', themeAsset), background.window.document.body);
+    if (!background.window.closed) paintDesktop(bundle, theme);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error || serviceError, () => showSystemSettings(bundle.output.id), listed, toggleWindow,
       id => showWindowActions(bundle.output.id, id), workspaceControl,
@@ -323,7 +501,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
             staged.push(surfaces[kind]);
           }
         }
-        plans.push({ output, surfaces });
+        let identity = null;
+        if (typeof native?.outputConfiguration === 'function') {
+          identity = desktopOutputIdentity(output, native.outputConfiguration().heads);
+        } else if (output.name) identity = outputIdentity(output);
+        plans.push({ output, surfaces, identity });
       }
       if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
         native.configureAppearance(theme);
@@ -361,7 +543,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     themeAsset = asset;
     themeAssetSource = assetSource;
     try {
-      for (const plan of plans) { bundles.set(plan.output.id, plan); paint(plan, theme); }
+      for (const plan of plans) bundles.set(plan.output.id, plan);
+      for (const plan of plans) paint(plan, theme);
     } finally {
       if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
     }
@@ -495,14 +678,30 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return;
     }
     if (current.mode === 'applications') {
-      render(applicationsView(getDesktopTheme(themeId), [{
-        id: SETTINGS_APPLICATION_ID, name: 'Settings', genericName: 'System settings',
-        comment: 'Appearance, displays, Wi-Fi, audio and keyboard', keywords: ['preferences', 'desktop'],
-      }, ...applications.filter(entry => entry.id !== SETTINGS_APPLICATION_ID)], current.query,
+      render(applicationsView(getDesktopTheme(themeId), desktopCatalog(), current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error,
-        typeof native?.beginSessionExit === 'function' ? scoped(() => showLogout(current.output)) : null),
+        typeof native?.beginSessionExit === 'function' ? scoped(() => showLogout(current.output)) : null, {
+          has: id => configuration.snapshot.desktop.shortcuts.some(item => item.id === id),
+          add: scoped(id => addDesktopShortcut(current.output, id)),
+          remove: scoped(id => removeDesktopShortcuts([id])),
+        }),
         current.window.document.body);
+      return;
+    }
+    if (current.mode === 'desktop') {
+      const bundle = bundles.get(current.output);
+      if (!bundle) { closeMenu(); return; }
+      const state = bundle.surfaces.wallpaper.desktopController.state;
+      render(desktopMenuView(getDesktopTheme(themeId), { ...state, shortcuts: shortcutsFor(bundle) },
+        desktopCatalog(), {
+          open: scoped(id => launchApplication(id, current.output)),
+          remove: scoped(() => removeDesktopShortcuts([...state.selected])),
+          removeOne: scoped(id => removeDesktopShortcuts([id])),
+          sort: scoped(() => sortDesktopShortcuts(current.output)),
+          applications: scoped(() => showApplications(current.output)),
+          settings: scoped(() => showSystemSettings(current.output)), close,
+        }, desktopStatus || error), current.window.document.body);
       return;
     }
     render(settingsView(getDesktopTheme(themeId), scoped(selectTheme), close,
@@ -526,6 +725,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       closeMenu(); return null;
     }
     closeMenu();
+    cancelDesktopInteractions();
     const theme = getDesktopTheme(themeId);
     const layout = theme.layout;
     const root = bundle.surfaces.wallpaper.window.document.body;
@@ -773,6 +973,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     settingsPage(page);
     if (!bundles.has(outputId)) throw new RangeError('Unknown shell output');
     closeMenu();
+    cancelDesktopInteractions();
     const open = () => {
       if (!running) throw new Error('Shell stopped before Settings could open');
       if (!settingsBridge) throw settingsStartupError || new Error('Independent Settings service is unavailable');
@@ -1124,11 +1325,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
       applications = launcher.refresh();
       if (errorKind === 'application') { error = ''; errorKind = ''; }
     } catch (failure) {
+      applications = [];
       error = 'Application discovery failed: ' + String(failure);
       errorKind = 'application';
       report('[shell] ' + error);
     }
     repaintMenu();
+    for (const bundle of bundles.values()) paintDesktop(bundle);
   }
 
   function showApplications(outputId) {
@@ -1142,9 +1345,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return openMenu(outputId, 'applications');
   }
 
-  function launchApplication(id) {
+  function launchApplication(id, outputId = menu?.output || host.displays()[0]?.id) {
     if (!running) throw new Error('Application launcher is unavailable');
-    if (id === SETTINGS_APPLICATION_ID) return showSystemSettings(menu?.output || host.displays()[0]?.id);
+    if (id === SETTINGS_APPLICATION_ID) return showSystemSettings(outputId);
     if (!launcher) throw new Error('Application launcher is unavailable');
     const current = menu;
     const scope = applicationLaunchScope;
@@ -1162,6 +1365,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         error = message;
         errorKind = 'application';
         repaintMenu();
+        for (const bundle of bundles.values()) paintDesktop(bundle);
       }
       return null;
     };
@@ -1186,6 +1390,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function showLogout(output) {
     if (!running) throw new Error('Shell is not running');
     closeMenu();
+    cancelDesktopInteractions();
     try { return logout.show(output); }
     catch (failure) {
       error = 'Logout is unavailable; this session is retained. ' + String(failure);
@@ -1199,6 +1404,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function refresh(force = false) {
     if (!running) return;
     const now = Date.now();
+    if (launcher && now - lastCatalogPoll >= 5000) {
+      lastCatalogPoll = now;
+      reloadApplications();
+    }
     if (force || now - lastServicePoll >= 1000) {
       lastServicePoll = now;
       const nextError = serviceMonitor.refresh().message;
@@ -1247,6 +1456,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (running) throw new Error('Shell is already running');
       host.close();
       running = true;
+      if (launcher) reloadApplications();
       sessionExit.start();
       if (native && typeof native.beginSessionExit === 'function') {
         previousSessionExit = native.onSessionExitRequested;
@@ -1284,6 +1494,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     },
     stop() {
       running = false;
+      iconScope = {};
       settingsScope = {};
       settingsBridge?.close(); settingsBridge = null; settingsReady = null;
       applicationLaunchScope = {};
@@ -1321,10 +1532,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
       for (const bundle of bundles.values())
         for (const surface of Object.values(bundle.surfaces)) closeSurface(surface);
       bundles.clear();
+      iconResources?.close(); iconResources = null; iconLoading = false; iconLoadError = null;
+      desktopImages.clear(); desktopImageErrors.clear();
       releaseThemeAsset(themeAsset); themeAsset = ''; themeAssetSource = '';
     },
     selectTheme, reloadThemes, restoreThemes, showSettings, showSystemSettings, showManagedSettings,
-    showApplications, launchApplication, showWindowActions, showWorkspaces, showShortcuts, showDisplays,
+    showApplications, launchApplication, addDesktopShortcut, removeDesktopShortcuts, sortDesktopShortcuts,
+    showWindowActions, showWorkspaces, showShortcuts, showDisplays,
     showNotifications: notifications.show, showNetwork, showAudio, showPower, showLogout, refresh,
     sessionExit,
     getSettingsState: () => settingsBridge?.getState() || { pid: 0, connected: false, error: String(settingsStartupError || '') },

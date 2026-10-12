@@ -20,6 +20,8 @@ export const requiredRuntimeFiles = [
     'desktop/launcher/services.mjs', 'desktop/client/settings.mjs', 'desktop/client/settings-contract.mjs',
     'desktop/shared/settings-environment.mjs', 'desktop/shared/file-system.mjs',
     'desktop/shared/native-files.mjs', 'desktop/shared/theme-resources.mjs',
+    'desktop/shell/desktop-shortcuts.mjs', 'desktop/shell/desktop-interactions.mjs',
+    'desktop/shell/desktop-view.mjs', 'desktop/shell/desktop-icon-resources.mjs',
     'desktop/apps/settings/main.mjs', 'desktop/apps/settings/runtime.mjs',
     'desktop/apps/settings/app.mjs', 'desktop/apps/settings/logic/controller.mjs',
     'sysrt/sdk/js/native.mjs', 'sysrt/sdk/js/memory.mjs', 'sysrt/sdk/js/encoding.mjs',

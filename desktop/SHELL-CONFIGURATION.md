@@ -1,4 +1,4 @@
-# Shell configuration v1
+# Shell configuration v2
 
 Shell is the sole writer of `application.configDir/shell-preferences.json`.
 Independent Settings requests changes through the existing authenticated IPC;
@@ -6,14 +6,41 @@ it never receives a configuration handle. Linux Shell composition passes
 `--no-legacy-storage`; ordinary applications, protected roles, headless tests
 and Windows retain their existing localStorage composition by default.
 
-The JSON object has exactly `version: 1`, `theme: { id, filesEnabled }`,
-`audio`, `display`, `workspace`, and `shortcuts`. A null theme ID selects the
+The JSON object has exactly `version: 2`, `theme: { id, filesEnabled }`,
+`audio`, `display`, `workspace`, `shortcuts`, and `desktop`. A null theme ID selects the
 packaged default; `filesEnabled` defaults to true. Null preference sections
 mean no saved profile. Non-null audio/display/workspace sections retain their
 existing v1 domain schemas and validation limits; shortcuts store only
 action/modifiers/key, not labels or live handles. Unknown fields/versions and
 invalid values fail explicitly. All updates validate the complete next object.
 Snapshots are deeply frozen and published only after file publication.
+
+`desktop` is `{ version: 1, shortcuts: [...] }`, initially empty. Each of at most
+128 shortcuts is `{ id, name, output: { name, make, model, serialNumber }, x, y }`.
+The ID is the catalog desktop-entry or `bundle:` ID, never a command; `name` is
+only a bounded display snapshot for unavailable entries. Names are refreshed
+from the catalog, and launching rechecks availability. IDs are unique globally;
+coordinates are nonnegative integer logical output pixels, at most 32768.
+Unknown fields and malformed output identities fail rather than dropping pins.
+
+Existing v1 JSON is validated, upgraded once by the same atomic writer, and
+preserves every original domain. It does not reread legacy localStorage.
+An upgrade write failure is explicit, retains the uncommitted v1 file, and
+does not create a success-shaped in-memory configuration. A post-rename
+durability failure retains the published v2 file and reports uncertain durability.
+Older binaries do not read v2; downgrading the Shell requires a separate,
+explicit configuration compatibility decision.
+
+Layouts match output-management connector/make/model/serial tuples. SDL display
+IDs are not output-management head IDs: the Shell associates them by the
+advertised name/description, using logical placement to disambiguate duplicates.
+Ambiguous or unavailable identities cannot save placement. An empty serial
+uses the available connector tuple, not a fabricated hardware identity; connector
+renames or hardware identity changes are treated as disconnected layouts.
+Pins for disconnected displays appear temporarily on the first surviving
+output without changing their saved home. A completed move or sort explicitly
+saves the new output and logical positions. Work-area/DPI reflow never silently
+deletes pins or overwrites their saved large-display layout.
 
 Only when the JSON file is absent, Shell reads its own
 `application.dataDir/localstorage.dat` once, strictly parses PUST1 byte lengths

@@ -20,7 +20,7 @@ test('typed configuration defaults, complete validation, immutable copy, restart
   assert.equal(store.snapshot.workspace.names[0], '\u8d44\u6599');
   assert.throws(() => store.snapshot.workspace.names.push('bad'));
   const saved = bytes.slice();
-  for (const value of [{ surprise: true }, { version: 2 }, { audio: { version: 99 } },
+  for (const value of [{ surprise: true }, { version: 99 }, { audio: { version: 99 } },
     { theme: { id: 'xp', filesEnabled: 'yes' } }, { workspace: undefined }])
     assert.throws(() => store.update(value));
   assert.deepEqual(bytes, saved);

@@ -24,6 +24,83 @@ Displays, Network, Audio, Keyboard and About together using the existing native
 controllers. Unavailable services remain explicit; closing Settings does not
 stop the desktop, audio policy or independent applications.
 
+## Desktop application shortcuts
+
+The desktop starts empty. Open **Polly > Applications** and choose **Add to
+desktop** beside an available application. Adding the same catalog ID again is
+idempotent, including across outputs. **Remove shortcut** in Applications or
+**Remove selected shortcuts** in the desktop context menu only removes the
+shortcut; it never uninstalls an app or touches an application's files.
+Right-clicking the wallpaper still offers **System Settings**, alongside
+**Add from Applications** and **Sort by name and align to grid**.
+
+Click an icon to select it; double-click or Enter opens it through the existing
+catalog launcher. Ctrl-click toggles a shortcut; Shift-click selects a range in
+stable row-major grid order, and Ctrl+Shift adds that range. Drag the left button
+on empty wallpaper to draw a translucent bounding-box marquee; Ctrl-marquee
+toggles hits and Shift-marquee adds hits. Empty unmodified clicks clear selection.
+Ctrl+A selects visible shortcuts on that output. Arrow keys/Home/End move focus,
+Shift extends a range, Ctrl moves focus without changing selection, and Space
+selects/toggles the focused icon. Enter opens only the focused selected shortcut,
+not every selected application. Context Menu or Shift+F10 opens shortcut actions.
+Escape cancels a held interaction and restores its original selection/positions,
+or clears idle selection.
+
+Drag a selected icon to move the selected group, preserving relative positions
+on a collision-free 96-by-104 logical-pixel grid. Movement starts at the same
+four-logical-pixel axis threshold as GUI clicks. Placement is saved only on a
+real release; capture/focus loss, session lock, output retirement, opening a
+Shell menu and shutdown cancel the held interaction. Pre-publication save failure
+restores the previous layout and shows an error; published-but-not-confirmed
+durability is reported without pretending rollback. Shell clock/status repaints
+retain the document's selection, focus and active capture.
+
+Icons live on each existing **background** surface, not a fullscreen overlay.
+Background keyboard focus is on-demand and does not intercept covered apps or
+the session lock. The shortcuts are shared across the manually synchronized
+workspaces, while selection/capture belong to one output document. Dragging is
+output-local, not a simulated global/cross-output capture. DPI, panel/Dock
+reservations and small outputs constrain placement; excess shortcuts remain
+saved and can be removed from the context menu's complete list. Disconnected
+display pins temporarily appear on a surviving output and retain their original
+home until moved/sorted.
+
+Managed bundles with registered PNG/JPEG `manifest.icon` resources, and
+desktop entries with an absolute PNG/JPEG `Icon` path, use the existing bounded
+native Bitmap decoder. Their decoded artwork is released on
+unpin, catalog object change or Shell shutdown; loading errors explicitly show
+that original fallback artwork is being used. Desktop-entry icon names do not
+yet have a freedesktop icon-theme resolver. Settings/folder/general application
+fallbacks reuse Polly's original rectangle/line artwork, not downloaded or
+platform-owned icons. Uninstalled/unavailable apps retain an explicitly labelled
+shortcut and cannot launch a stale command. Labels use current catalog names;
+the saved label is only a snapshot for a missing entry.
+
+The [v2 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
+theme/audio/display/workspace/keyboard preferences and atomically migrates v1.
+This feature is PollyOS Shell behavior, not Windows Explorer/macOS replacement,
+a desktop filesystem, cross-app drag-and-drop, animation, or an accessibility
+system bridge. The icon list exposes option/multiselect semantics and roving
+focus within the existing native DOM.
+
+Direct fixtures:
+
+```powershell
+node --test desktop\tests\desktop-shortcuts.mjs desktop\tests\configuration.mjs desktop\tests\menu-host.mjs
+```
+
+On a private ordinary-user Linux fixture, run
+`sh desktop/tests/desktop-shortcuts-native.sh DRIVER POLLYUI LOCK_FIXTURE EVIDENCE_DIR`
+with the existing `pollyui-layer-client-test`, production `pollyui`, and
+`polly-lock-test-client` binaries. It uses two headless PollyWM outputs, actual
+seat pointer/keyboard events, dedicated spawned fixture apps and session-lock
+protocol input isolation; it is not a hardware/DPI/Windows qualification matrix.
+The runner also checks hover/selection pixels, numeric marquee blending,
+simultaneous 1.25/1.5 logical-output scaling, shortcut removal and process reload,
+and uses original managed-catalog bitmap fixtures to verify pin/unpin/replacement
+and teardown ownership. The catalog artwork fixture is not an application
+installation or managed-registry integrity qualification.
+
 The user reported successful first-target physical validation of Alpine alpha.4
 on 2026-10-06; this is not a comprehensive hardware matrix or independent
 per-GPU acceleration measurement. The next base is **Debian 13 trixie amd64,

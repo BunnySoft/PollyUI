@@ -248,7 +248,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
     theme.colors.muted, 12));
 }
 
-export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null) {
+export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
@@ -280,9 +280,13 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
           padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
         } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
           label(entry.unavailable, theme.colors.muted, 10))
-      : desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
+      : h('view', { style: { ...row, gap: 6, flexShrink: 0 } },
+        desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
           { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
-            quiet: true, style: { height: 54, paddingLeft: 16 } })),
+            quiet: true, style: { height: 54, paddingLeft: 16, flexGrow: 1, flexBasis: 0, minWidth: 0 } }),
+        desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
+          theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
+          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null)),
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },

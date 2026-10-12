@@ -61,7 +61,11 @@ try {
     validateRuntimeContract(candidate, provenance, pins, inventory);
   check();
   assert.throws(() => check({ files }), /legacy packages/);
-  for (const name of ['usr/share/pollyui/sysrt/sdk/js/files.mjs', 'usr/bin/polly-settings', jsonName,
+  for (const name of ['usr/share/pollyui/sysrt/sdk/js/files.mjs', 'usr/bin/polly-settings',
+    'usr/share/pollyui/desktop/shell/desktop-shortcuts.mjs',
+    'usr/share/pollyui/desktop/shell/desktop-interactions.mjs',
+    'usr/share/pollyui/desktop/shell/desktop-view.mjs',
+    'usr/share/pollyui/desktop/shell/desktop-icon-resources.mjs', jsonName,
     'usr/share/icons/PollyRabbit/cursors/motion', 'usr/share/icons/PollyClassic/cursors/text']) {
     assert.throws(() => check({ ...manifest, files: files.filter(file => file.path !== name) }), /missing or changed/);
   }

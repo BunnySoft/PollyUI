@@ -5,6 +5,7 @@
 #include "data-device.h"
 #include "input-method.h"
 #include "shortcut-control.h"
+#include "session-lock.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -736,6 +737,111 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            char desktop_action[16], desktop_target[96];
+            int desktop_x, desktop_y;
+            if (sscanf(name, "fixture-desktop-pointer %15s %d %d %95s",
+                    desktop_action, &desktop_x, &desktop_y, desktop_target) == 4) {
+                struct wlr_scene_tree *tree = NULL;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->presented && layer->surface->surface->mapped &&
+                        !strcmp(layer->surface->namespace, desktop_target)) { tree = layer->tree; break; }
+                if (!tree) {
+                    struct PuDesktopView *view;
+                    wl_list_for_each(view, &desktop.views, link)
+                        if (view->mapped && !view->geometry_pending && view->toplevel->title &&
+                            !strcmp(view->toplevel->title, desktop_target)) { tree = view->tree; break; }
+                }
+                if (!tree) continue;
+                int sx, sy;
+                CHECK(wlr_scene_node_coords(&tree->node, &sx, &sy));
+                move_pointer(sx + desktop_x, sy + desktop_y);
+                if (!strcmp(desktop_action, "wheel")) {
+                    struct wlr_pointer_axis_event event = { .pointer = &pointer, .time_msec = 100000,
+                        .source = WL_POINTER_AXIS_SOURCE_WHEEL, .orientation = WL_POINTER_AXIS_VERTICAL_SCROLL,
+                        .delta = 104, .delta_discrete = 120 };
+                    wl_signal_emit_mutable(&pointer.events.axis, &event);
+                    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+                    wlr_layer_surface_v1_destroy(marker->surface);
+                    continue;
+                }
+                if (strcmp(desktop_action, "move")) {
+                    CHECK(!strcmp(desktop_action, "down") || !strcmp(desktop_action, "up") ||
+                        !strcmp(desktop_action, "click") || !strcmp(desktop_action, "right"));
+                    static uint32_t desktop_time = 100000;
+                    struct wlr_pointer_button_event event = { .pointer = &pointer, .time_msec = ++desktop_time,
+                        .button = !strcmp(desktop_action, "right") ? BTN_RIGHT : BTN_LEFT,
+                        .state = !strcmp(desktop_action, "up") ? WL_POINTER_BUTTON_STATE_RELEASED : WL_POINTER_BUTTON_STATE_PRESSED };
+                    wlr_pointer_notify_button(&pointer, &event);
+                    if (!strcmp(desktop_action, "click") || !strcmp(desktop_action, "right")) {
+                        event.time_msec = ++desktop_time; event.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                        wlr_pointer_notify_button(&pointer, &event);
+                    }
+                    wl_signal_emit_mutable(&pointer.events.frame, NULL);
+                }
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            unsigned desktop_color;
+            if (sscanf(name, "fixture-desktop-pixel %d %d %x %95s",
+                    &desktop_x, &desktop_y, &desktop_color, desktop_target) == 4) {
+                bool found = false;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link) {
+                    struct wlr_surface *surface = layer->surface->surface;
+                    if (strcmp(layer->surface->namespace, desktop_target) || !surface->mapped || !surface->buffer) continue;
+                    void *pixels; uint32_t format, pixel; size_t stride;
+                    struct wlr_buffer *buffer = surface->buffer->source;
+                    int x = desktop_x * buffer->width / surface->current.width;
+                    int y = desktop_y * buffer->height / surface->current.height;
+                    CHECK(x >= 0 && y >= 0 && x < buffer->width && y < buffer->height);
+                    CHECK(wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride));
+                    memcpy(&pixel, (char *)pixels + (size_t)y * stride + (size_t)x * 4, sizeof(pixel));
+                    wlr_buffer_end_data_ptr_access(buffer);
+                    if ((pixel & 0xffffff) != desktop_color) {
+                        fprintf(stderr, "FAIL: desktop native pixel (%d,%d) actual=%06x expected=%06x\n",
+                            desktop_x, desktop_y, pixel & 0xffffff, desktop_color);
+                        CHECK(false);
+                    }
+                    printf("PASS: desktop native buffer pixel %s (%d,%d)=%06x\n",
+                        desktop_target, desktop_x, desktop_y, pixel & 0xffffff);
+                    found = true;
+                }
+                CHECK(found);
+                wlr_layer_surface_v1_destroy(marker->surface); continue;
+            }
+            float desktop_scale;
+            if (sscanf(name, "fixture-desktop-scale %f %95s", &desktop_scale, desktop_target) == 2) {
+                struct wlr_output_layout_output *entry;
+                struct wlr_output *target = NULL;
+                wl_list_for_each(entry, &desktop.layout->outputs, link)
+                    if (!strcmp(entry->output->name, desktop_target)) target = entry->output;
+                CHECK(target && desktop_scale >= 1 && desktop_scale <= 2);
+                struct wlr_output_state state;
+                wlr_output_state_init(&state); wlr_output_state_set_scale(&state, desktop_scale);
+                CHECK(wlr_output_commit_state(target, &state)); wlr_output_state_finish(&state);
+                wlr_layer_surface_v1_destroy(marker->surface); continue;
+            }
+            if (!strcmp(name, "fixture-desktop-lock")) {
+                static bool started_lock;
+                if (!started_lock) {
+                    char *args[] = { getenv("PU_DESKTOP_FIXTURE_LOCK"), "unlock", NULL };
+                    CHECK(args[0] && pu_session_lock_spawn(&desktop, args)); started_lock = true;
+                }
+                if (!pu_session_lock_active(&desktop)) continue;
+                if (!desktop.seat->keyboard_state.focused_surface ||
+                    !pu_session_lock_surface(&desktop, desktop.seat->keyboard_state.focused_surface)) continue;
+                CHECK(!desktop.seat->pointer_state.focused_surface ||
+                    pu_session_lock_surface(&desktop, desktop.seat->pointer_state.focused_surface));
+                puts("PASS: desktop capture test acquired a real trusted session lock");
+                wlr_layer_surface_v1_destroy(marker->surface); continue;
+            }
+            if (!strcmp(name, "fixture-desktop-unlocked")) {
+                if (pu_session_lock_pid(&desktop) || pu_session_lock_active(&desktop)) continue;
+                CHECK(pu_session_lock_client_succeeded(&desktop));
+                puts("PASS: desktop real session lock completed explicit protocol unlock");
+                wlr_layer_surface_v1_destroy(marker->surface); continue;
+            }
             if (!strcmp(name, "fixture-ime-start")) {
                 const char *data = getenv("POLLY_IME_TEST_DATA");
                 CHECK(data && data[0] == '/');

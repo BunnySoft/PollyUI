@@ -81,6 +81,11 @@ class Node {
   }
   setInputMethod() {}
   cancelComposition() {}
+  getBoundingClientRect() {
+    return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight };
+  }
+  setMouseCapture() { this.ownerDocument.captured = this; }
+  releaseMouseCapture() { this.ownerDocument.captured = null; domEvent(this, 'lostmousecapture'); }
 }
 
 function descendants(node) { return [node, ...node.childNodes.flatMap(descendants)]; }
@@ -342,6 +347,8 @@ settingsScenario('taskbar, desktop and searchable application entry share the na
   click(find(f.surface('panel'), 'shell-panel-settings'));
   click(find(f.surface('panel'), 'shell-panel-settings'));
   domEvent(f.surface('wallpaper').document.body, 'contextmenu', { button: 2 });
+  const desktopMenu = f.created.findLast(window => window.document.getElementById('shell-desktop-settings'));
+  click(find(desktopMenu, 'shell-desktop-settings'));
   const applications = f.shell.showApplications(2);
   domEvent(find(applications, 'shell-app-search'), 'textinput', { data: 'Settings' });
   click(find(applications, 'shell-app-org.pollyui.settings'));
@@ -1197,4 +1204,54 @@ scenario('repeated explicit/external closes release each menu only once without 
     assert.equal(f.created.filter(window => !window.closed).length, f.shell.getSurfaces().length);
     assert.equal(f.timers.size, 1);
   }
+});
+
+scenario('desktop application menu adds and removes only shortcuts, preserves Settings routing and all configuration domains', f => {
+  const before = f.saved.snapshot;
+  const menu = f.shell.showApplications(1);
+  click(find(menu, 'shell-app-pin-fixture.desktop'));
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 1);
+  assert.equal(f.shell.addDesktopShortcut(1, 'fixture.desktop'), true);
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 1);
+  const background = f.surface('wallpaper');
+  assert.equal(find(background, 'shell-desktop-icon-fixture.desktop').getAttribute('aria-label'), 'Fixture');
+  f.shell.launchApplication('org.pollyui.settings', 1);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'settings-open'), [['settings-open', 'appearance']]);
+  assert.equal(f.shell.removeDesktopShortcuts(['fixture.desktop']), true);
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 0);
+  for (const key of ['theme', 'audio', 'display', 'workspace', 'shortcuts'])
+    assert.deepEqual(f.saved.snapshot[key], before[key]);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+});
+
+scenario('desktop save failure does not pretend persistence; committed durability error preserves the published shortcut', f => {
+  f.state.configurationFailure = new Error('fixture disk full');
+  assert.equal(f.shell.addDesktopShortcut(1, 'fixture.desktop'), false);
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 0);
+  f.expectedWarnings.push('[shell] Desktop shortcut change did not complete: Error: fixture disk full');
+  f.state.configurationFailure = Object.assign(new Error('fixture durability'), { committed: true });
+  assert.equal(f.shell.addDesktopShortcut(1, 'fixture.desktop'), false);
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 1);
+  f.expectedWarnings.push('[shell] Desktop shortcuts published, but durability confirmation failed: Error: fixture durability');
+  assert.ok(find(f.surface('wallpaper'), 'shell-desktop-status').childNodes.length);
+  f.state.configurationFailure = null;
+  assert.equal(f.shell.removeDesktopShortcuts(['fixture.desktop']), true);
+});
+
+scenario('desktop catalog rename/uninstall stays visible without stale launching; disconnected output pins are retained', f => {
+  assert.equal(f.shell.addDesktopShortcut(1, 'fixture.desktop'), true);
+  f.native.applicationFiles = () => [{ id: 'fixture.desktop', path: '/fixture.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Renamed fixture\nExec=fixture\n' }];
+  f.shell.showApplications(1);
+  assert.equal(find(f.surface('wallpaper'), 'shell-desktop-icon-fixture.desktop').getAttribute('aria-label'), 'Renamed fixture');
+  f.native.applicationFiles = () => [];
+  f.shell.showApplications(1); // Toggle the already-open menu only after catalog refresh.
+  assert.equal(find(f.surface('wallpaper'), 'shell-desktop-icon-fixture.desktop').getAttribute('aria-label'), 'Fixture (unavailable)');
+  assert.equal(f.shell.launchApplication('fixture.desktop'), null);
+  f.expectedWarnings.push('[shell] Could not launch application: Error: Application is no longer available');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  f.state.outputs = [f.state.outputs[1]];
+  f.shell.refresh(true);
+  assert.equal(f.saved.snapshot.desktop.shortcuts.length, 1);
+  assert.ok(find(f.surface('wallpaper', 2), 'shell-desktop-icon-fixture.desktop'));
 });
