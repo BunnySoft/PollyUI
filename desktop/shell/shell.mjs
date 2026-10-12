@@ -224,7 +224,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
           const bundle = bundles.get(surface.output);
           if (running && bundle?.surfaces.wallpaper === surface && !nativeWindow.closed) paintDesktop(bundle);
         },
-        save: items => saveDesktopPositions(surface.output, items),
+        save: (items, selected) => saveDesktopPositions(surface.output, items.filter(item => selected.has(item.id))),
         launch: id => launchApplication(id, surface.output),
         context: () => openMenu(surface.output, 'desktop'),
         failure: desktopFailure,

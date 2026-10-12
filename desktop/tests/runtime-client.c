@@ -829,7 +829,7 @@ static bool window_suite(char *executable, char *script, char *mode)
                     CHECK(args[0] && pu_session_lock_spawn(&desktop, args)); started_lock = true;
                 }
                 if (!pu_session_lock_active(&desktop)) continue;
-                if (!desktop.seat->keyboard_state.focused_surface ||
+                if (desktop.seat->keyboard_state.focused_surface &&
                     !pu_session_lock_surface(&desktop, desktop.seat->keyboard_state.focused_surface)) continue;
                 CHECK(!desktop.seat->pointer_state.focused_surface ||
                     pu_session_lock_surface(&desktop, desktop.seat->pointer_state.focused_surface));

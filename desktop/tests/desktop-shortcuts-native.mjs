@@ -239,6 +239,18 @@ async function run() {
     check(!state(second).held && state(second).rectangle === null, 'output retirement cancels document-owned capture');
     check(shell.configuration.snapshot.desktop.shortcuts.length === 3, 'output removal never silently deletes saved shortcuts');
     check(icon(first, 'org.pollyui.settings'), 'disconnected display shortcut is accessible on surviving output');
+    const savedHome = JSON.stringify(shell.configuration.snapshot.desktop.shortcuts.find(item => item.id === 'org.pollyui.settings'));
+    await clickNode(first, a);
+    dragX = a.offsetLeft + 48; dragY = a.offsetTop + 20;
+    await pointer(first, 'down', dragX, dragY);
+    await pointer(first, 'move', dragX, dragY + 104);
+    await pointer(first, 'up', dragX, dragY + 104);
+    check(JSON.stringify(shell.configuration.snapshot.desktop.shortcuts.find(item => item.id === 'org.pollyui.settings')) === savedHome,
+      'moving another selected icon preserves unselected disconnected shortcut home and saved coordinates');
+    dragX = a.offsetLeft + 48; dragY = a.offsetTop + 20;
+    await pointer(first, 'down', dragX, dragY);
+    await pointer(first, 'move', dragX, dragY - 104);
+    await pointer(first, 'up', dragX, dragY - 104);
   }
   await native('fixture-success');
   shell.stop(); window.quit();

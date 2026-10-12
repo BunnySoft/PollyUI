@@ -101,6 +101,19 @@ test('reverse-direction marquee, repaint retention, output geometry change cance
   assert.equal(c.state.held, false); assert.equal(c.state.rectangle, null);
   assert.deepEqual(ids(c.state.selected), [items[3].id]);
 });
+test('only selected moved IDs are published; snapped no-op and Ctrl-deselected press never move another group', () => {
+  const saves = [];
+  const { controller: c, click } = fixture((items, selected) => saves.push(ids(selected)));
+  click(items[0].id);
+  c.down(items[0].id, 0, 0); c.move(4, 0); c.up(4, 0);
+  assert.equal(saves.length, 0, 'crossing click slop without a grid translation does not save');
+  click(items[1].id, { ctrlKey: true });
+  c.down(items[1].id, 0, 0, { ctrlKey: true }); c.move(0, 104); c.up(0, 104);
+  assert.equal(saves.length, 0, 'deselected drag anchor cannot move a different selected icon');
+  assert.equal(c.state.items[0].y, 16);
+  c.down(items[0].id, 0, 0); c.move(0, 104); c.up(0, 104);
+  assert.deepEqual(saves, [[items[0].id]]);
+});
 test('v1 JSON atomically upgrades once preserving all original domains; failed migration never falls back', () => {
   const { desktop, ...defaults } = defaultShellConfiguration();
   const legacy = { ...defaults, version: 1, theme: { id: 'xp', filesEnabled: false },

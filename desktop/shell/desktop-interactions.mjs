@@ -31,6 +31,7 @@ export function createDesktopInteraction({ changed = () => {}, save = () => {}, 
     if (!held.dragging && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
     held.dragging = true; suppressed = true;
     if (held.id) {
+      if (!selected.has(held.id)) { notify(); return; }
       try { items = moveDesktopGroup(held.items, selected, dx, dy, area); }
       catch (error) { cancel(); failure(error); return; }
     } else {
@@ -75,7 +76,10 @@ export function createDesktopInteraction({ changed = () => {}, save = () => {}, 
       held = null; rectangle = null;
       if (!previous.dragging && previous.collapse) choose(previous.id);
       if (previous.dragging && previous.id) {
-        try { save(items); }
+        const before = new Map(previous.items.map(item => [item.id, item]));
+        const moved = items.some(item => selected.has(item.id) &&
+          (item.x !== before.get(item.id).x || item.y !== before.get(item.id).y));
+        try { if (moved) save(items, new Set(selected)); }
         catch (error) {
           if (!error.committed) items = previous.items;
           failure(error);

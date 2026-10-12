@@ -1255,3 +1255,17 @@ scenario('desktop catalog rename/uninstall stays visible without stale launching
   assert.equal(f.saved.snapshot.desktop.shortcuts.length, 1);
   assert.ok(find(f.surface('wallpaper', 2), 'shell-desktop-icon-fixture.desktop'));
 });
+
+scenario('moving a selected shortcut never rehomes unselected disconnected-display pins', f => {
+  assert.equal(f.shell.addDesktopShortcut(1, 'fixture.desktop'), true);
+  const first = f.saved.snapshot.desktop.shortcuts[0];
+  const disconnected = { ...first, id: 'missing.desktop', name: 'Disconnected fixture',
+    output: { ...first.output, name: 'DP-retired', serialNumber: 'old-display' } };
+  f.saved.update({ desktop: { version: 1, shortcuts: [first, disconnected] } });
+  f.shell.refresh(true);
+  const surface = f.shell.getSurfaces().find(item => item.kind === 'wallpaper' && item.output === 1);
+  const controller = surface.desktopController;
+  controller.down('fixture.desktop', 0, 0); controller.move(0, 104); controller.up(0, 104);
+  assert.equal(f.saved.snapshot.desktop.shortcuts[0].y, first.y + 104);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts.find(item => item.id === disconnected.id), disconnected);
+});
