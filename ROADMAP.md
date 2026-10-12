@@ -104,8 +104,24 @@ active increment to be integrated before writing those files.
 | Outgoing native drag | Integrated `2ef182f` from coherent child commit `c2cb1b0`: common GUI C/JS contract and first Wayland COPY backend; public-interface coexistence requires no SDK changes | Ordinary-window COPY with immutable text/binary payloads, opaque native press credentials, cancellation and UI-thread completion. Dedicated source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
 | Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
 | Native IME extensions | Read-only research completed; explicitly deferred to Beta by the user on 2026-10-12 | No implementation or transport spike in this round. Existing Rime preedit/candidate/commit stays unchanged. Reopening requires a single native input owner or separately authorized SDK extension, accurate Unicode/selection transactions and sensitive-field isolation |
-| Ordinary-window transparency (MT-01) | Wayland milestone integrated in `dd40d03`; Windows native presentation in progress, not delivered | Shared GUI options/rendering semantics with separate per-platform presentation; actual per-pixel native alpha, not whole-window opacity or backdrop blur. One child owns shared Host/render writes |
-| Desktop icons and selection (BD-04/BD-05) | Design and implementation selected; independent Shell workstream | JS App shortcuts, internal arrangement/persistence and captured marquee/multi-selection. No shared Host/render writes, file mutations, uninstall or cross-application Shell dragging |
+| Ordinary-window transparency (MT-01) | Wayland integrated in `dd40d03`; Windows implementation preserved in child `dca78a0`, not integrated pending user-run composed-output acceptance | Windows capture returned `E_ACCESSDENIED`; native-window contracts are not composed-pixel proof. User chose interactive own-fixture verification before deciding integration. Whole MT-01 remains incomplete |
+| Desktop icons and selection (BD-04/BD-05) | Integrated `cbe4000` and `0881e09`, including selected-only layout ownership | JS App shortcuts, internal arrangement/persistence and captured marquee/multi-selection. No shared Host/render writes, file mutations, uninstall or cross-application Shell dragging |
+
+Desktop shortcuts start empty and are added from Polly > Applications. Ctrl/Shift,
+marquee, grid movement, keyboard focus and focused-only Enter use the documented
+Linux/Windows desktop convention. Configuration v2 atomically migrates v1 while
+preserving all existing preference domains; untouched disconnected-display pins
+keep their saved home. Native mainline and relocated installed-runtime flows
+were independently exercised, including input/capture/lock/output retirement,
+actual fixture-app launching, persistence, bitmap ownership and numeric marquee
+blending. Installed product modules matched Git hashes with the source Shell
+directory hidden; test-only harness modules were supplied separately.
+
+The original `native-shell.mjs` synthetic context-menu fixture still fails before
+Shell construction on both the old and new sources because it omits a held
+secondary-button press. That qualification gap is retained, not called a new
+desktop regression or an all-legacy pass. Physical monitor/hotplug matrices,
+Windows desktop replacement and icon-name theme resolution are not qualified.
 
 The [cross-platform drag design](./DESIGN.md#54-cross-platform-native-drag-and-drop)
 separates application payload policy, the shared GUI session/credential/lifetime
@@ -248,7 +264,8 @@ remain preserved separately, never combined to manufacture an acceptance pass.
 
 Recorded at the user's request on 2026-10-12. These are **Beta candidates**,
 not a frozen Beta scope or current Alpha release gates. The user subsequently
-selected BD-04 and BD-05 for design and implementation, while explicitly
+selected BD-04 and BD-05 for design and implementation (now integrated in
+`cbe4000`/`0881e09`), while explicitly
 deferring the native IME extension (BD-06) to Beta. BD-01 through BD-03 remain
 unselected. No version bump, media rebuild or change to historical receipts is implied.
 
@@ -257,8 +274,8 @@ unselected. No version bump, media rebuild or change to historical receipts is i
 | BD-01 | Animated desktop companion: a character that can move across the screen, follow configurable paths and change movement/actions in response to events | JS controls paths and behavior; reusable native position, transparent presentation and input-region mechanisms support rendering. Transparent pixels must not block underlying applications; interactive regions are explicit. Not a new cursor mode or permission for arbitrary apps to create privileged overlay surfaces |
 | BD-02 | Procedural animated wallpaper: animated geometry and graphics-API drawing, including game-like effects, alongside existing static images | Reuse the background layer; simple node transforms already have building blocks, but a general JS drawing surface/API is not yet implemented. Keep icons and selection above the animated background |
 | BD-03 | Video wallpaper with playback and looping | Native decoding, playback timing and frame presentation with thin JS controls; avoid decoding or copying every full frame in JS. Video playback and hardware acceleration are not currently delivered or qualified |
-| BD-04 | Desktop App icons/shortcuts: icon and label, single-click selection, double-click/Enter launch, context menu, internal drag-rearrangement, grid alignment/sorting and saved positions | Reuse the application catalog/launcher and stable App IDs. Removing a shortcut does not uninstall the App. A real desktop file directory and file mutation operations are separate scope, not implied by this candidate |
-| BD-05 | Desktop marquee and multi-selection: left-button drag on empty desktop draws a translucent rectangle; support single selection, additive/toggle selection, ordered-range selection, select-all, keyboard navigation and Escape cancellation | Use native mouse capture/cancel with a JS selection model and one consistent desktop modifier convention. Clear active gestures on capture loss, surface retirement or output removal; do not leave stale selection rectangles |
+| BD-04 | Desktop App icons/shortcuts: icon and label, single-click selection, double-click/Enter launch, context menu, internal drag-rearrangement, grid alignment/sorting and saved positions | Implemented in `cbe4000`/`0881e09`; reuse catalog/launcher and stable IDs. Removing a shortcut does not uninstall the App. Real desktop files and mutations remain separate scope |
+| BD-05 | Desktop marquee and multi-selection: left-button drag on empty desktop draws a translucent rectangle; support single selection, additive/toggle selection, ordered-range selection, select-all, keyboard navigation and Escape cancellation | Implemented in `cbe4000`/`0881e09`; native capture/cancel with output-local JS selection. Gestures cancel on focus/capture loss, lock and output retirement |
 | BD-06 | Native IME context/editing extension: surrounding text, directional selection, delete-surrounding and atomic native edit transactions; actual context consumption where an engine supports it | Explicitly deferred to Beta on 2026-10-12. Preserve existing Rime input; transport alone does not add Rime context intelligence. Native single-owner/SDK route and platform scope must be decided before reopening; no implicit Windows IMM/TSF implementation |
 
 If selected, build desktop selection/icons and simple companion/image-frame or
@@ -288,7 +305,7 @@ for current capabilities, layer ownership and constraints.
 
 | Candidate slice | Concrete deliverable | Scope/status |
 |---|---|---|
-| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Wayland integrated in `dd40d03`; Windows in progress. Shared strict opt-in flag, ordinary/owned/modal support and explicit unsupported errors; transparent popups/input shapes are outside this increment |
+| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Wayland integrated in `dd40d03`; Windows child `dca78a0` awaits user composed-output acceptance and is not integrated. Shared strict opt-in flag; transparent popups/input shapes remain outside this increment |
 | MT-02 | Cached wallpaper-derived Mica-like base and in-app material composition | Candidate: GUI/Skia plus explicit desktop theme/wallpaper inputs; not live cross-window blur |
 | MT-03 | Regional background acrylic/blur for taskbar, menus and transient surfaces | Candidate: PollyWM render/damage/cache path plus effect requests; not a GUI-only style property |
 
