@@ -437,7 +437,7 @@ static int open_app(PuApp *app, const PuWindowConfig *config)
 {
     app->is_layer = config->layer != NULL || config->input_popup || config->lock_output;
     app->is_popup = config->popup != PU_POPUP_NONE;
-    app->transparent = config->layer && config->layer->transparent;
+    app->transparent = config->transparent || (config->layer && config->layer->transparent);
     app->window = pu_window_create(config);
     if (!app->window) return 0;
     if (g_app_quitting || app->closed) {
@@ -523,21 +523,27 @@ static int choice(JSContext *ctx, JSValueConst input, const char *name, const ch
     return result;
 }
 
+static int window_boolean(JSContext *ctx, JSValueConst options, const char *name, int *value)
+{
+    JSValue input = JS_GetPropertyStr(ctx, options, name);
+    if (JS_IsException(input)) return 0;
+    if (!JS_IsUndefined(input)) {
+        if (!JS_IsBool(input)) {
+            JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "%s must be a boolean", name); return 0;
+        }
+        *value = JS_ToBool(ctx, input);
+    }
+    JS_FreeValue(ctx, input);
+    return 1;
+}
+
 static int layer_options(JSContext *ctx, JSValueConst options, PuLayerConfig *layer)
 {
     const char *const keyboards[] = { "none", "exclusive", "on-demand", NULL };
     const char *const edges[] = { "top", "bottom", "left", "right", NULL };
     const char *const margins[] = { "top", "right", "bottom", "left", NULL };
-    JSValue input = JS_GetPropertyStr(ctx, options, "transparent");
-    if (JS_IsException(input)) return 0;
-    if (!JS_IsUndefined(input)) {
-        if (!JS_IsBool(input)) {
-            JS_FreeValue(ctx, input); JS_ThrowTypeError(ctx, "transparent must be a boolean"); return 0;
-        }
-        layer->transparent = JS_ToBool(ctx, input);
-    }
-    JS_FreeValue(ctx, input);
-    input = JS_GetPropertyStr(ctx, options, "keyboard");
+    if (!window_boolean(ctx, options, "transparent", &layer->transparent)) return 0;
+    JSValue input = JS_GetPropertyStr(ctx, options, "keyboard");
     if (JS_IsException(input)) return 0;
     if (!JS_IsUndefined(input)) layer->keyboard = choice(ctx, input, "keyboard", keyboards);
     JS_FreeValue(ctx, input);
@@ -594,6 +600,7 @@ static int layer_options(JSContext *ctx, JSValueConst options, PuLayerConfig *la
 
 static int native_options(JSContext *ctx, JSValueConst options, PuWindowConfig *config, JSValue *parent)
 {
+    if (!config->layer && !window_boolean(ctx, options, "transparent", &config->transparent)) return 0;
     *parent = JS_GetPropertyStr(ctx, options, "parent");
     if (JS_IsException(*parent)) return 0;
     if (!JS_IsUndefined(*parent)) {
@@ -635,7 +642,7 @@ static int native_options(JSContext *ctx, JSValueConst options, PuWindowConfig *
         !window_integer(ctx, options, "maxWidth", 0, &config->limits.max_width) ||
         !window_integer(ctx, options, "maxHeight", 0, &config->limits.max_height)) return 0;
     if (!pu_window_config_valid(config)) {
-        JS_ThrowTypeError(ctx, "Invalid parent, popup, modal or size-constraint combination"); return 0;
+        JS_ThrowTypeError(ctx, "Invalid transparency, parent, popup, modal or size-constraint combination"); return 0;
     }
     if (!config->popup && !JS_IsUndefined(*parent)) {
         PuApp *owner = window_app(ctx, *parent, 0);
@@ -644,7 +651,7 @@ static int native_options(JSContext *ctx, JSValueConst options, PuWindowConfig *
     }
     unsigned required = pu_window_required_capabilities(config);
     if (required && (pu_window_capabilities() & required) != required) {
-        JS_ThrowInternalError(ctx, "Requested ownership, popup, modal or size-constraint feature is unsupported by this driver/compositor");
+        JS_ThrowInternalError(ctx, "Requested transparency, ownership, popup, modal or size-constraint feature is unsupported by this driver/compositor");
         return 0;
     }
     return 1;
@@ -703,7 +710,7 @@ static JSValue jswin_create(JSContext *ctx, JSValueConst self, int argc, JSValue
         valid = layer.layer >= 0 && layer_options(ctx, options, &layer);
         config.layer = &layer;
     } else if (valid) {
-        for (int i = 4; i < 10; i++) {
+        for (int i = 4; i < 9; i++) {
             JSValue value = JS_GetPropertyStr(ctx, options, names[i]);
             if (JS_IsException(value)) valid = 0;
             else if (!JS_IsUndefined(value)) {
@@ -873,6 +880,7 @@ static JSValue jswin_capabilities(JSContext *ctx, JSValueConst self, int argc, J
     JS_SetPropertyStr(ctx, result, "popup", JS_NewBool(ctx, caps & PU_WINDOW_POPUP));
     JS_SetPropertyStr(ctx, result, "modal", JS_NewBool(ctx, caps & PU_WINDOW_MODAL));
     JS_SetPropertyStr(ctx, result, "sizeConstraints", JS_NewBool(ctx, caps & PU_WINDOW_LIMITS));
+    JS_SetPropertyStr(ctx, result, "transparent", JS_NewBool(ctx, caps & PU_WINDOW_TRANSPARENT));
     JS_SetPropertyStr(ctx, result, "popupGrab", JS_FALSE);
     PuApp *app = window_app(ctx, self, 1);
     JS_SetPropertyStr(ctx, result, "dragCopy", JS_NewBool(ctx, app && pu_window_drag_supported(app->window)));

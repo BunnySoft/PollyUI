@@ -73,6 +73,7 @@ struct PuWindow {
     int           running;
     int           dirty;
     int           frameless;
+    int           transparent;
     int           custom_chrome;   /* 1 => app draws chrome: enable drag hit-test */
     int           is_metal;
     int           exit_code;
@@ -188,6 +189,7 @@ unsigned pu_window_capabilities(void)
     if (!strcmp(driver, "wayland")) {
         caps = PU_WINDOW_OWNED | PU_WINDOW_POPUP | PU_WINDOW_LIMITS;
 #if defined(__linux__)
+        caps |= PU_WINDOW_TRANSPARENT;
         struct wl_display *display = SDL_GetPointerProperty(SDL_GetGlobalProperties(),
             SDL_PROP_GLOBAL_VIDEO_WAYLAND_WL_DISPLAY_POINTER, NULL);
         int modal = 0;
@@ -520,9 +522,10 @@ static int pu_sdl_paint(PuWindow *w, const char *capture_path)
     if (!w->presented || getenv("PU_TRACE_FRAMES")) {
         w->presented = 1;
         if (getenv("PU_TRACE_STARTUP") || getenv("PU_TRACE_FRAMES"))
-            SDL_Log("PollyUI frame presented: %dx%d, driver=%s, Skia=%s",
+            SDL_Log("PollyUI frame presented: %dx%d, driver=%s, Skia=%s, presentation=%s, transparent=%d",
                 w->width, w->height, SDL_GetCurrentVideoDriver(),
-                w->gl_context ? "GLES" : pu_surface_is_gl(w->surface) ? "GPU" : "raster");
+                w->gl_context ? "GLES" : pu_surface_is_gl(w->surface) ? "GPU" : "raster",
+                w->renderer ? SDL_GetRendererName(w->renderer) : "native-GPU", w->transparent);
     }
     return capture_ok;
 }
@@ -556,6 +559,9 @@ static int create_surface(PuWindow *w)
     }
     w->renderer = SDL_CreateRenderer(w->win, NULL);
     if (!w->renderer) { fail_window(w, "SDL_CreateRenderer"); return 0; }
+    if (!SDL_SetRenderDrawColor(w->renderer, 0, 0, 0, w->transparent ? 0 : 255)) {
+        fail_window(w, "SDL raster clear color"); return 0;
+    }
     if (!SDL_SetRenderVSync(w->renderer, presentation_interval()))
         SDL_Log("VSync unavailable for SDL presentation: %s", SDL_GetError());
     /* Match the actual presentation size, not a potentially stale resize event. */
@@ -686,6 +692,11 @@ static int create_gl(PuWindow *w, const PuWindowConfig *config, const char *titl
     if (!create_native(w, config, title, width, height, flags | SDL_WINDOW_OPENGL)) return 0;
     w->gl_context = SDL_GL_CreateContext(w->win);
     if (!w->gl_context || !SDL_GL_MakeCurrent(w->win, w->gl_context)) return 0;
+    int alpha = 0;
+    if (w->transparent && (!SDL_GL_GetAttribute(SDL_GL_ALPHA_SIZE, &alpha) || alpha < 8)) {
+        SDL_SetError("Transparent GLES presentation requires an 8-bit alpha framebuffer");
+        return 0;
+    }
     if (!SDL_GetWindowSizeInPixels(w->win, &w->width, &w->height)) return 0;
     w->surface = pu_surface_create_current_gl(gl_proc, NULL, w->width, w->height);
     if (!w->surface) { SDL_SetError("Skia GLES surface initialization failed"); return 0; }
@@ -738,6 +749,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     w->dirty   = 1;
     w->scale   = 1.0f;
     w->parent = cfg->parent; w->popup = cfg->popup; w->modal = cfg->modal;
+    w->transparent = cfg->transparent;
     if (w->parent) w->parent->children++;
     w->service = cfg->layer != NULL || cfg->input_popup || cfg->lock_output;
 
@@ -748,6 +760,7 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     const char *title = (cfg && cfg->title) ? cfg->title : "PollyUI";
 
     SDL_WindowFlags flags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
+    if (cfg->transparent) flags |= SDL_WINDOW_TRANSPARENT;
 #if defined(PU_METAL_BACKEND)
     flags |= SDL_WINDOW_METAL;
 #endif

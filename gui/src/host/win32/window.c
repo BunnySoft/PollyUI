@@ -698,6 +698,9 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg)
     if (cfg->layer || cfg->input_popup || cfg->lock_output) {
         fprintf(stderr, "Dedicated Wayland roles are unavailable on this Host\n"); return NULL;
     }
+    if (cfg->transparent) {
+        fprintf(stderr, "Ordinary per-pixel transparency is unavailable on this Host\n"); return NULL;
+    }
     if (g_windows && g_ui_thread != GetCurrentThreadId()) {
         fprintf(stderr, "All windows must be created on the same UI thread\n");
         return NULL;

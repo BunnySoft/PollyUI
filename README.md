@@ -753,6 +753,29 @@ have focused native fixtures; macOS/X11 execution is not qualified by those
 fixtures. See [the Host contract](docs/PORTING.md#native-window-contract) for
 the C seam and focused verification commands.
 
+### Ordinary-window transparency
+
+`window.create({ transparent: true, ... })` opts an ordinary window into native
+per-pixel alpha and a transparent DOM viewport. The default remains an opaque
+white viewport. Use a node's `backgroundColor: '#c8502880'` (`#RRGGBBAA`) for a
+translucent background; do not reduce the containing node's `opacity` when its
+text/images should remain opaque. Moving the window reveals the actual underlying
+windows, not a wallpaper copy or screenshot. This is neither blur nor Mica/Acrylic.
+
+`window.capabilities().transparent` reports support in the current Host/driver.
+The option is a strict boolean, immutable after creation. Transparent ordinary,
+owned and modal windows support the existing native/custom frame and input
+contracts. Transparent popups are currently rejected; opaque popups are unchanged.
+Dedicated input-method/session-lock roles cannot request ordinary transparency;
+layers retain their existing separate transparent option. Alpha does not create
+an input shape or enable click-through.
+
+The SDL Wayland Host supports `PU_RENDERER=auto`, `gl` and `raster` using
+premultiplied buffer alpha. Unsupported drivers/backends fail explicitly rather
+than creating an opaque substitute. Windows and other SDL drivers currently
+report ordinary transparency unsupported. See [porting](docs/PORTING.md#ordinary-window-alpha)
+for presentation details and the bounded native compositor qualification.
+
 ### Wayland shell surfaces
 
 The Linux SDL host now supports native `layer-shell` surfaces alongside ordinary

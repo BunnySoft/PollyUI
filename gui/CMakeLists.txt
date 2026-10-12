@@ -23,6 +23,10 @@ add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    add_executable(pollyui-transparency-contract-test tests/transparency-contract.c)
+    target_include_directories(pollyui-transparency-contract-test PRIVATE include src)
+    add_test(NAME gui-transparency-contract COMMAND pollyui-transparency-contract-test)
+    set_tests_properties(gui-transparency-contract PROPERTIES TIMEOUT 10)
     add_executable(pollyui-drag-core-test tests/drag-core.c)
     target_include_directories(pollyui-drag-core-test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pollyui-drag-core-test PRIVATE pollyui-engine)
@@ -79,6 +83,16 @@ if (BUILD_TESTING)
         set_tests_properties(gui-window-contract PROPERTIES TIMEOUT 15 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
     endif()
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP)
+        add_executable(pollyui-wayland-transparency-test tests/wayland-transparency.c)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(TRANSPARENCY_PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
+        target_link_libraries(pollyui-wayland-transparency-test PRIVATE pollywm-core PkgConfig::TRANSPARENCY_PIXMAN)
+        target_compile_options(pollyui-wayland-transparency-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME gui-wayland-transparency COMMAND sh
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wayland-transparency.sh"
+            $<TARGET_FILE:pollyui-wayland-transparency-test> $<TARGET_FILE:pollyui-playground>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")
+        set_tests_properties(gui-wayland-transparency PROPERTIES TIMEOUT 150 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/native-window-evidence")
         add_test(NAME gui-wayland-window-contract COMMAND sh
             "${CMAKE_SOURCE_DIR}/desktop/tests/window-contract.sh"
@@ -103,6 +117,10 @@ if (BUILD_TESTING)
     add_test(NAME gui-mouse-contract COMMAND pollyui-mouse-contract-test)
     set_tests_properties(gui-mouse-contract PROPERTIES TIMEOUT 15)
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_HOST STREQUAL "sdl")
+        add_test(NAME gui-transparency-unsupported COMMAND pollyui-playground
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/transparency.mjs")
+        set_tests_properties(gui-transparency-unsupported PROPERTIES TIMEOUT 15
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;PU_RENDERER=raster")
         add_executable(pollyui-input-test tests/sdl-input.c)
         add_executable(pollyui-multi-test tests/multi-window-native.c)
         foreach(target pollyui-input-test pollyui-multi-test)

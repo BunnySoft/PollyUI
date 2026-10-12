@@ -27,7 +27,7 @@ typedef struct PuWindowState {
 
 enum PuWindowCapability {
     PU_WINDOW_OWNED = 1, PU_WINDOW_POPUP = 2, PU_WINDOW_MODAL = 4,
-    PU_WINDOW_LIMITS = 8
+    PU_WINDOW_LIMITS = 8, PU_WINDOW_TRANSPARENT = 16
 };
 
 typedef struct PuLayerConfig {
@@ -59,6 +59,7 @@ typedef struct PuWindowConfig {
     int popup_x, popup_y;  /* Logical client coordinates relative to parent. */
     int modal;            /* Ordinary owned window; blocks native input to parent. */
     PuWindowLimits limits;
+    int transparent;     /* Immutable ordinary-window per-pixel alpha; not opacity/input shape. */
 } PuWindowConfig;
 
 /* Capabilities of the current native driver/compositor; no explicit popup grab. */

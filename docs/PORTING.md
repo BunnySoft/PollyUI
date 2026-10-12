@@ -136,6 +136,37 @@ It leaves a constraints PNG in `<build>/native-window-evidence`; it does not
 use a VM, a synthetic DOM close/resize controller, or production trusted roles.
 Headless qualification is not a physical-GPU or macOS execution claim.
 
+### Ordinary-window alpha
+
+`PuWindowConfig.transparent` is a creation-time 0/1 option for ordinary windows,
+including owned/modal windows. Query `PU_WINDOW_TRANSPARENT` before creation.
+Unsupported features return NULL with Host diagnostics and become JS exceptions.
+Popup transparency and mixing the ordinary flag with a dedicated service role
+are invalid contracts. Existing `PuLayerConfig.transparent` is independent.
+GUI rendering reuses `pu_render_tree_transparent`: zero-alpha black clear, with
+each node/text/image preserving its own alpha. The default white clear is unchanged.
+
+On Wayland, the public SDL transparent window flag selects an alpha-capable
+presentation buffer and clears the surface's opaque region. GLES explicitly
+requests and verifies at least 8 alpha bits; SDL also selects nonopaque EGL
+presentation where `EGL_EXT_present_opaque` is available. Skia supplies premultiplied
+RGBA. Raster supplies premultiplied BGRA, clears the SDL output with alpha zero,
+and copies the streaming texture with `SDL_BLENDMODE_NONE` (no second alpha
+multiplication). Auto may fall back to this same alpha-preserving raster path;
+explicit GL failure is an error. No SDL private layouts, offsets or SDK patches
+are used. Native input remains rectangular.
+
+Build `pollyui-wayland-transparency-test` and `pollyui-playground` with
+`PU_BUILD_DESKTOP=ON`, then run `ctest -R gui-wayland-transparency --output-on-failure`.
+The real private PollyWM fixture tests raster/gl/auto at 1x and 1.5x, with opaque
+and transparent ordinary clients over a two-color native marker window. It reads
+the composed output (not merely a client PNG), requires alpha-zero/half/opaque
+colors within two 8-bit channel values, checks opaque text pixels, movement,
+resized buffers, empty opaque/nonempty input regions, frames, owned/modal lifecycle
+and actual native pointer/capture delivery. This bounds software-compositor
+qualification; it does not claim physical GPU execution. Win32 and other SDL
+drivers currently reject ordinary transparency.
+
 ### Native drag-source seam
 
 `pollyui/drag.h` defines platform-neutral `PuDragItem`, opaque `PuDragInput` and
