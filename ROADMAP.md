@@ -103,7 +103,7 @@ active increment to be integrated before writing those files.
 | Native windows | Integrated `89da564` from coherent child commit `d6f8696`: owned windows, native menu/tooltip popups, owner-local modality, logical size constraints and actual state notifications | Normal owner closure requests descendants leaf-first; a veto/Promise preserves waiting owners, without restoring closed siblings or automatic retry. Explicit quit retains forced semantics with leaf-first native teardown |
 | Outgoing native drag | Integrated `2ef182f` from coherent child commit `c2cb1b0`: common GUI C/JS contract and first Wayland COPY backend; public-interface coexistence requires no SDK changes | Ordinary-window COPY with immutable text/binary payloads, opaque native press credentials, cancellation and UI-thread completion. Dedicated source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
 | Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
-| Native IME extensions | Read-only surrounding-text/selection/editing protocol research completed | SDL lacks public surrounding/delete/transaction transport; choose a single native input owner or a separately authorized SDK extension before implementation. Preserve Unicode/composition and sensitive-field isolation; no JS editor expansion |
+| Native IME extensions | Read-only research completed; explicitly deferred to Beta by the user on 2026-10-12 | No implementation or transport spike in this round. Existing Rime preedit/candidate/commit stays unchanged. Reopening requires a single native input owner or separately authorized SDK extension, accurate Unicode/selection transactions and sensitive-field isolation |
 
 The [cross-platform drag design](./DESIGN.md#54-cross-platform-native-drag-and-drop)
 separates application payload policy, the shared GUI session/credential/lifetime
@@ -245,8 +245,10 @@ remain preserved separately, never combined to manufacture an acceptance pass.
 ## Beta candidates: animated desktop and desktop icons
 
 Recorded at the user's request on 2026-10-12. These are **Beta candidates**,
-not implementation authorization, a frozen Beta scope or current Alpha release
-gates. No version bump, media rebuild or change to historical receipts is implied.
+not a frozen Beta scope or current Alpha release gates. The user subsequently
+selected BD-04 and BD-05 for design and implementation, while explicitly
+deferring the native IME extension (BD-06) to Beta. BD-01 through BD-03 remain
+unselected. No version bump, media rebuild or change to historical receipts is implied.
 
 | ID | Candidate requirement | Implementation boundary |
 |---|---|---|
@@ -255,6 +257,7 @@ gates. No version bump, media rebuild or change to historical receipts is implie
 | BD-03 | Video wallpaper with playback and looping | Native decoding, playback timing and frame presentation with thin JS controls; avoid decoding or copying every full frame in JS. Video playback and hardware acceleration are not currently delivered or qualified |
 | BD-04 | Desktop App icons/shortcuts: icon and label, single-click selection, double-click/Enter launch, context menu, internal drag-rearrangement, grid alignment/sorting and saved positions | Reuse the application catalog/launcher and stable App IDs. Removing a shortcut does not uninstall the App. A real desktop file directory and file mutation operations are separate scope, not implied by this candidate |
 | BD-05 | Desktop marquee and multi-selection: left-button drag on empty desktop draws a translucent rectangle; support single selection, additive/toggle selection, ordered-range selection, select-all, keyboard navigation and Escape cancellation | Use native mouse capture/cancel with a JS selection model and one consistent desktop modifier convention. Clear active gestures on capture loss, surface retirement or output removal; do not leave stale selection rectangles |
+| BD-06 | Native IME context/editing extension: surrounding text, directional selection, delete-surrounding and atomic native edit transactions; actual context consumption where an engine supports it | Explicitly deferred to Beta on 2026-10-12. Preserve existing Rime input; transport alone does not add Rime context intelligence. Native single-owner/SDK route and platform scope must be decided before reopening; no implicit Windows IMM/TSF implementation |
 
 If selected, build desktop selection/icons and simple companion/image-frame or
 node-based wallpaper animation before broader drawing/video capabilities.
@@ -267,7 +270,9 @@ Internal icon rearrangement and marquee selection do not depend on outgoing
 cross-application drag-and-drop. Dragging a desktop shortcut into another App
 requires a separate Shell-layer authorization and payload contract: the
 currently approved outgoing-drag increment is ordinary-window COPY only.
-These candidates do not expand that active increment or start new child sessions.
+These candidates do not expand the delivered ordinary-window drag increment.
+BD-04/BD-05 implementation follows their separate user approval, not an
+automatic expansion into desktop file operations or cross-application dragging.
 
 ## Next-version candidate: transparency and materials
 
