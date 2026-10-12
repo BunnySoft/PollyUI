@@ -319,6 +319,11 @@ animation that changes the model still requests the necessary frames.
 
 Recorded on 2026-10-11 as a **next-version candidate**, not an approved
 implementation or a claim that the current desktop renders Mica/Acrylic.
+On 2026-10-12 the user selected ordinary-window transparency (MT-01) for
+implementation, first Wayland and then Windows. Shared window options,
+transparent-clear/rendering semantics and capability/error contracts should
+be reused; native alpha presentation belongs in separate platform backends.
+Mica-like materials and background blur (MT-02/MT-03) remain unselected.
 
 | Effect | Current implementation | Required owner/change |
 |---|---|---|

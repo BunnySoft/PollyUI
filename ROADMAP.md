@@ -104,6 +104,8 @@ active increment to be integrated before writing those files.
 | Outgoing native drag | Integrated `2ef182f` from coherent child commit `c2cb1b0`: common GUI C/JS contract and first Wayland COPY backend; public-interface coexistence requires no SDK changes | Ordinary-window COPY with immutable text/binary payloads, opaque native press credentials, cancellation and UI-thread completion. Dedicated source queue/worker and post-SDL-pump passive mirror cleanup; no MOVE, custom icon, Shell-layer origin or Files mutations |
 | Windows outgoing drag | Explicitly deferred | Future OLE backend implements the same GUI contract; no separate application API or PollyOS service is needed. Windows build compatibility does not imply native outgoing-drag support |
 | Native IME extensions | Read-only research completed; explicitly deferred to Beta by the user on 2026-10-12 | No implementation or transport spike in this round. Existing Rime preedit/candidate/commit stays unchanged. Reopening requires a single native input owner or separately authorized SDK extension, accurate Unicode/selection transactions and sensitive-field isolation |
+| Ordinary-window transparency (MT-01) | Design and implementation selected on 2026-10-12; Wayland first, then Windows | Reuse common GUI options/rendering semantics, separate per-platform presentation; actual per-pixel native alpha, not whole-window opacity or backdrop blur. One child owns shared Host/render writes |
+| Desktop icons and selection (BD-04/BD-05) | Design and implementation selected; independent Shell workstream | JS App shortcuts, internal arrangement/persistence and captured marquee/multi-selection. No shared Host/render writes, file mutations, uninstall or cross-application Shell dragging |
 
 The [cross-platform drag design](./DESIGN.md#54-cross-platform-native-drag-and-drop)
 separates application payload policy, the shared GUI session/credential/lifetime
@@ -277,22 +279,25 @@ automatic expansion into desktop file operations or cross-application dragging.
 ## Next-version candidate: transparency and materials
 
 The user asked to retain the 2026-10-11 material discussion as a candidate for
-the next version. It is **not yet selected for implementation**, assigned a
-release number or included in the accepted Alpha.6 media.
+the next version. On 2026-10-12 the user selected **MT-01 only** for design and
+implementation, first Wayland and then Windows with shared code extracted and
+different native paths separated. MT-02/MT-03 remain candidates, not selected
+for implementation. No release number or new media is assigned by this work.
 See [transparency/material conclusions](./DESIGN.md#51-transparency-and-material-discussion)
 for current capabilities, layer ownership and constraints.
 
 | Candidate slice | Concrete deliverable | Scope/status |
 |---|---|---|
-| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Candidate: wire GUI/Host/presentation alpha; existing layer transparency is not sufficient |
+| MT-01 | Ordinary-window transparent background with intact opaque foreground text; capability/error reporting | Selected, in progress: wire GUI/Host/presentation alpha on Wayland, then Windows; existing layer transparency is not sufficient |
 | MT-02 | Cached wallpaper-derived Mica-like base and in-app material composition | Candidate: GUI/Skia plus explicit desktop theme/wallpaper inputs; not live cross-window blur |
 | MT-03 | Regional background acrylic/blur for taskbar, menus and transient surfaces | Candidate: PollyWM render/damage/cache path plus effect requests; not a GUI-only style property |
 
 Prefer MT-01, then MT-02, then MT-03 if the candidate is approved. Keep solid
 fallbacks explicit and validate native pixels, clipping/readability and actual
 render/damage cost before claiming support. Windows' existing DWM setter needs
-visibility and failure handling; it is not proof of a complete effect. No code,
-API, scheduling commitment, version bump or new ISO is implied by this record.
+visibility and failure handling; it is not proof of a complete effect. The
+MT-01 implementation approval does not authorize MT-02/MT-03, a version bump
+or a new ISO.
 
 ## Next-version requirement: system-level animated rabbit cursor
 
