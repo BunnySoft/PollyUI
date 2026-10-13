@@ -106,6 +106,7 @@ active increment to be integrated before writing those files.
 | Native IME extensions | Read-only research completed; explicitly deferred to Beta by the user on 2026-10-12 | No implementation or transport spike in this round. Existing Rime preedit/candidate/commit stays unchanged. Reopening requires a single native input owner or separately authorized SDK extension, accurate Unicode/selection transactions and sensitive-field isolation |
 | Ordinary-window transparency (MT-01) | Wayland integrated in `dd40d03`; Windows raster/DirectComposition integrated in `f59e692`, verifier fixes/diagnostics in `190faf8`/`c17c60a` | User confirmed manual visual alpha blending and rectangular input, then approved integration/push. Windows automatic exact-pixel qualification remains pending; native contracts, reference-only diagnostics and manual observations are not an automated composed-pixel PASS |
 | Desktop icons and selection (BD-04/BD-05) | Integrated `cbe4000` and `0881e09`, including selected-only layout ownership | JS App shortcuts, internal arrangement/persistence and captured marquee/multi-selection. No shared Host/render writes, file mutations, uninstall or cross-application Shell dragging |
+| HTML Canvas 2D and Image/img | Design and implementation selected on 2026-10-13 | HTML-shaped element/context/state/path/text/image/pixel/export behavior and PNG/JPEG image loading in the existing DOM; no additional OS window, SVG or 3D implementation |
 
 Desktop shortcuts start empty and are added from Polly > Applications. Ctrl/Shift,
 marquee, grid movement, keyboard focus and focused-only Enter use the documented
@@ -297,6 +298,25 @@ currently approved outgoing-drag increment is ordinary-window COPY only.
 These candidates do not expand the delivered ordinary-window drag increment.
 BD-04/BD-05 implementation follows their separate user approval, not an
 automatic expansion into desktop file operations or cross-application dragging.
+
+## HTML Canvas graphics sequence
+
+The user wants Canvas 2D and 3D graphics compatibility, with **2D completed
+first, then the 3D route planned**. The selected first increment is Canvas 2D
+plus HTML `Image`/`img` behavior for PNG/JPEG, not merely the existing image
+background/Bitmap primitives.
+
+| Stage | Scope | State |
+|---|---|---|
+| Canvas 2D | HTML canvas element/context, independent backing/CSS dimensions, drawing state/paths/text/images, pixel access, export, DOM composition and lifecycle | In progress; exact supported behavior and exceptions require an explicit compatibility matrix and executed checks |
+| Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Part of the first increment; source policy and resource ownership must be documented |
+| WebGL/WebGPU route | Plan native backend/context/resource management, required JS environment and version-qualified Three.js compatibility | Pending completion/integration of Canvas 2D; planning does not authorize immediate 3D implementation |
+| SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
+
+Canvas draws inside the existing UI window. This work neither starts desktop
+animated-wallpaper/companion/video candidates nor reverses the window-local
+menu/dialog decision. Supporting one Canvas context mode does not imply the
+others or complete browser compatibility. See [the graphics boundary](./DESIGN.md#56-html-canvas-and-image-compatibility).
 
 ## Next-version candidate: transparency and materials
 

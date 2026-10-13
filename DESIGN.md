@@ -485,6 +485,29 @@ wiring were declined for this round; they are not required completion gates
 or implicitly authorized follow-up work. Existing Shell surface roles are
 unchanged. This decision does not remove the implemented native window APIs.
 
+### 5.6 HTML Canvas and image compatibility
+
+On 2026-10-13 the user selected HTML-compatible Canvas graphics, with Canvas
+2D implemented first and WebGL/WebGPU routes planned after that increment is
+complete. The first scope includes `HTMLCanvasElement`,
+`CanvasRenderingContext2D` and `Image`/`img` PNG/JPEG loading. SVG image/DOM
+support is explicitly later work.
+
+Canvas is an element in the existing DOM, not an additional OS window.
+Its backing pixel dimensions are independent of its CSS display dimensions;
+Skia can provide the owned 2D drawing buffer, which the GUI composites with
+normal clipping, transforms and opacity. The public JS interface and drawing
+semantics should follow HTML Canvas rather than introduce a private drawing
+API. Existing background-image/Bitmap support is not already an HTML image
+interface, and GPU-backed UI presentation is not a JS WebGL context.
+
+Compatibility must be described by an implemented API/behavior matrix and
+actual pixel, state, image, export and lifecycle checks. This increment does
+not claim a full browser DOM, browser sandbox or complete standards-test
+coverage. WebGL/WebGPU/Three.js support is neither implemented nor implied by
+Canvas 2D; their context/backend/resource and required-environment route is
+the following planning task, not concurrent 3D implementation.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
