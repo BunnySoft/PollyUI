@@ -21,7 +21,7 @@ or WPT cases passed. No WebGL1 context is created.
 
 | Family | Native implementation and qualified behavior | Boundaries |
 |---|---|---|
-| Acquisition | Stable, exclusive 2D/WebGL2 identity; real backend failure returns `null` and schedules `webglcontextcreationerror`; actual context attributes | Single-sample `antialias:false`; default power policy, sRGB. No worker or OffscreenCanvas. `display-p3` explicitly rejects. `failIfMajorPerformanceCaveat` is presently a reported `false` policy rather than hardware selection. |
+| Acquisition | Stable, exclusive 2D/WebGL2 identity; real backend failure returns `null` and schedules `webglcontextcreationerror`; actual context attributes | Single-sample `antialias:false`; default power policy, sRGB. No worker or OffscreenCanvas. `display-p3` explicitly rejects. Strict `failIfMajorPerformanceCaveat:true` requests conservatively return `null` plus creation error because this backend has no qualified hardware-performance guarantee; no renderer-string hardware certification or software substitution. |
 | Backing/composition | Owned FBO, width/height independent of CSS and DPI, same-value resize clears storage but preserves GL state/resources, zero size; existing rounded clip, opacity, scroll, transform, input; genuine snapshots to 2D `drawImage`, PNG/JPEG/Blob export | Initial composition reads GPU pixels back and creates a raster Skia snapshot. **Not zero-copy**; readback and encoding run on the owning UI thread. |
 | Presentation | `preserveDrawingBuffer:false` clears the native drawing buffer after actual DOM presentation; retained DOM displays the captured frame until new default-framebuffer drawing; opaque default buffers have actual RGB storage | Presentation boundary is PollyUI's DOM paint operation, not a browser refresh driver. Detached canvases are not presented/discarded. |
 | State | Clear, color/depth/stencil masks and comparisons, front/cull face, blend factors/equations/color, scissor/viewport, hints, sample coverage, polygon offset, enabled state and natural query results | Backend numeric limits are real queries. The interface does not expose arbitrary GLES extension enumerants. |
@@ -55,12 +55,37 @@ GUI-only builds use `PU_BUILD_LAUNCHER=OFF`; `PU_BUILD_DESKTOP=OFF` remains vali
 `PU_WEBGL2=OFF` disables the backend. Enabled Windows builds need matching
 `EGL`/`GLES3` headers (the existing Skia ANGLE headers are sufficient) and the
 application-local `libEGL.dll`, `libGLESv2.dll`, `d3dcompiler_47.dll` at runtime.
+Windows WebGL2 now explicitly selects **ANGLE Vulkan + SwiftShader (software
+CPU)**, additionally requiring `vulkan-1.dll`, `vk_swiftshader.dll` and the
+original relative `vk_swiftshader_icd.json`. This is still EGL/GLES WebGL2,
+**not JavaScript WebGPU**. No hardware acceleration or hardware Vulkan
+qualification is claimed by the first Windows provider.
 Linux uses system EGL/GLES3 headers and runtime shared libraries.
 
-The tested Windows DLLs are development copies of an already installed browser
-ANGLE candidate, **not an official redistributable vendor package**. Do not
-include them in a release based on these tests. They report ANGLE 2.1.27746 /
-`355cc61af2aa`, Microsoft Basic Render Driver / D3D11 (software). Linux tests use
+The fixed Windows native bundle is the official Electron **v41.10.7** archive,
+SHA256 `43f2f823a263ee7d3ac71282e26c417c9e4417bbefdfa97ede3fde15daf5a46d`,
+with matching release-asset digest and independently verified published
+SHASUMS256 file. Its ANGLE reports 2.1.27094 / `830fc642200f`; the selected
+renderer reports Vulkan 1.3.0 / SwiftShader Device (Subzero), software.
+`tests/gpu/ANGLE-RUNTIME.json` records every extracted native library, ICD and
+full license hash. `tools/fetch_webgl_angle.ps1` verifies and stages only those
+files; it **does not install or run Electron/a browser**, change a shared SDK,
+or set global Vulkan environment/registry settings. Keep the full original
+`LICENSE` and `LICENSES.chromium.html` with the libraries. This is an official
+Electron bundle containing ANGLE/SwiftShader, **not a standalone official
+ANGLE vendor package**; release/legal/platform qualification is separate.
+
+The earlier installed-browser ANGLE 355cc / D3D11 candidate and diagnostic
+Electron 37/41 D3D11 candidates returned black generated mip pixels for a
+valid nonzero base level in actual ordinary/compatible, mutable/immutable GLES
+tests. They are **not qualified WebGL2 backends** and are not silently retried
+as fallbacks. Electron 44.7.0 had no standalone EGL/GLES DLLs. Those diagnostic
+results and original f905 receipts remain separate from the final Vulkan
+qualification. The UI's existing raster/D3D presentation path is unchanged;
+tests verify restoring its owning D3D EGL context across private Vulkan context
+draws/readback/resize/destruction, including display-scoped handle collisions.
+
+Linux tests use
 the immutable SDK image `4ef0cd4e096e79eedc8310c9cc87897fc5db778a6e68401e2ee7a56a64555cfb`,
 UID 1000, private Linux filesystem/Wayland sockets, Mesa 26.1.6 and llvmpipe
 (software). No shared SDK rebuild, image tag change, browser installation,
@@ -72,6 +97,7 @@ The optional Three.js fixture installs **0.180.0/r180** from its own manifest:
 Set-Location gui\tests\gpu
 npm ci --ignore-scripts --no-audit --no-fund
 Set-Location ..\..\..
+.\tools\fetch_webgl_angle.ps1 -Dest .\build\gpu-win\gui
 cmake --build build\gpu-win --target pollyui-gpu-test pollyui-gpu-current-test pollyui-canvas-test
 ctest --test-dir build\gpu-win -R "^gui-(gpu.*|canvas)$" --output-on-failure
 ```
@@ -105,7 +131,9 @@ The fixtures are:
 | `gui-gpu-core` | Actual shader failures, vertex/byte/pack bounds, VAO/FBO initialization, TF values 3/4/5 to 7/9/11, UBO color, query/fence/task visibility, resize/state, destroyed/restored EGL context, old-generation rejection |
 | `gui-gpu-transfer` | Actual PBO pack/unpack byte offsets, integer texture/FBO/read/clear, DOM byte/float/half/packed uploads, optional compressed-format rejection, atomic drawing-buffer storage |
 | `gui-gpu-state`, `gui-gpu-uniform` | State driver queries, samplers, all scalar/vector/array/matrix uniform families with actual shader values, indexed/instanced draws, copies/outside-zero, MSAA resolve, 3D/array layers, invalidation, deletion |
+| `gui-gpu-review` | Independently reproduced cached-getter index/enum failures, query-shadow atomicity/shared occlusion slot, color-space brands, strict performance refusal, actual generated 2D/cube/3D/array and nonzero-base/immutable mip pixels, preserved storage on exact budget rejection |
 | `gui-gpu-current` | Owning EGL handles/state restored across multiple canvases, draw/read/resize/close; Linux uses actual borrowed Skia GLES composition/readback |
+| `pollyui-gpu-mipmap-native-test` (manual diagnostic) | Direct GLES/no JS/no shadow comparison of selected backend vs Windows D3D11 ordinary/compatible mutable/immutable nonzero-base mip pixels; output deliberately makes no PASS/conformance claim |
 | `gui-gpu-three` | Unmodified r180 indexed BoxGeometry/material scene, actual DataTexture/CanvasTexture/decoded image, resize, native context loss/restoration/recreated scene, disposal |
 | `gui-gpu-wayland` | Real mapped 300x240 physical SDL window at 1.5 DPI, unmodified Three renderer shader, native logical pointer redraw, backing independent of DPI, rounded clip/scroll/transform/opacity equal to 2D |
 | Existing `gui-canvas`, `gui-canvas-wayland` | Inherited 2D/image regression |

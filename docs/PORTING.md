@@ -74,8 +74,16 @@ not zero-copy. Canvas width/height are independent of host DPI; regular DOM
 clipping, scrolling, opacity, transforms and pointer handling remain shared.
 No SysRT service or WebGPU dependency is introduced.
 
-The tested installed-browser ANGLE DLL copies are development provenance only,
-not a licensed official redistributable package. Three.js is an optional
+Windows WebGL2 explicitly uses a fixed ANGLE Vulkan/SwiftShader software CPU
+provider, rather than the D3D11 candidates with a reproduced nonzero-base mip
+defect. `tools/fetch_webgl_angle.ps1` verifies the official Electron v41.10.7
+archive/release hashes and stages only its native EGL/GLES/Vulkan/SwiftShader
+libraries, original application-relative ICD and complete licenses. It does not
+install or execute Electron/a browser or alter global Vulkan settings. This
+remains WebGL2, not JS WebGPU or hardware Vulkan qualification; missing libraries
+return `null`/creation error with no D3D fallback. The existing UI renderer is
+not switched. The bundled-library provenance is not a standalone official ANGLE
+redistribution package or product release certification. Three.js is an optional
 manifest-pinned qualification dependency, not a GUI library/runtime download.
 See [WEBGL2.md](../gui/sdk/WEBGL2.md) for exact qualified platforms, optional
 extension handling, source/license/integrity records and remaining conformance

@@ -71,11 +71,13 @@ bool load()
     }
     EGL_PROC(GetDisplay)
     EGL_PROC(Initialize)
-    EGL_PROC(BindAPI) EGL_PROC(QueryAPI) EGL_PROC(ChooseConfig) EGL_PROC(CreatePbufferSurface)
-        EGL_PROC(CreateContext) EGL_PROC(MakeCurrent) EGL_PROC(GetCurrentContext)
-            EGL_PROC(GetCurrentDisplay) EGL_PROC(GetCurrentSurface) EGL_PROC(DestroyContext)
-                EGL_PROC(DestroySurface) EGL_PROC(GetError) EGL_PROC(GetProcAddress) EGL_PROC(
-                    QueryString)
+    EGL_PROC(BindAPI)
+    EGL_PROC(QueryAPI)
+    EGL_PROC(ChooseConfig)
+    EGL_PROC(CreatePbufferSurface) EGL_PROC(CreateContext) EGL_PROC(MakeCurrent)
+        EGL_PROC(GetCurrentContext) EGL_PROC(GetCurrentDisplay) EGL_PROC(GetCurrentSurface)
+            EGL_PROC(DestroyContext) EGL_PROC(DestroySurface) EGL_PROC(GetError)
+                EGL_PROC(GetProcAddress) EGL_PROC(QueryString)
 #undef EGL_PROC
                     egl.GetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         egl.GetProcAddress("eglGetPlatformDisplayEXT"));
@@ -96,7 +98,7 @@ bool load()
 PuGles* pu_gles() { return &gl; }
 void* pu_gpu_proc(const char* name)
 {
-    void* proc = symbol(gles_library, name);
+    void* proc = symbol(!strncmp(name, "egl", 3) ? egl_library : gles_library, name);
     return proc ? proc : reinterpret_cast<void*>(egl.GetProcAddress(name));
 }
 bool pu_gpu_device_is_current(const PuGpuDevice* d)
@@ -119,7 +121,9 @@ PuGpuCurrent::PuGpuCurrent(PuGpuDevice* d)
         return;
     }
     current = egl.BindAPI(EGL_OPENGL_ES_API)
-        && egl.MakeCurrent(device->display, device->surface, device->surface, device->context);
+        && egl.MakeCurrent(device->display,
+            device->context == EGL_NO_CONTEXT ? EGL_NO_SURFACE : device->surface,
+            device->context == EGL_NO_CONTEXT ? EGL_NO_SURFACE : device->surface, device->context);
     touched = true;
     if (!current)
         std::fprintf(stderr, "[webgl2] eglMakeCurrent failed: 0x%x\n", egl.GetError());
@@ -148,7 +152,11 @@ bool pu_gpu_device_open(PuGpuDevice* d)
     if (egl.GetPlatformDisplayEXT) {
 #ifdef _WIN32
         const EGLint attributes[] = { 0x3203 /* EGL_PLATFORM_ANGLE_TYPE_ANGLE */,
-            0x3208 /* EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE */, EGL_NONE };
+            0x3450 /* EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE */,
+            0x3209 /* EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE */,
+            0x3487 /* EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE */, EGL_NONE };
+        std::fprintf(stderr,
+            "[webgl2] selected ANGLE Vulkan/SwiftShader software backend; no D3D fallback\n");
         d->display = egl.GetPlatformDisplayEXT(
             0x3202 /* EGL_PLATFORM_ANGLE_ANGLE */, EGL_DEFAULT_DISPLAY, attributes);
 #else
@@ -157,7 +165,11 @@ bool pu_gpu_device_open(PuGpuDevice* d)
 #endif
     }
     if (d->display == EGL_NO_DISPLAY)
+#ifdef _WIN32
+        return false;
+#else
         d->display = egl.GetDisplay(EGL_DEFAULT_DISPLAY);
+#endif
     EGLint major, minor, count;
     EGLConfig config;
     const EGLint attributes[]
@@ -221,12 +233,27 @@ bool pu_gpu_device_open(PuGpuDevice* d)
 }
 void pu_gpu_device_close(PuGpuDevice* d)
 {
-    if (d->context != EGL_NO_CONTEXT)
-        egl.DestroyContext(d->display, d->context);
-    if (d->surface != EGL_NO_SURFACE)
-        egl.DestroySurface(d->display, d->surface);
-    d->context = EGL_NO_CONTEXT;
-    d->surface = EGL_NO_SURFACE;
+    if (d->context == EGL_NO_CONTEXT && d->surface == EGL_NO_SURFACE)
+        return;
+    const auto destroy = [&]() {
+        if (!egl.MakeCurrent(d->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT))
+            std::fprintf(stderr, "[webgl2] cannot release context before destruction: 0x%x\n",
+                egl.GetError());
+        if (d->context != EGL_NO_CONTEXT && !egl.DestroyContext(d->display, d->context))
+            std::fprintf(stderr, "[webgl2] cannot destroy owned context: 0x%x\n", egl.GetError());
+        if (d->surface != EGL_NO_SURFACE && !egl.DestroySurface(d->display, d->surface))
+            std::fprintf(stderr, "[webgl2] cannot destroy owned surface: 0x%x\n", egl.GetError());
+        d->context = EGL_NO_CONTEXT;
+        d->surface = EGL_NO_SURFACE;
+    };
+    if (egl.GetCurrentDisplay() == d->display && egl.GetCurrentContext() == d->context) {
+        destroy();
+    } else {
+        // ANGLE handles are display-scoped. Never destroy a colliding handle while another display
+        // owns TLS.
+        PuGpuCurrent owned(d);
+        destroy();
+    }
     // EGLDisplay is process-shared (including SDL/Skia). Never terminate their display.
 }
 #endif

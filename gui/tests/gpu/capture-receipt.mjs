@@ -41,7 +41,8 @@ for(const name of ["pollyui-gpu-test","pollyui-gpu-current-test","pollyui-canvas
     const path=resolve(build,"gui",name+(process.platform==="win32"?".exe":""));
     if(existsSync(path))artifacts.push({path:local(path),sha256:hash(path)});
 }
-for(const name of ["libEGL.dll","libGLESv2.dll","d3dcompiler_47.dll"]){
+for(const name of ["libEGL.dll","libGLESv2.dll","d3dcompiler_47.dll","vulkan-1.dll","vk_swiftshader.dll",
+    "vk_swiftshader_icd.json","LICENSE","LICENSES.chromium.html"]){
     const path=resolve(build,"gui",name);
     if(existsSync(path))artifacts.push({path:local(path),sha256:hash(path),developmentCopyOnly:true});
 }
@@ -54,6 +55,7 @@ const receipt={generatedAt:new Date().toISOString(),sourceRoot:root,buildDirecto
     compiledSources:sources,
     compiledLocalDependencies:[...dependencies].sort().map(path=>({path,sha256:hash(resolve(root,path))})),
     embeddedScripts:embedded,artifacts,dependencyReceipt:JSON.parse(readFileSync(resolve(root,"gui/tests/gpu/dependency-receipt.json"),"utf8")),
+    windowsRuntimePin:JSON.parse(readFileSync(resolve(root,"gui/tests/gpu/ANGLE-RUNTIME.json"),"utf8")),
     limits:"Hashes describe the actual configured inputs and artifacts. No statement of complete WebGL/WPT, physical-GPU or release DLL redistribution qualification."};
 writeFileSync(output,JSON.stringify(receipt,null,2)+"\n");
 console.log(JSON.stringify({sources:sources.length,headers:dependencies.size,embeddedScripts:embedded.length,

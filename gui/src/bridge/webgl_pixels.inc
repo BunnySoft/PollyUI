@@ -74,9 +74,78 @@ if (IS("texParameteri") || IS("texParameterf") || IS("getTexParameter") || IS("g
         gl->TexParameteri(target, I(1), I(2));
     else if (IS("texParameterf"))
         gl->TexParameterf(target, I(1), N(2));
-    else if (IS("generateMipmap"))
+    else if (IS("generateMipmap")) {
+        auto texture = c->textures[c->active_texture][target];
+        GLint base = 0, maximum = 0, immutable_levels = 0;
+        gl->GetTexParameteriv(target, GL_TEXTURE_BASE_LEVEL, &base);
+        gl->GetTexParameteriv(target, GL_TEXTURE_MAX_LEVEL, &maximum);
+        if (texture->immutable)
+            gl->GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, &immutable_levels);
+        GLenum first = target == GL_TEXTURE_CUBE_MAP ? GL_TEXTURE_CUBE_MAP_POSITIVE_X : target;
+        GLenum last = target == GL_TEXTURE_CUBE_MAP ? GL_TEXTURE_CUBE_MAP_NEGATIVE_Z : target;
+        auto images = texture->images;
+        auto levels = texture->levels;
+        uint64_t allocation = texture->bytes;
+        bool has_base = true;
+        for (GLenum face = first; face <= last; ++face) {
+            uint64_t base_key = ((uint64_t)face << 32) | (unsigned)base;
+            auto found = images.find(base_key);
+            if (found == images.end() || found->second.width <= 0 || found->second.height <= 0
+                || found->second.depth <= 0) {
+                has_base = false;
+                break;
+            }
+            auto image = found->second;
+            StorageFormat info = { };
+            unsigned bytes = storage_format(image.internal, &info)
+                ? info.bytes
+                : transfer_bytes(image.format, image.type);
+            if (!bytes) {
+                has_base = false;
+                break;
+            }
+            int extent = std::max(
+                { image.width, image.height, target == GL_TEXTURE_3D ? image.depth : 1 });
+            int end = std::min(maximum, base + (int)std::floor(std::log2(extent)));
+            if (texture->immutable)
+                end = std::min(end, immutable_levels - 1);
+            for (int level = base + 1; level <= end; ++level) {
+                image.width = std::max(1, image.width / 2);
+                image.height = std::max(1, image.height / 2);
+                if (target == GL_TEXTURE_3D)
+                    image.depth = std::max(1, image.depth / 2);
+                uint64_t key = ((uint64_t)face << 32) | (unsigned)level;
+                uint64_t size = (uint64_t)image.width * image.height * image.depth * bytes;
+                if (!texture->immutable) {
+                    auto old = levels.find(key);
+                    allocation = allocation - (old == levels.end() ? 0 : old->second) + size;
+                    levels[key] = (size_t)size;
+                }
+                images[key] = image;
+            }
+        }
+        size_t previous = texture->bytes;
+        size_t previous_allocated = c->allocated;
+        if (has_base
+            && (allocation > PU_IMAGE_BYTE_LIMIT || !reserve(c, texture, (size_t)allocation))) {
+            if (allocation > PU_IMAGE_BYTE_LIMIT)
+                pu_gpu_error(c, GL_OUT_OF_MEMORY);
+            return JS_UNDEFINED;
+        }
         gl->GenerateMipmap(target);
-    else {
+        GLenum error = gl->GetError();
+        if (error) {
+            texture->bytes = previous;
+            c->allocated = previous_allocated;
+            ERROR(error);
+        }
+        if (!has_base) {
+            pu_gpu_canvas_close(c);
+            return JS_ThrowInternalError(ctx, "Generated mipmap base image is not tracked");
+        }
+        texture->images = std::move(images);
+        texture->levels = std::move(levels);
+    } else {
         if (I(1) == GL_TEXTURE_MIN_LOD || I(1) == GL_TEXTURE_MAX_LOD) {
             GLfloat value = 0;
             gl->GetTexParameterfv(target, I(1), &value);

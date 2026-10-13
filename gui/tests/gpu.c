@@ -197,6 +197,7 @@ int main(int argc, char** argv)
     }
     pu_render_shutdown();
     if (!failed)
-        puts("PASS: real offscreen GPU runtime fixture");
+        puts(argc == 3 ? "PASS: unavailable GPU backend returns null/error and preserves Canvas2D"
+                       : "PASS: real offscreen GPU runtime fixture");
     return failed;
 }

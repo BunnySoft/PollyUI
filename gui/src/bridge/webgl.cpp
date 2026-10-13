@@ -1474,10 +1474,11 @@ JSValue dispatch(JSContext* ctx, PuGpuCanvas* c, const char* op, Arguments& a)
     CALL0("flush", Flush)
     CALL0("finish", Finish)
     CALL1("enable", Enable, I)
-    CALL1("disable", Disable, I) CALL1("cullFace", CullFace, I) CALL1(
-        "frontFace", FrontFace, I) CALL1("depthFunc", DepthFunc, I) CALL1("depthMask", DepthMask, I)
-        CALL1("clearDepth", ClearDepthf, N) CALL1("clearStencil", ClearStencil, I) CALL1(
-            "stencilMask", StencilMask, I) CALL1("lineWidth", LineWidth, N) CALL2("blendFunc",
+    CALL1("disable", Disable, I)
+    CALL1("cullFace", CullFace, I)
+    CALL1("frontFace", FrontFace, I) CALL1("depthFunc", DepthFunc, I) CALL1("depthMask", DepthMask,
+        I) CALL1("clearDepth", ClearDepthf, N) CALL1("clearStencil", ClearStencil, I)
+        CALL1("stencilMask", StencilMask, I) CALL1("lineWidth", LineWidth, N) CALL2("blendFunc",
             BlendFunc, I) CALL1("blendEquation", BlendEquation, I) CALL2("blendEquationSeparate",
             BlendEquationSeparate, I) CALL4("blendFuncSeparate", BlendFuncSeparate, I)
             CALL4("blendColor", BlendColor, N) CALL4("clearColor", ClearColor, N)
@@ -1536,6 +1537,12 @@ JSValue native_impl(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
         if (!node || !node->tag || strcmp(node->tag, "canvas")
             || !JS_GetRuntimeOpaque(JS_GetRuntime(ctx)))
             return JS_ThrowTypeError(ctx, "Canvas scope is closed");
+        if (a.integer(5)) {
+            std::fprintf(stderr,
+                "[webgl2] strict performance-caveat request refused: backend hardware performance "
+                "is not qualified\n");
+            return JS_NULL;
+        }
         if (!node->canvas)
             node->canvas = pu_canvas_create(300, 150);
         if (!node->canvas)

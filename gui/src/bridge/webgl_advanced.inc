@@ -112,6 +112,11 @@ if (IS("getVertexAttrib") || IS("getVertexAttribOffset")) {
             ERROR(GL_INVALID_ENUM);
         return JS_NewUint32(ctx, c->vaos[c->vao].attributes[index].offset);
     }
+    if (pname == GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING) {
+        GLint value = 0;
+        gl->GetVertexAttribiv(index, pname, &value);
+        return JS_NewUint32(ctx, (GLuint)value);
+    }
     if (pname == GL_CURRENT_VERTEX_ATTRIB) {
         GLenum type = c->attribute_types[index];
         GLfloat f[4] = { };
@@ -257,8 +262,10 @@ if (IS("getIndexedParameter")) {
     GLenum target = I(0);
     unsigned index = I(1);
     GLint maximum = 0;
-    bool uniform = target == GL_UNIFORM_BUFFER_START || target == GL_UNIFORM_BUFFER_SIZE;
+    bool uniform = target == GL_UNIFORM_BUFFER_START || target == GL_UNIFORM_BUFFER_SIZE
+        || target == GL_UNIFORM_BUFFER_BINDING;
     if (!uniform && target != GL_TRANSFORM_FEEDBACK_BUFFER_START
+        && target != GL_TRANSFORM_FEEDBACK_BUFFER_BINDING
         && target != GL_TRANSFORM_FEEDBACK_BUFFER_SIZE)
         ERROR(GL_INVALID_ENUM);
     gl->GetIntegerv(
@@ -266,6 +273,11 @@ if (IS("getIndexedParameter")) {
         &maximum);
     if (index >= (unsigned)maximum)
         ERROR(GL_INVALID_VALUE);
+    if (target == GL_UNIFORM_BUFFER_BINDING || target == GL_TRANSFORM_FEEDBACK_BUFFER_BINDING) {
+        GLint value = 0;
+        gl->GetIntegeri_v(target, index, &value);
+        return JS_NewUint32(ctx, (GLuint)value);
+    }
     auto& bindings = uniform ? c->uniform_buffers : c->feedbacks[c->feedback].bindings;
     auto range = bindings[index];
     if (range.whole && range.buffer)
@@ -384,7 +396,9 @@ if (IS("beginQuery") || IS("endQuery") || IS("getQuery") || IS("getQueryParamete
         GLenum pname = I(1);
         if (pname != GL_QUERY_RESULT && pname != GL_QUERY_RESULT_AVAILABLE)
             ERROR(GL_INVALID_ENUM);
-        if (!r->target || c->queries[r->target] == r)
+        GLenum slot
+            = r->target == GL_ANY_SAMPLES_PASSED_CONSERVATIVE ? GL_ANY_SAMPLES_PASSED : r->target;
+        if (!r->target || c->queries[slot] == r)
             ERROR(GL_INVALID_OPERATION);
         if (pname == GL_QUERY_RESULT) {
             GLuint ready = 0;
@@ -403,24 +417,33 @@ if (IS("beginQuery") || IS("endQuery") || IS("getQuery") || IS("getQueryParamete
     if (target != GL_ANY_SAMPLES_PASSED && target != GL_ANY_SAMPLES_PASSED_CONSERVATIVE
         && target != GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN)
         ERROR(GL_INVALID_ENUM);
+    GLenum slot = target == GL_ANY_SAMPLES_PASSED_CONSERVATIVE ? GL_ANY_SAMPLES_PASSED : target;
     if (IS("beginQuery")) {
         auto r = resource(c, a.at(1), PuGlKind::Query);
         if (!r)
             return JS_UNDEFINED;
-        if (c->queries[target] || (r->target && r->target != target))
+        if (c->queries[slot] || (r->target && r->target != target))
             ERROR(GL_INVALID_OPERATION);
         gl->BeginQuery(target, r->name);
+        GLenum query_error = gl->GetError();
+        if (query_error)
+            ERROR(query_error);
         r->target = target;
-        c->queries[target] = r;
+        c->queries[slot] = r;
     } else if (IS("endQuery")) {
-        if (!c->queries[target])
+        if (!c->queries[slot])
             ERROR(GL_INVALID_OPERATION);
         gl->EndQuery(target);
-        c->queries[target].reset();
+        GLenum query_error = gl->GetError();
+        if (query_error)
+            ERROR(query_error);
+        c->queries[slot].reset();
     } else {
         if (I(1) != GL_CURRENT_QUERY)
             ERROR(GL_INVALID_ENUM);
-        return JS_NewUint32(ctx, c->queries[target] ? c->queries[target]->name : 0);
+        GLint value = 0;
+        gl->GetQueryiv(target, GL_CURRENT_QUERY, &value);
+        return JS_NewUint32(ctx, (GLuint)value);
     }
     return JS_UNDEFINED;
 }
@@ -560,6 +583,9 @@ if (IS("endTransformFeedback")) {
     if (!c->feedback_active)
         ERROR(GL_INVALID_OPERATION);
     gl->EndTransformFeedback();
+    GLenum feedback_error = gl->GetError();
+    if (feedback_error)
+        ERROR(feedback_error);
     c->feedback_active = c->feedback_paused = false;
     auto& feedback = c->feedbacks[c->feedback];
     feedback.active = feedback.paused = false;
@@ -570,6 +596,9 @@ if (IS("pauseTransformFeedback")) {
     if (!c->feedback_active || c->feedback_paused)
         ERROR(GL_INVALID_OPERATION);
     gl->PauseTransformFeedback();
+    GLenum feedback_error = gl->GetError();
+    if (feedback_error)
+        ERROR(feedback_error);
     c->feedback_paused = c->feedbacks[c->feedback].paused = true;
     return JS_UNDEFINED;
 }
@@ -579,6 +608,9 @@ if (IS("resumeTransformFeedback")) {
     if (c->feedbacks[c->feedback].program != c->current_program)
         ERROR(GL_INVALID_OPERATION);
     gl->ResumeTransformFeedback();
+    GLenum feedback_error = gl->GetError();
+    if (feedback_error)
+        ERROR(feedback_error);
     c->feedback_paused = c->feedbacks[c->feedback].paused = false;
     return JS_UNDEFINED;
 }
@@ -636,6 +668,8 @@ if (IS("getInternalformatParameter")) {
 }
 if (IS("getFramebufferAttachmentParameter")) {
     GLenum target = I(0), attachment = I(1), pname = I(2);
+    if (target != GL_FRAMEBUFFER && target != GL_READ_FRAMEBUFFER && target != GL_DRAW_FRAMEBUFFER)
+        ERROR(GL_INVALID_ENUM);
     bool has_fbo
         = target == GL_READ_FRAMEBUFFER ? bool(c->read_framebuffer) : bool(c->draw_framebuffer);
     if (!has_fbo) {
@@ -649,9 +683,20 @@ if (IS("getFramebufferAttachmentParameter")) {
             ERROR(GL_INVALID_OPERATION);
         if (pname == GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)
             return JS_NewUint32(ctx, GL_FRAMEBUFFER_DEFAULT);
+        if (pname == GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME)
+            return JS_NULL;
+    } else {
+        GLint maximum = 0;
+        gl->GetIntegerv(GL_MAX_COLOR_ATTACHMENTS, &maximum);
+        if (attachment != GL_DEPTH_ATTACHMENT && attachment != GL_STENCIL_ATTACHMENT
+            && attachment != GL_DEPTH_STENCIL_ATTACHMENT
+            && (attachment < GL_COLOR_ATTACHMENT0
+                || attachment >= GL_COLOR_ATTACHMENT0 + (unsigned)maximum))
+            ERROR(GL_INVALID_ENUM);
     }
     switch (pname) {
     case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE:
+    case GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME:
     case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LEVEL:
     case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_CUBE_MAP_FACE:
     case GL_FRAMEBUFFER_ATTACHMENT_TEXTURE_LAYER:

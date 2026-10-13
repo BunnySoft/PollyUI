@@ -1,0 +1,26 @@
+{
+  "publisher": "electron/electron official GitHub release",
+  "version": "v41.10.7",
+  "angleVersion": "2.1.27094",
+  "angleRevision": "830fc642200f",
+  "archiveUrl": "https://github.com/electron/electron/releases/download/v41.10.7/electron-v41.10.7-win32-x64.zip",
+  "archiveBytes": 142914787,
+  "archiveSha256": "43f2f823a263ee7d3ac71282e26c417c9e4417bbefdfa97ede3fde15daf5a46d",
+  "checksumsUrl": "https://github.com/electron/electron/releases/download/v41.10.7/SHASUMS256.txt",
+  "checksumsSha256": "6850e29142ae4cdcf70b16841c4343babcde33d3cee7ba43843b2a78db7963b8",
+  "selectedBackend": "ANGLE EGL/GLES via Vulkan + explicitly selected SwiftShader (software CPU)",
+  "files": {
+    "libEGL.dll": "68a4993edd27f5388d1c81b6f3dfdc7543bc08bb8d67f4601a7a539f92582ce9",
+    "libGLESv2.dll": "0fcccb1220cb52191a5f0d06c98bcdf909a53c2f652ba8b546e480da76b9f850",
+    "d3dcompiler_47.dll": "c8e25abd3d45dfb55966a74613258c39b4a83ea2ac77f2f80903499f4d5c03f0",
+    "vulkan-1.dll": "4a8e57900e0d34e82282a3fc18e4510109bc154dc3092620df6aa5bd6e14deee",
+    "vk_swiftshader.dll": "6e3b738934104835d60515901b3a766ad3fe959a4208072742cfd4c25ab29faa",
+    "vk_swiftshader_icd.json": "32d83ff113fef532a9f97e0d2831f8656628ab1c99e9060f0332b1532839afd9",
+    "LICENSE": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
+    "LICENSES.chromium.html": "0883a9eb407906c12b334d89bc5fbc63bd1df9e0803c252cc8d23cb76b6d58f3"
+  },
+  "icdLibraryPath": ".\\vk_swiftshader.dll",
+  "licenseBoundary": "Preserve both complete original license files beside any staged vendor libraries. This is an officially published Electron bundle containing ANGLE/SwiftShader, not a standalone official ANGLE vendor package. No Electron/browser installation, execution or embedding is used.",
+  "qualificationBoundary": "D3D11 nonzero-base mip generation returned black pixels on 355cc61af2aa, eca5eac9e587 and 830fc642200f in actual compatible/ordinary mutable/immutable tests. It is not used as a WebGL2 fallback. v44.7.0 lacked separate EGL/GLES DLLs and was diagnostic-only. Hardware Vulkan and complete WebGL/WPT conformance are not certified.",
+  "systemBoundary": "Application-local native libraries and original relative ICD only; no global Vulkan environment/registry or shared SDK changes. This remains WebGL2, not a JS WebGPU implementation."
+}

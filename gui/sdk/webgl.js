@@ -103,10 +103,10 @@
         get drawingBufferWidth(){const s=state(this);poll(s);return s.lost?0:s.canvas.width;}
         get drawingBufferHeight(){const s=state(this);poll(s);return s.lost?0:s.canvas.height;}
         get drawingBufferFormat(){return native(state(this).handle,"format",[]);}
-        get drawingBufferColorSpace(){return "srgb";}
-        set drawingBufferColorSpace(value){colorSpace(value);}
-        get unpackColorSpace(){return "srgb";}
-        set unpackColorSpace(value){colorSpace(value);}
+        get drawingBufferColorSpace(){state(this);return "srgb";}
+        set drawingBufferColorSpace(value){state(this);colorSpace(value);}
+        get unpackColorSpace(){state(this);return "srgb";}
+        set unpackColorSpace(value){state(this);colorSpace(value);}
         drawingBufferStorage(format,width,height){
             const s=state(this);poll(s);
             if(arguments.length<3)throw new TypeError("drawingBufferStorage requires three arguments");
@@ -549,8 +549,8 @@
     };
     proto.getVertexAttrib=function(index,name){
         const s=state(this);index=Number(index)>>>0;name=Number(name)>>>0;
-        if(name===constants.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING)return vao(s).attributes.get(index)?.buffer||null;
         const value=call(s,"getVertexAttrib",[index,name]);
+        if(name===constants.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING)return value?vao(s).attributes.get(index)?.buffer||null:null;
         if(value&&value.values)return value.type===constants.INT?new Int32Array(value.values):
             value.type===constants.UNSIGNED_INT?new Uint32Array(value.values):new Float32Array(value.values);
         return Array.isArray(value)?new Float32Array(value):value;
@@ -586,13 +586,15 @@
     }
     proto.getIndexedParameter=function(target,index){
         const s=state(this);target=Number(target)>>>0;index=Number(index)>>>0;
+        const value=call(s,"getIndexedParameter",[target,index]);
         if(target===constants.UNIFORM_BUFFER_BINDING||target===constants.TRANSFORM_FEEDBACK_BUFFER_BINDING){
+            if(!value)return null;
             const feedback=s.bindings.get("feedback");
             if(target===constants.TRANSFORM_FEEDBACK_BUFFER_BINDING&&feedback)return objects.get(feedback).attached.get(index)||null;
             const binding=target===constants.UNIFORM_BUFFER_BINDING?constants.UNIFORM_BUFFER:constants.TRANSFORM_FEEDBACK_BUFFER;
             return s.bindings.get(`indexed:${binding}:${index}`)||null;
         }
-        return call(s,"getIndexedParameter",[target,index]);
+        return value;
     };
     for(const name of ["getUniformBlockIndex","getActiveUniformBlockName","getActiveUniformBlockParameter","uniformBlockBinding",
         "getUniformIndices","getActiveUniforms","transformFeedbackVaryings","getTransformFeedbackVarying"]){
@@ -611,20 +613,21 @@
             }return result;
         };
     }
+    function querySlot(target){return target===constants.ANY_SAMPLES_PASSED_CONSERVATIVE?constants.ANY_SAMPLES_PASSED:target;}
     proto.beginQuery=function(target,query){
         const s=state(this),handle=object(s,query,9,false);if(handle===undefined)return;
         if(call(s,"beginQuery",[Number(target)>>>0,handle])!==true)return;
-        objects.get(query).visible=false;s.bindings.set(`query:${Number(target)>>>0}`,query);
+        objects.get(query).visible=false;s.bindings.set(`query:${querySlot(Number(target)>>>0)}`,query);
     };
     proto.endQuery=function(target){
-        const s=state(this),key=`query:${Number(target)>>>0}`,query=s.bindings.get(key);
+        const s=state(this),key=`query:${querySlot(Number(target)>>>0)}`,query=s.bindings.get(key);
         if(call(s,"endQuery",[Number(target)>>>0])!==true)return;
         s.bindings.delete(key);
         if(query){const r=objects.get(query);s.queue(()=>{if(!s.closed&&!r.deleted&&r.generation===s.generation)r.visible=true;});}
     };
     proto.getQuery=function(target,pname){
-        const s=state(this);call(s,"getQuery",[Number(target)>>>0,Number(pname)>>>0]);
-        return s.lost?null:s.bindings.get(`query:${Number(target)>>>0}`)||null;
+        const s=state(this),value=call(s,"getQuery",[Number(target)>>>0,Number(pname)>>>0]);
+        return value?s.bindings.get(`query:${querySlot(Number(target)>>>0)}`)||null:null;
     };
     proto.getQueryParameter=function(query,pname){
         const s=state(this);poll(s);if(s.lost)return null;
@@ -699,11 +702,13 @@
     }
     proto.getFramebufferAttachmentParameter=function(target,attachment,pname){
         const s=state(this);target=Number(target)>>>0;attachment=Number(attachment)>>>0;pname=Number(pname)>>>0;
+        const value=call(s,"getFramebufferAttachmentParameter",[target,attachment,pname]);
         if(pname===constants.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME){
+            if(!value)return null;
             const fbo=s.bindings.get(target===constants.READ_FRAMEBUFFER?"readFbo":"drawFbo");
             return fbo?objects.get(fbo).attached.get(attachment)||null:null;
         }
-        return call(s,"getFramebufferAttachmentParameter",[target,attachment,pname]);
+        return value;
     };
     const methods={
         clear:1,clearColor:4,clearDepth:1,clearStencil:1,colorMask:4,depthMask:1,depthFunc:1,depthRange:2,
@@ -757,12 +762,13 @@
         const attributes={alpha:options.alpha===undefined?true:Boolean(options.alpha),
             depth:options.depth===undefined?true:Boolean(options.depth),stencil:Boolean(options.stencil),
             antialias:false,premultipliedAlpha:options.premultipliedAlpha===undefined?true:Boolean(options.premultipliedAlpha),
-            preserveDrawingBuffer:Boolean(options.preserveDrawingBuffer),powerPreference:"default",failIfMajorPerformanceCaveat:false,
+            preserveDrawingBuffer:Boolean(options.preserveDrawingBuffer),powerPreference:"default",failIfMajorPerformanceCaveat:Boolean(options.failIfMajorPerformanceCaveat),
             desynchronized:false};
         const power=options.powerPreference===undefined?"default":String(options.powerPreference);
         if(!["default","low-power","high-performance"].includes(power))throw new TypeError("Invalid powerPreference");
         const handle=native(canvas,"open",[Number(attributes.alpha),Number(attributes.depth),
-            Number(attributes.stencil),Number(attributes.premultipliedAlpha),Number(attributes.preserveDrawingBuffer)]);
+            Number(attributes.stencil),Number(attributes.premultipliedAlpha),Number(attributes.preserveDrawingBuffer),
+            Number(attributes.failIfMajorPerformanceCaveat)]);
         if(!handle){
             media.shutdown=()=>{media.closed=true;};
             queue(()=>{if(!media.closed)mediaCall(canvas,"event",[],"webglcontextcreationerror");});return null;
