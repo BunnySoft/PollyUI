@@ -301,16 +301,17 @@ automatic expansion into desktop file operations or cross-application dragging.
 
 ## HTML Canvas graphics sequence
 
-The user wants Canvas 2D and 3D graphics compatibility, with **2D completed
-first, then the 3D route planned**. The selected first increment is Canvas 2D
-plus HTML `Image`/`img` behavior for PNG/JPEG, not merely the existing image
-background/Bitmap primitives.
+The user wants Canvas 2D and 3D graphics compatibility. After integrating the
+first Canvas 2D and PNG/JPEG `Image`/`img` increment, the user selected **3D
+implementation without WebGL1**: shared GPU canvas, WebGL2/Three.js, then
+native WebGPU/Three.js.
 
 | Stage | Scope | State |
 |---|---|---|
 | Canvas 2D | HTML canvas element/context, independent backing/CSS dimensions, drawing state/paths/text/images, pixel access, export, DOM composition and lifecycle | First subset integrated `5abf2ca`/`f4f42d9`; [actual compatibility matrix](./gui/sdk/CANVAS.md), including unsupported and approximate behavior |
 | Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Integrated: entry-relative/absolute local paths, local file URLs and base64 data URLs; EXIF orientation, source generations, task delivery and resource closure checked. No HTTP(S)/CORS/browser sandbox |
-| WebGL/WebGPU route | Plan native backend/context/resource management, required JS environment and version-qualified Three.js compatibility | Proposed route recorded after 2D integration: shared GPU canvas seam, WebGL2/Three.js, then native WebGPU/Three.js. Backend/dependency and implementation scopes remain unselected |
+| Shared GPU canvas and WebGL2 | Common offscreen/context/resource ownership, Windows ANGLE and Linux GLES backends, required JS environment and pinned Three.js WebGLRenderer qualification | Selected; implementation in progress, not integrated/qualified yet. Preserve 2D and existing DOM composition; `webgl`/`experimental-webgl` remain unavailable, not WebGL2 aliases |
+| WebGPU | Maintained native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification | Selected next, dependent on the shared GPU canvas increment; implementation has not started. A WebGL2 fallback does not qualify WebGPU |
 | SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
 
 Canvas draws inside the existing UI window. This work neither starts desktop

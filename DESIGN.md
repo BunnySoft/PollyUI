@@ -506,7 +506,7 @@ actual pixel, state, image, export and lifecycle checks. This increment does
 not claim a full browser DOM, browser sandbox or complete standards-test
 coverage. WebGL/WebGPU/Three.js support is neither implemented nor implied by
 Canvas 2D; their context/backend/resource and required-environment route is
-the following planning task, not concurrent 3D implementation.
+the separately selected implementation sequence below.
 
 The first 2D/image subset is integrated in `5abf2ca` and `f4f42d9`.
 Its [compatibility matrix](./gui/sdk/CANVAS.md) records actual API shapes,
@@ -518,12 +518,14 @@ fixture cover the increment; this is not full browser/WPT or 3D qualification.
 
 ### 5.7 Proposed WebGL and WebGPU route
 
-This is the next planning stage, not authorization to install GPU dependencies,
-modify a shared SDK or start both backends in parallel. Both APIs are user goals.
-The proposed order is WebGL2/Three.js first, then WebGPU; final backend choices
-and each implementation slice require an explicit scope.
+The user has selected implementation of this route after Canvas 2D integration,
+explicitly excluding WebGL1. The order is shared GPU canvas and WebGL2/Three.js
+first, then native WebGPU/Three.js on that foundation; the two backends are not
+implemented in parallel. `webgl` and `experimental-webgl` remain unavailable,
+not aliases for `webgl2`. Selection is not a claim of delivered 3D support or
+permission to modify the shared SDK.
 
-| Slice | Proposed deliverable | Boundary |
+| Slice | Selected deliverable | Boundary |
 |---|---|---|
 | Shared GPU canvas seam | Canvas context-mode ownership, offscreen render target, resource lifetime, resize, DOM composition and loss handling | Keep backing/CSS/DPI dimensions separate. Do not add an OS window per canvas; preserve 2D behavior and return null for genuinely unavailable contexts |
 | WebGL2 | Browser-shaped objects, validation, buffers/textures/framebuffers, GLSL shaders, draw/state/query APIs | GLES calls alone are not WebGL compatibility. Limits/extensions/errors must reflect the actual backend, not hard-coded success |
@@ -532,11 +534,15 @@ and each implementation slice require an explicit scope.
 | WebGPU Three.js qualification | Pin the renderer/backend and test a real WebGPU path, including external-image transfers and lifetime | A WebGL2 fallback is not evidence that WebGPU is implemented |
 
 Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
-current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Windows
-currently uses raster/WARP for transparent UI and does not have a qualified
-ANGLE runtime in this checkout. These are available-build facts, not device
-or hardware-driver certification. Windows ANGLE and Linux GLES are candidate
-WebGL backends; WebGPU needs a separate dependency/backend decision.
+current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Existing
+Windows development ANGLE DLLs were found in `build/win-release` (version
+`2.1.27746`, revision `355cc61af2aa`); their presence does not qualify WebGL2
+or establish a redistributable release dependency. The existing staging tool
+uses installed browser DLLs for development. Windows transparent UI currently
+uses raster/WARP, independently of this graphics route. Windows ANGLE and
+Linux GLES are the selected first backend candidates, subject to actual
+context/shader/resource qualification; WebGPU needs a separately pinned
+native dependency. These are available-build facts, not hardware certification.
 
 JS graphics types/validation remain common; per-platform context/device and
 presentation code stays behind native seams. Mixed raster/GPU composition,
