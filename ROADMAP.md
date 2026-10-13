@@ -311,13 +311,19 @@ native WebGPU/Three.js.
 | Canvas 2D | HTML canvas element/context, independent backing/CSS dimensions, drawing state/paths/text/images, pixel access, export, DOM composition and lifecycle | First subset integrated `5abf2ca`/`f4f42d9`; [actual compatibility matrix](./gui/sdk/CANVAS.md), including unsupported and approximate behavior |
 | Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Integrated: entry-relative/absolute local paths, local file URLs and base64 data URLs; EXIF orientation, source generations, task delivery and resource closure checked. No HTTP(S)/CORS/browser sandbox |
 | Shared GPU canvas and WebGL2 | Common offscreen/context/resource ownership, Windows ANGLE and Linux GLES backends, required JS environment and pinned Three.js WebGLRenderer qualification | Selected; implementation in progress, not integrated/qualified yet. Preserve 2D and existing DOM composition; `webgl`/`experimental-webgl` remain unavailable, not WebGL2 aliases |
-| WebGPU | Maintained native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification | Selected next, dependent on the shared GPU canvas increment; implementation has not started. A WebGL2 fallback does not qualify WebGPU |
+| WebGPU | Pinned Dawn native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification | Selected next, dependent on the shared GPU canvas increment. Native dependency preflight passed on Windows D3D12 software/Linux Vulkan llvmpipe; product bindings have not started. A WebGL2 fallback does not qualify WebGPU |
 | SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
 
 Canvas draws inside the existing UI window. This work neither starts desktop
 animated-wallpaper/companion/video candidates nor reverses the window-local
 menu/dialog decision. Supporting one Canvas context mode does not imply the
 others or complete browser compatibility. See [the graphics boundary](./DESIGN.md#56-html-canvas-and-image-compatibility).
+
+The user requested continuous implementation through both 3D increments.
+Completion requires implemented core behavior and real renderer qualification,
+not interface names, a single demo, stub-success returns or unsupported core
+operations hidden by fallback. Optional device features and limits remain
+accurate reflections of the selected adapter.
 
 Parent integration checks independently passed eleven Windows native/GUI
 cases, nine fresh Linux GUI-only cases and a real mapped Wayland 1.5-DPI

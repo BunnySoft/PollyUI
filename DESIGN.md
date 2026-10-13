@@ -530,7 +530,7 @@ permission to modify the shared SDK.
 | Shared GPU canvas seam | Canvas context-mode ownership, offscreen render target, resource lifetime, resize, DOM composition and loss handling | Keep backing/CSS/DPI dimensions separate. Do not add an OS window per canvas; preserve 2D behavior and return null for genuinely unavailable contexts |
 | WebGL2 | Browser-shaped objects, validation, buffers/textures/framebuffers, GLSL shaders, draw/state/query APIs | GLES calls alone are not WebGL compatibility. Limits/extensions/errors must reflect the actual backend, not hard-coded success |
 | Three.js qualification | Pin one tested release; local self-contained scene, texture, input, resize and context-loss cases | Add only required environment support such as HTML canvas creation namespace/events and image loading. Do not claim all loaders, browser DOM or networking from one scene |
-| WebGPU | Standards-shaped adapter/device/queue, WGSL, render/compute pipelines, buffers/textures, mapping and validation/loss events | Evaluate maintained native implementations such as Dawn or wgpu-native instead of exposing raw Vulkan/D3D calls as WebGPU |
+| WebGPU | Standards-shaped adapter/device/queue over Dawn, WGSL/Tint, render/compute pipelines, buffers/textures, mapping and validation/loss events | Windows D3D12 and Linux Vulkan behind the shared native seam; native C API support alone is not the QuickJS/browser-shaped binding |
 | WebGPU Three.js qualification | Pin the renderer/backend and test a real WebGPU path, including external-image transfers and lifetime | A WebGL2 fallback is not evidence that WebGPU is implemented |
 
 Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
@@ -543,6 +543,15 @@ uses raster/WARP, independently of this graphics route. Windows ANGLE and
 Linux GLES are the selected first backend candidates, subject to actual
 context/shader/resource qualification; WebGPU needs a separately pinned
 native dependency. These are available-build facts, not hardware certification.
+
+Dependency preflight selected Dawn `v20261009.190412`
+(`c943ea32b614ff53e4fe410fc8f4968b6b8fe46d`). Its official Windows/Linux
+archives passed integrity checks, and native WGSL compute/queue/map roundtrips
+ran on Windows D3D12 software and Linux Vulkan llvmpipe. This qualifies the
+candidate substrate only, not JS WebGPU or Three.js WebGPU. The Windows archive
+uses the dynamic CRT and needs pinned DXC runtime libraries; preserve PollyUI's
+static CRT through an isolated native provider or a compatible rebuilt Dawn,
+not mixed-CRT linker suppression. Packaging must retain all dependency notices.
 
 JS graphics types/validation remain common; per-platform context/device and
 presentation code stays behind native seams. Mixed raster/GPU composition,
