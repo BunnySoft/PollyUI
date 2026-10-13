@@ -312,7 +312,8 @@ native WebGPU/Three.js.
 | Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Integrated: entry-relative/absolute local paths, local file URLs and base64 data URLs; EXIF orientation, source generations, task delivery and resource closure checked. No HTTP(S)/CORS/browser sandbox |
 | Shared GPU canvas and WebGL2 | Common offscreen/context/resource ownership, Windows ANGLE and Linux GLES backends, required JS environment and pinned Three.js WebGLRenderer qualification | Software functional baseline integrated `586ce9d`/`b527163`; [implemented matrix](./gui/sdk/WEBGL2.md), not full browser/WPT or hardware certification. Preserve 2D and existing DOM composition; `webgl`/`experimental-webgl` remain unavailable |
 | Windows hardware WebGL2 provider | Genuine ANGLE/Vulkan hardware adapter selection, actual device-type/capability reporting, explicit unavailable/software distinction and context lifetime | Active next increment, before WebGPU; current SwiftShader qualification is CPU-only and is not its completion. Physical-GPU qualification requires an accessible hardware adapter |
-| WebGPU | Pinned Dawn native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification | Selected next, dependent on the shared GPU canvas increment. Native dependency preflight passed on Windows D3D12 software/Linux Vulkan llvmpipe; product bindings have not started. A WebGL2 fallback does not qualify WebGPU |
+| macOS WebGL2 provider | ANGLE/Metal native context/device selection using the common Canvas/JS/resource seam | Selected following the user's Linux/macOS discussion and continuation; not implemented yet. Current macOS `webgl2` acquisition returns `null`; native platform build and hardware qualification remain separate |
+| WebGPU | Pinned Dawn native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification on D3D12/Vulkan/Metal | Selected next, dependent on the shared GPU canvas increment. Native dependency preflight passed on Windows D3D12 software/Linux Vulkan llvmpipe; product bindings have not started. macOS needs real Metal-platform validation. A WebGL2 fallback does not qualify WebGPU |
 | SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
 
 Canvas draws inside the existing UI window. This work neither starts desktop
@@ -331,6 +332,9 @@ SwiftShader/llvmpipe/D3D software checks are not completion of hardware 3D.
 Expose the actual selected backend, distinguish unavailable hardware from an
 explicit software path, and retain physical-device qualification as a separate
 status when the execution environment cannot supply a hardware adapter.
+The user will arrange true-machine testing after implementation. Continue
+implementation without waiting for those hardware results, but retain native
+platform build validation and physical-device qualification as distinct states.
 
 The WebGL2 increment uses unmodified Three.js `0.180.0`, a checksum-pinned
 Windows native ANGLE Vulkan/SwiftShader bundle and Linux EGL/GLES.

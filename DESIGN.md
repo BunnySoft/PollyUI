@@ -519,7 +519,8 @@ fixture cover the increment; this is not full browser/WPT or 3D qualification.
 ### 5.7 Proposed WebGL and WebGPU route
 
 The user has selected implementation of this route after Canvas 2D integration,
-explicitly excluding WebGL1. The order is shared GPU canvas and WebGL2/Three.js
+explicitly excluding WebGL1, and has continued with Windows, Linux and macOS
+as platform targets. The order is shared GPU canvas and WebGL2/Three.js
 first, then native WebGPU/Three.js on that foundation; the two backends are not
 implemented in parallel. `webgl` and `experimental-webgl` remain unavailable,
 not aliases for `webgl2`. Selection is not a claim of delivered 3D support or
@@ -530,7 +531,7 @@ permission to modify the shared SDK.
 | Shared GPU canvas seam | Canvas context-mode ownership, offscreen render target, resource lifetime, resize, DOM composition and loss handling | Keep backing/CSS/DPI dimensions separate. Do not add an OS window per canvas; preserve 2D behavior and return null for genuinely unavailable contexts |
 | WebGL2 | Browser-shaped objects, validation, buffers/textures/framebuffers, GLSL shaders, draw/state/query APIs | GLES calls alone are not WebGL compatibility. Limits/extensions/errors must reflect the actual backend, not hard-coded success |
 | Three.js qualification | Pin one tested release; local self-contained scene, texture, input, resize and context-loss cases | Add only required environment support such as HTML canvas creation namespace/events and image loading. Do not claim all loaders, browser DOM or networking from one scene |
-| WebGPU | Standards-shaped adapter/device/queue over Dawn, WGSL/Tint, render/compute pipelines, buffers/textures, mapping and validation/loss events | Windows D3D12 and Linux Vulkan behind the shared native seam; native C API support alone is not the QuickJS/browser-shaped binding |
+| WebGPU | Standards-shaped adapter/device/queue over Dawn, WGSL/Tint, render/compute pipelines, buffers/textures, mapping and validation/loss events | Windows D3D12, Linux Vulkan and macOS Metal behind the shared native seam; native C API support alone is not the QuickJS/browser-shaped binding |
 | WebGPU Three.js qualification | Pin the renderer/backend and test a real WebGPU path, including external-image transfers and lifetime | A WebGL2 fallback is not evidence that WebGPU is implemented |
 
 The shared GPU canvas/WebGL2 software functional increment is integrated in
@@ -543,6 +544,14 @@ query-state transactions, generated mipmap images/budgets, context brands,
 strict software-caveat rejection and cross-display context teardown.
 Windows hardware selection is the next active increment, before WebGPU.
 Neither physical-GPU acceleration nor JS WebGPU is delivered by this baseline.
+
+macOS WebGL2 requires its own ANGLE/Metal provider; the current macOS build
+still returns `null` for that context. Existing Skia/Metal UI support cannot
+serve as its implementation evidence. Reuse common JS and Canvas lifetimes,
+but qualify actual native macOS builds separately. The existing macOS raster
+CI job does not certify either new 3D backend. The user will provide true-machine
+testing after implementation; this does not remove native build validation or
+turn unavailable platform/hardware checks into passes.
 
 Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
 current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Initial
