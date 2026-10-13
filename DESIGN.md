@@ -542,16 +542,32 @@ surface from behavioral coverage and browser conformance. Unmodified Three.js
 uses readback, not zero-copy. Review corrections cover cached getter validation,
 query-state transactions, generated mipmap images/budgets, context brands,
 strict software-caveat rejection and cross-display context teardown.
-Windows hardware selection is the next active increment, before WebGPU.
-Neither physical-GPU acceleration nor JS WebGPU is delivered by this baseline.
+Windows native hardware selection is integrated in `1931f5b`, from
+`e6997e6`: normal installed-driver discovery, native device-type/identity
+checks, explicit software selection and no automatic provider fallback.
+The physical verifier distinguishes unavailable hardware from configuration,
+runtime or ABI errors. Physical-GPU qualification remains pending; JS WebGPU
+is a separate active implementation.
 
 macOS WebGL2 requires its own ANGLE/Metal provider; the current macOS build
 still returns `null` for that context. Existing Skia/Metal UI support cannot
 serve as its implementation evidence. Reuse common JS and Canvas lifetimes,
 but qualify actual native macOS builds separately. The existing macOS raster
-CI job does not certify either new 3D backend. The user will provide true-machine
-testing after implementation; this does not remove native build validation or
-turn unavailable platform/hardware checks into passes.
+CI job does not certify either new 3D backend. Mac source checkpoints
+`68a41a3`/`66e2c41` have not been natively compiled or integrated as supported
+Metal code. No macOS host or permission to push a CI validation branch has
+been supplied; native compilation and Metal checks remain blocked/unqualified.
+The user will provide true-machine testing after implementation; this does not
+remove native build validation or turn unavailable checks into passes.
+
+WebGPU's unmerged `202b1e1`/`004e7cf` foundation checkpoints exercise real
+native WGSL compute, asynchronous compilation, mapping and resource lifetime
+on Windows D3D12 software and Linux Vulkan llvmpipe. They remain work in
+progress, default-disabled, without complete rendering, Canvas presentation,
+core API or Three.js WebGPU delivery. Parent review has also identified
+normative conversion/error and optional-runtime isolation issues for correction.
+Dawn type names and DXGI flags alone can misclassify Microsoft's synthetic
+adapters; record raw native identity separately from hardware qualification.
 
 Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
 current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Initial
