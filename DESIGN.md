@@ -553,6 +553,16 @@ uses the dynamic CRT and needs pinned DXC runtime libraries; preserve PollyUI's
 static CRT through an isolated native provider or a compatible rebuilt Dawn,
 not mixed-CRT linker suppression. Packaging must retain all dependency notices.
 
+Hardware-capable provider selection is part of the desktop 3D route.
+SwiftShader, llvmpipe and the Microsoft Basic Render Driver are software
+qualification substrates, not proof of GPU acceleration or the final
+hardware-provider deliverable. Keep implementation coverage, software runtime
+results and physical-device qualification separate. Do not permanently force
+a CPU provider or silently replace a failed context with another backend and
+call it accelerated support. Windows WebGL2's known D3D mipmap failure must
+not be hidden by fallback; a qualified Vulkan path can use the same ANGLE seam
+while leaving the UI renderer unchanged.
+
 JS graphics types/validation remain common; per-platform context/device and
 presentation code stays behind native seams. Mixed raster/GPU composition,
 sharing across windows, readback cost, shader validation, GC, device/context

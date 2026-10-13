@@ -325,6 +325,12 @@ not interface names, a single demo, stub-success returns or unsupported core
 operations hidden by fallback. Optional device features and limits remain
 accurate reflections of the selected adapter.
 
+Hardware-capable WebGL2/WebGPU providers remain required; CPU-backed
+SwiftShader/llvmpipe/D3D software checks are not completion of hardware 3D.
+Expose the actual selected backend, distinguish unavailable hardware from an
+explicit software path, and retain physical-device qualification as a separate
+status when the execution environment cannot supply a hardware adapter.
+
 Parent integration checks independently passed eleven Windows native/GUI
 cases, nine fresh Linux GUI-only cases and a real mapped Wayland 1.5-DPI
 canvas/Img/clip/scroll/logical-pointer smoke. The example also ran on both
