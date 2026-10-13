@@ -1,5 +1,6 @@
 #include "bridge/media.h"
 #include "bridge/image_file.h"
+#include "bridge/webgl.h"
 #include "canvas-script.h"
 #include "layout/layout.h"
 #include "render/canvas_c.h"
@@ -118,11 +119,13 @@ static JSValue native_media(JSContext *ctx, JSValueConst self, int argc, JSValue
         goto done;
     }
     if (node && !strcmp(op, "event")) {
-        if (strcmp(text, "load") && strcmp(text, "error")) {
+        if (strcmp(text, "load") && strcmp(text, "error") &&
+            strcmp(text, "webglcontextlost") && strcmp(text, "webglcontextrestored") &&
+            strcmp(text, "webglcontextcreationerror")) {
             result = JS_ThrowTypeError(ctx, "Invalid image event");
             goto done;
         }
-        pu_bridge_media_event(ctx, node, text);
+        result = JS_NewBool(ctx, pu_bridge_media_event(ctx, node, text));
         goto done;
     }
     if (node && !strcmp(op, "layout")) {
@@ -161,6 +164,19 @@ static JSValue native_media(JSContext *ctx, JSValueConst self, int argc, JSValue
                                      : key                ? pu_canvas_image(key)
                                                           : NULL;
         result = snapshot ? resource_value(ctx, snapshot) : JS_NULL;
+        goto done;
+    }
+    if (!strcmp(op, "sourcePixels")) {
+        if (!resource || count != 2 || !dimensions(args[0], args[1])) {
+            result = JS_ThrowTypeError(ctx, "Invalid image snapshot");
+            goto done;
+        }
+        size_t size = (size_t)args[0] * (size_t)args[1] * 4;
+        uint8_t *bytes = malloc(size ? size : 1);
+        if (!bytes) { result = JS_ThrowOutOfMemory(ctx); goto done; }
+        result = pu_canvas_resource_read(resource, (int)args[0], (int)args[1], bytes) ?
+            JS_NewArrayBufferCopy(ctx, bytes, size) : JS_ThrowTypeError(ctx, "Cannot read image snapshot");
+        free(bytes);
         goto done;
     }
     if (node && node->tag && !strcmp(node->tag, "img")) {
@@ -394,11 +410,14 @@ int pu_media_install(JSContext *ctx, JSValueConst node_proto)
                                 "polly:canvas", JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(installer))
         return -1;
-    JSValue args[] = {JS_NewCFunction(ctx, native_media, "media", 5), JS_DupValue(ctx, node_proto)};
-    JSValue protos = JS_Call(ctx, installer, JS_UNDEFINED, 2, args);
+    JSValue args[] = {JS_NewCFunction(ctx, native_media, "media", 5), JS_DupValue(ctx, node_proto),
+        pu_webgl_factory(ctx)};
+    JSValue protos = JS_IsException(args[2]) ? JS_EXCEPTION :
+        JS_Call(ctx, installer, JS_UNDEFINED, 3, args);
     JS_FreeValue(ctx, installer);
     JS_FreeValue(ctx, args[0]);
     JS_FreeValue(ctx, args[1]);
+    JS_FreeValue(ctx, args[2]);
     if (JS_IsException(protos))
         return -1;
     JS_SetClassProto(ctx, canvas_prototype_class, JS_GetPropertyUint32(ctx, protos, 0));

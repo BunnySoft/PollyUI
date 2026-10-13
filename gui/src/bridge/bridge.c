@@ -630,7 +630,10 @@ static JSValue js_event_stop_immediate(JSContext *ctx, JSValueConst this_val, in
 static JSValue js_event_prevent(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     (void)argc; (void)argv;
-    JS_SetPropertyStr(ctx, this_val, "defaultPrevented", JS_NewBool(ctx, 1));
+    JSValue cancelable = JS_GetPropertyStr(ctx, this_val, "cancelable");
+    if (JS_IsUndefined(cancelable) || JS_ToBool(ctx, cancelable))
+        JS_SetPropertyStr(ctx, this_val, "defaultPrevented", JS_NewBool(ctx, 1));
+    JS_FreeValue(ctx, cancelable);
     return JS_UNDEFINED;
 }
 
@@ -664,6 +667,10 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
+    if (!strncmp(type, "webglcontext", 12)) {
+        JS_SetPropertyStr(ctx, ev, "cancelable", JS_NewBool(ctx, !strcmp(type, "webglcontextlost")));
+        JS_SetPropertyStr(ctx, ev, "statusMessage", JS_NewString(ctx, ""));
+    }
     const PuKeyEvent *key = data ? data->key : NULL;
     if (key) {
         if (key->type == PU_KEY_TEXT || key->type == PU_KEY_PREEDIT) {
@@ -751,10 +758,12 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
     }
 
-    if (!bubble && (!strcmp(type,"load") || !strcmp(type,"error")) &&
+    if (!bubble && (!strcmp(type,"load") || !strcmp(type,"error") || !strncmp(type,"webglcontext",12)) &&
         !js_event_flag(ctx,ev,"__stopImmediate")) {
         JSValue self=pu_node_wrapper(ctx,target);
-        JSValue callback=JS_GetPropertyStr(ctx,self,!strcmp(type,"load") ? "onload" : "onerror");
+        char handler[64];
+        snprintf(handler,sizeof(handler),"on%s",type);
+        JSValue callback=JS_GetPropertyStr(ctx,self,handler);
         if (JS_IsException(callback)) dispatch_report(ctx);
         else if (JS_IsFunction(ctx,callback)) {
             JSValue result=JS_Call(ctx,callback,self,1,&ev);
@@ -772,10 +781,10 @@ failed:
     return 0;
 }
 
-void pu_bridge_media_event(JSContext *ctx, PuNode *node, const char *type)
+int pu_bridge_media_event(JSContext *ctx, PuNode *node, const char *type)
 {
     PuBridge *root=JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
-    dispatch_impl(root,node,type,NULL,0);
+    return dispatch_impl(root,node,type,NULL,0);
 }
 
 int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event)
@@ -1135,6 +1144,19 @@ static JSValue js_document_createElement(JSContext *ctx, JSValueConst this_val,
     return pu_node_wrapper(ctx, n);
 }
 
+static JSValue js_document_createElementNS(JSContext *ctx, JSValueConst self,
+                                           int argc, JSValueConst *argv)
+{
+    if (argc < 2) return JS_ThrowTypeError(ctx, "createElementNS requires namespace and name");
+    if (!JS_IsNull(argv[0])) {
+        const char *ns = JS_ToCString(ctx, argv[0]);
+        if (!ns) return JS_EXCEPTION;
+        int supported = !strcmp(ns, "http://www.w3.org/1999/xhtml") || !*ns;
+        JS_FreeCString(ctx, ns);
+        if (!supported) return JS_ThrowTypeError(ctx, "Only the HTML namespace is supported");
+    }
+    return js_document_createElement(ctx, self, 1, argv + 1);
+}
 static JSValue js_document_createTextNode(JSContext *ctx, JSValueConst this_val,
                                           int argc, JSValueConst *argv)
 {
@@ -1742,6 +1764,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_get(ctx, node_proto, "offsetTop",    js_node_get_offsetTop);
     def_get(ctx, node_proto, "offsetWidth",  js_node_get_offsetWidth);
     def_get(ctx, node_proto, "offsetHeight", js_node_get_offsetHeight);
+    def_get(ctx, node_proto, "clientWidth",  js_node_get_offsetWidth);
+    def_get(ctx, node_proto, "clientHeight", js_node_get_offsetHeight);
     def_method(ctx, node_proto, "getBoundingClientRect", js_node_getBoundingClientRect, 0);
     def_get(ctx, node_proto, "classList", js_node_get_classList);
     def_get(ctx, node_proto, "firstChild",      js_node_get_firstChild);
@@ -1781,6 +1805,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue document = JS_NewObject(ctx);
     def_method(ctx, document, "createElement",  js_document_createElement,  1);
+    def_method(ctx, document, "createElementNS", js_document_createElementNS, 2);
     def_method(ctx, document, "createTextNode", js_document_createTextNode, 1);
     def_get(ctx, document, "body", js_document_get_body);
     def_get(ctx, document, "activeElement", js_document_get_activeElement);

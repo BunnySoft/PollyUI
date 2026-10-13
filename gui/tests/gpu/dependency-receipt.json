@@ -1,0 +1,19 @@
+{
+  "package": "three",
+  "version": "0.180.0",
+  "revision": "r180",
+  "license": "MIT",
+  "requestedRegistry": "https://packagefeedproxy.microsoft.io/npm/",
+  "resolvedTarball": "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/three/-/three-0.180.0.tgz",
+  "tarballBytes": 7750248,
+  "registrySha1": "b930cabfb524f6d36bf63e874b4d866888b50487",
+  "receivedSha256": "ad66d724565ee29a2467277fa84daa5ed0211d6b8d446e9ef29f6bae0cd14144",
+  "receivedIntegrity": "sha512-o+qycAMZrh+TsE01GqWUxUIKR1AL0S8pq7zDkYOQw8GqfX8b8VoCKYUoHbhiX5j+7hr8XsuHDVU6+gkQJQKg9w==",
+  "integrityProvenance": "SHA512 of the received original npm tarball, not a claim of independently obtained upstream registry integrity. Registry supplied SHA1 matches the tarball.",
+  "unmodifiedRuntimeModules": {
+    "build/three.module.js": "c8211c69345d2e9949dc7a8ac969380497aa0600a5a8ac6a459c8cd02dd9cb8a",
+    "build/three.core.js": "eb077d2417f61d3e6d9264c317cabc4ea35769ed6b0ab533067292a550784c20",
+    "LICENSE": "bfe119ea4fd413f5f7ca3fcd63adb0c4a073ed39daa2fe7d3e6b769e21272601"
+  },
+  "boundary": "Optional local qualification dependency; not linked or embedded into the GUI engine. Original WebGLRenderer is neither patched nor replaced. No WebGPU renderer qualification is implied."
+}

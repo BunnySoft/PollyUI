@@ -2,6 +2,7 @@
 #define POLLYUI_CANVAS_C_H
 
 #include "render/skia_c.h"
+#include "render/gpu_canvas.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,6 +19,9 @@ void pu_canvas_destroy(PuCanvas *canvas);
 int pu_canvas_resize(PuCanvas *canvas, int width, int height);
 int pu_canvas_width(const PuCanvas *canvas);
 int pu_canvas_height(const PuCanvas *canvas);
+PuGpuCanvas *pu_canvas_gpu(PuCanvas *canvas);
+PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *canvas, int alpha, int depth, int stencil,
+                                  int premultiplied, int preserve);
 void pu_canvas_composite(PuSurface *surface, PuCanvas *canvas, float x, float y, float width,
                          float height);
 PuCanvasResource *pu_canvas_resource(const char *kind, const double *args, size_t count,
@@ -29,6 +33,7 @@ int pu_canvas_command(PuCanvas *canvas, PuCanvasResource *target, const char *op
                       PuCanvasResource *resource, double *result, size_t *result_count);
 PuCanvasResource *pu_canvas_snapshot(PuCanvas *canvas);
 PuCanvasResource *pu_canvas_image(const char *key);
+int pu_canvas_resource_read(PuCanvasResource *resource, int width, int height, uint8_t *rgba);
 int pu_canvas_read(PuCanvas *canvas, int x, int y, int width, int height, uint8_t *rgba);
 int pu_canvas_write(PuCanvas *canvas, int width, int height, const uint8_t *rgba, int x, int y,
                     int dirty_x, int dirty_y, int dirty_width, int dirty_height);

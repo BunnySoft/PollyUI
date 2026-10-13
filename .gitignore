@@ -18,6 +18,7 @@
 /third_party/harfbuzz-linux/
 /third_party/text-libs/
 .cache/
+/gui/tests/gpu/node_modules/
 
 # CMake
 CMakeCache.txt

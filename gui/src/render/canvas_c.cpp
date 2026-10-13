@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 #include <new>
 #include <string>
 #include <vector>
@@ -49,8 +50,12 @@ struct PuCanvasResource {
 };
 struct PuCanvas {
     PuCanvas() { ++live_backings; }
-    ~PuCanvas() { --live_backings; }
+    ~PuCanvas() { pu_gpu_canvas_unref(gpu); --live_backings; }
     sk_sp<SkSurface> surface;
+    PuGpuCanvas *gpu = nullptr;
+    uint64_t gpu_revision = 0;
+    uint64_t gpu_display_revision = 0;
+    sk_sp<SkImage> gpu_display;
     int width = 0, height = 0;
     SkMatrix transform = SkMatrix::I();
     std::vector<SkMatrix> saved_transforms;
@@ -138,7 +143,12 @@ int pu_canvas_resize(PuCanvas *c, int w, int h)
             return 0;
         next->getCanvas()->clear(c->opaque ? SK_ColorBLACK : SK_ColorTRANSPARENT);
     }
+    if (c->gpu && !pu_gpu_canvas_resize(c->gpu, w, h))
+        return 0;
     c->surface = std::move(next);
+    c->gpu_revision = 0;
+    c->gpu_display_revision = 0;
+    c->gpu_display.reset();
     c->width = w;
     c->height = h;
     c->path.reset();
@@ -148,15 +158,42 @@ int pu_canvas_resize(PuCanvas *c, int w, int h)
 }
 int pu_canvas_width(const PuCanvas *c) { return c ? c->width : 300; }
 int pu_canvas_height(const PuCanvas *c) { return c ? c->height : 150; }
+PuGpuCanvas *pu_canvas_gpu(PuCanvas *c) { return c ? c->gpu : nullptr; }
+PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *c, int alpha, int depth, int stencil, int premultiplied, int preserve)
+{
+    if (!c) return nullptr;
+    if (!c->gpu) c->gpu = pu_gpu_canvas_create(c->width, c->height, alpha, depth, stencil, premultiplied, preserve);
+    return c->gpu;
+}
+static bool sync_gpu(PuCanvas *c, bool force = false)
+{
+    if (!c || !c->gpu || (!force && c->gpu_revision == pu_gpu_canvas_revision(c->gpu))) return true;
+    if (!c->surface) return true;
+    std::vector<uint8_t> pixels((size_t)c->width * c->height * 4);
+    if (!pu_gpu_canvas_read(c->gpu, pixels.data(), pixels.size())) {
+        std::fprintf(stderr, "[webgl2] cannot snapshot GPU canvas\n");
+        return false;
+    }
+    auto info = SkImageInfo::Make(c->width, c->height, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+    c->surface->writePixels(SkPixmap(info, pixels.data(), (size_t)c->width * 4), 0, 0);
+    c->gpu_revision = pu_gpu_canvas_revision(c->gpu);
+    return true;
+}
 void pu_canvas_composite(PuSurface *s, PuCanvas *c, float x, float y, float w, float h)
 {
-    if (s && s->surface && c && c->surface && w > 0 && h > 0)
-        s->surface->getCanvas()->drawImageRect(c->surface->makeImageSnapshot(),
-                                               SkRect::MakeXYWH(x, y, w, h),
-                                               SkSamplingOptions(SkFilterMode::kLinear));
+    if (!s || !s->surface || !c || !c->surface || w <= 0 || h <= 0) return;
+    if (c->gpu && c->gpu_display_revision != pu_gpu_canvas_revision(c->gpu)) {
+        if (!sync_gpu(c, true)) return;
+        c->gpu_display = c->surface->makeImageSnapshot();
+        c->gpu_display_revision = pu_gpu_canvas_revision(c->gpu);
+    }
+    s->surface->getCanvas()->drawImageRect(c->gpu ? c->gpu_display : c->surface->makeImageSnapshot(),
+        SkRect::MakeXYWH(x, y, w, h), SkSamplingOptions(SkFilterMode::kLinear));
+    if (c->gpu) pu_gpu_canvas_present(c->gpu);
 }
 PuCanvasResource *pu_canvas_snapshot(PuCanvas *c)
 {
+    if (!sync_gpu(c, true)) return nullptr;
     if (!c || !c->surface)
         return nullptr;
     auto r = new (std::nothrow) PuCanvasResource;
@@ -177,6 +214,12 @@ PuCanvasResource *pu_canvas_image(const char *key)
         r->image = std::move(img);
     }
     return r;
+}
+int pu_canvas_resource_read(PuCanvasResource *r, int w, int h, uint8_t *rgba)
+{
+    if (!r || !r->image || r->image->width() != w || r->image->height() != h) return 0;
+    auto info = SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+    return r->image->readPixels(nullptr, info, rgba, (size_t)w * 4, 0, 0);
 }
 void pu_canvas_resource_destroy(PuCanvasResource *r) { delete r; }
 PuCanvasResource *pu_canvas_resource(const char *kind, const double *a, size_t n, const char *text,
@@ -594,6 +637,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
 }
 int pu_canvas_read(PuCanvas *c, int x, int y, int w, int h, uint8_t *rgba)
 {
+    if (!sync_gpu(c, true)) return 0;
     memset(rgba, 0, (size_t)w * h * 4);
     if (!c || !c->surface)
         return 1;
@@ -624,6 +668,7 @@ int pu_canvas_write(PuCanvas *c, int w, int h, const uint8_t *rgba, int x, int y
 }
 int pu_canvas_encode(PuCanvas *c, int jpeg, double quality, uint8_t **bytes, size_t *length)
 {
+    if (!sync_gpu(c, true)) return 0;
     if (!c || !c->surface)
         return 0;
     SkPixmap pixmap;

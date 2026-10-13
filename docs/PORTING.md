@@ -56,6 +56,31 @@ without an HWND/SDL window; the optional `gui-canvas-wayland` smoke exercises a
 mapped fractional-DPI window. Neither requires an ISO/VM or Windows desktop
 screen sampling. Existing window/popup/transparency/grab semantics are unchanged.
 
+### Owned GPU Canvas / WebGL2
+
+Windows/Linux `PU_WEBGL2=ON` adds a private EGL/GLES3 offscreen context/device
+adapter, common native validation/resource ownership and embedded browser-shaped
+JS interfaces. `EGL`/`GLES3` headers are required; Windows can use the existing
+Skia ANGLE include directory, Linux uses its system headers. Libraries load
+dynamically; Windows confines development ANGLE DLL lookup to the application
+directory/system loader dependency paths. Missing runtime/ES3 support returns
+`null` with creation-error notification, not a fake context or silent success.
+`PU_WEBGL2=OFF` keeps 2D available; macOS WebGL2 is explicitly unavailable.
+
+Each canvas has an owned framebuffer, not a native surface/window. The adapter
+restores the owning UI EGL context and never terminates a shared display.
+The first composition path is real GPU readback to a raster Skia snapshot,
+not zero-copy. Canvas width/height are independent of host DPI; regular DOM
+clipping, scrolling, opacity, transforms and pointer handling remain shared.
+No SysRT service or WebGPU dependency is introduced.
+
+The tested installed-browser ANGLE DLL copies are development provenance only,
+not a licensed official redistributable package. Three.js is an optional
+manifest-pinned qualification dependency, not a GUI library/runtime download.
+See [WEBGL2.md](../gui/sdk/WEBGL2.md) for exact qualified platforms, optional
+extension handling, source/license/integrity records and remaining conformance
+boundaries.
+
 ---
 
 ## 1. The HostEngine contract

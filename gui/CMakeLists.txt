@@ -7,12 +7,15 @@ add_library(pollyui-engine STATIC
     src/context/context.c
     src/render/skia_c.cpp
     src/render/canvas_c.cpp
+    src/render/gpu_canvas.cpp
+    src/render/gpu_device.cpp
     src/render/render.c
     src/script/script.c
     src/script/async.c
     src/model/node.c
     src/bridge/bridge.c
     src/bridge/media.c
+    src/bridge/webgl.cpp
     src/bridge/image_file.c
     src/host/clipboard.c
     src/host/drag.c
@@ -22,6 +25,30 @@ add_library(pollyui-engine STATIC
 target_include_directories(pollyui-engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${SKIA_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(pollyui-engine PUBLIC qjs yogacore polly-execution)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl.js")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl.js" WEBGL_SCRIPT HEX)
+string(REGEX REPLACE "(..)" "0x\\1," WEBGL_SCRIPT "${WEBGL_SCRIPT}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/webgl-script.h"
+    "static const unsigned char pu_webgl_script[] = {${WEBGL_SCRIPT}0};\n")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl-interface.js")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sdk/webgl-interface.js" WEBGL_INTERFACE HEX)
+string(REGEX REPLACE "(..)" "0x\\1," WEBGL_INTERFACE "${WEBGL_INTERFACE}")
+file(APPEND "${CMAKE_CURRENT_BINARY_DIR}/webgl-script.h"
+    "static const unsigned char pu_webgl_interface[] = {${WEBGL_INTERFACE}0};\n")
+if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    option(PU_WEBGL2 "Build the offscreen EGL/GLES3 Canvas backend" ON)
+    if (PU_WEBGL2)
+        find_path(PU_GLES_INCLUDE_DIR GLES3/gl3.h
+            HINTS "${SKIA_ROOT}/third_party/externals/angle2/include" REQUIRED)
+        target_include_directories(pollyui-engine PRIVATE "${PU_GLES_INCLUDE_DIR}")
+        target_compile_definitions(pollyui-engine PRIVATE PU_WEBGL2)
+        target_link_libraries(pollyui-engine PUBLIC ${CMAKE_DL_LIBS})
+        if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            set_source_files_properties(src/bridge/webgl.cpp src/render/gpu_canvas.cpp src/render/gpu_device.cpp
+                PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")
+        endif()
+    endif()
+endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_source_files_properties(src/host/drag.c src/host/drag_js.c src/host/sdl/drag_wayland.c
         PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")
@@ -31,6 +58,36 @@ add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    add_executable(pollyui-gpu-test tests/gpu.c)
+    target_include_directories(pollyui-gpu-test PRIVATE src)
+    target_link_libraries(pollyui-gpu-test PRIVATE pollyui-engine)
+    if (PU_WEBGL2)
+        add_executable(pollyui-gpu-current-test tests/gpu-current.cpp)
+        target_include_directories(pollyui-gpu-current-test PRIVATE src "${PU_GLES_INCLUDE_DIR}")
+        target_compile_definitions(pollyui-gpu-current-test PRIVATE PU_WEBGL2)
+        target_link_libraries(pollyui-gpu-current-test PRIVATE pollyui-engine)
+        add_test(NAME gui-gpu-current COMMAND pollyui-gpu-current-test)
+        set_tests_properties(gui-gpu-current PROPERTIES TIMEOUT 45)
+        add_test(NAME gui-gpu COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu.mjs")
+        set_tests_properties(gui-gpu PROPERTIES TIMEOUT 45)
+        add_test(NAME gui-gpu-core COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-core.mjs")
+        set_tests_properties(gui-gpu-core PROPERTIES TIMEOUT 45)
+        add_test(NAME gui-gpu-api COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-api.mjs")
+        set_tests_properties(gui-gpu-api PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        add_test(NAME gui-gpu-transfer COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-transfer.mjs")
+        set_tests_properties(gui-gpu-transfer PROPERTIES TIMEOUT 45)
+        add_test(NAME gui-gpu-state COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-state.mjs")
+        set_tests_properties(gui-gpu-state PROPERTIES TIMEOUT 45)
+        add_test(NAME gui-gpu-uniform COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-uniform.mjs")
+        set_tests_properties(gui-gpu-uniform PROPERTIES TIMEOUT 45)
+        if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/node_modules/three/build/three.module.js")
+            add_test(NAME gui-gpu-three COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-three.mjs")
+            set_tests_properties(gui-gpu-three PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
+    else()
+        add_test(NAME gui-gpu-unavailable COMMAND pollyui-gpu-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-unavailable.mjs" --unavailable)
+        set_tests_properties(gui-gpu-unavailable PROPERTIES TIMEOUT 30)
+    endif()
     add_executable(pollyui-canvas-test tests/canvas.c)
     target_include_directories(pollyui-canvas-test PRIVATE src)
     target_link_libraries(pollyui-canvas-test PRIVATE pollyui-engine)
@@ -44,6 +101,12 @@ if (BUILD_TESTING)
             $<TARGET_FILE:pollyui-canvas-wayland-test> $<TARGET_FILE:pollyui-playground>
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/canvas-window.mjs")
         set_tests_properties(gui-canvas-wayland PROPERTIES TIMEOUT 30)
+        if (PU_WEBGL2 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/node_modules/three/build/three.module.js")
+            add_test(NAME gui-gpu-wayland COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/canvas-wayland.sh"
+                $<TARGET_FILE:pollyui-canvas-wayland-test> $<TARGET_FILE:pollyui-playground>
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu-window.mjs" gpu)
+            set_tests_properties(gui-gpu-wayland PROPERTIES TIMEOUT 45 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
     endif()
     add_executable(pollyui-transparency-contract-test tests/transparency-contract.c)
     target_include_directories(pollyui-transparency-contract-test PRIVATE include src)

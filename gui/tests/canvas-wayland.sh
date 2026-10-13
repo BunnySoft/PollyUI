@@ -11,4 +11,4 @@ cleanup() {
 trap cleanup EXIT
 export XDG_RUNTIME_DIR="$runtime" WLR_BACKENDS=headless WLR_HEADLESS_OUTPUTS=1 WLR_RENDERER=pixman
 export SDL_VIDEODRIVER=wayland PU_RENDERER=raster
-"$server" "$client" "$script"
+"$server" "$client" "$script" ${4:+"$4"}

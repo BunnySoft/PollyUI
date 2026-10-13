@@ -1,4 +1,4 @@
-(function installCanvas(native, nodePrototype) {
+(function installCanvas(native, nodePrototype, createWebGL) {
     "use strict";
     const {Array,ArrayBuffer,Uint8Array,Uint8ClampedArray,Float32Array,Float64Array,String,Number,
         Object,Boolean,Math,Promise,TypeError,RangeError,Error}=globalThis;
@@ -466,7 +466,7 @@
     }
     function resetCanvas(canvas,width,height) {
         call(canvas,"resize",[width,height]);
-        const ctx=retained(canvas).context;if(ctx){const s=states.get(ctx);Object.assign(s,defaults,{dash:[],matrix:[1,0,0,1,0,0],stack:[]});}
+        const ctx=retained(canvas).context;if(ctx&&states.has(ctx)){const s=states.get(ctx);Object.assign(s,defaults,{dash:[],matrix:[1,0,0,1,0,0],stack:[]});}
     }
     function dimensionAttribute(value,def) {
         if(value===null||!/^\s*\+?\d+\s*$/.test(value))return def;
@@ -496,10 +496,15 @@
             removeAttribute.call(this,name);
         }
         getContext(type,options={}) {
-            type=String(type);if(type!=="2d")return null;
-            if(retained(this).context)return retained(this).context;
+            type=String(type);if(type!=="2d"&&type!=="webgl2")return null;
+            const media=retained(this);
+            if(media.context)return media.mode===type?media.context:null;
             if(options===null)options={};
             if(typeof options!=="object")throw new TypeError("Context attributes require a dictionary");
+            if(type==="webgl2"){
+                const ctx=createWebGL(this,options,media,call,queueTask);
+                if(ctx){media.context=ctx;media.mode=type;}return ctx;
+            }
             const colorSpace=options.colorSpace,colorType=options.colorType;
             const alpha=options.alpha,desynchronized=options.desynchronized,willReadFrequently=options.willReadFrequently;
             void desynchronized;
@@ -510,7 +515,7 @@
             if(colorType && colorType!=="unorm8")fail("NotSupportedError","Only RGBA8 contexts are supported");
             call(this,"alpha",[Number(attributes.alpha)]);
             states.set(ctx,{...defaults,canvas:this,attributes,dash:[],matrix:[1,0,0,1,0,0],stack:[]});
-            contexts.set(this,ctx);retained(this).context=ctx;return ctx;
+            contexts.set(this,ctx);retained(this).context=ctx;retained(this).mode="2d";return ctx;
         }
         toDataURL(type="image/png",quality=.92) {
             if(!this.width||!this.height)return "data:,";
@@ -519,7 +524,7 @@
         toBlob(callback,type="image/png",quality=.92) {
             if(typeof callback!=="function")throw new TypeError("A callback is required");
             const blob=this.width&&this.height?(()=>{const data=encoded(this,type,quality);return new Blob([data.buffer],{type:data.type});})():null;
-            queueTask(()=>{if(call(null,"alive"))callback(blob);});
+            queueTask(()=>{if(call(null,"alive")&&!retained(this).closed)callback(blob);});
         }
     }
     function encoded(canvas,type,quality) {

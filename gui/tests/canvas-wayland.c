@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include <wlr/backend.h>
 #include <wlr/interfaces/wlr_pointer.h>
@@ -21,6 +22,7 @@ static struct PuDesktop desktop;
 static struct wlr_pointer pointer;
 static const struct wlr_pointer_impl pointer_impl = {.name = "canvas-smoke-pointer"};
 static pid_t child;
+static int gpu_mode;
 static int fail(const char *message)
 {
     fprintf(stderr, "FAIL: %s\n", message);
@@ -37,10 +39,10 @@ static struct PuDesktopView *mapped(void)
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop.views,
                      link) if (view->mapped && !view->geometry_pending && view->toplevel->title &&
-                               !strcmp(view->toplevel->title, "Canvas2D.mapped")) return view;
+                               !strcmp(view->toplevel->title, gpu_mode ? "GpuCanvas.mapped" : "Canvas2D.mapped")) return view;
     return NULL;
 }
-static int pixel(struct wlr_surface *surface, int x, int y, uint32_t expected)
+static int sample_pixel(struct wlr_surface *surface, int x, int y, uint32_t *rgb)
 {
     if (!surface->buffer || !surface->buffer->source)
         return 0;
@@ -59,7 +61,13 @@ static int pixel(struct wlr_surface *surface, int x, int y, uint32_t expected)
         value = ((value & 255) << 16) | (value & 0xff00) | ((value >> 16) & 255);
     else if (format != DRM_FORMAT_ARGB8888 && format != DRM_FORMAT_XRGB8888)
         return 0;
-    return (value & 0xffffff) == expected;
+    *rgb = value & 0xffffff;
+    return 1;
+}
+static int pixel(struct wlr_surface *surface, int x, int y, uint32_t expected)
+{
+    uint32_t value;
+    return sample_pixel(surface,x,y,&value) && value == expected;
 }
 static int suite(const char *exe, const char *script)
 {
@@ -98,6 +106,17 @@ static int suite(const char *exe, const char *script)
     }
     if (!view)
         return fail("mapped 1.5 DPI canvas/clip/scroll/CSS scale/img frame");
+    if (gpu_mode) {
+        uint32_t gpu = 0, raster = 0;
+        if (!sample_pixel(view->toplevel->base->surface,165,30,&gpu) ||
+            !sample_pixel(view->toplevel->base->surface,210,30,&raster) ||
+            gpu != raster || (gpu >> 16) != 255 || !(gpu & 255) || (gpu & 255) == 255 ||
+            ((gpu >> 8) & 255) != (gpu & 255) ||
+            !pixel(view->toplevel->base->surface,15,15,0xffffff)) {
+            fprintf(stderr,"GPU opacity=%06x 2D opacity=%06x\n",gpu,raster);
+            return fail("GPU/2D byte-exact opacity equality and own rounded clip at 1.5 DPI");
+        }
+    }
     struct wlr_box bounds;
     wlr_output_layout_get_box(desktop.layout, NULL, &bounds);
     int x, y;
@@ -144,8 +163,9 @@ static int suite(const char *exe, const char *script)
 }
 int main(int argc, char **argv)
 {
-    if (argc != 3)
+    if (argc != 3 && argc != 4)
         return 2;
+    gpu_mode = argc == 4 && !strcmp(argv[3],"gpu");
     wlr_log_init(WLR_INFO, NULL);
     int ready = pu_desktop_init(&desktop, "canvas-smoke") && pu_desktop_start(&desktop), ok = 0;
     if (ready) {
@@ -154,13 +174,19 @@ int main(int argc, char **argv)
         ok = suite(argv[1], argv[2]);
         if (child > 0) {
             kill(child, SIGTERM);
-            waitpid(child, NULL, 0);
+            int exited=0;
+            for (int i=0;i<200;++i) {
+                if (waitpid(child,NULL,WNOHANG)==child) { exited=1; break; }
+                nanosleep(&(struct timespec){.tv_nsec=5000000},NULL);
+            }
+            if (!exited) { kill(child,SIGKILL); waitpid(child,NULL,0); }
             child = 0;
         }
         wlr_pointer_finish(&pointer);
     }
     pu_desktop_finish(&desktop);
     if (ok)
-        puts("PASS: mapped Canvas2D/img 1.5 DPI clip, scroll, CSS scale and logical input");
+        puts(gpu_mode ? "PASS: mapped native GPU/Three/img 1.5 DPI clip, scroll, transform, opacity and logical input" :
+            "PASS: mapped Canvas2D/img 1.5 DPI clip, scroll, CSS scale and logical input");
     return ok ? 0 : 1;
 }

@@ -198,6 +198,10 @@ static void cancel_media(JSContext *context,JSValueConst state)
 {
     if (!JS_IsObject(state)) return;
     JSValue keep=JS_DupValue(context,state);
+    if(JS_SetPropertyStr(context,keep,"closed",JS_NewBool(context,1))<0){
+        fprintf(stderr,"[media] Cannot mark media scope closed\n");
+        JS_FreeValue(context,JS_GetException(context));
+    }
     JSValue shutdown=JS_GetPropertyStr(context,keep,"shutdown");
     if (JS_IsFunction(context,shutdown)) {
         JSValue result=JS_Call(context,shutdown,keep,0,NULL);

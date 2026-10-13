@@ -1,4 +1,4 @@
-# Canvas 2D and Image / img
+# Canvas 2D, GPU Canvas and Image / img
 
 The GUI library installs `HTMLCanvasElement`, `CanvasRenderingContext2D`,
 `HTMLImageElement`, `Image`, `Path2D`, `CanvasGradient`, `CanvasPattern`,
@@ -6,6 +6,13 @@ The GUI library installs `HTMLCanvasElement`, `CanvasRenderingContext2D`,
 SysRT dependency, HTML parser, separate native window, or GPU context is needed.
 This is a defined Canvas 2D compatibility subset, **not a browser or full WPT
 implementation**. SVG **path syntax** in `Path2D` does not add SVG image or SVG DOM support.
+
+Windows/Linux additionally provide owned offscreen **WebGL2** contexts through
+the same DOM Canvas element. See [the native GPU/API/qualification matrix](WEBGL2.md).
+Context selection is exclusive and stable. WebGL1 (`"webgl"` and
+`"experimental-webgl"`) remains unavailable; WebGPU is not implemented here.
+WebGL backing readback participates in the existing snapshot/drawImage/export
+paths without creating another native window.
 
 ```js
 const canvas = document.createElement("canvas");
@@ -48,7 +55,7 @@ are generated in memory, with no external downloads.
 | Area | Implemented | Boundaries |
 |---|---|---|
 | Canvas element | `createElement("canvas")`, standard prototype, width/height properties and attributes, `getContext`, `toDataURL`, `toBlob` | Default backing is 300 x 150. Both dimensions reset pixels, path, clip, transform, saved states, and drawing styles even when assigned the same value. Zero-sized exports are `"data:,"` / `null`. |
-| Context acquisition | Stable `"2d"` context; `canvas`; `getContextAttributes`; opaque `alpha:false`; `isContextLost()` | Raster sRGB / RGBA8 only; attributes report actual alpha, colorSpace, colorType, desynchronized, willReadFrequently. Unsupported color spaces / float16 reject. `"webgl"`, `"webgl2"`, `"webgpu"`, `"bitmaprenderer"` return `null`; no fake 3D objects. Raster contexts do not experience GPU context loss. |
+| Context acquisition | Stable, exclusive `"2d"` / `"webgl2"` selection; `canvas`; `getContextAttributes`; opaque `alpha:false`; `isContextLost()` | 2D is raster sRGB / RGBA8; attributes report actual alpha, colorSpace, colorType, desynchronized, willReadFrequently. Unsupported color spaces / float16 reject. WebGL2 has a separate actual matrix. `"webgl"`, `"experimental-webgl"`, `"webgpu"`, `"bitmaprenderer"` return `null`. Raster 2D contexts do not experience GPU loss. |
 | State and transforms | `save`, `restore`, `reset`, `translate`, `rotate`, `scale`, `transform`, `setTransform`, `resetTransform`, `getTransform` | Affine 2D. Current path is not saved/restored; segments retain their creation transforms. Singular transforms suppress drawing; move/line/curve/rect/ellipse path construction remains defined. `arcTo` while the current transform is non-invertible is not implemented. |
 | Rectangles and paths | `clearRect`, `fillRect`, `strokeRect`, `beginPath`, `closePath`, `moveTo`, `lineTo`, `quadraticCurveTo`, `bezierCurveTo`, `arc`, `arcTo`, `ellipse`, `rect`, `roundRect` | `roundRect` accepts one to four scalar or `{x,y}` radii, flips corners for negative dimensions, and scales oversized radii. Negative arc radii and invalid roundRect radii report standard error names. |
 | Path2D and clipping | Empty/copy/SVG-path-string constructors; all path methods; `addPath` with a 2D matrix; `fill`, `stroke`, `clip`, `isPointInPath`, `isPointInStroke` overloads; nonzero/evenodd | Clip is part of saved state. Coordinates for hit queries and pixel reads are backing coordinates, not DOM pointer coordinates. No SVG image/DOM/XML parsing. |
@@ -60,7 +67,7 @@ are generated in memory, with no external downloads.
 | Export and Blob | In-memory PNG and JPEG `toDataURL` / asynchronous `toBlob`; PNG fallback for unsupported output MIME; JPEG quality; Blob size/type/arrayBuffer/text/slice | JPEG flattens alpha onto black. Blob holds copied bytes, not a filename. Blob streams and object URLs are absent. |
 | Geometry objects | DOMMatrix affine 2D values, aliases, identity/is2D, arrays, multiplication, translate/scale/rotate/inverse/point transforms; DOMPoint | Six-component constructor input and 2D-compatible 16-component input; public toFloat32Array/toFloat64Array return standard 16-component column-major 4x4 arrays. matrix() strings remain six-component affine syntax. No 3D matrices, perspective, DOMMatrixReadOnly or DOMPointReadOnly. |
 | DOM img | `createElement("img")` and `new Image(width?,height?)`; src/currentSrc, width/height, naturalWidth/Height, complete, decode; load/error listeners and onload/onerror; intrinsic layout and actual DOM painting | The surrounding DOM/CSS remains PollyUI's Yoga-based subset, not full browser DOM/layout. Width/height attributes are presentation hints, overridden by CSS. Natural dimensions do not change with display size. onload/onerror run after registered listeners in the existing bridge; property-handler registration-order parity with browsers is not claimed. |
-| Modern APIs | Explicitly outside this stage | OffscreenCanvas, transferControlToOffscreen, workers, WebGL/WebGPU, full DOM/CSS, browser-origin security, SVG images/DOM, canvas accessibility/hit regions, HDR/wide-gamut/float16, createConicGradient, context-loss events. |
+| Modern APIs | WebGL2 is documented separately; other APIs explicitly outside this stage | OffscreenCanvas, transferControlToOffscreen, workers, WebGL1/WebGPU, full DOM/CSS, browser-origin security, SVG images/DOM, canvas accessibility/hit regions, HDR/wide-gamut/float16, createConicGradient. GPU context-loss events do not imply loss for raster 2D. |
 
 ## Image sources, timing, and safety
 

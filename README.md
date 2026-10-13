@@ -52,8 +52,11 @@ native window. Paths/Path2D, roundRect, text, gradients/patterns, alpha/composit
 RGBA8 pixels, and PNG/JPEG dataURL/Blob export are included.
 See the [actual API/source/limit matrix](gui/sdk/CANVAS.md) and
 [`gui/examples/canvas.mjs`](gui/examples/canvas.mjs). Local files/file URLs and
-data URLs are supported; HTTP(S), browser CORS, SVG images, OffscreenCanvas and
-3D APIs are not. This is a defined compatibility subset, not a full browser.
+data URLs are supported; HTTP(S), browser CORS, SVG images and OffscreenCanvas
+are not. Windows/Linux additionally provide real owned offscreen **WebGL2**,
+composited in the same DOM, with unmodified pinned Three.js 0.180.0 qualification.
+See the [GPU API/behavior/platform matrix](gui/sdk/WEBGL2.md); it is not full
+browser/WPT certification, WebGL1 or WebGPU support.
 
 Current development adds an original Windows 11-oriented Shell/Settings layout:
 sidebar navigation, grouped cards, illustrated theme choices and a persistent

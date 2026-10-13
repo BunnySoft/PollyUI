@@ -303,11 +303,31 @@ static int set_resource_directory(PuScript *s,const char *path);
 static char *pu_module_normalize(JSContext *ctx, const char *base_name,
                                  const char *name, void *opaque)
 {
-    (void)base_name; (void)opaque;
-    size_t n = strlen(name) + 1;
-    char *p = (char *)js_malloc(ctx, n);
-    if (p) memcpy(p, name, n);
-    return p;
+    (void)opaque;
+    if (!base_name) base_name="";
+    size_t capacity = strlen(base_name) + strlen(name) + 2;
+    char *result = (char *)js_malloc(ctx, capacity);
+    if (!result) return NULL;
+    if (strncmp(name, "./", 2) && strncmp(name, "../", 3)) {
+        strcpy(result, name);
+        return result;
+    }
+    strcpy(result, base_name);
+    for (char *p = result; *p; ++p) if (*p == '\\') *p = '/';
+    char *separator = strrchr(result, '/');
+    if (separator) *separator = '\0'; else *result = '\0';
+    while (!strncmp(name, "./", 2) || !strncmp(name, "../", 3)) {
+        if (!strncmp(name, "./", 2)) { name += 2; continue; }
+        if (!*result) break;
+        separator = strrchr(result, '/');
+        const char *last = separator ? separator + 1 : result;
+        if (!strcmp(last, "..") || !strcmp(last, ".")) break;
+        if (separator) *separator = '\0'; else *result = '\0';
+        name += 3;
+    }
+    if (*result) strcat(result, "/");
+    strcat(result, name);
+    return result;
 }
 
 static JSModuleDef *pu_module_loader(JSContext *ctx, const char *module_name, void *opaque)
