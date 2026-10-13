@@ -207,9 +207,9 @@ task) — a permanent maintenance tax — despite minimizing glue.
   identical codegen/performance to C++, and a standard (C11/C17) that has been
   stable for a decade and doesn't move under us. QuickJS and Skia are
   themselves proof that C-style code reaches top-tier performance.
-- **The cost — Skia:** Skia has no first-class C API, so we write **one thin
-  `extern "C"` C++ shim** (`gui/src/render/skia_c.cpp`) exposing just the draw calls
-  we need. Windows per-pixel presentation additionally uses the backend-private
+- **The cost — Skia:** Skia has no first-class C API, so thin `extern "C"`
+  adapters (`gui/src/render/skia_c.cpp` and `canvas_c.cpp`) expose the drawing
+  and owned Canvas resources we need. Windows per-pixel presentation additionally uses the backend-private
   `gui/src/host/win32/composition.cpp` COM adapter with an opaque C seam;
   native capture tests have their own C++ helper. The model, bridge, layout,
   script and Host orchestration remain C; native SDK types do not enter the
@@ -507,6 +507,44 @@ not claim a full browser DOM, browser sandbox or complete standards-test
 coverage. WebGL/WebGPU/Three.js support is neither implemented nor implied by
 Canvas 2D; their context/backend/resource and required-environment route is
 the following planning task, not concurrent 3D implementation.
+
+The first 2D/image subset is integrated in `5abf2ca` and `f4f42d9`.
+Its [compatibility matrix](./gui/sdk/CANVAS.md) records actual API shapes,
+sources, limits and remaining differences. Zero-size backing stores retain
+path/transform state, DOM composition clips canvas corners, DOMMatrix typed
+exports contain 16 components, and PNG/JPEG decoding respects EXIF orientation.
+GUI-only Windows/Linux checks and a mapped 1.5-DPI Wayland input/composition
+fixture cover the increment; this is not full browser/WPT or 3D qualification.
+
+### 5.7 Proposed WebGL and WebGPU route
+
+This is the next planning stage, not authorization to install GPU dependencies,
+modify a shared SDK or start both backends in parallel. Both APIs are user goals.
+The proposed order is WebGL2/Three.js first, then WebGPU; final backend choices
+and each implementation slice require an explicit scope.
+
+| Slice | Proposed deliverable | Boundary |
+|---|---|---|
+| Shared GPU canvas seam | Canvas context-mode ownership, offscreen render target, resource lifetime, resize, DOM composition and loss handling | Keep backing/CSS/DPI dimensions separate. Do not add an OS window per canvas; preserve 2D behavior and return null for genuinely unavailable contexts |
+| WebGL2 | Browser-shaped objects, validation, buffers/textures/framebuffers, GLSL shaders, draw/state/query APIs | GLES calls alone are not WebGL compatibility. Limits/extensions/errors must reflect the actual backend, not hard-coded success |
+| Three.js qualification | Pin one tested release; local self-contained scene, texture, input, resize and context-loss cases | Add only required environment support such as HTML canvas creation namespace/events and image loading. Do not claim all loaders, browser DOM or networking from one scene |
+| WebGPU | Standards-shaped adapter/device/queue, WGSL, render/compute pipelines, buffers/textures, mapping and validation/loss events | Evaluate maintained native implementations such as Dawn or wgpu-native instead of exposing raw Vulkan/D3D calls as WebGPU |
+| WebGPU Three.js qualification | Pin the renderer/backend and test a real WebGPU path, including external-image transfers and lifetime | A WebGL2 fallback is not evidence that WebGPU is implemented |
+
+Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
+current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Windows
+currently uses raster/WARP for transparent UI and does not have a qualified
+ANGLE runtime in this checkout. These are available-build facts, not device
+or hardware-driver certification. Windows ANGLE and Linux GLES are candidate
+WebGL backends; WebGPU needs a separate dependency/backend decision.
+
+JS graphics types/validation remain common; per-platform context/device and
+presentation code stays behind native seams. Mixed raster/GPU composition,
+sharing across windows, readback cost, shader validation, GC, device/context
+loss and shutdown must be verified before support claims. Resource loading
+is separate from GPU drawing: the current PNG/JPEG local/data loader does not
+provide HTTP(S), browser CORS or object URLs. No browser engine embedding or
+new SysRT business bridge is implied by this route.
 
 ---
 
