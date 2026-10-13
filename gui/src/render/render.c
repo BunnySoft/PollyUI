@@ -267,7 +267,14 @@ static void render_node(PuSurface *s, PuNode *n)
 
     const char *img = pu_style_get(&n->style, "backgroundImage");
     if (img && *img) pu_surface_draw_image(s, img, x, y, w, h, radius);
-    if (n->canvas) pu_canvas_composite(s, n->canvas, x, y, w, h);
+    if (n->canvas) {
+        if (radius > 0) {
+            pu_surface_save(s);
+            pu_surface_clip_rrect(s, x, y, w, h, radius);
+        }
+        pu_canvas_composite(s, n->canvas, x, y, w, h);
+        if (radius > 0) pu_surface_restore(s);
+    }
     if (n->image_key) pu_surface_draw_image(s, n->image_key, x, y, w, h, radius);
 
     /* overflow: clip children to the box; scrollTop/Left translate them. */

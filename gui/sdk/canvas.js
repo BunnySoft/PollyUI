@@ -86,9 +86,11 @@
         }
         get is2D() { return true; }
         get isIdentity() { return this.a===1&&this.b===0&&this.c===0&&this.d===1&&this.e===0&&this.f===0; }
-        toFloat64Array() { return new Float64Array([this.a,this.b,this.c,this.d,this.e,this.f]); }
+        toFloat64Array() {
+            return new Float64Array([this.a,this.b,0,0,this.c,this.d,0,0,0,0,1,0,this.e,this.f,0,1]);
+        }
         toFloat32Array() { return new Float32Array(this.toFloat64Array()); }
-        multiply(other) { return new DOMMatrix(multiply([...this.toFloat64Array()],matrixArgs(other))); }
+        multiply(other) { return new DOMMatrix(multiply(affine(this),matrixArgs(other))); }
         multiplySelf(other) { Object.assign(this,this.multiply(other)); return this; }
         translate(x=0,y=0) { return this.multiply(new DOMMatrix([1,0,0,1,Number(x),Number(y)])); }
         scale(x=1,y=x) { return this.multiply(new DOMMatrix([Number(x),0,0,Number(y),0,0])); }
@@ -102,7 +104,7 @@
             const p=DOMPoint.fromPoint(point);
             return new DOMPoint(this.a*p.x+this.c*p.y+this.e*p.w,this.b*p.x+this.d*p.y+this.f*p.w,p.z,p.w);
         }
-        toString() { return `matrix(${[...this.toFloat64Array()].join(", ")})`; }
+        toString() { return `matrix(${affine(this).join(", ")})`; }
     }
     class DOMPoint {
         constructor(x=0,y=0,z=0,w=1) { this.x=Number(x);this.y=Number(y);this.z=Number(z);this.w=Number(w); }
@@ -122,6 +124,7 @@
             return Number(x===undefined ? y===undefined ? def : y : x);
         });
     }
+    function affine(matrix) { return [matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f]; }
     function multiply(a,b) {
         return [a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],
             a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],

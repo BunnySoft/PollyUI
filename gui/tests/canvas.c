@@ -94,6 +94,81 @@ static void remove_file(const char *path)
     unlink(path);
 #endif
 }
+static int prepare_orientations(const char *directory)
+{
+    PuCanvas *canvas = pu_canvas_create(48, 32);
+    uint8_t *quadrants = malloc(48 * 32 * 4);
+    if (!canvas || !quadrants) {
+        free(quadrants);
+        pu_canvas_destroy(canvas);
+        return 0;
+    }
+    const uint8_t colors[4][4] = {
+        {255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}, {255, 255, 0, 255}};
+    for (int y = 0; y < 32; ++y)
+        for (int x = 0; x < 48; ++x)
+            memcpy(quadrants + ((size_t)y * 48 + x) * 4,
+                   colors[(y >= 16 ? 2 : 0) + (x >= 24 ? 1 : 0)], 4);
+    int ok = pu_canvas_write(canvas, 48, 32, quadrants, 0, 0, 0, 0, 48, 32);
+    free(quadrants);
+    uint8_t *jpeg = NULL;
+    size_t jpeg_length = 0;
+    ok = ok && pu_canvas_encode(canvas, 1, 1, &jpeg, &jpeg_length);
+    pu_canvas_destroy(canvas);
+    for (int origin = 1; ok && origin <= 8; ++origin) {
+        uint8_t exif[] = {255,
+                          225,
+                          0,
+                          34,
+                          'E',
+                          'x',
+                          'i',
+                          'f',
+                          0,
+                          0,
+                          'I',
+                          'I',
+                          42,
+                          0,
+                          8,
+                          0,
+                          0,
+                          0,
+                          1,
+                          0,
+                          18,
+                          1,
+                          3,
+                          0,
+                          1,
+                          0,
+                          0,
+                          0,
+                          (uint8_t)origin,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0,
+                          0};
+        uint8_t *oriented = malloc(jpeg_length + sizeof(exif));
+        if (!oriented) {
+            ok = 0;
+            break;
+        }
+        memcpy(oriented, jpeg, 2);
+        memcpy(oriented + 2, exif, sizeof(exif));
+        memcpy(oriented + 2 + sizeof(exif), jpeg + 2, jpeg_length - 2);
+        char path[4096];
+        snprintf(path, sizeof(path), "%s/orientation-%d.jpg", directory, origin);
+        ok = write_file(path, oriented, jpeg_length + sizeof(exif));
+        free(oriented);
+    }
+    pu_canvas_bytes_free(jpeg);
+    return ok;
+}
+
 static int prepare_files(JSContext *ctx, const char *source, char directory[4096],
                          char script_path[4096])
 {
@@ -164,6 +239,7 @@ static int prepare_files(JSContext *ctx, const char *source, char directory[4096
     }
     pu_canvas_destroy(canvas);
     snprintf(path, sizeof(path), "%s/fixture.png", directory);
+    ok = ok && prepare_orientations(directory);
     JS_SetPropertyStr(ctx, global, "fixturePath", JS_NewString(ctx, path));
 #ifndef _WIN32
     snprintf(path, sizeof(path), "%s/fifo", directory);
@@ -190,6 +266,10 @@ static void clean_files(const char *directory, const char *script_path)
                            "fifo", "socket"};
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
         snprintf(path, sizeof(path), "%s/%s", directory, names[i]);
+        remove_file(path);
+    }
+    for (int origin = 1; origin <= 8; ++origin) {
+        snprintf(path, sizeof(path), "%s/orientation-%d.jpg", directory, origin);
         remove_file(path);
     }
 #ifdef _WIN32
@@ -305,6 +385,51 @@ int main(int argc, char **argv)
               "canvas participates in CSS scale / scroll / DPI composition");
         pixel(surface, 50, 1, (uint8_t[]){255, 255, 255, 255},
               "ancestor clip bounds canvas composition");
+        value = evaluate(
+            ctx,
+            "document.body.textContent='';"
+            "globalThis.roundedParent=document.createElement('div');"
+            "Object.assign(roundedParent.style,{width:'30',height:'20',overflow:'hidden'});"
+            "globalThis.roundedCanvas=document.createElement('canvas');"
+            "roundedCanvas.width=4;roundedCanvas.height=4;"
+            "Object.assign(roundedCanvas.style,{width:'20',height:'20',borderRadius:'8',overflow:'"
+            "hidden'});"
+            "roundedCanvas.getContext('2d').fillStyle='red';"
+            "roundedCanvas.getContext('2d').fillRect(0,0,4,4);"
+            "roundedParent.appendChild(roundedCanvas);document.body.appendChild(roundedParent);"
+            "Object.assign(composedImage.style,{position:'absolute',left:'40',top:'0',width:'20',"
+            "height:'20',"
+            "borderRadius:'8',overflow:'hidden',opacity:'.5'});document.body.appendChild("
+            "composedImage);");
+        JS_FreeValue(ctx, value);
+        const float scales[] = {1, 1.5f};
+        for (size_t i = 0; i < sizeof(scales) / sizeof(scales[0]); ++i) {
+            pu_layout_calculate(body, 100, 100);
+            pu_render_tree(surface, body, scales[i]);
+            pixel(surface, 0, 0, (uint8_t[]){255, 255, 255, 255},
+                  "canvas media clips its own rounded corner at native/DPI scale");
+            pixel(surface, (int)(10 * scales[i]), (int)(10 * scales[i]),
+                  (uint8_t[]){255, 0, 0, 255}, "rounded canvas center remains opaque red");
+            value = evaluate(
+                ctx, "roundedParent.style.scrollLeft='2';roundedCanvas.style.opacity='.5';");
+            JS_FreeValue(ctx, value);
+            pu_layout_calculate(body, 100, 100);
+            pu_render_tree(surface, body, scales[i]);
+            pixel(surface, 0, 0, (uint8_t[]){255, 255, 255, 255},
+                  "rounded media corner preserves ancestor scroll and opacity");
+            uint8_t rgba[4];
+            pu_surface_read_pixel(surface, (int)(10 * scales[i]), (int)(10 * scales[i]), rgba);
+            uint8_t reference[4];
+            pu_surface_read_pixel(surface, (int)(50 * scales[i]), (int)(10 * scales[i]), reference);
+            check(!memcmp(rgba, reference, 4) && rgba[0] == 255 && rgba[1] > 0 && rgba[1] < 255 &&
+                      rgba[1] == rgba[2] && rgba[3] == 255,
+                  "rounded canvas opacity exactly matches existing img composition");
+            pixel(surface, (int)(32 * scales[i]), (int)(10 * scales[i]),
+                  (uint8_t[]){255, 255, 255, 255}, "ancestor overflow clip remains in effect");
+            value = evaluate(ctx,
+                             "roundedParent.style.scrollLeft='0';roundedCanvas.style.opacity='1';");
+            JS_FreeValue(ctx, value);
+        }
         pu_surface_destroy(surface);
         PuBridge *child = pu_bridge_new_document(bridge);
         check(child != NULL, "child document creation");

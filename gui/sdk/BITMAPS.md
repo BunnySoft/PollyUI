@@ -5,6 +5,9 @@
 respected, and the decoder copies the bytes; the caller may subsequently mutate
 or release its input. `maxPixels` is a positive integer (at most `4294967295`);
 invalid, incomplete, or oversized encoded images throw.
+Decoded pixels respect the codec's encoded origin, including JPEG EXIF
+orientation; `width` and `height` describe the oriented image. The pixel budget
+still applies to the decoded pixel count before orientation.
 
 The returned handle has read-only `key`, `width`, and `height` properties. Use
 `key` as an image source or `backgroundImage` value, retain the handle while any

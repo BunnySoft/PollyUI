@@ -52,6 +52,8 @@ struct PuCanvas {
     ~PuCanvas() { --live_backings; }
     sk_sp<SkSurface> surface;
     int width = 0, height = 0;
+    SkMatrix transform = SkMatrix::I();
+    std::vector<SkMatrix> saved_transforms;
     SkPath path;
     SkPaint paint;
     double shadow[7] = {};
@@ -140,6 +142,8 @@ int pu_canvas_resize(PuCanvas *c, int w, int h)
     c->width = w;
     c->height = h;
     c->path.reset();
+    c->transform = SkMatrix::I();
+    c->saved_transforms.clear();
     return 1;
 }
 int pu_canvas_width(const PuCanvas *c) { return c ? c->width : 300; }
@@ -365,18 +369,24 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
         if (!strcmp(op, "matrix")) {
             if (n != 6)
                 return -1;
+            c->transform = matrix(a);
             if (canvas)
-                canvas->setMatrix(matrix(a));
+                canvas->setMatrix(c->transform);
             return 1;
         }
         if (!strcmp(op, "save")) {
+            c->saved_transforms.push_back(c->transform);
             if (canvas)
                 canvas->save();
             return 1;
         }
         if (!strcmp(op, "restore")) {
-            if (canvas && canvas->getSaveCount() > 1)
-                canvas->restore();
+            if (!c->saved_transforms.empty()) {
+                c->transform = c->saved_transforms.back();
+                c->saved_transforms.pop_back();
+                if (canvas)
+                    canvas->restore();
+            }
             return 1;
         }
         if (!strcmp(op, "configure") && n >= 19) {
@@ -393,8 +403,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
             c->smooth = a[10] != 0;
             memcpy(c->shadow, a + 11, sizeof(c->shadow));
             if (r) {
-                c->paint.setShader(
-                    shader(r, canvas ? canvas->getTotalMatrix() : SkMatrix::I(), c->smooth));
+                c->paint.setShader(shader(r, c->transform, c->smooth));
                 c->paint.setAlphaf(a[4]);
             }
             if (n > 19) {
@@ -406,7 +415,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
             }
             return 1;
         }
-        SkMatrix m = canvas ? canvas->getTotalMatrix() : SkMatrix::I(), inv;
+        SkMatrix m = c->transform, inv;
         if (!strcmp(op, "begin")) {
             c->path.reset();
             return 1;

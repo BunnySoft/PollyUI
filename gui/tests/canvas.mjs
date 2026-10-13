@@ -7,6 +7,7 @@ globalThis.check=check;globalThis.rejects=rejects;
 function same(actual,expected,message) {
     check(actual.length===expected.length&&actual.every((v,i)=>v===expected[i]),`${message}: ${actual} != ${expected}`);
 }
+function affine(matrix) { return [matrix.a,matrix.b,matrix.c,matrix.d,matrix.e,matrix.f]; }
 const canvas=document.createElement("CANVAS");
 check(canvas instanceof HTMLCanvasElement,"specialized canvas class");
 check(canvas.tagName==="CANVAS"&&Object.prototype.toString.call(canvas)==="[object HTMLCanvasElement]","standard canvas object branding");
@@ -23,7 +24,7 @@ ctx.globalAlpha=.5;ctx.fillStyle="blue";ctx.fillRect(0,0,4,4);
 same(pixel(1,1),[127,0,128,255],"source-over alpha");
 ctx.save();ctx.fillStyle="green";ctx.translate(8,0);ctx.fillRect(0,0,4,4);ctx.restore();
 check(ctx.fillStyle==="#0000ff"&&ctx.globalAlpha===.5,"save/restore styles");
-same([...ctx.getTransform().toFloat64Array()],[1,0,0,1,0,0],"restored transform");
+same(affine(ctx.getTransform()),[1,0,0,1,0,0],"restored transform");
 ctx.clearRect(0,0,16,16);same(pixel(1,1),[0,0,0,0],"clear ignores alpha/color");
 ctx.globalAlpha=1;
 ctx.beginPath();ctx.rect(0,0,4,4);ctx.save();ctx.translate(4,0);ctx.rect(0,0,4,4);ctx.restore();
@@ -185,6 +186,59 @@ check(reentrant.getContext("2d")===reentrantContext,"context option getter reent
 canvas.width=0;check(canvas.toDataURL()==="data:,","zero-sized export");
 check(await new Promise(resolve=>canvas.toBlob(resolve))===null,"zero-sized Blob null");
 same([...ctx.getImageData(0,0,1,1).data],[0,0,0,0],"zero-sized pixel read transparent");
+const noPixels=document.createElement("canvas");noPixels.width=0;noPixels.height=10;
+const noPixelsContext=noPixels.getContext("2d");
+noPixelsContext.setTransform(1,0,0,1,5,5);noPixelsContext.beginPath();noPixelsContext.rect(0,0,2,2);
+check(noPixelsContext.isPointInPath(5.5,5.5)&&!noPixelsContext.isPointInPath(.5,.5),"zero-width backing keeps transformed current path");
+same(affine(noPixelsContext.getTransform()),[1,0,0,1,5,5],"zero-sized native and JS transforms agree");
+noPixelsContext.save();noPixelsContext.translate(10,0);noPixelsContext.save();noPixelsContext.scale(2,2);
+noPixelsContext.beginPath();noPixelsContext.rect(0,0,2,2);
+noPixelsContext.restore();noPixelsContext.restore();
+same(affine(noPixelsContext.getTransform()),[1,0,0,1,5,5],"zero-size nested save/restore restores transform");
+check(noPixelsContext.isPointInPath(18,8)&&!noPixelsContext.isPointInPath(8,8),"zero-size path survives restore in creation coordinates");
+noPixelsContext.beginPath();noPixelsContext.moveTo(0,0);noPixelsContext.lineTo(3,0);
+noPixelsContext.quadraticCurveTo(3,3,0,3);noPixelsContext.closePath();
+check(noPixelsContext.isPointInPath(6,6),"zero-size curve path construction uses restored matrix");
+const noPixelsPath=new Path2D();noPixelsPath.rect(0,0,2,2);
+check(noPixelsContext.isPointInPath(noPixelsPath,5.5,5.5)&&!noPixelsContext.isPointInPath(noPixelsPath,.5,.5),"zero-size Path2D queries use current transform");
+noPixelsContext.save();noPixels.width=0;noPixelsContext.restore();
+same(affine(noPixelsContext.getTransform()),[1,0,0,1,0,0],"same zero-width assignment resets native save state");
+check(!noPixelsContext.isPointInPath(6,6),"zero-size reset clears native path");
+noPixels.width=10;noPixels.height=0;noPixelsContext.setTransform(1,0,0,1,5,5);
+noPixelsContext.beginPath();noPixelsContext.roundRect(0,0,2,2,0);
+check(noPixelsContext.isPointInPath(5.5,5.5)&&!noPixelsContext.isPointInPath(.5,.5),"zero-height backing keeps path transform");
+noPixels.height=10;check(!noPixelsContext.isPointInPath(5.5,5.5),"creating nonzero backing resets path");
+same(affine(noPixelsContext.getTransform()),[1,0,0,1,0,0],"nonzero resize resets transform");
+noPixelsContext.fillStyle="red";noPixelsContext.fillRect(0,0,2,2);
+same([...noPixelsContext.getImageData(0,0,1,1).data],[255,0,0,255],"nonzero drawing after zero-size state uses reset native matrix");
+const matrix=new DOMMatrix([2,3,4,5,6,7]);
+const matrixValues=[2,3,0,0,4,5,0,0,0,0,1,0,6,7,0,1];
+check(matrix.toFloat64Array() instanceof Float64Array&&matrix.toFloat32Array() instanceof Float32Array,"DOMMatrix typed array element types");
+same([...matrix.toFloat64Array()],matrixValues,"DOMMatrix public array is a 16-component column-major matrix");
+same([...matrix.toFloat32Array()],matrixValues,"DOMMatrix Float32 output embeds all 4x4 components");
+for(let column=1;column<=4;column++)for(let row=1;row<=4;row++)
+    check(matrix[`m${column}${row}`]===matrixValues[(column-1)*4+row-1],"DOMMatrix aliases match public array indexes");
+same([...new DOMMatrix(matrix.toFloat64Array()).toFloat64Array()],matrixValues,"DOMMatrix 16-component constructor roundtrip");
+same([...new DOMMatrix().toFloat64Array()],[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1],"DOMMatrix default 4x4 identity");
+check(matrix.toString()==="matrix(2, 3, 4, 5, 6, 7)","DOMMatrix string stays six-component affine syntax");
+const multiplied=new DOMMatrix([2,0,0,3,4,5]);const result=multiplied.multiplySelf(new DOMMatrix([1,0,0,1,6,7]));
+check(result===multiplied,"DOMMatrix multiplySelf returns same instance");
+same(affine(multiplied),[2,0,0,3,16,26],"DOMMatrix multiplication uses private affine components");
+same(affine(new DOMMatrix([2,0,0,4,6,8]).inverse()),[.5,0,0,.25,-3,-2],"DOMMatrix affine inverse");
+const orientations=[[0,1,2,3],[1,0,3,2],[3,2,1,0],[2,3,0,1],[0,2,1,3],[2,0,3,1],[3,1,2,0],[1,3,0,2]];
+const quadrantColors=[[255,0,0],[0,255,0],[0,0,255],[255,255,0]];
+const orientedCanvas=document.createElement("canvas"),orientedContext=orientedCanvas.getContext("2d");
+for(let origin=1;origin<=8;origin++){
+    const image=new Image();image.src=`orientation-${origin}.jpg`;await image.decode();
+    const width=origin>=5?32:48,height=origin>=5?48:32;
+    check(image.naturalWidth===width&&image.naturalHeight===height,"JPEG EXIF orientation dimensions "+origin);
+    orientedCanvas.width=width;orientedCanvas.height=height;orientedContext.drawImage(image,0,0);
+    for(let quadrant=0;quadrant<4;quadrant++){
+        const x=Math.floor(width*(quadrant%2?.75:.25)),y=Math.floor(height*(quadrant>=2?.75:.25));
+        const rgba=[...orientedContext.getImageData(x,y,1,1).data],expected=quadrantColors[orientations[origin-1][quadrant]];
+        check(rgba[3]===255&&expected.every((value,i)=>Math.abs(value-rgba[i])<=8),"JPEG EXIF oriented drawImage quadrant "+origin+"/"+quadrant);
+    }
+}
 const opaque=document.createElement("canvas"),opaqueCtx=opaque.getContext("2d",{alpha:false});
 same([...opaqueCtx.getImageData(0,0,1,1).data],[0,0,0,255],"opaque context initialized black");
 opaqueCtx.fillStyle="red";opaqueCtx.fillRect(0,0,2,2);opaqueCtx.clearRect(0,0,1,1);

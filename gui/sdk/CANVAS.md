@@ -58,13 +58,17 @@ are generated in memory, with no external downloads.
 | Text | `fillText`, `strokeText`, `measureText`, read-only TextMetrics fields, font, textAlign, textBaseline, direction; maxWidth; Unicode fallback | Reuses the DOM's font discovery/fallback. Linux's existing HarfBuzz/ICU shaping is used, including paragraph direction; other builds retain their existing simple-text shaping limitations. Outlined color-bitmap emoji, variable-font axes, font loading APIs, CSS font shorthand beyond size/family plus optional slant/weight, letterSpacing, wordSpacing, textRendering and fontKerning are not implemented. Hanging/ideographic baseline metrics use font-metric approximations, not script-specific browser baseline tables. |
 | Images and pixels | Three standard `drawImage` overloads; img/Image, canvas, and existing owned Bitmap sources; self-copy snapshots; smoothing enable; ImageData RGBA8/create/get/put, negative/outside/dirty rectangles | Reads/put ignore transform, clip and drawing styles. RGBA8 is unpremultiplied at the JS boundary; native pixels are premultiplied. Fractional-alpha roundtrips have 8-bit premultiplication quantization. `imageSmoothingQuality` preserves its standard state value; low/medium/high currently use the same linear sampling. No ImageBitmap API, video, SVG/GIF/WebP images or worker canvases. |
 | Export and Blob | In-memory PNG and JPEG `toDataURL` / asynchronous `toBlob`; PNG fallback for unsupported output MIME; JPEG quality; Blob size/type/arrayBuffer/text/slice | JPEG flattens alpha onto black. Blob holds copied bytes, not a filename. Blob streams and object URLs are absent. |
-| Geometry objects | DOMMatrix affine 2D values, aliases, identity/is2D, arrays, multiplication, translate/scale/rotate/inverse/point transforms; DOMPoint | Six-component matrices and 2D-compatible 16-component arrays; matrix() strings. No 3D matrices, perspective, DOMMatrixReadOnly or DOMPointReadOnly. |
+| Geometry objects | DOMMatrix affine 2D values, aliases, identity/is2D, arrays, multiplication, translate/scale/rotate/inverse/point transforms; DOMPoint | Six-component constructor input and 2D-compatible 16-component input; public toFloat32Array/toFloat64Array return standard 16-component column-major 4x4 arrays. matrix() strings remain six-component affine syntax. No 3D matrices, perspective, DOMMatrixReadOnly or DOMPointReadOnly. |
 | DOM img | `createElement("img")` and `new Image(width?,height?)`; src/currentSrc, width/height, naturalWidth/Height, complete, decode; load/error listeners and onload/onerror; intrinsic layout and actual DOM painting | The surrounding DOM/CSS remains PollyUI's Yoga-based subset, not full browser DOM/layout. Width/height attributes are presentation hints, overridden by CSS. Natural dimensions do not change with display size. onload/onerror run after registered listeners in the existing bridge; property-handler registration-order parity with browsers is not claimed. |
 | Modern APIs | Explicitly outside this stage | OffscreenCanvas, transferControlToOffscreen, workers, WebGL/WebGPU, full DOM/CSS, browser-origin security, SVG images/DOM, canvas accessibility/hit regions, HDR/wide-gamut/float16, createConicGradient, context-loss events. |
 
 ## Image sources, timing, and safety
 
-Image loading supports static PNG/JPEG bytes through these source forms:
+Image loading supports static PNG/JPEG bytes through these source forms.
+Decoded pixels are normalized using the codec's encoded origin, including all
+eight JPEG EXIF orientation values; natural dimensions, layout and `drawImage`
+use the oriented dimensions and pixels. Absent or unreadable orientation
+metadata follows the codec's top-left fallback:
 
 | Source | Behavior |
 |---|---|
@@ -104,7 +108,10 @@ service quotas. Failures do not retain old success or reveal input bytes/URLs.
 Canvas backing dimensions are independent of CSS display dimensions and native
 window DPI. Rendering scales a snapshot into the node's existing layout box;
 it participates in DOM clipping, scrolling, opacity, paint transforms and
-events. Existing paint-only transform/hit-test behavior is unchanged.
+events, including the canvas's own rounded media clip. Transform/save state is
+independent of the pixel allocation: zero-width/height canvases still construct
+paths and answer path queries in their transformed coordinates. Existing
+paint-only transform/hit-test behavior is unchanged.
 No native window, popup grab, window opacity trick or screenshot is used to
 implement canvas. Detached canvases continue to draw/read without a live HWND.
 

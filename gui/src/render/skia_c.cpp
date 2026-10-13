@@ -32,6 +32,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkEncodedImageFormat.h"
+#include "include/codec/SkEncodedOrigin.h"
 
 #if defined(__linux__)
 #include "include/ports/SkFontMgr_fontconfig.h"
@@ -624,8 +625,23 @@ int pu_image_set_bitmap(const char *key, const uint8_t *bytes, size_t length,
         bitmap.setImmutable();
         auto image = SkImages::RasterFromBitmap(bitmap);
         if (!image) { std::fprintf(stderr, "[render] Cannot retain memory bitmap\n"); return 0; }
+        SkEncodedOrigin origin=codec->getOrigin();
+        if (origin!=kTopLeft_SkEncodedOrigin) {
+            auto oriented_info=SkEncodedOriginSwapsWidthHeight(origin) ?
+                info.makeWH(info.height(),info.width()) : info;
+            auto oriented=SkSurfaces::Raster(oriented_info);
+            if (!oriented) {
+                std::fprintf(stderr,"[render] Cannot allocate oriented memory bitmap\n");return 0;
+            }
+            oriented->getCanvas()->setMatrix(SkEncodedOriginToMatrix(origin,oriented_info.width(),oriented_info.height()));
+            oriented->getCanvas()->drawImage(image,0,0,SkSamplingOptions(SkFilterMode::kNearest));
+            image=oriented->makeImageSnapshot();
+            if (!image) {
+                std::fprintf(stderr,"[render] Cannot retain oriented memory bitmap\n");return 0;
+            }
+        }
+        *width = image->width(); *height = image->height();
         image_cache()[key] = std::move(image);
-        *width = info.width(); *height = info.height();
         return 1;
     } catch (const std::bad_alloc &) {
         std::fprintf(stderr, "[render] Cannot allocate memory bitmap\n"); return 0;
