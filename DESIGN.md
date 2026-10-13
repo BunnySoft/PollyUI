@@ -533,16 +533,27 @@ permission to modify the shared SDK.
 | WebGPU | Standards-shaped adapter/device/queue over Dawn, WGSL/Tint, render/compute pipelines, buffers/textures, mapping and validation/loss events | Windows D3D12 and Linux Vulkan behind the shared native seam; native C API support alone is not the QuickJS/browser-shaped binding |
 | WebGPU Three.js qualification | Pin the renderer/backend and test a real WebGPU path, including external-image transfers and lifetime | A WebGL2 fallback is not evidence that WebGPU is implemented |
 
+The shared GPU canvas/WebGL2 software functional increment is integrated in
+`586ce9d` and `b527163`, from child commits `f905b7f` and `949841e`.
+Its [implemented matrix](./gui/sdk/WEBGL2.md) separates the complete core IDL
+surface from behavioral coverage and browser conformance. Unmodified Three.js
+`0.180.0` runs in QuickJS against the owned framebuffer; DOM composition initially
+uses readback, not zero-copy. Review corrections cover cached getter validation,
+query-state transactions, generated mipmap images/budgets, context brands,
+strict software-caveat rejection and cross-display context teardown.
+Windows hardware selection is the next active increment, before WebGPU.
+Neither physical-GPU acceleration nor JS WebGPU is delivered by this baseline.
+
 Read-only inventory found EGL 1.5, GLES 3.2 and Vulkan 1.4.309 packages in the
-current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Existing
-Windows development ANGLE DLLs were found in `build/win-release` (version
-`2.1.27746`, revision `355cc61af2aa`); their presence does not qualify WebGL2
-or establish a redistributable release dependency. The existing staging tool
-uses installed browser DLLs for development. Windows transparent UI currently
-uses raster/WARP, independently of this graphics route. Windows ANGLE and
-Linux GLES are the selected first backend candidates, subject to actual
-context/shader/resource qualification; WebGPU needs a separately pinned
-native dependency. These are available-build facts, not hardware certification.
+current Linux SDK, but no listed Dawn/wgpu/WebGPU runtime library. Initial
+Windows development ANGLE DLLs in `build/win-release` (`355cc61af2aa`) and
+later D3D11 candidates failed genuine nonzero-base mipmap pixel checks.
+They are not fallback backends for the integrated increment. Its pinned
+Electron `v41.10.7` native bundle supplies ANGLE Vulkan/SwiftShader libraries
+and original licenses, without installing, running or embedding Electron.
+Linux uses system EGL/GLES. The current qualification is software-only;
+Windows transparent UI retains its raster/WARP path independently. Availability
+and software results do not establish hardware or release-package certification.
 
 Dependency preflight selected Dawn `v20261009.190412`
 (`c943ea32b614ff53e4fe410fc8f4968b6b8fe46d`). Its official Windows/Linux
