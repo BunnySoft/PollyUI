@@ -561,6 +561,15 @@ is separate from GPU drawing: the current PNG/JPEG local/data loader does not
 provide HTTP(S), browser CORS or object URLs. No browser engine embedding or
 new SysRT business bridge is implied by this route.
 
+The completion baseline is the WebGL2/WebGPU standard, not all GLES tokens or
+every optional device extension. In particular, WebGL2 explicitly excludes
+ETC2/EAC formats by default; they require the optional
+`WEBGL_compressed_texture_etc` extension. An empty compressed-format list can
+be correct before extension activation, but cannot serve as a successful
+compressed-upload test. Test unavailable-format errors separately from actual
+uploads using enabled formats; do not advertise that extension through a
+software-decompression substitute.
+
 ---
 
 ## 6. The Bridge: JS ⇄ native lifetimes (the hard part)
