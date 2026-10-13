@@ -6,8 +6,9 @@
 extern "C" {
 #endif
 typedef struct PuGpuCanvas PuGpuCanvas;
-PuGpuCanvas* pu_gpu_canvas_create(
-    int width, int height, int alpha, int depth, int stencil, int premultiplied, int preserve);
+PuGpuCanvas* pu_gpu_canvas_create(int width, int height, int alpha, int depth, int stencil,
+    int premultiplied, int preserve, int power_preference, int strict_performance);
+const char* pu_gpu_canvas_creation_error(void);
 void pu_gpu_canvas_ref(PuGpuCanvas* canvas);
 void pu_gpu_canvas_unref(PuGpuCanvas* canvas);
 void pu_gpu_canvas_close(PuGpuCanvas* canvas);

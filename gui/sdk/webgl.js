@@ -766,12 +766,14 @@
             desynchronized:false};
         const power=options.powerPreference===undefined?"default":String(options.powerPreference);
         if(!["default","low-power","high-performance"].includes(power))throw new TypeError("Invalid powerPreference");
-        const handle=native(canvas,"open",[Number(attributes.alpha),Number(attributes.depth),
+        attributes.powerPreference=power;
+        const report=native(canvas,"open",[Number(attributes.alpha),Number(attributes.depth),
             Number(attributes.stencil),Number(attributes.premultipliedAlpha),Number(attributes.preserveDrawingBuffer),
-            Number(attributes.failIfMajorPerformanceCaveat)]);
+            Number(attributes.failIfMajorPerformanceCaveat),["default","low-power","high-performance"].indexOf(power)]);
+        const handle=report&&report.handle;
         if(!handle){
             media.shutdown=()=>{media.closed=true;};
-            queue(()=>{if(!media.closed)mediaCall(canvas,"event",[],"webglcontextcreationerror");});return null;
+            queue(()=>{if(!media.closed)mediaCall(canvas,"event",[],"webglcontextcreationerror",report?report.error:"Native WebGL2 backend unavailable");});return null;
         }
         const context=Object.create(proto),s={canvas,handle,attributes,media:mediaCall,queue,bindings:new Map(),
             defaultVao:{attributes:new Map(),element:null},vao:null,activeTexture:0,generation:1,

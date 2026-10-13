@@ -125,7 +125,12 @@ static JSValue native_media(JSContext *ctx, JSValueConst self, int argc, JSValue
             result = JS_ThrowTypeError(ctx, "Invalid image event");
             goto done;
         }
-        result = JS_NewBool(ctx, pu_bridge_media_event(ctx, node, text));
+        if(JS_IsString(argv[4])){
+            const char *status=JS_ToCString(ctx,argv[4]);
+            if(!status){result=JS_EXCEPTION;goto done;}
+            result=JS_NewBool(ctx,pu_bridge_media_event_status(ctx,node,text,status));
+            JS_FreeCString(ctx,status);
+        }else result = JS_NewBool(ctx, pu_bridge_media_event(ctx, node, text));
         goto done;
     }
     if (node && !strcmp(op, "layout")) {

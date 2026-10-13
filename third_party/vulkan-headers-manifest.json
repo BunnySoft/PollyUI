@@ -1,0 +1,12 @@
+{
+  "name": "Vulkan-Headers",
+  "repository": "https://github.com/KhronosGroup/Vulkan-Headers",
+  "tag": "vulkan-sdk-1.3.290.0",
+  "commit": "b379292b2ab6df5771ba9870d53cf8b2c9295daf",
+  "archiveUrl": "https://github.com/KhronosGroup/Vulkan-Headers/archive/b379292b2ab6df5771ba9870d53cf8b2c9295daf.tar.gz",
+  "archiveSha256": "2ad177c0e468ac2eb3db9b5be6b8a18a6730d339378ac670e5fbda3503ac7d64",
+  "integrityProvenance": "SHA256 of received official source archive addressed by the verified Khronos Git commit/tag, not a claim of a separately published release checksum",
+  "license": "Apache-2.0 OR MIT (original license files preserved)",
+  "scope": "Windows native EGL/Vulkan hardware device classification and selection only; headers, not a linked Vulkan/WebGPU implementation",
+  "reason": "The existing read-only Skia/ANGLE Windows SDK has no Vulkan headers. Use the maintained declared VkPhysicalDeviceProperties ABI rather than guessed stack structs or FFI."
+}

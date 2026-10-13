@@ -5,6 +5,7 @@
 #include "layout/layout.h"
 #include "script/script.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int failures;
@@ -35,6 +36,28 @@ static JSValue collect(JSContext* ctx, JSValueConst self, int argc, JSValueConst
     (void)argv;
     JS_RunGC(JS_GetRuntime(ctx));
     return JS_UNDEFINED;
+}
+static JSValue set_policy(JSContext* ctx, JSValueConst self, int argc, JSValueConst* argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsString(argv[0]))
+        return JS_ThrowTypeError(ctx, "test policy requires one string");
+    const char* policy = JS_ToCString(ctx, argv[0]);
+    if (!policy)
+        return JS_EXCEPTION;
+#ifdef _WIN32
+    int failed = _putenv_s("PU_WEBGL2_DEVICE", policy);
+#else
+    int failed = setenv("PU_WEBGL2_DEVICE", policy, 1);
+#endif
+    JSValue result = failed
+        ? JS_ThrowInternalError(ctx, "Cannot set process-local test provider policy")
+        : JS_UNDEFINED;
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, "gpuRequestedPolicy", JS_NewString(ctx, policy));
+    JS_FreeValue(ctx, global);
+    JS_FreeCString(ctx, policy);
+    return result;
 }
 static void native_suite(JSContext* ctx, PuBridge* bridge)
 {
@@ -69,8 +92,19 @@ static void native_suite(JSContext* ctx, PuBridge* bridge)
         "globalThis.gpuDetached=gpuChild.createElement('canvas');globalThis.gpuDetachedContext="
         "gpuDetached.getContext('webgl2');"
         "globalThis.gpuLateBlob=false;gpuDetached.toBlob(()=>gpuLateBlob=true);");
+#ifdef _WIN32
+    evaluate(ctx,
+        "globalThis.gpuSavedPolicy=gpuRequestedPolicy;gpuSetPolicyForTest('software');"
+        "globalThis.gpuLateCreation=false;globalThis.gpuFailedCreation=gpuChild.createElement('canvas');"
+        "gpuFailedCreation.addEventListener('webglcontextcreationerror',()=>gpuLateCreation=true);"
+        "if(gpuFailedCreation.getContext('webgl2',{failIfMajorPerformanceCaveat:true})!==null)"
+        "throw Error('CPU strict creation did not fail');gpuSetPolicyForTest(gpuSavedPolicy);");
+#endif
     pu_bridge_release_document(child);
     pu_script_pump(JS_GetContextOpaque(ctx));
+#ifdef _WIN32
+    evaluate(ctx, "if(gpuLateCreation)throw Error('late failed-creation event after document close');");
+#endif
     evaluate(ctx,
         "(()=>{const pixel=new "
         "Uint8Array(4);gpuMovedContext.readPixels(0,0,1,1,gpuMovedContext.RGBA,"
@@ -155,6 +189,15 @@ int main(int argc, char** argv)
     }
     JSValue global = JS_GetGlobalObject(ctx);
     JS_SetPropertyStr(ctx, global, "gc", JS_NewCFunction(ctx, collect, "gc", 0));
+    JS_SetPropertyStr(ctx, global, "gpuSetPolicyForTest",
+        JS_NewCFunction(ctx, set_policy, "gpuSetPolicyForTest", 1));
+#ifdef _WIN32
+    const char* policy = getenv("PU_WEBGL2_DEVICE");
+    JS_SetPropertyStr(ctx, global, "gpuRequestedPolicy",
+        JS_NewString(ctx, policy && *policy ? policy : "hardware"));
+#else
+    JS_SetPropertyStr(ctx, global, "gpuRequestedPolicy", JS_NewString(ctx, "system-gles"));
+#endif
     JS_FreeValue(ctx, global);
     evaluate(ctx,
         "globalThis.gpuMethodCalls={};if(typeof WebGL2RenderingContext!=='undefined')for(const "

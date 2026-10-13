@@ -74,17 +74,32 @@ not zero-copy. Canvas width/height are independent of host DPI; regular DOM
 clipping, scrolling, opacity, transforms and pointer handling remain shared.
 No SysRT service or WebGPU dependency is introduced.
 
-Windows WebGL2 explicitly uses a fixed ANGLE Vulkan/SwiftShader software CPU
-provider, rather than the D3D11 candidates with a reproduced nonzero-base mip
-defect. `tools/fetch_webgl_angle.ps1` verifies the official Electron v41.10.7
+Windows WebGL2 defaults to native-verified ANGLE Vulkan hardware using normal
+installed GPU drivers, not renderer-string guesses. Integrated/discrete and
+GPU-backed virtual device types are distinguished from CPU/unknown; virtual
+does not establish physical GPU qualification. Strict performance-caveat
+requests reject software/unknown types; standard power requests are only hints.
+Explicit `PU_WEBGL2_DEVICE=software` retains the deterministic SwiftShader CPU
+baseline. No hardware/software or known-broken D3D11 fallback occurs, including
+after shader/FBO errors or context loss. Native failure reasons reach the
+creation event as copied strings.
+
+Windows GPU builds need the headers-only Khronos Vulkan-Headers pin restored
+by `tools/fetch_vulkan_headers.ps1`; the maintained properties ABI is private
+C++, with no linked Vulkan/WebGPU implementation or dependency for GPU-off
+GUI/2D builds. `tools/fetch_webgl_angle.ps1` verifies the official Electron v41.10.7
 archive/release hashes and stages only its native EGL/GLES/Vulkan/SwiftShader
 libraries, original application-relative ICD and complete licenses. It does not
 install or execute Electron/a browser or alter global Vulkan settings. This
-remains WebGL2, not JS WebGPU or hardware Vulkan qualification; missing libraries
+remains WebGL2, not JS WebGPU; missing libraries
 return `null`/creation error with no D3D fallback. The existing UI renderer is
 not switched. The bundled-library provenance is not a standalone official ANGLE
 redistribution package or product release certification. Three.js is an optional
 manifest-pinned qualification dependency, not a GUI library/runtime download.
+`tools/test_webgl_hardware.ps1` records actual native device properties and runs
+the core/Three/mip/pixel/current/lifetime fixtures on a physical GPU. The current
+Hyper-V/remote execution environment has no compatible Vulkan hardware driver:
+positive physical qualification is SKIP/pending, never a software proxy PASS.
 See [WEBGL2.md](../gui/sdk/WEBGL2.md) for exact qualified platforms, optional
 extension handling, source/license/integrity records and remaining conformance
 boundaries.

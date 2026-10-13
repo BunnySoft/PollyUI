@@ -8,7 +8,7 @@
   "archiveSha256": "43f2f823a263ee7d3ac71282e26c417c9e4417bbefdfa97ede3fde15daf5a46d",
   "checksumsUrl": "https://github.com/electron/electron/releases/download/v41.10.7/SHASUMS256.txt",
   "checksumsSha256": "6850e29142ae4cdcf70b16841c4343babcde33d3cee7ba43843b2a78db7963b8",
-  "selectedBackend": "ANGLE EGL/GLES via Vulkan + explicitly selected SwiftShader (software CPU)",
+  "selectedBackend": "ANGLE EGL/GLES via Vulkan: default native-verified hardware, explicitly selected SwiftShader CPU software qualification; no fallback",
   "files": {
     "libEGL.dll": "68a4993edd27f5388d1c81b6f3dfdc7543bc08bb8d67f4601a7a539f92582ce9",
     "libGLESv2.dll": "0fcccb1220cb52191a5f0d06c98bcdf909a53c2f652ba8b546e480da76b9f850",

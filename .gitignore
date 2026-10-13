@@ -17,6 +17,7 @@
 /third_party/skia-linux/
 /third_party/harfbuzz-linux/
 /third_party/text-libs/
+/third_party/vulkan-headers/
 .cache/
 /gui/tests/gpu/node_modules/
 

@@ -17,6 +17,7 @@ int main()
     PuGpuDevice ui;
 #ifdef _WIN32
     PuGpuDevice provider;
+    provider.options.policy = PuGpuPolicy::Software;
     if (!pu_gpu_device_open(&provider))
         return 1;
     auto platform = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
@@ -60,6 +61,24 @@ int main()
         if (!owning.ok())
             return 1;
         auto gl = pu_gles();
+#ifdef _WIN32
+        const auto software_pixel = [&]() {
+            {
+                PuGpuCurrent software(&provider);
+                if (!software.ok())
+                    return false;
+                gl->ClearColor(0, 1, 0, 1);
+                gl->Clear(GL_COLOR_BUFFER_BIT);
+                uint8_t pixel[4] = { };
+                gl->ReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
+                if (memcmp(pixel, green, 4) || gl->GetError() != GL_NO_ERROR)
+                    return false;
+            }
+            return pu_gpu_device_is_current(&ui);
+        };
+        if (!software_pixel())
+            failed = 1;
+#endif
         std::fprintf(
             stderr, "[gpu-current] actual owning UI renderer=%s\n", gl->GetString(GL_RENDERER));
         PuSurface* surface = nullptr;
@@ -85,8 +104,38 @@ int main()
         }
         GLint framebuffer = 0;
         gl->GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+#ifdef _WIN32
+        PuGpuDevice strict;
+        strict.options.policy = PuGpuPolicy::Software;
+        strict.options.strict = true;
+        strict.options.power = PuGpuPower::HighPerformance;
+        if (pu_gpu_device_open(&strict) || strict.failure != PuGpuFailure::Caveat
+            || strict.info.type != PuGpuType::Cpu) {
+            std::fprintf(stderr,
+                "FAIL: strict explicit software must reject after actual CPU classification\n");
+            failed = 1;
+        }
+        pu_gpu_device_close(&strict);
+        if (!pu_gpu_device_is_current(&ui)) {
+            std::fprintf(stderr, "FAIL: owning EGL handles after late device-type refusal\n");
+            failed = 1;
+        }
+        PuGpuDevice hardware;
+        hardware.options.policy = PuGpuPolicy::Hardware;
+        bool hardware_open = pu_gpu_device_open(&hardware);
+        if (hardware_open && !pu_gpu_is_hardware(hardware.info.type)) {
+            std::fprintf(stderr, "FAIL: hardware provider accepted a non-GPU native device\n");
+            failed = 1;
+        }
+        pu_gpu_device_close(&hardware);
+        if (!pu_gpu_device_is_current(&ui)) {
+            std::fprintf(
+                stderr, "FAIL: owning EGL handles after hardware acquisition outcome/closure\n");
+            failed = 1;
+        }
+#endif
         PuCanvas* impossible = pu_canvas_create(0, INT32_MAX);
-        if (!impossible || pu_canvas_acquire_gpu(impossible, 0, 1, 1, 0, 1)) {
+        if (!impossible || pu_canvas_acquire_gpu(impossible, 0, 1, 1, 0, 1, 0, 0)) {
             std::fprintf(stderr, "FAIL: oversized zero backing must not acquire a GPU target\n");
             failed = 1;
         }
@@ -97,7 +146,7 @@ int main()
         }
         for (int i = 0; i < 8; ++i) {
             PuCanvas* canvas = pu_canvas_create(8, 8);
-            PuGpuCanvas* gpu = pu_canvas_acquire_gpu(canvas, 0, 1, 1, 0, 1);
+            PuGpuCanvas* gpu = pu_canvas_acquire_gpu(canvas, 0, 1, 1, 0, 1, 0, 0);
             if (!gpu) {
                 failed = 1;
                 pu_canvas_destroy(canvas);
@@ -123,6 +172,13 @@ int main()
                 std::fprintf(stderr, "FAIL: owning EGL current handles after read\n");
                 failed = 1;
             }
+#ifdef _WIN32
+            if (!software_pixel()) {
+                std::fprintf(stderr,
+                    "FAIL: interleaved explicit software, selected canvas and D3D UI contexts\n");
+                failed = 1;
+            }
+#endif
             if (surface) {
                 pu_surface_clear(surface, 255, 0, 0, 255);
                 pu_canvas_composite(surface, canvas, 0, 0, 1, 1);

@@ -55,9 +55,14 @@ See the [actual API/source/limit matrix](gui/sdk/CANVAS.md) and
 data URLs are supported; HTTP(S), browser CORS, SVG images and OffscreenCanvas
 are not. Windows/Linux additionally provide real owned offscreen **WebGL2**,
 composited in the same DOM, with unmodified pinned Three.js 0.180.0 qualification.
-The first Windows WebGL2 provider is explicitly software ANGLE Vulkan/SwiftShader,
-staged with `tools/fetch_webgl_angle.ps1`; it is separate from UI presentation
-and does not implement JS WebGPU or claim hardware acceleration.
+Windows WebGL2 defaults to native-verified ANGLE Vulkan hardware; explicit
+`PU_WEBGL2_DEVICE=software` selects the separately qualified SwiftShader CPU
+baseline. Stage native libraries with `tools/fetch_webgl_angle.ps1` and restore
+the headers-only build pin with `tools/fetch_vulkan_headers.ps1`.
+Physical GPU qualification is still pending in the current Hyper-V/remote
+environment; `tools/test_webgl_hardware.ps1` records actual devices and runs the
+same core/Three/pixel fixtures on real hardware. UI presentation is unchanged;
+neither provider implements JS WebGPU or silently substitutes software.
 See the [GPU API/behavior/platform matrix](gui/sdk/WEBGL2.md); it is not full
 browser/WPT certification, WebGL1 or WebGPU support.
 

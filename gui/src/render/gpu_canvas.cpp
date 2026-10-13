@@ -6,6 +6,8 @@
 #include <new>
 #ifdef PU_WEBGL2
 static size_t live_contexts;
+static thread_local std::string creation_error;
+const char* pu_gpu_canvas_creation_error() { return creation_error.c_str(); }
 size_t pu_gpu_canvas_live_contexts() { return live_contexts; }
 void pu_gpu_error(PuGpuCanvas* c, GLenum error)
 {
@@ -131,34 +133,49 @@ bool pu_gpu_restore(PuGpuCanvas* c)
 {
     if (c->closed || !pu_gpu_device_open(&c->device))
         return false;
-    PuGpuCurrent current(&c->device);
-    if (!current.ok())
-        return false;
-    auto gl = pu_gles();
-    gl->GetIntegerv(GL_MAX_VERTEX_ATTRIBS, &c->max_attributes);
-    gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &c->max_texture);
-    gl->GetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &c->max_units);
-    c->textures.resize(c->max_units);
-    c->vaos[0].attributes.resize(c->max_attributes);
-    c->attribute_types.assign(c->max_attributes, GL_FLOAT);
-    if (c->width > c->max_texture || c->height > c->max_texture
-        || !target_resize(c, c->width, c->height)) {
-        pu_gpu_device_close(&c->device);
+    std::unique_ptr<PuGpuDevice, decltype(&pu_gpu_device_close)> rollback(
+        &c->device, &pu_gpu_device_close);
+    {
+        PuGpuCurrent current(&c->device);
+        if (!current.ok())
+            return false;
+        auto gl = pu_gles();
+        gl->GetIntegerv(GL_MAX_VERTEX_ATTRIBS, &c->max_attributes);
+        gl->GetIntegerv(GL_MAX_TEXTURE_SIZE, &c->max_texture);
+        gl->GetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &c->max_units);
+        c->textures.resize(c->max_units);
+        c->vaos[0].attributes.resize(c->max_attributes);
+        c->attribute_types.assign(c->max_attributes, GL_FLOAT);
+        if (c->width > c->max_texture || c->height > c->max_texture
+            || !target_resize(c, c->width, c->height)) {
+            pu_gpu_device_close(&c->device);
+            return false;
+        }
+        c->lost = false;
+        gl->BindFramebuffer(GL_FRAMEBUFFER, c->framebuffer);
+        gl->Enable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
+        gl->Viewport(0, 0, c->width, c->height);
+        ++live_contexts;
+    }
+    if (c->device.failed) {
+        pu_gpu_canvas_close(c);
+        c->device.error = "Failed to restore owning EGL state after drawing-buffer creation";
+        c->device.failure = PuGpuFailure::Runtime;
         return false;
     }
-    c->lost = false;
-    gl->BindFramebuffer(GL_FRAMEBUFFER, c->framebuffer);
-    gl->Enable(GL_PRIMITIVE_RESTART_FIXED_INDEX);
-    gl->Viewport(0, 0, c->width, c->height);
-    ++live_contexts;
+    rollback.release();
     return true;
 }
-PuGpuCanvas* pu_gpu_canvas_create(
-    int w, int h, int alpha, int depth, int stencil, int premultiplied, int preserve)
+PuGpuCanvas* pu_gpu_canvas_create(int w, int h, int alpha, int depth, int stencil,
+    int premultiplied, int preserve, int power_preference, int strict_performance)
 {
-    auto c = new (std::nothrow) PuGpuCanvas;
-    if (!c)
+    creation_error.clear();
+    std::unique_ptr<PuGpuCanvas> owned(new (std::nothrow) PuGpuCanvas);
+    auto c = owned.get();
+    if (!c) {
+        creation_error = "Cannot allocate native GPU context";
         return nullptr;
+    }
     c->width = w;
     c->height = h;
     c->alpha = alpha != 0;
@@ -166,12 +183,18 @@ PuGpuCanvas* pu_gpu_canvas_create(
     c->stencil = stencil != 0;
     c->premultiplied = premultiplied != 0;
     c->preserve = preserve != 0;
+    c->device.options.power = power_preference == 1 ? PuGpuPower::LowPower
+        : power_preference == 2                     ? PuGpuPower::HighPerformance
+                                                    : PuGpuPower::Default;
+    c->device.options.strict = strict_performance != 0;
     if (!pu_gpu_restore(c)) {
+        creation_error = c->device.error.empty()
+            ? "Cannot allocate the requested native drawing buffer"
+            : c->device.error;
         pu_gpu_device_close(&c->device);
-        delete c;
         return nullptr;
     }
-    return c;
+    return owned.release();
 }
 void pu_gpu_canvas_ref(PuGpuCanvas* c)
 {
@@ -452,7 +475,11 @@ void pu_gpu_delete(PuGpuCanvas* c, const std::shared_ptr<PuGlResource>& r)
     }
 }
 #else
-PuGpuCanvas* pu_gpu_canvas_create(int, int, int, int, int, int, int) { return nullptr; }
+PuGpuCanvas* pu_gpu_canvas_create(int, int, int, int, int, int, int, int, int) { return nullptr; }
+const char* pu_gpu_canvas_creation_error()
+{
+    return "Native WebGL2 backend is not built on this platform";
+}
 void pu_gpu_canvas_ref(PuGpuCanvas*) { }
 void pu_gpu_canvas_unref(PuGpuCanvas*) { }
 void pu_gpu_canvas_close(PuGpuCanvas*) { }

@@ -37,10 +37,13 @@ for(const name of ["drawingBufferColorSpace","unpackColorSpace"]){
 }
 const strict=document.createElement("canvas");let creationErrors=0;
 strict.addEventListener("webglcontextcreationerror",()=>++creationErrors);
-same(strict.getContext("webgl2",{failIfMajorPerformanceCaveat:true}),null,"strict performance request refuses unqualified device");
+const strictContext=strict.getContext("webgl2",{failIfMajorPerformanceCaveat:true});
+if(gpuRequestedPolicy==="hardware")check(strictContext&&strictContext.getContextAttributes().failIfMajorPerformanceCaveat,
+    "strict hardware request accepts an actual native GPU-backed device");
+else same(strictContext,null,"strict performance request refuses software/unclassified device");
 await new Promise(resolve=>setTimeout(resolve,0));
-same(creationErrors,1,"strict refusal emits actual creation error");
-const permissive=strict.getContext("webgl2");
+same(creationErrors,strictContext?0:1,"strict acquisition/refusal emits the correct creation event");
+const permissive=strictContext?document.createElement("canvas").getContext("webgl2"):strict.getContext("webgl2");
 check(permissive&&!permissive.getContextAttributes().failIfMajorPerformanceCaveat,"strict failure does not lock canvas mode");
 const pixel=new Uint8Array(4);
 function readMip(texture,target,level,layer,expected=[255,255,255,255]){

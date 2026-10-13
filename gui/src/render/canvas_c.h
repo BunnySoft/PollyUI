@@ -21,7 +21,8 @@ int pu_canvas_width(const PuCanvas *canvas);
 int pu_canvas_height(const PuCanvas *canvas);
 PuGpuCanvas *pu_canvas_gpu(PuCanvas *canvas);
 PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *canvas, int alpha, int depth, int stencil,
-                                  int premultiplied, int preserve);
+                                  int premultiplied, int preserve, int power_preference,
+                                  int strict_performance);
 void pu_canvas_composite(PuSurface *surface, PuCanvas *canvas, float x, float y, float width,
                          float height);
 PuCanvasResource *pu_canvas_resource(const char *kind, const double *args, size_t count,

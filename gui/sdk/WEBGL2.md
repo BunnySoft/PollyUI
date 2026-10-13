@@ -21,7 +21,7 @@ or WPT cases passed. No WebGL1 context is created.
 
 | Family | Native implementation and qualified behavior | Boundaries |
 |---|---|---|
-| Acquisition | Stable, exclusive 2D/WebGL2 identity; real backend failure returns `null` and schedules `webglcontextcreationerror`; actual context attributes | Single-sample `antialias:false`; default power policy, sRGB. No worker or OffscreenCanvas. `display-p3` explicitly rejects. Strict `failIfMajorPerformanceCaveat:true` requests conservatively return `null` plus creation error because this backend has no qualified hardware-performance guarantee; no renderer-string hardware certification or software substitution. |
+| Acquisition | Stable, exclusive 2D/WebGL2 identity; real backend failure returns `null` and schedules `webglcontextcreationerror` with an owned native reason; actual context attributes | Single-sample `antialias:false`, sRGB. No worker or OffscreenCanvas. `display-p3` explicitly rejects. Strict `failIfMajorPerformanceCaveat:true` accepts native-verified GPU-backed devices and rejects CPU/software/unknown types; this is classification, not a benchmark guarantee. Standard `powerPreference` is preserved and only advertised native hints are submitted, without promising an effective performance change. |
 | Backing/composition | Owned FBO, width/height independent of CSS and DPI, same-value resize clears storage but preserves GL state/resources, zero size; existing rounded clip, opacity, scroll, transform, input; genuine snapshots to 2D `drawImage`, PNG/JPEG/Blob export | Initial composition reads GPU pixels back and creates a raster Skia snapshot. **Not zero-copy**; readback and encoding run on the owning UI thread. |
 | Presentation | `preserveDrawingBuffer:false` clears the native drawing buffer after actual DOM presentation; retained DOM displays the captured frame until new default-framebuffer drawing; opaque default buffers have actual RGB storage | Presentation boundary is PollyUI's DOM paint operation, not a browser refresh driver. Detached canvases are not presented/discarded. |
 | State | Clear, color/depth/stencil masks and comparisons, front/cull face, blend factors/equations/color, scissor/viewport, hints, sample coverage, polygon offset, enabled state and natural query results | Backend numeric limits are real queries. The interface does not expose arbitrary GLES extension enumerants. |
@@ -55,18 +55,38 @@ GUI-only builds use `PU_BUILD_LAUNCHER=OFF`; `PU_BUILD_DESKTOP=OFF` remains vali
 `PU_WEBGL2=OFF` disables the backend. Enabled Windows builds need matching
 `EGL`/`GLES3` headers (the existing Skia ANGLE headers are sufficient) and the
 application-local `libEGL.dll`, `libGLESv2.dll`, `d3dcompiler_47.dll` at runtime.
-Windows WebGL2 now explicitly selects **ANGLE Vulkan + SwiftShader (software
-CPU)**, additionally requiring `vulkan-1.dll`, `vk_swiftshader.dll` and the
-original relative `vk_swiftshader_icd.json`. This is still EGL/GLES WebGL2,
-**not JavaScript WebGPU**. No hardware acceleration or hardware Vulkan
-qualification is claimed by the first Windows provider.
+Enabled Windows builds additionally require maintained Vulkan headers; restore
+the headers-only pin with `tools/fetch_vulkan_headers.ps1`. The verified Khronos
+Vulkan-Headers commit is `b379292b2ab6df5771ba9870d53cf8b2c9295daf`
+(v1.3.290). Its manifest records the received official archive SHA256 and
+Apache-2.0 OR MIT licenses. No Vulkan SDK/driver is installed; no Vulkan types
+cross the Canvas/DOM C seam. `PU_WEBGL2=OFF` needs none of these headers.
+
+Windows defaults to **ANGLE Vulkan hardware** using normal installed-driver
+discovery and the native Vulkan loader. No environment setting is required for
+ordinary hardware use. ANGLE's advertised EGL device/Vulkan extension supplies
+its actual instance, physical device and instance-proc ABI; official
+`VkPhysicalDeviceProperties` identifies integrated/discrete/GPU-backed virtual
+devices versus CPU/unknown. Renderer strings are not hardware proof.
+Virtual devices are labeled GPU-backed, not physically qualified.
+
+Hardware/runtime/configuration failure returns `null` plus creation error,
+without silent software or D3D substitution. Hardware policy rejects Vulkan
+driver-file/filter environment overrides instead of letting a private ICD
+replace normal installed-driver discovery. Explicit process-local
+`PU_WEBGL2_DEVICE=software` selects **SwiftShader CPU**, requiring
+`vk_swiftshader.dll` and the original relative `vk_swiftshader_icd.json` as well
+as the loader. Software qualification is not hardware qualification.
+The selected policy remains pinned through context loss/restoration; a shader
+or FBO error never causes a provider swap. Neither mode implements JS WebGPU.
 Linux uses system EGL/GLES3 headers and runtime shared libraries.
 
 The fixed Windows native bundle is the official Electron **v41.10.7** archive,
 SHA256 `43f2f823a263ee7d3ac71282e26c417c9e4417bbefdfa97ede3fde15daf5a46d`,
 with matching release-asset digest and independently verified published
 SHASUMS256 file. Its ANGLE reports 2.1.27094 / `830fc642200f`; the selected
-renderer reports Vulkan 1.3.0 / SwiftShader Device (Subzero), software.
+software renderer reports Vulkan 1.3.0 / SwiftShader Device (Subzero), verified
+native CPU type 4, vendor `0x1ae0`, device `0xc0de`.
 `tests/gpu/ANGLE-RUNTIME.json` records every extracted native library, ICD and
 full license hash. `tools/fetch_webgl_angle.ps1` verifies and stages only those
 files; it **does not install or run Electron/a browser**, change a shared SDK,
@@ -91,6 +111,25 @@ UID 1000, private Linux filesystem/Wayland sockets, Mesa 26.1.6 and llvmpipe
 (software). No shared SDK rebuild, image tag change, browser installation,
 desktop/RDP screenshot or physical-GPU certification is implied.
 
+The current Windows execution environment exposes Hyper-V/remote display
+adapters but no compatible normal Vulkan GPU driver. Hardware acquisition is
+honestly unavailable here; **physical positive qualification remains pending**.
+This does not imply Windows or the host machine cannot provide hardware.
+For a physical Windows GPU, use the same frozen native/device, mip/pixel,
+current-context, lifetime and unmodified Three fixtures:
+
+```powershell
+.\tools\test_webgl_hardware.ps1 -Build .\build\gpu-hardware-win -Evidence .\build\hardware-proof
+```
+
+Exit 77 means no eligible native hardware environment, or only a GPU-backed
+virtual device without physical qualification. Missing libraries, invalid
+policy/driver overrides, ABI/query failures and rendering errors fail, not SKIP.
+The verifier records actual native IDs/type/API/power hints and runs positive
+fixtures directly under hardware policy, never under CTest's software setting.
+Existing positive Windows CTests intentionally select explicit software for a
+deterministic functional baseline.
+
 The optional Three.js fixture installs **0.180.0/r180** from its own manifest:
 
 ```powershell
@@ -98,6 +137,7 @@ Set-Location gui\tests\gpu
 npm ci --ignore-scripts --no-audit --no-fund
 Set-Location ..\..\..
 .\tools\fetch_webgl_angle.ps1 -Dest .\build\gpu-win\gui
+.\tools\fetch_vulkan_headers.ps1
 cmake --build build\gpu-win --target pollyui-gpu-test pollyui-gpu-current-test pollyui-canvas-test
 ctest --test-dir build\gpu-win -R "^gui-(gpu.*|canvas)$" --output-on-failure
 ```
@@ -131,7 +171,8 @@ The fixtures are:
 | `gui-gpu-core` | Actual shader failures, vertex/byte/pack bounds, VAO/FBO initialization, TF values 3/4/5 to 7/9/11, UBO color, query/fence/task visibility, resize/state, destroyed/restored EGL context, old-generation rejection |
 | `gui-gpu-transfer` | Actual PBO pack/unpack byte offsets, integer texture/FBO/read/clear, DOM byte/float/half/packed uploads, optional compressed-format rejection, atomic drawing-buffer storage |
 | `gui-gpu-state`, `gui-gpu-uniform` | State driver queries, samplers, all scalar/vector/array/matrix uniform families with actual shader values, indexed/instanced draws, copies/outside-zero, MSAA resolve, 3D/array layers, invalidation, deletion |
-| `gui-gpu-review` | Independently reproduced cached-getter index/enum failures, query-shadow atomicity/shared occlusion slot, color-space brands, strict performance refusal, actual generated 2D/cube/3D/array and nonzero-base/immutable mip pixels, preserved storage on exact budget rejection |
+| `gui-gpu-review` | Independently reproduced cached-getter index/enum failures, query-shadow atomicity/shared occlusion slot, color-space brands, actual-provider strict caveat, actual generated 2D/cube/3D/array and nonzero-base/immutable mip pixels, preserved storage on exact budget rejection |
+| `gui-gpu-device-policy`, native device/system inventory verifiers (Windows) | Actual hardware outcome/native error ownership, explicit CPU policy, strict refusal after real classification, immutable restore policy, invalid configuration, normal discovery with/without private software files; physical positives SKIP when genuinely unavailable |
 | `gui-gpu-current` | Owning EGL handles/state restored across multiple canvases, draw/read/resize/close; Linux uses actual borrowed Skia GLES composition/readback |
 | `pollyui-gpu-mipmap-native-test` (manual diagnostic) | Direct GLES/no JS/no shadow comparison of selected backend vs Windows D3D11 ordinary/compatible mutable/immutable nonzero-base mip pixels; output deliberately makes no PASS/conformance claim |
 | `gui-gpu-three` | Unmodified r180 indexed BoxGeometry/material scene, actual DataTexture/CanvasTexture/decoded image, resize, native context loss/restoration/recreated scene, disposal |

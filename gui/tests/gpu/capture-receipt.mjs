@@ -2,7 +2,7 @@ import {readFileSync,writeFileSync,existsSync} from "node:fs";
 import {createHash} from "node:crypto";
 import {resolve,relative,isAbsolute,sep} from "node:path";
 import {execFileSync} from "node:child_process";
-const [rootInput,buildInput,output,publishedReceipt]=process.argv.slice(2);
+const [rootInput,buildInput,output,publishedReceipt,layerBase]=process.argv.slice(2);
 if(!rootInput||!buildInput||!output)throw new Error("usage: node capture-receipt.mjs source-root build-directory output.json");
 const root=resolve(rootInput),build=resolve(buildInput);
 const hash=path=>createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -37,7 +37,8 @@ for(const [source,header,symbol]of [
         embeddedSha256:embeddedHash,bytes:bytes.length,matches:true});
 }
 const artifacts=[];
-for(const name of ["pollyui-gpu-test","pollyui-gpu-current-test","pollyui-canvas-test","pollyui-playground"]){
+for(const name of ["pollyui-gpu-test","pollyui-gpu-current-test","pollyui-gpu-device-test",
+    "pollyui-gpu-system-vulkan-test","pollyui-canvas-test","pollyui-playground"]){
     const path=resolve(build,"gui",name+(process.platform==="win32"?".exe":""));
     if(existsSync(path))artifacts.push({path:local(path),sha256:hash(path)});
 }
@@ -50,12 +51,13 @@ const git=args=>execFileSync("git",["-C",root,...args],{encoding:"utf8"}).trim()
 const metadata=publishedReceipt?JSON.parse(readFileSync(publishedReceipt,"utf8")):
     {head:git(["rev-parse","HEAD"]),tree:git(["rev-parse","HEAD^{tree}"]),dirty:git(["status","--porcelain"])};
 const receipt={generatedAt:new Date().toISOString(),sourceRoot:root,buildDirectory:build,
-    base:"20df3da4cfcfffc043aaea0dc76a1bf21f90fec8",head:metadata.head,tree:metadata.tree,
+    base:"20df3da4cfcfffc043aaea0dc76a1bf21f90fec8",layerBase:layerBase||null,head:metadata.head,tree:metadata.tree,
     dirty:metadata.dirty,gitIdentitySource:publishedReceipt?"published native source receipt; private source copy has no .git":".git",
     compiledSources:sources,
     compiledLocalDependencies:[...dependencies].sort().map(path=>({path,sha256:hash(resolve(root,path))})),
     embeddedScripts:embedded,artifacts,dependencyReceipt:JSON.parse(readFileSync(resolve(root,"gui/tests/gpu/dependency-receipt.json"),"utf8")),
     windowsRuntimePin:JSON.parse(readFileSync(resolve(root,"gui/tests/gpu/ANGLE-RUNTIME.json"),"utf8")),
+    windowsHeadersOnlyPin:JSON.parse(readFileSync(resolve(root,"third_party/vulkan-headers-manifest.json"),"utf8")),
     limits:"Hashes describe the actual configured inputs and artifacts. No statement of complete WebGL/WPT, physical-GPU or release DLL redistribution qualification."};
 writeFileSync(output,JSON.stringify(receipt,null,2)+"\n");
 console.log(JSON.stringify({sources:sources.length,headers:dependencies.size,embeddedScripts:embedded.length,

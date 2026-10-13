@@ -654,6 +654,7 @@ typedef struct PuEventData {
     const PuPointerEvent *pointer;
     const PuWheelEvent *wheel;
     const PuDropEvent *drop;
+    const char *status_message;
 } PuEventData;
 
 static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const PuEventData *data,
@@ -669,7 +670,8 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
     if (!strncmp(type, "webglcontext", 12)) {
         JS_SetPropertyStr(ctx, ev, "cancelable", JS_NewBool(ctx, !strcmp(type, "webglcontextlost")));
-        JS_SetPropertyStr(ctx, ev, "statusMessage", JS_NewString(ctx, ""));
+        JS_SetPropertyStr(ctx, ev, "statusMessage", JS_NewString(ctx,
+            data&&data->status_message?data->status_message:""));
     }
     const PuKeyEvent *key = data ? data->key : NULL;
     if (key) {
@@ -785,6 +787,11 @@ int pu_bridge_media_event(JSContext *ctx, PuNode *node, const char *type)
 {
     PuBridge *root=JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
     return dispatch_impl(root,node,type,NULL,0);
+}
+int pu_bridge_media_event_status(JSContext *ctx,PuNode *node,const char *type,const char *status)
+{
+    PuBridge *root=JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    return dispatch_impl(root,node,type,&(PuEventData){.status_message=status},0);
 }
 
 int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event)

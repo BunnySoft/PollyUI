@@ -159,10 +159,12 @@ int pu_canvas_resize(PuCanvas *c, int w, int h)
 int pu_canvas_width(const PuCanvas *c) { return c ? c->width : 300; }
 int pu_canvas_height(const PuCanvas *c) { return c ? c->height : 150; }
 PuGpuCanvas *pu_canvas_gpu(PuCanvas *c) { return c ? c->gpu : nullptr; }
-PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *c, int alpha, int depth, int stencil, int premultiplied, int preserve)
+PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *c, int alpha, int depth, int stencil, int premultiplied, int preserve,
+                                  int power_preference,int strict_performance)
 {
     if (!c) return nullptr;
-    if (!c->gpu) c->gpu = pu_gpu_canvas_create(c->width, c->height, alpha, depth, stencil, premultiplied, preserve);
+    if (!c->gpu) c->gpu = pu_gpu_canvas_create(c->width, c->height, alpha, depth, stencil, premultiplied, preserve,
+        power_preference,strict_performance);
     return c->gpu;
 }
 static bool sync_gpu(PuCanvas *c, bool force = false)

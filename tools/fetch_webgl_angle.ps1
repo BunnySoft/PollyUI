@@ -47,3 +47,4 @@ try {
 Copy-Item (Join-Path $PSScriptRoot '..\gui\tests\gpu\ANGLE-RUNTIME.json') $Dest
 Write-Host "Staged checksum-pinned ANGLE Vulkan/SwiftShader native libraries and full licenses to $Dest."
 Write-Host 'No Electron/browser was installed or run. No system Vulkan settings or shared SDK were changed.'
+Write-Host 'Product default is verified Vulkan hardware. PU_WEBGL2_DEVICE=software explicitly selects the CPU qualification provider; no fallback.'

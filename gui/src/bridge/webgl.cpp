@@ -1537,19 +1537,17 @@ JSValue native_impl(JSContext* ctx, JSValueConst, int argc, JSValueConst* argv)
         if (!node || !node->tag || strcmp(node->tag, "canvas")
             || !JS_GetRuntimeOpaque(JS_GetRuntime(ctx)))
             return JS_ThrowTypeError(ctx, "Canvas scope is closed");
-        if (a.integer(5)) {
-            std::fprintf(stderr,
-                "[webgl2] strict performance-caveat request refused: backend hardware performance "
-                "is not qualified\n");
-            return JS_NULL;
-        }
         if (!node->canvas)
             node->canvas = pu_canvas_create(300, 150);
         if (!node->canvas)
             return JS_ThrowOutOfMemory(ctx);
-        auto c = pu_canvas_acquire_gpu(
-            node->canvas, a.integer(0), a.integer(1), a.integer(2), a.integer(3), a.integer(4));
-        return c ? handle_value(ctx, c) : JS_NULL;
+        auto c = pu_canvas_acquire_gpu(node->canvas, a.integer(0), a.integer(1), a.integer(2),
+            a.integer(3), a.integer(4), a.integer(6), a.integer(5));
+        JSValue report = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, report, "handle", c ? handle_value(ctx, c) : JS_NULL);
+        JS_SetPropertyStr(
+            ctx, report, "error", JS_NewString(ctx, c ? "" : pu_gpu_canvas_creation_error()));
+        return report;
     }
     if (operation == "storage") {
         PuNode* node = pu_bridge_node(argv[0]);
