@@ -1,18 +1,26 @@
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/sdk/canvas.js")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/sdk/canvas.js" CANVAS_SCRIPT HEX)
+string(REGEX REPLACE "(..)" "0x\\1," CANVAS_SCRIPT "${CANVAS_SCRIPT}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/canvas-script.h"
+    "static const unsigned char pu_canvas_script[] = {${CANVAS_SCRIPT}0};\n")
 add_library(pollyui-engine STATIC
     src/context/context.c
     src/render/skia_c.cpp
+    src/render/canvas_c.cpp
     src/render/render.c
     src/script/script.c
     src/script/async.c
     src/model/node.c
     src/bridge/bridge.c
+    src/bridge/media.c
+    src/bridge/image_file.c
     src/host/clipboard.c
     src/host/drag.c
     src/host/drag_js.c
     src/layout/layout.c
 )
 target_include_directories(pollyui-engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${SKIA_ROOT}")
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src" "${SKIA_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}")
 target_link_libraries(pollyui-engine PUBLIC qjs yogacore polly-execution)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_source_files_properties(src/host/drag.c src/host/drag_js.c src/host/sdl/drag_wayland.c
@@ -23,6 +31,20 @@ add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    add_executable(pollyui-canvas-test tests/canvas.c)
+    target_include_directories(pollyui-canvas-test PRIVATE src)
+    target_link_libraries(pollyui-canvas-test PRIVATE pollyui-engine)
+    add_test(NAME gui-canvas COMMAND pollyui-canvas-test "${CMAKE_CURRENT_SOURCE_DIR}/tests/canvas.mjs")
+    set_tests_properties(gui-canvas PROPERTIES TIMEOUT 30)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_HOST STREQUAL "sdl" AND PU_BUILD_DESKTOP)
+        add_executable(pollyui-canvas-wayland-test tests/canvas-wayland.c)
+        target_link_libraries(pollyui-canvas-wayland-test PRIVATE pollywm-core)
+        target_compile_options(pollyui-canvas-wayland-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME gui-canvas-wayland COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/canvas-wayland.sh"
+            $<TARGET_FILE:pollyui-canvas-wayland-test> $<TARGET_FILE:pollyui-playground>
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/canvas-window.mjs")
+        set_tests_properties(gui-canvas-wayland PROPERTIES TIMEOUT 30)
+    endif()
     add_executable(pollyui-transparency-contract-test tests/transparency-contract.c)
     target_include_directories(pollyui-transparency-contract-test PRIVATE include src)
     add_test(NAME gui-transparency-contract COMMAND pollyui-transparency-contract-test)

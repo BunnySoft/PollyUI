@@ -36,6 +36,26 @@ Porting includes a host, surface creation, font discovery and any platform
 services used by the app (for example WinHTTP versus Linux libcurl).
 The UI/DOM/layout logic remains shared.
 
+### Canvas 2D and Image resources
+
+Canvas uses an independent CPU raster backing store on every host, including
+GPU-presented windows. Do not multiply HTML canvas width/height by host DPI;
+only the normal DOM paint pass scales its snapshot to physical pixels.
+`img` is a measured/painted replaced element with PNG/JPEG natural dimensions,
+not a background-image-only convention or a new native surface role.
+The standard JS API is embedded in the GUI library at build time and needs no
+source-root file at runtime or SysRT dependency. CMake compiles the private
+`render/canvas_c.cpp`, `bridge/media.c`, and regular-file/UTF-8-path adapter
+`bridge/image_file.c` using the existing Skia codecs and font pipeline.
+
+The [Canvas compatibility matrix](../gui/sdk/CANVAS.md) describes API,
+source, allocation, text/shaping and timing limits. Native file decoding is
+currently UI-thread synchronous with task-based notification, not a background
+decoder or a browser-origin/CORS implementation. Native `gui-canvas` tests run
+without an HWND/SDL window; the optional `gui-canvas-wayland` smoke exercises a
+mapped fractional-DPI window. Neither requires an ISO/VM or Windows desktop
+screen sampling. Existing window/popup/transparency/grab semantics are unchanged.
+
 ---
 
 ## 1. The HostEngine contract

@@ -44,6 +44,17 @@ only when the JSON file is absent. Other applications' legacy storage and HTTP
 remain native. Settings now has an independent
 process/realm for Appearance and About; Displays, Network, Audio and Keyboard
 retain explicit Shell control-panel entry points.
+
+The GUI also exposes standard **Canvas 2D and Image/img** interfaces for static
+PNG/JPEG. Canvas has its own raster backing pixels, independent of CSS size and
+window DPI, and is composited through the existing DOM rather than another
+native window. Paths/Path2D, roundRect, text, gradients/patterns, alpha/compositing,
+RGBA8 pixels, and PNG/JPEG dataURL/Blob export are included.
+See the [actual API/source/limit matrix](gui/sdk/CANVAS.md) and
+[`gui/examples/canvas.mjs`](gui/examples/canvas.mjs). Local files/file URLs and
+data URLs are supported; HTTP(S), browser CORS, SVG images, OffscreenCanvas and
+3D APIs are not. This is a defined compatibility subset, not a full browser.
+
 Current development adds an original Windows 11-oriented Shell/Settings layout:
 sidebar navigation, grouped cards, illustrated theme choices and a persistent
 system version/build footer. The new Modern preset applies to fresh sessions;

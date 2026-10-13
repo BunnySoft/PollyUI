@@ -53,6 +53,8 @@ struct PuScript {
     JSValue entry;
     const char *module_root;
     int failed;
+    char *resource_directory;
+    const char *loading_entry;
 };
 
 /* ---- error reporting -------------------------------------------------------*/
@@ -295,6 +297,7 @@ JSContext *pu_script_jsctx(PuScript *s)
 }
 
 static char *pu_read_file(const char *path, size_t *out_len);
+static int set_resource_directory(PuScript *s,const char *path);
 
 /* Module identities stay stable; shared resources precede app-local files. */
 static char *pu_module_normalize(JSContext *ctx, const char *base_name,
@@ -319,6 +322,10 @@ static JSModuleDef *pu_module_loader(JSContext *ctx, const char *module_name, vo
         if (!path) { JS_ThrowOutOfMemory(ctx); return NULL; }
         snprintf(path, size, "%s/%s", script->module_root, module_name);
         buf = pu_read_file(path, &len);
+        if (buf && script->loading_entry && !strcmp(script->loading_entry,module_name) &&
+            !set_resource_directory(script,path)) {
+            free(path);free(buf);JS_ThrowOutOfMemory(ctx);return NULL;
+        }
         int error = errno;
         free(path);
         if (!buf && error != ENOENT && error != ENOTDIR) {
@@ -326,7 +333,13 @@ static JSModuleDef *pu_module_loader(JSContext *ctx, const char *module_name, vo
             return NULL;
         }
     }
-    if (!buf) buf = pu_read_file(module_name, &len);
+    if (!buf) {
+        buf = pu_read_file(module_name, &len);
+        if (buf && script->loading_entry && !strcmp(script->loading_entry,module_name) &&
+            !set_resource_directory(script,module_name)) {
+            free(buf);JS_ThrowOutOfMemory(ctx);return NULL;
+        }
+    }
     if (!buf) {
         JS_ThrowReferenceError(ctx, "could not load module '%s'", module_name);
         return NULL;
@@ -407,6 +420,27 @@ int pu_script_finish(PuScript *s)
 
 void pu_script_set_module_root(PuScript *s, const char *root) { s->module_root = root; }
 
+char *pu_script_resource_path(PuScript *s, const char *relative)
+{
+    const char *base=s && s->resource_directory ? s->resource_directory : "";
+    if (relative[0]=='/' || relative[0]=='\\' || (relative[0] && relative[1]==':')) base="";
+    size_t size=strlen(base)+strlen(relative)+1;
+    char *path=malloc(size);
+    if (path) snprintf(path,size,"%s%s",base,relative);
+    return path;
+}
+static int set_resource_directory(PuScript *s, const char *path)
+{
+    const char *slash=strrchr(path,'/'), *backslash=strrchr(path,'\\');
+    if (backslash && (!slash || backslash>slash)) slash=backslash;
+    size_t length=slash ? (size_t)(slash-path)+1 : 0;
+    char *directory=malloc(length+1);
+    if (!directory) return 0;
+    memcpy(directory,path,length); directory[length]=0;
+    free(s->resource_directory); s->resource_directory=directory;
+    return 1;
+}
+
 static int evaluated(PuScript *s, JSValue val, int is_module)
 {
     if (JS_IsException(val)) {
@@ -426,11 +460,16 @@ static int evaluated(PuScript *s, JSValue val, int is_module)
 
 int pu_script_run_module(PuScript *s, const char *specifier)
 {
-    return evaluated(s, JS_LoadModule(s->ctx, NULL, specifier), 1);
+    if (!set_resource_directory(s,specifier)) return evaluated(s,JS_ThrowOutOfMemory(s->ctx),0);
+    s->loading_entry=specifier;
+    JSValue result=JS_LoadModule(s->ctx,NULL,specifier);
+    s->loading_entry=NULL;
+    return evaluated(s,result,1);
 }
 
 int pu_script_run_file(PuScript *s, const char *path)
 {
+    if (!set_resource_directory(s,path)) return evaluated(s,JS_ThrowOutOfMemory(s->ctx),0);
     size_t len = 0;
     char *src = pu_read_file(path, &len);
     if (!src) {
@@ -535,6 +574,7 @@ void pu_script_destroy(PuScript *s)
     for (int i = 0; i < s->nraf; i++) JS_FreeValue(s->ctx, s->rafs[i].func);
     free(s->rafs);
     JS_FreeValue(s->ctx, s->entry);
+    free(s->resource_directory);
     if (s->ctx) JS_FreeContext(s->ctx);
     if (s->rt)  JS_FreeRuntime(s->rt);
     free(s);

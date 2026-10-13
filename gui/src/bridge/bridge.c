@@ -2,6 +2,7 @@
 #include "render/skia_c.h"   /* pu_text_measure for the global measureText() */
 #include "layout/layout.h"   /* pu_layout_mark_dirty / pu_layout_affects */
 #include "host/drag_js.h"
+#include "bridge/media.h"
 
 #include <stdint.h>
 #include <inttypes.h>
@@ -22,6 +23,14 @@ typedef struct PuBitmap {
     char key[64];
 } PuBitmap;
 static uint64_t bitmap_serial;
+static uint64_t document_serial;
+
+PuNode *pu_bridge_node(JSValueConst value) { return JS_GetOpaque(value, pu_node_class_id); }
+const char *pu_bridge_bitmap_key(JSValueConst value)
+{
+    PuBitmap *bitmap = JS_GetOpaque(value, pu_bitmap_class_id);
+    return bitmap && bitmap->owner ? bitmap->key : NULL;
+}
 
 struct PuBridge {
     JSContext *ctx;
@@ -45,6 +54,7 @@ struct PuBridge {
     PuTextInputFn input_callback;
     void *input_user;
     PuBitmap *bitmaps;
+    uint64_t document_scope;
 };
 
 static void bitmap_close(PuBitmap *bitmap)
@@ -252,6 +262,12 @@ static JSValue pu_node_wrapper(JSContext *ctx, PuNode *node)
     JSValue obj = JS_NewObjectClass(ctx, pu_node_class_id);
     if (JS_IsException(obj)) return obj;
     JS_SetOpaque(obj, node);
+    node->runtime=JS_GetRuntime(ctx);
+    if (pu_media_prototype(ctx, obj, node->tag) < 0) {
+        JS_SetOpaque(obj, NULL);
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
     pu_node_ref(node);          /* the wrapper keeps the node alive */
     node->js_wrapper = obj;     /* weak cache (not duped) */
     node->has_wrapper = true;
@@ -262,10 +278,28 @@ static void pu_node_finalizer(JSRuntime *rt, JSValueConst val)
 {
     PuNode *node = (PuNode *)JS_GetOpaque(val, pu_node_class_id);
     if (!node) return;
+    int internal=!node->parent && node->ref<=1+(node->has_style?1:0);
+    pu_node_ref(node);
     node->has_wrapper = false;
     node->js_wrapper = JS_UNDEFINED;
+    JSValue state=node->media_state;
+    node->media_state=JS_UNDEFINED;
+    node->media_runtime=NULL;
+    JS_FreeValueRT(rt,state);
+    if(internal)pu_node_clear_listeners(node);
+    pu_node_unref(node);
     pu_node_unref(node);
     (void)rt;
+}
+
+static void pu_node_gc_mark(JSRuntime *rt, JSValueConst value, JS_MarkFunc *mark)
+{
+    PuNode *node=JS_GetOpaque(value,pu_node_class_id);
+    /* Native tree/host refs root JS state; wrapper-only ownership exposes cycle edges. */
+    if (node && !node->parent && node->ref <= 1+(node->has_style?1:0)) {
+        JS_MarkValue(rt,node->media_state,mark);
+        for(int i=0;i<node->listener_count;++i)JS_MarkValue(rt,node->listeners[i].func,mark);
+    }
 }
 
 static JSValue pu_style_wrapper(JSContext *ctx, PuNode *node)
@@ -273,7 +307,10 @@ static JSValue pu_style_wrapper(JSContext *ctx, PuNode *node)
     if (node->has_style) return JS_DupValue(ctx, node->js_style);
     JSValue obj = JS_NewObjectClass(ctx, pu_style_class_id);
     if (JS_IsException(obj)) return obj;
+    JSValue owner=pu_node_wrapper(ctx,node);
+    if(JS_IsException(owner)){JS_FreeValue(ctx,obj);return owner;}
     JS_SetOpaque(obj, node);
+    node->style_node_wrapper=owner;
     pu_node_ref(node);
     node->js_style = obj;
     node->has_style = true;
@@ -286,8 +323,17 @@ static void pu_style_finalizer(JSRuntime *rt, JSValueConst val)
     if (!node) return;
     node->has_style = false;
     node->js_style = JS_UNDEFINED;
+    JSValue owner=node->style_node_wrapper;
+    node->style_node_wrapper=JS_UNDEFINED;
+    JS_FreeValueRT(rt,owner);
     pu_node_unref(node);
     (void)rt;
+}
+
+static void pu_style_gc_mark(JSRuntime *rt,JSValueConst value,JS_MarkFunc *mark)
+{
+    PuNode *node=JS_GetOpaque(value,pu_style_class_id);
+    if(node)JS_MarkValue(rt,node->style_node_wrapper,mark);
 }
 
 /* ---- style exotic object (el.style.x = y) ---------------------------------*/
@@ -334,9 +380,10 @@ static JSClassExoticMethods pu_style_exotic = {
     .get_own_property = js_style_get_own,
     .set_property     = js_style_set,
 };
-static const JSClassDef pu_node_class_def  = { "Node", .finalizer = pu_node_finalizer };
+static const JSClassDef pu_node_class_def  = { "Node", .finalizer = pu_node_finalizer, .gc_mark = pu_node_gc_mark };
 static const JSClassDef pu_style_class_def = {
-    "CSSStyleDeclaration", .finalizer = pu_style_finalizer, .exotic = &pu_style_exotic
+    "CSSStyleDeclaration", .finalizer = pu_style_finalizer,
+    .gc_mark = pu_style_gc_mark, .exotic = &pu_style_exotic
 };
 static const JSClassDef pu_document_class_def = { "Document", .finalizer = document_finalizer };
 static const JSClassDef pu_bitmap_class_def = { "Bitmap", .finalizer = bitmap_finalizer };
@@ -704,6 +751,18 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
     }
 
+    if (!bubble && (!strcmp(type,"load") || !strcmp(type,"error")) &&
+        !js_event_flag(ctx,ev,"__stopImmediate")) {
+        JSValue self=pu_node_wrapper(ctx,target);
+        JSValue callback=JS_GetPropertyStr(ctx,self,!strcmp(type,"load") ? "onload" : "onerror");
+        if (JS_IsException(callback)) dispatch_report(ctx);
+        else if (JS_IsFunction(ctx,callback)) {
+            JSValue result=JS_Call(ctx,callback,self,1,&ev);
+            if (JS_IsException(result)) dispatch_report(ctx);
+            JS_FreeValue(ctx,result);
+        }
+        JS_FreeValue(ctx,callback);JS_FreeValue(ctx,self);
+    }
     int prevented = js_event_flag(ctx, ev, "defaultPrevented");
     JS_FreeValue(ctx, ev);
     return prevented;
@@ -711,6 +770,12 @@ failed:
     dispatch_report(ctx);
     JS_FreeValue(ctx, ev);
     return 0;
+}
+
+void pu_bridge_media_event(JSContext *ctx, PuNode *node, const char *type)
+{
+    PuBridge *root=JS_GetRuntimeOpaque(JS_GetRuntime(ctx));
+    dispatch_impl(root,node,type,NULL,0);
 }
 
 int pu_bridge_dispatch_drop(PuBridge *b, PuNode *target, const PuDropEvent *event)
@@ -1062,7 +1127,11 @@ static JSValue js_document_createElement(JSContext *ctx, JSValueConst this_val,
     PuNode *n = pu_node_new(PU_NODE_ELEMENT);
     if (!n) { if (tag) JS_FreeCString(ctx, tag); return JS_ThrowOutOfMemory(ctx); }
     n->tag = pu_bstrdup(tag ? tag : "div");
+    PuBridge *document=JS_GetOpaque(this_val,pu_document_class_id);
+    n->document_scope=document ? document->document_scope : 0;
     if (tag) JS_FreeCString(ctx, tag);
+    if (!n->tag) { pu_node_unref(n); return JS_ThrowOutOfMemory(ctx); }
+    for (char *p=n->tag; *p; ++p) if (*p>='A' && *p<='Z') *p=(char)(*p+'a'-'A');
     return pu_node_wrapper(ctx, n);
 }
 
@@ -1614,6 +1683,8 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     if (!b) return NULL;
     b->ctx = ctx;
     b->root = b;
+    if (document_serial==UINT64_MAX) {free(b);return NULL;}
+    b->document_scope=++document_serial;
     b->document = JS_UNDEFINED;
 
     JSRuntime *rt = JS_GetRuntime(ctx);
@@ -1684,6 +1755,11 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     def_get(ctx, node_proto, "tagName",         js_node_get_tagName);
     def_get(ctx, node_proto, "style",           js_node_get_style);
     def_getset(ctx, node_proto, "textContent",  js_node_get_textContent, js_node_set_textContent);
+    if (pu_media_install(ctx, node_proto) < 0) {
+        JS_FreeValue(ctx, node_proto);
+        pu_bridge_free(b);
+        return NULL;
+    }
     JS_SetClassProto(ctx, pu_node_class_id, node_proto);
 
     JS_SetClassProto(ctx, pu_style_class_id, JS_NewObject(ctx));
@@ -1697,6 +1773,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
         return NULL;
     }
     b->body->tag = pu_bstrdup("body");
+    b->body->document_scope=b->document_scope;
     pu_node_ref(b->body); /* bridge holds a ref so body persists across GC */
     if (!b->body->tag) { pu_bridge_free(b); return NULL; }
 
@@ -1751,11 +1828,14 @@ PuBridge *pu_bridge_new_document(PuBridge *main)
     PuBridge *b = calloc(1, sizeof(*b));
     if (!b) return NULL;
     b->root = main->root;
+    if(document_serial==UINT64_MAX){free(b);return NULL;}
+    b->document_scope=++document_serial;
     b->ctx = main->ctx;
     b->body = pu_node_new(PU_NODE_ELEMENT);
     if (!b->body) { free(b); return NULL; }
     pu_node_ref(b->body);
     b->body->tag = pu_bstrdup("body");
+    b->body->document_scope=b->document_scope;
     if (!b->body->tag) { free_document(b); return NULL; }
     b->document = JS_NewObjectClass(b->ctx, pu_document_class_id);
     if (JS_IsException(b->document)) { free_document(b); return NULL; }
@@ -1787,6 +1867,7 @@ void pu_bridge_release_document(PuBridge *b)
     if (b->focused) { node_set_state(b->focused, PU_STATE_FOCUS, 0, 0); pu_node_unref(b->focused); b->focused = NULL; }
     if (b->hovered) { node_set_state(b->hovered, PU_STATE_HOVER, 0, 1); pu_node_unref(b->hovered); b->hovered = NULL; }
     pu_node_unref(b->click_target); b->click_target = NULL; b->double_click = false;
+    pu_node_cancel_media_document(b->ctx,b->document_scope);
     pu_node_clear_tree_listeners(b->body);
     if (b == b->root) return; /* The global document belongs to the shared realm. */
     b->native_owned = false;
@@ -1797,7 +1878,8 @@ void pu_bridge_free(PuBridge *b)
 {
     if (!b) return;
     while (b->bitmaps) bitmap_close(b->bitmaps);
-    pu_node_clear_all_listeners();
+    pu_node_close_media(b->ctx);
+    pu_node_clear_all_listeners(JS_GetRuntime(b->ctx));
     JS_SetRuntimeOpaque(JS_GetRuntime(b->ctx), NULL);
     while (b->next) {
         PuBridge *child = b->next;

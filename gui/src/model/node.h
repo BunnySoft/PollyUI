@@ -23,6 +23,7 @@ typedef enum PuNodeType {
 } PuNodeType;
 
 typedef struct PuNode PuNode;
+typedef struct PuCanvas PuCanvas;
 
 typedef struct PuStyleProp {
     char *name;
@@ -60,6 +61,13 @@ struct PuNode {
     PuStyle style;           /* element style */
     PuStyle attrs;           /* generic attribute map (setAttribute/id/class) */
     int     tab_index;       /* >= 0 -> focusable (keyboard); -1 default */
+    PuCanvas *canvas;        /* HTML canvas backing store, independent of attachment */
+    char *image_key;         /* owned cache entry for HTML img */
+    int image_width, image_height;
+    JSRuntime *media_runtime;
+    JSRuntime *runtime;       /* callbacks belong to this node's realm, not the last installed bridge */
+    uint64_t document_scope;   /* stable identity, never a borrowed window/document pointer */
+    JSValue media_state;     /* traced by detached wrappers; attached nodes root their state */
 
     /* Interaction state flags (maintained by the bridge, read by the renderer to
      * apply `hover:`/`focus:`-prefixed style overrides). */
@@ -84,14 +92,17 @@ struct PuNode {
     /* Bridge wrappers — weak handles managed by bridge.c. */
     JSValue js_wrapper;  bool has_wrapper;
     JSValue js_style;    bool has_style;
+    JSValue style_node_wrapper; /* style wrappers retain their owning element */
 };
 
 /* The runtime used to release listener callbacks when a node is freed.
  * Set once by the bridge at install time. */
 void pu_node_set_runtime(JSRuntime *rt);
 /* Release native-held JS callbacks while their runtime is still alive. */
-void pu_node_clear_all_listeners(void);
+void pu_node_clear_all_listeners(JSRuntime *runtime);
 void pu_node_clear_tree_listeners(PuNode *root);
+void pu_node_close_media(JSContext *context);
+void pu_node_cancel_media_document(JSContext *context, uint64_t scope);
 uint64_t pu_node_paint_version(const PuNode *node);
 /* NULL marks shared bitmap resources; attached node changes stay document-scoped. */
 void pu_node_mark_paint_dirty(PuNode *node);
@@ -118,6 +129,7 @@ void        pu_style_remove(PuStyle *s, const char *name);
 void    pu_node_add_listener(PuNode *n, const char *type, JSValue func);
 /* Remove the first listener matching (type, func). */
 void    pu_node_remove_listener(PuNode *n, const char *type, JSValueConst func);
+void pu_node_clear_listeners(PuNode *node);
 /* Topmost element whose computed box contains (x, y), or NULL. */
 PuNode *pu_node_hit_test(PuNode *root, float x, float y);
 

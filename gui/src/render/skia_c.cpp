@@ -10,6 +10,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRRect.h"
@@ -635,6 +636,15 @@ void pu_image_remove(const char *key) {
     if (key && !std::strncmp(key, "polly-memory:", 13)) image_cache().erase(key);
 }
 
+extern "C++" sk_sp<SkImage> pu_canvas_cached_image(const char *key) {
+    auto it = image_cache().find(key ? key : "");
+    return it == image_cache().end() ? nullptr : it->second;
+}
+
+extern "C++" SkFont pu_canvas_font(float size, int weight, int italic, const char *family) {
+    return make_font(size, weight, italic, family);
+}
+
 int pu_surface_draw_image(PuSurface *s, const char *path, float x, float y,
                           float w, float h, float radius) {
     if (!s || !s->surface || !path) return 0;
@@ -795,6 +805,7 @@ struct ShapeCacheEntry {
     std::string text;
     SkTypefaceID typeface;
     float size;
+    int direction;
     ShapedText shape;
 };
 static std::vector<ShapeCacheEntry> &shape_cache() {
@@ -917,7 +928,7 @@ static bool shape_span(const SkFont &base, const std::vector<UChar> &text, const
     out.runs.push_back(std::move(run));
     return true;
 }
-static bool shape_text(const SkFont &base, const char *bytes, size_t length, ShapedText &out) {
+static bool shape_text(const SkFont &base, const char *bytes, size_t length, ShapedText &out, int direction = -1) {
     if (!length) return true;
     std::vector<UChar> text;
     std::vector<int> graphemes;
@@ -925,7 +936,8 @@ static bool shape_text(const SkFont &base, const char *bytes, size_t length, Sha
     UErrorCode error = U_ZERO_ERROR;
     Bidi bidi(ubidi_open(), ubidi_close);
     if (!bidi) { std::fprintf(stderr, "[text] Cannot allocate bidi state\n"); return false; }
-    ubidi_setPara(bidi.get(), text.data(), (int32_t)text.size(), UBIDI_DEFAULT_LTR, nullptr, &error);
+    ubidi_setPara(bidi.get(), text.data(), (int32_t)text.size(),
+        direction < 0 ? UBIDI_DEFAULT_LTR : (UBiDiLevel)direction, nullptr, &error);
     int32_t runs = ubidi_countRuns(bidi.get(), &error);
     if (U_FAILURE(error)) { std::fprintf(stderr, "[text] Bidi analysis failed: %s\n", u_errorName(error)); return false; }
     for (int i = 0; i < runs; i++) {
@@ -954,7 +966,7 @@ static bool shape_text(const SkFont &base, const char *bytes, size_t length, Sha
         [](const PuTextCluster &a, const PuTextCluster &b) { return a.start < b.start; });
     return true;
 }
-static const ShapedText *shaped(const SkFont &font, const char *text, size_t length) {
+static const ShapedText *shaped(const SkFont &font, const char *text, size_t length, int direction = -1) {
     if (!font.getTypeface()) { std::fprintf(stderr, "[text] No typeface available\n"); return nullptr; }
     if (!std::isfinite(font.getSize()) || font.getSize() <= 0 || font.getSize() > 4096) {
         std::fprintf(stderr, "[text] Invalid shaping font size\n"); return nullptr;
@@ -963,11 +975,11 @@ static const ShapedText *shaped(const SkFont &font, const char *text, size_t len
     auto &cache = shape_cache();
     SkTypefaceID id = font.getTypeface()->uniqueID();
     for (auto &entry : cache)
-        if (entry.typeface == id && entry.size == font.getSize() && entry.text.size() == length &&
+        if (entry.typeface == id && entry.size == font.getSize() && entry.direction == direction && entry.text.size() == length &&
             !std::memcmp(entry.text.data(), text, length)) return &entry.shape;
     ShapeCacheEntry entry;
-    entry.text.assign(text, length); entry.typeface = id; entry.size = font.getSize();
-    if (!shape_text(font, text, length, entry.shape)) return nullptr;
+    entry.text.assign(text, length); entry.typeface = id; entry.size = font.getSize(); entry.direction=direction;
+    if (!shape_text(font, text, length, entry.shape,direction)) return nullptr;
     size_t total = length;
     for (const auto &item : cache) total += item.text.size();
     if (cache.size() >= 128 || total > 256 * 1024) cache.clear();
@@ -1089,6 +1101,39 @@ static void pu_draw_runs(SkCanvas *canvas, const SkFont &base, const SkPaint &pa
     }
 #endif
 }
+
+extern "C++" bool pu_canvas_text_outline(const SkFont &base, const char *s, size_t n,
+        SkPath *path, float *advance, int direction) {
+        path->reset(); *advance=0;
+    #if defined(PU_COMPLEX_TEXT)
+        const ShapedText *text=shaped(base,s,n,direction);
+        if (!text) return false;
+        *advance=text->width;
+        for (const auto &run:text->runs) {
+            for (size_t i=0;i<run.glyphs.size();++i) {
+                SkPath glyph;
+                if (run.font.getPath(run.glyphs[i],&glyph))
+                    path->addPath(glyph,run.positions[i].x(),run.positions[i].y());
+            }
+        }
+    #else
+        (void)direction;
+        std::vector<PuRun> runs; pu_runs(base,s,n,runs);
+        for (const auto &run:runs) {
+            SkFont font=base; font.setTypeface(sk_ref_sp(run.tf));
+            int count=font.countText(run.start,run.len,SkTextEncoding::kUTF8);
+            std::vector<SkGlyphID> ids(count); std::vector<SkScalar> widths(count);
+            font.textToGlyphs(run.start,run.len,SkTextEncoding::kUTF8,ids.data(),count);
+            font.getWidths(ids.data(),count,widths.data());
+            for (int i=0;i<count;++i) {
+                SkPath glyph;
+                if (font.getPath(ids[i],&glyph)) path->addPath(glyph,*advance,0);
+                *advance+=widths[i];
+            }
+        }
+    #endif
+        return true;
+    }
 
 int pu_text_graphemes(const char *utf8, size_t length, int **boundaries, size_t *count) {
     *boundaries = nullptr; *count = 0;

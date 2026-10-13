@@ -1,0 +1,55 @@
+// Standard drawing code; the surrounding DOM uses PollyUI's existing layout styles.
+Object.assign(document.body.style,{padding:"24",alignItems:"flex-start",backgroundColor:"#f1f5f9"});
+const title=document.createElement("view");
+title.textContent="Canvas 2D + Image / img";
+Object.assign(title.style,{fontSize:"24",fontWeight:"bold",color:"#0f172a",marginBottom:"12"});
+document.body.appendChild(title);
+const canvas=document.createElement("canvas");
+canvas.width=600;canvas.height=320;
+Object.assign(canvas.style,{width:"600",height:"320",borderRadius:"12",marginBottom:"12"});
+document.body.appendChild(canvas);
+const context=canvas.getContext("2d");
+const tile=document.createElement("canvas");tile.width=48;tile.height=48;
+const tileContext=tile.getContext("2d");
+const tileGradient=tileContext.createLinearGradient(0,0,48,48);
+tileGradient.addColorStop(0,"deepskyblue");tileGradient.addColorStop(1,"rebeccapurple");
+tileContext.fillStyle=tileGradient;tileContext.fillRect(0,0,48,48);
+tileContext.fillStyle="white";tileContext.font="bold 26px sans-serif";tileContext.textAlign="center";
+tileContext.textBaseline="middle";tileContext.fillText("P",24,24);
+const image=new Image();image.src=tile.toDataURL("image/png");await image.decode();
+const jpeg=document.createElement("img");jpeg.src=tile.toDataURL("image/jpeg",.9);
+jpeg.width=48;jpeg.height=48;document.body.appendChild(jpeg);await jpeg.decode();
+const label=document.createElement("view");
+label.textContent="A normal DOM img (JPEG) above. Click the canvas to move the animated marker.";
+Object.assign(label.style,{fontSize:"14",color:"#475569",marginTop:"8"});
+document.body.appendChild(label);
+let pointerX=470,pointerY=155;
+canvas.addEventListener("mousedown",event=>{
+    const box=canvas.getBoundingClientRect();
+    pointerX=(event.clientX-box.left)*canvas.width/box.width;
+    pointerY=(event.clientY-box.top)*canvas.height/box.height;
+});
+const card=new Path2D();card.roundRect(20,20,560,280,16);
+function frame(time) {
+    context.clearRect(0,0,canvas.width,canvas.height);
+    context.fillStyle="white";context.fill(card);
+    context.save();context.clip(card);
+    const gradient=context.createLinearGradient(20,0,580,0);
+    gradient.addColorStop(0,"#dbeafe");gradient.addColorStop(.5,"#ede9fe");gradient.addColorStop(1,"#cffafe");
+    context.fillStyle=gradient;context.fillRect(20,20,560,80);
+    context.fillStyle="#0f172a";context.font="bold 22px sans-serif";context.textBaseline="alphabetic";
+    context.fillText("Portable CanvasRenderingContext2D",40,65);
+    context.drawImage(image,40,125,72,72);
+    context.beginPath();context.moveTo(140,230);
+    context.bezierCurveTo(230,80,310,290,410,135);
+    context.strokeStyle="royalblue";context.lineWidth=4;context.setLineDash([8,4]);context.stroke();
+    context.setLineDash([]);
+    context.translate(pointerX,pointerY);context.rotate(time/1000);
+    context.shadowColor="rgba(30, 41, 59, 0.25)";context.shadowBlur=12;context.shadowOffsetY=6;
+    context.fillStyle="coral";context.beginPath();context.roundRect(-24,-24,48,48,10);context.fill();
+    context.restore();
+    context.fillStyle="#475569";context.font="14px monospace";
+    context.fillText(`PNG / JPEG | ${canvas.width} x ${canvas.height} backing pixels`,40,275);
+    requestAnimationFrame(frame);
+}
+frame(0);

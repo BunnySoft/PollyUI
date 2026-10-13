@@ -1,4 +1,5 @@
 #include "model/node.h"
+#include "render/canvas_c.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -113,6 +114,9 @@ PuNode *pu_node_new(PuNodeType type)
     n->tab_index = -1; /* not focusable by default */
     n->js_wrapper = JS_UNDEFINED;
     n->js_style   = JS_UNDEFINED;
+    n->media_state = JS_UNDEFINED;
+    n->style_node_wrapper=JS_UNDEFINED;
+    n->runtime=g_rt;
     n->runtime_next = g_nodes;
     if (g_nodes) g_nodes->runtime_prev = n;
     g_nodes = n;
@@ -132,17 +136,20 @@ static void clear_listeners(PuNode *n)
     n->listener_count = n->listener_cap = 0;
     for (int i = 0; i < count; i++) {
         free(listeners[i].type);
-        if (g_rt) JS_FreeValueRT(g_rt, listeners[i].func);
+        if (n->runtime) JS_FreeValueRT(n->runtime, listeners[i].func);
     }
     free(listeners);
 }
 
-void pu_node_clear_all_listeners(void)
+void pu_node_clear_listeners(PuNode *node) { clear_listeners(node); }
+
+void pu_node_clear_all_listeners(JSRuntime *runtime)
 {
     /* Freeing a callback can finalize wrappers anywhere in the native forest.
      * Hold every node until the sweep finishes so traversal cannot be invalidated. */
     for (PuNode *n = g_nodes; n; n = n->runtime_next) pu_node_ref(n);
-    for (PuNode *n = g_nodes; n; n = n->runtime_next) clear_listeners(n);
+    for (PuNode *n = g_nodes; n; n = n->runtime_next)
+        if (n->runtime==runtime) clear_listeners(n);
     PuNode *n = g_nodes;
     while (n) {
         PuNode *next = n->runtime_next;
@@ -176,11 +183,58 @@ static void pu_node_free(PuNode *n)
         c = next;
     }
     clear_listeners(n);
+    if (n->media_runtime) JS_FreeValueRT(n->media_runtime,n->media_state);
+    pu_canvas_destroy(n->canvas);
+    if (n->image_key) pu_image_remove(n->image_key);
+    free(n->image_key);
     free(n->tag);
     free(n->text);
     pu_style_free(&n->style);
     pu_style_free(&n->attrs);
     free(n);
+}
+
+static void cancel_media(JSContext *context,JSValueConst state)
+{
+    if (!JS_IsObject(state)) return;
+    JSValue keep=JS_DupValue(context,state);
+    JSValue shutdown=JS_GetPropertyStr(context,keep,"shutdown");
+    if (JS_IsFunction(context,shutdown)) {
+        JSValue result=JS_Call(context,shutdown,keep,0,NULL);
+        if (JS_IsException(result)) {
+            fprintf(stderr,"[media] Cannot cancel image decode during shutdown\n");
+            JS_FreeValue(context,JS_GetException(context));
+        }
+        JS_FreeValue(context,result);
+    }
+    JS_FreeValue(context,shutdown);
+    JS_FreeValue(context,keep);
+}
+void pu_node_cancel_media_document(JSContext *context,uint64_t scope)
+{
+    JSRuntime *runtime=JS_GetRuntime(context);
+    for (PuNode *n=g_nodes;n;n=n->runtime_next) pu_node_ref(n);
+    for (PuNode *n=g_nodes;n;n=n->runtime_next)
+        if (n->media_runtime==runtime && n->document_scope==scope) cancel_media(context,n->media_state);
+    PuNode *n=g_nodes;
+    while(n){PuNode *next=n->runtime_next;pu_node_unref(n);n=next;}
+}
+void pu_node_close_media(JSContext *context)
+{
+    JSRuntime *runtime=JS_GetRuntime(context);
+    for (PuNode *n=g_nodes;n;n=n->runtime_next) pu_node_ref(n);
+    for (PuNode *n=g_nodes;n;n=n->runtime_next) {
+        if (n->media_runtime!=runtime) continue;
+        JSValue state=n->media_state;
+        n->media_state=JS_UNDEFINED; n->media_runtime=NULL;
+        cancel_media(context,state);
+        JS_FreeValueRT(runtime,state);
+        if (n->image_key) pu_image_remove(n->image_key);
+        free(n->image_key); n->image_key=NULL; n->image_width=n->image_height=0;
+        pu_canvas_destroy(n->canvas);n->canvas=NULL;
+    }
+    PuNode *n=g_nodes;
+    while (n) { PuNode *next=n->runtime_next; pu_node_unref(n); n=next; }
 }
 
 void pu_node_unref(PuNode *n)
@@ -207,10 +261,20 @@ static void pu_unlink(PuNode *child)
     child->parent = child->prev_sibling = child->next_sibling = NULL;
 }
 
+static void adopt_document_scope(PuNode *node,uint64_t scope)
+{
+    node->document_scope=scope;
+    for(PuNode *child=node->first_child;child;child=child->next_sibling)
+        adopt_document_scope(child,scope);
+}
+
 void pu_node_insert_before(PuNode *parent, PuNode *child, PuNode *ref_node)
 {
     if (!parent || !child || child == parent) return;
     if (ref_node && ref_node->parent != parent) return;
+    for(PuNode *ancestor=parent;ancestor;ancestor=ancestor->parent)
+        if(ancestor==child)return;
+    adopt_document_scope(child,parent->document_scope);
 
     bool was_rooted = (child->parent != NULL);
     pu_unlink(child);                 /* leave old position (no ref change yet) */

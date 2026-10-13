@@ -3,9 +3,9 @@
 
 /* RenderEngine — the C ABI over Skia (DESIGN.md §3).
  *
- * This is the ONLY seam where C++ enters PollyUI. The implementation
- * (skia_c.cpp) is C++ compiled against Skia's headers; everything else in the
- * project consumes Skia exclusively through these `extern "C"` functions.
+ * RenderEngine is the graphics seam where C++ enters PollyUI. skia_c.cpp and
+ * the private HTML Canvas adapter (canvas_c.h/.cpp) compile against Skia;
+ * other engines consume them exclusively through opaque C interfaces.
  *
  * M0b surface: a CPU raster surface in BGRA8888 (so its pixels blit directly to
  * a Windows top-down DIB), plus clear + fill-rect. Grown per milestone. */

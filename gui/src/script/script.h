@@ -37,6 +37,8 @@ int pu_script_run_file(PuScript *s, const char *path);
 void pu_script_set_module_root(PuScript *s, const char *root);
 int pu_script_run_module(PuScript *s, const char *specifier);
 int pu_script_failed(PuScript *s);
+/* Desktop file resources follow the entry's directory; no browser origin is implied. */
+char *pu_script_resource_path(PuScript *s, const char *relative);
 /* At application/test exit, unfinished module evaluation is also an error. */
 int pu_script_finish(PuScript *s);
 

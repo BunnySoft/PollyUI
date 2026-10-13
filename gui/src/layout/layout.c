@@ -1,5 +1,6 @@
 #include "layout/layout.h"
 #include "render/skia_c.h"   /* pu_text_measure for the text measure callback */
+#include "render/canvas_c.h"
 
 #include <yoga/Yoga.h>
 
@@ -231,6 +232,20 @@ static YGSize measure_text(YGNodeConstRef node, float width, YGMeasureMode width
 
 /* ---- build / read back -----------------------------------------------------*/
 
+static YGSize measure_media(YGNodeConstRef node, float width, YGMeasureMode wm,
+    float height, YGMeasureMode hm)
+{
+    PuNode *n=YGNodeGetContext(node);
+    float w=n->tag && !strcmp(n->tag,"canvas") ? (float)pu_canvas_width(n->canvas) : (float)n->image_width;
+    float h=n->tag && !strcmp(n->tag,"canvas") ? (float)pu_canvas_height(n->canvas) : (float)n->image_height;
+    float ratio=h>0 ? w/h : 0;
+    if (wm==YGMeasureModeExactly) { w=width; if (hm!=YGMeasureModeExactly && ratio>0) h=w/ratio; }
+    if (hm==YGMeasureModeExactly) { h=height; if (wm!=YGMeasureModeExactly && ratio>0) w=h*ratio; }
+    if (wm==YGMeasureModeAtMost && w>width) { if (wm!=YGMeasureModeExactly && hm!=YGMeasureModeExactly && w>0) h*=width/w; w=width; }
+    if (hm==YGMeasureModeAtMost && h>height) { if (wm!=YGMeasureModeExactly && h>0) w*=height/h; h=height; }
+    return (YGSize){w,h};
+}
+
 static YGNodeRef build_tree(PuNode *n)
 {
     YGNodeRef y = YGNodeNew();
@@ -242,7 +257,17 @@ static YGNodeRef build_tree(PuNode *n)
         return y;
     }
 
+    if (n->tag && !strcmp(n->tag,"img")) {
+        float size;
+        const char *width=pu_style_get(&n->attrs,"width"), *height=pu_style_get(&n->attrs,"height");
+        if (width && parse_number(width,&size) && size>=0) YGNodeStyleSetWidth(y,size);
+        if (height && parse_number(height,&size) && size>=0) YGNodeStyleSetHeight(y,size);
+    }
     apply_style(y, &n->style);
+    if (n->tag && (!strcmp(n->tag,"canvas") || !strcmp(n->tag,"img"))) {
+        YGNodeSetMeasureFunc(y,measure_media);
+        return y;
+    }
     size_t i = 0;
     for (PuNode *c = n->first_child; c; c = c->next_sibling)
         YGNodeInsertChild(y, build_tree(c), i++);
