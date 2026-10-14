@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+case " $(cat /proc/cmdline) " in
+    *" polly.splash=1 "*) ;;
+    *) exit 0 ;;
+esac
+case "${1:-}" in
+    start)
+        mkdir -p /run/plymouth
+        if plymouthd --mode=boot --tty=/dev/tty1 --pid-file=/run/plymouth/pid &&
+            plymouth show-splash; then
+            plymouth display-message --text="Starting Live system"
+        else
+            echo "Polly Live: graphical boot display unavailable; continuing with console diagnostics." >&2
+            if plymouth --ping; then plymouth quit; fi
+        fi
+        ;;
+    handoff)
+        if plymouth --ping; then
+            plymouth display-message --text="Opening your Live desktop"
+            plymouth quit --retain-splash
+        else
+            echo "Polly Live: no boot display to hand off; starting the ordinary-user session." >&2
+        fi
+        ;;
+    *) echo "Expected start or handoff" >&2; exit 2 ;;
+esac

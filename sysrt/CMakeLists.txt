@@ -128,6 +128,11 @@ if (TARGET qjs)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/files-fixture.py"
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
             set_tests_properties(sysrt-files PROPERTIES TIMEOUT 180 LABELS "ordinary-native;private-files-fixture")
+            add_test(NAME desktop-processes-native COMMAND "${SR_PYTHON}"
+                "${SR_REPOSITORY_ROOT}/desktop/apps/processes/tests/native-fixture.py"
+                $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)
+            set_tests_properties(desktop-processes-native PROPERTIES TIMEOUT 30
+                LABELS "ordinary-native;private-process-fixture")
             add_test(NAME desktop-theme-resources COMMAND "${SR_PYTHON}"
                 "${SR_REPOSITORY_ROOT}/desktop/tests/theme-resources-fixture.py"
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>)

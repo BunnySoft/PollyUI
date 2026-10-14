@@ -1,12 +1,16 @@
-option(PU_WEBGPU "Build the native Dawn WebGPU backend" OFF)
 if(NOT PU_WEBGPU)
     return()
 endif()
 
-set(PU_DAWN_ROOT "" CACHE PATH "Checksum-pinned Dawn package or source-build installation")
 if(NOT PU_DAWN_ROOT)
     message(FATAL_ERROR "PU_WEBGPU requires PU_DAWN_ROOT; use tools/fetch_dawn.cmake or the pinned macOS source build")
 endif()
+add_custom_target(pollyui-dawn-distribution-check
+    COMMAND "${CMAKE_COMMAND}"
+        "-DPU_DAWN_ROOT=${PU_DAWN_ROOT}"
+        "-DPU_DAWN_PLATFORM=${PU_DAWN_DISTRIBUTION_PLATFORM}"
+        -P "${CMAKE_CURRENT_LIST_DIR}/../../tools/check_dawn_redistribution.cmake"
+    VERBATIM)
 file(READ "${CMAKE_SOURCE_DIR}/third_party/dawn-manifest.json" PU_DAWN_MANIFEST)
 string(JSON PU_DAWN_HEADER_HASH GET "${PU_DAWN_MANIFEST}" header sha256)
 file(READ "${PU_DAWN_ROOT}/include/dawn/webgpu.h" PU_DAWN_HEADER_TEXT)
@@ -73,6 +77,22 @@ if(WIN32)
                 "${PU_DAWN_ROOT}/runtime/${dll}" "$<TARGET_FILE_DIR:pollyui-dawn-provider>/${dll}")
     endforeach()
 endif()
+install(TARGETS pollyui-dawn-provider
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop
+    LIBRARY DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
+if(WIN32)
+    install(FILES
+        "${PU_DAWN_ROOT}/runtime/dxcompiler.dll"
+        "${PU_DAWN_ROOT}/runtime/dxil.dll"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
+endif()
+install(DIRECTORY "${PU_DAWN_ROOT}/notices/"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/notices" COMPONENT PollyDesktop)
+install(FILES
+    "${PU_DAWN_ROOT}/dependency-lock.json"
+    "${PU_DAWN_ROOT}/acquisition-receipt.json"
+    "${CMAKE_CURRENT_LIST_DIR}/../../third_party/dawn-distribution-ledger.json"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/notices" COMPONENT PollyDesktop)
 
 if(BUILD_TESTING)
     add_executable(pollyui-canvas-source-test tests/canvas-source.cpp)

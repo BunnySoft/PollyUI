@@ -28,6 +28,7 @@ enum TestCommand {
 struct TestLayer {
     uint32_t layer, anchor, keyboard;
     int width, height, zone, top, right, bottom, left, output;
+    int live;
 };
 
 struct TestRequest {

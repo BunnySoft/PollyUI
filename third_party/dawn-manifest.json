@@ -15,21 +15,29 @@
   "archives": {
     "windows-x86_64": {
       "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-windows-latest-Release.tar.gz",
-      "sha256": "ba97fa93b5e1c265b8a4411698169b40e7696e7e8d574482c94efce6e3ff4228"
+      "sha256": "ba97fa93b5e1c265b8a4411698169b40e7696e7e8d574482c94efce6e3ff4228",
+      "library": "lib/webgpu_dawn.lib",
+      "librarySha256": "4cda677048656ff568177a23582f0a81c1cf18bcb6bedbdadcce56044e4f625f"
     },
     "linux-x86_64": {
       "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-ubuntu-latest-Release.tar.gz",
-      "sha256": "8530b52e5ef5abeb788ab5c3552b261882d9b4d400d7c85c9dc45255b74d48ea"
+      "sha256": "8530b52e5ef5abeb788ab5c3552b261882d9b4d400d7c85c9dc45255b74d48ea",
+      "library": "lib64/libwebgpu_dawn.a",
+      "librarySha256": "a7b9af59e0f96f446c6596783fd2a907db15736b0ae7bf208d530c54653e133d"
     },
     "macos-arm64": {
       "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-latest-Release.tar.gz",
       "sha256": "6d1584b308a332a547a08d694bbec78615bbde686de8a7ed24f2c7d2e8eb1114",
+      "library": "lib/libwebgpu_dawn.a",
+      "librarySha256": "869a977c4933d9047e1592a9fc6e0afa841b31396ae42e2b765ff5df297f889b",
       "architecture": "arm64",
       "architectureStatus": "Verified 656 actual arm64 Mach-O members and defined native WebGPU C API symbols; native Mac build/runtime unqualified"
     },
     "macos-x86_64": {
       "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-15-intel-Release.tar.gz",
       "sha256": "4ebbc32d8e0eaf8093ac17e050e15533aacede30d47049589ae475bfe0e0dcb4",
+      "library": "lib/libwebgpu_dawn.a",
+      "librarySha256": "a118e8b0bc165771545476806ebb87305f176d44150c8e934c3df14f3fce67b1",
       "architecture": "x86_64",
       "architectureStatus": "Verified 656 actual x86_64 Mach-O members and defined native WebGPU C API symbols; native Mac build/runtime unqualified"
     }
@@ -105,24 +113,116 @@
     "complete": false,
     "scope": "Original checksum-pinned notices for known compiled dependencies and native header inputs; not proof of the complete upstream build bill",
     "remaining": [
-      "Complete per-platform compiled/header/generated-source attribution closure",
-      "Nested source attributions and compiler/SDK/runtime redistribution terms"
+      "Authoritative release compile/include/generated-source bill tied to each platform archive; Linux/macOS member basenames do not close source attribution",
+      "Other embedded source attributions beyond the currently evidenced Windows Abseil time-zone objects",
+      "Actual Vulkan utility/header, SPIRV generated/header, GL/EGL/KHR, RenderDoc and DirectX file contributions plus their full original license texts and notices"
     ]
+  },
+  "redistributionReview": {
+    "deploymentDecisionStatus": "pending",
+    "rightsConfirmationStatus": "pending",
+    "interpretation": "Pending deployment choices or rights confirmation are unresolved release gates, not a finding that the code is unlawful. These fields are separate from technical notice closure.",
+    "platforms": {
+      "windows-x86_64": {
+        "deploymentDecision": "pending",
+        "rightsConfirmation": "pending",
+        "deploymentQuestions": [
+          "Select and document supported Windows versions and whether the VC++ runtime is a target-system prerequisite or an authorized app-local redistribution.",
+          "Document how the package obtains the VC++ runtime without bundling system components or running an installer as part of this acquisition."
+        ],
+        "rightsQuestions": [
+          "Confirm the applicable Visual Studio/VC++ REDIST entitlement and deployment terms.",
+          "Confirm the DXC distributables list authorizes the exact x64 DLLs and that downstream-user terms and indemnification requirements can be met."
+        ]
+      },
+      "linux-x86_64": {
+        "deploymentDecision": "pending",
+        "rightsConfirmation": "pending",
+        "deploymentQuestions": [
+          "Select supported distributions and minimum system ABI; the sealed provider requires GLIBC_2.34 and GLIBCXX_3.4.32 versioned symbols.",
+          "Document that libstdc++, libgcc_s, glibc and the Vulkan loader/driver are target-environment prerequisites, not package contents."
+        ],
+        "rightsQuestions": [
+          "Confirm the target-distribution policy for system-provided dependencies and required notices."
+        ]
+      },
+      "macos-arm64": {
+        "deploymentDecision": "pending",
+        "rightsConfirmation": "pending",
+        "deploymentQuestions": [
+          "Select a macOS deployment target and confirm the app links to OS frameworks rather than bundling SDK/system framework files."
+        ],
+        "rightsQuestions": [
+          "Confirm applicable Apple SDK/agreement and distribution eligibility for the selected deployment."
+        ]
+      },
+      "macos-x86_64": {
+        "deploymentDecision": "pending",
+        "rightsConfirmation": "pending",
+        "deploymentQuestions": [
+          "Select a macOS deployment target and confirm the app links to OS frameworks rather than bundling SDK/system framework files."
+        ],
+        "rightsQuestions": [
+          "Confirm applicable Apple SDK/agreement and distribution eligibility for the selected deployment."
+        ]
+      }
+    }
   },
   "windowsShaderCompiler": {
     "repository": "microsoft/DirectXShaderCompiler",
     "tag": "v1.9.2609",
     "file": "dxc_2026_09_29.zip",
     "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1",
+    "runtimeFiles": {
+      "dxcompiler.dll": "0689e2fee0a1c9df8662a59680469f24e2a3ad7ce6bbbcc9284f7a83172bfc59",
+      "dxil.dll": "64be2368211d257a038a7d4ea6bb3e24c878eb8d588c7b8414fccf759b69c2ac"
+    },
     "licenses": {
       "LICENSE-LLVM.txt": "729615317e28dd03907e46f0fc3b5e88f7853cee61d1a1471d2749335516b46f",
       "LICENSE-MS.txt": "734f72f239fe7b07b4c7203f294c1a7ce27095687278bab7e56d630d7c672963"
-    }
+    },
+    "additionalLicenseFiles": [
+      {
+        "archivePath": "LICENCE-MIT.txt",
+        "stagedFile": "DXC-LICENCE-MIT.txt",
+        "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c"
+      },
+      {
+        "archivePath": "inc/hlsl/LICENCE.txt",
+        "stagedFile": "DXC-HLSL-LICENCE.txt",
+        "sha256": "f47b94fc51b04f4354a6c6f41fb84b0bd22a8ebfcde9f93c1b4d9abd7f6d14c2"
+      }
+    ],
+    "runtimeMetadata": {
+      "dxcompiler.dll": {
+        "machine": "x86_64",
+        "fileVersion": "1.9.2609.5",
+        "productVersion": "1.9.2609.5 (01b62ad47)",
+        "imports": [
+          "KERNEL32.dll",
+          "ole32.dll",
+          "OLEAUT32.dll",
+          "ADVAPI32.dll"
+        ]
+      },
+      "dxil.dll": {
+        "machine": "x86_64",
+        "fileVersion": "1.9.2609.5",
+        "productVersion": "1.9.2609.5 (01b62ad47)",
+        "imports": [
+          "KERNEL32.dll",
+          "ADVAPI32.dll",
+          "ole32.dll"
+        ]
+      }
+    },
+    "licenseTermsStatus": "The pinned archive contains LICENSE-MS.txt but no separate distributables-list file; the exact authorization of dxcompiler.dll and dxil.dll under the referenced list remains unconfirmed."
   },
   "macos": {
     "backend": "Metal",
     "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
     "status": "Pinned archive hashes, actual architectures, native C API symbols and imported Metal framework link metadata verified; native build and runtime qualification pending"
   },
-  "redistributionStatus": "Bundled third-party notices must be completed before redistribution"
+  "redistributionStatus": "blocked",
+  "distributionLedger": "dawn-distribution-ledger.json"
 }

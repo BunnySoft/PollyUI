@@ -34,6 +34,7 @@ if (oracle.call('uid').value === 0) {
     () => fs.readText('/file', 'token'), () => fs.observeText('/file'),
     () => fs.writeText('/', 'file', '', 'token'), () => fs.replaceText('/file', '', 'token', 'parent'),
     () => fs.createDirectory('/', 'folder', 'token'), () => fs.rename('/file', 'new', 'token', 'parent'),
+    () => fs.move('/file', '/', 'new', 'token', 'source-parent', 'target-parent'),
   ]) refuses(action, 'EPERM');
 } else {
   // Only this test binding replaces enumeration to retire a real opened directory.
@@ -80,6 +81,36 @@ if (oracle.call('uid').value === 0) {
   refuses(() => fs.rename(entry.path, 'hello.txt', entry.identity, parent()), 'EEXIST');
   refuses(() => fs.rename(entry.path, 'wrong', 'wrong identity', parent()), 'ESTALE');
   check(fs.readText(entry.path, entry.identity).text === 'replacement', 'Collision leaves original content');
+  const destination = folder.path, destinationIdentity = () => inspect(destination).identity;
+  const move = (item, name) => fs.move(item.path, destination, name, item.identity, parent(), destinationIdentity());
+  const conflict = fs.writeText(destination, 'exists.txt', 'do not replace', destinationIdentity());
+  refuses(() => move(entry, 'exists.txt'), 'EEXIST');
+  check(fs.readText(conflict.path, conflict.identity).text === 'do not replace', 'Move never clobbers a destination');
+  const sourceParent = parent(), targetParent = destinationIdentity();
+  fs.writeText(destination, 'parent-changed.txt', 'changed', targetParent);
+  refuses(() => fs.move(entry.path, destination, 'moved.txt', entry.identity, sourceParent, targetParent), 'ESTALE');
+  refuses(() => fs.move(entry.path, destination, 'moved.txt', 'changed', parent(), destinationIdentity()), 'ESTALE');
+  refuses(() => move(inspect(root + '/file-link'), 'link'), 'EPERM');
+  refuses(() => move(inspect(root + '/target'), 'directory'), 'EPERM');
+  const foreign = fs.stat(root + '/foreign-directory', true);
+  refuses(() => fs.move(entry.path, foreign.path, 'cross-device.txt', entry.identity, parent(), foreign.identity), 'EXDEV');
+  check(fs.readText(entry.path, entry.identity).text === 'replacement' &&
+    fs.listDirectory(foreign.path, null).entries.length === 0, 'EXDEV leaves both private filesystems unchanged');
+  const sourcePath = entry.path;
+  const moved = move(entry, 'moved %u.txt');
+  refuses(() => inspect(sourcePath), 'ENOENT');
+  check(moved.path === destination + '/moved %u.txt' &&
+    fs.readText(moved.path, moved.identity).text === 'replacement', 'Real cross-directory move preserves literal path and contents');
+  entry = fs.move(moved.path, root, 'returned.txt', moved.identity, destinationIdentity(), parent());
+  check(fs.readText(entry.path, entry.identity).text === 'replacement', 'Move back observes both real directories');
+  const closeSource = fs.writeText(root, 'close-source.txt', 'actually moved', parent());
+  const beforeMove = parent(), beforeDestination = destinationIdentity();
+  oracle.call('failClose', destination);
+  check(refuses(() => fs.move(closeSource.path, destination, 'close-result.txt', closeSource.identity,
+    beforeMove, beforeDestination), 'EIO').committed === true, 'Move close failure reports confirmed mutation');
+  refuses(() => inspect(closeSource.path), 'ENOENT');
+  const closeResult = inspect(destination + '/close-result.txt');
+  check(fs.readText(closeResult.path, closeResult.identity).text === 'actually moved', 'Post-move failure is not rolled back or replayed');
   const linked = inspect(root + '/folder-link');
   check(linked.type === 'symlink' && linked.targetType === 'directory' && linked.linkTarget === 'target', 'Symbolic-link observation');
   const followed = fs.stat(linked.path, true);

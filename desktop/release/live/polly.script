@@ -1,0 +1,44 @@
+Window.SetBackgroundTopColor(0.062745, 0.094118, 0.141176);
+Window.SetBackgroundBottomColor(0.062745, 0.094118, 0.141176);
+logo.image = Image("polly.png");
+logo.sprite = Sprite(logo.image);
+message.sprite = Sprite();
+hint.image = Image.Text("Esc: boot details   |   Memory-only Live session", 0.61, 0.67, 0.74);
+hint.sprite = Sprite(hint.image);
+dot.image = Image.Text(".", 0.77, 0.89, 1);
+for (i = 0; i < 3; i++) dot.sprite[i] = Sprite(dot.image);
+phase = 0;
+text = "Starting Live system";
+
+fun display_message(value) {
+    global.text = value;
+    message.image = Image.Text(value, 0.77, 0.89, 1);
+    message.sprite.SetImage(message.image);
+}
+display_message(text);
+Plymouth.SetDisplayMessageFunction(display_message);
+
+fun refresh() {
+    width = Window.GetWidth();
+    height = Window.GetHeight();
+    size = 128;
+    if (width < 384) size = Math.Int(width / 3);
+    if (height < 384) size = Math.Int(height / 3);
+    if (logo.size != size) {
+        logo.size = size;
+        logo.sprite.SetImage(logo.image.Scale(size, size));
+    }
+    logo.sprite.SetPosition(Window.GetX() + width / 2 - size / 2,
+        Window.GetY() + height * 0.42 - size / 2, 1);
+    message.sprite.SetPosition(Window.GetX() + width / 2 - message.image.GetWidth() / 2,
+        Window.GetY() + height * 0.56, 1);
+    hint.sprite.SetPosition(Window.GetX() + width / 2 - hint.image.GetWidth() / 2,
+        Window.GetY() + height * 0.9, 1);
+    global.phase += 0.12;
+    for (i = 0; i < 3; i++) {
+        dot.sprite[i].SetPosition(Window.GetX() + width / 2 - 18 + i * 12,
+            Window.GetY() + height * 0.62, 1);
+        dot.sprite[i].SetOpacity(0.4 + 0.3 * (Math.Sin(phase - i) + 1));
+    }
+}
+Plymouth.SetRefreshFunction(refresh);

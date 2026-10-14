@@ -967,6 +967,7 @@ static void create_layer(struct Client *client, int id, const struct TestLayer *
     window->surface = wl_compositor_create_surface(client->compositor);
     char name[64];
     snprintf(name, sizeof(name), "org.pollywm.layer.%d", id);
+    if (state->live) snprintf(name, sizeof(name), "PollyShell.%s.1", id == 4 ? "panel" : "wallpaper");
     struct wl_output *output = state->output > 0 && state->output <= 8 ?
         client->outputs[state->output - 1].output : NULL;
     window->layer = zwlr_layer_shell_v1_get_layer_surface(

@@ -36,6 +36,9 @@ id -Gn polly | grep -qw audio
 test "$(getent passwd polly | cut -d: -f3)" -eq 1000
 grep -q 'session required pam_systemd.so' /etc/pam.d/login
 python3 -I -B /workspace/desktop/release/debian/power-policy.py / /workspace usr/share/polly-live-packages.tsv
+if [ -f /usr/share/polly-live-boot-dependencies.json ]; then
+    python3 -I -B /workspace/desktop/release/debian/boot-install.py verify /workspace
+fi
 grep -q 'HandlePowerKey=ignore' /etc/systemd/logind.conf.d/50-polly.conf
 grep -q '^resolv_conf=/run/polly-network/resolv.conf$' /etc/resolvconf.conf
 for unit in apt-daily.timer apt-daily-upgrade.timer fstrim.timer; do

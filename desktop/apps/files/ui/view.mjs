@@ -82,6 +82,11 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         command('files-open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity),
           usable && selection?.type === 'file'),
         command('files-rename', 'Rename', () => controller.beginRename(generation, selection?.identity), usable && !!selection, 'rename'),
+        command('files-cut', 'Cut', () => controller.cut(generation, selection?.identity),
+          usable && state.moveAvailable && selection?.type === 'file'),
+        command('files-paste', 'Paste...', () => controller.beginPaste(generation),
+          usable && state.moveAvailable && !!state.cut),
+        state.cut ? command('files-clear-cut', 'Cancel cut', () => controller.clearCut(generation), usable) : null,
         command('files-properties', 'Properties', () => controller.showProperties(generation, selection?.identity), usable && !!selection, 'info')),
       h('view', { style: { ...horizontal, gap: 8, width: 210, minWidth: 150, flexShrink: 1 } },
         desktopIcon('search', color('muted'), 18), filter,
@@ -220,7 +225,10 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         entries.length + ' / ' + state.snapshot.entries.length + ' items' + (selection ? ' | 1 selected' : '') : 'Folder unavailable',
     color('muted'), 12),
     h('view', { style: { flexGrow: 1 } }),
-    desktopText(state.message || 'Folders first | Filter: loaded names only', color('muted'), 12));
+    label('files-operation-limits', 'Moves: one regular file, same filesystem | No copy, delete or trash', 'muted',
+      { fontSize: 12, flexShrink: 1 }),
+    desktopText(state.message || (state.cut ? 'Cut: ' + state.cut.entry.name + ' | Paste reviews a move; no overwrite.' :
+      'Folders first | Filter: loaded names only'), color('muted'), 12));
 
   let dialog = null;
   if (state.dialog || state.openWith) {
@@ -232,13 +240,17 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       style: { position: 'absolute', left: '10%', top: '18%', width: '80%', maxWidth: 620, padding: 22,
         gap: 14, borderRadius: 10, borderWidth: 1, borderColor: color('accent'), backgroundColor: color('surface') } }) },
       desktopText(state.openWith ? 'Open with' : operation.kind === 'link' ? 'Follow symbolic link?' :
-        operation.kind === 'rename' ? 'Rename' : 'New folder', color('text'), 22, { fontWeight: 600 }),
+        operation.kind === 'rename' ? 'Rename' : operation.kind === 'move' ? 'Move cut file here?' : 'New folder',
+        color('text'), 22, { fontWeight: 600 }),
       editing && !inlineRename ? input('files-name', operation.name, 'Single folder or file name',
         value => controller.editName(value, generation)) : null,
       operation?.entry ? label('files-operation-source', operation.entry.path, 'muted', { fontSize: 13, flexShrink: 1 }) : null,
       operation?.kind === 'link' ? label('files-link-target', 'Target: ' + operation.entry.linkTarget +
         ' (' + operation.entry.targetType + '). Opening follows this link with your normal permissions.', 'text', { flexShrink: 1 }) : null,
       operation?.kind === 'rename' ? label('files-rename-note', 'Only this selected name changes. Existing destinations are never overwritten.', 'muted', { fontSize: 13, flexShrink: 1 }) : null,
+      operation?.kind === 'move' ? label('files-move-note', 'Destination: ' + state.path +
+        '\nMoves this regular file only, on the same filesystem. Existing names are never overwritten. Cancel leaves the source untouched.',
+        'muted', { fontSize: 13, flexShrink: 1 }) : null,
       state.openWith ? [
         label('files-handler-title', state.openWith.entry.name + ' | ' + state.openWith.mimeType, 'muted', { flexShrink: 1 }),
         ...state.openWith.applications.map((app, index) => command('files-handler-' + index, app.name,
@@ -246,7 +258,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         command('files-handler-cancel', 'Cancel', () => controller.cancel(generation)),
       ] : h('view', { style: { ...horizontal, gap: 8, justifyContent: 'flex-end' } },
         command('files-cancel', 'Cancel', () => controller.cancel(generation)),
-        desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' : 'Create folder',
+        desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' :
+          operation.kind === 'move' ? 'Move file' : 'Create folder',
           theme, guarded(() => controller.confirm(generation)), { enabled: ready })),
     );
   }
@@ -256,6 +269,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     [['open', 'Open', () => controller.open(generation, selection?.identity), true, 'open'],
       ['open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity), selection?.type === 'file', 'apps'],
       ['rename', 'Rename', () => controller.beginRename(generation, selection?.identity), true, 'rename'],
+      ['cut', 'Cut', () => controller.cut(generation, selection?.identity), state.moveAvailable && selection?.type === 'file', ''],
       ['properties', 'Properties', () => controller.showProperties(generation, selection?.identity), true, 'info']]
       .map(([id, text, action, enabled, icon]) => {
         const node = command('files-context-' + id, text, action, enabled, icon);
@@ -283,11 +297,17 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       else if (state.context && ['ArrowDown', 'ArrowUp', 'Tab'].includes(event.key)) {
         event.preventDefault();
         const document = event.currentTarget?.ownerDocument;
-        const items = ['open', ...(selection?.type === 'file' ? ['open-with'] : []), 'rename', 'properties']
+        const items = ['open', ...(selection?.type === 'file' ? ['open-with'] : []), 'rename',
+          ...(state.moveAvailable && selection?.type === 'file' ? ['cut'] : []), 'properties']
           .map(id => document?.getElementById('files-context-' + id)).filter(Boolean);
         const old = items.indexOf(document?.activeElement);
         items[(old + (event.key === 'ArrowUp' || event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
       } else if (modal) return;
+      else if (usable && event.ctrlKey && event.key.toLowerCase() === 'x') {
+        event.preventDefault(); controller.cut(generation, selection?.identity);
+      } else if (usable && event.ctrlKey && event.key.toLowerCase() === 'v') {
+        event.preventDefault(); controller.beginPaste(generation);
+      }
       else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); controller.back(generation); }
       else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); controller.forward(generation); }
       else if (event.altKey && event.key === 'ArrowUp') { event.preventDefault(); controller.parent(generation); }

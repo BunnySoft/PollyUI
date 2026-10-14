@@ -1,11 +1,28 @@
 import { SETTINGS_INSTANCE_NAME, settingsPage, settingsThemeId, settingsTarget, daemonTarget } from './desktop/client/settings-contract.mjs';
 import { waitSettingsReply, settingsPeer } from './desktop/client/settings.mjs';
+import { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkAuthentication } from './desktop/client/settings-network-contract.mjs';
 
 const denied = message => Object.assign(new Error(message), { dbusName: 'org.pollyui.Settings.Error.AccessDenied' });
 export function createSettingsService({ service, client, pid, uid, spawn, activate, appearance, about,
-  select, reload, restore, managed, report = console.error }) {
+  select, reload, restore, managed, network = null, report = console.error }) {
   let owned = null, generation = 0, closed = false, fatal = null, opening = false;
   const requests = new Set();
+  function networkSnapshot(owner) {
+    if (!network) throw new Error('Shell Wi-Fi service is unavailable');
+    network.startNetwork();
+    const state = network.networkState();
+    if (state.operation !== 'connect' || state.operationId !== owner.networkOperation) owner.networkOperation = null;
+    return { version: 1, ...state, authentication: owner.networkOperation ? state.authentication : null };
+  }
+  function ownsConnection(owner) {
+    const state = network.networkState();
+    return owner?.networkOperation && state.operation === 'connect' && state.operationId === owner.networkOperation;
+  }
+  function detachNetwork(owner) {
+    if (network && owner?.networkOperation && ownsConnection(owner)) network.cancelNetworkConnection();
+    if (owner) { owner.networkOperation = null; owner.networkGeneration = (owner.networkGeneration || 0) + 1; }
+  }
+  function networkReply(owner) { return JSON.stringify(parseSettingsNetwork(JSON.stringify(networkSnapshot(owner)))); }
   const current = owner => !closed && owner && owned === owner && owner.generation === generation;
   async function authorize(request, owner) {
     if (!current(owner)) throw denied('Settings owned process is no longer current');
@@ -46,6 +63,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     const member = request.target.member;
     if (member === 'Open') return [await open(settingsPage(request.args[0]))];
     const owner = owned;
+    const networkGeneration = owner?.networkGeneration || 0;
     await authorize(request, owner);
     if (member === 'Connect') {
       const destination = await waitSettingsReply(client.call(daemonTarget('GetNameOwner'), 's', [SETTINGS_INSTANCE_NAME], 's', 3000));
@@ -59,6 +77,26 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     if (!current(owner)) throw denied('Settings generation changed before execution');
     if (member === 'GetAppearance') return [JSON.stringify(appearance())];
     if (member === 'GetAbout') return [JSON.stringify(about())];
+    if (member === 'GetNetwork') return [networkReply(owner)];
+    if (member === 'DetachNetwork') { detachNetwork(owner); return []; }
+    if (['NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection'].includes(member)) {
+      if (!network) throw new Error('Shell Wi-Fi service is unavailable');
+      if (networkGeneration !== (owner.networkGeneration || 0)) throw denied('Settings network page was detached before execution');
+      if (member === 'NetworkAction') {
+        const action = parseSettingsNetworkAction(request.args[0]);
+        network.networkAction(action.revision, action.target, action.action);
+        owner.networkOperation = action.action === 'connect' ? network.networkState().operationId : null;
+      } else if (member === 'RefreshNetwork') network.refreshNetworks();
+      else {
+        if (!ownsConnection(owner)) throw denied('This pending connection does not belong to Settings');
+        if (member === 'CancelNetworkConnection') detachNetwork(owner);
+        else {
+          const auth = parseSettingsNetworkAuthentication(request.args[0]);
+          network.replyNetworkAuthentication(auth.token, auth.user, auth.password);
+        }
+      }
+      return [networkReply(owner)];
+    }
     if (member === 'OpenManagedPage') {
       managed(settingsPage(request.args[0], true)); return [];
     }
@@ -93,6 +131,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
   const timer = setInterval(poll, 10);
   function close() {
     if (closed) return;
+    try { detachNetwork(owned); } catch (error) { report('[settings] Cannot cancel owned Wi-Fi connection: ' + String(error)); }
     closed = true; generation++;
     clearInterval(timer);
     for (const request of requests) request.close();
@@ -101,7 +140,12 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
   }
   return Object.freeze({
     open, close,
-    exited(event) { if (owned?.pid === event.pid) { owned = null; generation++; } },
+    exited(event) {
+      if (owned?.pid === event.pid) {
+        try { detachNetwork(owned); } catch (error) { report('[settings] Cannot cancel exited Settings Wi-Fi request: ' + String(error)); }
+        owned = null; generation++;
+      }
+    },
     getState: () => ({ pid: owned?.pid || 0, generation, page: owned?.page || null,
       connected: !!owned?.destination, error: fatal ? String(fatal) : '' }),
   });

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Polly Live
+Description=Original Polly Live startup; real stage messages and indeterminate activity
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/polly
+ScriptFile=/usr/share/plymouth/themes/polly/polly.script

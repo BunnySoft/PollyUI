@@ -3,8 +3,8 @@
 Open **Settings** using the taskbar button, Dock, the searchable **Settings**
 entry in Applications, or the desktop background's context-menu gesture.
 The six navigation entries share an ordinary decorated, resizable **independent
-Settings application**. Appearance and About live in its own process/QuickJS
-realm/event loop. Displays, Network, Audio and Keyboard explicitly offer
+Settings application**. Appearance, Network and About live in its own process/QuickJS
+realm/event loop. Displays, Audio and Keyboard explicitly offer
 **Open desktop controls** and retain their actual controls in a separate
 Shell-owned panel. Theme changes,
 other application activity and launcher dismissal do not close it.
@@ -19,7 +19,7 @@ owned instance's navigation/presentation; Shell activates its current window.
 | --- | --- |
 | Appearance | Select a preset, reload user theme files or restore packaged themes. The existing Shell transaction updates wallpaper, panels and negotiated window frames; the current choice and file policy use the existing user preference keys. Selection keeps Settings open and shows application/save status or the original error. |
 | Displays | Edit enabled outputs, resolution/refresh, scale, rotation and position using the existing display draft and native output manager. Apply opens the existing trusted-layer **Keep / Revert** confirmation. The compositor's 15-second watchdog remains authoritative; only Keep saves the exact-identity startup profile. Hotplug/serial changes discard the stale draft and visibly ask the user to review the replacement. |
-| Network | The existing iwd controller shows actual adapters, radio/connection state, RSSI and IP-configuration status. Scan, radio power, connect, masked password/username prompts, disconnect and explicitly confirmed forgetting use the existing revision-bound native requests. An unprovisioned enterprise network remains disabled. The page does not add Bluetooth, VPN or an IP-address backend. |
+| Network | The independent Settings document mounts the existing iwd controls through authenticated, fixed Shell RPCs. Actual adapters, radio/connection state, RSSI and IP-configuration status come from the single Shell-owned JS service. Scan, radio power, connect, masked password/username prompts, disconnect and explicitly confirmed forgetting retain revision/token-bound requests. An unprovisioned enterprise network remains disabled. No Bluetooth, VPN or IP-address backend is added. |
 | Audio | The existing private PipeWire policy provides endpoint volume, mute and default playback/recording devices. Requests show acknowledgment progress; existing name/class preferences are saved only after the actual service echoes them. Device loss, missing service, unavailable volume/mute and storage errors remain visible. No host audio daemon or WirePlumber is substituted. |
 | Keyboard | Change, disable or reset the existing fixed shortcut catalog in the Shell control panel. Recording opens the existing trusted Shell layer: shortcut suppression is layer-focus-bound, not granted to the independent Settings window. Escape first cancels recording; closing/changing the owning control panel page releases capture. |
 | About | Grouped system build, session and preference cards show the actual system release, full build revision/source state, appearance, display count and service status. Expand Technical details for Settings's separate application version/runtime, identity/directories and saved profile information. Unknown source metadata is explicit. Login/lock behavior remains deployment-policy-dependent; account/password/administrator actions are unavailable here. |
@@ -59,7 +59,7 @@ ordinary `window.create` does not accept layer-only `output`/keyboard options.
 The legacy `showSettings` quick-appearance overlay, `showDisplays`,
 `showShortcuts`, `showNetwork` and `showAudio` APIs remain compatible with
 existing menu/native fixtures. `showSettings(..., true)` delegates About to the
-independent app. `showManagedSettings` mounts only the four retained Shell pages;
+independent app. `showManagedSettings` still supports the four legacy Shell pages;
 their Appearance/About navigation returns to the independent app.
 
 The fixed `org.pollyui.Settings1` D-Bus service uses empty/scalar calls and
@@ -73,12 +73,14 @@ do not prove rollback; writes never reconnect, retry or replay automatically.
 This is not a sandbox against an attacker already controlling the same UID or
 ptrace. See `apps/settings/README.md` for the exact first-version boundaries.
 
-Navigation **within the Shell control panel** detaches the previous service page
-before mounting the next one. Independent Settings navigation/close does not
-silently close a separately open control panel.
-Network detach wipes credential fields, cancels a present authentication prompt
-or still-pending connection, and retires its confirmations; it does not
-disconnect an established connection. Audio page detach releases only its
+Navigation within either document detaches its previous service page before
+mounting the next one. Independent Settings navigation/close does not silently
+close a separately open control panel. Network detach wipes credential fields
+and retires confirmations. The independent page cancels only its own still-pending
+connection, bound to the JS service's operation ID; it cannot cancel or answer a
+later Shell-panel connection even when the target network is identical.
+Shell observes actual Settings exit and performs the same bounded cleanup.
+Neither detach disconnects an established connection. Audio page detach releases only its
 document; routing, queued acknowledgments and persistence continue as Shell
 policy. Subscriptions are shared by the existing controllers, chain earlier
 callbacks and restore them when Shell stops. Closing Settings does not stop

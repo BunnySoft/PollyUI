@@ -25,6 +25,14 @@ test('standalone Settings has an ordinary fixed launcher entry without desktop p
   assert.match(wrapper, /--app-id org\.pollyui\.settings/);
   assert.doesNotMatch(wrapper, /--desktop/);
 });
+test('Processes is a real ordinary application entry with a fixed relocatable wrapper', () => {
+  const entry = parseDesktopEntry(asset('polly-processes.desktop'));
+  assert.equal(entry.name, 'Processes'); assert.deepEqual(entry.argv, ['polly-processes']);
+  const wrapper = readFileSync(new URL('../tools/polly-processes.in', import.meta.url), 'utf8');
+  assert.match(wrapper, /--app-id org\.pollyui\.processes/);
+  assert.match(wrapper, /desktop\/apps\/processes\/main\.mjs/);
+  assert.doesNotMatch(wrapper, /--shell|sudo|sh -c/);
+});
 
 test('installed document handler uses exact absolute --file %f with literal single filename and no URI/shell expansion', () => {
   const entry = parseDesktopEntry(asset('polly-file-text-open.desktop'), { documentHandlers: true });

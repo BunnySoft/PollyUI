@@ -135,6 +135,86 @@ Do not use this image to protect sensitive information. It does not establish
 production signing trust, encrypted persistence, a recovery partition or
 hardware compatibility.
 
+## Continuous Live startup (source-wired; new media acceptance pending)
+
+New Debian Live builds use an original Polly monogram and the same `#101824`
+background across the graphical UEFI GRUB menu, standard Plymouth DRM/framebuffer
+display, and the compositor's initial scene. The monogram comes from
+`release/live/boot-brand.h`; Python's standard library generates its PNG for
+GRUB/Plymouth, and PollyWM draws the same geometry without a new GPU feature.
+The normal entry retains the GRUB framebuffer and reduces routine kernel,
+udev and systemd chatter. Firmware, kernel decompression and device mode changes
+remain hardware-controlled; source wiring does not guarantee zero black frames
+on every machine. CPU/Pixman rendering remains the default.
+
+Only the **final Debian Live layer** installs `plymouth` and `libplymouth5`
+**24.004.60-5** from Debian trixie. Its built-in script plugin is sufficient;
+no desktop environment, `plymouth-themes`, new account or authentication service
+is added. `release/debian/boot-dependencies.json` and `boot-files.json` declare
+the pins and overlay. `boot-install.py` installs/verifies the exact source bytes,
+owners, modes and plugins. The platform/installed layers do not inherit this
+installation. The cached profile-only recipe remains a historical account-policy
+fixture, not a way to silently qualify old boot payloads for new media.
+The Live-only getty drop-in keeps the same `--autologin polly` identity while
+using `--noissue --skip-login`, `--noclear` and `.hushlogin` to avoid repainting
+login banners over the retained image; PAM and login session registration remain
+unchanged.
+
+| Stage | Actual trigger / completion |
+|---|---|
+| UEFI | GRUB loads its embedded font, menu theme and monogram; it falls back to text if graphics are unavailable |
+| System | `polly-live-splash.service` runs after udev starts; activity dots mean waiting, never a measured percentage |
+| Session | `polly-live-handoff.service` runs after logind/user-session startup, tells Plymouth to retain its last image and release display ownership before the existing tty1 autologin |
+| Desktop | The ordinary-user compositor temporarily draws the matching startup scene while the private Shell initializes |
+| Usable desktop | Private Shell wallpaper and panel buffers are mapped on every enabled output, a workspace and input device exist, the Live IME is bound, the real seat is active, and each desktop frame has an actual matching output-present event |
+
+`POLLY_LIVE_STARTUP=1` enables this compositor gate only for the Live session;
+`POLLY_LIVE_SPLASH=1` additionally enables its visual scene. The existing
+session-status protocol and ordinary/installed startup defaults are unchanged.
+`POLLY_LIVE_DESKTOP_READY outputs=N` is now emitted by that native presentation
+gate, not the old one-second JS timer. Merely starting the compositor, scheduling
+a Shell, submitting a buffer or acknowledging a handoff is not ready. Disabled
+and disconnected outputs do not hold readiness; later hotplug does not restart
+the boot overlay. This is a startup-operability condition, not per-feature or
+physical-hardware acceptance.
+
+The Live supervisor retains a mode-0600 `~/polly-session-*` log and streams the
+original output to the journal. Desktop startup has a **90-second** bound,
+starting at the ordinary-user session launcher, not at firmware power-on.
+It terminates only its own failed launch group, lets the session clean up, and
+returns to the existing ordinary user's console with **Retry / Collect
+diagnostics / Console** choices. Normal logout still ends at that console.
+System-display start/handoff units have separate 15-second limits; failed
+handoff stops only the guest's own Plymouth service so it cannot keep the
+display from diagnostics. Earlier kernel/system failures retain normal kernel,
+systemd and journal reporting; there is no fake successful desktop fallback.
+
+**Diagnostics:** Esc shows Plymouth's boot details while it owns the display.
+The GRUB menu also keeps explicit **verbose**, **diagnostics console** (no
+automatic desktop) and **serial VM baseline** entries; the serial entry remains
+last for the existing boot harness. In the unlocked active Live DRM session,
+Ctrl+Alt+F1..F12 requests standard logind/libseat VT switching; F2 offers a
+separate console and F1 returns to the desktop. An unsupported backend or denied
+seat request is logged explicitly. No lock-state bypass or new installed-system
+VT policy is added. Use `polly-live-diagnostics`, `journalctl -b`, and the private
+session logs before shutdown; all remain in RAM and should be reviewed before
+sharing.
+
+This source change **does not rebuild, replace or requalify Alpha.8 or any older
+media**, and does not change `VERSION`, signing, account/PAM policy or installed
+first-run setup. Current profile-aware source keeps the already-public Live
+presets (`polly/polly`, root maintenance password `polly`); older delivered media
+keeps its original credential state. Autologin and public presets are not
+authentication or a secure lock.
+
+Focused supervisor/configuration checks and a bounded wlroots headless fixture
+cover real native frame presentation, rejection of incomplete/wrong Shell
+layers, and removal of a blocking disconnected output. Those are **not an ISO
+boot**. A newly built target image still needs one normal UEFI boot-to-interactive
+desktop check, visible early-boot/timeout/verbose fallback review, and physical
+display-transition confirmation. No such new-image or physical acceptance is
+claimed by source or native-fixture results.
+
 ## Build
 
 First generate and verify the `0.1.0-alpha.4` runtime package and its runtime

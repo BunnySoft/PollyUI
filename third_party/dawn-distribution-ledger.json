@@ -1,0 +1,613 @@
+{
+  "schemaVersion": 1,
+  "scope": "Pinned google/dawn release archives and the separately loaded native provider/runtime used by PollyUI; excludes unrelated system packages and does not assert whole-repository license closure.",
+  "status": "blocked",
+  "technicalNoticeStatus": "incomplete",
+  "deploymentDecisionStatus": "pending",
+  "rightsConfirmationStatus": "pending",
+  "releaseStatus": "blocked",
+  "source": {
+    "sealedEvidenceSessionId": "04c5cc6d-8495-4c55-939f-47b2e0d9018e",
+    "repository": "https://github.com/google/dawn",
+    "tag": "v20261009.190412",
+    "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+    "treeEvidence": {
+      "sealedReceipt": "dawn-notice-audit/dawn-github-tree.json",
+      "rootGitTree": "5612d977c203567399a2459f89869b51fb696a31",
+      "thirdPartyGitTree": "54f90600b4240835474b42e34fadd89b742d8ed7"
+    },
+    "buildConfigurationEvidence": {
+      "sealedReceipt": "dawn-notice-audit/build-component-notice-receipt.json",
+      "sha256": "ce82b93de3ab77a1b0c72d5fd9891138692247cbceb2c65e84d819cb1a927690",
+      "releaseBuildInputs": [
+        {
+          "path": "third-party-CMakeLists.txt",
+          "sha256": "049f8cce575e1899e37dc0e4c598da090243efb9cc9d00415b5af802263c0a96"
+        },
+        {
+          "path": "native-CMakeLists.txt",
+          "sha256": "0ae982b37f94839acfee4642e83cc9e1d489ff41f63e57ae06864e77b2bcb835"
+        }
+      ],
+      "scopeLimit": "Pinned upstream configuration snapshots and release archive members are evidence, not an official per-platform source/header/generated-input bill of materials."
+    },
+    "lockedNotices": "third_party/dawn-manifest.json#/thirdPartyNotices"
+  },
+  "artifacts": {
+    "evidenceReceipt": {
+      "path": "dawn-notice-audit/build-component-notice-receipt.json",
+      "sha256": "ce82b93de3ab77a1b0c72d5fd9891138692247cbceb2c65e84d819cb1a927690"
+    },
+    "providerRuntimeEvidence": {
+      "sealedEvidenceSessionId": "04c5cc6d-8495-4c55-939f-47b2e0d9018e",
+      "runtimeConfigTree": "b948d1957581177641a7e20baf51f92867f229a8",
+      "windowsReceipt": {
+        "path": "windows-transient-config-receipt.json",
+        "ownerSessionId": "04c5cc6d-8495-4c55-939f-47b2e0d9018e",
+        "sha256": "5d773c2cb4c2ce8005a3cc27fde5c5568a7a887174cc0ca25598e4b9a8307758",
+        "providerPath": "build/native-webgpu/gui/pollyui-dawn-provider.dll",
+        "providerSha256": "4ddf64c7572fb6e1c7dba231e82b787a92e9f5ba6a45bbdde27123c898eda9a9",
+        "providerBytes": 10737664,
+        "matchingArtifactCopy": "bunnysoft-refactored-winner/build/native-webgpu/gui/pollyui-dawn-provider.dll",
+        "peMetadata": {
+          "machine": "x86_64 PE32+",
+          "fileVersionResource": "not present",
+          "imports": [
+            "MSVCP140.dll",
+            "MSVCP140_ATOMIC_WAIT.dll",
+            "VCRUNTIME140.dll",
+            "VCRUNTIME140_1.dll",
+            "USER32.dll",
+            "api-ms-win-core-string-l1-1-0.dll",
+            "api-ms-win-core-processenvironment-l1-1-0.dll",
+            "api-ms-win-core-errorhandling-l1-1-0.dll",
+            "api-ms-win-core-libraryloader-l1-2-0.dll",
+            "api-ms-win-core-registry-l1-1-0.dll",
+            "api-ms-win-core-synch-l1-1-0.dll",
+            "api-ms-win-core-synch-l1-2-0.dll",
+            "api-ms-win-core-processthreads-l1-1-0.dll",
+            "api-ms-win-core-sysinfo-l1-2-0.dll",
+            "api-ms-win-core-kernel32-legacy-l1-1-1.dll",
+            "api-ms-win-core-handle-l1-1-0.dll",
+            "api-ms-win-core-synch-l1-2-1.dll",
+            "api-ms-win-core-profile-l1-1-0.dll",
+            "api-ms-win-core-sysinfo-l1-1-0.dll",
+            "api-ms-win-core-console-l1-1-0.dll",
+            "api-ms-win-core-console-l2-1-0.dll",
+            "api-ms-win-core-interlocked-l1-1-0.dll",
+            "api-ms-win-crt-stdio-l1-1-0.dll",
+            "api-ms-win-crt-runtime-l1-1-0.dll",
+            "api-ms-win-crt-math-l1-1-0.dll",
+            "api-ms-win-crt-environment-l1-1-0.dll",
+            "api-ms-win-crt-heap-l1-1-0.dll",
+            "api-ms-win-crt-string-l1-1-0.dll",
+            "api-ms-win-crt-locale-l1-1-0.dll",
+            "api-ms-win-crt-convert-l1-1-0.dll"
+          ],
+          "evidenceBoundary": "Exact provider SHA matches the sealed c36c062 receipt; API-set and VC runtime imports identify prerequisites, not bundled DLLs."
+        },
+        "boundary": "Qualified transient test runtime evidence, not a final distribution binary."
+      },
+      "linuxReceipt": {
+        "path": "linux-transient-config-receipt.json",
+        "ownerSessionId": "04c5cc6d-8495-4c55-939f-47b2e0d9018e",
+        "sha256": "6c35bc83336efbc2fa072105e229dc8f635985ffd36f50ee99f770c3f3d9c1ff",
+        "providerPath": "/work/build/gui/libpollyui-dawn-provider.so",
+        "providerSha256": "728a6ae873208ad7b288062c242acf4681867cc60371c6a4466e9d36ef2f878c",
+        "providerBytes": 19387240,
+        "matchingParentArtifact": {
+          "sessionId": "c36d6b6e-869c-4fc1-b3a5-9ab39fdd4359",
+          "path": "webgpu-review-c36c062/parent-linux-canonical-transient/libpollyui-dawn-provider.so",
+          "sha256": "728a6ae873208ad7b288062c242acf4681867cc60371c6a4466e9d36ef2f878c"
+        },
+        "elfMetadata": {
+          "class": "ELF64 little-endian x86_64",
+          "needed": [
+            "libstdc++.so.6",
+            "libm.so.6",
+            "libgcc_s.so.1",
+            "libc.so.6",
+            "ld-linux-x86-64.so.2"
+          ],
+          "highestRequiredVersionedSymbols": {
+            "GLIBC": "GLIBC_2.34",
+            "GLIBCXX": "GLIBCXX_3.4.32",
+            "CXXABI": "CXXABI_1.3.9",
+            "GCC": "GCC_3.4"
+          },
+          "vulkanLoader": "Not an ELF DT_NEEDED entry; supplied by the target environment for the Vulkan backend."
+        },
+        "boundary": "Qualified transient test runtime evidence; receipt does not contain a complete ELF system-dependency inventory."
+      }
+    },
+    "platforms": {
+      "windows-x86_64": {
+        "archive": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-windows-latest-Release.tar.gz",
+        "archiveSha256": "ba97fa93b5e1c265b8a4411698169b40e7696e7e8d574482c94efce6e3ff4228",
+        "library": "lib/webgpu_dawn.lib",
+        "librarySha256": "4cda677048656ff568177a23582f0a81c1cf18bcb6bedbdadcce56044e4f625f",
+        "actualMemberCount": 1002,
+        "memberList": {
+          "path": "dawn-notice-audit/dawn-windows-members.txt",
+          "sha256": "2b0bd1dbd4916d0107c0a166d0d90ccd607516b9fd3fe96017ef5c0be3298b4d"
+        },
+        "actualCompiledObjectClassification": {
+          "Dawn": 267,
+          "Tint": 430,
+          "Abseil": 101,
+          "SPIRV-Tools": 204,
+          "unclassified": 0
+        },
+        "classificationLimit": "Archive object paths identify compiled source components; they do not close separate header/generated-code attributions or all nested source notices."
+      },
+      "linux-x86_64": {
+        "archive": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-ubuntu-latest-Release.tar.gz",
+        "archiveSha256": "8530b52e5ef5abeb788ab5c3552b261882d9b4d400d7c85c9dc45255b74d48ea",
+        "library": "lib64/libwebgpu_dawn.a",
+        "librarySha256": "a7b9af59e0f96f446c6596783fd2a907db15736b0ae7bf208d530c54653e133d",
+        "actualMemberCount": 945,
+        "memberList": {
+          "path": "dawn-notice-audit/dawn-linux-members.txt",
+          "sha256": "4b1fe6b9ab85fa7b9feb3c315ac92cffdeac9a8bfcce2a89d6f4cb302f1805a4"
+        },
+        "classificationStatus": "member names alone do not close source/header attribution"
+      },
+      "macos-arm64": {
+        "archive": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-latest-Release.tar.gz",
+        "archiveSha256": "6d1584b308a332a547a08d694bbec78615bbde686de8a7ed24f2c7d2e8eb1114",
+        "library": "lib/libwebgpu_dawn.a",
+        "librarySha256": "869a977c4933d9047e1592a9fc6e0afa841b31396ae42e2b765ff5df297f889b",
+        "actualMemberCount": 656,
+        "memberList": {
+          "path": "dawn-notice-audit/dawn-macos-arm64-members.txt",
+          "sha256": "5d16360442437d0ee52f65aa683195ff0fd0d794a799c6d79b2f26ed3ea97d0f"
+        },
+        "classificationStatus": "member names alone do not close source/header attribution; acquisition/architecture evidence only, not native-build or Metal qualification"
+      },
+      "macos-x86_64": {
+        "archive": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-15-intel-Release.tar.gz",
+        "archiveSha256": "4ebbc32d8e0eaf8093ac17e050e15533aacede30d47049589ae475bfe0e0dcb4",
+        "library": "lib/libwebgpu_dawn.a",
+        "librarySha256": "a118e8b0bc165771545476806ebb87305f176d44150c8e934c3df14f3fce67b1",
+        "actualMemberCount": 656,
+        "memberList": {
+          "path": "dawn-notice-audit/dawn-macos-x86_64-members.txt",
+          "sha256": "5d16360442437d0ee52f65aa683195ff0fd0d794a799c6d79b2f26ed3ea97d0f"
+        },
+        "classificationStatus": "member names alone do not close source/header attribution; acquisition/architecture evidence only, not native-build or Metal qualification"
+      },
+      "windows-dxc-runtime": {
+        "repository": "https://github.com/microsoft/DirectXShaderCompiler",
+        "tag": "v1.9.2609",
+        "archive": "dxc_2026_09_29.zip",
+        "archiveSha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1",
+        "bundledFiles": [
+          {
+            "path": "runtime/dxcompiler.dll",
+            "sourceArchivePath": "bin/x64/dxcompiler.dll",
+            "sha256": "0689e2fee0a1c9df8662a59680469f24e2a3ad7ce6bbbcc9284f7a83172bfc59",
+            "fileVersion": "1.9.2609.5",
+            "imports": [
+              "KERNEL32.dll",
+              "ole32.dll",
+              "OLEAUT32.dll",
+              "ADVAPI32.dll"
+            ]
+          },
+          {
+            "path": "runtime/dxil.dll",
+            "sourceArchivePath": "bin/x64/dxil.dll",
+            "sha256": "64be2368211d257a038a7d4ea6bb3e24c878eb8d588c7b8414fccf759b69c2ac",
+            "fileVersion": "1.9.2609.5",
+            "imports": [
+              "KERNEL32.dll",
+              "ADVAPI32.dll",
+              "ole32.dll"
+            ]
+          }
+        ],
+        "archiveInventory": {
+          "entryCount": 33,
+          "paths": [
+            "bin/arm64/dxc.exe",
+            "bin/arm64/dxcompiler.dll",
+            "bin/arm64/dxil.dll",
+            "bin/arm64/dxv.exe",
+            "bin/x64/dxc.exe",
+            "bin/x64/dxcompiler.dll",
+            "bin/x64/dxil.dll",
+            "bin/x64/dxv.exe",
+            "bin/x86/dxc.exe",
+            "bin/x86/dxcompiler.dll",
+            "bin/x86/dxil.dll",
+            "bin/x86/dxv.exe",
+            "inc/d3d12shader.h",
+            "inc/dxcapi.h",
+            "inc/dxcerrors.h",
+            "inc/dxcisense.h",
+            "inc/dxcpix.h",
+            "inc/hlsl/LICENCE.txt",
+            "inc/hlsl/README.txt",
+            "inc/hlsl/vk/opcode_selector.h",
+            "inc/hlsl/vk/spirv.h",
+            "inc/hlsl/vk/khr/cooperative_matrix.h",
+            "inc/hlsl/vk/khr/cooperative_matrix.impl",
+            "inc/Support/ErrorCodes.h",
+            "lib/arm64/dxcompiler.lib",
+            "lib/arm64/dxil.lib",
+            "lib/x64/dxcompiler.lib",
+            "lib/x64/dxil.lib",
+            "lib/x86/dxcompiler.lib",
+            "lib/x86/dxil.lib",
+            "LICENCE-MIT.txt",
+            "LICENSE-LLVM.txt",
+            "LICENSE-MS.txt"
+          ],
+          "distributablesListEntry": "No separate distributables-list file is present among the 33 entries."
+        },
+        "licenseFiles": [
+          "DXC-LICENSE-LLVM.txt",
+          "DXC-LICENSE-MS.txt",
+          "DXC-LICENCE-MIT.txt",
+          "DXC-HLSL-LICENCE.txt"
+        ],
+        "status": "The exact archive and selected x64 DLLs are hash-verified. The archive includes four original license files; Microsoft distributable-list authorization remains a separate unresolved rights question."
+      }
+    },
+    "header": {
+      "path": "include/dawn/webgpu.h",
+      "sha256LfNormalized": "88216227a19607c0320c50ebba584da5055529b663606d46b1149b0c5591e315",
+      "contributionStatus": "pinned public header; other generated and transitive header contributions remain open"
+    }
+  },
+  "componentAttribution": [
+    {
+      "component": "Dawn",
+      "source": "google/dawn",
+      "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "attribution": "actual provider archives; exact object attribution on Windows only, archive member names retained for other platforms",
+      "license": "DAWN-LICENSE"
+    },
+    {
+      "component": "Tint",
+      "source": "google/dawn",
+      "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "attribution": "430 classified Windows provider archive members; other platforms not classified by basename",
+      "license": "DAWN-LICENSE plus unresolved nested/vendor attribution closure"
+    },
+    {
+      "component": "Abseil",
+      "source": "google/dawn/abseil-cpp",
+      "commit": "af5aede14a0b4013be6890148d34e0fd7b1fac69",
+      "upstreamEquivalentCommit": "7f008af1930f59d869a816795ac5d445e3628e4d",
+      "attribution": "101 classified Windows provider archive members, including ten Abseil time-zone object paths; CCTZ attribution and Apache-2.0 coverage are recorded separately below, while other embedded/nested source attribution remains unresolved",
+      "license": "ABSEIL-LICENSE",
+      "licenseSha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747",
+      "comparison": "Pinned upstream LICENSE is byte-identical to the mirror; failed CCTZ subdirectory LICENSE probes do not establish absence of notices."
+    },
+    {
+      "component": "CCTZ sources embedded by Abseil",
+      "source": "abseil/abseil-cpp/absl/time/internal/cctz",
+      "commit": "7f008af1930f59d869a816795ac5d445e3628e4d",
+      "vendoredDawnPin": "af5aede14a0b4013be6890148d34e0fd7b1fac69",
+      "attribution": "The sealed Windows archive classifies ten members under third_party/abseil/absl/time/absl_time_zone.dir, including CCTZ time-zone objects. The pinned CCTZ source tree's time_zone_impl.cc header identifies Copyright 2016 Google Inc. and Apache-2.0.",
+      "license": "Apache-2.0; complete original text is staged as ABSEIL-LICENSE.",
+      "licenseFile": "ABSEIL-LICENSE",
+      "licenseSha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747",
+      "evidence": {
+        "sealedBuildReceipt": "dawn-notice-audit/build-component-notice-receipt.json",
+        "sealedMemberList": "dawn-notice-audit/dawn-windows-members.txt",
+        "upstreamSourceHeader": {
+          "path": "absl/time/internal/cctz/src/time_zone_impl.cc",
+          "url": "https://raw.githubusercontent.com/abseil/abseil-cpp/7f008af1930f59d869a816795ac5d445e3628e4d/absl/time/internal/cctz/src/time_zone_impl.cc",
+          "copyright": "Copyright 2016 Google Inc. All Rights Reserved.",
+          "license": "Apache License, Version 2.0"
+        },
+        "upstreamCctzDirectoryEntries": [
+          "BUILD.bazel",
+          "include/",
+          "src/",
+          "testdata/"
+        ],
+        "licenseLookupNote": "The candidate CCTZ LICENSE and LICENSE.txt paths return 404, but the pinned source file header specifies Apache-2.0 and the full Abseil license text is staged; the 404s are not treated as evidence of license absence.",
+        "observedObjectPaths": [
+          "time_zone_name_win.obj",
+          "zone_info_source.obj",
+          "time_zone_posix.obj",
+          "time_zone_lookup.obj",
+          "time_zone_libc.obj",
+          "time_zone_info.obj",
+          "time_zone_impl.obj",
+          "time_zone_if.obj",
+          "time_zone_format.obj",
+          "time_zone_fixed.obj"
+        ],
+        "failedStandaloneLicenseLookups": [
+          "absl/time/internal/cctz/LICENSE",
+          "absl/time/internal/cctz/LICENSE.txt"
+        ]
+      }
+    },
+    {
+      "component": "SPIRV-Tools",
+      "source": "google/dawn/third_party/spirv-tools",
+      "commit": "e56740d931256cc464d4d1a76149f69469c33f70",
+      "attribution": "204 classified Windows provider archive members; other platforms not classified by basename",
+      "license": "SPIRV-TOOLS-LICENSE"
+    },
+    {
+      "component": "SPIRV-Headers",
+      "source": "KhronosGroup/SPIRV-Headers",
+      "commit": "86f980c731e62ae4eaf383d320449d71687936bf",
+      "attribution": "pinned dependency/header input; per-platform inclusion in shipped archive/provider not established",
+      "license": "SPIRV-HEADERS-LICENSE"
+    },
+    {
+      "component": "Vulkan-Headers",
+      "source": "KhronosGroup/Vulkan-Headers",
+      "commit": "c46850864f4661461b0f6cb9922c058ffea4915e",
+      "attribution": "pinned header input; target/platform contribution not closed",
+      "license": "VULKAN-HEADERS-LICENSE.md",
+      "licenseSha256": "95ad366d23fadf701d355bc45fb8b82ae2d700239471d35d41286ac3b08ff903",
+      "licenseTextStatus": "source file is an SPDX/copyright summary, not the complete Apache-2.0 license text"
+    },
+    {
+      "component": "Vulkan-Utility-Libraries",
+      "source": "KhronosGroup/Vulkan-Utility-Libraries",
+      "commit": "90738f6edfa19561a978fc5f97543ba37075ba9d",
+      "attribution": "pinned dependency input; actual contributing headers/files and platform use not established",
+      "license": "VULKAN-UTILITY-LIBRARIES-LICENSE.md",
+      "licenseSha256": "69760673abf91cfd0280ae73739a29c078f493804d9016a122b3b189b48ad6e6",
+      "licenseTextStatus": "source file is an SPDX/copyright summary, not complete Apache-2.0 and MIT license texts"
+    },
+    {
+      "component": "RenderDoc API header",
+      "source": "google/dawn/third_party/renderdoc",
+      "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "attribution": "notice staged conservatively; actual header retention/use not proven",
+      "license": "RENDERDOC-LICENSE.md"
+    },
+    {
+      "component": "EGL/OpenGL registry headers",
+      "source": "google/dawn/third_party/EGL-Registry and OpenGL-Registry",
+      "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "attribution": "notices staged conservatively; exact per-platform declarations/generated content not closed",
+      "license": "EGL-REGISTRY-LICENSE and OPENGL-REGISTRY-LICENSE"
+    },
+    {
+      "component": "DirectX headers",
+      "source": "google/dawn/third_party/directx-headers",
+      "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "attribution": "notice staged conservatively; exact compiled/generated contribution is not fully mapped",
+      "license": "DIRECTX-HEADERS-LICENSE"
+    },
+    {
+      "component": "DirectX Shader Compiler runtime",
+      "source": "microsoft/DirectXShaderCompiler",
+      "tag": "v1.9.2609",
+      "archive": "dxc_2026_09_29.zip",
+      "archiveSha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1",
+      "attribution": "Only the selected x64 dxcompiler.dll and dxil.dll are currently placed in the Windows bundle. Exact pinned archive members and DLL hashes are recorded under artifacts.platforms.windows-dxc-runtime.",
+      "licenseFiles": [
+        {
+          "archivePath": "LICENSE-MS.txt",
+          "stagedFile": "DXC-LICENSE-MS.txt",
+          "sha256": "734f72f239fe7b07b4c7203f294c1a7ce27095687278bab7e56d630d7c672963"
+        },
+        {
+          "archivePath": "LICENSE-LLVM.txt",
+          "stagedFile": "DXC-LICENSE-LLVM.txt",
+          "sha256": "729615317e28dd03907e46f0fc3b5e88f7853cee61d1a1471d2749335516b46f"
+        },
+        {
+          "archivePath": "LICENCE-MIT.txt",
+          "stagedFile": "DXC-LICENCE-MIT.txt",
+          "sha256": "903df5512f7d02609fed0c780a9b704f5a3eeb6e4d84ebe42a29845c81899a3c"
+        },
+        {
+          "archivePath": "inc/hlsl/LICENCE.txt",
+          "stagedFile": "DXC-HLSL-LICENCE.txt",
+          "sha256": "f47b94fc51b04f4354a6c6f41fb84b0bd22a8ebfcde9f93c1b4d9abd7f6d14c2"
+        }
+      ],
+      "redistributionTerms": "LICENSE-MS.txt permits redistribution only for object code listed in the software's distributables file list and imposes downstream terms and indemnification requirements. The archive contains the selected DLLs but no separate distributables-list file; the legal mapping remains pending."
+    }
+  ],
+  "runtimeDistribution": {
+    "windows-x86_64": {
+      "redistributionStatus": "blocked",
+      "technicalNoticeStatus": "incomplete",
+      "deploymentDecision": "pending",
+      "rightsConfirmation": "pending",
+      "inBundle": [
+        "pollyui-dawn-provider.dll (separately loaded provider)",
+        "dxcompiler.dll",
+        "dxil.dll"
+      ],
+      "coShippedQualificationRuntimeNotDawnDependencies": {
+        "sourceLock": {
+          "path": "gui/tests/gpu/ANGLE-RUNTIME.json",
+          "sha256": "2bd102259c5d41be1b4568645a9a358cc3d2b2c9969c0210fc136e535311e31f"
+        },
+        "publisher": "Electron official release v41.10.7; ANGLE 2.1.27094 revision 830fc642200f",
+        "archiveSha256": "43f2f823a263ee7d3ac71282e26c417c9e4417bbefdfa97ede3fde15daf5a46d",
+        "libraries": [
+          "libEGL.dll",
+          "libGLESv2.dll",
+          "vulkan-1.dll",
+          "vk_swiftshader.dll",
+          "vk_swiftshader_icd.json",
+          "d3dcompiler_47.dll"
+        ],
+        "originalNoticeEvidence": {
+          "files": [
+            {
+              "path": "LICENSE",
+              "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+            },
+            {
+              "path": "LICENSES.chromium.html",
+              "sha256": "0883a9eb407906c12b334d89bc5fbc63bd1df9e0803c252cc8d23cb76b6d58f3"
+            }
+          ],
+          "receipt": "windows-transient-config-receipt.json, runtime entries",
+          "condition": "Keep the complete original license and Chromium notices next to any release that actually carries these application-local binaries. This ledger does not re-audit this separately locked bundle."
+        }
+      },
+      "systemOrToolchainDependencies": [
+        "The sealed provider PE imports MSVCP140.dll, MSVCP140_ATOMIC_WAIT.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll and api-ms-win-crt-* contracts. Treat VC++ runtime/UCRT as target prerequisites unless a separately authorized app-local REDIST deployment is selected; do not copy OS components or run an installer as part of dependency acquisition."
+      ],
+      "authoritativeTerms": [
+        {
+          "component": "DirectX Shader Compiler runtime",
+          "source": "DXC v1.9.2609 archive LICENSE-MS.txt, checksum-locked in third_party/dawn-manifest.json",
+          "relevantSections": [
+            "Installation and Use Rights (Windows-only use)",
+            "Distributable Code (only listed object-code files; downstream terms and indemnification requirements)"
+          ],
+          "observedArchive": "The SHA-256-pinned archive has 33 entries and contains bin/x64/dxcompiler.dll and bin/x64/dxil.dll plus LICENSE-MS.txt, LICENSE-LLVM.txt, LICENCE-MIT.txt and inc/hlsl/LICENCE.txt. It contains no separate file named as a distributables list.",
+          "unresolved": "The LICENSE-MS reference to the distributables file list has not been authoritatively mapped to the two selected x64 DLLs; downstream end-user/distributor terms and indemnification requirements remain to be confirmed."
+        },
+        {
+          "component": "Visual C++ / UCRT runtime",
+          "sources": [
+            "https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files?view=msvc-170",
+            "https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/"
+          ],
+          "relevantCondition": "Microsoft documents redistribution as limited to licensed Visual Studio users and subject to the applicable Microsoft Software License Terms and REDIST list.",
+          "observedRuntime": "The sealed provider PE imports MSVCP140.dll, MSVCP140_ATOMIC_WAIT.dll, VCRUNTIME140.dll, VCRUNTIME140_1.dll and api-ms-win-crt-* contracts. The sealed DXC DLLs import Windows system libraries only.",
+          "unresolved": "The target Windows support policy, chosen runtime deployment method and applicable Visual Studio license/REDIST entitlement are not established."
+        }
+      ],
+      "blockedOn": [
+        "Technical notice closure for Dawn and its actual transitive/header contributions",
+        "A documented Windows target/deployment decision for the VC++ runtime prerequisite",
+        "Authorized review of VC++ REDIST eligibility and DXC distributables-list/downstream conditions"
+      ]
+    },
+    "linux-x86_64": {
+      "redistributionStatus": "blocked",
+      "technicalNoticeStatus": "incomplete",
+      "deploymentDecision": "pending",
+      "rightsConfirmation": "pending",
+      "inBundle": [
+        "pollyui-dawn-provider.so (separately loaded provider)"
+      ],
+      "systemOrUserProvided": [
+        "DT_NEEDED requires libstdc++.so.6, libm.so.6, libgcc_s.so.1, libc.so.6 and ld-linux-x86-64.so.2. The provider also needs a target Vulkan loader/driver at runtime; it is not a DT_NEEDED entry. These are target-environment prerequisites, not package contents."
+      ],
+      "blockedOn": [
+        "Technical notice closure for Dawn and its actual transitive/header contributions",
+        "Select supported distributions against sealed GLIBC_2.34, GLIBCXX_3.4.32, CXXABI_1.3.9 and GCC_3.4 requirements, and document target-system Vulkan loader/driver and shared-library prerequisites",
+        "Confirm distribution-specific responsibility and notices for target-provided runtime dependencies"
+      ]
+    },
+    "macos-arm64": {
+      "redistributionStatus": "blocked",
+      "technicalNoticeStatus": "incomplete",
+      "deploymentDecision": "pending",
+      "rightsConfirmation": "pending",
+      "inBundle": [
+        "No native PollyUI provider bundle verified; pinned Dawn archive is acquisition evidence only."
+      ],
+      "systemOrUserProvided": [
+        "Foundation, IOSurface, QuartzCore, Cocoa, IOKit and Metal appear in the pinned DawnTargets.cmake imported link interface. They are OS frameworks, not files in the acquired archive or this package."
+      ],
+      "linkMetadata": {
+        "receipt": "macos-arm64-input-receipt.json",
+        "dawnTargetsSha256": "1160f7a4a33465f75f4e13b1306b75f09e38d256b0abc9ddea5943077e3b8493",
+        "frameworks": [
+          "Foundation",
+          "IOSurface",
+          "QuartzCore",
+          "Cocoa",
+          "IOKit",
+          "Metal"
+        ],
+        "boundary": "Imported CMake link metadata only; no native provider import table, build, or runtime qualification."
+      },
+      "authoritativeTerms": [
+        {
+          "component": "macOS SDK/system frameworks",
+          "source": "https://developer.apple.com/support/terms/apple-developer-program-license-agreement/",
+          "unresolved": "Record the applicable SDK/agreement version, minimum supported macOS deployment target, and confirm the shipped app links to system frameworks rather than bundling SDK framework files."
+        }
+      ],
+      "blockedOn": [
+        "Technical notice closure and a selected macOS deployment target/system-framework policy",
+        "Confirmation of applicable Apple SDK/agreement and distribution eligibility"
+      ]
+    },
+    "macos-x86_64": {
+      "redistributionStatus": "blocked",
+      "technicalNoticeStatus": "incomplete",
+      "deploymentDecision": "pending",
+      "rightsConfirmation": "pending",
+      "inBundle": [
+        "No native PollyUI provider bundle verified; pinned Dawn archive is acquisition evidence only."
+      ],
+      "systemOrUserProvided": [
+        "Foundation, IOSurface, QuartzCore, Cocoa, IOKit and Metal appear in the pinned DawnTargets.cmake imported link interface. They are OS frameworks, not files in the acquired archive or this package."
+      ],
+      "linkMetadata": {
+        "receipt": "macos-x86_64-input-receipt.json",
+        "dawnTargetsSha256": "1160f7a4a33465f75f4e13b1306b75f09e38d256b0abc9ddea5943077e3b8493",
+        "frameworks": [
+          "Foundation",
+          "IOSurface",
+          "QuartzCore",
+          "Cocoa",
+          "IOKit",
+          "Metal"
+        ],
+        "boundary": "Imported CMake link metadata only; no native provider import table, build, or runtime qualification."
+      },
+      "authoritativeTerms": [
+        {
+          "component": "macOS SDK/system frameworks",
+          "source": "https://developer.apple.com/support/terms/apple-developer-program-license-agreement/",
+          "unresolved": "Record the applicable SDK/agreement version, minimum supported macOS deployment target, and confirm the shipped app links to system frameworks rather than bundling SDK framework files."
+        }
+      ],
+      "blockedOn": [
+        "Technical notice closure and a selected macOS deployment target/system-framework policy",
+        "Confirmation of applicable Apple SDK/agreement and distribution eligibility"
+      ]
+    }
+  },
+  "deploymentAndRightsGaps": [
+    {
+      "id": "windows-deployment-and-rights",
+      "missing": "Supported Windows target policy, chosen VC++ runtime deployment mode, applicable REDIST entitlement, and authoritative confirmation that the selected DXC DLLs satisfy the LICENSE-MS distributables-list condition and downstream terms.",
+      "unblockWhen": "The responsible distributor records the supported target/install policy and an authorized review confirms the exact VC++ and DXC terms; system DLLs remain target prerequisites unless a separately approved REDIST route applies."
+    },
+    {
+      "id": "linux-target-policy",
+      "missing": "Supported distribution set and package responsibility for the exact ELF ABI/runtime requirements and Vulkan loader/driver.",
+      "unblockWhen": "The release target list is selected and validated against the recorded minimum symbol versions, with system-provided dependencies and required notices documented."
+    },
+    {
+      "id": "macos-target-and-eligibility",
+      "missing": "Native provider qualification, deployment target, framework packaging policy, and applicable Apple SDK/agreement distribution eligibility.",
+      "unblockWhen": "A separate authorized macOS build/runtime qualification establishes the deployment target and confirms the package uses system frameworks; this ledger does not qualify macOS execution."
+    }
+  ],
+  "closureGaps": [
+    {
+      "id": "upstream-build-input-bill",
+      "missing": "Authoritative per-release, per-platform compile/include/generated-source bill tied to the exact official archives; local CMake/DEPS/tree snapshots do not prove all binary contributions.",
+      "unblockWhen": "Upstream build manifest or reproducible matching release build provides source, generated file, header, and target attribution for each shipped artifact."
+    },
+    {
+      "id": "unix-source-attribution",
+      "missing": "Source attribution for Linux/macOS basename-only archive members and for header-only/generated inputs.",
+      "unblockWhen": "Use debug/source maps or an upstream component manifest matching the archive SHA to classify retained object/source and public header contributions."
+    },
+    {
+      "id": "nested-and-vendor-notices",
+      "missing": "Other embedded source attributions and exact SPIRV/Vulkan utility/generated/header and GL/EGL/KHR/RenderDoc/DirectX file contributions remain open. The confirmed Windows CCTZ source header identifies Apache-2.0 and its full text is staged as ABSEIL-LICENSE; Vulkan summary files are not full license texts.",
+      "unblockWhen": "Map remaining actual retained/compiled files to pinned upstream license and NOTICE sources, stage unaltered complete texts and required attributions, and hash-check each."
+    }
+  ],
+  "qualificationBoundary": "This is technical evidence and a packaging gate, not legal advice or a warranty of compliance. It does not qualify macOS native execution, a physical GPU, or the full PollyUI repository."
+}

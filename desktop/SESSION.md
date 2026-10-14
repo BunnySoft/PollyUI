@@ -9,11 +9,20 @@ uses libseat's logind backend, and PAM supplies the user's private
 `XDG_RUNTIME_DIR`. See the [PollyOS overview](../docs/POLLYOS.md) for the current
 candidate and its separately tracked physical acceptance.
 
-The temporary Live getty still explicitly selects automatic login. The account
-has no usable password, and **password locking remains disabled by default**.
+The temporary Live getty still explicitly selects automatic login. Historical
+delivered media has its original passwordless account; current profile-aware
+source already applies the deliberately public Live presets (`polly/polly`,
+root maintenance password `polly`) only in the final Live layer.
+**Password locking remains disabled by default** in either case.
 PAM session registration is not proof that the user authenticated. No protected
 boot option, password prompt, secure lock or credential-management UI is
 introduced by this foundation.
+
+The [continuous Live startup](./LIVE.md#continuous-live-startup-source-wired-new-media-acceptance-pending)
+uses the same ordinary-user tty1/PAM/logind entry. Its optional boot scene and
+native first-present gate do not change installed setup/login or account
+credentials. Diagnostic VT switching is Live-only, requires the active backend
+session and remains suppressed by the existing lock handling.
 
 `system/elogind-polly.conf` keeps automatic lid/key/idle power actions disabled
 until lock-before-suspend behavior is implemented. It does not grant additional
@@ -533,8 +542,9 @@ account, explicitly set `POLLY_LOCK_RUNTIME` to the absolute PollyUI executable
 and pass the executable `desktop/tools/run-session-lock.sh` as
 `pollywm --lock-on-start`'s program before `--shell`. The build/install rules keep
 the helper next to the runtime. A root-owned `/etc/pam.d/polly-lock` service must
-already be configured. Do not enable it on the passwordless Live account:
-there is no usable password, and forcing it to start would leave it locked.
+already be configured. Do not enable it on historical passwordless Live media,
+where it would leave the session locked, or treat the new source's public
+Live presets as a secure lock credential.
 
 This is a tested locking mechanism, **not a completed protected desktop
 session**. A normal Shell lock menu, configured recovery trigger, elogind

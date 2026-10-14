@@ -24,6 +24,17 @@ neither file nor desktop management APIs; lock and input-method roles also skip
 the service prelude. UID0/setid operations are refused by this desktop service,
 not the native-mapping SDK. Future filesystem bindings extend JS/config, not a C bridge.
 
+## Built-in ordinary applications
+
+Files, Settings and **Processes** have fixed installed wrappers and `.desktop`
+entries; they are not managed bundles or a new global App store. `polly-processes`
+opens an independent ordinary `org.pollyui.processes` process/realm and window.
+Its [read-only monitor](apps/processes/README.md) uses Linux `/proc` through the
+existing SysRT file mappings, never Shell private connections or command output.
+The wrapper resolves installed data relative to its own binary directory just
+like Files. Launching it from Applications does not grant process-management
+authority; no terminate, administrator or arbitrary-shell API is exposed.
+
 ## Confirmed P0 target, not the current implementation
 
 The [storage design](../docs/POLLYOS-STORAGE-DESIGN.md) now takes priority:

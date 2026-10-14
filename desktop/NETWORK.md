@@ -4,8 +4,10 @@
 it on the existing `desktop` API and captures the real native `desktop.windows`
 authorization binding. `startNetwork()` checks that binding every time; an
 ordinary public Wayland application cannot register a Shell authentication
-agent. The existing Shell panel and Settings managed-panel entry point continue
-to use the same methods. No UI layout, root daemon, account/polkit policy or iwd
+agent. The legacy Shell panel continues to use the same methods. Independent
+Settings mounts that same UI in its own document through the owned Settings
+service's fixed scalar RPCs; it never receives the system-bus connection or
+registers another agent. No new root daemon, account/polkit policy or iwd
 credential storage is introduced by this migration.
 
 The service uses `openDbusEndpoint` from the [D-Bus SDK](../docs/DBUS-SDK.md).
@@ -29,13 +31,20 @@ never the host radio.
 | `replyNetworkAuthentication(token, user, password)` | Require the current live token; null/null cancels; invalid fields preserve the current prompt |
 | `onNetworkChanged` | Optional function called on visible state changes; it is a JS event-loop callback, not a retained native callback |
 
-Snapshots contain `ready`, `registered`, `refreshing`, `revision`, `error`,
+Snapshots contain `ready`, `registered`, `refreshing`, `revision`, `operationId`, `error`,
 `operation`, `target`, `networkConfiguration`, `devices`, `networks` and
 `authentication`. Devices expose id/name/address/state/mode/powered/scanning/
 station/connectedNetwork. Networks expose id/device/name/type/known/connected/
 signal/order. Signal is signed RSSI divided by 100 (dBm), or null. A live prompt
 contains only id/kind/network/username; **passwords never enter snapshots,
 configuration files, logs or artifacts**.
+
+`operationId` is a nonzero uint32 for each accepted action/cancellation (zero
+before the first action), distinct from model `revision`. The Settings bridge
+retains it only for a connection started by its authenticated owned process.
+Detach/exit cannot answer or cancel a subsequent Shell-panel operation even
+when it targets the same network. The service remains the single agent/owner;
+this ID is a lifetime guard, not a caller-supplied authorization credential.
 
 Actions are `scan`, `disconnect`, `power-on`, `power-off`, `connect` and `forget`.
 Connect supports open/PSK and already-known 802.1x networks on powered stations

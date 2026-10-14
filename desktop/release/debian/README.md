@@ -37,6 +37,23 @@ masks SSH service/socket aliases in Live. Cached-container PAM/su/passwd checks
 do not establish new-image boot acceptance; existing artifacts are unchanged.
 Remote login stays disabled by default.
 
+The new [continuous Live startup](../../LIVE.md#continuous-live-startup-source-wired-new-media-acceptance-pending)
+is also final-Live-only. Standard Plymouth **24.004.60-5** and its exact matching
+`libplymouth5` supply the DRM/framebuffer/script machinery; the dependency and
+overlay manifests are `boot-dependencies.json` and `boot-files.json`.
+`boot-install.py` is shared by fresh Live and frozen offline overlay assembly.
+Offline input packs must explicitly supply that pinned dependency closure (or
+an already-matching immutable base); missing inputs fail rather than reusing
+an old pretty-looking startup. The ISO builder additionally verifies the actual
+exported boot overlay bytes/modes and pins. Offline origin receipts now include
+the boot resources and explicit per-overlay modes, including the generated
+monogram. The ISO verifier accepts these modes while retaining compatibility
+with older receipts. No original receipt or media is rewritten.
+The profile-only offline recipe still installs no packages and is not new
+startup-media qualification. Installed images keep the platform's existing
+authentication and graphical setup/login strategy; they do not acquire this
+Live overlay. Source/native checks are not real UEFI or physical acceptance.
+
 New images carry a root-owned exact `template`, `live`, `installed` or `recovery`
 profile. The read-only profile checker is usable by ordinary users; sessions and
 the installed account backend reject mismatched, missing, linked, writable or

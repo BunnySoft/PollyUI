@@ -28,6 +28,7 @@ COPY frozen /tmp/polly-frozen
 RUN chmod 755 /init /usr/bin/polly-live-session /usr/bin/polly-live-diagnostics \
         /usr/share/pollyui/desktop/tools/live-session-mode.sh && \
     chmod 644 /usr/share/pollyui/desktop/shell/live.mjs /usr/share/pollyui/power-dependencies.json && \
+    python3 -I -B /tmp/polly-frozen/desktop/release/debian/boot-install.py install /tmp/polly-frozen && \
     python3 -I -B /tmp/polly-producer/offline-live-overlay.py overlay /tmp/polly-runtime /tmp/polly-frozen \
         --runtime-revision "$RUNTIME_REVISION" --producer-revision "$PRODUCER_REVISION" \
         --base-image "$BASE_IMAGE_ID" --recipe /tmp/polly-producer/Containerfile.offline-live \

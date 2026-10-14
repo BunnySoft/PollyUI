@@ -11,7 +11,10 @@ mount -t devpts devpts /dev/pts
 mount -t tmpfs -o mode=1777 tmpfs /dev/shm
 mount -t tmpfs -o mode=0755 tmpfs /run
 mount -t tmpfs -o mode=1777 tmpfs /tmp
-echo "PollyDesktop Live: memory-only root; no block-device installation." >/dev/console
+case " $(cat /proc/cmdline) " in
+    *" polly.splash=1 "*) ;;
+    *) echo "PollyDesktop Live: memory-only root; no block-device installation." >/dev/console ;;
+esac
 case " $(cat /proc/cmdline) " in
     *" polly.serial=1 "*)
         if [ -f /etc/conf.d/syslog ]; then

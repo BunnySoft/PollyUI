@@ -11,6 +11,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import runpy
 import stat
 import subprocess
 
@@ -151,8 +152,17 @@ def main():
                 stat.S_IMODE(info.st_mode) != (0o755 if executable else 0o644)):
             raise ValueError("Live overlay differs from frozen source: " + target)
         overlays.append({"path": target, "source": original, "sha256": digest(file)})
+    boot_install = runpy.run_path(str(source / "desktop/release/debian/boot-install.py"))
+    boot_targets = set()
+    for target, original, data, mode in boot_install["files"](source):
+        file = root / target
+        info = regular(file)
+        if (file.read_bytes() != data or info.st_uid or info.st_gid or stat.S_IMODE(info.st_mode) != mode):
+            raise ValueError("Live boot overlay differs from frozen source: " + target)
+        boot_targets.add(target)
+        overlays.append({"path": target, "source": original, "sha256": digest(file), "mode": f"{mode:04o}"})
     origin_path = "usr/share/pollyui/runtime-origin.json"
-    allowed = set(expected) | set(OVERLAYS) | {origin_path}
+    allowed = set(expected) | set(OVERLAYS) | boot_targets | {origin_path}
     verify_namespaces(root, allowed)
     pins = verify_pins((bundle / "runtime-packages.txt").read_text())
     offline = verify_offline_inputs(args.offline_inputs)

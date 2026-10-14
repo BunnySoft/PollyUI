@@ -151,21 +151,82 @@ GPU result.
 
 ## Redistribution gate
 
-The official release archives omit full bundled dependency notices.
-Acquisition stages Dawn's original license and Windows DXC's original
-licenses, plus nine checksum-pinned original notices for Abseil, SPIRV
-tools/headers, Vulkan headers/utilities, RenderDoc's API header and the
-EGL/OpenGL/DirectX header inputs. Abseil's upstream license is byte-identical
-to the pinned Chromium mirror. Vulkan's attribution summaries reference the
-Apache-2.0 text included with the collected Abseil/SPIRV-Tools licenses; they
-are not themselves full license texts. This is a conservative common input set,
-not a claim that every listed header is compiled on every platform.
+The official Dawn release archives omit full bundled dependency notices.
+Acquisition stages Dawn's original license and nine checksum-pinned original
+notices for Abseil, SPIR-V tools/headers, Vulkan headers/utilities, RenderDoc's
+API header and EGL/OpenGL/DirectX header inputs. Windows DXC stages the four
+original license texts found in its exact pinned ZIP: Microsoft, LLVM, MIT and
+the HLSL component license. Abseil's upstream license is byte-identical to
+the pinned Chromium mirror. Vulkan attribution summaries refer to the
+Apache-2.0 license text included with the collected Abseil/SPIR-V-Tools
+licenses; they are not themselves full license texts. This is a conservative
+common input set, not a claim that every listed header is compiled on every
+platform.
 
-**Third-party notice collection is not complete**: per-platform compiled,
-header/generated-source and nested attribution closure, along with applicable
-compiler/SDK/runtime redistribution terms, still require review. The
-manifest explicitly keeps redistribution blocked; do not package or
-redistribute this checkpoint as a completed native dependency bundle.
+**Technical notice closure remains incomplete.** The sealed Windows archive
+member list proves ten Abseil time-zone objects, including CCTZ sources. The
+pinned CCTZ source header identifies Google attribution and Apache-2.0; its
+complete license text is staged as `ABSEIL-LICENSE`. The absence of a separate
+CCTZ `LICENSE` file is not treated as evidence of missing terms. The release
+still lacks an authoritative per-platform compile/header/generated-source
+bill, and Vulkan utility, SPIR-V generated/header, GL/EGL/KHR, RenderDoc and
+DirectX file contributions are not fully mapped. Keep the gate blocked until
+these remaining technical notice gaps are resolved.
+
+Deployment choices and rights confirmation are separate, pending release
+decisions; they are not a finding that the code is unlawful. The ledger records
+actual target prerequisites without bundling system components: the sealed
+Windows `/MD` provider imports VC++ runtime and UCRT API-set contracts; the
+selected DXC DLLs import Windows system libraries. The locked DXC ZIP has 33
+entries, including the selected x64 DLLs and four original license texts, but
+no separate distributables-list file. Its `LICENSE-MS.txt` restricts
+redistribution to object code listed in the software's distributables list
+and requires downstream terms and indemnification, so authorization of the
+selected DLLs remains unconfirmed. The ledger records the exact PE imports,
+DLL versions and SHA-256 values; it does not authorize copying system DLLs or
+running an installer.
+
+The sealed Linux provider requires `libstdc++.so.6`, `libm.so.6`,
+`libgcc_s.so.1`, `libc.so.6` and `ld-linux-x86-64.so.2`, with highest
+versioned symbol requirements `GLIBC_2.34`, `GLIBCXX_3.4.32`,
+`CXXABI_1.3.9` and `GCC_3.4`. Its supported distribution range is not yet
+selected; the Vulkan loader/driver remains target-provided. The pinned macOS
+Dawn target metadata links Foundation, IOSurface, QuartzCore, Cocoa, IOKit
+and Metal as OS frameworks. This is link metadata only: there is no native
+macOS provider build or runtime qualification, and SDK/system framework files
+are not staged.
+
+`third_party/dawn-distribution-ledger.json` records pinned source/artifact
+hashes, sealed archive-member evidence, exact provider import/ABI metadata,
+confidence limits, and platform runtime conditions. Windows archive object
+paths classify 1,002 members (Dawn 267, Tint 430, Abseil 101, SPIR-V Tools
+204); Unix/macOS member-name lists are not source attribution. The ledger
+distinguishes observed archive contents from conservative notice inputs and
+does not treat DEPS membership as proof of binary contribution. Technical
+notice closure, deployment decision, rights confirmation and derived release
+status are separate fields; all remain blocked/pending for every platform.
+The Windows graphics qualification runtime is separately locked as an official
+Electron ANGLE/SwiftShader bundle in `gui/tests/gpu/ANGLE-RUNTIME.json`; its
+original `LICENSE` and `LICENSES.chromium.html` hashes are referenced in the
+ledger. These are not Dawn dependencies, and the notices apply if a release
+actually carries those application-local binaries.
+
+`tools/fetch_dawn.cmake` verifies both the release archive and the extracted
+static library, plus the bundled DXC DLL hashes. It records an
+`acquisition-receipt.json`; acquisition is not redistribution approval.
+Installing a `PU_WEBGPU=ON` build runs
+`tools/check_dawn_redistribution.cmake`, which checks the lock and staged
+notices/runtime hashes, then separately requires complete technical notice
+coverage, an approved platform deployment decision and confirmed rights. It
+fails closed at the first unmet gate. With `PU_WEBGPU=ON`, the root CMake
+registers this check before any subdirectory's `PollyDesktop` install rules;
+GPU-disabled installs and other install components do not run it. The same
+check is available as the `pollyui-dawn-distribution-check` build target.
+When unblocked, the `PollyDesktop` install component places the provider and
+Windows DXC DLLs next to the executable (as required by the provider loader)
+and installs the notices, dependency lock, acquisition receipt and ledger.
+This gate is a technical packaging control, not legal advice or a compliance
+guarantee.
 
 ## Owned VideoFrame subset
 

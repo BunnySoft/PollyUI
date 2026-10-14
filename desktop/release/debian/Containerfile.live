@@ -90,6 +90,15 @@ FROM platform-base AS live-base
 COPY release/debian/account-profile /tmp/polly-account-profile
 RUN sed -i 's/\r$//' /tmp/polly-account-profile && \
     sh /tmp/polly-account-profile live && rm /tmp/polly-account-profile
+COPY release/live /tmp/polly-boot/desktop/release/live
+COPY release/debian /tmp/polly-boot/desktop/release/debian
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        plymouth=24.004.60-5 libplymouth5=24.004.60-5 && \
+    python3 -I -B /tmp/polly-boot/desktop/release/debian/boot-install.py install /tmp/polly-boot && \
+    dpkg-query -W -f='${binary:Package}\t${Version}\t${Homepage}\n' > /usr/share/polly-live-packages.tsv && \
+    rm -rf /tmp/polly-boot && apt-get clean && \
+    rm -f /var/cache/apt/pkgcache.bin /var/cache/apt/srcpkgcache.bin && \
+    rm -rf /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
 
 FROM docker.io/library/debian:trixie-slim AS image-tools
 ENV DEBIAN_FRONTEND=noninteractive

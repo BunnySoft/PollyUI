@@ -1,0 +1,19 @@
+[Unit]
+Description=Hand Polly Live display to the ordinary-user desktop
+Wants=polly-live-splash.service
+After=polly-live-splash.service systemd-logind.service systemd-user-sessions.service
+Before=getty@tty1.service
+ConditionKernelCommandLine=polly.splash=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/polly-live-splash handoff
+ExecStartPost=/usr/bin/systemctl stop polly-live-splash.service
+ExecStopPost=-/usr/bin/systemctl --no-block stop polly-live-splash.service
+TimeoutStartSec=15
+TimeoutStopSec=5
+RemainAfterExit=yes
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

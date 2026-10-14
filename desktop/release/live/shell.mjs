@@ -21,7 +21,7 @@ for (const [text, size] of [
   ['Use Appearance for JSON themes and settings; Polly for applications.', 15],
   ['Ctrl+Super+Left/Right switches manual workspaces. Alt+Escape asks to log out.', 14],
   ['Hardware preview: wired DHCP; Wi-Fi and audio via Appearance settings.', 14],
-  ['Diagnostics stay in your temporary home. Review them before sharing.', 14],
+  ['Ctrl+Alt+F2: Live console. Diagnostics and session logs stay in your temporary home.', 14],
 ]) {
   const label = guide.document.createElement('view');
   label.textContent = text;
@@ -76,11 +76,3 @@ function checkInput() {
 }
 input.root.addEventListener('textinput', checkInput);
 input.root.addEventListener('keydown', checkInput);
-setTimeout(() => {
-  if (!shell.getState().outputs.length || shell.getState().error) {
-    console.error('Polly Live startup failed: ' + shell.getState().error);
-    return;
-  }
-  desktop.spawnApplication(['/usr/bin/logger', '-t', 'polly-live',
-    'POLLY_LIVE_DESKTOP_READY outputs=' + shell.getState().outputs.length], '', 'live readiness');
-}, 1000);

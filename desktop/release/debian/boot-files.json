@@ -1,0 +1,13 @@
+{
+  "usr/lib/polly-live-startup.py": "desktop/release/live/startup.py",
+  "usr/lib/polly-live-splash": "desktop/release/debian/live-splash",
+  "usr/share/plymouth/themes/polly/polly.plymouth": "desktop/release/live/polly.plymouth",
+  "usr/share/plymouth/themes/polly/polly.script": "desktop/release/live/polly.script",
+  "usr/share/plymouth/themes/polly/polly.png": "@generated-logo",
+  "usr/share/polly-live-boot-dependencies.json": "desktop/release/debian/boot-dependencies.json",
+  "etc/systemd/system/polly-live-splash.service": "desktop/release/debian/polly-live-splash.service",
+  "etc/systemd/system/polly-live-handoff.service": "desktop/release/debian/polly-live-handoff.service",
+  "etc/systemd/system/getty@tty1.service.d/live-boot.conf": "desktop/release/debian/live-boot-getty.conf",
+  "etc/plymouth/plymouthd.conf": "@live-theme",
+  "home/polly/.hushlogin": "@quiet-login"
+}

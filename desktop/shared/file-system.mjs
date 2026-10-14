@@ -302,6 +302,7 @@ function publish(parent, name, text, expectedParent, expected = null) {
 export const fileSystem = Object.freeze({
   version: 1, implementation: 'desktop-files-v1', maxEntries: COUNT, maxTextBytes: TEXT,
   overwrite: true, textObservation: 'sha256-v1',
+  moveFile: true,
   locations(...args) {
     return execute('locations', args, 0, () => {
       const pointer = raw('environment', 'HOME').value;
@@ -360,6 +361,31 @@ export const fileSystem = Object.freeze({
         call('rename', fd, old, fd, name, C.noReplace);
         return describe(fd, name, full);
       });
+    });
+  },
+  move(...args) {
+    return execute('move', args, 6, () => {
+      const [path, destination, name, expected, expectedSource, expectedDestination] = args;
+      const [parent, old] = split(path);
+      nameValue(name);
+      if (!bytes(expectedSource, 191).length || !bytes(expectedDestination, 191).length) throw failure('EINVAL');
+      let committed = false;
+      try {
+        return directory(parent, expectedSource, (source, canonicalSource) =>
+          directory(destination, expectedDestination, (target, canonicalTarget) => {
+            const full = join(canonicalTarget, name);
+            const s = status(source, old, C.noFollowStatus);
+            matches(s, expected);
+            if (s.uid !== call('euid') || kind(s.mode) !== 'file' || (s.mode & 0o6000)) throw failure('EPERM');
+            if (canonicalSource === canonicalTarget && old === name) throw failure('EINVAL', 'same source and destination');
+            matches(status(C.currentDirectory, canonicalSource, 0), expectedSource);
+            matches(status(C.currentDirectory, canonicalTarget, 0), expectedDestination);
+            matches(status(source, old, C.noFollowStatus), expected);
+            call('rename', source, old, target, name, C.noReplace);
+            committed = true;
+            return describe(target, name, full);
+          }));
+      } catch (error) { if (committed) error.committed = true; throw error; }
     });
   },
 });

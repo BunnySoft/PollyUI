@@ -1,0 +1,17 @@
+[Unit]
+Description=Polly Live system startup display
+DefaultDependencies=no
+After=systemd-udev-trigger.service systemd-udevd.service
+Before=basic.target polly-live-handoff.service
+ConditionKernelCommandLine=polly.splash=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/polly-live-splash start
+RemainAfterExit=yes
+TimeoutStartSec=15
+TimeoutStopSec=5
+StandardError=journal+console
+
+[Install]
+WantedBy=sysinit.target

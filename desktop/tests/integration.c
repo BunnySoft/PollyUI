@@ -1938,12 +1938,94 @@ static bool stop_clients(bool expect_success)
     return passed;
 }
 
+static bool live_startup_suite(const char *path)
+{
+    CHECK(desktop.live_startup && desktop.live_splash && !desktop.live_ready);
+    int sockets[2];
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0);
+    CHECK(fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == 0);
+    char fd[32];
+    snprintf(fd, sizeof(fd), "%d", sockets[1]);
+    char *args[] = { (char *)path, "--trusted", fd, NULL };
+    CHECK(pu_desktop_spawn_shell(&desktop, args));
+    close(sockets[1]);
+    shell_client.control = sockets[0];
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(!desktop.live_ready);
+    struct TestLayer wallpaper = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+        .anchor = 15, .output = 1, .live = 1,
+    };
+    CHECK(layer_command(TEST_LAYER_MAP, 3, wallpaper));
+    CHECK(!desktop.live_ready);
+    struct TestLayer panel = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP, .anchor = 13,
+        .height = 32, .zone = 32, .output = 1,
+    };
+    CHECK(layer_command(TEST_LAYER_MAP, 4, panel));
+    CHECK(!desktop.live_ready);
+    struct TestClient ime = { .control = -1 };
+    CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0);
+    CHECK(fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == 0);
+    snprintf(fd, sizeof(fd), "%d", sockets[1]);
+    CHECK(pu_input_method_spawn(&desktop, args));
+    close(sockets[1]);
+    ime.control = sockets[0];
+    CHECK(command(&ime, TEST_IME_CREATE, 0, 0, 0));
+    for (int i = 0; i < 10; i++) CHECK(pump());
+    CHECK(pu_input_method_ready(&desktop) && !desktop.live_ready);
+    CHECK(command(&shell_client, TEST_DESTROY, 4, 0, 0));
+    struct wlr_backend *headless = NULL;
+    wlr_multi_for_each_backend(desktop.backend, find_headless, &headless);
+    CHECK(headless);
+    struct wlr_output *extra = wlr_headless_add_output(headless, 800, 600);
+    CHECK(extra);
+    panel.live = 1;
+    CHECK(layer_command(TEST_LAYER_MAP, 4, panel));
+    for (int i = 0; i < 10; i++) CHECK(pump());
+    CHECK(!desktop.live_ready);
+    wlr_output_destroy(extra);
+    for (int i = 0; i < 100 && !desktop.live_ready; i++) CHECK(pump());
+    if (!desktop.live_ready) {
+        fprintf(stderr, "Live gate: outputs=%d shell=%p caps=%u ime=%d workspace=%p\n",
+            desktop.output_count, (void *)desktop.shell_client, desktop.seat->capabilities,
+            pu_input_method_ready(&desktop), (void *)desktop.active_workspace);
+        struct PuDesktopLayer *layer;
+        wl_list_for_each(layer, &desktop.layers, link)
+            fprintf(stderr, "Layer %s on %s: mapped=%d presented=%d enabled=%d\n",
+                layer->surface->namespace, layer->surface->output->name,
+                layer->surface->surface->mapped, layer->presented, layer->tree->node.enabled);
+    }
+    CHECK(desktop.live_ready && desktop.output_count == 1);
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    CHECK(shell_client.reply.frames > 0);
+    extra = wlr_headless_add_output(headless, 800, 600);
+    CHECK(extra);
+    struct wlr_box box;
+    wlr_output_layout_get_box(desktop.layout, extra, &box);
+    double sx, sy;
+    CHECK(!wlr_scene_node_at(&desktop.scene->tree.node,
+        box.x + box.width / 2, box.y + box.height * 42 / 100, &sx, &sy));
+    wlr_output_destroy(extra);
+    CHECK(command(&ime, TEST_QUIT, 0, 0, 0));
+    close(ime.control);
+    pu_input_method_stop(&desktop);
+    CHECK(command(&shell_client, TEST_QUIT, 0, 0, 0));
+    pu_desktop_stop_shell(&desktop);
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 2 && argc != 3) return 2;
     nested = argc == 3 && strcmp(argv[2], "--nested") == 0;
     cursor_only = argc == 3 && strcmp(argv[2], "--cursor") == 0;
     cursor_resources = argc == 3 && strcmp(argv[2], "--cursor-resources") == 0;
+    bool live_startup = argc == 3 && strcmp(argv[2], "--live-startup") == 0;
+    if (live_startup) {
+        setenv("POLLY_LIVE_STARTUP", "1", 1);
+        setenv("POLLY_LIVE_SPLASH", "1", 1);
+    }
     char runtime[] = "/tmp/pollywm-test-XXXXXX";
     if (!mkdtemp(runtime)) { perror("mkdtemp"); return 1; }
     setenv("XDG_RUNTIME_DIR", runtime, 1);
@@ -1967,7 +2049,7 @@ int main(int argc, char **argv)
         wlr_pointer_init(&pointer, &pointer_impl, "test-pointer");
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
-        passed = cursor_only ? cursor_suite(argv[1]) :
+        passed = live_startup ? live_startup_suite(argv[1]) : cursor_only ? cursor_suite(argv[1]) :
             cursor_resources ? cursor_resource_suite() : suite(argv[1]);
         if (!stop_clients(passed)) passed = false;
         wlr_pointer_finish(&pointer);

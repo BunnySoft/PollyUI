@@ -1,0 +1,44 @@
+desktop-color: "#101824"
+title-text: ""
+message-color: "#c5e2ff"
+message-bg-color: "#101824"
+terminal-font: "Unifont Regular 16"
+
++ image {
+  left = 50%-64
+  top = 25%-64
+  width = 128
+  height = 128
+  file = "polly.png"
+}
++ label {
+  left = 10%
+  top = 40%
+  width = 80%
+  height = 32
+  align = "center"
+  text = "PollyDesktop Live"
+  color = "#c5e2ff"
+  font = "Unifont Regular 16"
+}
++ boot_menu {
+  left = 10%
+  top = 50%
+  width = 80%
+  height = 34%
+  item_height = 28
+  item_padding = 4
+  item_spacing = 3
+  item_color = "#9baabc"
+  selected_item_color = "#ffffff"
+  item_font = "Unifont Regular 16"
+}
++ label {
+  left = 5%
+  top = 91%
+  width = 90%
+  height = 24
+  align = "center"
+  text = "Memory only. Enter: start   E: boot options   Esc: boot details"
+  color = "#9baabc"
+}

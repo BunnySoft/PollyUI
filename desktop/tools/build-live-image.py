@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import runpy
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
@@ -101,6 +102,20 @@ def main():
                     inventory.append({"name": fields["P"], "version": fields.get("V"),
                                       "license": fields.get("L"), "url": fields.get("U")})
             packages.close()
+            if debian:
+                # New Debian media must not silently reuse a pre-startup-UX base.
+                boot_install = runpy.run_path(str(repo / "desktop/release/debian/boot-install.py"))
+                for target, _, expected, mode in boot_install["files"](repo):
+                    member = archive.getmember(target)
+                    with archive.extractfile(member) as source:
+                        if (not member.isfile() or member.uid or member.gid or member.mode != mode or
+                                source.read() != expected):
+                            raise ValueError("Live startup payload differs from source: " + target)
+                pins = json.loads((repo / "desktop/release/debian/boot-dependencies.json").read_text())
+                versions = {item["name"]: item["version"] for item in inventory}
+                for package, pinned in pins["packages"].items():
+                    if versions.get(package, versions.get(package + ":amd64")) != pinned:
+                        raise ValueError("Live startup package pin mismatch: " + package)
 
             with (boot / "initramfs.gz").open("wb") as raw:
                 with gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=6, mtime=0) as cpio:
@@ -165,10 +180,19 @@ def main():
                     entry("TRAILER!!!", 0)
 
         efi = staging / "BOOTX64.EFI"
-        cfg = repo / "desktop/release/live/grub.cfg"
-        run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=",
-            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal",
-            "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg))
+        cfg = repo / ("desktop/release/debian/live-grub.cfg" if debian else "desktop/release/live/grub.cfg")
+        resources = []
+        if debian:
+            logo = staging / "polly.png"
+            logo.write_bytes(runpy.run_path(str(repo / "desktop/release/live/boot-assets.py"))["logo"]())
+            resources = ["boot/grub/themes/polly/polly.png=" + str(logo),
+                         "boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt")]
+        run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=unicode" if debian else "--fonts=",
+            "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal" +
+            (" all_video efi_gop gfxterm gfxmenu png font" if debian else ""),
+            "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg), *resources)
+        if debian:
+            logo.unlink()
         fat = boot / "efiboot.img"
         with fat.open("wb") as target:
             target.truncate(16 * 1024 * 1024)

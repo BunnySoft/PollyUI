@@ -78,5 +78,6 @@ export function textObservation(value) {
 }
 
 export function fileError(error) {
-  return (error?.code ? error.code + ': ' : '') + String(error?.message ?? error);
+  return (error?.code ? error.code + ': ' : '') + String(error?.message ?? error) +
+    (error?.committed ? '\nThe operation already changed the filesystem. Refresh and inspect; do not retry automatically.' : '');
 }

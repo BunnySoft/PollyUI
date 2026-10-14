@@ -7,13 +7,31 @@ runs with `--app-id org.pollyui.settings`, without `--desktop`, in its own proce
 QuickJS realm and GUI event loop. It uses its own application directories; it does
 not read or migrate Shell localStorage, theme files or management connections.
 
-Appearance selection, theme-file reload/restore and live About snapshots use the
+Appearance selection, theme-file reload/restore, Network and live About snapshots use the
 fixed `org.pollyui.Settings1` scalar D-Bus contract. The version-1 JSON appearance
 and About payloads have strict field, size, catalog and service-state validation.
-Display, network, audio and keyboard pages explicitly open the existing Shell
+Display, audio and keyboard pages explicitly open the existing Shell
 control panel; these controls are **not** independent Settings implementations.
 The Shell keeps the existing native apply/acknowledgement/persistence/rollback
 state machines, and quick-theme menus remain available.
+
+Network mounts the existing network controller/view in the Settings document,
+using `network-client.mjs`, not a second system-bus connection or iwd agent.
+`GetNetwork` returns a strict version-1 business snapshot; `NetworkAction(s)`
+accepts only `{revision,target,action}` with the six existing Wi-Fi actions.
+`RefreshNetwork`, `CancelNetworkConnection` and `DetachNetwork` take no arguments;
+`ReplyNetworkAuthentication(s)` accepts only `{token,user,password}`. JSON is a
+bounded business payload, never a command, path to execute or claimed identity.
+The same daemon PID/UID and current owned-generation checks guard every method.
+Detaching invalidates in-flight page mutations at their final dispatch gate.
+The Shell retains the service's `operationId` for a Settings-started connection:
+only that still-current pending Connect may be answered/cancelled, including on
+actual Settings process exit. Another Shell-panel connection is never adopted.
+Closing/reopening reads the actual radio/connection state from iwd, not AppData.
+Already-established connections survive page close. iwd retains credential and
+installed/Live persistence authority; no reboot-persistence guarantee is added.
+Failures and uncertain delivery remain visible, writes are never replayed, and
+credential fields are wiped on prompt change, service failure, navigation or close.
 
 The original Windows-11-inspired presentation uses a persistent sidebar,
 grouped surface cards and illustrated theme previews, rather than full-width
@@ -50,3 +68,13 @@ delivery; writes are never automatically retried, reconnected or replayed.
 Closing Settings closes only its SDK endpoints/application. SDK module references
 remain until exit; neither Shell nor Settings calls process-wide `dbus_shutdown`,
 which would require exclusive ownership of every libdbus user.
+
+The targeted Node suite includes actual reconciler mounting, masked prompt/focus
+retention and independent navigation in a host DOM fixture. The registered
+`desktop-settings-network-api` fixture uses real SysRT/libdbus scalar calls and
+the existing root-owned synthetic iwd on private buses, as UID1000, without GUI,
+host radios or user credentials. Its endpoints share a fixture process; it does
+not prove native two-process rendering/input. `desktop/tests/settings-shell.mjs`
+now drives the independent Network document through the existing test-only
+Settings probe and ordinary-window input path; that separate native GUI lane
+must be run against a rebuilt runtime before claiming new pixel/input acceptance.

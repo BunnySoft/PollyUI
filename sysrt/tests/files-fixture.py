@@ -7,9 +7,12 @@ import tempfile
 
 runner, library = sys.argv[1:]
 repo = Path(__file__).resolve().parents[2]
-with tempfile.TemporaryDirectory(prefix="polly-files-sdk-") as temporary:
+with tempfile.TemporaryDirectory(prefix="polly-files-sdk-") as temporary, \
+        tempfile.TemporaryDirectory(prefix="polly-files-move-", dir="/dev/shm") as foreign:
     home = Path(temporary)
     if os.getuid():
+        if home.stat().st_dev == Path(foreign).stat().st_dev:
+            raise RuntimeError("The private move fixture requires two distinct filesystems")
         for run in (0, 8, 1):
             root = home / f"run-{run}"
             root.mkdir(mode=0o700)
@@ -19,6 +22,7 @@ with tempfile.TemporaryDirectory(prefix="polly-files-sdk-") as temporary:
             (root / "file-link").symlink_to("hello.txt")
             (root / "broken-link").symlink_to("missing")
             (root / "loop-link").symlink_to("loop-link")
+            (root / "foreign-directory").symlink_to(foreign)
             (root / "denied").mkdir(mode=0)
             os.mkfifo(root / "fifo", 0o600)
             (root / "invalid-utf8").write_bytes(b"\xc0\x80")

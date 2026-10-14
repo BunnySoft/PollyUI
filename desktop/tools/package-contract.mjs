@@ -6,6 +6,7 @@ import path from 'node:path';
 export const requiredRuntimeFiles = [
   'usr/bin/pollyui', 'usr/bin/pollywm', 'usr/bin/pollyui-app-launcher', 'usr/bin/polly-app',
   'usr/bin/polly-desktop', 'usr/bin/polly-settings', 'usr/share/applications/polly-settings.desktop',
+  'usr/bin/polly-processes', 'usr/share/applications/polly-processes.desktop',
   'usr/lib/pollyui/libSDL3.so.0',
   'usr/share/pollyui/desktop/resources/icons/cursor-manifest.json',
   ...['PollyRabbit', 'PollyClassic'].flatMap(theme => [
@@ -24,6 +25,10 @@ export const requiredRuntimeFiles = [
     'desktop/shell/desktop-view.mjs', 'desktop/shell/desktop-icon-resources.mjs',
     'desktop/apps/settings/main.mjs', 'desktop/apps/settings/runtime.mjs',
     'desktop/apps/settings/app.mjs', 'desktop/apps/settings/logic/controller.mjs',
+    'desktop/apps/settings/network-client.mjs', 'desktop/client/settings-network-contract.mjs',
+    'desktop/apps/processes/main.mjs', 'desktop/apps/processes/app.mjs',
+    'desktop/apps/processes/logic/model.mjs', 'desktop/apps/processes/logic/controller.mjs',
+    'desktop/apps/processes/logic/native-provider.mjs',
     'sysrt/sdk/js/native.mjs', 'sysrt/sdk/js/memory.mjs', 'sysrt/sdk/js/encoding.mjs',
     'sysrt/sdk/js/clock.mjs', 'sysrt/sdk/js/files.mjs', 'sysrt/sdk/js/dbus.mjs',
     'sysrt/sdk/js/process.mjs', 'sysrt/sdk/js/network.mjs',

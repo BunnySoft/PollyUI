@@ -49,6 +49,16 @@ function fixture() {
       const renamed = entry(childPath(parentPath(path), name), entries[index].type);
       entries[index] = renamed; return renamed;
     },
+    moveFile: true,
+    move(path, parent, name, identity, sourceParentIdentity, destinationIdentity) {
+      operations.push(['move', path, parent, name, identity, sourceParentIdentity, destinationIdentity]);
+      const source = directories.get(parentPath(path)), destination = directories.get(parent);
+      const index = source.findIndex(item => item.path === path && item.identity === identity);
+      if (index < 0) throw Object.assign(new Error('Source changed'), { code: 'ESTALE' });
+      if (destination.some(item => item.name === name)) throw Object.assign(new Error('Name exists'), { code: 'EEXIST' });
+      const moved = entry(childPath(parent, name));
+      source.splice(index, 1); destination.push(moved); return moved;
+    },
     readText() {}, observeText() {}, writeText() {}, replaceText() {},
   };
   const opened = [], launcher = {
@@ -135,6 +145,48 @@ test('existing destination errors are visible and retain original list; no silen
   controller.beginCreate(); controller.editName('Documents'); assert.equal(await controller.confirm(), false);
   assert.match(controller.getState().error, /EEXIST/); assert.equal(controller.getState().selection, null);
   assert.equal(operations.filter(item => item[0] === 'mkdir').length, 1);
+});
+test('Cut survives navigation; Paste reviews exact source/destination, cancels without mutation and moves once', async () => {
+  const { controller, operations, directories } = fixture(); await controller.start();
+  select(controller, '/fixture/literal %u; 中文.txt');
+  assert.equal(controller.cut(), true);
+  await controller.navigate('/fixture/Documents');
+  controller.beginPaste();
+  const stale = controller.getState().generation;
+  const nodes = flatten(filesView(controller.getState(), controller));
+  assert.match(nodes.find(node => node.props.id === 'files-operation-source').children[0].props.nodeValue, /literal/);
+  controller.cancel(); assert.equal(operations.some(item => item[0] === 'move'), false);
+  controller.beginPaste(); controller.editName('moved %u.txt');
+  assert.equal(await controller.confirm(stale), false);
+  assert.equal(await controller.confirm(), true);
+  assert.equal(controller.getState().cut, null);
+  assert.equal(controller.getState().selection.path, '/fixture/Documents/moved %u.txt');
+  assert.equal(directories.get('/fixture').some(item => item.name.startsWith('literal')), false);
+  assert.deepEqual(operations.find(item => item[0] === 'move').slice(1), [
+    '/fixture/literal %u; 中文.txt', '/fixture/Documents', 'moved %u.txt',
+    '/fixture/literal %u; 中文.txt:1', '/fixture:directory', '/fixture/Documents:directory',
+  ]);
+});
+test('Cut/Paste refuses stale/denied/cross-device/colliding outcomes and clears intent without replay', async () => {
+  for (const code of ['ESTALE', 'EACCES', 'EXDEV', 'EEXIST', 'EROFS']) {
+    const { controller, fs, operations } = fixture(); await controller.start();
+    select(controller, '/fixture/literal %u; 中文.txt'); controller.cut();
+    await controller.navigate('/fixture/Documents'); controller.beginPaste();
+    fs.move = () => { operations.push(['failed-move']); throw Object.assign(new Error(code), { code }); };
+    assert.equal(await controller.confirm(), false);
+    assert.match(controller.getState().error, new RegExp(code));
+    assert.equal(controller.getState().cut, null);
+    await controller.refresh();
+    assert.equal(operations.filter(item => item[0] === 'failed-move').length, 1);
+  }
+});
+test('Cut does not claim folder/link or old-runtime support; text input shortcuts remain text editing', async () => {
+  const { controller, fs } = fixture(); await controller.start(); select(controller, '/fixture/Documents');
+  assert.equal(controller.cut(), false); assert.match(controller.getState().error, /regular files only/);
+  fs.moveFile = false;
+  const older = createFilesController({ api: fs }); await older.start();
+  select(older, '/fixture/literal %u; 中文.txt'); assert.equal(older.cut(), false);
+  assert.equal(older.getState().moveAvailable, false);
 });
 test('stale selection/generation invalidates previous rename and entry row callbacks', async () => {
   const { controller, operations } = fixture(); await controller.start();

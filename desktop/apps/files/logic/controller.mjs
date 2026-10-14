@@ -7,6 +7,8 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     locations: null, error: '', message: '', dialog: null, openWith: null,
     sort: { key: 'name', direction: 1 }, filter: '', context: null, properties: false, address: null,
     applications: [], applicationError: '', canBack: false, canForward: false };
+  state.moveAvailable = api?.moveFile === true && typeof api.move === 'function';
+  state.cut = null;
   function update(fields) {
     if (disposed) return;
     state = { ...state, ...fields, canBack: position > 0, canForward: position < history.length - 1 };
@@ -228,8 +230,36 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         properties: false, openWith: null, error: '' });
       return true;
     },
+    cut(generation = state.generation, identity = state.selection?.identity) {
+      const entry = selected(generation, identity);
+      if (!entry || state.dialog || state.openWith || !state.moveAvailable) return false;
+      try {
+        observed(entry);
+        if (entry.type !== 'file') throw new Error('Cut supports regular files only; folders and links are not moved.');
+        if (state.applications.some(app => app.id.startsWith('bundle:') &&
+            (entry.path === app.path || entry.path.startsWith(app.path + '/'))))
+          throw new Error('Managed application contents must be changed using the application manager');
+        update({ generation: state.generation + 1, cut: { entry, parent: state.snapshot.path,
+          parentIdentity: state.snapshot.identity }, context: null, properties: false,
+          error: '', message: 'Cut: ' + entry.path + ' | Navigate to a folder, then Paste to review the move.' });
+        return true;
+      } catch (error) { reportError(fileError(error)); update({ error: fileError(error) }); return false; }
+    },
+    clearCut(generation = state.generation) {
+      if (!valid(generation) || state.phase !== 'ready') return false;
+      update({ generation: state.generation + 1, cut: null, dialog: null, context: null, message: 'Cut cancelled; no file was moved.' });
+      return true;
+    },
+    beginPaste(generation = state.generation) {
+      if (!valid(generation) || state.phase !== 'ready' || state.dialog || state.openWith ||
+          !state.moveAvailable || !state.cut) return false;
+      const next = state.generation + 1;
+      update({ generation: next, dialog: { kind: 'move', name: state.cut.entry.name, entry: state.cut.entry,
+        cut: state.cut, generation: next }, context: null, properties: false, error: '', openWith: null });
+      return true;
+    },
     editName(name, generation = state.generation) {
-      if (!valid(generation) || !state.dialog || !['create', 'rename'].includes(state.dialog.kind)) return false;
+      if (!valid(generation) || !state.dialog || !['create', 'rename', 'move'].includes(state.dialog.kind)) return false;
       update({ dialog: { ...state.dialog, name }, error: '' }); return true;
     },
     async confirm(generation = state.generation) {
@@ -241,20 +271,26 @@ export function createFilesController({ api, launcher = null, onChange = () => {
         childPath(snapshot.path, dialog.name);
         if (dialog.kind === 'rename' && (!selected(generation, dialog.entry.identity) ||
             dialog.entry.path !== state.selection.path)) return false;
+        if (dialog.kind === 'move' && dialog.cut !== state.cut) return false;
         update({ phase: 'working', error: '' });
         const entry = fileEntry(await (dialog.kind === 'create' ?
           api.createDirectory(snapshot.path, dialog.name, snapshot.identity) :
+          dialog.kind === 'move' ? api.move(dialog.entry.path, snapshot.path, dialog.name,
+            dialog.entry.identity, dialog.cut.parentIdentity, snapshot.identity) :
           api.rename(dialog.entry.path, dialog.name, dialog.entry.identity, snapshot.identity)));
         if (disposed || request !== serial) return false;
+        if (dialog.kind === 'move') update({ cut: null });
         await navigate(snapshot.path, { refresh: true });
         if (disposed || state.phase !== 'ready') return false;
         controller.select(entry.path, state.snapshot.entries.find(item => item.path === entry.path)?.identity);
-        update({ message: (dialog.kind === 'create' ? 'Created folder: ' : 'Renamed to: ') + entry.name });
+        update({ message: (dialog.kind === 'create' ? 'Created folder: ' :
+          dialog.kind === 'move' ? 'Moved to: ' + snapshot.path + '/' : 'Renamed to: ') + entry.name });
         return true;
       } catch (error) {
         if (!disposed && request === serial) {
           const message = fileError(error); reportError(message);
-          update({ phase: 'ready', error: message, dialog: null, selection: null });
+          update({ phase: 'ready', error: message, dialog: null, selection: null,
+            ...(dialog.kind === 'move' ? { cut: null } : {}) });
         }
         return false;
       }
@@ -272,7 +308,7 @@ export function createFilesController({ api, launcher = null, onChange = () => {
     dispose() {
       if (disposed) return;
       disposed = true; serial++;
-      state = { ...state, phase: 'disposed', selection: null, snapshot: null, dialog: null, openWith: null };
+      state = { ...state, phase: 'disposed', selection: null, snapshot: null, dialog: null, openWith: null, cut: null };
     },
   };
   return controller;

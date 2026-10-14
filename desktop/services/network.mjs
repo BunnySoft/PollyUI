@@ -78,7 +78,7 @@ export function createNetworkService(authorize, address = systemBusAddress, serv
   let owner = '', trusted = false, registered = false, ready = false, fatal = false;
   let refreshing = false, dirty = false, changed = false, error = '', configuration = null;
   let watching = false;
-  let operation = '', target = '', operationDevice = '', canceled = false;
+  let operation = '', target = '', operationDevice = '', canceled = false, operationId = 0;
   let devices = [], networks = [], authentication = null;
   const pending = new Set();
   const acceptIwd = (sender, header) => trusted && sender === owner &&
@@ -373,7 +373,7 @@ export function createNetworkService(authorize, address = systemBusAddress, serv
       fatal = watching = false;
     },
     networkState() {
-      return { ready: ready && trusted && !fatal, registered, refreshing, revision, error, operation, target,
+      return { ready: ready && trusted && !fatal, registered, refreshing, revision, operationId, error, operation, target,
         networkConfiguration: configuration, devices: devices.map(device => ({ ...device })),
         networks: networks.map(({ knownPath, ...entry }) => ({ ...entry, known: Boolean(knownPath) })),
         authentication: authentication ? { id: promptId, kind: authentication.kind,
@@ -407,6 +407,7 @@ export function createNetworkService(authorize, address = systemBusAddress, serv
       if (!destination) throw new TypeError('Unsupported or unavailable Wi-Fi action');
       queue('operation', destination, signature, args, '', timeout, path);
       operation = action; target = path; operationDevice = entry?.device ?? device?.id ?? '';
+      operationId = next(operationId);
       error = ''; canceled = false; changed = true;
     },
     cancelNetworkConnection() {
@@ -416,6 +417,7 @@ export function createNetworkService(authorize, address = systemBusAddress, serv
       cancelAuthentication(); dropOperations(); operation = target = operationDevice = '';
       queue('operation', method(device, IWD + '.Station', 'Disconnect'), '', [], '', 15000, device);
       operation = 'disconnect'; target = operationDevice = device; canceled = false; changed = true;
+      operationId = next(operationId);
     },
     replyNetworkAuthentication(token, user, password) {
       if (arguments.length !== 3 || !integer(token) || !authentication || token !== promptId || !trusted || fatal)

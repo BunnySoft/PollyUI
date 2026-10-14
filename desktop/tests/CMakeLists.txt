@@ -140,6 +140,12 @@ endforeach()
 add_test(NAME desktop-integration
     COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client>)
 set_tests_properties(desktop-integration PROPERTIES TIMEOUT 40)
+add_test(NAME desktop-live-startup
+    COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client> --live-startup)
+set_tests_properties(desktop-live-startup PROPERTIES TIMEOUT 15)
+add_test(NAME desktop-live-startup-source COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/live-startup.py")
+set_tests_properties(desktop-live-startup-source PROPERTIES TIMEOUT 15)
 add_test(NAME desktop-cursor-native
     COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client> --cursor)
 set_tests_properties(desktop-cursor-native PROPERTIES TIMEOUT 15)

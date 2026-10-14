@@ -98,6 +98,25 @@ retained callbacks, and a retired confirmation cannot confirm a new dialog.
 Refresh, navigation, close and stale callbacks cannot operate on a different
 selected entry. Reopening uses a new app/controller instance.
 
+**Cut / Paste** moves one owned, non-set-ID regular file, including binary files.
+Use the command bar/context menu or Ctrl+X and Ctrl+V outside text fields.
+The cut observation is local to this Files window, not a system clipboard
+format; navigation retains it and closing discards it without moving anything.
+Paste shows the exact source and destination directory, permits editing the
+destination name and requires **Move file** confirmation. Cancel dismisses that
+review without a filesystem action; **Cancel cut** also clears the retained intent.
+There is no implicit copy or cross-filesystem copy/delete fallback.
+The real JS service uses `renameat2(RENAME_NOREPLACE)`: an existing file, hard link
+or symlink destination is never overwritten. Both directory observations and
+the selected source identity must still match. A changed source/parent requires
+a fresh Cut after review; Files never silently updates the old intent. EXDEV,
+permission, read-only, stale and collision errors are visible and clear the cut
+intent, with no replay. A post-move observation/close failure reports
+`committed:true` and asks the user to refresh/inspect. This changes only the
+selected pathname, not its hard-link aliases, and claims no power-loss durability.
+Folders, symbolic links, special files and managed package contents are excluded.
+An older runtime without `moveFile:true` and `move()` leaves these controls unavailable.
+
 Symbolic links are labelled with their literal target and target type/error.
 Open asks explicitly before following a link. The link and target observations
 are checked again; browsing then uses the actual resolved directory path.
@@ -118,7 +137,7 @@ launched as a managed application. Such packages cannot be renamed in Files.
 
 `desktop.fileSystem` has `version:1`, `implementation:'desktop-files-v1'`,
 `maxEntries:1024`, `maxTextBytes:1048576`, `overwrite:true`,
-`textObservation:'sha256-v1'`. The shared
+`textObservation:'sha256-v1'`, plus the optional `moveFile:true` capability. The shared
 `desktop/apps/files/logic/model.mjs` supplies `requireFileSystem`, `pathValue`,
 `childPath`, `parentPath`, `fileEntry`, `textObservation`, `directorySnapshot` and `fileError`.
 Missing, older or incompatible engines fail explicitly; there is no stub
@@ -126,7 +145,7 @@ catalog or Node filesystem backend.
 
 All native calls are **synchronous** and either return a value or throw an
 Error with `code`, `message` and `operation`. EACCES/EPERM/ENOENT/EEXIST/ESTALE/
-EINVAL/EFBIG/ELOOP/ENOTDIR/ENAMETOOLONG/EILSEQ/ENOSPC/EROFS/ENOMEM are
+EINVAL/EFBIG/ELOOP/ENOTDIR/ENAMETOOLONG/EILSEQ/ENOSPC/EROFS/ENOMEM/EXDEV are
 distinguished; unlisted OS errors retain their number as `ERR_OS_<errno>`.
 Invalid paths and text fail explicitly with EINVAL/EILSEQ/EFBIG; wrong argument
 types/counts throw TypeError. All paths are absolute UTF-8, max 4095 bytes,
@@ -144,6 +163,9 @@ fs.readText(path, observedIdentity); // entry metadata + text
 const replacement = textObservation(fs.observeText(path)); // explicit overwrite question
 fs.createDirectory(parent, name, observedParentIdentity);
 fs.rename(path, newName, observedIdentity, observedParentIdentity);
+// Optional moveFile:true capability, independent of text size/encoding:
+fs.move(path, destinationParent, newName, observedIdentity,
+  observedSourceParentIdentity, observedDestinationParentIdentity);
 fs.writeText(parent, name, text, observedParentIdentity); // NEW ONLY
 fs.replaceText(path, text, replacement.identity, observedParentIdentity);
 ```
@@ -210,7 +232,7 @@ retrying; the text consumer never treats such an ESTALE as permission to resubmi
 Ordinary Linux permissions are enforced by the OS, not reimplemented ACLs.
 Counts and bytes are bounded, but libc/local/FUSE I/O can block the UI; awaiting
 the result does not move it into the background or establish a hard deadline.
-The Files app does not expose file cut/copy/paste/delete/trash, global search,
+The Files app does not expose copy, recursive/folder moves, delete/trash, global search,
 network mounts, XDG portals
 or binary editing. That is not a restriction on native SysRT binary I/O.
 There is no real host HOME enumeration in agent fixtures.

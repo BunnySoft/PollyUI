@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Processes
+Comment=Monitor process state, resident memory and sampled CPU use
+Exec=polly-processes
+TryExec=polly-processes
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;

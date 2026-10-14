@@ -2,7 +2,8 @@ import { startSettingsRuntime } from './desktop/apps/settings/runtime.mjs';
 import { openDbusService } from './sysrt/sdk/js/dbus.mjs';
 import { settingsEnvironment } from './desktop/shared/settings-environment.mjs';
 
-let endpoint = null, timer = null;
+let endpoint = null, timer = null, nodeSerial = 0;
+const nodeIdentities = new WeakMap();
 const app = await startSettingsRuntime({ host: globalThis.settingsProbeHost || window, onStop() {
   if (timer !== null) clearInterval(timer);
   endpoint?.close();
@@ -51,7 +52,9 @@ if (app) {
             parent.scrollTop = Math.max(0, Number(parent.scrollTop) + rect.y - viewport.y);
         }
         rect = node.getBoundingClientRect();
-        result = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, text: node.textContent };
+        if (!nodeIdentities.has(node)) nodeIdentities.set(node, ++nodeSerial);
+        result = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, text: node.textContent,
+          nodeIdentity: nodeIdentities.get(node), enabled: node.getAttribute('aria-disabled') !== 'true' };
       } else throw new TypeError('Unknown test probe operation');
       request.reply([JSON.stringify(result)]);
     } catch (error) { request.error('org.pollyui.Settings.TestError', String(error)); }

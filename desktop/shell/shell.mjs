@@ -953,7 +953,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
   function startSettingsBridge() {
     const scope = settingsScope;
-    const handlers = { native, appearance: appearanceSnapshot, about: aboutSnapshot,
+    const handlers = { native, network: native, appearance: appearanceSnapshot, about: aboutSnapshot,
       select: selectTheme, reload: reloadThemes, restore: restoreThemes,
       managed(page) {
         const panel = showManagedSettings(host.displays()[0]?.id, page);

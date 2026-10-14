@@ -5,18 +5,24 @@ import { systemSettingsView, aboutSettingsView } from './desktop/shell/settings.
 import { SETTINGS_APP_ID, SETTINGS_VERSION, MANAGED_PAGES, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
 import { desktopCommand, desktopIcon, desktopText, settingsCard, horizontal } from './desktop/shell/presentation.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
+import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
+import { createNetworkSettings } from './desktop/shell/network.mjs';
 
 export function createSettingsApp({ client, page = 'appearance', host = window, report = console.error,
   identity = typeof application === 'undefined' ? { id: SETTINGS_APP_ID } : application,
   onStop = () => {} }) {
   let surface = null, timer = null, stopped = false, revision = 0, details = false;
   const ownBuild = runtimeBuild(identity);
+  let currentTheme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
+  const networkClient = createSettingsNetworkClient(client, report);
+  const network = createNetworkSettings({ native: networkClient, host, theme: () => currentTheme, report });
   const controller = createSettingsController({ client, page, changed: paint, report });
   function paint() {
     if (stopped || !surface || surface.closed) return;
     const state = controller.getState(), scope = ++revision;
     const theme = state.appearance ?
       state.appearance.catalog.themes.find(theme => theme.id === state.appearance.themeId) : getDesktopTheme(DEFAULT_DESKTOP_THEME);
+    currentTheme = theme;
     const guarded = action => (...args) => { if (!stopped && scope === revision) return action(...args); };
     const available = action => guarded((...args) => {
       if (!controller.getState().busy && !controller.getState().unavailable && controller.getState().appearance)
@@ -32,6 +38,9 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
           reload: available(controller.reload), restore: available(controller.restore) } : null,
         null, true, state.busy ? 'Waiting for Shell acknowledgement...' : state.appearance?.status || '',
         state.appearance?.catalog.themes);
+    } else if (state.page === 'network') {
+      content = h('view', { id: 'settings-network-slot', style: { minHeight: 0, flexGrow: 1, flexBasis: 0 },
+        onMount: node => network.attach(surface, node) });
     } else if (MANAGED_PAGES.includes(state.page)) {
       const descriptions = {
         displays: ['Connected displays', 'Resolution, scale, arrangement and confirmed display profiles.'],
@@ -71,6 +80,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
         ]) : null);
     }
     const tree = systemSettingsView(theme, state.page, guarded(page => {
+      if (state.page === 'network') { network.detach(); networkClient.stopNetwork(); }
       surface.document.activeElement?.blur();
       render(null, surface.document.body);
       controller.navigate(page);
@@ -91,6 +101,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     }
     disable(tree);
     render(tree, surface.document.body);
+    if (state.page === 'network') network.refresh();
   }
   function keydown(event) {
     if (!event.defaultPrevented && event.key === 'Escape') {
@@ -102,13 +113,14 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     stopped = true; revision++;
     if (timer !== null) clearInterval(timer);
     surface?.document.body.removeEventListener('keydown', keydown);
-    controller.close(); onStop();
+    network.stop(); networkClient.close(); controller.close(); onStop();
     if (surface && !surface.closed) surface.close();
   }
   return Object.freeze({
     controller, stop, getWindow: () => surface,
     present(page) {
       if (stopped) throw new Error('Settings instance is closed');
+      if (controller.getState().page === 'network') { network.detach(); networkClient.stopNetwork(); }
       surface.document.activeElement?.blur(); render(null, surface.document.body);
       return controller.navigate(page);
     },

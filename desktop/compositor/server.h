@@ -71,6 +71,7 @@ enum PuDesktopGrab {
 struct PuDesktop {
     struct wl_display *display;
     struct wlr_backend *backend;
+    struct wlr_session *backend_session;
     struct wlr_renderer *renderer;
     struct wlr_allocator *allocator;
     struct wlr_scene *scene;
@@ -109,6 +110,7 @@ struct PuDesktop {
     uint32_t grab_edges, grab_button, suppressed_button;
     int output_count;
     bool failed, stopping;
+    bool live_startup, live_splash, live_ready;
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
     struct wl_event_source *shell_exit;

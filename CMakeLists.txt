@@ -14,6 +14,32 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(PU_BUILD_DESKTOP "Build the experimental Linux Wayland compositor" OFF)
 option(PU_BUILD_LAUNCHER "Build the application launcher with SysRT system capabilities" ON)
+option(PU_WEBGPU "Build the native Dawn WebGPU backend" OFF)
+if(PU_WEBGPU)
+    set(PU_DAWN_ROOT "" CACHE PATH "Checksum-pinned Dawn package or source-build installation")
+    if(NOT PU_DAWN_ROOT)
+        message(FATAL_ERROR "PU_WEBGPU requires PU_DAWN_ROOT; use tools/fetch_dawn.cmake or the pinned macOS source build")
+    endif()
+    if(WIN32)
+        set(PU_DAWN_DISTRIBUTION_PLATFORM "windows-x86_64")
+    elseif(APPLE)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(PU_DAWN_DISTRIBUTION_PLATFORM "macos-arm64")
+        else()
+            set(PU_DAWN_DISTRIBUTION_PLATFORM "macos-x86_64")
+        endif()
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        set(PU_DAWN_DISTRIBUTION_PLATFORM "linux-x86_64")
+    else()
+        message(FATAL_ERROR "No pinned Dawn distribution platform for ${CMAKE_SYSTEM_NAME}")
+    endif()
+    # This must precede subdirectory install rules for the PollyDesktop component.
+    install(CODE "
+        set(PU_DAWN_ROOT [==[${PU_DAWN_ROOT}]==])
+        set(PU_DAWN_PLATFORM [==[${PU_DAWN_DISTRIBUTION_PLATFORM}]==])
+        include([==[${CMAKE_SOURCE_DIR}/tools/check_dawn_redistribution.cmake]==])
+    " COMPONENT PollyDesktop)
+endif()
 if (PU_BUILD_DESKTOP)
     add_subdirectory(desktop)
 endif()
@@ -479,9 +505,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
         add_test(NAME desktop-file-dialog-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog.mjs")
         add_test(NAME desktop-file-text-open-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/file-text-open.mjs")
         add_test(NAME desktop-functional-launchers COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/functional-launchers.mjs")
+        add_test(NAME desktop-processes-source COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/apps/processes/tests/processes.mjs")
         add_test(NAME desktop-greeter-controller COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-controller.mjs")
         set_tests_properties(desktop-files-source desktop-file-dialog-source desktop-file-text-open-source
-            desktop-functional-launchers desktop-greeter-controller
+            desktop-functional-launchers desktop-processes-source desktop-greeter-controller
             PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "source")
         add_test(NAME desktop-greeter-setup COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-setup.py")
         add_test(NAME desktop-greeter-image COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/greeter-image.py")
@@ -614,6 +641,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                 $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
                 $<TARGET_FILE:polly-iwd-test>)
             set_tests_properties(desktop-network-service PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;synthetic-network")
+            add_test(NAME desktop-settings-network-api COMMAND python3 -I -B
+                "${CMAKE_SOURCE_DIR}/desktop/apps/settings/tests/network-native.py"
+                $<TARGET_FILE:polly-sysrt-ffi-test> $<TARGET_FILE:polly-sysrt-ffi-fixture>
+                $<TARGET_FILE:polly-iwd-test>)
+            set_tests_properties(desktop-settings-network-api PROPERTIES TIMEOUT 60
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "root-container;fixture-coordinator;synthetic-network")
         endif()
         add_test(NAME desktop-storage-network-image COMMAND python3 -I -B

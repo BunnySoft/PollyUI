@@ -87,7 +87,10 @@ async function click(id) {
   await signal(`${verb} ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
 }
 async function appClick(id) {
-  await until(async () => !(await query({ op: 'state' })).busy, 'independent Settings idle');
+  await until(async () => {
+    if ((await query({ op: 'state' })).busy) return false;
+    try { return (await query({ op: 'control', id })).enabled; } catch { return false; }
+  }, 'independent Settings control ready: ' + id);
   await painted();
   let rect = await query({ op: 'control', id });
   await painted(); rect = await query({ op: 'control', id });
@@ -103,43 +106,44 @@ async function capture(settings, name) {
 async function network(settings) {
   const state = () => desktop.networkState();
   const idle = () => until(() => state().ready && !state().operation && !state().refreshing, 'private iwd operation');
-  await click('shell-settings-page-network');
+  await appClick('shell-settings-page-network');
   await until(() => state().ready && state().registered && state().networks.length >= 13 &&
     state().networks[0]?.signal === -45, 'root-owned multi-network synthetic iwd');
-  check(settings.document.getElementById('shell-network-connect-0-12'),
+  check((await query({ op: 'control', id: 'shell-network-connect-0-12' })).width > 0,
     'Settings mounts the real long iwd network list before delayed credentials');
-  check(settings.document.getElementById('shell-network-settings').textContent.includes('wlan-test'),
+  check((await query({ op: 'control', id: 'shell-network-settings' })).text.includes('wlan-test'),
     'Settings displays actual iwd adapter data');
   await capture(settings, 'network');
-  await click('shell-network-scan-0'); await idle();
-  await click('shell-network-connect-0-0'); await click('shell-network-confirm');
+  await appClick('shell-network-scan-0'); await idle();
+  await appClick('shell-network-connect-0-0'); await appClick('shell-network-confirm');
   await until(() => state().authentication, 'iwd credentials');
-  await click('shell-network-auth-cancel'); await idle();
-  await click('shell-network-connect-0-0'); await click('shell-network-confirm');
+  await appClick('shell-network-auth-cancel'); await idle();
+  await appClick('shell-network-connect-0-0'); await appClick('shell-network-confirm');
   await until(() => state().authentication, 'second iwd credentials');
-  await click('shell-network-password');
+  await appClick('shell-network-password');
   for (const code of [20, 18, 31, 20, 25, 30, 31, 31]) {
-    check(settings.document.activeElement?.id === 'shell-network-password', 'native password owns keyboard focus');
-    await signal('fixture-settings-managed-key ' + ++serial + ' ' + code + ' 0');
+    check((await query({ op: 'state' })).activeElement === 'shell-network-password', 'native password owns keyboard focus');
+    await signal('fixture-settings-key ' + ++serial + ' ' + code + ' 0');
   }
-  check(settings.document.getElementById('shell-network-password').textContent === '\u2022'.repeat(8),
+  check((await query({ op: 'control', id: 'shell-network-password' })).text === '\u2022'.repeat(8),
     'native Settings password is masked');
-  const field = settings.document.getElementById('shell-network-password');
+  const field = await query({ op: 'control', id: 'shell-network-password' });
   check(shell.selectTheme('bigsur'), 'native theme repaint while iwd credentials are entered');
-  await painted();
-  check(settings.document.getElementById('shell-network-password') === field &&
-    settings.document.activeElement === field && field.textContent === '\u2022'.repeat(8),
+  await until(async () => (await query({ op: 'state' })).appearance.themeId === 'bigsur', 'independent credential retheme');
+  const retained = await query({ op: 'control', id: 'shell-network-password' });
+  check(retained.nodeIdentity === field.nodeIdentity &&
+    (await query({ op: 'state' })).activeElement === 'shell-network-password' && retained.text === '\u2022'.repeat(8),
     'same native iwd prompt keeps its mounted field, secret and focus across retheme');
   check(shell.selectTheme('xp'), 'restore native Settings theme without recreating credentials');
-  await click('shell-network-auth-submit'); await idle();
+  await appClick('shell-network-auth-submit'); await idle();
   await until(() => state().networks[0].connected && state().networks[0].known, 'synthetic Wi-Fi connected');
   await capture(settings, 'network-connected');
-  await click('shell-network-disconnect-0'); await idle();
-  await click('shell-network-forget-0-0'); await click('shell-network-confirm'); await idle();
+  await appClick('shell-network-disconnect-0'); await idle();
+  await appClick('shell-network-forget-0-0'); await appClick('shell-network-confirm'); await idle();
   await until(() => !state().networks[0].known, 'synthetic saved network forgotten');
-  await click('shell-network-power-0'); await idle();
+  await appClick('shell-network-power-0'); await idle();
   await until(() => !state().devices[0].powered, 'synthetic radio off');
-  await click('shell-network-power-0'); await idle();
+  await appClick('shell-network-power-0'); await idle();
   await until(() => state().devices[0].powered, 'synthetic radio on');
   const helper = executable.slice(0, executable.lastIndexOf('/')) + '/polly-iwd-test';
   const quit = desktop.spawnApplication([helper, 'quit'], '', 'settings-iwd-stop');
@@ -265,23 +269,28 @@ async function run() {
     check((await query({ op: 'state' })).versionFooter === expectedLabel,
       'system build identity stays visible on independent ' + page + ' page');
     await capture(settings, 'delegate-' + page);
+    if (page === 'network') {
+      if (mode === 'network') await network(settings);
+      else {
+        await until(async () => (await query({ op: 'state' })).text.includes('org.freedesktop.DBus.Error.FileNotFound'),
+          'missing isolated iwd is visible in the independent Settings document');
+        check(!desktop.networkState().ready, 'missing isolated iwd never invents readiness');
+      }
+      await capture(settings, page);
+      check(!surfaces.some(item => !item.window.closed && item.title === 'Desktop control panel'),
+        'Network controls belong only to independent Settings, not a delegated Shell panel');
+      continue;
+    }
     await appClick('settings-open-managed-' + page);
     await until(() => surfaces.some(item => !item.window.closed && item.title === 'Desktop control panel'),
       'delegated desktop control panel');
     const managed = surfaces.findLast(item => !item.window.closed && item.title === 'Desktop control panel').window;
     check(managed.document.getElementById('settings-system-version')?.textContent === expectedLabel,
       'managed ' + page + ' panel shows the same actual system build');
-    const contentId = { displays: 'shell-displays', keyboard: 'shell-shortcuts',
-      network: 'shell-network-settings', audio: 'shell-audio-settings' }[page];
-    if (mode === 'network' && page === 'network') await network(managed);
-    else if (mode === 'audio' && page === 'audio') await audio(managed);
+    const contentId = { displays: 'shell-displays', keyboard: 'shell-shortcuts', audio: 'shell-audio-settings' }[page];
+    if (mode === 'audio' && page === 'audio') await audio(managed);
     else if (['displays', 'keyboard'].includes(page)) check(managed.document.getElementById(contentId),
       'independent Settings delegates actual ' + page + ' controls');
-    if (page === 'network' && mode !== 'network') {
-      check(reports.length === 1 && reports[0].includes('org.freedesktop.DBus.Error.FileNotFound'),
-        'missing isolated iwd is explicitly reported without inventing readiness');
-      reports.length = 0;
-    }
     await capture(managed, page); managed.close();
     check(!exits.has(firstPid), 'Closing managed ' + page + ' panel retains independent Settings');
   }

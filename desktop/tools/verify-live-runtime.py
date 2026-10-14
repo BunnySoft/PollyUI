@@ -108,8 +108,8 @@ def main():
         if digest(file) != item["sha256"]:
             raise ValueError("Retained frozen overlay bytes changed")
         expected[item["path"]] = {"size": file.stat().st_size, "sha256": item["sha256"],
-                                 "mode": "0755" if item["path"] == "init" or
-                                 item["path"].startswith("usr/bin/") or item["path"].endswith(".sh") else "0644"}
+                                 "mode": item.get("mode", "0755" if item["path"] == "init" or
+                                 item["path"].startswith("usr/bin/") or item["path"].endswith(".sh") else "0644")}
     with tempfile.TemporaryDirectory(prefix="polly-iso-runtime-") as temporary:
         initramfs = Path(temporary) / "initramfs.gz"
         subprocess.run(["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract",

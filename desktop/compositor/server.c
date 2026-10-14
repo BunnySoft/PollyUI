@@ -18,6 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wlr/backend.h>
+#include <wlr/backend/session.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
@@ -46,7 +47,11 @@ struct PuDesktopOutput {
     struct PuDesktop *desktop;
     struct wlr_output *output;
     struct wlr_box usable;
-    struct wl_listener frame, request_state, commit, destroy;
+    struct wl_listener frame, request_state, commit, destroy, present, boot_destroy;
+    struct wlr_scene_tree *boot;
+    struct wlr_scene_rect *boot_background, *boot_logo[5], *boot_dots[3];
+    uint32_t boot_sequence;
+    bool boot_pending, boot_presented;
 };
 
 struct PuDesktopKeyboard {
@@ -355,7 +360,16 @@ static void keyboard_key(struct wl_listener *listener, void *data)
         for (int i = 0; i < count && !handled; i++) {
             /* Mark before changing focus so keyboard.enter excludes the shortcut. */
             if (event->keycode < KEY_CNT) entry->consumed[event->keycode] = true;
-            if (pu_data_device_drag_active(desktop) && syms[i] == XKB_KEY_Escape) {
+            if (desktop->live_startup &&
+                syms[i] >= XKB_KEY_XF86Switch_VT_1 && syms[i] <= XKB_KEY_XF86Switch_VT_12) {
+                if (!desktop->backend_session)
+                    wlr_log(WLR_ERROR, "Live diagnostic VT switching is unavailable on this backend");
+                else if (!desktop->backend_session->active)
+                    wlr_log(WLR_ERROR, "Live diagnostic VT switching requires the active seat session");
+                else if (!wlr_session_change_vt(desktop->backend_session, syms[i] - XKB_KEY_XF86Switch_VT_1 + 1))
+                    wlr_log(WLR_ERROR, "Live diagnostic VT switch was refused by the seat backend");
+                handled = true;
+            } else if (pu_data_device_drag_active(desktop) && syms[i] == XKB_KEY_Escape) {
                 pu_data_device_cancel_drag(desktop);
                 handled = true;
             } else if (!wlr_seat_keyboard_has_grab(desktop->seat))
@@ -1400,6 +1414,136 @@ static void request_selection(struct wl_listener *listener, void *data)
     wlr_seat_set_selection(desktop->seat, event->source, event->serial);
 }
 
+static bool live_content_ready(struct PuDesktopOutput *entry)
+{
+    struct PuDesktop *desktop = entry->desktop;
+    if (!desktop->shell_client || desktop->failed || !desktop->active_workspace ||
+        !desktop->seat->capabilities || !pu_input_method_ready(desktop) ||
+        (desktop->backend_session && !desktop->backend_session->active) ||
+        pu_session_lock_active(desktop)) return false;
+    bool wallpaper = false, panel = false;
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop->layers, link) {
+        if (layer->surface->output != entry->output || !layer->presented ||
+            !layer->surface->surface->mapped || !layer->tree->node.enabled) continue;
+        const char *name = layer->surface->namespace;
+        if (!name) continue;
+        if (!strncmp(name, "PollyShell.wallpaper.", 21)) wallpaper = true;
+        if (!strncmp(name, "PollyShell.panel.", 17)) panel = true;
+    }
+    return wallpaper && panel;
+}
+
+static void live_boot_destroyed(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct PuDesktopOutput *entry = wl_container_of(listener, entry, boot_destroy);
+    entry->boot = NULL;
+    unlisten(&entry->boot_destroy);
+}
+
+static bool live_boot_create(struct PuDesktopOutput *entry)
+{
+    if (!entry->desktop->live_splash || entry->desktop->live_ready) return true;
+    const float background[4] = {16 / 255.0f, 24 / 255.0f, 36 / 255.0f, 1};
+    const float foreground[4] = {197 / 255.0f, 226 / 255.0f, 1, 1};
+    entry->boot = wlr_scene_tree_create(&entry->desktop->scene->tree);
+    if (!entry->boot) return false;
+    listen(&entry->boot->node.events.destroy, &entry->boot_destroy, live_boot_destroyed);
+    entry->boot_background = wlr_scene_rect_create(entry->boot, 1, 1, background);
+    if (!entry->boot_background) return false;
+    for (unsigned i = 0; i < 5; i++) {
+        entry->boot_logo[i] = wlr_scene_rect_create(entry->boot, 1, 1, foreground);
+        if (!entry->boot_logo[i]) return false;
+    }
+    for (unsigned i = 0; i < 3; i++) {
+        entry->boot_dots[i] = wlr_scene_rect_create(entry->boot, 4, 4, foreground);
+        if (!entry->boot_dots[i]) return false;
+    }
+    return true;
+}
+
+static void live_check_ready(struct PuDesktop *desktop)
+{
+    if (!desktop->live_startup || desktop->live_ready) return;
+    int count = 0;
+    struct wlr_output_layout_output *output;
+    wl_list_for_each(output, &desktop->layout->outputs, link) {
+        if (!output->output->enabled) continue;
+        struct PuDesktopOutput *entry = output->output->data;
+        if (!entry || !entry->boot_presented || !live_content_ready(entry)) return;
+        count++;
+    }
+    if (!count) return;
+    desktop->live_ready = true;
+    wlr_log(WLR_INFO, "POLLY_LIVE_DESKTOP_READY outputs=%d", count);
+}
+
+static void live_boot_frame(struct PuDesktopOutput *entry)
+{
+    struct PuDesktop *desktop = entry->desktop;
+    if (!desktop->live_startup || desktop->live_ready) return;
+    if (pu_session_lock_active(desktop)) {
+        if (entry->boot) wlr_scene_node_set_enabled(&entry->boot->node, false);
+        entry->boot_pending = entry->boot_presented = false;
+        return;
+    }
+    bool candidate = live_content_ready(entry);
+    if (!candidate) entry->boot_presented = false;
+    live_check_ready(desktop);
+    if (desktop->live_ready) return;
+    entry->boot_pending = candidate && !entry->boot_presented;
+    entry->boot_sequence = entry->output->commit_seq + 1;
+    if (entry->boot) {
+        wlr_scene_node_set_enabled(&entry->boot->node, !candidate);
+        if (!candidate) {
+            wlr_scene_node_raise_to_top(&entry->boot->node);
+            struct wlr_box box;
+            wlr_output_layout_get_box(desktop->layout, entry->output, &box);
+            wlr_scene_node_set_position(&entry->boot->node, box.x, box.y);
+            wlr_scene_rect_set_size(entry->boot_background, box.width, box.height);
+            int size = box.width < box.height ? box.width : box.height;
+            size = size < 384 ? size / 3 : 128;
+            static const int rectangles[][4] = {
+#define POLLY_BOOT_RECT(x, y, w, h) {x, y, w, h},
+#include "../release/live/boot-brand.h"
+#undef POLLY_BOOT_RECT
+            };
+            _Static_assert(sizeof(rectangles) / sizeof(rectangles[0]) == 5, "Boot monogram rectangle count");
+            for (unsigned i = 0; i < 5; i++) {
+                const int *r = rectangles[i];
+                wlr_scene_rect_set_size(entry->boot_logo[i], r[2] * size / 64, r[3] * size / 64);
+                wlr_scene_node_set_position(&entry->boot_logo[i]->node,
+                    (box.width - size) / 2 + r[0] * size / 64,
+                    box.height * 42 / 100 - size / 2 + r[1] * size / 64);
+            }
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            unsigned step = ((uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000) / 250 % 3;
+            for (unsigned i = 0; i < 3; i++) {
+                float brightness = i == step ? 1 : 0.4f;
+                float color[4] = {197 / 255.0f * brightness, 226 / 255.0f * brightness, brightness, 1};
+                wlr_scene_rect_set_color(entry->boot_dots[i], color);
+                wlr_scene_node_set_position(&entry->boot_dots[i]->node,
+                    box.width / 2 - 16 + (int)i * 12, box.height * 62 / 100);
+            }
+        }
+    }
+    wlr_output_schedule_frame(entry->output);
+}
+
+static void live_frame_presented(struct wl_listener *listener, void *data)
+{
+    struct PuDesktopOutput *entry = wl_container_of(listener, entry, present);
+    struct PuDesktop *desktop = entry->desktop;
+    struct wlr_output_event_present *event = data;
+    if (!desktop->live_startup || desktop->live_ready || !entry->boot_pending ||
+        !event->presented || event->commit_seq != entry->boot_sequence || !live_content_ready(entry)) return;
+    entry->boot_pending = false;
+    entry->boot_presented = true;
+    live_check_ready(desktop);
+}
+
 static void output_frame(struct wl_listener *listener, void *data)
 {
     (void)data;
@@ -1407,6 +1551,7 @@ static void output_frame(struct wl_listener *listener, void *data)
     if (!entry->output->enabled) return;
     struct wlr_scene_output *output =
         wlr_scene_get_scene_output(entry->desktop->scene, entry->output);
+    live_boot_frame(entry);
     pu_session_lock_prepare_frame(entry->desktop, entry->output);
     if (!output || !wlr_scene_output_commit(output, NULL)) {
         fail(entry->desktop, "Cannot commit output frame");
@@ -1415,6 +1560,14 @@ static void output_frame(struct wl_listener *listener, void *data)
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
     wlr_scene_output_send_frame_done(output, &now);
+    if (entry->boot && entry->boot->node.enabled) {
+        /* Let the private Shell finish initializing even while its first buffers
+         * are occluded by the startup display. */
+        struct PuDesktopLayer *layer;
+        wl_list_for_each(layer, &entry->desktop->layers, link)
+            if (layer->surface->output == entry->output && layer->surface->surface->mapped)
+                wlr_surface_send_frame_done(layer->surface->surface, &now);
+    }
 }
 
 static void output_request_state(struct wl_listener *listener, void *data)
@@ -1449,9 +1602,11 @@ static void output_commit(struct wl_listener *listener, void *data)
         fail(entry->desktop, "Cannot load scaled cursor resources"); return;
     }
     if (!(event->state->committed & WLR_OUTPUT_STATE_ENABLED)) return;
+    entry->boot_presented = entry->boot_pending = false;
     if (entry->output->enabled) {
         if (!wlr_output_layout_get(entry->desktop->layout, entry->output)) attach_output(entry);
     } else {
+        if (entry->boot) wlr_scene_node_set_enabled(&entry->boot->node, false);
         wlr_output_layout_remove(entry->desktop->layout, entry->output);
         entry->output->data = NULL;
         entry->output->data = NULL;
@@ -1466,6 +1621,8 @@ static void output_destroy(struct wl_listener *listener, void *data)
     wl_list_remove(&entry->request_state.link);
     wl_list_remove(&entry->commit.link);
     wl_list_remove(&entry->destroy.link);
+    wl_list_remove(&entry->present.link);
+    if (entry->boot) wlr_scene_node_destroy(&entry->boot->node);
     wlr_output_layout_remove(entry->desktop->layout, entry->output);
     entry->desktop->output_count--;
     if (!entry->desktop->stopping && entry->desktop->output_count == 0 && !pu_session_lock_active(entry->desktop))
@@ -1501,6 +1658,7 @@ static void new_output(struct wl_listener *listener, void *data)
     listen(&output->events.request_state, &entry->request_state, output_request_state);
     listen(&output->events.commit, &entry->commit, output_commit);
     listen(&output->events.destroy, &entry->destroy, output_destroy);
+    listen(&output->events.present, &entry->present, live_frame_presented);
     desktop->output_count++;
     if (!pu_cursor_load_scale(desktop, output->scale)) {
         fail(desktop, "Cannot load output cursor resources"); return;
@@ -1511,6 +1669,9 @@ static void new_output(struct wl_listener *listener, void *data)
     attach_output(entry);
     if (!pu_session_lock_output(desktop, output)) {
         fail(desktop, "Cannot prepare output lock protection"); return;
+    }
+    if (desktop->live_startup && !live_boot_create(entry)) {
+        fail(desktop, "Cannot prepare Live startup display"); return;
     }
     wlr_log(WLR_INFO, "Output %s: %dx%d", output->name, output->width, output->height);
 }
@@ -2084,6 +2245,9 @@ static int stop_signal(int signal_number, void *data)
 bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
 {
     memset(desktop, 0, sizeof(*desktop));
+    const char *live = getenv("POLLY_LIVE_STARTUP"), *splash = getenv("POLLY_LIVE_SPLASH");
+    desktop->live_startup = live && !strcmp(live, "1");
+    desktop->live_splash = desktop->live_startup && splash && !strcmp(splash, "1");
     wl_list_init(&desktop->views);
     wl_list_init(&desktop->all_views);
     wl_list_init(&desktop->keyboards);
@@ -2093,7 +2257,7 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     if (!desktop->display) { fail(desktop, "Cannot create Wayland display"); return false; }
     wl_display_set_global_filter(desktop->display, pu_desktop_global_filter, desktop);
     struct wl_event_loop *loop = wl_display_get_event_loop(desktop->display);
-    desktop->backend = wlr_backend_autocreate(loop, NULL);
+    desktop->backend = wlr_backend_autocreate(loop, &desktop->backend_session);
     if (!desktop->backend) { fail(desktop, "Cannot create wlroots backend"); return false; }
     desktop->renderer = wlr_renderer_autocreate(desktop->backend);
     if (!desktop->renderer ||

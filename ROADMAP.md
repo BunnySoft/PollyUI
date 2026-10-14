@@ -237,6 +237,27 @@ or merely moving UI while retaining its old backend.
 SM-01 does not add a root service, change system authorization policy, migrate
 other Settings pages or rebuild the physically accepted Alpha.6 media.
 
+## Bounded desktop applications and Live startup delivery
+
+The current source delivery integrates App checkpoint `3919661`, Live startup
+checkpoint `d0711e9`, and distribution-preparation checkpoints
+`f88cc2e`/`055d6552`. It does not rebuild or replace any published Alpha image.
+
+| Task | Delivered source | Remaining boundary |
+|---|---|---|
+| Settings Network | Independent Settings document using the Shell-owned iwd service through PID/UID/generation-checked RPC; pending connection cancellation is operation-owned | Synthetic daemon/API and controller evidence, not a physical Wi-Fi or new full GUI-input qualification |
+| Files Cut/Paste | One ordinary regular file, same-filesystem cross-directory move, explicit confirmation/name choice and atomic no-replace backend | No copy, recursive directory move, delete or trash; cross-filesystem moves are explicitly rejected |
+| Processes | Ordinary read-only process app with real `/proc` state, memory, CPU deltas, refresh and sorting | No process termination or arbitrary command execution |
+| Live startup | Original GRUB/Plymouth/compositor presentation, actual first-present readiness, bounded session failure and diagnostic paths | Native fixture and EFI assembly do not qualify a new complete ISO boot, physical display switching or zero-black-frame behavior |
+| Distribution preparation | Locked artifact/notice hashes, measured runtime metadata, acquisition receipt and early fail-closed install gate | Full source/header/generated attribution, deployment decisions and rights confirmation remain separate binary-release gates |
+
+After this source integration and push, a dedicated child owns the queued
+GRUB presentation redesign toward a polished Clover/macOS-like selection
+experience using original Polly assets. GRUB remains the bootloader; this
+does not replace UEFI firmware, authorize ESP/NVRAM changes, introduce fake OS
+entries or promise unsupported mouse/animation capabilities. Preserve keyboard
+navigation, default selection, diagnostics and text/resolution fallback.
+
 ## Modern desktop presentation and interaction
 
 The user selected Windows 11 as the layout/style direction for Settings, Shell
