@@ -264,6 +264,8 @@ def main():
         (staging / "SHA256SUMS").write_text("\n".join(sums) + "\n")
         shutil.rmtree(image)
         efi.unlink()
+        if debian:
+            shutil.rmtree(staging / "grub-theme")
         publication = Path(tempfile.mkdtemp(prefix=".polly-live-", dir=output.parent))
         for file in staging.iterdir():
             if not file.is_file():

@@ -353,6 +353,11 @@ static char *pu_module_normalize(JSContext *ctx, const char *base_name,
     size_t capacity = strlen(base_name) + strlen(name) + 2;
     char *result = (char *)js_malloc(ctx, capacity);
     if (!result) return NULL;
+    if (!strncmp(name, "./desktop/", 10) || !strncmp(name, "./sysrt/", 8) ||
+        !strncmp(name, "./gui/", 6)) {
+        strcpy(result, name + 2);
+        return result;
+    }
     if (strncmp(name, "./", 2) && strncmp(name, "../", 3)) {
         strcpy(result, name);
         return result;
