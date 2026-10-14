@@ -183,16 +183,13 @@ def main():
         cfg = repo / ("desktop/release/debian/live-grub.cfg" if debian else "desktop/release/live/grub.cfg")
         resources = []
         if debian:
-            logo = staging / "polly.png"
-            logo.write_bytes(runpy.run_path(str(repo / "desktop/release/live/boot-assets.py"))["logo"]())
-            resources = ["boot/grub/themes/polly/polly.png=" + str(logo),
-                         "boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt")]
+            assets = runpy.run_path(str(repo / "desktop/release/live/boot-assets.py"))
+            resources = assets["write_theme"](staging / "grub-theme")
+            resources.append("boot/grub/themes/polly/theme.txt=" + str(repo / "desktop/release/live/grub-theme.txt"))
         run("grub-mkstandalone", "-O", "x86_64-efi", "--locales=", "--fonts=unicode" if debian else "--fonts=",
             "--modules=part_gpt part_msdos fat iso9660 normal linux search search_fs_file serial terminal" +
             (" all_video efi_gop gfxterm gfxmenu png font" if debian else ""),
             "-o", str(efi), "boot/grub/grub.cfg=" + str(cfg), *resources)
-        if debian:
-            logo.unlink()
         fat = boot / "efiboot.img"
         with fat.open("wb") as target:
             target.truncate(16 * 1024 * 1024)

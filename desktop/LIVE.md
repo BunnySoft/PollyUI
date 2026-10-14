@@ -147,6 +147,32 @@ udev and systemd chatter. Firmware, kernel decompression and device mode changes
 remain hardware-controlled; source wiring does not guarantee zero black frames
 on every machine. CPU/Pixman rendering remains the default.
 
+The graphical menu is an original Polly startup selector, not Clover/OpenCore
+or firmware replacement. GRUB's native **vertical** `boot_menu` provides the
+rounded selection frames, original 32-pixel class icons and keyboard navigation;
+it does not promise mouse input, horizontal cards or animation. The main menu
+contains **Start PollyDesktop Live (memory only)** (default index 0) and
+**Advanced startup**. Advanced contains GPU automatic selection, Intel GPU,
+verbose startup, diagnostics console, and the serial VM baseline, in that order,
+with the original kernel/search/initrd commands unchanged. Entering Advanced
+disables automatic boot (`timeout=-1`); its initial selection is GPU, not a
+different hidden normal-boot default. Esc returns to the main menu. No installed
+OS entries, disk discovery, mounts or chainloading are added.
+
+The main menu's **8-second** countdown is GRUB's real `__timeout__` component,
+not startup progress; keyboard navigation cancels it. Up/Down selects,
+Enter starts/opens, E edits a boot entry, and C opens GRUB's console.
+Esc here means back, not Plymouth boot details. The layout supports 640x480
+and above; Advanced scrolls with the selection and shows a scrollbar when its
+five rows do not fit. Explicit supported graphics modes never request a layout
+below 640x480. Missing graphics modules, font/theme, or an unavailable supported
+video mode leave an explicit **console + serial** text menu; GRUB theme-rendering
+errors retain its standard text-menu fallback and serial output.
+`release/live/boot-assets.py --theme DIRECTORY` generates the original menu
+icons and nine-slice frames. The Debian media builder embeds all these resources,
+the unchanged monogram, theme and existing Unicode font in `BOOTX64.EFI`;
+Plymouth's `logo()` bytes remain unchanged.
+
 Only the **final Debian Live layer** installs `plymouth` and `libplymouth5`
 **24.004.60-5** from Debian trixie. Its built-in script plugin is sufficient;
 no desktop environment, `plymouth-themes`, new account or authentication service
@@ -190,9 +216,11 @@ display from diagnostics. Earlier kernel/system failures retain normal kernel,
 systemd and journal reporting; there is no fake successful desktop fallback.
 
 **Diagnostics:** Esc shows Plymouth's boot details while it owns the display.
-The GRUB menu also keeps explicit **verbose**, **diagnostics console** (no
-automatic desktop) and **serial VM baseline** entries; the serial entry remains
-last for the existing boot harness. In the unlocked active Live DRM session,
+The GRUB **Advanced startup** submenu keeps explicit **verbose**, **diagnostics
+console** (no automatic desktop) and **serial VM baseline** entries; the serial
+entry remains last in Advanced. The existing Live boot harness opens this
+submenu before selecting its last entry and still accepts historical flat menus.
+In the unlocked active Live DRM session,
 Ctrl+Alt+F1..F12 requests standard logind/libseat VT switching; F2 offers a
 separate console and F1 returns to the desktop. An unsupported backend or denied
 seat request is logged explicitly. No lock-state bypass or new installed-system

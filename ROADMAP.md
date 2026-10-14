@@ -251,12 +251,16 @@ checkpoint `d0711e9`, and distribution-preparation checkpoints
 | Live startup | Original GRUB/Plymouth/compositor presentation, actual first-present readiness, bounded session failure and diagnostic paths | Native fixture and EFI assembly do not qualify a new complete ISO boot, physical display switching or zero-black-frame behavior |
 | Distribution preparation | Locked artifact/notice hashes, measured runtime metadata, acquisition receipt and early fail-closed install gate | Full source/header/generated attribution, deployment decisions and rights confirmation remain separate binary-release gates |
 
-After this source integration and push, a dedicated child owns the queued
-GRUB presentation redesign toward a polished Clover/macOS-like selection
-experience using original Polly assets. GRUB remains the bootloader; this
+The GRUB presentation redesign is integrated from `0a7212c`: an original Polly
+dark graphical selector with class icons, rounded selection frames, a real
+8-second countdown and a normal-start/Advanced menu structure. All six original
+boot command groups and the Plymouth logo bytes are preserved; the serial
+harness supports both nested and historical flat menus. Actual Python resource
+generation and source checks pass, but native GRUB parsing/rendering, the new
+EFI assembly and OS boot remain unqualified. GRUB remains the bootloader; this
 does not replace UEFI firmware, authorize ESP/NVRAM changes, introduce fake OS
-entries or promise unsupported mouse/animation capabilities. Preserve keyboard
-navigation, default selection, diagnostics and text/resolution fallback.
+entries or promise unsupported mouse/horizontal-card/animation capabilities.
+Keyboard navigation, diagnostics and text/resolution fallback remain available.
 
 ## Modern desktop presentation and interaction
 

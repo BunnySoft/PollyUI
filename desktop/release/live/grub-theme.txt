@@ -5,40 +5,87 @@ message-bg-color: "#101824"
 terminal-font: "Unifont Regular 16"
 
 + image {
-  left = 50%-64
-  top = 25%-64
-  width = 128
-  height = 128
+  left = 50%-32
+  top = 5%
+  width = 64
+  height = 64
   file = "polly.png"
 }
 + label {
-  left = 10%
-  top = 40%
-  width = 80%
-  height = 32
-  align = "center"
-  text = "PollyDesktop Live"
-  color = "#c5e2ff"
-  font = "Unifont Regular 16"
-}
-+ boot_menu {
-  left = 10%
-  top = 50%
-  width = 80%
-  height = 34%
-  item_height = 28
-  item_padding = 4
-  item_spacing = 3
-  item_color = "#9baabc"
-  selected_item_color = "#ffffff"
-  item_font = "Unifont Regular 16"
-}
-+ label {
   left = 5%
-  top = 91%
+  top = 5%+72
   width = 90%
   height = 24
   align = "center"
-  text = "Memory only. Enter: start   E: boot options   Esc: boot details"
+  text = "PollyDesktop"
+  color = "#c5e2ff"
+  font = "Unifont Regular 16"
+}
++ label {
+  left = 5%
+  top = 5%+100
+  width = 90%
+  height = 20
+  align = "center"
+  text = "Choose your startup"
   color = "#9baabc"
+  font = "Unifont Regular 16"
+}
++ boot_menu {
+  left = 8%
+  top = 34%
+  width = 84%
+  height = 44%
+  item_height = 48
+  item_padding = 8
+  item_spacing = 32
+  icon_width = 32
+  icon_height = 32
+  item_icon_space = 14
+  item_color = "#b3c3d6"
+  selected_item_color = "#ffffff"
+  item_font = "Unifont Regular 16"
+  item_pixmap_style = "item_*.png"
+  selected_item_pixmap_style = "selected_*.png"
+  scrollbar = true
+  scrollbar_width = 8
+  scrollbar_slice = "center"
+  scrollbar_left_pad = 10
+  scrollbar_right_pad = 0
+  scrollbar_frame = "scroll_*.png"
+  scrollbar_thumb = "thumb_*.png"
+  scrollbar_thumb_overlay = true
+}
++ progress_bar {
+  id = "__timeout__"
+  left = 8%
+  top = 82%
+  width = 84%
+  height = 26
+  font = "Unifont Regular 16"
+  text = "Starting the default entry in %ds"
+  text_color = "#c5e2ff"
+  border_color = "#33465b"
+  bg_color = "#101824"
+  fg_color = "#263e58"
+}
++ label {
+  left = 5%
+  top = 91%-12
+  width = 90%
+  height = 20
+  align = "center"
+  text = "Up/Down: select   Enter: start/open   Esc: back"
+  color = "#b3c3d6"
+  font = "Unifont Regular 16"
+}
++ label {
+  left = 5%
+  top = 96%-12
+  width = 90%
+  height = 20
+  align = "center"
+  text = "Memory only   E: edit options   C: GRUB console"
+  color = "#9baabc"
+  font = "Unifont Regular 16"
 }

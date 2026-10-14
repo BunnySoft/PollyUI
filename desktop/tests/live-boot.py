@@ -218,11 +218,25 @@ def main():
 
                     serial_thread = threading.Thread(target=drain_serial, daemon=True)
                     serial_thread.start()
-                while "serial VM baseline" not in (serial.read_text(errors="replace") if serial.exists() else ""):
+                while True:
+                    menu = serial.read_text(errors="replace") if serial.exists() else ""
+                    if "Advanced startup" in menu or "serial VM baseline" in menu:
+                        break
                     if process.poll() is not None or time.monotonic() > deadline:
                         execute("screendump", {"filename": str(evidence / "failed-firmware.ppm")})
                         raise RuntimeError("UEFI firmware did not reach the Live boot menu")
                     time.sleep(0.1)
+                # New Debian media nests diagnostics; historical flat menus remain valid.
+                if "Advanced startup" in menu:
+                    execute("send-key", {"keys": [{"type": "qcode", "data": "end"}]})
+                    time.sleep(0.2)
+                    position = serial.stat().st_size
+                    execute("send-key", {"keys": [{"type": "qcode", "data": "ret"}]})
+                    while "serial VM baseline" not in serial.read_bytes()[position:].decode(errors="replace"):
+                        if process.poll() is not None or time.monotonic() > deadline:
+                            execute("screendump", {"filename": str(evidence / "failed-firmware.ppm")})
+                            raise RuntimeError("UEFI Advanced startup did not expose the serial VM entry")
+                        time.sleep(0.1)
                 execute("send-key", {"keys": [{"type": "qcode", "data": "end"}]})
                 time.sleep(0.2)
                 execute("send-key", {"keys": [{"type": "qcode", "data": "ret"}]})
