@@ -18,6 +18,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include "include/utils/SkParsePath.h"
 #include "render/skia_internal.h"
+#include "render/image_color.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -50,12 +51,25 @@ struct PuCanvasResource {
 };
 struct PuCanvas {
     PuCanvas() { ++live_backings; }
-    ~PuCanvas() { pu_gpu_canvas_unref(gpu); --live_backings; }
+    ~PuCanvas() {
+        auto source = gpu_source;
+        gpu_source = nullptr;
+        source_busy=true;
+        if (source) source_ops.release(source);
+        pu_gpu_canvas_unref(gpu);
+        --live_backings;
+    }
+    unsigned refs = 1;
+    bool destroying = false, source_busy = false;
+    void *gpu_source = nullptr;
+    PuCanvasGpuSourceOps source_ops = {};
+    uint64_t source_revision = UINT64_MAX;
     sk_sp<SkSurface> surface;
     PuGpuCanvas *gpu = nullptr;
     uint64_t gpu_revision = 0;
     uint64_t gpu_display_revision = 0;
     sk_sp<SkImage> gpu_display;
+    sk_sp<SkImage> source_image;
     int width = 0, height = 0;
     SkMatrix transform = SkMatrix::I();
     std::vector<SkMatrix> saved_transforms;
@@ -65,6 +79,16 @@ struct PuCanvas {
     bool smooth = true;
     bool opaque = false;
     double alpha = 1;
+};
+struct CanvasHold {
+    PuCanvas *canvas;
+    explicit CanvasHold(PuCanvas *c) : canvas(c&&c->refs?c:nullptr) { if(canvas) ++canvas->refs; }
+    ~CanvasHold() { if(canvas && !--canvas->refs) delete canvas; }
+};
+struct SourceCall {
+    PuCanvas *canvas;
+    explicit SourceCall(PuCanvas *c) : canvas(c) { c->source_busy=true; }
+    ~SourceCall() { canvas->source_busy=false; }
 };
 
 static SkMatrix matrix(const double *a)
@@ -130,25 +154,39 @@ PuCanvas *pu_canvas_create(int width, int height)
     }
     return c;
 }
-void pu_canvas_destroy(PuCanvas *c) { delete c; }
+void pu_canvas_destroy(PuCanvas *c) {
+    if(!c || c->destroying) return;
+    c->destroying = true;
+    if(!--c->refs) delete c;
+}
 int pu_canvas_resize(PuCanvas *c, int w, int h)
 {
+    CanvasHold hold(c);
     if (!c || w < 0 || h < 0 || (h && (size_t)w > PU_CANVAS_PIXEL_LIMIT / (size_t)h))
         return 0;
+    if(c->destroying || c->source_busy) return 0;
     sk_sp<SkSurface> next;
     if (w && h) {
         next = SkSurfaces::Raster(SkImageInfo::Make(
-            w, h, kN32_SkColorType, c->opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType));
+            w, h, kN32_SkColorType, c->opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType,
+            SkColorSpace::MakeSRGB()));
         if (!next)
             return 0;
         next->getCanvas()->clear(c->opaque ? SK_ColorBLACK : SK_ColorTRANSPARENT);
     }
     if (c->gpu && !pu_gpu_canvas_resize(c->gpu, w, h))
         return 0;
+    if(c->gpu_source) {
+        int ok;
+        {SourceCall call(c);ok=c->source_ops.resize(c->gpu_source,w,h);}
+        if(!ok || c->destroying) return 0;
+    }
     c->surface = std::move(next);
     c->gpu_revision = 0;
     c->gpu_display_revision = 0;
     c->gpu_display.reset();
+    c->source_image.reset();
+    c->source_revision = UINT64_MAX;
     c->width = w;
     c->height = h;
     c->path.reset();
@@ -162,13 +200,66 @@ PuGpuCanvas *pu_canvas_gpu(PuCanvas *c) { return c ? c->gpu : nullptr; }
 PuGpuCanvas *pu_canvas_acquire_gpu(PuCanvas *c, int alpha, int depth, int stencil, int premultiplied, int preserve,
                                   int power_preference,int strict_performance)
 {
-    if (!c) return nullptr;
+    if (!c || c->gpu_source || c->destroying) return nullptr;
     if (!c->gpu) c->gpu = pu_gpu_canvas_create(c->width, c->height, alpha, depth, stencil, premultiplied, preserve,
         power_preference,strict_performance);
     return c->gpu;
 }
-static bool sync_gpu(PuCanvas *c, bool force = false)
+int pu_canvas_set_gpu_source(PuCanvas *c, const PuCanvasGpuSourceOps *ops, void *userdata)
 {
+    CanvasHold hold(c);
+    if(!c || c->destroying || c->source_busy || (userdata && (c->gpu||userdata==c->gpu_source))) return 0;
+    if(userdata && (!ops || !ops->resize || !ops->read_rgba || !ops->revision ||
+        !ops->present || !ops->release)) return 0;
+    PuCanvasGpuSourceOps next = ops ? *ops : PuCanvasGpuSourceOps{};
+    SourceCall call(c);
+    if(userdata && (!next.resize(userdata,c->width,c->height) || c->destroying)) {
+        return 0;
+    }
+    auto old = c->gpu_source;
+    auto previous = c->source_ops;
+    c->gpu_source=nullptr;
+    c->source_ops={};
+    if(old)previous.release(old);
+    if(c->destroying)return 0;
+    c->gpu_source = userdata;
+    c->source_ops = next;
+    c->source_revision = UINT64_MAX;
+    c->source_image.reset();
+    if(c->surface) c->surface->getCanvas()->clear(c->opaque ? SK_ColorBLACK : SK_ColorTRANSPARENT);
+    return 1;
+}
+static bool sync_gpu_impl(PuCanvas *c, bool force)
+{
+    if(c&&(c->destroying||c->source_busy))return false;
+    if(c && c->gpu_source) {
+        if(c->source_busy || c->destroying) return false;
+        uint64_t revision;
+        {
+            SourceCall call(c);
+            revision=c->source_ops.revision(c->gpu_source);
+        }
+        if(c->destroying) return false;
+        if(revision == c->source_revision || !c->surface) return true;
+        bool linear=c->source_ops.read_f16!=nullptr;
+        size_t row=(size_t)c->width*(linear?8:4),length=row*c->height;
+        if(length>PU_IMAGE_BYTE_LIMIT){std::fprintf(stderr,"[canvas] GPU snapshot exceeds byte budget\n");return false;}
+        std::vector<uint8_t> pixels(length);
+        int ok;
+        {SourceCall call(c);ok=linear?c->source_ops.read_f16(c->gpu_source,pixels.data(),pixels.size()):
+            c->source_ops.read_rgba(c->gpu_source,pixels.data(),pixels.size());}
+        if(!ok || c->destroying) { std::fprintf(stderr,"[canvas] cannot read GPU source\n"); return false; }
+        auto info=SkImageInfo::Make(c->width,c->height,linear?kRGBA_F16_SkColorType:kRGBA_8888_SkColorType,
+            kUnpremul_SkAlphaType,linear?SkColorSpace::MakeSRGBLinear():SkColorSpace::MakeSRGB());
+        auto data=SkData::MakeWithCopy(pixels.data(),pixels.size());
+        if(!data)return false;
+        auto image=SkImages::RasterFromData(info,std::move(data),row);
+        if(!image)return false;
+        if(!c->surface->getCanvas()->writePixels(info,pixels.data(),row,0,0))return false;
+        c->source_image=std::move(image);
+        c->source_revision = revision;
+        return true;
+    }
     if (!c || !c->gpu || (!force && c->gpu_revision == pu_gpu_canvas_revision(c->gpu))) return true;
     if (!c->surface) return true;
     std::vector<uint8_t> pixels((size_t)c->width * c->height * 4);
@@ -181,9 +272,16 @@ static bool sync_gpu(PuCanvas *c, bool force = false)
     c->gpu_revision = pu_gpu_canvas_revision(c->gpu);
     return true;
 }
+static bool sync_gpu(PuCanvas *c,bool force=false)
+{
+    try{return sync_gpu_impl(c,force);}
+    catch(const std::bad_alloc&){std::fprintf(stderr,"[canvas] GPU snapshot allocation failed\n");return false;}
+}
 void pu_canvas_composite(PuSurface *s, PuCanvas *c, float x, float y, float w, float h)
 {
+    CanvasHold hold(c);
     if (!s || !s->surface || !c || !c->surface || w <= 0 || h <= 0) return;
+    if(c->gpu_source && !sync_gpu(c)) return;
     if (c->gpu && c->gpu_display_revision != pu_gpu_canvas_revision(c->gpu)) {
         if (!sync_gpu(c, true)) return;
         c->gpu_display = c->surface->makeImageSnapshot();
@@ -192,16 +290,21 @@ void pu_canvas_composite(PuSurface *s, PuCanvas *c, float x, float y, float w, f
     s->surface->getCanvas()->drawImageRect(c->gpu ? c->gpu_display : c->surface->makeImageSnapshot(),
         SkRect::MakeXYWH(x, y, w, h), SkSamplingOptions(SkFilterMode::kLinear));
     if (c->gpu) pu_gpu_canvas_present(c->gpu);
+    if(c->gpu_source) {
+        SourceCall call(c);
+        c->source_ops.present(c->gpu_source);
+    }
 }
 PuCanvasResource *pu_canvas_snapshot(PuCanvas *c)
 {
+    CanvasHold hold(c);
     if (!sync_gpu(c, true)) return nullptr;
     if (!c || !c->surface)
         return nullptr;
     auto r = new (std::nothrow) PuCanvasResource;
     if (r) {
         r->kind = PuCanvasResource::Image;
-        r->image = c->surface->makeImageSnapshot();
+        r->image = c->source_image?c->source_image:c->surface->makeImageSnapshot();
     }
     return r;
 }
@@ -217,11 +320,74 @@ PuCanvasResource *pu_canvas_image(const char *key)
     }
     return r;
 }
+PuCanvasResource *pu_canvas_rgba_image(int width, int height, const uint8_t *pixels,
+                                     int display_width, int display_height,
+                                     unsigned primaries, unsigned transfer, int full_range)
+{
+    if(!pixels||width<=0||height<=0||(size_t)width>PU_CANVAS_PIXEL_LIMIT/(size_t)height||
+        display_width<=0||display_height<=0||
+        (size_t)display_width>PU_CANVAS_PIXEL_LIMIT/(size_t)display_height)return nullptr;
+    auto color=pu_image_color_space(primaries,transfer);
+    if(!color)return nullptr;
+    auto info=SkImageInfo::Make(width,height,kRGBA_8888_SkColorType,kUnpremul_SkAlphaType,color);
+    auto data=SkData::MakeWithCopy(pixels,(size_t)width*height*4);
+    if(!data)return nullptr;
+    auto image=SkImages::RasterFromData(info,std::move(data),(size_t)width*4);
+    if(!image)return nullptr;
+    bool extended=!color->isSRGB()||!full_range;
+    if(extended&&(size_t)display_width*display_height>PU_CANVAS_PIXEL_LIMIT/2)return nullptr;
+    if(!full_range) {
+        if((size_t)width*height>PU_CANVAS_PIXEL_LIMIT/2)return nullptr;
+        auto surface=SkSurfaces::Raster(SkImageInfo::Make(width,height,kRGBA_F16_SkColorType,kPremul_SkAlphaType,color));
+        if(!surface)return nullptr;
+        float chunk[1024*4];
+        for(int y=0;y<height;++y)for(int x=0;x<width;x+=1024) {
+            int count=std::min(1024,width-x);
+            for(int i=0;i<count;++i) {
+                size_t at=((size_t)y*width+x+i)*4;
+                for(int channel=0;channel<3;++channel)chunk[i*4+channel]=(pixels[at+channel]-16.f)/219.f;
+                chunk[i*4+3]=pixels[at+3]/255.f;
+            }
+            auto part=SkImageInfo::Make(count,1,kRGBA_F32_SkColorType,kUnpremul_SkAlphaType,color);
+            if(!surface->getCanvas()->writePixels(part,chunk,(size_t)count*16,x,y))return nullptr;
+        }
+        image=surface->makeImageSnapshot();
+    }
+    if(width!=display_width||height!=display_height) {
+        auto surface=SkSurfaces::Raster(SkImageInfo::Make(display_width,display_height,
+            extended?kRGBA_F16_SkColorType:kN32_SkColorType,kPremul_SkAlphaType,color));
+        if(!surface)return nullptr;
+        surface->getCanvas()->clear(SK_ColorTRANSPARENT);
+        surface->getCanvas()->drawImageRect(image,SkRect::MakeWH(display_width,display_height),
+            SkSamplingOptions(SkFilterMode::kLinear),nullptr);
+        image=surface->makeImageSnapshot();
+        if(!image)return nullptr;
+    }
+    auto resource=new(std::nothrow)PuCanvasResource;
+    if(resource){resource->kind=PuCanvasResource::Image;resource->image=std::move(image);}
+    return resource;
+}
 int pu_canvas_resource_read(PuCanvasResource *r, int w, int h, uint8_t *rgba)
 {
     if (!r || !r->image || r->image->width() != w || r->image->height() != h) return 0;
-    auto info = SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
+    auto info = SkImageInfo::Make(w, h, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType,SkColorSpace::MakeSRGB());
     return r->image->readPixels(nullptr, info, rgba, (size_t)w * 4, 0, 0);
+}
+int pu_canvas_resource_info(PuCanvasResource *r,int *width,int *height,int *linear)
+{
+    if(!r||!r->image||!width||!height||!linear)return 0;
+    *width=r->image->width();*height=r->image->height();
+    auto color=r->image->colorSpace();
+    *linear=(color&&!color->isSRGB())||r->image->colorType()==kRGBA_F16_SkColorType;
+    return 1;
+}
+int pu_canvas_resource_read_row(PuCanvasResource *r,int x,int y,int width,int linear,uint8_t *pixels,size_t length)
+{
+    if(!r||!r->image||!pixels||x<0||y<0||width<0||y>=r->image->height()||
+        x>r->image->width()||width>r->image->width()-x||length!=(size_t)width*(linear?8:4))return 0;
+    auto color=linear?SkColorSpace::MakeSRGBLinear():SkColorSpace::MakeSRGB();
+    auto info=SkImageInfo::Make(width,1,linear?kRGBA_F16_SkColorType:kRGBA_8888_SkColorType,kUnpremul_SkAlphaType,color);
+    return r->image->readPixels(nullptr,info,pixels,(size_t)width*(linear?8:4),x,y);
 }
 void pu_canvas_resource_destroy(PuCanvasResource *r) { delete r; }
 PuCanvasResource *pu_canvas_resource(const char *kind, const double *a, size_t n, const char *text,
@@ -639,6 +805,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
 }
 int pu_canvas_read(PuCanvas *c, int x, int y, int w, int h, uint8_t *rgba)
 {
+    CanvasHold hold(c);
     if (!sync_gpu(c, true)) return 0;
     memset(rgba, 0, (size_t)w * h * 4);
     if (!c || !c->surface)
@@ -670,6 +837,7 @@ int pu_canvas_write(PuCanvas *c, int w, int h, const uint8_t *rgba, int x, int y
 }
 int pu_canvas_encode(PuCanvas *c, int jpeg, double quality, uint8_t **bytes, size_t *length)
 {
+    CanvasHold hold(c);
     if (!sync_gpu(c, true)) return 0;
     if (!c || !c->surface)
         return 0;

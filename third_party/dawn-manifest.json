@@ -1,0 +1,128 @@
+{
+  "repository": "google/dawn",
+  "tag": "v20261009.190412",
+  "commit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+  "license": "BSD-3-Clause and third-party licenses",
+  "header": {
+    "path": "include/dawn/webgpu.h",
+    "sha256": "88216227a19607c0320c50ebba584da5055529b663606d46b1149b0c5591e315",
+    "normalization": "CRLF converted to LF only",
+    "rawSha256": {
+      "windows": "d5575bf3b157ff4cb792953e0acb68ede6f4906b1fb56f8d170746db4c5e2673",
+      "linux": "88216227a19607c0320c50ebba584da5055529b663606d46b1149b0c5591e315"
+    }
+  },
+  "archives": {
+    "windows-x86_64": {
+      "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-windows-latest-Release.tar.gz",
+      "sha256": "ba97fa93b5e1c265b8a4411698169b40e7696e7e8d574482c94efce6e3ff4228"
+    },
+    "linux-x86_64": {
+      "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-ubuntu-latest-Release.tar.gz",
+      "sha256": "8530b52e5ef5abeb788ab5c3552b261882d9b4d400d7c85c9dc45255b74d48ea"
+    },
+    "macos-arm64": {
+      "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-latest-Release.tar.gz",
+      "sha256": "6d1584b308a332a547a08d694bbec78615bbde686de8a7ed24f2c7d2e8eb1114",
+      "architecture": "arm64",
+      "architectureStatus": "Verified 656 actual arm64 Mach-O members and defined native WebGPU C API symbols; native Mac build/runtime unqualified"
+    },
+    "macos-x86_64": {
+      "file": "Dawn-c943ea32b614ff53e4fe410fc8f4968b6b8fe46d-macos-15-intel-Release.tar.gz",
+      "sha256": "4ebbc32d8e0eaf8093ac17e050e15533aacede30d47049589ae475bfe0e0dcb4",
+      "architecture": "x86_64",
+      "architectureStatus": "Verified 656 actual x86_64 Mach-O members and defined native WebGPU C API symbols; native Mac build/runtime unqualified"
+    }
+  },
+  "dawnLicenseSha256": "0493f897193af1796d5054659f45ec7d4c5af648fa67a99f01d30e55cc805abc",
+  "thirdPartyNotices": [
+    {
+      "component": "Abseil",
+      "sourceCommit": "af5aede14a0b4013be6890148d34e0fd7b1fac69",
+      "upstreamCommit": "7f008af1930f59d869a816795ac5d445e3628e4d",
+      "file": "ABSEIL-LICENSE",
+      "url": "https://raw.githubusercontent.com/abseil/abseil-cpp/7f008af1930f59d869a816795ac5d445e3628e4d/LICENSE",
+      "sha256": "c79a7fea0e3cac04cd43f20e7b648e5a0ff8fa5344e644b0ee09ca1162b62747"
+    },
+    {
+      "component": "SPIRV-Tools",
+      "sourceCommit": "e56740d931256cc464d4d1a76149f69469c33f70",
+      "file": "SPIRV-TOOLS-LICENSE",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/e56740d931256cc464d4d1a76149f69469c33f70/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "component": "SPIRV-Headers",
+      "sourceCommit": "86f980c731e62ae4eaf383d320449d71687936bf",
+      "file": "SPIRV-HEADERS-LICENSE",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/86f980c731e62ae4eaf383d320449d71687936bf/LICENSE",
+      "sha256": "ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613"
+    },
+    {
+      "component": "Vulkan-Headers",
+      "sourceCommit": "c46850864f4661461b0f6cb9922c058ffea4915e",
+      "file": "VULKAN-HEADERS-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/c46850864f4661461b0f6cb9922c058ffea4915e/LICENSE.md",
+      "sha256": "95ad366d23fadf701d355bc45fb8b82ae2d700239471d35d41286ac3b08ff903"
+    },
+    {
+      "component": "Vulkan-Utility-Libraries",
+      "sourceCommit": "90738f6edfa19561a978fc5f97543ba37075ba9d",
+      "file": "VULKAN-UTILITY-LIBRARIES-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/Vulkan-Utility-Libraries/90738f6edfa19561a978fc5f97543ba37075ba9d/LICENSE.md",
+      "sha256": "69760673abf91cfd0280ae73739a29c078f493804d9016a122b3b189b48ad6e6"
+    },
+    {
+      "component": "RenderDoc API header",
+      "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "file": "RENDERDOC-LICENSE.md",
+      "url": "https://raw.githubusercontent.com/google/dawn/c943ea32b614ff53e4fe410fc8f4968b6b8fe46d/third_party/renderdoc/LICENSE.md",
+      "sha256": "b921912e9e433291f6010631a0dd41cec76c4a877966ecc22ba86151b2e66718"
+    },
+    {
+      "component": "EGL registry headers",
+      "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "file": "EGL-REGISTRY-LICENSE",
+      "url": "https://raw.githubusercontent.com/google/dawn/c943ea32b614ff53e4fe410fc8f4968b6b8fe46d/third_party/EGL-Registry/LICENSE",
+      "sha256": "4782253b8777b2c679544b31b18a52616d3c2ba0515dcf695e262bd318b356f0"
+    },
+    {
+      "component": "OpenGL registry generated declarations",
+      "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "file": "OPENGL-REGISTRY-LICENSE",
+      "url": "https://raw.githubusercontent.com/google/dawn/c943ea32b614ff53e4fe410fc8f4968b6b8fe46d/third_party/OpenGL-Registry/LICENSE",
+      "sha256": "d20809e7f3c8116615249bdefdc826c29b0b8332e7ac7ac249fd3949b716e8c5"
+    },
+    {
+      "component": "DirectX headers",
+      "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+      "file": "DIRECTX-HEADERS-LICENSE",
+      "url": "https://raw.githubusercontent.com/google/dawn/c943ea32b614ff53e4fe410fc8f4968b6b8fe46d/third_party/directx-headers/LICENSE",
+      "sha256": "7c77a44a8acd9b41fdc209864a8016b3d430b5d0e09309818d5b7444336df744"
+    }
+  ],
+  "noticeCoverage": {
+    "complete": false,
+    "scope": "Original checksum-pinned notices for known compiled dependencies and native header inputs; not proof of the complete upstream build bill",
+    "remaining": [
+      "Complete per-platform compiled/header/generated-source attribution closure",
+      "Nested source attributions and compiler/SDK/runtime redistribution terms"
+    ]
+  },
+  "windowsShaderCompiler": {
+    "repository": "microsoft/DirectXShaderCompiler",
+    "tag": "v1.9.2609",
+    "file": "dxc_2026_09_29.zip",
+    "sha256": "ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1",
+    "licenses": {
+      "LICENSE-LLVM.txt": "729615317e28dd03907e46f0fc3b5e88f7853cee61d1a1471d2749335516b46f",
+      "LICENSE-MS.txt": "734f72f239fe7b07b4c7203f294c1a7ce27095687278bab7e56d630d7c672963"
+    }
+  },
+  "macos": {
+    "backend": "Metal",
+    "sourceCommit": "c943ea32b614ff53e4fe410fc8f4968b6b8fe46d",
+    "status": "Pinned archive hashes, actual architectures, native C API symbols and imported Metal framework link metadata verified; native build and runtime qualification pending"
+  },
+  "redistributionStatus": "Bundled third-party notices must be completed before redistribution"
+}

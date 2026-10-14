@@ -2,6 +2,8 @@
 #define POLLYUI_BRIDGE_MEDIA_H
 #include "model/node.h"
 #include "quickjs.h"
+typedef struct PuCanvasResource PuCanvasResource;
+PuCanvasResource *pu_media_resource(JSContext *ctx, JSValueConst value);
 int pu_media_install(JSContext *ctx, JSValueConst node_prototype);
 int pu_media_prototype(JSContext *ctx, JSValueConst object, const char *tag);
 PuNode *pu_bridge_node(JSValueConst value);

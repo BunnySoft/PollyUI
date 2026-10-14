@@ -1,4 +1,5 @@
 #include "script/script.h"
+#include "bridge/webgpu.h"
 
 #include "quickjs.h"
 
@@ -37,6 +38,10 @@ typedef struct PuRaf {
     int     id;
     JSValue func;          /* owned (duped) callback */
 } PuRaf;
+typedef struct PuRejection {
+    JSValue promise, reason;
+    struct PuRejection *next;
+} PuRejection;
 
 struct PuScript {
     JSRuntime  *rt;
@@ -55,6 +60,8 @@ struct PuScript {
     int failed;
     char *resource_directory;
     const char *loading_entry;
+    int64_t performance_origin;
+    PuRejection *rejections;
 };
 
 /* ---- error reporting -------------------------------------------------------*/
@@ -78,6 +85,34 @@ static void pu_dump_error(JSContext *ctx)
     JS_FreeValue(ctx, exc);
 }
 
+static void pu_track_rejection(JSContext *ctx, JSValueConst promise, JSValueConst reason,
+    bool handled, void *opaque)
+{
+    PuScript *script = opaque;
+    PuRejection **slot = &script->rejections;
+    while (*slot && JS_VALUE_GET_PTR((*slot)->promise) != JS_VALUE_GET_PTR(promise)) slot = &(*slot)->next;
+    if (handled) {
+        if (*slot) {
+            PuRejection *removed = *slot;
+            *slot = removed->next;
+            JS_FreeValue(ctx,removed->promise);JS_FreeValue(ctx,removed->reason);free(removed);
+        }
+        return;
+    }
+    if (*slot) return;
+    PuRejection *record = malloc(sizeof(*record));
+    if(!record) { fprintf(stderr,"Uncaught: cannot track promise rejection\n");script->failed=1;return; }
+    record->promise=JS_DupValue(ctx,promise);record->reason=JS_DupValue(ctx,reason);
+    record->next=NULL;*slot=record;
+}
+static void pu_clear_rejections(PuScript *script, int report)
+{
+    while(script->rejections) {
+        PuRejection *record=script->rejections;script->rejections=record->next;
+        if(report) { JS_Throw(script->ctx,JS_DupValue(script->ctx,record->reason));pu_dump_error(script->ctx);script->failed=1; }
+        JS_FreeValue(script->ctx,record->promise);JS_FreeValue(script->ctx,record->reason);free(record);
+    }
+}
 /* ---- console ---------------------------------------------------------------*/
 
 static JSValue js_console_print(JSContext *ctx, JSValueConst this_val,
@@ -259,6 +294,12 @@ static int pu_next_timer(PuScript *s)
 
 /* ---- public API ------------------------------------------------------------*/
 
+static JSValue js_performance_now(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    PuScript *script = JS_GetContextOpaque(ctx);
+    return JS_NewFloat64(ctx, (double)(pu_now_ms() - script->performance_origin));
+}
 static void pu_register_globals(PuScript *s)
 {
     JSContext *ctx = s->ctx;
@@ -287,6 +328,10 @@ static void pu_register_globals(PuScript *s)
         JS_NewCFunction(ctx, js_request_anim_frame, "requestAnimationFrame", 1));
     JS_SetPropertyStr(ctx, global, "cancelAnimationFrame",
         JS_NewCFunction(ctx, js_cancel_anim_frame, "cancelAnimationFrame", 1));
+    JSValue performance = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, performance, "now", JS_NewCFunction(ctx, js_performance_now, "now", 0));
+    JS_SetPropertyStr(ctx, global, "performance", performance);
+    JS_SetPropertyStr(ctx, global, "self", JS_DupValue(ctx,global));
 
     JS_FreeValue(ctx, global);
 }
@@ -378,6 +423,7 @@ PuScript *pu_script_create(void)
     PuScript *s = (PuScript *)calloc(1, sizeof(PuScript));
     if (!s) return NULL;
     s->entry = JS_UNDEFINED;
+    s->performance_origin = pu_now_ms();
 
     s->rt = JS_NewRuntime();
     if (!s->rt) { free(s); return NULL; }
@@ -385,6 +431,7 @@ PuScript *pu_script_create(void)
     if (!s->ctx) { JS_FreeRuntime(s->rt); free(s); return NULL; }
 
     JS_SetContextOpaque(s->ctx, s);
+    JS_SetHostPromiseRejectionTracker(s->rt,pu_track_rejection,s);
     JS_SetModuleLoaderFunc(s->rt, pu_module_normalize, pu_module_loader, s);
     pu_register_globals(s);
     return s;
@@ -537,6 +584,13 @@ int pu_script_pump(PuScript *s)
     int total = 0, did;
     do {
         did = 0;
+        int gpu_work = pu_webgpu_pump(s->ctx);
+        if (gpu_work < 0) {
+            pu_dump_error(s->ctx);
+            s->failed = 1;
+            return total;
+        }
+        did += gpu_work;
 
         /* microtasks / promise jobs */
         JSContext *jctx;
@@ -556,6 +610,7 @@ int pu_script_pump(PuScript *s)
 
         total += did;
     } while (did > 0);
+    pu_clear_rejections(s,1);
     pu_script_failed(s);
     return total;
 }
@@ -568,7 +623,12 @@ void pu_script_run_loop(PuScript *s)
 
         int idx = pu_next_timer(s);
         int pending = s->dispatch ? pu_dispatch_pending(s->dispatch) : 0;
-        if (idx < 0 && pending == 0) break; /* fully idle */
+        int gpu_pending = pu_webgpu_pending(s->ctx);
+        if (idx < 0 && pending == 0 && !gpu_pending) break; /* fully idle */
+        if (gpu_pending) {
+            pu_sleep_ms(1);
+            continue;
+        }
 
         if (idx < 0) {
             /* only async work outstanding -> block until a delivery arrives */
@@ -587,6 +647,9 @@ void pu_script_run_loop(PuScript *s)
 void pu_script_destroy(PuScript *s)
 {
     if (!s) return;
+    JS_SetHostPromiseRejectionTracker(s->rt,NULL,NULL);
+    pu_clear_rejections(s,0);
+    pu_webgpu_shutdown(s->ctx);
     for (int i = 0; i < s->ntimers; i++) {
         if (s->timers[i].active) JS_FreeValue(s->ctx, s->timers[i].func);
     }

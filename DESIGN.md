@@ -562,12 +562,14 @@ been supplied; native compilation and Metal checks remain blocked/unqualified.
 The user will provide true-machine testing after implementation; this does not
 remove native build validation or turn unavailable checks into passes.
 
-WebGPU's unmerged checkpoints through `914cb7b` now exercise real native WGSL
+The default-disabled native WebGPU source increment is integrated from the
+reviewed `c36c062` checkpoint, with the separate `ad5ebc8` notice-input metadata.
+It exercises real native WGSL
 render/compute, asynchronous compilation, mapping, Canvas presentation,
 external textures, color conversion and resource lifetime on Windows D3D12
 software and Linux Vulkan llvmpipe. Unmodified Three.js `0.180.0` exercises
 multiple image sources, lighting, TSL, resize/disposal and new-device recovery.
-Parent's fresh immutable Linux build of `914cb7b` passed 41 actual cases plus
+Parent's fresh immutable Linux build of `c36c062` passed 42 actual cases plus
 one physical-device SKIP 77, including real Wayland client-buffer pixels and
 seat input at 1.5 DPI, clip/scroll/transform/opacity and retained GLES/2D cases.
 Earlier assertive parent reproductions for conversion/error, direct texture
@@ -581,17 +583,24 @@ The subsequent shared dictionary/iterator/typed-offset defects are also closed:
 original getter receivers, one-shot iterator access and actual offset-selected
 WGSL data now pass. Independent native texture checks confirm core versus
 compatibility binding-view dimensions and transient resolve/validation rules
-on the tested adapter's enabled native optimization path.
+on both actual native-optimization and ordinary-allocation paths. The ordinary
+path preserves logical transient usage without requiring a private Dawn feature.
+Canonical Canvas configuration, immediate rejection of transient canvas usage
+and preservation of the prior configuration/frame also pass. Linux's native
+policy actually enables the optimization; Windows WARP does not, so its native
+policy still exercises ordinary allocation rather than an optimized lane.
 
 This remains default-disabled work in progress, not complete core or release
-delivery. Remaining transient-hint work must use ordinary render-attachment
-allocation when the native optimization feature is unavailable, without making
-that private feature an extra standard requirement. Further parent assertions
-found that transient canvas usage is accepted instead of throwing immediately,
-and `getConfiguration()` retains raw enum objects/string flags instead of
-converted IDL values. These require fixes before integration. API inventory is
-not behavioral coverage; the final IDL/behavior matrix and complete Dawn
-third-party notices remain open, as do native macOS and physical-device checks.
+delivery. All concrete parent reproductions in this bounded increment are
+closed. The fixed-IDL matrix separates 36 concrete interfaces, 57 dictionaries
+and 211 inherited/overload prototype checks from actual family assertions;
+mechanical presence is not complete behavior or WPT qualification.
+Acquisition collects nine checksum-pinned original dependency/header notices,
+but full per-platform compiled/header/generated/nested attribution and runtime
+redistribution terms remain a binary-distribution gate, not an indefinite source
+integration gate. Native macOS, physical devices and broader Three/shadow
+qualification remain separate. Do not expand testing or dependency tracing
+without a concrete defect or a specifically selected platform/release task.
 Dawn type names and DXGI flags alone can misclassify Microsoft's synthetic
 adapters; record raw native identity separately from hardware qualification.
 

@@ -1,6 +1,7 @@
 (function installWebGL(native,descriptors) {
     "use strict";
     const contexts=new WeakMap(),objects=new WeakMap(),types={};
+    let framePixels=null;
     // Three's LoadingManager creates a controller even for a local-only renderer.
     // This is real cancellation state/events, not a fetch/network implementation.
     const signals=new WeakMap(),controllers=new WeakMap(),signalToken={};
@@ -63,11 +64,15 @@
     for(const [name,value]of Object.entries({AbortSignal,AbortController}))
         if(!(name in globalThis))Object.defineProperty(globalThis,name,{value,writable:true,configurable:true});
     const constants=native(null,"constants",[]);
-    if(!constants)return (canvas,options,media,call,queue)=>{
-        media.shutdown=()=>{media.closed=true;};
-        queue(()=>{if(!media.closed)call(canvas,"event",[],"webglcontextcreationerror");});
-        return null;
-    };
+    if(!constants){
+        const unavailable=(canvas,options,media,call,queue)=>{
+            media.shutdown=()=>{media.closed=true;};
+            queue(()=>{if(!media.closed)call(canvas,"event",[],"webglcontextcreationerror");});
+            return null;
+        };
+        unavailable.isAbortSignal=value=>signals.has(value);
+        return unavailable;
+    }
     Object.assign(constants,{UNPACK_FLIP_Y_WEBGL:0x9240,UNPACK_PREMULTIPLY_ALPHA_WEBGL:0x9241,
         CONTEXT_LOST_WEBGL:0x9242,UNPACK_COLORSPACE_CONVERSION_WEBGL:0x9243,BROWSER_DEFAULT_WEBGL:0x9244,
         MAX_CLIENT_WAIT_TIMEOUT_WEBGL:0x9247,TIMEOUT_IGNORED:-1});
@@ -401,7 +406,9 @@
     }
     function source(s,value,format,type,targetWidth,targetHeight,depth=1){
         let width,height,bytes;
-        if(value instanceof ImageData){width=value.width;height=value.height;bytes=new Uint8Array(value.data);}
+        const frame=framePixels?.(value);
+        if(frame){width=frame.width;height=frame.height;bytes=frame.pixels;}
+        else if(value instanceof ImageData){width=value.width;height=value.height;bytes=new Uint8Array(value.data);}
         else if(value instanceof HTMLCanvasElement||value instanceof HTMLImageElement){
             width=value instanceof HTMLCanvasElement?value.width:value.naturalWidth;
             height=value instanceof HTMLCanvasElement?value.height:value.naturalHeight;
@@ -409,7 +416,7 @@
             const snapshot=s.media(value,"snapshot");
             if(!snapshot){error(s,constants.INVALID_VALUE);return null;}
             bytes=new Uint8Array(s.media(null,"sourcePixels",[width,height],"",snapshot));
-        }else throw new TypeError("Expected ImageData, canvas or decoded Image/img");
+        }else throw new TypeError("Expected ImageData, canvas, decoded Image/img or owned VideoFrame");
         if(s.unpackFlip)for(let y=0;y<height/2;y++)for(let x=0;x<width*4;x++){
             const a=y*width*4+x,b=(height-y-1)*width*4+x,t=bytes[a];bytes[a]=bytes[b];bytes[b]=t;
         }
@@ -758,7 +765,7 @@
     Object.defineProperty(proto,Symbol.toStringTag,{value:"WebGL2RenderingContext"});
     Object.defineProperty(globalThis,"WebGL2RenderingContext",{value:WebGL2RenderingContext,writable:true,configurable:true});
     if(!("self" in globalThis))Object.defineProperty(globalThis,"self",{value:globalThis,writable:true,configurable:true});
-    return function create(canvas,options,media,mediaCall,queue){
+    function create(canvas,options,media,mediaCall,queue){
         const attributes={alpha:options.alpha===undefined?true:Boolean(options.alpha),
             depth:options.depth===undefined?true:Boolean(options.depth),stencil:Boolean(options.stencil),
             antialias:false,premultipliedAlpha:options.premultipliedAlpha===undefined?true:Boolean(options.premultipliedAlpha),
@@ -781,5 +788,8 @@
         contexts.set(context,s);
         media.shutdown=()=>{if(!s.closed){native(handle,"close",[]);s.closed=true;media.closed=true;s.bindings.clear();}};
         return context;
-    };
+    }
+    create.setFramePixels=getter=>{framePixels=getter;};
+    create.isAbortSignal=value=>signals.has(value);
+    return create;
 })

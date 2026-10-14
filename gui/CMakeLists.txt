@@ -16,6 +16,7 @@ add_library(pollyui-engine STATIC
     src/bridge/bridge.c
     src/bridge/media.c
     src/bridge/webgl.cpp
+    src/bridge/webgpu.cpp
     src/bridge/image_file.c
     src/host/clipboard.c
     src/host/drag.c
@@ -54,6 +55,7 @@ if (WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         endif()
     endif()
 endif()
+include(cmake/WebGPU.cmake)
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set_source_files_properties(src/host/drag.c src/host/drag_js.c src/host/sdl/drag_wayland.c
         PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")

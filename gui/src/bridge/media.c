@@ -1,6 +1,7 @@
 #include "bridge/media.h"
 #include "bridge/image_file.h"
 #include "bridge/webgl.h"
+#include "bridge/webgpu.h"
 #include "canvas-script.h"
 #include "layout/layout.h"
 #include "render/canvas_c.h"
@@ -13,6 +14,10 @@
 #include <string.h>
 
 static JSClassID resource_class, canvas_prototype_class, image_prototype_class;
+PuCanvasResource *pu_media_resource(JSContext *ctx,JSValueConst value)
+{
+    return JS_GetOpaque2(ctx,value,resource_class);
+}
 static uint64_t image_serial;
 static void resource_finalizer(JSRuntime *rt, JSValueConst value)
 {
@@ -171,6 +176,13 @@ static JSValue native_media(JSContext *ctx, JSValueConst self, int argc, JSValue
         result = snapshot ? resource_value(ctx, snapshot) : JS_NULL;
         goto done;
     }
+    if(!strcmp(op,"sourceInfo")) {
+        int width,height,linear;
+        if(!pu_canvas_resource_info(resource,&width,&height,&linear)){
+            result=JS_ThrowTypeError(ctx,"Invalid owned image snapshot");goto done;
+        }
+        double info[]={width,height,linear};result=numbers(ctx,info,3);goto done;
+    }
     if (!strcmp(op, "sourcePixels")) {
         if (!resource || count != 2 || !dimensions(args[0], args[1])) {
             result = JS_ThrowTypeError(ctx, "Invalid image snapshot");
@@ -182,6 +194,24 @@ static JSValue native_media(JSContext *ctx, JSValueConst self, int argc, JSValue
         result = pu_canvas_resource_read(resource, (int)args[0], (int)args[1], bytes) ?
             JS_NewArrayBufferCopy(ctx, bytes, size) : JS_ThrowTypeError(ctx, "Cannot read image snapshot");
         free(bytes);
+        goto done;
+    }
+    if(!strcmp(op,"rgbaImage")) {
+        size_t length=0;
+        uint8_t *pixels=JS_IsArrayBuffer(argv[4])?JS_GetArrayBuffer(ctx,&length,argv[4]):NULL;
+        if(count!=7||!dimensions(args[0],args[1])||!dimensions(args[2],args[3])||
+            !args[0]||!args[1]||!args[2]||!args[3]||!pixels||
+            args[4]<0||args[4]>4||floor(args[4])!=args[4]||
+            args[5]<0||args[5]>4||floor(args[5])!=args[5]||(args[6]!=0&&args[6]!=1)||
+            length!=(size_t)args[0]*(size_t)args[1]*4) {
+            result=JS_ThrowTypeError(ctx,"Invalid owned image source pixels");goto done;
+        }
+        if(((args[4]!=0||args[5]!=0||args[6]==0)&&
+            args[2]*args[3]>PU_CANVAS_PIXEL_LIMIT/2)||(args[6]==0&&args[0]*args[1]>PU_CANVAS_PIXEL_LIMIT/2)){
+            result=JS_ThrowRangeError(ctx,"Extended owned image exceeds byte budget");goto done;
+        }
+        result=resource_value(ctx,pu_canvas_rgba_image((int)args[0],(int)args[1],pixels,
+            (int)args[2],(int)args[3],(unsigned)args[4],(unsigned)args[5],args[6]!=0));
         goto done;
     }
     if (node && node->tag && !strcmp(node->tag, "img")) {
@@ -427,7 +457,18 @@ int pu_media_install(JSContext *ctx, JSValueConst node_proto)
         return -1;
     JS_SetClassProto(ctx, canvas_prototype_class, JS_GetPropertyUint32(ctx, protos, 0));
     JS_SetClassProto(ctx, image_prototype_class, JS_GetPropertyUint32(ctx, protos, 1));
-    JS_FreeValue(ctx, protos);
+    JSValue webgpu = pu_webgpu_factory(ctx);
+    if (JS_IsException(webgpu)) {
+        JS_FreeValue(ctx,protos);
+        return -1;
+    }
+    JSValue setter=JS_GetPropertyUint32(ctx,protos,2);
+    JSValue wired=JS_Call(ctx,setter,JS_UNDEFINED,1,&webgpu);
+    JS_FreeValue(ctx,setter);
+    JS_FreeValue(ctx,protos);
+    JS_FreeValue(ctx, webgpu);
+    if(JS_IsException(wired))return -1;
+    JS_FreeValue(ctx,wired);
     return JS_HasException(ctx) ? -1 : 0;
 }
 int pu_media_prototype(JSContext *ctx, JSValueConst object, const char *tag)

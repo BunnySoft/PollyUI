@@ -4,6 +4,8 @@
         Object,Boolean,Math,Promise,TypeError,RangeError,Error}=globalThis;
     const timeout=globalThis.setTimeout,promiseResolve=Promise.resolve.bind(Promise);
     const contexts = new WeakMap(), images = new WeakMap(), paths = new WeakMap();
+    let createWebGPU = null;
+    let framePixels = null;
     const gradients = new WeakMap(), patterns = new WeakMap(), states = new WeakMap();
     const call = (target, op, args = [], text = "", resource = null) =>
         native(target, op, args.length ? new Float64Array(args) : null, text, resource);
@@ -496,7 +498,7 @@
             removeAttribute.call(this,name);
         }
         getContext(type,options={}) {
-            type=String(type);if(type!=="2d"&&type!=="webgl2")return null;
+            type=String(type);if(type!=="2d"&&type!=="webgl2"&&type!=="webgpu")return null;
             const media=retained(this);
             if(media.context)return media.mode===type?media.context:null;
             if(options===null)options={};
@@ -504,6 +506,11 @@
             if(type==="webgl2"){
                 const ctx=createWebGL(this,options,media,call,queueTask);
                 if(ctx){media.context=ctx;media.mode=type;}return ctx;
+            }
+            if(type==="webgpu") {
+                if(!createWebGPU)return null;
+                const ctx=createWebGPU(this,media);
+                media.context=ctx;media.mode=type;return ctx;
             }
             const colorSpace=options.colorSpace,colorType=options.colorType;
             const alpha=options.alpha,desynchronized=options.desynchronized,willReadFrequently=options.willReadFrequently;
@@ -560,6 +567,10 @@
         return images.get(image);
     }
     function imageSource(image,pattern=false) {
+        const frame=framePixels?.(image);
+        if(frame)return {width:frame.displayWidth,height:frame.displayHeight,
+            handle:call(null,"rgbaImage",[frame.width,frame.height,frame.displayWidth,frame.displayHeight,
+                frame.primaries,frame.transfer,Number(frame.fullRange)],"",frame.pixels.buffer)};
         if(image instanceof HTMLCanvasElement){
             const width=image.width,height=image.height;
             if(!width||!height)fail("InvalidStateError","The source canvas has zero size");
@@ -685,5 +696,18 @@
     for(const [name,type] of Object.entries(globals))
         if(name!=="Image")Object.defineProperty(type.prototype,Symbol.toStringTag,{value:name,configurable:true});
     for(const [name,value] of Object.entries(globals))Object.defineProperty(globalThis,name,{value,writable:true,configurable:true});
-    return [HTMLCanvasElement.prototype,HTMLImageElement.prototype];
+    return [HTMLCanvasElement.prototype,HTMLImageElement.prototype,factory=>{
+        createWebGPU=factory;framePixels=factory?.framePixels??null;
+        const pixels=image=>{
+            const source=imageSource(image);if(!source)throw new DOMException("Image source is not ready","InvalidStateError");
+            return {width:source.width,height:source.height,pixels:new Uint8Array(call(null,"sourcePixels",[source.width,source.height],"",source.handle))};
+        };
+        if(factory)factory.setImageSource(image=>{
+            const source=imageSource(image);if(!source)throw new DOMException("Image source is not ready","InvalidStateError");
+            const info=call(null,"sourceInfo",[],"",source.handle);
+            return {handle:source.handle,width:info[0],height:info[1]};
+        });
+        if(factory)factory.setAbortSignalValidator(createWebGL.isAbortSignal);
+        createWebGL?.setFramePixels?.(image=>framePixels?.(image)?pixels(image):null);
+    }];
 })
