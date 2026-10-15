@@ -46,7 +46,7 @@ const numbers = {
     borderWidth: [0, 4], disabledOpacity: [0, 1, 1000], workspaceTitleLimit: [4, 64],
     panelGap: [0, 32], panelPaddingLeft: [0, 48], panelPaddingRight: [0, 48], panelItemInset: [0, 32],
     menuBarHeight: [20, 64], dockBaseWidth: [96, 1024], dockGap: [0, 32], dockTileWidth: [40, 192],
-    windowButtonWidth: [48, 320], dockWindowWidth: [24, 160], windowGap: [0, 32],
+    windowButtonWidth: [24, 320], dockWindowWidth: [24, 160], windowGap: [0, 32],
     windowTitleLimit: [4, 64], dockTitleLimit: [1, 32], workspaceWidth: [64, 320],
     screenInset: [0, 64], menuWidth: [240, 800], menuHeight: [240, 960], menuGap: [0, 32],
     menuTopGap: [0, 32], contentPadding: [0, 32], contentGap: [0, 32], compactPadding: [0, 32],
@@ -78,9 +78,15 @@ const options = {
   layout: {},
 };
 const optionalOptions = {
-  window: { surfaceStyle: ['generic', 'luna'] },
-  button: { surfaceStyle: ['generic', 'luna'] },
-  panel: { surfaceStyle: ['generic', 'luna'] },
+  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'] },
+  button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
+  panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'] },
+};
+const optionalNumbers = {
+  window: { controlWidth: [8, 96], controlTop: [0, 64] },
+  layout: { launcherWidth: [24, 160], dockIconSize: [16, 96], dockPadding: [0, 32],
+    dockIndicatorSize: [2, 12], menuHeaderHeight: [0, 96], menuFooterHeight: [24, 96],
+    menuRowHeight: [16, 96] },
 };
 
 function object(value, context) {
@@ -137,7 +143,7 @@ export function validateTheme(value) {
   text(value.era, 240, 'Theme description');
   for (const group of groups) {
     const prefix = value.id + '.' + group;
-    const optional = Object.keys(optionalOptions[group] || {});
+    const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {})];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : [])], prefix, true, optional);
     for (const key of colors[group])
@@ -149,6 +155,11 @@ export function validateTheme(value) {
         Number(number.toFixed(scale === 1 ? 0 : 3)) !== number)
         throw new RangeError(prefix + '.' + key + ' is outside ' + minimum + '-' + maximum);
     }
+    for (const [key, [minimum, maximum]] of Object.entries(optionalNumbers[group] || {})) {
+      if (!Object.hasOwn(value[group], key)) continue;
+      if (!Number.isInteger(value[group][key]) || value[group][key] < minimum || value[group][key] > maximum)
+        throw new RangeError(prefix + '.' + key + ' is outside ' + minimum + '-' + maximum);
+    }
     wallpaperLayers(value.desktop.layers);
     if (value.layout.compactButtonHeight > value.layout.menuBarHeight ||
       value.layout.fontSize > value.layout.compactButtonHeight ||
@@ -157,11 +168,15 @@ export function validateTheme(value) {
       (value.panel.kind === 'taskbar' && value.layout.buttonHeight > value.panel.height))
       throw new RangeError('Shell controls do not fit the configured panel geometry');
     const window = value.window;
+    const top = window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) +
+      (window.surfaceStyle === 'luna' ? 2 : 0);
     if ((window.surfaceStyle === 'luna' && window.controlSize + 4 > window.titleHeight) ||
-      window.controlSize + window.borderWidth * 2 > window.titleHeight ||
+      (window.controlShape === 'round' && (window.controlWidth ?? window.controlSize) !== window.controlSize) ||
+      top < window.borderWidth || top + window.controlSize > window.titleHeight ||
       window.fontSize + window.borderWidth * 2 > window.titleHeight ||
       window.stripeWidth > window.stripeSpacing ||
-      window.glyphRadius + Math.max(window.glyphThickness, window.closeThickness) > window.controlSize / 2)
+      window.glyphRadius + Math.max(window.glyphThickness, window.closeThickness) >
+        Math.min(window.controlSize, window.controlWidth ?? window.controlSize) / 2)
       throw new RangeError('Decoration controls, text or strokes do not fit their geometry');
     for (const [key, allowed] of Object.entries(options[group]))
       if (!allowed.includes(value[group][key])) throw new TypeError(prefix + '.' + key + ' is unsupported');
@@ -213,7 +228,8 @@ export function applyThemeOverrides(catalog, text) {
     const result = { ...theme };
     for (const group of groups) {
       if (!Object.hasOwn(override, group)) continue;
-      keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {})],
+      keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {}),
+        ...Object.keys(optionalNumbers[group] || {})],
         theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }

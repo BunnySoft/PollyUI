@@ -914,7 +914,7 @@ scenario('internal pointer/focus/scroll and a consumed child Escape do not dismi
   const search = find(menu, 'shell-app-search');
   press(search);
   domEvent(search, 'textinput', { data: 'fix' });
-  assert.match(find(menu, 'shell-app-search').firstChild.firstChild.textContent, /fix/);
+  assert.match(find(menu, 'shell-app-search').lastChild.firstChild.textContent, /fix/);
   press(find(menu, 'shell-applications'));
   domEvent(find(menu, 'shell-applications'), 'wheel', { deltaY: 40 });
   key(menu, 'Tab');
@@ -968,7 +968,7 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   oldOnclose();
   assert.equal(next.closed, false);
   assert.equal(next.document.activeElement.id, 'shell-app-search');
-  assert.equal(find(next, 'shell-app-search').firstChild.firstChild.textContent, 'Type to search...');
+  assert.equal(find(next, 'shell-app-search').lastChild.firstChild.textContent, 'Search applications');
   assert.equal(f.calls.some(call => call[0] === 'launch'), false);
   assert.ok(first.document.activeElement === null, 'replaced menu releases DOM focus');
   assert.equal(first.document.body.listeners.get('keydown').length, 0);

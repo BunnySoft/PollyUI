@@ -6,7 +6,7 @@ register('./root-loader.mjs', import.meta.url);
 const { createDesktopShell } = await import('../shell/shell.mjs');
 const { defaultShellConfiguration } = await import('../shell/configuration.mjs');
 const { memoryConfiguration } = await import('./configuration-memory.mjs');
-const { getDesktopTheme } = await import('../shell/themes.mjs');
+const { getDesktopTheme, DEFAULT_DESKTOP_THEME } = await import('../shell/themes.mjs');
 const { DECORATION_METRICS, DECORATION_COLORS, parseThemeFile } = await import('../shell/theme-schema.mjs');
 const { waitForSessionReady } = await import('../shell/health.mjs');
 
@@ -75,21 +75,25 @@ globalThis.document = document();
 function encode(theme) {
   const window = theme.window;
   const luna = window.surfaceStyle === 'luna';
+  const style = ['generic', 'luna', 'classic', 'fluent'].indexOf(window.surfaceStyle || 'generic');
+  const extended = style >= 2 || window.controlWidth !== undefined || window.controlTop !== undefined;
   const flags = Number(window.controls === 'left') | Number(window.controlShape === 'round') << 1 |
     Number(window.texture === 'pinstripe') << 2 | Number(window.gradientDir === 'horizontal') << 3 |
     ['sans-serif', 'serif', 'monospace'].indexOf(window.fontFamily) << 4 |
     Number(window.glyphsOnHoverOnly) << 6 | ['left', 'center', 'right'].indexOf(window.textAlign) << 7 |
-    Number(luna) << 9;
-  return [luna ? 2 : 1, flags,
+    Number(luna) << 9 | (style >= 2 ? style << 10 : 0);
+  return [extended ? 3 : luna ? 2 : 1, flags,
     ...DECORATION_METRICS.map(([, token, , , scale]) => Math.round(window[token] * scale)),
-    ...DECORATION_COLORS.map(token => 0xff000000 + parseInt(window[token].slice(1), 16))];
+    ...DECORATION_COLORS.map(token => 0xff000000 + parseInt(window[token].slice(1), 16)),
+    ...(extended ? [window.controlWidth ?? window.controlSize,
+      window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) + (luna ? 2 : 0)] : [])];
 }
 function schemaRejection(schema, message = 'Unsupported or out-of-range appearance data') {
   return Object.assign(new Error('Appearance preparation failed: ' + message), {
     code: 'ERR_APPEARANCE_SCHEMA_REJECTED', appearanceSchema: schema, compositorMessage: message,
   });
 }
-function fixture(t, { maximumSchema = 2, initialTheme = 'xp', failure = null } = {}) {
+function fixture(t, { maximumSchema = 3, initialTheme = 'xp', failure = null } = {}) {
   const created = [], attempts = [], reports = [], saves = [];
   const preferences = memoryConfiguration({ ...defaultShellConfiguration(),
     theme: { id: initialTheme, filesEnabled: true } }, next => saves.push(next));
@@ -105,16 +109,17 @@ function fixture(t, { maximumSchema = 2, initialTheme = 'xp', failure = null } =
   };
   const backend = {
     maximumSchema, failure, committed: null,
+    applicationFiles: () => [],
     sessionServices: () => ({ inputMethod: 'disabled' }),
     configureAppearance(theme) {
       const words = encode(theme);
       attempts.push({ theme, words });
       if (this.failure) throw this.failure(words);
       const validHeader = words[0] <= this.maximumSchema &&
-        !(words[1] & ~(words[0] === 1 ? 511 : 1023));
+        !(words[1] & ~(words[0] === 1 ? 511 : words[0] === 2 ? 1023 : 4095));
       const validBounds = DECORATION_METRICS.every(([, , minimum, maximum, scale], index) =>
         words[index + 2] >= minimum * scale && words[index + 2] <= maximum * scale);
-      assert.equal(words.length, 2 + DECORATION_METRICS.length + DECORATION_COLORS.length);
+      assert.equal(words.length, 2 + DECORATION_METRICS.length + DECORATION_COLORS.length + (words[0] === 3 ? 2 : 0));
       if (!validHeader || !validBounds) throw schemaRejection(words[0]);
       this.committed = parseThemeFile(JSON.stringify({ schemaVersion: 1, theme }));
     },
@@ -129,7 +134,7 @@ test('startup without a saved theme applies the default without inventing a pref
   f.shell.start();
   assert.equal(f.preferences.snapshot.theme.id, null);
   assert.equal(f.saves.length, 0);
-  assert.equal(f.shell.getState().themeId, 'xp');
+  assert.equal(f.shell.getState().themeId, DEFAULT_DESKTOP_THEME);
 });
 
 test('startup applies Luna once through the current configuration API', async t => {
@@ -138,7 +143,7 @@ test('startup applies Luna once through the current configuration API', async t 
   assert.deepEqual(f.attempts.map(item => item.words[0]), [2]);
   assert.ok(f.attempts[0].words[1] & 512);
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
-  assert.equal(f.reports.length, 0);
+  assert.deepEqual(f.reports, []);
   assert.equal(f.shell.getSurfaces().length, 4);
   await waitForSessionReady({ shell: f.shell, native: f.backend, report() {} });
   f.shell.refresh(true);
@@ -147,30 +152,30 @@ test('startup applies Luna once through the current configuration API', async t 
 
 test('generic themes use their own supported data, not a downgraded Luna snapshot', t => {
   assert.equal(getDesktopTheme('xp').window.surfaceStyle, 'luna');
-  const f = fixture(t, { initialTheme: 'server2003' });
+  const f = fixture(t, { initialTheme: 'aqua' });
   f.shell.start();
   assert.deepEqual(f.attempts.map(item => item.words[0]), [1]);
-  assert.deepEqual(f.backend.committed, getDesktopTheme('server2003'));
-  assert.equal(f.reports.length, 0);
+  assert.deepEqual(f.backend.committed, getDesktopTheme('aqua'));
+  assert.deepEqual(f.reports, []);
 });
 
 test('rejected theme selection preserves the committed snapshot, live surfaces and preference', t => {
-  const f = fixture(t, { maximumSchema: 1, initialTheme: 'server2003' });
+  const f = fixture(t, { maximumSchema: 1, initialTheme: 'aqua' });
   f.shell.start();
   const surfaces = f.shell.getSurfaces().map(item => item.window);
   const snapshot = f.backend.committed;
   assert.equal(f.shell.selectTheme('xp'), false);
   assert.deepEqual(f.attempts.map(item => item.words[0]), [1, 2]);
   assert.equal(f.backend.committed, snapshot);
-  assert.equal(f.preferences.snapshot.theme.id, 'server2003');
-  assert.equal(f.shell.getState().themeId, 'server2003');
+  assert.equal(f.preferences.snapshot.theme.id, 'aqua');
+  assert.equal(f.shell.getState().themeId, 'aqua');
   assert.match(f.shell.getState().error, /Could not apply\/save appearance/);
   assert.ok(surfaces.every(surface => !surface.closed));
   assert.ok(f.shell.getSurfaces().every(item => surfaces.includes(item.window)));
 });
 
 test('recovered backend accepts an explicit theme selection after rejection', t => {
-  const f = fixture(t, { maximumSchema: 1, initialTheme: 'server2003' });
+  const f = fixture(t, { maximumSchema: 1, initialTheme: 'aqua' });
   f.shell.start();
   assert.equal(f.shell.selectTheme('xp'), false);
   f.backend.maximumSchema = 2;
@@ -206,7 +211,7 @@ for (const [name, failure] of [
 
 test('generic startup rejection also fails without retrying a different appearance', t => {
   const genericFailure = new Error('Appearance preparation failed: generic rejected');
-  const f = fixture(t, { initialTheme: 'server2003', failure: () => genericFailure });
+  const f = fixture(t, { initialTheme: 'aqua', failure: () => genericFailure });
   assert.throws(() => f.shell.start(), error => error === genericFailure);
   assert.deepEqual(f.attempts.map(item => item.words[0]), [1]);
   assert.equal(f.shell.getState().running, false);
@@ -214,3 +219,14 @@ test('generic startup rejection also fails without retrying a different appearan
   assert.ok(f.created.every(surface => surface.closed));
   assert.equal(f.saves.length, 0);
 });
+
+for (const id of ['server2003', 'modern']) {
+  test('schema 3 ' + id + ' is rejected by an old server without dropping new geometry', t => {
+    const f = fixture(t, { maximumSchema: 2, initialTheme: id });
+    assert.throws(() => f.shell.start(), /Appearance preparation failed/);
+    assert.deepEqual(f.attempts.map(item => item.words[0]), [3]);
+    assert.equal(f.backend.committed, null);
+    assert.equal(f.saves.length, 0);
+    assert.equal(f.shell.getState().running, false);
+  });
+}

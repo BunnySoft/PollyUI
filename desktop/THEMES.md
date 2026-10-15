@@ -10,14 +10,15 @@ connection. Native file mappings themselves have no theme policy.
 
 ## Data and ownership
 
-`resources/themes/builtin.json` contains the original **Polly / Modern** preset
-and five retained classic presets. Modern is the default only for fresh or
+`resources/themes/builtin.json` contains **Polly / Modern** and five retained
+classic presets. Modern now targets Windows 11 24H2 light geometry, not Windows
+10. Modern is the default only for fresh or
 unavailable configuration; saved classic choices and user overrides are not
-silently rewritten. It uses a solid 52px taskbar, spacious native controls and
-original geometric wallpaper/icon artwork. No platform logos/assets, Mica,
-blur or expanded decoration protocol are used.
+silently rewritten. It uses a solid 48px taskbar, centered icon tasks, a 32px
+caption content band with 46x32px controls, and original Polly artwork.
+No platform logos/assets, Mica or blur are shipped.
 `resources/themes/fallback.json` is a packaged recovery catalog.
-`shell/theme-schema.mjs` defines schema version
+`shared/ui/theme-schema.mjs` defines JSON schema version
 1 and validates every supported field. Accepted snapshots are deeply frozen.
 The catalog has `{schemaVersion, default, themes}`; a single user theme has
 `{schemaVersion, theme}`.
@@ -91,7 +92,10 @@ a visible warning rather than claiming that the requested files were applied.
   spacing, inset and radius, control gradients, glyph dimensions/visibility,
   stripe treatment, hover/inactive mixing, gradient direction, generic caption
   font family, size, weight and alignment. Text and controls must fit their
-  configured titlebar. Fractional decoration parameters use 0.001 precision.
+  configured titlebar. Optional `controlWidth` (8-96) and `controlTop` (0-64)
+  give genuinely rectangular buttons; `controlSize` remains their height.
+  Absent fields preserve the old square/centered geometry. Round controls must
+  be square. Fractional decoration parameters use 0.001 precision.
 - `layout`: typography roles, panel/menu-bar geometry, Dock tiles/window
   buttons, popup preferred dimensions, spacing, borders, tray layout,
   notification layout and switcher capacity. Existing layout kinds remain
@@ -103,17 +107,64 @@ a visible warning rather than claiming that the requested files were applied.
 - `colors`, `button`, `icons`, `panel`: shared palette and component treatments.
   Actions, focus policy, keyboard bindings and workspaces remain code-owned.
 
-`window`, `button` and `panel` optionally accept `surfaceStyle: "generic"` or
-`"luna"`. Absence preserves the original generic path. Luna is a bounded built-in
-painter, not an executable hook or arbitrary layout template. XP opts in; the
-other presets do not. Native Luna captions use numeric decoration schema 2
-(same word count/bounds, one additional flag). Shell and compositor use the
+Optional `surfaceStyle` selects a bounded painter, not executable theme code:
+window supports `generic`, `luna`, `classic`, `fluent`; button supports `generic`,
+`luna`, `classic`, `aqua`, `fluent`; panel supports `generic`, `luna`, `classic`,
+`fluent`, `tiger`, `lion`, `bigsur`. Absence preserves the generic path.
+Classic paints raised/sunken frame edges and a horizontal caption gradient.
+Fluent paints full-bleed caption button backplates, including close hover/press.
+The same C button-box function drives raster placement and compositor hit tests.
+Native Luna captions use numeric schema 2 (original word count). Classic,
+Fluent or explicit rectangular geometry use schema 3: the original fields,
+then width and top inset, with an exact checked word count. Actual schema 1/2
+messages remain readable. New data is never silently dropped to negotiate an
+older server. Shell and compositor use the
 current configuration API together; there is no legacy theme-ID selection or
 automatic schema downgrade. Rejected startup fails explicitly. Rejected theme
 changes retain the live snapshot and saved preference; transport loss and
 uncertain commits are reported rather than treated as success. Reference scope, original-art
 rights and outstanding native acceptance are documented in
 [Blue Luna](resources/themes/XP-LUNA.md).
+
+## Alignment scope and evidence
+
+The fixed targets are XP SP3 Luna, Server 2003 SP2 Classic, Windows 11 24H2
+light, OS X 10.4/10.7 and macOS 11 at 100% scale. The bounded component list,
+reading sources, font references and **uncertified version/DPI/rights gaps** are
+in `resources/themes/alignment-reference.json`. Its geometry is an implementation
+target, not an assertion that an untagged public screenshot proves a service pack.
+
+XP Start uses a two-column header/link layout; Classic uses compact menu rows
+and bevels; Modern uses a centered, searchable application grid and footer.
+Only actual installed entries/actions are shown: no fake recommendations,
+categories, pinned history or nonfunctional search. Classic cascading Programs
+menus, true user account/profile art, and Win11 recommendation/account features
+are not reproduced. Existing application launch, desktop shortcut, keyboard and
+logout actions remain connected.
+
+The three Dock painters have real icon slots, separators and running indicators:
+Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
+indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
+are still running. These are **opaque material approximations**, without
+compositor blur, reflection, wallpaper tint, magnification or authentic OS icons.
+Slots currently represent windows, not macOS application grouping. The pure
+`dockSurfaceWidth`/`applicationMenuPlacement` functions are the Shell consumer
+seam; they do not create surfaces or change state by themselves.
+
+`tests/theme-alignment-render.mjs` paints the actual Shell component functions
+through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
+simulated appearance preview, but also **not a Linux compositor desktop capture**.
+`tests/caption-alignment.c` checks/rasterizes the actual shared C primitives and
+hitboxes; it does not draw FreeType caption text or certify a full window.
+Compare same-size raw crops with no resizing, pixel masks, font exclusions or
+invented pass thresholds. Before/after difference is change evidence, not OS
+reference error. No full-scene OS MAE is available without qualified raw captures.
+
+Shared button/command typography, Classic edges/focus/disabled painting and Aqua
+button gloss are covered. SDK text-input caret/selection, every bespoke dialog,
+global scrollbars and third-party clients are not certified as OS-identical.
+Generic platform font fallback remains intentional: no forced aliases or
+proprietary font files are installed. These missing pixels prevent a 1:1 claim.
 
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing

@@ -954,7 +954,7 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     JSValue serialized = JS_UNDEFINED, envelope = JS_UNDEFINED;
     const char *name = NULL, *document = NULL;
     int document_fd = -1;
-    uint32_t words[PU_APPEARANCE_WORDS] = {1};
+    uint32_t words[PU_APPEARANCE_V3_WORDS] = {1};
     if (JS_IsException(id) || JS_IsException(window)) goto invalid;
     size_t length;
     if (!JS_IsString(id) || !(name = JS_ToCStringLen(ctx, &length, id)) ||
@@ -985,11 +985,14 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     if (JS_IsException(surface_style)) goto invalid;
     bool has_surface_style = !JS_IsUndefined(surface_style);
     JS_FreeValue(ctx, surface_style);
-    int luna = has_surface_style ? appearance_option(ctx, window, "surfaceStyle", "luna", "generic") : 0;
-    if (luna < 0) goto invalid;
+    const char *styles[] = {"generic", "luna", "classic", "fluent"};
+    int style = has_surface_style ? appearance_choice(ctx, window, "surfaceStyle", styles, 4) : 0;
+    if (style < 0) goto invalid;
+    int luna = style == PU_CAPTION_LUNA;
     words[0] = pu_appearance_schema(luna);
     words[1] = (uint32_t)(left | round << 1 | stripes << 2 | horizontal << 3 |
-        family << 4 | glyphs_hover << 6 | alignment << 7 | luna << 9);
+        family << 4 | glyphs_hover << 6 | alignment << 7 | luna << 9 |
+        (style >= PU_CAPTION_CLASSIC ? style << 10 : 0));
     unsigned index = 2;
 #define PU_ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
     if (!appearance_word(ctx, window, #token, &words[index++], 0, minimum, maximum, scale)) goto invalid;
@@ -998,6 +1001,24 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
 #define PU_ENCODE_COLOR(field) if (!appearance_word(ctx, window, #field, &words[index++], 1, 0, 0, 1)) goto invalid;
     PU_APPEARANCE_COLORS(PU_ENCODE_COLOR)
 #undef PU_ENCODE_COLOR
+    const char *extra_names[] = {"controlWidth", "controlTop"};
+    uint32_t size, title;
+    if (!appearance_word(ctx, window, "controlSize", &size, 0, 8, 64, 1) ||
+        !appearance_word(ctx, window, "titleHeight", &title, 0, 16, 96, 1)) goto invalid;
+    uint32_t extra_defaults[] = {size, title >= size ? (title - size) / 2 + (luna ? 2 : 0) : 0};
+    bool extended = style >= PU_CAPTION_CLASSIC;
+    for (unsigned i = 0; i < 2; i++) {
+        JSValue value = JS_GetPropertyStr(ctx, window, extra_names[i]);
+        if (JS_IsException(value)) goto invalid;
+        bool supplied = !JS_IsUndefined(value);
+        JS_FreeValue(ctx, value);
+        if (supplied) {
+            if (!appearance_word(ctx, window, extra_names[i], &words[index + i], 0,
+                    i ? 0 : 8, i ? 64 : 96, 1)) goto invalid;
+            extended = true;
+        } else words[index + i] = extra_defaults[i];
+    }
+    if (extended) words[0] = 3;
     struct PuDecorationTheme decoded;
     if (!pu_appearance_decode(&decoded, words)) {
         JS_ThrowRangeError(ctx, "Decoration metrics exceed supported bounds"); goto invalid;
@@ -1027,7 +1048,8 @@ static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc,
     uint32_t serial = ++control.appearance_serial;
     control.appearance_reply = 0; control.appearance_phase = 0;
     control.appearance_accepted = 0; control.appearance_error[0] = 0;
-    struct wl_array configuration = { .size = sizeof(words), .alloc = sizeof(words), .data = words };
+    size_t word_size = (words[0] == 3 ? PU_APPEARANCE_V3_WORDS : PU_APPEARANCE_WORDS) * sizeof(uint32_t);
+    struct wl_array configuration = { .size = word_size, .alloc = word_size, .data = words };
     polly_appearance_v1_prepare(control.appearance, serial, name, &configuration, document_fd, (uint32_t)length);
     close(document_fd); document_fd = -1;
     bool acknowledged = roundtrip() && control.appearance_reply == serial && control.appearance_phase == 1;

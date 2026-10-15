@@ -65,7 +65,7 @@ struct PuDecoration {
     struct wl_listener request_mode, destroy;
     struct wlr_scene_tree *tree;
     struct wlr_scene_buffer *title;
-    struct wlr_scene_rect *left, *right, *bottom;
+    struct wlr_scene_rect *left[8], *right[8], *bottom[8];
     struct PuDecorationTheme theme, pending_theme;
     uint64_t generation, pending_generation;
     bool decorated, last_active, last_maximized, last_pressed;
@@ -161,16 +161,11 @@ bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_b
     const struct PuDecorationTheme *theme = theme_for(view, false);
     if (view->toplevel->base->geometry.width < 1 || view->toplevel->base->geometry.width > 32700) return false;
     int width = view->toplevel->base->geometry.width + 2 * theme->border_width;
-    int size = theme->control_size;
-    int index = part == PU_DECORATION_CLOSE ? 0 :
-        part == PU_DECORATION_MINIMIZE && theme->left_controls ? 1 :
-        part == PU_DECORATION_MAXIMIZE && !theme->left_controls ? 1 : 2;
-    if (width < (index + 1) * size + index * theme->control_gap + 2 * theme->control_inset) return false;
+    struct PuChromeBox chrome;
+    if (!pu_chrome_button_box(theme, width, part - PU_DECORATION_CLOSE, &chrome)) return false;
     *box = (struct wlr_box) {
-        .x = -theme->border_width + (theme->left_controls ? theme->control_inset + index * (size + theme->control_gap) :
-            width - theme->control_inset - size - index * (size + theme->control_gap)),
-        .y = -theme->title_height + (theme->title_height - size) / 2 + (theme->luna ? 2 : 0),
-        .width = size, .height = size,
+        .x = chrome.x - theme->border_width, .y = chrome.y - theme->title_height,
+        .width = chrome.width, .height = chrome.height,
     };
     return true;
 }
@@ -210,18 +205,6 @@ const char *pu_decoration_cursor(int part)
     case WLR_EDGE_BOTTOM | WLR_EDGE_RIGHT: return "se-resize";
     default: return "default";
     }
-}
-
-static uint32_t mix(uint32_t from, uint32_t to, double amount)
-{
-    if (amount < 0) amount = 0;
-    if (amount > 1) amount = 1;
-    uint32_t result = 0xff000000;
-    for (int shift = 0; shift <= 16; shift += 8) {
-        int a = (from >> shift) & 255, b = (to >> shift) & 255;
-        result |= (uint32_t)(a + (b - a) * amount) << shift;
-    }
-    return result;
 }
 
 static void blend(struct TitleBuffer *buffer, int x, int y, uint32_t rgb, unsigned alpha)
@@ -334,7 +317,9 @@ static bool draw_text(struct PuDecoration *d, struct TitleBuffer *buffer, const 
         int advance = (int)(glyph->advance.x >> 6);
         if (pen + advance > end) break;
         FT_Bitmap *bitmap = &glyph->bitmap;
-        int baseline = (buffer->base.height + (int)(face->size->metrics.ascender >> 6) +
+        int baseline = (buffer->base.height + (theme->caption_style == PU_CAPTION_CLASSIC ?
+            (int)round((theme->border_width - 1) * scale) : 0) +
+            (int)(face->size->metrics.ascender >> 6) +
             (int)(face->size->metrics.descender >> 6)) / 2;
         for (unsigned y = 0; y < bitmap->rows; y++) {
             const unsigned char *row = bitmap->buffer + (bitmap->pitch < 0 ?
@@ -375,28 +360,12 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
     if (radius > logical_height / 2) radius = logical_height / 2;
     for (int y = 0; y < buffer->base.height; y++) {
         double ly = (y + 0.5) / scale;
-        bool striped = theme->pinstripe && (int)ly % theme->stripe_spacing < theme->stripe_width;
-        uint32_t vertical = pu_chrome_title(theme, ly, active);
-        if (striped) vertical = mix(vertical, theme->stripeColor, theme->stripe_opacity);
         for (int x = 0; x < buffer->base.width; x++) {
             double lx = (x + 0.5) / scale;
-            uint32_t color = vertical;
-            if (theme->horizontal) {
-                color = mix(active ? theme->titleFrom : theme->inactiveFrom,
-                    active ? theme->titleTo : theme->inactiveTo, lx / logical_width);
-                if (striped) color = mix(color, theme->stripeColor, theme->stripe_opacity);
-            }
+            uint32_t color = pu_chrome_pixel(theme, lx, ly, logical_width, active);
             double cx = lx < radius ? radius : lx > logical_width - radius ? logical_width - radius : lx;
             double cy = ly < radius ? radius : ly;
             if ((lx - cx) * (lx - cx) + (ly - cy) * (ly - cy) > radius * radius) continue;
-            bool edge = lx < theme->border_width || lx >= logical_width - theme->border_width ||
-                ly < theme->border_width;
-            if (theme->luna) {
-                if (lx < 1 || lx >= logical_width - 1)
-                    color = active ? theme->border : pu_chrome_mix(theme->inactiveFrom, 0xff000000, 0.3);
-                else if (lx < 2 || lx >= logical_width - 2)
-                    color = pu_chrome_mix(color, 0xffffffff, 0.25);
-            } else if (edge) color = theme->border;
             buffer->pixels[(size_t)y * buffer->base.width + x] = color;
         }
     }
@@ -412,7 +381,7 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
         uint32_t to = part == PU_DECORATION_CLOSE ? theme->closeTo : theme->controlTo;
         if (part == PU_DECORATION_MINIMIZE) { from = theme->minimizeFrom; to = theme->minimizeTo; }
         if (part == PU_DECORATION_MAXIMIZE) { from = theme->maximizeFrom; to = theme->maximizeTo; }
-        bool pressed = theme->luna && d->view->desktop->decoration_pressed == d->view &&
+        bool pressed = d->view->desktop->decoration_pressed == d->view &&
             d->view->desktop->decoration_part == part && d->hover == part;
         for (int y = (int)floor(box.y * scale); y < (int)ceil((box.y + box.height) * scale); y++) {
             for (int x = (int)floor(box.x * scale); x < (int)ceil((box.x + box.width) * scale); x++) {
@@ -426,12 +395,17 @@ static bool draw_title(struct PuDecoration *d, const char *text, int width, doub
                     double cy = fmax(radius, fmin(box.height - radius, ry));
                     if ((rx - cx) * (rx - cx) + (ry - cy) * (ry - cy) > radius * radius) continue;
                 }
-                uint32_t color = pu_chrome_control(theme, from, to, rx, ry, active, d->hover == part, pressed);
+                uint32_t color = pu_chrome_button(theme, part - PU_DECORATION_CLOSE,
+                    from, to, rx, ry, active, d->hover == part, pressed);
                 blend(buffer, x, y, color, 255);
                 bool mark = pu_chrome_glyph(theme, part - PU_DECORATION_CLOSE, rx, ry,
-                    d->view->mode == PU_DESKTOP_MAXIMIZED, pressed);
+                    d->view->mode == PU_DESKTOP_MAXIMIZED,
+                    pressed && theme->caption_style != PU_CAPTION_FLUENT);
                 if (mark && (!theme->glyphs_hover || d->hover == part))
-                    blend(buffer, x, y, theme->controlText, 255);
+                    blend(buffer, x, y, theme->caption_style == PU_CAPTION_FLUENT &&
+                        part == PU_DECORATION_CLOSE && d->hover == part ? 0xffffffff :
+                        !active && theme->caption_style == PU_CAPTION_FLUENT ?
+                        theme->inactiveText : theme->controlText, 255);
             }
         }
     }
@@ -477,24 +451,27 @@ void pu_decoration_update(struct PuDesktopView *view)
     const struct PuDecorationTheme *theme = theme_for(view, false);
     int border = theme->border_width;
     bool active = view->desktop->focused == view && !view->desktop->focused_layer;
-    uint32_t frame = theme->luna && !active ?
-        pu_chrome_mix(theme->inactiveFrom, 0xff000000, 0.3) : theme->border;
-    float color[4] = { ((frame >> 16) & 255) / 255.0f,
-        ((frame >> 8) & 255) / 255.0f, (frame & 255) / 255.0f, 1 };
     wlr_scene_node_set_position(&d->title->node, -border, -theme->title_height);
-    wlr_scene_node_set_position(&d->left->node, -border, 0);
-    wlr_scene_node_set_position(&d->right->node, geometry.width, 0);
-    wlr_scene_node_set_position(&d->bottom->node, -border, geometry.height);
-    wlr_scene_rect_set_size(d->left, border, geometry.height);
-    wlr_scene_rect_set_size(d->right, border, geometry.height);
-    wlr_scene_rect_set_size(d->bottom, geometry.width + 2 * border, border);
-    wlr_scene_rect_set_color(d->left, color);
-    wlr_scene_rect_set_color(d->right, color);
-    wlr_scene_rect_set_color(d->bottom, color);
+    for (int i = 0; i < 8; i++) {
+        struct wlr_scene_rect *edges[] = {d->left[i], d->right[i], d->bottom[i]};
+        for (int edge = 0; edge < 3; edge++) {
+            wlr_scene_node_set_enabled(&edges[edge]->node, i < border);
+            if (i >= border) continue;
+            uint32_t frame = pu_chrome_frame(theme, edge + 1, i, active);
+            float color[4] = { ((frame >> 16) & 255) / 255.0f,
+                ((frame >> 8) & 255) / 255.0f, (frame & 255) / 255.0f, 1 };
+            wlr_scene_rect_set_color(edges[edge], color);
+            wlr_scene_rect_set_size(edges[edge], edge == 2 ? geometry.width + 2 * border - 2 * i : 1,
+                edge == 2 ? 1 : geometry.height + border - i);
+            wlr_scene_node_set_position(&edges[edge]->node,
+                edge == 1 ? geometry.width + border - i - 1 : -border + i,
+                edge == 2 ? geometry.height + border - i - 1 : 0);
+        }
+    }
     const char *title = view->toplevel->title && *view->toplevel->title ? view->toplevel->title :
         view->toplevel->app_id && *view->toplevel->app_id ? view->toplevel->app_id : "Untitled";
     bool maximized = view->mode == PU_DESKTOP_MAXIMIZED;
-    bool pressed = theme->luna && view->desktop->decoration_pressed == view;
+    bool pressed = view->desktop->decoration_pressed == view;
     if (d->width == geometry.width && d->height == geometry.height && d->scale == scale &&
         d->last_active == active && d->last_maximized == maximized && d->last_pressed == pressed && d->last_hover == d->hover &&
         d->last_title && !strcmp(d->last_title, title)) return;
@@ -532,10 +509,14 @@ bool pu_decoration_create(struct PuDesktopView *view)
     d->tree = wlr_scene_tree_create(view->tree);
     if (!d->tree) { free(d); return false; }
     d->title = wlr_scene_buffer_create(d->tree, NULL);
-    d->left = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
-    d->right = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
-    d->bottom = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
-    if (!d->title || !d->left || !d->right || !d->bottom) {
+    bool allocated = d->title != NULL;
+    for (int i = 0; i < 8 && allocated; i++) {
+        d->left[i] = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
+        d->right[i] = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
+        d->bottom[i] = wlr_scene_rect_create(d->tree, 1, 1, (float[4]){0, 0, 0, 1});
+        allocated = d->left[i] && d->right[i] && d->bottom[i];
+    }
+    if (!allocated) {
         wlr_scene_node_destroy(&d->tree->node); free(d); return false;
     }
     wlr_scene_node_set_enabled(&d->tree->node, false);
@@ -698,12 +679,15 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     }
     if (owner->document_fd >= 0) close(owner->document_fd);
     owner->document_fd = -1; owner->document_size = 0; owner->serial = 0;
-    uint32_t words[PU_APPEARANCE_WORDS];
-    bool valid = serial && pu_appearance_identifier(name) && configuration->size == sizeof(words) &&
+    uint32_t words[PU_APPEARANCE_V3_WORDS] = {0};
+    bool valid = serial && pu_appearance_identifier(name) &&
+        (configuration->size == PU_APPEARANCE_WORDS * sizeof(uint32_t) ||
+         configuration->size == sizeof(words)) &&
         pu_appearance_document_valid(document, length);
     if (valid) {
-        memcpy(words, configuration->data, sizeof(words));
-        valid = pu_appearance_decode(&owner->staged, words);
+        memcpy(words, configuration->data, configuration->size);
+        valid = configuration->size == (words[0] == 3 ? sizeof(words) :
+            PU_APPEARANCE_WORDS * sizeof(uint32_t)) && pu_appearance_decode(&owner->staged, words);
     }
     if (!valid) {
         close(document);

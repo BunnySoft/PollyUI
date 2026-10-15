@@ -700,10 +700,10 @@ static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uin
     wlr_output_lock_attach_render(view->output, false);
     CHECK(inside && (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888));
     for (int shift = 0; shift <= 16; shift += 8) {
-        int from = (theme->titleFrom >> shift) & 255, to = (theme->titleTo >> shift) & 255;
-        int expected = theme->luna ?
-            (int)((pu_chrome_title(theme, (height / 2 + 0.5) / scale, true) >> shift) & 255) :
-            from + (int)((to - from) * ((height / 2 + 0.5) / scale / theme->title_height));
+        int expected = (int)((pu_chrome_pixel(theme,
+            (width / 2 + 0.5) / scale + theme->border_width,
+            (height / 2 + 0.5) / scale,
+            view->toplevel->base->geometry.width + 2 * theme->border_width, true) >> shift) & 255);
         int actual = (sample >> shift) & 255;
         if (theme->pinstripe) CHECK(abs(actual - expected) < 20);
         else CHECK(abs(actual - expected) <= 3);

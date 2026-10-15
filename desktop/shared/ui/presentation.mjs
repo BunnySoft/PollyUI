@@ -1,5 +1,8 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
+import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
+import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
@@ -56,20 +59,33 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
     if (!enabled || (event?.button !== undefined && event.button !== 0)) return false;
     event?.stopPropagation?.(); return action();
   };
+  const luna = isLuna(theme) && !quiet, painted = hasSurfacePaint(theme);
+  const color = !enabled ? theme.colors.muted :
+    selected && surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text;
+  const options = { selected, disabled: !enabled, quiet };
+  const caption = desktopText(text, color, themeTextSize(theme), { pointerEvents: 'none',
+    flexShrink: 1, minWidth: 0 });
+  caption.props.className = 'theme-command-label';
   return h('view', { id, role, tabIndex: enabled ? 0 : -1, 'aria-label': text,
     'aria-disabled': String(!enabled), 'aria-pressed': String(selected),
-    style: { ...horizontal, height: 36, gap: 9, paddingLeft: 12, paddingRight: 12, flexShrink: 0,
-      borderWidth: 1, borderRadius: 6, borderColor: selected ? theme.colors.accent :
+    style: { ...horizontal, height: theme.layout.buttonHeight, gap: theme.layout.controlGap,
+      paddingLeft: theme.layout.buttonPaddingX, paddingRight: theme.layout.buttonPaddingX, flexShrink: 0,
+      borderWidth: theme.layout.borderWidth, borderRadius: theme.button.radius, borderColor: selected ? theme.colors.accent :
         quiet ? 'transparent' : theme.colors.border,
       backgroundColor: selected ? theme.colors.selection : quiet ? 'transparent' : theme.colors.surface,
-      opacity: enabled ? 1 : 0.5, ...style },
-    hoverStyle: enabled ? { backgroundColor: theme.colors.selection } : {},
-    focusStyle: { borderColor: theme.colors.focus },
+      opacity: enabled ? 1 : theme.layout.disabledOpacity,
+      ...(luna ? { ...lunaButtonPaint(theme, options), position: 'relative', overflow: 'hidden' } :
+        painted ? { ...surfacePaint(theme, options), position: 'relative', overflow: 'hidden' } : {}), ...style },
+    hoverStyle: enabled && !luna && !painted ? { backgroundColor: theme.colors.selection } : {},
+    focusStyle: luna || painted ? {} : { borderColor: theme.colors.focus },
+    ...(enabled ? luna ? lunaVisualEvents(theme, options) : painted ? surfaceEvents(theme, options) : {} : {}),
     onClick: activate, onKeydown: event => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); }
     },
-  }, icon ? desktopIcon(icon, theme.colors.accent) : null,
-  desktopText(text, theme.colors.text, 14, { pointerEvents: 'none', flexShrink: 1, minWidth: 0 }));
+  }, luna ? lunaButtonDetail(theme, 'button', !enabled) : painted ? surfaceDetail(theme, options) : null,
+  icon ? desktopIcon(icon, !enabled ? theme.colors.muted : theme.colors.accent,
+    Math.min(20, theme.layout.buttonHeight - 6)) : null,
+  caption);
 }
 
 export function settingsCard(theme, title, subtitle, children = [], id) {

@@ -13,7 +13,7 @@
     <request name="destroy" type="destructor"/>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
-        Configuration is an array of native-endian uint32 words: schema 1 or 2,
+        Configuration is an array of native-endian uint32 words: schema 1, 2 or 3,
         flags, scaled metrics, then opaque ARGB colors. The exact field order,
         bounds and fixed-point scales are specified by appearance-fields.h.
         Flags encode left controls (1), round controls (2), pinstripes (4),
@@ -21,7 +21,14 @@
         hover-only glyphs (64), and text alignment (bits 7-8).
         Numeric schema 2 has the same word count and bounds, and additionally
         permits the bounded Luna painter (512). Schema 1 retains its original
-        flags and generic rendering. Unsupported data is rejected through
+        flags and generic rendering. Schema 3 appends control width (8-96px)
+        and top inset (0-64px) after the colors. Bits 10-11 select Generic (0),
+        Classic (2), or Fluent (3); value 1 is reserved. Luna still uses bit 9
+        and cannot be combined with another painter. Control height retains
+        the controlSize metric's meaning. Controls must fit the title and round
+        controls must have equal width/height. Schema 1/2 retain their original
+        word count; exact sizes are checked before decoding.
+        Unsupported data is rejected through
         prepared; the Shell keeps the last committed appearance visible.
         Name is a bounded identifier. Document is a readable, immutable memfd
         sealed against writes, growth, shrinkage and further seal changes.
