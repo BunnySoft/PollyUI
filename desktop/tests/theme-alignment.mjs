@@ -57,6 +57,34 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+for (let size = 2; size <= 12; size++) {
+  const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+    themes: { aqua: { layout: { dockIndicatorSize: size } } } })).themes.find(theme => theme.id === 'aqua');
+  const dock = dockView(theme, action, action, action, [{ id: 1, active: false, minimized: true }]);
+  const indicator = find(dock, 'shell-window-1').children[1];
+  assert.equal(indicator.props.style.width, size);
+  assert.equal(indicator.props.style.height, 4);
+  assert.equal(indicator.children.length, 4);
+  const rows = indicator.children.map(node => node.props.style);
+  rows.forEach((row, y) => {
+    assert.ok(Number.isInteger(row.left) && Number.isInteger(row.width));
+    assert.ok(row.width > 0 && row.left >= 0 && row.left + row.width <= size);
+    assert.equal(row.left * 2 + row.width, size);
+    assert.equal(row.top, y);
+    assert.equal(row.height, 1);
+    if (y) assert.ok(row.width >= rows[y - 1].width);
+  });
+  assert.equal(rows[3].width, size);
+  if (size === 7) assert.deepEqual(rows.map(row => [row.left, row.width]), [[3, 1], [2, 3], [1, 5], [0, 7]]);
+}
+for (const [id, width, height, color] of [['lion', 8, 3, '#bde8ff'], ['bigsur', 4, 4, '#303030']]) {
+  const theme = catalog.themes.find(theme => theme.id === id);
+  const indicator = find(dockView(theme, action, action, action, [{ id: 1, minimized: true }]), 'shell-window-1').children[1];
+  assert.equal(indicator.props.style.width, width);
+  assert.equal(indicator.props.style.height, height);
+  assert.equal(indicator.props.style.backgroundColor, color);
+  assert.equal(indicator.children.length, 0);
+}
 assert.equal(catalog.default, 'modern');
 const narrow = JSON.parse(JSON.stringify(catalog.themes.find(theme => theme.id === 'modern')));
 Object.assign(narrow.window, { controlWidth: 8, controlSize: 16, glyphRadius: 3, glyphThickness: 1, closeThickness: 4 });

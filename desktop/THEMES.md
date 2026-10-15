@@ -236,6 +236,17 @@ Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
 are still running. These are **opaque material approximations**, without
 compositor blur, reflection, wallpaper tint, magnification or authentic OS icons.
+Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
+with centered integer insets, retaining the default 7x4 geometry. Very narrow
+even widths degenerate to a symmetric bar rather than spilling outside the
+configured container or introducing fractional-pixel blur. The first width-only
+increment preserves the default pixels; actual GUI evidence also exposes the
+existing bottom-rim clipping of the fourth row, which remains a separate visible
+geometry defect, not a completed 7x4 pixel match.
+`tests/tiger-dock-indicator-render.mjs` records the actual visible rows at 7/2/12,
+running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
+configuration consistency evidence, not a Tiger raw-reference or native Mac
+platform acceptance.
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure

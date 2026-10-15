@@ -1120,7 +1120,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "已有tiger painter和triangle指标、固定三action/窗口scroll；alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证。"
+      "evidence": "已有tiger painter和triangle指标、固定三action/窗口scroll；2026-10-15首增量修复合法dockIndicatorSize=2..12时固定7px行造成的偏心/越界，四行采用对称整数inset；actual Windows raster GUI在7/2/12及窄Dock scroll/click/focus验证，默认7px全图before/after像素hash均3475878074。另实证默认7x4几何第四行被底部rim裁掉，实际仅1/3/5三行可见，此缺口未修、不称完整7x4或OS对齐。alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证；E22.26仍partial。"
     },
     {
       "id": "tiger-dock-material",
