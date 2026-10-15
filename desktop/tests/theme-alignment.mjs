@@ -57,6 +57,102 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+{
+  const fitError = { name: 'RangeError',
+    message: 'Dock icons and running indicators do not fit the configured slot/panel geometry' };
+  const cases = [
+    ['tiger-default', 'aqua', {}, true],
+    ['lion-default', 'lion', {}, true],
+    ['bigsur-default', 'bigsur', {}, true],
+    ['tiger-indicator12', 'aqua', { layout: { dockIndicatorSize: 12 } }, true],
+    ['lion-custom48', 'lion', { panel: { height: 74 }, layout: {
+      dockPadding: 10, dockGap: 1, dockTileWidth: 52, dockWindowWidth: 48, dockIndicatorSize: 12 } }, true],
+    ['bigsur-custom64', 'bigsur', { panel: { height: 88 }, layout: {
+      dockIconSize: 64, dockTileWidth: 72, dockWindowWidth: 72, dockIndicatorSize: 12 } }, true],
+    ['height40-icon48', 'bigsur', { panel: { height: 40 } }, false],
+    ['icon96-slot58', 'bigsur', { layout: { dockIconSize: 96 } }, false],
+    ['icon96-height108-slot96', 'bigsur', { panel: { height: 108 }, layout: {
+      dockIconSize: 96, dockTileWidth: 96, dockWindowWidth: 96 } }, true],
+    ['tiger-height60', 'aqua', { panel: { height: 60 } }, true],
+    ['lion-height60', 'lion', { panel: { height: 60 } }, true],
+    ['bigsur-height60', 'bigsur', { panel: { height: 60 } }, true],
+    ['height59-icon48', 'bigsur', { panel: { height: 59 } }, false],
+    ['marker12-touch', 'bigsur', { panel: { height: 70 }, layout: { dockIndicatorSize: 12 } }, true],
+    ['marker12-half-overlap', 'bigsur', { panel: { height: 69 }, layout: { dockIndicatorSize: 12 } }, false],
+    ['icon16-height28', 'bigsur', { panel: { height: 28 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 4 } }, true],
+    ['icon16-marker12-height38', 'bigsur', { panel: { height: 38 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 12 } }, true],
+    ['icon16-marker12-height37', 'bigsur', { panel: { height: 37 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 12 } }, false],
+    ['fixed-slot47-icon48', 'bigsur', { layout: { dockTileWidth: 47 } }, false],
+    ['window-slot47-icon48', 'bigsur', { layout: { dockWindowWidth: 47 } }, false],
+  ];
+  const original = JSON.stringify(catalog);
+  for (const [name, id, override, fits] of cases) {
+    const base = catalog.themes.find(theme => theme.id === id);
+    const theme = { ...base, panel: { ...base.panel, ...override.panel },
+      layout: { ...base.layout, ...override.layout } };
+    const parsers = [
+      () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+      () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1, themes: { [id]: override } }))
+        .themes.find(theme => theme.id === id),
+      () => parseThemeCatalog(JSON.stringify({ ...catalog,
+        themes: catalog.themes.map(item => item.id === id ? theme : item) })).themes.find(theme => theme.id === id),
+    ];
+    for (const parse of parsers) {
+      if (!fits) { assert.throws(parse, fitError, name); continue; }
+      const accepted = parse();
+      assert.deepEqual(accepted, theme, name + ' never silently adjusts explicit dimensions');
+      assert.ok(Object.isFrozen(accepted.layout));
+      const dock = dockView(accepted, action, action, action, [{ id: 1 }], action, action);
+      const fixed = find(dock, 'shell-dock-applications'), running = find(dock, 'shell-window-1');
+      assert.equal(fixed.props.style.height, theme.panel.height - 4);
+      assert.equal(fixed.props.style.paddingBottom, 8);
+      assert.equal(fixed.children[0].props.style.width, theme.layout.dockIconSize ?? 48);
+      assert.equal(running.children[1].props.style.height,
+        theme.panel.surfaceStyle === 'tiger' ? 4 : theme.panel.surfaceStyle === 'lion' ? 3 :
+          theme.layout.dockIndicatorSize ?? 4);
+      assert.equal(running.children[1].props.style.bottom, 1);
+    }
+  }
+  for (const base of catalog.themes.filter(theme => ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle))) {
+    const theme = { ...base, id: 'custom-dock', panel: { ...base.panel, height: 40 } };
+    assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })), fitError);
+    theme.panel = { ...theme.panel, kind: 'taskbar' };
+    assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })));
+    theme.panel = { ...theme.panel, kind: 'dock', surfaceStyle: 'generic' };
+    theme.layout = { ...theme.layout, dockIconSize: 96 };
+    assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })));
+  }
+  const base = catalog.themes.find(theme => theme.id === 'bigsur');
+  assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1,
+    theme: { ...base, layout: { ...base.layout, dockIconSize: 97 } } })),
+  { name: 'RangeError', message: 'bigsur.layout.dockIconSize is outside 16-96' });
+  const omitted = { ...base, panel: { ...base.panel, height: 60 }, layout: { ...base.layout } };
+  delete omitted.layout.dockIconSize;
+  delete omitted.layout.dockIndicatorSize;
+  assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })));
+  omitted.panel.height = 59;
+  assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })), fitError);
+  const { readUserThemeCatalog } = await import('../shell/theme-files.mjs');
+  const overrides = JSON.stringify({ schemaVersion: 1, themes: { bigsur: { panel: { height: 40 } } } });
+  assert.throws(() => readUserThemeCatalog({ readThemeFiles: () => ({ files: [], overrides }) }), fitError);
+  const installed = await import('../shared/ui/themes.mjs');
+  const previous = installed.DESKTOP_THEMES, revision = installed.THEME_REVISION;
+  const invalid = { ...catalog, themes: catalog.themes.map(theme => theme.id === 'bigsur' ?
+    { ...theme, panel: { ...theme.panel, height: 40 } } : theme) };
+  assert.throws(() => installed.installThemeCatalog(invalid), fitError);
+  assert.strictEqual(installed.DESKTOP_THEMES, previous);
+  assert.equal(installed.THEME_REVISION, revision);
+  assert.equal(JSON.stringify(catalog), original);
+  console.log('DOCK_ICON_FIT_VALIDATION ' + JSON.stringify({
+    accepted: cases.filter(item => item[3]).map(item => item[0]),
+    rejected: cases.filter(item => !item[3]).map(item => item[0]), error: fitError,
+    parsers: ['file', 'catalog', 'overrides'], rejectedInstallPreservesRevision: true,
+  }));
+  console.log('PASS: 20 styled Dock fit cases through file/catalog/overrides; fallback, generic and rejection propagation');
+}
 for (const theme of catalog.themes) {
   for (const count of [0, 1, 2]) {
     const generic = { ...theme, panel: { ...theme.panel, surfaceStyle: 'generic' } };
@@ -64,12 +160,16 @@ for (const theme of catalog.themes) {
       theme.layout.dockBaseWidth + count * (theme.layout.dockWindowWidth + theme.layout.windowGap));
     if (!['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle)) {
       assert.equal(dockSurfaceWidth(theme, count, 10000), dockSurfaceWidth(generic, count, 10000));
+      assert.equal(find(dockView(generic, action, action, action), 'shell-dock-viewport'), undefined);
       continue;
     }
     for (const gap of [0, theme.layout.dockGap, 12]) {
       const custom = { ...theme, layout: { ...theme.layout, dockGap: gap } };
       const windows = Array.from({ length: count }, (_, i) => ({ id: i + 1 }));
-      const dock = dockView(custom, action, action, action, windows, action, action);
+      const viewport = dockView(custom, action, action, action, windows, action, action);
+      const dock = find(viewport, 'shell-dock');
+      assert.equal(viewport.props.id, 'shell-dock-viewport');
+      assert.equal(dock.props.style.minWidth, dockSurfaceWidth(custom, count ? 1 : 0, Infinity));
       const children = dock.children.filter(child => child.props.style.position !== 'absolute');
       const naturalWidth = dock.props.style.paddingLeft + dock.props.style.paddingRight +
         children.reduce((total, child) => {
@@ -86,6 +186,77 @@ for (const theme of catalog.themes) {
       assert.equal(dockSurfaceWidth(custom, count, 100), 100 - 2 * custom.layout.screenInset);
     }
   }
+}
+{
+  const theme = catalog.themes.find(theme => theme.id === 'bigsur');
+  const custom = { ...theme, layout: { ...theme.layout, dockGap: 32 } };
+  const vnode = dockView(custom, action, action, action, Array.from({ length: 20 }, (_, id) => ({ id })));
+  const viewport = { id: 'shell-dock-viewport', offsetLeft: 0, offsetWidth: 304, scrollLeft: 0,
+    parentNode: {}, ownerDocument: {}, style: {} };
+  const surface = { id: 'shell-dock', offsetLeft: 0, offsetWidth: 391, parentNode: viewport };
+  const strip = { id: 'shell-dock-windows', offsetLeft: 324, offsetWidth: 58, scrollLeft: 0,
+    parentNode: surface };
+  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface }));
+  strip.childNodes = Array.from({ length: 20 }, (_, i) =>
+    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip }));
+  surface.childNodes = [...fixed, strip];
+  surface.querySelector = () => strip;
+  viewport.childNodes = [surface];
+  viewport.firstChild = surface;
+  const last = strip.childNodes.at(-1);
+  const focus = find(vnode, 'shell-window-19').props.onFocus;
+  focus({ currentTarget: last });
+  assert.equal(strip.scrollLeft, 1710);
+  assert.equal(viewport.scrollLeft, 78);
+  const wheel = delta => {
+    const event = { currentTarget: strip, deltaX: 0, deltaY: delta, stopped: false,
+      preventDefault() {}, stopPropagation() { this.stopped = true; } };
+    find(vnode, 'shell-dock-windows').props.onWheel(event);
+    if (!event.stopped) { event.currentTarget = viewport; vnode.props.onWheel(event); }
+  };
+  wheel(10000);
+  assert.equal(viewport.scrollLeft, 87, 'inner end chains wheel to the bounded outer viewport');
+  wheel(-1);
+  assert.equal(strip.scrollLeft, 1709);
+  assert.equal(viewport.scrollLeft, 87, 'movable inner scroll does not move fixed actions again');
+  const request = globalThis.requestAnimationFrame, frames = [];
+  let requested = 0;
+  globalThis.requestAnimationFrame = callback => { frames.push(callback); return ++requested; };
+  const flush = () => {
+    const before = requested;
+    while (frames.length) {
+      frames.shift()();
+      assert.ok(requested - before <= 1, 'a layout sync schedules at most one additional frame');
+    }
+  };
+  try {
+    viewport.ownerDocument.activeElement = last;
+    vnode.props.onMount(viewport); flush();
+    assert.equal(viewport.style.overflow, 'scroll');
+    wheel(-1);
+    const manual = [strip.scrollLeft, viewport.scrollLeft];
+    vnode.props.onUpdate(viewport); flush();
+    assert.deepEqual([strip.scrollLeft, viewport.scrollLeft], manual, 'unchanged reconciliation preserves manual scroll');
+    viewport.offsetWidth = surface.offsetWidth = 544;
+    strip.offsetWidth = 211;
+    vnode.props.onUpdate(viewport); flush();
+    assert.equal(viewport.scrollLeft, 0);
+    assert.equal(strip.scrollLeft, 1557);
+    assert.equal(viewport.style.overflow, 'visible', 'fitting Dock does not add a rim-altering clip');
+    assert.strictEqual(viewport.ownerDocument.activeElement, last);
+    viewport.offsetWidth = surface.offsetWidth = 304;
+    viewport.scrollLeft = 87;
+    surface.querySelector = () => null;
+    surface.childNodes = fixed;
+    viewport.ownerDocument.activeElement = fixed[1];
+    vnode.props.onUpdate(viewport); flush();
+    assert.equal(viewport.scrollLeft, 0, 'shrinking content clamps stale outer scroll');
+    assert.strictEqual(viewport.ownerDocument.activeElement, fixed[1]);
+  } finally {
+    if (request) globalThis.requestAnimationFrame = request;
+    else delete globalThis.requestAnimationFrame;
+  }
+  console.log('PASS: styled Dock inner/outer wheel and focus chaining, bounded layout clamp and no clock-scroll jitter');
 }
 {
   const theme = catalog.themes.find(theme => theme.id === 'modern');
@@ -155,7 +326,7 @@ for (const theme of catalog.themes) {
 for (const id of ['aqua', 'lion', 'bigsur']) {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
     themes: { [id]: { panel: { from: '#804020', to: '#204080' } } } })).themes.find(theme => theme.id === id);
-  const dock = dockView(theme, action, action, action, [{ id: 1, minimized: true }]);
+  const dock = find(dockView(theme, action, action, action, [{ id: 1, minimized: true }]), 'shell-dock');
   if (id === 'lion') {
     const shelf = dock.children[0];
     assert.equal(shelf.children.length, 25);

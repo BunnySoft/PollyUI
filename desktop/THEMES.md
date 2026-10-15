@@ -76,6 +76,26 @@ base theme. Arrays replace whole arrays. Unknown fields, IDs, schema versions,
 prototype keys, invalid colors and unsupported geometry are rejected. There are
 no executable hooks, imports, conditionals or recursive inheritance rules.
 
+Scalar ranges alone do not guarantee a usable combination. For `panel.kind`
+`dock` with `surfaceStyle` `tiger`, `lion` or `bigsur`, the explicit icon size
+`I = layout.dockIconSize ?? 48` must not exceed
+`Math.min(layout.dockTileWidth, layout.dockWindowWidth, panel.height - 12, panel.height + 2 - 2 * M)`.
+`M` is the running marker height: 4 for Tiger, 3 for Lion, otherwise
+`layout.dockIndicatorSize ?? 4`. This follows the existing slot height
+`panel.height - 4`, 8px bottom padding and marker bottom offset 1px. Icon and
+marker may touch; no extra blank pixel or automatic shrinking is required.
+Generic Docks and taskbars do not acquire this styled-Dock constraint.
+
+This is an intentional compatibility tightening: previously accepted non-fit
+files and overrides now raise
+`RangeError: Dock icons and running indicators do not fit the configured slot/panel geometry`
+through the existing rejection path. For example, height40/icon48,
+icon96/default58px slots, and Big Sur height69/icon48/marker12 reject.
+Defaults, Lion's icon48/window48 custom geometry and Big Sur's
+height88/icon64/slot72/marker12 remain valid. Explicit icon96 remains supported
+with both slots96 and height108 (marker4); height70/icon48/marker12 is also
+valid at the touching boundary. There is no forced global icon size.
+
 In **Appearance**, choose **Reload theme files** to load changes and
 apply them to the selected theme, including changes under the same ID. There is
 no file watcher. **Use packaged themes** restores a shipped appearance and
@@ -244,7 +264,8 @@ schema, caption painting and application/backend actions are unchanged.
 |---|---|---|
 | Icon task states and focus | A Fluent-only task variant supplies both initial and event paint: active uses `button.from`, inactive is transparent, hover uses `colors.selection`, held uses `button.to`, with transparent gradients. Leave/cancel/blur restore the original face. Existing stretch focus detail is retained alongside the 16px/6px running markers. Clock reconciliation preserves hover/held/focus for the same immutable theme; replacement theme identity clears stale interaction state | These are existing theme design colors, not measured Windows state-color errors |
 | Centered group and notification area | Measure actual fixed slot, task and notification-area widths after layout; keep the full group centered when it fits before the tray, otherwise retreat into the available interval. The 800px default remains at x280/width240. At 360px it is x12/width226; at 260px x12/width126. Notification/clock remain outside it. The task strip retains at least one configured task width; when fixed actions also overflow, the group independently scrolls and local focus reveals the inner viewport. Inner task wheel does not scroll the outer group | A tray consuming almost the entire output can leave less than one full configured slot; this is a physical layout boundary, not a claim of complete fit at arbitrary width/item count |
-| Nested Start app and Pin focus | Chain the existing command focus handler and use unscrolled offsets plus `verticalScrollMetrics` clamp along the known nested grid/list path. At 640px/available660 the last 80px app scrolls 46px and its 20px Pin scrolls 68px, fully visible and independently invoked once by pointer and Enter. Repeated focus does not jitter; reverse wheel clamps to zero. Search/footer rectangles and disabled activation guards remain unchanged | At 360px/available260 the existing preferred-height calculation yields a 180px menu, a zero-height body row with a 16px list, and footer y144..208 beyond root180. App/Pin focus clamps to 778/860 and Enter works, but pointer/wheel hit testing reaches the menu root rather than the list; footer fit is **not fixed**. Short-height chrome/layout degradation is a separate confirmed defect, not merely the impossibility of fitting an 80px app in 16px |
+| Nested Start app and Pin focus | Chain the existing focus handler through inner and outer viewports. At 640px/available660 the last app/Pin scrolls 46/68px and Search/footer stay fixed. The follow-up fixes the former collapsed 180px menu: its app/Pin body is now 118px, with outer maximum146. The full 80px app and 20px Pin, Search, Refresh, Close and logout have real pointer/keyboard access without shrinking fonts or controls. Inner wheel consumes movement before chaining at its boundary. Filtering and retained growth clamp stale scroll; unchanged reconciliation does not undo manual scrolling | Whole-menu scrolling intentionally moves Search/header/footer only when their existing chrome and one card cannot fit. A 40px root exposes at most 40px of an 80px app, not full fit. Initial pre-layout Search focus does reveal all 32px in that root, using outer16. This is not certification at arbitrary geometry or a new native popup/input mechanism |
+| Native owner sizing/lifetime | Subscribe after attachment, not the earlier ownerless mount. Actual host-only 240→680→240→680 resize completes in three bounded layout/reveal frames; later business `onstatechange` remains intact. Leave cancels pending frames and unsubscribes. A closed subscribed panel, its Document and handle all collect after GC | Uses generic owner/state APIs, weak remover values and owner-free finalizer tokens; no C theme painting or periodic layout polling |
 
 `tests/fluent-shell-surface-render.mjs` exercises actual views and host input in
 an unscaled 800x700 raster fixture, with local 800/360/260px taskbar layouts,
@@ -254,8 +275,11 @@ and `width = min(desiredGroupWidth, R - L)`; its left edge clamps the preferred
 screen-centered position into that interval. Owner-state observation and bounded
 post-layout frames remeasure geometry; no polling or native appearance branch is
 added. The complete default 800x48 taskbar pixels are unchanged before interaction.
-This evidence is component rendering/input, not native output resize, Windows
-pixel certification, or full low-height accessibility closure.
+The normal 640x580 menu's complete fixture PNG is unchanged. Its two-frame
+layout synchronizer also handles initial pre-layout focus and safely ignores
+a root reused as another scroll view. Component rendering/input and the
+separate native owner probe are not native output-resize, Windows pixel or
+arbitrary-geometry accessibility certification.
 
 True recommendation/account history and app-grouping semantics still need
 backend/design decisions. Full-window corners/shadows and Mica/Acrylic remain
@@ -375,8 +399,55 @@ clamp boundaries, running/minimized truth and held reconstruction. The default
 last window while the three fixed commands stay put. Node guards derive
 natural widths from actual Dock child styles and retain the generic/non-Dock
 helper branch. This is a local layout correction, not a macOS pixel-fidelity
-score; icon-fit validation, extreme-width responsive policy, materials and
-desktop/menu-bar reference gaps remain separate work.
+score; that checkpoint excludes the separate icon-fit validation below,
+extreme-width responsive policy, materials and desktop/menu-bar reference gaps.
+
+The subsequent icon-fit checkpoint adds only the schema constraint described
+above, not new rendering. `tests/theme-alignment.mjs` covers 20 combinations
+through theme-file, catalog and override parsing (13 accepted, 7 rejected),
+optional fallbacks, custom IDs and the generic/taskbar gate. Errors propagate
+through the user-file reader and installation rejects before replacing the
+active catalog/revision. `tests/mac-dock-icon-fit-render.mjs` checks real
+560x160 slot/icon/marker boxes and marker ink, normal/focused boundary states,
+16/48/64/96px icons and held-reconstruction single activation. The legal
+half-pixel marker gap rounds at rasterization without overlap; negative
+half-pixel overlap is rejected before rendering. All three default Dock
+captures and the existing 320px narrow scroll/click/focus controls remain
+byte-identical to the gap-fixed baseline. This does not certify rounded-rim
+silhouettes, whole-Dock fit on extreme outputs or native macOS appearance.
+
+The extreme-width follow-up keeps a stable `shell-dock-viewport` around the
+original material/controls surface. Its minimum content width is the existing
+`dockSurfaceWidth(theme, windows.length ? 1 : 0, Infinity)`: configured padding,
+three fixed slots and their gaps, plus the separator and one window slot when
+windows exist. Only below that threshold does the outer viewport clip/scroll
+the complete surface. It never compresses gaps, padding, icons or unequal slot
+widths. With no windows, the same rule keeps all three fixed actions reachable.
+If even one control is physically wider than the viewport, focus exposes its
+maximum visible portion rather than claiming that it fully fits.
+
+Window focus reveals the inner strip before the outer viewport; fixed-action
+focus reveals the outer viewport. Inner wheel movement stops propagation;
+at its boundary the event can move the outer Dock. A bounded two-frame
+mount/update layout check clamps stale inner/outer scroll after geometry
+changes and reveals retained focus. Unchanged clock reconciliation does not
+undo manual wheel scrolling. A fitting Dock adds no outer clip, preserving
+the existing antialiased rim pixels and normal fixed-action positions.
+
+`tests/mac-dock-extreme-render.mjs` covers real 560x180 rendering/input. With a
+304px client, gap32 and 20 windows, the formerly zero-width Tiger/Lion/Big Sur
+window strips become 54/56/58px inside 369/381/391px complete surfaces. Fixed
+actions and first/last windows have real single callbacks; Lion's full-width
+shelf remains under the last window. Big Sur wheel limits are inner1710 and
+outer87. Widening to544 clears outer scroll and preserves last-window focus;
+removing windows restores outer0 with Settings focus intact. Empty80px,
+unequal64/80px slots at100px and explicit96px slots at40px cover smaller
+outputs without silent resizing. The minimum-surface/client distinction also
+applies one pixel below the exact-fit boundary. Thirty-one full before/after
+PNG pairs for normal/default320/gap0/gap12 and legal icon configurations remain
+byte-identical. These are local layout/input guarantees, not an OS-fidelity
+claim; desktop icons, global menu-bar reference gaps and genuine materials
+remain separate.
 
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
@@ -425,6 +496,26 @@ activation are covered. A private WM_DPICHANGED 1.25 test checks adapter/backing
 refresh only, not monitor-DPI qualification. No C theme rendering is added.
 E22.7 remains partial: this does not certify default-button styles, every SDK
 widget/state, fonts or full OS appearance.
+
+The native Canvas painter cache keeps its Document, window and remover weak;
+the finalizer holds a weak remover and an owner-free unregister token. Real
+focused/unfocused closed-window node/Document/handle references all collect,
+and a detached Canvas actually unsubscribes while its owner remains open.
+Live-owner GC still preserves the focus dot and subsequent two-frame host resize.
+
+`tests/appearance-focus-render.mjs` covers a separate consumer omission:
+Appearance cards replaced the command children and lost their focus detail.
+They now retain only the original focus wrapper above the illustrations,
+without restoring bevel/gloss or changing the unfocused gallery. Actual Classic
+card focus changes 335 pixels; blur returns the full fixture to its original
+bytes. Retained XP-to-Classic focus can produce a 175px ring clip around a 176px
+Canvas; the painter uses their actual coordinate intersection for the outline,
+keeping the 176px backing and independent edge phases. All four visible edges
+are complete, and all six unfocused preset captures remain byte-identical.
+These cards/navigation are selected command buttons, not proof of themed
+checkbox/radio/switch/select/tab/list coverage. Those SDK controls already exist
+in `naive.mjs`, but their desktop-theme mapping and OS-state certification remain
+separate E22.8 work.
 
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;

@@ -3,7 +3,7 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 const painters = new WeakMap();
 const focuses = new WeakMap();
 const windowFocuses = new WeakMap();
-const focusFinalizers = new FinalizationRegistry(remove => remove());
+const focusFinalizers = new FinalizationRegistry(weak => weak.deref()?.());
 
 function repeatPattern(ctx, owner, color, background = null) {
   const tile = owner.createElement('canvas');
@@ -21,10 +21,11 @@ function repeatPattern(ctx, owner, color, background = null) {
 function stopFocus(state) {
   if (state.frame !== null) cancelAnimationFrame(state.frame);
   state.frame = null;
-  if (state.unsubscribe) state.unsubscribe();
-  focusFinalizers.unregister(state);
-  if (state.owner && windowFocuses.get(state.owner) === state.unsubscribe)
-    windowFocuses.delete(state.owner);
+  const remove = state.unsubscribe?.deref(), owner = state.owner?.deref();
+  if (remove) remove();
+  focusFinalizers.unregister(state.finalizerToken);
+  if (owner && windowFocuses.get(owner)?.deref() === remove)
+    windowFocuses.delete(owner);
   state.unsubscribe = null;
   state.owner = null;
   state.signature = '';
@@ -38,7 +39,7 @@ function showFocus(canvas, visible) {
 
 function drawFocus(canvas, state) {
   const control = canvas.parentNode?.parentNode?.parentNode, owner = control?.ownerDocument;
-  if (!state.focused || !owner || owner !== state.document ||
+  if (!state.focused || !owner || owner !== state.document.deref() ||
       owner.activeElement !== control || control.getAttribute('aria-disabled') === 'true') {
     stopFocus(state);
     showFocus(canvas, false);
@@ -46,10 +47,16 @@ function drawFocus(canvas, state) {
   }
   const width = canvas.offsetWidth, height = canvas.offsetHeight;
   if (width < 1 || height < 1) return;
-  const windowState = state.owner?.state;
+  // Measured Canvas rounding can extend beyond its clipping focus-ring view.
+  const bounds = canvas.getBoundingClientRect(), clip = canvas.parentNode.getBoundingClientRect();
+  const left = Math.max(0, clip.x - bounds.x), top = Math.max(0, clip.y - bounds.y);
+  const right = Math.min(width, clip.right - bounds.x), bottom = Math.min(height, clip.bottom - bounds.y);
+  const focusWidth = right - left, focusHeight = bottom - top;
+  if (focusWidth < 1 || focusHeight < 1) return;
+  const windowState = state.owner?.deref()?.state;
   const scale = windowState ? windowState.scale : 1;
   if (windowState) state.windowSize = [windowState.width, windowState.height, scale].join(':');
-  const signature = [width, height, scale, state.theme.colors.focus].join(':');
+  const signature = [width, height, left, top, focusWidth, focusHeight, scale, state.theme.colors.focus].join(':');
   if (state.signature === signature) { showFocus(canvas, true); return; }
   const pixelWidth = Math.ceil(width * scale), pixelHeight = Math.ceil(height * scale);
   if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
@@ -67,8 +74,8 @@ function drawFocus(canvas, state) {
   ctx.scale(scale, scale);
   ctx.fillStyle = state.pattern;
   // Each old edge began at its own zero, including the bottom and right edges.
-  for (const [x, y, w, h] of [[0, 0, width, 1], [0, height - 1, width, 1],
-    [0, 0, 1, height], [width - 1, 0, 1, height]]) {
+  for (const [x, y, w, h] of [[left, top, focusWidth, 1], [left, bottom - 1, focusWidth, 1],
+    [left, top, 1, focusHeight], [right - 1, top, 1, focusHeight]]) {
     ctx.save(); ctx.translate(x, y); ctx.fillRect(0, 0, w, h); ctx.restore();
   }
   ctx.restore();
@@ -90,7 +97,9 @@ function queueFocus(canvas, state) {
 export function paintClassicFocus(canvas, theme, focused) {
   let state = focuses.get(canvas);
   if (!state) {
-    state = { document: canvas.ownerDocument || document, frame: null, owner: null };
+    // Native Canvas roots must not retain their owner through this cache or its finalizer token.
+    state = { document: new WeakRef(canvas.ownerDocument || document),
+      frame: null, owner: null, finalizerToken: {} };
     focuses.set(canvas, state);
   }
   const control = canvas.parentNode?.parentNode?.parentNode, owner = control?.ownerDocument;
@@ -101,28 +110,28 @@ export function paintClassicFocus(canvas, theme, focused) {
     showFocus(canvas, false);
     return;
   }
-  state.document = owner;
+  if (state.document.deref() !== owner) state.document = new WeakRef(owner);
   const view = owner.defaultView;
-  if (view !== state.owner) {
+  if (view !== (state.owner?.deref() || null)) {
     stopFocus(state);
-    state.owner = view;
+    state.owner = view ? new WeakRef(view) : null;
     if (view) {
-      const previous = windowFocuses.get(view);
+      const previous = windowFocuses.get(view)?.deref();
       if (previous) previous();
       const weak = new WeakRef(canvas);
       let remove;
       remove = view.observeState(next => {
         const node = weak.deref(), current = node && focuses.get(node);
-        if (!current || current.owner !== view) { remove(); return; }
+        if (!current || current.owner?.deref() !== view) { remove(); return; }
         const size = [next.width, next.height, next.scale].join(':');
         if (size !== current.windowSize) {
           current.windowSize = size;
           queueFocus(node, current);
         }
       });
-      state.unsubscribe = remove;
-      windowFocuses.set(view, remove);
-      focusFinalizers.register(canvas, remove, state);
+      state.unsubscribe = new WeakRef(remove);
+      windowFocuses.set(view, new WeakRef(remove));
+      focusFinalizers.register(canvas, new WeakRef(remove), state.finalizerToken);
     }
   }
   drawFocus(canvas, state);

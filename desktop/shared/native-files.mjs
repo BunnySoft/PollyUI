@@ -21,20 +21,27 @@ export function call(name, ...args) {
   if (result.value < 0) throw failure(errors[result.errno] ?? 'ERR_OS_' + result.errno, name);
   return result.value;
 }
+function finishFD(fd, primary) {
+  try { call('close', fd); }
+  catch (cleanup) {
+    if (primary) {
+      throw Object.assign(new Error(primary.message + '; descriptor cleanup failed: ' + cleanup.message),
+        { code: primary.code, cause: primary, cleanup, committed: primary.committed });
+    }
+    throw cleanup;
+  }
+}
 export function usingFD(fd, action) {
   let primary = null;
   try { return action(fd); }
   catch (error) { primary = error; throw error; }
-  finally {
-    try { call('close', fd); }
-    catch (cleanup) {
-      if (primary) {
-        throw Object.assign(new Error(primary.message + '; descriptor cleanup failed: ' + cleanup.message),
-          { code: primary.code, cause: primary, cleanup, committed: primary.committed });
-      }
-      throw cleanup;
-    }
-  }
+  finally { finishFD(fd, primary); }
+}
+export async function usingFDAsync(fd, action) {
+  let primary = null;
+  try { return await action(fd); }
+  catch (error) { primary = error; throw error; }
+  finally { finishFD(fd, primary); }
 }
 export function status(fd, name = '', flags = C.emptyPath) {
   const record = backend().createRecord('statx');

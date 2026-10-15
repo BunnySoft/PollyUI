@@ -11,9 +11,10 @@ export function createProcessController({ provider, changed = () => {}, report =
       const scope = ++request;
       state = { ...state, loading: true }; changed();
       try {
-        const snapshot = await provider.snapshot();
-        const rows = processRows(snapshot, previous);
+        const snapshot = await (typeof provider.snapshotAsync === 'function' ?
+          provider.snapshotAsync(() => !closed && scope === request) : provider.snapshot());
         if (closed || scope !== request) return false;
+        const rows = processRows(snapshot, previous);
         previous = snapshot;
         state = { ...state, rows, complete: snapshot.complete, skipped: snapshot.skipped,
           updated: Date.now(), error: '' };
