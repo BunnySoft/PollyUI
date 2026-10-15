@@ -1056,7 +1056,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-15 Fluent现有Shell coherent表面修正：task consumer的首次/hover/held/leave/cancel/blur/focus和retained clock reconcile共用局部task variant，active沿button.from/inactive透明、hover沿selection/held沿button.to，恢复paint-only stretch focusdetail且保留16/6运行标记、aria及pointer/Enter/context单次。按actual fixedslot/task/tray宽与owner layout后测量，800默认group x280/240保持；360退让为x12/226、260为x12/126，与tray x242/142无重叠，inner task与outer group独立wheel/clamp和局部focusreveal使Apps/Settings/workspace/末task真实可点击；实有tray consumer与合法launcher60/task52亦实际验证。Start nested app/Pin局部chain原focus+verticalScrollMetrics，640/available660 last app/Pin滚46/68完整可见，pointer/Enter各单次、反向wheel归零/重复focus不抖，disabled/Search/footer保留。极低360/available260仍有独立confirmed布局缺陷：preferredmenu180、bodyrow0/list16、footer y144..208越root180，focus仅clamp778/860并Enter，不宣称pointer/wheel/footerfit；短高chrome降级需另定，不扩本批。tests/fluent-shell-surface-render.mjs为800x700既有raster actual组件证据，不等同native输出resize或OSexact；palette/font/schema/caption/其它五preset不改，保留共享disabled/Classic/Luna/Mac修复。THEMES有界表列清raw24H2/100%认证参考、真实recommendation/account/Appgroup业务与独立Mica/corner/shadow仍缺，E22.22保持partial。"
+      "evidence": "2026-10-15 Fluent task首次与事件共用局部task variant，active沿button.from/inactive透明、hover沿selection/held沿button.to，恢复paint-only focus并保留16/6标记、aria及pointer/Enter/context单次；retained clock保hover/held/focus。800默认group x280/240不变；360/260为x12/226与x12/126，实测tray x242/142无重叠，双层wheel/focus使fixed入口和末task可点，实有tray及launcher60/task52亦通过。后续fa3316f修首次未attach时漏订owner：真实host-only240→680→240→680恰3帧重排，业务onstatechange后写仍有效，leave取消1帧，closed panel/doc/window八轮GC均释放。初批发现180menu body0/list16/footer越界，a2b496c独立修为整menu纵向滚动：保80app/20Pin/fonts/Search/footer与preferredheight，body/list118、outermax146，app/Pin与Search/Refresh/Close/logout真实pointer/Enter、Tab跳disabled、内外wheel/clamp及retained grow/filter通过；小于80的root仅最大可见，不缩控件。首次layout前search.focus的40px root也正确scroll16完整露32px。正常640x580整图bytes不变，无不变clock抢回手动scroll；两帧布局同步/leave取消，无新observer或poll。tests/fluent-shell-surface-render.mjs为有界组件与独立native owner证据，不作24H2 OSexact/完整原生popup认证；palette/font/caption和其它preset保留，recommendation/account/Appgroup、Mica/corner/shadow仍缺，保持partial。"
     },
     {
       "id": "win11-corners-shadows",
@@ -1216,7 +1216,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；前批修正通用styledDock非空自然宽少算1个gap：三fixed+separator+windowstrip需root4gaps与inner(count-1)gaps。actual400x140中Tiger/Lion/BigSur两窗默认303/317/329→305/319/331，BigSur合法gap12的369→381、末icon裁7px→0且无多余scroll；empty/gap0/已clamp与默认320窄条的末窗click/focus、fixed3及sameDOMheldrelease保持。后续独立iconfitA按现消费者slot高panel-4/paddingBottom8/markerBottom1添加schema组合约束，保留显式16-96尺寸及touch边界，不silent缩放；20case经file/catalog/overrides为13接受7明确RangeError，含height40/icon48、96/defaultslots和marker12半像素相交拒绝。actual560x160核default与48/64/96合法custom及最小16、normal/focus boxes/markerink/held输入，default与窄条相对gapfixed基线bytes不变。tests/mac-dock-gap-render.mjs与mac-dock-icon-fit-render.mjs为本地几何合同，不是OSraw误差认证；仍缺完整licensedrawdisplaymetadata、真实材质，极窄responsive另批，desktop/menubar参考差异未夹带，保持partial。"
+      "evidence": "BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；前批修正通用styledDock非空自然宽少算1个gap：三fixed+separator+windowstrip需root4gaps与inner(count-1)gaps。actual400x140中Tiger/Lion/BigSur两窗默认303/317/329→305/319/331，BigSur合法gap12的369→381、末icon裁7px→0且无多余scroll；empty/gap0/已clamp与默认320窄条的末窗click/focus、fixed3及sameDOMheldrelease保持。后续独立iconfitA按现消费者slot高panel-4/paddingBottom8/markerBottom1添加schema组合约束，保留显式16-96尺寸及touch边界，不silent缩放；20case经file/catalog/overrides为13接受7明确RangeError，含height40/icon48、96/defaultslots和marker12半像素相交拒绝。actual560x160核default与48/64/96合法custom及最小16、normal/focus boxes/markerink/held输入，default与窄条相对gapfixed基线bytes不变。再独立修极窄fallback：稳定viewport滚动完整material/controls surface，最小宽取既有helper(count?1:0,Infinity)，不压显式尺寸；actual560x180的304client/gap32/20窗下三Mac内strip由0变54/56/58，surface369/381/391，fixed3及首末窗真click、inner/outerwheel/focus、Lion末端shelf和held均通过。BigSurinner1710/outer87；grow544及empty缩内容清outer0并保活focus，empty80/unequal64与80slots于100/96slot于40为最大可见实测。default320/gap0/gap12/合法icon共31对原图bytes0差异；clamp-1区分client与完整surface。相关三个MacDockfixtures与Node为本地几何/输入合同，不是OSraw误差认证；仍缺完整licensedrawdisplaymetadata、真实材质及nativeMac资格，desktop/menubar参考差异未夹带，保持partial。"
     },
     {
       "id": "bigsur-dock-vibrancy",
@@ -5505,6 +5505,40 @@
       "evidence": "历史 4e6b004 的未初始化 VHDX 与原 Live、其原始日志/资格保持不变。2026-10-15 新 Live 为实际 clean b7e7a700563b4b1763f305da6a9946f08df20660，tree 9c129e296b4dc970065c61a9e5e00627dd29203e 等于已推送 main 6298ff3；源/runtime/overlay/producer同版本真实重编。D:\\temp\\PollyOS\\PollyOS.iso 是版本目录内 ISO 的真 NTFS 硬链接，711092224 字节，SHA256 54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c。新 63 项/旧 72 项 checksum、ISO 297 路径/17 overlay、实际 EFI/GRUB 及 UID1000 打包 WM/Shell Wayland raster 首帧通过。新 ISO 的 UEFI/Hyper-V/实体资格未自动取得，也没有更新 installed VHDX；因此统一 Live/installed Alpha 仍部分完成，旧 Shutdown/长输入失败不被本次构建抹除。"
     },
     {
+      "id": "display-ui-scale-choices",
+      "label": "T21.8 高分屏显示缩放选择",
+      "kind": "subtask",
+      "parent": "t21",
+      "scope": "在独立Settings的每个显示器草稿中明确选择100%、150%、200%，保留自定义比例、现有Apply/可信Keep-Revert及确认后profile持久化；核逻辑尺寸、设备像素和输入，不以只放大字体替代系统显示缩放。不包含所有物理显示器/驱动或原生Mac认证。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "system-settings-hub"
+      ],
+      "evidence": "用户追加任务；bebe881合入每head 1/1.5/2快捷比例、custom125不假选、typed/paste/原+更新真值且保留input DOM/caret/selection。选择只改draft，Apply仍固定命令/serial与可信15秒确认，不自动Keep；19项Settings与38项profile检查及父actual GUI通过。私有真实Wayland输出使用历史只读WM+新GUI6a+当前JS：logical1280x720→853x480→640x360，普通400x240逻辑App backing400x240→600x360→800x480，80x32控件物理80x32→120x48→160x64，实际seat pointer和Enter每档各一次。此为真实虚拟输出功能证据，非整套native全量重编/物理HiDPI资格；window.displays().scale的SDL contentScale不被误当pixel density。未生成新ISO或改现有用户监视器。"
+    },
+    {
+      "id": "processes-list-cpu-regression",
+      "label": "App2 任务管理器响应与采样性能",
+      "kind": "task",
+      "parent": "system-apps",
+      "scope": "修复只读Processes列表全量重建和连续同步采样造成的主线程卡顿/CPU开销。保留全部最多4096观察、两秒采样、排序、真实CPU/PID身份与错误/关闭语义，不增加终止进程等管理权限，不通过缩样本或延长周期假优化。",
+      "priority": "P1",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "用户追加bug；父直接实证e21ba54：受控1024行原生Windows/raster/150%DPI刷新主线程469..531ms，复用SDK fixedRowWindow、缓存sort及可视行后约31ms；同4次两秒样本、无PNG编码的约6.5秒workload进程CPU时间3187.5→421.875ms，非用户VM实测百分比。真实GUI4096观察仅13条可视DOM行，正反wheel到完整末行scroll171596，sort/Refresh/F5、pending禁止重叠、错误stale/列表身份/缩样本clamp/close通过；真实host-only420/760/640高度均恰2帧重测。Linux实际99进程同步采样约90..105ms，UI改走批8观察后正deadline让出事件循环，真实51次heartbeat/maxgap9ms及16次取消FD总数6保持；共享usingFDAsync保原primary/cleanup错误语义，scratch按scan复用。Node9、SDK原virtual-list及actual GUI/native定点通过；单个内核调用仍同步无硬I/O期限，不冒称全硬件性能或新ISO已交付。"
+    },
+    {
       "id": "alpha-manual-acceptance",
       "label": "A0.4 集中手动验收",
       "kind": "subtask",
@@ -5540,6 +5574,9 @@
     "- 已交付并从剩余项去重：六页独立 Settings、JS iwd、基础 Files 和单普通文件同 FS 移动、只读 Processes、桌面快捷方式/框选、Canvas2D/Image、Win/Linux 有界 WebGL2/WebGPU、GUI 窗饰与 Classic 边线/纹理、Live 启动与固定路径媒体发布。它们各有明确子集，不能因此关闭共享包、多用户、物理设备、完整浏览器兼容或整系统验收。",
     "- 新发现待设计项：无 Shell 仍有完整系统窗框；当前只保证 App 存活，CSD 协商不保证不会自绘的客户有边框。独立窗饰服务尚未授权实施。其余明确待验项包括旧 Shutdown GUI/长输入失败、当前 installed 策略联合验收、真实 Mac/物理 GPU 与完整二进制发行履约。",
     "- 本次签入/推送授权不解除远端 CI、生产密钥/公开发布、外置介质写入或故障测试的独立授权门槛；保持它们为待决策/受阻，不自动启动延期功能。",
-    "- 2026-10-15 六主题差异逐项登记：保留原E22/XPLuna三个IDs，扩为XP/Classic/Win11/Tiger/Lion/BigSur及共享字体/图标/控件/真实状态的35个条目；已修复7项单列完成记录，余项区分部分实现、明确缺失与参考不足。不把所有待核对区域都伪称已有确定像素bug，不重新打开已修Classic纹理/边线/布局/菜单输入，也不自动开启blur/materials/品牌素材或全六主题测试。"
+    "- 2026-10-15 六主题差异逐项登记：保留原E22/XPLuna三个IDs，扩为XP/Classic/Win11/Tiger/Lion/BigSur及共享字体/图标/控件/真实状态的35个条目；已修复7项单列完成记录，余项区分部分实现、明确缺失与参考不足。不把所有待核对区域都伪称已有确定像素bug，不重新打开已修Classic纹理/边线/布局/菜单输入，也不自动开启blur/materials/品牌素材或全六主题测试。",
+    "- 后续本地有界E22.7交付：a1dcab3/52383ab/1130278/623e1df完成只读Document owner、独立bounded state observer、普通Proxy属性语义与Canvas弱owner/owner-free finalizer token；真实关闭focus/plain/panel对象均可GC，live detached Canvas实际unsubscribe，live-GC后两帧host-only resize和原五图bytes保持。632953f保Appearance原focus wrapper而不恢复bevel/gloss，Classic卡focus0→335px、blur0差；retained ring175/Canvas176按真实clip绘四边全0缺点且backing不缩。E22.8只读核SDK六类选择控件确已存在，但Settings导航/Appearance是selected command按钮，不把此修复当checkbox/radio/tabs全主题认证。",
+    "- 新增两项用户要求已落源码：每显示器100/150/200系统缩放，以及只读任务管理器响应/采样性能，分别有UI/真实私有输出和GUI/真实proc证据；历史Live硬链接仍b7e7a700，未以本地代码提交冒称新介质已生成。源分支仍未推送。",
+    "- 扩展检查保留两个精确基线红项：module-boundaries的旧configureAppearance(theme)静态regex，与Files专用fake DOM缺querySelector；均在未改基线上复现，未为新功能隐去或修改生产guard。定点相关测试通过不表示所有历史suite全绿。"
   ]
 }

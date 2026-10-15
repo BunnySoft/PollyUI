@@ -8,6 +8,7 @@
 import { h, reactive } from './gui/sdk/js/vue.mjs';
 import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint } from './gui/sdk/js/textindex.mjs';
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
+import { fixedRowWindow } from './gui/sdk/js/virtual-list.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -1450,11 +1451,8 @@ export function NScrollbar(props = {}, content) {
 
 export function NVirtualList(props = {}) {
   const { items = [], itemHeight = 34, height = 300, width, scrollTop = 0, onScroll, renderItem, id } = props;
-  const total = items.length * itemHeight;
-  const maxS = Math.max(0, total - height);
-  const st = Math.max(0, Math.min(maxS, scrollTop));
-  const start = Math.max(0, Math.floor(st / itemHeight) - 2);
-  const end = Math.min(items.length, Math.ceil((st + height) / itemHeight) + 2);
+  const { total, maximum: maxS, offset: st, start, end } =
+    fixedRowWindow(items.length, itemHeight, height, scrollTop);
   const vis = [];
   for (let i = start; i < end; i++) vis.push(h('view', { key: i, style: clean({ position: 'absolute', top: i * itemHeight, left: 0, right: 0, height: itemHeight, paddingLeft: 10, justifyContent: 'center' }) }, renderItem(items[i], i)));
   return h('view', { id, style: clean({ height, width, position: 'relative', overflow: 'hidden' }),

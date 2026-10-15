@@ -160,12 +160,16 @@ for (const theme of catalog.themes) {
       theme.layout.dockBaseWidth + count * (theme.layout.dockWindowWidth + theme.layout.windowGap));
     if (!['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle)) {
       assert.equal(dockSurfaceWidth(theme, count, 10000), dockSurfaceWidth(generic, count, 10000));
+      assert.equal(find(dockView(generic, action, action, action), 'shell-dock-viewport'), undefined);
       continue;
     }
     for (const gap of [0, theme.layout.dockGap, 12]) {
       const custom = { ...theme, layout: { ...theme.layout, dockGap: gap } };
       const windows = Array.from({ length: count }, (_, i) => ({ id: i + 1 }));
-      const dock = dockView(custom, action, action, action, windows, action, action);
+      const viewport = dockView(custom, action, action, action, windows, action, action);
+      const dock = find(viewport, 'shell-dock');
+      assert.equal(viewport.props.id, 'shell-dock-viewport');
+      assert.equal(dock.props.style.minWidth, dockSurfaceWidth(custom, count ? 1 : 0, Infinity));
       const children = dock.children.filter(child => child.props.style.position !== 'absolute');
       const naturalWidth = dock.props.style.paddingLeft + dock.props.style.paddingRight +
         children.reduce((total, child) => {
@@ -182,6 +186,77 @@ for (const theme of catalog.themes) {
       assert.equal(dockSurfaceWidth(custom, count, 100), 100 - 2 * custom.layout.screenInset);
     }
   }
+}
+{
+  const theme = catalog.themes.find(theme => theme.id === 'bigsur');
+  const custom = { ...theme, layout: { ...theme.layout, dockGap: 32 } };
+  const vnode = dockView(custom, action, action, action, Array.from({ length: 20 }, (_, id) => ({ id })));
+  const viewport = { id: 'shell-dock-viewport', offsetLeft: 0, offsetWidth: 304, scrollLeft: 0,
+    parentNode: {}, ownerDocument: {}, style: {} };
+  const surface = { id: 'shell-dock', offsetLeft: 0, offsetWidth: 391, parentNode: viewport };
+  const strip = { id: 'shell-dock-windows', offsetLeft: 324, offsetWidth: 58, scrollLeft: 0,
+    parentNode: surface };
+  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface }));
+  strip.childNodes = Array.from({ length: 20 }, (_, i) =>
+    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip }));
+  surface.childNodes = [...fixed, strip];
+  surface.querySelector = () => strip;
+  viewport.childNodes = [surface];
+  viewport.firstChild = surface;
+  const last = strip.childNodes.at(-1);
+  const focus = find(vnode, 'shell-window-19').props.onFocus;
+  focus({ currentTarget: last });
+  assert.equal(strip.scrollLeft, 1710);
+  assert.equal(viewport.scrollLeft, 78);
+  const wheel = delta => {
+    const event = { currentTarget: strip, deltaX: 0, deltaY: delta, stopped: false,
+      preventDefault() {}, stopPropagation() { this.stopped = true; } };
+    find(vnode, 'shell-dock-windows').props.onWheel(event);
+    if (!event.stopped) { event.currentTarget = viewport; vnode.props.onWheel(event); }
+  };
+  wheel(10000);
+  assert.equal(viewport.scrollLeft, 87, 'inner end chains wheel to the bounded outer viewport');
+  wheel(-1);
+  assert.equal(strip.scrollLeft, 1709);
+  assert.equal(viewport.scrollLeft, 87, 'movable inner scroll does not move fixed actions again');
+  const request = globalThis.requestAnimationFrame, frames = [];
+  let requested = 0;
+  globalThis.requestAnimationFrame = callback => { frames.push(callback); return ++requested; };
+  const flush = () => {
+    const before = requested;
+    while (frames.length) {
+      frames.shift()();
+      assert.ok(requested - before <= 1, 'a layout sync schedules at most one additional frame');
+    }
+  };
+  try {
+    viewport.ownerDocument.activeElement = last;
+    vnode.props.onMount(viewport); flush();
+    assert.equal(viewport.style.overflow, 'scroll');
+    wheel(-1);
+    const manual = [strip.scrollLeft, viewport.scrollLeft];
+    vnode.props.onUpdate(viewport); flush();
+    assert.deepEqual([strip.scrollLeft, viewport.scrollLeft], manual, 'unchanged reconciliation preserves manual scroll');
+    viewport.offsetWidth = surface.offsetWidth = 544;
+    strip.offsetWidth = 211;
+    vnode.props.onUpdate(viewport); flush();
+    assert.equal(viewport.scrollLeft, 0);
+    assert.equal(strip.scrollLeft, 1557);
+    assert.equal(viewport.style.overflow, 'visible', 'fitting Dock does not add a rim-altering clip');
+    assert.strictEqual(viewport.ownerDocument.activeElement, last);
+    viewport.offsetWidth = surface.offsetWidth = 304;
+    viewport.scrollLeft = 87;
+    surface.querySelector = () => null;
+    surface.childNodes = fixed;
+    viewport.ownerDocument.activeElement = fixed[1];
+    vnode.props.onUpdate(viewport); flush();
+    assert.equal(viewport.scrollLeft, 0, 'shrinking content clamps stale outer scroll');
+    assert.strictEqual(viewport.ownerDocument.activeElement, fixed[1]);
+  } finally {
+    if (request) globalThis.requestAnimationFrame = request;
+    else delete globalThis.requestAnimationFrame;
+  }
+  console.log('PASS: styled Dock inner/outer wheel and focus chaining, bounded layout clamp and no clock-scroll jitter');
 }
 {
   const theme = catalog.themes.find(theme => theme.id === 'modern');
@@ -251,7 +326,7 @@ for (const theme of catalog.themes) {
 for (const id of ['aqua', 'lion', 'bigsur']) {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
     themes: { [id]: { panel: { from: '#804020', to: '#204080' } } } })).themes.find(theme => theme.id === id);
-  const dock = dockView(theme, action, action, action, [{ id: 1, minimized: true }]);
+  const dock = find(dockView(theme, action, action, action, [{ id: 1, minimized: true }]), 'shell-dock');
   if (id === 'lion') {
     const shelf = dock.children[0];
     assert.equal(shelf.children.length, 25);

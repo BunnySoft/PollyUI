@@ -1,29 +1,25 @@
 import { alloc, platform } from 'sysrt:ffi';
 import { decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 import { fileConstants as C } from './sysrt/bindings/files.mjs';
-import { raw, call, usingFD, failure, errors } from './desktop/shared/native-files.mjs';
+import { raw, call, usingFD, usingFDAsync, failure, errors } from './desktop/shared/native-files.mjs';
 import { parseProcessStat, parseCpuTicks, parseResidentBytes } from './desktop/apps/processes/logic/model.mjs';
 
 const MAX = 4096, LIMIT = 65536;
 const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
-function readAt(directory, path) {
+function readAt(directory, path, buffer) {
   return usingFD(Number(call('open', directory, path, C.readOnly | C.noFollow | C.nonblock | C.closeOnExec, 0)), fd => {
-    const buffer = alloc(LIMIT + 1), data = new Uint8Array(LIMIT + 1);
-    try {
-      let size = 0;
-      for (;;) {
-        const view = buffer.slice(size, LIMIT + 1 - size);
-        let result;
-        try { result = raw('read', fd, view, LIMIT + 1 - size); } finally { view.close(); }
-        if (result.value < 0 && result.errno === 4) continue;
-        if (result.value < 0) throw failure(errors[result.errno] ?? 'ERR_OS_' + result.errno, 'read process data');
-        if (!result.value) break;
-        size += Number(result.value);
-        if (size > LIMIT) throw failure('EFBIG', 'process data');
-      }
-      data.set(new Uint8Array(buffer.read(size)));
-      return decodeUtf8(data.subarray(0, size));
-    } finally { buffer.close(); }
+    let size = 0;
+    for (;;) {
+      const view = buffer.slice(size, LIMIT + 1 - size);
+      let result;
+      try { result = raw('read', fd, view, LIMIT + 1 - size); } finally { view.close(); }
+      if (result.value < 0 && result.errno === 4) continue;
+      if (result.value < 0) throw failure(errors[result.errno] ?? 'ERR_OS_' + result.errno, 'read process data');
+      if (!result.value) break;
+      size += Number(result.value);
+      if (size > LIMIT) throw failure('EFBIG', 'process data');
+    }
+    return decodeUtf8(new Uint8Array(buffer.read(size)));
   });
 }
 function processIds(fd) {
@@ -50,31 +46,58 @@ function processIds(fd) {
     }
   } finally { buffer.close(); }
 }
+function* scanProcesses(root) {
+  const { ids, complete } = processIds(root), processes = [];
+  let skipped = 0;
+  const buffer = alloc(LIMIT + 1);
+  try {
+    for (const pid of ids) {
+      try {
+        const item = usingFD(Number(call('open', root, String(pid),
+          C.readOnly | C.directory | C.noFollow | C.closeOnExec, 0)), directory => {
+          const first = parseProcessStat(readAt(directory, 'stat', buffer), pid);
+          const memoryBytes = parseResidentBytes(readAt(directory, 'status', buffer));
+          const last = parseProcessStat(readAt(directory, 'stat', buffer), pid);
+          if (first.start !== last.start) throw failure('ESTALE', 'process identity');
+          return { ...last, memoryBytes };
+        });
+        processes.push(item);
+      } catch (error) {
+        if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM', 'ESTALE'].includes(error.code)) throw error;
+        skipped++;
+      }
+      yield;
+    }
+    return { processes, totalTicks: parseCpuTicks(readAt(root, 'stat', buffer)), complete, skipped };
+  } finally { buffer.close(); }
+}
+const openProcesses = () => Number(call('open', C.currentDirectory, '/proc',
+  C.readOnly | C.directory | C.noFollow | C.closeOnExec, 0));
 export function createProcessProvider() {
   if (platform !== 'linux') throw new Error('Process monitoring currently requires Linux /proc');
   return Object.freeze({
     snapshot() {
-      return usingFD(Number(call('open', C.currentDirectory, '/proc',
-        C.readOnly | C.directory | C.noFollow | C.closeOnExec, 0)), root => {
-        const { ids, complete } = processIds(root), processes = [];
-        let skipped = 0;
-        for (const pid of ids) {
-          try {
-            const item = usingFD(Number(call('open', root, String(pid),
-              C.readOnly | C.directory | C.noFollow | C.closeOnExec, 0)), directory => {
-              const first = parseProcessStat(readAt(directory, 'stat'), pid);
-              const memoryBytes = parseResidentBytes(readAt(directory, 'status'));
-              const last = parseProcessStat(readAt(directory, 'stat'), pid);
-              if (first.start !== last.start) throw failure('ESTALE', 'process identity');
-              return { ...last, memoryBytes };
-            });
-            processes.push(item);
-          } catch (error) {
-            if (!['ENOENT', 'ESRCH', 'EACCES', 'EPERM', 'ESTALE'].includes(error.code)) throw error;
-            skipped++;
+      return usingFD(openProcesses(), root => {
+        const scan = scanProcesses(root);
+        let result;
+        do { result = scan.next(); } while (!result.done);
+        return result.value;
+      });
+    },
+    async snapshotAsync(active = () => true) {
+      if (!active()) throw failure('ECANCELED', 'process sample');
+      return usingFDAsync(openProcesses(), async root => {
+        const scan = scanProcesses(root);
+        let count = 0;
+        try {
+          for (;;) {
+            if (!active()) throw failure('ECANCELED', 'process sample');
+            const result = scan.next();
+            if (result.done) return result.value;
+            // A positive macrotask deadline lets the native event loop paint and process input.
+            if (++count % 8 === 0) await new Promise(resolve => setTimeout(resolve, 4));
           }
-        }
-        return { processes, totalTicks: parseCpuTicks(readAt(root, 'stat')), complete, skipped };
+        } finally { scan.return(); }
       });
     },
   });

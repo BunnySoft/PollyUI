@@ -2,14 +2,14 @@ import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 
-export function displayField(owner, inputs, head, field, theme, width = 78) {
+export function displayField(owner, inputs, head, field, theme, width = 78, onInput = null) {
   const id = 'shell-output-' + head.id + '-' + field;
   const fontSize = themeTextSize(theme, 12);
   const appearance = { color: theme.colors.text, background: theme.colors.surface,
     selectionColor: theme.colors.selection, borderColor: theme.colors.border,
     borderRadius: theme.button.radius, fontSize };
   const existing = inputs.get(id);
-  if (existing) existing.setAppearance(appearance);
+  if (existing) { existing.setAppearance(appearance); existing.onDisplayInput = onInput; }
   return h('view', { style: { width, height: fontSize + 16, flexShrink: 0 }, onMount: node => {
     let input = inputs.get(id);
     if (!input) {
@@ -21,7 +21,15 @@ export function displayField(owner, inputs, head, field, theme, width = 78) {
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', head.name + ' ' + field);
       inputs.set(id, input);
+      const edited = () => { if (inputs.get(id) === input) input.onDisplayInput?.(); };
+      input.root.addEventListener('textinput', edited);
+      input.root.addEventListener('auxclick', event => { if (event.button === 1) edited(); });
+      input.root.addEventListener('keydown', event => {
+        if (['Backspace', 'Delete'].includes(event.key) ||
+            ((event.ctrlKey || event.metaKey) && ['x', 'v'].includes(event.key.toLowerCase()))) edited();
+      });
     }
+    input.onDisplayInput = onInput;
     node.appendChild(input.root);
   } });
 }
