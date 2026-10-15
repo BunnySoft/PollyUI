@@ -894,7 +894,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "XP-LUNA.md 的 multi-band/outline/text-shadow 基础批已实现，完整状态/reference crops 仍缺；现已改用 GUI caption-paint.mjs，历史 C strip 分数不是当前完整标题栏认证。"
+      "evidence": "XP-LUNA.md 的 multi-band/outline/text-shadow 为历史基础批。2026-10-15 恢复迁至 GUI 时遗漏的 active Luna caption text-shadow：沿用 5bb181c^ 已删除 C draw_text 的当前文字色混黑70%，以现 Canvas scale 绘制1 logical px右下偏移，共用ellipsis/metrics/baseline/text clip；不复刻旧C fractional ceil或inactive shadow。真实GUI raster before/after：active 348px、long ellipsis 57px、1.25x 456px改变，inactive/空标题/无文字空间及非Luna五preset hash保持；像素与独立两遍文字合成相同，侧strip不变。caption三键/命中/几何及palette未改。证据为actual GUI component而非native compositor输入或XP SP3 raw oracle，字体/全状态/reference crops仍缺，E22.12保持partial；历史C strip分数不是当前完整标题栏认证。"
     },
     {
       "id": "xp-taskbar-start-finish",

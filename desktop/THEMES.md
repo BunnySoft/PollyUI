@@ -143,6 +143,18 @@ creating canvases nor pattern tiles creates native windows. PollyWM contains
 no JavaScript engine, GUI instance, theme-specific painter or second font cache.
 No application content is sent to the renderer.
 
+Active Luna caption text has a hard shadow using the current title text color
+mixed 70% toward black, drawn before the foreground at a one-logical-pixel
+right/down offset. This restores the design from `draw_text` in the removed C
+painter (`5bb181c^`), not a new XP pixel oracle. Both passes share ellipsis,
+alignment, baseline and the native text rectangle clip. Existing Canvas scaling
+scales that logical offset; unlike the old C loop, fractional offsets are not
+rounded up to whole backing pixels. This increment deliberately leaves inactive
+Luna and non-Luna text unchanged; the old C loop also shadowed inactive Luna.
+`tests/luna-caption-shadow.mjs` checks actual GUI strip pixels, clipped long and
+empty/narrow titles, 1/1.25 scaling and unchanged inactive/non-Luna output.
+It does not certify XP SP3 fonts, native compositor input or OS-exact pixels.
+
 One response contains top, left, right and bottom strips in a single sealed
 memfd. Logical strip dimensions are `(clientWidth+2*border,titleHeight)`,
 `(border,clientHeight)` twice, and `(clientWidth+2*border,border)`.
