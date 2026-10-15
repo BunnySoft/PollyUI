@@ -18,6 +18,7 @@
 /third_party/harfbuzz-linux/
 /third_party/text-libs/
 /third_party/vulkan-headers/
+/third_party/angle-metal/
 .cache/
 /gui/tests/gpu/node_modules/
 

@@ -11,6 +11,10 @@
 #include <windows.h>
 #include <EGL/eglext_angle.h>
 #include <vulkan/vulkan_core.h>
+#elif defined(__APPLE__)
+#include "render/gpu_metal.h"
+#include <EGL/eglext_angle.h>
+#include <dlfcn.h>
 #else
 #include <dlfcn.h>
 #endif
@@ -43,6 +47,24 @@ struct Egl {
 } egl;
 PuGles gl;
 bool loaded, attempted;
+std::string runtime_error;
+#ifdef __APPLE__
+std::string metal_egl_path, metal_gles_path;
+bool metal_module_path(void* entry, const std::string& expected, std::string& result)
+{
+    Dl_info info = { };
+    if (!entry || !dladdr(entry, &info) || !info.dli_fname)
+        return false;
+    std::unique_ptr<char, decltype(&std::free)> actual(
+        realpath(info.dli_fname, nullptr), &std::free);
+    std::unique_ptr<char, decltype(&std::free)> requested(
+        realpath(expected.c_str(), nullptr), &std::free);
+    if (!actual || !requested || strcmp(actual.get(), requested.get()))
+        return false;
+    result = actual.get();
+    return true;
+}
+#endif
 #ifdef _WIN32
 HMODULE egl_library, gles_library;
 void* symbol(HMODULE library, const char* name)
@@ -64,6 +86,29 @@ bool load()
         L"libEGL.dll", nullptr, LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     gles_library = LoadLibraryExW(L"libGLESv2.dll", nullptr,
         LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
+#elif defined(__APPLE__)
+    std::string directory;
+    if (!pu_gpu_metal_runtime_directory(directory, runtime_error)) {
+        std::fprintf(stderr, "[webgl2] %s\n", runtime_error.c_str());
+        return false;
+    }
+    metal_egl_path = directory + "/libEGL.dylib";
+    metal_gles_path = directory + "/libGLESv2.dylib";
+    gles_library = dlopen(metal_gles_path.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_FIRST);
+    if (gles_library)
+        egl_library = dlopen(metal_egl_path.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_FIRST);
+    if (!gles_library || !egl_library) {
+        const char* detail = dlerror();
+        runtime_error = "Cannot load application-local ANGLE Metal dylibs: ";
+        runtime_error += detail ? detail : "dynamic loader did not provide a failure reason";
+        std::fprintf(stderr, "[webgl2] %s\n", runtime_error.c_str());
+        if (egl_library)
+            dlclose(egl_library);
+        if (gles_library)
+            dlclose(gles_library);
+        egl_library = gles_library = nullptr;
+        return false;
+    }
 #else
     egl_library = dlopen("libEGL.so.1", RTLD_NOW | RTLD_LOCAL);
     gles_library = dlopen("libGLESv2.so.2", RTLD_NOW | RTLD_LOCAL);
@@ -88,8 +133,9 @@ bool load()
     EGL_PROC(MakeCurrent)
     EGL_PROC(GetCurrentContext)
     EGL_PROC(GetCurrentDisplay)
-    EGL_PROC(GetCurrentSurface) EGL_PROC(DestroyContext) EGL_PROC(DestroySurface) EGL_PROC(GetError)
-        EGL_PROC(GetProcAddress) EGL_PROC(QueryString)
+    EGL_PROC(GetCurrentSurface)
+    EGL_PROC(DestroyContext) EGL_PROC(DestroySurface) EGL_PROC(GetError) EGL_PROC(GetProcAddress)
+        EGL_PROC(QueryString)
 #undef EGL_PROC
             egl.GetPlatformDisplayEXT = reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(
         egl.GetProcAddress("eglGetPlatformDisplayEXT"));
@@ -252,7 +298,7 @@ bool hardware_inventory(PuGpuDevice* d)
 #endif
 bool query_device(PuGpuDevice* d)
 {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
     const char* client_extensions = egl.QueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
     const char* display_extensions = egl.QueryString(d->display, EGL_EXTENSIONS);
     if (!extension(client_extensions, "EGL_EXT_device_query")
@@ -262,7 +308,7 @@ bool query_device(PuGpuDevice* d)
             d, "The EGL implementation does not advertise native device-query capability");
 #endif
     if (!egl.QueryDisplayAttribEXT || !egl.QueryDeviceStringEXT || !egl.QueryDeviceAttribEXT) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
         return failure(
             d, "Native EGL device-query ABI unavailable; device type cannot be verified");
 #else
@@ -274,7 +320,7 @@ bool query_device(PuGpuDevice* d)
     }
     EGLAttrib device_value = 0;
     if (!egl.QueryDisplayAttribEXT(d->display, EGL_DEVICE_EXT, &device_value) || !device_value) {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
         return failure(d, "Cannot query ANGLE's actual EGL device");
 #else
         return d->options.strict
@@ -351,6 +397,27 @@ bool query_device(PuGpuDevice* d)
     if (d->options.policy == PuGpuPolicy::Software && d->info.type != PuGpuType::Cpu)
         return failure(d, "Explicit SwiftShader policy did not yield a verified CPU device",
             PuGpuFailure::DeviceRejected);
+#elif defined(__APPLE__)
+    if (!extension(extensions, "EGL_ANGLE_device_metal"))
+        return failure(d, "The selected EGL device does not advertise native Metal device queries");
+    EGLAttrib metal = 0;
+    if (!egl.QueryDeviceAttribEXT(device, EGL_METAL_DEVICE_ANGLE, &metal) || !metal)
+        return failure(d, "Cannot query ANGLE's actual native MTLDevice");
+    if (!pu_gpu_metal_query(reinterpret_cast<void*>(metal), d->info, d->error)) {
+        d->failure = PuGpuFailure::DeviceQuery;
+        std::fprintf(stderr, "[webgl2] %s\n", d->error.c_str());
+        return false;
+    }
+    std::fprintf(stderr,
+        "[webgl2] native-device policy=%s type=metal-gpu registry=%llu name=%s low-power=%s "
+        "removable=%s headless=%s unified-memory=%s requested-power=%s hint-submitted=%s "
+        "automatic-graphics-switching=%s physical-qualification=unproven\n",
+        pu_gpu_policy_name(d->options.policy),
+        static_cast<unsigned long long>(d->info.metal_registry_id), d->info.name.c_str(),
+        d->info.metal_low_power ? "true" : "false", d->info.metal_removable ? "true" : "false",
+        d->info.metal_headless ? "true" : "false", d->info.metal_unified_memory ? "true" : "false",
+        pu_gpu_power_name(d->options.power), d->info.power_hint_submitted ? "true" : "false",
+        d->info.automatic_graphics_switching ? "true" : "false");
 #else
     if (extension(extensions, "EGL_MESA_device_software"))
         d->info.type = PuGpuType::NativeSoftware;
@@ -365,7 +432,7 @@ bool query_device(PuGpuDevice* d)
 bool pu_gpu_is_hardware(PuGpuType type)
 {
     return type == PuGpuType::Integrated || type == PuGpuType::Discrete
-        || type == PuGpuType::Virtual;
+        || type == PuGpuType::Virtual || type == PuGpuType::MetalGpu;
 }
 const char* pu_gpu_type_name(PuGpuType type)
 {
@@ -380,6 +447,8 @@ const char* pu_gpu_type_name(PuGpuType type)
         return "cpu";
     case PuGpuType::NativeSoftware:
         return "native-software";
+    case PuGpuType::MetalGpu:
+        return "metal-gpu-physical-unproven";
     default:
         return "unknown";
     }
@@ -467,17 +536,47 @@ bool pu_gpu_device_open(PuGpuDevice* d)
             return failure(
                 d, "PU_WEBGL2_DEVICE must be hardware or software", PuGpuFailure::Configuration);
     }
+#elif defined(__APPLE__)
+    if (d->options.policy == PuGpuPolicy::Default) {
+        const char* policy = std::getenv("PU_WEBGL2_DEVICE");
+        if (!policy || !*policy || !strcmp(policy, "hardware"))
+            d->options.policy = PuGpuPolicy::Hardware;
+        else
+            return failure(d,
+                "macOS ANGLE Metal only supports hardware policy; no software or GL fallback",
+                PuGpuFailure::Configuration);
+    }
+    if (d->options.policy != PuGpuPolicy::Hardware)
+        return failure(d, "Requested provider policy is unavailable for native macOS ANGLE Metal",
+            PuGpuFailure::Configuration);
 #else
     d->options.policy = PuGpuPolicy::System;
 #endif
     if (!load())
-        return failure(d, "Native EGL/GLES libraries unavailable", PuGpuFailure::Runtime);
+        return failure(d,
+            runtime_error.empty() ? "Native EGL/GLES libraries unavailable" : runtime_error.c_str(),
+            PuGpuFailure::Runtime);
 #ifdef _WIN32
     if (!module_path(egl_library, d->info.egl_library)
         || !module_path(gles_library, d->info.gles_library))
         return failure(d, "Cannot identify loaded EGL/GLES libraries", PuGpuFailure::Runtime);
     if (d->options.policy == PuGpuPolicy::Hardware && !hardware_inventory(d))
         return false;
+#elif defined(__APPLE__)
+    if (!metal_module_path(
+            symbol(egl_library, "eglGetDisplay"), metal_egl_path, d->info.egl_library)
+        || !metal_module_path(
+            symbol(gles_library, "glGetString"), metal_gles_path, d->info.gles_library))
+        return failure(d,
+            "Loaded EGL/GLES symbols are not from the application-local pinned dylibs",
+            PuGpuFailure::Runtime);
+    PuGpuFailure inventory = pu_gpu_metal_inventory(d->error);
+    if (inventory != PuGpuFailure::None) {
+        d->failure = inventory;
+        std::fprintf(stderr, "[webgl2] %s\n", d->error.c_str());
+        return false;
+    }
+    d->info.automatic_graphics_switching = pu_gpu_metal_automatic_switching();
 #endif
     d->thread = std::this_thread::get_id();
     d->failed = false;
@@ -504,6 +603,23 @@ bool pu_gpu_device_open(PuGpuDevice* d)
             pu_gpu_policy_name(d->options.policy));
         d->display = egl.GetPlatformDisplayEXT(
             EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, attributes.data());
+#elif defined(__APPLE__)
+        std::vector<EGLint> attributes
+            = { EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE };
+        if (d->options.power != PuGpuPower::Default && d->info.automatic_graphics_switching
+            && extension(egl.QueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS),
+                "EGL_ANGLE_display_power_preference")) {
+            attributes.insert(attributes.end(),
+                { EGL_POWER_PREFERENCE_ANGLE,
+                    d->options.power == PuGpuPower::LowPower ? EGL_LOW_POWER_ANGLE
+                                                             : EGL_HIGH_POWER_ANGLE });
+            d->info.power_hint_submitted = true;
+        }
+        attributes.push_back(EGL_NONE);
+        std::fprintf(
+            stderr, "[webgl2] requested ANGLE Metal GPU; no software/Vulkan/CGL fallback\n");
+        d->display = egl.GetPlatformDisplayEXT(
+            EGL_PLATFORM_ANGLE_ANGLE, EGL_DEFAULT_DISPLAY, attributes.data());
 #else
         d->display = egl.GetPlatformDisplayEXT(
             0x31DD /* EGL_PLATFORM_SURFACELESS_MESA */, EGL_DEFAULT_DISPLAY, nullptr);
@@ -512,6 +628,8 @@ bool pu_gpu_device_open(PuGpuDevice* d)
     if (d->display == EGL_NO_DISPLAY)
 #ifdef _WIN32
         return failure(d, "Requested ANGLE Vulkan display unavailable", PuGpuFailure::Unavailable);
+#elif defined(__APPLE__)
+        return failure(d, "Requested ANGLE Metal display unavailable", PuGpuFailure::Unavailable);
 #else
         d->display = egl.GetDisplay(EGL_DEFAULT_DISPLAY);
 #endif
@@ -527,8 +645,11 @@ bool pu_gpu_device_open(PuGpuDevice* d)
         && egl.ChooseConfig(d->display, attributes, &config, 1, &count) && count;
     if (ok) {
         const char* extensions = egl.QueryString(d->display, EGL_EXTENSIONS);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
         if (d->options.policy == PuGpuPolicy::Hardware && d->options.power != PuGpuPower::Default
+#ifdef __APPLE__
+            && d->info.automatic_graphics_switching
+#endif
             && extension(extensions, "EGL_ANGLE_power_preference")) {
             context.insert(context.end(),
                 { EGL_POWER_PREFERENCE_ANGLE,

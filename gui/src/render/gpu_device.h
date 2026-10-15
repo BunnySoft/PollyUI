@@ -9,7 +9,7 @@
 #include <string>
 
 enum class PuGpuPolicy { Default, Hardware, Software, System };
-enum class PuGpuType { Unknown, Integrated, Discrete, Virtual, Cpu, NativeSoftware };
+enum class PuGpuType { Unknown, Integrated, Discrete, Virtual, Cpu, NativeSoftware, MetalGpu };
 enum class PuGpuPower { Default, LowPower, HighPerformance };
 enum class PuGpuFailure {
     None,
@@ -31,6 +31,9 @@ struct PuGpuInfo {
     uint32_t vendor = 0, device = 0, api_version = 0, driver_version = 0;
     std::string name;
     std::string egl_library, gles_library, vulkan_entry_library;
+    uint64_t metal_registry_id = 0;
+    bool metal_low_power = false, metal_removable = false, metal_headless = false;
+    bool metal_unified_memory = false, automatic_graphics_switching = false;
     bool power_hint_submitted = false;
 };
 

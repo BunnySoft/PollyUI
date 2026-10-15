@@ -553,16 +553,17 @@ The physical verifier distinguishes unavailable hardware from configuration,
 runtime or ABI errors. Physical-GPU qualification remains pending; JS WebGPU
 is a separate active implementation.
 
-macOS WebGL2 requires its own ANGLE/Metal provider; the current macOS build
-still returns `null` for that context. Existing Skia/Metal UI support cannot
-serve as its implementation evidence. Reuse common JS and Canvas lifetimes,
-but qualify actual native macOS builds separately. The existing macOS raster
-CI job does not certify either new 3D backend. Mac source checkpoints through
-`20f3e21` have not been natively compiled or integrated as supported
-Metal code. That checkpoint preserves the existing raster build by making
-Darwin WebGL2 opt-in until its native dependencies are staged; this source-policy
-check is not a Darwin compile. No macOS host or permission to push a CI validation branch has
-been supplied; native compilation and Metal checks remain blocked/unqualified.
+The opt-in macOS WebGL2 source implementation through `20f3e21` is now merged
+locally, following the user's explicit acceptance of Windows/Linux compatibility
+builds as the source-integration gate. Both platforms built the same combined
+Release tree and passed Canvas2D, owning-GPU-context and GLES-core checks.
+The existing WebGPU/common Canvas sources remain unchanged.
+**The Mac implementation itself has not been compiled or tested on macOS.**
+Darwin defaults `PU_WEBGL2` to OFF, preserving existing raster builds; explicit
+ON requires the pinned standalone ANGLE/Metal runtime. Skia/Metal UI support and
+the raster-only macOS CI job do not qualify this separate provider.
+Mac linking, Metal pixels, Three and physical-device checks remain unqualified.
+No Mac host or CI execution permission is implied by this source-only merge.
 The user will provide true-machine testing after implementation; this does not
 remove native build validation or turn unavailable checks into passes.
 

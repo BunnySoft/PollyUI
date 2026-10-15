@@ -1,13 +1,18 @@
 # GPU Canvas and WebGL2
 
 `canvas.getContext("webgl2")` uses a real, owned EGL OpenGL ES 3 context and an
-offscreen color/depth/stencil framebuffer on Windows and Linux. Canvas remains
+offscreen color/depth/stencil framebuffer on qualified Windows/Linux backends. A
+separate macOS ANGLE Metal provider is implemented and wired for native builds,
+but is **not yet compiled or runtime-qualified in this Windows-only workspace**.
+Canvas remains
 an element in the ordinary DOM. There is **no canvas-specific native window,
 hidden SDL window, browser engine, or SysRT graphics bridge**.
 
 `"webgl"` and `"experimental-webgl"` are intentionally unavailable, not aliases.
-`"webgpu"` is not implemented by this increment. macOS returns `null` for
-`"webgl2"`; its UI Metal backend does not provide a WebGL context.
+`"webgpu"` is not implemented by this increment. macOS WebGL2, when built and
+provided with its separate ANGLE runtime, is not supplied by Skia's UI Metal
+backend. GPU-off/missing-runtime/unsupported-device acquisition returns `null`
+and a real creation error, not a fabricated context.
 
 This is an implemented desktop compatibility layer with native behavioral
 qualification, **not complete browser/WebGL conformance or a browser security
@@ -50,6 +55,93 @@ SDL/Skia. Every operation switches to its private context, then releases it and
 restores the prior display, context, draw/read surfaces and client API.
 
 ## Qualification and dependency provenance
+
+### macOS standalone ANGLE Metal: native execution pending
+
+The separate source pin is ANGLE
+`25b559464cb10c557e10aad1e75d1b85ddfef271`; its official received source archive
+SHA256 is `5b13a45eaa921dea76f34cea47dec4f1044ba790baa42569e0e2ee5addbb47dd`.
+`third_party/angle-metal-manifest.json` also pins depot_tools, the exact DEPS and
+license bytes, GN build policy and minimum platform facts. These hashes verify
+received official commit-addressed archives, not published standalone binary
+release checksums. **No actual macOS compilation, Metal framebuffer pixel,
+Three or physical-GPU PASS is claimed yet.**
+
+`tools/build_webgl_angle_macos.py` builds only standalone `libEGL`/`libGLESv2`
+with the Metal backend; GL/CGL, Vulkan, SwiftShader, null and WGPU backends are
+disabled. It uses a private checkout and DEPS-pinned tools/clang, records actual
+dependency revisions, and preserves complete original licenses and header
+notices. There is no browser download/install/execution, global SDK/driver
+change, or silent source-revision fallback. The existing m124 Skia raster UI
+does not need a Metal rebuild.
+
+The selected source's build defaults require macOS SDK **15 or newer**, an
+existing compatible Xcode with working `metal`/`metallib`, and deployment target
+**13.0**. Xcode 26+ may require the user's already-installed MetalToolchain
+component; the script reports missing tools instead of installing it or
+accepting Xcode licenses. Its native Metal availability requires
+`MTLGPUFamilyMac2`; older Metal-capable models can still be rejected by ANGLE.
+Apple Silicon macOS 15.0 with non-ASCII executable paths has an upstream
+availability restriction in this exact pin. No workaround silently swaps
+providers.
+
+Native acquisition asks for `EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE`. Advertised
+`EGL_EXT_device_query`/`EGL_ANGLE_device_metal` supplies ANGLE's actual MTLDevice.
+The private Objective-C++ helper uses the official Metal protocol, GPU family,
+registry ID (decimal string in diagnostic JSON), low-power/removable/headless/
+unified-memory properties. A valid Metal GPU is **GPU-backed, physical status
+unproven**; Metal APIs alone do not rule out virtualization. Strict caveat
+requests are handled from that native evidence, never renderer substrings.
+Standard power hints are submitted only when the matching EGL extension is
+advertised **and** the containing app's actual Info.plist has
+`NSSupportsAutomaticGraphicsSwitching=true`. CLI tests without that setting
+preserve the request but report `powerHintSubmitted=false`.
+
+CLI libraries live beside the executable in `polly-angle/`; `.app` libraries
+live in `Contents/Frameworks/PollyANGLE/`. The loader uses executable-derived
+absolute paths, `RTLD_FIRST`, and canonical entry-point module checks; it
+rejects DYLD search/injection overrides and never searches CWD. The staged
+dylibs have application-relative dependency paths and recorded original/
+staged hashes plus ad-hoc signatures. Product signing/notarization is separate.
+No new canvas native window is created. Owned EGL contexts restore prior
+display/context/draw/read/client API even when the UI owns no EGL context.
+The Mac-specific isolation fixture also executes an independent native Metal
+queue blit before and after GPU readback/resize/loss/close, rather than assuming
+absence of global Metal state.
+
+On a real macOS build host with existing SDL3/Skia/Node prerequisites:
+
+```bash
+python3 tools/build_webgl_angle_macos.py
+cmake -S . -B build/mac-webgl -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPU_BUILD_LAUNCHER=OFF \
+  -DPU_BUILD_DESKTOP=OFF -DPU_HOST=sdl -DPU_WEBGL2=ON \
+  -DSKIA_ROOT="$SKIA_ROOT" -DSKIA_LIB_DIR="$SKIA_LIB_DIR"
+cmake --build build/mac-webgl
+# Restore the optional pinned Three dependency only if missing:
+if [ ! -f gui/tests/gpu/node_modules/three/build/three.module.js ]; then
+  (cd gui/tests/gpu && npm ci --ignore-scripts --no-audit --no-fund)
+fi
+bash tools/test_webgl_macos.sh "$PWD/build/mac-webgl" "$PWD/build/mac-webgl-proof"
+```
+
+The verifier validates dylib/license receipts and captures real source/object/
+embedded-script and native-binary hashes. It runs the same core, nonzero-base/
+all-target mutable/immutable mip, texture/pixel, resource/GC/document/loss,
+unmodified r180 Three, owning EGL and native Metal queue fixtures, plus Canvas2D.
+Only an actual empty native Metal inventory can produce exit 77; ABI/runtime/
+configuration/driver/render failures are errors, not SKIP. With no Metal GPU,
+positive core/Three cases are explicitly NOT RUN, and no-GPU/2D still runs.
+Use `PU_WEBGL2=OFF` for an independent 2D-only build needing no ANGLE headers,
+ObjC++ helper or Metal provider. Existing raster-only CI is not a qualification
+of this new provider.
+Darwin defaults `PU_WEBGL2` to **OFF** while native qualification is pending,
+preserving existing raster builds and CI without an ANGLE bootstrap. The
+explicit `-DPU_WEBGL2=ON` command above selects the new provider and its
+dependencies; Windows/Linux retain their existing ON default. `PU_METAL`
+continues to control only the separate Skia UI renderer.
+
+### Windows and Linux qualified stages
 
 GUI-only builds use `PU_BUILD_LAUNCHER=OFF`; `PU_BUILD_DESKTOP=OFF` remains valid.
 `PU_WEBGL2=OFF` disables the backend. Enabled Windows builds need matching
