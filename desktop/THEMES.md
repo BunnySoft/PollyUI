@@ -274,9 +274,11 @@ and limits are desktop policy, not built into the decoder.
 
 ## Native and application boundary
 
-`desktop.configureAppearance(theme)` uses private appearance protocol v2:
-prepare validates a fixed numeric layout and an immutable descriptor; commit
-applies it. Each window owns current and pending value snapshots so a delayed
+Private `desktop.configureAppearance(theme, layout)` uses appearance protocol
+v3 with geometry-only numeric schema 4. Prepare validates the bounded
+JS-compiled layout and an immutable descriptor; commit publishes the snapshot.
+The existing GUI renders complete four-strip pixel responses, not C theme
+commands. Each window owns current and pending snapshots so a delayed
 configure acknowledgment cannot mutate an older frame. Three-second transport
 deadlines report lost or uncertain acknowledgment explicitly; a transport loss
 is not reported as a successful rollback.
@@ -284,9 +286,11 @@ is not reported as a successful rollback.
 The document is carried in a size-checked, sealed memfd, avoiding Wayland's
 small individual-message limit. It is capped at 32 KiB after serialization.
 PollyWM checks descriptor size, readability and sealing but does not parse JSON.
-The generated C schema lists supported fields and bounds. Generated presets
-provide the compositor bootstrap appearance and native test oracles, not a
-runtime theme-ID registry. Runtime theme IDs and values do not require recompilation.
+The generated C schema lists geometry fields and bounds. Generated preset
+geometry is test-only; the compositor has no bootstrap style or theme-ID
+registry. Runtime theme IDs and visual values do not require recompilation.
+Old private versions are explicitly rejected; the public application theme
+subscription and JSON schema remain unchanged.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the
