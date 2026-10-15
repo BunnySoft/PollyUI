@@ -22,7 +22,37 @@ const center = { alignItems: 'center', justifyContent: 'center' };
 const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
 const menuThemes = new WeakMap();
 const fluentPanels = new WeakMap();
-const panelFinalizers = new FinalizationRegistry(remove => remove());
+const panelFinalizers = new FinalizationRegistry(weak => weak.deref()?.());
+function stopFluentPanel(node) {
+  const state = fluentPanels.get(node);
+  if (!state) return;
+  if (state.frame !== null) cancelAnimationFrame(state.frame);
+  state.unsubscribe?.();
+  panelFinalizers.unregister(state.token);
+  fluentPanels.delete(node);
+}
+function observeFluentPanel(node, state) {
+  const document = node.ownerDocument, view = document?.defaultView;
+  if (!document || view?.closed) { stopFluentPanel(node); return false; }
+  if (view !== state.owner) {
+    state.unsubscribe?.();
+    panelFinalizers.unregister(state.token);
+    state.owner = view;
+    state.unsubscribe = null;
+    if (view) {
+      const weak = new WeakRef(node);
+      let remove;
+      remove = view.observeState(() => {
+        const panel = weak.deref();
+        if (!panel) { remove(); return; }
+        syncFluentPanel(panel);
+      });
+      state.unsubscribe = remove;
+      panelFinalizers.register(node, new WeakRef(remove), state.token);
+    }
+  }
+  return true;
+}
 function revealFluentTask(event) {
   let target = event.currentTarget;
   for (let strip = target.parentNode; strip; strip = strip.parentNode) {
@@ -38,28 +68,23 @@ function revealFluentTask(event) {
     target = strip;
   }
 }
-function syncFluentPanel(node) {
+function syncFluentPanel(node, theme) {
   let state = fluentPanels.get(node);
   if (!state) {
-    state = { frame: null };
+    // QuickJS retains unregister tokens; the token must not carry an owner or unsubscribe closure.
+    state = { frame: null, owner: null, unsubscribe: null, token: {} };
     fluentPanels.set(node, state);
-    const view = node.ownerDocument?.defaultView;
-    if (view) {
-      const weak = new WeakRef(node);
-      const remove = view.observeState(() => {
-        const panel = weak.deref();
-        if (!panel) { remove(); return; }
-        syncFluentPanel(panel);
-      });
-      panelFinalizers.register(node, remove);
-    }
   }
+  if (theme) state.theme = theme;
   if (state.frame !== null) return;
   state.frame = requestAnimationFrame(() => {
+    if (!observeFluentPanel(node, state)) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = null;
+      if (!observeFluentPanel(node, state)) return;
       const group = node.querySelector('#shell-centered-tasks'), tray = node.querySelector('#shell-notification-area');
-      if (!group || !tray || !node.offsetWidth) return;
+      if (!group || !tray) { stopFluentPanel(node); return; }
+      if (!node.offsetWidth) return;
       const theme = state.theme, l = theme.layout;
       const strip = node.querySelector('#shell-window-list');
       const fixed = group.childNodes.filter(child => child !== strip);
@@ -77,6 +102,7 @@ function syncFluentPanel(node) {
           fixed.length * l.panelGap + (strip.childNodes.length ? l.windowButtonWidth : 0) - width)));
       state.frame = requestAnimationFrame(() => {
         state.frame = null;
+        if (!observeFluentPanel(node, state)) return;
         if (node.ownerDocument.activeElement)
           revealFluentTask({ currentTarget: node.ownerDocument.activeElement });
       });
@@ -220,10 +246,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       node.props.onFocus = event => { focus?.(event); revealFluentTask(event); };
       return node;
     };
-    const sync = node => {
-      syncFluentPanel(node);
-      fluentPanels.get(node).theme = theme;
-    };
+    const sync = node => syncFluentPanel(node, theme);
     const tasks = windowButtons(theme, windows, toggle, actions);
     tasks.props.style.minWidth = windows.length ? theme.layout.windowButtonWidth : 0;
     const wheel = tasks.props.onWheel;
@@ -231,7 +254,8 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     return h('view', { id: 'shell-panel', style: { ...row, width: '100%', height: '100%',
       gap: theme.layout.panelGap, paddingLeft: 12, paddingRight: 12, backgroundColor: panel.from,
       borderTopWidth: 1, borderColor: theme.colors.border, position: 'relative' },
-      onMount: sync, onUpdate: sync },
+      onMount: sync, onUpdate: sync,
+      onLeave: (node, done) => { stopFluentPanel(node); done(); } },
     h('view', { id: 'shell-centered-tasks', style: { ...row, gap: theme.layout.panelGap,
       position: 'absolute', top: (panel.height - 40) / 2, left: theme.layout.panelPaddingLeft,
       width: (2 + Number(Boolean(workspace))) * ((theme.layout.launcherWidth ?? 44) + theme.layout.panelGap) +
