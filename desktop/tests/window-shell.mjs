@@ -1,5 +1,6 @@
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { BUILTIN_THEME_CATALOG, getDesktopTheme, installThemeCatalog } from './desktop/shell/themes.mjs';
+import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -7,10 +8,11 @@ function check(value, message) {
   if (!value) throw new Error(message);
   console.log('PASS: ' + message);
 }
-function rejects(action, message) {
+function rejects(action, message, reason = null) {
   let error = null;
   try { action(); } catch (failure) { error = failure; }
-  check(error !== null, message);
+  const accepted = error !== null && (!reason || reason(error));
+  check(accepted, accepted ? message : message + ' (actual rejection: ' + String(error) + ')');
 }
 async function until(predicate, message) {
   const deadline = Date.now() + 30000;
@@ -55,7 +57,10 @@ async function run() {
     window.create({ title: 'Public window-management rejection', width: 160, height: 100 });
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
     rejects(() => desktop.activateWindow(1), 'public connection cannot activate a guessed handle');
-    rejects(() => desktop.configureAppearance(getDesktopTheme('xp')), 'public connection cannot submit decoration data');
+    const theme = getDesktopTheme('xp');
+    rejects(() => desktop.configureAppearance(theme, encodeDecorationLayout(theme)),
+      'public connection cannot submit decoration data',
+      error => /unavailable|unauthorized|trusted|management connection failed/i.test(error.message));
     window.quit();
     return;
   }
@@ -84,8 +89,10 @@ async function run() {
   await until(() => find()?.active, 'live independent application');
   const id = find().id;
   rejects(() => shell.selectTheme('missing'), 'unknown catalog appearance is rejected without losing Shell privilege');
-  rejects(() => desktop.configureAppearance({ ...getDesktopTheme('xp'), id: 'xp\0invalid' }),
-    'appearance identifiers cannot contain embedded NUL');
+  const invalidIdentity = { ...getDesktopTheme('xp'), id: 'xp\0invalid' };
+  rejects(() => desktop.configureAppearance(invalidIdentity, encodeDecorationLayout(invalidIdentity)),
+    'appearance identifiers cannot contain embedded NUL',
+    error => error.name === 'TypeError' && error.message === 'Invalid appearance identity');
   const initialFrame = marker('fixture-frame-theme xp');
   await until(() => initialFrame.closed, 'Shell theme reaches real application decorations');
   if (mode === 'initial') await until(() => find()?.title === 'Updated title', 'metadata update');
@@ -158,7 +165,9 @@ async function run() {
     await until(() => configured.closed, 'updated same-ID appearance is displayed');
     const invalid = JSON.parse(JSON.stringify(changed));
     invalid.window.titleHeight = 10000;
-    rejects(() => desktop.configureAppearance(invalid), 'native boundary rejects unsafe geometry');
+    rejects(() => desktop.configureAppearance(invalid, encodeDecorationLayout(invalid)),
+      'native boundary rejects unsafe geometry',
+      error => error.name === 'RangeError' && error.message === 'Invalid decoration geometry');
     configured = marker('fixture-frame-style 3 44 325788');
     await until(() => configured.closed, 'rejected configuration preserves committed appearance');
     installThemeCatalog(BUILTIN_THEME_CATALOG);

@@ -1204,22 +1204,25 @@ App grouping, icons/pinning and complete desktop keyboard
 navigation remain future work.
 
 PollyWM supplies titlebars and borders through `xdg-decoration` negotiation.
-Server-side decoration is the default for negotiating clients without an
-explicit preference; an explicit client-side request is honored. Clients that
+Server-side decoration uses the paired GUI renderer when available for clients
+without an explicit preference; an explicit client-side request is honored. Clients that
 do not negotiate keep their existing headers. Titlebars support drag, double
 click to toggle maximize, minimize/maximize/close buttons, active/inactive
 colors, and edge/corner resizing. Fullscreen hides decorations; maximized
 content respects both panel reservations and frame extents.
 
-`desktop.configureAppearance(theme)` prepares and commits bounded decoration
-data and an immutable theme document on the trusted Shell connection through
-the restricted `polly_appearance_v1` global. Custom theme IDs need no compiled
-registry. Legacy ID selection and automatic schema downgrades are removed.
-Bootstrap presets and native bounds are generated from theme data, not
-maintained as a second palette. Regenerate with `node desktop/tools/generate-decoration-themes.mjs`;
-`--check` verifies the committed header. Standalone compositor builds require
-Fontconfig/FreeType but still do not link SDL, Skia, QuickJS, Yoga or GLib/GIO.
-Captions have basic Unicode font fallback, not complex shaping/bidi. Blur,
+The trusted Shell supplies validated theme JSON and a JS-compiled layout to
+private `desktop.configureAppearance(theme, layout)`. Appearance protocol v3
+uses geometry-only numeric schema 4 and immutable descriptors. The existing GUI
+renders four detached Canvas2D strips; PollyWM validates and atomically composes
+them with matching geometry, scale and state. Missing or failed renderers
+negotiate client-side decoration; old private Shell/WM versions are explicitly
+rejected. Public application APIs and theme JSON schema 1 remain unchanged.
+There is no C theme painter or preset registry. Regenerate geometry bounds and
+test-only fixtures with `node desktop/tools/generate-decoration-themes.mjs`;
+`--check` verifies those files. Caption fonts and shaping use the existing GUI
+text backend, not a separate WM Fontconfig/FreeType cache. PollyWM still does
+not embed SDL, Skia, QuickJS or Yoga. Blur,
 frame shadows, fully rounded client-content clipping and polished animations
 remain separate appearance work.
 
