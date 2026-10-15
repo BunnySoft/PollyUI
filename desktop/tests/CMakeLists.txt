@@ -68,7 +68,7 @@ target_link_libraries(polly-lock-test PRIVATE pollywm-core)
 target_compile_options(polly-lock-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME desktop-session-lock COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/session-lock.sh"
     $<TARGET_FILE:polly-lock-test> $<TARGET_FILE:polly-lock-test-client>)
-set_tests_properties(desktop-session-lock PROPERTIES TIMEOUT 30)
+set_tests_properties(desktop-session-lock PROPERTIES TIMEOUT 30 ENVIRONMENT "POLLY_CURSOR_THEME=PollyRabbit")
 
 add_executable(pollywm-shortcut-policy shortcut-policy.c)
 target_link_libraries(pollywm-shortcut-policy PRIVATE pollywm-core)
@@ -148,7 +148,10 @@ add_test(NAME desktop-live-startup-source COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
 set_tests_properties(desktop-live-startup-source PROPERTIES TIMEOUT 15)
 add_test(NAME desktop-cursor-native
     COMMAND pollywm-integration $<TARGET_FILE:pollywm-test-client> --cursor)
-set_tests_properties(desktop-cursor-native PROPERTIES TIMEOUT 15)
+set_tests_properties(desktop-cursor-native PROPERTIES TIMEOUT 15 ENVIRONMENT "POLLY_CURSOR_THEME=PollyRabbit")
+add_executable(polly-cursor-choice-test cursor-choice.c)
+add_test(NAME desktop-cursor-choice COMMAND polly-cursor-choice-test)
+set_tests_properties(desktop-cursor-choice PROPERTIES TIMEOUT 10)
 add_test(NAME desktop-cursor-resources COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/cursor-resources.py" $<TARGET_FILE:pollywm-integration>)
 set_tests_properties(desktop-cursor-resources PROPERTIES TIMEOUT 60)

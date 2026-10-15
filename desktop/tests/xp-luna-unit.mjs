@@ -47,8 +47,6 @@ for (const theme of catalog.themes.filter(theme => !['xp', 'modern'].includes(th
   assert.equal(isLuna(theme), false);
   assert.equal(isLuna(theme, 'window'), false);
   assert.equal(isLuna(theme, 'panel'), false);
-  const baseline = JSON.parse(readFileSync(new URL('../resources/themes/xp-reference.json', import.meta.url), 'utf8'));
-  assert.equal(theme.panel.height, baseline.unchangedPanelHeights[theme.id]);
 }
 const bands = lunaBands(xp, 'title', xp.window.titleHeight);
 assert.equal(bands.children.length, 30);
@@ -120,8 +118,8 @@ assert.equal(find(settings, 'shell-theme-xp').props.style.height, 166, 'classic 
 const apps = applicationsView(xp, [], '', action, action, action, action);
 assert.equal(find(apps, 'shell-app-search').props.style.borderRadius, 0);
 const classicPanel = panelView(catalog.themes[1], '10:31 AM', action);
-assert.equal(find(classicPanel, 'shell-menu').props.style.height, 28);
-assert.equal(find(classicPanel, 'shell-notification-area'), undefined);
+assert.equal(find(classicPanel, 'shell-menu').props.style.height, 22);
+assert.ok(find(classicPanel, 'shell-notification-area'));
 if (process.argv[2]) {
   const data = readFileSync(process.argv[2], 'utf8').trim().split(/\s+/).slice(4).map(Number);
   assert.equal(data.length, 180);

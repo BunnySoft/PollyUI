@@ -201,12 +201,7 @@ static const struct polly_appearance_v1_listener appearance_listener = {
 static void configure_appearance(struct Client *client, unsigned index)
 {
     const struct PuDecorationTheme *theme = &pu_decoration_themes[index];
-    uint32_t words[PU_APPEARANCE_WORDS] = {
-        pu_appearance_schema(theme->luna),
-        theme->left_controls | (theme->round_controls << 1) | (theme->pinstripe << 2) |
-        (theme->horizontal << 3) | (theme->font_family << 4) | (theme->glyphs_hover << 6) |
-        (theme->text_align << 7) | (theme->luna << 9),
-    };
+    uint32_t words[PU_APPEARANCE_V3_WORDS] = {pu_appearance_theme_schema(theme), pu_appearance_flags(theme)};
     unsigned position = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
     words[position++] = (uint32_t)(theme->field * (scale) + 0.5);
@@ -215,11 +210,14 @@ static void configure_appearance(struct Client *client, unsigned index)
 #define ENCODE_COLOR(name) words[position++] = theme->name;
     PU_APPEARANCE_COLORS(ENCODE_COLOR)
 #undef ENCODE_COLOR
+    words[position++] = theme->control_width;
+    words[position++] = theme->control_top;
     /* This native geometry fixture has no JS theme subscribers. */
     const char document[] = "{}";
     int fd = pu_appearance_document_create(document, sizeof(document) - 1);
     if (fd < 0) die("cannot create appearance descriptor");
-    struct wl_array configuration = { .size = sizeof(words), .data = words };
+    struct wl_array configuration = { .size = sizeof(uint32_t) *
+        (words[0] == 3 ? PU_APPEARANCE_V3_WORDS : PU_APPEARANCE_WORDS), .data = words };
     if (!++client->appearance_serial) ++client->appearance_serial;
     uint32_t serial = client->appearance_serial;
     client->appearance_phase = 0;

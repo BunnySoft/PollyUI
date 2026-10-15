@@ -14,7 +14,7 @@ int main(int argc, char **argv)
     assert(!pu_appearance_schema_rejected(1, true, false, "Unsupported appearance schema"));
     assert(!pu_appearance_schema_rejected(2, true, false, "Appearance descriptor is not sealed"));
     assert(!pu_appearance_schema_rejected(2, true, false, NULL));
-    uint32_t words[PU_APPEARANCE_WORDS] = {1};
+    uint32_t words[PU_APPEARANCE_V3_WORDS] = {1};
     unsigned index = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) words[index++] = (uint32_t)round(xp->field * scale);
     PU_APPEARANCE_METRICS(ENCODE_METRIC)

@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "scale": 1,
+  "units": "physical pixels at 100 percent; never infer service pack or DPI from a web thumbnail",
+  "status": "partial implementation targets, not a pixel-perfect certification",
+  "rights": "No Microsoft or Apple screenshot, system bitmap, font, msstyles, logo or icon is included. Public pages are reading references. Screenshot downloads/crops require a lawful analysis source; no new third-party bitmap is retained by this change.",
+  "comparison": {
+    "policy": "Compare identical-size raw crops without resizing, font masks, hidden pixels or tolerance changes. Report MAE RGB, maximum channel error and changed-pixel count. Component fixtures are actual PollyUI renders, not native Linux desktop captures.",
+    "fullScene": "not measured: no certified six-system raw capture pack and no running Linux compositor in the available host",
+    "beforeCommit": "0df54c57141c4e5dba754d22d1641ee2f8441703"
+  },
+  "targets": [
+    {
+      "id": "xp",
+      "system": "Windows XP SP3, blue Luna, normal fonts",
+      "sources": ["https://guidebookgallery.org/screenshots/winxppro/", "xp-reference.json"],
+      "qualification": "Public XP Pro page does not certify SP3 or 96 DPI. Existing xp-reference.json hashes identify only those exact historical PNGs.",
+      "geometry": { "caption": 30, "captionButton": [21, 21], "taskbar": 30, "button": 21, "startColumns": 2 },
+      "fontReference": "Tahoma 11px controls, Trebuchet MS 13px bold caption; not bundled",
+      "gaps": ["certified SP3/DPI captures", "original system icon/font rasterization", "full active/inactive/hover/pressed crops"]
+    },
+    {
+      "id": "server2003",
+      "system": "Windows Server 2003 SP2, Windows Classic",
+      "sources": ["https://guidebookgallery.org/screenshots/winserv2003web/", "https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsystemmetrics"],
+      "qualification": "Web Edition page, not a certified SP2 capture. Values are bounded Classic reconstruction targets; no screenshot-derived exactness is claimed.",
+      "geometry": { "caption": 22, "captionFrame": 3, "captionButton": [16, 14], "captionButtonTop": 5, "taskbar": 28, "taskButton": 22, "button": 23, "menuRow": 22 },
+      "colors": { "face": "#d4d0c8", "light": "#ffffff", "shadow": "#808080", "deepShadow": "#404040", "titleFrom": "#0a246a", "titleTo": "#a6caf0", "inactiveFrom": "#808080", "inactiveTo": "#c0c0c0" },
+      "fontReference": "Tahoma 11px controls, 11px bold caption; not bundled",
+      "gaps": ["SP2/96 DPI evidence", "precise GDI text baseline and rasterization", "Classic menu cascade reference crops"]
+    },
+    {
+      "id": "modern",
+      "system": "Windows 11 24H2, light, default taskbar",
+      "sources": ["https://learn.microsoft.com/en-us/windows/apps/design/basics/titlebar-design", "https://learn.microsoft.com/en-us/windows/configuration/taskbar/", "https://learn.microsoft.com/en-us/windows/configuration/start/"],
+      "qualification": "Microsoft titlebar guidance specifies 32px height and state behavior; it is not a build-tagged 24H2 raw screenshot. Taskbar/Start values are reconstruction targets, not measured 24H2 pixels.",
+      "geometry": { "captionContent": 32, "captionOuter": 33, "captionButton": [46, 32], "taskbar": 48, "taskSlot": 44, "taskIcon": 24, "start": [640, 660] },
+      "fontReference": "Segoe UI Variable/Segoe UI, 12px caption, 14px controls; not bundled",
+      "gaps": ["build-tagged 24H2/100 percent raw crops", "Mica/Acrylic backdrop", "full-window corner clipping and shadow", "Segoe font pixels", "Snap layout flyout is not implemented"]
+    },
+    {
+      "id": "aqua",
+      "system": "Mac OS X 10.4 Tiger",
+      "sources": ["https://512pixels.net/projects/aqua-screenshot-library/mac-os-x-10-4-tiger/"],
+      "qualification": "Version-specific reading reference; no licensed unscaled raw crop retained. Dock size is user-adjustable, so 48px icon size is an explicit local comparison setting, not a universal OS default.",
+      "geometry": { "dockIcon": 48, "dockSlot": 54, "dockHeight": 62, "dockInset": 0, "indicator": [7, 4], "menuBar": 22 },
+      "treatment": "2D glass rim, centered icon slots, black running triangles; not the Leopard 3D shelf",
+      "fontReference": "Lucida Grande; not bundled",
+      "gaps": ["unscaled licensed capture with Dock size/magnification settings", "real transparency", "system icon and font art"]
+    },
+    {
+      "id": "lion",
+      "system": "Mac OS X 10.7 Lion",
+      "sources": ["https://512pixels.net/projects/aqua-screenshot-library/mac-os-x-10-7-lion/"],
+      "qualification": "Version-specific reading reference, no licensed raw pixel oracle. Dock comparison fixes icons at 48px with magnification off.",
+      "geometry": { "dockIcon": 48, "dockSlot": 56, "dockHeight": 66, "dockInset": 0, "indicator": [8, 3], "menuBar": 22 },
+      "treatment": "perspective shelf with luminous running indicators; no fabricated reflection",
+      "fontReference": "Lucida Grande; not bundled",
+      "gaps": ["unscaled reference capture", "actual icon/window reflection", "glass transparency and shadow", "font and system icon pixels"]
+    },
+    {
+      "id": "bigsur",
+      "system": "macOS 11 Big Sur, light",
+      "sources": ["https://512pixels.net/projects/aqua-screenshot-library/macos-11-0-big-sur/"],
+      "qualification": "Reference describes wallpaper tint enabled. Opaque local material cannot reproduce its backdrop. Icons explicitly 48px, magnification off.",
+      "geometry": { "dockIcon": 48, "dockSlot": 58, "dockHeight": 70, "dockInset": 9, "indicator": [4, 4], "menuBar": 24 },
+      "treatment": "floating rounded rectangle, separated content slots, dark running dots",
+      "fontReference": "San Francisco; not bundled",
+      "gaps": ["raw licensed reference with display scale metadata", "wallpaper-tinted vibrancy and blur", "system icon/font pixels"]
+    }
+  ],
+  "controls": {
+    "covered": ["shared button", "desktopCommand", "launcher app rows", "menu selection", "disabled command", "focus ring"],
+    "notCertified": ["third-party client widgets", "all Settings bespoke fields", "native SDK text-input caret/selection", "global scrollbar styling", "all dialogs"],
+    "policy": "Do not claim every OS widget is covered; keep input focus, credentials and selection untouched."
+  }
+}

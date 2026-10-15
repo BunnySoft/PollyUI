@@ -275,6 +275,26 @@ system assets. The accepted Alpha.6 demonstrated function, not a finished UX.
 | Files | Integrated Explorer-like navigation/command/address areas and Places sidebar; Name/Modified/Type/Size columns, Properties for complete metadata | Current native file operations, exact-entry identity and no-clobber/error semantics |
 | Files interaction | Complete first slice: single selection/focus, open, navigation, sorting, loaded-name filtering, context actions and inline rename. Normal/narrow native browser and details journeys passed, including real file/MIME operations and normal window close; current-main normal evidence was independently verified | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
 
+The 2026-10-15 theme increment integrates `ce21f540` and `882f9182`: Classic
+caption bevels, real rectangular Win11 caption controls, theme-specific taskbars
+and Start menus, three Dock painters and shared control treatments. The Shell
+uses the new Dock-width and menu-placement helpers. Overflowing Dock window
+slots remain scrollable without displacing the fixed actions, and rectangular
+glyph bounds agree between JS and native decoding. Original Polly artwork is
+retained. Product component geometry, current-engine before/after bytes and C
+painter checks are evidence of implementation, not six-system pixel-perfect
+certification: no complete qualified OS pixel oracle is available, and fonts,
+material effects and broader widget/state coverage retain explicit gaps.
+The attempted Linux native compilation could not start because the Podman
+connection failed; it is not a passing compositor/bridge build.
+
+Cursor default selection is updated from `0d48e280`: unset, empty or `classic`
+selects conventional PollyClassic; `PollyRabbit` remains an explicit startup
+choice. Existing animation checks select Rabbit explicitly. This does not add
+a saved GUI pointer preference, change cursor ownership or rewrite any
+published Alpha media. The current ISO predates these Settings/theme/cursor
+source changes.
+
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses
 actual rendered windows and layout/interaction checks, not screenshots of a

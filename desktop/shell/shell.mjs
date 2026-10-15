@@ -1,3 +1,4 @@
+import { dockSurfaceWidth, applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 import { render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
@@ -270,8 +271,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height },
     };
     if (dock) result.dock = {
-      layer: 'top', width: Math.max(1, Math.min(layout.dockBaseWidth +
-        visibleWindows().length * (layout.dockWindowWidth + layout.windowGap), output.width - layout.screenInset * 2)), height: theme.panel.height,
+      layer: 'top', width: dockSurfaceWidth(theme, visibleWindows().length, output.width), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
       transparent: true,
     };
@@ -711,14 +711,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const root = bundle.surfaces.wallpaper.window.document.body;
     const width = root.offsetWidth || bundle.output.width;
     const height = root.offsetHeight || bundle.output.height;
-    const mac = theme.panel.kind === 'dock';
     try {
       menu = newSurface(bundle.output, 'settings', {
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
         height: Math.max(1, Math.min(layout.menuHeight, height - theme.panel.height - layout.overlayInset * 2)),
-        anchors: [mac ? 'top' : 'bottom', 'left'],
-        margins: { left: layout.screenInset, [mac ? 'top' : 'bottom']:
-          mac ? layout.menuBarHeight + layout.menuTopGap : theme.panel.height + layout.menuGap },
+        ...applicationMenuPlacement(theme),
         keyboard: 'exclusive', transparent: true,
       });
     } catch (failure) {

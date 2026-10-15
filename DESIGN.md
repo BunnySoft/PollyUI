@@ -390,12 +390,16 @@ outgoing native drag-and-drop support. See the [public input contract](./README.
 
 ### 5.3 System-level animated cursor candidate
 
-The user clarified on 2026-10-11 that the rabbit cursor is the **system/desktop
+**Current default (2026-10-15):** conventional PollyClassic; the rabbit is an
+explicit `POLLY_CURSOR_THEME=PollyRabbit` option. Unset/empty settings use Classic.
+This source policy does not rewrite the historical Alpha.8 image or its receipts.
+
+Historically, the user clarified on 2026-10-11 that the rabbit cursor is the **system/desktop
 default**, not an application overlay. The user selected it for the version
 after Alpha.7; the source prototype is implemented, while the exact next release number is not frozen.
 It is not part of the Alpha.7 Files/ISO scope.
 
-PollyWM owns the default cursor theme and its animation: an idle rabbit,
+When the rabbit option is selected, PollyWM owns its animation: an idle rabbit,
 running while moving, hopping on a click, and an effort pose while dragging.
 The compositor observes the input lifecycle; individual apps do not need
 global mouse listeners or access to other apps' content. Cancellation, released

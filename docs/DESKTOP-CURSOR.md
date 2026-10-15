@@ -1,10 +1,11 @@
-# System rabbit cursor
+# System cursor themes
 
-PollyWM now supplies an original rabbit as the **system/desktop theme default**,
-with running, click-hop and held-movement effort animation. It is a native
-wlroots cursor, not a hidden pointer plus an application overlay. This source
-implementation is after the Alpha.7 freeze; it does not change Alpha.7 media,
-its qualification, or `desktop/VERSION`.
+PollyWM uses **PollyClassic (conventional cursors) by default**. The original
+PollyRabbit theme remains an explicit option, including running, click-hop and
+held-movement effort animation. These are native wlroots cursor themes, not a
+hidden pointer plus an application overlay. The 2026-10-15 default change does
+not alter historical Alpha.8 rabbit-default media, qualification or
+`desktop/VERSION`.
 
 ## Resources and configuration
 
@@ -49,8 +50,8 @@ Startup environment configuration:
 
 | Variable | Values | Behavior |
 |---|---|---|
-| `POLLY_CURSOR_THEME` | unset or `PollyRabbit` | Packaged original rabbit theme |
-| `POLLY_CURSOR_THEME` | `classic` | Packaged conventional theme; no input-action animation |
+| `POLLY_CURSOR_THEME` | unset, empty, or `classic` | Packaged conventional theme; no input-action animation |
+| `POLLY_CURSOR_THEME` | `PollyRabbit` | Explicitly opt into the packaged original rabbit theme |
 | `POLLY_CURSOR_THEME` | absolute theme directory | Read known flat `cursors\` names from that directory |
 | `POLLY_CURSOR_STATIC` | unset/`0`, or `1` | Enable animation, or static rabbit/reduced motion |
 
@@ -58,8 +59,9 @@ Invalid settings fail startup explicitly. The packaged root is executable-relati
 so a relocated installation works without a source checkout. Only executables
 inside the configured build directory use source-tree resources. No global
 `XCURSOR_PATH`, host Xcursor configuration, or client environment is overwritten.
-Settings theme editors, upload UI, size preferences and a live configuration
-protocol are deliberately deferred.
+Explicit environment choices are preserved; this is not a saved GUI cursor
+preference. There is no Appearance cursor selector. Settings theme editors,
+upload UI, size preferences and a live configuration protocol remain deferred.
 
 `desktop\tools\generate-cursors.py` is the original procedural pixel master.
 It uses only Python's standard library. `--write` deterministically regenerates
@@ -124,7 +126,8 @@ hidden until another request. Legacy image clients cannot be promised
 compositor-owned rabbit action animation.
 
 The existing `window.setCursor('arrow')` maps through SDL to semantic DEFAULT,
-so it now selects the **theme default rabbit**, not a forced classic arrow.
+so it selects the **current theme default**: normally Classic, or the rabbit
+when `POLLY_CURSOR_THEME=PollyRabbit` was explicitly selected.
 The protocol cannot recover a distinct classic-arrow intent that the SDK did
 not send. Choose `POLLY_CURSOR_THEME=classic` for that system theme instead;
 no new GUI API or per-window classic-arrow override is introduced here.
@@ -166,8 +169,12 @@ the native cursor.
 
 `desktop-cursor-resources` independently parses committed Xcursor files,
 checks all frames/scale metadata and original hashes, then compares actual C
-loader/output texture bytes for normal, static, classic, missing and malformed
-themes. `desktop-cursor-assets` checks deterministic regeneration.
+loader/output texture bytes for unset/empty Classic defaults, explicit rabbit,
+static rabbit, explicit classic, missing and malformed themes.
+`desktop-cursor-assets` checks deterministic regeneration.
+`desktop-cursor-choice` directly checks the native default-selection helper.
+Animation and cursor-related lock tests explicitly select PollyRabbit; run
+direct animation fixtures with `POLLY_CURSOR_THEME=PollyRabbit` as well.
 
 For persistent evidence, set the **test-only fixture**
 `POLLY_CURSOR_EVIDENCE` to an existing output directory, run the native fixture,
