@@ -772,6 +772,35 @@ minimized window can have zero client geometry. Read the next painted document
 viewport for layout; this notification is not a component resize/layout policy.
 Closed-window state queries fail explicitly.
 
+`document.defaultView` is an enumerable, read-only, nonconfigurable native
+property. It returns the live window handle owning that exact Document; the
+root Document identifies the actual global `window`, and each child has its own
+stable handle. It is `null` for an unowned/headless or retired Document, including
+a retained Document after window close. Root ownership exists before the native
+window opens; this does not make pre-open native geometry queries available.
+The virtual property has no borrowable JavaScript getter. Reads/descriptors from
+another JSContext cannot acquire its owner, and a substituted/inherited receiver
+cannot borrow the association. This does not authorize cross-runtime JSValue
+sharing or change other existing window APIs' realm policy.
+
+`handle.observeState(callback)` independently subscribes to the same actual
+native state changes and returns an idempotent unsubscribe function. It only
+registers: it does not synchronously deliver an initial callback. Read
+`handle.state` when native geometry is available to establish a baseline.
+The existing mutable `onstatechange` runs first; observers follow in registration
+order with separate fresh snapshot objects. Reassigning the business property
+does not replace observers. Removal during delivery suppresses a not-yet-called
+listener; additions wait for a subsequent state event. Callback exceptions use
+the existing window error reporter/failing exit status, without skipping later
+observers or native cleanup. Closing the owner invalidates its association and
+clears subscriptions before `onclose`; a late unsubscribe is safe, while new
+registration on a closed window fails. At most 64 observers may be registered per
+window (and registration IDs never wrap); invalid callbacks/receivers and
+overflow fail explicitly. These are owner/state mechanisms, not component
+layout notifications or an EventTarget implementation. The
+`gui-owner-state` native test covers Win32 and Linux SDL-dummy lifecycle;
+SDL-dummy is not compositor/presentation qualification.
+
 `window.capabilities()` reports `owned`, `popup`, `modal`, `sizeConstraints`, `transparent` and
 `popupGrab` for the current native driver/compositor. Wayland modal support
 requires advertised `xdg_wm_dialog_v1`, even though SDL alone may report success

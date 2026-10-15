@@ -21,6 +21,23 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const filtered = entries.filter(entry =>
     [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
       .join(' ').toLowerCase().includes(query.toLowerCase()));
+  const revealGrid = node => {
+    if (!modern || !grid) return node;
+    const focus = node.props.onFocus;
+    node.props.onFocus = event => {
+      focus?.(event);
+      const item = event.currentTarget;
+      let strip = item.parentNode;
+      while (strip && strip.id !== 'shell-start-apps') strip = strip.parentNode;
+      if (!strip) return;
+      const top = item.offsetTop - strip.offsetTop, start = Number(strip.scrollTop);
+      const end = top + item.offsetHeight, height = strip.offsetHeight;
+      const next = item.offsetHeight > height ? top : top < start ? top :
+        end > start + height ? end - height : start;
+      if (next !== start) strip.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(strip).maximum, next));
+    };
+    return node;
+  };
   const command = (id, title, action, icon = '', extra = {}) => {
     const node = desktopCommand(id, title, theme, action, { icon, iconSize: classicColumns ? 24 : 0, quiet: true, style: {
       borderRadius: modern ? 4 : 0, height: linkHeight, borderWidth: 0,
@@ -37,7 +54,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
         if (next !== start) strip.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(strip).maximum, next));
       };
     }
-    return node;
+    return revealGrid(node);
   };
   const search = h('view', { id: 'shell-app-search', role: 'textbox', tabIndex: 0,
     'aria-label': 'Search applications', style: { ...row, flexShrink: 0, minWidth: 0,
@@ -76,6 +93,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       if (art) item.children[item.children.indexOf(art)] = desktopIcon(icon, c.accent, 32);
     }
     if (entry.unavailable) item.props['aria-description'] = entry.unavailable;
+    revealGrid(item);
     return h('view', { key: entry.id, style: { ...row, flexShrink: 0, gap: 2,
       ...(grid ? { flexDirection: 'column', width: 88 } : {}) } }, item,
     desktop ? command('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Unpin' : 'Pin',

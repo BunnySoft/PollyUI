@@ -1,5 +1,5 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
-import { paintClassicTask } from './desktop/shared/ui/classic-task-paint.mjs';
+import { paintClassicTask, classicFocusPaint, paintClassicFocus } from './desktop/shared/ui/classic-task-paint.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
 export const surfaceStyle = (theme, group = 'button') => theme[group].surfaceStyle || 'generic';
@@ -9,6 +9,12 @@ const states = new WeakMap();
 export function surfacePaint(theme, { selected = false, pressed = false, hovered = false,
   focused = false, disabled = false, quiet = false, variant = 'button' } = {}) {
   const style = surfaceStyle(theme), c = theme.colors;
+  if (surfaceStyle(theme, 'panel') === 'fluent' && variant === 'task') return {
+    backgroundColor: disabled ? 'transparent' : pressed ? theme.button.to :
+      hovered ? c.selection : selected ? theme.button.from : 'transparent',
+    gradientFrom: 'transparent', gradientTo: 'transparent',
+    borderRadius: theme.button.radius, borderColor: 'transparent',
+  };
   const face = variant === 'task' ? selected ? '#e8e6e0' : c.body :
     disabled ? c.body : selected ? c.selection : quiet ? 'transparent' :
     pressed ? theme.button.to : theme.button.from;
@@ -47,7 +53,7 @@ export function bevel(theme, { pressed = false, inset = false, frame = false } =
     ] : null);
 }
 
-export function surfaceDetail(theme, { selected = false, quiet = false } = {}) {
+export function surfaceDetail(theme, { selected = false, quiet = false, disabled = false } = {}) {
   const classic = surfaceStyle(theme) === 'classic';
   return h('view', { 'aria-hidden': 'true', style: { ...fill } },
     classic && !quiet ? bevel(theme, { pressed: selected }) : null,
@@ -57,17 +63,7 @@ export function surfaceDetail(theme, { selected = false, quiet = false } = {}) {
     h('view', { className: 'theme-focus-ring', style: {
       ...fill, left: 3, top: 3, right: 3, bottom: 3, borderWidth: classic ? 0 : 1,
       borderColor: theme.colors.focus, borderRadius: Math.max(0, theme.button.radius - 2),
-      opacity: 0, overflow: 'hidden' } },
-    classic ? [false, true].flatMap(end => [
-      h('view', { style: { position: 'absolute', left: 0, right: 0, [end ? 'bottom' : 'top']: 0,
-        height: 1, pointerEvents: 'none' } },
-      Array.from({ length: 160 }, (_, i) => h('view', { style: { position: 'absolute',
-        left: i * 2, top: 0, width: 1, height: 1, backgroundColor: theme.colors.focus, pointerEvents: 'none' } }))),
-      h('view', { style: { position: 'absolute', top: 0, bottom: 0, [end ? 'right' : 'left']: 0,
-        width: 1, pointerEvents: 'none' } },
-      Array.from({ length: 32 }, (_, i) => h('view', { style: { position: 'absolute',
-        left: 0, top: i * 2, width: 1, height: 1, backgroundColor: theme.colors.focus, pointerEvents: 'none' } }))),
-    ]) : null));
+      opacity: 0, overflow: 'hidden' } }, classic ? classicFocusPaint(theme, disabled) : null));
 }
 
 export function surfaceEvents(theme, options = {}) {
@@ -87,6 +83,8 @@ export function surfaceEvents(theme, options = {}) {
     Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
+    const focusPaint = node.querySelector('.classic-focus-paint');
+    if (focusPaint) paintClassicFocus(focusPaint, theme, state.focused);
     const texture = node.querySelector('.classic-task-paint');
     if (texture) paintClassicTask(texture, theme, { ...options, ...state });
     const label = node.querySelector('.theme-command-label');
@@ -113,13 +111,14 @@ export function surfaceEvents(theme, options = {}) {
       content.style.top = down ? '1' : '0';
     }
   };
-  const syncDisabled = node => {
-    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true')
+  const syncState = node => {
+    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+        surfaceStyle(theme, 'panel') === 'fluent' && options.variant === 'task')
       paint({ currentTarget: node }, {});
   };
   return {
-    onMount: syncDisabled,
-    onUpdate: syncDisabled,
+    onMount: syncState,
+    onUpdate: syncState,
     onMouseenter: event => paint(event, { hovered: true }),
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },
