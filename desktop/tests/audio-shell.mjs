@@ -1,3 +1,4 @@
+import { createSettingsFixtureClient } from './desktop/tests/settings-probe.mjs';
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function check(value, message) { if (!value) throw new Error(message); console.log('PASS: ' + message); }
@@ -6,21 +7,14 @@ async function until(predicate, message, timeout = 20000) {
   while (Date.now() < deadline) { if (predicate()) return; await delay(10); }
   throw new Error('Timed out: ' + message + ' ' + JSON.stringify(desktop.audioState()));
 }
-let shell, serial = 0;
+let shell, settingsFixture;
 const surfaces = [], exits = new Map(), reports = [];
 async function signal(title) {
   const marker = window.create({ title, layer: 'overlay', width: 1, height: 1,
     anchors: ['top', 'right'], exclusiveZone: -1 });
   await until(() => marker.closed, title);
 }
-async function click(id) {
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const surface = surfaces.findLast(item => !item.window.closed && item.window.document.getElementById(id));
-  const node = surface?.window.document.getElementById(id);
-  check(node?.offsetWidth > 0, 'native audio control laid out: ' + id);
-  const rect = node.getBoundingClientRect();
-  await signal(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
-}
+async function click(id) { return settingsFixture.click(id); }
 async function run() {
   const [mode, executable, script] = application.arguments;
   if (mode === 'denied') {
@@ -31,7 +25,8 @@ async function run() {
     window.quit(); return;
   }
   desktop.onExit = event => exits.set(event.pid, event.status);
-  shell = createDesktopShell({ report: value => { reports.push(value); console.error(value); }, host: {
+  settingsFixture = createSettingsFixtureClient(signal);
+  shell = createDesktopShell({ settingsFactory: settingsFixture.factory, report: value => { reports.push(value); console.error(value); }, host: {
     close: () => window.close(), displays: () => window.displays(),
     create(options) { const result = window.create(options); surfaces.push({ title: options.title, window: result }); return result; },
   } }).start();
@@ -44,7 +39,7 @@ async function run() {
     await until(() => exits.has(publicClient), 'public audio API probe');
     check(exits.get(publicClient) === 0, 'audio policy APIs require the trusted Shell connection');
     check(desktop.audioState().defaultSink === node('Polly-Test-A').id, 'own policy chooses highest-priority output');
-    shell.showAudio(shell.getState().outputs[0]);
+    await shell.showAudio(shell.getState().outputs[0]);
     const initial = node('Polly-Test-A');
     let invalidVolume = false;
     try { desktop.setAudioVolume(initial.id, initial.revision, 2); } catch { invalidVolume = true; }
@@ -102,6 +97,7 @@ async function run() {
   } else check(desktop.audioState().preferredSink === 'Polly-Test-B' &&
     desktop.audioState().defaultSink === node('Polly-Test-A').id, 'preference and fallback survive Shell restart');
   check(reports.length === 0 && !desktop.audioState().error, 'audio policy has no errors');
+  await settingsFixture?.close();
   await signal('fixture-success');
   shell.stop(); window.quit();
 }

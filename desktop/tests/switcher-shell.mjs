@@ -1,3 +1,4 @@
+import { createSettingsFixtureClient } from './desktop/tests/settings-probe.mjs';
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 
 const [mode, executable, script] = application.arguments;
@@ -17,7 +18,7 @@ async function until(predicate, message) {
   throw new Error('Timed out: ' + message);
 }
 const created = [], reports = [], exits = new Map();
-let shell, serial = 0;
+let shell, serial = 0, settingsFixture;
 function app(suffix) { return desktop.windows().find(item => item.appId === 'org.pollyui.switch-' + suffix); }
 async function signal(title) {
   const marker = window.create({ title, layer: 'overlay', width: 1, height: 1,
@@ -54,7 +55,8 @@ async function run() {
     return;
   }
   desktop.onExit = event => exits.set(event.pid, event.status);
-  shell = createDesktopShell({ report: message => { reports.push(message); console.error(message); }, host: {
+  settingsFixture = createSettingsFixtureClient(signal);
+  shell = createDesktopShell({ settingsFactory: settingsFixture.factory, report: message => { reports.push(message); console.error(message); }, host: {
     close: () => window.close(), displays: () => window.displays(),
     create(options) {
       const native = window.create(options);
@@ -111,15 +113,15 @@ async function run() {
     check(desktop.windowSwitcher().items.length === 1, 'picker excludes other workspaces');
     await key(ALT, false);
     const output = shell.getState().outputs[0];
-    const menuWindow = shell.showShortcuts(output);
-    const menu = created.find(item => item.window === menuWindow);
-    await click(menu, 'shell-shortcut-minimize-window');
+    await shell.showShortcuts(output);
+    await settingsFixture.click('shell-shortcut-minimize-window');
+    await until(() => created.some(item => item.title.startsWith('PollyShell.shortcut-recording.') && !item.window.closed && item.window.active), 'trusted recording focus');
     await key(CTRL, true); await tap(M); await key(CTRL, false);
     await until(() => desktop.shortcuts().find(item => item.action === 'minimize-window').key === 'm',
       'recorded shortcut is applied');
     check(shell.configuration.snapshot.shortcuts.some(item =>
       item.action === 'minimize-window' && item.key === 'm' && item.modifiers === 2), 'shortcut is persisted');
-    await click(menu, 'shell-shortcuts-close');
+    await settingsFixture.close();
     desktop.activateWindow(app('a').id);
     await until(() => app('a').active, 'focus before configured shortcut');
     await key(CTRL, true); await tap(M); await key(CTRL, false);
@@ -158,6 +160,7 @@ async function run() {
   }
   check(reports.every(message => message.startsWith('[shell] Application exited: switch-')),
     'shortcut controller reports no failures other than intentional fixture exits');
+  await settingsFixture?.close();
   await signal('fixture-success');
   shell.stop(); window.quit();
 }

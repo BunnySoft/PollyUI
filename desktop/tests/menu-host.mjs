@@ -359,23 +359,16 @@ settingsScenario('taskbar, desktop and searchable application entry share the na
     'Shell does not create the independent Settings document in its own realm');
 });
 
-settingsScenario('narrow appearance handlers retain all theme effects and real managed page mounts', f => {
-  for (const id of ['server2003', 'aqua', 'lion', 'bigsur', 'xp']) {
-    assert.equal(f.state.settingsHandlers.select(id), true);
-    assert.equal(f.saved.snapshot.theme.id, id);
-    assert.equal(f.shell.getState().themeId, id);
-    assert.equal(f.state.settingsHandlers.appearance().themeId, id);
-  }
-  const settings = f.shell.showManagedSettings(1, 'displays');
+settingsScenario('every former full-panel entry routes to the same owned Settings app', f => {
   for (const page of ['displays', 'network', 'audio', 'keyboard']) {
-    navigate(settings, page);
-    assert.equal(find(settings, 'shell-settings-page-' + page).getAttribute('aria-current'), 'page');
-    const expected = { displays: 'shell-displays', network: 'shell-network-settings', audio: 'shell-audio-settings',
-      keyboard: 'shell-shortcuts' };
-    assert.ok(find(settings, expected[page]), 'navigation mounts actual page content');
-    assert.equal(settings.closed, false);
+    assert.equal(f.shell.showManagedSettings(1, page), 123);
+    assert.deepEqual(f.calls.at(-1), ['settings-open', page]);
   }
-  assert.equal(f.created.filter(window => window.options.title === 'Desktop control panel').length, 1);
+  assert.equal(f.shell.showDisplays(1), 123);
+  assert.equal(f.shell.showShortcuts(1), 123);
+  assert.equal(f.shell.showAudio(1), 123);
+  assert.equal(f.created.some(window => window.options.title === 'Desktop control panel'), false);
+  assert.equal(f.calls.some(call => call[0] === 'capture'), false);
 });
 
 settingsScenario('theme publication failures preserve the real committed state and never replay native rollback', f => {
@@ -407,314 +400,6 @@ settingsScenario('theme publication failures preserve the real committed state a
   assert.match(f.state.settingsHandlers.appearance().error, /fixture directory sync failed/);
   f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
   f.state.configurationFailure = null;
-});
-
-settingsScenario('Tab, Enter, Space, consumed Escape and close keep ordinary-window semantics', f => {
-  const settings = f.shell.showManagedSettings(1, 'displays');
-  key(settings, 'Tab');
-  assert.equal(settings.document.activeElement.id, 'shell-settings-page-appearance');
-  find(settings, 'shell-settings-page-audio').focus();
-  key(settings, ' ');
-  assert.ok(find(settings, 'shell-audio-settings'));
-  find(settings, 'shell-settings-page-keyboard').focus();
-  key(settings, 'Enter');
-  assert.ok(find(settings, 'shell-shortcuts'));
-  assert.equal(settings.closed, false);
-  const child = settings.document.createElement('view');
-  child.tabIndex = 0; child.addEventListener('keydown', value => value.preventDefault());
-  find(settings, 'shell-settings-content').appendChild(child); child.focus();
-  key(settings, 'Escape'); assert.equal(settings.closed, false);
-  settings.document.body.focus(); key(settings, 'Escape');
-  assert.equal(settings.closed, true);
-  assert.equal(f.shell.getState().running, true);
-  assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
-});
-
-settingsScenario('retained control panel keeps explicit quick appearance and Power entry points', f => {
-  const panel = f.shell.showManagedSettings(1, 'audio');
-  click(find(panel, 'shell-controls-quick-appearance'));
-  const quick = f.created.at(-1);
-  assert.ok(find(quick, 'shell-theme-xp'));
-  click(find(quick, 'shell-settings-close'));
-  assert.equal(panel.closed, false);
-  click(find(panel, 'shell-controls-power'));
-  const power = f.created.at(-1);
-  assert.ok(find(power, 'shell-power-settings'));
-  click(find(power, 'shell-power-close'));
-  assert.equal(panel.closed, false);
-  assert.equal(f.shell.showSettings(1, true), 123);
-  assert.deepEqual(f.calls.at(-1), ['settings-open', 'about']);
-});
-
-settingsScenario('display edits use guarded apply, Keep persistence and live replacement drafts', f => {
-  const settings = f.shell.showManagedSettings(1, 'displays');
-  const field = find(settings, 'shell-output-1-scale');
-  field.focus(); key(settings, 'a', { ctrlKey: true });
-  domEvent(field, 'textinput', { data: '1.25' });
-  click(find(settings, 'shell-output-apply'));
-  const request = f.calls.find(call => call[0] === 'apply-outputs')[1];
-  assert.equal(request.serial, 1);
-  assert.equal(request.heads[0].scale, 1.25);
-  assert.equal(settings.closed, false);
-  const guard = f.created.at(-1);
-  assert.ok(find(guard, 'shell-output-confirmation'));
-  assert.match(text(guard.document.body), /15 seconds/);
-  assert.equal(guard.options.layer, 'overlay');
-  assert.equal(f.saved.snapshot.display, null);
-  click(find(guard, 'shell-output-keep'));
-  assert.equal(guard.closed, true);
-  assert.ok(f.saved.snapshot.display);
-  assert.ok(find(settings, 'shell-output-1-scale'));
-  f.state.output.serial++;
-  f.state.output.heads[0].scale = 1.5;
-  f.native.onOutputsChanged();
-  f.expectedWarnings.push('[shell] Display settings: Outputs changed; the draft was refreshed. Review it before applying.');
-  assert.match(text(settings.document.body), /draft was refreshed/);
-  click(find(settings, 'shell-output-apply'));
-  assert.equal(f.calls.filter(call => call[0] === 'apply-outputs').at(-1)[1].heads[0].scale, 1.5);
-});
-
-settingsScenario('closing Settings cannot confirm/revert a pending layout or stop its watchdog', f => {
-  const settings = f.shell.showManagedSettings(1, 'displays');
-  click(find(settings, 'shell-output-apply'));
-  const guard = f.created.at(-1);
-  const close = settings.onclose;
-  settings.close();
-  assert.equal(guard.closed, false);
-  assert.equal(f.state.output.pendingToken, 5);
-  const next = f.shell.showManagedSettings(1, 'audio');
-  close();
-  assert.equal(next.closed, false);
-  key(guard, 'Escape');
-  assert.equal(f.state.output.pendingToken, 0);
-  assert.equal(next.closed, false);
-});
-
-settingsScenario('iwd scan/connect/password/disconnect/forget consume actual revision and target shapes', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  assert.match(text(settings.document.body), /fixture-wifi/);
-  assert.match(text(settings.document.body), /-45 dBm/);
-  click(find(settings, 'shell-network-scan-0'));
-  assert.deepEqual(f.calls.find(call => call[0] === 'network-action'),
-    ['network-action', 10, '/net/connman/iwd/0', 'scan']);
-  click(find(settings, 'shell-network-connect-0-0'));
-  assert.equal(f.calls.some(call => call[3] === 'connect'), false);
-  click(find(settings, 'shell-network-confirm'));
-  const password = find(settings, 'shell-network-password');
-  password.focus(); domEvent(password, 'textinput', { data: 'fixture-pass' });
-  assert.equal(text(password).includes('fixture-pass'), false);
-  click(find(settings, 'shell-network-auth-submit'));
-  assert.equal(f.state.network.authentication, null);
-  assert.equal(f.state.network.networks[0].known, true);
-  click(find(settings, 'shell-network-disconnect-0'));
-  click(find(settings, 'shell-network-forget-0-0'));
-  assert.equal(f.calls.some(call => call[3] === 'forget'), false);
-  click(find(settings, 'shell-network-confirm'));
-  assert.ok(f.calls.some(call => call[0] === 'network-action' && call[3] === 'forget'));
-});
-
-settingsScenario('Wi-Fi page teardown clears/cancels credentials and retires snapshot callbacks', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
-  f.state.network.revision++; f.native.onNetworkChanged();
-  oldScan(event('click'));
-  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
-  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
-  const password = find(settings, 'shell-network-password');
-  password.focus(); domEvent(password, 'textinput', { data: 'fixture-secret' });
-  const oldSubmit = callback(find(settings, 'shell-network-auth-submit'), 'click');
-  navigate(settings, 'audio');
-  assert.equal(f.state.network.authentication, null);
-  assert.ok(f.calls.some(call => call[0] === 'network-auth' && call[3] === null));
-  assert.equal(text(password).includes('fixture-secret'), false);
-  assert.equal(text(password).includes('\u2022'), false, 'retired field is wiped');
-  navigate(settings, 'network'); oldSubmit(event('click'));
-  assert.equal(f.state.network.networks[0].connected, false);
-  assert.equal(f.calls.some(call => call[0] === 'stop-network'), false);
-});
-
-settingsScenario('iwd service loss and changed confirmation disable requests without invented readiness', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  click(find(settings, 'shell-network-connect-0-0'));
-  f.state.network.revision++; f.native.onNetworkChanged();
-  assert.equal(find(settings, 'shell-network-confirm').getAttribute('aria-disabled'), 'true');
-  click(find(settings, 'shell-network-confirm'));
-  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
-  click(find(settings, 'shell-network-confirm-cancel'));
-  f.state.network.ready = false; f.state.network.error = 'Private fixture iwd unavailable';
-  f.native.onNetworkChanged();
-  assert.match(text(settings.document.body), /iwd unavailable/);
-  assert.equal(find(settings, 'shell-network-scan-0').getAttribute('aria-disabled'), 'true');
-  click(find(settings, 'shell-network-scan-0'));
-  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
-});
-
-settingsScenario('PipeWire volume, mute and default devices show progress and save only acknowledgments', f => {
-  const settings = f.shell.showManagedSettings(1, 'audio');
-  assert.match(text(settings.document.body), /Private speaker/);
-  click(find(settings, 'shell-audio-lower-20'));
-  assert.deepEqual(f.calls.find(call => call[0] === 'setAudioVolume'), ['setAudioVolume', 20, 1, 0.9]);
-  assert.match(text(settings.document.body), /acknowledge and save/);
-  assert.equal(f.saved.snapshot.audio, null);
-  assert.equal(find(settings, 'shell-audio-mute-20').getAttribute('aria-disabled'), 'true');
-  f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
-  assert.equal(f.saved.snapshot.audio.devices[0].volume, 0.9);
-  click(find(settings, 'shell-audio-mute-22'));
-  f.state.audio.nodes[2].muted = true; f.state.audio.nodes[2].revision++; f.native.onAudioChanged();
-  assert.equal(f.saved.snapshot.audio.devices.find(node => node.name === 'fixture-microphone').muted, true);
-  click(find(settings, 'shell-audio-default-21'));
-  f.state.audio.defaultSink = 21; f.state.audio.preferredSink = 'fixture-headphones'; f.native.onAudioChanged();
-  assert.equal(f.saved.snapshot.audio.preferredSink, 'fixture-headphones');
-  assert.equal(settings.closed, false);
-});
-
-settingsScenario('audio policy outlives Settings and persists an acknowledgment after page detach', f => {
-  const settings = f.shell.showManagedSettings(1, 'audio');
-  const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
-  click(find(settings, 'shell-audio-lower-20'));
-  settings.close();
-  assert.equal(f.calls.some(call => call[0] === 'stop-audio'), false);
-  f.state.audio.nodes[0].volume = 0.9; f.state.audio.nodes[0].revision++; f.native.onAudioChanged();
-  assert.equal(f.saved.snapshot.audio.devices[0].volume, 0.9);
-  const next = f.shell.showManagedSettings(1, 'audio');
-  assert.match(text(next.document.body), /90%/);
-  oldMute(event('click'));
-  assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
-  assert.equal(f.calls.filter(call => call[0] === 'start-audio').length, 1);
-});
-
-settingsScenario('keyboard changes retain the trusted-layer capture boundary and existing persistence', f => {
-  const settings = f.shell.showManagedSettings(1, 'keyboard');
-  click(find(settings, 'shell-shortcut-minimize-window'));
-  const capture = f.created.at(-1);
-  assert.equal(capture.options.layer, 'overlay');
-  assert.equal(settings.closed, false);
-  key(capture, 'm', { ctrlKey: true });
-  assert.equal(f.state.shortcuts[0].key, 'm');
-  assert.ok(f.saved.snapshot.shortcuts);
-  key(capture, 'Escape');
-  assert.equal(capture.closed, true);
-  assert.match(text(settings.document.body), /Ctrl\+M/);
-  click(find(settings, 'shell-shortcut-disable-minimize-window'));
-  assert.equal(f.state.shortcuts[0].key, '');
-});
-
-settingsScenario('unsupported capabilities stay visible and About makes no login/version claims', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  delete f.native.startNetwork; delete f.native.startAudio; delete f.native.outputConfiguration; delete f.native.shortcuts;
-  for (const page of ['network', 'audio', 'displays', 'keyboard']) {
-    navigate(settings, page);
-    assert.match(text(settings.document.body), /unavailable|requires/i);
-    assert.ok(find(settings, 'settings-system-version'), 'unavailable pages still show system identity');
-  }
-  navigate(settings, 'about');
-  assert.equal(settings.closed, true);
-  assert.deepEqual(f.calls.at(-1), ['settings-open', 'about']);
-  assert.equal(f.state.settingsHandlers.about().services.inputMethod, 'disabled');
-});
-
-settingsScenario('close/reopen and Shell restart restore listeners and reject old generations', f => {
-  const previousNetwork = f.native.onNetworkChanged;
-  const settings = f.shell.showManagedSettings(1, 'network');
-  const oldNav = callback(find(settings, 'shell-settings-page-appearance'), 'click');
-  const oldClose = settings.onclose;
-  settings.close();
-  assert.equal(settings.document.body.listeners.get('keydown').length, 0);
-  f.shell.stop();
-  assert.equal(f.native.onNetworkChanged, previousNetwork);
-  assert.equal(f.timers.size, 0);
-  f.shell.start();
-  const next = f.shell.showManagedSettings(1, 'keyboard');
-  oldNav(event('click')); oldClose();
-  assert.ok(find(next, 'shell-shortcuts'));
-  assert.equal(next.closed, false);
-});
-
-settingsScenario('late device notifications and detached controls cannot replace a later page', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  const oldScan = callback(find(settings, 'shell-network-scan-0'), 'click');
-  navigate(settings, 'audio');
-  const audioRoot = find(settings, 'shell-audio-settings');
-  f.state.network.devices[0].name = 'Changed after detach'; f.native.onNetworkChanged();
-  oldScan(event('click'));
-  assert.equal(find(settings, 'shell-audio-settings'), audioRoot);
-  assert.equal(settings.document.getElementById('shell-network-settings'), null);
-  assert.equal(f.calls.some(call => call[0] === 'network-action'), false);
-  const oldMute = callback(find(settings, 'shell-audio-mute-20'), 'click');
-  navigate(settings, 'displays');
-  const displays = find(settings, 'shell-displays');
-  f.state.audio.generation++;
-  f.state.audio.nodes[0].instance++; f.native.onAudioChanged();
-  oldMute(event('click'));
-  assert.equal(find(settings, 'shell-displays'), displays);
-  assert.equal(settings.document.getElementById('shell-audio-settings'), null);
-  assert.equal(f.calls.some(call => call[0] === 'setAudioMute'), false);
-  assert.ok(f.calls.some(call => call[0] === 'previous-network'));
-  assert.ok(f.calls.some(call => call[0] === 'previous-audio'));
-});
-
-settingsScenario('theme repaint preserves current credential value/focus and unavailable-state retry reports errors', f => {
-  const settings = f.shell.showManagedSettings(1, 'network');
-  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
-  const input = find(settings, 'shell-network-password');
-  input.focus(); domEvent(input, 'textinput', { data: 'fixture-secret' });
-  f.shell.selectTheme('bigsur');
-  assert.equal(find(settings, 'shell-network-password'), input);
-  assert.equal(settings.document.activeElement, input);
-  assert.match(text(input), /\u2022{14}/);
-  click(find(settings, 'shell-network-auth-cancel'));
-  f.native.networkState = () => { throw new Error('fixture state read failed'); };
-  f.native.onNetworkChanged();
-  f.expectedWarnings.push('[shell] Network: Error: fixture state read failed');
-  assert.match(text(settings.document.body), /fixture state read failed/);
-  assert.equal(settings.document.getElementById('shell-network-scan-0'), null);
-  assert.ok(find(settings, 'shell-network-retry'));
-});
-
-for (const kind of ['passphrase', 'username-password'])
-settingsScenario('a long multi-network list mounts ' + kind + ' fields and preserves the same prompt on repaint', f => {
-  const prototype = f.state.network.networks[0];
-  f.state.network.networks.push(...Array.from({ length: 12 }, (_, index) => ({
-    ...prototype, id: prototype.id + '-' + index, name: 'Private fixture ' + index, order: index + 1,
-  })));
-  let authentication = null;
-  const originalAction = f.native.networkAction;
-  f.native.networkAction = (...args) => {
-    originalAction(...args);
-    if (args[2] === 'connect') {
-      authentication = f.state.network.authentication;
-      authentication.kind = kind;
-      authentication.username = 'fixture-user';
-      f.state.network.authentication = null;
-    }
-  };
-  const settings = f.shell.showManagedSettings(1, 'network');
-  assert.ok(find(settings, 'shell-network-connect-0-12'));
-  click(find(settings, 'shell-network-connect-0-0')); click(find(settings, 'shell-network-confirm'));
-  assert.equal(settings.document.getElementById('shell-network-password'), null);
-  f.state.network.authentication = authentication; f.native.onNetworkChanged();
-  const field = find(settings, 'shell-network-password');
-  const user = kind === 'username-password' ? find(settings, 'shell-network-username') : null;
-  assert.equal(settings.document.activeElement, user || field);
-  field.focus();
-  domEvent(field, 'textinput', { data: 'fixture-secret' });
-  f.native.onNetworkChanged();
-  f.shell.selectTheme('bigsur');
-  assert.equal(find(settings, 'shell-network-password'), field);
-  if (user) assert.equal(find(settings, 'shell-network-username'), user);
-  assert.equal(settings.document.activeElement, field);
-  assert.match(text(field), /\u2022{14}/);
-  if (kind === 'passphrase') {
-    f.state.network.authentication.kind = 'username-password';
-    f.native.onNetworkChanged();
-    assert.ok(find(settings, 'shell-network-username'));
-    const replacement = find(settings, 'shell-network-password');
-    assert.notEqual(replacement, field);
-    assert.equal(text(field).includes('\u2022'), false, 'changed prompt kind wipes the old field');
-    replacement.focus(); domEvent(replacement, 'textinput', { data: 'fixture-secret' });
-  }
-  click(find(settings, 'shell-network-auth-submit'));
-  assert.equal(f.state.network.networks[0].connected, true);
 });
 
 function blockedActivation(f) {
@@ -978,70 +663,18 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   const shortcuts = f.shell.showShortcuts(1);
   oldTheme(event('click')); oldChild(event('click'));
   assert.equal(f.shell.getState().themeId, 'modern');
-  assert.equal(shortcuts.closed, false);
+  assert.equal(shortcuts, 123);
 });
 
-scenario('shortcut recording cancels once on Escape/close and stale keys do not affect reopened capture', f => {
-  const first = f.shell.showShortcuts(1);
-  click(find(first, 'shell-shortcut-minimize-window'));
-  assert.deepEqual(f.calls.filter(call => call[0] === 'capture'), [['capture', true]]);
-  const oldKey = callback(first.document.body, 'keydown');
-  key(first, 'Escape');
-  assert.equal(first.closed, false, 'first Escape only cancels recording');
-  assert.deepEqual(f.calls.filter(call => call[0] === 'capture'), [['capture', true], ['capture', false]]);
-  key(first, 'Escape');
-  assert.equal(first.closed, true);
-  const next = f.shell.showShortcuts(1);
-  click(find(next, 'shell-shortcut-minimize-window'));
-  oldKey(event('keydown', { key: 'Escape' }));
-  oldKey(event('keydown', { key: 'm', ctrlKey: true }));
-  assert.equal(next.closed, false);
-  assert.equal(f.state.shortcuts[0].key, 'F9');
-  next.close();
-  assert.deepEqual(f.calls.filter(call => call[0] === 'capture'),
-    [['capture', true], ['capture', false], ['capture', true], ['capture', false]]);
-  assert.ok(next.document.activeElement === null, 'externally closed menu releases DOM focus');
-  assert.equal(next.document.body.listeners.get('keydown').length, 0);
-});
-
-scenario('failed replacement retires capture/listeners/focus and a subsequent menu can recover', f => {
-  const first = f.shell.showShortcuts(1);
-  click(find(first, 'shell-shortcut-minimize-window'));
-  f.state.failCreate = true;
-  f.expectedWarnings.push('[shell] Could not open settings: Error: fixture surface creation failed');
-  assert.equal(f.shell.showSettings(1), null);
-  assert.equal(first.closed, true);
-  assert.ok(first.document.activeElement === null, 'failed replacement releases DOM focus');
-  assert.equal(first.document.body.listeners.get('keydown').length, 0);
-  assert.deepEqual(f.calls.filter(call => call[0] === 'capture'), [['capture', true], ['capture', false]]);
-  f.state.failCreate = false;
-  const next = f.shell.showSettings(1);
-  assert.equal(next.closed, false);
-  key(next, 'Escape');
-  assert.equal(next.closed, true);
-});
-
-scenario('current search launch, shortcut save and display apply still use their actual callbacks', f => {
+scenario('current search launch and fixed Settings routes retain their actual launcher callbacks', f => {
   const applications = f.shell.showApplications(1);
   domEvent(find(applications, 'shell-app-search'), 'textinput', { data: 'Fixture' });
   key(applications, 'Enter');
   assert.equal(applications.closed, true);
   assert.deepEqual(f.calls.find(call => call[0] === 'launch'), ['launch', ['fixture'], '', 'fixture.desktop']);
-  const shortcuts = f.shell.showShortcuts(1);
-  click(find(shortcuts, 'shell-shortcut-minimize-window'));
-  key(shortcuts, 'm', { ctrlKey: true });
-  assert.equal(shortcuts.closed, false);
-  assert.equal(f.state.shortcuts[0].key, 'm');
-  assert.equal(f.state.shortcuts[0].modifiers, 2);
-  const display = f.shell.showDisplays(1);
-  const width = find(display, 'shell-output-1-width');
-  width.focus();
-  key(display, 'ArrowLeft');
-  assert.equal(display.closed, false, 'field cursor navigation remains local');
-  click(find(display, 'shell-output-apply'));
-  assert.equal(display.closed, true);
-  assert.ok(display.document.activeElement === null, 'applied display menu releases its input focus');
-  assert.equal(f.calls.find(call => call[0] === 'apply-outputs')[1].heads[0].width, 1280);
+  assert.equal(f.shell.showShortcuts(1), 123); assert.equal(f.shell.showDisplays(1), 123);
+  assert.equal(f.calls.some(call => call[0] === 'capture'), false);
+  assert.equal(f.calls.some(call => call[0] === 'apply-outputs'), false);
 });
 
 scenario('workspace editor focus is internal and retired Enter cannot save a replacement editor', f => {
@@ -1068,10 +701,9 @@ scenario('settings replacement and transfer to a power child do not misclose the
   const first = f.shell.showSettings(1);
   const oldKey = callback(first.document.body, 'keydown');
   click(find(first, 'shell-keyboard-settings'));
-  const shortcuts = f.created.at(-1);
   assert.equal(first.closed, true);
   oldKey(event('keydown', { key: 'Escape' }));
-  assert.equal(shortcuts.closed, false);
+  assert.deepEqual(f.calls.at(-1), ['settings-open', 'keyboard']);
   const settings = f.shell.showSettings(1);
   const staleClose = callback(find(settings, 'shell-settings-close'), 'click');
   click(find(settings, 'shell-power-settings-open'));
@@ -1129,17 +761,10 @@ scenario('display removal and retired/recreated Shell surface callbacks are isol
   assert.equal(dockMenu.closed, false);
 });
 
-scenario('retired display menu callbacks cannot apply to a replacement', f => {
-  const settings = f.shell.showDisplays(1);
-  const apply = callback(find(settings, 'shell-output-apply'), 'click');
-  const input = find(settings, 'shell-output-1-width');
-  input.focus();
-  settings.close();
-  assert.ok(settings.document.activeElement === null, 'closed display menu releases input focus');
-  const next = f.shell.showSettings(1);
-  apply(event('click'));
-  assert.equal(f.calls.some(call => call[0] === 'apply-outputs'), false);
-  assert.equal(next.closed, false);
+scenario('display entry cannot retain a Shell draft or apply callback after routing', f => {
+  assert.equal(f.shell.showDisplays(1), 123);
+  assert.deepEqual(f.calls.at(-1), ['settings-open', 'displays']);
+  assert.equal(f.created.some(window => window.document.getElementById('shell-output-apply')), false);
 });
 
 scenario('retired display confirmation callbacks cannot finish a replacement transaction', f => {
@@ -1163,28 +788,16 @@ scenario('retired display confirmation callbacks cannot finish a replacement tra
   assert.deepEqual(f.calls.filter(call => call[0].endsWith('-outputs')), [['keep-outputs', 2]]);
 });
 
-scenario('stop/restart cleans owned listeners, focus and capture and rejects old generations', f => {
-  const first = f.shell.showShortcuts(1);
-  click(find(first, 'shell-shortcut-minimize-window'));
-  const oldKey = callback(first.document.body, 'keydown');
-  const oldChange = callback(find(first, 'shell-shortcut-minimize-window'), 'click');
-  const oldPanel = f.surface('panel');
-  const oldPress = callback(oldPanel.document.body, 'mousedown');
-  f.shell.stop();
-  assert.equal(f.timers.size, 0);
+scenario('stop/restart cleans Shell listeners and routes only through the new owned generation', f => {
+  const first = f.shell.showApplications(1), oldKey = callback(first.document.body, 'keydown');
+  const oldPanel = f.surface('panel'), oldPress = callback(oldPanel.document.body, 'mousedown');
+  f.shell.stop(); assert.equal(f.timers.size, 0);
   assert.ok(f.created.every(window => window.closed));
-  assert.ok(first.document.activeElement === null, 'stopping Shell releases menu focus');
-  assert.equal(oldPanel.document.body.listeners.get('mousedown').length, 0);
-  f.shell.start();
-  const next = f.shell.showShortcuts(1);
-  oldKey(event('keydown', { key: 'Escape' }));
-  oldChange(event('click'));
-  oldPress(event('mousedown', { target: oldPanel.document.body }));
+  f.shell.start(); const next = f.shell.showApplications(1);
+  oldKey(event('keydown', { key: 'Escape' })); oldPress(event('mousedown', { target: oldPanel.document.body }));
   assert.equal(next.closed, false);
-  assert.deepEqual(f.calls.filter(call => call[0] === 'capture'), [['capture', true], ['capture', false]]);
-  find(next, 'shell-shortcuts-close').focus();
-  key(next, 'Enter');
-  assert.equal(next.closed, true);
+  assert.equal(f.shell.showShortcuts(1), 123);
+  assert.equal(f.calls.some(call => call[0] === 'capture'), false);
 });
 
 scenario('repeated explicit/external closes release each menu only once without accumulating listeners', f => {

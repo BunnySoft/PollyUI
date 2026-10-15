@@ -12,6 +12,12 @@ const { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkAu
 const { settingsView } = await import('./desktop/shell/views.mjs');
 const { createSettingsApp } = await import('./desktop/apps/settings/app.mjs');
 const { applicationHost, deliver } = await import('./desktop/tests/application-host.mjs');
+const { createSettingsDomains } = await import('./desktop/shell/settings-domains.mjs');
+const { createAudioPolicy } = await import('./desktop/shell/audio-policy.mjs');
+const { createShortcutRecorder } = await import('./desktop/shell/shortcut-recorder.mjs');
+const { createDisplayPersistence } = await import('./desktop/shell/display-profiles.mjs');
+const { parseDisplays, parseAudio, parseKeyboard, displayDraft } = await import('./desktop/client/settings-domains-contract.mjs');
+const { fixtureShortcuts } = await import('./desktop/tests/configuration-memory.mjs');
 const appearance = () => ({ version: 1, revision: 1, catalogRevision: 1, themeId: 'xp',
   catalog: BUILTIN_THEME_CATALOG, themeFilesEnabled: true, themeFilesAvailable: true, status: '', error: '', build: runtimeBuild() });
 const about = () => ({ version: 1, services: { inputMethod: 'disabled', audio: 'ready', message: '', error: '' },
@@ -111,6 +117,169 @@ test('standalone Settings mounts Network in its own document, preserves masked p
   assert.ok(find('shell-network-settings')); assert.equal(find('shell-network-password'), null);
   assert.deepEqual(reports, []);
 });
+function domainFixture(t) {
+  const host = applicationHost(t), errors = [], calls = [], owner = {};
+  host.displays = () => [{ id: 1, width: 1280, height: 720 }];
+  const clone = value => JSON.parse(JSON.stringify(value));
+  let bindings = clone(fixtureShortcuts);
+  const output = { serial: 1, pendingToken: 0, remainingMs: 0, outcome: 0, message: '', heads: [
+    { id: 1, name: 'DP-1', description: 'Fixture display', make: 'Fixture', model: 'Screen', serialNumber: 'one',
+      enabled: true, width: 1280, height: 720, refresh: 60000, x: 0, y: 0, scale: 1, transform: 0, adaptiveSync: false,
+      modes: [{ width: 1280, height: 720, refresh: 60000, preferred: true }] },
+  ] };
+  const sound = { ready: true, revision: 1, generation: 1, error: '', defaultSink: 10, defaultSource: 11,
+    preferredSink: '', preferredSource: '', nodes: [
+      { id: 10, revision: 1, instance: '100', name: 'speaker', description: 'Private speaker',
+        class: 'Audio/Sink', state: 'idle', volume: 1, muted: false },
+      { id: 11, revision: 1, instance: '101', name: 'microphone', description: 'Private microphone',
+        class: 'Audio/Source', state: 'idle', volume: null, muted: null },
+    ] };
+  let saved = { audio: null, display: null, shortcuts: null };
+  const configuration = { get snapshot() { return saved; }, update(value) {
+    calls.push(['save', Object.keys(value)[0]]); saved = { ...saved, ...clone(value) };
+  } };
+  const native = {
+    audioAvailable: true, startAudio() { calls.push(['audio-start']); }, stopAudio() { calls.push(['audio-stop']); },
+    audioState: () => clone(sound),
+    setAudioVolume: (...args) => calls.push(['volume', ...args]),
+    setAudioMute: (...args) => calls.push(['mute', ...args]),
+    setDefaultAudio: (...args) => calls.push(['default', ...args]),
+    outputConfiguration: () => clone(output),
+    applyOutputConfiguration(draft) {
+      calls.push(['display-apply', clone(draft)]); output.serial++; output.pendingToken = 7;
+      output.remainingMs = 14500; output.heads = output.heads.map(head => ({ ...head, ...draft.heads.find(item => item.id === head.id) }));
+    },
+    shortcuts: () => clone(bindings), shortcutDefaults: () => clone(fixtureShortcuts),
+    setShortcuts(value) {
+      if (value.some(binding => binding.key === 'conflict')) throw new Error('Shortcut conflicts with reserved binding');
+      calls.push(['shortcuts']); bindings = clone(value).map(binding => ({ ...binding,
+        label: fixtureShortcuts.find(item => item.action === binding.action).label }));
+    },
+    captureShortcuts: enabled => calls.push(['capture', enabled]),
+  };
+  const report = value => errors.push(String(value));
+  const audio = createAudioPolicy({ native, configuration, report });
+  audio.start();
+  const recorder = createShortcutRecorder({ native, host, report, theme: () => BUILTIN_THEME_CATALOG.themes[0] });
+  const persistence = createDisplayPersistence({ native, configuration, failure: report });
+  const domains = createSettingsDomains({ native, configuration, displayPersistence: persistence, audio, recorder,
+    updateOutputs() {}, displayError: () => '', report });
+  const client = { async call(member, argument) {
+    calls.push(['rpc', member]);
+    if (member === 'GetAppearance') return JSON.stringify(appearance());
+    if (member === 'GetAbout') return JSON.stringify(about());
+    if (member === 'DetachPage') { if (argument === 'keyboard') domains.detach(owner); return; }
+    if (member === 'GetDisplays') return JSON.stringify(domains.displays());
+    if (member === 'ApplyDisplays') { domains.applyDisplays(argument); return JSON.stringify(domains.displays()); }
+    if (member === 'ForgetDisplayProfile') { domains.forgetDisplays(argument); return JSON.stringify(domains.displays()); }
+    if (member === 'GetAudio') return JSON.stringify(domains.audio());
+    if (member === 'RefreshAudio') { domains.retryAudio(); return JSON.stringify(domains.audio()); }
+    if (member === 'AudioAction') { domains.audioAction(argument); return JSON.stringify(domains.audio()); }
+    if (member === 'ForgetAudio') { domains.forgetAudio(argument); return JSON.stringify(domains.audio()); }
+    if (member === 'GetKeyboard') return JSON.stringify(domains.keyboard(owner));
+    if (member === 'KeyboardAction') { domains.keyboardAction(owner, argument); return JSON.stringify(domains.keyboard(owner)); }
+    if (member === 'CancelShortcutRecording') { domains.cancelRecording(owner, argument); return JSON.stringify(domains.keyboard(owner)); }
+    throw new Error('Unexpected RPC ' + member);
+  }, close() {} };
+  const app = createSettingsApp({ client, host, report, page: 'displays' }).start();
+  t.after(() => { app.stop(); recorder.stop(); audio.stop(); });
+  return { app, host, calls, errors, owner, domains, native, output, sound, audio, recorder, persistence, configuration,
+    document: app.getWindow().document, saved: () => saved };
+}
+test('Displays edits live in the independent Settings document; Apply preserves trusted pending state through detach/reopen', async t => {
+  const f = domainFixture(t); await tick();
+  const find = id => f.document.getElementById(id);
+  assert.ok(find('shell-displays')); assert.equal(find('settings-open-managed-displays'), null);
+  await deliver(find('shell-output-1-scale-up'));
+  await deliver(find('shell-output-1-rotate'));
+  await deliver(find('shell-output-apply')); await tick();
+  const request = f.calls.find(item => item[0] === 'display-apply')[1];
+  assert.equal(request.heads[0].scale, 1.25); assert.equal(request.heads[0].transform, 1);
+  assert.equal(f.saved().display, null); assert.equal(f.output.pendingToken, 7);
+  assert.match(f.document.body.textContent, /trusted confirmation.*15 seconds/);
+  await f.app.present('about'); await tick();
+  assert.equal(f.output.pendingToken, 7, 'navigation cannot Keep/Revert or remove the compositor watchdog');
+  f.output.remainingMs = 9000;
+  await f.app.present('displays'); await tick();
+  assert.match(f.document.body.textContent, /9 seconds/);
+  assert.equal(f.host.windows.length, 1);
+  assert.ok(!f.host.windows.some(window => window.title === 'Desktop control panel'));
+});
+test('Displays hotplug discards draft/inputs and exact identity or all-off changes are refused without mutation', async t => {
+  const f = domainFixture(t); await tick();
+  const old = f.document.getElementById('shell-output-1-width');
+  f.output.serial++; f.output.heads[0].serialNumber = 'replacement';
+  await f.app.present('displays'); await tick();
+  assert.notEqual(f.document.getElementById('shell-output-1-width'), old);
+  const stale = displayDraft(f.domains.displays()); stale.heads[0].serialNumber = 'old';
+  assert.throws(() => f.domains.applyDisplays(JSON.stringify(stale)), /identities/);
+  const off = displayDraft(f.domains.displays()); off.heads[0].enabled = false;
+  assert.throws(() => f.domains.applyDisplays(JSON.stringify(off)), /remain enabled/);
+  assert.equal(f.calls.some(item => item[0] === 'display-apply'), false);
+});
+test('Audio page uses one owner policy; actual acknowledgement persists after page close and stale/replaced nodes refuse', async t => {
+  const f = domainFixture(t); await f.app.present('audio'); await tick();
+  const find = id => f.document.getElementById(id);
+  assert.ok(find('shell-audio-settings')); assert.equal(find('settings-open-managed-audio'), null);
+  await deliver(find('shell-audio-retry')); await tick();
+  assert.equal(f.calls.filter(item => item[0] === 'audio-start').length, 1, 'explicit refresh never creates a second policy owner');
+  assert.equal(find('shell-audio-mute-11').getAttribute('aria-disabled'), 'true');
+  await deliver(find('shell-audio-lower-10')); await tick();
+  assert.deepEqual(f.calls.find(item => item[0] === 'volume'), ['volume', 10, 1, 0.9]);
+  assert.equal(f.saved().audio, null);
+  f.app.stop(); assert.equal(f.calls.some(item => item[0] === 'audio-stop'), false);
+  f.sound.nodes[0].volume = 0.9; f.sound.nodes[0].revision++; f.sound.revision++;
+  f.audio.snapshot();
+  assert.equal(f.saved().audio.devices[0].volume, 0.9);
+  const action = JSON.stringify({ generation: f.sound.generation, id: 10, revision: 1, instance: '100', operation: 'mute', value: true });
+  assert.throws(() => f.domains.audioAction(action), /device changed/);
+  f.sound.generation++;
+  assert.throws(() => f.domains.audioAction(action), /device changed/);
+  assert.throws(() => f.domains.forgetAudio(JSON.stringify({ generation: f.sound.generation - 1,
+    revision: f.sound.revision })), /state changed/);
+  assert.equal(f.calls.filter(item => item[0] === 'volume').length, 1);
+});
+test('Keyboard records only in the small trusted active surface, cancels on focus loss/detach, preserves catalog conflict errors', async t => {
+  const f = domainFixture(t); await f.app.present('keyboard'); await tick();
+  const action = fixtureShortcuts[0].action;
+  await deliver(f.document.getElementById('shell-shortcut-' + action)); await tick();
+  const first = f.host.windows.at(-1), firstRecording = f.domains.keyboard(f.owner).recording;
+  assert.equal(first.title, 'PollyShell.shortcut-recording.' + firstRecording.token);
+  assert.equal(f.calls.some(item => item[0] === 'capture'), false, 'no capture before actual trusted activation');
+  first.active = true; first.onactivate();
+  assert.deepEqual(f.calls.at(-1), ['capture', true]);
+  f.domains.detach({}); assert.ok(f.domains.keyboard(f.owner).recording, 'another owner cannot cancel this token');
+  assert.throws(() => f.domains.cancelRecording({}, firstRecording.token), /another owner/);
+  first.active = false; first.ondeactivate();
+  assert.equal(f.domains.keyboard(f.owner).recording, null);
+  assert.deepEqual(f.calls.at(-1), ['capture', false]);
+  let state = f.domains.keyboard(f.owner);
+  f.domains.keyboardAction(f.owner, JSON.stringify({ revision: state.revision, operation: 'record', action }));
+  const second = f.host.windows.at(-1); second.active = true; second.onactivate();
+  await deliver(second.document.body, 'keydown', { key: 'm', ctrlKey: true });
+  assert.equal(f.native.shortcuts()[0].key, 'm'); assert.equal(f.saved().shortcuts[0].key, 'm');
+  state = f.domains.keyboard(f.owner);
+  f.domains.keyboardAction(f.owner, JSON.stringify({ revision: state.revision, operation: 'record', action }));
+  const third = f.host.windows.at(-1); third.active = true; third.onactivate();
+  await deliver(third.document.body, 'keydown', { key: 'conflict', ctrlKey: true });
+  assert.match(f.domains.keyboard(f.owner).error, /conflicts/);
+  assert.equal(f.native.shortcuts()[0].key, 'm');
+  state = f.domains.keyboard(f.owner);
+  f.domains.keyboardAction(f.owner, JSON.stringify({ revision: state.revision, operation: 'record', action }));
+  await f.app.present('about'); await tick();
+  assert.equal(f.domains.keyboard(f.owner).recording, null);
+});
+test('Domain snapshots reject unknown fields, fabricated readiness and mixed identity payloads', async t => {
+  const f = domainFixture(t); await tick();
+  for (const [parse, value] of [[parseDisplays, f.domains.displays()], [parseAudio, f.domains.audio()],
+    [parseKeyboard, f.domains.keyboard(f.owner)]]) {
+    assert.throws(() => parse(JSON.stringify({ ...value, command: 'untrusted' })));
+  }
+  const audio = f.domains.audio(); audio.nodes[0].instance = 100;
+  assert.throws(() => parseAudio(JSON.stringify(audio)));
+  const displays = f.domains.displays(); displays.heads[0].adaptiveSync = 'true';
+  assert.throws(() => parseDisplays(JSON.stringify(displays)));
+});
 test('shared appearance view uses the explicit remote catalog rather than a Shell module-global list', () => {
   const theme = BUILTIN_THEME_CATALOG.themes[0];
   const tree = settingsView(theme, () => {}, () => {}, () => {}, '', false, null, null, null, null,
@@ -207,7 +376,17 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     refreshNetworks() { effects.push(['network-refresh']); },
     replyNetworkAuthentication(token, user, password) { effects.push(['network-auth', token, user === null, password === null]); },
   };
-  const bridge = createSettingsService({ service: { poll: () => queue.shift() || null, close() {} }, client, network,
+  const domains = {
+    displays: () => ({ domain: 'displays' }), audio: () => ({ domain: 'audio' }),
+    keyboard: () => ({ domain: 'keyboard' }),
+    applyDisplays: value => effects.push(['display-write', value]),
+    forgetDisplays: () => effects.push(['display-forget']),
+    audioAction: () => effects.push(['audio-write']), retryAudio() {}, forgetAudio: () => effects.push(['audio-forget']),
+    keyboardAction: () => effects.push(['keyboard-write']),
+    cancelRecording: () => effects.push(['recording-cancel']),
+    detach: () => effects.push(['keyboard-detach']),
+  };
+  const bridge = createSettingsService({ service: { poll: () => queue.shift() || null, close() {} }, client, network, domains,
     pid: 7, uid: 1000, spawn: page => { effects.push(['spawn', page, SETTINGS_APP_ID]); return 42; },
     activate: () => effects.push(['activate']), appearance, about,
     select: id => { effects.push(['select', id]); return id !== 'fail'; },
@@ -231,7 +410,8 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     for (const sender of [':intruder', ':root'])
       assert.match((await request('SelectTheme', ['bigsur'], sender)).name, /AccessDenied/);
     for (const member of ['Open', 'SelectTheme', 'ReloadThemes', 'RestoreThemes', 'OpenManagedPage',
-      'NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection', 'DetachNetwork'])
+      'NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection', 'DetachNetwork',
+      'ApplyDisplays', 'ForgetDisplayProfile', 'AudioAction', 'RefreshAudio', 'ForgetAudio', 'KeyboardAction', 'CancelShortcutRecording', 'DetachPage'])
       await request(member, ['xp'], ':owned', true);
     assert.equal(effects.some(([kind]) => kind === 'select'), false);
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
@@ -248,6 +428,24 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     assert.ok(effects.some(effect => effect.join() === 'managed,network'));
     for (const member of ['GetNetwork', 'NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection', 'DetachNetwork'])
       assert.match((await request(member, [], ':intruder')).name, /AccessDenied/);
+    for (const member of ['GetDisplays', 'ApplyDisplays', 'ForgetDisplayProfile', 'GetAudio', 'AudioAction', 'RefreshAudio', 'ForgetAudio',
+      'GetKeyboard', 'KeyboardAction', 'CancelShortcutRecording', 'DetachPage'])
+      assert.match((await request(member, [], ':intruder')).name, /AccessDenied/);
+    delayed = ':owned';
+    const retiredKeyboard = request('KeyboardAction', ['{}']);
+    await tick(); await request('DetachPage', ['keyboard'], ':presentation'); delayed = null;
+    assert.match((await retiredKeyboard).name, /AccessDenied/);
+    assert.equal(effects.some(([kind]) => kind === 'keyboard-write'), false);
+    await request('ApplyDisplays', ['{}']); await request('AudioAction', ['{}']); await request('KeyboardAction', ['{}']);
+    assert.equal(effects.filter(([kind]) => /^(display|audio|keyboard)-write$/.test(kind)).length, 3);
+    delayed = ':owned';
+    const olderDetach = request('DetachPage', ['keyboard']);
+    await tick();
+    const detachCount = effects.filter(([kind]) => kind === 'keyboard-detach').length;
+    await request('KeyboardAction', ['{}'], ':presentation');
+    delayed = null; await olderDetach;
+    assert.equal(effects.filter(([kind]) => kind === 'keyboard-detach').length, detachCount,
+      'an older delayed detach must not cancel a newer accepted recorder operation');
     const action = JSON.stringify({ revision: wifi.revision, target: networkId, action: 'connect' });
     await request('NetworkAction', [action]);
     wifi.authentication = { id: 77, kind: 'passphrase', username: '', network: networkId };

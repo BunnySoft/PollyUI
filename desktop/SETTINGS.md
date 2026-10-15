@@ -3,10 +3,10 @@
 Open **Settings** using the taskbar button, Dock, the searchable **Settings**
 entry in Applications, or the desktop background's context-menu gesture.
 The six navigation entries share an ordinary decorated, resizable **independent
-Settings application**. Appearance, Network and About live in its own process/QuickJS
-realm/event loop. Displays, Audio and Keyboard explicitly offer
-**Open desktop controls** and retain their actual controls in a separate
-Shell-owned panel. Theme changes,
+Settings application**. Appearance, Displays, Network, Audio, Keyboard and About
+all live in that one application's own window/document, process/QuickJS realm
+and event loop. There is no complete Shell-owned settings window or
+**Open desktop controls** delegation. Theme changes,
 other application activity and launcher dismissal do not close it.
 Escape (unless consumed by an input), Alt+F4 and the window-frame close control
 close only Settings. Use its normal taskbar/window-switcher entry to restore a
@@ -21,7 +21,7 @@ owned instance's navigation/presentation; Shell activates its current window.
 | Displays | Edit enabled outputs, resolution/refresh, scale, rotation and position using the existing display draft and native output manager. Apply opens the existing trusted-layer **Keep / Revert** confirmation. The compositor's 15-second watchdog remains authoritative; only Keep saves the exact-identity startup profile. Hotplug/serial changes discard the stale draft and visibly ask the user to review the replacement. |
 | Network | The independent Settings document mounts the existing iwd controls through authenticated, fixed Shell RPCs. Actual adapters, radio/connection state, RSSI and IP-configuration status come from the single Shell-owned JS service. Scan, radio power, connect, masked password/username prompts, disconnect and explicitly confirmed forgetting retain revision/token-bound requests. An unprovisioned enterprise network remains disabled. No Bluetooth, VPN or IP-address backend is added. |
 | Audio | The existing private PipeWire policy provides endpoint volume, mute and default playback/recording devices. Requests show acknowledgment progress; existing name/class preferences are saved only after the actual service echoes them. Device loss, missing service, unavailable volume/mute and storage errors remain visible. No host audio daemon or WirePlumber is substituted. |
-| Keyboard | Change, disable or reset the existing fixed shortcut catalog in the Shell control panel. Recording opens the existing trusted Shell layer: shortcut suppression is layer-focus-bound, not granted to the independent Settings window. Escape first cancels recording; closing/changing the owning control panel page releases capture. |
+| Keyboard | Change, disable or reset the existing fixed shortcut catalog inside Settings. Change opens only a small trusted recording prompt, not another full Keyboard page. Capture starts on actual prompt activation and ends on Escape, deactivation/lock focus loss, timeout, page detach or owned-process exit. The ordinary Settings window never receives a global keyboard hook. Conflicts and save/rollback errors remain visible. |
 | About | Grouped system build, session and preference cards show the actual system release, full build revision/source state, appearance, display count and service status. Expand Technical details for Settings's separate application version/runtime, identity/directories and saved profile information. Unknown source metadata is explicit. Login/lock behavior remains deployment-policy-dependent; account/password/administrator actions are unavailable here. |
 
 Missing native APIs are visibly unavailable, not fake ready services. Existing
@@ -56,11 +56,14 @@ objects, native management connections or private Wayland descriptors.
 No public appearance, output, audio-policy or Wi-Fi-agent privilege is added. Placement belongs to PollyWM;
 ordinary `window.create` does not accept layer-only `output`/keyboard options.
 
-The legacy `showSettings` quick-appearance overlay, `showDisplays`,
-`showShortcuts`, `showNetwork` and `showAudio` APIs remain compatible with
-existing menu/native fixtures. `showSettings(..., true)` delegates About to the
-independent app. `showManagedSettings` still supports the four legacy Shell pages;
-their Appearance/About navigation returns to the independent app.
+The legacy `showSettings` quick-appearance overlay and `showNetwork` Wi-Fi quick
+control remain explicit quick controls. `showSettings(..., true)` routes About
+to the independent app. `showDisplays`, `showShortcuts`, `showAudio` and
+`showManagedSettings(output, page)` now return the same asynchronous owned
+Settings launch/presentation acknowledgement, not a Shell window handle.
+Taskbar, Dock, Applications, desktop and full-page shortcuts route to that one
+owned application. Existing native fixtures use the ordinary-window test probe
+instead of pretending a returned PID is a Shell document.
 
 The fixed `org.pollyui.Settings1` D-Bus service uses empty/scalar calls and
 version-1 business JSON snapshots validated before rendering. Both endpoints
@@ -73,18 +76,21 @@ do not prove rollback; writes never reconnect, retry or replay automatically.
 This is not a sandbox against an attacker already controlling the same UID or
 ptrace. See `apps/settings/README.md` for the exact first-version boundaries.
 
-Navigation within either document detaches its previous service page before
-mounting the next one. Independent Settings navigation/close does not silently
-close a separately open control panel. Network detach wipes credential fields
+Navigation detaches the previous Settings page before mounting the next one.
+Network detach wipes credential fields
 and retires confirmations. The independent page cancels only its own still-pending
 connection, bound to the JS service's operation ID; it cannot cancel or answer a
 later Shell-panel connection even when the target network is identical.
 Shell observes actual Settings exit and performs the same bounded cleanup.
-Neither detach disconnects an established connection. Audio page detach releases only its
-document; routing, queued acknowledgments and persistence continue as Shell
-policy. Subscriptions are shared by the existing controllers, chain earlier
-callbacks and restore them when Shell stops. Closing Settings does not stop
-those policies or other applications.
+Neither detach disconnects an established connection. Display detach discards
+only the editor draft/inputs: a provisional token and its real remaining
+deadline stay with the compositor and small trusted Keep/Revert prompt.
+Audio detach releases only page UI; the single Shell audio-policy subscription,
+routing, pending acknowledgments and ack-before-save persistence continue.
+Keyboard detach cancels only that owned process's current recorder token;
+retired keys and other owners cannot cancel or mutate its replacement.
+Ordered final authorization gates reject delayed writes after detach and prevent
+an older delayed detach from cancelling a newer operation.
 
 Every Settings callback is scoped to its live window, current page and rendered
 revision. Embedded service buttons also bind their attachment and actual state
@@ -102,19 +108,16 @@ it cannot be silently kept or reverted by a stale Settings callback.
 
 ## Bounded checks and native acceptance
 
-`desktop/tests/menu-host.mjs` exercises the injected narrow launch contract and
-actual retained control-panel view/reconciler: entry points, page content, pointer/keyboard handlers,
-theme changes, native request shapes, provisional display confirmation,
-acknowledged audio persistence, masked Wi-Fi prompts, actual current-node
-replacement, late service callbacks, unavailable controls and close/restart
-cleanup. `apps/settings/tests/settings.mjs` separately checks the independent
-controller, strict snapshots, credential checks, stale generations, no-reply
-suppression and no mutation replay. These backends are synthetic and certify
-no native rendering.
+`desktop/tests/menu-host.mjs` exercises Shell entry-point routing, appearance
+transactions, quick menus and trusted display-confirmation lifetimes.
+`apps/settings/tests/settings.mjs` exercises the independent six-page UI with the
+actual reconciler, strict snapshots, display identity/hotplug/all-off refusal,
+acknowledged audio persistence after close, trusted recorder focus/token ownership,
+credential checks, stale generations, no-reply suppression and no replay.
+These backends are synthetic and certify no native rendering.
 
 ```powershell
 node --test .\desktop\tests\menu-host.mjs .\desktop\apps\settings\tests\settings.mjs
-node .\desktop\tests\xp-luna-unit.mjs
 ```
 
 `settings-shell.mjs` is the native acceptance fixture, not a product entry point.
@@ -138,7 +141,7 @@ host DOM checks constitute native acceptance:
 ```sh
 python3 desktop/tests/settings-native.py \
   /absolute/build/pollyui-layer-client-test /absolute/build/pollyui \
-  --mode all --evidence /private/evidence
+  --mode migration --evidence /private/evidence
 ```
 
 Run in an isolated Linux container with the pinned SDK, read-only source, no
@@ -152,9 +155,20 @@ change display hardware or operate real Wi-Fi/audio devices. Physical radios,
 GPU/audio hardware, installed reboot persistence and authenticated-session
 qualification are separate acceptance work.
 
-CTest registers four separate wrapper invocations: `desktop-settings-ui` and
+The bounded `migration` mode uses two native headless outputs and the existing
+private PipeWire virtual endpoints: it edits/applies scale in independent
+Settings, keeps it through the trusted token prompt, changes actual volume,
+mute/default endpoint, records an actual compositor-delivered Ctrl+M in the
+activated trusted recorder, resets defaults and closes/reopens Settings with a
+new PID while preserving audio state and an independent survivor. It retains
+eight actual app-buffer captures. This establishes software-native independent
+window/RPC/input behavior, not physical display/audio/Wi-Fi or theme pixel
+alignment. No additional OS service is made independent and no sandbox is claimed.
+
+CTest registers separate wrapper invocations: `desktop-settings-ui` and
 `desktop-settings-audio` use `--mode ui`/`audio` and the `ordinary-native` label;
-run them explicitly as UID1000. `desktop-settings-network` uses `--mode network`
+run them explicitly as UID1000. `desktop-settings-migration` uses the bounded
+`--mode migration` flow above, also as UID1000. `desktop-settings-network` uses `--mode network`
 and the `root-container;fixture-coordinator;synthetic-network` labels. Its root
 coordinator owns only the private synthetic iwd/system-bus fixture; the wrapper
 drops PollyWM, PollyUI and the public survivor to UID1000. The audio mode starts
