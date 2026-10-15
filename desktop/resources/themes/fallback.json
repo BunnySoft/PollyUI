@@ -215,8 +215,8 @@
       "name": "Server 2003 / Classic",
       "era": "Square frames, restrained gray, beveled controls",
       "desktop": {
-        "from": "#396c79",
-        "to": "#396c79",
+        "from": "#3a6ea5",
+        "to": "#3a6ea5",
         "asset": "",
         "layers": []
       },
@@ -236,8 +236,8 @@
       "window": {
         "radius": 0,
         "border": "#404040",
-        "borderWidth": 3,
-        "titleHeight": 22,
+        "borderWidth": 4,
+        "titleHeight": 23,
         "titleFrom": "#0a246a",
         "titleTo": "#a6caf0",
         "titleText": "#ffffff",
@@ -257,8 +257,8 @@
         "unifiedToolbar": false,
         "controlSize": 14,
         "controlGap": 2,
-        "controlInset": 5,
-        "textInset": 23,
+        "controlInset": 6,
+        "textInset": 24,
         "textGap": 4,
         "fontSize": 11,
         "fontWeight": 700,
@@ -282,7 +282,7 @@
         "stripeColor": "#aabbcc",
         "surfaceStyle": "classic",
         "controlWidth": 16,
-        "controlTop": 5
+        "controlTop": 6
       },
       "icons": {
         "size": 32,
@@ -307,7 +307,8 @@
         "height": 28,
         "radius": 0,
         "inset": 0,
-        "surfaceStyle": "classic"
+        "surfaceStyle": "classic",
+        "menuStyle": "two-column"
       },
       "layout": {
         "fontSize": 11,
@@ -338,8 +339,8 @@
         "dockTitleLimit": 5,
         "workspaceWidth": 160,
         "screenInset": 0,
-        "menuWidth": 260,
-        "menuHeight": 400,
+        "menuWidth": 380,
+        "menuHeight": 442,
         "menuGap": 0,
         "menuTopGap": 4,
         "contentPadding": 8,
@@ -388,9 +389,12 @@
         "trayMenuRowHeight": 30,
         "dockTileWidth": 90,
         "launcherWidth": 60,
-        "menuHeaderHeight": 0,
-        "menuFooterHeight": 30,
-        "menuRowHeight": 22
+        "menuHeaderHeight": 40,
+        "menuFooterHeight": 34,
+        "menuRowHeight": 22,
+        "menuSideWidth": 184,
+        "menuIconSize": 32,
+        "menuVerticalInset": 4
       }
     },
     {

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 register('./root-loader.mjs', import.meta.url);
-const { parseThemeCatalog, parseThemeFile } = await import('../shared/ui/theme-schema.mjs');
-const { dockSurfaceWidth, applicationMenuPlacement } = await import('../shared/ui/theme-layout.mjs');
+const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import('../shared/ui/theme-schema.mjs');
+const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
@@ -63,4 +63,29 @@ narrow.window.controlWidth = 14;
 assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: narrow })));
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-profile'));
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-links'));
+const server = catalog.themes.find(theme => theme.id === 'server2003');
+const serverMenu = applicationsView(server, apps, '', action, action, action, action);
+assert.equal(server.panel.menuStyle, 'two-column');
+assert.ok(find(serverMenu, 'shell-start-profile'));
+assert.equal(find(serverMenu, 'shell-start-links').props.style.width, 184);
+assert.equal(find(serverMenu, 'shell-start-links').props.style.backgroundColor, server.colors.body);
+assert.equal(find(serverMenu, 'shell-start-profile').props.style.gradientDir, 'horizontal');
+assert.equal(serverMenu.props.style.borderRadius, 0);
+assert.equal(applicationMenuHeight(server, 480), 442);
+assert.equal(applicationMenuHeight(server, 240), 204);
+assert.equal(applicationMenuHeight(server, 0), 1);
+const legacy = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+  themes: { server2003: { panel: { menuStyle: 'legacy' } } } })).themes.find(theme => theme.id === 'server2003');
+const legacyMenu = applicationsView(legacy, apps, '', action, action, action, action);
+assert.ok(find(legacyMenu, 'shell-start-brand'));
+assert.equal(find(legacyMenu, 'shell-start-profile'), undefined);
+assert.equal(find(legacyMenu, 'shell-app-org.pollyui.settings').props.style.height, 22);
+assert.ok(find(legacyMenu, 'shell-app-org.pollyui.settings').children
+  .filter(child => child.props?.['aria-hidden'] === 'true' && child.props?.style?.width)
+  .every(child => child.props.style.width <= 22));
+for (const theme of catalog.themes.filter(theme => theme.id !== 'server2003'))
+  assert.equal(applicationMenuHeight(theme, 480),
+    Math.max(1, Math.min(theme.layout.menuHeight, 480 - theme.panel.height - theme.layout.overlayInset * 2)));
+assert.throws(() => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+  themes: { server2003: { panel: { menuStyle: 'arbitrary-code' } } } })), /unsupported/);
 console.log('PASS: six-theme geometry, menu activation, Dock keyboard behavior, disabled commands, recovery parity and placement seams');

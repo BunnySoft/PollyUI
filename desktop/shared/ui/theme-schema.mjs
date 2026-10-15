@@ -80,13 +80,14 @@ const options = {
 const optionalOptions = {
   window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
-  panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'] },
+  panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
+    menuStyle: ['legacy', 'two-column', 'grid'] },
 };
 const optionalNumbers = {
   window: { controlWidth: [8, 96], controlTop: [0, 64] },
   layout: { launcherWidth: [24, 160], dockIconSize: [16, 96], dockPadding: [0, 32],
     dockIndicatorSize: [2, 12], menuHeaderHeight: [0, 96], menuFooterHeight: [24, 96],
-    menuRowHeight: [16, 96] },
+    menuRowHeight: [16, 96], menuSideWidth: [80, 320], menuIconSize: [12, 48], menuVerticalInset: [0, 64] },
 };
 
 function object(value, context) {

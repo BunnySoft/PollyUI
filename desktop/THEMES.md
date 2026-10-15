@@ -134,8 +134,16 @@ reading sources, font references and **uncertified version/DPI/rights gaps** are
 in `resources/themes/alignment-reference.json`. Its geometry is an implementation
 target, not an assertion that an untagged public screenshot proves a service pack.
 
-XP Start uses a two-column header/link layout; Classic uses compact menu rows
-and bevels; Modern uses a centered, searchable application grid and footer.
+XP Start uses a two-column header/link layout; Server 2003 uses a gray two-column
+menu with a horizontal caption-colored header and bevels; Modern uses a centered,
+searchable application grid and footer. Visual Classic and legacy single-column
+Start are not synonyms. Optional `panel.menuStyle` (`legacy`, `two-column`, `grid`)
+selects structure independently of its painter/palette. Omission retains the
+previous style-derived defaults, and `server2003` explicitly selects `two-column`.
+Set its `panel.menuStyle` override to `legacy` to retain the compact single column.
+Optional `layout.menuSideWidth` and `menuIconSize` control side/app geometry.
+`menuVerticalInset` applies only to menu sizing; absence uses `overlayInset`,
+so changing the Server menu fit does not alter other panel margins.
 Only actual installed entries/actions are shown: no fake recommendations,
 categories, pinned history or nonfunctional search. Classic cascading Programs
 menus, true user account/profile art, and Win11 recommendation/account features
@@ -150,7 +158,7 @@ compositor blur, reflection, wallpaper tint, magnification or authentic OS icons
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
-`dockSurfaceWidth`/`applicationMenuPlacement` functions are the Shell consumer
+`dockSurfaceWidth`/`applicationMenuPlacement`/`applicationMenuHeight` functions are the Shell consumer
 seam; they do not create surfaces or change state by themselves.
 
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions

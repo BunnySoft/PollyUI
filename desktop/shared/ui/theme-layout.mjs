@@ -28,3 +28,9 @@ export function applicationMenuPlacement(theme) {
       [mac ? 'top' : 'bottom']: mac ? l.menuBarHeight + l.menuTopGap : theme.panel.height + l.menuGap },
   };
 }
+
+export function applicationMenuHeight(theme, availableHeight) {
+  const l = theme.layout;
+  return Math.max(1, Math.min(l.menuHeight,
+    availableHeight - theme.panel.height - (l.menuVerticalInset ?? l.overlayInset) * 2));
+}

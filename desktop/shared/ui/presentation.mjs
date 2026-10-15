@@ -54,7 +54,7 @@ export function desktopText(text, color, size = 14, extra = {}) {
 }
 
 export function desktopCommand(id, text, theme, action, { icon = '', selected = false, enabled = true,
-  quiet = false, style = {}, role = 'button' } = {}) {
+  quiet = false, style = {}, role = 'button', iconSize = 0 } = {}) {
   const activate = event => {
     if (!enabled || (event?.button !== undefined && event.button !== 0)) return false;
     event?.stopPropagation?.(); return action();
@@ -84,7 +84,7 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
     },
   }, luna ? lunaButtonDetail(theme, 'button', !enabled) : painted ? surfaceDetail(theme, options) : null,
   icon ? desktopIcon(icon, !enabled ? theme.colors.muted : theme.colors.accent,
-    Math.min(20, theme.layout.buttonHeight - 6)) : null,
+    iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null,
   caption);
 }
 
