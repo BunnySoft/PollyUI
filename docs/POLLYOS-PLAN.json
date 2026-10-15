@@ -1168,7 +1168,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "现有Lion painter/shelf/indicators已交付但仅opaque approximation，用户Dock不一致意见和alignment-reference仍待真实同设置对照。"
+      "evidence": "2026-10-15 Lion Dock有界surface核验：actual Windows raster GUI证明既有panel.from/to合法override前整图0变化，原因shelf主面/front硬码；将两层接既有字段，默认值恰等旧色，default400x120 PNG逐字节不变；custom#804020/#204080仅主面与front所在行4334px变化（含灯边缘与front正常alpha混合），中性#EEE/#999层不染色。24透视row+4pxfront、默认317x66/56pxslot及一组合法289x74/48pxslot/12x3灯几何验证；active/minimized仍running、实际hover/held/focus/sameDOM/singleclick、fixed3actions、窄stripscroll1059/最后minimizedclick与focusreveal均保持。仅currentdesign字段消费，不称OSraw或Darwin/nativeMac验收。相同设置授权rawreference/真实玻璃阴影反射/Appgroup等仍缺，E22.29保持partial。"
     },
     {
       "id": "lion-dock-material",

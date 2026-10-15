@@ -86,6 +86,25 @@ assert.equal(launched, 6);
   }
 }
 for (const id of ['aqua', 'lion', 'bigsur']) {
+  const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+    themes: { [id]: { panel: { from: '#804020', to: '#204080' } } } })).themes.find(theme => theme.id === id);
+  const dock = dockView(theme, action, action, action, [{ id: 1, minimized: true }]);
+  if (id === 'lion') {
+    const shelf = dock.children[0];
+    assert.equal(shelf.children.length, 25);
+    shelf.children.slice(0, 24).forEach((row, y) => {
+      assert.equal(row.props.style.left, 12 - y / 2);
+      assert.equal(row.props.style.right, 12 - y / 2);
+      assert.equal(row.props.style.backgroundColor, y === 0 ? '#eeeeee' : y < 12 ? '#804020' : '#999999');
+    });
+    assert.equal(shelf.children[24].props.style.backgroundColor, '#204080');
+    assert.equal(shelf.children[24].props.style.borderColor, '#d6d6d6');
+  } else {
+    assert.equal(dock.props.style.gradientFrom, '#804020');
+    assert.equal(dock.props.style.gradientTo, '#204080');
+  }
+}
+for (const id of ['aqua', 'lion', 'bigsur']) {
   for (const painted of [false, true]) {
     const theme = painted ? applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
       themes: { [id]: { button: { surfaceStyle: 'aqua' } } } })).themes.find(theme => theme.id === id) :
