@@ -412,6 +412,39 @@ captures and the existing 320px narrow scroll/click/focus controls remain
 byte-identical to the gap-fixed baseline. This does not certify rounded-rim
 silhouettes, whole-Dock fit on extreme outputs or native macOS appearance.
 
+The extreme-width follow-up keeps a stable `shell-dock-viewport` around the
+original material/controls surface. Its minimum content width is the existing
+`dockSurfaceWidth(theme, windows.length ? 1 : 0, Infinity)`: configured padding,
+three fixed slots and their gaps, plus the separator and one window slot when
+windows exist. Only below that threshold does the outer viewport clip/scroll
+the complete surface. It never compresses gaps, padding, icons or unequal slot
+widths. With no windows, the same rule keeps all three fixed actions reachable.
+If even one control is physically wider than the viewport, focus exposes its
+maximum visible portion rather than claiming that it fully fits.
+
+Window focus reveals the inner strip before the outer viewport; fixed-action
+focus reveals the outer viewport. Inner wheel movement stops propagation;
+at its boundary the event can move the outer Dock. A bounded two-frame
+mount/update layout check clamps stale inner/outer scroll after geometry
+changes and reveals retained focus. Unchanged clock reconciliation does not
+undo manual wheel scrolling. A fitting Dock adds no outer clip, preserving
+the existing antialiased rim pixels and normal fixed-action positions.
+
+`tests/mac-dock-extreme-render.mjs` covers real 560x180 rendering/input. With a
+304px client, gap32 and 20 windows, the formerly zero-width Tiger/Lion/Big Sur
+window strips become 54/56/58px inside 369/381/391px complete surfaces. Fixed
+actions and first/last windows have real single callbacks; Lion's full-width
+shelf remains under the last window. Big Sur wheel limits are inner1710 and
+outer87. Widening to544 clears outer scroll and preserves last-window focus;
+removing windows restores outer0 with Settings focus intact. Empty80px,
+unequal64/80px slots at100px and explicit96px slots at40px cover smaller
+outputs without silent resizing. The minimum-surface/client distinction also
+applies one pixel below the exact-fit boundary. Thirty-one full before/after
+PNG pairs for normal/default320/gap0/gap12 and legal icon configurations remain
+byte-identical. These are local layout/input guarantees, not an OS-fidelity
+claim; desktop icons, global menu-bar reference gaps and genuine materials
+remain separate.
+
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
 simulated appearance preview, but also **not a Linux compositor desktop capture**.

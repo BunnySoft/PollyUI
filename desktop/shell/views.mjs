@@ -8,7 +8,7 @@ import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
 
 
 import { trayView } from './desktop/shell/tray.mjs';
-import { themeTextSize } from './desktop/shell/theme-layout.mjs';
+import { themeTextSize, dockSurfaceWidth } from './desktop/shell/theme-layout.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
 import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
 import { bevel, surfaceStyle, surfacePaint, surfaceEvents, surfaceDetail } from './desktop/shared/ui/surface-primitives.mjs';
@@ -111,6 +111,55 @@ function syncFluentPanel(node, theme) {
 }
 const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
+
+const dockLayouts = new WeakMap();
+function dockScrollMaximum(node) {
+  return node.childNodes.reduce((maximum, child) => Math.max(maximum,
+    child.offsetLeft + child.offsetWidth - node.offsetLeft - node.offsetWidth), 0);
+}
+function scrollDock(event) {
+  const start = Number(event.currentTarget.scrollLeft);
+  scrollDesktop(event, true);
+  if (Number(event.currentTarget.scrollLeft) !== start) event.stopPropagation?.();
+}
+function revealDockSlot(event) {
+  let target = event.currentTarget;
+  for (let viewport = target.parentNode; viewport; viewport = viewport.parentNode) {
+    if (!['shell-dock-windows', 'shell-dock-viewport'].includes(viewport.id)) continue;
+    const left = target.offsetLeft - viewport.offsetLeft, end = left + target.offsetWidth;
+    const start = Number(viewport.scrollLeft);
+    const next = target.offsetWidth > viewport.offsetWidth || left < start ? left :
+      end > start + viewport.offsetWidth ? end - viewport.offsetWidth : start;
+    viewport.scrollLeft = Math.max(0, Math.min(dockScrollMaximum(viewport), next));
+    target = viewport;
+  }
+}
+function syncDockLayout(node) {
+  let state = dockLayouts.get(node);
+  if (!state) { state = { frame: null, geometry: '' }; dockLayouts.set(node, state); }
+  if (state.frame !== null) return;
+  const weak = new WeakRef(node);
+  // Settle attachment/layout once; unchanged clock reconciliation must not undo manual scrolling.
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      state.frame = null;
+      const viewport = weak.deref();
+      if (!viewport?.parentNode || !viewport.offsetWidth) return;
+      const surface = viewport.firstChild, strip = surface.querySelector('#shell-dock-windows');
+      const geometry = [viewport.offsetWidth, surface.offsetWidth, strip?.offsetWidth ?? 0,
+        strip ? dockScrollMaximum(strip) : 0, ...surface.childNodes.flatMap(child =>
+          [child.offsetLeft - surface.offsetLeft, child.offsetWidth])].join(':');
+      if (state.geometry === geometry) return;
+      state.geometry = geometry;
+      viewport.style.overflow = surface.offsetWidth > viewport.offsetWidth ? 'scroll' : 'visible';
+      if (strip) strip.scrollLeft = Math.max(0, Math.min(Number(strip.scrollLeft), dockScrollMaximum(strip)));
+      viewport.scrollLeft = Math.max(0, Math.min(Number(viewport.scrollLeft), dockScrollMaximum(viewport)));
+      const active = viewport.ownerDocument?.activeElement;
+      for (let parent = active; parent; parent = parent.parentNode)
+        if (parent === viewport) { revealDockSlot({ currentTarget: active }); break; }
+    });
+  });
+}
 
 function windowButtons(theme, windows, toggle, actions, compact = false) {
   return h('view', { id: 'shell-window-list', style: {
@@ -360,13 +409,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
-        onFocus: window ? event => {
-          const node = event.currentTarget, strip = node.parentNode;
-          const left = node.offsetLeft - strip.offsetLeft, end = left + node.offsetWidth;
-          const start = Number(strip.scrollLeft);
-          if (left < start) strip.scrollLeft = Math.max(0, left);
-          else if (end > start + strip.offsetWidth) strip.scrollLeft = end - strip.offsetWidth;
-        } : undefined,
+        onFocus: revealDockSlot,
         onClick: event => { if (event.button === 0) { event.stopPropagation(); action(); } },
         onKeydown: event => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
@@ -398,8 +441,12 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         height: 1, backgroundColor: y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999', pointerEvents: 'none' } })),
       h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4,
         backgroundColor: panel.to, borderTopWidth: 1, borderColor: '#d6d6d6', pointerEvents: 'none' } })) : null;
-    return h('view', { id: 'shell-dock', style: { ...row, position: 'relative',
-      width: '100%', height: '100%', alignItems: 'flex-end', justifyContent: 'center',
+    return h('view', { id: 'shell-dock-viewport', style: {
+      width: '100%', height: '100%', overflow: 'visible' },
+      onWheel: scrollDock, onMount: syncDockLayout, onUpdate: syncDockLayout },
+    h('view', { id: 'shell-dock', style: { ...row, position: 'relative',
+      width: '100%', minWidth: dockSurfaceWidth(theme, windows.length ? 1 : 0, Infinity),
+      height: '100%', flexShrink: 0, alignItems: 'flex-end', justifyContent: 'center',
       paddingLeft: theme.layout.dockPadding ?? 6, paddingRight: theme.layout.dockPadding ?? 6,
       gap: theme.layout.dockGap, overflow: 'hidden', borderRadius: panel.radius,
       ...(style === 'lion' ? { backgroundColor: 'transparent' } : {
@@ -414,9 +461,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       windows.length ? h('view', { id: 'shell-dock-windows', style: {
         ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, height: panel.height - 4,
         gap: theme.layout.dockGap, overflow: 'scroll',
-      }, onWheel: event => scrollDesktop(event, true) },
+      }, onWheel: scrollDock },
       windows.map(window => slot('shell-window-' + window.id, window.title || window.appId || 'Untitled',
-        'file', () => toggle(window.id), true, window))) : null);
+        'file', () => toggle(window.id), true, window))) : null));
   }
   const tile = { height: panel.height - theme.layout.panelItemInset, width: theme.layout.dockTileWidth,
     borderRadius: theme.icons.dockTiles ? theme.icons.radius : theme.button.radius };

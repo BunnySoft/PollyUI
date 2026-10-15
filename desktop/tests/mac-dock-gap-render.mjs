@@ -35,10 +35,11 @@ export function checkMacDockGaps(directory, verify = true) {
   };
   const measurements = () => {
     const strip = get('shell-dock-windows'), dock = get('shell-dock');
+    const viewport = get('shell-dock-viewport');
     const fixed = ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about'].map(get);
     const children = strip?.childNodes || [], last = children.at(-1);
     const contentWidth = last ? last.offsetLeft + last.offsetWidth - strip.offsetLeft : 0;
-    return { dock: rect(dock), fixed: fixed.map(rect), strip: strip ? rect(strip) : null,
+    return { dock: rect(dock), viewport: rect(viewport || dock), fixed: fixed.map(rect), strip: strip ? rect(strip) : null,
       contentWidth, shortfall: last ? contentWidth - strip.offsetWidth : 0 };
   };
   for (const theme of [...themes, overrides(0), overrides(12)]) {
@@ -74,7 +75,9 @@ export function checkMacDockGaps(directory, verify = true) {
       scene(wideGap, items, available);
       const result = measurements();
       const expectedWidth = Math.min(available - 2 * l.screenInset, natural - (!verify && count ? l.dockGap : 0));
-      check(result.dock[2] === expectedWidth, 'Exact clamp boundary');
+      check(result.viewport[2] === expectedWidth, 'Exact client clamp boundary');
+      check(result.dock[2] === (verify ? Math.max(expectedWidth, dockSurfaceWidth(wideGap, count ? 1 : 0, Infinity)) :
+        expectedWidth), 'Complete material surface retains fixed entries and at least one window slot');
       if (verify && count) check(result.shortfall === natural - result.dock[2],
         'Only a physically insufficient viewport needs window scrolling');
       console.log('MAC_DOCK_CLAMP ' + JSON.stringify({ count, available, ...result }));
