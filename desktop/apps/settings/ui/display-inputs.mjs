@@ -5,16 +5,18 @@ import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 export function displayField(owner, inputs, head, field, theme, width = 78) {
   const id = 'shell-output-' + head.id + '-' + field;
   const fontSize = themeTextSize(theme, 12);
-  const existing = inputs.get(id);
-  if (existing) existing.setAppearance({ color: theme.colors.text, background: theme.colors.surface,
+  const appearance = { color: theme.colors.text, background: theme.colors.surface,
     selectionColor: theme.colors.selection, borderColor: theme.colors.border,
-    borderRadius: theme.button.radius, fontSize });
+    borderRadius: theme.button.radius, fontSize };
+  const existing = inputs.get(id);
+  if (existing) existing.setAppearance(appearance);
   return h('view', { style: { width, height: fontSize + 16, flexShrink: 0 }, onMount: node => {
     let input = inputs.get(id);
     if (!input) {
       input = createTextInput({ document: owner, value: field === 'refresh' ? head[field] / 1000 : head[field],
         width, fontSize, padding: 7, purpose: 'number', color: theme.colors.text, background: theme.colors.surface,
         selectionColor: theme.colors.selection });
+      input.setAppearance(appearance);
       input.root.id = id;
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', head.name + ' ' + field);
