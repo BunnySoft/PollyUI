@@ -814,7 +814,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集。公共 disabled checkpoint：修 shared surface/Luna 对既有 aria-disabled=true 和 disabled option 的视觉状态同步，paint 不覆盖 caller opacity；真实 Settings Audio view 的禁用 Classic held 290px、Luna hover276px/held1300px 变化修为0，held→disabled/retheme/reenable保留DOM和focus、selected truth、一次enabled action实测通过；额外caller disabledOpacity0.37保持，不改默认值1或palette。tests/disabled-button-render.mjs 与 theme-alignment.mjs 覆盖该子集。此项仍partial：未认证全SDK/default-button/完整主题状态，font/选择控件/输入滚动条/对话框仍独立remaining。"
+      "evidence": "ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集。3760f36 公共 disabled checkpoint：修 shared surface/Luna 对既有 aria-disabled=true 和 disabled option 的视觉状态同步，paint 不覆盖 caller opacity；真实 Settings Audio view 的禁用 Classic held 290px、Luna hover276px/held1300px 变化修为0，held→disabled/retheme/reenable保留DOM和focus、selected truth、一次enabled action实测通过；额外caller disabledOpacity0.37保持，不改默认值1或palette。tests/disabled-button-render.mjs 与 theme-alignment.mjs 覆盖该子集。第二批 actual GUI 确认固定焦点点阵截断：120x22四边完整，420x80缺47/47/5/5点，500x96缺87/87/13/13点。该缺陷未修：Canvas替换要覆盖无VNode更新的子窗口host resize，现Document缺owner-window关联；纯onUpdate/rAF方案会回归，已保留before与自有WIP artifact，未交付不完整替换。最小只读document.defaultView机制需另行选择，用户暂不可即时答复，不视为批准。此项仍partial：完整focus尺寸/default-button/全SDK状态未闭环，font/选择控件/输入滚动条/对话框仍独立remaining。"
     },
     {
       "id": "theme-selection-controls",
@@ -1120,7 +1120,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "已有tiger painter和triangle指标、固定三action/窗口scroll；alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证。"
+      "evidence": "已有tiger painter和triangle指标、固定三action/窗口scroll；2026-10-15首增量修复合法dockIndicatorSize=2..12时固定7px行造成的偏心/越界，四行采用对称整数inset，默认7px全图before/after像素hash均3475878074。actual Windows raster GUI另实证第四行被底部rim裁掉；独立followup仅Tiger indicator bottom=0→1，默认完整显示1/3/5/7四行、两窗口400x100图有意增加14个黑色像素，不改rim/高度/slot。7/2/12可见像素/边界/中心、active/minimized running与窄Dock scroll/click/focus保持验证；非Tiger结构未变。仅currentgeometry/configuration contract修正，不是OS rawfidelity或Darwin/nativeMac验收。alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证；E22.26仍partial。"
     },
     {
       "id": "tiger-dock-material",
