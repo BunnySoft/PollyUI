@@ -210,6 +210,30 @@ Set its `panel.menuStyle` override to `legacy` to retain the compact single colu
 Optional `layout.menuSideWidth` and `menuIconSize` control side/app geometry.
 `menuVerticalInset` applies only to menu sizing; absence uses `overlayInset`,
 so changing the Server menu fit does not alter other panel margins.
+
+### XP taskbar and Start surface coverage
+
+The bounded E22.13 surface uses [XP-LUNA](resources/themes/XP-LUNA.md),
+`xp-reference.json` and `alignment-reference.json` as design/geometry references,
+not certified SP3/DPI raw-pixel oracles. Existing colors and artwork are unchanged.
+
+| Surface | Verified existing contract / correction | Remaining boundary |
+|---|---|---|
+| Taskbar and green launcher | Actual 30px bar, default 97px launcher, band/tint hover/held/cancel; `layout.launcherWidth` now controls actual launcher layout and hitbox (tested 123px) | Reference lacks certified launcher hover/held state crops; original Polly mark is not Windows art |
+| Active/inactive tasks and compact tools | Actual 26px tasks, single activation, keyboard focus; overflowing task strip remains wheel-accessible at narrow width | Settings/workspace shortcuts are real actions, not a full configurable historical Quick Launch implementation |
+| Cyan notification area and clock | Actual 30px area and visible clock; existing tray/notification paths retained | No full SNI external-icon/state or original-font pixel certification |
+| Start header, left apps and Search/Pin | Actual 64px header, 380x480 default menu; left list scroll, disabled app, single launch/Pin and text search retained | Header is original Polly identity, not a real account/profile; Programs cascade is absent |
+| Right links and column separator | Existing Settings/Refresh/Close rows and palette/border retained; XP right column now independently scrolls and locally reveals focused commands using existing unscrolled offset/scroll metrics | No invented categories/group dividers without backend groups or qualified state references; Classic and other preset paths unchanged |
+| Footer and low-height fit | Actual 42px footer stays fixed with header while either column scrolls; logout remains reachable at 360x260 local layout | Below the combined fixed header/footer/Search minimum, fitting all content requires a separate layout policy; this batch does not change menu preferred height or global insets |
+
+`tests/xp-shell-surface-render.mjs` exercises actual `panelView`/`applicationsView`
+and host input. At 800x600 the default before/after PNG bytes match. In a 360x260
+layout inside the same 800x600 GUI surface, the 206px menu has a 100px right
+viewport: Close previously extended below it, and now wheel/focus scroll 20px
+to reveal the full command. Header/footer rectangles do not move; reverse wheel
+clamps at zero and repeated focus does not jitter. This is actual component
+layout/input evidence, not a native compositor output resize or XP fidelity score.
+
 Classic follows the supplied Windows Server 2003 references: flat faces and real
 pixel bevel layers, not simulated blur or a modern gradient. Standard WinForms
 controls in that system theme share this appearance; WinForms is not a separate
@@ -272,6 +296,36 @@ this repairs the local 7x4 visibility contract, not OS-exact placement.
 running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
 configuration consistency evidence, not a Tiger raw-reference or native Mac
 platform acceptance.
+Lion's existing `panel.from` controls the upper shelf face and `panel.to` the
+four-pixel front face. The painter previously ignored both fields; their shipped
+values already matched those two hardcoded colors, so consuming them preserves
+default pixels. The neutral top highlight, lower shelf band and front-edge
+declaration remain separate detail colors, not a promise that these two fields
+tint every layer. Tiger/Big Sur keep their existing root-gradient consumers;
+the Mac menu bar still uses `window.titleFrom/titleTo`.
+
+The bounded Lion Dock coverage in `tests/lion-dock-surface-render.mjs` is local
+design/field-consumption evidence on an actual Windows GUI raster surface:
+
+| Area | Result and boundary |
+| --- | --- |
+| Palette entry points | Confirmed defect fixed: accepted `panel.from/to` overrides now affect the upper/front faces; default 400x120 PNG is byte-identical. Top/lower neutral bands stay unchanged. |
+| Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
+| Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
+| Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
+| Mechanism/business gaps | Still missing: real glass, shadow/reflection, application grouping, pinning and magnification. This palette wiring does not implement any of them. |
+
+The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
+**no confirmed product defect and makes no painter/preset change**:
+
+| Area | Current coverage and remaining boundary |
+| --- | --- |
+| Geometry | Actual detached GUI Canvas uses supplied rectangles: default 12px round controls at close/minimize/maximize x=12/32/52, y=8 in a 28px title strip; one accepted custom 16px/34px allocation and widths 1/20/44/64/300 fit without stretching strips. The fixture mirrors the metadata grammar; it does not certify native hit testing or generate an OS oracle. |
+| State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
+| Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
+| Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
+| Mechanism/content gaps | Unchanged: genuine window shadow/vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance need separate evidence or implementation decisions. |
+
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure

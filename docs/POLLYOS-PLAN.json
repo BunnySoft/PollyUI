@@ -910,7 +910,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "用户最初明确 XP bar/Start 不像原版；当前 30px bar、97px launcher、26px tasks、cyan tray 和两列 header/link 已有，XP-LUNA/THEMES 明列完整 Start/profile、quick-launch 与 tray 状态差异未闭环。"
+      "evidence": "2026-10-15 XP现有taskbar/Start表面批：修Luna launcher硬码97未消费现layout.launcherWidth，合法123 override实际布局/命中生效而默认不变；XP双列右links复用scrollDesktop/minHeight0与局部chain onFocus、verticalScrollMetrics clamp，低高Settings/Refresh/Close不再裁失，不扩SDK机制或改Classic。实际GUI800x600量测bar30/launcher97/tasks26、tray30/menu380x480/header64/footer42，default before/after PNG SHA相同；360x260局部布局menu206/links100，Close原bottom208越过footer188，修后wheel/focus scroll20完整显示，末项pointer/Enter各单次，重复focus不抖、反向wheel归零。左右列独立scroll且header/footer不动；Search/Pin/disabled app/launcher hover-held-cancel/任务focus及窄条滚动激活保留。THEMES有界表区分现有合同/已修缺陷/待参考/缺业务；源色/字体/其它五preset路径未改。原XP字体/认证SP3-DPI raw、Start account/profile/Programs级联、完整QuickLaunch与tray外部状态仍缺；更低于固定header/footer/Search总高的布局策略未选。本证据为actual GUI component，不冒充native resize/OS精确误差，E22.13保持partial。"
     },
     {
       "id": "classic-residual-colors",
@@ -1168,7 +1168,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "现有Lion painter/shelf/indicators已交付但仅opaque approximation，用户Dock不一致意见和alignment-reference仍待真实同设置对照。"
+      "evidence": "2026-10-15 Lion Dock有界surface核验：actual Windows raster GUI证明既有panel.from/to合法override前整图0变化，原因shelf主面/front硬码；将两层接既有字段，默认值恰等旧色，default400x120 PNG逐字节不变；custom#804020/#204080仅主面与front所在行4334px变化（含灯边缘与front正常alpha混合），中性#EEE/#999层不染色。24透视row+4pxfront、默认317x66/56pxslot及一组合法289x74/48pxslot/12x3灯几何验证；active/minimized仍running、实际hover/held/focus/sameDOM/singleclick、fixed3actions、窄stripscroll1059/最后minimizedclick与focusreveal均保持。仅currentdesign字段消费，不称OSraw或Darwin/nativeMac验收。相同设置授权rawreference/真实玻璃阴影反射/Appgroup等仍缺，E22.29保持partial。"
     },
     {
       "id": "lion-dock-material",
@@ -1200,7 +1200,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "BigSur light preset/公共GUIcaption已具；font/systempixels、nativefullwindoweffects未认证，unifiedToolbar仍仅preview含义。"
+      "evidence": "BigSur light preset/公共GUIcaption已具；2026-10-15有界caption actual Windows raster GUI核验未发现确定产品缺陷，未改painter/preset。默认12px圆control及close/min/max左序、active/inactive/三hover/validheld+hover、现有整组glyphhover与inactiveOpacity/ink消费通过；合法16pxcontrol/34pxtitle、宽1/20/44/64/300、empty/long textclip、1.25backingceil、5otherpreset前后strip bytes guards通过。元数据fixture镜像现geometry合同，不冒nativehit/input或OSraw验收。旧C5bb181c^逐键glyphhover与现JS整组存在priorart分歧，保留现行为待同版本授权rawstate参考/决定；exactcolors/font/art/nativeMac/Metal、vibrancy/shadow和统一clienttoolbar仍未认证/缺机制，E22.31保持partial。"
     },
     {
       "id": "bigsur-dock-geometry",
