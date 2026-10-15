@@ -57,6 +57,34 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+{
+  const xp = catalog.themes.find(theme => theme.id === 'xp');
+  const custom = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+    themes: { xp: { layout: { launcherWidth: 123 } } } })).themes.find(theme => theme.id === 'xp');
+  assert.equal(find(panelView(xp, '', action), 'shell-menu').props.style.width, 97);
+  assert.equal(find(panelView(custom, '', action), 'shell-menu').props.style.width, 123);
+  for (const theme of catalog.themes) {
+    const menu = applicationsView(theme, apps, '', action, action, action, action);
+    const links = find(menu, 'shell-start-links');
+    if (theme.id === 'xp') {
+      assert.equal(links.props.style.minHeight, 0);
+      assert.equal(links.props.style.overflow, 'scroll');
+      assert.equal(typeof links.props.onWheel, 'function');
+      const close = find(menu, 'shell-app-close');
+      const strip = { id: 'shell-start-links', offsetTop: 88, offsetHeight: 100, scrollTop: 0,
+        childNodes: [{ offsetTop: 94, offsetHeight: 34 }, { offsetTop: 134, offsetHeight: 34 },
+          { offsetTop: 174, offsetHeight: 34 }], style: { padding: 6 } };
+      const node = { parentNode: strip, offsetTop: 174, offsetHeight: 34 };
+      close.props.onFocus({ currentTarget: node });
+      assert.equal(strip.scrollTop, 20);
+      close.props.onFocus({ currentTarget: node });
+      assert.equal(strip.scrollTop, 20);
+    } else if (links) {
+      assert.equal(links.props.style.overflow, undefined, theme.id + ' right column unchanged');
+      assert.equal(links.props.onWheel, undefined, theme.id + ' wheel route unchanged');
+    }
+  }
+}
 for (const id of ['aqua', 'lion', 'bigsur']) {
   for (const painted of [false, true]) {
     const theme = painted ? applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,

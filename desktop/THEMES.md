@@ -210,6 +210,30 @@ Set its `panel.menuStyle` override to `legacy` to retain the compact single colu
 Optional `layout.menuSideWidth` and `menuIconSize` control side/app geometry.
 `menuVerticalInset` applies only to menu sizing; absence uses `overlayInset`,
 so changing the Server menu fit does not alter other panel margins.
+
+### XP taskbar and Start surface coverage
+
+The bounded E22.13 surface uses [XP-LUNA](resources/themes/XP-LUNA.md),
+`xp-reference.json` and `alignment-reference.json` as design/geometry references,
+not certified SP3/DPI raw-pixel oracles. Existing colors and artwork are unchanged.
+
+| Surface | Verified existing contract / correction | Remaining boundary |
+|---|---|---|
+| Taskbar and green launcher | Actual 30px bar, default 97px launcher, band/tint hover/held/cancel; `layout.launcherWidth` now controls actual launcher layout and hitbox (tested 123px) | Reference lacks certified launcher hover/held state crops; original Polly mark is not Windows art |
+| Active/inactive tasks and compact tools | Actual 26px tasks, single activation, keyboard focus; overflowing task strip remains wheel-accessible at narrow width | Settings/workspace shortcuts are real actions, not a full configurable historical Quick Launch implementation |
+| Cyan notification area and clock | Actual 30px area and visible clock; existing tray/notification paths retained | No full SNI external-icon/state or original-font pixel certification |
+| Start header, left apps and Search/Pin | Actual 64px header, 380x480 default menu; left list scroll, disabled app, single launch/Pin and text search retained | Header is original Polly identity, not a real account/profile; Programs cascade is absent |
+| Right links and column separator | Existing Settings/Refresh/Close rows and palette/border retained; XP right column now independently scrolls and locally reveals focused commands using existing unscrolled offset/scroll metrics | No invented categories/group dividers without backend groups or qualified state references; Classic and other preset paths unchanged |
+| Footer and low-height fit | Actual 42px footer stays fixed with header while either column scrolls; logout remains reachable at 360x260 local layout | Below the combined fixed header/footer/Search minimum, fitting all content requires a separate layout policy; this batch does not change menu preferred height or global insets |
+
+`tests/xp-shell-surface-render.mjs` exercises actual `panelView`/`applicationsView`
+and host input. At 800x600 the default before/after PNG bytes match. In a 360x260
+layout inside the same 800x600 GUI surface, the 206px menu has a 100px right
+viewport: Close previously extended below it, and now wheel/focus scroll 20px
+to reveal the full command. Header/footer rectangles do not move; reverse wheel
+clamps at zero and repeated focus does not jitter. This is actual component
+layout/input evidence, not a native compositor output resize or XP fidelity score.
+
 Classic follows the supplied Windows Server 2003 references: flat faces and real
 pixel bevel layers, not simulated blur or a modern gradient. Standard WinForms
 controls in that system theme share this appearance; WinForms is not a separate
@@ -291,6 +315,14 @@ The shipped Classic/Luna value remains 1; a 0.37 override is a separate input
 contract check, not a new OS appearance default. Disabled pointer pixels, retained
 selection/node/focus, and re-enabled single activation are covered. This does
 not certify all SDK widgets, fonts or OS control states.
+
+Settings display fields also apply their existing appearance mapping at creation,
+not only when a retained field is repainted. The bounded
+`tests/display-field-render.mjs` check uses the actual Displays view and SDK input:
+first-frame/same-theme border and radius pixels match, while value, caret,
+selection, focus, padding and draft roundtrip survive a retheme. This does not
+change theme tokens, SDK input defaults/focus color or display transaction policy,
+and does not certify other input controls or scrollbars.
 
 An additional actual-GUI check found that the current fixed Classic focus-dot
 grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots

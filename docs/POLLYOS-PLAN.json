@@ -844,9 +844,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "THEMES.md 明列 SDK caret/selection、global scrollbar、Settings bespoke fields 未认证；Files 已有功能滚动/编辑证据，不等于 Windows/Mac 视觉一致。"
+      "evidence": "Settings displayField 初始appearance接线checkpoint：新建与复用统一调用既有setAppearance对象，首帧不再保留SDK默认border#cbd5e1/radius6。真实Settings displaysView+display-inputs+SDK输入800x600/scale1：Classic初始→same-theme repaint原238px差、Modern原236px差均修为0；现有theme border/radius/font、padding7、selection/caret colors实消费，value1920/selection[0,4]/caret/focus同DOM跨retheme保持，实际输入2560并一次Apply回调draft roundtrip通过。未改主题catalog/SDK API/defaultfocusColor/显示事务。仅此局部已交付；全SDKcaret/selection、global scrollbar及其它bespoke输入仍未认证，Files功能滚动证据不等于OS视觉一致。"
     },
     {
       "id": "theme-dialog-panel-coverage",
@@ -910,7 +910,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "用户最初明确 XP bar/Start 不像原版；当前 30px bar、97px launcher、26px tasks、cyan tray 和两列 header/link 已有，XP-LUNA/THEMES 明列完整 Start/profile、quick-launch 与 tray 状态差异未闭环。"
+      "evidence": "2026-10-15 XP现有taskbar/Start表面批：修Luna launcher硬码97未消费现layout.launcherWidth，合法123 override实际布局/命中生效而默认不变；XP双列右links复用scrollDesktop/minHeight0与局部chain onFocus、verticalScrollMetrics clamp，低高Settings/Refresh/Close不再裁失，不扩SDK机制或改Classic。实际GUI800x600量测bar30/launcher97/tasks26、tray30/menu380x480/header64/footer42，default before/after PNG SHA相同；360x260局部布局menu206/links100，Close原bottom208越过footer188，修后wheel/focus scroll20完整显示，末项pointer/Enter各单次，重复focus不抖、反向wheel归零。左右列独立scroll且header/footer不动；Search/Pin/disabled app/launcher hover-held-cancel/任务focus及窄条滚动激活保留。THEMES有界表区分现有合同/已修缺陷/待参考/缺业务；源色/字体/其它五preset路径未改。原XP字体/认证SP3-DPI raw、Start account/profile/Programs级联、完整QuickLaunch与tray外部状态仍缺；更低于固定header/footer/Search总高的布局策略未选。本证据为actual GUI component，不冒充native resize/OS精确误差，E22.13保持partial。"
     },
     {
       "id": "classic-residual-colors",

@@ -118,7 +118,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       return node;
     };
     const launcher = button('shell-menu', 'Polly', theme, openMenu, false, {
-      height: panel.height, width: 97, borderWidth: 0, borderRadius: 0,
+      height: panel.height, width: theme.layout.launcherWidth ?? 97, borderWidth: 0, borderRadius: 0,
       paddingLeft: 7, paddingRight: 10, flexDirection: 'row', gap: 5,
       ...lunaButtonPaint(theme, { variant: 'launcher' }),
     });
