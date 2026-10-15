@@ -354,14 +354,31 @@ selection, focus, padding and draft roundtrip survive a retheme. This does not
 change theme tokens, SDK input defaults/focus color or display transaction policy,
 and does not certify other input controls or scrollbars.
 
-An additional actual-GUI check found that the current fixed Classic focus-dot
+An additional actual-GUI check found that the former fixed Classic focus-dot
 grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots
-along its four full edges, while 120x22 is complete. This is **not fixed**.
-A paint-only Canvas replacement must also follow child-window host resizing
-without a vnode update. The existing window state event has size/scale data,
-but Document currently exposes no owner-window association. An onUpdate/rAF-only
-replacement would regress that case, so it is not shipped; a minimal read-only
-owner association is a separate mechanism decision. E22.7 remains partial.
+along its four full edges, while 120x22 is complete. The original evidence and
+unshipped candidate remain historical proof of the earlier deferral.
+The subsequent bounded fix replaces only the ordinary Classic focus grid with
+one paint-only Canvas, reusing the task painter's 2x2 repeat primitive but
+preserving each ordinary edge's independent phase (task phase is unchanged).
+Actual 800x600/scale-1 GUI output has zero missing dots on all four full edges
+for 420x80 and 500x96; the complete 120x22 control crop differs by zero pixels
+from the preserved before image, with no resize/mask/font exclusions.
+
+The generic read-only `Document.defaultView` and independent
+`Window.observeState` mechanisms associate the focused control with its real
+owner, without wrapping the business `onstatechange`. Focused/enabled controls
+use a weak cached painter and bounded two-rAF post-layout remeasurement, not a
+frame loop. Blur/disabled/leave cancel frames and unsubscribe; detached Canvas
+subscriptions do not retain the Canvas and have GC cleanup. Real Win32 child
+host-only resize, with no VNode update or forced render, expands a 420x180
+control to 640x290 and completes the 634x284 focus backing; its presented PNG has
+zero wrong on/off pixels on every full edge. Business callback reassignment,
+retained focus, caller opacity, selection truth, retheme, blur and single
+activation are covered. A private WM_DPICHANGED 1.25 test checks adapter/backing
+refresh only, not monitor-DPI qualification. No C theme rendering is added.
+E22.7 remains partial: this does not certify default-button styles, every SDK
+widget/state, fonts or full OS appearance.
 
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;

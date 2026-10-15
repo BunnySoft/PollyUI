@@ -51,12 +51,21 @@ static int    pu_perf_on(void) { return 0; }
 #endif
 
 /* Shared state for the window callbacks. */
+typedef struct PuStateObserver {
+    struct PuStateObserver *next;
+    uint32_t id;
+    JSValue callback;
+} PuStateObserver;
+
 typedef struct PuApp {
     PuScript *script;
     PuBridge *bridge;
     struct PuApp *next;
     PuWindow *window;
     JSValue handle;
+    PuStateObserver *observers;
+    uint32_t observer_serial;
+    unsigned observer_count;
     uint64_t paint_version;
     int closed, frameless, backdrop, titlebar, is_layer, transparent, is_popup;
 } PuApp;
@@ -306,6 +315,11 @@ static void app_state(const PuWindowState *state, void *user)
 {
     PuApp *app = user;
     JSContext *ctx = pu_script_jsctx(app->script);
+    JSValue keep = JS_DupValue(ctx, app->handle);
+    uint32_t observers[64];
+    unsigned count = 0;
+    for (PuStateObserver *entry = app->observers; entry; entry = entry->next)
+        observers[count++] = entry->id;
     JSValue callback = JS_GetPropertyStr(ctx, app->handle, "onstatechange");
     if (JS_IsException(callback)) app_report(ctx);
     else if (JS_IsFunction(ctx, callback)) {
@@ -318,10 +332,35 @@ static void app_state(const PuWindowState *state, void *user)
         JS_ThrowTypeError(ctx, "onstatechange must be a function or null"); app_report(ctx);
     }
     JS_FreeValue(ctx, callback);
+    for (unsigned i = 0; i < count && !app->closed; i++) {
+        PuStateObserver *entry = app->observers;
+        while (entry && entry->id != observers[i]) entry = entry->next;
+        if (!entry) continue;
+        JSValue listener = JS_DupValue(ctx, entry->callback);
+        JSValue argument = window_state_value(ctx, state);
+        JSValue result = JS_IsException(argument) ? JS_EXCEPTION :
+            JS_Call(ctx, listener, app->handle, 1, &argument);
+        if (JS_IsException(result)) app_report(ctx);
+        JS_FreeValue(ctx, result); JS_FreeValue(ctx, argument); JS_FreeValue(ctx, listener);
+    }
+    JS_FreeValue(ctx, keep);
+}
+
+static void clear_state_observers(JSRuntime *rt, PuApp *app)
+{
+    while (app->observers) {
+        PuStateObserver *entry = app->observers;
+        app->observers = entry->next;
+        JS_FreeValueRT(rt, entry->callback);
+        free(entry);
+    }
+    app->observer_count = 0;
 }
 
 static void app_retire(PuApp *app, int notify)
 {
+    pu_bridge_set_default_view(app->bridge, NULL, NULL);
+    clear_state_observers(JS_GetRuntime(pu_script_jsctx(app->script)), app);
     pu_drag_js_close(app->bridge);
     JSContext *ctx = pu_script_jsctx(app->script);
     PuApp **link = &g_apps;
@@ -396,8 +435,22 @@ static int app_close_requested(PuWindow *window, void *user)
 
 static void window_finalizer(JSRuntime *rt, JSValueConst value)
 {
-    (void)rt;
-    free(JS_GetOpaque(value, g_window_class));
+    PuApp *app = JS_GetOpaque(value, g_window_class);
+    if (app) { clear_state_observers(rt, app); free(app); }
+}
+
+static void window_gc_mark(JSRuntime *rt, JSValueConst value, JS_MarkFunc *mark)
+{
+    PuApp *app = JS_GetOpaque(value, g_window_class);
+    for (PuStateObserver *entry = app ? app->observers : NULL; entry; entry = entry->next)
+        JS_MarkValue(rt, entry->callback, mark);
+}
+
+static JSValue app_default_view(JSContext *ctx, void *user)
+{
+    PuApp *app = user;
+    return !app->closed && pu_script_jsctx(app->script) == ctx ?
+        JS_DupValue(ctx, app->handle) : JS_NULL;
 }
 
 static PuApp *new_app(PuBridge *bridge)
@@ -423,6 +476,7 @@ static PuApp *new_app(PuBridge *bridge)
         free(app);
         return NULL;
     }
+    pu_bridge_set_default_view(bridge, app_default_view, app);
     app->next = g_apps;
     g_apps = app;
     return app;
@@ -895,6 +949,46 @@ static JSValue jswin_start_drag(JSContext *ctx, JSValueConst self, int argc, JSV
     return pu_drag_js_start(ctx, app->bridge, app->window, argc, argv);
 }
 
+static JSValue remove_state_observer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv,
+    int magic, JSValue *data)
+{
+    (void)self; (void)argc; (void)argv; (void)magic;
+    PuApp *app = window_app(ctx, data[0], 1);
+    if (!app) return JS_EXCEPTION;
+    uint32_t id;
+    if (JS_ToUint32(ctx, &id, data[1])) return JS_EXCEPTION;
+    PuStateObserver **slot = &app->observers;
+    while (*slot && (*slot)->id != id) slot = &(*slot)->next;
+    if (*slot) {
+        PuStateObserver *entry = *slot;
+        *slot = entry->next;
+        app->observer_count--;
+        JS_FreeValue(ctx, entry->callback); free(entry);
+    }
+    return JS_UNDEFINED;
+}
+
+static JSValue jswin_observe_state(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    PuApp *app = window_app(ctx, self, 0);
+    if (!app) return JS_EXCEPTION;
+    if (argc != 1 || !JS_IsFunction(ctx, argv[0]))
+        return JS_ThrowTypeError(ctx, "observeState requires a function");
+    if (app->observer_count >= 64 || app->observer_serial == UINT32_MAX)
+        return JS_ThrowRangeError(ctx, "Window state observer limit reached");
+    PuStateObserver *entry = calloc(1, sizeof(*entry));
+    if (!entry) return JS_ThrowOutOfMemory(ctx);
+    entry->id = ++app->observer_serial; entry->callback = JS_DupValue(ctx, argv[0]);
+    JSValue data[] = {JS_DupValue(ctx, self), JS_NewUint32(ctx, entry->id)};
+    JSValue remove = JS_NewCFunctionData(ctx, remove_state_observer, 0, 0, 2, data);
+    JS_FreeValue(ctx, data[0]); JS_FreeValue(ctx, data[1]);
+    if (JS_IsException(remove)) { JS_FreeValue(ctx, entry->callback); free(entry); return remove; }
+    PuStateObserver **tail = &app->observers;
+    while (*tail) tail = &(*tail)->next;
+    *tail = entry; app->observer_count++;
+    return remove;
+}
+
 static JSValue jswin_capture(JSContext *c, JSValueConst t, int n, JSValueConst *a)
 {
     PuApp *app = window_app(c,t,0);
@@ -945,7 +1039,7 @@ static PuApp *install_window_api(JSContext *ctx)
     if (!pu_drag_js_install(ctx)) return NULL;
     JSRuntime *runtime = JS_GetRuntime(ctx);
     if (!g_window_class) JS_NewClassID(runtime, &g_window_class);
-    const JSClassDef definition = { "Window", .finalizer = window_finalizer };
+    const JSClassDef definition = { "Window", .finalizer = window_finalizer, .gc_mark = window_gc_mark };
     if (JS_NewClass(runtime, g_window_class, &definition) < 0) return NULL;
     JSValue win = JS_NewObject(ctx);
     JS_SetPropertyStr(ctx, win, "create", JS_NewCFunction(ctx, jswin_create, "create", 1));
@@ -953,6 +1047,7 @@ static PuApp *install_window_api(JSContext *ctx)
     JS_SetPropertyStr(ctx, win, "capture", JS_NewCFunction(ctx, jswin_capture, "capture", 1));
     JS_SetPropertyStr(ctx, win, "displays", JS_NewCFunction(ctx, jswin_displays, "displays", 0));
     JS_SetPropertyStr(ctx, win, "capabilities", JS_NewCFunction(ctx, jswin_capabilities, "capabilities", 0));
+    JS_SetPropertyStr(ctx, win, "observeState", JS_NewCFunction(ctx, jswin_observe_state, "observeState", 1));
     JSAtom state = JS_NewAtom(ctx, "state");
     JS_DefinePropertyGetSet(ctx, win, state,
         JS_NewCFunction2(ctx, (JSCFunction *)jswin_state, "state", 0, JS_CFUNC_getter, 0),
