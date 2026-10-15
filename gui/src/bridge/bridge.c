@@ -387,7 +387,7 @@ static const JSClassDef pu_style_class_def = {
     "CSSStyleDeclaration", .finalizer = pu_style_finalizer,
     .gc_mark = pu_style_gc_mark, .exotic = &pu_style_exotic
 };
-static const JSClassExoticMethods pu_document_exotic;
+static JSClassExoticMethods pu_document_exotic;
 static const JSClassDef pu_document_class_def = {
     "Document", .finalizer = document_finalizer, .exotic = &pu_document_exotic
 };
@@ -537,7 +537,7 @@ static int document_own_names(JSContext *ctx, JSPropertyEnum **names, uint32_t *
     return 0;
 }
 
-static const JSClassExoticMethods pu_document_exotic = {
+static JSClassExoticMethods pu_document_exotic = {
     .get_own_property = document_get_own,
     .get_own_property_names = document_own_names,
     .get_property = document_get_property,
