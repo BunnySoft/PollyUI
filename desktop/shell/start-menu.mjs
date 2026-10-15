@@ -1,4 +1,5 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
+import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { desktopCommand, desktopIcon, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { surfaceStyle, bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
@@ -20,10 +21,24 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const filtered = entries.filter(entry =>
     [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
       .join(' ').toLowerCase().includes(query.toLowerCase()));
-  const command = (id, title, action, icon = '', extra = {}) =>
-    desktopCommand(id, title, theme, action, { icon, iconSize: classicColumns ? 24 : 0, quiet: true, style: {
+  const command = (id, title, action, icon = '', extra = {}) => {
+    const node = desktopCommand(id, title, theme, action, { icon, iconSize: classicColumns ? 24 : 0, quiet: true, style: {
       borderRadius: modern ? 4 : 0, height: linkHeight, borderWidth: 0,
       paddingLeft: grid ? 12 : 6, paddingRight: 6, ...extra } });
+    if (xp && twoColumn) {
+      const focus = node.props.onFocus;
+      node.props.onFocus = event => {
+        focus?.(event);
+        const item = event.currentTarget, strip = item.parentNode;
+        if (strip?.id !== 'shell-start-links') return;
+        const top = item.offsetTop - strip.offsetTop, end = top + item.offsetHeight;
+        const start = Number(strip.scrollTop);
+        const next = top < start ? top : end > start + strip.offsetHeight ? end - strip.offsetHeight : start;
+        if (next !== start) strip.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(strip).maximum, next));
+      };
+    }
+    return node;
+  };
   const search = h('view', { id: 'shell-app-search', role: 'textbox', tabIndex: 0,
     'aria-label': 'Search applications', style: { ...row, flexShrink: 0, minWidth: 0,
       height: grid ? 32 : 24, paddingLeft: 8, paddingRight: 8, gap: 8,
@@ -112,7 +127,9 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       filtered.length > 100 ? text(theme, 'Showing 100 matches; refine the search.', c.muted) : null),
     twoColumn ? h('view', { id: 'shell-start-links', style: { width: l.menuSideWidth ?? 132, flexShrink: 0,
       padding: classic ? 4 : 6, gap: classic ? 0 : 6, backgroundColor: xp ? '#d3e5fa' : c.body,
-      borderLeftWidth: classicColumns ? 0 : 1, borderColor: xp ? '#95b8e9' : c.dark, position: 'relative' } },
+      borderLeftWidth: classicColumns ? 0 : 1, borderColor: xp ? '#95b8e9' : c.dark, position: 'relative',
+      ...(xp ? { minHeight: 0, overflow: 'scroll' } : {}) },
+    ...(xp ? { onWheel: scrollDesktop } : {}) },
       classicColumns ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute',
         left: 0, top: 0, bottom: 0, width: 1, backgroundColor: c.dark, pointerEvents: 'none' } }) : null,
       classicColumns ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute',
