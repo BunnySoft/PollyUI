@@ -1104,7 +1104,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "现有Aqua/genericcaption与菜单栏路线已具；用户明确三套Mac质感和控件/字体不准，当前THEMES仅声明原创近似，不具有Tiger fullstate认证。"
+      "evidence": "现有Aqua/genericcaption与菜单栏路线已具；2026-10-15第二批actual Windows raster GUI证实默认Tiger菜单项显式radius0被输入state painter改为普通按钮radius8；局部menuTheme radius0供factory/events一致消费，hover/leave/focus/press/click/reconcile/blur保留直角，普通按钮仍8，菜单单击一次激活。独立followup实证每次重建clone派生theme使hover/held后focus/release丢高亮（Tiger/customLion846、customBigSur936像素）；按原immutabletheme用局部WeakMap复用派生对象修复，重建保留DOM和hover/held，真正换theme自然重置状态并用新palette。默认Lion/BigSur为generic路径无此默认bug；合法Aqua painter override在3/5半径复现并修复。仅currentdesign override一致性，不称OS rawhighlight或Darwin/nativeMac认证；字体/标题/真实参考及其它差异仍partial。"
     },
     {
       "id": "tiger-dock-geometry",

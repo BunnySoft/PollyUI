@@ -20,6 +20,7 @@ export { wallpaper } from './desktop/shell/appearance.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const center = { alignItems: 'center', justifyContent: 'center' };
 const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
+const menuThemes = new WeakMap();
 const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
@@ -197,8 +198,13 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: 11 } }, clock)));
   }
   if (['tiger', 'lion', 'bigsur'].includes(surfaceStyle(theme, 'panel')) && panel.kind === 'dock') {
+    let menuTheme = menuThemes.get(theme);
+    if (!menuTheme) {
+      menuTheme = { ...theme, button: { ...theme.button, radius: 0 } };
+      menuThemes.set(theme, menuTheme);
+    }
     const menuItem = (id, title, callback, bold = false) => {
-      const node = desktopCommand(id, title, theme, callback, { quiet: true, style: {
+      const node = desktopCommand(id, title, menuTheme, callback, { quiet: true, style: {
         height: theme.layout.menuBarHeight, paddingLeft: 9, paddingRight: 9,
         borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent',
         gradientFrom: 'transparent', gradientTo: 'transparent' } });

@@ -57,6 +57,42 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+for (const id of ['aqua', 'lion', 'bigsur']) {
+  for (const painted of [false, true]) {
+    const theme = painted ? applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+      themes: { [id]: { button: { surfaceStyle: 'aqua' } } } })).themes.find(theme => theme.id === id) :
+      catalog.themes.find(theme => theme.id === id);
+    const menu = find(panelView(theme, '10:31', action, '', action), 'shell-menu');
+    const node = { style: { ...menu.props.style }, querySelector: () => null };
+    assert.equal(node.style.borderRadius, 0);
+    for (const name of ['onMouseenter', 'onMousedown', 'onMouseup', 'onMouseleave', 'onFocus', 'onBlur']) {
+      menu.props[name]?.({ currentTarget: node, button: 0 });
+      assert.equal(node.style.borderRadius, 0, id + ' menubar radius during ' + name);
+    }
+    if (menu.props.onMouseenter) {
+      const event = { currentTarget: node, button: 0 };
+      menu.props.onMouseenter(event);
+      const rebuilt = find(panelView(theme, '10:32', action, '', action), 'shell-menu');
+      rebuilt.props.onFocus(event);
+      assert.equal(node.style.backgroundColor, theme.colors.selection, 'Stable theme retains hover after rebuild/focus');
+      rebuilt.props.onMousedown(event);
+      const held = find(panelView(theme, '10:33', action, '', action), 'shell-menu');
+      held.props.onMouseup(event);
+      assert.equal(node.style.backgroundColor, theme.colors.selection, 'Stable theme retains hover after held rebuild/release');
+      const rethemed = { ...theme, colors: { ...theme.colors, selection: '#112233' } };
+      const updated = find(panelView(rethemed, '10:34', action, '', action), 'shell-menu');
+      updated.props.onFocus(event);
+      assert.equal(node.style.backgroundColor, 'transparent', 'New theme does not inherit old hover state');
+      updated.props.onMouseenter(event);
+      assert.equal(node.style.backgroundColor, '#112233', 'New theme uses its own palette');
+      assert.equal(node.style.borderRadius, 0);
+    }
+    const ordinary = desktopCommand('ordinary', 'Ordinary', theme, action);
+    const ordinaryNode = { style: { ...ordinary.props.style }, querySelector: () => null };
+    ordinary.props.onFocus?.({ currentTarget: ordinaryNode });
+    assert.equal(ordinaryNode.style.borderRadius, theme.button.radius);
+  }
+}
 for (let size = 2; size <= 12; size++) {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
     themes: { aqua: { layout: { dockIndicatorSize: size } } } })).themes.find(theme => theme.id === 'aqua');
