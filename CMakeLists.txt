@@ -768,6 +768,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     $<TARGET_FILE:pollywm-test-client>)
             set_tests_properties(desktop-decorator-lifecycle-raster PROPERTIES TIMEOUT 100
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
+            add_test(NAME desktop-decorator-version-pair COMMAND pollywm-decorator-policy $<TARGET_FILE:pollyui>)
+            set_tests_properties(desktop-decorator-version-pair PROPERTIES TIMEOUT 25
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
             add_test(NAME desktop-files-window
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

@@ -26,29 +26,30 @@ for mode in cycle reload; do
         cat "$temporary/$mode.log"; exit 1
     fi
 done
-python3 - "$temporary/captures" <<'PY'
+python3 - "$temporary/captures" "$(dirname "$client")/../resources/themes/builtin.json" <<'PY'
+import json
 import pathlib
 import sys
 from PIL import Image
 
 directory = pathlib.Path(sys.argv[1])
-palettes = {
-    "xp": ("245edb", "2663e0", 30), "server2003": ("e9e6df", "d4d0c8", 36),
-    "aqua": ("f9fdff", "b4d5e5", 26), "lion": ("d4d9df", "7c8592", 26),
-    "bigsur": ("f7edf3", "d7e2f3", 26),
-}
+themes = json.loads(pathlib.Path(sys.argv[2]).read_text())["themes"]
 wallpapers = set()
-for theme, (start, end, height) in palettes.items():
+for definition in themes:
+    theme, panel = definition["id"], definition["panel"]
+    dock = panel["kind"] == "dock"
+    start, end = (definition["window"]["titleFrom"], definition["window"]["titleTo"]) if dock else (panel["from"], panel["to"])
+    height = definition["layout"]["menuBarHeight"] if dock else panel["height"]
     with Image.open(directory / f"shell-{theme}-wallpaper.png") as image:
         wallpapers.add(image.tobytes())
     with Image.open(directory / f"shell-{theme}-panel.png") as image:
         assert image.height == height, (theme, image.size)
         color = image.convert("RGB").getpixel((image.width // 2, height // 2))
-        a = tuple(bytes.fromhex(start)); b = tuple(bytes.fromhex(end))
+        a = tuple(bytes.fromhex(start.removeprefix("#"))); b = tuple(bytes.fromhex(end.removeprefix("#")))
         assert all(min(lo, hi) - 3 <= v <= max(lo, hi) + 3 for v, lo, hi in zip(color, a, b)), (theme, color)
-    if theme in ("aqua", "lion", "bigsur"):
+    if dock:
         with Image.open(directory / f"shell-{theme}-dock.png") as image:
             assert image.convert("RGBA").getpixel((0, 0))[3] == 0, (theme, "opaque Dock corner")
-assert len(wallpapers) == 5, "Wallpapers must render five distinct appearances"
+assert len(wallpapers) == len(themes), "Catalog wallpapers must render distinct appearances"
 print("PASS: actual shell palettes, panel geometry, wallpaper artwork and transparent Dock corners")
 PY

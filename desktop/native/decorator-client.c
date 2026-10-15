@@ -51,6 +51,16 @@ static int wait_events(int timeout)
     };
     int result = poll(descriptors, 3, timeout);
     int error = errno;
+    if (result > 0 && (descriptors[2].revents & POLLIN)) {
+        wl_display_cancel_read(client.display);
+        struct signalfd_siginfo info;
+        ssize_t count;
+        do { count = read(client.signals, &info, sizeof(info)); } while (count < 0 && errno == EINTR);
+        if (count != sizeof(info)) return failure("Cannot read service shutdown signal");
+        client.stopped = true;
+        pu_decoration_client_cancel_requests();
+        return 1;
+    }
     if (result > 0 && (descriptors[0].revents & POLLIN)) {
         if (wl_display_read_events(client.display) < 0) return failure("Wayland read failed");
     } else wl_display_cancel_read(client.display);
@@ -67,19 +77,12 @@ static int wait_events(int timeout)
         do { count = read(client.wake, &value, sizeof(value)); } while (count < 0 && errno == EINTR);
         if (count != sizeof(value) && !(count < 0 && errno == EAGAIN)) return failure("Cannot drain dispatcher wake");
     }
-    if (descriptors[2].revents & POLLIN) {
-        struct signalfd_siginfo info;
-        ssize_t count;
-        do { count = read(client.signals, &info, sizeof(info)); } while (count < 0 && errno == EINTR);
-        if (count != sizeof(info)) return failure("Cannot read service shutdown signal");
-        client.stopped = true;
-        return 1;
-    }
     if (wl_display_dispatch_pending(client.display) < 0) return failure("Wayland pending dispatch failed");
     return 0;
 }
 int pu_decorator_client_wait(int timeout_ms)
 {
+    if (client.stopped) return 1;
     if (pu_decoration_client_pending()) return 0;
     return wait_events(timeout_ms);
 }

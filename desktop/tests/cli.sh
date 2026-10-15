@@ -29,6 +29,11 @@ expect_status 2 "$wm" --socket
 expect_status 2 "$wm" --socket ../unsafe
 expect_status 2 "$wm" --shell
 expect_status 2 "$wm" --shell ''
+expect_status 2 "$wm" --decorator
+expect_status 2 "$wm" --decorator ''
+expect_status 2 "$wm" --decorator /bin/true --decorator /bin/true
+expect_status 1 "$wm" --decorator /pollywm-test/nonexistent-decorator
+grep -q 'Cannot start decorator' "$runtime/error.log"
 expect_status 2 "$wm" --shell-restarts
 expect_status 2 "$wm" --shell-restarts -1
 expect_status 2 "$wm" --shell-restarts '2x'

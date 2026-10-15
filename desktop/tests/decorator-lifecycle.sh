@@ -6,6 +6,7 @@ wire=$3
 temporary=$(mktemp -d)
 cleanup() {
     rm -f "$temporary/run/decorator-fixture" "$temporary/run/decorator-fixture.lock"
+    rm -f "$temporary/lifecycle.log"
     rm -rf "$temporary/config" "$temporary/data" "$temporary/cache"
     rmdir "$temporary/run" "$temporary"
 }
@@ -38,7 +39,14 @@ for mode in cold-missing cold normal crash cold-saved cold-corrupt cold-legacy; 
     esac
     before=
     if [ -f "$preferences" ]; then before=$(cksum "$preferences"); fi
-    timeout -k 3 25 "$driver" "$ui" "$wire" "$mode"
+    if ! timeout -k 3 25 "$driver" "$ui" "$wire" "$mode" >"$temporary/lifecycle.log" 2>&1; then
+        cat "$temporary/lifecycle.log"; exit 1
+    fi
+    if grep -E 'Frame failed:|GUI callback failed|Decorator exited with status [1-9]' "$temporary/lifecycle.log"; then
+        cat "$temporary/lifecycle.log"; exit 1
+    fi
+    grep -q 'Decorator exited with status 0' "$temporary/lifecycle.log"
+    grep '^PASS:' "$temporary/lifecycle.log"
     if [ -n "$before" ]; then
         [ "$before" = "$(cksum "$preferences")" ]
     else

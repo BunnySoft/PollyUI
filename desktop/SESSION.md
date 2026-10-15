@@ -82,9 +82,7 @@ not an already authenticated shell. Graphical setup/greeter, administrator UI,
 integrated locking/VT protection and account/host migration across different
 system versions remain incomplete.
 
-## Ordinary logout and save-before-session-exit
-
-### Independent window decoration service
+## Independent window decoration service
 
 The Linux session wrapper starts a separate, compositor-supervised
 `pollyui --decorator` process through `pollywm --decorator PROGRAM`.
@@ -137,6 +135,8 @@ For a private headless/raster fixture, build `pollyui`, `pollywm`,
 four-strip pixels and seat input, Shell exit/crash, renderer reconnection,
 read-only cold bootstrap and role/protocol rejection. They do not qualify
 hardware GPUs or an installed distribution image.
+
+## Ordinary logout and save-before-session-exit
 
 The trusted Shell's Applications menu provides **Log out...**. Alt+Escape now
 requests that same confirmation rather than abruptly terminating the compositor;

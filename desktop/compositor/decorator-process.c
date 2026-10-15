@@ -115,6 +115,9 @@ static bool reap(struct PuDecoratorProcess *service, int options)
     if (result < 0 && errno != ECHILD) {
         wlr_log_errno(WLR_ERROR, "Cannot reap decorator"); return false;
     }
+    if (result > 0 && WIFEXITED(result_status))
+        wlr_log(WEXITSTATUS(result_status) ? WLR_ERROR : WLR_INFO, "Decorator exited with status %d",
+            WEXITSTATUS(result_status));
     service->pid = 0;
     service->terminating = true;
     wl_event_source_timer_update(service->terminate, 0);

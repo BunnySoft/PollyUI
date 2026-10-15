@@ -25,7 +25,7 @@ static struct {
     uint32_t serial, reply, phase, accepted, frame_token, frame_revision, frame_status;
     unsigned count;
     bool enabled, enable_reply, frame_reply;
-    bool painter, bootstrap, status_changed;
+    bool painter, bootstrap, status_changed, stopping;
     uint32_t service_state;
     char service_message[192];
     char error[192];
@@ -169,6 +169,7 @@ static JSValue requests(JSContext *ctx, JSValueConst self, int argc, JSValueCons
 static JSValue submit(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
+    if (renderer.stopping) return JS_NewBool(ctx, false);
     uint32_t meta[PU_FRAME_META_WORDS], bytes;
     struct PuFrameStrip strips[PU_FRAME_STRIPS];
     if (!renderer.enabled || !renderer.appearance || argc != 2)
@@ -205,8 +206,10 @@ static JSValue submit(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     renderer.frame_token = meta[0]; renderer.frame_revision = meta[1]; renderer.frame_reply = false;
     polly_appearance_v1_submit_frame(renderer.appearance, meta[0], meta[1], fd, bytes);
     close(fd);
-    if (!renderer.roundtrip(renderer.display) || !renderer.frame_reply)
+    if (!renderer.roundtrip(renderer.display) || !renderer.frame_reply) {
+        if (renderer.stopping) return JS_NewBool(ctx, false);
         return JS_ThrowInternalError(ctx, "GUI frame submission was not acknowledged");
+    }
     if (renderer.frame_status > 1)
         return JS_ThrowInternalError(ctx, "GUI frame rejected: %s", renderer.error);
     return JS_NewBool(ctx, renderer.frame_status == 0);
@@ -225,6 +228,7 @@ static JSValue stop_renderer(JSContext *ctx, JSValueConst self, int argc, JSValu
 static JSValue fail_frame(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self; uint32_t meta[PU_FRAME_META_WORDS];
+    if (renderer.stopping) return JS_UNDEFINED;
     if (!renderer.enabled || argc != 2) return JS_ThrowTypeError(ctx, "An active render request is required");
     if (!read_words(ctx, argv[0], meta, PU_FRAME_META_WORDS)) return JS_EXCEPTION;
     const char *message = JS_ToCString(ctx, argv[1]);
@@ -262,6 +266,7 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     struct polly_appearance_v1 *appearance, struct wl_display *display)
 {
     uint32_t words[PU_APPEARANCE_WORDS]; struct PuDecorationLayout layout;
+    if (renderer.stopping) return JS_NewBool(ctx, false);
     if (argc != 2 || !JS_IsObject(argv[0])) return JS_ThrowTypeError(ctx, "A theme and paired GUI layout are required");
     if (!read_words(ctx, argv[1], words, PU_APPEARANCE_WORDS)) return JS_EXCEPTION;
     if (!pu_appearance_decode(&layout, words)) return JS_ThrowRangeError(ctx, "Invalid decoration geometry");
@@ -291,6 +296,7 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     polly_appearance_v1_prepare(appearance, serial, name, &configuration, fd, (uint32_t)length);
     close(fd); fd = -1;
     if (!renderer.roundtrip(display) || renderer.reply != serial || renderer.phase != 1 || renderer.accepted != 1) {
+        if (renderer.stopping) goto obsolete;
         polly_appearance_v1_cancel(appearance, serial);
         if (renderer.painter && renderer.reply == serial && renderer.phase == 1 &&
             !renderer.accepted && !renderer.bootstrap) goto obsolete;
@@ -298,6 +304,7 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     }
     renderer.phase = 0; polly_appearance_v1_commit(appearance, serial);
     if (!renderer.roundtrip(display) || renderer.reply != serial || renderer.phase != 2 || renderer.accepted != 1) {
+        if (renderer.stopping) goto obsolete;
         if (renderer.painter && renderer.reply == serial && renderer.phase == 2 &&
             !renderer.accepted && !renderer.bootstrap) goto obsolete;
         JS_ThrowInternalError(ctx, "Cannot confirm GUI appearance commit: %s", renderer.error); goto failure;
@@ -350,7 +357,7 @@ static int notify(const char *name)
 }
 int pu_decoration_client_pump(void)
 {
-    if (!renderer.ctx || !renderer.painter) return 0;
+    if (!renderer.ctx || !renderer.painter || renderer.stopping) return 0;
     int work = 0;
     if (renderer.status_changed) {
         renderer.status_changed = false;
@@ -361,7 +368,17 @@ int pu_decoration_client_pump(void)
     return work;
 }
 bool pu_decoration_client_pending(void)
-{ return renderer.painter && (renderer.requests || renderer.status_changed); }
+{ return renderer.painter && !renderer.stopping && (renderer.requests || renderer.status_changed); }
+void pu_decoration_client_cancel_requests(void)
+{
+    renderer.stopping = true;
+    renderer.enabled = false;
+    while (renderer.requests) {
+        struct RenderRequest *request = renderer.requests;
+        renderer.requests = request->next; free_request(request);
+    }
+    renderer.count = 0;
+}
 void pu_decoration_client_disconnect(void)
 {
     while (renderer.requests) {

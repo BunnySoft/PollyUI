@@ -590,7 +590,10 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     uint32_t words[PU_APPEARANCE_WORDS];
     if (valid) { memcpy(words, configuration->data, sizeof(words)); valid = pu_appearance_decode(&layout, words); }
     if (!valid) {
-        close(document); polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 4 are required"); return;
+        close(document);
+        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 4 are required");
+        pu_decorations_service_changed(owner->state->desktop);
+        return;
     }
     owner->staged = calloc(1, sizeof(*owner->staged));
     if (!owner->staged) { close(document); wl_resource_post_no_memory(resource); return; }

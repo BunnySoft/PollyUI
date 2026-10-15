@@ -18,7 +18,7 @@ const shell = createDesktopShell().start();
 async function run() {
   const [mode, prefix] = application.arguments;
   if (mode === 'reload') {
-    check(shell.getState().themeId === 'bigsur', 'real shell reloads persisted appearance');
+    check(shell.getState().themeId === DESKTOP_THEMES.at(-1).id, 'real shell reloads persisted appearance');
     await painted(shell);
   } else {
     for (const theme of DESKTOP_THEMES) {
@@ -30,10 +30,17 @@ async function run() {
       check(surfaces.length === (theme.panel.kind === 'dock' ? 3 : 2), theme.id + ' has the expected native surface count');
       for (const surface of surfaces) surface.window.capture(prefix + '-' + theme.id + '-' + surface.kind + '.png');
       const panel = surfaces.find(surface => surface.kind === 'panel');
+      const colors = theme.panel.kind === 'dock' ? [theme.window.titleFrom, theme.window.titleTo] :
+        [theme.panel.from, theme.panel.to];
+      const solid = ['classic', 'fluent'].includes(theme.panel.surfaceStyle);
       check(panel.window.document.body.childNodes.length === 1 &&
-        panel.window.document.body.firstChild.style.gradientFrom === theme.panel.from,
+        panel.window.document.body.firstChild.id === 'shell-panel' &&
+        panel.window.document.body.firstChild.style.backgroundColor === colors[0] &&
+        (solid || (panel.window.document.body.firstChild.style.gradientFrom === colors[0] &&
+          panel.window.document.body.firstChild.style.gradientTo === colors[1])),
         theme.id + ' updates the existing native panel tree');
-      check(panel.window.document.body.offsetHeight === (theme.panel.kind === 'dock' ? 26 : theme.panel.height),
+      check(panel.window.document.body.offsetHeight ===
+        (theme.panel.kind === 'dock' ? theme.layout.menuBarHeight : theme.panel.height),
         theme.id + ' panel has correct logical height');
       const menu = shell.showSettings(output);
       check(menu && menu.document.getElementById('shell-theme-' + theme.id).getAttribute('aria-pressed') === 'true',
@@ -41,7 +48,7 @@ async function run() {
       shell.showSettings(output);
     }
   }
-  check(getDesktopTheme(shell.getState().themeId).id === 'bigsur', 'final theme is Big Sur');
+  check(getDesktopTheme(shell.getState().themeId).id === DESKTOP_THEMES.at(-1).id, 'final catalog theme is applied');
   shell.stop();
   console.log('PASS: native themed shell ' + mode + ' complete');
 }
