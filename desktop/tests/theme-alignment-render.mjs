@@ -64,5 +64,55 @@ export function captureThemeComponents(directory) {
     host.mouse('mouseup', x, y); host.render();
     check(document.activeElement === buttonNode, 'Pointer state painting changed keyboard focus');
   }
+
   console.log('PASS: actual six-theme component bytes and layout, focus and pointer state paths');
+}
+
+export function checkDockOverflow() {
+  const theme = DESKTOP_THEMES.find(item => item.id === 'lion');
+  const normalWidth = layout.dockSurfaceWidth(theme, windows.length, 1280);
+  render(h('view', { style: { width: normalWidth, height: theme.panel.height } },
+    dockView(theme, action, action, action, windows, action, action)), document.body);
+  host.render();
+  const normalFixed = ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about']
+    .map(id => document.getElementById(id));
+  check(normalWidth === 317 && document.getElementById('shell-dock').offsetWidth === 317,
+    'The ordinary two-window Dock must retain its frozen surface width');
+  check(normalFixed.every((node, i) => node.offsetWidth === 56 &&
+    (!i || node.offsetLeft - normalFixed[i - 1].offsetLeft === 58)),
+  'Ordinary fixed Dock actions must retain their slot width and spacing');
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, title: 'Window ' + (i + 1) }));
+  let activated = 0;
+  const width = layout.dockSurfaceWidth(theme, many.length, 320);
+  render(h('view', { style: { width, height: theme.panel.height } },
+    dockView(theme, action, action, action, many, id => { activated = id; }, action)), document.body);
+  host.render();
+  const get = id => document.getElementById(id);
+  const strip = get('shell-dock-windows'), last = get('shell-window-20');
+  check(strip.offsetWidth > 0 && strip.offsetWidth < 2 * theme.layout.dockWindowWidth,
+    'Clamped Dock must give window slots a bounded, nonzero scroll viewport');
+  const fixed = ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about'].map(get);
+  const positions = fixed.map(rectangle);
+  check(fixed.every(node => node.offsetLeft >= 0 && node.offsetLeft + node.offsetWidth <= width),
+    'Fixed Dock actions must remain visible when window slots overflow');
+  const x = strip.offsetLeft + strip.offsetWidth / 2, y = strip.offsetTop + 20;
+  host.scroll(x, y, 100000); host.render();
+  check(Number(strip.scrollLeft) > 0, 'Actual wheel dispatch must scroll the window strip');
+  const visibleLeft = last.offsetLeft - Number(strip.scrollLeft);
+  console.log('DOCK_OVERFLOW ' + JSON.stringify({ strip: rectangle(strip), scrollLeft: strip.scrollLeft,
+    last: rectangle(last), bounds: last.getBoundingClientRect(), visibleLeft }));
+  check(visibleLeft >= strip.offsetLeft && visibleLeft + last.offsetWidth <= strip.offsetLeft + strip.offsetWidth,
+    'The last running window must be fully reachable after horizontal scrolling');
+  host.mouse('mousedown', visibleLeft + last.offsetWidth / 2, last.offsetTop + 20);
+  host.mouse('mouseup', visibleLeft + last.offsetWidth / 2, last.offsetTop + 20);
+  host.mouse('click', visibleLeft + last.offsetWidth / 2, last.offsetTop + 20); host.render();
+  check(activated === 20, 'The reached window must retain actual pointer activation');
+  host.scroll(x, y, -100000); host.render();
+  check(Number(strip.scrollLeft) === 0, 'Reverse wheel dispatch must return to the first window');
+  last.focus(); host.render();
+  check(document.activeElement === last && Number(strip.scrollLeft) > 0,
+    'Keyboard focus must reveal an offscreen window slot');
+  check(fixed.every((node, i) => JSON.stringify(rectangle(node)) === JSON.stringify(positions[i])),
+    'Scrolling and focus must not move or shrink the fixed Dock actions');
+  console.log('PASS: actual clamped Dock wheel reachability, pointer activation, focus reveal and fixed actions');
 }

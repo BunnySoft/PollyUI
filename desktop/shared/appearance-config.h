@@ -103,14 +103,15 @@ static inline bool pu_appearance_decode(struct PuDecorationTheme *theme, const u
         theme->control_width = (int)words[index++];
         theme->control_top = (int)words[index++];
     }
+    double stroke = theme->glyph_thickness > theme->close_thickness ?
+        theme->glyph_thickness : theme->close_thickness;
     return (!theme->luna || theme->control_size + 4 <= theme->title_height) &&
         (!theme->round_controls || theme->control_width == theme->control_size) &&
         theme->control_top >= theme->border_width &&
         theme->control_top + theme->control_size <= theme->title_height &&
         theme->font_size + theme->border_width * 2 <= theme->title_height &&
         theme->stripe_width <= theme->stripe_spacing &&
-        theme->glyph_radius + (theme->glyph_thickness > theme->close_thickness ?
-            theme->glyph_thickness : theme->close_thickness) <= theme->control_size / 2.0 &&
-        theme->glyph_radius + theme->glyph_thickness <= theme->control_width / 2.0;
+        theme->glyph_radius + stroke <= theme->control_size / 2.0 &&
+        theme->glyph_radius + stroke <= theme->control_width / 2.0;
 }
 #endif

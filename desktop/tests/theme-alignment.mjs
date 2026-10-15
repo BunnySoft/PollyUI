@@ -31,6 +31,16 @@ for (const theme of catalog.themes) {
     assert.equal(win.props['aria-label'], 'Sample');
     win.props.onKeydown({ key: 'Enter', preventDefault() {} });
     assert.ok(find(dock, 'shell-dock-separator'));
+    const strip = find(dock, 'shell-dock-windows');
+    assert.equal(strip.props.style.overflow, 'scroll');
+    assert.equal(strip.props.style.minWidth, 0);
+    assert.equal(find(dock, 'shell-dock-applications').props.style.flexShrink, 0);
+    const viewport = { offsetLeft: 180, offsetWidth: 100, scrollLeft: 0,
+      childNodes: [{ offsetLeft: 180, offsetWidth: 54 }, { offsetLeft: 236, offsetWidth: 54 }] };
+    strip.props.onWheel({ currentTarget: viewport, deltaX: 0, deltaY: 1000, preventDefault() {} });
+    assert.equal(viewport.scrollLeft, 10);
+    strip.props.onWheel({ currentTarget: viewport, deltaX: -1000, deltaY: 0, preventDefault() {} });
+    assert.equal(viewport.scrollLeft, 0);
     assert.equal(dockSurfaceWidth(theme, 1, 1280), (theme.layout.dockPadding * 2) +
       3 * theme.layout.dockTileWidth + 13 + theme.layout.dockWindowWidth + 3 * theme.layout.dockGap);
     assert.equal(dockSurfaceWidth(theme, 100, 320), 320 - theme.layout.screenInset * 2);
@@ -46,6 +56,11 @@ for (const theme of catalog.themes) {
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
 assert.equal(catalog.default, 'modern');
+const narrow = JSON.parse(JSON.stringify(catalog.themes.find(theme => theme.id === 'modern')));
+Object.assign(narrow.window, { controlWidth: 8, controlSize: 16, glyphRadius: 3, glyphThickness: 1, closeThickness: 4 });
+assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: narrow })), /fit/);
+narrow.window.controlWidth = 14;
+assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: narrow })));
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-profile'));
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-links'));
 console.log('PASS: six-theme geometry, menu activation, Dock keyboard behavior, disabled commands, recovery parity and placement seams');

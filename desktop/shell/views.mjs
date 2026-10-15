@@ -234,6 +234,13 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
+        onFocus: window ? event => {
+          const node = event.currentTarget, strip = node.parentNode;
+          const left = node.offsetLeft - strip.offsetLeft, end = left + node.offsetWidth;
+          const start = Number(strip.scrollLeft);
+          if (left < start) strip.scrollLeft = Math.max(0, left);
+          else if (end > start + strip.offsetWidth) strip.scrollLeft = end - strip.offsetWidth;
+        } : undefined,
         onClick: event => { if (event.button === 0) { event.stopPropagation(); action(); } },
         onKeydown: event => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
@@ -273,8 +280,12 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       windows.length ? h('view', { id: 'shell-dock-separator', style: { width: 1, height: 43,
         backgroundColor: style === 'lion' ? '#707070' : '#a0a0a0', marginLeft: 6, marginRight: 6,
         marginBottom: 8, flexShrink: 0, pointerEvents: 'none' } }) : null,
+      windows.length ? h('view', { id: 'shell-dock-windows', style: {
+        ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, height: panel.height - 4,
+        gap: theme.layout.dockGap, overflow: 'scroll',
+      }, onWheel: event => scrollDesktop(event, true) },
       windows.map(window => slot('shell-window-' + window.id, window.title || window.appId || 'Untitled',
-        'file', () => toggle(window.id), true, window)));
+        'file', () => toggle(window.id), true, window))) : null);
   }
   const tile = { height: panel.height - theme.layout.panelItemInset, width: theme.layout.dockTileWidth,
     borderRadius: theme.icons.dockTiles ? theme.icons.radius : theme.button.radius };

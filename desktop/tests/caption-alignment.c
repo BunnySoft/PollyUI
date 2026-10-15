@@ -49,6 +49,18 @@ int main(int argc, char **argv)
         }
     }
     const struct PuDecorationTheme *classic = &pu_decoration_themes[1], *fluent = &pu_decoration_themes[5];
+    struct PuDecorationTheme narrow = *fluent, decoded;
+    narrow.control_size = 16; narrow.control_width = 8;
+    narrow.glyph_radius = 3; narrow.glyph_thickness = 1; narrow.close_thickness = 4;
+    uint32_t words[PU_APPEARANCE_V3_WORDS] = {0};
+    encode(&narrow, words);
+    assert(!pu_appearance_decode(&decoded, words));
+    narrow.control_width = 13;
+    encode(&narrow, words);
+    assert(!pu_appearance_decode(&decoded, words));
+    narrow.control_width = 14;
+    encode(&narrow, words);
+    assert(pu_appearance_decode(&decoded, words));
     assert(classic->title_height == 22 && classic->control_width == 16 && classic->control_size == 14);
     struct PuChromeBox close, maximize, minimize;
     assert(pu_chrome_button_box(classic, 480, 0, &close));

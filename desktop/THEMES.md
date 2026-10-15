@@ -147,7 +147,9 @@ Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
 are still running. These are **opaque material approximations**, without
 compositor blur, reflection, wallpaper tint, magnification or authentic OS icons.
-Slots currently represent windows, not macOS application grouping. The pure
+Slots currently represent windows, not macOS application grouping. The
+window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
+do not shrink, and focusing an offscreen window reveals it. The pure
 `dockSurfaceWidth`/`applicationMenuPlacement` functions are the Shell consumer
 seam; they do not create surfaces or change state by themselves.
 
