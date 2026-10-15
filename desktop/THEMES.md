@@ -1,7 +1,8 @@
 # Runtime desktop themes
 
 PollyShell JavaScript owns theme loading, schema validation, user overrides and
-UI rendering. PollyWM accepts only bounded decoration parameters from the trusted
+UI rendering, including the pixels of server-side window decorations. PollyWM
+accepts geometry and complete immutable GUI-rendered frame strips from the trusted
 Shell. It does not interpret theme files or execute theme code.
 File traversal, ownership checks and resource limits are implemented in
 `shared/theme-resources.mjs` over the native FileSystem SDK; the old theme-file
@@ -113,18 +114,63 @@ window supports `generic`, `luna`, `classic`, `fluent`; button supports `generic
 `fluent`, `tiger`, `lion`, `bigsur`. Absence preserves the generic path.
 Classic paints raised/sunken frame edges and a horizontal caption gradient.
 Fluent paints full-bleed caption button backplates, including close hover/press.
-The same C button-box function drives raster placement and compositor hit tests.
-Native Luna captions use numeric schema 2 (original word count). Classic,
-Fluent or explicit rectangular geometry use schema 3: the original fields,
-then width and top inset, with an exact checked word count. Actual schema 1/2
-messages remain readable. New data is never silently dropped to negotiate an
-older server. Shell and compositor use the
-current configuration API together; there is no legacy theme-ID selection or
-automatic schema downgrade. Rejected startup fails explicitly. Rejected theme
+GUI captions consume the exact button/text rectangles used by compositor hit
+testing, rather than recomputing them from style names.
+Private appearance protocol v3 uses geometry-only numeric schema 4. Previous
+private Shell/WM combinations are explicitly rejected; public JSON schema 1 and
+the read-only application theme subscription remain unchanged. This paired
+upgrade/removal of the C painters follows the user's explicit choice:
+“接受同版本成套升级，移除旧 C 主题绘制路径（推荐）”.
+There is no legacy theme-ID selection or automatic schema downgrade.
+Rejected startup fails explicitly. Rejected theme
 changes retain the live snapshot and saved preference; transport loss and
 uncertain commits are reported rather than treated as success. Reference scope, original-art
 rights and outstanding native acceptance are documented in
 [Blue Luna](resources/themes/XP-LUNA.md).
+
+## Decoration execution boundary
+
+`shared/ui/caption-layout.mjs` compiles visual layout choices into bounded
+geometry. C validates those dimensions and owns window management, input,
+hit testing, DPI conversion, configure/ack fencing, lifecycle and buffer
+composition. Generated C fixtures are test-only: no preset catalog, colors,
+font families, glyph rules or style/painter IDs are compiled into the WM.
+Before the GUI publishes a validated layout, it negotiates client-side decoration.
+
+`shared/ui/caption-paint.mjs` uses the existing GUI's detached Canvas2D and text
+shaping. `shell/decorations.mjs` services the trusted render queue. Neither
+creating canvases nor pattern tiles creates native windows. PollyWM contains
+no JavaScript engine, GUI instance, theme-specific painter or second font cache.
+No application content is sent to the renderer.
+
+One response contains top, left, right and bottom strips in a single sealed
+memfd. Logical strip dimensions are `(clientWidth+2*border,titleHeight)`,
+`(border,clientHeight)` twice, and `(clientWidth+2*border,border)`.
+Backing dimensions are the ceiling of logical dimensions times output scale;
+zero-border strips have zero bytes. The native codec validates exact width,
+height, stride, offsets, total size and immutable regular-file seals. It converts
+GUI straight-alpha RGBA into premultiplied ARGB; it does not choose colors.
+Frames are limited to 16,777,216 total pixels and 32,768 pixels per axis, with
+a 128MiB aggregate live-mapping budget. Requests coalesce per window; the native
+Shell queue is bounded to 128. There is no palette map, per-frame timer loop
+or per-title native surface.
+
+Non-reused window tokens and frame revisions bind theme generation, geometry,
+scale, state and layout rectangles. Stale/duplicate frames are rejected.
+Invalid/partial data cannot replace any strip or hitbox. A complete scene and its
+layout switch together, after the applicable client configure acknowledgement;
+unchanged client buffers retain their idle-reuse path. Individual windows may
+retain an earlier complete snapshot while their new geometry/frame is pending.
+This is not a global barrier that freezes every application's content.
+
+No renderer at startup negotiates standard client-side decorations. A failed or
+unresponsive renderer (1000ms without a complete requested frame) logs/reports
+failure and requests client-side decoration; WM input never waits for JavaScript.
+The last complete frame remains until that negotiation is committed.
+Shell disconnect/restart, unmap and destruction cancel requests and reclaim
+owned scenes/FDs; a new theme commit can retry the GUI renderer. There is no
+hidden C style fallback. Frame rejection is distinct from ordinary obsolete
+replies, which return `false` rather than pretending a new frame was displayed.
 
 ## Alignment scope and evidence
 
@@ -150,7 +196,12 @@ controls in that system theme share this appearance; WinForms is not a separate
 theme or a runtime dependency here. Menu frames use three layers;
 buttons use raised/sunken two-layer edges and the tray a single inset edge.
 Those painters own their edges: a generic one-pixel outline must not paint over
-the light/shadow layers. Classic task faces remain flat in every pointer state.
+the light/shadow layers. Optional `panel.taskTexture` is `flat` by default or
+`stipple`; only the Server preset opts into stipple. Selected tasks use the
+theme's body/light colors in an original procedural 2x2 repeat. Temporarily
+pressing an inactive task does not select that texture. Focus uses a paint-only
+one-pixel repeat outline; cancellation, selection loss and retheming clear stale
+pixels without changing pointer, hitbox or accessibility ownership.
 Task content shifts by one pixel when active/pressed, without moving its hitbox;
 pointer cancellation restores inactive content. `taskIconSize`/`taskPaddingX`
 control Classic task slots. The 28px bar retains its measured 2px top chrome,

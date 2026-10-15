@@ -34,9 +34,10 @@ export function h(type, props, ...children) {
 
 const eventName = (k) => k.slice(2).toLowerCase(); // onClick -> click
 // Lifecycle hooks (used by <Transition>): onMount(el) fires after an element is
-// created; onLeave(el, done) defers a removal until done() is called. They look
+// created; onUpdate(el) follows an existing node's prop/child diff;
+// onLeave(el, done) defers a removal until done() is called. They look
 // like event handlers (`on*`) but are NOT addEventListener'd.
-const isLifecycle = (k) => k === 'onMount' || k === 'onLeave';
+const isLifecycle = (k) => k === 'onMount' || k === 'onUpdate' || k === 'onLeave';
 // Unwrap function-component vnodes to the element vnode that actually carries a
 // leave hook (so a removed <Transition> can animate out before detaching).
 function leaveHookOf(v) { while (v && typeof v.type === 'function') v = v.__rendered; return v && v.props && v.props.onLeave; }
@@ -211,6 +212,7 @@ function diff(parentDom, oldV, newV) {
   const oldCh = oldV.children, newCh = newV.children;
   const n = Math.max(oldCh.length, newCh.length);
   for (let i = 0; i < n; i++) diff(dom, oldCh[i] || null, newCh[i] || null);
+  if (typeof newV.props.onUpdate === 'function') newV.props.onUpdate(dom);
   return dom;
 }
 

@@ -51,6 +51,12 @@ target_include_directories(polly-appearance-document-test PRIVATE ../shared)
 target_compile_options(polly-appearance-document-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME desktop-appearance-document COMMAND polly-appearance-document-test)
 set_tests_properties(desktop-appearance-document PROPERTIES TIMEOUT 10)
+add_executable(polly-decoration-frame-test decoration-frame.c ../shared/decoration-frame.c)
+target_include_directories(polly-decoration-frame-test PRIVATE ../shared)
+target_compile_options(polly-decoration-frame-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(polly-decoration-frame-test PRIVATE m)
+add_test(NAME desktop-decoration-frame COMMAND polly-decoration-frame-test)
+set_tests_properties(desktop-decoration-frame PROPERTIES TIMEOUT 10)
 
 set(SESSION_LOCK_XML "${WAYLAND_PROTOCOLS_DIR}/staging/ext-session-lock/ext-session-lock-v1.xml")
 add_custom_command(OUTPUT "${PROTOCOL_DIR}/session-lock-client.h" "${PROTOCOL_DIR}/session-lock.c"
@@ -109,7 +115,7 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" client-header "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel-client.h"
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
-add_executable(pollywm-test-client client.c ../shared/appearance-document.c
+add_executable(pollywm-test-client client.c ../shared/appearance-document.c ../shared/decoration-frame.c
     "${PROTOCOL_DIR}/cursor-shape-client.h" "${PROTOCOL_DIR}/cursor-shape-client.c"
     "${PROTOCOL_DIR}/cursor-tablet.c"
     ${IME_TEST_PROTOCOLS}
@@ -123,7 +129,7 @@ add_executable(pollywm-test-client client.c ../shared/appearance-document.c
 target_include_directories(pollywm-test-client PRIVATE "${PROTOCOL_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../compositor" "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 target_compile_definitions(pollywm-test-client PRIVATE _POSIX_C_SOURCE=200809L)
-target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
+target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT m)
 
 add_executable(pollywm-integration integration.c)
 target_link_libraries(pollywm-integration PRIVATE pollywm-core)

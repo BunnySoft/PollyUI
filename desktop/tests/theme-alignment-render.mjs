@@ -222,8 +222,9 @@ export function captureClassicBorders(directory, verify = false) {
   second.focus(); host.render();
   check(document.activeElement === second, 'Task keyboard focus must remain connected');
   if (verify) {
-    check(second.querySelector('.theme-focus-ring').style.opacity === '1' &&
-      host.pixel(second.offsetLeft + second.offsetWidth - 7, second.offsetTop + 3) === '#000000',
+    check(theme.panel.taskTexture === 'stipple' ? second.querySelector('.classic-task-paint') !== null :
+      second.querySelector('.theme-focus-ring').style.opacity === '1' &&
+        host.pixel(second.offsetLeft + second.offsetWidth - 7, second.offsetTop + 3) === '#000000',
     'Removing the generic outline must retain an actual visible keyboard focus indicator');
   }
   host.mouse('mousemove', second.offsetLeft + 130, second.offsetTop + 10);
@@ -241,8 +242,10 @@ export function captureClassicBorders(directory, verify = false) {
       'Active/sunken and inactive task content must retain their measured inner offsets');
     check(heldIcon[0] === releasedIcon[0] + 1 && heldIcon[1] === releasedIcon[1] + 1,
       'Pointer cancellation must retire the visual content offset without moving the hitbox');
-    check(Object.values(probes).every(([top, bottom]) => top === bottom),
-      'Classic tasks must remain flat in actual normal, hovered and pressed pixels');
+    check(theme.panel.taskTexture === 'stipple' ?
+      Object.values(probes).every(value => JSON.stringify(value) === JSON.stringify(probes.normal)) :
+      Object.values(probes).every(([top, bottom]) => top === bottom),
+    'Classic task material must not drift back to a gradient on hover or press');
     check(JSON.stringify(edgeProbes.active) === JSON.stringify(['#404040', '#808080', '#D4D0C8', '#FFFFFF']) &&
       JSON.stringify(edgeProbes.inactive) === JSON.stringify(['#FFFFFF', '#D4D0C8', '#808080', '#404040']) &&
       JSON.stringify(edgeProbes.pressedInactive) === JSON.stringify(edgeProbes.active) &&
@@ -268,7 +271,116 @@ export function captureClassicBorders(directory, verify = false) {
     host.mouse('click', last.x + last.width / 2, last.y + last.height / 2); host.render();
     check(launched === 'narrow-19', 'Last app must remain reachable in the narrow, low-height menu');
   }
+
   console.log('CLASSIC_BORDERS ' + JSON.stringify({ geometry, probes, edgeProbes, activations, heldIcon, releasedIcon }));
   console.log(verify ? 'PASS: actual Classic border/task spacing, flat state paint, cancellation, focus and single activation' :
     'BASELINE: frozen Classic frame/states captured; new geometry/flat assertions are not applied');
 }
+
+export async function captureClassicMaterial(directory, verify = false) {
+    check(host.width === 800 && host.height === 600, 'Material fixture requires original 800x600 guest-sized bounds');
+    const original = DESKTOP_THEMES.find(item => item.id === 'server2003');
+    const appWindows = [
+      { id: 1, title: 'Untitled - Notepad', active: false },
+      { id: 2, title: 'Command Prompt', active: true },
+    ];
+    const activations = [];
+    const scene = async (theme = original, selected = 2) => {
+      const placement = layout.applicationMenuPlacement(theme, host.width);
+      render(h('view', { style: { width: '100%', height: '100%', position: 'relative',
+        backgroundColor: theme.desktop.from } },
+        h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: theme.panel.height } },
+          panelView(theme, '6:08 AM', action, '', action,
+            appWindows.map(window => ({ ...window, active: window.id === selected })),
+            id => activations.push(id), action)),
+        h('view', { style: { position: 'absolute', left: placement.margins.left ?? 0,
+          bottom: placement.margins.bottom, width: placement.width ?? theme.layout.menuWidth,
+          height: layout.applicationMenuHeight(theme, host.height) } },
+          applicationsView(theme, entries, '', action, action, action, action, '', action))),
+      document.body);
+      await Promise.resolve(); host.render();
+    };
+    await scene();
+    const get = id => document.getElementById(id);
+    const task = id => get('shell-window-' + id);
+    const canvas = id => task(id).querySelector('.classic-task-paint');
+    const block = id => {
+      const node = task(id), pixels = [];
+      for (let y = 8; y < 12; y++) for (let x = 130; x < 134; x++)
+        pixels.push(host.pixel(node.offsetLeft + x, node.offsetTop + y));
+      return pixels;
+    };
+    const expected = [original.colors.body.toUpperCase(), original.colors.light.toUpperCase()].sort();
+    const geometry = { viewport: [800, 600], taskbar: rectangle(get('shell-panel')),
+      activeTask: rectangle(task(2)), inactiveTask: rectangle(task(1)),
+      menu: rectangle(get('shell-applications')), header: rectangle(get('shell-start-profile')),
+      links: rectangle(get('shell-start-links')), footer: rectangle(get('shell-start-footer')) };
+    const normal = block(2);
+    check(host.save(directory + '\\classic-material-800x600.png'), 'Cannot save the actual material frame');
+    const verifyChecker = pixels => {
+      check(JSON.stringify([...new Set(pixels)].sort()) === JSON.stringify(expected), 'Selected task must use the two theme colors');
+      for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++)
+        check(pixels[y * 4 + x] === pixels[((y + 1) % 4) * 4 + (x + 1) % 4] &&
+          pixels[y * 4 + x] !== pixels[y * 4 + (x + 1) % 4], 'Actual task pixels must repeat at one-pixel checker spacing');
+    };
+    if (verify) {
+      verifyChecker(normal);
+      check(task(2).querySelectorAll('canvas').length === 1 && task(1).querySelectorAll('canvas').length === 1,
+        'Each task must use one paint-only canvas, not a DOM point grid');
+      check(canvas(2).style.pointerEvents === 'none' && canvas(2).getAttribute('aria-hidden') === 'true',
+        'The texture must not own pointer or accessibility focus');
+    }
+    const rect = task(2).getBoundingClientRect(), x = rect.x + 130, y = rect.y + 10;
+    host.mouse('mousemove', x, y); host.render();
+    const hover = block(2);
+    host.mouse('mousedown', x, y); host.render();
+    const pressed = block(2);
+    check(activations.length === 0, 'Painting selected task press must not activate it');
+    host.mouse('mouseup', x, y); host.mouse('click', x, y); host.render();
+    check(activations.length === 1 && activations[0] === 2, 'Task click must activate exactly once');
+    task(2).focus(); host.render();
+    check(document.activeElement === task(2), 'The task retains ordinary keyboard focus');
+    const focusPixels = Array.from({ length: 8 }, (_, i) =>
+      host.pixel(rect.x + 124 + i, rect.y + 3));
+    console.log('CLASSIC_FOCUS_PROBE ' + JSON.stringify({ focusPixels, task: rect,
+      canvas: canvas(2).getBoundingClientRect(),
+      backing: Array.from(canvas(2).getContext('2d').getImageData(124, 3, 8, 1).data) }));
+    if (verify) {
+      verifyChecker(hover); verifyChecker(pressed);
+      check(focusPixels.includes('#000000') && focusPixels.some(value => value !== '#000000'),
+        'Focused task must paint a real dashed, not solid, focus edge');
+      host.mouse('mousedown', task(1).offsetLeft + 130, task(1).offsetTop + 10); host.render();
+      check(canvas(1).getContext('2d').getImageData(30, 10, 1, 1).data[3] === 0,
+        'Temporary press on an inactive task must not paint selected stipple');
+      host.mouse('mousecancel', task(1).offsetLeft + 130, task(1).offsetTop + 10);
+      host.mouse('mouseup', task(1).offsetLeft + 130, task(1).offsetTop + 10); host.render();
+      await scene(original, 0);
+      check(canvas(2).getContext('2d').getImageData(30, 10, 1, 1).data[3] === 0,
+        'Selected-to-inactive reconciliation must clear the old texture');
+      await scene();
+      task(2).focus(); host.render();
+      const retained = task(2);
+      for (const body of ['#dedbd3', '#e4e1d9', original.colors.body]) {
+        const theme = { ...original, colors: { ...original.colors, body } };
+        await scene(theme);
+        check(task(2) === retained && document.activeElement === retained,
+          'Palette changes must retain the task hitbox and keyboard focus');
+        check(document.body.querySelectorAll('.classic-task-paint').length === 2,
+          'Palette changes must not accumulate attached texture nodes');
+        const values = canvas(2).getContext('2d').getImageData(30, 10, 2, 2).data;
+        const colors = [];
+        for (let i = 0; i < 16; i += 4)
+          colors.push('#' + Array.from(values.slice(i, i + 3)).map(value => value.toString(16).padStart(2, '0')).join(''));
+        check(colors.includes(body.toLowerCase()) && colors.includes(original.colors.light.toLowerCase()),
+          'Palette changes must replace cached tile colors');
+      }
+      const flat = { ...original, panel: { ...original.panel, taskTexture: 'flat' } };
+      await scene(flat);
+      check(document.body.querySelectorAll('.classic-task-paint').length === 0,
+        'Flat opt-out must retire all task texture canvases');
+    }
+    console.log('CLASSIC_MATERIAL ' + JSON.stringify({ geometry, normal, hover, pressed,
+      focusPixels, activations, verified: verify }));
+    console.log(verify ? 'PASS: actual stipple, dotted focus, selection/press/palette lifecycle and unchanged task activation' :
+      'BASELINE: actual flat task material captured without after-style assertions');
+  }

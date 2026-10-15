@@ -1,124 +1,62 @@
-#include "../compositor/decoration-paint.h"
-#include "../compositor/decoration-themes.h"
+#include "../shared/decoration-layout.h"
+#include "../shared/decoration-frame.h"
+#include "decoration-layout-fixtures.h"
 #include <assert.h>
 #include <stdio.h>
 
-static void encode(const struct PuDecorationTheme *theme, uint32_t *words)
+int main(void)
 {
-    words[0] = pu_appearance_theme_schema(theme);
-    words[1] = pu_appearance_flags(theme);
-    unsigned index = 2;
-#define METRIC(type, field, token, minimum, maximum, scale) words[index++] = (uint32_t)round(theme->field * scale);
-    PU_APPEARANCE_METRICS(METRIC)
-#undef METRIC
-#define COLOR(field) words[index++] = theme->field;
-    PU_APPEARANCE_COLORS(COLOR)
-#undef COLOR
-    words[index++] = theme->control_width;
-    words[index] = theme->control_top;
-}
-
-int main(int argc, char **argv)
-{
-    assert(PU_DECORATION_THEME_COUNT == 6);
-    assert(!strcmp(pu_decoration_themes[PU_DECORATION_DEFAULT_THEME].id, "modern"));
-    for (unsigned i = 0; i < PU_DECORATION_THEME_COUNT; i++) {
-        const struct PuDecorationTheme *theme = &pu_decoration_themes[i];
-        uint32_t words[PU_APPEARANCE_V3_WORDS] = {0};
-        encode(theme, words);
-        struct PuDecorationTheme decoded;
+    assert(PU_DECORATION_LAYOUT_COUNT == 6);
+    assert(!strcmp(pu_decoration_layouts[PU_DECORATION_DEFAULT_LAYOUT].id, "modern"));
+    for (unsigned i = 0; i < PU_DECORATION_LAYOUT_COUNT; i++) {
+        const struct PuDecorationLayout *layout = &pu_decoration_layouts[i].layout;
+        uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, layout->left_controls};
+        unsigned index = 2;
+#define ENCODE(type, field, token, minimum, maximum, scale) words[index++] = layout->field;
+        PU_APPEARANCE_METRICS(ENCODE)
+#undef ENCODE
+        struct PuDecorationLayout decoded;
         assert(pu_appearance_decode(&decoded, words));
-        assert(decoded.control_width == theme->control_width);
-        assert(decoded.control_top == theme->control_top);
-        assert(decoded.caption_style == theme->caption_style);
-        for (int command = 0; command < 3; command++) {
-            struct PuChromeBox box;
-            assert(pu_chrome_button_box(theme, 480, command, &box));
-            assert(box.x >= 0 && box.y >= theme->border_width);
-            assert(box.y + box.height <= theme->title_height);
-            assert(box.x + box.width <= 480);
-            assert(box.width == theme->control_width && box.height == theme->control_size);
+        assert(!memcmp(layout, &decoded, sizeof(decoded)));
+        for (int width = 1; width <= 480; width++) {
+            struct PuChromeBox text;
+            pu_decoration_layout_text(layout, width, &text);
+            assert(text.x >= 0 && text.x <= width && text.width >= 0 && text.x + text.width <= width);
+            for (int command = 0; command < 3; command++) {
+                struct PuChromeBox box;
+                if (!pu_decoration_layout_button(layout, width, command, &box)) continue;
+                assert(box.x >= 0 && box.x + box.width <= width);
+                assert(box.y >= layout->border_width && box.y + box.height <= layout->title_height);
+                assert(!text.width || (layout->left_controls ? text.x >= box.x + box.width :
+                    text.x + text.width <= box.x));
+            }
         }
-        assert(!pu_chrome_button_box(theme, 1, 0, &(struct PuChromeBox){0}));
-        if (words[0] == 3) {
-            words[PU_APPEARANCE_WORDS] = 97;
-            assert(!pu_appearance_decode(&decoded, words));
-            encode(theme, words);
-            words[PU_APPEARANCE_WORDS + 1] = theme->title_height;
-            assert(!pu_appearance_decode(&decoded, words));
-        }
+        words[0] = 3; assert(!pu_appearance_decode(&decoded, words)); words[0] = 4;
+        words[1] = 2; assert(!pu_appearance_decode(&decoded, words)); words[1] = layout->left_controls;
+        words[2] = 9; assert(!pu_appearance_decode(&decoded, words));
     }
-    const struct PuDecorationTheme *classic = &pu_decoration_themes[1], *fluent = &pu_decoration_themes[5];
-    struct PuDecorationTheme narrow = *fluent, decoded;
-    narrow.control_size = 16; narrow.control_width = 8;
-    narrow.glyph_radius = 3; narrow.glyph_thickness = 1; narrow.close_thickness = 4;
-    uint32_t words[PU_APPEARANCE_V3_WORDS] = {0};
-    encode(&narrow, words);
-    assert(!pu_appearance_decode(&decoded, words));
-    narrow.control_width = 13;
-    encode(&narrow, words);
-    assert(!pu_appearance_decode(&decoded, words));
-    narrow.control_width = 14;
-    encode(&narrow, words);
-    assert(pu_appearance_decode(&decoded, words));
-    assert(classic->title_height == 23 && classic->border_width == 4 &&
-        classic->control_top == 6 && classic->control_inset == 6 &&
-        classic->control_width == 16 && classic->control_size == 14);
-    struct PuChromeBox close, maximize, minimize;
-    assert(pu_chrome_button_box(classic, 480, 0, &close));
-    assert(pu_chrome_button_box(classic, 480, 1, &maximize));
-    assert(pu_chrome_button_box(classic, 480, 2, &minimize));
-    assert(close.x - maximize.x == 18 && maximize.x - minimize.x == 16);
-    assert(pu_chrome_button_box(classic, 468, 0, &close) && close.x == 446 && close.y == 6);
-    assert(pu_chrome_button_box(classic, 468, 1, &maximize) && maximize.x == 428 && maximize.y == 6);
-    assert(pu_chrome_button_box(classic, 468, 2, &minimize) && minimize.x == 412 && minimize.y == 6);
-    assert(pu_chrome_pixel(classic, 1.5, 1.5, 480, true) == 0xffffffff);
-    assert(pu_chrome_pixel(classic, 478.5, 10.5, 480, true) == 0xff808080);
-    assert(pu_chrome_pixel(classic, 20.5, 10.5, 480, true) !=
-        pu_chrome_pixel(classic, 400.5, 10.5, 480, true));
-    assert(pu_chrome_control(classic, classic->controlFrom, classic->controlTo,
-        0.5, 0.5, true, true, false) == 0xffffffff);
-    assert(pu_chrome_control(classic, classic->controlFrom, classic->controlTo,
-        0.5, 0.5, true, true, true) == 0xff808080);
-    assert(fluent->control_width == 46 && fluent->control_size == 32 && fluent->control_top == 1);
-    assert(pu_chrome_button(fluent, 0, 0, 0, 10, 10, true, false, false) == fluent->titleFrom);
-    assert(pu_chrome_button(fluent, 0, 0, 0, 10, 10, true, true, false) == fluent->closeFrom);
-    assert(pu_chrome_button(fluent, 0, 0, 0, 10, 10, true, true, true) == fluent->closeTo);
-    if (argc == 2) {
-        FILE *output = fopen(argv[1], "wb");
-        assert(output);
-        /* Actual shared C painter bytes, not a window capture; text is not painted here. */
-        fprintf(output, "P6\n480 %u\n255\n", (unsigned)PU_DECORATION_THEME_COUNT * 4 * 48);
-        for (unsigned i = 0; i < PU_DECORATION_THEME_COUNT; i++)
-            for (int state = 0; state < 4; state++)
-                for (int y = 0; y < 48; y++)
-                    for (int x = 0; x < 480; x++) {
-                        const struct PuDecorationTheme *theme = &pu_decoration_themes[i];
-                        uint32_t color = y < theme->title_height ?
-                            pu_chrome_pixel(theme, x + 0.5, y + 0.5, 480, state != 1) : 0xffececec;
-                        for (int command = 0; command < 3 && y < theme->title_height; command++) {
-                            struct PuChromeBox box;
-                            if (!pu_chrome_button_box(theme, 480, command, &box) ||
-                                x < box.x || x >= box.x + box.width ||
-                                y < box.y || y >= box.y + box.height) continue;
-                            double rx = x - box.x + 0.5, ry = y - box.y + 0.5;
-                            uint32_t from = !command ? theme->closeFrom : command == 1 ?
-                                theme->maximizeFrom : theme->minimizeFrom;
-                            uint32_t to = !command ? theme->closeTo : command == 1 ?
-                                theme->maximizeTo : theme->minimizeTo;
-                            color = pu_chrome_button(theme, command, from, to, rx, ry,
-                                state != 1, state >= 2, state == 3);
-                            if (pu_chrome_glyph(theme, command, rx, ry, state == 2,
-                                    state == 3 && theme->caption_style != PU_CAPTION_FLUENT) &&
-                                (!theme->glyphs_hover || state >= 2))
-                                color = !command && state >= 2 && theme->caption_style == PU_CAPTION_FLUENT ?
-                                    0xffffffff : theme->controlText;
-                        }
-                        unsigned char rgb[] = {(unsigned char)(color >> 16), (unsigned char)(color >> 8), (unsigned char)color};
-                        assert(fwrite(rgb, 1, 3, output) == 3);
-                    }
-        assert(!fclose(output));
-    }
-    puts("PASS: six captions, native schema 1/2/3, bounds, actual shared hitboxes, Classic bevel and Fluent state pixels");
+    uint32_t meta[PU_FRAME_META_WORDS] = {1, 1, 2, 0, 460, 300, 0, 1, 4, 23};
+    meta[PU_FRAME_SCALE] = pu_frame_scale_word(1);
+    struct PuFrameStrip strips[PU_FRAME_STRIPS]; uint32_t length;
+    assert(pu_frame_strips(meta, strips, &length));
+    assert(strips[0].width == 468 && strips[0].height == 23);
+    assert(strips[1].width == 4 && strips[1].height == 300);
+    assert(strips[3].width == 468 && strips[3].height == 4);
+    uint32_t words[PU_FRAME_HEADER_WORDS] = {PU_FRAME_MAGIC, PU_FRAME_VERSION, length};
+    memcpy(words + 3, meta, sizeof(meta));
+    for (unsigned i = 0; i < PU_FRAME_STRIPS; i++)
+        memcpy(words + 3 + PU_FRAME_META_WORDS + i * 4, &strips[i], sizeof(strips[i]));
+    assert(pu_frame_validate(words, length, meta, strips));
+    words[3 + PU_FRAME_REVISION]++; assert(!pu_frame_validate(words, length, meta, strips));
+    words[3 + PU_FRAME_REVISION]--;
+    words[PU_FRAME_HEADER_WORDS - 1]++; assert(!pu_frame_validate(words, length, meta, strips));
+    meta[PU_FRAME_SCALE] = pu_frame_scale_word(NAN); assert(!pu_frame_strips(meta, strips, &length));
+    meta[PU_FRAME_SCALE] = pu_frame_scale_word(8); meta[PU_FRAME_CLIENT_WIDTH] = 32700;
+    assert(!pu_frame_strips(meta, strips, &length));
+    meta[PU_FRAME_SCALE] = pu_frame_scale_word(1.25f); meta[PU_FRAME_CLIENT_WIDTH] = 460;
+    assert(pu_frame_strips(meta, strips, &length) && strips[0].width == 585 && strips[0].height == 29);
+    meta[PU_FRAME_BORDER] = 0;
+    assert(pu_frame_strips(meta, strips, &length) && strips[1].width == 0 && strips[3].height == 0);
+    puts("PASS: geometry-only layout, narrow text/button bounds, exact strip codec and stale/budget/scale rejection");
     return 0;
 }

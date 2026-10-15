@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="2">
+  <interface name="polly_appearance_v1" version="3">
     <description summary="trusted Shell appearance selection">
       This private global is restricted to the compositor-owned Shell connection.
-      Version 2 stages and commits bounded runtime decoration data.
-      This interface exposes neither window geometry,
-      input injection, filesystem access or arbitrary rendering commands.
+      Version 3 requires a matching GUI renderer and geometry-only schema 4.
+      Earlier private versions are deliberately rejected. Render requests expose
+      caption geometry and text, never client content or input injection.
     </description>
     <enum name="error">
       <entry name="unauthorized" value="1" summary="connection is not the trusted Shell"/>
@@ -13,21 +13,9 @@
     <request name="destroy" type="destructor"/>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
-        Configuration is an array of native-endian uint32 words: schema 1, 2 or 3,
-        flags, scaled metrics, then opaque ARGB colors. The exact field order,
-        bounds and fixed-point scales are specified by appearance-fields.h.
-        Flags encode left controls (1), round controls (2), pinstripes (4),
-        horizontal gradients (8), generic font family (bits 4-5),
-        hover-only glyphs (64), and text alignment (bits 7-8).
-        Numeric schema 2 has the same word count and bounds, and additionally
-        permits the bounded Luna painter (512). Schema 1 retains its original
-        flags and generic rendering. Schema 3 appends control width (8-96px)
-        and top inset (0-64px) after the colors. Bits 10-11 select Generic (0),
-        Classic (2), or Fluent (3); value 1 is reserved. Luna still uses bit 9
-        and cannot be combined with another painter. Control height retains
-        the controlSize metric's meaning. Controls must fit the title and round
-        controls must have equal width/height. Schema 1/2 retain their original
-        word count; exact sizes are checked before decoding.
+        Configuration contains schema 4, left-controls (0 or 1), and the
+        geometry-only metrics specified by appearance-fields.h. Colors, fonts,
+        glyphs, materials and style selection are interpreted only by the GUI.
         Unsupported data is rejected through
         prepared; the Shell keeps the last committed appearance visible.
         Name is a bounded identifier. Document is a readable, immutable memfd
@@ -62,6 +50,49 @@
       <arg name="serial" type="uint"/>
       <arg name="accepted" type="uint"/>
       <arg name="message" type="string"/>
+    </event>
+    <request name="enable_renderer" since="3"/>
+    <request name="disable_renderer" since="3"/>
+    <request name="submit_frame" since="3">
+      <description summary="submit one complete immutable four-strip snapshot">
+        Metadata and exact dimensions, strides, offsets and size are defined by
+        decoration-frame.h. All strips are supplied in one sealed memfd; there
+        is no partial update. Token, revision, generation, geometry, scale and
+        state must match the latest render request. Old requests are harmlessly
+        rejected. The renderer never receives the application's content.
+      </description>
+      <arg name="token" type="uint"/>
+      <arg name="revision" type="uint"/>
+      <arg name="pixels" type="fd"/>
+      <arg name="length" type="uint"/>
+    </request>
+    <request name="frame_failed" since="3">
+      <arg name="token" type="uint"/>
+      <arg name="revision" type="uint"/>
+      <arg name="message" type="string"/>
+    </request>
+    <event name="renderer_enabled" since="3">
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="render_request" since="3">
+      <arg name="metadata" type="array"/>
+      <arg name="title" type="string"/>
+      <arg name="theme" type="fd"/>
+      <arg name="length" type="uint"/>
+    </event>
+    <event name="frame_result" since="3">
+      <description summary="0 accepted, 1 obsolete, 2 invalid">
+        Invalid submissions do not alter the currently presented snapshot.
+      </description>
+      <arg name="token" type="uint"/>
+      <arg name="revision" type="uint"/>
+      <arg name="status" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="render_cancelled" since="3">
+      <description summary="discard queued requests for an unmapped, closed or unavailable frame"/>
+      <arg name="token" type="uint"/>
     </event>
   </interface>
   <interface name="polly_theme_manager_v1" version="1">

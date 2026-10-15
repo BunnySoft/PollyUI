@@ -14,6 +14,13 @@ Context selection is exclusive and stable. WebGL1 (`"webgl"` and
 WebGL backing readback participates in the existing snapshot/drawImage/export
 paths without creating another native window.
 
+Reconciler-backed canvases can paint in `onMount(node)` and opt into
+`onUpdate(node)` after an existing node's properties and children have been
+updated. Initial creation, replacement and removal do not call `onUpdate`.
+Callbacks run synchronously and propagate errors like `onMount`; they do not
+schedule another render. Existing nodes without the hook are unaffected.
+The reconciler's reserved `key` prop does not implement keyed replacement.
+
 ```js
 const canvas = document.createElement("canvas");
 canvas.width = 480;

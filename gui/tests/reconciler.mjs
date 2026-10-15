@@ -50,4 +50,29 @@ check('remaining item keeps its text', document.getElementById('list').textConte
 render(h(List, { items: ['x', 'y', 'z', 'w'] }), c2);
 check('list grows on re-render', document.getElementById('list').childNodes.length === 4);
 
+const lifecycle = document.createElement('view');
+document.body.appendChild(lifecycle);
+let mounts = 0, updates = 0, leaves = 0, childrenReady = false, replacementUpdates = 0;
+const mounted = () => mounts++;
+const updated = node => {
+  updates++;
+  childrenReady = node.textContent === 'after' && node.getAttribute('aria-label') === 'after';
+};
+render(h('view', { onMount: mounted, onUpdate: updated, 'aria-label': 'before' }, 'before'), lifecycle);
+const retained = lifecycle.firstChild;
+check('mount calls onMount once without onUpdate', mounts === 1 && updates === 0);
+render(h('view', { onMount: mounted, onUpdate: updated, 'aria-label': 'after' }, 'after'), lifecycle);
+check('opt-in update runs once on the same existing node', mounts === 1 && updates === 1 && lifecycle.firstChild === retained);
+check('onUpdate observes completed prop and child updates', childrenReady);
+render(h('canvas', { onUpdate: () => replacementUpdates++ }), lifecycle);
+check('replacement does not update either the retired or new node', updates === 1 && replacementUpdates === 0 && lifecycle.firstChild !== retained);
+render(h('view', { onUpdate: updated, onLeave: (node, done) => { leaves++; done(); } }), lifecycle);
+render(null, lifecycle);
+check('onLeave removes without an extra update', leaves === 1 && updates === 1 && lifecycle.firstChild === null);
+render(h('view', {}, 'plain'), lifecycle);
+let propagated = false;
+try { render(h('view', { onUpdate: () => { throw new Error('update failure'); } }, 'changed'), lifecycle); }
+catch (error) { propagated = error.message === 'update failure'; }
+check('onUpdate errors propagate without an implicit rerender', propagated && lifecycle.firstChild.textContent === 'changed');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

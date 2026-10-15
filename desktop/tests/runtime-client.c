@@ -1,6 +1,6 @@
 #include "server.h"
 #include "decoration.h"
-#include "decoration-themes.h"
+#include "decoration-layout-fixtures.h"
 #include "workspace.h"
 #include "data-device.h"
 #include "input-method.h"
@@ -702,6 +702,49 @@ static bool settings_lifetime_policy(void)
     return true;
 }
 
+static bool capture_caption_output(struct PuDesktopView *view)
+{
+    const char *path = getenv("POLLY_CAPTION_EVIDENCE");
+    if (!path || !*path) return true;
+    struct wlr_box output_box, inset = { .width = 1280, .height = 720 }, close;
+    int vx, vy;
+    wlr_output_layout_get_box(desktop.layout, view->output, &output_box);
+    pu_decoration_inset(view, &inset, false);
+    CHECK(wlr_scene_node_coords(&view->tree->node, &vx, &vy));
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &close));
+    printf("CAPTION_NATIVE_GEOMETRY {\"client\":[%d,%d,%d,%d],\"border\":%d,\"title\":%d,"
+        "\"scale\":%.9g,\"close\":[%d,%d,%d,%d]}\n",
+        vx - output_box.x, vy - output_box.y, view->toplevel->base->geometry.width,
+        view->toplevel->base->geometry.height, inset.x, inset.y, view->output->scale,
+        close.x, close.y, close.width, close.height);
+    struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, view->output);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_lock_attach_render(view->output, true);
+    CHECK(wlr_scene_output_build_state(output, &state, NULL) && state.buffer);
+    void *pixels; uint32_t format; size_t stride;
+    CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+        &pixels, &format, &stride));
+    CHECK(format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888);
+    FILE *file = fopen(path, "wb");
+    CHECK(file);
+    bool written = fprintf(file, "P6\n%d %d\n255\n", state.buffer->width, state.buffer->height) > 0;
+    for (int y = 0; y < state.buffer->height && written; y++)
+        for (int x = 0; x < state.buffer->width && written; x++) {
+            uint32_t pixel; unsigned char rgb[3];
+            memcpy(&pixel, (char *)pixels + (size_t)y * stride + (size_t)x * 4, sizeof(pixel));
+            rgb[0] = pixel >> 16; rgb[1] = pixel >> 8; rgb[2] = pixel;
+            written = fwrite(rgb, 1, 3, file) == 3;
+        }
+    written = fclose(file) == 0 && written;
+    wlr_buffer_end_data_ptr_access(state.buffer);
+    wlr_output_state_finish(&state);
+    wlr_output_lock_attach_render(view->output, false);
+    CHECK(written);
+    printf("CAPTION_NATIVE_OUTPUT: %s\n", path);
+    return true;
+}
+
 static bool window_suite(char *executable, char *script, char *mode)
 {
     char *args[] = { executable, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.window-shell",
@@ -1003,13 +1046,15 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wl_list_for_each(view, &desktop.views, link) {
                     if (!view->toplevel->app_id || strcmp(view->toplevel->app_id, "org.pollyui.window-fixture") ||
                         view->geometry_pending) continue;
-                    for (unsigned theme = 0; theme < PU_DECORATION_THEME_COUNT; theme++) {
-                        if (strcmp(name + 20, pu_decoration_themes[theme].id)) continue;
+                    for (unsigned theme = 0; theme < PU_DECORATION_LAYOUT_COUNT; theme++) {
+                        if (strcmp(name + 20, pu_decoration_layouts[theme].id)) continue;
                         struct wlr_box inset = { .width = 1280, .height = 720 }, button;
                         pu_decoration_inset(view, &inset, false);
-                        CHECK(inset.y == pu_decoration_themes[theme].title_height &&
-                              inset.x == pu_decoration_themes[theme].border_width);
+                        CHECK(inset.y == pu_decoration_layouts[theme].layout.title_height &&
+                              inset.x == pu_decoration_layouts[theme].layout.border_width);
                         CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &button));
+                        if (!strcmp(pu_decoration_layouts[theme].id, "server2003"))
+                            CHECK(capture_caption_output(view));
                         ready = true;
                     }
                 }

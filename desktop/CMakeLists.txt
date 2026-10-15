@@ -15,7 +15,6 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET "wlroots-0.19>=0.19.3" "wlroots-0.19<0.20")
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
-pkg_check_modules(DECORATION_FONTS REQUIRED IMPORTED_TARGET fontconfig freetype2)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
 pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
 pkg_check_modules(WLR_PROTOCOLS REQUIRED wlr-protocols)
@@ -89,6 +88,7 @@ add_custom_command(
 
 add_library(pollywm-core STATIC
     shared/appearance-document.c
+    shared/decoration-frame.c
     shared/shortcuts.c
     compositor/shortcut-control.c
     compositor/output-control.c
@@ -122,7 +122,7 @@ target_compile_definitions(pollywm-core PRIVATE
     PU_CURSOR_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resources/icons")
 target_compile_options(pollywm-core PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_link_libraries(pollywm-core PUBLIC
-    PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER PkgConfig::XKBCOMMON PkgConfig::DECORATION_FONTS m)
+    PkgConfig::WLROOTS PkgConfig::WAYLAND_SERVER PkgConfig::XKBCOMMON m)
 set_target_properties(pollywm-core PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
 
 add_executable(pollywm compositor/main.c)

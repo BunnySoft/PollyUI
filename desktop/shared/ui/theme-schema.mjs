@@ -81,7 +81,7 @@ const optionalOptions = {
   window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
-    menuStyle: ['legacy', 'two-column', 'grid'] },
+    menuStyle: ['legacy', 'two-column', 'grid'], taskTexture: ['flat', 'stipple'] },
 };
 const optionalNumbers = {
   window: { controlWidth: [8, 96], controlTop: [0, 64] },

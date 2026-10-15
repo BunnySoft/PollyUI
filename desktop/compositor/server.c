@@ -778,12 +778,12 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
     wlr_xdg_toplevel_set_resizing(view->toplevel, false);
     view->geometry_serial = wlr_xdg_toplevel_set_size(view->toplevel, box.width, box.height);
     view->geometry_pending = true;
+    view->geometry_reuse = reuse_buffer;
     /* Position/theme-only changes can use the presented buffer; idle clients
        may acknowledge an unchanged size without committing another buffer. */
     if (reuse_buffer) {
-        present_geometry(view);
         present_view(view);
-    }
+    } else pu_decoration_update(view);
 }
 
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
@@ -833,12 +833,25 @@ void pu_desktop_redecorate(struct PuDesktopView *view)
 
 static void present_view(struct PuDesktopView *view)
 {
+    if (!view->geometry_pending && !pu_decoration_ready(view)) {
+        struct wlr_box clip = view->toplevel->base->geometry;
+        pu_decoration_waiting_clip(view, &clip);
+        wlr_scene_subsurface_tree_set_clip(&view->content->node, &clip);
+        return;
+    }
     if (view->geometry_pending) {
         /* A buffer for an older configure must not acquire the latest position. */
         uint32_t serial = view->toplevel->base->current.configure_serial;
-        if ((int32_t)(serial - view->geometry_serial) < 0) return;
+        if (!view->geometry_reuse && (int32_t)(serial - view->geometry_serial) < 0) return;
+        if (!pu_decoration_ready(view)) {
+            struct wlr_box clip = view->toplevel->base->geometry;
+            pu_decoration_waiting_clip(view, &clip);
+            wlr_scene_subsurface_tree_set_clip(&view->content->node, &clip);
+            return;
+        }
         present_geometry(view);
     }
+
     struct wlr_box geometry = view->toplevel->base->geometry;
     bool fullscreen = view->mode == PU_DESKTOP_FULLSCREEN;
     int x = fullscreen ? (view->presented_box.width - geometry.width) / 2 : 0;
@@ -856,6 +869,13 @@ static void present_view(struct PuDesktopView *view)
         view->mode != PU_DESKTOP_FLOATING ? &clip : NULL);
     update_layer_focus(view->desktop);
     sync_foreign(view->desktop);
+}
+
+void pu_desktop_decoration_ready(struct PuDesktopView *view)
+{
+    if (view->desktop->stopping) return;
+    present_view(view);
+    pu_decoration_update(view);
 }
 
 static void refresh_views(struct PuDesktop *desktop)
@@ -1818,6 +1838,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     if (desktop->last_title_click == view) desktop->last_title_click = NULL;
     pu_shortcuts_unmap(view);
     pu_workspaces_view_unmap(view);
+    pu_decoration_suspend(view);
     view->resize_pending = false;
     view->mapped = false;
     view->minimized = false;

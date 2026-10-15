@@ -1,4 +1,5 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
+import { paintClassicTask } from './desktop/shared/ui/classic-task-paint.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
 export const surfaceStyle = (theme, group = 'button') => theme[group].surfaceStyle || 'generic';
@@ -80,6 +81,8 @@ export function surfaceEvents(theme, options = {}) {
     Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
+    const texture = node.querySelector('.classic-task-paint');
+    if (texture) paintClassicTask(texture, theme, { ...options, ...state });
     const label = node.querySelector('.theme-command-label');
     if (label && options.quiet && surfaceStyle(theme) === 'classic')
       label.style.color = state.hovered || state.pressed || options.selected ?

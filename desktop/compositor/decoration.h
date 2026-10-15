@@ -22,10 +22,13 @@ bool pu_decorations_init(struct PuDesktop *desktop);
 void pu_decorations_finish(struct PuDesktop *desktop);
 bool pu_decoration_create(struct PuDesktopView *view);
 void pu_decoration_destroy(struct PuDesktopView *view);
+void pu_decoration_suspend(struct PuDesktopView *view);
+void pu_decoration_waiting_clip(struct PuDesktopView *view, struct wlr_box *box);
 void pu_decoration_schedule(struct PuDesktopView *view);
 void pu_decoration_configure(struct PuDesktopView *view);
 bool pu_decoration_mode_pending(struct PuDesktopView *view);
 void pu_decoration_present(struct PuDesktopView *view);
+bool pu_decoration_ready(struct PuDesktopView *view);
 void pu_decoration_update(struct PuDesktopView *view);
 void pu_decoration_inset(struct PuDesktopView *view, struct wlr_box *bounds, bool pending);
 int pu_decoration_hit(struct PuDesktopView *view, double x, double y);
@@ -35,5 +38,6 @@ bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_b
 
 /* Reconfigure; new client content or decoration modes still require a commit. */
 void pu_desktop_redecorate(struct PuDesktopView *view);
+void pu_desktop_decoration_ready(struct PuDesktopView *view);
 double pu_desktop_view_scale(struct PuDesktopView *view);
 #endif

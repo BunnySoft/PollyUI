@@ -312,8 +312,9 @@ requests are honored. A client which does not implement this protocol retains
 its own header; PollyWM does not guess whether an application has painted one
 or place a second titlebar over it.
 
-The compositor draws caption text, active/inactive titlebars, borders and
-minimize/maximize/close controls. Titlebar double-click toggles maximize; drag
+The existing GUI renders caption text, active/inactive titlebars, borders and
+minimize/maximize/close controls into detached Canvas2D strips. The compositor
+composes complete snapshots and owns input. Titlebar double-click toggles maximize; drag
 moves floating windows and edges/corners resize them. Releases outside the
 pressed control cancel the action. Fullscreen hides the frame, and maximized
 client geometry excludes both Shell reservations and decoration extents.
@@ -324,18 +325,26 @@ negotiation reuse the presented buffer. An idle client need not redraw before
 its titlebar can move or resize. Outstanding size changes still require the
 latest matching commit, including when a theme refresh arrives while resizing.
 
-Shell appearance selection calls `desktop.configureAppearance(theme)` on the
-private connection. JS reads and validates versioned JSON, then prepares and
-commits bounded numeric decoration data and a sealed snapshot descriptor.
+Shell appearance selection sends validated JSON and a JS-compiled geometry
+array through the private paired v3 connection. It then services bounded GUI
+render requests using the same logical rectangles as WM hit testing. Four
+immutable pixel strips and their revision/generation/scale/state are validated
+and atomically staged, never mixed individually with a previous frame.
 Custom IDs and same-ID edits apply without rebuilding the compositor.
 There is no legacy theme-ID selection or automatic schema downgrade. Generated
-C presets supply the bootstrap appearance and native test oracles; generated
-schema fields keep native bounds consistent with the JS validator.
+Generated test fixtures contain preset geometry; the WM contains no preset
+catalog. Generated schema fields keep native bounds consistent with the JS
+layout compiler. Mixed old private versions fail
+explicitly. Public theme JSON and application APIs are unchanged.
 
-Caption rasterization uses Fontconfig and FreeType with a bounded face cache
-and scale-aware CPU buffers. This adds neither Skia/SDL/QuickJS/Yoga nor
-GLib/GIO to PollyWM. Basic Unicode fallback is supported; shaping, bidi,
-grapheme-aware ellipsis and complete accessibility remain later work.
+Caption rasterization and text shaping reuse GUI Canvas2D, with no hidden
+caption window. The WM's separate theme painters, FreeType/Fontconfig face cache
+and direct font dependencies are removed. Skia/SDL/QuickJS/Yoga are not embedded
+in PollyWM. A missing or failed GUI renderer negotiates client-side decoration
+instead of invoking a second C theme renderer. See [the ownership and bounded
+frame contract](THEMES.md#decoration-execution-boundary).
+Painting through the GUI does not itself add accessible DOM controls to native
+captions; platform caption accessibility integration is still a separate gap.
 The current frames have rounded titlebar tops, not rounded clipping of client
 content, blur or shadows. Input bounds remain rectangular. Restore a maximized
 window before dragging it; drag-to-restore and tiling gestures remain deferred.

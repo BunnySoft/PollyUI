@@ -267,7 +267,7 @@
         "gradientDir": "horizontal",
         "stripeSpacing": 3,
         "stripeWidth": 1,
-        "glyphRadius": 3.5,
+        "glyphRadius": 4.5,
         "glyphThickness": 0.8,
         "closeThickness": 1,
         "hoverOpacity": 0,
@@ -308,7 +308,8 @@
         "radius": 0,
         "inset": 0,
         "surfaceStyle": "classic",
-        "menuStyle": "two-column"
+        "menuStyle": "two-column",
+        "taskTexture": "stipple"
       },
       "layout": {
         "fontSize": 11,

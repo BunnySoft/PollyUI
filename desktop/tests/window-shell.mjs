@@ -68,6 +68,14 @@ async function run() {
       return native;
     },
   } }).start();
+  const readFrames = desktop.decorationRequests;
+  desktop.decorationRequests = () => {
+    const requests = readFrames();
+    for (const request of requests)
+      if (JSON.parse(request.document).theme.id === 'server2003')
+        console.log('CAPTION_NATIVE_REQUEST ' + JSON.stringify({ title: request.title, meta: request.meta }));
+    return requests;
+  };
   check(shell.selectTheme('xp'), 'taskbar theme selected');
   if (mode === 'initial') {
     desktop.spawnApplication(['foot', '--app-id=org.pollyui.window-fixture', '--title=Initial title',
@@ -104,6 +112,9 @@ async function run() {
     await until(() => !find()?.minimized, 'native restore');
     desktop.activateWindow(id);
     await until(() => find()?.active, 'native activate');
+    check(shell.selectTheme('server2003'), 'Classic GUI-rendered frame selected');
+    const classicFrame = marker('fixture-frame-theme server2003');
+    await until(() => classicFrame.closed, 'Classic strips reach real WM geometry and composition');
     check(shell.selectTheme('bigsur'), 'Big Sur Dock selected');
     const bigSurFrame = marker('fixture-frame-theme bigsur');
     await until(() => bigSurFrame.closed, 'live Big Sur application frame geometry');
@@ -116,10 +127,29 @@ async function run() {
     custom.name = 'External configuration';
     Object.assign(custom.window, { titleHeight: 52, borderWidth: 2, texture: 'none',
       titleFrom: '#6e3ba7', titleTo: '#6e3ba7' });
+    const submitFrame = desktop.submitDecorationFrame;
+    let frameProbes = 0;
+    desktop.submitDecorationFrame = (meta, strips) => {
+      if (frameProbes) return submitFrame(meta, strips);
+      rejects(() => submitFrame(meta, [{ ...strips[0], width: strips[0].width + 1 }, ...strips.slice(1)]),
+        'native bridge rejects an inexact strip before transport');
+      const obsolete = [...meta]; obsolete[1]++;
+      check(submitFrame(obsolete, strips) === false, 'WM rejects an unknown frame revision without changing presentation');
+      const mismatched = [...meta]; mismatched[2]++;
+      rejects(() => submitFrame(mismatched, strips), 'WM rejects a complete frame with a mismatched theme generation');
+      const accepted = submitFrame(meta, strips);
+      if (accepted) {
+        check(submitFrame(meta, strips) === false, 'WM rejects duplicate accepted revisions');
+        frameProbes++;
+      }
+      return accepted;
+    };
     installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, custom] });
     check(shell.selectTheme(custom.id), 'custom theme does not require a compiled appearance ID');
     let configured = marker('fixture-frame-style 2 52 6e3ba7');
     await until(() => configured.closed, 'runtime configuration changes real decoration metrics and pixels');
+    desktop.submitDecorationFrame = submitFrame;
+    check(frameProbes === 1, 'real GUI strips passed bounded protocol negative cases before publication');
     const changed = JSON.parse(JSON.stringify(custom));
     Object.assign(changed.window, { titleHeight: 44, borderWidth: 3, titleFrom: '#325788', titleTo: '#325788' });
     installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, changed] });
