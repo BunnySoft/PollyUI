@@ -19,8 +19,7 @@ export function surfacePaint(theme, { selected = false, pressed = false, hovered
     gradientTo: flatTask ? face : quiet ? 'transparent' : pressed ? theme.button.from : theme.button.to,
     borderRadius: theme.button.radius,
     borderColor: disabled ? c.border : focused && style !== 'classic' ? c.focus :
-      quiet ? 'transparent' : c.border,
-    opacity: 1 };
+      quiet ? 'transparent' : c.border };
 }
 
 export function bevel(theme, { pressed = false, inset = false, frame = false } = {}) {
@@ -74,17 +73,24 @@ export function surfaceDetail(theme, { selected = false, quiet = false } = {}) {
 export function surfaceEvents(theme, options = {}) {
   const paint = (event, change) => {
     const node = event.currentTarget, previous = states.get(node);
-    const state = previous?.theme === theme ? previous : {
+    const disabled = options.disabled || node.getAttribute?.('aria-disabled') === 'true';
+    const state = !disabled && previous?.theme === theme ? previous : {
       theme, pressed: false, hovered: false, focused: node.ownerDocument?.activeElement === node,
     };
-    Object.assign(state, change); states.set(node, state);
+    if (disabled) {
+      Object.assign(state, { pressed: false, hovered: false, focused: false });
+      states.delete(node);
+    } else {
+      Object.assign(state, change);
+      states.set(node, state);
+    }
     Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
     const texture = node.querySelector('.classic-task-paint');
     if (texture) paintClassicTask(texture, theme, { ...options, ...state });
     const label = node.querySelector('.theme-command-label');
-    if (label && options.quiet && surfaceStyle(theme) === 'classic')
+    if (!disabled && label && options.quiet && surfaceStyle(theme) === 'classic')
       label.style.color = state.hovered || state.pressed || options.selected ?
         theme.colors.accentText : theme.colors.text;
     const down = state.pressed || options.selected;
@@ -107,7 +113,13 @@ export function surfaceEvents(theme, options = {}) {
       content.style.top = down ? '1' : '0';
     }
   };
+  const syncDisabled = node => {
+    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true')
+      paint({ currentTarget: node }, {});
+  };
   return {
+    onMount: syncDisabled,
+    onUpdate: syncDisabled,
     onMouseenter: event => paint(event, { hovered: true }),
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },

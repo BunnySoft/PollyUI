@@ -233,6 +233,16 @@ seam; they do not create surfaces or change state by themselves.
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
 simulated appearance preview, but also **not a Linux compositor desktop capture**.
+
+The bounded shared disabled-state checkpoint also exercises the real Settings
+Audio view through `tests/disabled-button-render.mjs`. Surface and Luna visual
+handlers honor the existing explicit disabled option or `aria-disabled="true"`;
+reconciliation clears stale held/hot/focus paint without moving actual focus.
+Paint does not replace caller opacity, including configured disabled opacity.
+The shipped Classic/Luna value remains 1; a 0.37 override is a separate input
+contract check, not a new OS appearance default. Disabled pointer pixels, retained
+selection/node/focus, and re-enabled single activation are covered. This does
+not certify all SDK widgets, fonts or OS control states.
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;
 the native window suite checks their composition/input. Historical C painter

@@ -105,9 +105,10 @@ const visualStates = new WeakMap();
 export function lunaVisualEvents(theme, options = {}) {
   const paint = (event, change) => {
     const node = event.currentTarget;
-    const state = visualStates.get(node) || { hovered: false, pressed: false, focused: false };
-    Object.assign(state, change);
-    visualStates.set(node, state);
+    const disabled = options.disabled || node.getAttribute?.('aria-disabled') === 'true';
+    const state = !disabled && visualStates.get(node) || { hovered: false, pressed: false, focused: false };
+    if (disabled) visualStates.delete(node);
+    else { Object.assign(state, change); visualStates.set(node, state); }
     const { hovered, pressed, focused } = state;
     Object.assign(node.style, lunaButtonPaint(theme, { ...options, hovered, pressed, focused }));
     const hot = node.querySelector('.luna-hot-ring'), focus = node.querySelector('.luna-focus-ring');
@@ -119,7 +120,13 @@ export function lunaVisualEvents(theme, options = {}) {
       tint.style.opacity = pressed ? '0.18' : hovered ? '0.12' : '0';
     }
   };
+  const syncDisabled = node => {
+    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true')
+      paint({ currentTarget: node }, {});
+  };
   return {
+    onMount: syncDisabled,
+    onUpdate: syncDisabled,
     onMouseenter: event => paint(event, { hovered: true }),
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },

@@ -78,7 +78,7 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
         painted ? { ...surfacePaint(theme, options), position: 'relative', overflow: 'hidden' } : {}), ...style },
     hoverStyle: enabled && !luna && !painted ? { backgroundColor: theme.colors.selection } : {},
     focusStyle: luna || painted ? {} : { borderColor: theme.colors.focus },
-    ...(enabled ? luna ? lunaVisualEvents(theme, options) : painted ? surfaceEvents(theme, options) : {} : {}),
+    ...(luna ? lunaVisualEvents(theme, options) : painted ? surfaceEvents(theme, options) : {}),
     onClick: activate, onKeydown: event => {
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); }
     },
