@@ -9,6 +9,12 @@ const states = new WeakMap();
 export function surfacePaint(theme, { selected = false, pressed = false, hovered = false,
   focused = false, disabled = false, quiet = false, variant = 'button' } = {}) {
   const style = surfaceStyle(theme), c = theme.colors;
+  if (surfaceStyle(theme, 'panel') === 'fluent' && variant === 'task') return {
+    backgroundColor: disabled ? 'transparent' : pressed ? theme.button.to :
+      hovered ? c.selection : selected ? theme.button.from : 'transparent',
+    gradientFrom: 'transparent', gradientTo: 'transparent',
+    borderRadius: theme.button.radius, borderColor: 'transparent',
+  };
   const face = variant === 'task' ? selected ? '#e8e6e0' : c.body :
     disabled ? c.body : selected ? c.selection : quiet ? 'transparent' :
     pressed ? theme.button.to : theme.button.from;
@@ -105,13 +111,14 @@ export function surfaceEvents(theme, options = {}) {
       content.style.top = down ? '1' : '0';
     }
   };
-  const syncDisabled = node => {
-    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true')
+  const syncState = node => {
+    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+        surfaceStyle(theme, 'panel') === 'fluent' && options.variant === 'task')
       paint({ currentTarget: node }, {});
   };
   return {
-    onMount: syncDisabled,
-    onUpdate: syncDisabled,
+    onMount: syncState,
+    onUpdate: syncState,
     onMouseenter: event => paint(event, { hovered: true }),
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },

@@ -234,6 +234,34 @@ to reveal the full command. Header/footer rectangles do not move; reverse wheel
 clamps at zero and repeated focus does not jitter. This is actual component
 layout/input evidence, not a native compositor output resize or XP fidelity score.
 
+### Fluent taskbar and Start surface coverage
+
+The bounded E22.22 correction follows the existing Modern/Fluent design and
+catalog, not a certified Windows 11 24H2 raw screenshot. Palette, fonts, theme
+schema, caption painting and application/backend actions are unchanged.
+
+| Surface | Verified contract / correction | Remaining boundary |
+|---|---|---|
+| Icon task states and focus | A Fluent-only task variant supplies both initial and event paint: active uses `button.from`, inactive is transparent, hover uses `colors.selection`, held uses `button.to`, with transparent gradients. Leave/cancel/blur restore the original face. Existing stretch focus detail is retained alongside the 16px/6px running markers. Clock reconciliation preserves hover/held/focus for the same immutable theme; replacement theme identity clears stale interaction state | These are existing theme design colors, not measured Windows state-color errors |
+| Centered group and notification area | Measure actual fixed slot, task and notification-area widths after layout; keep the full group centered when it fits before the tray, otherwise retreat into the available interval. The 800px default remains at x280/width240. At 360px it is x12/width226; at 260px x12/width126. Notification/clock remain outside it. The task strip retains at least one configured task width; when fixed actions also overflow, the group independently scrolls and local focus reveals the inner viewport. Inner task wheel does not scroll the outer group | A tray consuming almost the entire output can leave less than one full configured slot; this is a physical layout boundary, not a claim of complete fit at arbitrary width/item count |
+| Nested Start app and Pin focus | Chain the existing command focus handler and use unscrolled offsets plus `verticalScrollMetrics` clamp along the known nested grid/list path. At 640px/available660 the last 80px app scrolls 46px and its 20px Pin scrolls 68px, fully visible and independently invoked once by pointer and Enter. Repeated focus does not jitter; reverse wheel clamps to zero. Search/footer rectangles and disabled activation guards remain unchanged | At 360px/available260 the existing preferred-height calculation yields a 180px menu, a zero-height body row with a 16px list, and footer y144..208 beyond root180. App/Pin focus clamps to 778/860 and Enter works, but pointer/wheel hit testing reaches the menu root rather than the list; footer fit is **not fixed**. Short-height chrome/layout degradation is a separate confirmed defect, not merely the impossibility of fitting an 80px app in 16px |
+
+`tests/fluent-shell-surface-render.mjs` exercises actual views and host input in
+an unscaled 800x700 raster fixture, with local 800/360/260px taskbar layouts,
+an existing tray item, and legal unequal launcher/task widths (60/52px).
+The local placement uses `L = panelPaddingLeft`, `R = actualTrayLeft - panelGap`,
+and `width = min(desiredGroupWidth, R - L)`; its left edge clamps the preferred
+screen-centered position into that interval. Owner-state observation and bounded
+post-layout frames remeasure geometry; no polling or native appearance branch is
+added. The complete default 800x48 taskbar pixels are unchanged before interaction.
+This evidence is component rendering/input, not native output resize, Windows
+pixel certification, or full low-height accessibility closure.
+
+True recommendation/account history and app-grouping semantics still need
+backend/design decisions. Full-window corners/shadows and Mica/Acrylic remain
+separate mechanisms; solid/gradient painting is not represented as those effects.
+E22.22 remains partial.
+
 Classic follows the supplied Windows Server 2003 references: flat faces and real
 pixel bevel layers, not simulated blur or a modern gradient. Standard WinForms
 controls in that system theme share this appearance; WinForms is not a separate
