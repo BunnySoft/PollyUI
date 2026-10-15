@@ -214,14 +214,73 @@ static bool suite(const char *self)
     renderer = start(self, true, "3", &r);
     CHECK(renderer >= 0 && r.denied);
     pu_decorator_stop(&desktop); close(renderer);
+    char *failed[] = {"/bin/false", NULL};
+    CHECK(pu_decorator_spawn(&desktop, failed));
+    for (int i = 0; i < 1000 && (pu_decorator_pid(&desktop) ||
+        pu_decorator_status(&desktop, NULL) != 3); i++) {
+        wl_display_flush_clients(desktop.display);
+        CHECK(wl_event_loop_dispatch(wl_display_get_event_loop(desktop.display), 5) >= 0);
+    }
+    const char *message;
+    CHECK(!pu_decorator_pid(&desktop) && pu_decorator_status(&desktop, &message) == 3);
+    CHECK(strstr(message, "budget exhausted") && !desktop.failed);
+    pu_decorator_stop(&desktop);
     puts("PASS: real private roles, public second connection, bootstrap prepare race/cancel/one-shot/reconnect, publisher override, duplicate role and old v3 rejection");
+    puts("PASS: renderer restart budget exhaustion is explicit and does not end the WM session");
+    return true;
+}
+static void legacy_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
+{
+    (void)data; (void)version; (void)id;
+    wl_client_post_implementation_error(client, "New renderer must not bind an old private interface");
+}
+static bool legacy_server(const char *ui)
+{
+    struct wl_display *display = wl_display_create();
+    CHECK(display);
+    const char *socket = wl_display_add_socket_auto(display);
+    CHECK(socket && wl_global_create(display, &polly_appearance_v1_interface, 3, NULL, legacy_bind));
+    int errors[2];
+    CHECK(!pipe(errors));
+    pid_t pid = fork();
+    CHECK(pid >= 0);
+    if (!pid) {
+        close(errors[0]);
+        if (dup2(errors[1], STDERR_FILENO) < 0) _exit(126);
+        close(errors[1]);
+        unsetenv("WAYLAND_SOCKET"); setenv("WAYLAND_DISPLAY", socket, 1);
+        execl(ui, ui, "--decorator", "desktop/decorator/main.mjs", (char *)NULL);
+        _exit(127);
+    }
+    close(errors[1]);
+    int status = 0;
+    bool reaped = false;
+    for (int i = 0; i < 1000; i++) {
+        wl_display_flush_clients(display);
+        CHECK(wl_event_loop_dispatch(wl_display_get_event_loop(display), 5) >= 0);
+        pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) { reaped = true; break; }
+        CHECK(result == 0 || (result < 0 && errno == EINTR));
+    }
+    if (!reaped) {
+        kill(pid, SIGKILL);
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    }
+    char message[2048];
+    ssize_t length = read(errors[0], message, sizeof(message) - 1);
+    close(errors[0]);
+    wl_display_destroy_clients(display); wl_display_destroy(display);
+    CHECK(length > 0); message[length] = 0;
+    CHECK(reaped && WIFEXITED(status) && WEXITSTATUS(status) == 1);
+    CHECK(strstr(message, "appearance v4 is required"));
+    puts("PASS: production v4 renderer explicitly rejects a real old-version Wayland server");
     return true;
 }
 int main(int argc, char **argv)
 {
     if (argc == 4 && !strcmp(argv[1], "--probe"))
         return child(atoi(argv[2]), (uint32_t)atoi(argv[3])) ? 0 : 1;
-    if (argc != 1) return 2;
+    if (argc != 1 && argc != 2) return 2;
     char runtime[] = "/tmp/polly-decorator-policy-XXXXXX";
     if (!mkdtemp(runtime)) return 1;
     setenv("XDG_RUNTIME_DIR", runtime, 1); setenv("WLR_BACKENDS", "headless", 1);
@@ -229,6 +288,7 @@ int main(int argc, char **argv)
     wlr_log_init(WLR_INFO, NULL);
     bool passed = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) && suite(argv[0]);
     pu_desktop_finish(&desktop);
+    if (passed && argc == 2) passed = legacy_server(argv[1]);
     if (rmdir(runtime)) passed = false;
     return passed ? 0 : 1;
 }

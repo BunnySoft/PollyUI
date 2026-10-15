@@ -137,6 +137,9 @@ install(FILES "${CMAKE_SOURCE_DIR}/docs/DESKTOP-CURSOR.md"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/pollyui" COMPONENT PollyDesktop)
 
 if (BUILD_TESTING)
+    add_test(NAME desktop-decorator-installed COMMAND node
+        "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-installed.mjs" "${CMAKE_BINARY_DIR}")
+    set_tests_properties(desktop-decorator-installed PROPERTIES TIMEOUT 75)
     add_test(NAME desktop-installed-session COMMAND node
         "${CMAKE_SOURCE_DIR}/desktop/tests/installed-session.mjs" "${CMAKE_BINARY_DIR}"
         "$<$<BOOL:${PU_BUILD_IME_ENGINE}>:--ime>")

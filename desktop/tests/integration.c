@@ -649,9 +649,18 @@ static struct PuDesktopLayer *find_layer(int id)
     return NULL;
 }
 
+static bool settle_decoration(struct PuDesktopView *view)
+{
+    for (int i = 0; i < 1000; i++) {
+        if (!view->geometry_pending && pu_decoration_ready(view)) return true;
+        CHECK(pump());
+    }
+    CHECK(false);
+}
 static bool decoration_click(struct TestClient *client, struct PuDesktopView *view, int part)
 {
     struct wlr_box box;
+    CHECK(settle_decoration(view));
     CHECK(pu_decoration_button_box(view, part, &box));
     motion(view->tree->node.x + box.x + box.width / 2.0,
            view->tree->node.y + box.y + box.height / 2.0);
@@ -659,11 +668,13 @@ static bool decoration_click(struct TestClient *client, struct PuDesktopView *vi
     button(BTN_LEFT, true);
     button(BTN_LEFT, false);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
+    CHECK(settle_decoration(view));
     return true;
 }
 
 static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uint64_t *hash)
 {
+    CHECK(settle_decoration(view));
     const struct PuDecorationLayout *theme = &pu_decoration_layouts[theme_id].layout;
     struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, view->output);
     struct wlr_box bounds;
@@ -726,10 +737,14 @@ static bool decoration_suite(const char *path)
     CHECK(view->tree->node.x == x + 30 && view->tree->node.y == y + 20);
     x = view->tree->node.x; y = view->tree->node.y;
     int width = client->reply.width, height = client->reply.height;
-    motion(x + width + 1, y + height + 1);
+    struct wlr_box resize_inset = {0};
+    pu_decoration_inset(view, &resize_inset, false);
+    double edge = resize_inset.x / 2.0;
+    CHECK(edge > 0);
+    motion(x + width + edge, y + height + edge);
     button(BTN_LEFT, true);
     CHECK(desktop.grab == PU_DESKTOP_RESIZE);
-    motion(x + width + 31, y + height + 26);
+    motion(x + width + edge + 30, y + height + edge + 25);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     button(BTN_LEFT, false);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
@@ -737,14 +752,14 @@ static bool decoration_suite(const char *path)
     CHECK(client->reply.buttons == buttons_before);
     struct wlr_box inset = { .width = width, .height = height };
     pu_decoration_inset(view, &inset, false);
-    int resize_top = y - inset.y + 1;
-    motion(x - 1, resize_top);
+    double resize_top = y - inset.y + edge;
+    motion(x - edge, resize_top);
     button(BTN_LEFT, true);
     CHECK(desktop.grab == PU_DESKTOP_RESIZE && desktop.grab_edges == (WLR_EDGE_TOP | WLR_EDGE_LEFT));
-    motion(x + 9, resize_top + 8);
+    motion(x - edge + 10, resize_top + 8);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     CHECK(geometry_is(view, x + 10, y + 8, width + 20, height + 17));
-    motion(x - 1, resize_top);
+    motion(x - edge, resize_top);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     button(BTN_LEFT, false);
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
