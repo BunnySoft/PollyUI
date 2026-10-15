@@ -292,6 +292,14 @@ contract check, not a new OS appearance default. Disabled pointer pixels, retain
 selection/node/focus, and re-enabled single activation are covered. This does
 not certify all SDK widgets, fonts or OS control states.
 
+Settings display fields also apply their existing appearance mapping at creation,
+not only when a retained field is repainted. The bounded
+`tests/display-field-render.mjs` check uses the actual Displays view and SDK input:
+first-frame/same-theme border and radius pixels match, while value, caret,
+selection, focus, padding and draft roundtrip survive a retheme. This does not
+change theme tokens, SDK input defaults/focus color or display transaction policy,
+and does not certify other input controls or scrollbars.
+
 An additional actual-GUI check found that the current fixed Classic focus-dot
 grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots
 along its four full edges, while 120x22 is complete. This is **not fixed**.

@@ -844,9 +844,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "THEMES.md 明列 SDK caret/selection、global scrollbar、Settings bespoke fields 未认证；Files 已有功能滚动/编辑证据，不等于 Windows/Mac 视觉一致。"
+      "evidence": "Settings displayField 初始appearance接线checkpoint：新建与复用统一调用既有setAppearance对象，首帧不再保留SDK默认border#cbd5e1/radius6。真实Settings displaysView+display-inputs+SDK输入800x600/scale1：Classic初始→same-theme repaint原238px差、Modern原236px差均修为0；现有theme border/radius/font、padding7、selection/caret colors实消费，value1920/selection[0,4]/caret/focus同DOM跨retheme保持，实际输入2560并一次Apply回调draft roundtrip通过。未改主题catalog/SDK API/defaultfocusColor/显示事务。仅此局部已交付；全SDKcaret/selection、global scrollbar及其它bespoke输入仍未认证，Files功能滚动证据不等于OS视觉一致。"
     },
     {
       "id": "theme-dialog-panel-coverage",
