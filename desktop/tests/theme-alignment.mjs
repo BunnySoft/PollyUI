@@ -125,43 +125,6 @@ for (const theme of catalog.themes) {
   assert.equal(viewport.scrollTop, 200);
 }
 {
-  const theme = catalog.themes.find(theme => theme.id === 'modern');
-  const panel = panelView(theme, '10:31', action, '', action,
-    [{ id: 1, title: 'Selected', active: true }, { id: 2, title: 'Running', active: false }], action, action);
-  const task = find(panel, 'shell-window-2'), focus = { style: {} };
-  const node = { style: { ...task.props.style }, querySelector: selector => selector === '.theme-focus-ring' ? focus : null };
-  assert.equal(node.style.backgroundColor, 'transparent');
-  task.props.onMouseenter({ currentTarget: node });
-  assert.equal(node.style.backgroundColor, theme.colors.selection);
-  task.props.onUpdate(node);
-  assert.equal(node.style.backgroundColor, theme.colors.selection);
-  task.props.onMousedown({ currentTarget: node, button: 0 });
-  assert.equal(node.style.backgroundColor, theme.button.to);
-  task.props.onMousecancel({ currentTarget: node });
-  assert.equal(node.style.backgroundColor, 'transparent');
-  task.props.onFocus({ currentTarget: node });
-  assert.equal(focus.style.opacity, '1');
-  task.props.onBlur({ currentTarget: node });
-  assert.equal(focus.style.opacity, '0');
-  assert.equal(surfacePaint(theme, { variant: 'task', selected: true }).backgroundColor, theme.button.from);
-  assert.equal(find(panel, 'shell-window-list').props.style.minWidth, theme.layout.windowButtonWidth);
-  assert.equal(find(panel, 'shell-centered-tasks').props.style.overflow, 'scroll');
-  const entries = [{ id: 'last', name: 'Last' }];
-  const menu = applicationsView(theme, entries, '', action, action, action, action, '', action,
-    { has: () => false, add: action });
-  const viewport = { id: 'shell-start-apps', offsetTop: 124, offsetHeight: 16, scrollTop: 0,
-    childNodes: [{ offsetTop: 132, offsetHeight: 102 }, { offsetTop: 242, offsetHeight: 102 }] };
-  const nested = { parentNode: viewport };
-  const item = { style: {}, querySelector: () => null, parentNode: nested, offsetTop: 242, offsetHeight: 80 };
-  find(menu, 'shell-app-last').props.onFocus({ currentTarget: item });
-  assert.equal(viewport.scrollTop, 118);
-  find(menu, 'shell-app-last').props.onFocus({ currentTarget: item });
-  assert.equal(viewport.scrollTop, 118);
-  item.offsetTop = 324; item.offsetHeight = 20;
-  find(menu, 'shell-app-pin-last').props.onFocus({ currentTarget: item });
-  assert.equal(viewport.scrollTop, 200);
-}
-{
   const xp = catalog.themes.find(theme => theme.id === 'xp');
   const custom = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
     themes: { xp: { layout: { launcherWidth: 123 } } } })).themes.find(theme => theme.id === 'xp');
