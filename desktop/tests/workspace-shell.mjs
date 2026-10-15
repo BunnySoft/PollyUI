@@ -45,21 +45,21 @@ function panel() {
   return { window: surface.window, title: `PollyShell.panel.${surface.output}` };
 }
 async function menu() {
-  await until(() => created.some(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed),
+  await until(() => created.some(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed),
     'workspace menu');
-  return created.find(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed);
+  return created.find(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed);
 }
 async function openWorkspaces() {
   await click(panel(), 'shell-workspaces');
   return menu();
 }
 async function remove(id) {
-  const opened = created.find(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed);
+  const opened = created.find(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed);
   const surface = opened || await openWorkspaces();
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   await click(surface, 'shell-workspace-remove-' + id);
   await until(() => !workspaces().some(workspace => workspace.id === id) &&
-    created.filter(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed)
+    created.filter(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed)
       .every(item => !item.window.document.getElementById('shell-workspace-' + id)), 'workspace removal ' + id);
 }
 function hasTaskButton(id, present = true) {
@@ -166,7 +166,7 @@ async function run() {
     check(workspaces().length === 1 && !current().canRemove, 'at least one workspace remains');
     rejects(() => desktop.removeWorkspace(current().id), 'cannot remove the last workspace');
     check(applicationWindow().id === id && applicationWindow().maximized, 'migration preserves window identity and state');
-    if (created.some(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed))
+    if (created.some(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed))
       await click(await menu(), 'shell-workspace-close');
     const probe = desktop.spawnApplication([executable, '--desktop', script, 'denied'], '', 'workspace-public');
     await until(() => exits.has(probe), 'public workspace probe');

@@ -39,7 +39,7 @@ async function click(surface, id, button = 0) {
     `${Math.floor(node.offsetTop + node.offsetHeight / 2)} ${button} ${surface.title}`);
   await until(() => signal.closed, 'compositor pointer injection');
 }
-async function captionPointer(command, exclusive = false) {
+async function captionPointer(command, exclusive = 0) {
   const signal = marker(`fixture-caption-pointer ${command} ${Number(exclusive)}`);
   await until(() => signal.closed, 'actual caption pointer injection');
 }
@@ -49,6 +49,13 @@ async function menuKey(code) {
     await until(() => signal.closed, 'real menu keyboard input');
   }
 }
+async function classicApplications() {
+  const applications = shell.showApplications(outputs()[0].id);
+  await until(() => applications.document.getElementById('shell-app-search')?.offsetWidth > 0, 'Classic native menu search layout');
+  const signal = marker('fixture-classic-menu-placement');
+  await until(() => signal.closed, 'native committed menu uses full output with four-pixel bar overlap');
+  return applications;
+}
 function bar() {
   const kind = getDesktopTheme(shell.getState().themeId).panel.kind === 'dock' ? 'dock' : 'panel';
   const surface = shell.getSurfaces().find(item => item.kind === kind);
@@ -56,14 +63,36 @@ function bar() {
 }
 async function menuAction(id, action) {
   await click(bar(), 'shell-window-' + id, 2);
-  await until(() => created.some(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed),
+  await until(() => created.some(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed),
     'real context menu');
-  const menu = created.find(item => item.title.startsWith('PollyShell.settings.') && !item.window.closed);
+  const menu = created.find(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed);
   await click(menu, 'shell-window-' + action);
 }
 const find = () => desktop.windows().find(item => item.appId === 'org.pollyui.window-fixture');
 const exitCodes = new Map();
 async function run() {
+  if (mode === 'pointer-client') {
+    const receiver = window.create({ title: 'Menu pointer receiver', width: 240, height: 120 });
+    const target = receiver.document.createElement('view');
+    Object.assign(target.style, { width: '100%', height: '100%', backgroundColor: '#202020' });
+    let clicks = 0;
+    target.addEventListener('click', () => {
+      clicks++;
+      target.style.backgroundColor = clicks === 1 ? '#00ff00' : '#ff0000';
+      console.log('MENU_PUBLIC_CLIENT_CLICKS ' + clicks);
+    });
+    receiver.document.body.addEventListener('mousedown', event =>
+      console.log('MENU_PUBLIC_CLIENT_DOWN ' + JSON.stringify({ x: event.clientX, y: event.clientY, target: event.target === target })));
+    receiver.document.body.addEventListener('mouseup', event =>
+      console.log('MENU_PUBLIC_CLIENT_UP ' + JSON.stringify({ x: event.clientX, y: event.clientY, target: event.target === target })));
+    receiver.document.body.appendChild(target);
+    setTimeout(() => console.log('MENU_PUBLIC_CLIENT_BOUNDS ' + JSON.stringify({
+      body: receiver.document.body.getBoundingClientRect(), target: target.getBoundingClientRect(),
+    })), 100);
+    receiver.onclose = () => window.quit();
+    window.close();
+    return;
+  }
   if (mode === 'denied') {
     window.create({ title: 'Public window-management rejection', width: 160, height: 100 });
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
@@ -141,22 +170,65 @@ async function run() {
     await until(() => find()?.minimized, 'actual Classic caption pointer minimizes with menu closed');
     await click(bar(), 'shell-window-' + id);
     await until(() => find()?.active && !find()?.minimized, 'Classic taskbar restores after caption minimize');
-    const applications = shell.showApplications(outputs()[0].id);
-    await until(() => applications.document.getElementById('shell-app-search')?.offsetWidth > 0, 'Classic native menu search layout');
-    const placement = marker('fixture-classic-menu-placement');
-    await until(() => placement.closed, 'native committed menu uses full output with four-pixel bar overlap');
+    const prompt = window.create({ title: 'Fixture.exclusive.prompt', layer: 'overlay',
+      output: outputs()[0].id, width: 200, height: 100, anchors: ['top', 'right'],
+      keyboard: 'exclusive', exclusiveZone: -1 });
+    const promptReady = marker('fixture-exclusive-prompt-ready');
+    await until(() => promptReady.closed, 'non-menu exclusive prompt has native focus');
+    const promptMaximized = find().maximized;
+    await captionPointer(1, 2);
+    check(!prompt.closed && find()?.maximized === promptMaximized,
+      'non-menu exclusive prompt is not dismissed and still blocks caption actions');
+    prompt.close();
+    const applications = await classicApplications();
     const search = applications.document.getElementById('shell-app-search');
     check(applications.document.activeElement === search, 'native Classic menu focuses its real search field');
     await menuKey(20);
     await until(() => search.lastChild.firstChild.textContent === 't', 'real native menu search accepts keyboard text');
     check(applications.document.activeElement === search, 'real search retains focus after filtering');
-    const maximized = find().maximized;
-    await captionPointer(1, true);
-    await delay(50);
-    check(!applications.closed && find()?.maximized === maximized,
-      'open exclusive Start blocks caption pointer rather than a closed-menu caption failure');
     await menuKey(1);
     await until(() => applications.closed, 'real Escape closes the native application menu');
+    const toggleMenu = await classicApplications();
+    await click(bar(), 'shell-menu');
+    await until(() => toggleMenu.closed, 'owned launcher closes Start rather than reopening it');
+    await click(bar(), 'shell-menu');
+    await until(() => created.some(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed),
+      'owned launcher opens Start exactly once');
+    const toggleOpened = created.find(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed);
+    const toggleReady = marker('fixture-classic-menu-placement');
+    await until(() => toggleReady.closed, 'launcher-opened menu has committed native geometry and focus');
+    await menuKey(1);
+    await until(() => toggleOpened.window.closed, 'Escape closes launcher-opened Start');
+    const cancelMenu = await classicApplications();
+    const cancelPress = marker('fixture-menu-caption-cancel');
+    await until(() => cancelPress.closed && cancelMenu.closed, 'outside caption press dismisses menu before cancellation');
+    check(find()?.id === id && !find()?.minimized, 'dragging off close before release cancels the action');
+    const maximizeMenu = await classicApplications();
+    await captionPointer(1, 1);
+    await until(() => maximizeMenu.closed && find()?.maximized,
+      'one outside caption press dismisses Start and maximizes exactly once');
+    await captionPointer(1);
+    await until(() => !find()?.maximized, 'caption restore after outside-menu maximize');
+    const minimizeMenu = await classicApplications();
+    await captionPointer(2, 1);
+    await until(() => minimizeMenu.closed && find()?.minimized,
+      'one outside caption press dismisses Start and minimizes');
+    await click(bar(), 'shell-window-' + id);
+    await until(() => find()?.active && !find()?.minimized, 'restore after outside-menu minimize');
+    // Test WM delivery with a client that opts into handling its activation click.
+    const pointerPid = desktop.spawnApplication(['env', 'SDL_MOUSE_FOCUS_CLICKTHROUGH=1', 'WAYLAND_DEBUG=client', executable, '--desktop', '--app-id',
+      'org.pollyui.menu-pointer-fixture', script, 'pointer-client'], '', 'pointer-receiver');
+    const pointerWindow = () => desktop.windows().find(item => item.appId === 'org.pollyui.menu-pointer-fixture');
+    await until(() => pointerWindow()?.active, 'independent pointer receiver is mapped and active');
+    const clientMenu = await classicApplications();
+    const clientPress = marker('fixture-menu-client-click');
+    await until(() => clientPress.closed && clientMenu.closed,
+      'outside press dismisses menu and reaches the real foreign client once');
+    desktop.closeWindow(pointerWindow().id);
+    await until(() => exitCodes.has(pointerPid), 'ordinary pointer receiver cleanup');
+    check(exitCodes.get(pointerPid) === 0, 'ordinary pointer receiver exits cleanly');
+    desktop.activateWindow(id);
+    await until(() => find()?.active, 'restore target after foreign-client outside click');
     const dockPlacement = applicationMenuPlacement(getDesktopTheme('bigsur'), 1280);
     check(dockPlacement.width === 340 && dockPlacement.anchors.join(',') === 'top,left' &&
       dockPlacement.margins.left === 8 && dockPlacement.margins.top === 28,
@@ -221,7 +293,9 @@ async function run() {
     check(shell.selectTheme('server2003'), 'Classic caption selected for the real close-pointer check');
     const closeFrame = marker('fixture-frame-theme server2003');
     await until(() => closeFrame.closed, 'real Classic close-button geometry is committed');
-    await captionPointer(0);
+    const closeMenu = await classicApplications();
+    await captionPointer(0, 1);
+    await until(() => closeMenu.closed, 'outside close-button press dismisses Start');
     await until(() => !find(), 'graceful close removes the foreign handle');
     await until(() => shell.getSurfaces().filter(item => item.kind === 'panel')
       .every(item => !item.window.document.getElementById('shell-window-' + id)), 'closed window buttons removed');

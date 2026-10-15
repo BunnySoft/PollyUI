@@ -951,7 +951,7 @@ static bool window_suite(char *executable, char *script, char *mode)
                 struct PuDesktopLayer *menu = NULL, *panel = NULL, *layer;
                 wl_list_for_each(layer, &desktop.layers, link) {
                     if (!layer->presented || !layer->surface->surface->mapped) continue;
-                    if (!strncmp(layer->surface->namespace, "PollyShell.settings.", 20)) menu = layer;
+                    if (!strncmp(layer->surface->namespace, "PollyShell.menu.", 16)) menu = layer;
                 }
                 if (!menu) continue;
                 wl_list_for_each(layer, &desktop.layers, link)
@@ -978,15 +978,89 @@ static bool window_suite(char *executable, char *script, char *mode)
                 wlr_layer_surface_v1_destroy(marker->surface);
                 continue;
             }
+            if (!strcmp(name, "fixture-exclusive-prompt-ready")) {
+                struct PuDesktopLayer *layer, *prompt = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->presented && layer->surface->surface->mapped &&
+                        !strcmp(layer->surface->namespace, "Fixture.exclusive.prompt")) prompt = layer;
+                if (!prompt) continue;
+                CHECK(desktop.focused_layer == prompt &&
+                    prompt->surface->current.keyboard_interactive == ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-menu-client-click")) {
+                struct PuDesktopView *view = NULL, *item;
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && !item->geometry_pending && item->toplevel->app_id &&
+                        !strcmp(item->toplevel->app_id, "org.pollyui.menu-pointer-fixture")) view = item;
+                if (!view) continue;
+                CHECK(wl_resource_get_client(view->toplevel->base->resource) != desktop.shell_client);
+                CHECK(desktop.focused_layer &&
+                    !strncmp(desktop.focused_layer->surface->namespace, "PollyShell.menu.", 16));
+                int vx, vy;
+                CHECK(wlr_scene_node_coords(&view->tree->node, &vx, &vy));
+                fixture_pointer_click(vx + 40, vy + 40, settings_time += 3, 0);
+                CHECK(!desktop.focused_layer && desktop.focused == view);
+                CHECK(desktop.seat->pointer_state.focused_surface == view->toplevel->base->surface);
+                bool green = false;
+                for (int attempt = 0; attempt < 1000 && !green; attempt++) {
+                    CHECK(pump());
+                    struct wlr_surface *surface = view->toplevel->base->surface;
+                    if (!surface->buffer || surface->current.width != surface->current.buffer_width) continue;
+                    void *pixels; uint32_t format, pixel; size_t stride;
+                    struct wlr_buffer *buffer = surface->buffer->source;
+                    CHECK(wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &pixels, &format, &stride));
+                    CHECK(format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888);
+                    memcpy(&pixel, (char *)pixels + 40 * stride + 40 * 4, sizeof(pixel));
+                    wlr_buffer_end_data_ptr_access(buffer);
+                    green = (pixel & 0xffffff) == 0x00ff00;
+                    if (!attempt || attempt == 999) printf("MENU_CLIENT_PIXEL: %06x\n", pixel & 0xffffff);
+                    CHECK((pixel & 0xffffff) != 0xff0000);
+                }
+                CHECK(green);
+                puts("MENU_FOREIGN_CLIENT_POINTER: one actual click, green client buffer, no duplicate red state");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                /* The outside press can destroy the cached next layer. */
+                break;
+            }
+            if (!strcmp(name, "fixture-menu-caption-cancel")) {
+                struct PuDesktopView *view = NULL, *item;
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && !item->geometry_pending && item->toplevel->app_id &&
+                        !strcmp(item->toplevel->app_id, "org.pollyui.window-fixture")) view = item;
+                if (!view) continue;
+                CHECK(desktop.focused_layer && !strncmp(desktop.focused_layer->surface->namespace, "PollyShell.menu.", 16));
+                struct wlr_box box;
+                CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+                int vx, vy;
+                CHECK(wlr_scene_node_coords(&view->tree->node, &vx, &vy));
+                fixture_pointer_motion(vx + box.x + box.width / 2, vy + box.y + box.height / 2, settings_time += 3);
+                struct wlr_pointer_button_event event = { .pointer = &pointer, .time_msec = ++settings_time,
+                    .button = BTN_LEFT, .state = WL_POINTER_BUTTON_STATE_PRESSED };
+                wlr_pointer_notify_button(&pointer, &event);
+                CHECK(!desktop.focused_layer && desktop.decoration_pressed == view);
+                fixture_pointer_motion(vx + 40, vy + 40, ++settings_time);
+                event.time_msec = ++settings_time; event.state = WL_POINTER_BUTTON_STATE_RELEASED;
+                wlr_pointer_notify_button(&pointer, &event);
+                CHECK(!desktop.decoration_pressed && !desktop.suppressed_button && !view->minimized);
+                puts("CAPTION_MENU_CANCEL: outside dismissal keeps release-outside cancellation");
+                wlr_layer_surface_v1_destroy(marker->surface);
+                break;
+            }
             unsigned caption_command, menu_exclusive;
             if (sscanf(name, "fixture-caption-pointer %u %u", &caption_command, &menu_exclusive) == 2) {
-                CHECK(caption_command < 3 && menu_exclusive <= 1);
+                CHECK(caption_command < 3 && menu_exclusive <= 2);
                 struct PuDesktopView *view = NULL, *item;
                 wl_list_for_each(item, &desktop.views, link)
                     if (item->mapped && !item->geometry_pending && item->toplevel->app_id &&
                         !strcmp(item->toplevel->app_id, "org.pollyui.window-fixture")) view = item;
                 if (!view) continue;
                 CHECK((desktop.focused_layer != NULL) == (menu_exclusive != 0));
+                if (menu_exclusive == 1)
+                    CHECK(!strncmp(desktop.focused_layer->surface->namespace, "PollyShell.menu.", 16));
+                if (menu_exclusive == 2)
+                    CHECK(!strcmp(desktop.focused_layer->surface->namespace, "Fixture.exclusive.prompt"));
                 struct wlr_box box;
                 CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE + (int)caption_command, &box));
                 int vx, vy;
@@ -994,13 +1068,14 @@ static bool window_suite(char *executable, char *script, char *mode)
                 bool maximized = view->maximized;
                 fixture_pointer_click(vx + box.x + box.width / 2, vy + box.y + box.height / 2,
                     settings_time += 3, 0);
-                if (menu_exclusive) CHECK(view->maximized == maximized);
-                printf("CAPTION_NATIVE_POINTER {\"command\":%u,\"exclusiveMenu\":%u,\"at\":[%d,%d],"
+                if (menu_exclusive == 2) CHECK(view->maximized == maximized && desktop.focused_layer);
+                if (menu_exclusive == 1) CHECK(!desktop.focused_layer);
+                printf("CAPTION_NATIVE_POINTER {\"command\":%u,\"exclusiveLayer\":%u,\"at\":[%d,%d],"
                     "\"maximizedBefore\":%u,\"maximizedAfter\":%u,\"minimizedAfter\":%u}\n",
                     caption_command, menu_exclusive, vx + box.x + box.width / 2, vy + box.y + box.height / 2,
                     maximized, view->maximized, view->minimized);
                 wlr_layer_surface_v1_destroy(marker->surface);
-                continue;
+                break;
             }
             unsigned keycode, key_down;
             if (sscanf(name, "fixture-key %u %u", &keycode, &key_down) == 2) {
