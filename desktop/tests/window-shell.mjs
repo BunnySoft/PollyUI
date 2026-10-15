@@ -1,6 +1,7 @@
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { BUILTIN_THEME_CATALOG, getDesktopTheme, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
+import { applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -38,8 +39,18 @@ async function click(surface, id, button = 0) {
     `${Math.floor(node.offsetTop + node.offsetHeight / 2)} ${button} ${surface.title}`);
   await until(() => signal.closed, 'compositor pointer injection');
 }
+async function captionPointer(command, exclusive = false) {
+  const signal = marker(`fixture-caption-pointer ${command} ${Number(exclusive)}`);
+  await until(() => signal.closed, 'actual caption pointer injection');
+}
+async function menuKey(code) {
+  for (const down of [1, 0]) {
+    const signal = marker(`fixture-key ${code} ${down}`);
+    await until(() => signal.closed, 'real menu keyboard input');
+  }
+}
 function bar() {
-  const kind = shell.getState().themeId === 'xp' ? 'panel' : 'dock';
+  const kind = getDesktopTheme(shell.getState().themeId).panel.kind === 'dock' ? 'dock' : 'panel';
   const surface = shell.getSurfaces().find(item => item.kind === kind);
   return { window: surface.window, title: `PollyShell.${kind}.${surface.output}` };
 }
@@ -122,6 +133,34 @@ async function run() {
     check(shell.selectTheme('server2003'), 'Classic GUI-rendered frame selected');
     const classicFrame = marker('fixture-frame-theme server2003');
     await until(() => classicFrame.closed, 'Classic strips reach real WM geometry and composition');
+    await captionPointer(1);
+    await until(() => find()?.maximized, 'actual Classic caption pointer maximizes with menu closed');
+    await captionPointer(1);
+    await until(() => !find()?.maximized, 'actual Classic caption pointer restores with menu closed');
+    await captionPointer(2);
+    await until(() => find()?.minimized, 'actual Classic caption pointer minimizes with menu closed');
+    await click(bar(), 'shell-window-' + id);
+    await until(() => find()?.active && !find()?.minimized, 'Classic taskbar restores after caption minimize');
+    const applications = shell.showApplications(outputs()[0].id);
+    await until(() => applications.document.getElementById('shell-app-search')?.offsetWidth > 0, 'Classic native menu search layout');
+    const placement = marker('fixture-classic-menu-placement');
+    await until(() => placement.closed, 'native committed menu uses full output with four-pixel bar overlap');
+    const search = applications.document.getElementById('shell-app-search');
+    check(applications.document.activeElement === search, 'native Classic menu focuses its real search field');
+    await menuKey(20);
+    await until(() => search.lastChild.firstChild.textContent === 't', 'real native menu search accepts keyboard text');
+    check(applications.document.activeElement === search, 'real search retains focus after filtering');
+    const maximized = find().maximized;
+    await captionPointer(1, true);
+    await delay(50);
+    check(!applications.closed && find()?.maximized === maximized,
+      'open exclusive Start blocks caption pointer rather than a closed-menu caption failure');
+    await menuKey(1);
+    await until(() => applications.closed, 'real Escape closes the native application menu');
+    const dockPlacement = applicationMenuPlacement(getDesktopTheme('bigsur'), 1280);
+    check(dockPlacement.width === 340 && dockPlacement.anchors.join(',') === 'top,left' &&
+      dockPlacement.margins.left === 8 && dockPlacement.margins.top === 28,
+    'top-Dock full-output placement values are unchanged');
     check(shell.selectTheme('bigsur'), 'Big Sur Dock selected');
     const bigSurFrame = marker('fixture-frame-theme bigsur');
     await until(() => bigSurFrame.closed, 'live Big Sur application frame geometry');
@@ -179,7 +218,10 @@ async function run() {
     await until(() => find()?.active, 'restore application focus after public check');
   } else {
     check(find().title === 'Updated title', 'new Shell connection enumerates the surviving application');
-    await menuAction(id, 'close');
+    check(shell.selectTheme('server2003'), 'Classic caption selected for the real close-pointer check');
+    const closeFrame = marker('fixture-frame-theme server2003');
+    await until(() => closeFrame.closed, 'real Classic close-button geometry is committed');
+    await captionPointer(0);
     await until(() => !find(), 'graceful close removes the foreign handle');
     await until(() => shell.getSurfaces().filter(item => item.kind === 'panel')
       .every(item => !item.window.document.getElementById('shell-window-' + id)), 'closed window buttons removed');

@@ -947,6 +947,61 @@ static bool window_suite(char *executable, char *script, char *mode)
                 CHECK(kill(desktop.shell_pid, SIGKILL) == 0);
                 break;
             }
+            if (!strcmp(name, "fixture-classic-menu-placement")) {
+                struct PuDesktopLayer *menu = NULL, *panel = NULL, *layer;
+                wl_list_for_each(layer, &desktop.layers, link) {
+                    if (!layer->presented || !layer->surface->surface->mapped) continue;
+                    if (!strncmp(layer->surface->namespace, "PollyShell.settings.", 20)) menu = layer;
+                }
+                if (!menu) continue;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->presented && layer->surface->surface->mapped &&
+                        layer->surface->output == menu->surface->output &&
+                        !strncmp(layer->surface->namespace, "PollyShell.panel.", 17) &&
+                        layer->surface->current.exclusive_zone == 28) panel = layer;
+                if (!panel) continue;
+                struct wlr_box full;
+                wlr_output_layout_get_box(desktop.layout, menu->surface->output, &full);
+                int mx, my, px, py;
+                CHECK(wlr_scene_node_coords(&menu->tree->node, &mx, &my));
+                CHECK(wlr_scene_node_coords(&panel->tree->node, &px, &py));
+                CHECK(menu->surface->current.exclusive_zone == -1);
+                CHECK(menu->surface->current.configure_serial == menu->serial);
+                CHECK(menu->surface->surface->current.width == 380 && menu->surface->surface->current.height == 444);
+                CHECK(mx == full.x + 2 && my == full.y + full.height - 24 - 444);
+                CHECK(py == full.y + full.height - 28 && my + 444 - py == 4);
+                CHECK(desktop.focused_layer == menu);
+                CHECK(desktop.seat->keyboard_state.focused_surface == menu->surface->surface);
+                printf("MENU_NATIVE_PLACEMENT {\"output\":[%d,%d,%d,%d],\"menu\":[%d,%d,380,444],"
+                    "\"bar\":[%d,%d,%d,28],\"zone\":-1,\"overlap\":4,\"committed\":%u}\n",
+                    full.x, full.y, full.width, full.height, mx, my, px, py, full.width, menu->serial);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            unsigned caption_command, menu_exclusive;
+            if (sscanf(name, "fixture-caption-pointer %u %u", &caption_command, &menu_exclusive) == 2) {
+                CHECK(caption_command < 3 && menu_exclusive <= 1);
+                struct PuDesktopView *view = NULL, *item;
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && !item->geometry_pending && item->toplevel->app_id &&
+                        !strcmp(item->toplevel->app_id, "org.pollyui.window-fixture")) view = item;
+                if (!view) continue;
+                CHECK((desktop.focused_layer != NULL) == (menu_exclusive != 0));
+                struct wlr_box box;
+                CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE + (int)caption_command, &box));
+                int vx, vy;
+                CHECK(wlr_scene_node_coords(&view->tree->node, &vx, &vy));
+                bool maximized = view->maximized;
+                fixture_pointer_click(vx + box.x + box.width / 2, vy + box.y + box.height / 2,
+                    settings_time += 3, 0);
+                if (menu_exclusive) CHECK(view->maximized == maximized);
+                printf("CAPTION_NATIVE_POINTER {\"command\":%u,\"exclusiveMenu\":%u,\"at\":[%d,%d],"
+                    "\"maximizedBefore\":%u,\"maximizedAfter\":%u,\"minimizedAfter\":%u}\n",
+                    caption_command, menu_exclusive, vx + box.x + box.width / 2, vy + box.y + box.height / 2,
+                    maximized, view->maximized, view->minimized);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             unsigned keycode, key_down;
             if (sscanf(name, "fixture-key %u %u", &keycode, &key_down) == 2) {
                 CHECK(keycode <= KEY_MAX && key_down <= 1);
