@@ -7,6 +7,9 @@ find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
 set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 30)
+add_test(NAME desktop-live-publication COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
+    "${CMAKE_CURRENT_SOURCE_DIR}/publish-live-iso.mjs")
+set_tests_properties(desktop-live-publication PROPERTIES TIMEOUT 30)
 find_program(CURSOR_PYTHON_EXECUTABLE python3 REQUIRED)
 add_test(NAME desktop-cursor-assets COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../tools/generate-cursors.py")
