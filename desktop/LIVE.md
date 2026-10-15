@@ -293,6 +293,40 @@ receipt, and unexpected Polly files, including cursor assets outside
 a producer-only integrity fix does not change the frozen runtime identity.
 These checks do not establish boot, complete VM or physical-hardware acceptance.
 
+### Windows publication and the stable Hyper-V ISO path
+
+After building a **new frozen runtime**, assembling media with the existing
+Debian builder, and running `verify-live-runtime.py`, publish that verified output
+on the Windows host:
+
+```powershell
+node desktop\tools\publish-live-iso.mjs C:\path\to\verified-media
+```
+
+The host entry defaults to **`D:\temp\PollyOS`**. It rechecks the bundle's
+`SHA256SUMS`, `live-manifest.json`, `candidate-origin.json` and actual ISO bytes,
+then copies the verified files into a new versioned subdirectory identified by
+runtime revision, media-producer revision and ISO hash. Existing releases, VHDX
+files and root-level receipts/checksums are not overwritten. `--destination`
+overrides only this host publication root; the cross-platform builders retain
+their explicit output-directory arguments. This command is the final publication
+step, not a replacement for compilation, image assembly or payload verification.
+
+Only after the copied bundle verifies does the entry create a temporary **hard
+link** on the destination volume and atomically replace
+`D:\temp\PollyOS\PollyOS.iso`. It never writes through the old alias or mutates
+an older release's inode. Its JSON output records both paths, source identities,
+size, SHA-256 and matching file identities/link counts. There is no copy or
+symbolic-link fallback. A Windows/Hyper-V sharing violation fails explicitly,
+retains the new version and leaves the old alias in place; the tool does not
+stop, eject, reconfigure or restart any VM. An already-open virtual optical
+handle can still reference the previous inode until Hyper-V reopens it.
+
+Publication integrity does not qualify Hyper-V boot, default splash transitions
+or physical hardware. Host publication tests use only disposable regular files:
+`node --test desktop\tests\publish-live-iso.mjs`. Only Node.js standard-library
+modules are used; Windows Python and additional packages are not required.
+
 ## Validate in a disposable guest
 
 The boot fixture uses OVMF, 4 GiB RAM, two virtual CPUs, virtio-vga and emulated
