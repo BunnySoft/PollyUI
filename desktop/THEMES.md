@@ -114,6 +114,14 @@ window supports `generic`, `luna`, `classic`, `fluent`; button supports `generic
 `fluent`, `tiger`, `lion`, `bigsur`. Absence preserves the generic path.
 Classic paints raised/sunken frame edges and a horizontal caption gradient.
 Fluent paints full-bleed caption button backplates, including close hover/press.
+Its inactive caption glyphs consume `window.inactiveText`; active glyphs retain
+`controlText`, and close hover/held glyphs remain white at either activation
+state. This restores the state/color selection from the removed C painter
+(`5bb181c^`), without changing button geometry or backplates. The actual GUI
+fixture `tests/fluent-caption-inactive.mjs` covers inactive normal/hover/held/
+restore, active-state invariance, custom inactive ink, narrow windows and 1.25
+scaling. This verifies the existing theme contract, not build-tagged Windows
+11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
 Private appearance protocol v3 uses geometry-only numeric schema 4. Previous
