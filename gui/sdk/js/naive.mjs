@@ -53,6 +53,27 @@ const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined &
 
 const primaryClick = event => event.button === undefined || event.button === 0;
 const activationKey = event => !event.repeat && (event.key === ' ' || event.key === 'Enter');
+const selectionGestures = new WeakMap();
+function optionPointer(kind, value, disabled, activate) {
+  return {
+    onMousedown: event => {
+      const node = event.currentTarget;
+      if (!disabled && primaryClick(event)) selectionGestures.set(node, { kind, value });
+      else selectionGestures.delete(node);
+    },
+    onMousecancel: event => selectionGestures.delete(event.currentTarget),
+    onUpdate: node => {
+      const down = selectionGestures.get(node);
+      if (down && (disabled || down.kind !== kind || down.value !== value)) selectionGestures.delete(node);
+      syncSelectionFocus(node);
+    },
+    onClick: event => {
+      const node = event.currentTarget, down = selectionGestures.get(node);
+      selectionGestures.delete(node);
+      if (!disabled && primaryClick(event) && down?.kind === kind && down.value === value) activate(event);
+    },
+  };
+}
 const selectionFocus = () => h('view', { className: 'n-selection-focus', 'aria-hidden': 'true',
   style: clean({ position: 'absolute', left: 1, top: 1, right: 1, bottom: 1,
     borderWidth: 1, borderColor: theme.primary, borderRadius: 2, opacity: 0, pointerEvents: 'none' }) });
@@ -246,7 +267,7 @@ export function NRadioGroup(props = {}) {
       return h('view', { role: 'radio', tabIndex: index === entry ? 0 : -1, 'aria-label': opt.label,
         'aria-checked': String(on), 'aria-disabled': String(Boolean(off)), ...selectionEvents(),
         style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: off ? 0.5 : 1 }),
-        onClick: event => { if (!off && primaryClick(event)) { event.currentTarget.focus(); onUpdate?.(opt.value); } },
+        ...optionPointer('radio', opt.value, off, event => { event.currentTarget.focus(); onUpdate?.(opt.value); }),
         onKeydown: event => {
           if (off) return;
           if (event.key === ' ') { event.preventDefault(); if (!event.repeat) choose(index); }
@@ -328,7 +349,7 @@ export function NTabs(props = {}) {
           'aria-selected': String(Boolean(on)), 'aria-disabled': String(Boolean(off)),
           'aria-controls': id ? id + '-panel' : undefined, ...selectionEvents(),
           style: clean({ position: 'relative', flexDirection: 'column', gap: 8, paddingTop: 10, opacity: off ? 0.5 : 1 }),
-          onClick: event => { if (!off && primaryClick(event)) { event.currentTarget.focus(); onUpdate?.(p.name); } },
+          ...optionPointer('tab', p.name, off, event => { event.currentTarget.focus(); onUpdate?.(p.name); }),
           onKeydown: event => {
             if (off) return;
             if (activationKey(event)) { event.preventDefault(); choose(index); }
@@ -581,15 +602,39 @@ function selectPlacement(node, config) {
   const rect = node.getBoundingClientRect(), body = node.ownerDocument.body;
   const width = Math.min(rect.width, Math.max(0, body.offsetWidth - 8));
   const needed = Math.min(240, Math.max(1, config.options.length) * 34 + 8);
-  const below = Math.max(0, body.offsetHeight - rect.bottom - 8), above = Math.max(0, rect.top - 8);
+  const available = Math.max(0, body.offsetHeight - 8);
+  const below = Math.max(0, Math.min(available, body.offsetHeight - rect.bottom - 8)),
+    above = Math.max(0, Math.min(available, rect.top - 8));
   const down = below >= needed || below >= above;
   const height = Math.min(needed, down ? below : above);
   return { x: Math.max(4, Math.min(rect.left, body.offsetWidth - width - 4)),
-    y: down ? rect.bottom + 4 : Math.max(4, rect.top - height - 4), width, height };
+    y: Math.max(4, Math.min(down ? rect.bottom + 4 : rect.top - height - 4, body.offsetHeight - height - 4)),
+    width, height };
 }
 function stopSelectFrames(state) {
   if (state.frame !== null) cancelAnimationFrame(state.frame);
   state.frame = null;
+}
+function stopSelectOwner(state) {
+  state.unsubscribeOwner?.deref()?.();
+  state.unsubscribeOwner = null;
+}
+function observeSelectOwner(state, node) {
+  const owner = node.ownerDocument.defaultView;
+  if (!owner || state.unsubscribeOwner?.deref()) return;
+  const initial = owner.state, weak = new WeakRef(state);
+  let size = [initial.width, initial.height, initial.scale].join(':'), remove;
+  remove = owner.observeState(next => {
+    const current = weak.deref();
+    if (!current || current.popup === null) { remove(); return; }
+    const signature = [next.width, next.height, next.scale].join(':');
+    if (size !== signature) {
+      size = signature;
+      const list = current.list?.deref();
+      if (list) queueSelectLayout(current, list);
+    }
+  });
+  state.unsubscribeOwner = new WeakRef(remove);
 }
 function closeSelect(state, restore = true) {
   if (state.popup === null) return;
@@ -640,14 +685,22 @@ function commitSelect(state, value) {
 function selectDropdown(state) {
   const config = state.config, place = state.placement;
   return h('view', { id: state.listId, role: 'listbox', className: 'n-select-list',
-    onMount: node => queueSelectLayout(state, node),
+    onMount: node => {
+      state.list = new WeakRef(node);
+      const trigger = selectTrigger(state);
+      if (trigger) observeSelectOwner(state, trigger);
+      queueSelectLayout(state, node);
+    },
     onUpdate: node => {
+      state.list = new WeakRef(node);
       Promise.resolve().then(() => {
         if (!selectTrigger(state) || state.config.disabled) closeSelect(state, false);
       });
       queueSelectLayout(state, node);
     },
-    onLeave: (node, done) => { stopSelectFrames(state); done(); },
+    onLeave: (node, done) => {
+      stopSelectFrames(state); stopSelectOwner(state); state.list = null; done();
+    },
     onMousedown: event => event.preventDefault(),
     onWheel: event => {
       event.preventDefault();
@@ -663,7 +716,7 @@ function selectDropdown(state) {
     style: clean({ position: 'relative', height: 32, flexShrink: 0, paddingLeft: 10, paddingRight: 10, borderRadius: 3,
       justifyContent: 'center', opacity: option.disabled ? 0.5 : 1,
       backgroundColor: option.value === config.value ? theme.primary + '1f' : 'transparent' }),
-    onClick: event => { if (primaryClick(event)) commitSelect(state, option.value); },
+    ...optionPointer(state.listId, option.value, config.disabled || option.disabled, () => commitSelect(state, option.value)),
   }, h('view', { style: { color: option.value === config.value ? theme.primary : theme.text, fontSize: '14',
     minWidth: 0, flexShrink: 1, overflow: 'hidden', pointerEvents: 'none' } }, option.label),
   h('view', { 'aria-hidden': 'true', style: clean({ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
@@ -714,8 +767,11 @@ function openSelect(node, config, last = false) {
   state.popup = openPopup(() => selectDropdown(state), {
     x: state.placement.x, y: state.placement.y, onClose: () => closeSelect(state),
   });
+  observeSelectOwner(state, node);
   popupCleanups.set(state.popup, () => {
     stopSelectFrames(state);
+    stopSelectOwner(state);
+    state.list = null;
     state.popup = null;
     const trigger = selectTrigger(state);
     if (trigger) {
@@ -1145,7 +1201,7 @@ export function NMenu(props = {}) {
         style: clean({ position: 'relative', opacity: off ? 0.5 : 1,
           height: 40, paddingLeft: 16, paddingRight: 16, borderRadius: 3, flexDirection: 'row', alignItems: 'center', gap: 8,
           backgroundColor: on ? theme.primary + '1f' : 'transparent' }),
-        onClick: event => { if (primaryClick(event) && !off) { event.currentTarget.focus(); activate(); } },
+        ...optionPointer('menu', it.key, off, event => { event.currentTarget.focus(); activate(); }),
         onKeydown: event => {
           if (off) return;
           if (activationKey(event)) { event.preventDefault(); activate(); }

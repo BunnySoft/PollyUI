@@ -17,7 +17,9 @@ or panes. Focus/navigation state is local and does not move a control's hitbox.
 Group and individual disabled entries cannot activate and are excluded from Tab/
 arrow navigation. A programmatic focus is not forcibly moved when a caller
 disables a control; disabled focus paint is cleared. Pointer activation accepts
-only the primary button. Held Space/Enter does not emit repeated activations.
+only the primary button. Mapped radio/tab/menu/Select options bind the gesture
+to the value at pointer-down: deleting, disabling or changing that slot while
+held cancels it, rather than activating the replacement value. Held Space/Enter does not emit repeated activations.
 Arrows may repeat. Checked/selected/disabled state is exposed through the
 corresponding roles and ARIA attributes; an icon-only switch or Select can be
 named with `aria-label`. `id` is supported on each factory.
@@ -51,6 +53,13 @@ measurement; there is no timer, frame loop or new layout/owner API. Narrow optio
 labels clip within the configured row. An empty list shows an inert `No options`
 state and cannot emit a value.
 
+An open native Select observes only its owning window's geometry through the
+existing `Document.defaultView` / `Window.observeState` contract. Pure host
+resize therefore remeasures placement and height even without a parent update;
+close/leave removes the subscription. Two measurement frames and, if placement
+changed, two post-portal layout frames complete one resize. A viewport shorter
+than one row can only show a partial row; it is not reported as a full-row reveal.
+
 ## Focused checks
 
 Run the actual GUI tests from the repository root with a raster-enabled
@@ -59,6 +68,7 @@ Run the actual GUI tests from the repository root with a raster-enabled
 ```text
 pollyui-playground --test gui/tests/selection-basic.mjs
 pollyui-playground --test gui/tests/selection-controls.mjs
+pollyui-playground --test gui/tests/selection-gestures.mjs
 pollyui-playground --test gui/tests/naive3.mjs
 ```
 
