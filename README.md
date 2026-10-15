@@ -1517,12 +1517,13 @@ automatically erased on deactivation. `window.setCursor(name)` selects an owned
 native system cursor for that window: `arrow`, `text`, `crosshair`, `pointer`,
 `move`, `ew-resize`, `ns-resize`, `nesw-resize`, `nwse-resize`, `not-allowed`,
 or `wait`. Invalid names, unsupported backends and closed windows fail explicitly.
-On PollyWM, SDL's `arrow` is semantic DEFAULT and therefore uses the system
-rabbit theme, including its native input animations; it does not force a classic
-arrow. Text/resize/crosshair and other explicit shapes remain conventional,
-and legacy custom/hidden cursor surfaces are respected. Startup static/classic
+On PollyWM, SDL's `arrow` is semantic DEFAULT and therefore uses the current
+system theme: conventional PollyClassic by default, or the original animated
+rabbit when explicitly selected with `POLLY_CURSOR_THEME=PollyRabbit`.
+Text/resize/crosshair and other explicit shapes remain conventional,
+and legacy custom/hidden cursor surfaces are respected. Startup theme/static
 selection and the compatibility boundary are documented in
-[System rabbit cursor](./docs/DESKTOP-CURSOR.md).
+[System cursor themes](./docs/DESKTOP-CURSOR.md).
 No CSS cursor policy, widgets, outgoing drag/drop or application operations are
 implemented by these mechanisms.
 

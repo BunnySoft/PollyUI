@@ -551,7 +551,7 @@ bool pu_cursor_init(struct PuDesktop *desktop)
     if (snprintf(state->classic, sizeof(state->classic), "%s/PollyClassic", root) >= (int)sizeof(state->classic))
         return false;
     const char *setting = getenv("POLLY_CURSOR_THEME");
-    state->classic_mode = setting && !strcmp(setting, "classic");
+    state->classic_mode = pu_cursor_classic_theme(setting);
     if (setting && !state->classic_mode && strcmp(setting, "PollyRabbit") && setting[0] != '/') {
         wlr_log(WLR_ERROR, "POLLY_CURSOR_THEME must be PollyRabbit, classic or an absolute theme directory");
         return false;

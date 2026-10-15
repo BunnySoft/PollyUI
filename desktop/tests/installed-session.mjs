@@ -39,7 +39,7 @@ try {
     const result = spawnSync(program, ['--headless', '--audio', '--check',
       ...(imeEnabled ? ['--ime'] : [])], {
       cwd: tmpdir(), encoding: 'utf8', timeout: 40000,
-      env: { ...process.env, PU_RENDERER: renderer, SDL_RENDER_DRIVER: 'software',
+      env: { ...process.env, PU_RENDERER: renderer, SDL_RENDER_DRIVER: 'software', POLLY_CURSOR_THEME: '',
         XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(temporary, 'config'),
         XDG_DATA_HOME: path.join(temporary, 'data'), XDG_CACHE_HOME: path.join(temporary, 'cache') },
     });
@@ -47,7 +47,7 @@ try {
     assert.equal(result.error, undefined, String(result.error));
     assert.equal(result.status, 0, log);
     assert.match(log, /PASS: installed PollyDesktop session ready/);
-    assert.ok(log.includes('Cursor theme ' + root + '/usr/bin/../share/icons/PollyRabbit'),
+    assert.ok(log.includes('Cursor theme ' + root + '/usr/bin/../share/icons/PollyClassic'),
       'Relocated compositor must use installed cursors, not the build checkout: ' + log);
     assert.doesNotMatch(log, /AddressSanitizer|LeakSanitizer|Uncaught|did not exit|Failed to create|SDL_Init failed/);
     assert.match(log, /\[health\] shell=ready ime=(ready|disabled) audio=ready/);

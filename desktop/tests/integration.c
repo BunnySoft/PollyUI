@@ -499,7 +499,7 @@ static bool cursor_resource_suite(void)
     CHECK(cursor_pixels(output, "default", "resource-default", NULL));
     motion(70, 70);
     const char *motion_name = (getenv("POLLY_CURSOR_STATIC") && !strcmp(getenv("POLLY_CURSOR_STATIC"), "1")) ||
-        (getenv("POLLY_CURSOR_THEME") && !strcmp(getenv("POLLY_CURSOR_THEME"), "classic")) ? "default" : "motion";
+        pu_cursor_classic_theme(getenv("POLLY_CURSOR_THEME")) ? "default" : "motion";
     CHECK(!strcmp(pu_cursor_selected(&desktop), motion_name));
     CHECK(cursor_pixels(output, motion_name, "resource-motion", NULL));
     CHECK(wait_ms(150));
@@ -547,7 +547,7 @@ static bool cursor_resource_suite(void)
     /* Exercise explicit cursor teardown while both native animation and the
      * quiet deadline are live, then dispatch after their owning buffers die. */
     if (!getenv("POLLY_CURSOR_STATIC") &&
-        !(getenv("POLLY_CURSOR_THEME") && !strcmp(getenv("POLLY_CURSOR_THEME"), "classic"))) {
+        !pu_cursor_classic_theme(getenv("POLLY_CURSOR_THEME"))) {
         motion(74, 74);
         CHECK(pu_cursor_timer_active(&desktop));
         CHECK(cursor_pixels(output, "motion", "resource-shutdown-live", NULL));

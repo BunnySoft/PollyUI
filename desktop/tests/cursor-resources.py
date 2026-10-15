@@ -111,8 +111,10 @@ def main():
         root = Path(tmp)
         output = args.evidence or root / "evidence"
         output.mkdir(parents=True, exist_ok=True)
-        cases = [("normal", {}, None, rabbit, asset("PollyRabbit", "motion")),
-                 ("static", {"POLLY_CURSOR_STATIC": "1"}, None, rabbit, rabbit),
+        cases = [("normal", {}, None, classic, classic),
+                 ("empty", {"POLLY_CURSOR_THEME": ""}, None, classic, classic),
+                 ("rabbit", {"POLLY_CURSOR_THEME": "PollyRabbit"}, None, rabbit, asset("PollyRabbit", "motion")),
+                 ("static", {"POLLY_CURSOR_THEME": "PollyRabbit", "POLLY_CURSOR_STATIC": "1"}, None, rabbit, rabbit),
                  ("classic", {"POLLY_CURSOR_THEME": "classic"}, None, classic, classic),
                  ("missing-theme", {}, "missing", classic, classic)]
         partial = root / "partial"
@@ -192,7 +194,7 @@ def main():
                              "sha256": hashlib.sha256(args.native.read_bytes()).hexdigest()},
             "revisionQualification": "development evidence, not a frozen runtime/ISO receipt",
             "cursorAssets": manifest["themes"]}, indent=2) + "\n")
-    print("PASS: independent Xcursor format/ARGB checks and native normal/static/classic/missing/corrupt/multiscale pixels")
+    print("PASS: independent Xcursor format/ARGB checks and native default/empty/rabbit/static/classic/missing/corrupt/multiscale pixels")
 
 
 if __name__ == "__main__":
