@@ -320,21 +320,24 @@ animation that changes the model still requests the necessary frames.
 
 ### 5.1 Transparency and material discussion
 
-Recorded on 2026-10-11 as a **next-version candidate**, not an approved
-implementation or a claim that the current desktop renders Mica/Acrylic.
+Recorded on 2026-10-11 as a **next-version candidate**, not a claim that the
+current desktop renders native Mica/Acrylic.
 On 2026-10-12 the user selected ordinary-window transparency (MT-01) for
 implementation, first Wayland and then Windows. Shared window options,
 transparent-clear/rendering semantics and capability/error contracts should
 be reused; native alpha presentation belongs in separate platform backends.
-Mica-like materials and background blur (MT-02/MT-03) remain unselected.
+On 2026-10-16 the remaining-work implementation added the bounded MT-02
+wallpaper-derived client-base subset below. MT-03 compositor sampling remains
+separate and unimplemented; default themes and application surfaces do not
+automatically opt in.
 
 | Effect | Current implementation | Required owner/change |
 |---|---|---|
 | Alpha colors and subtree opacity | `#rrggbbaa` and `opacity` work within the rendered window; subtree opacity also fades text/children | Existing GUI drawing; use background alpha when foreground text should remain opaque |
 | Gradients, rounded shapes, shadows and image textures | Existing GUI primitives; shadow blur is not backdrop blur | Combine existing primitives without claiming background sampling |
 | Transparent window composition | Layer transparency is retained; ordinary Wayland per-pixel alpha is integrated in `dd40d03`, Windows raster/DirectComposition in `f59e692` with verifier updates `190faf8`/`c17c60a`. The user confirmed manual visual blending and rectangular input and approved integration; Windows automatic exact-pixel qualification remains incomplete. Default app windows still clear to opaque white | Shared GUI options/render semantics, separate Host presentation and compositor alpha contract; transparent popup/input-shape extensions are not included |
-| Wallpaper-derived Mica-like base | Not implemented as a desktop material | Cached material rendering in GUI, with wallpaper/theme/activation inputs supplied through desktop/Host boundaries |
-| In-app background blur | No exposed background-filter pipeline | GUI/Skia sampling of previously rendered content, filtering and clipped composition |
+| Wallpaper-derived Mica-like base | Opt-in `desktop/shared/ui/material.mjs` draws actual theme primitives or a decoded wallpaper image, uses genuine Gaussian filtering, bounded source/blur/tint caches and explicit solid recovery; a runnable GUI example is included | JS owns policy and owner-state inputs over ordinary Canvas/Image resources; the opaque texture is client-mapped, not desktop-position-aligned or a native caption/default-app change |
+| In-app background blur | Canvas 2D now filters explicit owned drawing/image sources with `none` or one `blur(px)`; no retained-DOM backdrop-filter pipeline is exposed | A general background effect would still require GUI/Skia sampling of previously rendered content, filtering and clipped composition |
 | Blur behind another application | No PollyWM background-blur render pass | Compositor-controlled scene sampling, effect regions, damage propagation and caching |
 | Windows native Mica/Acrylic | DWM attribute request exists; transparency/visibility and capability/error reporting are incomplete; SDL backdrop setter is currently a no-op | Windows Host integration, verified presentation and explicit support reporting |
 
@@ -345,12 +348,14 @@ wallpaper/theme-derived opaque base, not a live view of every underlying window.
 can sample in-app content or the composition behind a window. A translucent
 color alone performs neither sampling nor blur.
 
-The preferred implementation order, **if this candidate is selected**, is:
+The implementation order is:
 
 1. Complete ordinary-window transparency end to end, keeping background alpha
    separate from foreground text opacity and verifying Host presentation.
-2. Add cached wallpaper-derived and in-app materials for Settings/Files;
-   update on relevant wallpaper, theme, activation or content changes.
+2. The cached wallpaper-derived opt-in client helper is implemented; adoption
+   in default Settings/Files surfaces and a retained-DOM in-app backdrop
+   mechanism remain separate work. Update only on relevant wallpaper, theme,
+   activation, geometry, scale or content changes.
 3. Add compositor-owned regional background blur for taskbar, menus and
    transient surfaces when that effect is required.
 

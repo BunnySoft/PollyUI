@@ -1086,9 +1086,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "alignment-reference.json列Mica/Acrylic缺口；普通窗口alpha已交付但不是backgroundblur，当前materials仍未选实施。"
+      "evidence": "普通窗口alpha已交付但不是backgroundblur。2026-10-16 用户要求自主完成剩余后，合入d94a94a（源f1085d9b）的有界MT02子集：通用Canvas filter none/singleblur(px)，JS-owned真实wallpaper/theme派生opaque客户端base，source/blur/tint缓存、padding预算、activation/size/scale/sourceRevision失效、错误显式并可主动恢复solid。仅opt-in desktop/examples/material.mjs，不强改Settings/Files/主题或nativecaption；纹理跨client映射而非desktop-position对齐。父Node8/8和精确新C runner实际raster+真实GUI owner cleanup通过；中点[226,199,228,255]证实真Gaussian，全部alpha255，八次无变重绘work counters不变，前景sharp。SDK/native脚本同CMake内嵌构建，旧C runner不用于新filter资格。不是Windows DWM Mica、liveAcrylic或MT03；默认App/Start/taskbar材质、retainedDOM背景采样、跨App合成与OS像素资格仍未完成，E22.24保持partial。"
     },
     {
       "id": "tiger-window-menubar",
