@@ -57,6 +57,24 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+for (const id of ['aqua', 'lion', 'bigsur']) {
+  for (const painted of [false, true]) {
+    const theme = painted ? applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+      themes: { [id]: { button: { surfaceStyle: 'aqua' } } } })).themes.find(theme => theme.id === id) :
+      catalog.themes.find(theme => theme.id === id);
+    const menu = find(panelView(theme, '10:31', action, '', action), 'shell-menu');
+    const node = { style: { ...menu.props.style }, querySelector: () => null };
+    assert.equal(node.style.borderRadius, 0);
+    for (const name of ['onMouseenter', 'onMousedown', 'onMouseup', 'onMouseleave', 'onFocus', 'onBlur']) {
+      menu.props[name]?.({ currentTarget: node, button: 0 });
+      assert.equal(node.style.borderRadius, 0, id + ' menubar radius during ' + name);
+    }
+    const ordinary = desktopCommand('ordinary', 'Ordinary', theme, action);
+    const ordinaryNode = { style: { ...ordinary.props.style }, querySelector: () => null };
+    ordinary.props.onFocus?.({ currentTarget: ordinaryNode });
+    assert.equal(ordinaryNode.style.borderRadius, theme.button.radius);
+  }
+}
 for (let size = 2; size <= 12; size++) {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
     themes: { aqua: { layout: { dockIndicatorSize: size } } } })).themes.find(theme => theme.id === 'aqua');

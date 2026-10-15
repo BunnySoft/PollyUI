@@ -239,6 +239,17 @@ menus, true user account/profile art, and Win11 recommendation/account features
 are not reproduced. Existing application launch, desktop shortcut, keyboard and
 logout actions remain connected.
 
+Mac menu-bar commands keep their existing explicit square-corner treatment
+through pointer, focus and reconciliation states. A component-local button
+radius of zero is shared by their factory and state painter; ordinary buttons
+still consume the original theme radius. Previously the default Tiger/Aqua
+surface painter changed the menu-item radius from 0 to 8 after input. Default
+Lion/Big Sur use the generic path and were not affected; their supported
+`button.surfaceStyle: "aqua"` overrides exercised the same defect at radii 3/5.
+`tests/mac-menubar-state-render.mjs` checks those positive/negative paths with
+actual GUI pixels and one-click activation. This restores local override
+consistency, not a claim about authentic OS menu highlight shapes or Mac input.
+
 The three Dock painters have real icon slots, separators and running indicators:
 Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows

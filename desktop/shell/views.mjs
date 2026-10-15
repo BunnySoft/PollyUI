@@ -197,8 +197,9 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: 11 } }, clock)));
   }
   if (['tiger', 'lion', 'bigsur'].includes(surfaceStyle(theme, 'panel')) && panel.kind === 'dock') {
+    const menuTheme = { ...theme, button: { ...theme.button, radius: 0 } };
     const menuItem = (id, title, callback, bold = false) => {
-      const node = desktopCommand(id, title, theme, callback, { quiet: true, style: {
+      const node = desktopCommand(id, title, menuTheme, callback, { quiet: true, style: {
         height: theme.layout.menuBarHeight, paddingLeft: 9, paddingRight: 9,
         borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent',
         gradientFrom: 'transparent', gradientTo: 'transparent' } });
