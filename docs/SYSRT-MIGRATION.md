@@ -13,10 +13,10 @@ in the next work. It is not a requirement to finish all mechanisms first.
 | UI separation first | Settings, narrow IPC and Shell presentation | More pages run in a separate application while existing native backends remain | No |
 | Service migration | Required protocol SDK features, JS domain logic, callers and tests | One existing system capability works through the new path and its replaced bridge is deleted | Yes |
 
-The selected route is **service migration**, starting with Wi-Fi/iwd. Add
-mechanisms only for concrete calls in that service. UI separation is a distinct
-follow-up: rewriting Wi-Fi logic in JS does not itself move the Wi-Fi page out
-of the Shell, and moving a page does not itself rewrite the backend.
+The selected route is **service migration**. Wi-Fi/iwd and the subsequent
+independent six-page Settings UI are now delivered. Add mechanisms only for
+concrete calls in the next selected service. These remain separate outcomes:
+moving a page out of Shell does not itself rewrite its native backend.
 
 ## Generic FFI gaps
 
@@ -71,7 +71,7 @@ Unix-FD transport and general introspection are not added by this slice.
 
 | Domain | Current implementation still active | Concrete next work |
 |---|---|---|
-| Wi-Fi | `desktop/services/network.mjs`, existing Shell control panel | JS iwd state/agent service replaces the deleted `network.c/.h`; existing callers/API remain compatible |
+| Wi-Fi | `desktop/services/network.mjs`, Shell-owned service and independent Settings client | Delivered: JS iwd replaces `network.c/.h`; UI is in Settings, not a complete Shell control panel. Physical-radio/persistence qualification is separate |
 | Audio | `desktop/native/audio.c`, Shell PipeWire routing/persistence policy | Requires native event/record mechanisms; not covered by the scalar D-Bus client |
 | Displays / shortcuts | `output-client.c`, `shortcut-client.c`, Shell guarded controls | Wayland objects/listeners and guarded transactions; compositor watchdogs stay authoritative |
 | Power | `desktop/native/power.c` | Preserve login-service owner, seat, capability and uncertain-action semantics when replacing the client |
@@ -88,7 +88,9 @@ untrusted-application sandbox are separate product/security projects.
 
 The first service implementation remains Shell-owned JS so the existing
 authorized UI and agent lifetime are preserved. This is not a new root daemon
-or a simultaneous migration of all Settings pages.
+or a migration of every domain backend. All six existing Settings pages
+subsequently moved to the ordinary Settings process with strict narrow RPC;
+that does not remove audio/display/shortcut/power C clients.
 
 1. Extend only the D-Bus signatures, signal/agent routing and connection
    ownership needed above; preserve existing scalar client/service consumers.

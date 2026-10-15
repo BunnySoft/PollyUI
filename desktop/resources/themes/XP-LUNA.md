@@ -1,5 +1,14 @@
 # Blue Luna: first visual batch
 
+This document records the historical first Luna batch and its original evidence.
+Current native captions use the shared GUI painter and paired appearance
+protocol v3 / geometry schema 4, not the old C painter described below.
+The original C paint-test commands are historical reproduction instructions,
+not current build targets. The two-column Start structure has since landed;
+its complete profile/content/state fidelity is still unfinished. See
+[the current per-theme task index](../../THEMES.md#per-theme-discrepancy-tasks)
+and E22.1-E22.3 / E22.12-E22.13 in the authoritative plan for current scope.
+
 Target: Windows XP SP3, default blue Luna, normal-size typography at 96 DPI,
 800 x 600 first, then supported output scaling. The public GUIdebook original
 Windows XP screenshots in `xp-reference.json` establish a traceable *partial*

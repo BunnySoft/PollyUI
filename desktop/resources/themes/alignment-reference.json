@@ -6,7 +6,8 @@
   "rights": "No Microsoft or Apple screenshot, system bitmap, font, msstyles, logo or icon is included. Public pages are reading references. Screenshot downloads/crops require a lawful analysis source; no new third-party bitmap is retained by this change.",
   "comparison": {
     "policy": "Compare identical-size raw crops without resizing, font masks, hidden pixels or tolerance changes. Report MAE RGB, maximum channel error and changed-pixel count. Component fixtures are actual PollyUI renders, not native Linux desktop captures.",
-    "fullScene": "not measured: no certified six-system raw capture pack and no running Linux compositor in the available host",
+    "fullScene": "No complete six-system reference comparison is qualified. Later Linux WM/GUI native runs and Classic JPEG measurements exist, but do not supply certified six-OS version/DPI/font raw captures or a whole-desktop fidelity score.",
+    "taskLedger": "docs/POLLYOS-PLAN.json: e22; per-surface index in desktop/THEMES.md#per-theme-discrepancy-tasks",
     "beforeCommit": "0df54c57141c4e5dba754d22d1641ee2f8441703"
   },
   "targets": [

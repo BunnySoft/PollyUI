@@ -1,5 +1,34 @@
 # PollyOS 当前批次交接
 
+## 2026-10-15 当前交付与盘点
+
+功能组合 `6298ff3e57c687a21fd6e9f8edce0b3803c7f3f9` 已正常推送至
+`origin/main`，远端 SHA 已独立核对。此前本地八个提交均已包含，包括 opt-in Mac
+源码；Mac 仍默认 OFF、未在 macOS 编译/测试，不把推送当作平台验收或 CI 授权。
+
+最新 Live 固定入口为 **`D:\temp\PollyOS\PollyOS.iso`**，真实 NTFS 硬链接到
+独立版本目录；实际 runtime/overlay/producer 为 clean `b7e7a700563b4b1763f305da6a9946f08df20660`，
+tree `9c129e296b4dc970065c61a9e5e00627dd29203e` 与上述主线完全一致。
+ISO 711,092,224 字节，SHA256
+`54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c`。
+新 63 项及旧版本 72 项校验、实际 ISO 297 路径/17 overlay、GRUB/EFI 资源和
+UID1000 打包 WM/Shell 的真实 Wayland raster 帧已核；新介质的完整
+UEFI/Hyper-V/实机资格未宣称完成。旧 ISO/VHDX 内容不变，未刷新安装版 VHDX。
+
+已完成而不再重复列为未实现：独立六页 Settings、JS iwd、Files 单普通文件同 FS
+Cut/Paste、只读 Processes、桌面快捷方式/框选、Canvas2D/Image 与有界 3D 源码、
+常规指针默认、GUI 窗饰/Classic 材质、Live 启动及固定路径发布。
+最新 `6618394`/`6298ff3` 已修菜单重复扣任务栏高度与展开菜单拦截标题栏点击；
+真实 native 输入覆盖三键、取消、普通客户单次投递及非菜单独占保护。
+
+剩余项按 [唯一计划数据](POLLYOS-PLAN.json) 与 [路线图当前盘点](../ROADMAP.md#current-delivery-and-remaining-work-inventory-2026-10-15)
+维护。新确认的架构缺口是系统窗饰依赖 Shell：App 可存活但不会自绘 CSD 的客户
+可能无框，独立窗饰服务尚未设计/实施授权。旧 Shutdown GUI/长输入失败、安装维护/
+救援/多用户、服务迁移及真实平台/发行资格也未被本次 Live 构建关闭。
+本次只盘点，不自动启动这些工作流或扩大授权。
+
+## 以下为 2026-10-09 历史批次
+
 更新时间：2026-10-09。本地 `main` 的最新功能组合基线为 `1dac93d`，
 保留此前正常快进合入的 `ce73a3c`，本轮尚未推送。
 此前已推送的代码基线为 `ac5a5a570aee09ce1ce8ca641cac9ae92099e2c1`，

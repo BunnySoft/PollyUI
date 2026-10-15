@@ -352,9 +352,9 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 
 **交付/边界：** 首个面向普通用户的开发版：可启动的 Live ISO 与单 SYSTEM 安装版虚拟磁盘、稳定首次设置/密码登录、基础 Shell/设置/应用和打开保存。不是空白磁盘安装器、受保护生产桌面或硬件认证版本；后期项目不作为 Alpha 前置。
 
-- [x] **A0.1 基础功能代码集成** · 已完成 · P1 · candidate：将已具备的模式/账户/普通桌面/系统设置/基础 Files/原生打开保存与当前功能修复汇入同一主分支，不携未完成强化草稿。 证据：主工作区已实际 --ff-only 3beac48 到 ce73a3cee08f8b09ff9f78e681957a0c993e0d51；包含基础 Files 和中央完整接线、控制台 1cd 服务闭包及闲置窗口源码修复。未推送，未将未完成 Files419行草稿合入。集成完成不等所有功能/媒体/手测通过。
+- [x] **A0.1 基础功能代码集成** · 已完成 · P1 · candidate：将已具备的模式/账户/普通桌面/系统设置/基础 Files/原生打开保存与当前功能修复汇入同一主分支，不携未完成强化草稿。 证据：历史 ce73a3c 已集成基础 Files、中央接线、控制台服务闭包和闲置窗口修复，未收养旧 Files 419 行未验证草稿。2026-10-15 最新功能组合 6298ff3e57c687a21fd6e9f8edce0b3803c7f3f9 已正常推送 origin/main 并独立核 remote SHA：六页独立 Settings、Apps、小范围图形能力、主题/常规指针、GUI 窗饰分层、固定 ISO 硬链接发布及菜单定位/外点输入修复均在主线。Mac source 同批推送，但 Darwin 默认 OFF、仍未原生编译/测试；推送不授权新 CI/生产发布。集成完成不等完整 Alpha/实机/安装版验收。
 - [ ] **A0.2 必要功能闭环** · 进行中/部分完成 · P1 · installed：剩余近程功能：首次启动图形入口稳定、密码登录/失败重试、普通注销与保存、普通关机重启；不以重启可进桌面当首次图形问题已修。 前置：T14.1、T14.2、T14.3、T15.4、T22.2。 证据：2026-10-09 4e6b004 受限候选已实际交付：生产默认新 guest 图形首设、标准 PAM 错误拒绝/正确重试、普通登录、正常 Logout回greetd、真实 managedApp close-veto/Cancel/nativeSave、标准Reboot、原密码再登录及Classic/26字节用户文档普通读回均确证。首启排序修复与busy UI-only修复已父审合，61项最终证据全hash核。Shutdown GUI仍ready/NoSend，当前没有实际关机证明；长批量QMP输入Wayland4KiB/Foot断管未修且普通持续输入范围未资格。保持功能闭环/完整Alpha未完成，不把诊断host-qmp-quit当PowerOff；旧Hyper-V未改、现场由用户测。
-- [ ] **A0.3 统一 Alpha 候选介质** · 进行中/部分完成 · P1 · live/installed/candidate：从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。 前置：A0.1、A0.2。 证据：受限测试介质已在 D:\Temp\PollyOS no-overwrite交付并加Library：4e LiveISO713508864B SHA17e663...383423、freshVHDX1598029824B/virtual3471835136B SHAae843...10e6dd，与未初始化raw6afd逻辑内容相同，无测试App/账号/默认安装密码。父核5项交付checksum与61项实际证据，receipt完整SHAb2f62edea0faa6cf5edb043bd45d25802cc90eeb179626a3ee6d9758a4a2441b；真实构建sourceffc与runtimePowerJS4e/合格polkit依赖分层保留。普通新QEMU短测包含真实Reboot/持久性，但Shutdown UI与长输入限制未闭环，因此只是已交付测试预览，正式Alpha功能齐备冻结仍进行中。用户本人复用现有Hyper-V换介质，未自动改配置；所有ownedVM/controller已停。
+- [ ] **A0.3 统一 Alpha 候选介质** · 进行中/部分完成 · P1 · live/installed/candidate：从功能闭环后的同一固定 main 生成一次新 ISO/VHDX、必要运行库与模式正确的发行说明，准确列出已知限制。 前置：A0.1、A0.2。 证据：历史 4e6b004 的未初始化 VHDX 与原 Live、其原始日志/资格保持不变。2026-10-15 新 Live 为实际 clean b7e7a700563b4b1763f305da6a9946f08df20660，tree 9c129e296b4dc970065c61a9e5e00627dd29203e 等于已推送 main 6298ff3；源/runtime/overlay/producer同版本真实重编。D:\temp\PollyOS\PollyOS.iso 是版本目录内 ISO 的真 NTFS 硬链接，711092224 字节，SHA256 54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c。新 63 项/旧 72 项 checksum、ISO 297 路径/17 overlay、实际 EFI/GRUB 及 UID1000 打包 WM/Shell Wayland raster 首帧通过。新 ISO 的 UEFI/Hyper-V/实体资格未自动取得，也没有更新 installed VHDX；因此统一 Live/installed Alpha 仍部分完成，旧 Shutdown/长输入失败不被本次构建抹除。
 - [ ] **A0.4 集中手动验收** · 进行中/部分完成 · P1 · candidate：按一份简短清单集中手测冷启动/首设/登录、再启动与基本持久性、窗口交互/设置/基础文件与打开保存、注销与正常关机，修复阻塞后冻结 Alpha。 前置：A0.3。 证据：本轮集中有界真实QEMU/TCG短测已完成结果评估并交付4e受限预览：首设/PAM拒绝重试/登录/注销/应用SaveCancel/标准Reboot/偏好与文档持久性/LIVE普通桌面能力状态已核；Shutdown GUI未产生动作，Foot长批量输入断管范围未修，不能完整验收。用户Hyper-V现场测试及阻塞修复后冻结仍待完成；不自动操作其VM/密码/磁盘，不把诊断清理或源Mock计绿。
 
 ### A1 系统自带 App — 已延期 / 进行中/部分完成
@@ -367,7 +367,7 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 真实文件浏览/修改的用户操作闭环；设备挂载与文件 Portal 是其它任务，不要求它们全完成才浏览现有 HOME。
 
 - [x] **T19.1 文件浏览与属性** · 已完成 · P2 · installed：当前基础 Files：普通用户真实目录浏览、导航、类型/属性、MIME 打开、新目录与同目录不覆盖重命名；高级图标、搜索与文件操作另列后期。 来源：M16.1。 证据：用户要求增加功能并行，固定0f86311，子会话4b0f28e2-6cc2-48f5-b900-3d9b04d7ab8c实现普通用户原生目录导航/属性/真实MIME打开、新目录/重命名；唯一共享FS后端供选择器使用，不重复root broker。以真实浏览/操作为交付，原生功能验收待返回。 第四批实现与中央接线已快进到本地主分支 ce73a3c；新引擎中实际指针/滚轮/Backspace/创建/重命名/MIME helper 读文件/WM 关闭与六张原生 app-buffer 图通过。完整 ISO/VHDX 手测与高级 App 强化不在此基础项完成声明内。
-- [ ] **T19.2 文件操作与覆盖** · 已延期 / 待实现 · P2 · installed：后期文件 App 强化：二进制/目录树复制、跨目录移动、删除到回收站和还原；默认保留已有目标，不隐式合并或永久删除。当前创建目录、同目录重命名和文本强观察覆盖保留。 前置：T19.1。 来源：M16.2。 证据：第四批同文件管理器子会话仅先接通创建目录、同目录无覆盖重命名和普通文本保存；用户明确第一版支持已有文件覆盖，必须明确确认且变化后重新确认，由同一FS后端提供观察绑定。复制/跨目录移动/删除未实施时不关闭整项，无实际用户文件操作授权。 用户已选删除默认回收站并支持还原，作为未来需求保留。新分支 bunnysoft-files-operations 基线 1cd5f77，仅 files.c/h 共419行未完成、未编译草稿，原样保留而未合入 main；暂停全部实现/研究/测试，不批准未来 Trash 挂载发现策略。
+- [ ] **T19.2 文件操作与覆盖** · 已延期 / 进行中/部分完成 · P2 · installed：后期文件 App 强化：二进制/目录树复制、跨目录移动、删除到回收站和还原；默认保留已有目标，不隐式合并或永久删除。当前创建目录、同目录重命名和文本强观察覆盖保留。 前置：T19.1。 来源：M16.2。 证据：历史第四批完成新目录、同目录无覆盖重命名和文本强观察覆盖；旧 bunnysoft-files-operations 的 419 行未验证草稿仍保留、不因此收养。后续 3919661 随 da59cc0 集成并已进入当前 Live：Cut/Paste 仅移动一个用户拥有、非 set-ID 的普通文件（可为二进制），同文件系统、跨目录、显式确认、renameat2 NOREPLACE 和源/目录身份验证，提交后错误单独报告。复制、目录树操作、跨文件系统移动、回收站及还原仍未实现，不能关闭整项；未来删除默认回收站/支持还原的已选需求保留，不自动授权操作用户文件。
 
 ### B1 系统构建 — 已延期 / 待实现
 
@@ -413,13 +413,45 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 **交付/边界：** 后期按独立项目完善复测、视觉精修、XWayland、屏幕采集、目标硬件热插拔、有线网络、锁屏认证、共享包、多用户隔离和授权外置安装；延期不等于完成，授权边界不解除。
 
 
-#### E22 XP Luna 视觉对齐
+#### E22 Windows/Mac 六主题对齐
 
-以选定 XP 蓝色 Luna 版本/96-DPI 基线，逐部件对齐真实窗口装饰和 Shell 控件、字体/资源、材质和状态；使用原创或有明确授权材料，记录剩余差异，不以预览/模拟截图宣称1:1或强制第三方控件改样式。
+按 XP SP3 Luna、Server 2003 SP2 Classic、Windows 11 24H2 light、OS X 10.4 Tiger/10.7 Lion、macOS 11 Big Sur 六个既定目标，逐项跟踪标题栏/按钮、任务栏/Start、菜单栏/Dock、控件/字体/图标及真实材质差异。共享机制与主题局部数据分层；已修复项保留完成记录，参考不足与未实现功能分别说明，不以预览或局部像素吻合宣称整系统1:1，不强制第三方 CSD/控件改样式。
 
-- [ ] **E22.1 固定参考与测量** · 已延期 / 待实现 · P2 · installed/live：建立来源可追溯的固定目标版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。 证据：本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。
-- [x] **E22.2 控件与装饰绘制** · 已完成 · P1 · installed/live：当前XP小批：30px任务栏、21px标题按钮、受限多段绘制/bevel、原创通用图形及基础控件状态，绘制/命中尺寸一致；保留其它四主题与数据安全契约，不改菜单生命周期。未实现状态/完整Start布局另行验收。 来源：M17.4、M17.5。 证据：1176066与startup修复1d5254a纳入固定最终组合a5e176a；完整新native build、13selectors、3真实PollyUI/实际四scale组成截图通过。source-reviewed startup typed拒绝/generic schema1真实回退通过；非整桌面1:1/官方字体或品牌资源认证。 Alpha 的当前 XP 基础窗口装饰绘制保持已完成：标题栏、按钮、任务栏与 bevel 已有固定原生四倍率证据；未完成的完整 Start、disabled/focus、外部托盘图标和参考认证仅属后期精修。主题刷新后的闲置窗口拖缩是独立交互缺陷，ce73a3c 已修功能源码，旧 e879 媒体没有该修复。
-- [ ] **E22.3 真实截图差异验收** · 已延期 / 待实现 · P2 · installed/live：固定实现提交在独立验证lane真实绘制截图，对照裁剪部件的几何/颜色/状态与已定义图像差异；说明字体/授权资产/抗锯齿和未实现效果，迭代，不以mock或预览替代native。 前置：E22.2。 证据：临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。
+- [ ] **E22.1 XP 固定参考与测量** · 已延期 / 待实现 · P2 · installed/live：建立 XP SP3 Luna 来源可追溯的版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。 证据：本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。
+- [x] **E22.2 控件与装饰绘制** · 已完成 · P1 · installed/live：历史已完成 XP 小批：30px 任务栏、21px 标题按钮、多段绘制/bevel、原创通用图形及基础控件状态，绘制/命中尺寸一致；保留其它主题及数据安全契约。后续 GUI 窗饰迁移不撤销该已完成基础项；完整颜色/状态/Start 差异另列具体任务。 来源：M17.4、M17.5。 证据：1176066与startup修复1d5254a纳入固定最终组合a5e176a；完整新native build、13selectors、3真实PollyUI/实际四scale组成截图通过。source-reviewed startup typed拒绝/generic schema1真实回退通过；非整桌面1:1/官方字体或品牌资源认证。 Alpha 的当前 XP 基础窗口装饰绘制保持已完成：标题栏、按钮、任务栏与 bevel 已有固定原生四倍率证据；未完成的完整 Start、disabled/focus、外部托盘图标和参考认证仅属后期精修。主题刷新后的闲置窗口拖缩是独立交互缺陷，ce73a3c 已修功能源码，旧 e879 媒体没有该修复。
+- [ ] **E22.3 XP 真实截图差异验收** · 已延期 / 待实现 · P2 · installed/live：固定实现提交在独立验证lane真实绘制截图，对照裁剪部件的几何/颜色/状态与已定义图像差异；说明字体/授权资产/抗锯齿和未实现效果，迭代，不以mock或预览替代native。 前置：E22.2。 证据：临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。
+- [ ] **E22.4 六主题参考与状态来源** · 已延期 / 进行中/部分完成 · P2 · installed/live：补齐 Classic SP2/96DPI、Win11 build/100% 与三套 Mac 的 display scale、Dock 图标尺寸/放大开关、light/tint 等参考元数据及 active/inactive/hover/press 状态。逐条关联原始图/hash/crop；证据不足只标待测，不猜颜色或把 JPEG 转 PNG 当无损原图，不阻塞已能独立证明的局部修复。 证据：alignment-reference.json 已有六目标/公开阅读来源；用户 Win2K3 VM 截图 a92ec32d... 与 e333e3f9... 提供真实状态但为 JPEG，SP/DPI/显示深度仍未认证。Mac 暂无完整原尺寸授权 raw pack，不能把未测项描述成已证实的特定像素错误。
+- [ ] **E22.5 字体与文字基线** · 已延期 / 待实现 · P2 · installed/live：逐主题列出 Tahoma/Trebuchet、Segoe UI、Lucida Grande、San Francisco 与当前通用 fallback 的字宽、字号、粗细、标题基线及抗锯齿差异；用合法可用字体和真实度量决定可配置替代方案。保留 Unicode shaping，不打包未授权字体、不强制全局别名或固定分辨率；影响主题通用性的选择先确认。 证据：六主题 fontReference 与 THEMES.md 明确原系统字体未分发，真实 Classic caption 仍有 GDI 文字基线/栅格差异；GUI shaping 复用已实现，不等于字体像素一致。
+- [ ] **E22.6 图标与品牌资源差异** · 已延期 / 待实现 · P2 · installed/live：分别记录 Windows Start/应用/任务/托盘图标和 Mac Dock 应用图标的形状、尺寸、对齐与当前 Polly 原创图形差异；优先接真实应用已有合法 artwork，缺失时明确 fallback。系统品牌图标、壁纸和字体只在授权明确时考虑；参考图不能直接变成 runtime 资源，原创图形不宣称官方像素复刻。 证据：现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。实际 app-icon 解析与合法资源选择未由 theme color 修正覆盖。
+- [ ] **E22.7 按钮边线与交互状态** · 已延期 / 进行中/部分完成 · P2 · installed/live：逐主题核按钮/command 的背景、边框色与厚度、内外高光、圆角/光泽及 normal/hover/held/disabled/default/keyboard-focus 状态；保留已修 Classic raised/sunken 和 dotted focus，不以基础按钮覆盖声称全 SDK 一致。每次只选有参考的局部与实际输入回归，不统一套现代渐变或改点击区。 证据：ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集；THEMES.md 明确完整控件状态未认证，用户曾明确指出控件背景/边框/质感不一致。
+- [ ] **E22.8 选择控件与页签覆盖** · 已延期 / 待实现 · P2 · installed/live：逐项核 checkbox、radio、switch、select、tab 和列表 selection 的主题外观及 disabled/focus/checked 状态，先区分现有共享控件与 App 自定义控件。没有真实控件/reference 的项标未覆盖，不从 button painter 推断已经一致；不强制第三方 App/CSD 跟随。 证据：XP-LUNA.md 明列设置 tabs/app-specific widget theming 未完成；THEMES.md 的 covered 仅有限 shared button/command 等，不包含完整 SDK 选择控件认证。
+- [ ] **E22.9 输入框光标与滚动条** · 已延期 / 待实现 · P2 · installed/live：逐主题登记文本框内凹/边框、padding、caret、selection 色和默认滚动条/滑块/箭头的可见差异；当前 Files 自绘 scrollbar 与通用 SDK 分开核。只能改外观/可配置度量，不丢输入内容、selection、IME、捕获或键盘焦点；未测默认和 bespoke 路线不能合并标绿。 证据：THEMES.md 明列 SDK caret/selection、global scrollbar、Settings bespoke fields 未认证；Files 已有功能滚动/编辑证据，不等于 Windows/Mac 视觉一致。
+- [ ] **E22.10 对话框与面板一致性** · 已延期 / 待实现 · P2 · installed/live：分别核 Settings 六页、打开/保存、确认/错误/认证小面板的背景、边线、留白、标题和按钮布局，标明窗口内部模板与系统窗饰边界。仅处理已存在的界面，不制造 Windows/Mac 未实现业务入口；保留密码遮罩、值/selection/focus 及 trusted confirmation 权限。 证据：用户原问题包括控件背景/边框/字体；独立 Settings 功能已完成，所有 bespoke dialogs/fields 的 OS-identical 覆盖仍在 THEMES.md 明确缺口中。
+- [ ] **E22.11 原生状态与缩放对照** · 已延期 / 进行中/部分完成 · P2 · installed/live：按选中主题/部件而非默认全矩阵，验证真实 compositor 下 active/inactive、hover/press/cancel、maximize/restore、低高/窄屏、受支持 DPI 的几何/颜色和命中；同版同状态比较，未支持 native disabled/focus 明列。组件离屏图、默认主题预览和旧 ISO 不作新完整桌面等价证明。 证据：现有组件及 native 四 strip/真实 pointer 回归覆盖有限状态，Classic 菜单 DOM fixture 与真实 layer 的 28px 差异已修；不能回填所有六主题/DPI/fullscene qualification。
+- [ ] **E22.12 XP 标题栏材质与状态** · 已延期 / 进行中/部分完成 · P2 · installed/live：核 XP caption 多段蓝色渐变、边缘/高光、文字阴影及三键/还原图形在激活/非激活/hover/press 的原生结果；30px/21px 基础几何保留，未实现的 disabled caption/键盘语义先记录机制边界。迁至公共 JS painter 后须比实际输出，不恢复 C Luna 专用绘制。 证据：XP-LUNA.md 的 multi-band/outline/text-shadow 基础批已实现，完整状态/reference crops 仍缺；现已改用 GUI caption-paint.mjs，历史 C strip 分数不是当前完整标题栏认证。
+- [ ] **E22.13 XP 任务栏与 Start** · 已延期 / 进行中/部分完成 · P2 · installed/live：分项核 30px bar、绿色 Start/Polly launcher、任务按钮、quick-launch 与托盘/clock 的尺寸/色带/边线/间距；两列 Start 的 profile/header、左右行、分组分隔线/footer 与字体另逐状态对照。基础结构已存在，缺真实业务/历史项不加假按钮，完整 quick-launch 行为不以画出图标代替。 证据：用户最初明确 XP bar/Start 不像原版；当前 30px bar、97px launcher、26px tasks、cyan tray 和两列 header/link 已有，XP-LUNA/THEMES 明列完整 Start/profile、quick-launch 与 tray 状态差异未闭环。
+- [ ] **E22.14 Classic 残余颜色差** · 已延期 / 进行中/部分完成 · P2 · installed/live：继续追踪 Classic frame/menu/taskbar 仍非零的原尺寸 raw RGB 差异，区分真正 paint 差异、JPEG 链路与疑似 RGB565 量化，不把标准 24bit palette 整体改成参考截图色。只对可证实的局部原因修正；正文/图标/字体差异分别归共享任务。 证据：2ec 边框 raw 误差明显降低但非零；后续实际 native controls 700px 对 JPEG 的 MAE 5.119047619/RMSE 7.576593028，仅 3px exact，不是全 OS 分数。原 88px plain frame crop=0 不能覆盖其它边框/文字。
+- [ ] **E22.15 Classic 菜单与级联** · 已延期 / 待实现 · P2 · installed/live：区分已完成灰色双列 chrome 与仍缺的 Programs/All Programs 级联、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。先确认内容布局取舍和真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。 证据：真实 Win2K3 Start-open JPEG 与实际 Polly 菜单可见 profile/All Programs/内容行差异；THEMES.md 明确 cascading Programs 与 true user profile art 未复现。380x444 是当前 preferred，不强改所有分辨率为参考 484px 高。
+- [x] **E22.16 已修 Classic 边线** · 已完成 · P2 · installed/live：保留已完成 Classic raised/sunken 分层、menu 三层外框/双线 separator，以及移除覆盖 bevel 的通用 outline；这是明确缺陷修复记录，不宣称全部 RGB 或文本一致。 证据：0838bee 集成 2ec2e2e：外四边同灰的 root cause 为重复 borderWidth 覆盖，已移除；正常边序 FFF/D4/808/404、按下404/808/D4/FFF 实测，menu frame/separator 与 raw crop 记录保留。
+- [x] **E22.17 已修 Classic 任务质感** · 已完成 · P2 · installed/live：保留 flat hover/press 基底、选中 2x2 body/light stipple、1px dotted focus、22px task/16px icon、内留白和按下1px偏移的已完成修正；纹理不拥有输入，不回退到大量 DOM 点阵。 证据：0838bee 修交互重加 gradient；5bb181c 实际 GUI 验棋盘8白/8body、hover/press、selected->inactive、palette/retheme、同button/focus/单次click。Task28bar/22slot 上4下2含2px chrome，对应内部2/2；不再当未实现重复派发。
+- [x] **E22.18 已修 Classic 标题三键** · 已完成 · P2 · installed/live：保留 Win2K3 测量所得三键 glyph 尺寸/偏移与按可用文字区域绘制渐变的完成记录；窗框4px/caption23px/box16x14不变，外观在 JS 绘制、WM保留命中和操作。 证据：5bb181c/776d868：实际 GUI min bbox[4,9,6,2]/12点、max[3,2,9,9]/39点、close[4,3,8,7]/26点及press偏移1通过；原 JPEG 跨阈值测量与 native 四strip证据保留，不覆盖所有字体/restore状态认证。
+- [x] **E22.19 已修菜单任务栏间隙** · 已完成 · P2 · installed/live：保留真实 layer 菜单错误多扣28px任务栏的完成修正；openMenu明确full-output坐标，保持preferred尺寸、left2和4px边框衔接，不改全局layer默认/其它预设。 证据：6618394 的 zone-1 已经真实 native committed menu[2,252,380,444]/bar[0,692,1280,28]断言4px overlap、search/focus/Escape与top-Dock helper；修正版b7e7a700 ISO已包含，不再把组件图位置当原生布局证明。
+- [x] **E22.20 已修菜单外标题操作** · 已完成 · P2 · installed/live：将开始菜单展开后标题三键不响应的已修复交互与视觉差异分开；跟踪既有可信菜单外点关闭任务，不另起一套native input策略。 前置：T21.5。 证据：6298ff3 实测菜单关闭时三键原本正常；菜单开启时exclusive焦点拦截已由受限Shell-menu生命周期修复。真实max/min/close、单次route、drag-off取消、non-menu exclusive保护通过。权威功能任务为menu-native-dismiss，此处仅历史差异索引。
+- [ ] **E22.21 Win11 标题栏状态** · 已延期 / 进行中/部分完成 · P2 · installed/live：按 Windows11 24H2 light 核 32px caption内容/33px外框、46x32三键、close红色hover/press与其它backplate/图形、active/inactive及文字基线；当前矩形paint/hitbox已实现但build-tagged raw状态对照不足。Snap flyout尚未实现，作为功能差异说明，不伪装成已有标题按钮效果。 证据：ce21f540/882f9182与公共GUI窗饰已交付rect controls；alignment-reference.json 的Win11数值为重建目标而非24H2像素测量，用户已明确Modern目标不是Win10。
+- [ ] **E22.22 Win11 任务栏与 Start** · 已延期 / 进行中/部分完成 · P2 · installed/live：分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。当前无推荐历史/account完整业务、App分组/固定等差异关联既有T21任务，不造假推荐/不可用入口。 证据：当前Modern centered searchable grid/footer与bar已实现；THEMES.md明确真实recommendation/account未复现，raw24H2/100%依据尚缺，不能仅主题卡片证明布局一致。
+- [ ] **E22.23 Win11 内容圆角阴影** · 已延期 / 待实现 · P2 · installed/live：登记真实Win11整窗内容圆角裁剪、外阴影和输入边界差异：当前仅标题顶角、内容仍矩形且非真实系统阴影。若实施，复用E13原生clip/shadow机制项目，不在themeJS伪造透明遮角或复制另一渲染器；视觉变化须验证内容/命中一致。 证据：alignment-reference.json/THEMES.md/desktop README均明确full-window corner clipping和shadow未实现；theme preview的shadow字段不等于compositor效果。实现项目为e13-m17-5，本项只跟踪Win11差异验收，非重复工程授权。
+- [ ] **E22.24 Win11 背景材质** · 已延期 / 待实现 · P2 · installed/live：登记Win11 Mica-like壁纸基色与Start/taskbar Acrylic背景采样的质感差异；当前opaque/gradient不能代替真实backdrop。分别关联已存在MT-02/MT-03候选，先选具体效果/机制再实现，保留solid/reduced-transparency方案；本次登记不自动授权blur/GPU新功能。 证据：alignment-reference.json列Mica/Acrylic缺口；普通窗口alpha已交付但不是backgroundblur，当前materials仍未选实施。
+- [ ] **E22.25 Tiger 窗框与菜单栏** · 已延期 / 进行中/部分完成 · P2 · installed/live：按OSX10.4核标题光泽/pinstripe、traffic-light三键顺序/间距/hoverglyph、active/inactive及22px菜单栏字体/背景/项目间距。记录当前绘制近似与尚无完整raw状态对照的区别；无真App菜单时不伪造OS功能，Lucida字体差异归共享任务。 证据：现有Aqua/genericcaption与菜单栏路线已具；用户明确三套Mac质感和控件/字体不准，当前THEMES仅声明原创近似，不具有Tiger fullstate认证。
+- [ ] **E22.26 Tiger Dock 边缘指示** · 已延期 / 进行中/部分完成 · P2 · installed/live：按明确48px图标/关闭magnification的参考设置核Tiger二维rim、54pxslot/62px高度、底部贴合、separator与7x4黑三角运行指示；不得误套Leopard/Lion3D shelf。溢出滚动已修不重开，未测几何先取得同配置原尺寸参考。 证据：已有tiger painter和triangle指标、固定三action/窗口scroll；alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证。
+- [ ] **E22.27 Tiger Dock 透明质感** · 已延期 / 待实现 · P2 · installed/live：登记Tiger Dock二维玻璃rim与真实透明背景的差异，避免将当前不透明渐变称为真实glass；效果若选定应接共享透明/合成机制，维持图标和文字对比度。无可靠参考不补造倒影；不从Lion效果套用Tiger。 证据：alignment-reference的aqua gaps明确realtransparency未实现；THEMES将三Dock统一标opaque material approximations，真实效果需单独选定机制。
+- [ ] **E22.28 Lion 窗框与菜单栏** · 已延期 / 进行中/部分完成 · P2 · installed/live：按OSX10.7核灰色窗框材质、traffic-light外形/间距/状态、标题文字与22px菜单栏的颜色/边线/内距；区分genericcaption已有子集与真实Lion对照缺失。窗口内部unifiedtoolbar为preview含义，不当作已统一所有App toolbar。 证据：现有Lion preset/genericcaption和menu-bar已具；无完整授权rawpixeloracle，THEMES明确unifiedToolbar不代表nativeclient内容改造。
+- [ ] **E22.29 Lion Dock 透视与光点** · 已延期 / 进行中/部分完成 · P2 · installed/live：核Lion perspective shelf轮廓、56pxslot/66px高度、底部位置、separator与8x3luminous运行指示的几何/颜色；固定48pxicon与关闭放大作为本地比较条件，不硬编码为不可配置系统默认。恢复/最小化仍是running，indicator不能消失。 证据：现有Lion painter/shelf/indicators已交付但仅opaque approximation，用户Dock不一致意见和alignment-reference仍待真实同设置对照。
+- [ ] **E22.30 Lion 玻璃与倒影** · 已延期 / 待实现 · P2 · installed/live：分别登记Lion Dock真实玻璃透明、外阴影及icon/windowreflection缺失；当前透视色带不是reflection。先选实际可支持效果及共享E13/材质机制，不能靠复制图标倒影贴图或虚构窗口图像冒充实时效果；不默认启动新合成工程。 证据：alignment-reference的Lion gaps明确actualicon/windowreflection、glasstransparency/shadow未实现；当前source不声称这些特性。
+- [ ] **E22.31 Big Sur 窗框菜单栏** · 已延期 / 进行中/部分完成 · P2 · installed/live：按macOS11light核28pxcaption、traffic-light12px控件/间距/hoverglyph、active/inactive、统一工具栏视觉边界及24px菜单栏。SanFrancisco度量归共享字体项，真实App内容与纯窗饰分开，不用标题圆角代替全窗裁剪。 证据：BigSur light preset/公共GUIcaption已具；font/systempixels、nativefullwindoweffects未认证，unifiedToolbar仍仅preview含义。
+- [ ] **E22.32 Big Sur 浮动 Dock** · 已延期 / 进行中/部分完成 · P2 · installed/live：核浮动圆角Dock的rim/radius、58pxslot/70px高度、9px底距、内容分隔线和4x4深色运行点；对照固定48pxicon/magnificationoff参考，保留缩放与窄屏可达性。仅原生菜单已修的top28margin不能当整Dock位置/材质已验收。 证据：BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；没有完整licensedrawdisplaymetadata，geometry属于重建目标。
+- [ ] **E22.33 Big Sur 壁纸染色模糊** · 已延期 / 待实现 · P2 · installed/live：登记BigSur Dock/菜单栏wallpaper-tintedvibrancy、真实blur/transparency与外阴影缺失，当前固定不透明色无法随壁纸变化。与MT-02/MT-03/E13关联选一个真实机制，不新造Mac主题专用renderer；light/dark/减透明策略需明确后再实施。 证据：alignment-reference的BigSur阅读源有wallpapertint，现opaque材料明确不匹配；darkvariant未实现且当前目标light，不将其默默列为当前light完成前置。
+- [ ] **E22.34 Mac Dock 分组与放大** · 已延期 / 待实现 · P2 · installed/live：登记三MacDock当前按窗口slot而非按App分组的行为差异、固定/启动与running标记、最小化窗口处理，以及尚无magnification的差异。App分组/固定关联T21，放大先选交互/动画范围；不把窗口数图标伪装成macOSApp语义，不在视觉任务中悄加包管理。 证据：THEMES.md明确slotsrepresentwindows、noapplicationgrouping/magnification；882f9182已修窗口区溢出可达性，不能因这个已修问题重新标Dock所有功能未实现。
+- [x] **E22.35 已修 Classic 基础布局** · 已完成 · P2 · installed/live：保留已完成4px frame/23px caption/16x14 button盒、标准蓝色纯桌面及灰色双列Start基础布局；双列是Server2003默认且单列可配置，不能再把Classic配色等同legacy单列。 证据：4bcddf2 集成670491e，用户明确选择双列默认/单列override；actual468px外窗min/max/close盒分别x412/428/446、y6/16x14，标准desktop#3A6EA5。灰双列/blueheader/低高度scroll可达性已实测，当前380x444后续边框修正保留。完整Programs级联/profile/字体/图标仍由独立未完成项跟踪。
 
 #### T11 额外用户生命周期
 
@@ -666,11 +698,12 @@ GUI 消费已有身份/角色后端；先建角色再用它认证，不反向阻
 
 有界恢复/自启动/保存与资源释放；基础会话不等待完整共享迁移。
 
-- [ ] **T16.1 Shell 生命周期** · 待实现 · P1 · installed：明确 Shell 正常退出、崩溃、重启及最终失败策略，不误杀仍正常工作的普通应用。 前置：T06.3。 来源：M11.1。 证据：用户已选择Shell崩溃默认最多自动重启3次、耗尽保留普通应用并明确故障/手动恢复，正常退出/注销/health-check语义分开；随后明确暂缓新的恢复基础设施，第四批改为图形账户入口/设置/文件功能。原子会话0f86311干净，仅只读研究，当前策略未实现，不阻塞本批用户功能。
+- [ ] **T16.1 Shell 生命周期** · 待实现 · P1 · installed：明确 Shell 正常退出、崩溃、重启及最终失败策略，不误杀仍正常工作的普通应用。 前置：T06.3。 来源：M11.1。 证据：用户已选择Shell崩溃默认最多自动重启3次、耗尽保留普通应用并明确故障/手动恢复，正常退出/注销/health-check语义分开；随后明确暂缓新的恢复基础设施，第四批改为图形账户入口/设置/文件功能。原子会话0f86311干净，仅只读研究，完整策略未实现，不阻塞本批用户功能。2026-10-15 已有真实 native Shell 断开/重连、普通 App 存活证据及 Live 首帧/90秒启动 supervisor；这些不等于安装版重试耗尽策略或窗饰独立服务完成。
 - [ ] **T16.2 服务就绪与诊断** · 待实现 · P1 · installed：补齐 IME、网络、音频、通知等必要服务的就绪/失效诊断和受控恢复入口。 前置：T06.3。 来源：M11.2。
 - [ ] **T16.3 有界重试与人工恢复** · 待实现 · P1 · installed：实现有界重试/退避、状态持有和人工恢复，失败显式提示，不增加无限后台循环。 前置：T16.2。 来源：M11.3。
 - [ ] **T16.4 自启动与会话恢复** · 待实现 · P1 · installed：接通应用自启动、窗口/应用恢复及保存提示；恢复对象与代码版本合法，不能恢复陈旧或已卸载会话。 前置：T16.1、T13.1。 来源：M11.4。
 - [ ] **T16.5 会话耐久与释放** · 待实现 · P1 · installed：验证反复登录/注销、Shell 重启、服务失联和进程残留/资源释放，并记录可导出的会话诊断。 前置：T16.3、T16.4、T15.4。 来源：M11.5。
+- [ ] **T16.6 窗饰与 Shell 解耦** · 待实现 · P1 · common/live/installed：盘点发现的架构缺口：复用现有 GUI/JS 窗饰绘制，但应用系统窗框的生命周期不应依赖桌面 Shell。先单独确认服务归属、最小权限、主题快照、启动/崩溃/恢复及无 Shell 验收，再实施；不将此前架构问答当作独立服务重构授权，不回退到 C 主题 painter。 证据：2026-10-15 用户明确询问 App 是否像 Windows 程序一样不依赖 Explorer。当前 WM 与 App 可在 Shell 退出后继续存在，但统一 GUI 窗饰绘制器运行在 Shell；失联只请求标准 CSD，未实现 CSD 的客户可能无边框。因此只证明 App 存活，不能证明无 Shell 仍有完整可操作系统窗框；尚未启动服务拆分实现。
 
 #### T17 基础网络与凭据
 
@@ -683,7 +716,7 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 本地播放/录音及设备路由，不把蓝牙完成当普通音频前置；软件和物理证据分开。
 
-- [ ] **T18.1 音频设备与路由控制** · 待实现 · P1 · installed：补设备/端口/profile 选择、音量和失联恢复，复用现有私有 PipeWire，独立于蓝牙发现/配对。 来源：M14.1。
+- [ ] **T18.1 音频设备与路由控制** · 进行中/部分完成 · P1 · installed：补设备/端口/profile 选择、音量和失联恢复，复用现有私有 PipeWire，独立于蓝牙发现/配对。 来源：M14.1。 证据：2026-10-15 盘点：e442596 已完成六页独立 Settings；真实普通用户私有 PipeWire 软件设备执行音量 90%、麦克风静音、默认 sink，回读确认后保存，新 PID 重开仍保留。设备/端口/profile 的完整选择、失联与实体播放/录音/插拔仍未闭环，因此不是完整 T18 或物理音频验收。
 - [ ] **T18.2 扬声器麦克风验收** · 待实现 · P1 · hardware：指定实体扬声器/麦克风，验证播放、录音、插拔、恢复及延迟；软件模拟不冒充物理设备。 前置：T18.1。 来源：M14.1。
 
 #### T20 文档打开保存
@@ -698,9 +731,9 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 启动器、菜单/托盘通知和应用管理 UI；高级效果、窗口策略、终端形态另列。
 
 - [x] **T21.6 系统设置中心** · 已完成 · P1 · installed/live：可操作的统一系统设置窗口，接通现有外观、显示、网络、音频、快捷键与关于页面；复用已具备的控制器和真实权限，不以卡片/假成功替代用户操作。 证据：用户明确将第四批改为实际系统功能优先；固定0f86311，子会话47f514de-9e94-47a4-8ccf-05299e0676fe实现Shell连接拥有的普通设置窗口、持续导航和现有服务操作；显示确认/快捷键捕获继续使用现有受控层，不扩大普通应用权限。功能与实际原生验收待返回。 第四批普通设置中心六页导航与复用控制器已进入本地 main ce73a3c。固定 e879 的实际 UI16.27s/音频17.38s 与合格私有 PSK 网络关闭/重开、最少七张 UI/十张网络 app-buffer 门槛通过，父核对日志 SHA6ee5d39a。账户管理、物理音频/无线、原生 EAP、正式授权和 Hyper-V 首启图形稳定性不被此完成声明覆盖。
-- [ ] **T21.5 原生弹层关闭信号** · 待实现 · P1 · installed/live：设计并实现可信 compositor/host 到 Shell 的 surface-instance-scoped outside-press/popup-dismiss 事件，保留 owner/child membership/generation、真实输入及session-lock/trusted-shell隔离；exclusive层键盘保留时不能用DOM blur或window metadata猜焦点。 前置：T06.3。 来源：M17.2。 证据：菜单子会话精确6487101 trace确认native event缺口；当前合并的是授权A的JS lifecycle/owned surfaces，不含真正foreign app outside press，待新批明确接口并作原生输入验收。
-- [ ] **T21.1 启动器与窗口联动** · 待实现 · P1 · installed：应用图标、分组、固定、图标网格与任务窗口联动，不把包 icon 元数据视为 UI 已完成。 前置：T12.2。 来源：M17.1。
-- [ ] **T21.2 菜单焦点与关闭** · 进行中/部分完成 · P1 · installed：菜单/浮层点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归。 来源：M17.2。 证据：7c12e8→49b3e6d纳入a5已合并推送；Shell-owned surface/stale callbacks/捕获清理与17宿主回归、既有native window/workspace/output兼容通过。真正foreign/already-focused app outside-press缺可信surface实例信号，完整T21.2仍进行中；新增native前置单独跟踪。
+- [x] **T21.5 可信菜单外点关闭** · 已完成 · P1 · installed/live：为真实 Shell 连接拥有的专用临时菜单实现原生外点关闭，经 surface 生命周期清理焦点后将同一次按下交回正常输入路径；保留其它独占层和 session-lock 隔离。不增加普通应用 popup grab 或通用跨进程输入接口。 前置：T06.3。 来源：M17.2。 证据：历史 6487101 确认 foreign outside-press 缺口。2026-10-15 用户实际新版 Live 复现开始菜单展开时标题按钮被独占焦点拦截；最终采用受限 WM 生命周期关闭，而非另造通用事件或放松所有独占层。6618394/6298ff3 已合入并推送：菜单 full-output zone -1 消除重复 28px 边距；真实 Shell owner、专用 namespace、mapped/presented/overlay/exclusive 合同限定外点关闭。真实 GUI 四 strip caption 的最大化/还原/最小化/关闭、拖离取消、普通客户 wire 单次投递及 opt-in 客户 DOM 单击、非菜单独占负例通过。锁屏 guard 未变；普通 SDL 客户可按自身策略消费激活首击。原生 fixture 证据不冒充新 ISO/WSLg 可见交互验收。
+- [ ] **T21.1 启动器与窗口联动** · 进行中/部分完成 · P1 · installed：应用图标、分组、固定、图标网格与任务窗口联动，不把包 icon 元数据视为 UI 已完成。 前置：T12.2。 来源：M17.1。 证据：2026-10-15 盘点：桌面 App 快捷方式/框选/内部排列与保存已由 cbe4000/0881e09 集成，Shell 有真实任务按钮、三种 Dock、可滚动窗口区及启动联动。窗口按 App 分组、固定/图标解析和共享注册完整闭环仍未完成；已具界面不以未来共享包注册为由重新标成完全未实现。
+- [x] **T21.2 菜单焦点与关闭** · 已完成 · P1 · installed：Shell 临时菜单点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归；普通应用继续采用已选的窗口内菜单/对话框方案，不要求新增通用原生 popup grab。 来源：M17.2。 证据：历史 7c12e8→49b3e6d 的 owned-surface 生命周期与 stale callback 清理保留。2026-10-15 6618394/6298ff3 补齐可信专用菜单的 native 外点关闭、同次 caption/client 路由、真实 4px 任务栏衔接；实际 GUI/native 测试覆盖三键、按下拖离取消、launcher 不先关后重开、搜索/焦点/Escape、非菜单独占保护。普通客户 wire 下发一次，受控 SDL activation-click opt-in 客户实际 DOM 单击/绿色帧验证；不将默认客户自身激活策略强改。未承诺所有应用 popup 外点 API；当前源码已推送，修正版 Live b7e7a700 与 main 6298ff3 同 tree。
 - [ ] **T21.3 托盘与通知** · 待实现 · P1 · installed：托盘主题图标/overlay/动画/tooltip 与通知历史、丰富内容/声音；确定隐私、容量和外部资源边界。 来源：M17.3。
 - [ ] **T21.4 应用管理界面** · 待实现 · P1 · installed：补齐安装、替换、回退、退役/恢复管理 UI、版本/状态/空间展示和明确错误。 前置：T14.7、T12.1、T12.2。 来源：M15.1。
 - [x] **T21.7 闲置窗口拖动与缩放** · 已完成 · P1 · live/installed：主题/纯位置刷新不阻塞已有当前缓冲的标题栏拖动与缩放；真正尺寸/模式/装饰协商仍等待最新 matching commit，保留输入/工作区/边界契约。 证据：功能源码固定 ce73a3c 已审并纳入本地主分支；直接既有 Core 集成 runner 3.77s 与 held-buffer/no-body-click 拖动、真实 resize release 回归通过，receipt SHA0513501b。2026-10-08 固定组合 ffc887f 的 PollyUI/PollyWM 已增量链接，复用字节一致的最新 Core，receipt SHA9f45bf17；已交付 e879 媒体未更新，集中新候选手测仍待执行。
@@ -796,19 +829,19 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 
 - [ ] **E12.1 输入法与深色主题** · 待实现 · P2 · installed：IME 主题跟随、深色变体和现有主题深化；任意模板、自动监听、字体文件扩展先定义受限契约。 来源：M17.4。
 
-### E14 深度文本输入 — 待实现
+### E14 深度文本输入 — 进行中/部分完成
 
 **交付/边界：** 文字方向/字素、断行/caret 与真实 IME 上下文分别验收；不伪造主机 API 能力。
 
-- [ ] **E14.1 文字方向与字素** · 待实现 · P2 · installed：标题 shaping/bidi、字素安全省略及语义；补齐正文段落方向/locale、bidi、视觉光标 affinity。 来源：M18.1。
+- [ ] **E14.1 文字方向与字素** · 进行中/部分完成 · P2 · installed：标题 shaping/bidi、字素安全省略及语义；补齐正文段落方向/locale、bidi、视觉光标 affinity。 来源：M18.1。 证据：2026-10-15 5bb181c 已将 native caption 文本迁移至现有 GUI Canvas2D，复用 Linux HarfBuzz/ICU shaping，不再维护 WM 的独立字体缓存。caption 当前省略按 Unicode code point 截断，尚非 grapheme-safe；完整 bidi/locale、视觉光标 affinity 和其它平台 shaping 仍待完成。
 - [ ] **E14.2 高级断行与光标** · 待实现 · P2 · installed：字体连字 caret、高级断行/断字及匿名输入控件选择/剪贴板编辑，保留已实现稳定 ID 路径。 来源：M18.2。
 - [ ] **E14.3 输入法上下文** · 待实现 · P2 · installed：改实际主机/输入链路实现 surrounding-text/delete-surrounding 和 Rime 上下文消费，不伪造 SDL API 能力。 来源：M18.3。
 
-### E15 跨应用输出传输 — 待实现
+### E15 跨应用输出传输 — 进行中/部分完成
 
 **交付/边界：** 输出拖放/offer/动作和接收阶段峰值内存有界；触摸/剪贴板历史是未选方向。
 
-- [ ] **E15.1 输出拖放语义** · 待实现 · P2 · installed：补齐向外拖放、offer、动作协商与 DataTransfer 语义，明确取消/拒绝及传入文本自动插入规则。 来源：M18.5。
+- [ ] **E15.1 输出拖放语义** · 进行中/部分完成 · P2 · installed：补齐向外拖放、offer、动作协商与 DataTransfer 语义，明确取消/拒绝及传入文本自动插入规则。 来源：M18.5。 证据：2ef182f 已交付公共 GUI 原生拖放合同和首个 Wayland 普通窗口 COPY 后端，原生 27 场景包含实际 JS 发起、接收、取消/拒绝、GC/关闭与连接丢失。Windows OLE、macOS/X11、MOVE、自定义拖拽图、Shell-layer 来源及传入文本自动编辑仍不属于已完成范围；没有因为首个 COPY 后端通过而关闭整项。
 - [ ] **E15.2 传输峰值内存** · 待实现 · P2 · installed：接收传输阶段限制内存和大载荷，测峰值内存而非只在收完后检查长度。 来源：M18.8。
 
 ### E21 可选应用沙箱 — 待实现
@@ -848,7 +881,7 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 - [x] **H0.3 D1 基线 3** · 已完成 · history · common：A/A/B/A 四次冷启动，实际设置、应用注册/AppData 和文档连续保留，测试镜像各轮正常关机。 来源：M00.3。 证据：617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。
 - [x] **H0.4 D1 基线 4** · 已完成 · history · common：正常镜像不包含验证 fixture；单次原生桌面启动预检通过，不冒充正常关机或持久性验收。 来源：M00.4。 证据：617cea4；persistent-d1-boot-r2/smoke 的原始 sourceDirty 与关机范围保持。
 - [ ] **授权 外置介质写入** · 待授权/待决策 · P2 · hardware：用户指定目标稳定身份/型号/容量与写入清除范围；三块排除内盘禁写，批准一次具体范围才解除。 证据：用户将授权外置安装/相关硬件复测推迟；此授权仍未授予，不成为 Alpha 虚拟介质交付前置。
-- [ ] **授权 远端推送与 CI** · 待授权/待决策 · P2 · release：远端实际 push/权限或触发动作需要用户明确范围；本地配方验证不需要该授权。
+- [ ] **授权 远端 CI 执行** · 待授权/待决策 · P2 · release：实际运行远端 CI、改变其权限或增加触发动作仍需具体范围。2026-10-15 用户授权的当前 main 代码签入/推送已执行；这不自动授权新 CI 工作流、Mac 主机或生产发布。本地配方验证不需要该授权。
 - [ ] **授权 生产密钥与发布** · 待授权/待决策 · P2 · release：生产信任根/私钥操作与对外发布先选身份/渠道并获得具体授权；测试身份不等同生产授权。
 - [ ] **授权 外置故障测试** · 待授权/待决策 · P2 · hardware：指定可丢弃数据、介质和拔出/掉电/满盘测试范围后才执行；安装写入授权不自动包括故意中断和故障注入。 证据：用户将授权外置安装/相关硬件复测推迟；此授权仍未授予，不成为 Alpha 虚拟介质交付前置。
 
@@ -867,3 +900,8 @@ iwd、连接/忘记/重连、有线和 DNS；高级企业/VPN 不是基础网络
 - HOME：`21517ca` / `fa6763a` / `b8a9a4e` / `cbf128f` / `e7c4ea3`；v2/v3/v4 managed 结果分别保留，1→2 不等于共享注册/额外用户 PAM。
 - 账户导入：`94c23cd`；真实 readonly tmpfs/PAM/su/passwd，fixture 仅适配卷发现。新工具未装入现有 r2，不宣称迁移镜像/ext4耐久已经通过。
 - 以上已完成只指各子项的准确组件/产物范围；当前策略候选、独立救援、正式签名和真实外置写入仍需对应新证据。
+- 2026-10-15 盘点：main 6298ff3 已正常推送；最新 Live b7e7a700/tree9c129e2 与其内容一致，固定 D:\temp\PollyOS\PollyOS.iso 真硬链接。历史备注中的当前介质、尚未推送等词只属于原记录日期，不覆盖本条和 Alpha 节最新证据。
+- 已交付并从剩余项去重：六页独立 Settings、JS iwd、基础 Files 和单普通文件同 FS 移动、只读 Processes、桌面快捷方式/框选、Canvas2D/Image、Win/Linux 有界 WebGL2/WebGPU、GUI 窗饰与 Classic 边线/纹理、Live 启动与固定路径媒体发布。它们各有明确子集，不能因此关闭共享包、多用户、物理设备、完整浏览器兼容或整系统验收。
+- 新发现待设计项：无 Shell 仍有完整系统窗框；当前只保证 App 存活，CSD 协商不保证不会自绘的客户有边框。独立窗饰服务尚未授权实施。其余明确待验项包括旧 Shutdown GUI/长输入失败、当前 installed 策略联合验收、真实 Mac/物理 GPU 与完整二进制发行履约。
+- 本次签入/推送授权不解除远端 CI、生产密钥/公开发布、外置介质写入或故障测试的独立授权门槛；保持它们为待决策/受阻，不自动启动延期功能。
+- 2026-10-15 六主题差异逐项登记：保留原E22/XPLuna三个IDs，扩为XP/Classic/Win11/Tiger/Lion/BigSur及共享字体/图标/控件/真实状态的35个条目；已修复7项单列完成记录，余项区分部分实现、明确缺失与参考不足。不把所有待核对区域都伪称已有确定像素bug，不重新打开已修Classic纹理/边线/布局/菜单输入，也不自动开启blur/materials/品牌素材或全六主题测试。

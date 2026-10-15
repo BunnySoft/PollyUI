@@ -233,8 +233,10 @@ seam; they do not create surfaces or change state by themselves.
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
 simulated appearance preview, but also **not a Linux compositor desktop capture**.
-`tests/caption-alignment.c` checks/rasterizes the actual shared C primitives and
-hitboxes; it does not draw FreeType caption text or certify a full window.
+`tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
+bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;
+the native window suite checks their composition/input. Historical C painter
+crops retain their original scope and are not current full-window certification.
 Compare same-size raw crops with no resizing, pixel masks, font exclusions or
 invented pass thresholds. Before/after difference is change evidence, not OS
 reference error. No full-scene OS MAE is available without qualified raw captures.
@@ -253,8 +255,42 @@ not include application or credential content.
 The standalone appearance preview is still a simulated sample. Its samples use
 the same data but do not certify every compositor effect. `window.shadow` and
 `unifiedToolbar` retain their preview meaning; real client clipping, compositor
-shadows/blur, caption shaping and arbitrary font-file loading are not added by
-this theme system.
+shadows/blur and arbitrary font-file loading are not added by this theme
+system. Captions now reuse the GUI text backend, but font equivalence,
+grapheme-safe ellipsis and full platform/state qualification remain incomplete.
+
+### Per-theme discrepancy tasks
+
+Execution state and evidence live only in
+[`docs/POLLYOS-PLAN.json`](../docs/POLLYOS-PLAN.json), under **E22 Windows/Mac
+six-theme alignment**; its generated checklist is in
+[`docs/POLLYOS-BACKLOG.md`](../docs/POLLYOS-BACKLOG.md). This is the index to the
+specific task IDs, not another independently maintained status table.
+
+| Target / surface | Individually tracked discrepancies |
+|---|---|
+| Reference provenance | E22.1 / E22.3: XP version/DPI and native comparison; E22.4: Classic, Win11 and Mac version/scale/interaction-state capture metadata |
+| Shared typography and art | E22.5: font widths, weights, baselines and rasterization; E22.6: original Polly versus system/application/Start/tray/Dock artwork |
+| Shared controls | E22.7: button borders, backgrounds and hover/press/disabled/default/focus; E22.8: checkbox/radio/switch/select/tabs/list selection; E22.9: text-box bevel/padding/caret/selection and scrollbars; E22.10: Settings/dialog/confirmation/authentication surfaces |
+| Actual geometry and state | E22.11: bounded native active/inactive/press/cancel/maximize/restore, narrow/low-screen and supported DPI checks, not just component fixtures |
+| XP SP3 Luna | E22.2: completed historical base-paint increment; E22.12: remaining caption bands, edges, text shadow and caption-control states; E22.13: taskbar/Start/quick-launch/tray/clock and two-column menu details |
+| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: cascading Programs, profile and content-density/layout choices |
+| Server 2003 Classic corrected records | E22.16: bevel/outline ownership; E22.17: flat state, stipple, focus and icon spacing; E22.18: caption glyph size/offset and gradient span; E22.19: native menu/taskbar gap; E22.20: outside-menu caption input, linked to the existing functional task; E22.35: base frame metrics, solid desktop and gray two-column default with single-column override |
+| Windows 11 24H2 light | E22.21: caption backplates/glyphs/states; E22.22: centered taskbar, running markers, Start search/grid/footer; E22.23: full-client corner clipping/shadows; E22.24: Mica-like versus Acrylic backdrop mechanisms |
+| OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
+| OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
+| macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
+| Shared Mac Dock semantics | E22.34: per-application grouping/pinning versus the current per-window slots, minimized/running behavior and unimplemented magnification |
+
+The list distinguishes a measured defect, an explicit implementation gap and
+missing reference/qualification evidence. Corrected defects are not reopened
+as unfinished work. Existing native menus, application grouping and material
+projects remain the owners of their mechanisms; an alignment task does not
+duplicate them or authorize Mica/blur, a new renderer, proprietary assets or
+fake OS actions. Preserve customization and request a decision before changes
+that force fonts/resolution, remove search/actions or alter cross-theme policy.
+No new screenshot campaign, six-theme test matrix or product changes are
+started merely by recording these tasks.
 
 ## Bitmap resources
 
