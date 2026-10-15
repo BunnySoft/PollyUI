@@ -789,16 +789,16 @@
       "label": "E22.6 图标与品牌资源差异",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分别记录 Windows Start/应用/任务/托盘图标和 Mac Dock 应用图标的形状、尺寸、对齐与当前 Polly 原创图形差异；优先接真实应用已有合法 artwork，缺失时明确 fallback。系统品牌图标、壁纸和字体只在授权明确时考虑；参考图不能直接变成 runtime 资源，原创图形不宣称官方像素复刻。",
+      "scope": "分别记录 Windows Start/应用/任务/托盘图标、Mac Dock 应用图标与桌面标签的形状、尺寸、对齐和当前 Polly 原创图形差异；优先接真实应用已有合法 artwork，缺失时明确 fallback。系统品牌图标、壁纸和字体只在授权明确时考虑；参考图不能直接变成 runtime 资源，原创图形不宣称官方像素复刻。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。实际 app-icon 解析与合法资源选择未由 theme color 修正覆盖。"
+      "evidence": "现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。2026-10-16 合入并推送 b7f2916（源 e3d7201）：新增严格可选 icons.desktopLabelStyle=capsule|shadow，缺省及显式 capsule 保持 schema1 原样，仅有桌面原图参考的 Tiger/BigSur 主动启用 shadow，Lion/XP 不变。原 native 主文本布局、86宽/44高裁剪、36图标及持久位置不变；阴影是同宽、向下1logicalpx、aria-hidden/pointer-none的原生文本层，selected 保旧色和结构。父 Node12/0 与真实GUI四主题的 wrap/Unicode/bitmap/fallback/选中/双击/Enter/拖放/框选通过；Lion/XP全图bytes不变，Tiger/BigSur变化限定原标签框。另真实私有Wayland六场1/1.5/2使用已冻结WM/GUI和当前JS通过，不是物理HiDPI、Darwin或完整main-native认证；平台A11y provider不可用，不宣称screenreader实测。合法系统品牌资源、精确字体/阴影raw、Lion桌面图标参考及全图标资格仍待完成，不以此标签子集关闭E22.6。"
     },
     {
       "id": "theme-button-state-coverage",
@@ -3205,7 +3205,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -3315,9 +3315,9 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-15 用户明确询问 App 是否像 Windows 程序一样不依赖 Explorer。当前 WM 与 App 可在 Shell 退出后继续存在，但统一 GUI 窗饰绘制器运行在 Shell；失联只请求标准 CSD，未实现 CSD 的客户可能无边框。因此只证明 App 存活，不能证明无 Shell 仍有完整可操作系统窗框；尚未启动服务拆分实现。"
+      "evidence": "2026-10-15 用户明确询问 App 是否像 Windows 程序一样不依赖 Explorer；现行交付仍是Shell内统一GUI窗饰，失联仅请求CSD，不能保证不会自绘客户有完整窗框。2026-10-16 用户要求提交推送后继续完成剩余，并明确自主实现；父已审完并正式批准无窗口独立decorator方案，独占native分支正在实施，尚未交付。WM私有连接固定publisher/renderer角色、appearance v4、WM会话不可逆的一次性只读主题引导；Shell保唯一偏好writer。通用无窗口GUI复用字体/Document/Canvas和事件等待，不用SDL/隐藏窗/testhost/固定tick。保最后已呈现帧但新geometry/revision必须等matching frame或显式失败，重连fresh revision，三次有界重启。与Windows shell.mjs交棒后才移除Shell renderer，不回退C painter；完成须以真实独立进程冷启动/Shell退出/renderer恢复及权限/FD负例证明，当前不能宣称已具独立窗饰能力。"
     },
     {
       "id": "t17",
@@ -5577,6 +5577,7 @@
     "- 2026-10-15 六主题差异逐项登记：保留原E22/XPLuna三个IDs，扩为XP/Classic/Win11/Tiger/Lion/BigSur及共享字体/图标/控件/真实状态的35个条目；已修复7项单列完成记录，余项区分部分实现、明确缺失与参考不足。不把所有待核对区域都伪称已有确定像素bug，不重新打开已修Classic纹理/边线/布局/菜单输入，也不自动开启blur/materials/品牌素材或全六主题测试。",
     "- 后续本地有界E22.7交付：a1dcab3/52383ab/1130278/623e1df完成只读Document owner、独立bounded state observer、普通Proxy属性语义与Canvas弱owner/owner-free finalizer token；真实关闭focus/plain/panel对象均可GC，live detached Canvas实际unsubscribe，live-GC后两帧host-only resize和原五图bytes保持。632953f保Appearance原focus wrapper而不恢复bevel/gloss，Classic卡focus0→335px、blur0差；retained ring175/Canvas176按真实clip绘四边全0缺点且backing不缩。E22.8只读核SDK六类选择控件确已存在，但Settings导航/Appearance是selected command按钮，不把此修复当checkbox/radio/tabs全主题认证。",
     "- 新增两项用户要求已落源码：每显示器100/150/200系统缩放，以及只读任务管理器响应/采样性能，分别有UI/真实私有输出和GUI/真实proc证据；历史Live硬链接仍b7e7a700，未以本地代码提交冒称新介质已生成。源分支仍未推送。",
-    "- 扩展检查保留两个精确基线红项：module-boundaries的旧configureAppearance(theme)静态regex，与Files专用fake DOM缺querySelector；均在未改基线上复现，未为新功能隐去或修改生产guard。定点相关测试通过不表示所有历史suite全绿。"
+    "- 扩展检查保留两个精确基线红项：module-boundaries的旧configureAppearance(theme)静态regex，与Files专用fake DOM缺querySelector；均在未改基线上复现，未为新功能隐去或修改生产guard。定点相关测试通过不表示所有历史suite全绿。",
+    "- 2026-10-16 推送进展：79b88ed及此前23个本地提交已正常推送并核远端一致，之后桌面标签b7f2916也已审查、定点实测并正常推送。前条源分支仍未推送仅属原记录时间；最新ISO依然b7e7a700，没有把新源码提交冒称新媒体。当前继续SDK选择控件、Classic所有程序、独立窗饰服务与最小MT02壁纸派生客户端材质；MT03跨应用采样、完整品牌/字体/OS像素与外部硬件资格不因此标绿。"
   ]
 }
