@@ -135,3 +135,72 @@ export async function checkNativeClassicFocus(directory) {
   console.log('PASS: actual native owner/host resize/scale and business-handler coexistence');
   child.close(); window.quit();
 }
+
+export async function checkNativeClassicFocusCollection() {
+  const collect = async () => {
+    for (let i = 0; i < 8; i++) { await delay(30); ownerTest.gc(); }
+  };
+  const alive = refs => Object.fromEntries(Object.entries(refs).map(([name, weak]) => [name, Boolean(weak.deref())]));
+  const closed = async focused => {
+    let child = window.create({ title: 'Classic collection ' + focused, width: 240, height: 140 });
+    let owner = child.document;
+    const original = globalThis.document;
+    globalThis.document = owner;
+    try {
+      render(h('view', { style: { width: '100%', height: '100%' } },
+        button('collect-control', 'Collect', theme, () => {}, false, { width: 120, height: 22 })), owner.body);
+    } finally { globalThis.document = original; }
+    await delay(90);
+    let node = owner.getElementById('collect-control');
+    if (focused) node.focus();
+    await delay(90);
+    const refs = { node: new WeakRef(node), document: new WeakRef(owner), window: new WeakRef(child) };
+    node = null; owner = null; child.close(); child = null;
+    return refs;
+  };
+  const plain = await closed(false), focused = await closed(true);
+  await collect();
+  const result = { unfocused: alive(plain), focused: alive(focused) };
+  console.log('CLASSIC_CLOSED_WINDOW_GC ' + JSON.stringify(result));
+  check(Object.values(result.unfocused).every(value => !value), 'Unfocused closed child baseline collects');
+  check(Object.values(result.focused).every(value => !value), 'Focused closed child node/Document/window collect');
+
+  const child = window.create({ title: 'Classic detached Canvas', width: 240, height: 140 });
+  const owner = child.document, observe = child.observeState;
+  let subscriptions = 0;
+  child.observeState = function(callback) {
+    const remove = observe.call(this, callback);
+    let active = true;
+    subscriptions++;
+    return () => { if (active) { active = false; subscriptions--; remove(); } };
+  };
+  const draw = replace => {
+    const control = button('live-focus', 'Live owner', theme, () => {}, false, { width: 120, height: 22 });
+    if (replace) {
+      const find = vnode => vnode.props?.className === 'classic-focus-paint' ? vnode :
+        vnode.children?.map(find).find(Boolean);
+      const paint = find(control);
+      // Type replacement drops this Canvas without its normal onLeave hook.
+      paint.type = 'view';
+      paint.props = { className: 'focus-replacement', style: paint.props.style };
+    }
+    const original = globalThis.document;
+    globalThis.document = owner;
+    try { render(control, owner.body); } finally { globalThis.document = original; }
+  };
+  draw(false); await delay(90);
+  owner.getElementById('live-focus').focus(); await delay(90);
+  check(subscriptions === 1, 'Focused live owner has one state subscription');
+  const detached = new WeakRef(owner.getElementById('live-focus').querySelector('.classic-focus-paint'));
+  draw(true);
+  check(subscriptions === 1 && owner.activeElement === owner.getElementById('live-focus'),
+    'Type replacement exercises finalizer cleanup without blurring the live control');
+  await collect();
+  const detachedResult = { canvasAlive: Boolean(detached.deref()), subscriptions, ownerClosed: child.closed };
+  console.log('CLASSIC_DETACHED_CANVAS_GC ' + JSON.stringify(detachedResult));
+  check(!detachedResult.canvasAlive && subscriptions === 0 && !child.closed,
+    'Detached Canvas collects and unsubscribes while the native owner remains live');
+  child.close();
+  console.log('PASS: real focused/unfocused child collection and live-owner detached Canvas cleanup');
+  window.quit();
+}
