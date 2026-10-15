@@ -828,9 +828,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "XP-LUNA.md 明列设置 tabs/app-specific widget theming 未完成；THEMES.md 的 covered 仅有限 shared button/command 等，不包含完整 SDK 选择控件认证。"
+      "evidence": "2026-10-16 合入99ab885（源91b53df/aec417f7/ff1b295e）：SDK switch/checkbox/radio/tabs/select/menu六类实接role/checked/disabled、paint-only可见focus、primary pointer、受控值及roving键盘；Select沿既有NOverlayHost/openPopup，动态options/value/disabled/latestcallback、关闭/替换/焦点恢复和长列表实际可用。父review另实证mapped四类按住A后删除/重排会在同NativeNode误emit B，现SDK局部gesture identity令八case均无误触；不改globalreconciler/key。另一真实host-only640x500→640x80原popup仍240高越界，现open期间用既有owner.observeState，收为18高/bottom76，grow恢复，每次四个有界rAF、close订阅1→0/后续frames0。父实际basic30、controls49、gesture组及既有naive四组54项通过，真Win32子窗口resize/cleanup通过；原light/dark静态全图bytes/七box保持。仅SDK light/dark功能合同，不是六OS精确glyph/art、所有App bespoke选择控件或native accessibility provider资格，E22.8保持partial。"
     },
     {
       "id": "theme-input-scrollbar-coverage",
@@ -933,16 +933,16 @@
       "label": "E22.15 Classic 菜单与级联",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "区分已完成灰色双列 chrome 与仍缺的 Programs/All Programs 级联、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。先确认内容布局取舍和真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
+      "scope": "区分已完成灰色双列 chrome、真实 flat All Programs 子菜单与仍缺的多级目录、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。内容和布局使用真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "真实 Win2K3 Start-open JPEG 与实际 Polly 菜单可见 profile/All Programs/内容行差异；THEMES.md 明确 cascading Programs 与 true user profile art 未复现。380x444 是当前 preferred，不强改所有分辨率为参考 484px 高。"
+      "evidence": "真实 Win2K3 Start-open JPEG 与实际 Polly 菜单的完整profile/内容行差异仍未认证。2026-10-16 合入f20c38b（源73f5ce24）：Classic现有RootMenu内增加真实desktopCatalog的flat All Programs，保默认双列/legacy单列及原Search/Pin/Files/Settings/Refresh/Close/logout；右贴或同client覆盖，Back/Left/Escape恢复trigger，键盘/wheel/focus可达长列表。每次open稳定行槽避免positional reconciler把held行变另一app，epoch/currentMenu/livecatalog拒绝旧launch/Pin/延迟focus，clock/retheme保状态。父Node35/35、真实GUI384x480/260x180/legacy180x140通过；真nativechild submenu分别[197,3,184,474]与[3,29,174,108]完全在client输入document内，末行focus完整可见。没有增加surface/native权限或放松RootMenu outside/lock合同，但此Win32client边界不是Linuxcompositor outside-dismiss认证。categories非目录path，不造多级目录/Accounts/Recent后端；极小viewport只最大可见，不冒完整fit。E22.15保持partial。"
     },
     {
       "id": "classic-frame-bevel-corrected",

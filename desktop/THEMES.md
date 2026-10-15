@@ -353,10 +353,17 @@ the canonical Classic palette. That is not verified display-depth metadata:
 the product keeps canonical 24-bit colors, and raw comparison error is not
 normalized or forced to zero.
 Only actual installed entries/actions are shown: no fake recommendations,
-categories, pinned history or nonfunctional search. Classic cascading Programs
-menus, true user account/profile art, and Win11 recommendation/account features
-are not reproduced. Existing application launch, desktop shortcut, keyboard and
-logout actions remain connected.
+categories, pinned history or nonfunctional search. Classic now has a flat
+All Programs submenu inside its existing RootMenu client. It uses real catalog
+IDs and existing launch/Pin services, preserves two-column and legacy layouts,
+and supports Back/Left/Escape, keyboard navigation and bounded scrolling.
+Stable per-open row slots and menu epochs prevent a held or retired row from
+activating another application after catalog reconciliation. The submenu stays
+inside the existing input viewport; no native popup or new authority is added.
+See [the Shell contract](shell/README.md). Multi-level directory menus, true user
+account/profile art, and Win11 recommendation/account features are not reproduced.
+Existing application launch, desktop shortcut, keyboard and logout actions remain
+connected. E22.15 therefore remains partial.
 
 Mac menu-bar commands keep their existing explicit square-corner treatment
 through pointer, focus and reconciliation states. A component-local button
@@ -574,6 +581,15 @@ global scrollbars and third-party clients are not certified as OS-identical.
 Generic platform font fallback remains intentional: no forced aliases or
 proprietary font files are installed. These missing pixels prevent a 1:1 claim.
 
+The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
+keyboard navigation, disabled/controlled-value contracts and visible paint-only
+focus. Mapped options cancel a pointer gesture if reconciliation changes its
+identity. Open Select popups follow native owner geometry, remove their observer
+on close and keep the existing window-local portal; a very short viewport can
+show only part of a row. These are functional improvements, not six-theme
+OS-exact glyphs or native accessibility-provider certification. See
+[the SDK contract](../gui/README.md).
+
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing
 credential controls preserves their values, selection and focus. Theme data does
@@ -601,7 +617,7 @@ specific task IDs, not another independently maintained status table.
 | Shared controls | E22.7: button borders, backgrounds and hover/press/disabled/default/focus; E22.8: checkbox/radio/switch/select/tabs/list selection; E22.9: text-box bevel/padding/caret/selection and scrollbars; E22.10: Settings/dialog/confirmation/authentication surfaces |
 | Actual geometry and state | E22.11: bounded native active/inactive/press/cancel/maximize/restore, narrow/low-screen and supported DPI checks, not just component fixtures |
 | XP SP3 Luna | E22.2: completed historical base-paint increment; E22.12: remaining caption bands, edges, text shadow and caption-control states; E22.13: taskbar/Start/quick-launch/tray/clock and two-column menu details |
-| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: cascading Programs, profile and content-density/layout choices |
+| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: multi-level Programs directories beyond the delivered flat submenu, profile and content-density/layout choices |
 | Server 2003 Classic corrected records | E22.16: bevel/outline ownership; E22.17: flat state, stipple, focus and icon spacing; E22.18: caption glyph size/offset and gradient span; E22.19: native menu/taskbar gap; E22.20: outside-menu caption input, linked to the existing functional task; E22.35: base frame metrics, solid desktop and gray two-column default with single-column override |
 | Windows 11 24H2 light | E22.21: caption backplates/glyphs/states; E22.22: centered taskbar, running markers, Start search/grid/footer; E22.23: full-client corner clipping/shadows; E22.24: Mica-like versus Acrylic backdrop mechanisms |
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
