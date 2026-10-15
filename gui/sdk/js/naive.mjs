@@ -51,6 +51,44 @@ const ctrlFocus = () => ({ borderColor: theme.primary });
 // drop undefined/null so they don't stringify to "undefined"
 const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined && o[k] !== null) r[k] = String(o[k]); return r; };
 
+const primaryClick = event => event.button === undefined || event.button === 0;
+const activationKey = event => !event.repeat && (event.key === ' ' || event.key === 'Enter');
+const selectionFocus = () => h('view', { className: 'n-selection-focus', 'aria-hidden': 'true',
+  style: clean({ position: 'absolute', left: 1, top: 1, right: 1, bottom: 1,
+    borderWidth: 1, borderColor: theme.primary, borderRadius: 2, opacity: 0, pointerEvents: 'none' }) });
+function syncSelectionFocus(node) {
+  const ring = node.querySelector('.n-selection-focus');
+  if (ring) ring.style.opacity = node.getAttribute('aria-disabled') !== 'true' &&
+    node.ownerDocument?.activeElement === node ? '1' : '0';
+}
+const selectionEvents = () => ({
+  onFocus: event => syncSelectionFocus(event.currentTarget),
+  onBlur: event => syncSelectionFocus(event.currentTarget),
+  onUpdate: syncSelectionFocus,
+});
+function roveSelection(event, group, horizontal, activate) {
+  const keys = horizontal ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+  if (![...keys, 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault(); event.stopPropagation();
+  const nodes = Array.from(group.childNodes).filter(node => node.getAttribute('aria-disabled') === 'false');
+  if (!nodes.length) return;
+  const at = nodes.indexOf(event.currentTarget);
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? nodes.length - 1 :
+    (Math.max(0, at) + (event.key === keys[0] ? -1 : 1) + nodes.length) % nodes.length;
+  for (const node of group.childNodes) node.tabIndex = node === nodes[index] ? 0 : -1;
+  nodes[index].focus();
+  const position = Array.from(group.childNodes).indexOf(nodes[index]);
+  if (activate) activate(position);
+}
+function syncRoving(group, selected) {
+  const nodes = Array.from(group.childNodes);
+  const enabled = node => node.getAttribute('aria-disabled') === 'false';
+  const active = group.ownerDocument?.activeElement;
+  const entry = nodes.find(node => node === active && enabled(node)) ||
+    nodes.find((node, index) => index === selected && enabled(node)) || nodes.find(enabled);
+  for (const node of nodes) node.tabIndex = node === entry ? 0 : -1;
+}
+
 // ---- blinking text caret (shared by the text inputs) -----------------------
 // Native focus isn't reactive, so focus/blur handlers set the active id and a
 // reactive blink toggles re-renders. Inputs need a stable `id` for the caret.
@@ -156,10 +194,14 @@ export function NSwitch(props = {}) {
   const { value = false, onUpdate, disabled = false, id } = props;
   const W = 40, H = 22, knob = 18, pad = 2;
   return h('view', {
-    id,
+    id, role: 'switch', tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(value)),
+    'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
     style: clean({ width: W, height: H, borderRadius: H / 2, position: 'relative', backgroundColor: value ? theme.primary : theme.railOff, opacity: disabled ? 0.5 : 1 }),
-    onClick: disabled ? undefined : () => onUpdate && onUpdate(!value),
-  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }));
+    onClick: event => { if (!disabled && primaryClick(event)) onUpdate?.(!value); },
+    onKeydown: event => {
+      if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onUpdate?.(!value); }
+    },
+  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }), selectionFocus());
 }
 
 // ---- NCheckbox --------------------------------------------------------------
@@ -167,26 +209,47 @@ export function NSwitch(props = {}) {
 export function NCheckbox(props = {}, label) {
   const { checked = false, disabled = false, onChange, id } = props;
   return h('view', {
-    id,
-    style: clean({ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
-    onClick: disabled ? undefined : () => onChange && onChange(!checked),
+    id, role: 'checkbox', tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(checked)),
+    'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
+    style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
+    onClick: event => { if (!disabled && primaryClick(event)) onChange?.(!checked); },
+    onKeydown: event => {
+      if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onChange?.(!checked); }
+    },
   },
     h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: checked ? theme.primary : theme.card, borderWidth: checked ? 0 : 1, borderColor: theme.border }) },
       checked ? h('view', { style: { color: theme.solidText, fontSize: '13', fontWeight: 'bold' } }, '✓') : null),
-    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null);
+    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null, selectionFocus());
 }
 
 // ---- NRadioGroup ------------------------------------------------------------
 
 export function NRadioGroup(props = {}) {
-  const { value, onUpdate, options = [], vertical = false } = props;
-  return h('view', { style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
-    ...options.map(opt => {
+  const { value, onUpdate, options = [], vertical = false, disabled = false, id } = props;
+  const selected = options.findIndex(opt => opt.value === value);
+  const entry = options.findIndex((opt, index) => !disabled && !opt.disabled &&
+    (index === selected || !options.some(item => item.value === value && !item.disabled)));
+  return h('view', { id, role: 'radiogroup', 'aria-disabled': String(Boolean(disabled)),
+    'aria-orientation': vertical ? 'vertical' : 'horizontal',
+    onUpdate: node => syncRoving(node, selected),
+    style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
+    ...options.map((opt, index) => {
       const on = opt.value === value;
-      return h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '8' }, onClick: () => onUpdate && onUpdate(opt.value) },
+      const off = disabled || opt.disabled;
+      const choose = position => { if (!disabled && !options[position].disabled && options[position].value !== value) onUpdate?.(options[position].value); };
+      return h('view', { role: 'radio', tabIndex: index === entry ? 0 : -1, 'aria-label': opt.label,
+        'aria-checked': String(on), 'aria-disabled': String(Boolean(off)), ...selectionEvents(),
+        style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: off ? 0.5 : 1 }),
+        onClick: event => { if (!off && primaryClick(event)) { event.currentTarget.focus(); choose(index); } },
+        onKeydown: event => {
+          if (off) return;
+          if (event.key === ' ') { event.preventDefault(); if (!event.repeat) choose(index); }
+          const horizontal = ['ArrowLeft', 'ArrowRight'].includes(event.key);
+          roveSelection(event, event.currentTarget.parentNode, horizontal, choose);
+        } },
         h('view', { style: clean({ width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.card, borderWidth: 2, borderColor: on ? theme.primary : theme.border }) },
           on ? h('view', { style: { width: '8', height: '8', borderRadius: '4', backgroundColor: theme.primary } }) : null),
-        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label));
+        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label), selectionFocus());
     }));
 }
 
