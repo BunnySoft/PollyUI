@@ -545,6 +545,13 @@ third-party panel programs connected to the public socket.
   with application focus restored when they close, unmap, or relinquish focus.
   WM shortcuts other than the Alt+Escape logout-confirmation request are forwarded
   while a layer owns keyboard focus. This is **not** a secure session-lock API.
+- Only a real Shell-owned transient menu with the dedicated
+  `PollyShell.menu.<output>` namespace, overlay/zone -1/exclusive contract is
+  dismissed on an outside caption/client press. Its existing layer-close
+  lifecycle clears focus before that same press follows the normal route once.
+  Other exclusive surfaces and session-lock guards are unchanged. Shell
+  panel/Dock/desktop layers retain their existing DOM dismissal and opener
+  toggles rather than being pre-closed by the compositor.
 - Layer popups may extend outside the panel, are constrained to its output, and
   support nested/repositioned/reactive xdg popups. Layer content is clipped to
   the output separately from the popup tree. A shell crash releases its layer

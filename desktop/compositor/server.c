@@ -154,6 +154,21 @@ static bool exclusive_layer(struct PuDesktopLayer *layer)
             ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
 }
 
+static bool transient_shell_menu(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
+{
+    if (!exclusive_layer(layer) || !layer->presented || !layer->surface->surface->mapped ||
+        layer->surface->current.layer != ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
+        layer->surface->current.exclusive_zone != -1 ||
+        wl_resource_get_client(layer->surface->resource) != desktop->shell_client) return false;
+    const char *name = layer->surface->namespace;
+    static const char prefix[] = "PollyShell.menu.";
+    if (!name || strncmp(name, prefix, sizeof(prefix) - 1)) return false;
+    size_t length = strlen(name), start = sizeof(prefix) - 1;
+    if (length <= start || length > start + 10) return false;
+    for (size_t i = start; i < length; i++) if (name[i] < '0' || name[i] > '9') return false;
+    return true;
+}
+
 void pu_desktop_restore_input(struct PuDesktop *desktop)
 {
     if (desktop->stopping) return;
@@ -1350,6 +1365,12 @@ static void cursor_button(struct wl_listener *listener, void *data)
         struct PuDesktopLayer *layer;
         struct PuDesktopView *view = view_at(desktop, desktop->cursor->x,
                                              desktop->cursor->y, &surface, &sx, &sy, &layer);
+        if (!layer && transient_shell_menu(desktop, desktop->focused_layer)) {
+            /* Owned Shell layers handle their own toggles. Foreign content and
+             * native captions cannot deliver those DOM dismissal events. */
+            wlr_layer_surface_v1_destroy(desktop->focused_layer->surface);
+            view = view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, &layer);
+        }
         if (layer) {
             if (!exclusive_layer(desktop->focused_layer) &&
                 layer->surface->current.keyboard_interactive ==

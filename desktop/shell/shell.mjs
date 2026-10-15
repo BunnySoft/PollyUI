@@ -223,7 +223,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (['wallpaper', 'panel', 'dock'].includes(kind)) listen(surface, 'mousedown', event => {
       if (!running || surface.expectedClose || nativeWindow.closed ||
           bundles.get(output.id)?.surfaces[kind] !== surface || !menu) return;
-      // Only these owned documents deliver this event; foreign application presses need a native popup API.
+      // Owned layers retain opener toggles; the WM handles presses outside Shell layers.
       if (!menuOpener(surface, event)) closeMenu();
     });
     if (kind === 'wallpaper') {
@@ -257,7 +257,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
           } catch (failure) { outputFailure(failure); }
         }
       }
-      if (!surface.expectedClose && running && kind !== 'settings') {
+      if (!surface.expectedClose && running && kind !== 'menu') {
         lastFailure = '';
       }
     };
@@ -721,7 +721,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const width = root.offsetWidth || bundle.output.width;
     const height = root.offsetHeight || bundle.output.height;
     try {
-      menu = newSurface(bundle.output, 'settings', {
+      menu = newSurface(bundle.output, 'menu', {
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
         height: applicationMenuHeight(theme, height),
         ...applicationMenuPlacement(theme, width),

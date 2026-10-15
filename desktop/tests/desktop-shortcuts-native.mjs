@@ -110,7 +110,7 @@ async function run() {
   } else {
     check(shell.configuration.snapshot.desktop.shortcuts.length === 0, 'first desktop is empty, not catalog-autopinned');
     const menuWindow = shell.showApplications(first.output);
-    const menu = { window: menuWindow, kind: 'settings', output: first.output };
+    const menu = { window: menuWindow, kind: 'menu', output: first.output };
     await until(() => menuWindow.document.getElementById('shell-app-pin-bd04-a.desktop')?.offsetWidth > 0, 'native application add entry');
     menuWindow.document.body.addEventListener('click', event => console.log('INFO: actual native menu click ' + event.target.id));
     menuWindow.capture(application.cacheDir + '/desktop-application-menu.png');
@@ -203,8 +203,8 @@ async function run() {
     await until(() => created.some(surface => !surface.window.closed && surface.window.document.getElementById('shell-desktop-settings')),
       'desktop context menu preserves Settings entry');
     const context = created.findLast(surface => !surface.window.closed && surface.window.document.getElementById('shell-desktop-remove-bd04-b.desktop'));
-    await pointer({ window: context.window, kind: 'settings', output: first.output }, 'wheel', 160, 300);
-    await clickNode({ window: context.window, kind: 'settings', output: first.output },
+    await pointer({ window: context.window, kind: 'menu', output: first.output }, 'wheel', 160, 300);
+    await clickNode({ window: context.window, kind: 'menu', output: first.output },
       context.window.document.getElementById('shell-desktop-remove-bd04-b.desktop'));
     check(!icon(first, 'bd04-b.desktop') && desktop.applicationFiles().some(entry => entry.id === 'bd04-b.desktop'),
       'native context-menu removal removes only shortcut, not its catalog application');
