@@ -397,6 +397,31 @@ export async function checkFluentStartFallback(directory) {
     check(cancellations === 1 && pending.size === 0, 'Leaving Start cancels pending layout frame');
     await stable(); check(frames === settled, 'No removed Start layout callback executes');
   } finally { globalThis.requestAnimationFrame = request; globalThis.cancelAnimationFrame = cancel; }
+  const initialFocus = [];
+  for (const [height, id] of [[40, 'shell-app-search'], [40, 'shell-app-app23'], [580, 'shell-app-search']]) {
+    render(h('view'), document.body);
+    state.width = 360; state.height = height;
+    mount(false);
+    const control = get(id), menu = get('shell-applications');
+    control.focus();
+    settle(); await stable();
+    const exposed = clip(control)[3];
+    check(exposed === Math.min(height, control.offsetHeight), 'Initial prelayout focus reveals ' + id);
+    if (id === 'shell-app-search')
+      check(Number(menu.scrollTop) === (height === 40 ? 16 : 0),
+        'Initial Search focus scrolls only when required after first layout');
+    initialFocus.push({ height, id, exposed, outer: menu.scrollTop, inner: get('shell-start-apps').scrollTop });
+  }
+  render(h('view'), document.body);
+  mount(false);
+  const reused = get('shell-applications');
+  render(h('view', { style: { width: '100%', height: '100%', backgroundColor: '#608090' } },
+    h('view', { style: { width: state.width, height: state.height } },
+      h('view', { id: 'replacement-scroll', style: { overflow: 'scroll', height: 100 } }))), document.body);
+  check(get('replacement-scroll') === reused, 'Pending Start root is reused as another scroll view');
+  settle(); await stable();
+  check(!get('shell-start-apps'), 'Delayed Start callback safely ignores replacement without list');
+  console.log('FLUENT_START_INITIAL_FOCUS ' + JSON.stringify(initialFocus));
   console.log('FLUENT_START_FALLBACK ' + JSON.stringify({ ...geometry, launches, pins, refreshes, closes, logouts,
     layoutFrames: frames, leaveCancellations: cancellations }));
   console.log('PASS: actual low-height Start root scroll, maximum visibility, pointer/Enter, Search/Tab/disabled, wheel chaining, stable DOM and normal geometry');

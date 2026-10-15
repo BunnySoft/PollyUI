@@ -35,13 +35,14 @@ function syncGridScroll(node) {
       state.frame = null;
       if (!node.ownerDocument || node.style.overflow !== 'scroll') return;
       const list = node.querySelector('#shell-start-apps');
+      if (!list) return;
       const geometry = [];
       for (const viewport of [list, node]) {
         const metrics = verticalScrollMetrics(viewport);
         geometry.push(viewport.offsetWidth, metrics.height, metrics.maximum);
         if (Number(viewport.scrollTop) !== metrics.value) viewport.scrollTop = metrics.value;
       }
-      const changed = state.geometry && geometry.some((value, index) => value !== state.geometry[index]);
+      const changed = !state.geometry || geometry.some((value, index) => value !== state.geometry[index]);
       state.geometry = geometry;
       if (!changed) return;
       const focused = node.ownerDocument.activeElement;
