@@ -51,6 +51,71 @@ const ctrlFocus = () => ({ borderColor: theme.primary });
 // drop undefined/null so they don't stringify to "undefined"
 const clean = (o) => { const r = {}; for (const k in o) if (o[k] !== undefined && o[k] !== null) r[k] = String(o[k]); return r; };
 
+const primaryClick = event => event.button === undefined || event.button === 0;
+const activationKey = event => !event.repeat && (event.key === ' ' || event.key === 'Enter');
+const selectionGestures = new WeakMap();
+function optionPointer(kind, value, disabled, activate) {
+  return {
+    onMousedown: event => {
+      const node = event.currentTarget;
+      if (!disabled && primaryClick(event)) selectionGestures.set(node, { kind, value });
+      else selectionGestures.delete(node);
+    },
+    onMousecancel: event => selectionGestures.delete(event.currentTarget),
+    onUpdate: node => {
+      const down = selectionGestures.get(node);
+      if (down && (disabled || down.kind !== kind || down.value !== value)) selectionGestures.delete(node);
+      syncSelectionFocus(node);
+    },
+    onClick: event => {
+      const node = event.currentTarget, down = selectionGestures.get(node);
+      selectionGestures.delete(node);
+      if (!disabled && primaryClick(event) && down?.kind === kind && down.value === value) activate(event);
+    },
+  };
+}
+const selectionFocus = () => h('view', { className: 'n-selection-focus', 'aria-hidden': 'true',
+  style: clean({ position: 'absolute', left: 1, top: 1, right: 1, bottom: 1,
+    borderWidth: 1, borderColor: theme.primary, borderRadius: 2, opacity: 0, pointerEvents: 'none' }) });
+function syncSelectionFocus(node) {
+  const ring = node.querySelector('.n-selection-focus');
+  if (ring) ring.style.opacity = node.getAttribute('aria-disabled') !== 'true' &&
+    node.ownerDocument?.activeElement === node ? '1' : '0';
+}
+const selectionEvents = () => ({
+  onFocus: event => {
+    const node = event.currentTarget;
+    if (['radio', 'tab', 'menuitem'].includes(node.getAttribute('role')) &&
+        node.getAttribute('aria-disabled') === 'false')
+      for (const sibling of node.parentNode.childNodes) sibling.tabIndex = sibling === node ? 0 : -1;
+    syncSelectionFocus(node);
+  },
+  onBlur: event => syncSelectionFocus(event.currentTarget),
+  onUpdate: syncSelectionFocus,
+});
+function roveSelection(event, group, horizontal, activate) {
+  const keys = horizontal ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+  if (![...keys, 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault(); event.stopPropagation();
+  const nodes = Array.from(group.childNodes).filter(node => node.getAttribute('aria-disabled') === 'false');
+  if (!nodes.length) return;
+  const at = nodes.indexOf(event.currentTarget);
+  const index = event.key === 'Home' ? 0 : event.key === 'End' ? nodes.length - 1 :
+    (Math.max(0, at) + (event.key === keys[0] ? -1 : 1) + nodes.length) % nodes.length;
+  for (const node of group.childNodes) node.tabIndex = node === nodes[index] ? 0 : -1;
+  nodes[index].focus();
+  const position = Array.from(group.childNodes).indexOf(nodes[index]);
+  if (activate) activate(position);
+}
+function syncRoving(group, selected) {
+  const nodes = Array.from(group.childNodes);
+  const enabled = node => node.getAttribute('aria-disabled') === 'false';
+  const active = group.ownerDocument?.activeElement;
+  const entry = nodes.find(node => node === active && enabled(node)) ||
+    nodes.find((node, index) => index === selected && enabled(node)) || nodes.find(enabled);
+  for (const node of nodes) node.tabIndex = node === entry ? 0 : -1;
+}
+
 // ---- blinking text caret (shared by the text inputs) -----------------------
 // Native focus isn't reactive, so focus/blur handlers set the active id and a
 // reactive blink toggles re-renders. Inputs need a stable `id` for the caret.
@@ -156,10 +221,14 @@ export function NSwitch(props = {}) {
   const { value = false, onUpdate, disabled = false, id } = props;
   const W = 40, H = 22, knob = 18, pad = 2;
   return h('view', {
-    id,
+    id, role: 'switch', 'aria-label': props['aria-label'], tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(value)),
+    'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
     style: clean({ width: W, height: H, borderRadius: H / 2, position: 'relative', backgroundColor: value ? theme.primary : theme.railOff, opacity: disabled ? 0.5 : 1 }),
-    onClick: disabled ? undefined : () => onUpdate && onUpdate(!value),
-  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }));
+    onClick: event => { if (!disabled && primaryClick(event)) onUpdate?.(!value); },
+    onKeydown: event => {
+      if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onUpdate?.(!value); }
+    },
+  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }), selectionFocus());
 }
 
 // ---- NCheckbox --------------------------------------------------------------
@@ -167,26 +236,47 @@ export function NSwitch(props = {}) {
 export function NCheckbox(props = {}, label) {
   const { checked = false, disabled = false, onChange, id } = props;
   return h('view', {
-    id,
-    style: clean({ flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
-    onClick: disabled ? undefined : () => onChange && onChange(!checked),
+    id, role: 'checkbox', 'aria-label': props['aria-label'], tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(checked)),
+    'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
+    style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
+    onClick: event => { if (!disabled && primaryClick(event)) onChange?.(!checked); },
+    onKeydown: event => {
+      if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onChange?.(!checked); }
+    },
   },
     h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: checked ? theme.primary : theme.card, borderWidth: checked ? 0 : 1, borderColor: theme.border }) },
       checked ? h('view', { style: { color: theme.solidText, fontSize: '13', fontWeight: 'bold' } }, '✓') : null),
-    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null);
+    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null, selectionFocus());
 }
 
 // ---- NRadioGroup ------------------------------------------------------------
 
 export function NRadioGroup(props = {}) {
-  const { value, onUpdate, options = [], vertical = false } = props;
-  return h('view', { style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
-    ...options.map(opt => {
+  const { value, onUpdate, options = [], vertical = false, disabled = false, id } = props;
+  const selected = options.findIndex(opt => opt.value === value);
+  const entry = options.findIndex((opt, index) => !disabled && !opt.disabled &&
+    (index === selected || !options.some(item => item.value === value && !item.disabled)));
+  return h('view', { id, role: 'radiogroup', 'aria-disabled': String(Boolean(disabled)),
+    'aria-orientation': vertical ? 'vertical' : 'horizontal',
+    onUpdate: node => syncRoving(node, selected),
+    style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
+    ...options.map((opt, index) => {
       const on = opt.value === value;
-      return h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: '8' }, onClick: () => onUpdate && onUpdate(opt.value) },
+      const off = disabled || opt.disabled;
+      const choose = position => { if (!disabled && !options[position].disabled && options[position].value !== value) onUpdate?.(options[position].value); };
+      return h('view', { role: 'radio', tabIndex: index === entry ? 0 : -1, 'aria-label': opt.label,
+        'aria-checked': String(on), 'aria-disabled': String(Boolean(off)), ...selectionEvents(),
+        style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: off ? 0.5 : 1 }),
+        ...optionPointer('radio', opt.value, off, event => { event.currentTarget.focus(); onUpdate?.(opt.value); }),
+        onKeydown: event => {
+          if (off) return;
+          if (event.key === ' ') { event.preventDefault(); if (!event.repeat) choose(index); }
+          const horizontal = ['ArrowLeft', 'ArrowRight'].includes(event.key);
+          roveSelection(event, event.currentTarget.parentNode, horizontal, choose);
+        } },
         h('view', { style: clean({ width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.card, borderWidth: 2, borderColor: on ? theme.primary : theme.border }) },
           on ? h('view', { style: { width: '8', height: '8', borderRadius: '4', backgroundColor: theme.primary } }) : null),
-        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label));
+        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label), selectionFocus());
     }));
 }
 
@@ -240,17 +330,38 @@ export function NAlert(props = {}, content) {
 // ---- NTabs ------------------------------------------------------------------
 
 export function NTabs(props = {}) {
-  const { value, onUpdate, panes = [] } = props;
-  const active = panes.find(p => p.name === value) || panes[0];
-  return h('view', { style: { flexDirection: 'column' } },
-    h('view', { style: clean({ flexDirection: 'row', gap: 24, borderBottomWidth: 0 }) },
-      ...panes.map(p => {
+  const { value, onUpdate, panes = [], disabled = false, id } = props;
+  const active = panes.find(p => p.name === value) || panes.find(p => !p.disabled) || panes[0];
+  const selected = panes.indexOf(active);
+  const entry = panes.findIndex((pane, index) => !disabled && !pane.disabled &&
+    (index === selected || !active || active.disabled));
+  const choose = index => {
+    if (!disabled && !panes[index].disabled && panes[index].name !== active?.name) onUpdate?.(panes[index].name);
+  };
+  return h('view', { id, style: { flexDirection: 'column' } },
+    h('view', { role: 'tablist', 'aria-disabled': String(Boolean(disabled)),
+      onUpdate: node => syncRoving(node, selected),
+      style: clean({ flexDirection: 'row', gap: 24, borderBottomWidth: 0 }) },
+      ...panes.map((p, index) => {
         const on = active && p.name === active.name;
-        return h('view', { style: { flexDirection: 'column', gap: '8', paddingTop: '10' }, onClick: () => onUpdate && onUpdate(p.name) },
+        const off = disabled || p.disabled;
+        return h('view', { id: id ? id + '-tab-' + index : undefined, role: 'tab', tabIndex: entry === index ? 0 : -1,
+          'aria-selected': String(Boolean(on)), 'aria-disabled': String(Boolean(off)),
+          'aria-controls': id ? id + '-panel' : undefined, ...selectionEvents(),
+          style: clean({ position: 'relative', flexDirection: 'column', gap: 8, paddingTop: 10, opacity: off ? 0.5 : 1 }),
+          ...optionPointer('tab', p.name, off, event => { event.currentTarget.focus(); onUpdate?.(p.name); }),
+          onKeydown: event => {
+            if (off) return;
+            if (activationKey(event)) { event.preventDefault(); choose(index); }
+            roveSelection(event, event.currentTarget.parentNode, true, choose);
+          } },
           h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 'bold' : 'normal', paddingBottom: 8 }) }, p.label),
-          h('view', { style: clean({ height: 2, borderRadius: 1, backgroundColor: on ? theme.primary : 'transparent' }) }));
+          h('view', { style: clean({ height: 2, borderRadius: 1, backgroundColor: on ? theme.primary : 'transparent' }) }),
+          selectionFocus());
       })),
-    h('view', { style: { paddingTop: '16' } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
+    h('view', { id: id ? id + '-panel' : undefined, role: 'tabpanel',
+      'aria-labelledby': id && selected >= 0 ? id + '-tab-' + selected : undefined,
+      style: { paddingTop: '16' } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
 }
 
 // ---- NModal -----------------------------------------------------------------
@@ -436,6 +547,7 @@ export function NInput(props = {}) {
 // so opening/closing a popup re-renders via Vue/the reconciler.
 
 const _overlays = reactive({ list: [] });
+const popupCleanups = new Map();
 let _ovSeq = 0;
 
 export function openPopup(render, opts = {}) {
@@ -443,7 +555,12 @@ export function openPopup(render, opts = {}) {
   _overlays.list = _overlays.list.concat({ id, render, x: opts.x || 0, y: opts.y || 0, onClose: opts.onClose, backdrop: opts.backdrop !== false, fullWidth: !!opts.fullWidth, fullScreen: !!opts.fullScreen });
   return id;
 }
-export function closePopup(id) { _overlays.list = _overlays.list.filter(o => o.id !== id); }
+export function closePopup(id) {
+  const cleanup = popupCleanups.get(id);
+  popupCleanups.delete(id);
+  _overlays.list = _overlays.list.filter(o => o.id !== id);
+  if (cleanup) cleanup();
+}
 
 export function NOverlayHost() {
   const active = _overlays.list.length > 0;
@@ -463,31 +580,267 @@ export function NOverlayHost() {
 
 // ---- NSelect ----------------------------------------------------------------
 
+const selectStates = new WeakMap();
+let selectSerial = 0;
+function connectedSelection(node) {
+  const owner = node?.ownerDocument;
+  for (let parent = node; owner && parent; parent = parent.parentNode) if (parent === owner.body) return true;
+  return false;
+}
+function selectTrigger(state) {
+  const node = state.trigger.deref();
+  return connectedSelection(node) && node.getAttribute('role') === 'combobox' &&
+    node.getAttribute('aria-controls') === state.listId ? node : null;
+}
+function selectConfigChanged(a, b) {
+  return !a || a.value !== b.value || a.disabled !== b.disabled || a.width !== b.width || a.palette !== b.palette ||
+    a.options.length !== b.options.length || a.options.some((option, index) =>
+      option.value !== b.options[index].value || option.label !== b.options[index].label ||
+      Boolean(option.disabled) !== Boolean(b.options[index].disabled));
+}
+function selectPlacement(node, config) {
+  const rect = node.getBoundingClientRect(), body = node.ownerDocument.body;
+  const width = Math.min(rect.width, Math.max(0, body.offsetWidth - 8));
+  const needed = Math.min(240, Math.max(1, config.options.length) * 34 + 8);
+  const available = Math.max(0, body.offsetHeight - 8);
+  const below = Math.max(0, Math.min(available, body.offsetHeight - rect.bottom - 8)),
+    above = Math.max(0, Math.min(available, rect.top - 8));
+  const down = below >= needed || below >= above;
+  const height = Math.min(needed, down ? below : above);
+  return { x: Math.max(4, Math.min(rect.left, body.offsetWidth - width - 4)),
+    y: Math.max(4, Math.min(down ? rect.bottom + 4 : rect.top - height - 4, body.offsetHeight - height - 4)),
+    width, height };
+}
+function stopSelectFrames(state) {
+  if (state.frame !== null) cancelAnimationFrame(state.frame);
+  state.frame = null;
+}
+function stopSelectOwner(state) {
+  state.unsubscribeOwner?.deref()?.();
+  state.unsubscribeOwner = null;
+}
+function observeSelectOwner(state, node) {
+  const owner = node.ownerDocument.defaultView;
+  if (!owner || state.unsubscribeOwner?.deref()) return;
+  const initial = owner.state, weak = new WeakRef(state);
+  let size = [initial.width, initial.height, initial.scale].join(':'), remove;
+  remove = owner.observeState(next => {
+    const current = weak.deref();
+    if (!current || current.popup === null) { remove(); return; }
+    const signature = [next.width, next.height, next.scale].join(':');
+    if (size !== signature) {
+      size = signature;
+      const list = current.list?.deref();
+      if (list) queueSelectLayout(current, list);
+    }
+  });
+  state.unsubscribeOwner = new WeakRef(remove);
+}
+function closeSelect(state, restore = true) {
+  if (state.popup === null) return;
+  state.restore = restore;
+  closePopup(state.popup);
+}
+function revealSelect(state, list) {
+  const nodes = list.querySelectorAll('.n-select-option'), node = nodes[state.active];
+  if (!node) return;
+  const rect = node.getBoundingClientRect(), viewport = list.getBoundingClientRect();
+  if (rect.top < viewport.top) list.scrollTop = Math.max(0, list.scrollTop + rect.top - viewport.top);
+  else if (rect.bottom > viewport.bottom) list.scrollTop += rect.bottom - viewport.bottom;
+}
+function queueSelectLayout(state, list) {
+  if (state.frame !== null) return;
+  const weak = new WeakRef(list);
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      state.frame = null;
+      const node = selectTrigger(state), popup = weak.deref();
+      if (!node || state.config.disabled) { closeSelect(state, false); return; }
+      if (popup && connectedSelection(popup)) {
+        const place = selectPlacement(node, state.config), old = state.placement;
+        if (['x', 'y', 'width', 'height'].some(key => place[key] !== old[key])) {
+          state.placement = place;
+          _overlays.list = _overlays.list.map(entry => entry.id === state.popup ?
+            { ...entry, x: place.x, y: place.y } : entry);
+        } else revealSelect(state, popup);
+      }
+    });
+  });
+}
+function selectActive(state, index) {
+  state.active = index;
+  const trigger = state.trigger.deref();
+  if (trigger) {
+    if (index < 0) trigger.removeAttribute('aria-activedescendant');
+    else trigger.setAttribute('aria-activedescendant', state.listId + '-option-' + index);
+  }
+}
+function commitSelect(state, value) {
+  const node = selectTrigger(state), option = state.config.options.find(item => item.value === value);
+  if (!node || state.config.disabled || !option || option.disabled) return;
+  const callback = state.config.onUpdate;
+  closeSelect(state);
+  callback?.(option.value);
+}
+function selectDropdown(state) {
+  const config = state.config, place = state.placement;
+  return h('view', { id: state.listId, role: 'listbox', className: 'n-select-list',
+    onMount: node => {
+      state.list = new WeakRef(node);
+      const trigger = selectTrigger(state);
+      if (trigger) observeSelectOwner(state, trigger);
+      queueSelectLayout(state, node);
+    },
+    onUpdate: node => {
+      state.list = new WeakRef(node);
+      Promise.resolve().then(() => {
+        if (!selectTrigger(state) || state.config.disabled) closeSelect(state, false);
+      });
+      queueSelectLayout(state, node);
+    },
+    onLeave: (node, done) => {
+      stopSelectFrames(state); stopSelectOwner(state); state.list = null; done();
+    },
+    onMousedown: event => event.preventDefault(),
+    onWheel: event => {
+      event.preventDefault();
+      const node = event.currentTarget;
+      node.scrollTop = Math.max(0, Math.min(Math.max(0, config.options.length * 34 + 8 - node.offsetHeight),
+        node.scrollTop + event.deltaY));
+    },
+    style: clean({ width: place.width, height: place.height, overflow: 'scroll', flexShrink: 0,
+      backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }),
+  }, config.options.length ? config.options.map((option, index) => h('view', {
+    id: state.listId + '-option-' + index, role: 'option', className: 'n-select-option',
+    'aria-selected': String(option.value === config.value), 'aria-disabled': String(Boolean(option.disabled)),
+    style: clean({ position: 'relative', height: 32, flexShrink: 0, paddingLeft: 10, paddingRight: 10, borderRadius: 3,
+      justifyContent: 'center', opacity: option.disabled ? 0.5 : 1,
+      backgroundColor: option.value === config.value ? theme.primary + '1f' : 'transparent' }),
+    ...optionPointer(state.listId, option.value, config.disabled || option.disabled, () => commitSelect(state, option.value)),
+  }, h('view', { style: { color: option.value === config.value ? theme.primary : theme.text, fontSize: '14',
+    minWidth: 0, flexShrink: 1, overflow: 'hidden', pointerEvents: 'none' } }, option.label),
+  h('view', { 'aria-hidden': 'true', style: clean({ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
+    borderWidth: 1, borderColor: theme.primary, opacity: state.active === index ? 1 : 0, pointerEvents: 'none' }) }))) :
+    h('view', { role: 'status', style: { height: 32, color: theme.textDisabled, fontSize: 14 } }, 'No options'));
+}
+function syncSelect(node, config) {
+  let state = selectStates.get(node);
+  if (!state) {
+    state = { trigger: new WeakRef(node), listId: 'n-select-list-' + ++selectSerial, popup: null, active: -1, frame: null };
+    selectStates.set(node, state);
+  }
+  const changed = selectConfigChanged(state.config, config), old = state.config;
+  const activeValue = old?.options[state.active]?.value;
+  state.config = config;
+  syncSelectionFocus(node);
+  node.setAttribute('aria-controls', state.listId);
+  if (state.popup !== null && config.disabled)
+    Promise.resolve().then(() => { if (state.config.disabled) closeSelect(state, false); });
+  else if (state.popup !== null && changed) {
+    const preferred = old.value !== config.value ? config.value : activeValue;
+    let index = config.options.findIndex(option => option.value === preferred && !option.disabled);
+    if (index < 0) index = config.options.findIndex(option => !option.disabled);
+    selectActive(state, index);
+    state.placement = selectPlacement(node, config);
+    if (!state.refreshQueued) {
+      state.refreshQueued = true;
+      // A parent update has already built its overlay vnode; refresh after that reconciliation.
+      Promise.resolve().then(() => {
+        state.refreshQueued = false;
+        if (state.popup !== null) _overlays.list = _overlays.list.map(popup => popup.id === state.popup ?
+          { ...popup, x: state.placement.x, y: state.placement.y } : popup);
+      });
+    }
+  }
+  node.setAttribute('aria-expanded', String(state.popup !== null));
+  return state;
+}
+function openSelect(node, config, last = false) {
+  const state = syncSelect(node, config);
+  if (config.disabled || state.popup !== null) return state;
+  node.focus();
+  let index = config.options.findIndex(option => option.value === config.value && !option.disabled);
+  if (index < 0) index = last ? config.options.findLastIndex(option => !option.disabled) :
+    config.options.findIndex(option => !option.disabled);
+  selectActive(state, index);
+  state.placement = selectPlacement(node, config);
+  state.popup = openPopup(() => selectDropdown(state), {
+    x: state.placement.x, y: state.placement.y, onClose: () => closeSelect(state),
+  });
+  observeSelectOwner(state, node);
+  popupCleanups.set(state.popup, () => {
+    stopSelectFrames(state);
+    stopSelectOwner(state);
+    state.list = null;
+    state.popup = null;
+    const trigger = selectTrigger(state);
+    if (trigger) {
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.removeAttribute('aria-activedescendant');
+      if (state.restore !== false && !state.config.disabled) trigger.focus();
+    }
+    state.restore = true;
+  });
+  node.setAttribute('aria-expanded', 'true');
+  return state;
+}
+
 export function NSelect(props = {}) {
-  const { value, options = [], onUpdate, placeholder = 'Select', width = 200, id } = props;
+  const { value, options = [], onUpdate, placeholder = 'Select', width = 200, id, disabled = false } = props;
   const sel = options.find(o => o.value === value);
-
-  const open = (e) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    let pid;
-    const dropdown = () => h('view', {
-      style: clean({ width, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }),
-    }, ...options.map(o => h('view', {
-      style: clean({ height: 32, paddingLeft: 10, paddingRight: 10, borderRadius: 3, justifyContent: 'center',
-        backgroundColor: o.value === value ? theme.primary + '1f' : 'transparent' }),
-      onClick: () => { onUpdate && onUpdate(o.value); closePopup(pid); },
-    }, h('view', { style: { color: o.value === value ? theme.primary : theme.text, fontSize: '14' } }, o.label))));
-    pid = openPopup(dropdown, { x: r.left, y: r.bottom + 4, onClose: () => closePopup(pid) });
-  };
-
+  const config = { value, options: options.map(option => ({ ...option })), onUpdate, width, disabled,
+    palette: [theme.name, theme.primary, theme.card, theme.border, theme.text].join(':') };
   return h('view', {
-    id, tabIndex: 0,
-    style: clean({ width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
-    hoverStyle: ctrlHover(), focusStyle: ctrlFocus(),
-    onClick: open,
+    id, tabIndex: disabled ? -1 : 0, role: 'combobox', 'aria-label': props['aria-label'], 'aria-haspopup': 'listbox',
+    'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
+    onMount: node => syncSelect(node, config), onUpdate: node => syncSelect(node, config),
+    onLeave: (node, done) => {
+      const state = selectStates.get(node);
+      if (state) Promise.resolve().then(() => closeSelect(state, false));
+      done();
+    },
+    onBlur: event => {
+      const node = event.currentTarget;
+      syncSelectionFocus(node);
+      Promise.resolve().then(() => {
+        if (node.ownerDocument?.activeElement !== node) {
+          const state = selectStates.get(node); if (state) closeSelect(state, false);
+        }
+      });
+    },
+    style: clean({ position: 'relative', opacity: disabled ? 0.5 : 1,
+      width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    hoverStyle: disabled ? {} : ctrlHover(), focusStyle: disabled ? {} : ctrlFocus(),
+    onClick: event => {
+      if (disabled || !primaryClick(event)) return;
+      const state = syncSelect(event.currentTarget, config);
+      if (state.popup === null) openSelect(event.currentTarget, config);
+      else closeSelect(state);
+    },
+    onKeydown: event => {
+      if (disabled) return;
+      const state = syncSelect(event.currentTarget, config);
+      if (event.key === 'Tab') { closeSelect(state, false); return; }
+      if (event.key === 'Escape') { event.preventDefault(); closeSelect(state); return; }
+      if (activationKey(event)) {
+        event.preventDefault();
+        if (state.popup === null) openSelect(event.currentTarget, config);
+        else if (state.active >= 0) commitSelect(state, state.config.options[state.active]?.value);
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      if (state.popup === null) { openSelect(event.currentTarget, config, event.key === 'ArrowUp' || event.key === 'End'); return; }
+      const enabled = state.config.options.map((option, index) => option.disabled ? -1 : index).filter(index => index >= 0);
+      if (!enabled.length) return;
+      const index = enabled.indexOf(state.active);
+      selectActive(state, event.key === 'Home' ? enabled[0] : event.key === 'End' ? enabled[enabled.length - 1] :
+        enabled[(Math.max(0, index) + (event.key === 'ArrowUp' ? -1 : 1) + enabled.length) % enabled.length]);
+      _overlays.list = _overlays.list.slice();
+    },
   },
-    h('view', { style: { color: sel ? theme.text : theme.textDisabled, fontSize: '14' } }, sel ? sel.label : placeholder),
-    h('view', { style: { color: theme.textSecondary, fontSize: '12' } }, '▾'));
+    h('view', { style: { color: sel ? theme.text : theme.textDisabled, fontSize: '14', flexShrink: 1, minWidth: 0, overflow: 'hidden' } }, sel ? sel.label : placeholder),
+    h('view', { style: { color: theme.textSecondary, fontSize: '12', flexShrink: 0 } }, '▾'), selectionFocus());
 }
 
 // ---- NTooltip ---------------------------------------------------------------
@@ -830,18 +1183,34 @@ export function NCollapse(props = {}) {
 // ---- NMenu ------------------------------------------------------------------
 
 export function NMenu(props = {}) {
-  const { value, onUpdate, items = [], mode = 'vertical', id } = props;
+  const { value, onUpdate, items = [], mode = 'vertical', id, disabled = false } = props;
   const horizontal = mode === 'horizontal';
-  return h('view', { id, style: clean({ flexDirection: horizontal ? 'row' : 'column', gap: horizontal ? 4 : 4, padding: horizontal ? 0 : 8, backgroundColor: theme.card }) },
-    ...items.map(it => {
+  const selected = items.findIndex(item => item.key === value);
+  const entry = items.findIndex((item, index) => !disabled && !item.disabled &&
+    (index === selected || !items.some(candidate => candidate.key === value && !candidate.disabled)));
+  return h('view', { id, role: horizontal ? 'menubar' : 'menu', 'aria-orientation': horizontal ? 'horizontal' : 'vertical',
+    'aria-disabled': String(Boolean(disabled)), onUpdate: node => syncRoving(node, selected),
+    style: clean({ flexDirection: horizontal ? 'row' : 'column', gap: horizontal ? 4 : 4, padding: horizontal ? 0 : 8, backgroundColor: theme.card }) },
+    ...items.map((it, index) => {
       const on = it.key === value;
+      const off = disabled || it.disabled;
+      const activate = () => { if (!off) onUpdate?.(it.key); };
       return h('view', {
-        style: clean({ height: 40, paddingLeft: 16, paddingRight: 16, borderRadius: 3, flexDirection: 'row', alignItems: 'center', gap: 8,
+        id: id ? id + '-item-' + index : undefined, role: 'menuitem', 'aria-current': on ? 'true' : undefined,
+        'aria-disabled': String(Boolean(off)), tabIndex: entry === index ? 0 : -1, ...selectionEvents(),
+        style: clean({ position: 'relative', opacity: off ? 0.5 : 1,
+          height: 40, paddingLeft: 16, paddingRight: 16, borderRadius: 3, flexDirection: 'row', alignItems: 'center', gap: 8,
           backgroundColor: on ? theme.primary + '1f' : 'transparent' }),
-        onClick: () => onUpdate && onUpdate(it.key),
+        ...optionPointer('menu', it.key, off, event => { event.currentTarget.focus(); activate(); }),
+        onKeydown: event => {
+          if (off) return;
+          if (activationKey(event)) { event.preventDefault(); activate(); }
+          roveSelection(event, event.currentTarget.parentNode, horizontal);
+        },
       },
         it.icon ? h('view', { style: clean({ color: on ? theme.primary : theme.textSecondary, fontSize: 15 }) }, it.icon) : null,
-        h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 500 : 400 }) }, it.label));
+        h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 500 : 400 }) }, it.label),
+        selectionFocus());
     }));
 }
 
