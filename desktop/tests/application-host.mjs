@@ -26,6 +26,11 @@ class Node {
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   getAttribute(key) { return this.attributes.get(key) ?? null; }
   removeAttribute(key) { this.attributes.delete(key); }
+  querySelector(selector) {
+    assert.match(selector, /^\.[a-zA-Z][\w-]*$/);
+    return descendants(this).slice(1).find(node =>
+      (node.className || '').split(/\s+/).includes(selector.slice(1))) || null;
+  }
   addEventListener(type, callback) {
     this.listeners.set(type, [...(this.listeners.get(type) || []), callback]);
   }
@@ -35,12 +40,12 @@ class Node {
   focus() {
     if (this.ownerDocument.activeElement === this) return;
     this.ownerDocument.activeElement?.blur(); this.ownerDocument.activeElement = this;
-    for (const callback of this.listeners.get('focus') || []) callback({ target: this });
+    for (const callback of this.listeners.get('focus') || []) callback({ target: this, currentTarget: this });
   }
   blur() {
     if (this.ownerDocument.activeElement !== this) return;
     this.ownerDocument.activeElement = null;
-    for (const callback of this.listeners.get('blur') || []) callback({ target: this });
+    for (const callback of this.listeners.get('blur') || []) callback({ target: this, currentTarget: this });
   }
   setInputMethod() {}
   cancelComposition() {}

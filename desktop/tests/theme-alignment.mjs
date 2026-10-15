@@ -7,6 +7,7 @@ const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = aw
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const { surfacePaint, surfaceEvents, bevel } = await import('../shared/ui/surface-primitives.mjs');
+const { lunaVisualEvents } = await import('../shared/ui/luna-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
 const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url), 'utf8'));
 assert.deepEqual(catalog, recovery);
@@ -134,4 +135,55 @@ for (const theme of catalog.themes.filter(theme => theme.id !== 'server2003')) {
 }
 assert.throws(() => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
   themes: { server2003: { panel: { menuStyle: 'arbitrary-code' } } } })), /unsupported/);
+for (const preset of catalog.themes) {
+  const custom = { ...preset, layout: { ...preset.layout, disabledOpacity: 0.37 } };
+  const command = desktopCommand('disabled-state', 'Selected unavailable', custom,
+    () => { throw new Error('Disabled action ran'); }, { enabled: false, selected: true });
+  assert.equal(command.props.style.opacity, 0.37, preset.id + ' preserves configured disabled opacity');
+  assert.equal(command.props['aria-pressed'], 'true');
+  assert.equal(command.props['aria-disabled'], 'true');
+  assert.equal(command.props.tabIndex, -1);
+  command.props.onClick({ button: 0 });
+  const callerOpacity = desktopCommand('caller-opacity', 'Unavailable', custom, action,
+    { enabled: false, style: { opacity: 0.23 } });
+  assert.equal(callerOpacity.props.style.opacity, 0.23, 'caller opacity is not replaced by a painter');
+}
+const visualTarget = () => {
+  const parts = Object.fromEntries(['.theme-focus-ring', '.luna-focus-ring', '.luna-hot-ring',
+    '.luna-launcher-tint', '.bevel-top'].map(key => [key, { style: { opacity: '1' } }]));
+  const node = { style: { opacity: 0.37 }, disabled: 'false', parts,
+    getAttribute: name => name === 'aria-disabled' ? node.disabled : null,
+    querySelector: key => parts[key] || null, ownerDocument: {} };
+  node.ownerDocument.activeElement = node;
+  return node;
+};
+for (const [name, theme, factory, ring] of [
+  ['Classic', server, surfaceEvents, '.theme-focus-ring'],
+  ['Luna', catalog.themes[0], lunaVisualEvents, '.luna-focus-ring'],
+]) {
+  const node = visualTarget(), event = { currentTarget: node, button: 0 };
+  const events = factory(theme);
+  events.onMouseenter(event); events.onMousedown(event); events.onFocus(event);
+  assert.equal(Number(node.parts[ring].style.opacity), 1, name + ' enabled focus remains visible');
+  node.disabled = 'true';
+  events.onUpdate(node);
+  assert.equal(Number(node.parts[ring].style.opacity), 0, name + ' disabled reconciliation clears focus visuals');
+  assert.equal(node.ownerDocument.activeElement, node, 'visual cleanup does not move actual focus');
+  const disabledStyle = { ...node.style };
+  for (const key of ['onMouseenter', 'onMousedown', 'onMouseup', 'onFocus', 'onBlur'])
+    events[key](event);
+  assert.deepEqual(node.style, disabledStyle, name + ' disabled input cannot repaint the face or opacity');
+  node.disabled = 'false';
+  events.onMouseenter(event);
+  assert.equal(node.style.opacity, 0.37, 'paint does not own caller opacity in the enabled state either');
+  if (name === 'Classic') assert.equal(node.parts['.bevel-top'].style.backgroundColor, theme.colors.light);
+  else assert.equal(Number(node.parts['.luna-hot-ring'].style.opacity), 1);
+  node.disabled = 'true';
+  factory({ ...theme }).onMount(node);
+  assert.equal(Number(node.parts[ring].style.opacity), 0, 'disabled mount/retheme remains quiet');
+  const explicit = factory(theme, { disabled: true });
+  node.disabled = 'false';
+  explicit.onUpdate(node); explicit.onMousedown(event);
+  assert.equal(Number(node.parts[ring].style.opacity), 0, 'native disabled option also suppresses active visuals');
+}
 console.log('PASS: six-theme geometry, menu activation, Dock keyboard behavior, disabled commands, recovery parity and placement seams');
