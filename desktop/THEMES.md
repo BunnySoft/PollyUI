@@ -143,6 +143,18 @@ creating canvases nor pattern tiles creates native windows. PollyWM contains
 no JavaScript engine, GUI instance, theme-specific painter or second font cache.
 No application content is sent to the renderer.
 
+Active Luna caption text has a hard shadow using the current title text color
+mixed 70% toward black, drawn before the foreground at a one-logical-pixel
+right/down offset. This restores the design from `draw_text` in the removed C
+painter (`5bb181c^`), not a new XP pixel oracle. Both passes share ellipsis,
+alignment, baseline and the native text rectangle clip. Existing Canvas scaling
+scales that logical offset; unlike the old C loop, fractional offsets are not
+rounded up to whole backing pixels. This increment deliberately leaves inactive
+Luna and non-Luna text unchanged; the old C loop also shadowed inactive Luna.
+`tests/luna-caption-shadow.mjs` checks actual GUI strip pixels, clipped long and
+empty/narrow titles, 1/1.25 scaling and unchanged inactive/non-Luna output.
+It does not certify XP SP3 fonts, native compositor input or OS-exact pixels.
+
 One response contains top, left, right and bottom strips in a single sealed
 memfd. Logical strip dimensions are `(clientWidth+2*border,titleHeight)`,
 `(border,clientHeight)` twice, and `(clientWidth+2*border,border)`.
@@ -224,6 +236,19 @@ Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
 are still running. These are **opaque material approximations**, without
 compositor blur, reflection, wallpaper tint, magnification or authentic OS icons.
+Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
+with centered integer insets, retaining the default 7x4 geometry. Very narrow
+even widths degenerate to a symmetric bar rather than spilling outside the
+configured container or introducing fractional-pixel blur. The width-only
+increment preserved the default pixels. Its actual GUI evidence exposed the
+fourth row being clipped by the bottom rim; a separate follow-up moves only
+Tiger's indicator one pixel up, preserving the rim and showing all four rows.
+The default two-window 400x100 fixture intentionally gains 14 black pixels;
+this repairs the local 7x4 visibility contract, not OS-exact placement.
+`tests/tiger-dock-indicator-render.mjs` records the actual visible rows at 7/2/12,
+running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
+configuration consistency evidence, not a Tiger raw-reference or native Mac
+platform acceptance.
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
