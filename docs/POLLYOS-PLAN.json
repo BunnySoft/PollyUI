@@ -1200,7 +1200,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "BigSur light preset/公共GUIcaption已具；font/systempixels、nativefullwindoweffects未认证，unifiedToolbar仍仅preview含义。"
+      "evidence": "BigSur light preset/公共GUIcaption已具；2026-10-15有界caption actual Windows raster GUI核验未发现确定产品缺陷，未改painter/preset。默认12px圆control及close/min/max左序、active/inactive/三hover/validheld+hover、现有整组glyphhover与inactiveOpacity/ink消费通过；合法16pxcontrol/34pxtitle、宽1/20/44/64/300、empty/long textclip、1.25backingceil、5otherpreset前后strip bytes guards通过。元数据fixture镜像现geometry合同，不冒nativehit/input或OSraw验收。旧C5bb181c^逐键glyphhover与现JS整组存在priorart分歧，保留现行为待同版本授权rawstate参考/决定；exactcolors/font/art/nativeMac/Metal、vibrancy/shadow和统一clienttoolbar仍未认证/缺机制，E22.31保持partial。"
     },
     {
       "id": "bigsur-dock-geometry",
