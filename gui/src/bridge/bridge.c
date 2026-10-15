@@ -47,6 +47,7 @@ struct PuBridge {
     void      *capture_user;
     PuBridge  *root, *next;
     JSValue    document;
+    JSValue    reflect_get;
     bool       native_owned;
     PuDocumentViewFn default_view;
     void *default_view_user;
@@ -217,6 +218,7 @@ static bool document_root(JSContext *ctx, PuNode *node)
 
 static void free_document(PuBridge *b)
 {
+    JS_FreeValueRT(JS_GetRuntime(b->ctx), b->reflect_get);
     pu_node_unref(b->input_owner);
     pu_node_unref(b->composition);
     pu_node_unref(b->click_target);
@@ -240,6 +242,12 @@ static void document_finalizer(JSRuntime *rt, JSValueConst value)
     while (*link && *link != b) link = &(*link)->next;
     if (*link) *link = b->next;
     free_document(b);
+}
+
+static void document_gc_mark(JSRuntime *rt, JSValueConst value, JS_MarkFunc *mark)
+{
+    PuBridge *b = JS_GetOpaque(value, pu_document_class_id);
+    if (b) JS_MarkValue(rt, b->reflect_get, mark);
 }
 
 static char *pu_bstrdup(const char *s)
@@ -389,7 +397,8 @@ static const JSClassDef pu_style_class_def = {
 };
 static JSClassExoticMethods pu_document_exotic;
 static const JSClassDef pu_document_class_def = {
-    "Document", .finalizer = document_finalizer, .exotic = &pu_document_exotic
+    "Document", .finalizer = document_finalizer, .gc_mark = document_gc_mark,
+    .exotic = &pu_document_exotic
 };
 static const JSClassDef pu_bitmap_class_def = { "Bitmap", .finalizer = bitmap_finalizer };
 
@@ -487,26 +496,18 @@ static JSValue document_get_property(JSContext *ctx, JSValueConst obj,
     if (document_view_atom(ctx, prop))
         return JS_IsObject(receiver) && JS_VALUE_GET_PTR(obj) == JS_VALUE_GET_PTR(receiver) ?
             js_document_get_defaultView(ctx, receiver) : JS_NULL;
+    PuBridge *b = JS_GetOpaque(obj, pu_document_class_id);
+    if (!b) return JS_ThrowTypeError(ctx, "Document scope is closed");
     JSValue proto = JS_GetPrototype(ctx, obj);
-    while (JS_IsObject(proto)) {
-        JSPropertyDescriptor desc;
-        int found = JS_GetOwnProperty(ctx, &desc, proto, prop);
-        if (found < 0) { JS_FreeValue(ctx, proto); return JS_EXCEPTION; }
-        if (found) {
-            JSValue value = desc.value;
-            if (desc.flags & JS_PROP_GETSET)
-                value = JS_IsUndefined(desc.getter) ? JS_UNDEFINED :
-                    JS_Call(ctx, desc.getter, receiver, 0, NULL);
-            JS_FreeValue(ctx, desc.getter);
-            JS_FreeValue(ctx, desc.setter);
-            JS_FreeValue(ctx, proto);
-            return value;
-        }
-        JSValue next = JS_GetPrototype(ctx, proto);
-        JS_FreeValue(ctx, proto);
-        proto = next;
-    }
-    return JS_IsException(proto) ? proto : JS_UNDEFINED;
+    if (JS_IsException(proto)) return proto;
+    if (JS_IsNull(proto)) return JS_UNDEFINED;
+    JSValue key = JS_AtomToValue(ctx, prop);
+    JSValue args[] = { proto, key, receiver };
+    JSValue result = JS_IsException(key) ? JS_EXCEPTION :
+        JS_Call(ctx, b->reflect_get, JS_UNDEFINED, 3, args);
+    JS_FreeValue(ctx, key);
+    JS_FreeValue(ctx, proto);
+    return result;
 }
 
 static int document_define_property(JSContext *ctx, JSValueConst obj, JSAtom prop,
@@ -1815,6 +1816,7 @@ PuBridge *pu_bridge_install(JSContext *ctx)
     if (document_serial==UINT64_MAX) {free(b);return NULL;}
     b->document_scope=++document_serial;
     b->document = JS_UNDEFINED;
+    b->reflect_get = JS_UNDEFINED;
 
     JSRuntime *rt = JS_GetRuntime(ctx);
     JS_SetRuntimeOpaque(rt, b);
@@ -1910,6 +1912,17 @@ PuBridge *pu_bridge_install(JSContext *ctx)
 
     /* The `document` global. */
     JSValue global = JS_GetGlobalObject(ctx);
+    JSValue reflect = JS_GetPropertyStr(ctx, global, "Reflect");
+    b->reflect_get = JS_IsException(reflect) ? JS_EXCEPTION :
+        JS_GetPropertyStr(ctx, reflect, "get");
+    JS_FreeValue(ctx, reflect);
+    if (!JS_IsFunction(ctx, b->reflect_get)) {
+        if (!JS_IsException(b->reflect_get))
+            JS_ThrowTypeError(ctx, "The GUI requires the intrinsic Reflect.get");
+        JS_FreeValue(ctx, global);
+        pu_bridge_free(b);
+        return NULL;
+    }
     JSValue document = JS_NewObject(ctx);
     def_method(ctx, document, "createElement",  js_document_createElement,  1);
     def_method(ctx, document, "createElementNS", js_document_createElementNS, 2);
@@ -1963,6 +1976,7 @@ PuBridge *pu_bridge_new_document(PuBridge *main)
     if(document_serial==UINT64_MAX){free(b);return NULL;}
     b->document_scope=++document_serial;
     b->ctx = main->ctx;
+    b->reflect_get = JS_UNDEFINED;
     b->body = pu_node_new(PU_NODE_ELEMENT);
     if (!b->body) { free(b); return NULL; }
     pu_node_ref(b->body);
@@ -1980,6 +1994,7 @@ PuBridge *pu_bridge_new_document(PuBridge *main)
         free_document(b);
         return NULL;
     }
+    b->reflect_get = JS_DupValue(b->ctx, main->reflect_get);
     b->native_owned = true;
     b->next = b->root->next;
     b->root->next = b;
