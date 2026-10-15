@@ -1040,7 +1040,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "ce21f540/882f9182与公共GUI窗饰已交付rect controls；alignment-reference.json 的Win11数值为重建目标而非24H2像素测量，用户已明确Modern目标不是Win10。"
+      "evidence": "ce21f540/882f9182与公共GUI窗饰已交付rect controls。2026-10-15 恢复GUI迁移遗漏的Fluent inactive glyph着色：沿用5bb181c^旧C语义消费现window.inactiveText（catalog #999999，而非active controlText #1a1a1a），close hover/held白色优先级保留。真实GUI组件before/after：inactive normal/max/min hover或held各90px改变、close hover/held仅另两键70px、restore121px、1.25x200px；close hover本键、其它区域/侧strip、8个active状态、窄窗和非Fluent五preset hash不变；custom inactive色也实际生效。未改backplate/palette/font/三键geometry/native input，保留Luna shadow/Classic已验路径。E22.21仍partial；alignment-reference.json数值是重建目标而非build-tagged24H2 raw测量，本组件证据不认证OS-exact/Snap或native输入，Modern目标不是Win10。"
     },
     {
       "id": "win11-taskbar-start-finish",

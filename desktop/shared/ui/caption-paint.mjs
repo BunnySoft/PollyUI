@@ -140,7 +140,8 @@ function paintControl(ctx, theme, geometry, command, box) {
     }
   }
   if (!w.glyphsOnHoverOnly || geometry.hovered) {
-    ctx.fillStyle = style === 'fluent' && command === 0 && hovered ? '#ffffff' : w.controlText;
+    ctx.fillStyle = style === 'fluent' && command === 0 && hovered ? '#ffffff' :
+      style === 'fluent' && !geometry.active ? w.inactiveText : w.controlText;
     if (pressed && style !== 'fluent') ctx.translate(1, 1);
     glyph(ctx, theme, command, width, height, geometry.maximized);
   }
