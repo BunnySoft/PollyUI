@@ -11,7 +11,7 @@ import { trayView } from './desktop/shell/tray.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
 import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
-import { bevel, surfaceStyle, surfacePaint, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
+import { bevel, surfaceStyle, surfacePaint, surfaceEvents, surfaceDetail } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
 
@@ -21,6 +21,68 @@ const row = { flexDirection: 'row', alignItems: 'center' };
 const center = { alignItems: 'center', justifyContent: 'center' };
 const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
 const menuThemes = new WeakMap();
+const fluentPanels = new WeakMap();
+const panelFinalizers = new FinalizationRegistry(remove => remove());
+function revealFluentTask(event) {
+  let target = event.currentTarget;
+  for (let strip = target.parentNode; strip; strip = strip.parentNode) {
+    if (!['shell-window-list', 'shell-centered-tasks'].includes(strip.id)) continue;
+    const left = target.offsetLeft - strip.offsetLeft, end = left + target.offsetWidth;
+    const start = Number(strip.scrollLeft);
+    const extent = strip.childNodes.reduce((maximum, child) =>
+      Math.max(maximum, child.offsetLeft + child.offsetWidth - strip.offsetLeft), strip.offsetWidth);
+    const next = target.offsetWidth > strip.offsetWidth || left < start ? left :
+      end > start + strip.offsetWidth ? end - strip.offsetWidth : start;
+    strip.scrollLeft = Math.max(0, Math.min(extent - strip.offsetWidth, next));
+    // Offsets are unscrolled; reveal the inner viewport, not its offscreen task, in the outer group.
+    target = strip;
+  }
+}
+function syncFluentPanel(node) {
+  let state = fluentPanels.get(node);
+  if (!state) {
+    state = { frame: null };
+    fluentPanels.set(node, state);
+    const view = node.ownerDocument?.defaultView;
+    if (view) {
+      const weak = new WeakRef(node);
+      const remove = view.observeState(() => {
+        const panel = weak.deref();
+        if (!panel) { remove(); return; }
+        syncFluentPanel(panel);
+      });
+      panelFinalizers.register(node, remove);
+    }
+  }
+  if (state.frame !== null) return;
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      state.frame = null;
+      const group = node.querySelector('#shell-centered-tasks'), tray = node.querySelector('#shell-notification-area');
+      if (!group || !tray || !node.offsetWidth) return;
+      const theme = state.theme, l = theme.layout;
+      const strip = node.querySelector('#shell-window-list');
+      const fixed = group.childNodes.filter(child => child !== strip);
+      const taskWidth = strip.childNodes.reduce((sum, child) => sum + child.offsetWidth, 0) +
+        Math.max(0, strip.childNodes.length - 1) * l.windowGap;
+      const desired = fixed.reduce((sum, child) => sum + child.offsetWidth, 0) +
+        fixed.length * l.panelGap + taskWidth + l.panelGap;
+      const left = l.panelPaddingLeft, right = Math.max(left, tray.offsetLeft - node.offsetLeft - l.panelGap);
+      const width = Math.max(1, Math.min(desired, right - left));
+      group.style.width = String(width);
+      group.style.left = String(Math.max(left, Math.min((node.offsetWidth - desired) / 2, right - width)));
+      group.style.top = String((node.offsetHeight - group.offsetHeight) / 2);
+      group.scrollLeft = Math.max(0, Math.min(Number(group.scrollLeft),
+        Math.max(0, fixed.reduce((sum, child) => sum + child.offsetWidth, 0) +
+          fixed.length * l.panelGap + (strip.childNodes.length ? l.windowButtonWidth : 0) - width)));
+      state.frame = requestAnimationFrame(() => {
+        state.frame = null;
+        if (node.ownerDocument.activeElement)
+          revealFluentTask({ currentTarget: node.ownerDocument.activeElement });
+      });
+    });
+  });
+}
 const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
@@ -79,11 +141,14 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       Object.assign(node.props, surfaceEvents(theme, options));
     }
     if (!compact && surfaceStyle(theme, 'panel') === 'fluent') {
+      const options = { selected: window.active, variant: 'task', quiet: true };
       Object.assign(node.props.style, { height: 40, width: theme.layout.windowButtonWidth,
         paddingLeft: 0, paddingRight: 0, borderWidth: 0, borderRadius: 4,
-        backgroundColor: window.active ? '#ffffff' : 'transparent',
-        gradientFrom: 'transparent', gradientTo: 'transparent' });
-      node.children = [desktopIcon('file', theme.colors.accent, 24),
+        ...surfacePaint(theme, options) });
+      Object.assign(node.props, surfaceEvents(theme, options));
+      const focus = node.props.onFocus;
+      node.props.onFocus = event => { focus(event); revealFluentTask(event); };
+      node.children = [surfaceDetail(theme, options), desktopIcon('file', theme.colors.accent, 24),
         h('view', { 'aria-hidden': 'true', style: { position: 'absolute', bottom: 0,
           width: window.active ? 16 : 6, height: 3, borderRadius: 2,
           backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
@@ -151,20 +216,32 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
         style: { width: theme.layout.launcherWidth ?? 44, height: 40, paddingLeft: 0, paddingRight: 0,
           justifyContent: 'center', borderWidth: 0, borderRadius: 4 } });
       node.children = [desktopIcon(icon, theme.colors.accent, 24)];
+      const focus = node.props.onFocus;
+      node.props.onFocus = event => { focus?.(event); revealFluentTask(event); };
       return node;
     };
+    const sync = node => {
+      syncFluentPanel(node);
+      fluentPanels.get(node).theme = theme;
+    };
+    const tasks = windowButtons(theme, windows, toggle, actions);
+    tasks.props.style.minWidth = windows.length ? theme.layout.windowButtonWidth : 0;
+    const wheel = tasks.props.onWheel;
+    tasks.props.onWheel = event => { event.stopPropagation(); wheel(event); };
     return h('view', { id: 'shell-panel', style: { ...row, width: '100%', height: '100%',
       gap: theme.layout.panelGap, paddingLeft: 12, paddingRight: 12, backgroundColor: panel.from,
-      borderTopWidth: 1, borderColor: theme.colors.border } },
-    h('view', { style: { flexGrow: 1, flexBasis: 0 } }),
+      borderTopWidth: 1, borderColor: theme.colors.border, position: 'relative' },
+      onMount: sync, onUpdate: sync },
     h('view', { id: 'shell-centered-tasks', style: { ...row, gap: theme.layout.panelGap,
-      width: (2 + Number(Boolean(workspace)) + windows.length) * (theme.layout.windowButtonWidth + theme.layout.panelGap),
-      maxWidth: '70%', minWidth: 0 } },
+      position: 'absolute', top: (panel.height - 40) / 2, left: theme.layout.panelPaddingLeft,
+      width: (2 + Number(Boolean(workspace))) * ((theme.layout.launcherWidth ?? 44) + theme.layout.panelGap) +
+        windows.length * (theme.layout.windowButtonWidth + theme.layout.windowGap),
+      maxWidth: '100%', minWidth: 0, overflow: 'scroll' },
+      onWheel: event => scrollDesktop(event, true) },
       iconButton('shell-menu', 'Polly', 'apps', openMenu),
       iconButton('shell-panel-settings', 'Settings', 'appearance', openSettings),
       workspace ? iconButton('shell-workspaces', workspace.name, 'displays', workspace.open) : null,
-      windowButtons(theme, windows, toggle, actions)),
-    h('view', { style: { flexGrow: 1, flexBasis: 0 } }),
+      tasks),
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'absolute', right: 12, top: 1,
       height: panel.height - 1, gap: 4, backgroundColor: panel.from } },
       error ? desktopText('Needs attention', panel.text, 11) : null,

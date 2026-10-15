@@ -1056,7 +1056,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "当前Modern centered searchable grid/footer与bar已实现；THEMES.md明确真实recommendation/account未复现，raw24H2/100%依据尚缺，不能仅主题卡片证明布局一致。"
+      "evidence": "2026-10-15 Fluent现有Shell coherent表面修正：task consumer的首次/hover/held/leave/cancel/blur/focus和retained clock reconcile共用局部task variant，active沿button.from/inactive透明、hover沿selection/held沿button.to，恢复paint-only stretch focusdetail且保留16/6运行标记、aria及pointer/Enter/context单次。按actual fixedslot/task/tray宽与owner layout后测量，800默认group x280/240保持；360退让为x12/226、260为x12/126，与tray x242/142无重叠，inner task与outer group独立wheel/clamp和局部focusreveal使Apps/Settings/workspace/末task真实可点击；实有tray consumer与合法launcher60/task52亦实际验证。Start nested app/Pin局部chain原focus+verticalScrollMetrics，640/available660 last app/Pin滚46/68完整可见，pointer/Enter各单次、反向wheel归零/重复focus不抖，disabled/Search/footer保留。极低360/available260仍有独立confirmed布局缺陷：preferredmenu180、bodyrow0/list16、footer y144..208越root180，focus仅clamp778/860并Enter，不宣称pointer/wheel/footerfit；短高chrome降级需另定，不扩本批。tests/fluent-shell-surface-render.mjs为800x700既有raster actual组件证据，不等同native输出resize或OSexact；palette/font/schema/caption/其它五preset不改，保留共享disabled/Classic/Luna/Mac修复。THEMES有界表列清raw24H2/100%认证参考、真实recommendation/account/Appgroup业务与独立Mica/corner/shadow仍缺，E22.22保持partial。"
     },
     {
       "id": "win11-corners-shadows",
