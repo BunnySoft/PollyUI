@@ -1,4 +1,4 @@
-import { dockSurfaceWidth, applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
+import { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
 import { render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
@@ -714,7 +714,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     try {
       menu = newSurface(bundle.output, 'settings', {
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
-        height: Math.max(1, Math.min(layout.menuHeight, height - theme.panel.height - layout.overlayInset * 2)),
+        height: applicationMenuHeight(theme, height),
         ...applicationMenuPlacement(theme),
         keyboard: 'exclusive', transparent: true,
       });

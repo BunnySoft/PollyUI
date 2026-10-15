@@ -61,12 +61,17 @@ int main(int argc, char **argv)
     narrow.control_width = 14;
     encode(&narrow, words);
     assert(pu_appearance_decode(&decoded, words));
-    assert(classic->title_height == 22 && classic->control_width == 16 && classic->control_size == 14);
+    assert(classic->title_height == 23 && classic->border_width == 4 &&
+        classic->control_top == 6 && classic->control_inset == 6 &&
+        classic->control_width == 16 && classic->control_size == 14);
     struct PuChromeBox close, maximize, minimize;
     assert(pu_chrome_button_box(classic, 480, 0, &close));
     assert(pu_chrome_button_box(classic, 480, 1, &maximize));
     assert(pu_chrome_button_box(classic, 480, 2, &minimize));
     assert(close.x - maximize.x == 18 && maximize.x - minimize.x == 16);
+    assert(pu_chrome_button_box(classic, 468, 0, &close) && close.x == 446 && close.y == 6);
+    assert(pu_chrome_button_box(classic, 468, 1, &maximize) && maximize.x == 428 && maximize.y == 6);
+    assert(pu_chrome_button_box(classic, 468, 2, &minimize) && minimize.x == 412 && minimize.y == 6);
     assert(pu_chrome_pixel(classic, 1.5, 1.5, 480, true) == 0xffffffff);
     assert(pu_chrome_pixel(classic, 478.5, 10.5, 480, true) == 0xff808080);
     assert(pu_chrome_pixel(classic, 20.5, 10.5, 480, true) !=

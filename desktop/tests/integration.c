@@ -853,7 +853,7 @@ static bool decoration_suite(const char *path)
     CHECK(command(&shell_client, TEST_APPEARANCE, 0, 0, 0));
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     content = full; pu_decoration_inset(view, &content, false);
-    CHECK(content.y == full.y + 40);
+    CHECK(content.y == full.y + pu_decoration_themes[PU_DECORATION_THEME_COUNT - 1].title_height);
     CHECK(command(client, TEST_RELEASE, 0, 0, 0));
     content = full; pu_decoration_inset(view, &content, false);
     CHECK(content.y == full.y + pu_decoration_themes[0].title_height);

@@ -116,3 +116,52 @@ export function checkDockOverflow() {
     'Scrolling and focus must not move or shrink the fixed Dock actions');
   console.log('PASS: actual clamped Dock wheel reachability, pointer activation, focus reveal and fixed actions');
 }
+
+export function captureServer2003Reference(directory) {
+  check(host.width === 640 && host.height === 480, 'Server reference fixture requires an unscaled 640x480 surface');
+  const theme = DESKTOP_THEMES.find(item => item.id === 'server2003');
+  const height = layout.applicationMenuHeight(theme, host.height);
+  let launched = '';
+  const menu = (apps = entries) => applicationsView(theme, apps, '', action, id => { launched = id; }, action, action, '', action);
+  render(h('view', { style: { width: '100%', height: '100%', position: 'relative',
+    backgroundColor: theme.desktop.from } },
+    h('view', { style: { position: 'absolute', left: 0, bottom: theme.panel.height,
+      width: theme.layout.menuWidth, height } }, menu()),
+    h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: theme.panel.height } },
+      panelView(theme, '5:05 PM', action, '', action, windows, action, action))),
+  document.body);
+  host.render(); document.activeElement?.blur(); host.render();
+  const get = id => document.getElementById(id);
+  check(get('shell-applications').offsetWidth === 380 && get('shell-applications').offsetHeight === 442,
+    'Two-column menu must use measured preferred dimensions without changing screen resolution');
+  check(get('shell-start-profile').offsetHeight === 40 && get('shell-start-links').offsetWidth === 184,
+    'Classic header/gray second column geometry must match configured measurements');
+  check(host.save(directory + '\\server2003-two-column-640x480.png'), 'Cannot save Server 2003 component evidence');
+  console.log('SERVER_GEOMETRY ' + JSON.stringify({
+    viewport: [640, 480], scale: 1, menu: rectangle(get('shell-applications')),
+    header: rectangle(get('shell-start-profile')), links: rectangle(get('shell-start-links')),
+    footer: rectangle(get('shell-start-footer')), panel: rectangle(get('shell-panel')),
+    app: rectangle(get('shell-app-org.pollyui.settings')),
+  }));
+  const many = Array.from({ length: 20 }, (_, i) => ({ id: 'fixture-' + i, name: 'Application ' + i,
+    comment: '', keywords: [] }));
+  const lowHeight = layout.applicationMenuHeight(theme, 240);
+  render(h('view', { style: { width: 380, height: lowHeight } }, menu(many)), document.body);
+  host.render();
+  const list = get('shell-start-apps'), last = get('shell-app-fixture-19');
+  const footer = get('shell-start-footer'), search = get('shell-app-search');
+  check(list.offsetHeight > 0 && footer.offsetTop + footer.offsetHeight <= lowHeight &&
+    search.offsetTop + search.offsetHeight <= footer.offsetTop,
+  'Small-height menu must retain visible search/footer and a real scrolling app viewport');
+  host.scroll(list.offsetLeft + 30, list.offsetTop + list.offsetHeight / 2, 100000); host.render();
+  const bounds = last.getBoundingClientRect();
+  console.log('SERVER_SMALL ' + JSON.stringify({ height: lowHeight, list: rectangle(list),
+    scrollTop: list.scrollTop, last: bounds, search: rectangle(search), footer: rectangle(footer) }));
+  host.mouse('mousedown', bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  host.mouse('mouseup', bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  host.mouse('click', bounds.x + bounds.width / 2, bounds.y + bounds.height / 2); host.render();
+  check(launched === 'fixture-19', 'The final application must remain scrollable and actually launchable');
+  search.focus(); host.render();
+  check(document.activeElement === search, 'Search retains actual focus in the small-height layout');
+  console.log('PASS: Server Classic two-column component dimensions, low-height scrolling, launch and focus');
+}

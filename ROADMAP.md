@@ -295,6 +295,14 @@ a saved GUI pointer preference, change cursor ownership or rewrite any
 published Alpha media. The current ISO predates these Settings/theme/cursor
 source changes.
 
+The Server 2003 follow-up from `670491e` uses the user's supplied images to
+refine its frame/button geometry, solid desktop color and gray two-column Start
+menu. Optional `panel.menuStyle` separates layout from palette; the single-column
+menu remains configurable. Menu-only vertical insets preserve other panels.
+The full, unscaled 88-pixel plain frame crop matches its reference, while the
+single component render confirms low-height scrolling and activation. Neither
+result establishes full-caption/text or whole-system pixel equivalence.
+
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses
 actual rendered windows and layout/interaction checks, not screenshots of a

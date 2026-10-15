@@ -301,7 +301,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
-  if (['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
+  if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
     return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
