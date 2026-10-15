@@ -17,7 +17,10 @@ classic presets. Modern now targets Windows 11 24H2 light geometry, not Windows
 unavailable configuration; saved classic choices and user overrides are not
 silently rewritten. It uses a solid 48px taskbar, centered icon tasks, a 32px
 caption content band with 46x32px controls, and original Polly artwork.
-No platform logos/assets, Mica or blur are shipped.
+No proprietary platform logos/assets are bundled. This preset does not
+automatically enable a material or blur; the separate
+[opt-in wallpaper-derived client helper](../gui/sdk/CANVAS.md#opt-in-wallpaper-derived-client-base)
+is not native DWM Mica or compositor Acrylic.
 `resources/themes/fallback.json` is a packaged recovery catalog.
 `shared/ui/theme-schema.mjs` defines JSON schema version
 1 and validates every supported field. Accepted snapshots are deeply frozen.
