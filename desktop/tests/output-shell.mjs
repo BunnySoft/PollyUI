@@ -1,3 +1,4 @@
+import { createSettingsFixtureClient } from './desktop/tests/settings-probe.mjs';
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,8 +23,8 @@ async function signal(title) {
 }
 const created = [];
 let clickSerial = 0;
-let shell;
-function startShell() { return createDesktopShell({ host: {
+let shell, settingsFixture;
+function startShell() { settingsFixture = createSettingsFixtureClient(signal); return createDesktopShell({ settingsFactory: settingsFixture.factory, host: {
   close: () => window.close(), displays: () => window.displays(),
   create(options) {
     const native = window.create(options);
@@ -88,20 +89,21 @@ async function run() {
     desktop.applyOutputConfiguration({ ...desktop.outputConfiguration(), heads: changed.heads });
     (await confirmation()).window.close();
     await until(() => !desktop.outputConfiguration().pendingToken, 'closing the confirmation surface reverts immediately');
-    const menuWindow = shell.showDisplays(shell.getState().outputs[0]);
-    const menu = created.find(item => item.window === menuWindow);
-    await click(menu, 'shell-output-' + target + '-width');
+    const ownedPid = await shell.showDisplays(shell.getState().outputs[0]);
+    check(ownedPid > 0, 'display entry routes to the independent owned Settings process');
+    await settingsFixture.click('shell-output-' + target + '-width');
     for (const code of [107, 14, 14, 14, 14, 2, 11, 3, 5]) {
       await signal('fixture-key ' + code + ' 1');
       await signal('fixture-key ' + code + ' 0');
     }
-    await click(menu, 'shell-output-' + target + '-scale-up');
-    await click(menu, 'shell-output-apply');
+    await settingsFixture.click('shell-output-' + target + '-scale-up');
+    await settingsFixture.click('shell-output-apply');
     await until(() => desktop.outputConfiguration().pendingToken > 0, 'native settings apply');
     await until(() => desktop.outputConfiguration().heads.find(head => head.id === target).width === 1024,
       'numeric display fields edit the actual output mode');
     await click(await confirmation(), 'shell-output-revert');
     await until(() => !desktop.outputConfiguration().pendingToken, 'native confirmation reverts changes');
+    await settingsFixture.close();
     let config = desktop.outputConfiguration();
     const keep = desktop.applyOutputConfiguration({ ...config, heads: config.heads.map(head => head.id === target ?
       { ...head, x: 64, y: 32 } : head) });
@@ -136,6 +138,7 @@ async function run() {
     await signal('fixture-output-crash');
     throw new Error('Crash injection did not terminate the fixture');
   }
+  await settingsFixture?.close();
   await signal('fixture-success');
   shell.stop(); window.quit();
 }

@@ -793,7 +793,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     "${CMAKE_SOURCE_DIR}/desktop/tests/file-dialog-window-shell.mjs" file-dialog file-dialog)
             set_tests_properties(desktop-file-dialog-window PROPERTIES TIMEOUT 120
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "ordinary-native;private-files-fixture")
-            foreach(mode IN ITEMS ui audio installed)
+            foreach(mode IN ITEMS ui audio migration installed)
                 add_test(NAME desktop-settings-${mode}
                     COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/settings-native.py"
                         $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

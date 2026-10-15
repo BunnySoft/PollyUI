@@ -35,6 +35,15 @@ The wrapper resolves installed data relative to its own binary directory just
 like Files. Launching it from Applications does not grant process-management
 authority; no terminate, administrator or arbitrary-shell API is exposed.
 
+Settings is one independent application for all six existing pages, not six
+small apps or a Shell-owned control panel. Its page source is owned by
+`desktop/apps/settings`; neutral appearance/control helpers are in
+`desktop/shared/ui`. Full display/audio/keyboard launch shortcuts present that
+same owned Settings PID. Existing Shell service policy and its small trusted
+display-confirmation/shortcut-recording layers stay authoritative behind
+authenticated scalar IPC; this does not migrate every OS service or establish
+an application sandbox.
+
 ## Confirmed P0 target, not the current implementation
 
 The [storage design](../docs/POLLYOS-STORAGE-DESIGN.md) now takes priority:

@@ -155,7 +155,7 @@ async function audio(settings) {
   const node = name => desktop.audioState().nodes.find(item => item.name === name);
   await click('shell-settings-page-audio');
   await until(() => desktop.audioState().ready && node('Polly-Test-A')?.volume != null, 'private PipeWire endpoints');
-  check(settings.document.getElementById('shell-audio-settings').textContent.includes('Volume: 100%'),
+  await until(async () => (await query({ op: 'state' })).text.includes('Volume: 100%'),
     'Settings shows native endpoint volume, not a default model');
   await capture(settings, 'audio');
   await click('shell-audio-lower-' + node('Polly-Test-A').id);
@@ -170,6 +170,61 @@ async function audio(settings) {
     'PipeWire selected output echoed and saved');
   await capture(settings, 'audio-changed');
   check(desktop.audioState().defaultSink === node('Polly-Test-B').id, 'Settings uses existing native default-device policy');
+}
+async function migration(output, firstPid, survivor) {
+  await appClick('shell-settings-page-displays');
+  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.heads?.length === 2,
+    'independent Settings reads the real native output snapshot');
+  await capture(independent, 'displays');
+  const firstHead = desktop.outputConfiguration().heads[0];
+  await appClick('shell-output-' + firstHead.id + '-scale-up');
+  await appClick('shell-output-apply');
+  await until(() => desktop.outputConfiguration().pendingToken > 0 &&
+    surfaces.some(item => !item.window.closed && item.title.startsWith('PollyShell.display-confirmation.')),
+    'native apply opens only the small trusted Keep/Revert prompt');
+  check(shell.configuration.snapshot.display === null, 'provisional display changes are not saved');
+  await capture(independent, 'display-pending');
+  await click('shell-output-keep');
+  await until(() => !desktop.outputConfiguration().pendingToken && shell.configuration.snapshot.display !== null,
+    'native Keep acknowledges and saves the exact display profile');
+  check(desktop.outputConfiguration().heads.find(head => head.id === firstHead.id).scale === 1.25,
+    'actual native scale changed through independent Settings');
+  await capture(independent, 'display-kept');
+  await audio(independent);
+  await appClick('shell-settings-page-keyboard');
+  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 7,
+    'independent Settings reads the real shortcut catalog');
+  await capture(independent, 'keyboard');
+  await appClick('shell-shortcut-minimize-window');
+  await until(() => surfaces.some(item => !item.window.closed &&
+    item.title.startsWith('PollyShell.shortcut-recording.') && item.window.active),
+    'only the trusted shortcut-recording layer receives capture focus');
+  const recording = surfaces.findLast(item => !item.window.closed && item.title.startsWith('PollyShell.shortcut-recording.'));
+  check(!recording.window.document.getElementById('shell-shortcuts'), 'trusted recorder has no duplicate full Keyboard page');
+  await signal('fixture-key 29 1'); await signal('fixture-key 50 1');
+  await signal('fixture-key 50 0'); await signal('fixture-key 29 0');
+  await until(() => desktop.shortcuts().some(binding => binding.action === 'minimize-window' &&
+    binding.key === 'm' && binding.modifiers === 2), 'real native Ctrl+M is recorded and saved');
+  await appClick('shell-shortcuts-reset');
+  await until(() => desktop.shortcuts().some(binding => binding.action === 'minimize-window' && binding.key === 'F9'),
+    'real shortcut defaults restored');
+  await appClick('shell-settings-page-about'); await capture(independent, 'about');
+  check(!surfaces.some(item => item.title === 'Desktop control panel'), 'all complete pages remain in the one owned Settings process');
+  await signal('fixture-settings-close ' + ++serial);
+  await until(() => exits.has(firstPid), 'actual owned Settings close');
+  await shell.showSystemSettings(output, 'audio');
+  const reopened = shell.getSettingsState().pid;
+  check(reopened !== firstPid, 'Settings reopens with a fresh owned PID/generation');
+  await until(async () => (await query({ op: 'state' })).text.includes('Volume: 90%'), 'reopened page reads actual retained audio state');
+  await capture(independent, 'reopened-audio');
+  await signal('fixture-settings-close ' + ++serial);
+  await until(() => exits.has(reopened), 'reopened Settings closes normally');
+  check(!exits.has(survivor) && shell.getState().running, 'Settings close retains Shell policy and the independent survivor');
+  const survivorView = desktop.windows().find(item => item.appId === 'org.pollyui.settings-survivor');
+  desktop.closeWindow(survivorView.id); await until(() => exits.has(survivor), 'owned fixture survivor cleanup');
+  check(reports.length === 0, 'migration smoke has no unexpected Shell errors');
+  console.log('PASS: native Settings migration complete');
+  await signal('fixture-success'); queryClient.close(); shell.stop(); window.quit();
 }
 async function run() {
   if (mode === 'survivor') {
@@ -217,6 +272,7 @@ async function run() {
     initial.id === 'org.pollyui.settings' && initial.namespace === initial.id && initial.shellPreference === null &&
     initial.configDir !== application.configDir && initial.dataDir !== application.dataDir,
     'Settings owns a distinct native PID, realm, event loop and storage namespace');
+  if (mode === 'migration') { await migration(output, firstPid, survivor); return; }
   const intruder = createSettingsClient(openDbusClient(environment.address));
   for (const [member, argument] of [['SelectTheme', 'bigsur'], ['ReloadThemes'], ['RestoreThemes'],
     ['OpenManagedPage', 'audio'], ['GetAppearance'], ['SelectTheme', JSON.stringify({ pid: firstPid, generation: 1 })]]) {
@@ -268,7 +324,7 @@ async function run() {
     await appClick('shell-settings-page-' + page);
     check((await query({ op: 'state' })).versionFooter === expectedLabel,
       'system build identity stays visible on independent ' + page + ' page');
-    await capture(settings, 'delegate-' + page);
+    await capture(settings, 'page-' + page);
     if (page === 'network') {
       if (mode === 'network') await network(settings);
       else {
@@ -281,18 +337,13 @@ async function run() {
         'Network controls belong only to independent Settings, not a delegated Shell panel');
       continue;
     }
-    await appClick('settings-open-managed-' + page);
-    await until(() => surfaces.some(item => !item.window.closed && item.title === 'Desktop control panel'),
-      'delegated desktop control panel');
-    const managed = surfaces.findLast(item => !item.window.closed && item.title === 'Desktop control panel').window;
-    check(managed.document.getElementById('settings-system-version')?.textContent === expectedLabel,
-      'managed ' + page + ' panel shows the same actual system build');
     const contentId = { displays: 'shell-displays', keyboard: 'shell-shortcuts', audio: 'shell-audio-settings' }[page];
-    if (mode === 'audio' && page === 'audio') await audio(managed);
-    else if (['displays', 'keyboard'].includes(page)) check(managed.document.getElementById(contentId),
-      'independent Settings delegates actual ' + page + ' controls');
-    await capture(managed, page); managed.close();
-    check(!exits.has(firstPid), 'Closing managed ' + page + ' panel retains independent Settings');
+    if (mode === 'audio' && page === 'audio') await audio(settings);
+    else if (['displays', 'keyboard'].includes(page))
+      await until(async () => (await query({ op: 'control', id: contentId })).width > 0,
+        'independent Settings mounts actual ' + page + ' controls');
+    await capture(settings, page);
+    check(!surfaces.some(item => item.title === 'Desktop control panel'), 'no complete settings page is delegated to Shell');
   }
   await appClick('shell-settings-page-about');
   await until(async () => (await query({ op: 'state' })).about?.outputs === 2, 'actual About service/outputs snapshot');
@@ -337,10 +388,9 @@ async function run() {
   check(reopenedPid !== firstPid, 'closed Settings reopens in a new owned PID/generation');
   await signal('fixture-settings-state ' + ++serial + ' 1');
   if (mode === 'audio') {
-    const managed = shell.showManagedSettings(output, 'audio');
-    check(managed.document.getElementById('shell-audio-settings').textContent.includes('Volume: 90%'),
-      'reopened delegated panel shows the current persisted PipeWire volume');
-    managed.close();
+    await shell.showManagedSettings(output, 'audio');
+    await until(async () => (await query({ op: 'state' })).text.includes('Volume: 90%'),
+      'reopened independent Audio page shows the current persisted PipeWire volume');
   }
   await capture(reopened, 'reopened');
   await appClick('shell-settings-page-about');

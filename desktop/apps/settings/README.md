@@ -7,13 +7,32 @@ runs with `--app-id org.pollyui.settings`, without `--desktop`, in its own proce
 QuickJS realm and GUI event loop. It uses its own application directories; it does
 not read or migrate Shell localStorage, theme files or management connections.
 
-Appearance selection, theme-file reload/restore, Network and live About snapshots use the
-fixed `org.pollyui.Settings1` scalar D-Bus contract. The version-1 JSON appearance
-and About payloads have strict field, size, catalog and service-state validation.
-Display, audio and keyboard pages explicitly open the existing Shell
-control panel; these controls are **not** independent Settings implementations.
-The Shell keeps the existing native apply/acknowledgement/persistence/rollback
-state machines, and quick-theme menus remain available.
+All six pages and their controllers/rendering live inside this one Settings
+window/document/realm. They use fixed `org.pollyui.Settings1` scalar RPCs and strict
+version-1 business JSON, not Shell-private JS objects or management connections.
+Business page source lives in `desktop/apps/settings/ui` and `logic`.
+Genuinely shared themes, presentation, button, typography and wallpaper helpers
+live in `desktop/shared/ui`; old Shell exports are source-compatibility aliases.
+Settings production modules have no business-rendering imports from
+`desktop/shell`. The Shell retains service policy, launch ownership and the two
+small trusted safety surfaces below; there is no full Shell settings window.
+
+| Page | Fixed methods / identity binding | Owner and detach behavior |
+| --- | --- | --- |
+| Appearance / About | Existing theme/catalog revisions, build and strict service snapshots | Existing Shell theme transaction and JSON writer; Settings owns the page |
+| Displays | `GetDisplays`, `ApplyDisplays(s)` complete serial + head ID/name/make/model/serial identity and bounded geometry, `ForgetDisplayProfile(u serial)` | Native output manager/compositor watchdog remains authoritative. Hotplug discards stale draft. Only the small trusted token-bound Keep/Revert layer confirms; Keep saves, navigation/close never silently confirms or restarts its 15-second deadline |
+| Network | Existing revision/operation ID/authentication token methods | Single Shell-owned iwd agent; detach cancels only its own pending connection, not an established one |
+| Audio | `GetAudio`, explicit `RefreshAudio`, `AudioAction(s)` fixed volume/mute/default + generation/node ID/revision/instance, `ForgetAudio(s {generation,revision})` | One `audio-policy.mjs` owner subscribes, restores and saves only echoed acknowledgments. Page close does not stop routing or pending persistence; device/service loss and unknown controls stay explicit |
+| Keyboard | `GetKeyboard`, `KeyboardAction(s)` fixed catalog revision/action + record/disable/reset, `CancelShortcutRecording(u token)`, `DetachPage(s page)` | Fixed catalog/config transaction stays with Shell. Record creates only the token/owner-bound trusted prompt, activates capture only on actual focus, and releases on focus loss/lock, Escape, timeout, page detach or actual owned exit |
+
+Every mutation rechecks the daemon-supplied UID/PID and current owned generation
+after asynchronous authorization. Page detach invalidates pending domain writes;
+monotonic execution-order guards prevent an older authorization result or detach
+from affecting a newer action. Recording tokens are never adopted across owners.
+No-reply requests do nothing, and writes are never automatically retried/replayed.
+The recording layer uses existing `window.active/onactivate/ondeactivate` and
+native focus-bound shortcut suppression, not a new hook or C management bridge.
+Audio remains the existing private PipeWire policy, not WirePlumber or a host core.
 
 Network mounts the existing network controller/view in the Settings document,
 using `network-client.mjs`, not a second system-bus connection or iwd agent.
@@ -74,7 +93,10 @@ retention and independent navigation in a host DOM fixture. The registered
 `desktop-settings-network-api` fixture uses real SysRT/libdbus scalar calls and
 the existing root-owned synthetic iwd on private buses, as UID1000, without GUI,
 host radios or user credentials. Its endpoints share a fixture process; it does
-not prove native two-process rendering/input. `desktop/tests/settings-shell.mjs`
-now drives the independent Network document through the existing test-only
-Settings probe and ordinary-window input path; that separate native GUI lane
-must be run against a rebuilt runtime before claiming new pixel/input acceptance.
+not prove native two-process rendering/input. The existing native wrapper's
+bounded `--mode migration` flow separately runs real independent Settings and
+Shell PIDs with two private headless outputs and private PipeWire fixtures:
+native Apply/Keep, volume/mute/default, focus-bound actual-key recording/reset,
+close/new-PID reopen and eight app-buffer captures. Its software-native result
+does not qualify physical hardware, theme pixel matching, persistent reboot or
+an ISO. Existing network/full UI modes keep their separate evidence boundaries.

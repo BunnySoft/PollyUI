@@ -210,7 +210,7 @@ prove one complete execution/service path before adding broad API coverage.
 | RT-04 | P0 | ABI metadata generation | First target integrated: deterministic Linux x86_64 statx layout/file constants from native headers, with generator --check and target/type guards. Other domains/targets remain staged | Independent |
 | RT-05 | P1 | IPC/D-Bus SDK | First two-process loop integrated: explicit-address JS client/service, zero-wait noarg/u/b/s/o calls and fixed scalar replies, diagnostics, single-use request replies and stable cancel/close/deadlines. Setup/name claim synchronous; application authorization, containers/subscriptions remain staged | RT-01, RT-02; RT-03 only for callback-based routes |
 | RT-06 | P1 | Real desktop capability migration | First service integrated: user theme-file/resource policy is JS over native files, with Shell authorization, lifecycle and rollback preserved; old C bridge removed. Bitmap decoding stays a generic GUI mechanism | Native files; RT-05 for D-Bus-based services |
-| RT-07 | P1 | Independent Settings/application boundary | First app integrated: Appearance/About in an independent process/realm behind narrow IPC, daemon PID/UID and current-generation checks; Displays/Network/Audio/Keyboard retain explicit Shell-panel entry points. Relocatable single-instance launch; no private Shell connection inheritance or lost controls | RT-06, bidirectional IPC |
+| RT-07 | P1 | Independent Settings/application boundary | All six existing pages run in one Settings process/window/realm, with App-owned page source and neutral shared UI. Strict scalar IPC keeps daemon PID/UID/current-generation and domain identity guards. Shell retains only single-owner service policy and small trusted display-confirmation/shortcut-recording layers, not complete settings pages. Relocatable single-instance routes remain | RT-06, bidirectional IPC |
 | RT-08 | P1 | Application configuration/state | First target integrated: typed Shell JSON preferences over native files, one-time legacy conversion preserving the original, exclusive writer lifetime and explicit publication/durability failures. Other apps' legacy storage unchanged; no native FileSystem quota | Existing native file API |
 | RT-09 | P2 | Additional platforms/protocols | Deferred: Windows filesystem and DNS/HTTP/TLS only when the next real use case needs them | Relevant mechanism above |
 
@@ -270,10 +270,47 @@ system assets. The accepted Alpha.6 demonstrated function, not a finished UX.
 
 | Surface | Concrete change | Preserved boundary |
 |---|---|---|
-| Settings | Integrated: sidebar, headings, grouped cards, theme-preview tiles and concise status/errors; system version/short build SHA on every page, full identity in About. Native normal/narrow layout and actual identity checks passed | Appearance/About use the existing narrow IPC; four managed pages retain explicit Shell-panel delegation |
+| Settings | Six existing pages migrated into one independent Settings window with App-owned controllers/views, shared neutral UI, strict IPC and unchanged single-owner service authority. Bounded software-native three-page Apply/Keep, audio ack/save, trusted key recording/reset and new-PID reopen completed | No new OS settings, service-process migration, account privileges or sandbox. Physical devices, full theme pixel alignment and reboot persistence remain separate |
 | Shell | Integrated: modern taskbar/launcher/menu spacing, typography, original icons and fresh-session Modern default | Window/workspace controls, input focus, power confirmation, rollback and user-selected classic themes |
 | Files | Integrated Explorer-like navigation/command/address areas and Places sidebar; Name/Modified/Type/Size columns, Properties for complete metadata | Current native file operations, exact-entry identity and no-clobber/error semantics |
 | Files interaction | Complete first slice: single selection/focus, open, navigation, sorting, loaded-name filtering, context actions and inline rename. Normal/narrow native browser and details journeys passed, including real file/MIME operations and normal window close; current-main normal evidence was independently verified | No fake cut/paste/delete/search controls; new OS mutations require their own real backend and acceptance |
+
+The 2026-10-15 theme increment integrates `ce21f540` and `882f9182`: Classic
+caption bevels, real rectangular Win11 caption controls, theme-specific taskbars
+and Start menus, three Dock painters and shared control treatments. The Shell
+uses the new Dock-width and menu-placement helpers. Overflowing Dock window
+slots remain scrollable without displacing the fixed actions, and rectangular
+glyph bounds agree between JS and native decoding. Original Polly artwork is
+retained. Product component geometry, current-engine before/after bytes and C
+painter checks are evidence of implementation, not six-system pixel-perfect
+certification: no complete qualified OS pixel oracle is available, and fonts,
+material effects and broader widget/state coverage retain explicit gaps.
+The attempted Linux native compilation could not start because the Podman
+connection failed; it is not a passing compositor/bridge build.
+
+Cursor default selection is updated from `0d48e280`: unset, empty or `classic`
+selects conventional PollyClassic; `PollyRabbit` remains an explicit startup
+choice. Existing animation checks select Rabbit explicitly. This does not add
+a saved GUI pointer preference, change cursor ownership or rewrite any
+published Alpha media. The current ISO predates these Settings/theme/cursor
+source changes.
+
+The Server 2003 follow-up from `670491e` uses the user's supplied images to
+refine its frame/button geometry, solid desktop color and gray two-column Start
+menu. Optional `panel.menuStyle` separates layout from palette; the single-column
+menu remains configurable. Menu-only vertical insets preserve other panels.
+The full, unscaled 88-pixel plain frame crop matches its reference, while the
+single component render confirms low-height scrolling and activation. Neither
+result establishes full-caption/text or whole-system pixel equivalence.
+
+The subsequent Classic border/spacing fix from `2ec2e2e` removes the generic
+outline that covered bevel layers and the interaction repaint that reintroduced
+a task-button gradient. Raised/sunken edge colors, flat pointer states,
+one-pixel content movement/cancellation and visible keyboard focus are retained.
+Menu placement accounts for its local inset/overlap and available width.
+Reference RGB differences remain nonzero; no palette quantization is used to
+manufacture equality. Other theme definitions and application services are
+unchanged.
 
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses
@@ -337,7 +374,7 @@ native WebGPU/Three.js.
 | Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Integrated: entry-relative/absolute local paths, local file URLs and base64 data URLs; EXIF orientation, source generations, task delivery and resource closure checked. No HTTP(S)/CORS/browser sandbox |
 | Shared GPU canvas and WebGL2 | Common offscreen/context/resource ownership, Windows ANGLE and Linux GLES backends, required JS environment and pinned Three.js WebGLRenderer qualification | Software functional baseline integrated `586ce9d`/`b527163`; [implemented matrix](./gui/sdk/WEBGL2.md), not full browser/WPT or hardware certification. Preserve 2D and existing DOM composition; `webgl`/`experimental-webgl` remain unavailable |
 | Windows hardware WebGL2 provider | Genuine ANGLE/Vulkan hardware adapter selection, actual device-type/capability reporting, explicit unavailable/software distinction and context lifetime | Implementation integrated `1931f5b` from `e6997e6`; parent Windows 17 functional passes plus physical SKIP 77, Linux 17 compatibility passes. Physical-GPU qualification remains pending, not satisfied by software or virtual displays |
-| macOS WebGL2 provider | ANGLE/Metal native context/device selection using the common Canvas/JS/resource seam | Unmerged source checkpoints through `20f3e21`, including Darwin default-OFF raster-build protection; native compilation/link/Metal pixels/Three all unqualified. No Mac host or CI push authorization was supplied. Existing supported macOS build still returns `null` for `webgl2` |
+| macOS WebGL2 provider | ANGLE/Metal native context/device selection using the common Canvas/JS/resource seam | Source implementation through `20f3e21` merged locally after the user's Windows/Linux-build condition was met on the same combined Release tree, with three minimal compatibility cases passing per platform. Darwin remains default OFF. **Not compiled or tested on macOS**; Mac linking/Metal pixels/Three/physical checks remain unqualified. This source-integration batch is not pushed and does not authorize Mac CI or media changes |
 | WebGPU | Pinned Dawn native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification on D3D12/Vulkan/Metal | Bounded Win/Linux source increment integrated from `c36c062`, default OFF; separate notice metadata `ad5ebc8` adds nine pinned original inputs. Parent fresh Linux confirms 42 actual passes plus physical SKIP 77, fully-OFF and all concrete parent reproductions; canonical Canvas and both real transient allocation paths pass. Mechanical inventory remains distinct from behavior qualification. Full notice closure blocks binary distribution, not this source integration; native Mac/physical and broader Three/shadow qualification remain separate |
 | SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
 

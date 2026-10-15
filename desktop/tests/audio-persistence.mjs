@@ -1,8 +1,9 @@
+import { createSettingsFixtureClient } from './desktop/tests/settings-probe.mjs';
 import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { checkDamagedConfiguration } from './desktop/tests/configuration-damage.mjs';
 const stage = application.arguments[0], surfaces = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-let shell, serial = 0;
+let shell, settingsFixture;
 function check(value, message) { if (!value) throw new Error(message); console.log('PASS: ' + message); }
 async function until(predicate, message) {
   const deadline = Date.now() + 15000;
@@ -12,22 +13,7 @@ async function signal(title) {
   const marker = window.create({ title, layer: 'overlay', width: 1, height: 1, anchors: ['top', 'right'], exclusiveZone: -1 });
   await until(() => marker.closed, title);
 }
-async function click(id) {
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const surface = surfaces.findLast(item => !item.window.closed && item.window.document.getElementById(id));
-  const node = surface?.window.document.getElementById(id);
-  check(node?.offsetWidth > 0, 'audio preference control laid out: ' + id);
-  const body = surface.window.document.body.firstChild;
-  let rect = node.getBoundingClientRect(), bounds = surface.window.document.body.getBoundingClientRect();
-  if (rect.y + rect.height > bounds.y + bounds.height || rect.y < bounds.y) {
-    body.scrollTop = Math.max(0, Number(body.scrollTop) + rect.y - bounds.y);
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    rect = node.getBoundingClientRect();
-  }
-  check(rect.y + rect.height / 2 >= bounds.y && rect.y + rect.height / 2 < bounds.y + bounds.height,
-    'audio preference control is inside its scroll viewport: ' + id);
-  await signal(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
-}
+async function click(id) { return settingsFixture.click(id); }
 const node = name => desktop.audioState().nodes.find(node => node.name === name);
 const saved = () => shell.configuration.snapshot.audio;
 async function run() {
@@ -36,13 +22,14 @@ async function run() {
     console.log('PASS: audio persistence ' + stage);
     await signal('fixture-success'); window.quit(); return;
   }
-  shell = createDesktopShell({ host: {
+  settingsFixture = createSettingsFixtureClient(signal);
+  shell = createDesktopShell({ settingsFactory: settingsFixture.factory, host: {
     close: () => window.close(), displays: () => window.displays(),
     create(options) { const surface = window.create(options); surfaces.push({ title: options.title, window: surface }); return surface; },
   } }).start();
   await until(() => desktop.audioState().ready && node('Polly-Test-A')?.volume != null &&
     node('Polly-Test-Source')?.muted != null, 'real private audio nodes ready');
-  shell.showAudio(shell.getState().outputs[0]);
+  await shell.showAudio(shell.getState().outputs[0]);
   if (stage === 'save') {
     await click('shell-audio-lower-' + node('Polly-Test-A').id);
     await until(() => saved() &&

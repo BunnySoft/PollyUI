@@ -191,7 +191,7 @@ int main(int argc, char** argv)
     JS_SetPropertyStr(ctx, global, "gc", JS_NewCFunction(ctx, collect, "gc", 0));
     JS_SetPropertyStr(ctx, global, "gpuSetPolicyForTest",
         JS_NewCFunction(ctx, set_policy, "gpuSetPolicyForTest", 1));
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
     const char* policy = getenv("PU_WEBGL2_DEVICE");
     JS_SetPropertyStr(ctx, global, "gpuRequestedPolicy",
         JS_NewString(ctx, policy && *policy ? policy : "hardware"));

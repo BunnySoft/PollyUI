@@ -4,8 +4,8 @@ import { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkA
 
 const denied = message => Object.assign(new Error(message), { dbusName: 'org.pollyui.Settings.Error.AccessDenied' });
 export function createSettingsService({ service, client, pid, uid, spawn, activate, appearance, about,
-  select, reload, restore, managed, network = null, report = console.error }) {
-  let owned = null, generation = 0, closed = false, fatal = null, opening = false;
+  select, reload, restore, managed, network = null, domains = null, report = console.error }) {
+  let owned = null, generation = 0, closed = false, fatal = null, opening = false, requestOrder = 0;
   const requests = new Set();
   function networkSnapshot(owner) {
     if (!network) throw new Error('Shell Wi-Fi service is unavailable');
@@ -61,9 +61,11 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
   }
   async function dispatch(request) {
     const member = request.target.member;
+    const order = ++requestOrder;
     if (member === 'Open') return [await open(settingsPage(request.args[0]))];
     const owner = owned;
     const networkGeneration = owner?.networkGeneration || 0;
+    const pageGeneration = owner?.pageGeneration || 0;
     await authorize(request, owner);
     if (member === 'Connect') {
       const destination = await waitSettingsReply(client.call(daemonTarget('GetNameOwner'), 's', [SETTINGS_INSTANCE_NAME], 's', 3000));
@@ -77,11 +79,44 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     if (!current(owner)) throw denied('Settings generation changed before execution');
     if (member === 'GetAppearance') return [JSON.stringify(appearance())];
     if (member === 'GetAbout') return [JSON.stringify(about())];
+    if (member === 'GetDisplays') return [JSON.stringify(domains.displays())];
+    if (member === 'GetAudio') return [JSON.stringify(domains.audio())];
+    if (member === 'GetKeyboard') return [JSON.stringify(domains.keyboard(owner))];
+    if (member === 'DetachPage') {
+      settingsPage(request.args[0]);
+      if (order < (owner.domainOrder || 0)) return [];
+      owner.domainOrder = order;
+      owner.pageGeneration = (owner.pageGeneration || 0) + 1;
+      if (request.args[0] === 'keyboard') domains?.detach(owner);
+      return [];
+    }
+    if (['ApplyDisplays', 'ForgetDisplayProfile', 'AudioAction', 'RefreshAudio', 'ForgetAudio',
+      'KeyboardAction', 'CancelShortcutRecording'].includes(member)) {
+      if (!domains) throw new Error('Settings domain services are unavailable');
+      if (pageGeneration !== (owner.pageGeneration || 0) || order < (owner.domainOrder || 0))
+        throw denied('Settings page detached or a newer operation executed before this request');
+      owner.domainOrder = order;
+      if (member === 'ApplyDisplays') domains.applyDisplays(request.args[0]);
+      else if (member === 'ForgetDisplayProfile') domains.forgetDisplays(request.args[0]);
+      else if (member === 'AudioAction') domains.audioAction(request.args[0]);
+      else if (member === 'RefreshAudio') domains.retryAudio();
+      else if (member === 'ForgetAudio') domains.forgetAudio(request.args[0]);
+      else if (member === 'KeyboardAction') domains.keyboardAction(owner, request.args[0]);
+      else domains.cancelRecording(owner, request.args[0]);
+      return [JSON.stringify(member.includes('Display') ? domains.displays() :
+        member.includes('Audio') ? domains.audio() : domains.keyboard(owner))];
+    }
     if (member === 'GetNetwork') return [networkReply(owner)];
-    if (member === 'DetachNetwork') { detachNetwork(owner); return []; }
+    if (member === 'DetachNetwork') {
+      if (order < (owner.networkOrder || 0)) return [];
+      owner.networkOrder = order;
+      detachNetwork(owner); return [];
+    }
     if (['NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection'].includes(member)) {
       if (!network) throw new Error('Shell Wi-Fi service is unavailable');
-      if (networkGeneration !== (owner.networkGeneration || 0)) throw denied('Settings network page was detached before execution');
+      if (networkGeneration !== (owner.networkGeneration || 0) || order < (owner.networkOrder || 0))
+        throw denied('Settings network page was detached or superseded before execution');
+      owner.networkOrder = order;
       if (member === 'NetworkAction') {
         const action = parseSettingsNetworkAction(request.args[0]);
         network.networkAction(action.revision, action.target, action.action);
@@ -98,7 +133,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
       return [networkReply(owner)];
     }
     if (member === 'OpenManagedPage') {
-      managed(settingsPage(request.args[0], true)); return [];
+      await managed(settingsPage(request.args[0], true)); return [];
     }
     let success;
     if (member === 'SelectTheme') success = select(settingsThemeId(request.args[0]));
@@ -132,6 +167,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
   function close() {
     if (closed) return;
     try { detachNetwork(owned); } catch (error) { report('[settings] Cannot cancel owned Wi-Fi connection: ' + String(error)); }
+    try { if (owned) domains?.detach(owned); } catch (error) { report('[settings] Cannot release owned shortcut recording: ' + String(error)); }
     closed = true; generation++;
     clearInterval(timer);
     for (const request of requests) request.close();
@@ -143,6 +179,7 @@ export function createSettingsService({ service, client, pid, uid, spawn, activa
     exited(event) {
       if (owned?.pid === event.pid) {
         try { detachNetwork(owned); } catch (error) { report('[settings] Cannot cancel exited Settings Wi-Fi request: ' + String(error)); }
+        try { domains?.detach(owned); } catch (error) { report('[settings] Cannot release exited Settings recording: ' + String(error)); }
         owned = null; generation++;
       }
     },

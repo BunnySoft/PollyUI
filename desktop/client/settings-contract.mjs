@@ -1,4 +1,4 @@
-import { parseThemeCatalog, freezeTheme } from './desktop/shell/theme-schema.mjs';
+import { parseThemeCatalog, freezeTheme } from './desktop/shared/ui/theme-schema.mjs';
 
 export const SETTINGS_APP_ID = 'org.pollyui.settings';
 export const SETTINGS_BUS_NAME = 'org.pollyui.Shell.Settings';
@@ -31,6 +31,17 @@ export const SETTINGS_METHODS = Object.freeze({
   ReplyNetworkAuthentication: { signature: 's', replySignature: 's' },
   CancelNetworkConnection: { signature: '', replySignature: 's' },
   DetachNetwork: { signature: '', replySignature: '' },
+  GetDisplays: { signature: '', replySignature: 's' },
+  ApplyDisplays: { signature: 's', replySignature: 's' },
+  ForgetDisplayProfile: { signature: 'u', replySignature: 's' },
+  GetAudio: { signature: '', replySignature: 's' },
+  RefreshAudio: { signature: '', replySignature: 's' },
+  AudioAction: { signature: 's', replySignature: 's' },
+  ForgetAudio: { signature: 's', replySignature: 's' },
+  GetKeyboard: { signature: '', replySignature: 's' },
+  KeyboardAction: { signature: 's', replySignature: 's' },
+  CancelShortcutRecording: { signature: 'u', replySignature: 's' },
+  DetachPage: { signature: 's', replySignature: '' },
   SelectTheme: { signature: 's', replySignature: 's' },
   ReloadThemes: { signature: '', replySignature: 's' },
   RestoreThemes: { signature: '', replySignature: 's' },

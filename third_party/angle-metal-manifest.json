@@ -1,0 +1,52 @@
+{
+  "name": "ANGLE standalone Metal-only runtime",
+  "repository": "https://github.com/google/angle",
+  "commit": "25b559464cb10c557e10aad1e75d1b85ddfef271",
+  "archiveUrl": "https://codeload.github.com/google/angle/tar.gz/25b559464cb10c557e10aad1e75d1b85ddfef271",
+  "archiveSha256": "5b13a45eaa921dea76f34cea47dec4f1044ba790baa42569e0e2ee5addbb47dd",
+  "depsSha256": "c36e32ce87ba65ade16194508ef97a02c8ece9e895f04b249eeccf1db0596e6f",
+  "licenseSha256": "bf4da21bd20bcfb5b60b7ecc67fa864a79be049e21d6178076887f178dd6c71a",
+  "deviceExtensionSha256": "a361f4aa8817883a2c4b3a0d219744debd93943e51740ad738b0135dd8677716",
+  "integrityProvenance": "SHA256 of received official commit-addressed source archive and exact extracted files; not a claim of separately published upstream release checksums",
+  "depotTools": {
+    "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git",
+    "commit": "2fd34a8813b6f34336aad40976cc4223768177f8",
+    "archiveUrl": "https://chromium.googlesource.com/chromium/tools/depot_tools/+archive/2fd34a8813b6f34336aad40976cc4223768177f8.tar.gz",
+    "archiveSha256": "a276390a1a86b99a3b0425182ed219347a53c04c3f417c9afc64cab465bfc21b"
+  },
+  "chromiumBuildCommit": "b6d3bf1cb558bd41aa171d518b0ee60c3eb1b10e",
+  "gnCommit": "0035961837fbcfe875d855744b3eda4fd2eefb43",
+  "minimumMacSdk": "15.0",
+  "deploymentTarget": "13.0",
+  "macGpuFamilyRequirement": "MTLGPUFamilyMac2, required by this exact ANGLE source's native Metal availability and ES3 implementation",
+  "gnArgs": {
+    "is_debug": false,
+    "is_component_build": false,
+    "use_system_xcode": true,
+    "clang_use_chrome_plugins": false,
+    "use_custom_libcxx": false,
+    "angle_build_tests": false,
+    "angle_enable_metal": true,
+    "angle_enable_gl": false,
+    "angle_enable_vulkan": false,
+    "angle_enable_wgpu": false,
+    "angle_enable_d3d11": false,
+    "angle_enable_null": false,
+    "angle_enable_swiftshader": false,
+    "angle_enable_perfetto": false,
+    "mac_deployment_target": "13.0",
+    "mac_min_system_version": "13.0"
+  },
+  "gclientCustomVars": {
+    "checkout_angle_dawn_deps": false,
+    "checkout_angle_cl_deps": false,
+    "checkout_angle_internal": false,
+    "checkout_angle_partition_alloc": false,
+    "checkout_angle_restricted_traces": false,
+    "checkout_extra_traces": false,
+    "download_remoteexec_cfg": false
+  },
+  "licenseBoundary": "Original ANGLE BSD license, maintained Khronos header notices and complete dependency LICENSE/COPYING/NOTICE/README.chromium files are retained with the private stage. Source/DEPS and actual dependency revisions are recorded; no third-party source is patched.",
+  "runtimeBoundary": "Only standalone libEGL/libGLESv2 dylibs are built and staged; no Electron/Chromium/browser install or execution, no CGL/Vulkan/software fallback, no JS WebGPU, no hidden native canvas windows",
+  "qualification": "macOS native compilation/link and real Metal pixels require a macOS host. Source pins/build wiring are not a positive runtime or physical-GPU qualification."
+}

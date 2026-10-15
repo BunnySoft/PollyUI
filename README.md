@@ -66,6 +66,12 @@ neither provider implements JS WebGPU or silently substitutes software.
 See the [GPU API/behavior/platform matrix](gui/sdk/WEBGL2.md); it is not full
 browser/WPT certification, WebGL1 or WebGPU support.
 
+The macOS ANGLE-to-Metal WebGL2 provider is an **opt-in source implementation,
+not compiled or tested on macOS**. Darwin keeps `PU_WEBGL2=OFF` by default;
+existing raster builds need no ANGLE bootstrap. Windows/Linux compatibility
+builds do not qualify Mac compilation, Metal pixels, or physical GPU behavior.
+See the [Mac dependency and verification instructions](gui/sdk/WEBGL2.md#macos-standalone-angle-metal-native-execution-pending).
+
 Current development adds an original Windows 11-oriented Shell/Settings layout:
 sidebar navigation, grouped cards, illustrated theme choices and a persistent
 system version/build footer. The new Modern preset applies to fresh sessions;

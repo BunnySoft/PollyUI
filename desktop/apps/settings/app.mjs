@@ -1,21 +1,27 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
-import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shell/themes.mjs';
-import { settingsView } from './desktop/shell/views.mjs';
-import { systemSettingsView, aboutSettingsView } from './desktop/shell/settings.mjs';
-import { SETTINGS_APP_ID, SETTINGS_VERSION, MANAGED_PAGES, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
-import { desktopCommand, desktopIcon, desktopText, settingsCard, horizontal } from './desktop/shell/presentation.mjs';
+import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shared/ui/themes.mjs';
+import { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
+import { systemSettingsView, aboutSettingsView } from './desktop/apps/settings/ui/frame.mjs';
+import { SETTINGS_APP_ID, SETTINGS_VERSION, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
+import { desktopCommand, desktopText, settingsCard } from './desktop/shared/ui/presentation.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
-import { createNetworkSettings } from './desktop/shell/network.mjs';
+import { createNetworkSettings } from './desktop/apps/settings/ui/network.mjs';
+import { createSettingsPages } from './desktop/apps/settings/logic/pages.mjs';
+import { createDisplayPage } from './desktop/apps/settings/ui/display-page.mjs';
+import { audioSettingsView } from './desktop/apps/settings/ui/audio.mjs';
+import { shortcutsView } from './desktop/apps/settings/ui/keyboard.mjs';
 
 export function createSettingsApp({ client, page = 'appearance', host = window, report = console.error,
   identity = typeof application === 'undefined' ? { id: SETTINGS_APP_ID } : application,
   onStop = () => {} }) {
-  let surface = null, timer = null, stopped = false, revision = 0, details = false;
+  let surface = null, timer = null, pageTimer = null, stopped = false, revision = 0, details = false;
   const ownBuild = runtimeBuild(identity);
   let currentTheme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
   const networkClient = createSettingsNetworkClient(client, report);
   const network = createNetworkSettings({ native: networkClient, host, theme: () => currentTheme, report });
+  const pages = createSettingsPages({ client, changed: paint, report });
+  const displays = createDisplayPage();
   const controller = createSettingsController({ client, page, changed: paint, report });
   function paint() {
     if (stopped || !surface || surface.closed) return;
@@ -41,25 +47,29 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     } else if (state.page === 'network') {
       content = h('view', { id: 'settings-network-slot', style: { minHeight: 0, flexGrow: 1, flexBasis: 0 },
         onMount: node => network.attach(surface, node) });
-    } else if (MANAGED_PAGES.includes(state.page)) {
-      const descriptions = {
-        displays: ['Connected displays', 'Resolution, scale, arrangement and confirmed display profiles.'],
-        network: ['Wi-Fi connections', 'Available networks, connection status and saved Wi-Fi preferences.'],
-        audio: ['Sound devices', 'Outputs, microphones, volume and the preferred audio device.'],
-        keyboard: ['Keyboard shortcuts', 'Choose and record desktop shortcuts for window and workspace actions.'],
-      };
-      content = h('view', { style: { padding: 8, gap: 16, flexShrink: 0 } },
-        settingsCard(theme, descriptions[state.page][0], descriptions[state.page][1], [
-          h('view', { style: { ...horizontal, gap: 14, flexWrap: 'wrap' } },
-            desktopIcon(state.page, theme.colors.accent, 36),
-            desktopCommand('settings-open-managed-' + state.page, 'Open desktop controls', theme,
-              available(() => controller.managed(state.page)), { icon: 'open' })),
-          desktopText('Opens a separate desktop control panel. Settings stays open.', theme.colors.muted, 13),
-        ]),
-        desktopText('These controls are managed by the desktop Shell, not by the Settings application.',
-          theme.colors.muted, 13, { flexShrink: 1 }),
-        state.busy ? h('view', { role: 'status' }, label('Opening desktop controls...')) : null,
-        state.error ? h('view', { role: 'alert' }, label(state.error)) : null);
+    } else if (['displays', 'audio', 'keyboard'].includes(state.page)) {
+      const { snapshot, busy, error } = pages.getState();
+      const command = guarded(pages.command);
+      let pageContent = null;
+      if (!snapshot) pageContent = label('Loading ' + state.page + ' service state...');
+      else if (state.page === 'displays') {
+        pageContent = h('view', { id: 'settings-display-slot', style: { minHeight: 0, flexGrow: 1, flexBasis: 0 } });
+      } else if (state.page === 'audio') {
+        pageContent = audioSettingsView(theme, snapshot, busy, command);
+      } else if (!snapshot.available) pageContent = label('Trusted shortcut management is unavailable in this session.');
+      else {
+        const action = (operation, action = '') => command('KeyboardAction',
+          JSON.stringify({ revision: snapshot.revision, operation, action }));
+        pageContent = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: 10 } },
+          shortcutsView(theme, snapshot.bindings, snapshot.recording?.action || null,
+            id => action('record', id), id => action('disable', id), () => action('reset'), () => {}, snapshot.error),
+          label('Recording uses a small trusted focus-bound prompt. It is not another Settings window or a global keyboard hook.'),
+          snapshot.recording ? desktopCommand('settings-keyboard-cancel', 'Cancel recording', theme,
+            guarded(() => pages.command('CancelShortcutRecording', snapshot.recording.token)), { enabled: !busy }) : null);
+      }
+      content = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: 10 } },
+        state.error || error ? h('view', { role: 'alert' }, label(state.error || error)) : null,
+        pageContent);
     } else {
       content = h('view', { style: { minHeight: 0, gap: 12, flexShrink: 0 } },
         state.error && state.about ? h('view', { role: 'alert' }, label(state.error)) : null,
@@ -80,10 +90,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
         ]) : null);
     }
     const tree = systemSettingsView(theme, state.page, guarded(page => {
-      if (state.page === 'network') { network.detach(); networkClient.stopNetwork(); }
-      surface.document.activeElement?.blur();
-      render(null, surface.document.body);
-      controller.navigate(page);
+      navigate(page);
       surface.document.getElementById('shell-settings-page-' + page)?.focus();
     }), stop, content, null, 'Settings', [], build);
     if (JSON.stringify(build) !== JSON.stringify(ownBuild))
@@ -92,16 +99,37 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     if (state.busy || !state.appearance)
       tree.props['aria-busy'] = 'true';
     function disable(node) {
-      if (node.props?.id && /^(shell-theme-|settings-open-managed-)/.test(node.props.id) &&
+      if (node.props?.id && /^(shell-theme-)/.test(node.props.id) &&
           (state.busy || state.unavailable || !state.appearance)) {
         node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
         node.props.style.opacity = theme.layout.disabledOpacity;
+      }
+      if (node.props?.id === 'shell-shortcuts-close') {
+        node.props.style.display = 'none'; node.props.tabIndex = -1;
+      }
+      if (state.page === 'keyboard' && node.props?.id?.startsWith('shell-shortcut') &&
+          (pages.getState().busy || pages.getState().snapshot?.recording)) {
+        if (node.props.role === 'button') {
+          node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
+          node.props.onClick = node.props.onKeydown = () => {};
+        }
       }
       node.children?.forEach(disable);
     }
     disable(tree);
     render(tree, surface.document.body);
     if (state.page === 'network') network.refresh();
+    if (state.page === 'displays' && pages.getState().snapshot) {
+      const { snapshot, busy } = pages.getState();
+      const slot = surface.document.getElementById('settings-display-slot');
+      if (slot) displays.paint(slot, theme, snapshot, busy, guarded(pages.command), paint);
+    }
+  }
+  function navigate(page) {
+    if (controller.getState().page === 'network') { network.detach(); networkClient.stopNetwork(); }
+    displays.detach(); pages.detach();
+    surface.document.activeElement?.blur(); render(null, surface.document.body);
+    controller.navigate(page); pages.activate(page);
   }
   function keydown(event) {
     if (!event.defaultPrevented && event.key === 'Escape') {
@@ -112,17 +140,16 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     if (stopped) return;
     stopped = true; revision++;
     if (timer !== null) clearInterval(timer);
+    if (pageTimer !== null) clearInterval(pageTimer);
     surface?.document.body.removeEventListener('keydown', keydown);
-    network.stop(); networkClient.close(); controller.close(); onStop();
+    network.stop(); networkClient.close(); pages.close(); displays.detach(); controller.close(); onStop();
     if (surface && !surface.closed) surface.close();
   }
   return Object.freeze({
-    controller, stop, getWindow: () => surface,
+    controller, pages, stop, getWindow: () => surface,
     present(page) {
       if (stopped) throw new Error('Settings instance is closed');
-      if (controller.getState().page === 'network') { network.detach(); networkClient.stopNetwork(); }
-      surface.document.activeElement?.blur(); render(null, surface.document.body);
-      return controller.navigate(page);
+      return navigate(page);
     },
     start() {
       if (stopped) throw new Error('Closed Settings cannot restart');
@@ -131,7 +158,8 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       surface.onclose = stop; surface.document.body.tabIndex = 0;
       surface.document.body.addEventListener('keydown', keydown);
       host.close(); paint(); surface.document.body.focus();
-      controller.refresh(); timer = setInterval(controller.refresh, 1000);
+      pages.activate(page); controller.refresh(); timer = setInterval(controller.refresh, 1000);
+      pageTimer = setInterval(pages.refresh, 250);
       return this;
     },
   });

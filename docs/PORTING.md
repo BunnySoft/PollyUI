@@ -65,7 +65,17 @@ Skia ANGLE include directory, Linux uses its system headers. Libraries load
 dynamically; Windows confines development ANGLE DLL lookup to the application
 directory/system loader dependency paths. Missing runtime/ES3 support returns
 `null` with creation-error notification, not a fake context or silent success.
-`PU_WEBGL2=OFF` keeps 2D available; macOS WebGL2 is explicitly unavailable.
+`PU_WEBGL2=OFF` keeps 2D available.
+
+macOS has an opt-in private ANGLE-to-Metal provider source implementation,
+**not compiled or tested on macOS**. Darwin defaults `PU_WEBGL2=OFF`, preserving
+the existing raster build and CI without ANGLE headers, ObjC++ or native dylibs.
+Explicit `-DPU_WEBGL2=ON` requires the pinned standalone ANGLE source build;
+it does not enable Skia Metal or supply a browser. The manifest, private build
+tool and native verifier are documented in
+[WEBGL2.md](../gui/sdk/WEBGL2.md#macos-standalone-angle-metal-native-execution-pending).
+Windows/Linux compatibility results are not Mac compilation or Metal pixel
+qualification; the native Mac and physical-machine checks remain pending.
 
 Each canvas has an owned framebuffer, not a native surface/window. The adapter
 restores the owning UI EGL context and never terminates a shared display.
