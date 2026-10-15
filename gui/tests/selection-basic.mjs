@@ -3,7 +3,7 @@ import { NSwitch, NCheckbox, NRadioGroup, useTheme, theme } from './gui/sdk/js/n
 
 const check = (value, message) => { if (!value) throw new Error(message); console.log('PASS: ' + message); };
 const calls = [];
-let value = false, checked = false, radio = 'a', disabled = false;
+let value = false, checked = false, radio = 'a', disabled = false, vertical = false;
 const options = [{ value: 'a', label: 'Alpha' }, { value: 'b', label: 'Blocked', disabled: true },
   { value: 'c', label: 'Charlie' }];
 const original = JSON.stringify(options);
@@ -12,7 +12,7 @@ function paint() {
     h('view', { id: 'before', tabIndex: 0, style: { width: 60, height: 20 } }, 'Before'),
     NSwitch({ id: 'switch', value, disabled, onUpdate: next => { calls.push(['switch', next]); value = next; paint(); } }),
     NCheckbox({ id: 'checkbox', checked, disabled, onChange: next => { calls.push(['checkbox', next]); checked = next; paint(); } }, 'Check'),
-    NRadioGroup({ id: 'radio', value: radio, options, disabled, onUpdate: next => { calls.push(['radio', next]); radio = next; paint(); } }),
+    NRadioGroup({ id: 'radio', value: radio, options, disabled, vertical, onUpdate: next => { calls.push(['radio', next]); radio = next; paint(); } }),
     h('view', { id: 'after', tabIndex: 0, style: { width: 60, height: 20 } }, 'After')), document.body);
   host.render();
 }
@@ -58,6 +58,18 @@ for (const node of [sw, cb]) {
   host.mouse('click', r.x + 3, r.y + 3, { button: 2 });
 }
 check(calls.length === count, 'Non-primary click does not activate selection controls');
+for (const node of [sw, cb, radios[0]]) {
+  const before = calls.length, r = node.getBoundingClientRect();
+  host.mouse('mousedown', r.x + 3, r.y + 3);
+  host.mouse('mouseup', r.x + 3, r.y + 3);
+  host.mouse('click', r.x + 3, r.y + 3); host.render();
+  check(calls.length === before + 1, 'Primary pointer activation invokes exactly one controlled callback');
+}
+const selectedCount = calls.length, selectedBox = radios[0].getBoundingClientRect();
+host.mouse('mousedown', selectedBox.x + 3, selectedBox.y + 3);
+host.mouse('mouseup', selectedBox.x + 3, selectedBox.y + 3);
+host.mouse('click', selectedBox.x + 3, selectedBox.y + 3);
+check(calls.length === selectedCount + 1 && calls.at(-1)[1] === 'a', 'Selected radio primary click retains the original callback contract');
 cb.focus(); useTheme('dark'); paint();
 check(find('checkbox') === cb && document.activeElement === cb &&
   cb.querySelector('.n-selection-focus').style.opacity === '1', 'Dark retheme preserves node/focus and focus paint');
@@ -66,4 +78,7 @@ check(sw.getBoundingClientRect().width === box.width && sw.getBoundingClientRect
 useTheme('light'); paint(); cb.blur(); host.render();
 check(cb.querySelector('.n-selection-focus').style.opacity === '0', 'Blur clears focus without rerender');
 check(JSON.stringify(options) === original, 'Controlled options and values are not mutated');
+vertical = true; radio = 'a'; paint(); radios[0].focus(); key('ArrowDown');
+check(radio === 'c' && document.activeElement === radios[2], 'Vertical radio Down skips a disabled row');
+key('ArrowUp'); check(radio === 'a', 'Vertical radio Up restores first enabled row');
 console.log('PASS: actual basic selection keyboard, disabled, pointer, controlled, focus and theme lifecycle');
