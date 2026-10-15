@@ -7,6 +7,8 @@ register('./menu-host-loader.mjs', import.meta.url);
 const { createDesktopShell } = await import('./desktop/shell/shell.mjs');
 const { memoryConfiguration, fixtureShortcuts } = await import('./desktop/tests/configuration-memory.mjs');
 const { defaultShellConfiguration } = await import('./desktop/shell/configuration.mjs');
+const { getDesktopTheme } = await import('./desktop/shell/themes.mjs');
+const { applicationsView } = await import('./desktop/shell/views.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -54,10 +56,10 @@ class Node {
   getAttribute(key) { return this.attributes.get(key) ?? null; }
   removeAttribute(key) { this.attributes.delete(key); }
   querySelector(selector) {
-    assert.match(selector, /^\.[a-zA-Z][\w-]*$/);
+    assert.match(selector, /^[.#][a-zA-Z][\w-]*$/);
     const name = selector.slice(1);
     return descendants(this).slice(1).find(node =>
-      (node.className || '').split(/\s+/).includes(name)) || null;
+      selector[0] === '#' ? node.id === name : (node.className || '').split(/\s+/).includes(name)) || null;
   }
   addEventListener(type, callback) {
     const callbacks = this.listeners.get(type) || [];
@@ -82,7 +84,13 @@ class Node {
   setInputMethod() {}
   cancelComposition() {}
   getBoundingClientRect() {
-    return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight };
+    return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight,
+      right: this.offsetLeft + this.offsetWidth, bottom: this.offsetTop + this.offsetHeight };
+  }
+  getContext() {
+    // Controller-only fixture; Classic pixels are covered by the GUI render fixtures.
+    return { fillRect() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {},
+      resetTransform() {}, createPattern: () => ({}) };
   }
   setMouseCapture() { this.ownerDocument.captured = this; }
   releaseMouseCapture() { this.ownerDocument.captured = null; domEvent(this, 'lostmousecapture'); }
@@ -167,12 +175,24 @@ function find(window, id) {
 
 function fixture(configure = () => {}) {
   const previous = { document: globalThis.document, measureText: globalThis.measureText,
-    setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval };
+    setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval,
+    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame };
   globalThis.document = document();
   globalThis.measureText = value => value.length * 8;
   const timers = new Set();
   globalThis.setInterval = fn => { timers.add(fn); return fn; };
   globalThis.clearInterval = fn => timers.delete(fn);
+  const frames = new Map();
+  let serial = 0;
+  globalThis.requestAnimationFrame = callback => { frames.set(++serial, callback); return serial; };
+  globalThis.cancelAnimationFrame = id => frames.delete(id);
+  const flushFrames = () => {
+    for (let count = 0; frames.size; count++) {
+      assert.ok(count < 10, 'bounded layout frames');
+      const ready = [...frames.values()]; frames.clear();
+      ready.forEach(callback => callback(0));
+    }
+  };
   const created = [], warnings = [], expectedWarnings = [], calls = [];
   const saved = memoryConfiguration(defaultShellConfiguration(), () => {
     if (state.configurationFailure) throw state.configurationFailure;
@@ -270,7 +290,7 @@ function fixture(configure = () => {}) {
       assert.deepEqual(warnings, expectedWarnings);
     } finally { Object.assign(globalThis, previous); }
   };
-  return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings };
+  return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings, flushFrames };
 }
 function scenario(name, run, configure) {
   test(name, () => {
@@ -278,6 +298,60 @@ function scenario(name, run, configure) {
     try { run(f); } finally { f.done(); }
   });
 }
+
+scenario('Classic Programs uses current registered IDs and retains only live menu callbacks', f => {
+  f.shell.selectTheme('server2003');
+  const menu = f.shell.showApplications(1);
+  const trigger = find(menu, 'shell-all-programs');
+  trigger.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-org.pollyui.settings'));
+  assert.equal(menu.options.exclusiveZone, -1);
+  assert.equal(menu.options.keyboard, 'exclusive');
+  const item = find(menu, 'shell-program-fixture.desktop'), oldClick = callback(item, 'click');
+  const oldPin = callback(find(menu, 'shell-program-pin-fixture.desktop'), 'click');
+  const shortcutCalls = f.calls.filter(call => call[0] === 'shortcuts').length;
+  key(menu, 'End');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-pin-fixture.desktop'));
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.closed, false);
+  assert.equal(menu.document.activeElement, trigger);
+  oldClick(event('click'));
+  oldPin(event('click'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 0, 'closed Programs refuses stale handler');
+  assert.equal(f.calls.filter(call => call[0] === 'shortcuts').length, shortcutCalls, 'closed Programs refuses stale Pin');
+  key(menu, 'ArrowRight'); f.flushFrames();
+  oldClick(event('click'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 0, 'reopened Programs refuses prior open epoch');
+  click(find(menu, 'shell-program-fixture.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+  oldClick(event('click'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1, 'closed RootMenu refuses stale handler');
+}, ({ state }) => { state.windows = []; });
+
+scenario('Classic Programs rejects stale launch and Pin after live registry removal', f => {
+  f.shell.selectTheme('server2003');
+  const menu = f.shell.showApplications(1), refresh = callback(find(menu, 'shell-app-refresh'), 'click');
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  const oldLaunch = callback(find(menu, 'shell-program-fixture.desktop'), 'click');
+  const oldPin = callback(find(menu, 'shell-program-pin-fixture.desktop'), 'click');
+  f.native.applicationFiles = () => [];
+  refresh(event('click')); f.flushFrames();
+  assert.equal(menu.document.getElementById('shell-program-fixture.desktop'), null);
+  assert.ok(menu.document.getElementById('shell-program-menu'), 'live registry refresh keeps Programs open');
+  oldLaunch(event('click')); oldPin(event('click'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch' || call[0] === 'shortcuts').length, 0);
+  assert.equal(menu.closed, false);
+}, ({ state }) => { state.windows = []; });
+
+scenario('Non-Classic applications keeps the existing applications consumer', f => {
+  f.shell.selectTheme('bigsur');
+  const menu = f.shell.showApplications(1);
+  const expected = applicationsView(getDesktopTheme('bigsur'), [], '', () => {}, () => {}, () => {}, () => {});
+  assert.deepEqual(find(menu, 'shell-applications').style,
+    Object.fromEntries(Object.entries(expected.props.style).map(([name, value]) => [name, String(value)])));
+  assert.equal(menu.document.getElementById('shell-all-programs'), null);
+}, ({ state }) => { state.windows = []; });
 
 function settingsBackend({ native, state, calls }) {
   const clone = value => JSON.parse(JSON.stringify(value));
