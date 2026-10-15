@@ -12,12 +12,46 @@ One view of what's built and what's planned. For the architecture, see
 | 🛠 | Planned |
 | ⏸ | Deferred (deliberately not doing now) |
 
-Platform column: **Win** = Windows. Windows and macOS hosts are available;
+Platform column: **Win** = Windows. A Windows host is available; native macOS
+qualification still needs an actual Mac host.
 Linux has an experimental SDL3 EGL/GLES/raster path with Fontconfig fonts and a native
 Alpine/musl build, libcurl HTTP and XDG app data. Native Rime and complex Linux
 text are implemented; detailed GPU qualification, advanced IME/text extensions
 and the macOS HTTP backend remain separate.
 See README and `desktop/README.md` for current platform boundaries.
+
+## Current delivery and remaining-work inventory (2026-10-15)
+
+The functional source baseline `6298ff3` has been pushed to `origin/main`.
+It includes the previously local-only opt-in Mac source, independent six-page
+Settings, the Classic refinements, GUI-rendered native decorations and the
+two native menu placement/input corrections. Mac remains default OFF and
+uncompiled/untested on macOS; source publication is not Mac CI authorization.
+
+The latest memory-only Live image is available through the real NTFS hard link
+`D:\temp\PollyOS\PollyOS.iso`. Its actual clean runtime/producer is `b7e7a700`,
+with the same tree as `6298ff3`; size 711,092,224 bytes, SHA-256
+`54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c`.
+The versioned image and older images remain intact. Actual package/ISO
+integrity, GRUB resources and an ordinary-user packaged WM/Shell raster frame
+passed. This is not complete acceptance of the new ISO on Hyper-V/physical
+hardware, nor an updated installed-system VHDX.
+
+| Remaining work | Actual gap / next boundary |
+|---|---|
+| Shell-independent system decorations | Apps survive Shell loss, but the shared GUI painter still runs in Shell. CSD negotiation cannot guarantee a frame for clients without CSD. A separately scoped service/lifecycle design is needed; it is not implemented or implicitly approved by the architecture discussion. |
+| Session and installed-system closure | Bounded Shell/service recovery, installed login failure paths and the retained Shutdown GUI final-submit/long-input failures still need concrete closure. Recent Live readiness and menu-input results do not close these older cases. |
+| Core service migration | JS iwd is delivered; audio, Wayland display/shortcut clients, power and tray/notification domain bridges remain active. Select one real consumer before extending generic FFI or moving another backend. |
+| Application completion | Files has browse/create/rename and one same-filesystem ordinary-file Cut/Paste move, not copy, recursive operations, cross-filesystem move or Trash/restore. Processes is read-only. Task grouping/pinning and richer tray/notification behavior remain incomplete. |
+| Installed maintenance and recovery | Account/host-state fault handling, apt/kernel transactions, independent recovery, shared packages/multi-user lifecycle and the real installer remain separate unfinished product work, not new Live prerequisites. |
+| Platform and release qualification | Native Mac, physical GPU/device tests, full theme/reference equivalence and complete WebGPU redistribution attribution/rights remain unqualified. WebGPU stays OFF in the delivered ISO. |
+| Explicitly deferred or unselected | Native IME context extension is deferred to Beta; Mica/blur, animated/video wallpaper, horizontal boot picker and broader accessibility/Portal/XWayland work are not newly scheduled by this inventory. |
+
+Use `docs/POLLYOS-PLAN.json` for execution state and its generated backlog view.
+The dated sections below retain historical evidence; an old “not pushed” or
+“current ISO predates” statement is not the current delivery status.
+No remaining-work percentage is inferred from mixed milestones, subtasks,
+authorization gates and intentionally deferred candidates.
 
 **Latest user-reported physical acceptance:** Debian 13 trixie amd64 alpha.8,
 frozen runtime `a357a7d`, ISO SHA-256
@@ -231,7 +265,7 @@ or merely moving UI while retaining its old backend.
 | Slice | Deliverable | State / prerequisites |
 |---|---|---|
 | SM-01 | JS Wi-Fi/iwd service replaces `desktop/native/network.c/.h`; existing scan/radio/connect/credentials/cancel/disconnect/forget and owner-loss behavior retained | Complete: JS service/transport integrated, old C bridge and hooks removed; native service, raster/GL Shell and ordinary-user Settings network flows passed |
-| SM-02 | Independent Settings Wi-Fi page uses a narrow service client | Later, after SM-01; moving UI alone is not backend replacement |
+| SM-02 | Independent Settings Wi-Fi page uses a narrow service client | Delivered in the independent six-page Settings process; Shell still owns the single iwd service and authorization policy |
 | SM-03 | Next selected OS service replaces its domain bridge | Not started; choose the consumer before adding PipeWire/Wayland callback mechanisms |
 
 SM-01 does not add a root service, change system authorization policy, migrate
@@ -285,15 +319,17 @@ retained. Product component geometry, current-engine before/after bytes and C
 painter checks are evidence of implementation, not six-system pixel-perfect
 certification: no complete qualified OS pixel oracle is available, and fonts,
 material effects and broader widget/state coverage retain explicit gaps.
-The attempted Linux native compilation could not start because the Podman
-connection failed; it is not a passing compositor/bridge build.
+The initial Linux compile attempt failed before configuration when Podman was
+unavailable. Later GUI-decoration and menu-input increments completed actual
+Linux builds and bounded WM/GUI tests; the original failed attempt is retained,
+not rewritten as a pass.
 
 Cursor default selection is updated from `0d48e280`: unset, empty or `classic`
 selects conventional PollyClassic; `PollyRabbit` remains an explicit startup
 choice. Existing animation checks select Rabbit explicitly. This does not add
 a saved GUI pointer preference, change cursor ownership or rewrite any
-published Alpha media. The current ISO predates these Settings/theme/cursor
-source changes.
+historical Alpha media. The latest `b7e7a700` Live contains these
+Settings/theme/cursor changes; older images retain their original contents.
 
 The Server 2003 follow-up from `670491e` uses the user's supplied images to
 refine its frame/button geometry, solid desktop color and gray two-column Start
@@ -340,7 +376,7 @@ unselected. No version bump, media rebuild or change to historical receipts is i
 | ID | Candidate requirement | Implementation boundary |
 |---|---|---|
 | BD-01 | Animated desktop companion: a character that can move across the screen, follow configurable paths and change movement/actions in response to events | JS controls paths and behavior; reusable native position, transparent presentation and input-region mechanisms support rendering. Transparent pixels must not block underlying applications; interactive regions are explicit. Not a new cursor mode or permission for arbitrary apps to create privileged overlay surfaces |
-| BD-02 | Procedural animated wallpaper: animated geometry and graphics-API drawing, including game-like effects, alongside existing static images | Reuse the background layer; simple node transforms already have building blocks, but a general JS drawing surface/API is not yet implemented. Keep icons and selection above the animated background |
+| BD-02 | Procedural animated wallpaper: animated geometry and graphics-API drawing, including game-like effects, alongside existing static images | Canvas2D and bounded GPU canvas APIs now provide drawing building blocks, but the wallpaper product, scheduling and lifecycle policy are not implemented. Reuse the background layer and keep icons/selection above it |
 | BD-03 | Video wallpaper with playback and looping | Native decoding, playback timing and frame presentation with thin JS controls; avoid decoding or copying every full frame in JS. Video playback and hardware acceleration are not currently delivered or qualified |
 | BD-04 | Desktop App icons/shortcuts: icon and label, single-click selection, double-click/Enter launch, context menu, internal drag-rearrangement, grid alignment/sorting and saved positions | Implemented in `cbe4000`/`0881e09`; reuse catalog/launcher and stable IDs. Removing a shortcut does not uninstall the App. Real desktop files and mutations remain separate scope |
 | BD-05 | Desktop marquee and multi-selection: left-button drag on empty desktop draws a translucent rectangle; support single selection, additive/toggle selection, ordered-range selection, select-all, keyboard navigation and Escape cancellation | Implemented in `cbe4000`/`0881e09`; native capture/cancel with output-local JS selection. Gestures cancel on focus/capture loss, lock and output retirement |
@@ -374,7 +410,7 @@ native WebGPU/Three.js.
 | Image/img | PNG/JPEG loading, standard image properties/events, DOM rendering and Canvas image sources | Integrated: entry-relative/absolute local paths, local file URLs and base64 data URLs; EXIF orientation, source generations, task delivery and resource closure checked. No HTTP(S)/CORS/browser sandbox |
 | Shared GPU canvas and WebGL2 | Common offscreen/context/resource ownership, Windows ANGLE and Linux GLES backends, required JS environment and pinned Three.js WebGLRenderer qualification | Software functional baseline integrated `586ce9d`/`b527163`; [implemented matrix](./gui/sdk/WEBGL2.md), not full browser/WPT or hardware certification. Preserve 2D and existing DOM composition; `webgl`/`experimental-webgl` remain unavailable |
 | Windows hardware WebGL2 provider | Genuine ANGLE/Vulkan hardware adapter selection, actual device-type/capability reporting, explicit unavailable/software distinction and context lifetime | Implementation integrated `1931f5b` from `e6997e6`; parent Windows 17 functional passes plus physical SKIP 77, Linux 17 compatibility passes. Physical-GPU qualification remains pending, not satisfied by software or virtual displays |
-| macOS WebGL2 provider | ANGLE/Metal native context/device selection using the common Canvas/JS/resource seam | Source implementation through `20f3e21` merged locally after the user's Windows/Linux-build condition was met on the same combined Release tree, with three minimal compatibility cases passing per platform. Darwin remains default OFF. **Not compiled or tested on macOS**; Mac linking/Metal pixels/Three/physical checks remain unqualified. This source-integration batch is not pushed and does not authorize Mac CI or media changes |
+| macOS WebGL2 provider | ANGLE/Metal native context/device selection using the common Canvas/JS/resource seam | Source implementation through `20f3e21` integrated in `90b36b5` after the user's Windows/Linux-build condition was met on the same combined Release tree, with three minimal compatibility cases passing per platform. Published with `main` on 2026-10-15. Darwin remains default OFF. **Not compiled or tested on macOS**; Mac linking/Metal pixels/Three/physical checks remain unqualified. This does not authorize Mac CI or enable Metal in the Linux ISO |
 | WebGPU | Pinned Dawn native dependency, adapter/device/queue, WGSL render/compute, mapping/loss and actual pinned Three.js WebGPU qualification on D3D12/Vulkan/Metal | Bounded Win/Linux source increment integrated from `c36c062`, default OFF; separate notice metadata `ad5ebc8` adds nine pinned original inputs. Parent fresh Linux confirms 42 actual passes plus physical SKIP 77, fully-OFF and all concrete parent reproductions; canonical Canvas and both real transient allocation paths pass. Mechanical inventory remains distinct from behavior qualification. Full notice closure blocks binary distribution, not this source integration; native Mac/physical and broader Three/shadow qualification remain separate |
 | SVG | SVG image loading and/or SVG element/DOM renderer | Explicitly postponed; not included in the first 2D increment |
 

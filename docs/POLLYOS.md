@@ -4,6 +4,11 @@
 > `b68faa6566043c791b36f8b244323b08378156aa`。本文用于技术介绍、设计约束说明和开发交接；
 > 后续文档提交不改变已经生成的镜像及其源码版本。
 
+**2026-10-15 当前状态补充：** 功能组合 `6298ff3` 已推送；最新 memory-only
+Live 为 `b7e7a700`（与主线同 tree），固定入口 `D:\temp\PollyOS\PollyOS.iso`。
+安装版 VHDX、历史实机结果和本文原批次证据不重标。最新介质与剩余任务见
+[当前交接](POLLYOS-HANDOFF.md)和[唯一计划数据](POLLYOS-PLAN.json)。
+
 本轮新增 **D1 持久安装虚拟盘候选**：用户确认 GPT/EFI、ext4 A/B 系统槽和独立
 `/home` 布局，已实现镜像构建及 A/A/B/A 四次冷启动的数据连续性。
 候选原始构建来自当时未提交工作区，不重写 sourceDirty；不改变 alpha.5-r2 的版本、哈希或实机反馈；
@@ -51,7 +56,7 @@ apt/内核和独立救援；新安装不等待旧数据迁移整组完成。可�
 | PollyDesktop / `pollydesktop-*` | 现有桌面子项目、构建产物使用的历史名称；本文不重命名代码或文件 |
 | PollyWM | 自研 C11 Wayland 合成器；wlroots 是其基础库，不是另一个被套壳的桌面 |
 | PollyUI | 通用跨平台原生 UI 框架；不依赖 PollyWM 或 PollyOS 才能工作 |
-| PollyShell | 运行在 PollyUI 上的桌面界面，负责面板、Dock、启动器和设置等 |
+| PollyShell | 运行在 PollyUI 上的桌面界面，负责面板、Dock、启动器、服务策略及当前统一窗饰绘制；六页设置 UI 已在独立 Settings 进程 |
 | `polly-app` | 当前普通用户私有应用包管理器；P0 将共享代码和全局注册接入受限管理后端，普通应用仍非 root |
 
 当前成熟度必须分开表述：
@@ -196,7 +201,7 @@ Mesa 的本地补丁修复 CPU 拓扑缓存卸载清理，以及最后一块代�
 | 多显示器 | 分辨率/刷新率/缩放/旋转/位置/启停；15 秒确认与合成器侧回退 | Debian 目标多 GPU/接线组合已全部验收 |
 | 显示恢复 | connector/make/model/serial 完整且无歧义匹配才自动恢复；实际变化仍确认；Shell 重连不重复套用旧状态 | 不匹配设备时强行恢复旧布局 |
 | 桌面界面 | 原生多输出壁纸、面板/菜单栏、Dock、窗口按钮、Apps 搜索及设置面板 | 完整文件管理器、应用商城或图标网格 |
-| 外观 | 五套原创历史风格主题；JSON 用户主题/有限覆盖、本地壁纸、显式重载/恢复、应用 opt-in 订阅 | 任意主题代码、自动文件监视、强制改造第三方 UI、完整阴影/模糊效果 |
+| 外观 | 六套原创主题；JSON 用户主题/有限覆盖、本地壁纸、显式重载/恢复、应用 opt-in 订阅；系统窗饰复用 GUI Canvas2D | 无 Shell 的完整窗框独立性、任意主题代码、自动文件监视、强制改造第三方 UI、完整阴影/模糊效果 |
 | 中文与 Unicode | 独立 Rime 服务、候选/预编辑/提交、敏感字段隔离；复杂文字 shaping 和字素级编辑 | 全部编辑器/无障碍场景、窗口标题的完整 shaping |
 | 剪贴板/拖放 | 文本/MIME 剪贴板、primary selection、合成器拖放路由、PollyUI 传入文本/文件拖放 | PollyUI 完整传出拖放/DataTransfer API |
 | 应用启动 | `.desktop` 启动与 managed bundle 共存；直接 argv、错误/退出报告，公开 Wayland 身份 | 所有 Linux 程序直接可用；XWayland 或任意 `.deb` 转 `.app` |

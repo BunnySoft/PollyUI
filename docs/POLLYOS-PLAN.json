@@ -665,10 +665,10 @@
     },
     {
       "id": "menu-native-dismiss",
-      "label": "T21.5 原生弹层关闭信号",
+      "label": "T21.5 可信菜单外点关闭",
       "kind": "subtask",
       "parent": "t21",
-      "scope": "设计并实现可信 compositor/host 到 Shell 的 surface-instance-scoped outside-press/popup-dismiss 事件，保留 owner/child membership/generation、真实输入及session-lock/trusted-shell隔离；exclusive层键盘保留时不能用DOM blur或window metadata猜焦点。",
+      "scope": "为真实 Shell 连接拥有的专用临时菜单实现原生外点关闭，经 surface 生命周期清理焦点后将同一次按下交回正常输入路径；保留其它独占层和 session-lock 隔离。不增加普通应用 popup grab 或通用跨进程输入接口。",
       "priority": "P1",
       "modes": [
         "installed",
@@ -677,11 +677,11 @@
       "sources": [
         "M17.2"
       ],
-      "status": "pending",
+      "status": "done",
       "requires": [
         "pam-session"
       ],
-      "evidence": "菜单子会话精确6487101 trace确认native event缺口；当前合并的是授权A的JS lifecycle/owned surfaces，不含真正foreign app outside press，待新批明确接口并作原生输入验收。"
+      "evidence": "历史 6487101 确认 foreign outside-press 缺口。2026-10-15 用户实际新版 Live 复现开始菜单展开时标题按钮被独占焦点拦截；最终采用受限 WM 生命周期关闭，而非另造通用事件或放松所有独占层。6618394/6298ff3 已合入并推送：菜单 full-output zone -1 消除重复 28px 边距；真实 Shell owner、专用 namespace、mapped/presented/overlay/exclusive 合同限定外点关闭。真实 GUI 四 strip caption 的最大化/还原/最小化/关闭、拖离取消、普通客户 wire 单次投递及 opt-in 客户 DOM 单击、非菜单独占负例通过。锁屏 guard 未变；普通 SDL 客户可按自身策略消费激活首击。原生 fixture 证据不冒充新 ISO/WSLg 可见交互验收。"
     },
     {
       "id": "e22",
@@ -2711,7 +2711,7 @@
       "requires": [
         "pam-session"
       ],
-      "evidence": "用户已选择Shell崩溃默认最多自动重启3次、耗尽保留普通应用并明确故障/手动恢复，正常退出/注销/health-check语义分开；随后明确暂缓新的恢复基础设施，第四批改为图形账户入口/设置/文件功能。原子会话0f86311干净，仅只读研究，当前策略未实现，不阻塞本批用户功能。"
+      "evidence": "用户已选择Shell崩溃默认最多自动重启3次、耗尽保留普通应用并明确故障/手动恢复，正常退出/注销/health-check语义分开；随后明确暂缓新的恢复基础设施，第四批改为图形账户入口/设置/文件功能。原子会话0f86311干净，仅只读研究，完整策略未实现，不阻塞本批用户功能。2026-10-15 已有真实 native Shell 断开/重连、普通 App 存活证据及 Live 首帧/90秒启动 supervisor；这些不等于安装版重试耗尽策略或窗饰独立服务完成。"
     },
     {
       "id": "t16-m11-2",
@@ -2787,6 +2787,23 @@
         "t16-m11-4",
         "t15-m05-4"
       ]
+    },
+    {
+      "id": "decoration-service-independence",
+      "label": "T16.6 窗饰与 Shell 解耦",
+      "kind": "subtask",
+      "parent": "t16",
+      "scope": "盘点发现的架构缺口：复用现有 GUI/JS 窗饰绘制，但应用系统窗框的生命周期不应依赖桌面 Shell。先单独确认服务归属、最小权限、主题快照、启动/崩溃/恢复及无 Shell 验收，再实施；不将此前架构问答当作独立服务重构授权，不回退到 C 主题 painter。",
+      "priority": "P1",
+      "modes": [
+        "common",
+        "live",
+        "installed"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "2026-10-15 用户明确询问 App 是否像 Windows 程序一样不依赖 Explorer。当前 WM 与 App 可在 Shell 退出后继续存在，但统一 GUI 窗饰绘制器运行在 Shell；失联只请求标准 CSD，未实现 CSD 的客户可能无边框。因此只证明 App 存活，不能证明无 Shell 仍有完整可操作系统窗框；尚未启动服务拆分实现。"
     },
     {
       "id": "t17",
@@ -2874,7 +2891,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -2890,8 +2907,9 @@
       "sources": [
         "M14.1"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "2026-10-15 盘点：e442596 已完成六页独立 Settings；真实普通用户私有 PipeWire 软件设备执行音量 90%、麦克风静音、默认 sink，回读确认后保存，新 PID 重开仍保留。设备/端口/profile 的完整选择、失联与实体播放/录音/插拔仍未闭环，因此不是完整 T18 或物理音频验收。"
     },
     {
       "id": "audio-device-proof",
@@ -2956,11 +2974,11 @@
       "sources": [
         "M16.2"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t19-m16-1"
       ],
-      "evidence": "第四批同文件管理器子会话仅先接通创建目录、同目录无覆盖重命名和普通文本保存；用户明确第一版支持已有文件覆盖，必须明确确认且变化后重新确认，由同一FS后端提供观察绑定。复制/跨目录移动/删除未实施时不关闭整项，无实际用户文件操作授权。 用户已选删除默认回收站并支持还原，作为未来需求保留。新分支 bunnysoft-files-operations 基线 1cd5f77，仅 files.c/h 共419行未完成、未编译草稿，原样保留而未合入 main；暂停全部实现/研究/测试，不批准未来 Trash 挂载发现策略。"
+      "evidence": "历史第四批完成新目录、同目录无覆盖重命名和文本强观察覆盖；旧 bunnysoft-files-operations 的 419 行未验证草稿仍保留、不因此收养。后续 3919661 随 da59cc0 集成并已进入当前 Live：Cut/Paste 仅移动一个用户拥有、非 set-ID 的普通文件（可为二进制），同文件系统、跨目录、显式确认、renameat2 NOREPLACE 和源/目录身份验证，提交后错误单独报告。复制、目录树操作、跨文件系统移动、回收站及还原仍未实现，不能关闭整项；未来删除默认回收站/支持还原的已选需求保留，不自动授权操作用户文件。"
     },
     {
       "id": "t20",
@@ -3039,17 +3057,18 @@
       "sources": [
         "M17.1"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [
         "t12-m15-8"
-      ]
+      ],
+      "evidence": "2026-10-15 盘点：桌面 App 快捷方式/框选/内部排列与保存已由 cbe4000/0881e09 集成，Shell 有真实任务按钮、三种 Dock、可滚动窗口区及启动联动。窗口按 App 分组、固定/图标解析和共享注册完整闭环仍未完成；已具界面不以未来共享包注册为由重新标成完全未实现。"
     },
     {
       "id": "t21-m17-2",
       "label": "T21.2 菜单焦点与关闭",
       "kind": "subtask",
       "parent": "t21",
-      "scope": "菜单/浮层点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归。",
+      "scope": "Shell 临时菜单点击外部关闭、焦点与跨 surface 事件、快捷键及误关闭回归；普通应用继续采用已选的窗口内菜单/对话框方案，不要求新增通用原生 popup grab。",
       "priority": "P1",
       "modes": [
         "installed"
@@ -3057,9 +3076,9 @@
       "sources": [
         "M17.2"
       ],
-      "status": "in_progress",
+      "status": "done",
       "requires": [],
-      "evidence": "7c12e8→49b3e6d纳入a5已合并推送；Shell-owned surface/stale callbacks/捕获清理与17宿主回归、既有native window/workspace/output兼容通过。真正foreign/already-focused app outside-press缺可信surface实例信号，完整T21.2仍进行中；新增native前置单独跟踪。"
+      "evidence": "历史 7c12e8→49b3e6d 的 owned-surface 生命周期与 stale callback 清理保留。2026-10-15 6618394/6298ff3 补齐可信专用菜单的 native 外点关闭、同次 caption/client 路由、真实 4px 任务栏衔接；实际 GUI/native 测试覆盖三键、按下拖离取消、launcher 不先关后重开、搜索/焦点/Escape、非菜单独占保护。普通客户 wire 下发一次，受控 SDL activation-click opt-in 客户实际 DOM 单击/绿色帧验证；不将默认客户自身激活策略强改。未承诺所有应用 popup 外点 API；当前源码已推送，修正版 Live b7e7a700 与 main 6298ff3 同 tree。"
     },
     {
       "id": "t21-m17-3",
@@ -4085,7 +4104,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -4101,8 +4120,9 @@
       "sources": [
         "M18.1"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "2026-10-15 5bb181c 已将 native caption 文本迁移至现有 GUI Canvas2D，复用 Linux HarfBuzz/ICU shaping，不再维护 WM 的独立字体缓存。caption 当前省略按 Unicode code point 截断，尚非 grapheme-safe；完整 bidi/locale、视觉光标 affinity 和其它平台 shaping 仍待完成。"
     },
     {
       "id": "e14-m18-2",
@@ -4147,7 +4167,7 @@
         "installed"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": []
     },
     {
@@ -4163,8 +4183,9 @@
       "sources": [
         "M18.5"
       ],
-      "status": "pending",
-      "requires": []
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "2ef182f 已交付公共 GUI 原生拖放合同和首个 Wayland 普通窗口 COPY 后端，原生 27 场景包含实际 JS 发起、接收、取消/拒绝、GC/关闭与连接丢失。Windows OLE、macOS/X11、MOVE、自定义拖拽图、Shell-layer 来源及传入文本自动编辑仍不属于已完成范围；没有因为首个 COPY 后端通过而关闭整项。"
     },
     {
       "id": "e15-m18-8",
@@ -4828,10 +4849,10 @@
     },
     {
       "id": "gate-ci",
-      "label": "授权 远端推送与 CI",
+      "label": "授权 远端 CI 执行",
       "kind": "gate",
       "parent": null,
-      "scope": "远端实际 push/权限或触发动作需要用户明确范围；本地配方验证不需要该授权。",
+      "scope": "实际运行远端 CI、改变其权限或增加触发动作仍需具体范围。2026-10-15 用户授权的当前 main 代码签入/推送已执行；这不自动授权新 CI 工作流、Mac 主机或生产发布。本地配方验证不需要该授权。",
       "priority": "P2",
       "modes": [
         "release"
@@ -4926,7 +4947,7 @@
       "sources": [],
       "status": "done",
       "requires": [],
-      "evidence": "主工作区已实际 --ff-only 3beac48 到 ce73a3cee08f8b09ff9f78e681957a0c993e0d51；包含基础 Files 和中央完整接线、控制台 1cd 服务闭包及闲置窗口源码修复。未推送，未将未完成 Files419行草稿合入。集成完成不等所有功能/媒体/手测通过。"
+      "evidence": "历史 ce73a3c 已集成基础 Files、中央接线、控制台服务闭包和闲置窗口修复，未收养旧 Files 419 行未验证草稿。2026-10-15 最新功能组合 6298ff3e57c687a21fd6e9f8edce0b3803c7f3f9 已正常推送 origin/main 并独立核 remote SHA：六页独立 Settings、Apps、小范围图形能力、主题/常规指针、GUI 窗饰分层、固定 ISO 硬链接发布及菜单定位/外点输入修复均在主线。Mac source 同批推送，但 Darwin 默认 OFF、仍未原生编译/测试；推送不授权新 CI/生产发布。集成完成不等完整 Alpha/实机/安装版验收。"
     },
     {
       "id": "alpha-functional-closure",
@@ -4967,7 +4988,7 @@
         "alpha-code-integration",
         "alpha-functional-closure"
       ],
-      "evidence": "受限测试介质已在 D:\\Temp\\PollyOS no-overwrite交付并加Library：4e LiveISO713508864B SHA17e663...383423、freshVHDX1598029824B/virtual3471835136B SHAae843...10e6dd，与未初始化raw6afd逻辑内容相同，无测试App/账号/默认安装密码。父核5项交付checksum与61项实际证据，receipt完整SHAb2f62edea0faa6cf5edb043bd45d25802cc90eeb179626a3ee6d9758a4a2441b；真实构建sourceffc与runtimePowerJS4e/合格polkit依赖分层保留。普通新QEMU短测包含真实Reboot/持久性，但Shutdown UI与长输入限制未闭环，因此只是已交付测试预览，正式Alpha功能齐备冻结仍进行中。用户本人复用现有Hyper-V换介质，未自动改配置；所有ownedVM/controller已停。"
+      "evidence": "历史 4e6b004 的未初始化 VHDX 与原 Live、其原始日志/资格保持不变。2026-10-15 新 Live 为实际 clean b7e7a700563b4b1763f305da6a9946f08df20660，tree 9c129e296b4dc970065c61a9e5e00627dd29203e 等于已推送 main 6298ff3；源/runtime/overlay/producer同版本真实重编。D:\\temp\\PollyOS\\PollyOS.iso 是版本目录内 ISO 的真 NTFS 硬链接，711092224 字节，SHA256 54c4cde209fe98cb92aa9cb7e07872530693109b57b96267ce819364289e046c。新 63 项/旧 72 项 checksum、ISO 297 路径/17 overlay、实际 EFI/GRUB 及 UID1000 打包 WM/Shell Wayland raster 首帧通过。新 ISO 的 UEFI/Hyper-V/实体资格未自动取得，也没有更新 installed VHDX；因此统一 Live/installed Alpha 仍部分完成，旧 Shutdown/长输入失败不被本次构建抹除。"
     },
     {
       "id": "alpha-manual-acceptance",
@@ -5000,6 +5021,10 @@
     "- 认证连续性：`build/single-system-account-persistence-r2-attempt3/run/result.json` 三轮正常关机/冷启动；前两次时序失败与 r1 `/var/tmp` umask 失败证据保留。",
     "- HOME：`21517ca` / `fa6763a` / `b8a9a4e` / `cbf128f` / `e7c4ea3`；v2/v3/v4 managed 结果分别保留，1→2 不等于共享注册/额外用户 PAM。",
     "- 账户导入：`94c23cd`；真实 readonly tmpfs/PAM/su/passwd，fixture 仅适配卷发现。新工具未装入现有 r2，不宣称迁移镜像/ext4耐久已经通过。",
-    "- 以上已完成只指各子项的准确组件/产物范围；当前策略候选、独立救援、正式签名和真实外置写入仍需对应新证据。"
+    "- 以上已完成只指各子项的准确组件/产物范围；当前策略候选、独立救援、正式签名和真实外置写入仍需对应新证据。",
+    "- 2026-10-15 盘点：main 6298ff3 已正常推送；最新 Live b7e7a700/tree9c129e2 与其内容一致，固定 D:\\temp\\PollyOS\\PollyOS.iso 真硬链接。历史备注中的当前介质、尚未推送等词只属于原记录日期，不覆盖本条和 Alpha 节最新证据。",
+    "- 已交付并从剩余项去重：六页独立 Settings、JS iwd、基础 Files 和单普通文件同 FS 移动、只读 Processes、桌面快捷方式/框选、Canvas2D/Image、Win/Linux 有界 WebGL2/WebGPU、GUI 窗饰与 Classic 边线/纹理、Live 启动与固定路径媒体发布。它们各有明确子集，不能因此关闭共享包、多用户、物理设备、完整浏览器兼容或整系统验收。",
+    "- 新发现待设计项：无 Shell 仍有完整系统窗框；当前只保证 App 存活，CSD 协商不保证不会自绘的客户有边框。独立窗饰服务尚未授权实施。其余明确待验项包括旧 Shutdown GUI/长输入失败、当前 installed 策略联合验收、真实 Mac/物理 GPU 与完整二进制发行履约。",
+    "- 本次签入/推送授权不解除远端 CI、生产密钥/公开发布、外置介质写入或故障测试的独立授权门槛；保持它们为待决策/受阻，不自动启动延期功能。"
   ]
 }
