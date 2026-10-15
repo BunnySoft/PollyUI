@@ -64,11 +64,29 @@ export function checkMacMenubarStates(directory, verify = true) {
     const restored = state('blur');
     if (verify) check(changed(normal, leave) === 0 && changed(normal, restored) === 0,
       'Leave and blur restore all original scene pixels');
+    host.mouse('mousemove', x, y); host.render();
+    scene();
+    check(document.getElementById('shell-menu') === menu, 'Hovered reconciliation retains the same menu node');
+    menu.focus(); host.render();
+    const reconciledHover = pixels();
+    host.mouse('mousemove', 390, 90); host.mouse('mousemove', x, y); host.render();
+    const focusedHover = pixels();
+    const hoverReconcileChangedPixels = changed(reconciledHover, focusedHover);
+    host.mouse('mousedown', x, y); host.render();
+    scene();
+    check(document.getElementById('shell-menu') === menu, 'Held reconciliation retains the same menu node');
+    host.mouse('mouseup', x, y); host.render();
+    const released = pixels();
+    host.mouse('mousemove', 390, 90); host.mouse('mousemove', x, y); host.render();
+    const heldReconcileChangedPixels = changed(released, pixels());
+    if (verify) check(hoverReconcileChangedPixels === 0 && heldReconcileChangedPixels === 0,
+      'Reconciliation preserves hover through focus and held release while the pointer stays inside');
     button.focus(); host.render();
     check(Number(button.style.borderRadius) === theme.button.radius, 'Ordinary Aqua buttons retain configured roundness');
     console.log('MAC_MENUBAR ' + JSON.stringify({ name, theme: theme.id, viewport: [400, 100], scale: 1,
       menu: [bounds.x, bounds.y, bounds.width, bounds.height], radii, activated,
       leaveChangedPixels: changed(normal, leave), restoredChangedPixels: changed(normal, restored),
+      hoverReconcileChangedPixels, heldReconcileChangedPixels,
       ordinaryButtonRadius: Number(button.style.borderRadius) }));
     document.activeElement?.blur(); host.mouse('mousemove', 390, 90); host.render();
   }

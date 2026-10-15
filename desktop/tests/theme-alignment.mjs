@@ -69,6 +69,24 @@ for (const id of ['aqua', 'lion', 'bigsur']) {
       menu.props[name]?.({ currentTarget: node, button: 0 });
       assert.equal(node.style.borderRadius, 0, id + ' menubar radius during ' + name);
     }
+    if (menu.props.onMouseenter) {
+      const event = { currentTarget: node, button: 0 };
+      menu.props.onMouseenter(event);
+      const rebuilt = find(panelView(theme, '10:32', action, '', action), 'shell-menu');
+      rebuilt.props.onFocus(event);
+      assert.equal(node.style.backgroundColor, theme.colors.selection, 'Stable theme retains hover after rebuild/focus');
+      rebuilt.props.onMousedown(event);
+      const held = find(panelView(theme, '10:33', action, '', action), 'shell-menu');
+      held.props.onMouseup(event);
+      assert.equal(node.style.backgroundColor, theme.colors.selection, 'Stable theme retains hover after held rebuild/release');
+      const rethemed = { ...theme, colors: { ...theme.colors, selection: '#112233' } };
+      const updated = find(panelView(rethemed, '10:34', action, '', action), 'shell-menu');
+      updated.props.onFocus(event);
+      assert.equal(node.style.backgroundColor, 'transparent', 'New theme does not inherit old hover state');
+      updated.props.onMouseenter(event);
+      assert.equal(node.style.backgroundColor, '#112233', 'New theme uses its own palette');
+      assert.equal(node.style.borderRadius, 0);
+    }
     const ordinary = desktopCommand('ordinary', 'Ordinary', theme, action);
     const ordinaryNode = { style: { ...ordinary.props.style }, querySelector: () => null };
     ordinary.props.onFocus?.({ currentTarget: ordinaryNode });

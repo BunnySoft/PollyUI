@@ -242,7 +242,11 @@ logout actions remain connected.
 Mac menu-bar commands keep their existing explicit square-corner treatment
 through pointer, focus and reconciliation states. A component-local button
 radius of zero is shared by their factory and state painter; ordinary buttons
-still consume the original theme radius. Previously the default Tiger/Aqua
+still consume the original theme radius. A menu-only `WeakMap` reuses that derived
+object for each immutable source theme, so clock-driven reconstruction does not
+reset hover/held state on the retained menu node. A new source theme gets a new
+derived object and palette rather than retaining the old input state.
+Previously the default Tiger/Aqua
 surface painter changed the menu-item radius from 0 to 8 after input. Default
 Lion/Big Sur use the generic path and were not affected; their supported
 `button.surfaceStyle: "aqua"` overrides exercised the same defect at radii 3/5.
