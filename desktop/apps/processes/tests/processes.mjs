@@ -6,10 +6,45 @@ const { parseProcessStat, parseCpuTicks, parseResidentBytes, processRows, sorted
   await import('../logic/model.mjs');
 const { createProcessController } = await import('../logic/controller.mjs');
 const { createProcessesApp } = await import('../app.mjs');
+const { fixedRowWindow } = await import('./gui/sdk/js/virtual-list.mjs');
 const { applicationHost, deliver } = await import('./desktop/tests/application-host.mjs');
 const item = (pid = 42, start = '100', ticks = 20n) =>
   ({ pid, start, ticks, name: 'fixture', state: 'S', memoryBytes: 8192 });
 const sample = (processes, totalTicks = 1000n) => ({ processes, totalTicks, complete: true, skipped: 0 });
+function processHost(t) {
+  const host = applicationHost(t), frames = new Set();
+  const previous = { requestAnimationFrame: globalThis.requestAnimationFrame,
+    cancelAnimationFrame: globalThis.cancelAnimationFrame };
+  globalThis.requestAnimationFrame = callback => {
+    const id = setImmediate(() => { frames.delete(id); callback(Date.now()); });
+    frames.add(id); return id;
+  };
+  globalThis.cancelAnimationFrame = id => { clearImmediate(id); frames.delete(id); };
+  t.after(() => {
+    for (const surface of host.windows) surface.close();
+    for (const id of frames) clearImmediate(id);
+    Object.assign(globalThis, previous);
+  });
+  return host;
+}
+const settleFrames = async () => {
+  for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve));
+};
+
+test('shared fixed-row ranges retain SDK overscan and clamp without dropping observations', () => {
+  for (const count of [0, 1, 64, 4096]) for (const height of [0, 1, 42, 436, 640]) {
+    for (const scroll of [-10, 0, 120, count * 42 + 100]) {
+      const range = fixedRowWindow(count, 42, height, scroll);
+      assert.equal(range.total, count * 42);
+      assert.equal(range.maximum, Math.max(0, count * 42 - height));
+      assert.ok(range.offset >= 0 && range.offset <= range.maximum);
+      assert.ok(range.start >= 0 && range.end <= count);
+      assert.ok(range.end - range.start <= Math.ceil(height / 42) + 5);
+      assert.equal(range.start, Math.max(0, Math.floor(range.offset / 42) - 2));
+      assert.equal(range.end, Math.min(count, Math.ceil((range.offset + height) / 42) + 2));
+    }
+  }
+});
 
 test('real proc stat field positions handle spaces/parentheses, CPU excludes guest double-count, RSS is exact bytes', () => {
   const fields = Array(50).fill('0'); fields[0] = 'S'; fields[11] = '17'; fields[12] = '3'; fields[19] = '999';
@@ -54,8 +89,23 @@ test('a late process snapshot cannot publish after close', async () => {
   const pending = controller.refresh(); controller.close(); resolve(sample([item()]));
   assert.equal(await pending, false); assert.equal(controller.getState().rows.length, 0);
 });
+test('UI sampling prefers cooperative reads and closes their publication scope', async () => {
+  let resolve, active, syncCalls = 0;
+  const controller = createProcessController({ provider: {
+    snapshot() { syncCalls++; throw new Error('Synchronous sampling must not run in the UI'); },
+    snapshotAsync(scope) { active = scope; return new Promise(done => { resolve = done; }); },
+  } });
+  const pending = controller.refresh();
+  assert.equal(active(), true);
+  controller.close();
+  assert.equal(active(), false);
+  resolve(sample([item()]));
+  assert.equal(await pending, false);
+  assert.equal(syncCalls, 0);
+  assert.equal(controller.getState().rows.length, 0);
+});
 test('ordinary Processes window renders observed rows, refreshes/sorts by real controls and never offers an End action', async t => {
-  const host = applicationHost(t); let calls = 0;
+  const host = processHost(t); let calls = 0;
   const app = createProcessesApp({ host, native: null, provider: { snapshot() {
     calls++; return sample([{ ...item(42), name: 'owned-fixture' }, { ...item(7), memoryBytes: null }], BigInt(calls * 1000));
   } } }).start();
@@ -71,4 +121,52 @@ test('ordinary Processes window renders observed rows, refreshes/sorts by real c
   await deliver(find('processes-refresh'));
   assert.equal(calls, 2); assert.match(find('processes-pid-42').textContent, /0\.0%/);
   app.stop(); assert.equal(host.windows[0].closed, true);
+});
+test('4096 observations keep bounded DOM rows, reach either end and retain scroll through errors', async t => {
+  const host = processHost(t); let next = sample(Array.from({ length: 4096 }, (_, i) =>
+    ({ ...item(i + 1), memoryBytes: (i + 1) * 4096 })));
+  const app = createProcessesApp({ host, native: null, report() {},
+    provider: { snapshot() { if (next instanceof Error) throw next; return next; } } }).start();
+  t.after(() => app.stop());
+  await settleFrames();
+  const document = app.getWindow().document;
+  const list = document.getElementById('processes-list');
+  const visible = () => list.childNodes.filter(node => node.getAttribute('role') === 'row');
+  assert.equal(app.controller.getState().rows.length, 4096);
+  assert.equal(list.getAttribute('aria-rowcount'), '4096');
+  assert.ok(visible().length <= Math.ceil(list.offsetHeight / 42) + 5);
+  assert.ok(document.getElementById('processes-pid-4096'));
+  assert.equal(document.getElementById('processes-pid-1'), null);
+  await deliver(list, 'wheel', { deltaY: 1e6 });
+  assert.ok(document.getElementById('processes-pid-1'));
+  assert.ok(visible().length <= Math.ceil(list.offsetHeight / 42) + 5);
+  const end = list.scrollTop;
+  next = new Error('EACCES: retained sample');
+  await app.controller.refresh(); await settleFrames();
+  assert.strictEqual(document.getElementById('processes-list'), list);
+  assert.equal(list.scrollTop, end);
+  assert.match(document.getElementById('processes-error').textContent, /retained sample.*stale/);
+  next = sample([item(9), item(10)], 2000n);
+  await app.controller.refresh(); await settleFrames();
+  assert.strictEqual(document.getElementById('processes-list'), list);
+  assert.equal(list.scrollTop, 0);
+  assert.equal(list.getAttribute('aria-rowcount'), '2');
+  assert.equal(visible().length, 2);
+  await deliver(document.getElementById('processes-sort-pid'));
+  assert.equal(visible()[0].id, 'processes-pid-9');
+});
+test('viewport updates are bounded and closing cancels deferred measurement', async t => {
+  const host = processHost(t);
+  const app = createProcessesApp({ host, native: null, provider: { snapshot: () =>
+    sample(Array.from({ length: 100 }, (_, i) => item(i + 1))) } }).start();
+  await settleFrames();
+  const list = app.getWindow().document.getElementById('processes-list');
+  list.offsetHeight = 126;
+  app.controller.sortBy('pid');
+  await settleFrames();
+  const visible = list.childNodes.filter(node => node.getAttribute('role') === 'row');
+  assert.ok(visible.length <= 8);
+  app.controller.sortBy('pid');
+  app.stop(); await settleFrames();
+  assert.equal(app.getWindow().closed, true);
 });
