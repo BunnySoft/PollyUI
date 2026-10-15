@@ -6,6 +6,15 @@ const head = { id: 5, name: 'DP-1', make: 'Polly fixture', model: 'Monitor', ser
   enabled: true, width: 1280, height: 720, refresh: 60000, scale: 1, transform: 0, x: 0, y: 0, adaptiveSync: false };
 const snapshot = { serial: 72, pendingToken: 0, heads: [head] };
 const profile = displayProfile(snapshot);
+for (const scale of [1, 1.5, 2]) {
+  const scaled = displayProfile({ ...snapshot, heads: [{ ...head, scale }] });
+  check(readDisplayProfile(JSON.stringify(scaled)).heads[0].scale === scale,
+    scale * 100 + '% output scale persists without integer conversion');
+  const restored = displayRestorePlan(scaled, { ...snapshot, serial: 73,
+    heads: [{ ...head, id: 6, scale: scale === 1 ? 1.25 : 1 }] });
+  check(restored.draft.serial === 73 && restored.draft.heads[0].id === 6 &&
+    restored.draft.heads[0].scale === scale, scale * 100 + '% restore uses the exact factor and current output identity');
+}
 check(!('id' in profile.heads[0]) && !('serial' in profile), 'profile excludes live display IDs and transaction serials');
 check(!displayRestorePlan(profile, snapshot).draft, 'unchanged geometry does not apply or ask for confirmation');
 const changed = { ...snapshot, serial: 999, heads: [{ ...head, id: 81, scale: 1.25 }] };

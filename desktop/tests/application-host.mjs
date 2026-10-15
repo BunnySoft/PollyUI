@@ -8,6 +8,7 @@ class Node {
       scrollTop: 0, scrollLeft: 0, offsetWidth: 900, offsetHeight: 640, offsetTop: 0, offsetLeft: 0 });
   }
   get firstChild() { return this.childNodes[0] || null; }
+  get lastChild() { return this.childNodes.at(-1) || null; }
   get textContent() { return this.type === '#text' ? this.value : this.childNodes.map(node => node.textContent).join(''); }
   set textContent(value) { this.value = String(value); this.childNodes = []; }
   appendChild(node) { return this.insertBefore(node, null); }
