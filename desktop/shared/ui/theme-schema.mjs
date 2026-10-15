@@ -78,6 +78,7 @@ const options = {
   layout: {},
 };
 const optionalOptions = {
+  icons: { desktopLabelStyle: ['capsule', 'shadow'] },
   window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],

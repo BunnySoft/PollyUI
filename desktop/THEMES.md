@@ -128,6 +128,49 @@ a visible warning rather than claiming that the requested files were applied.
 - `colors`, `button`, `icons`, `panel`: shared palette and component treatments.
   Actions, focus policy, keyboard bindings and workspaces remain code-owned.
 
+### Desktop shortcut labels
+
+Optional `icons.desktopLabelStyle` accepts only `capsule` or `shadow`. Omitting
+it, including in existing schema-1 user themes, preserves the original dark
+unselected capsule. An explicit `capsule` override restores that appearance
+on any preset. `shadow` gives unselected labels a transparent background and
+white native text with a black copy offset down one logical pixel. This is a
+JS text-layer treatment, not native CSS `textShadow`, a blurred shadow, or
+bitmap text. It does not change the 12px font, padding, native line wrapping,
+86px maximum label width, 44px clipping height, or 36px bitmap/fallback icons.
+The decorative copy is absolutely positioned, pointer-inert and `aria-hidden`;
+the real option retains its single `aria-label`. Selected labels retain the
+existing selection/text colors without a shadow. Hover/focus borders,
+unavailable descriptions, launch policy and persisted icon coordinates remain
+unchanged.
+
+Only shipped Tiger/Aqua and Big Sur opt into `shadow`, in both catalogs. The
+downloaded Tiger desktop and Big Sur desktop references show white shadowed
+labels without a filled capsule. Big Sur's companion About image identifies
+an 11.0 beta; neither reference certifies exact fonts, shadow pixels or
+selection/hover states. The Lion desktop reference has no visible desktop
+icons, so its shipped label appearance stays unchanged pending qualified
+evidence. Finder and Dock icons are not desktop-icon references. No Apple
+icons, fonts, wallpaper or new application-menu business are introduced.
+
+`tests/desktop-labels.mjs` checks optional-field validation through file,
+catalog and override parsers, old-theme compatibility, and label/option
+structure. `tests/desktop-label-render.mjs` exercises actual 640x320 GUI
+rendering for the three Mac presets and an unchanged XP control: short,
+long/clipped, explicit multiline, Unicode and unavailable labels, a registered
+original bitmap and procedural fallback, selection, native hover/focus,
+label single/double-click, Enter, drag persistence and marquee selection.
+Main label boxes and wrapping are unchanged; decorative text shares the main
+native line width and metrics.
+
+A bounded private Wayland run also exercised Tiger/Big Sur at real virtual
+output scales 1, 1.5 and 2, with 1280x720 physical captures, native seat selection
+and Enter at each scale. The current JS ran on the existing cached compositor
+fixture and generic GUI runner; this is not a current full-native rebuild,
+physical-monitor or macOS certification. DOM roles, names and hidden-copy
+attributes are checked, but platform accessibility-tree/screen-reader
+verification remains unavailable and is not inferred from `textContent`.
+
 Optional `surfaceStyle` selects a bounded painter, not executable theme code:
 window supports `generic`, `luna`, `classic`, `fluent`; button supports `generic`,
 `luna`, `classic`, `aqua`, `fluent`; panel supports `generic`, `luna`, `classic`,
