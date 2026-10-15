@@ -268,6 +268,16 @@ The shipped Classic/Luna value remains 1; a 0.37 override is a separate input
 contract check, not a new OS appearance default. Disabled pointer pixels, retained
 selection/node/focus, and re-enabled single activation are covered. This does
 not certify all SDK widgets, fonts or OS control states.
+
+An additional actual-GUI check found that the current fixed Classic focus-dot
+grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots
+along its four full edges, while 120x22 is complete. This is **not fixed**.
+A paint-only Canvas replacement must also follow child-window host resizing
+without a vnode update. The existing window state event has size/scale data,
+but Document currently exposes no owner-window association. An onUpdate/rAF-only
+replacement would regress that case, so it is not shipped; a minimal read-only
+owner association is a separate mechanism decision. E22.7 remains partial.
+
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;
 the native window suite checks their composition/input. Historical C painter
