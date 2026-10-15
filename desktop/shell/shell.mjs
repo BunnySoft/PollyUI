@@ -725,6 +725,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
         height: applicationMenuHeight(theme, height),
         ...applicationMenuPlacement(theme, width),
+        // Placement already includes panel/menu-bar offsets in full-output coordinates.
+        exclusiveZone: -1,
         keyboard: 'exclusive', transparent: true,
       });
     } catch (failure) {
