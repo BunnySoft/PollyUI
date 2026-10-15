@@ -319,7 +319,7 @@ int main(int argc, char **argv)
         "const x=c.getContext('2d');const "
         "g=x.createLinearGradient(0,0,8,8);g.addColorStop(0,'red');"
         "const style=c.style;c.addEventListener('click',()=>{style.width='8';x.fillRect(0,0,1,1)});"
-        "g.addColorStop(1,'blue');x.fillStyle=g;x.fillRect(0,0,8,8);"
+        "g.addColorStop(1,'blue');x.fillStyle=g;x.filter='blur(1px)';x.fillRect(0,0,8,8);"
         "const p=new Path2D();p.roundRect(0,0,8,8,2);x.clip(p);"
         "const pattern=x.createPattern(c,'repeat');pattern.setTransform(new "
         "DOMMatrix());x.fillStyle=pattern;}})();");

@@ -20,6 +20,16 @@
         }
     }
     function finite(values) { return values.every(Number.isFinite); }
+    function filterFunctions(value) {
+        if(!/^(?:blur|brightness|contrast|drop-shadow|grayscale|hue-rotate|invert|opacity|saturate|sepia|url)\(/.test(value)||
+            !value.endsWith(")"))return false;
+        let depth=0;
+        for(const character of value){
+            if(character==="(")depth++;
+            if(character===")"&&--depth<0)return false;
+        }
+        return depth===0;
+    }
     function wellFormed(value) {
         return String(value).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g,s=>s.length===1?"\uFFFD":s);
     }
@@ -261,7 +271,7 @@
     const defaults={fillStyle:"#000000",strokeStyle:"#000000",globalAlpha:1,globalCompositeOperation:"source-over",
         lineWidth:1,lineCap:"butt",lineJoin:"miter",miterLimit:10,lineDashOffset:0,shadowColor:"rgba(0, 0, 0, 0)",
         shadowBlur:0,shadowOffsetX:0,shadowOffsetY:0,font:"10px sans-serif",textAlign:"start",textBaseline:"alphabetic",
-        direction:"inherit",imageSmoothingEnabled:true,imageSmoothingQuality:"low"};
+        direction:"inherit",imageSmoothingEnabled:true,imageSmoothingQuality:"low",filter:"none"};
     const blends=["clear","copy","destination","source-over","destination-over","source-in","destination-in",
         "source-out","destination-out","source-atop","destination-atop","xor","lighter","modulate",
         "screen","overlay","darken","lighten","color-dodge","color-burn","hard-light","soft-light","difference",
@@ -285,7 +295,8 @@
         call(ctx.canvas,"configure",[...c,s.globalAlpha,s.lineWidth,s.miterLimit,
             ["butt","round","square"].indexOf(s.lineCap),["miter","round","bevel"].indexOf(s.lineJoin),
             blends.indexOf(s.globalCompositeOperation),Number(s.imageSmoothingEnabled),
-            ...shadow,s.shadowBlur,s.shadowOffsetX,s.shadowOffsetY,s.lineDashOffset,...s.dash],
+            ...shadow,s.shadowBlur,s.shadowOffsetX,s.shadowOffsetY,s.lineDashOffset,
+            s.filter==="none"?0:Number(s.filter.slice(5,-3)),...s.dash],
             "",gradients.get(paint)||patterns.get(paint)||null);
     }
     const metricsToken=Symbol();
@@ -441,6 +452,19 @@
             if(key==="fillStyle"||key==="strokeStyle"){
                 if(gradients.has(value)||patterns.has(value)){s[key]=value;return;}const c=rgba(value);if(!c)return;value=colorText(c);
             }else if(["shadowColor"].includes(key)){const c=rgba(value);if(!c)return;value=colorText(c);
+            }else if(key==="filter"){
+                value=String(value).trim();
+                if(value!=="none"){
+                    const match=/^blur\(\s*(\+?(?:\d*\.?\d+)(?:[eE][+-]?\d+)?)px\s*\)$/.exec(value);
+                    if(match){
+                        const sigma=Number(match[1]);if(!Number.isFinite(sigma))return;
+                        if(sigma>128)throw new RangeError("Canvas blur exceeds 128 backing pixels");
+                        value=`blur(${sigma}px)`;
+                    }else if(/^blur\(\s*[+]?0\s*\)$/.test(value))value="blur(0px)";
+                    else if(filterFunctions(value)&&!/^blur\([^()]*\)$/.test(value))
+                        fail("NotSupportedError","Only none and a single blur(px) filter are supported");
+                    else return;
+                }
             }else if(key==="font"){value=String(value).trim();if(!fontInfo(value))return;
             }else if(key==="globalCompositeOperation"){value=String(value);if(!compositeNames.has(value))return;
             }else if(typeof defaults[key]==="number"){
