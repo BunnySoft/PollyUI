@@ -65,6 +65,15 @@ assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, them
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-profile'));
 assert.ok(find(applicationsView(catalog.themes[0], apps, '', action, action, action, action), 'shell-start-links'));
 const server = catalog.themes.find(theme => theme.id === 'server2003');
+assert.equal(server.panel.taskTexture, 'stipple');
+const flatServer = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+  themes: { server2003: { panel: { taskTexture: 'flat' } } } })).themes.find(theme => theme.id === 'server2003');
+const taskPanel = panelView(server, '10:31', action, '', action, [{ id: 1, active: true }]);
+const flatPanel = panelView(flatServer, '10:31', action, '', action, [{ id: 1, active: true }]);
+assert.equal(find(taskPanel, 'shell-window-1').children.filter(node => node.type === 'canvas').length, 1);
+assert.equal(find(flatPanel, 'shell-window-1').children.filter(node => node.type === 'canvas').length, 0);
+assert.throws(() => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+  themes: { server2003: { panel: { taskTexture: 'external-bitmap' } } } })), /unsupported/);
 const serverMenu = applicationsView(server, apps, '', action, action, action, action);
 assert.equal(server.panel.menuStyle, 'two-column');
 assert.ok(find(serverMenu, 'shell-start-profile'));

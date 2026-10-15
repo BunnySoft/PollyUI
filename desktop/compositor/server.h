@@ -45,7 +45,7 @@ struct PuDesktopView {
     struct PuWorkspace *workspace;
     uint64_t workspace_window;
     /* Policy may lead the presented mode until a matching configure is committed. */
-    bool maximized, fullscreen, geometry_pending;
+    bool maximized, fullscreen, geometry_pending, geometry_reuse;
     enum PuDesktopMode mode;
     struct wlr_output *output;
     struct wlr_box restore_box, pending_box, presented_box;

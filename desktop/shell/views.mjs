@@ -13,6 +13,7 @@ import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents,
 import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
 import { bevel, surfaceStyle, surfacePaint, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
+import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -63,13 +64,17 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       caption.props.style.fontWeight = window.active ? 700 : 400;
       const icon = desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16);
       icon.props.id = 'shell-window-icon-' + window.id;
-      node.children = [bevel(theme, { pressed: window.active }),
-        h('view', { className: 'theme-focus-ring', 'aria-hidden': 'true', style: {
+      const stipple = theme.panel.taskTexture === 'stipple';
+      node.children = [
+        stipple ? classicTaskPaint(theme, theme.layout.windowButtonWidth,
+          theme.panel.height - theme.layout.panelItemInset, window.active) : null,
+        bevel(theme, { pressed: window.active }),
+        stipple ? null : h('view', { className: 'theme-focus-ring', 'aria-hidden': 'true', style: {
           position: 'absolute', left: 3, top: 3, right: 3, bottom: 3, borderWidth: 1,
           borderColor: theme.colors.focus, opacity: 0, pointerEvents: 'none' } }),
         h('view', { className: 'classic-task-content', style: { ...row, position: 'relative',
           left: window.active ? 1 : 0, top: window.active ? 1 : 0, gap: 4, minWidth: 0,
-          pointerEvents: 'none' } }, icon, caption)];
+          pointerEvents: 'none' } }, icon, caption)].filter(Boolean);
       Object.assign(node.props, surfaceEvents(theme, options));
     }
     if (!compact && surfaceStyle(theme, 'panel') === 'fluent') {

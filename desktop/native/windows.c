@@ -3,6 +3,7 @@
 #include "native/shortcut-client.h"
 #include "native/output-client.h"
 #include "native/theme-client.h"
+#include "native/decoration-client.h"
 #include "foreign-toplevel-client.h"
 #include "polly-appearance-client.h"
 #include "appearance-config.h"
@@ -67,9 +68,6 @@ static struct {
     uint32_t next_workspace, workspace_capabilities;
     int workspaces_changed, workspaces_ready;
     int changed, failed, ready;
-    uint32_t appearance_serial, appearance_reply;
-    int appearance_phase, appearance_accepted;
-    char appearance_error[192];
     uint32_t restore_serial, restore_reply, restore_result;
     char restore_error[192];
 } control;
@@ -124,26 +122,6 @@ static void workspace_restored(void *data, struct polly_workspace_toplevel_manag
 }
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .restored = workspace_restored,
-};
-
-static void appearance_prepared(void *data, struct polly_appearance_v1 *appearance,
-                                uint32_t serial, uint32_t accepted, const char *message)
-{
-    (void)data; (void)appearance;
-    if (serial != control.appearance_serial) return;
-    control.appearance_reply = serial;
-    control.appearance_phase = 1;
-    control.appearance_accepted = accepted == 1;
-    snprintf(control.appearance_error, sizeof(control.appearance_error), "%s", message);
-}
-static void appearance_applied(void *data, struct polly_appearance_v1 *appearance,
-                               uint32_t serial, uint32_t accepted, const char *message)
-{
-    appearance_prepared(data, appearance, serial, accepted, message);
-    if (serial == control.appearance_serial) control.appearance_phase = 2;
-}
-static const struct polly_appearance_v1_listener appearance_listener = {
-    .prepared = appearance_prepared, .applied = appearance_applied,
 };
 
 static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 *handle,
@@ -412,9 +390,9 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, version < 2 ? version : 2);
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, version < 3 ? version : 3);
         if (!control.appearance ||
-            polly_appearance_v1_add_listener(control.appearance, &appearance_listener, NULL) < 0)
+            polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.workspace_manager && !strcmp(interface, "ext_workspace_manager_v1")) {
         control.workspace_manager = wl_registry_bind(registry, name, &ext_workspace_manager_v1_interface, 1);
@@ -467,6 +445,7 @@ static int roundtrip(void)
 
 static void disconnect_control(void)
 {
+    pu_decoration_client_disconnect();
     while (control.windows) closed(control.windows, control.windows->handle);
     while (control.workspaces) {
         struct DesktopWorkspace *next = control.workspaces->next;
@@ -896,200 +875,11 @@ static JSValue session_exit(JSContext *ctx, JSValueConst self, int argc, JSValue
     return result;
 }
 
-static int appearance_word(JSContext *ctx, JSValueConst window, const char *name, uint32_t *word,
-                           int color, double minimum, double maximum, double scale)
-{
-    JSValue value = JS_GetPropertyStr(ctx, window, name);
-    if (JS_IsException(value)) return 0;
-    int valid = 0;
-    if (color && JS_IsString(value)) {
-        size_t length;
-        const char *text = JS_ToCStringLen(ctx, &length, value);
-        if (text && length == 7 && text[0] == '#') {
-            valid = 1;
-            for (size_t i = 1; i < length; i++)
-                if (!((text[i] >= '0' && text[i] <= '9') || (text[i] >= 'a' && text[i] <= 'f') ||
-                    (text[i] >= 'A' && text[i] <= 'F'))) valid = 0;
-            if (valid) *word = 0xff000000u | (uint32_t)strtoul(text + 1, NULL, 16);
-        }
-        JS_FreeCString(ctx, text);
-    } else if (!color && JS_IsNumber(value)) {
-        double number;
-        if (JS_ToFloat64(ctx, &number, value) == 0 && isfinite(number) && number >= minimum && number <= maximum &&
-            fabs(number * scale - round(number * scale)) < 0.000001) {
-            *word = (uint32_t)llround(number * scale); valid = 1;
-        }
-    }
-    JS_FreeValue(ctx, value);
-    if (!valid && !JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Invalid decoration token: %s", name);
-    return valid;
-}
-
-static int appearance_choice(JSContext *ctx, JSValueConst window, const char *name,
-                             const char *const *choices, size_t count)
-{
-    JSValue value = JS_GetPropertyStr(ctx, window, name);
-    if (JS_IsException(value)) return -1;
-    const char *text = JS_IsString(value) ? JS_ToCString(ctx, value) : NULL;
-    int result = -1;
-    for (size_t i = 0; text && i < count; i++)
-        if (!strcmp(text, choices[i])) { result = (int)i; break; }
-    JS_FreeCString(ctx, text); JS_FreeValue(ctx, value);
-    if (result < 0 && !JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Invalid decoration option: %s", name);
-    return result;
-}
-
-static int appearance_option(JSContext *ctx, JSValueConst window, const char *name, const char *yes, const char *no)
-{
-    const char *choices[] = {no, yes};
-    return appearance_choice(ctx, window, name, choices, 2);
-}
-
 static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
-    if (argc != 1 || !JS_IsObject(argv[0])) return JS_ThrowTypeError(ctx, "A validated theme object is required");
-    JSValue id = JS_GetPropertyStr(ctx, argv[0], "id");
-    JSValue window = JS_GetPropertyStr(ctx, argv[0], "window");
-    JSValue serialized = JS_UNDEFINED, envelope = JS_UNDEFINED;
-    const char *name = NULL, *document = NULL;
-    int document_fd = -1;
-    uint32_t words[PU_APPEARANCE_V3_WORDS] = {1};
-    if (JS_IsException(id) || JS_IsException(window)) goto invalid;
-    size_t length;
-    if (!JS_IsString(id) || !(name = JS_ToCStringLen(ctx, &length, id)) ||
-        strlen(name) != length || !pu_appearance_identifier(name) || !JS_IsObject(window)) {
-        JS_ThrowTypeError(ctx, "Invalid appearance identity or window tokens"); goto invalid;
-    }
-    int left = appearance_option(ctx, window, "controls", "left", "right");
-    if (left < 0) goto invalid;
-    int round = appearance_option(ctx, window, "controlShape", "round", "square");
-    if (round < 0) goto invalid;
-    int stripes = appearance_option(ctx, window, "texture", "pinstripe", "none");
-    if (stripes < 0) goto invalid;
-    int horizontal = appearance_option(ctx, window, "gradientDir", "horizontal", "vertical");
-    if (horizontal < 0) goto invalid;
-    const char *families[] = {"sans-serif", "serif", "monospace"}, *alignments[] = {"left", "center", "right"};
-    int family = appearance_choice(ctx, window, "fontFamily", families, 3);
-    if (family < 0) goto invalid;
-    int alignment = appearance_choice(ctx, window, "textAlign", alignments, 3);
-    if (alignment < 0) goto invalid;
-    JSValue hover = JS_GetPropertyStr(ctx, window, "glyphsOnHoverOnly");
-    if (JS_IsException(hover)) goto invalid;
-    if (!JS_IsBool(hover)) {
-        JS_FreeValue(ctx, hover); JS_ThrowTypeError(ctx, "Glyph visibility requires a boolean"); goto invalid;
-    }
-    int glyphs_hover = JS_ToBool(ctx, hover);
-    JS_FreeValue(ctx, hover);
-    JSValue surface_style = JS_GetPropertyStr(ctx, window, "surfaceStyle");
-    if (JS_IsException(surface_style)) goto invalid;
-    bool has_surface_style = !JS_IsUndefined(surface_style);
-    JS_FreeValue(ctx, surface_style);
-    const char *styles[] = {"generic", "luna", "classic", "fluent"};
-    int style = has_surface_style ? appearance_choice(ctx, window, "surfaceStyle", styles, 4) : 0;
-    if (style < 0) goto invalid;
-    int luna = style == PU_CAPTION_LUNA;
-    words[0] = pu_appearance_schema(luna);
-    words[1] = (uint32_t)(left | round << 1 | stripes << 2 | horizontal << 3 |
-        family << 4 | glyphs_hover << 6 | alignment << 7 | luna << 9 |
-        (style >= PU_CAPTION_CLASSIC ? style << 10 : 0));
-    unsigned index = 2;
-#define PU_ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
-    if (!appearance_word(ctx, window, #token, &words[index++], 0, minimum, maximum, scale)) goto invalid;
-    PU_APPEARANCE_METRICS(PU_ENCODE_METRIC)
-#undef PU_ENCODE_METRIC
-#define PU_ENCODE_COLOR(field) if (!appearance_word(ctx, window, #field, &words[index++], 1, 0, 0, 1)) goto invalid;
-    PU_APPEARANCE_COLORS(PU_ENCODE_COLOR)
-#undef PU_ENCODE_COLOR
-    const char *extra_names[] = {"controlWidth", "controlTop"};
-    uint32_t size, title;
-    if (!appearance_word(ctx, window, "controlSize", &size, 0, 8, 64, 1) ||
-        !appearance_word(ctx, window, "titleHeight", &title, 0, 16, 96, 1)) goto invalid;
-    uint32_t extra_defaults[] = {size, title >= size ? (title - size) / 2 + (luna ? 2 : 0) : 0};
-    bool extended = style >= PU_CAPTION_CLASSIC;
-    for (unsigned i = 0; i < 2; i++) {
-        JSValue value = JS_GetPropertyStr(ctx, window, extra_names[i]);
-        if (JS_IsException(value)) goto invalid;
-        bool supplied = !JS_IsUndefined(value);
-        JS_FreeValue(ctx, value);
-        if (supplied) {
-            if (!appearance_word(ctx, window, extra_names[i], &words[index + i], 0,
-                    i ? 0 : 8, i ? 64 : 96, 1)) goto invalid;
-            extended = true;
-        } else words[index + i] = extra_defaults[i];
-    }
-    if (extended) words[0] = 3;
-    struct PuDecorationTheme decoded;
-    if (!pu_appearance_decode(&decoded, words)) {
-        JS_ThrowRangeError(ctx, "Decoration metrics exceed supported bounds"); goto invalid;
-    }
-    envelope = JS_NewObject(ctx);
-    if (JS_IsException(envelope) || !property(ctx, envelope, "schemaVersion", JS_NewInt32(ctx, 1)) ||
-        !property(ctx, envelope, "theme", JS_DupValue(ctx, argv[0]))) goto invalid;
-    serialized = JS_JSONStringify(ctx, envelope, JS_UNDEFINED, JS_UNDEFINED);
-    if (JS_IsException(serialized)) goto invalid;
-    document = JS_ToCStringLen(ctx, &length, serialized);
-    if (!document) goto invalid;
-    if (!length || length > PU_APPEARANCE_DOCUMENT_LIMIT || strlen(document) != length) {
-        JS_ThrowRangeError(ctx, "Appearance snapshot exceeds supported size"); goto invalid;
-    }
-    if (!ensure_control(ctx)) goto invalid;
-    if (!control.appearance || polly_appearance_v1_get_version(control.appearance) < 2) {
-        JS_ThrowTypeError(ctx, "Runtime themes require PollyWM appearance protocol v2"); goto invalid;
-    }
-    if (control.appearance_serial == UINT32_MAX) {
-        JS_ThrowRangeError(ctx, "Appearance request sequence exhausted"); goto invalid;
-    }
-    document_fd = pu_appearance_document_create(document, length);
-    if (document_fd < 0) {
-        JS_ThrowInternalError(ctx, "Cannot create immutable theme snapshot: %s", strerror(errno));
-        goto invalid;
-    }
-    uint32_t serial = ++control.appearance_serial;
-    control.appearance_reply = 0; control.appearance_phase = 0;
-    control.appearance_accepted = 0; control.appearance_error[0] = 0;
-    size_t word_size = (words[0] == 3 ? PU_APPEARANCE_V3_WORDS : PU_APPEARANCE_WORDS) * sizeof(uint32_t);
-    struct wl_array configuration = { .size = word_size, .alloc = word_size, .data = words };
-    polly_appearance_v1_prepare(control.appearance, serial, name, &configuration, document_fd, (uint32_t)length);
-    close(document_fd); document_fd = -1;
-    bool acknowledged = roundtrip() && control.appearance_reply == serial && control.appearance_phase == 1;
-    if (!acknowledged || !control.appearance_accepted) {
-        polly_appearance_v1_cancel(control.appearance, serial);
-        int flushed = wl_display_flush(control.display);
-        bool transport_ok = flushed >= 0 || errno == EAGAIN || errno == EINTR;
-        JS_ThrowInternalError(ctx, "Appearance preparation failed: %s",
-            *control.appearance_error ? control.appearance_error : "no compositor acknowledgment");
-        if (pu_appearance_schema_rejected(words[0], acknowledged && transport_ok,
-                                         control.appearance_accepted, control.appearance_error)) {
-            JSValue failure = JS_GetException(ctx);
-            if (!property(ctx, failure, "code", JS_NewString(ctx, "ERR_APPEARANCE_SCHEMA_REJECTED")) ||
-                !property(ctx, failure, "appearanceSchema", JS_NewUint32(ctx, words[0])) ||
-                !property(ctx, failure, "compositorMessage", JS_NewString(ctx, control.appearance_error))) {
-                JS_FreeValue(ctx, failure);
-                goto invalid;
-            }
-            JS_Throw(ctx, failure);
-        }
-        goto invalid;
-    }
-    control.appearance_phase = 0;
-    polly_appearance_v1_commit(control.appearance, serial);
-    if (!roundtrip() || control.appearance_reply != serial || control.appearance_phase != 2) {
-        JS_ThrowInternalError(ctx, "Cannot confirm appearance commit; compositor state may have changed");
-        goto invalid;
-    }
-    if (!control.appearance_accepted) {
-        JS_ThrowInternalError(ctx, "Appearance commit rejected: %s", control.appearance_error);
-        goto invalid;
-    }
-    JS_FreeCString(ctx, name); JS_FreeCString(ctx, document);
-    JS_FreeValue(ctx, id); JS_FreeValue(ctx, window); JS_FreeValue(ctx, serialized); JS_FreeValue(ctx, envelope);
-    return JS_UNDEFINED;
-invalid:
-    if (document_fd >= 0) close(document_fd);
-    JS_FreeCString(ctx, name); JS_FreeCString(ctx, document);
-    JS_FreeValue(ctx, id); JS_FreeValue(ctx, window); JS_FreeValue(ctx, serialized); JS_FreeValue(ctx, envelope);
-    return JS_EXCEPTION;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_configure(ctx, argc, argv, control.appearance, control.display);
 }
 
 int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
@@ -1106,8 +896,9 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
         if (!property(ctx, api, exit_names[i], JS_NewCFunctionMagic(ctx, session_exit, exit_names[i],
             0, JS_CFUNC_generic_magic, i))) return 0;
     if (!pu_theme_client_install(ctx, api)) return 0;
+    if (!pu_decoration_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
-    if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 1))) return 0;
+    if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
         !property(ctx, api, "restoreWorkspaces", JS_NewCFunction(ctx, restore_workspaces, "restoreWorkspaces", 2)) ||
         !property(ctx, api, "renameWorkspace", JS_NewCFunction(ctx, rename_workspace, "renameWorkspace", 2)) ||
@@ -1149,6 +940,7 @@ int pu_desktop_windows_pump(void)
     int worked = pu_shortcut_client_pump();
     worked += pu_theme_client_pump();
     worked += pu_output_client_pump();
+    worked += pu_decoration_client_pump();
     if (!control.ctx || (!control.changed && !control.workspaces_changed)) return worked;
     int windows = control.changed, workspaces = control.workspaces_changed;
     control.changed = control.workspaces_changed = 0;
@@ -1163,6 +955,7 @@ void pu_desktop_windows_shutdown(void)
     pu_shortcut_client_shutdown();
     pu_output_client_shutdown();
     disconnect_control();
+    pu_decoration_client_shutdown();
     if (control.ctx) {
         JS_FreeValue(control.ctx, control.exit_windows);
         JS_FreeValue(control.ctx, control.api);

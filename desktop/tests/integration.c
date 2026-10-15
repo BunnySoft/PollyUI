@@ -1,7 +1,6 @@
 #include "server.h"
 #include "decoration.h"
-#include "decoration-themes.h"
-#include "decoration-paint.h"
+#include "decoration-layout-fixtures.h"
 #include "workspace.h"
 #include "data-device.h"
 #include "input-method.h"
@@ -664,7 +663,7 @@ static bool decoration_click(struct TestClient *client, struct PuDesktopView *vi
 
 static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uint64_t *hash)
 {
-    const struct PuDecorationTheme *theme = &pu_decoration_themes[theme_id];
+    const struct PuDecorationLayout *theme = &pu_decoration_layouts[theme_id].layout;
     struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, view->output);
     struct wlr_box bounds;
     wlr_output_layout_get_box(desktop.layout, view->output, &bounds);
@@ -699,15 +698,8 @@ static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uin
     wlr_output_state_finish(&state);
     wlr_output_lock_attach_render(view->output, false);
     CHECK(inside && (format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888));
-    for (int shift = 0; shift <= 16; shift += 8) {
-        int expected = (int)((pu_chrome_pixel(theme,
-            (width / 2 + 0.5) / scale + theme->border_width,
-            (height / 2 + 0.5) / scale,
-            view->toplevel->base->geometry.width + 2 * theme->border_width, true) >> shift) & 255);
-        int actual = (sample >> shift) & 255;
-        if (theme->pinstripe) CHECK(abs(actual - expected) < 20);
-        else CHECK(abs(actual - expected) <= 3);
-    }
+    /* The independent C client sends a plain transport marker, not a theme painter. */
+    CHECK((sample & 0xffffff) == ((theme_id + 1) * 0x200000 | 0x004000));
     return true;
 }
 
@@ -781,16 +773,16 @@ static bool decoration_suite(const char *path)
     struct wlr_box full, content;
     CHECK(command(&clients[0], TEST_QUERY, 0, 0, 0));
     int csd_configures = clients[0].reply.configured;
-    for (unsigned theme = 0; theme < PU_DECORATION_THEME_COUNT; theme++) {
+    for (unsigned theme = 0; theme < PU_DECORATION_LAYOUT_COUNT; theme++) {
         CHECK(command(&shell_client, TEST_APPEARANCE, (int)theme, 0, 0));
         CHECK(command(client, TEST_QUERY, 0, 0, 0));
         wlr_output_layout_get_box(desktop.layout, view->output, &full);
         content = full;
         pu_decoration_inset(view, &content, false);
-        CHECK(content.y == full.y + pu_decoration_themes[theme].title_height);
+        CHECK(content.y == full.y + pu_decoration_layouts[theme].layout.title_height);
         CHECK(geometry_is(view, content.x, content.y, content.width, content.height));
         CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
-        CHECK(pu_decoration_themes[theme].left_controls ? box.x < 20 : box.x > content.width / 2);
+        CHECK(pu_decoration_layouts[theme].layout.left_controls ? box.x < 20 : box.x > content.width / 2);
         uint64_t before, after;
         CHECK(decoration_pixels(view, theme, &before));
         if (!theme) {
@@ -808,7 +800,7 @@ static bool decoration_suite(const char *path)
         wlr_output_state_finish(&state);
         CHECK(command(client, TEST_QUERY, 0, 0, 0));
         uint64_t hash;
-        CHECK(decoration_pixels(view, 4, &hash));
+        CHECK(decoration_pixels(view, PU_DECORATION_LAYOUT_COUNT - 1, &hash));
         wlr_output_state_init(&state);
         wlr_output_state_set_scale(&state, 1);
         CHECK(wlr_output_commit_state(view->output, &state));
@@ -833,10 +825,10 @@ static bool decoration_suite(const char *path)
         button(BTN_LEFT, false);
         CHECK(pu_desktop_view_scale(view) == 1.25);
         CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
-        CHECK(view->output == extra && decoration_pixels(view, 4, &hash));
+        CHECK(view->output == extra && decoration_pixels(view, PU_DECORATION_LAYOUT_COUNT - 1, &hash));
         wlr_output_destroy(extra);
         CHECK(command(client, TEST_QUERY, 0, 0, 0));
-        CHECK(pu_desktop_view_scale(view) == 1 && decoration_pixels(view, 4, &hash));
+        CHECK(pu_desktop_view_scale(view) == 1 && decoration_pixels(view, PU_DECORATION_LAYOUT_COUNT - 1, &hash));
         CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
         motion(view->tree->node.x + 80, view->tree->node.y - 20);
         button(BTN_LEFT, true);
@@ -853,10 +845,10 @@ static bool decoration_suite(const char *path)
     CHECK(command(&shell_client, TEST_APPEARANCE, 0, 0, 0));
     CHECK(command(client, TEST_QUERY, 0, 0, 0));
     content = full; pu_decoration_inset(view, &content, false);
-    CHECK(content.y == full.y + pu_decoration_themes[PU_DECORATION_THEME_COUNT - 1].title_height);
+    CHECK(content.y == full.y + pu_decoration_layouts[PU_DECORATION_LAYOUT_COUNT - 1].layout.title_height);
     CHECK(command(client, TEST_RELEASE, 0, 0, 0));
     content = full; pu_decoration_inset(view, &content, false);
-    CHECK(content.y == full.y + pu_decoration_themes[0].title_height);
+    CHECK(content.y == full.y + pu_decoration_layouts[0].layout.title_height);
     CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
     CHECK(view->mode == PU_DESKTOP_FLOATING);
     CHECK(geometry_is(view, x, y, width + 30, height + 25));
@@ -885,7 +877,7 @@ static bool decoration_suite(const char *path)
     CHECK(view->toplevel->base->surface->buffer == buffer);
     inset = (struct wlr_box){0};
     pu_decoration_inset(view, &inset, false);
-    CHECK(inset.y == pu_decoration_themes[1].title_height);
+    CHECK(inset.y == pu_decoration_layouts[1].layout.title_height);
     pu_desktop_redecorate(view);
     CHECK(!view->geometry_pending && view->toplevel->base->surface->buffer == buffer);
     int before_x = view->tree->node.x, before_y = view->tree->node.y;

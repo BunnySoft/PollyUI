@@ -16,7 +16,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const classicColumns = classic && twoColumn;
   const rowHeight = l.menuRowHeight ?? 32;
   const appHeight = twoColumn ? Math.max(rowHeight, (l.menuIconSize ?? 0) + 8) : rowHeight;
-  const linkHeight = twoColumn ? Math.max(rowHeight, l.menuIconSize ?? 0) : rowHeight;
+  const linkHeight = twoColumn ? Math.max(rowHeight, classicColumns ? 28 : l.menuIconSize ?? 0) : rowHeight;
   const filtered = entries.filter(entry =>
     [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
       .join(' ').toLowerCase().includes(query.toLowerCase()));
@@ -123,7 +123,12 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   h('view', { id: 'shell-start-footer', style: { ...row, flexShrink: 0,
     height: l.menuFooterHeight ?? 36, gap: 6, paddingLeft: grid ? 36 : 6, paddingRight: grid ? 36 : 6,
     backgroundColor: xp ? '#4487de' : modern ? '#eaeaea' : c.body,
-    borderTopWidth: 1, borderColor: xp ? '#75b3f6' : c.border } },
+    borderTopWidth: classic ? 0 : 1, borderColor: xp ? '#75b3f6' : c.border,
+    ...(classic ? { position: 'relative', paddingTop: 2 } : {}) } },
+    classic ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute', top: 0, left: 0, right: 0,
+      height: 1, backgroundColor: c.dark, pointerEvents: 'none' } }) : null,
+    classic ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute', top: 1, left: 0, right: 0,
+      height: 1, backgroundColor: c.light, pointerEvents: 'none' } }) : null,
     grid ? text(theme, 'PollyDesktop') : null,
     menuStyle === 'legacy' ? tools : null,
     h('view', { style: { flexGrow: 1 } }),

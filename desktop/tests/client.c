@@ -4,8 +4,9 @@
 #include "foreign-toplevel-client.h"
 #include "xdg-decoration-client.h"
 #include "polly-appearance-client.h"
-#include "decoration-themes.h"
+#include "decoration-layout-fixtures.h"
 #include "appearance-document.h"
+#include "decoration-frame.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
 #include "text-input-v3-client.h"
@@ -79,6 +80,7 @@ struct Client {
     struct polly_appearance_v1 *appearance;
     uint32_t appearance_serial, appearance_reply;
     int appearance_phase, appearance_accepted;
+    bool renderer_enabled;
     struct Foreign foreign[16];
     struct ext_workspace_manager_v1 *workspaces;
     struct ext_workspace_group_handle_v1 *workspace_group;
@@ -194,35 +196,87 @@ static void appearance_prepared(void *data, struct polly_appearance_v1 *appearan
 static void appearance_applied(void *data, struct polly_appearance_v1 *appearance,
                                uint32_t serial, uint32_t accepted, const char *message)
 { (void)appearance; appearance_reply(data, serial, accepted, message, 2); }
+static void renderer_enabled(void *data, struct polly_appearance_v1 *appearance,
+    uint32_t accepted, const char *message)
+{
+    (void)appearance;
+    if (!accepted) die(message);
+    ((struct Client *)data)->renderer_enabled = true;
+}
+static void render_fixture(void *data, struct polly_appearance_v1 *appearance, struct wl_array *metadata,
+    const char *title, int32_t document, uint32_t document_length)
+{
+    (void)data;
+    uint32_t meta[PU_FRAME_META_WORDS], length;
+    if (metadata->size != sizeof(meta)) die("invalid fixture frame metadata");
+    memcpy(meta, metadata->data, sizeof(meta));
+    char *text = pu_appearance_document_read(document, document_length);
+    close(document);
+    unsigned layout;
+    if (!text || sscanf(text, "{\"fixtureLayout\":%u}", &layout) != 1) die("invalid fixture document");
+    free(text);
+    struct PuFrameStrip strips[PU_FRAME_STRIPS];
+    if (!pu_frame_strips(meta, strips, &length)) die("invalid fixture strip dimensions");
+    uint8_t *rgba[PU_FRAME_STRIPS] = {0}; size_t lengths[PU_FRAME_STRIPS];
+    uint32_t color = (layout + 1) * 0x200000 | (meta[PU_FRAME_STATE] & 1 ? 0x004000 : 0);
+    for (unsigned i = 0; i < PU_FRAME_STRIPS; i++) {
+        lengths[i] = (size_t)strips[i].width * strips[i].height * 4;
+        rgba[i] = lengths[i] ? malloc(lengths[i]) : NULL;
+        if (lengths[i] && !rgba[i]) die("allocate fixture pixels");
+        for (size_t offset = 0; offset < lengths[i]; offset += 4) {
+            rgba[i][offset] = color >> 16; rgba[i][offset + 1] = color >> 8;
+            rgba[i][offset + 2] = color; rgba[i][offset + 3] = 255;
+        }
+    }
+    /* A metadata marker tests transport changes, not system-theme rendering. */
+    unsigned hash = 0;
+    for (const unsigned char *p = (const unsigned char *)title; *p; p++) hash = hash * 31 + *p;
+    size_t marker = meta[PU_FRAME_BORDER] * 4;
+    if (marker + 3 < lengths[0]) rgba[0][marker + 2] = hash;
+    const uint8_t *pixels[PU_FRAME_STRIPS] = {rgba[0], rgba[1], rgba[2], rgba[3]};
+    int fd = pu_frame_create(meta, pixels, lengths, &length);
+    for (unsigned i = 0; i < PU_FRAME_STRIPS; i++) free(rgba[i]);
+    if (fd < 0) die("seal fixture frame");
+    polly_appearance_v1_submit_frame(appearance, meta[0], meta[1], fd, length);
+    close(fd);
+}
+static void frame_result(void *data, struct polly_appearance_v1 *appearance,
+    uint32_t token, uint32_t revision, uint32_t status, const char *message)
+{
+    (void)data; (void)appearance; (void)token; (void)revision;
+    if (status > 1) die(message);
+}
+static void frame_closed(void *data, struct polly_appearance_v1 *appearance, uint32_t token)
+{ (void)data; (void)appearance; (void)token; }
 static const struct polly_appearance_v1_listener appearance_listener = {
     .prepared = appearance_prepared, .applied = appearance_applied,
+    .renderer_enabled = renderer_enabled, .render_request = render_fixture,
+    .frame_result = frame_result, .render_cancelled = frame_closed,
 };
 
 static void configure_appearance(struct Client *client, unsigned index)
 {
-    const struct PuDecorationTheme *theme = &pu_decoration_themes[index];
-    uint32_t words[PU_APPEARANCE_V3_WORDS] = {pu_appearance_theme_schema(theme), pu_appearance_flags(theme)};
+    const struct PuDecorationLayout *theme = &pu_decoration_layouts[index].layout;
+    uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, theme->left_controls};
+    if (!client->renderer_enabled) {
+        polly_appearance_v1_enable_renderer(client->appearance);
+        if (wl_display_roundtrip(client->display) < 0 || !client->renderer_enabled) die("enable fixture renderer");
+    }
     unsigned position = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
     words[position++] = (uint32_t)(theme->field * (scale) + 0.5);
     PU_APPEARANCE_METRICS(ENCODE_METRIC)
 #undef ENCODE_METRIC
-#define ENCODE_COLOR(name) words[position++] = theme->name;
-    PU_APPEARANCE_COLORS(ENCODE_COLOR)
-#undef ENCODE_COLOR
-    words[position++] = theme->control_width;
-    words[position++] = theme->control_top;
-    /* This native geometry fixture has no JS theme subscribers. */
-    const char document[] = "{}";
-    int fd = pu_appearance_document_create(document, sizeof(document) - 1);
+    char document[64];
+    int document_length = snprintf(document, sizeof(document), "{\"fixtureLayout\":%u}", index);
+    int fd = pu_appearance_document_create(document, (size_t)document_length);
     if (fd < 0) die("cannot create appearance descriptor");
-    struct wl_array configuration = { .size = sizeof(uint32_t) *
-        (words[0] == 3 ? PU_APPEARANCE_V3_WORDS : PU_APPEARANCE_WORDS), .data = words };
+    struct wl_array configuration = { .size = sizeof(words), .data = words };
     if (!++client->appearance_serial) ++client->appearance_serial;
     uint32_t serial = client->appearance_serial;
     client->appearance_phase = 0;
-    polly_appearance_v1_prepare(client->appearance, serial, theme->id, &configuration,
-        fd, sizeof(document) - 1);
+    polly_appearance_v1_prepare(client->appearance, serial, pu_decoration_layouts[index].id, &configuration,
+        fd, (uint32_t)document_length);
     close(fd);
     if (wl_display_roundtrip(client->display) < 0 || client->appearance_reply != serial ||
         client->appearance_phase != 1 || !client->appearance_accepted) die("appearance prepare failed");
@@ -754,8 +808,8 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        if (version < 2) die("appearance configuration requires protocol version 2");
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 2);
+        if (version < 3) die("appearance configuration requires paired protocol version 3");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 3);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
@@ -986,6 +1040,7 @@ int main(int argc, char **argv)
     wl_registry_add_listener(registry, &registry_listener, &client);
     if (wl_display_roundtrip(client.display) < 0 ||
         !client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
+    if (client.appearance) configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
     bool running = true;
     while (running) {
         if (wl_display_dispatch_pending(client.display) < 0 ||
@@ -1133,7 +1188,7 @@ int main(int argc, char **argv)
             polly_workspace_toplevel_v1_move_to(foreign->workspace_handle, find_workspace(&client, request.edges)->handle);
             break;
         case TEST_APPEARANCE:
-            if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_THEME_COUNT)
+            if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_LAYOUT_COUNT)
                 die("invalid appearance request");
             configure_appearance(&client, (unsigned)request.id);
             break;

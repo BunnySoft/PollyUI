@@ -1,4 +1,6 @@
 import { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
+import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
+import { createDecorationRenderer } from './desktop/shell/decorations.mjs';
 import { render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
@@ -76,6 +78,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
   };
   let compositorAppearance = null;
   let appearanceStatus = '';
+  const decorationRenderer = createDecorationRenderer({ native, document: host.document ?? globalThis.document,
+    failure(failure) {
+      error = 'Window decoration renderer failed: ' + String(failure);
+      errorKind = 'theme';
+      report('[shell] ' + error);
+      repaintMenu();
+    } });
   let previousWindowsChanged = null;
   const windowsChanged = () => {
     if (!running) return;
@@ -507,7 +516,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         plans.push({ output, surfaces, identity });
       }
       if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
-        native.configureAppearance(theme);
+        native.configureAppearance(theme, encodeDecorationLayout(theme));
         compositorAppearance = appearance;
         configured = true;
       }
@@ -523,7 +532,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       for (const surface of staged) closeSurface(surface);
       if (configured) {
         try {
-          native.configureAppearance(previousTheme);
+          native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme));
           compositorAppearance = previousAppearance;
         } catch (rollback) {
           throw new Error(String(failure) + '; could not restore native appearance: ' + String(rollback));
@@ -1195,6 +1204,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (running) throw new Error('Shell is already running');
       host.close();
       running = true;
+      decorationRenderer.start();
       if (launcher) reloadApplications();
       sessionExit.start();
       if (native && typeof native.beginSessionExit === 'function') {
@@ -1205,6 +1215,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       lastServicePoll = 0;
       try { reconcile(themeId, false); }
       catch (failure) {
+        decorationRenderer.stop();
+        compositorAppearance = null;
         running = false; throw failure;
       }
       timer = setInterval(refresh, 1000);
@@ -1233,6 +1245,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     },
     stop() {
       running = false;
+      decorationRenderer.stop();
+      compositorAppearance = null;
       iconScope = {};
       settingsScope = {};
       settingsBridge?.close(); settingsBridge = null; settingsReady = null;
