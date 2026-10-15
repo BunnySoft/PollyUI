@@ -1,4 +1,4 @@
-import { parseThemeFile, applyThemeOverrides } from './desktop/shell/theme-schema.mjs';
+import { parseThemeFile, applyThemeOverrides } from './desktop/shared/ui/theme-schema.mjs';
 
 const connections = new WeakMap();
 

@@ -1,3 +1,5 @@
+import { wallpaper } from './desktop/shared/ui/wallpaper.mjs';
+export { wallpaper };
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, DESKTOP_THEMES, getDesktopTheme } from './desktop/shell/themes.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents,
@@ -51,17 +53,6 @@ function fileIcon(theme, label, size = theme.icons.size, id) {
     borderWidth: 1, borderColor: theme.colors.border,
     ...gradient('#ffffff', theme.colors.selection), ...center,
   } }, text(label, theme.colors.accent, Math.round(size / 2), { fontWeight: 'bold' }));
-}
-
-export function wallpaper(theme, id = 'appearance-wallpaper', asset = '') {
-  const art = asset ? [h('view', { style: { ...fill, backgroundImage: asset } })] :
-    theme.desktop.layers.map(layer => h('view', { style: {
-      position: 'absolute', left: layer.left, top: layer.top, width: layer.width, height: layer.height,
-      borderRadius: layer.radius, rotate: layer.rotation, opacity: layer.opacity,
-      borderWidth: layer.borderWidth, borderColor: layer.borderColor, ...gradient(layer.from, layer.to),
-    } }));
-  return h('view', { id,
-    style: { ...fill, ...gradient(theme.desktop.from, theme.desktop.to), overflow: 'hidden' } }, art);
 }
 
 function captionButton(theme, command, active, dispatch, interactive) {
