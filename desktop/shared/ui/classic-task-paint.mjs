@@ -1,6 +1,150 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 
 const painters = new WeakMap();
+const focuses = new WeakMap();
+const windowFocuses = new WeakMap();
+const focusFinalizers = new FinalizationRegistry(remove => remove());
+
+function repeatPattern(ctx, owner, color, background = null) {
+  const tile = owner.createElement('canvas');
+  tile.width = 2; tile.height = 2;
+  const ink = tile.getContext('2d');
+  if (!ink) throw new Error('Cannot create the Classic repeat pattern tile');
+  if (background) { ink.fillStyle = background; ink.fillRect(0, 0, 2, 2); }
+  ink.fillStyle = color;
+  ink.fillRect(0, 0, 1, 1); ink.fillRect(1, 1, 1, 1);
+  const pattern = ctx.createPattern(tile, 'repeat');
+  if (!pattern) throw new Error('Cannot create the Classic repeat pattern');
+  return pattern;
+}
+
+function stopFocus(state) {
+  if (state.frame !== null) cancelAnimationFrame(state.frame);
+  state.frame = null;
+  if (state.unsubscribe) state.unsubscribe();
+  focusFinalizers.unregister(state);
+  if (state.owner && windowFocuses.get(state.owner) === state.unsubscribe)
+    windowFocuses.delete(state.owner);
+  state.unsubscribe = null;
+  state.owner = null;
+  state.signature = '';
+}
+
+function showFocus(canvas, visible) {
+  const opacity = visible ? '1' : '0';
+  canvas.style.opacity = opacity;
+  if (canvas.parentNode) canvas.parentNode.style.opacity = opacity;
+}
+
+function drawFocus(canvas, state) {
+  const control = canvas.parentNode?.parentNode?.parentNode, owner = control?.ownerDocument;
+  if (!state.focused || !owner || owner !== state.document ||
+      owner.activeElement !== control || control.getAttribute('aria-disabled') === 'true') {
+    stopFocus(state);
+    showFocus(canvas, false);
+    return;
+  }
+  const width = canvas.offsetWidth, height = canvas.offsetHeight;
+  if (width < 1 || height < 1) return;
+  const windowState = state.owner?.state;
+  const scale = windowState ? windowState.scale : 1;
+  if (windowState) state.windowSize = [windowState.width, windowState.height, scale].join(':');
+  const signature = [width, height, scale, state.theme.colors.focus].join(':');
+  if (state.signature === signature) { showFocus(canvas, true); return; }
+  const pixelWidth = Math.ceil(width * scale), pixelHeight = Math.ceil(height * scale);
+  if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+  if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+  const ctx = state.ctx || canvas.getContext('2d');
+  if (!ctx) throw new Error('Classic focus requires the GUI Canvas 2D context');
+  state.ctx = ctx;
+  if (!state.pattern || state.color !== state.theme.colors.focus) {
+    state.pattern = repeatPattern(ctx, owner, state.theme.colors.focus);
+    state.color = state.theme.colors.focus;
+  }
+  ctx.resetTransform();
+  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.fillStyle = state.pattern;
+  // Each old edge began at its own zero, including the bottom and right edges.
+  for (const [x, y, w, h] of [[0, 0, width, 1], [0, height - 1, width, 1],
+    [0, 0, 1, height], [width - 1, 0, 1, height]]) {
+    ctx.save(); ctx.translate(x, y); ctx.fillRect(0, 0, w, h); ctx.restore();
+  }
+  ctx.restore();
+  state.signature = signature;
+  showFocus(canvas, true);
+}
+
+function queueFocus(canvas, state) {
+  if (state.frame !== null) return;
+  // Native rAF precedes layout; the second one-shot sees the intervening layout.
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      state.frame = null;
+      drawFocus(canvas, state);
+    });
+  });
+}
+
+export function paintClassicFocus(canvas, theme, focused) {
+  let state = focuses.get(canvas);
+  if (!state) {
+    state = { document: canvas.ownerDocument || document, frame: null, owner: null };
+    focuses.set(canvas, state);
+  }
+  const control = canvas.parentNode?.parentNode?.parentNode, owner = control?.ownerDocument;
+  state.theme = theme;
+  state.focused = Boolean(focused) && control?.getAttribute('aria-disabled') !== 'true';
+  if (!state.focused || !owner) {
+    stopFocus(state);
+    showFocus(canvas, false);
+    return;
+  }
+  state.document = owner;
+  const view = owner.defaultView;
+  if (view !== state.owner) {
+    stopFocus(state);
+    state.owner = view;
+    if (view) {
+      const previous = windowFocuses.get(view);
+      if (previous) previous();
+      const weak = new WeakRef(canvas);
+      let remove;
+      remove = view.observeState(next => {
+        const node = weak.deref(), current = node && focuses.get(node);
+        if (!current || current.owner !== view) { remove(); return; }
+        const size = [next.width, next.height, next.scale].join(':');
+        if (size !== current.windowSize) {
+          current.windowSize = size;
+          queueFocus(node, current);
+        }
+      });
+      state.unsubscribe = remove;
+      windowFocuses.set(view, remove);
+      focusFinalizers.register(canvas, remove, state);
+    }
+  }
+  drawFocus(canvas, state);
+  queueFocus(canvas, state);
+}
+
+export function classicFocusPaint(theme, disabled = false) {
+  const sync = canvas => {
+    const control = canvas.parentNode?.parentNode?.parentNode;
+    paintClassicFocus(canvas, theme, !disabled && Boolean(control) && control.ownerDocument?.activeElement === control);
+  };
+  return h('canvas', { className: 'classic-focus-paint', 'aria-hidden': 'true',
+    style: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
+      opacity: 0, pointerEvents: 'none' },
+    onMount: canvas => {
+      paintClassicFocus(canvas, theme, false);
+      Promise.resolve().then(() => { if (canvas.parentNode) sync(canvas); });
+    },
+    onUpdate: sync,
+    onLeave: (canvas, done) => { stopFocus(focuses.get(canvas)); done(); },
+  });
+}
 
 export function paintClassicTask(canvas, theme, { selected = false, focused = false, document: owner = null } = {}) {
   let painter = painters.get(canvas);
@@ -10,22 +154,8 @@ export function paintClassicTask(canvas, theme, { selected = false, focused = fa
     if (!ctx) throw new Error('Classic task texture requires the GUI Canvas 2D context');
     const document = canvas.ownerDocument || painter?.document || owner;
     if (!document) throw new Error('Classic task painter requires its owning document');
-    const tile = document.createElement('canvas');
-    tile.width = 2; tile.height = 2;
-    const ink = tile.getContext('2d');
-    if (!ink) throw new Error('Cannot create the Classic task pattern tile');
-    ink.fillStyle = theme.colors.body;
-    ink.fillRect(0, 0, 2, 2);
-    ink.fillStyle = theme.colors.light;
-    ink.fillRect(0, 0, 1, 1);
-    ink.fillRect(1, 1, 1, 1);
-    const pattern = ctx.createPattern(tile, 'repeat');
-    if (!pattern) throw new Error('Cannot create the Classic task repeat pattern');
-    ink.clearRect(0, 0, 2, 2);
-    ink.fillStyle = theme.colors.focus;
-    ink.fillRect(0, 0, 1, 1); ink.fillRect(1, 1, 1, 1);
-    const focusPattern = ctx.createPattern(tile, 'repeat');
-    if (!focusPattern) throw new Error('Cannot create the Classic task focus pattern');
+    const pattern = repeatPattern(ctx, document, theme.colors.light, theme.colors.body);
+    const focusPattern = repeatPattern(ctx, document, theme.colors.focus);
     painter = { ctx, pattern, focusPattern, colors, document };
     painters.set(canvas, painter);
   }

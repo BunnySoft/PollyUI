@@ -296,6 +296,36 @@ this repairs the local 7x4 visibility contract, not OS-exact placement.
 running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
 configuration consistency evidence, not a Tiger raw-reference or native Mac
 platform acceptance.
+Lion's existing `panel.from` controls the upper shelf face and `panel.to` the
+four-pixel front face. The painter previously ignored both fields; their shipped
+values already matched those two hardcoded colors, so consuming them preserves
+default pixels. The neutral top highlight, lower shelf band and front-edge
+declaration remain separate detail colors, not a promise that these two fields
+tint every layer. Tiger/Big Sur keep their existing root-gradient consumers;
+the Mac menu bar still uses `window.titleFrom/titleTo`.
+
+The bounded Lion Dock coverage in `tests/lion-dock-surface-render.mjs` is local
+design/field-consumption evidence on an actual Windows GUI raster surface:
+
+| Area | Result and boundary |
+| --- | --- |
+| Palette entry points | Confirmed defect fixed: accepted `panel.from/to` overrides now affect the upper/front faces; default 400x120 PNG is byte-identical. Top/lower neutral bands stay unchanged. |
+| Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
+| Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
+| Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
+| Mechanism/business gaps | Still missing: real glass, shadow/reflection, application grouping, pinning and magnification. This palette wiring does not implement any of them. |
+
+The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
+**no confirmed product defect and makes no painter/preset change**:
+
+| Area | Current coverage and remaining boundary |
+| --- | --- |
+| Geometry | Actual detached GUI Canvas uses supplied rectangles: default 12px round controls at close/minimize/maximize x=12/32/52, y=8 in a 28px title strip; one accepted custom 16px/34px allocation and widths 1/20/44/64/300 fit without stretching strips. The fixture mirrors the metadata grammar; it does not certify native hit testing or generate an OS oracle. |
+| State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
+| Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
+| Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
+| Mechanism/content gaps | Unchanged: genuine window shadow/vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance need separate evidence or implementation decisions. |
+
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
@@ -324,14 +354,31 @@ selection, focus, padding and draft roundtrip survive a retheme. This does not
 change theme tokens, SDK input defaults/focus color or display transaction policy,
 and does not certify other input controls or scrollbars.
 
-An additional actual-GUI check found that the current fixed Classic focus-dot
+An additional actual-GUI check found that the former fixed Classic focus-dot
 grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots
-along its four full edges, while 120x22 is complete. This is **not fixed**.
-A paint-only Canvas replacement must also follow child-window host resizing
-without a vnode update. The existing window state event has size/scale data,
-but Document currently exposes no owner-window association. An onUpdate/rAF-only
-replacement would regress that case, so it is not shipped; a minimal read-only
-owner association is a separate mechanism decision. E22.7 remains partial.
+along its four full edges, while 120x22 is complete. The original evidence and
+unshipped candidate remain historical proof of the earlier deferral.
+The subsequent bounded fix replaces only the ordinary Classic focus grid with
+one paint-only Canvas, reusing the task painter's 2x2 repeat primitive but
+preserving each ordinary edge's independent phase (task phase is unchanged).
+Actual 800x600/scale-1 GUI output has zero missing dots on all four full edges
+for 420x80 and 500x96; the complete 120x22 control crop differs by zero pixels
+from the preserved before image, with no resize/mask/font exclusions.
+
+The generic read-only `Document.defaultView` and independent
+`Window.observeState` mechanisms associate the focused control with its real
+owner, without wrapping the business `onstatechange`. Focused/enabled controls
+use a weak cached painter and bounded two-rAF post-layout remeasurement, not a
+frame loop. Blur/disabled/leave cancel frames and unsubscribe; detached Canvas
+subscriptions do not retain the Canvas and have GC cleanup. Real Win32 child
+host-only resize, with no VNode update or forced render, expands a 420x180
+control to 640x290 and completes the 634x284 focus backing; its presented PNG has
+zero wrong on/off pixels on every full edge. Business callback reassignment,
+retained focus, caller opacity, selection truth, retheme, blur and single
+activation are covered. A private WM_DPICHANGED 1.25 test checks adapter/backing
+refresh only, not monitor-DPI qualification. No C theme rendering is added.
+E22.7 remains partial: this does not certify default-button styles, every SDK
+widget/state, fonts or full OS appearance.
 
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;

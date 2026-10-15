@@ -294,9 +294,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       position: 'absolute', left: 0, right: 0, bottom: 0, height: 28, pointerEvents: 'none' } },
       Array.from({ length: 24 }, (_, y) => h('view', { style: {
         position: 'absolute', top: y, left: 12 - y / 2, right: 12 - y / 2,
-        height: 1, backgroundColor: y === 0 ? '#eeeeee' : y < 12 ? '#b8b8b8' : '#999999', pointerEvents: 'none' } })),
+        height: 1, backgroundColor: y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999', pointerEvents: 'none' } })),
       h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4,
-        backgroundColor: '#686868', borderTopWidth: 1, borderColor: '#d6d6d6', pointerEvents: 'none' } })) : null;
+        backgroundColor: panel.to, borderTopWidth: 1, borderColor: '#d6d6d6', pointerEvents: 'none' } })) : null;
     return h('view', { id: 'shell-dock', style: { ...row, position: 'relative',
       width: '100%', height: '100%', alignItems: 'flex-end', justifyContent: 'center',
       paddingLeft: theme.layout.dockPadding ?? 6, paddingRight: theme.layout.dockPadding ?? 6,
