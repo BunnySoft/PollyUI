@@ -3,6 +3,7 @@ import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { desktopCommand, desktopIcon, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { surfaceStyle, bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { programsMenu, programsPlacement } from './desktop/shell/programs-menu.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
 const text = (theme, value, color = theme.colors.text, extra = {}) =>
@@ -60,7 +61,7 @@ function stopGridScroll(node, done) {
 }
 
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
-  error = '', logout = null, desktop = null) {
+  error = '', logout = null, desktop = null, programs = null) {
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
   const menuStyle = theme.panel.menuStyle ?? (modern ? 'grid' : xp ? 'two-column' : 'legacy');
@@ -163,12 +164,47 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   ];
   const settings = entries.find(entry => entry.id === 'org.pollyui.settings' && !entry.unavailable);
   const files = entries.find(entry => entry.id === 'org.pollyui.files' && !entry.unavailable);
+  const programTrigger = classic && programs ? command('shell-all-programs', 'All Programs >',
+    () => programs.change(true, 'first'), 'apps') : null;
+  if (programTrigger) {
+    programTrigger.props['aria-haspopup'] = 'menu';
+    programTrigger.props['aria-expanded'] = String(programs.open);
+    const enter = programTrigger.props.onMouseenter, key = programTrigger.props.onKeydown;
+    programTrigger.props.onMouseenter = event => {
+      enter?.(event);
+      const trigger = event.currentTarget;
+      let root = trigger.parentNode;
+      while (root && root.id !== 'shell-applications') root = root.parentNode;
+      if (!root || programs.open) return;
+      const placement = programsPlacement(root, trigger, rowHeight);
+      if (placement.left >= trigger.offsetLeft + trigger.offsetWidth - root.offsetLeft - 1 ||
+          placement.top >= trigger.offsetTop + trigger.offsetHeight - root.offsetTop) programs.change(true, 'first');
+    };
+    programTrigger.props.onKeydown = event => {
+      if (event.key === 'ArrowRight') {
+        event.preventDefault(); event.stopPropagation(); programs.change(true, 'first');
+      } else key?.(event);
+    };
+  }
   return h('view', { id: 'shell-applications', style: { width: '100%', height: '100%',
     backgroundColor: c.body, borderWidth: classic ? 0 : xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
     borderRadius: modern ? 8 : xp ? 6 : theme.window.radius, overflow: scrollGrid ? 'scroll' : 'hidden', position: 'relative',
     padding: classic ? 3 : 0, gap: grid ? 20 : 0 },
     ...(scrollGrid ? { onWheel: scrollDesktop, onMount: syncGridScroll, onUpdate: syncGridScroll,
-      onLeave: stopGridScroll } : {}) },
+      onLeave: stopGridScroll } : {}),
+    ...(classic && programs?.open ? {
+      onKeydown: event => {
+        if (event.key === 'Escape' || event.key === 'ArrowLeft') {
+          event.preventDefault(); event.stopPropagation(); programs.change(false, 'trigger');
+        }
+      },
+      onMousecancel: () => programs.change(false, 'trigger'),
+      onMouseleave: event => {
+        const box = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < box.x || event.clientX >= box.x + box.width ||
+            event.clientY < box.y || event.clientY >= box.y + box.height) programs.change(false);
+      },
+    } : {}) },
   classic ? bevel(theme, { frame: true }) : null,
   twoColumn && (l.menuHeaderHeight ?? 64) > 0 ? h('view', { id: 'shell-start-profile', style: { ...row, height: l.menuHeaderHeight ?? 64,
     flexShrink: 0, paddingLeft: 8, gap: 10, backgroundColor: xp ? '#1c62d1' : theme.window.titleFrom,
@@ -193,7 +229,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       flexShrink: 0, backgroundColor: '#0a246a', gradientFrom: '#0a246a', gradientTo: '#a6caf0' } }) : null,
     h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, backgroundColor: xp ? c.surface : c.body,
       padding: grid || classicColumns ? 0 : 4, gap: 4 } },
-      list,
+      programTrigger, list,
       grid ? null : search,
       filtered.length > 100 ? text(theme, 'Showing 100 matches; refine the search.', c.muted) : null),
     twoColumn ? h('view', { id: 'shell-start-links', style: { width: l.menuSideWidth ?? 132, flexShrink: 0,
@@ -221,6 +257,10 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     menuStyle === 'legacy' ? tools : null,
     h('view', { style: { flexGrow: 1 } }),
     logout ? command('shell-app-logout', 'Log out...', logout, '', { height: 28 }) : null),
-  error ? h('view', { role: 'alert', style: { padding: 6, backgroundColor: c.selection } },
-    text(theme, error, classic ? c.accentText : c.text)) : null);
+  classic && programs ? h('view', { role: 'alert', style: {
+    display: error ? 'flex' : 'none', padding: error ? 6 : 0, backgroundColor: c.selection,
+  } }, error ? text(theme, error, c.accentText) : null) :
+    error ? h('view', { role: 'alert', style: { padding: 6, backgroundColor: c.selection } },
+      text(theme, error, classic ? c.accentText : c.text)) : null,
+  classic && programs?.open ? programsMenu(theme, entries, desktop, { ...programs, error }) : null);
 }

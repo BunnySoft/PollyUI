@@ -7,6 +7,9 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISIO
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher } from './desktop/shell/applications.mjs';
+import { startMenuView } from './desktop/shell/start-menu.mjs';
+import { programsPlacement } from './desktop/shell/programs-menu.mjs';
+import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
 import { createNetworkSettings } from './desktop/shell/network.mjs';
@@ -667,13 +670,57 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return;
     }
     if (current.mode === 'applications') {
-      render(applicationsView(getDesktopTheme(themeId), desktopCatalog(), current.query,
+      const menuTheme = getDesktopTheme(themeId);
+      if (surfaceStyle(menuTheme, 'panel') !== 'classic' && current.programsOpen) {
+        current.programsOpen = false;
+        current.programsEpoch = (current.programsEpoch ?? 0) + 1;
+        current.programsSlots = [];
+      }
+      const programsEpoch = current.programsEpoch ?? 0;
+      const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
+      render(applicationMenu(menuTheme, desktopCatalog(), current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error,
         typeof native?.beginSessionExit === 'function' ? scoped(() => showLogout(current.output)) : null, {
           has: id => configuration.snapshot.desktop.shortcuts.some(item => item.id === id),
           add: scoped(id => addDesktopShortcut(current.output, id)),
           remove: scoped(id => removeDesktopShortcuts([id])),
+        }, {
+          open: current.programsOpen === true,
+          slots: current.programsSlots ??= [],
+          placement: current.programsPlacement,
+          launch: scoped(id => {
+            if (current.programsOpen && current.programsEpoch === programsEpoch &&
+                desktopCatalog().some(entry => entry.id === id && !entry.unavailable))
+              return launchApplication(id);
+          }),
+          pin: scoped(id => {
+            if (!current.programsOpen || current.programsEpoch !== programsEpoch ||
+                !desktopCatalog().some(entry => entry.id === id)) return;
+            if (configuration.snapshot.desktop.shortcuts.some(item => item.id === id)) return removeDesktopShortcuts([id]);
+            return addDesktopShortcut(current.output, id);
+          }),
+          change: scoped((open, focus = '') => {
+            if ((current.programsEpoch ?? 0) !== programsEpoch) return;
+            if (open) {
+              const document = current.window.document;
+              current.programsPlacement = programsPlacement(document.getElementById('shell-applications'),
+                document.getElementById('shell-all-programs'), getDesktopTheme(themeId).layout.menuRowHeight ?? 32);
+            }
+            if (current.programsOpen !== open) current.programsEpoch = (current.programsEpoch ?? 0) + 1;
+            current.programsOpen = open;
+            if (!open) current.programsSlots = [];
+            repaintMenu();
+            const epoch = current.programsEpoch;
+            if (focus) requestAnimationFrame(() => {
+              if (!currentMenu(current) || current.programsOpen !== open || current.programsEpoch !== epoch) return;
+              const document = current.window.document;
+              const target = focus === 'trigger' ? document.getElementById('shell-all-programs') :
+                Array.from(document.getElementById('shell-program-list')?.childNodes ?? []).find(node => node.tabIndex >= 0) ??
+                  document.getElementById('shell-program-back');
+              target?.focus();
+            });
+          }),
         }),
         current.window.document.body);
       return;
