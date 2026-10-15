@@ -8,12 +8,64 @@ const row = { flexDirection: 'row', alignItems: 'center' };
 const text = (theme, value, color = theme.colors.text, extra = {}) =>
   desktopText(value, color, themeTextSize(theme), extra);
 
+function revealGridItem(item) {
+  let innerScroll = 0;
+  for (let strip = item.parentNode; strip; strip = strip.parentNode) {
+    if (strip.id === 'shell-start-apps' || strip.id === 'shell-applications') {
+      const top = item.offsetTop - strip.offsetTop - innerScroll, start = Number(strip.scrollTop);
+      const end = top + item.offsetHeight, height = strip.offsetHeight;
+      const next = item.offsetHeight > height ? top : top < start ? top :
+        end > start + height ? end - height : start;
+      if (next !== start) strip.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(strip).maximum, next));
+    }
+    if (strip.id === 'shell-applications') break;
+    // Native offsets are unscrolled; the outer target must subtract newly applied inner scrolling.
+    innerScroll += Number(strip.scrollTop ?? 0);
+  }
+}
+
+const gridLayouts = new WeakMap();
+function syncGridScroll(node) {
+  let state = gridLayouts.get(node);
+  if (!state) { state = { frame: null, geometry: null }; gridLayouts.set(node, state); }
+  if (state.frame !== null) return;
+  // Reconciliation and Yoga settle before measuring; retained updates coalesce without polling.
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      state.frame = null;
+      if (!node.ownerDocument || node.style.overflow !== 'scroll') return;
+      const list = node.querySelector('#shell-start-apps');
+      const geometry = [];
+      for (const viewport of [list, node]) {
+        const metrics = verticalScrollMetrics(viewport);
+        geometry.push(viewport.offsetWidth, metrics.height, metrics.maximum);
+        if (Number(viewport.scrollTop) !== metrics.value) viewport.scrollTop = metrics.value;
+      }
+      const changed = state.geometry && geometry.some((value, index) => value !== state.geometry[index]);
+      state.geometry = geometry;
+      if (!changed) return;
+      const focused = node.ownerDocument.activeElement;
+      for (let parent = focused; parent; parent = parent.parentNode) {
+        if (parent === node) { revealGridItem(focused); break; }
+      }
+    });
+  });
+}
+function stopGridScroll(node, done) {
+  const state = gridLayouts.get(node);
+  if (state && state.frame !== null) cancelAnimationFrame(state.frame);
+  gridLayouts.delete(node);
+  done();
+}
+
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
   error = '', logout = null, desktop = null) {
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
   const menuStyle = theme.panel.menuStyle ?? (modern ? 'grid' : xp ? 'two-column' : 'legacy');
   const grid = menuStyle === 'grid', twoColumn = menuStyle === 'two-column';
+  const scrollGrid = modern && grid;
+  const gridAppHeight = 80, gridPinHeight = 20, cardGap = 2, gridPadding = 8;
   const classicColumns = classic && twoColumn;
   const rowHeight = l.menuRowHeight ?? 32;
   const appHeight = twoColumn ? Math.max(rowHeight, (l.menuIconSize ?? 0) + 8) : rowHeight;
@@ -22,19 +74,11 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
       .join(' ').toLowerCase().includes(query.toLowerCase()));
   const revealGrid = node => {
-    if (!modern || !grid) return node;
+    if (!scrollGrid) return node;
     const focus = node.props.onFocus;
     node.props.onFocus = event => {
       focus?.(event);
-      const item = event.currentTarget;
-      let strip = item.parentNode;
-      while (strip && strip.id !== 'shell-start-apps') strip = strip.parentNode;
-      if (!strip) return;
-      const top = item.offsetTop - strip.offsetTop, start = Number(strip.scrollTop);
-      const end = top + item.offsetHeight, height = strip.offsetHeight;
-      const next = item.offsetHeight > height ? top : top < start ? top :
-        end > start + height ? end - height : start;
-      if (next !== start) strip.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(strip).maximum, next));
+      revealGridItem(event.currentTarget);
     };
     return node;
   };
@@ -75,12 +119,13 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   grid ? desktopIcon('search', c.muted, 16) : null,
   text(theme, query || 'Search applications', query ? c.text : c.muted,
     { pointerEvents: 'none', flexShrink: 1, minWidth: 0 }));
+  revealGrid(search);
   const app = entry => {
     const icon = entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps';
     const item = desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id), {
       icon, iconSize: grid || twoColumn ? l.menuIconSize ?? 0 : 0,
       enabled: !entry.unavailable, quiet: true, style: {
-        height: grid ? 80 : appHeight, borderRadius: modern ? 4 : 0,
+        height: grid ? gridAppHeight : appHeight, borderRadius: modern ? 4 : 0,
         borderWidth: 0, paddingLeft: grid ? 4 : 6, paddingRight: grid ? 4 : 6,
         ...(grid ? { width: 88, flexDirection: 'column', justifyContent: 'center', gap: 6 } :
           { flexGrow: 1, flexBasis: 0, minWidth: 0 }),
@@ -94,18 +139,22 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     }
     if (entry.unavailable) item.props['aria-description'] = entry.unavailable;
     revealGrid(item);
-    return h('view', { key: entry.id, style: { ...row, flexShrink: 0, gap: 2,
+    return h('view', { key: entry.id, style: { ...row, flexShrink: 0, gap: cardGap,
       ...(grid ? { flexDirection: 'column', width: 88 } : {}) } }, item,
     desktop ? command('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Unpin' : 'Pin',
       () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id), '',
-      { height: grid ? 20 : l.menuRowHeight ?? 32, width: grid ? 64 : 38,
+      { height: grid ? gridPinHeight : l.menuRowHeight ?? 32, width: grid ? 64 : 38,
         paddingLeft: 3, paddingRight: 3 }) : null);
   };
   const list = h('view', { id: 'shell-start-apps', style: {
     flexGrow: 1, flexBasis: 0, minHeight: 0, minWidth: 0, overflow: 'scroll',
-    gap: grid ? 8 : 0, padding: grid ? 8 : classicColumns ? 0 : 2,
+    gap: grid ? 8 : 0, padding: grid ? gridPadding : classicColumns ? 0 : 2,
     ...(grid ? { ...row, alignItems: 'flex-start', alignContent: 'flex-start', flexWrap: 'wrap' } : {}),
-  }, onWheel: scrollDesktop }, filtered.slice(0, 100).map(app),
+  }, onWheel: scrollGrid ? event => {
+    const before = Number(event.currentTarget.scrollTop);
+    scrollDesktop(event);
+    if (Number(event.currentTarget.scrollTop) !== before) event.stopPropagation();
+  } : scrollDesktop }, filtered.slice(0, 100).map(app),
   !filtered.length ? text(theme, 'No matching applications', c.muted) : null);
   const tools = [
     command('shell-app-refresh', 'Refresh', refresh, 'refresh'),
@@ -115,8 +164,10 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const files = entries.find(entry => entry.id === 'org.pollyui.files' && !entry.unavailable);
   return h('view', { id: 'shell-applications', style: { width: '100%', height: '100%',
     backgroundColor: c.body, borderWidth: classic ? 0 : xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
-    borderRadius: modern ? 8 : xp ? 6 : theme.window.radius, overflow: 'hidden', position: 'relative',
-    padding: classic ? 3 : 0, gap: grid ? 20 : 0 } },
+    borderRadius: modern ? 8 : xp ? 6 : theme.window.radius, overflow: scrollGrid ? 'scroll' : 'hidden', position: 'relative',
+    padding: classic ? 3 : 0, gap: grid ? 20 : 0 },
+    ...(scrollGrid ? { onWheel: scrollDesktop, onMount: syncGridScroll, onUpdate: syncGridScroll,
+      onLeave: stopGridScroll } : {}) },
   classic ? bevel(theme, { frame: true }) : null,
   twoColumn && (l.menuHeaderHeight ?? 64) > 0 ? h('view', { id: 'shell-start-profile', style: { ...row, height: l.menuHeaderHeight ?? 64,
     flexShrink: 0, paddingLeft: 8, gap: 10, backgroundColor: xp ? '#1c62d1' : theme.window.titleFrom,
@@ -134,7 +185,8 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     text(theme, 'Applications', c.text, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }),
     ...tools.map(tool => { tool.props.style.height = 28; return tool; })) : null,
-  h('view', { style: { ...row, alignItems: 'stretch', flexGrow: 1, flexBasis: 0, minHeight: 0,
+  h('view', { style: { ...row, alignItems: 'stretch', flexGrow: 1, flexBasis: 0,
+    minHeight: scrollGrid ? gridPadding * 2 + gridAppHeight + (desktop ? cardGap + gridPinHeight : 0) : 0,
     ...(grid ? { paddingLeft: 24, paddingRight: 24 } : {}) } },
     classic && menuStyle === 'legacy' ? h('view', { id: 'shell-start-brand', 'aria-hidden': 'true', style: { width: 24,
       flexShrink: 0, backgroundColor: '#0a246a', gradientFrom: '#0a246a', gradientTo: '#a6caf0' } }) : null,
