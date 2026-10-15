@@ -68,13 +68,94 @@ are generated in memory, with no external downloads.
 | Path2D and clipping | Empty/copy/SVG-path-string constructors; all path methods; `addPath` with a 2D matrix; `fill`, `stroke`, `clip`, `isPointInPath`, `isPointInStroke` overloads; nonzero/evenodd | Clip is part of saved state. Coordinates for hit queries and pixel reads are backing coordinates, not DOM pointer coordinates. No SVG image/DOM/XML parsing. |
 | Lines | `lineWidth`, `lineCap`, `lineJoin`, `miterLimit`, `setLineDash`, `getLineDash`, `lineDashOffset` | Invalid numeric/style assignments leave the prior value. Odd dash arrays are doubled; getter returns a copy. |
 | Paint | Hex RGB/RGBA, rgb/rgba, hsl/hsla, all CSS named colors and transparent; fill/stroke styles; linear/radial gradients with sorted multi-stops; image/canvas/bitmap patterns; pattern `setTransform` | No CSS variables, system colors, `currentColor`, CSS Color 4 wide-gamut functions, or conic gradients. CSS named-color data is shared with DOM painting. Pattern sources are retained snapshots. |
-| Effects | `globalAlpha`; standard Porter-Duff and artistic `globalCompositeOperation` values; `shadowColor`, `shadowBlur`, shadow offsets | Copy and destination-in affect the full current clip, including outside the drawn shape. Shadows use Skia's blur kernel; exact browser blur-edge parity is not claimed. `filter` is absent. |
+| Effects | `globalAlpha`; standard Porter-Duff and artistic `globalCompositeOperation` values; `shadowColor`, `shadowBlur`, shadow offsets; `filter: "none"` / a single `"blur(Npx)"` | Blur is a real Skia Gaussian image filter, with sigma in backing pixels independent of the current transform, applied to the source plus shadow before final clipping/compositing. Transparent outside-source edges use decal sampling, not opaque clamp. Filter state participates in save/restore/reset/dimension reset. Copy and destination-in affect the full current clip. Exact browser blur-edge parity is not claimed. |
 | Text | `fillText`, `strokeText`, `measureText`, read-only TextMetrics fields, font, textAlign, textBaseline, direction; maxWidth; Unicode fallback | Reuses the DOM's font discovery/fallback. Linux's existing HarfBuzz/ICU shaping is used, including paragraph direction; other builds retain their existing simple-text shaping limitations. Outlined color-bitmap emoji, variable-font axes, font loading APIs, CSS font shorthand beyond size/family plus optional slant/weight, letterSpacing, wordSpacing, textRendering and fontKerning are not implemented. Hanging/ideographic baseline metrics use font-metric approximations, not script-specific browser baseline tables. |
 | Images and pixels | Three standard `drawImage` overloads; img/Image, canvas, and existing owned Bitmap sources; self-copy snapshots; smoothing enable; ImageData RGBA8/create/get/put, negative/outside/dirty rectangles | Reads/put ignore transform, clip and drawing styles. RGBA8 is unpremultiplied at the JS boundary; native pixels are premultiplied. Fractional-alpha roundtrips have 8-bit premultiplication quantization. `imageSmoothingQuality` preserves its standard state value; low/medium/high currently use the same linear sampling. No ImageBitmap API, video, SVG/GIF/WebP images or worker canvases. |
 | Export and Blob | In-memory PNG and JPEG `toDataURL` / asynchronous `toBlob`; PNG fallback for unsupported output MIME; JPEG quality; Blob size/type/arrayBuffer/text/slice | JPEG flattens alpha onto black. Blob holds copied bytes, not a filename. Blob streams and object URLs are absent. |
 | Geometry objects | DOMMatrix affine 2D values, aliases, identity/is2D, arrays, multiplication, translate/scale/rotate/inverse/point transforms; DOMPoint | Six-component constructor input and 2D-compatible 16-component input; public toFloat32Array/toFloat64Array return standard 16-component column-major 4x4 arrays. matrix() strings remain six-component affine syntax. No 3D matrices, perspective, DOMMatrixReadOnly or DOMPointReadOnly. |
 | DOM img | `createElement("img")` and `new Image(width?,height?)`; src/currentSrc, width/height, naturalWidth/Height, complete, decode; load/error listeners and onload/onerror; intrinsic layout and actual DOM painting | The surrounding DOM/CSS remains PollyUI's Yoga-based subset, not full browser DOM/layout. Width/height attributes are presentation hints, overridden by CSS. Natural dimensions do not change with display size. onload/onerror run after registered listeners in the existing bridge; property-handler registration-order parity with browsers is not claimed. |
 | Modern APIs | WebGL2 is documented separately; other APIs explicitly outside this stage | OffscreenCanvas, transferControlToOffscreen, workers, WebGL1/WebGPU, full DOM/CSS, browser-origin security, SVG images/DOM, canvas accessibility/hit regions, HDR/wide-gamut/float16, createConicGradient. GPU context-loss events do not imply loss for raster 2D. |
+
+The `filter` compatibility subset accepts `none`, one nonnegative pixel blur,
+and unitless `blur(0)`. Getters canonicalize blur to `blur(Npx)`. Invalid blur
+values (negative, nonfinite, wrong units or malformed single blur) leave the
+previous state unchanged, like invalid paint/style setters. A blur above
+128 backing pixels throws `RangeError`; other CSS filter functions and filter
+lists throw `NotSupportedError` instead of pretending they were applied.
+`clearRect`, `getImageData` and `putImageData` ignore filter state. Rectangles,
+paths, strokes, text, patterns and `drawImage` share the filter mechanism.
+This is not CSS `backdrop-filter` or a compositor/background sampling API.
+
+## Opt-in wallpaper-derived client base
+
+`desktop/shared/ui/material.mjs` exports `createWallpaperMaterial({document,
+maxPixels?, onError?})`. This is a JS policy/helper over ordinary owned Canvas
+and Image resources, not a C theme painter. `material.canvas` is the decorative
+client-base node; append sharp foreground DOM as separate siblings, never apply
+opacity/filter to the foreground container. No theme automatically opts in, and
+no native caption is changed.
+
+```js
+const material = createWallpaperMaterial({ document, onError: report });
+document.body.appendChild(material.canvas);
+await material.update({ theme, width: 800, height: 600, scale: owner.state.scale,
+  active: owner.state.active, asset: resolvedWallpaperPath, sourceRevision: 0 });
+// Reuse on theme/source or owner.observeState notifications; no animation loop.
+await material.update({ theme, width: 800, height: 600, mode: 'solid' });
+material.dispose();
+```
+
+`theme` uses the existing schema-1 contract. The helper draws its desktop
+gradient/layers or a real decoded local/data PNG/JPEG asset, pads by clamping
+all image edges/corners, blurs, then composites an opaque base and theme tint.
+The active tint uses `theme.colors.surface`; inactive uses `theme.colors.body`
+with less wallpaper contrast. The source is mapped across the client base,
+not desktop-position-aligned or sampled from another application. This is a
+**wallpaper-derived Mica-like opaque base**, not Windows DWM Mica, live Acrylic,
+MT01 per-pixel window transparency, or MT03 regional compositor blur.
+
+Identical update signatures and ordinary DOM repaints do no read/decode/paint/
+blur/composite work. Activation/tint changes reuse the blurred texture.
+Wallpaper data/path, explicit `sourceRevision`, desktop primitives, logical size,
+scale or blur changes invalidate the relevant cache. Pass the already-resolved
+actual wallpaper path (or data URL); the default is `theme.desktop.asset`.
+Increment `sourceRevision` when contents at the same path change: this helper
+does not add a file watcher, service, polling or permission protocol.
+`update` resolves true for a publication, false for a cache hit or superseded
+request; identical in-flight requests share a promise. Stale/cancelled image
+loads cannot overwrite a newer request.
+
+Logical bounds are 1..16384 per axis, scale 0.25..8, logical blur 0..64
+(default 32). The per-canvas budget defaults to 262144 pixels, configurable
+within 1024..1048576. Padding is included in this budget; sampling is reduced
+when needed, never allocated at unbounded window/DPI dimensions. During a
+rebuild there are at most four bounded raster canvases (published, blurred,
+raw, padded), plus transient Canvas source snapshots and one decoded asset
+under the existing 16M-pixel/64-MiB input limits. Scratch pixels are zero-sized
+after use; replacing a source clears its Image; dispose zero-sizes cached
+backings, invalidates pending work and removes the published node. Ordinary
+Canvas resource wrappers retire through the existing native finalizers/GC.
+The read-only `stats` snapshot exposes work counters and published dimensions.
+
+Unsupported Canvas blur providers, decode/filter/allocation failures and invalid
+inputs reject and call `onError` (default: explicit console error), revoke old
+published pixels and do **not** silently publish a solid fallback. Callers can
+deliberately recover with `mode: 'solid'`, which restores `theme.colors.body`,
+releases wallpaper caches and needs no blur support. Stop owner observers and
+dispose on owner close. Calls after dispose reject.
+
+Run `pollyui desktop/examples/material.mjs` from the repository root for a
+real opt-in GUI example with keyboard-accessible solid/material toggle and
+owner state observation (resize/activation/scale); it uses the full launcher
+for the existing theme-file loader. `node --test desktop/tests/material.mjs`
+checks lifecycle/cache contracts with a fake provider, not native pixels.
+`pollyui --test desktop/tests/material-render.mjs` checks actual software-raster
+pixels, opaque/clamped edges, sharp DOM foreground, cache/invalidation and
+decode-error recovery. Its explicit scale inputs do not change the test host's
+fixed native scale 1.0 or qualify physical GPU, OS compositor or native DPI.
+`pollyui desktop/tests/material-example.mjs` additionally checks example startup
+in a real GUI-owned window and explicit observer/backing cleanup; a dummy SDL
+driver does not qualify compositor presentation or physical input.
 
 ## Image sources, timing, and safety
 

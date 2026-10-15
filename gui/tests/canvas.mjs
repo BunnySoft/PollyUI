@@ -105,6 +105,61 @@ for(const mode of ["source-in","source-out","source-atop","destination-over","de
 canvas.width=16;ctx.shadowColor="red";ctx.shadowOffsetX=4;ctx.fillStyle="blue";ctx.fillRect(0,0,2,2);
 same(pixel(5,1),[255,0,0,255],"shadow offset/color");ctx.shadowBlur=2;ctx.fillRect(0,4,2,2);
 check(pixel(5,5)[3]>0,"blurred shadow");
+{
+    const filtered=document.createElement("canvas");filtered.width=96;filtered.height=64;
+    const f=filtered.getContext("2d"),at=(x,y)=>[...f.getImageData(x,y,1,1).data];
+    check(f.filter==="none","filter defaults to none");
+    f.filter="blur(2px)";f.save();f.filter="none";f.restore();
+    check(f.filter==="blur(2px)","filter save/restore");
+    for(const invalid of ["", "invalid", "blur(-1px)", "blur(NaNpx)", "blur(2%)", "blur(2px", "blur(2px))"]) {
+        f.filter=invalid;check(f.filter==="blur(2px)","invalid filter ignored: "+invalid);
+    }
+    for(const unsupported of ["brightness(2)","drop-shadow(1px 1px red)","blur(2px) blur(3px)","url(test)"])
+        rejects(()=>{f.filter=unsupported;},"NotSupportedError");
+    rejects(()=>{f.filter="blur(129px)";},"RangeError");
+    check(f.filter==="blur(2px)","unsupported filter leaves previous state");
+    f.filter="blur(0)";check(f.filter==="blur(0px)","unitless zero canonicalized");
+    f.filter="blur(2px)";
+    f.fillStyle="red";f.fillRect(24,20,24,24);
+    check(at(22,32)[3]>0&&at(24,32)[3]>0&&at(24,32)[3]<220&&at(36,32)[3]===255,
+        "real Gaussian rectangle edge, not solid or whole-layer opacity");
+    const reference=[...f.getImageData(0,0,96,64).data];
+    f.reset();check(f.filter==="none","reset clears filter");
+    f.filter="blur(2px)";f.scale(2,2);f.fillStyle="red";f.fillRect(12,10,12,12);
+    same([...f.getImageData(0,0,96,64).data],reference,"blur radius uses backing pixels, not current scale");
+    f.reset();f.filter="blur(2px)";f.fillStyle="red";
+    f.beginPath();f.rect(24,20,24,24);f.fill();
+    same([...f.getImageData(0,0,96,64).data],reference,"current-path filtering matches rectangles");
+    f.reset();f.filter="blur(2px)";f.globalAlpha=.5;f.fillStyle="red";f.fillRect(24,20,24,24);
+    check(at(36,32)[3]>=127&&at(36,32)[3]<=128&&at(22,32)[3]>0&&at(22,32)[0]===255,
+        "blur uses premultiplied color/alpha without dark color fringes");
+    const tile=document.createElement("canvas");tile.width=24;tile.height=24;
+    tile.getContext("2d").fillStyle="red";tile.getContext("2d").fillRect(0,0,24,24);
+    f.reset();f.filter="blur(2px)";f.drawImage(tile,24,20);
+    same([...f.getImageData(0,0,96,64).data],reference,"drawImage uses the same true filter");
+    f.reset();f.filter="blur(2px)";f.fillStyle=f.createPattern(tile,"repeat");f.fillRect(24,20,24,24);
+    same([...f.getImageData(0,0,96,64).data],reference,"pattern paint uses the same filter");
+    f.reset();f.filter="blur(2px)";f.strokeStyle="red";f.lineWidth=2;f.strokeRect(24,20,24,24);
+    check(at(21,32)[3]>0&&at(36,32)[3]===0,"stroke geometry is blurred without filling its interior");
+    f.reset();f.fillStyle="red";f.fillRect(0,0,96,64);f.filter="blur(2px)";
+    f.globalCompositeOperation="destination-in";f.fillRect(24,20,24,24);
+    check(at(22,32)[3]>0&&at(24,32)[3]<220&&at(0,0)[3]===0,
+        "filter precedes destination-in and retains unbounded composite clearing");
+    f.reset();f.save();f.beginPath();f.rect(24,0,72,64);f.clip();
+    f.filter="blur(2px)";f.drawImage(tile,24,20);f.restore();
+    check(at(23,32)[3]===0&&at(24,32)[3]>0,"final clip remains a hard boundary after blur");
+    f.reset();f.font="bold 24px sans-serif";f.fillStyle="red";f.fillText("M",30,40);
+    const sharp=[...f.getImageData(0,0,96,64).data];
+    f.reset();f.font="bold 24px sans-serif";f.fillStyle="red";f.filter="blur(2px)";f.fillText("M",30,40);
+    const soft=[...f.getImageData(0,0,96,64).data];
+    check(soft.some((v,i)=>i%4===3&&v>0&&sharp[i]===0),"text outlines are filtered too");
+    f.shadowColor="blue";f.shadowOffsetX=12;f.fillRect(20,20,4,4);
+    check(at(33,22)[2]>0,"filter composes source and existing shadow");
+    f.putImageData(new ImageData(new Uint8ClampedArray([0,255,0,255]),1,1),0,0);
+    same(at(0,0),[0,255,0,255],"putImageData ignores blur");
+    f.clearRect(0,0,96,64);same(at(0,0),[0,0,0,0],"clearRect ignores blur");
+    filtered.width=96;check(f.filter==="none","dimension reset clears filter and saved stack");
+}
 canvas.width=16;
 const data=new ImageData(new Uint8ClampedArray([120,60,30,128,255,255,255,255,0,0,255,255,0,255,0,255]),2,2);
 check(data.data instanceof Uint8ClampedArray&&data.colorSpace==="srgb","ImageData standard RGBA8 shape");

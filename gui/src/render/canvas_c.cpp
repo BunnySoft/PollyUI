@@ -79,6 +79,7 @@ struct PuCanvas {
     bool smooth = true;
     bool opaque = false;
     double alpha = 1;
+    double blur = 0;
 };
 struct CanvasHold {
     PuCanvas *canvas;
@@ -522,17 +523,42 @@ static bool path_op(SkPath &p, const char *op, const double *a, size_t n)
     }
     return false;
 }
-static void draw(PuCanvas *c, const SkPath &path, bool stroke)
+static bool begin_draw(PuCanvas *c, SkPaint &paint)
+{
+    auto canvas = c->surface->getCanvas();
+    SkPaint layer;
+    layer.setBlendMode(paint.getBlendMode_or(SkBlendMode::kSrcOver));
+    if (c->blur > 0) {
+        auto filter = SkImageFilters::Blur(c->blur, c->blur, SkTileMode::kDecal, nullptr);
+        if (!filter)
+            return false;
+        layer.setImageFilter(std::move(filter));
+    }
+    canvas->save();
+    if (c->blur > 0) {
+        // Canvas filters use backing pixels, independently of the current transform.
+        canvas->resetMatrix();
+    }
+    canvas->saveLayer(nullptr, &layer);
+    canvas->setMatrix(c->transform);
+    paint.setBlendMode(SkBlendMode::kSrcOver);
+    return true;
+}
+static void end_draw(PuCanvas *c)
+{
+    auto canvas = c->surface->getCanvas();
+    canvas->restore();
+    canvas->restore();
+}
+static bool draw(PuCanvas *c, const SkPath &path, bool stroke)
 {
     if (path.isEmpty())
-        return;
+        return true;
     auto canvas = c->surface->getCanvas();
     SkPaint p = c->paint;
     p.setStyle(stroke ? SkPaint::kStroke_Style : SkPaint::kFill_Style);
-    SkPaint layer;
-    layer.setBlendMode(p.getBlendMode_or(SkBlendMode::kSrcOver));
-    canvas->saveLayer(nullptr, &layer);
-    p.setBlendMode(SkBlendMode::kSrcOver);
+    if (!begin_draw(c, p))
+        return false;
     if (c->shadow[3] > 0 && (c->shadow[4] || c->shadow[5] || c->shadow[6])) {
         SkPaint shadow = p;
         shadow.setImageFilter(SkImageFilters::DropShadowOnly(c->shadow[5], c->shadow[6],
@@ -541,7 +567,8 @@ static void draw(PuCanvas *c, const SkPath &path, bool stroke)
         canvas->drawPath(path, shadow);
     }
     canvas->drawPath(path, p);
-    canvas->restore();
+    end_draw(c);
+    return true;
 }
 int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, const double *a,
                       size_t n, const char *text, size_t text_length, PuCanvasResource *r,
@@ -600,7 +627,9 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
             }
             return 1;
         }
-        if (!strcmp(op, "configure") && n >= 19) {
+        if (!strcmp(op, "configure") && n >= 20) {
+            if (!std::isfinite(a[19]) || a[19] < 0 || a[19] > 128)
+                return -1;
             c->paint = SkPaint();
             c->paint.setAntiAlias(true);
             c->paint.setColor(color(a));
@@ -613,13 +642,14 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
             c->paint.setBlendMode((SkBlendMode)(int)a[9]);
             c->smooth = a[10] != 0;
             memcpy(c->shadow, a + 11, sizeof(c->shadow));
+            c->blur = a[19];
             if (r) {
                 c->paint.setShader(shader(r, c->transform, c->smooth));
                 c->paint.setAlphaf(a[4]);
             }
-            if (n > 19) {
+            if (n > 20) {
                 std::vector<SkScalar> dash;
-                for (size_t i = 19; i < n; ++i)
+                for (size_t i = 20; i < n; ++i)
                     dash.push_back(a[i]);
                 c->paint.setPathEffect(
                     SkDashPathEffect::Make(dash.data(), (int)dash.size(), a[18]));
@@ -699,7 +729,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
                 if (!strcmp(op, "clip"))
                     canvas->clipPath(path, true);
                 else
-                    draw(c, path, !strcmp(op, "stroke"));
+                    return draw(c, path, !strcmp(op, "stroke")) ? 1 : 0;
             }
             return 1;
         }
@@ -716,7 +746,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
                 p.setAntiAlias(true);
                 canvas->drawPath(box, p);
             } else
-                draw(c, box, !strcmp(op, "strokeRect"));
+                return draw(c, box, !strcmp(op, "strokeRect")) ? 1 : 0;
             return 1;
         }
         if (!strcmp(op, "image") && r && r->image && n == 8) {
@@ -724,10 +754,8 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
                 SkPaint p = c->paint;
                 p.setShader(nullptr);
                 p.setAlphaf(c->alpha);
-                SkPaint layer;
-                layer.setBlendMode(p.getBlendMode_or(SkBlendMode::kSrcOver));
-                canvas->saveLayer(nullptr, &layer);
-                p.setBlendMode(SkBlendMode::kSrcOver);
+                if (!begin_draw(c, p))
+                    return 0;
                 if (c->shadow[3] > 0 && (c->shadow[4] || c->shadow[5] || c->shadow[6])) {
                     SkPaint shadow = p;
                     shadow.setImageFilter(SkImageFilters::DropShadowOnly(
@@ -743,7 +771,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
                     SkRect::MakeXYWH(a[4], a[5], a[6], a[7]),
                     SkSamplingOptions(c->smooth ? SkFilterMode::kLinear : SkFilterMode::kNearest),
                     &p, SkCanvas::kStrict_SrcRectConstraint);
-                canvas->restore();
+                end_draw(c);
             }
             return 1;
         }
@@ -795,7 +823,7 @@ int pu_canvas_command(PuCanvas *c, PuCanvasResource *target, const char *op, con
             }
             glyphs.offset(x, y);
             if (canvas)
-                draw(c, glyphs, a[7] != 0);
+                return draw(c, glyphs, a[7] != 0) ? 1 : 0;
             return 1;
         }
         return -1;
