@@ -234,6 +234,34 @@ to reveal the full command. Header/footer rectangles do not move; reverse wheel
 clamps at zero and repeated focus does not jitter. This is actual component
 layout/input evidence, not a native compositor output resize or XP fidelity score.
 
+### Fluent taskbar and Start surface coverage
+
+The bounded E22.22 correction follows the existing Modern/Fluent design and
+catalog, not a certified Windows 11 24H2 raw screenshot. Palette, fonts, theme
+schema, caption painting and application/backend actions are unchanged.
+
+| Surface | Verified contract / correction | Remaining boundary |
+|---|---|---|
+| Icon task states and focus | A Fluent-only task variant supplies both initial and event paint: active uses `button.from`, inactive is transparent, hover uses `colors.selection`, held uses `button.to`, with transparent gradients. Leave/cancel/blur restore the original face. Existing stretch focus detail is retained alongside the 16px/6px running markers. Clock reconciliation preserves hover/held/focus for the same immutable theme; replacement theme identity clears stale interaction state | These are existing theme design colors, not measured Windows state-color errors |
+| Centered group and notification area | Measure actual fixed slot, task and notification-area widths after layout; keep the full group centered when it fits before the tray, otherwise retreat into the available interval. The 800px default remains at x280/width240. At 360px it is x12/width226; at 260px x12/width126. Notification/clock remain outside it. The task strip retains at least one configured task width; when fixed actions also overflow, the group independently scrolls and local focus reveals the inner viewport. Inner task wheel does not scroll the outer group | A tray consuming almost the entire output can leave less than one full configured slot; this is a physical layout boundary, not a claim of complete fit at arbitrary width/item count |
+| Nested Start app and Pin focus | Chain the existing command focus handler and use unscrolled offsets plus `verticalScrollMetrics` clamp along the known nested grid/list path. At 640px/available660 the last 80px app scrolls 46px and its 20px Pin scrolls 68px, fully visible and independently invoked once by pointer and Enter. Repeated focus does not jitter; reverse wheel clamps to zero. Search/footer rectangles and disabled activation guards remain unchanged | At 360px/available260 the existing preferred-height calculation yields a 180px menu, a zero-height body row with a 16px list, and footer y144..208 beyond root180. App/Pin focus clamps to 778/860 and Enter works, but pointer/wheel hit testing reaches the menu root rather than the list; footer fit is **not fixed**. Short-height chrome/layout degradation is a separate confirmed defect, not merely the impossibility of fitting an 80px app in 16px |
+
+`tests/fluent-shell-surface-render.mjs` exercises actual views and host input in
+an unscaled 800x700 raster fixture, with local 800/360/260px taskbar layouts,
+an existing tray item, and legal unequal launcher/task widths (60/52px).
+The local placement uses `L = panelPaddingLeft`, `R = actualTrayLeft - panelGap`,
+and `width = min(desiredGroupWidth, R - L)`; its left edge clamps the preferred
+screen-centered position into that interval. Owner-state observation and bounded
+post-layout frames remeasure geometry; no polling or native appearance branch is
+added. The complete default 800x48 taskbar pixels are unchanged before interaction.
+This evidence is component rendering/input, not native output resize, Windows
+pixel certification, or full low-height accessibility closure.
+
+True recommendation/account history and app-grouping semantics still need
+backend/design decisions. Full-window corners/shadows and Mica/Acrylic remain
+separate mechanisms; solid/gradient painting is not represented as those effects.
+E22.22 remains partial.
+
 Classic follows the supplied Windows Server 2003 references: flat faces and real
 pixel bevel layers, not simulated blur or a modern gradient. Standard WinForms
 controls in that system theme share this appearance; WinForms is not a separate
@@ -331,6 +359,24 @@ window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
 `dockSurfaceWidth`/`applicationMenuPlacement`/`applicationMenuHeight` functions are the Shell consumer
 seam; they do not create surfaces or change state by themselves.
+
+The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
+the natural width of all three styled Docks. With windows, three fixed actions,
+a separator and a window strip require four root gaps plus `count - 1` inner
+gaps, not `count + 2` total. At two windows, default Tiger/Lion/Big Sur widths
+intentionally change from 303/317/329 to 305/319/331px and recenter accordingly.
+Big Sur with a legal 12px gap changes from 369 to 381px, exposing the previously
+clipped final icon and removing unnecessary 12px scrolling. Palette, height,
+slots, rim and indicators are unchanged. Earlier palette/triangle captures and
+their hashes describe those checkpoints, not the new centered geometry.
+Actual 400x140 GUI checks cover natural widths, zero gaps, empty Docks, exact
+clamp boundaries, running/minimized truth and held reconstruction. The default
+320px available-width window strip retains scroll/click/focus access to the
+last window while the three fixed commands stay put. Node guards derive
+natural widths from actual Dock child styles and retain the generic/non-Dock
+helper branch. This is a local layout correction, not a macOS pixel-fidelity
+score; icon-fit validation, extreme-width responsive policy, materials and
+desktop/menu-bar reference gaps remain separate work.
 
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a

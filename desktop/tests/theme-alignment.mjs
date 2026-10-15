@@ -44,7 +44,7 @@ for (const theme of catalog.themes) {
     strip.props.onWheel({ currentTarget: viewport, deltaX: -1000, deltaY: 0, preventDefault() {} });
     assert.equal(viewport.scrollLeft, 0);
     assert.equal(dockSurfaceWidth(theme, 1, 1280), (theme.layout.dockPadding * 2) +
-      3 * theme.layout.dockTileWidth + 13 + theme.layout.dockWindowWidth + 3 * theme.layout.dockGap);
+      3 * theme.layout.dockTileWidth + 13 + theme.layout.dockWindowWidth + 4 * theme.layout.dockGap);
     assert.equal(dockSurfaceWidth(theme, 100, 320), 320 - theme.layout.screenInset * 2);
   } else {
     find(panel, 'shell-window-1').props.onKeydown({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
@@ -57,6 +57,73 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+for (const theme of catalog.themes) {
+  for (const count of [0, 1, 2]) {
+    const generic = { ...theme, panel: { ...theme.panel, surfaceStyle: 'generic' } };
+    assert.equal(dockSurfaceWidth(generic, count, 10000),
+      theme.layout.dockBaseWidth + count * (theme.layout.dockWindowWidth + theme.layout.windowGap));
+    if (!['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle)) {
+      assert.equal(dockSurfaceWidth(theme, count, 10000), dockSurfaceWidth(generic, count, 10000));
+      continue;
+    }
+    for (const gap of [0, theme.layout.dockGap, 12]) {
+      const custom = { ...theme, layout: { ...theme.layout, dockGap: gap } };
+      const windows = Array.from({ length: count }, (_, i) => ({ id: i + 1 }));
+      const dock = dockView(custom, action, action, action, windows, action, action);
+      const children = dock.children.filter(child => child.props.style.position !== 'absolute');
+      const naturalWidth = dock.props.style.paddingLeft + dock.props.style.paddingRight +
+        children.reduce((total, child) => {
+          const style = child.props.style;
+          const width = child.props.id === 'shell-dock-windows' ?
+            child.children.reduce((sum, slot) => sum + slot.props.style.width, 0) +
+              Math.max(0, child.children.length - 1) * style.gap : style.width;
+          return total + width + (style.marginLeft || 0) + (style.marginRight || 0);
+        }, 0) + Math.max(0, children.length - 1) * dock.props.style.gap;
+      const exactAvailable = naturalWidth + 2 * custom.layout.screenInset;
+      assert.equal(dockSurfaceWidth(custom, count, 10000), naturalWidth);
+      assert.equal(dockSurfaceWidth(custom, count, exactAvailable), naturalWidth);
+      assert.equal(dockSurfaceWidth(custom, count, exactAvailable - 1), naturalWidth - 1);
+      assert.equal(dockSurfaceWidth(custom, count, 100), 100 - 2 * custom.layout.screenInset);
+    }
+  }
+}
+{
+  const theme = catalog.themes.find(theme => theme.id === 'modern');
+  const panel = panelView(theme, '10:31', action, '', action,
+    [{ id: 1, title: 'Selected', active: true }, { id: 2, title: 'Running', active: false }], action, action);
+  const task = find(panel, 'shell-window-2'), focus = { style: {} };
+  const node = { style: { ...task.props.style }, querySelector: selector => selector === '.theme-focus-ring' ? focus : null };
+  assert.equal(node.style.backgroundColor, 'transparent');
+  task.props.onMouseenter({ currentTarget: node });
+  assert.equal(node.style.backgroundColor, theme.colors.selection);
+  task.props.onUpdate(node);
+  assert.equal(node.style.backgroundColor, theme.colors.selection);
+  task.props.onMousedown({ currentTarget: node, button: 0 });
+  assert.equal(node.style.backgroundColor, theme.button.to);
+  task.props.onMousecancel({ currentTarget: node });
+  assert.equal(node.style.backgroundColor, 'transparent');
+  task.props.onFocus({ currentTarget: node });
+  assert.equal(focus.style.opacity, '1');
+  task.props.onBlur({ currentTarget: node });
+  assert.equal(focus.style.opacity, '0');
+  assert.equal(surfacePaint(theme, { variant: 'task', selected: true }).backgroundColor, theme.button.from);
+  assert.equal(find(panel, 'shell-window-list').props.style.minWidth, theme.layout.windowButtonWidth);
+  assert.equal(find(panel, 'shell-centered-tasks').props.style.overflow, 'scroll');
+  const entries = [{ id: 'last', name: 'Last' }];
+  const menu = applicationsView(theme, entries, '', action, action, action, action, '', action,
+    { has: () => false, add: action });
+  const viewport = { id: 'shell-start-apps', offsetTop: 124, offsetHeight: 16, scrollTop: 0,
+    childNodes: [{ offsetTop: 132, offsetHeight: 102 }, { offsetTop: 242, offsetHeight: 102 }] };
+  const nested = { parentNode: viewport };
+  const item = { style: {}, querySelector: () => null, parentNode: nested, offsetTop: 242, offsetHeight: 80 };
+  find(menu, 'shell-app-last').props.onFocus({ currentTarget: item });
+  assert.equal(viewport.scrollTop, 118);
+  find(menu, 'shell-app-last').props.onFocus({ currentTarget: item });
+  assert.equal(viewport.scrollTop, 118);
+  item.offsetTop = 324; item.offsetHeight = 20;
+  find(menu, 'shell-app-pin-last').props.onFocus({ currentTarget: item });
+  assert.equal(viewport.scrollTop, 200);
+}
 {
   const xp = catalog.themes.find(theme => theme.id === 'xp');
   const custom = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
