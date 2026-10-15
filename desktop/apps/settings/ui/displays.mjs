@@ -7,7 +7,8 @@ const labelFor = theme => (value, color, size = 12) => h('view', { style: { colo
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
 export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null) {
   const label = labelFor(theme);
-  const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width);
+  const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width,
+    name === 'scale' ? repaint : null);
   return h('view', { id: 'shell-displays', style: {
     width: '100%', height: '100%', minHeight: 0, padding: 8, gap: 16, backgroundColor: theme.colors.body,
   } },
@@ -31,10 +32,15 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
           const mode = head.modes[(found + 1) % head.modes.length];
           for (const name of ['width', 'height', 'refresh']) setDisplayField(inputs, head, name, mode[name]);
         }) : null),
-      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Scale', theme.colors.text, 11), field(head, 'scale', 62),
+      h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Scale', theme.colors.text, 11),
+        [1, 1.5, 2].map(scale => button('shell-output-' + head.id + '-scale-' + scale * 100, scale * 100 + '%', theme,
+          () => { setDisplayField(inputs, head, 'scale', scale); repaint(); },
+          Number(inputs.get('shell-output-' + head.id + '-scale')?.value ?? head.scale) === scale)),
+        label('Custom', theme.colors.text, 11), field(head, 'scale', 62),
         button('shell-output-' + head.id + '-scale-up', '+', theme, () => {
           const value = Number(inputs.get('shell-output-' + head.id + '-scale')?.value);
           setDisplayField(inputs, head, 'scale', Math.min(4, (Number.isFinite(value) ? value : head.scale) + 0.25));
+          repaint();
         }),
         button('shell-output-' + head.id + '-rotate', String((head.transform & 3) * 90) + ' deg', theme,
           () => { head.transform = (head.transform & 4) | ((head.transform + 1) & 3); repaint(); })),

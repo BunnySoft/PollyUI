@@ -3,6 +3,7 @@ import { DESKTOP_THEMES } from './desktop/shared/ui/themes.mjs';
 import { parseThemeFile } from './desktop/shared/ui/theme-schema.mjs';
 import { panelView, applicationsView } from './desktop/shell/views.mjs';
 import { applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
+import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 
 const check = (value, message) => { if (!value) throw new Error(message); };
 const get = id => document.getElementById(id);
@@ -203,9 +204,7 @@ export async function checkFluentShellSurface(directory) {
       save('grid-focus-' + node.id + '-' + width);
       host.key('Enter', 'keydown', { text: false }); settle();
       check(count() === before + 1, 'Revealed grid keyboard action invokes once');
-      if (height === 660) {
-        click(node); check(count() === before + 2, 'Fully revealed grid pointer invokes once');
-      }
+      click(node); check(count() === before + 2, 'Fully revealed grid pointer invokes once');
     }
     check(get('shell-app-app1').tabIndex === -1 && get('shell-app-app1').getAttribute('aria-disabled') === 'true',
       'Unavailable grid app stays disabled');
@@ -220,20 +219,212 @@ export async function checkFluentShellSurface(directory) {
       check(Number(list.scrollTop) === 0, 'Grid wheel reverse clamps at start');
       host.scroll(lx + lw / 2, ly + lh / 2, 10000); settle();
       check(Number(list.scrollTop) > 0, 'Grid wheel can still reach final nested row');
-    } else {
-      check(list.parentNode.parentNode.offsetHeight === 0, 'Record existing physically collapsed grid row');
-      console.log('FLUENT_LIMIT: 180px menu has a 16px list in a collapsed row; focus scroll is bounded, not full pointer/wheel/footer fit');
-    }
+    } else check(list.parentNode.parentNode.offsetHeight >= 118, 'Low grid row fits a full existing app/Pin card');
     get('shell-app-search').focus(); host.text('files'); settle();
     check(query === 'files', 'Search still accepts actual text');
     check(JSON.stringify(fixed) === JSON.stringify([rect(get('shell-app-search')), rect(get('shell-start-footer'))]),
-      'Grid scroll never moves Search/footer');
+      'Grid scroll preserves raw Search/footer layout');
     console.log('FLUENT_GRID ' + JSON.stringify({ width, height, viewport: rect(list),
       app: rect(last), pin: rect(pin), scrollTop: list.scrollTop, fixed }));
     save('grid-' + width);
     query = '';
   }
+
   console.log('PASS: actual Fluent task states/focus/reconcile, no tray overlap, narrow/custom slots and nested grid focus');
+}
+
+export async function checkFluentStartFallback(directory) {
+  const theme = DESKTOP_THEMES.find(item => item.id === 'modern');
+  const entries = Array.from({ length: 24 }, (_, i) => ({
+    id: 'app' + i, name: 'App ' + i, ...(i === 1 ? { unavailable: 'Unavailable' } : {}),
+  }));
+  const launches = [], pins = [];
+  let refreshes = 0, closes = 0, logouts = 0;
+  const state = { width: 640, height: 580, query: '', theme, pin: true };
+  function mount(flush = true) {
+    render(h('view', { style: { width: '100%', height: '100%', backgroundColor: '#608090' } },
+      h('view', { style: { width: state.width, height: state.height } },
+        applicationsView(state.theme, entries, state.query, value => { state.query = value; mount(); },
+          id => launches.push(id), () => refreshes++, () => closes++, '', () => logouts++,
+          state.pin ? { has: () => false, add: id => pins.push(id), remove: noop } : null))), document.body);
+    if (flush) settle();
+  }
+  const stable = async () => { await delay(); await delay(); settle(); };
+  function clip(node) {
+    let [x, y, width, height] = visibleBox(node), right = x + width, bottom = y + height;
+    for (let parent = node.parentNode; parent; parent = parent.parentNode) {
+      const [px, py, pw, ph] = visibleBox(parent);
+      x = Math.max(x, px); y = Math.max(y, py); right = Math.min(right, px + pw); bottom = Math.min(bottom, py + ph);
+    }
+    return [x, y, Math.max(0, right - x), Math.max(0, bottom - y)];
+  }
+  const clippedPoint = node => {
+    const [x, y, width, height] = clip(node);
+    check(width > 0 && height > 0, node.id + ' has an actual exposed hitbox');
+    return [x + width / 2, y + height / 2];
+  };
+  const click = node => {
+    host.mouse('mousemove', ...clippedPoint(node)); host.mouse('mousedown', ...clippedPoint(node));
+    host.mouse('mouseup', ...clippedPoint(node)); host.mouse('click', ...clippedPoint(node)); settle();
+  };
+  const save = name => check(host.save(directory + '\\start-' + name + '.png'), 'Save actual Start ' + name);
+  const focus = node => {
+    node.blur(); node.focus(); settle();
+    const visible = clip(node), raw = rect(node), root = get('shell-applications');
+    check(visible[3] === Math.min(raw[3], root.offsetHeight), node.id + ' gets maximum actual visible height');
+    const before = [root.scrollTop, get('shell-start-apps').scrollTop];
+    node.blur(); node.focus(); settle();
+    check(JSON.stringify(before) === JSON.stringify([root.scrollTop, get('shell-start-apps').scrollTop]),
+      'Repeated focus does not jitter either scroll layer');
+  };
+  mount(); await stable();
+  save('normal-640');
+  check(Number(get('shell-applications').scrollTop) === 0 &&
+    get('shell-start-apps').offsetHeight === 372 && get('shell-start-footer').offsetTop === 516,
+    'Normal menu retains existing geometry and outer zero scroll');
+  const retained = [get('shell-applications'), get('shell-start-apps'), get('shell-app-search'), get('shell-app-app23')];
+  state.width = 360; state.height = 180; mount(); await stable();
+  const root = get('shell-applications'), list = get('shell-start-apps');
+  check(get('shell-app-search') === retained[2] && get('shell-app-app23') === retained[3],
+    'Height fallback never rebuilds existing controls');
+  check(root.offsetHeight === 180 && list.parentNode.parentNode.offsetHeight === 118 && list.offsetHeight === 118,
+    'Same 180px root contains a full 80+2+20+16 app/Pin body instead of a collapsed row');
+  save('low-initial-360');
+  const app = get('shell-app-app23'), pin = get('shell-app-pin-app23');
+  for (const [node, calls] of [[app, launches], [pin, pins]]) {
+    focus(node);
+    const before = calls.length; click(node);
+    check(calls.length === before + 1 && calls.at(-1) === 'app23', 'Revealed last app/Pin actual pointer invokes correct ID once');
+    node.focus(); host.key('Enter', 'keydown', { text: false }); settle();
+    check(calls.length === before + 2 && calls.at(-1) === 'app23', 'Revealed last app/Pin Enter invokes correct ID once');
+    save('low-focused-' + node.id);
+  }
+  for (const [id, count] of [['shell-app-refresh', () => refreshes], ['shell-app-close', () => closes],
+    ['shell-app-logout', () => logouts]]) {
+    const node = get(id), before = count();
+    focus(node); click(node);
+    check(count() === before + 1, id + ' actual pointer invokes once');
+    node.focus(); host.key('Enter', 'keydown', { text: false }); settle();
+    check(count() === before + 2, id + ' Enter invokes once');
+  }
+  focus(get('shell-app-search'));
+  const search = get('shell-app-search');
+  click(search); host.text('App 23'); settle(); await stable();
+  check(state.query === 'App 23' && search === get('shell-app-search') &&
+    list.childNodes.length === 1, 'Actual Search filters without rebuilding root/list/search');
+  check(Number(list.scrollTop) === 0, 'Filtering clamps retained inner scroll before pointer input');
+  const filteredBefore = launches.length; click(get('shell-app-app23'));
+  check(launches.length === filteredBefore + 1 && launches.at(-1) === 'app23',
+    'Filtered retained command invokes new entry, never stale callback');
+  state.query = ''; mount(); await stable();
+  focus(get('shell-app-pin-app0'));
+  host.key('Tab', 'keydown', { text: false }); settle();
+  check(document.activeElement === get('shell-app-pin-app1'), 'Native Tab skips unavailable app but retains its real Pin action');
+  const disabledBefore = launches.length;
+  get('shell-app-app1').focus(); host.key('Enter', 'keydown', { text: false }); settle();
+  check(launches.length === disabledBefore, 'Disabled guard is preserved');
+  focus(get('shell-app-search'));
+  list.scrollTop = 0; root.scrollTop = 0; settle();
+  const wheel = delta => { host.scroll(...clippedPoint(list), delta); settle(); };
+  wheel(40);
+  check(Number(list.scrollTop) === 40 && Number(root.scrollTop) === 0, 'Inner movable wheel consumes event, not both layers');
+  wheel(10000);
+  check(Number(list.scrollTop) === verticalScrollMetrics(list).maximum && Number(root.scrollTop) === 0,
+    'Inner consumes overshoot to its clamp without moving root');
+  wheel(12);
+  check(Number(root.scrollTop) === 12 && Number(list.scrollTop) === verticalScrollMetrics(list).maximum,
+    'Only at inner end does wheel chain into outer menu');
+  wheel(-10000);
+  check(Number(list.scrollTop) === 0 && Number(root.scrollTop) === 12, 'Reverse first consumes inner, leaving root unchanged');
+  wheel(-10000);
+  check(Number(list.scrollTop) === 0 && Number(root.scrollTop) === 0, 'Reverse at inner start chains and clamps root to zero');
+  wheel(10000); wheel(10000);
+  check(Number(root.scrollTop) === verticalScrollMetrics(root).maximum, 'Outer clamp reveals full footer');
+  const footer = get('shell-start-footer');
+  check(clip(footer)[3] === footer.offsetHeight, 'Entire existing footer can be exposed in low menu');
+  save('low-footer-360');
+  const geometry = { root: rect(root), list: rect(list), body: rect(list.parentNode.parentNode),
+    footer: rect(footer), outer: root.scrollTop, inner: list.scrollTop };
+  const preserved = [root, list, get('shell-app-search'), get('shell-app-app23')];
+  state.theme = { ...theme, colors: { ...theme.colors, focus: '#804020' } }; mount(); await stable();
+  check(root === get('shell-applications') && list === get('shell-start-apps') &&
+    preserved[2] === get('shell-app-search') && preserved[3] === get('shell-app-app23'),
+    'Retheme retains DOM, business controls and scroll structure');
+  check(root.scrollTop === geometry.outer && list.scrollTop === geometry.inner,
+    'Unchanged layout retheme does not reset intentional wheel position to focused Search');
+  focus(get('shell-app-app23'));
+  state.pin = false; mount(); await stable();
+  check(list.offsetHeight === 96, 'Without Pin the minimum uses 80px app plus actual list padding only');
+  focus(get('shell-app-app23')); click(get('shell-app-app23'));
+  state.pin = true;
+  state.theme = parseThemeFile(JSON.stringify({ schemaVersion: 1,
+    theme: { ...theme, layout: { ...theme.layout, menuFooterHeight: 96 } } }));
+  mount(); await stable();
+  check(list.offsetHeight === 118 && get('shell-start-footer').offsetHeight === 96,
+    'Legal footer override participates in natural overflow without changing app/Pin minimum');
+  focus(get('shell-app-logout')); click(get('shell-app-logout'));
+  check(logouts === 3, 'Legal taller footer retains reachable real logout callback');
+  focus(get('shell-app-app23'));
+  state.theme = theme;
+  state.pin = true; state.height = 40; mount(); await stable();
+  focus(get('shell-app-app23'));
+  check(clip(get('shell-app-app23'))[3] === 40 && get('shell-app-app23').offsetHeight === 80,
+    'Root smaller than app exposes maximum 40px, never falsely promises full fit or shrinks app');
+  click(get('shell-app-app23'));
+  save('physical-40px-limit');
+  state.width = 640; state.height = 580; state.theme = theme; mount(); await stable();
+  check(Number(root.scrollTop) === 0 && list.offsetHeight === 372 && get('shell-start-footer').offsetTop === 516,
+    'Returning to normal clamps outer scroll without another focus event');
+  check(clip(get('shell-app-app23'))[3] === 80, 'Still-focused app is fully revealed after retained resize');
+  const request = globalThis.requestAnimationFrame, cancel = globalThis.cancelAnimationFrame;
+  const pending = new Set();
+  let frames = 0, cancellations = 0;
+  globalThis.requestAnimationFrame = callback => {
+    const id = request(time => { pending.delete(id); frames++; callback(time); });
+    pending.add(id); return id;
+  };
+  globalThis.cancelAnimationFrame = id => { if (pending.delete(id)) cancellations++; cancel(id); };
+  try {
+    mount(false); mount(false); settle(); await stable();
+    check(frames === 2 && pending.size === 0,
+      'Retained updates coalesce into exactly two layout frames: ' + JSON.stringify({ frames, pending: pending.size }));
+    const settled = frames; await stable();
+    check(frames === settled, 'Start layout callbacks do not poll');
+    mount(false);
+    render(h('view', { style: { width: '100%', height: '100%', backgroundColor: '#608090' } },
+      h('view', { style: { width: state.width, height: state.height } })), document.body);
+    settle();
+    check(cancellations === 1 && pending.size === 0, 'Leaving Start cancels pending layout frame');
+    await stable(); check(frames === settled, 'No removed Start layout callback executes');
+  } finally { globalThis.requestAnimationFrame = request; globalThis.cancelAnimationFrame = cancel; }
+  const initialFocus = [];
+  for (const [height, id] of [[40, 'shell-app-search'], [40, 'shell-app-app23'], [580, 'shell-app-search']]) {
+    render(h('view'), document.body);
+    state.width = 360; state.height = height;
+    mount(false);
+    const control = get(id), menu = get('shell-applications');
+    control.focus();
+    settle(); await stable();
+    const exposed = clip(control)[3];
+    check(exposed === Math.min(height, control.offsetHeight), 'Initial prelayout focus reveals ' + id);
+    if (id === 'shell-app-search')
+      check(Number(menu.scrollTop) === (height === 40 ? 16 : 0),
+        'Initial Search focus scrolls only when required after first layout');
+    initialFocus.push({ height, id, exposed, outer: menu.scrollTop, inner: get('shell-start-apps').scrollTop });
+  }
+  render(h('view'), document.body);
+  mount(false);
+  const reused = get('shell-applications');
+  render(h('view', { style: { width: '100%', height: '100%', backgroundColor: '#608090' } },
+    h('view', { style: { width: state.width, height: state.height } },
+      h('view', { id: 'replacement-scroll', style: { overflow: 'scroll', height: 100 } }))), document.body);
+  check(get('replacement-scroll') === reused, 'Pending Start root is reused as another scroll view');
+  settle(); await stable();
+  check(!get('shell-start-apps'), 'Delayed Start callback safely ignores replacement without list');
+  console.log('FLUENT_START_INITIAL_FOCUS ' + JSON.stringify(initialFocus));
+  console.log('FLUENT_START_FALLBACK ' + JSON.stringify({ ...geometry, launches, pins, refreshes, closes, logouts,
+    layoutFrames: frames, leaveCancellations: cancellations }));
+  console.log('PASS: actual low-height Start root scroll, maximum visibility, pointer/Enter, Search/Tab/disabled, wheel chaining, stable DOM and normal geometry');
 }
 
 export async function checkNativeFluentPanel(directory) {

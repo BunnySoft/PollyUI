@@ -11,6 +11,7 @@ const { parseSettingsNetwork, parseSettingsNetworkAction, parseSettingsNetworkAu
   await import('./desktop/client/settings-network-contract.mjs');
 const { settingsView } = await import('./desktop/shell/views.mjs');
 const { createSettingsApp } = await import('./desktop/apps/settings/app.mjs');
+const { createDisplayPage } = await import('./desktop/apps/settings/ui/display-page.mjs');
 const { applicationHost, deliver } = await import('./desktop/tests/application-host.mjs');
 const { createSettingsDomains } = await import('./desktop/shell/settings-domains.mjs');
 const { createAudioPolicy } = await import('./desktop/shell/audio-policy.mjs');
@@ -208,6 +209,112 @@ test('Displays edits live in the independent Settings document; Apply preserves 
   assert.match(f.document.body.textContent, /9 seconds/);
   assert.equal(f.host.windows.length, 1);
   assert.ok(!f.host.windows.some(window => window.title === 'Desktop control panel'));
+});
+test('Displays 100/150/200 percent shortcuts edit only the draft and Apply sends exact output scale factors', async t => {
+  for (const [percent, type, key] of [[100, 'click', ''], [150, 'keydown', 'Enter'], [200, 'keydown', ' ']]) {
+    await t.test(percent + '%', async t => {
+      const f = domainFixture(t); await tick();
+      const find = id => f.document.getElementById(id);
+      await deliver(find('shell-output-1-scale-' + percent), type, { key });
+      assert.equal(find('shell-output-1-scale').textContent, String(percent / 100));
+      for (const preset of [100, 150, 200])
+        assert.equal(find('shell-output-1-scale-' + preset).getAttribute('aria-pressed'), String(preset === percent));
+      assert.equal(f.calls.some(item => item[0] === 'display-apply'), false);
+      assert.equal(f.output.heads[0].scale, 1, 'selection does not configure the live output');
+      await deliver(find('shell-output-apply')); await tick();
+      assert.equal(f.calls.find(item => item[0] === 'display-apply')[1].heads[0].scale, percent / 100);
+      assert.equal(f.output.pendingToken, 7); assert.equal(f.saved().display, null);
+      assert.equal(find('shell-output-1-scale-' + percent), null);
+      assert.match(f.document.body.textContent, /trusted confirmation.*15 seconds/);
+      assert.ok(!f.calls.some(item => /Keep|Confirm|Revert/.test(item[1])));
+      assert.deepEqual(f.errors, []);
+    });
+  }
+});
+test('Displays custom scale, typed edits and increments keep per-head preset truth without replacing inputs or listeners', async t => {
+  const f = domainFixture(t); await tick();
+  f.output.heads[0].scale = 1.25;
+  f.output.heads.push({ ...f.output.heads[0], id: 2, name: 'DP-2', serialNumber: 'two', x: 1280, scale: 2 });
+  f.output.serial++; await f.app.pages.refresh();
+  const find = id => f.document.getElementById(id), input = find('shell-output-1-scale');
+  const selected = (id, percent) => find('shell-output-' + id + '-scale-' + percent).getAttribute('aria-pressed');
+  const firstSelection = percent => [100, 150, 200].forEach(preset =>
+    assert.equal(selected(1, preset), String(preset === percent)));
+  firstSelection(null); assert.equal(selected(2, 200), 'true');
+  await deliver(find('shell-output-1-scale-up')); firstSelection(150);
+  await deliver(find('shell-output-1-scale-up')); firstSelection(null);
+  await deliver(find('shell-output-1-scale-up')); firstSelection(200);
+  const type = async value => {
+    input.focus(); await deliver(input, 'keydown', { key: 'a', ctrlKey: true });
+    await deliver(input, 'textinput', { data: value });
+  };
+  await type('1.25'); firstSelection(null);
+  await type('1.5'); firstSelection(150);
+  await deliver(input, 'keydown', { key: 'a', ctrlKey: true });
+  const caret = input.childNodes[2].style.left;
+  const selection = JSON.stringify(input.firstChild.childNodes.map(node => node.style));
+  for (let i = 0; i < 3; i++) await f.app.controller.refresh();
+  assert.equal(find('shell-output-1-scale'), input);
+  assert.equal(f.document.activeElement, input);
+  assert.equal(input.childNodes[2].style.left, caret);
+  assert.equal(JSON.stringify(input.firstChild.childNodes.map(node => node.style)), selection);
+  assert.equal(input.listeners.get('textinput').length, 2, 'one SDK and one edit notification listener');
+  assert.equal(input.listeners.get('keydown').length, 2);
+  await deliver(input, 'keydown', { key: 'Backspace' }); firstSelection(null);
+  await deliver(find('shell-output-apply')); await tick();
+  assert.match(f.document.body.textContent, /Enter a value for scale/);
+  assert.equal(f.calls.some(item => item[0] === 'display-apply'), false);
+  const previous = globalThis.clipboard;
+  globalThis.clipboard = { readText: () => '2', readPrimaryText: () => '1.5', supportsPrimary: true };
+  t.after(() => { globalThis.clipboard = previous; });
+  await deliver(input, 'keydown', { key: 'v', ctrlKey: true }); firstSelection(200);
+  await deliver(input, 'keydown', { key: 'a', ctrlKey: true });
+  await deliver(input, 'keydown', { key: 'Delete' }); firstSelection(null);
+  await deliver(input, 'auxclick', { button: 1, clientX: 7 }); firstSelection(150);
+  assert.equal(selected(2, 200), 'true'); assert.equal(find('shell-output-2-scale').textContent, '2');
+  await deliver(find('shell-output-2-scale-100'));
+  firstSelection(150); assert.equal(input.textContent, '1.5');
+  assert.equal(selected(2, 100), 'true');
+  await deliver(find('shell-output-2-scale-200'));
+  await deliver(find('shell-output-apply')); await tick();
+  assert.deepEqual(f.calls.find(item => item[0] === 'display-apply')[1].heads.map(head => head.scale), [1.5, 2]);
+});
+test('Displays presets honor busy/disabled state and serial/pending changes retire callbacks and drafts', async t => {
+  const f = domainFixture(t); await tick();
+  const document = f.host.create({}).document, page = createDisplayPage(), commands = [];
+  t.after(() => page.detach());
+  let snapshot = f.domains.displays(), busy = true, paints = 0;
+  const paint = () => { paints++; page.paint(document.body, BUILTIN_THEME_CATALOG.themes[0],
+    snapshot, busy, (...args) => commands.push(args), paint); };
+  const find = id => document.getElementById(id);
+  paint();
+  for (const percent of [100, 150, 200]) {
+    const preset = find('shell-output-1-scale-' + percent);
+    assert.equal(preset.getAttribute('aria-disabled'), 'true'); assert.equal(preset.tabIndex, -1);
+    await deliver(preset); await deliver(preset, 'keydown', { key: 'Enter' }); await deliver(preset, 'keydown', { key: ' ' });
+  }
+  await deliver(find('shell-output-1-scale-up')); await deliver(find('shell-output-apply'));
+  assert.equal(find('shell-output-1-scale').textContent, '1'); assert.deepEqual(commands, []);
+  busy = false; paint();
+  await deliver(find('shell-output-1-scale-150'));
+  const retired = find('shell-output-1-scale');
+  snapshot = { ...snapshot, serial: snapshot.serial + 1 }; paint();
+  assert.notEqual(find('shell-output-1-scale'), retired);
+  assert.equal(find('shell-output-1-scale').textContent, '1');
+  assert.match(document.body.textContent, /old draft was discarded/);
+  const before = paints;
+  await deliver(retired, 'textinput', { data: '2' });
+  assert.equal(paints, before, 'retired input cannot repaint a replacement draft');
+  await deliver(find('shell-output-1-enabled'));
+  assert.equal(find('shell-output-1-scale-100'), null, 'disabled heads have no scale actions');
+  await deliver(find('shell-output-1-enabled'));
+  await deliver(find('shell-output-1-scale-200'));
+  snapshot = { ...snapshot, pendingToken: 9, remainingMs: 15000 }; paint();
+  assert.equal(find('shell-output-1-scale-200'), null);
+  assert.match(document.body.textContent, /trusted confirmation.*15 seconds/);
+  snapshot = { ...snapshot, pendingToken: 0 }; paint();
+  assert.equal(find('shell-output-1-scale').textContent, '1', 'pending confirmation discards the editable draft');
+  assert.deepEqual(commands, []);
 });
 test('Displays hotplug discards draft/inputs and exact identity or all-off changes are refused without mutation', async t => {
   const f = domainFixture(t); await tick();

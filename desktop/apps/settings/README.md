@@ -25,6 +25,15 @@ small trusted safety surfaces below; there is no full Shell settings window.
 | Audio | `GetAudio`, explicit `RefreshAudio`, `AudioAction(s)` fixed volume/mute/default + generation/node ID/revision/instance, `ForgetAudio(s {generation,revision})` | One `audio-policy.mjs` owner subscribes, restores and saves only echoed acknowledgments. Page close does not stop routing or pending persistence; device/service loss and unknown controls stay explicit |
 | Keyboard | `GetKeyboard`, `KeyboardAction(s)` fixed catalog revision/action + record/disable/reset, `CancelShortcutRecording(u token)`, `DetachPage(s page)` | Fixed catalog/config transaction stays with Shell. Record creates only the token/owner-bound trusted prompt, activates capture only on actual focus, and releases on focus loss/lock, Escape, timeout, page detach or actual owned exit |
 
+Displays offers per-monitor **100%**, **150%** and **200%** scale shortcuts
+(factors 1, 1.5 and 2). The Custom field still accepts factors from 0.25 to 4,
+and `+` still increments by 0.25. Shortcuts reflect the current draft field:
+a custom 1.25 does not select 100%, and typing or incrementing updates selection.
+These are output scales for desktop, decorations and application buffers, not
+an app-only font zoom. Choosing a scale only edits that monitor's draft; Apply
+uses the existing native transaction and trusted 15-second Keep/Revert prompt.
+Only Keep saves the confirmed layout; hotplug discards the stale draft.
+
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;
 monotonic execution-order guards prevent an older authorization result or detach
