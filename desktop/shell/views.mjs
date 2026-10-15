@@ -272,9 +272,14 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
         pointerEvents: 'none' } }, desktopIcon(icon, theme.colors.accent, iconSize - 8)),
       running ? style === 'tiger' ? h('view', { 'aria-hidden': 'true', style: {
-        position: 'absolute', bottom: 0, width: indicator, height: 4, pointerEvents: 'none' } },
-        Array.from({ length: 4 }, (_, y) => h('view', { style: { position: 'absolute',
-          top: y, left: 3 - y, width: 1 + y * 2, height: 1, backgroundColor: '#111111', pointerEvents: 'none' } }))) :
+        position: 'absolute', bottom: 1, width: indicator, height: 4, pointerEvents: 'none' } },
+        Array.from({ length: 4 }, (_, y) => {
+          // Integer insets keep even and very narrow indicators symmetric without blurred edges.
+          const inset = Math.min(Math.floor((indicator - 1) / 2), Math.round((3 - y) * (indicator - 1) / 6));
+          return h('view', { style: { position: 'absolute',
+            top: y, left: inset, width: indicator - 2 * inset, height: 1,
+            backgroundColor: '#111111', pointerEvents: 'none' } });
+        })) :
         h('view', { 'aria-hidden': 'true', style: { position: 'absolute', bottom: 1,
           width: indicator, height: style === 'lion' ? 3 : indicator, borderRadius: indicator,
           backgroundColor: style === 'lion' ? '#bde8ff' : '#303030', pointerEvents: 'none',
