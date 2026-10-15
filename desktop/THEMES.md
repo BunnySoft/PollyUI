@@ -114,6 +114,14 @@ window supports `generic`, `luna`, `classic`, `fluent`; button supports `generic
 `fluent`, `tiger`, `lion`, `bigsur`. Absence preserves the generic path.
 Classic paints raised/sunken frame edges and a horizontal caption gradient.
 Fluent paints full-bleed caption button backplates, including close hover/press.
+Its inactive caption glyphs consume `window.inactiveText`; active glyphs retain
+`controlText`, and close hover/held glyphs remain white at either activation
+state. This restores the state/color selection from the removed C painter
+(`5bb181c^`), without changing button geometry or backplates. The actual GUI
+fixture `tests/fluent-caption-inactive.mjs` covers inactive normal/hover/held/
+restore, active-state invariance, custom inactive ink, narrow windows and 1.25
+scaling. This verifies the existing theme contract, not build-tagged Windows
+11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
 Private appearance protocol v3 uses geometry-only numeric schema 4. Previous
@@ -268,6 +276,16 @@ The shipped Classic/Luna value remains 1; a 0.37 override is a separate input
 contract check, not a new OS appearance default. Disabled pointer pixels, retained
 selection/node/focus, and re-enabled single activation are covered. This does
 not certify all SDK widgets, fonts or OS control states.
+
+An additional actual-GUI check found that the current fixed Classic focus-dot
+grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots
+along its four full edges, while 120x22 is complete. This is **not fixed**.
+A paint-only Canvas replacement must also follow child-window host resizing
+without a vnode update. The existing window state event has size/scale data,
+but Document currently exposes no owner-window association. An onUpdate/rAF-only
+replacement would regress that case, so it is not shipped; a minimal read-only
+owner association is a separate mechanism decision. E22.7 remains partial.
+
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;
 the native window suite checks their composition/input. Historical C painter
