@@ -47,10 +47,16 @@ function drawFocus(canvas, state) {
   }
   const width = canvas.offsetWidth, height = canvas.offsetHeight;
   if (width < 1 || height < 1) return;
+  // Measured Canvas rounding can extend beyond its clipping focus-ring view.
+  const bounds = canvas.getBoundingClientRect(), clip = canvas.parentNode.getBoundingClientRect();
+  const left = Math.max(0, clip.x - bounds.x), top = Math.max(0, clip.y - bounds.y);
+  const right = Math.min(width, clip.right - bounds.x), bottom = Math.min(height, clip.bottom - bounds.y);
+  const focusWidth = right - left, focusHeight = bottom - top;
+  if (focusWidth < 1 || focusHeight < 1) return;
   const windowState = state.owner?.deref()?.state;
   const scale = windowState ? windowState.scale : 1;
   if (windowState) state.windowSize = [windowState.width, windowState.height, scale].join(':');
-  const signature = [width, height, scale, state.theme.colors.focus].join(':');
+  const signature = [width, height, left, top, focusWidth, focusHeight, scale, state.theme.colors.focus].join(':');
   if (state.signature === signature) { showFocus(canvas, true); return; }
   const pixelWidth = Math.ceil(width * scale), pixelHeight = Math.ceil(height * scale);
   if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
@@ -68,8 +74,8 @@ function drawFocus(canvas, state) {
   ctx.scale(scale, scale);
   ctx.fillStyle = state.pattern;
   // Each old edge began at its own zero, including the bottom and right edges.
-  for (const [x, y, w, h] of [[0, 0, width, 1], [0, height - 1, width, 1],
-    [0, 0, 1, height], [width - 1, 0, 1, height]]) {
+  for (const [x, y, w, h] of [[left, top, focusWidth, 1], [left, bottom - 1, focusWidth, 1],
+    [left, top, 1, focusHeight], [right - 1, top, 1, focusHeight]]) {
     ctx.save(); ctx.translate(x, y); ctx.fillRect(0, 0, w, h); ctx.restore();
   }
   ctx.restore();

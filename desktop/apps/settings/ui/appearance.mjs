@@ -3,6 +3,7 @@ import { button } from './desktop/shared/ui/button.mjs';
 import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
+const isCommandFocus = node => ['theme-focus-ring', 'luna-focus-ring'].includes(node?.props?.className);
 const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 import { DESKTOP_THEMES } from './desktop/shared/ui/themes.mjs';
 import { wallpaper as previewWallpaper } from './desktop/shared/ui/wallpaper.mjs';
@@ -49,9 +50,12 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
           const tile = desktopCommand('shell-theme-' + preset.id, preset.name, theme, () => select(preset.id),
             { selected, style: { flexDirection: 'column', alignItems: 'stretch', height: 166, padding: 10, gap: 8,
               flexGrow: 1, flexBasis: 168, minWidth: 150, maxWidth: 260 } });
+          // Retain the focus wrapper, but not the command's bevel/gloss, above the custom card content.
+          const focusDetail = tile.children.find(child => child.children?.some(isCommandFocus));
+          if (focusDetail) focusDetail.children = focusDetail.children.filter(isCommandFocus);
           tile.children = [art, desktopText(preset.name, theme.colors.text, 14, { pointerEvents: 'none', fontWeight: 600 }),
             desktopText(selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted, 12,
-              { pointerEvents: 'none' })];
+              { pointerEvents: 'none' }), ...(focusDetail ? [focusDetail] : [])];
           return tile;
         })),
         desktopText('Theme previews are illustrations, not hardware screenshots. Solid surfaces; no simulated blur.',
