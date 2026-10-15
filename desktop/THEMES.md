@@ -239,6 +239,21 @@ menus, true user account/profile art, and Win11 recommendation/account features
 are not reproduced. Existing application launch, desktop shortcut, keyboard and
 logout actions remain connected.
 
+Mac menu-bar commands keep their existing explicit square-corner treatment
+through pointer, focus and reconciliation states. A component-local button
+radius of zero is shared by their factory and state painter; ordinary buttons
+still consume the original theme radius. A menu-only `WeakMap` reuses that derived
+object for each immutable source theme, so clock-driven reconstruction does not
+reset hover/held state on the retained menu node. A new source theme gets a new
+derived object and palette rather than retaining the old input state.
+Previously the default Tiger/Aqua
+surface painter changed the menu-item radius from 0 to 8 after input. Default
+Lion/Big Sur use the generic path and were not affected; their supported
+`button.surfaceStyle: "aqua"` overrides exercised the same defect at radii 3/5.
+`tests/mac-menubar-state-render.mjs` checks those positive/negative paths with
+actual GUI pixels and one-click activation. This restores local override
+consistency, not a claim about authentic OS menu highlight shapes or Mac input.
+
 The three Dock painters have real icon slots, separators and running indicators:
 Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
@@ -276,6 +291,14 @@ The shipped Classic/Luna value remains 1; a 0.37 override is a separate input
 contract check, not a new OS appearance default. Disabled pointer pixels, retained
 selection/node/focus, and re-enabled single activation are covered. This does
 not certify all SDK widgets, fonts or OS control states.
+
+Settings display fields also apply their existing appearance mapping at creation,
+not only when a retained field is repainted. The bounded
+`tests/display-field-render.mjs` check uses the actual Displays view and SDK input:
+first-frame/same-theme border and radius pixels match, while value, caret,
+selection, focus, padding and draft roundtrip survive a retheme. This does not
+change theme tokens, SDK input defaults/focus color or display transaction policy,
+and does not certify other input controls or scrollbars.
 
 An additional actual-GUI check found that the current fixed Classic focus-dot
 grid truncates on wide/tall controls: a 420x80 control misses 47/47/5/5 dots

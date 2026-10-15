@@ -190,6 +190,10 @@ test('Displays edits live in the independent Settings document; Apply preserves 
   const f = domainFixture(t); await tick();
   const find = id => f.document.getElementById(id);
   assert.ok(find('shell-displays')); assert.equal(find('settings-open-managed-displays'), null);
+  const inputTheme = BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'xp');
+  assert.equal(find('shell-output-1-width').style.borderColor, inputTheme.colors.border);
+  assert.equal(Number(find('shell-output-1-width').style.borderRadius), inputTheme.button.radius);
+  assert.equal(Number(find('shell-output-1-width').style.paddingLeft), 7);
   await deliver(find('shell-output-1-scale-up'));
   await deliver(find('shell-output-1-rotate'));
   await deliver(find('shell-output-apply')); await tick();

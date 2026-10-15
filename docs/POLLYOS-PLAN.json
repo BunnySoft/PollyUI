@@ -844,9 +844,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "THEMES.md 明列 SDK caret/selection、global scrollbar、Settings bespoke fields 未认证；Files 已有功能滚动/编辑证据，不等于 Windows/Mac 视觉一致。"
+      "evidence": "Settings displayField 初始appearance接线checkpoint：新建与复用统一调用既有setAppearance对象，首帧不再保留SDK默认border#cbd5e1/radius6。真实Settings displaysView+display-inputs+SDK输入800x600/scale1：Classic初始→same-theme repaint原238px差、Modern原236px差均修为0；现有theme border/radius/font、padding7、selection/caret colors实消费，value1920/selection[0,4]/caret/focus同DOM跨retheme保持，实际输入2560并一次Apply回调draft roundtrip通过。未改主题catalog/SDK API/defaultfocusColor/显示事务。仅此局部已交付；全SDKcaret/selection、global scrollbar及其它bespoke输入仍未认证，Files功能滚动证据不等于OS视觉一致。"
     },
     {
       "id": "theme-dialog-panel-coverage",
@@ -1104,7 +1104,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "现有Aqua/genericcaption与菜单栏路线已具；用户明确三套Mac质感和控件/字体不准，当前THEMES仅声明原创近似，不具有Tiger fullstate认证。"
+      "evidence": "现有Aqua/genericcaption与菜单栏路线已具；2026-10-15第二批actual Windows raster GUI证实默认Tiger菜单项显式radius0被输入state painter改为普通按钮radius8；局部menuTheme radius0供factory/events一致消费，hover/leave/focus/press/click/reconcile/blur保留直角，普通按钮仍8，菜单单击一次激活。独立followup实证每次重建clone派生theme使hover/held后focus/release丢高亮（Tiger/customLion846、customBigSur936像素）；按原immutabletheme用局部WeakMap复用派生对象修复，重建保留DOM和hover/held，真正换theme自然重置状态并用新palette。默认Lion/BigSur为generic路径无此默认bug；合法Aqua painter override在3/5半径复现并修复。仅currentdesign override一致性，不称OS rawhighlight或Darwin/nativeMac认证；字体/标题/真实参考及其它差异仍partial。"
     },
     {
       "id": "tiger-dock-geometry",
