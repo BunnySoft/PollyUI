@@ -89,6 +89,7 @@ struct PuDesktop {
     struct wlr_layer_shell_v1 *layer_shell;
     struct wlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct PuDecorations *decorations;
+    struct PuDecoratorProcess *decorator;
     struct PuWorkspaces *workspaces;
     struct PuShortcuts *shortcuts;
     struct PuOutputControl *output_control;

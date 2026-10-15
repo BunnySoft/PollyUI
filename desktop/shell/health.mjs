@@ -1,3 +1,10 @@
+function decorationStatus(services) {
+  if (!['disabled', 'starting', 'ready', 'failed'].includes(services.decorations) ||
+      typeof services.decorationMessage !== 'string')
+    throw new Error('Invalid decoration service status');
+  return services.decorations;
+}
+
 export async function waitForSessionReady({ shell, native, requireIme = false, requireAudio = false,
   timeoutMs = 15000, now = Date.now, delay = ms => new Promise(resolve => setTimeout(resolve, ms)),
   report = console.log }) {
@@ -9,6 +16,10 @@ export async function waitForSessionReady({ shell, native, requireIme = false, r
     if (state.error) throw new Error(state.error);
     if (!state.running) throw new Error('Shell stopped before session readiness');
     const services = native.sessionServices();
+    const decorations = decorationStatus(services);
+    if (decorations === 'disabled') throw new Error('Independent decoration service is not configured');
+    if (decorations === 'failed')
+      throw new Error('Independent decoration service failed: ' + services.decorationMessage);
     const ime = services.inputMethod;
     if (!['disabled', 'starting', 'ready', 'failed'].includes(ime))
       throw new Error('Invalid input-method service status');
@@ -20,22 +31,24 @@ export async function waitForSessionReady({ shell, native, requireIme = false, r
     const surfaces = shell.getSurfaces();
     const shellReady = state.outputs.length > 0 && surfaces.length > 0 &&
       surfaces.every(surface => !surface.window.closed);
-    const summary = `shell=${shellReady ? 'ready' : 'starting'} ime=${ime} audio=${audio ? audio.ready ? 'ready' : 'starting' : 'disabled'}`;
+    const summary = `shell=${shellReady ? 'ready' : 'starting'} decorations=${decorations} ime=${ime} audio=${audio ? audio.ready ? 'ready' : 'starting' : 'disabled'}`;
     if (summary !== previous) { report('[health] ' + summary); previous = summary; }
-    if (shellReady && ime !== 'starting' && (!audio || audio.ready)) return;
+    if (shellReady && decorations === 'ready' && ime !== 'starting' && (!audio || audio.ready)) return;
     if (now() >= deadline) throw new Error('Session readiness deadline exceeded: ' + summary);
     await delay(50);
   }
 }
 
 export function createSessionMonitor({ native, report, now = Date.now }) {
-  let starting = null, previous = '', current = { inputMethod: 'unavailable', audio: 'unavailable', message: '', error: '' };
+  let starting = null, previous = '', current = {
+    inputMethod: 'unavailable', audio: 'unavailable', decorations: 'unavailable', message: '', error: '' };
   return {
     refresh() {
       if (typeof native?.sessionServices !== 'function') return current;
       let message = '';
       try {
-        const inputMethod = native.sessionServices().inputMethod;
+        const services = native.sessionServices(), inputMethod = services.inputMethod;
+        const decorations = decorationStatus(services);
         if (!['disabled', 'starting', 'ready', 'failed'].includes(inputMethod))
           throw new Error('Invalid input-method service status');
         if (inputMethod === 'starting') {
@@ -47,11 +60,14 @@ export function createSessionMonitor({ native, report, now = Date.now }) {
         }
         const audio = native.audioAvailable ? native.audioState() : null;
         if (audio?.error) message += (message ? ' ' : '') + 'Audio service: ' + audio.error;
-        current = { inputMethod, audio: audio ? audio.error ? 'failed' : audio.ready ? 'ready' : 'starting' : 'disabled',
-          message, error: inputMethod === 'failed' || audio?.error ? message : '' };
+        if (decorations !== 'ready') message += (message ? ' ' : '') +
+          'Window decorations ' + decorations + ': ' + services.decorationMessage;
+        current = { inputMethod, decorations,
+          audio: audio ? audio.error ? 'failed' : audio.ready ? 'ready' : 'starting' : 'disabled',
+          message, error: inputMethod === 'failed' || audio?.error || decorations === 'failed' || decorations === 'disabled' ? message : '' };
       } catch (error) {
         message = 'Cannot inspect session services: ' + String(error);
-        current = { inputMethod: 'unavailable', audio: 'unavailable', message, error: message };
+        current = { inputMethod: 'unavailable', audio: 'unavailable', decorations: 'unavailable', message, error: message };
       }
       if (message && message !== previous) report('[shell] ' + message);
       previous = message;
@@ -59,7 +75,7 @@ export function createSessionMonitor({ native, report, now = Date.now }) {
     },
     reset() {
       starting = null; previous = '';
-      current = { inputMethod: 'unavailable', audio: 'unavailable', message: '', error: '' };
+      current = { inputMethod: 'unavailable', audio: 'unavailable', decorations: 'unavailable', message: '', error: '' };
     },
     snapshot() { return { ...current }; },
   };

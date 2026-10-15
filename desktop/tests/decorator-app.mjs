@@ -1,0 +1,10 @@
+const app = window.create({ title: 'Decorator.fixture.app', width: 260, height: 160 });
+const target = app.document.createElement('view');
+Object.assign(target.style, { width: '100%', height: '100%', backgroundColor: '#234567' });
+target.addEventListener('click', () => { target.style.backgroundColor = '#33cc66'; });
+app.document.body.appendChild(target);
+app.onclose = () => window.quit();
+const frameless = window.create({ title: 'Decorator.fixture.frameless', width: 120, height: 60 });
+frameless.setFrameless(true);
+frameless.document.body.style.backgroundColor = '#654321';
+window.close();

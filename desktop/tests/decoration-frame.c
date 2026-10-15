@@ -39,6 +39,18 @@ int main(void)
     changed[PU_FRAME_REVISION]++; assert(!pu_frame_validate(data, length, changed, strips));
     changed[PU_FRAME_REVISION]--; changed[PU_FRAME_GENERATION_LO]++;
     assert(!pu_frame_validate(data, length, changed, strips));
+    for (unsigned i = 0; i < PU_FRAME_META_WORDS; i++) {
+        memcpy(changed, meta, sizeof(meta)); changed[i] ^= 1;
+        assert(!pu_frame_validate(data, length, changed, strips));
+    }
+    uint32_t *invalid = malloc(length); assert(invalid);
+    memcpy(invalid, data, length);
+    invalid[3 + PU_FRAME_META_WORDS + 2]++;
+    assert(!pu_frame_validate(invalid, length, meta, strips));
+    memcpy(invalid, data, length);
+    invalid[3 + PU_FRAME_META_WORDS + 3]++;
+    assert(!pu_frame_validate(invalid, length, meta, strips));
+    free(invalid);
     munmap(data, length); close(fd);
     int mutable = memfd_create("invalid-decoration", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     assert(mutable >= 0 && ftruncate(mutable, length) == 0 && !pu_frame_fd_valid(mutable, length));

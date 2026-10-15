@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <limits.h>
 
 #ifdef _WIN32
 #  include <windows.h>
@@ -618,6 +619,15 @@ int pu_script_pump(PuScript *s)
     pu_clear_rejections(s,1);
     pu_script_failed(s);
     return total;
+}
+
+int pu_script_next_timeout(PuScript *s)
+{
+    if (JS_IsJobPending(s->rt)) return 0;
+    int index = pu_next_timer(s);
+    if (index < 0) return -1;
+    int64_t delay = s->timers[index].due_ms - pu_now_ms();
+    return delay <= 0 ? 0 : delay > INT_MAX ? INT_MAX : (int)delay;
 }
 
 void pu_script_run_loop(PuScript *s)

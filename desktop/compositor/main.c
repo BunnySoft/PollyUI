@@ -1,6 +1,7 @@
 #include "server.h"
 #include "input-method.h"
 #include "session-lock.h"
+#include "decorator-process.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -20,6 +21,7 @@ static void usage(FILE *out)
         "--require-session-exit: require the confirmed close/save barrier before a normal Shell exit ends the session.\n"
         "--exit-on-shell-failure: fail the session after the Shell restart budget is exhausted (never while locked).\n"
         "--input-method PROGRAM: start a separately trusted input-method service (before --shell).\n"
+        "--decorator PROGRAM: supervise a separate windowless GUI decoration service (before --shell).\n"
         "--lock-on-start PROGRAM: explicitly start a trusted lock client; no password lock is enabled by default.\n"
         "--shell must be last; its program receives a private trusted Wayland connection.\n"
         "Alt+Tab: cycle windows; Alt+F4: close; Alt+Escape: confirm ordinary logout in the trusted Shell.\n"
@@ -34,6 +36,7 @@ int main(int argc, char **argv)
     bool debug = false;
     char **shell_argv = NULL;
     char *input_method_argv[2] = {0};
+    char *decorator_argv[2] = {0};
     char *lock_argv[2] = {0};
     unsigned shell_restarts = 0;
     bool restart_option = false, exit_with_shell = false, exit_on_shell_failure = false;
@@ -41,6 +44,8 @@ int main(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--help") == 0) { usage(stdout); return 0; }
         if (strcmp(argv[i], "--debug") == 0) { debug = true; continue; }
+        if (strcmp(argv[i], "--decorator") == 0 && i + 1 < argc && *argv[i + 1] &&
+            !decorator_argv[0]) { decorator_argv[0] = argv[++i]; continue; }
         if (strcmp(argv[i], "--input-method") == 0 && i + 1 < argc && *argv[i + 1] &&
             !input_method_argv[0]) { input_method_argv[0] = argv[++i]; continue; }
         if (strcmp(argv[i], "--lock-on-start") == 0 && i + 1 < argc && *argv[i + 1] &&
@@ -99,6 +104,7 @@ int main(int argc, char **argv)
     desktop.require_session_exit = require_session_exit;
     desktop.exit_on_shell_failure = exit_on_shell_failure;
     if (ready && input_method_argv[0]) ready = pu_input_method_spawn(&desktop, input_method_argv);
+    if (ready && decorator_argv[0]) ready = pu_decorator_spawn(&desktop, decorator_argv);
     if (ready && shell_argv) ready = pu_desktop_supervise_shell(&desktop, shell_argv, shell_restarts);
     if (ready && lock_argv[0]) ready = pu_session_lock_spawn(&desktop, lock_argv);
     if (ready) wl_display_run(desktop.display);

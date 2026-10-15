@@ -113,14 +113,7 @@ async function run() {
       return native;
     },
   } }).start();
-  const readFrames = desktop.decorationRequests;
-  desktop.decorationRequests = () => {
-    const requests = readFrames();
-    for (const request of requests)
-      if (JSON.parse(request.document).theme.id === 'server2003')
-        console.log('CAPTION_NATIVE_REQUEST ' + JSON.stringify({ title: request.title, meta: request.meta }));
-    return requests;
-  };
+  check(typeof desktop.decorationRequests === 'undefined', 'Shell cannot consume the independent renderer queue');
   check(shell.selectTheme('xp'), 'taskbar theme selected');
   if (mode === 'initial') {
     desktop.spawnApplication(['foot', '--app-id=org.pollyui.window-fixture', '--title=Initial title',

@@ -84,6 +84,60 @@ system versions remain incomplete.
 
 ## Ordinary logout and save-before-session-exit
 
+### Independent window decoration service
+
+The Linux session wrapper starts a separate, compositor-supervised
+`pollyui --decorator` process through `pollywm --decorator PROGRAM`.
+Its private inherited Wayland connection identifies the renderer; an application
+ID, matching UID/PID or a second connection to the public socket cannot claim
+that role. It cannot create surfaces, inspect application buffers, manage
+windows/workspaces/outputs, acquire input devices or act as the Shell.
+The Shell remains the theme publisher and sole preference writer.
+
+The renderer uses the ordinary GUI font system, unowned Document
+(`defaultView === null`) and detached Canvas2D. It creates no visible or hidden
+window. Four narrow sealed RGBA strips travel through the existing bounded
+frame contract; PollyWM validates identity, generation, revision, geometry,
+scale and exact FD layout, then atomically presents them with client geometry.
+The compositor does not parse theme JSON or paint themes.
+
+The service blocks on its Wayland connection, dispatcher wake descriptor and
+shutdown signals, with the next actual JavaScript timer deadline as its timeout.
+There is no periodic rendering poll. Shutdown stops producers and queued frames,
+joins asynchronous work while the VM is alive, and then releases Wayland,
+wake descriptors and the VM.
+
+Closing or crashing the Shell does not stop this renderer or discard the
+committed theme. Caption text, focus/hover/pressed state, DPI, resizing and
+caption controls continue to work. Explicit CSD, frameless and fullscreen
+semantics are unchanged. Clients that do not negotiate decorations are not
+silently given an extra frame.
+
+A renderer failure retains the last valid presentation as an old cache; a new
+size or revision is not called rendered and the old strips are not stretched.
+New SSD presentation waits for a complete matching frame. PollyWM revokes the
+failed connection, reaps its process, and allows at most three restarts with
+backoff. A fresh renderer rebuilds the live requests against the WM-owned theme.
+Exhaustion is an explicit service failure, not logout or a claim that clients
+will draw their own titlebars. Existing ordinary clients remain alive.
+
+Private appearance protocol v4 splits publisher and renderer authority.
+PollyWM, runtime, Shell and decorator modules must be upgraded or rolled back
+together; older private versions fail explicitly. Public theme JSON version 1,
+geometry schema 4 and ordinary App/Window/Document contracts do not change.
+`desktop.sessionServices()` reports `decorations` and `decorationMessage`;
+installed `--check` requires the independent renderer to be ready.
+A bare compositor without `--decorator` does not claim this service exists.
+
+For a private headless/raster fixture, build `pollyui`, `pollywm`,
+`pollywm-test-client`, `pollywm-decorator-lifecycle-test`,
+`pollywm-decorator-policy` and `pollyui-windowless-test`, then run CTest selectors
+`desktop-decorator-lifecycle-raster`, `desktop-decorator-policy` and
+`gui-windowless-service`. These exercise real independent GUI/Wayland processes,
+four-strip pixels and seat input, Shell exit/crash, renderer reconnection,
+read-only cold bootstrap and role/protocol rejection. They do not qualify
+hardware GPUs or an installed distribution image.
+
 The trusted Shell's Applications menu provides **Log out...**. Alt+Escape now
 requests that same confirmation rather than abruptly terminating the compositor;
 Ctrl+Alt+L also opens it while a Shell surface has focus. The first confirmation

@@ -382,12 +382,15 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 "${UI_PROTOCOL_DIR}/output-management-client.h" "${UI_PROTOCOL_DIR}/output-management.c"
                 "${UI_PROTOCOL_DIR}/polly-output-guard-client.h" "${UI_PROTOCOL_DIR}/polly-output-guard.c"
                 desktop/native/shortcut-client.c desktop/native/theme-client.c desktop/native/decoration-client.c
+                desktop/native/decorator-client.c
                 desktop/shared/shortcuts.c desktop/shared/appearance-document.c desktop/shared/decoration-frame.c
                 "${UI_PROTOCOL_DIR}/polly-shortcuts-client.h" "${UI_PROTOCOL_DIR}/polly-shortcuts.c"
                 "${UI_PROTOCOL_DIR}/ext-workspace-client.h" "${UI_PROTOCOL_DIR}/ext-workspace.c"
                 "${UI_PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${UI_PROTOCOL_DIR}/polly-workspace-toplevel.c"
                 "${UI_PROTOCOL_DIR}/polly-appearance-client.h" "${UI_PROTOCOL_DIR}/polly-appearance.c"
                 "${UI_PROTOCOL_DIR}/foreign-toplevel-client.h" "${UI_PROTOCOL_DIR}/foreign-toplevel.c")
+            set_source_files_properties(desktop/native/decoration-client.c desktop/native/decorator-client.c
+                PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Wpedantic;-Werror")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/compositor")
             target_include_directories(pollyui PRIVATE "${CMAKE_SOURCE_DIR}/desktop/shared")
         endif()
@@ -758,6 +761,13 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
         target_link_libraries(pollyui-layer-client-test PRIVATE pollywm-core PkgConfig::PIXMAN_UI_TEST)
         target_compile_options(pollyui-layer-client-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
         if (PU_DESKTOP_SERVICES)
+            target_compile_definitions(pollyui-layer-client-test PRIVATE PU_TEST_DECORATOR)
+            add_test(NAME desktop-decorator-lifecycle-raster
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client>)
+            set_tests_properties(desktop-decorator-lifecycle-raster PROPERTIES TIMEOUT 100
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
             add_test(NAME desktop-files-window
                 COMMAND python3 -I -B "${CMAKE_SOURCE_DIR}/desktop/tests/files-window.py"
                     $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>

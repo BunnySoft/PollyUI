@@ -390,7 +390,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, version < 3 ? version : 3);
+        if (version < 4) { control.failed = control.changed = 1; return; }
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 4);
         if (!control.appearance ||
             polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -521,6 +522,14 @@ static JSValue services(JSContext *ctx, JSValueConst self, int argc, JSValueCons
     if (JS_IsException(result)) return result;
     if (!property(ctx, result, "inputMethod", JS_NewString(ctx, states[control.input_method_state]))) {
         JS_FreeValue(ctx, result); return JS_EXCEPTION;
+    }
+    const char *message;
+    uint32_t decoration = pu_decoration_client_status(NULL, &message);
+    if (decoration > 3 ||
+        !property(ctx, result, "decorations", JS_NewString(ctx, states[decoration])) ||
+        !property(ctx, result, "decorationMessage", JS_NewString(ctx, message))) {
+        JS_FreeValue(ctx, result);
+        return JS_HasException(ctx) ? JS_EXCEPTION : JS_ThrowInternalError(ctx, "Invalid decoration service status");
     }
     return result;
 }

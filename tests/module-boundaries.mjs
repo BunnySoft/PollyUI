@@ -157,7 +157,12 @@ test('CLI and desktop composition remain outside the GUI engine', () => {
 
 test('appearance uses runtime configuration without legacy selection or downgrade paths', () => {
   const shell = read('desktop/shell/shell.mjs');
-  assert.match(shell, /native\.configureAppearance\(theme\)/);
+  assert.match(shell, /native\.configureAppearance\(theme,\s*encodeDecorationLayout\(theme\)\)/);
+  assert.doesNotMatch(shell, /createDecorationRenderer|decorationRenderer/);
+  assert.match(read('desktop/decorator/main.mjs'), /createDecorationRenderer/);
+  assert.match(read('desktop/shared/ui/decoration-renderer.mjs'), /paintCaptionFrame/);
+  assert.match(read('desktop/compositor/decoration.c'), /pu_decorator_allowed/);
+  assert.match(read('desktop/protocols/polly-appearance-v1.xml'), /name="polly_appearance_v1" version="4"/);
   assert.doesNotMatch(shell, /setAppearance|compatibilityTheme|appearanceWarning|startupGeneric/);
   assert.equal(existsSync(new URL('desktop/shell/appearance-compatibility.mjs', root)), false);
   assert.equal(existsSync(new URL('desktop/tests/xp-startup-compatibility.mjs', root)), false);

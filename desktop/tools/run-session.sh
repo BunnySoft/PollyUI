@@ -89,6 +89,10 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$repo"
+if ! "$ui" --decorator --help >/dev/null; then
+    echo "Session requires paired PollyWM/Shell/windowless decorator v4" >&2; exit 1
+fi
+export POLLY_DECORATOR_RUNTIME="$ui"
 if [ "$ime" -eq 1 ]; then
     if ! "$ui" --input-method --help >/dev/null; then
         echo "This PollyUI build does not support input-method service mode" >&2; exit 1
@@ -111,10 +115,12 @@ printf 'PollyDesktop runtime: %s\nClient display: %s/pollywm-0\n' "$runtime" "$r
 printf 'Private session bus ready (pid %s)\n' "$bus_pid"
 if [ "$ime" -eq 1 ]; then
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
+        --decorator "$repo/desktop/tools/run-decorator.sh" \
         --input-method "$repo/desktop/tools/run-input-method.sh" \
         --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --no-legacy-storage --app-id org.pollyui.shell "$script" "$@" &
 else
     WAYLAND_DISPLAY="$parent" "$wm" --socket pollywm-0 --shell-restarts "$restarts" \
+        --decorator "$repo/desktop/tools/run-decorator.sh" \
         --exit-with-shell ${exit_option:+"$exit_option"} ${failure_option:+"$failure_option"} --shell "$ui" --desktop --no-legacy-storage --app-id org.pollyui.shell "$script" "$@" &
 fi
 pid=$!

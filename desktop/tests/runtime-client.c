@@ -1,4 +1,5 @@
 #include "server.h"
+#include "decorator-process.h"
 #include "decoration.h"
 #include "decoration-layout-fixtures.h"
 #include "workspace.h"
@@ -1408,6 +1409,13 @@ int main(int argc, char **argv)
         ready = pu_desktop_start(&desktop);
     }
     bool passed = false;
+    if (ready) {
+#if defined(PU_TEST_DECORATOR)
+        char *decorator[] = {argv[1], "--decorator", "--app-id", "org.pollyui.decorator",
+            "desktop/decorator/main.mjs", NULL};
+        ready = pu_decorator_spawn(&desktop, decorator);
+#endif
+    }
     if (ready) {
         wlr_keyboard_init(&keyboard, &keyboard_impl, "runtime-fixture-keyboard");
         wlr_pointer_init(&pointer, &pointer_impl, "runtime-fixture-pointer");

@@ -20,6 +20,7 @@ enum PuDecorationPart {
 
 bool pu_decorations_init(struct PuDesktop *desktop);
 void pu_decorations_finish(struct PuDesktop *desktop);
+void pu_decorations_service_changed(struct PuDesktop *desktop);
 bool pu_decoration_create(struct PuDesktopView *view);
 void pu_decoration_destroy(struct PuDesktopView *view);
 void pu_decoration_suspend(struct PuDesktopView *view);
