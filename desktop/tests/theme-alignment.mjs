@@ -64,6 +64,7 @@ for (let size = 2; size <= 12; size++) {
   const indicator = find(dock, 'shell-window-1').children[1];
   assert.equal(indicator.props.style.width, size);
   assert.equal(indicator.props.style.height, 4);
+  assert.equal(indicator.props.style.bottom, 1);
   assert.equal(indicator.children.length, 4);
   const rows = indicator.children.map(node => node.props.style);
   rows.forEach((row, y) => {

@@ -272,7 +272,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
         pointerEvents: 'none' } }, desktopIcon(icon, theme.colors.accent, iconSize - 8)),
       running ? style === 'tiger' ? h('view', { 'aria-hidden': 'true', style: {
-        position: 'absolute', bottom: 0, width: indicator, height: 4, pointerEvents: 'none' } },
+        position: 'absolute', bottom: 1, width: indicator, height: 4, pointerEvents: 'none' } },
         Array.from({ length: 4 }, (_, y) => {
           // Integer insets keep even and very narrow indicators symmetric without blurred edges.
           const inset = Math.min(Math.floor((indicator - 1) / 2), Math.round((3 - y) * (indicator - 1) / 6));

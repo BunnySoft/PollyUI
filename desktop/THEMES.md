@@ -239,10 +239,12 @@ compositor blur, reflection, wallpaper tint, magnification or authentic OS icons
 Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
 with centered integer insets, retaining the default 7x4 geometry. Very narrow
 even widths degenerate to a symmetric bar rather than spilling outside the
-configured container or introducing fractional-pixel blur. The first width-only
-increment preserves the default pixels; actual GUI evidence also exposes the
-existing bottom-rim clipping of the fourth row, which remains a separate visible
-geometry defect, not a completed 7x4 pixel match.
+configured container or introducing fractional-pixel blur. The width-only
+increment preserved the default pixels. Its actual GUI evidence exposed the
+fourth row being clipped by the bottom rim; a separate follow-up moves only
+Tiger's indicator one pixel up, preserving the rim and showing all four rows.
+The default two-window 400x100 fixture intentionally gains 14 black pixels;
+this repairs the local 7x4 visibility contract, not OS-exact placement.
 `tests/tiger-dock-indicator-render.mjs` records the actual visible rows at 7/2/12,
 running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
 configuration consistency evidence, not a Tiger raw-reference or native Mac
