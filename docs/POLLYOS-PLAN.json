@@ -1216,7 +1216,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；没有完整licensedrawdisplaymetadata，geometry属于重建目标。"
+      "evidence": "BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；本轮修正通用styledDock非空自然宽少算1个gap：三fixed+separator+windowstrip需root4gaps与inner(count-1)gaps。actual400x140中Tiger/Lion/BigSur两窗默认303/317/329→305/319/331，BigSur合法gap12的369→381、末icon裁7px→0且无多余scroll；empty/gap0/已clamp与默认320窄条的末窗click/focus、fixed3及sameDOMheldrelease保持。desktop/tests/mac-dock-gap-render.mjs与Node child结构边界覆盖为本地几何合同，不是OSraw误差认证；仍缺完整licensedrawdisplaymetadata、真实材质，iconfit与极窄responsive另批，保持partial。"
     },
     {
       "id": "bigsur-dock-vibrancy",

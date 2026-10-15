@@ -9,10 +9,59 @@ function rejects(action, message) {
   let error = null; try { action(); } catch (caught) { error = caught; }
   check(error instanceof TypeError || error instanceof RangeError, message);
 }
+function documentLookup(doc, owner, label) {
+  const prototype = Object.getPrototypeOf(doc), reflect = globalThis.Reflect, get = reflect.get;
+  const symbol = Symbol(label), proxySymbol = Symbol(label + ' proxy'), receiver = {};
+  const failure = new Error('EXPECTED inherited Proxy get');
+  let gets = 0, ownerGets = 0;
+  doc.annotation = 17; doc[symbol] = 'retained';
+  const inherited = Object.create(prototype, {
+    receiverProbe: { get() { return this; }, configurable: true },
+  });
+  const proxy = new Proxy(inherited, {
+    get(target, property, actualReceiver) {
+      if (property === 'defaultView') { ownerGets++; return 'wrong owner'; }
+      if (property === 'proxyProbe' || property === proxySymbol) { gets++; return actualReceiver; }
+      if (property === 'throwProbe') throw failure;
+      return get(target, property, actualReceiver);
+    },
+  });
+  try {
+    Object.setPrototypeOf(doc, proxy);
+    check(doc.annotation === 17 && doc[symbol] === 'retained', label + ' ordinary string/Symbol extensions');
+    check(doc.receiverProbe === doc && get(doc, 'receiverProbe', receiver) === receiver,
+      label + ' inherited getter receives the actual/supplied receiver');
+    check(doc.proxyProbe === doc && get(doc, 'proxyProbe', receiver) === receiver &&
+      get(doc, proxySymbol, receiver) === receiver && gets === 3, label + ' delegates Proxy [[Get]] and Symbol keys');
+    check(doc.defaultView === owner && get(doc, 'defaultView', receiver) === null && ownerGets === 0,
+      label + ' owner lookup keeps its native receiver guard instead of delegating');
+    let caught;
+    try { doc.throwProbe; } catch (error) { caught = error; }
+    check(caught === failure, label + ' propagates the original Proxy exception');
+    reflect.get = () => { throw new Error('Mutable global Reflect.get consulted'); };
+    check(doc.proxyProbe === doc, label + ' cached intrinsic survives replacing Reflect.get');
+    globalThis.Reflect = { get() { throw new Error('Mutable global Reflect consulted'); } };
+    check(doc.proxyProbe === doc && get(doc, 'proxyProbe', receiver) === receiver,
+      label + ' cached intrinsic survives replacing global Reflect');
+  } finally {
+    globalThis.Reflect = reflect; reflect.get = get;
+    Object.setPrototypeOf(doc, prototype);
+    delete doc.annotation; delete doc[symbol];
+  }
+  check(doc.body && get(doc, 'body', doc) === doc.body, label + ' ordinary lookup survives restoration');
+}
 async function run() {
   check(document.defaultView === window, 'Root document identifies the actual global window handle');
-  const child = window.create({title: 'Owner.child', width: 300, height: 180});
+  documentLookup(document, window, 'Root');
+  const reflect = globalThis.Reflect, get = reflect.get;
+  let child;
+  try {
+    reflect.get = () => { throw new Error('Child creation consulted mutable Reflect.get'); };
+    globalThis.Reflect = { get() { throw new Error('Child creation consulted mutable Reflect'); } };
+    child = window.create({title: 'Owner.child', width: 300, height: 180});
+  } finally { globalThis.Reflect = reflect; reflect.get = get; }
   const doc = child.document;
+  documentLookup(doc, child, 'Child created while global Reflect was replaced');
   check(doc.defaultView === child && doc !== document && doc.defaultView !== window, 'Child owner identity is stable and not the root');
   rejects(() => { doc.defaultView = window; }, 'defaultView rejects assignment');
   rejects(() => Object.defineProperty(doc, 'defaultView', {value: window}), 'defaultView is an own nonconfigurable property');
@@ -83,6 +132,7 @@ async function run() {
   }
   child.close(); ownerTest.gc();
   check(doc.defaultView === null, 'Retained child document remains safe after GC');
+  documentLookup(doc, null, 'Retained closed child after GC');
   console.log('PASS: native root/child owner, immutable association and independent state lifecycle');
   window.quit();
 }

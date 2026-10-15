@@ -360,6 +360,24 @@ do not shrink, and focusing an offscreen window reveals it. The pure
 `dockSurfaceWidth`/`applicationMenuPlacement`/`applicationMenuHeight` functions are the Shell consumer
 seam; they do not create surfaces or change state by themselves.
 
+The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
+the natural width of all three styled Docks. With windows, three fixed actions,
+a separator and a window strip require four root gaps plus `count - 1` inner
+gaps, not `count + 2` total. At two windows, default Tiger/Lion/Big Sur widths
+intentionally change from 303/317/329 to 305/319/331px and recenter accordingly.
+Big Sur with a legal 12px gap changes from 369 to 381px, exposing the previously
+clipped final icon and removing unnecessary 12px scrolling. Palette, height,
+slots, rim and indicators are unchanged. Earlier palette/triangle captures and
+their hashes describe those checkpoints, not the new centered geometry.
+Actual 400x140 GUI checks cover natural widths, zero gaps, empty Docks, exact
+clamp boundaries, running/minimized truth and held reconstruction. The default
+320px available-width window strip retains scroll/click/focus access to the
+last window while the three fixed commands stay put. Node guards derive
+natural widths from actual Dock child styles and retain the generic/non-Dock
+helper branch. This is a local layout correction, not a macOS pixel-fidelity
+score; icon-fit validation, extreme-width responsive policy, materials and
+desktop/menu-bar reference gaps remain separate work.
+
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
 simulated appearance preview, but also **not a Linux compositor desktop capture**.

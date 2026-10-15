@@ -76,8 +76,8 @@ export function checkDockOverflow() {
   host.render();
   const normalFixed = ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about']
     .map(id => document.getElementById(id));
-  check(normalWidth === 317 && document.getElementById('shell-dock').offsetWidth === 317,
-    'The ordinary two-window Dock must retain its frozen surface width');
+  check(normalWidth === 319 && document.getElementById('shell-dock').offsetWidth === 319,
+    'The ordinary two-window Dock must include all root and window-strip gaps');
   check(normalFixed.every((node, i) => node.offsetWidth === 56 &&
     (!i || node.offsetLeft - normalFixed[i - 1].offsetLeft === 58)),
   'Ordinary fixed Dock actions must retain their slot width and spacing');
