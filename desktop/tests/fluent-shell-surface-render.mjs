@@ -235,3 +235,100 @@ export async function checkFluentShellSurface(directory) {
   }
   console.log('PASS: actual Fluent task states/focus/reconcile, no tray overlap, narrow/custom slots and nested grid focus');
 }
+
+export async function checkNativeFluentPanel(directory) {
+  const theme = DESKTOP_THEMES.find(item => item.id === 'modern');
+  const wait = () => new Promise(resolve => setTimeout(resolve, 150));
+  const scene = (shown = true) => h('view', { style: { width: '100%', height: 48 } },
+    shown ? panelView(theme, '10:31 AM', noop, '', noop,
+      [{ id: 1, title: 'Active', active: true }, { id: 2, title: 'Running' }], noop, noop,
+      { name: 'Workspaces', open: noop }, { count: 0, open: noop }) : null);
+  async function roundtrip() {
+    const title = 'Fluent.panel.owner';
+    const child = window.create({ title, width: 240, height: 140 });
+    const owner = child.document, original = globalThis.document;
+    let business = 0, replacement = 0;
+    child.onstatechange = () => business++;
+    globalThis.document = owner;
+    try { render(scene(), owner.body); } finally { globalThis.document = original; }
+    await wait();
+    const panel = owner.getElementById('shell-panel'), group = owner.getElementById('shell-centered-tasks');
+    const tray = owner.getElementById('shell-notification-area');
+    const snapshot = () => ({ origin: panel.offsetLeft, panel: panel.offsetWidth,
+      left: group.offsetLeft, width: group.offsetWidth, tray: rect(tray) });
+    const before = snapshot(), records = [];
+    const request = globalThis.requestAnimationFrame, cancel = globalThis.cancelAnimationFrame;
+    const pending = new Set();
+    let frames = 0, cancellations = 0;
+    globalThis.requestAnimationFrame = callback => {
+      const id = request(time => { pending.delete(id); frames++; callback(time); });
+      pending.add(id); return id;
+    };
+    globalThis.cancelAnimationFrame = id => { if (pending.delete(id)) cancellations++; cancel(id); };
+    try {
+      for (const width of [680, 240, 680]) {
+        frames = 0;
+        ownerTest.resize(title, width, 140);
+        // No render(), host.render(), VNode update or capture flush follows host resize.
+        await wait();
+        const after = snapshot();
+        check(frames === 3 && pending.size === 0, 'Owner resize runs exactly bounded 2+1 layout/reveal frames');
+        check(after.width > 0 && after.left >= after.origin + theme.layout.panelPaddingLeft &&
+          after.left + after.width <= tray.offsetLeft - theme.layout.panelGap,
+          'Host-only resize measures actual tray bounds relative to the native panel origin');
+        if (width === 680) check(Math.abs(after.left + after.width / 2 -
+          (after.origin + after.panel / 2)) <= 1, 'Host-only grow restores real screen-centered group');
+        else check(after.width < 240, 'Host-only shrink restores tray-safe constrained group');
+        records.push({ ...after, frames });
+        await wait();
+        check(frames === 3, 'No periodic or self-scheduling owner layout polling');
+        child.onstatechange = () => replacement++;
+      }
+      check(business > 0 && replacement > 0, 'Panel observer coexists with original and later business handlers');
+      child.capture(directory + '\\fluent-native-panel.png');
+      frames = 0;
+      globalThis.document = owner;
+      try {
+        render(scene(), owner.body);
+        check(pending.size === 1, 'VNode update queues one bounded layout chain');
+        render(scene(false), owner.body);
+      } finally { globalThis.document = original; }
+      check(pending.size === 0 && cancellations === 1, 'Panel leave cancels pending layout frame');
+      await wait();
+      check(frames === 0, 'Removed panel never executes a stale layout/reveal');
+      ownerTest.resize(title, 420, 140);
+      await wait();
+      check(frames === 0, 'Panel leave unregisters owner subscription');
+    } finally {
+      globalThis.requestAnimationFrame = request;
+      globalThis.cancelAnimationFrame = cancel;
+      child.close();
+    }
+    console.log('NATIVE_FLUENT_PANEL ' + JSON.stringify({ before, after: records, business, replacement, cancellations }));
+  }
+  async function closedPanel() {
+    let child = window.create({ title: 'Fluent.panel.collect', width: 360, height: 140 });
+    let owner = child.document;
+    const original = globalThis.document;
+    globalThis.document = owner;
+    try { render(scene(), owner.body); } finally { globalThis.document = original; }
+    await wait();
+    ownerTest.resize('Fluent.panel.collect', 680, 140);
+    await wait();
+    let panel = owner.getElementById('shell-panel');
+    let group = owner.getElementById('shell-centered-tasks');
+    check(Math.abs(group.offsetLeft + group.offsetWidth / 2 -
+      (panel.offsetLeft + panel.offsetWidth / 2)) <= 1, 'GC fixture really registered and handled owner resize');
+    const references = { panel: new WeakRef(panel), document: new WeakRef(owner), window: new WeakRef(child) };
+    // Close while still subscribed; onLeave cannot mask a finalizer-held owner leak.
+    child.close(); panel = null; group = null; owner = null; child = null;
+    return references;
+  }
+  await roundtrip();
+  const references = await closedPanel();
+  for (let i = 0; i < 8; i++) { await new Promise(resolve => setTimeout(resolve, 30)); ownerTest.gc(); }
+  const alive = Object.fromEntries(Object.entries(references).map(([name, weak]) => [name, Boolean(weak.deref())]));
+  console.log('NATIVE_FLUENT_PANEL_GC ' + JSON.stringify(alive));
+  check(Object.values(alive).every(value => !value), 'Closed subscribed panel, Document and window handle all collect');
+  console.log('PASS: actual Fluent owner-only shrink/grow, handler coexistence, bounded frames, leave and closed-window GC');
+}
