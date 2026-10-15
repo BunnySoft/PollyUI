@@ -685,10 +685,10 @@
     },
     {
       "id": "e22",
-      "label": "E22 XP Luna 视觉对齐",
+      "label": "E22 Windows/Mac 六主题对齐",
       "kind": "task",
       "parent": "system-optimizations",
-      "scope": "以选定 XP 蓝色 Luna 版本/96-DPI 基线，逐部件对齐真实窗口装饰和 Shell 控件、字体/资源、材质和状态；使用原创或有明确授权材料，记录剩余差异，不以预览/模拟截图宣称1:1或强制第三方控件改样式。",
+      "scope": "按 XP SP3 Luna、Server 2003 SP2 Classic、Windows 11 24H2 light、OS X 10.4 Tiger/10.7 Lion、macOS 11 Big Sur 六个既定目标，逐项跟踪标题栏/按钮、任务栏/Start、菜单栏/Dock、控件/字体/图标及真实材质差异。共享机制与主题局部数据分层；已修复项保留完成记录，参考不足与未实现功能分别说明，不以预览或局部像素吻合宣称整系统1:1，不强制第三方 CSD/控件改样式。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -697,14 +697,14 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-08 用户范围调整：XP 参考认证与完整视觉精修；移出 Alpha 必须项，保留原始状态、来源和技术前置，不假标完成。"
+      "evidence": "原 E22 的 XP IDs/证据和 Alpha 非前置边界保留。2026-10-15 用户要求把此前 Windows/Mac UI 不一致逐项列入任务，现扩为六主题具体缺口。依据 desktop/THEMES.md、alignment-reference.json、XP-LUNA.md 和实际 Win2K3 参考/原生回归；不是新增一轮全主题测试或材质/品牌素材/业务后端实施授权。in_progress 表示有已交付子集，不表示正在后台运行实现会话。"
     },
     {
       "id": "xp-reference-baseline",
-      "label": "E22.1 固定参考与测量",
+      "label": "E22.1 XP 固定参考与测量",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "建立来源可追溯的固定目标版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。",
+      "scope": "建立 XP SP3 Luna 来源可追溯的版本、DPI、窗口/标题按钮/任务栏/菜单代表状态截图，测几何、字体度量、颜色和边缘；权利不明材料只参考分析，不打包。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -720,7 +720,7 @@
       "label": "E22.2 控件与装饰绘制",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "当前XP小批：30px任务栏、21px标题按钮、受限多段绘制/bevel、原创通用图形及基础控件状态，绘制/命中尺寸一致；保留其它四主题与数据安全契约，不改菜单生命周期。未实现状态/完整Start布局另行验收。",
+      "scope": "历史已完成 XP 小批：30px 任务栏、21px 标题按钮、多段绘制/bevel、原创通用图形及基础控件状态，绘制/命中尺寸一致；保留其它主题及数据安全契约。后续 GUI 窗饰迁移不撤销该已完成基础项；完整颜色/状态/Start 差异另列具体任务。",
       "priority": "P1",
       "modes": [
         "installed",
@@ -736,7 +736,7 @@
     },
     {
       "id": "xp-native-comparison",
-      "label": "E22.3 真实截图差异验收",
+      "label": "E22.3 XP 真实截图差异验收",
       "kind": "subtask",
       "parent": "e22",
       "scope": "固定实现提交在独立验证lane真实绘制截图，对照裁剪部件的几何/颜色/状态与已定义图像差异；说明字体/授权资产/抗锯齿和未实现效果，迭代，不以mock或预览替代native。",
@@ -751,6 +751,520 @@
         "xp-painted-components"
       ],
       "evidence": "临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。"
+    },
+    {
+      "id": "theme-reference-metadata",
+      "label": "E22.4 六主题参考与状态来源",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "补齐 Classic SP2/96DPI、Win11 build/100% 与三套 Mac 的 display scale、Dock 图标尺寸/放大开关、light/tint 等参考元数据及 active/inactive/hover/press 状态。逐条关联原始图/hash/crop；证据不足只标待测，不猜颜色或把 JPEG 转 PNG 当无损原图，不阻塞已能独立证明的局部修复。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "alignment-reference.json 已有六目标/公开阅读来源；用户 Win2K3 VM 截图 a92ec32d... 与 e333e3f9... 提供真实状态但为 JPEG，SP/DPI/显示深度仍未认证。Mac 暂无完整原尺寸授权 raw pack，不能把未测项描述成已证实的特定像素错误。"
+    },
+    {
+      "id": "theme-font-metrics",
+      "label": "E22.5 字体与文字基线",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "逐主题列出 Tahoma/Trebuchet、Segoe UI、Lucida Grande、San Francisco 与当前通用 fallback 的字宽、字号、粗细、标题基线及抗锯齿差异；用合法可用字体和真实度量决定可配置替代方案。保留 Unicode shaping，不打包未授权字体、不强制全局别名或固定分辨率；影响主题通用性的选择先确认。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "六主题 fontReference 与 THEMES.md 明确原系统字体未分发，真实 Classic caption 仍有 GDI 文字基线/栅格差异；GUI shaping 复用已实现，不等于字体像素一致。"
+    },
+    {
+      "id": "theme-icon-artwork",
+      "label": "E22.6 图标与品牌资源差异",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "分别记录 Windows Start/应用/任务/托盘图标和 Mac Dock 应用图标的形状、尺寸、对齐与当前 Polly 原创图形差异；优先接真实应用已有合法 artwork，缺失时明确 fallback。系统品牌图标、壁纸和字体只在授权明确时考虑；参考图不能直接变成 runtime 资源，原创图形不宣称官方像素复刻。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。实际 app-icon 解析与合法资源选择未由 theme color 修正覆盖。"
+    },
+    {
+      "id": "theme-button-state-coverage",
+      "label": "E22.7 按钮边线与交互状态",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "逐主题核按钮/command 的背景、边框色与厚度、内外高光、圆角/光泽及 normal/hover/held/disabled/default/keyboard-focus 状态；保留已修 Classic raised/sunken 和 dotted focus，不以基础按钮覆盖声称全 SDK 一致。每次只选有参考的局部与实际输入回归，不统一套现代渐变或改点击区。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集；THEMES.md 明确完整控件状态未认证，用户曾明确指出控件背景/边框/质感不一致。"
+    },
+    {
+      "id": "theme-selection-controls",
+      "label": "E22.8 选择控件与页签覆盖",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "逐项核 checkbox、radio、switch、select、tab 和列表 selection 的主题外观及 disabled/focus/checked 状态，先区分现有共享控件与 App 自定义控件。没有真实控件/reference 的项标未覆盖，不从 button painter 推断已经一致；不强制第三方 App/CSD 跟随。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "XP-LUNA.md 明列设置 tabs/app-specific widget theming 未完成；THEMES.md 的 covered 仅有限 shared button/command 等，不包含完整 SDK 选择控件认证。"
+    },
+    {
+      "id": "theme-input-scrollbar-coverage",
+      "label": "E22.9 输入框光标与滚动条",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "逐主题登记文本框内凹/边框、padding、caret、selection 色和默认滚动条/滑块/箭头的可见差异；当前 Files 自绘 scrollbar 与通用 SDK 分开核。只能改外观/可配置度量，不丢输入内容、selection、IME、捕获或键盘焦点；未测默认和 bespoke 路线不能合并标绿。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "THEMES.md 明列 SDK caret/selection、global scrollbar、Settings bespoke fields 未认证；Files 已有功能滚动/编辑证据，不等于 Windows/Mac 视觉一致。"
+    },
+    {
+      "id": "theme-dialog-panel-coverage",
+      "label": "E22.10 对话框与面板一致性",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "分别核 Settings 六页、打开/保存、确认/错误/认证小面板的背景、边线、留白、标题和按钮布局，标明窗口内部模板与系统窗饰边界。仅处理已存在的界面，不制造 Windows/Mac 未实现业务入口；保留密码遮罩、值/selection/focus 及 trusted confirmation 权限。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "用户原问题包括控件背景/边框/字体；独立 Settings 功能已完成，所有 bespoke dialogs/fields 的 OS-identical 覆盖仍在 THEMES.md 明确缺口中。"
+    },
+    {
+      "id": "theme-native-state-geometry",
+      "label": "E22.11 原生状态与缩放对照",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按选中主题/部件而非默认全矩阵，验证真实 compositor 下 active/inactive、hover/press/cancel、maximize/restore、低高/窄屏、受支持 DPI 的几何/颜色和命中；同版同状态比较，未支持 native disabled/focus 明列。组件离屏图、默认主题预览和旧 ISO 不作新完整桌面等价证明。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "现有组件及 native 四 strip/真实 pointer 回归覆盖有限状态，Classic 菜单 DOM fixture 与真实 layer 的 28px 差异已修；不能回填所有六主题/DPI/fullscene qualification。"
+    },
+    {
+      "id": "xp-caption-finish",
+      "label": "E22.12 XP 标题栏材质与状态",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "核 XP caption 多段蓝色渐变、边缘/高光、文字阴影及三键/还原图形在激活/非激活/hover/press 的原生结果；30px/21px 基础几何保留，未实现的 disabled caption/键盘语义先记录机制边界。迁至公共 JS painter 后须比实际输出，不恢复 C Luna 专用绘制。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "XP-LUNA.md 的 multi-band/outline/text-shadow 基础批已实现，完整状态/reference crops 仍缺；现已改用 GUI caption-paint.mjs，历史 C strip 分数不是当前完整标题栏认证。"
+    },
+    {
+      "id": "xp-taskbar-start-finish",
+      "label": "E22.13 XP 任务栏与 Start",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "分项核 30px bar、绿色 Start/Polly launcher、任务按钮、quick-launch 与托盘/clock 的尺寸/色带/边线/间距；两列 Start 的 profile/header、左右行、分组分隔线/footer 与字体另逐状态对照。基础结构已存在，缺真实业务/历史项不加假按钮，完整 quick-launch 行为不以画出图标代替。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "用户最初明确 XP bar/Start 不像原版；当前 30px bar、97px launcher、26px tasks、cyan tray 和两列 header/link 已有，XP-LUNA/THEMES 明列完整 Start/profile、quick-launch 与 tray 状态差异未闭环。"
+    },
+    {
+      "id": "classic-residual-colors",
+      "label": "E22.14 Classic 残余颜色差",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "继续追踪 Classic frame/menu/taskbar 仍非零的原尺寸 raw RGB 差异，区分真正 paint 差异、JPEG 链路与疑似 RGB565 量化，不把标准 24bit palette 整体改成参考截图色。只对可证实的局部原因修正；正文/图标/字体差异分别归共享任务。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "2ec 边框 raw 误差明显降低但非零；后续实际 native controls 700px 对 JPEG 的 MAE 5.119047619/RMSE 7.576593028，仅 3px exact，不是全 OS 分数。原 88px plain frame crop=0 不能覆盖其它边框/文字。"
+    },
+    {
+      "id": "classic-menu-completeness",
+      "label": "E22.15 Classic 菜单与级联",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "区分已完成灰色双列 chrome 与仍缺的 Programs/All Programs 级联、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。先确认内容布局取舍和真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "真实 Win2K3 Start-open JPEG 与实际 Polly 菜单可见 profile/All Programs/内容行差异；THEMES.md 明确 cascading Programs 与 true user profile art 未复现。380x444 是当前 preferred，不强改所有分辨率为参考 484px 高。"
+    },
+    {
+      "id": "classic-frame-bevel-corrected",
+      "label": "E22.16 已修 Classic 边线",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "保留已完成 Classic raised/sunken 分层、menu 三层外框/双线 separator，以及移除覆盖 bevel 的通用 outline；这是明确缺陷修复记录，不宣称全部 RGB 或文本一致。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "0838bee 集成 2ec2e2e：外四边同灰的 root cause 为重复 borderWidth 覆盖，已移除；正常边序 FFF/D4/808/404、按下404/808/D4/FFF 实测，menu frame/separator 与 raw crop 记录保留。"
+    },
+    {
+      "id": "classic-task-material-corrected",
+      "label": "E22.17 已修 Classic 任务质感",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "保留 flat hover/press 基底、选中 2x2 body/light stipple、1px dotted focus、22px task/16px icon、内留白和按下1px偏移的已完成修正；纹理不拥有输入，不回退到大量 DOM 点阵。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "0838bee 修交互重加 gradient；5bb181c 实际 GUI 验棋盘8白/8body、hover/press、selected->inactive、palette/retheme、同button/focus/单次click。Task28bar/22slot 上4下2含2px chrome，对应内部2/2；不再当未实现重复派发。"
+    },
+    {
+      "id": "classic-caption-corrected",
+      "label": "E22.18 已修 Classic 标题三键",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "保留 Win2K3 测量所得三键 glyph 尺寸/偏移与按可用文字区域绘制渐变的完成记录；窗框4px/caption23px/box16x14不变，外观在 JS 绘制、WM保留命中和操作。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "5bb181c/776d868：实际 GUI min bbox[4,9,6,2]/12点、max[3,2,9,9]/39点、close[4,3,8,7]/26点及press偏移1通过；原 JPEG 跨阈值测量与 native 四strip证据保留，不覆盖所有字体/restore状态认证。"
+    },
+    {
+      "id": "classic-menu-gap-corrected",
+      "label": "E22.19 已修菜单任务栏间隙",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "保留真实 layer 菜单错误多扣28px任务栏的完成修正；openMenu明确full-output坐标，保持preferred尺寸、left2和4px边框衔接，不改全局layer默认/其它预设。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "6618394 的 zone-1 已经真实 native committed menu[2,252,380,444]/bar[0,692,1280,28]断言4px overlap、search/focus/Escape与top-Dock helper；修正版b7e7a700 ISO已包含，不再把组件图位置当原生布局证明。"
+    },
+    {
+      "id": "classic-menu-actions-corrected",
+      "label": "E22.20 已修菜单外标题操作",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "将开始菜单展开后标题三键不响应的已修复交互与视觉差异分开；跟踪既有可信菜单外点关闭任务，不另起一套native input策略。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [
+        "menu-native-dismiss"
+      ],
+      "evidence": "6298ff3 实测菜单关闭时三键原本正常；菜单开启时exclusive焦点拦截已由受限Shell-menu生命周期修复。真实max/min/close、单次route、drag-off取消、non-menu exclusive保护通过。权威功能任务为menu-native-dismiss，此处仅历史差异索引。"
+    },
+    {
+      "id": "win11-caption-finish",
+      "label": "E22.21 Win11 标题栏状态",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按 Windows11 24H2 light 核 32px caption内容/33px外框、46x32三键、close红色hover/press与其它backplate/图形、active/inactive及文字基线；当前矩形paint/hitbox已实现但build-tagged raw状态对照不足。Snap flyout尚未实现，作为功能差异说明，不伪装成已有标题按钮效果。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "ce21f540/882f9182与公共GUI窗饰已交付rect controls；alignment-reference.json 的Win11数值为重建目标而非24H2像素测量，用户已明确Modern目标不是Win10。"
+    },
+    {
+      "id": "win11-taskbar-start-finish",
+      "label": "E22.22 Win11 任务栏与 Start",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。当前无推荐历史/account完整业务、App分组/固定等差异关联既有T21任务，不造假推荐/不可用入口。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "当前Modern centered searchable grid/footer与bar已实现；THEMES.md明确真实recommendation/account未复现，raw24H2/100%依据尚缺，不能仅主题卡片证明布局一致。"
+    },
+    {
+      "id": "win11-corners-shadows",
+      "label": "E22.23 Win11 内容圆角阴影",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "登记真实Win11整窗内容圆角裁剪、外阴影和输入边界差异：当前仅标题顶角、内容仍矩形且非真实系统阴影。若实施，复用E13原生clip/shadow机制项目，不在themeJS伪造透明遮角或复制另一渲染器；视觉变化须验证内容/命中一致。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "alignment-reference.json/THEMES.md/desktop README均明确full-window corner clipping和shadow未实现；theme preview的shadow字段不等于compositor效果。实现项目为e13-m17-5，本项只跟踪Win11差异验收，非重复工程授权。"
+    },
+    {
+      "id": "win11-backdrop-material",
+      "label": "E22.24 Win11 背景材质",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "登记Win11 Mica-like壁纸基色与Start/taskbar Acrylic背景采样的质感差异；当前opaque/gradient不能代替真实backdrop。分别关联已存在MT-02/MT-03候选，先选具体效果/机制再实现，保留solid/reduced-transparency方案；本次登记不自动授权blur/GPU新功能。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "alignment-reference.json列Mica/Acrylic缺口；普通窗口alpha已交付但不是backgroundblur，当前materials仍未选实施。"
+    },
+    {
+      "id": "tiger-window-menubar",
+      "label": "E22.25 Tiger 窗框与菜单栏",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按OSX10.4核标题光泽/pinstripe、traffic-light三键顺序/间距/hoverglyph、active/inactive及22px菜单栏字体/背景/项目间距。记录当前绘制近似与尚无完整raw状态对照的区别；无真App菜单时不伪造OS功能，Lucida字体差异归共享任务。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "现有Aqua/genericcaption与菜单栏路线已具；用户明确三套Mac质感和控件/字体不准，当前THEMES仅声明原创近似，不具有Tiger fullstate认证。"
+    },
+    {
+      "id": "tiger-dock-geometry",
+      "label": "E22.26 Tiger Dock 边缘指示",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按明确48px图标/关闭magnification的参考设置核Tiger二维rim、54pxslot/62px高度、底部贴合、separator与7x4黑三角运行指示；不得误套Leopard/Lion3D shelf。溢出滚动已修不重开，未测几何先取得同配置原尺寸参考。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "已有tiger painter和triangle指标、固定三action/窗口scroll；alignment-reference明确Dock尺寸可配，当前数值不是任意Tiger用户默认保证。"
+    },
+    {
+      "id": "tiger-dock-material",
+      "label": "E22.27 Tiger Dock 透明质感",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "登记Tiger Dock二维玻璃rim与真实透明背景的差异，避免将当前不透明渐变称为真实glass；效果若选定应接共享透明/合成机制，维持图标和文字对比度。无可靠参考不补造倒影；不从Lion效果套用Tiger。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "alignment-reference的aqua gaps明确realtransparency未实现；THEMES将三Dock统一标opaque material approximations，真实效果需单独选定机制。"
+    },
+    {
+      "id": "lion-window-menubar",
+      "label": "E22.28 Lion 窗框与菜单栏",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按OSX10.7核灰色窗框材质、traffic-light外形/间距/状态、标题文字与22px菜单栏的颜色/边线/内距；区分genericcaption已有子集与真实Lion对照缺失。窗口内部unifiedtoolbar为preview含义，不当作已统一所有App toolbar。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "现有Lion preset/genericcaption和menu-bar已具；无完整授权rawpixeloracle，THEMES明确unifiedToolbar不代表nativeclient内容改造。"
+    },
+    {
+      "id": "lion-dock-geometry",
+      "label": "E22.29 Lion Dock 透视与光点",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "核Lion perspective shelf轮廓、56pxslot/66px高度、底部位置、separator与8x3luminous运行指示的几何/颜色；固定48pxicon与关闭放大作为本地比较条件，不硬编码为不可配置系统默认。恢复/最小化仍是running，indicator不能消失。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "现有Lion painter/shelf/indicators已交付但仅opaque approximation，用户Dock不一致意见和alignment-reference仍待真实同设置对照。"
+    },
+    {
+      "id": "lion-dock-material",
+      "label": "E22.30 Lion 玻璃与倒影",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "分别登记Lion Dock真实玻璃透明、外阴影及icon/windowreflection缺失；当前透视色带不是reflection。先选实际可支持效果及共享E13/材质机制，不能靠复制图标倒影贴图或虚构窗口图像冒充实时效果；不默认启动新合成工程。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "alignment-reference的Lion gaps明确actualicon/windowreflection、glasstransparency/shadow未实现；当前source不声称这些特性。"
+    },
+    {
+      "id": "bigsur-window-menubar",
+      "label": "E22.31 Big Sur 窗框菜单栏",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "按macOS11light核28pxcaption、traffic-light12px控件/间距/hoverglyph、active/inactive、统一工具栏视觉边界及24px菜单栏。SanFrancisco度量归共享字体项，真实App内容与纯窗饰分开，不用标题圆角代替全窗裁剪。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "BigSur light preset/公共GUIcaption已具；font/systempixels、nativefullwindoweffects未认证，unifiedToolbar仍仅preview含义。"
+    },
+    {
+      "id": "bigsur-dock-geometry",
+      "label": "E22.32 Big Sur 浮动 Dock",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "核浮动圆角Dock的rim/radius、58pxslot/70px高度、9px底距、内容分隔线和4x4深色运行点；对照固定48pxicon/magnificationoff参考，保留缩放与窄屏可达性。仅原生菜单已修的top28margin不能当整Dock位置/材质已验收。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "in_progress",
+      "requires": [],
+      "evidence": "BigSur float/runningdots/scrollablewindowstrip已实现，原始用户意见为Dock整体仍不准；没有完整licensedrawdisplaymetadata，geometry属于重建目标。"
+    },
+    {
+      "id": "bigsur-dock-vibrancy",
+      "label": "E22.33 Big Sur 壁纸染色模糊",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "登记BigSur Dock/菜单栏wallpaper-tintedvibrancy、真实blur/transparency与外阴影缺失，当前固定不透明色无法随壁纸变化。与MT-02/MT-03/E13关联选一个真实机制，不新造Mac主题专用renderer；light/dark/减透明策略需明确后再实施。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "alignment-reference的BigSur阅读源有wallpapertint，现opaque材料明确不匹配；darkvariant未实现且当前目标light，不将其默默列为当前light完成前置。"
+    },
+    {
+      "id": "mac-dock-application-semantics",
+      "label": "E22.34 Mac Dock 分组与放大",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "登记三MacDock当前按窗口slot而非按App分组的行为差异、固定/启动与running标记、最小化窗口处理，以及尚无magnification的差异。App分组/固定关联T21，放大先选交互/动画范围；不把窗口数图标伪装成macOSApp语义，不在视觉任务中悄加包管理。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "THEMES.md明确slotsrepresentwindows、noapplicationgrouping/magnification；882f9182已修窗口区溢出可达性，不能因这个已修问题重新标Dock所有功能未实现。"
+    },
+    {
+      "id": "classic-layout-corrected",
+      "label": "E22.35 已修 Classic 基础布局",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "保留已完成4px frame/23px caption/16x14 button盒、标准蓝色纯桌面及灰色双列Start基础布局；双列是Server2003默认且单列可配置，不能再把Classic配色等同legacy单列。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "done",
+      "requires": [],
+      "evidence": "4bcddf2 集成670491e，用户明确选择双列默认/单列override；actual468px外窗min/max/close盒分别x412/428/446、y6/16x14，标准desktop#3A6EA5。灰双列/blueheader/低高度scroll可达性已实测，当前380x444后续边框修正保留。完整Programs级联/profile/字体/图标仍由独立未完成项跟踪。"
     },
     {
       "id": "r1",
@@ -5025,6 +5539,7 @@
     "- 2026-10-15 盘点：main 6298ff3 已正常推送；最新 Live b7e7a700/tree9c129e2 与其内容一致，固定 D:\\temp\\PollyOS\\PollyOS.iso 真硬链接。历史备注中的当前介质、尚未推送等词只属于原记录日期，不覆盖本条和 Alpha 节最新证据。",
     "- 已交付并从剩余项去重：六页独立 Settings、JS iwd、基础 Files 和单普通文件同 FS 移动、只读 Processes、桌面快捷方式/框选、Canvas2D/Image、Win/Linux 有界 WebGL2/WebGPU、GUI 窗饰与 Classic 边线/纹理、Live 启动与固定路径媒体发布。它们各有明确子集，不能因此关闭共享包、多用户、物理设备、完整浏览器兼容或整系统验收。",
     "- 新发现待设计项：无 Shell 仍有完整系统窗框；当前只保证 App 存活，CSD 协商不保证不会自绘的客户有边框。独立窗饰服务尚未授权实施。其余明确待验项包括旧 Shutdown GUI/长输入失败、当前 installed 策略联合验收、真实 Mac/物理 GPU 与完整二进制发行履约。",
-    "- 本次签入/推送授权不解除远端 CI、生产密钥/公开发布、外置介质写入或故障测试的独立授权门槛；保持它们为待决策/受阻，不自动启动延期功能。"
+    "- 本次签入/推送授权不解除远端 CI、生产密钥/公开发布、外置介质写入或故障测试的独立授权门槛；保持它们为待决策/受阻，不自动启动延期功能。",
+    "- 2026-10-15 六主题差异逐项登记：保留原E22/XPLuna三个IDs，扩为XP/Classic/Win11/Tiger/Lion/BigSur及共享字体/图标/控件/真实状态的35个条目；已修复7项单列完成记录，余项区分部分实现、明确缺失与参考不足。不把所有待核对区域都伪称已有确定像素bug，不重新打开已修Classic纹理/边线/布局/菜单输入，也不自动开启blur/materials/品牌素材或全六主题测试。"
   ]
 }

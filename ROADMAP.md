@@ -53,6 +53,23 @@ The dated sections below retain historical evidence; an old “not pushed” or
 No remaining-work percentage is inferred from mixed milestones, subtasks,
 authorization gates and intentionally deferred candidates.
 
+### Per-theme UI discrepancies
+
+E22 now records **35 individual entries**, rather than only a broad XP/pixel
+alignment task. Their current scopes, status and evidence are maintained in
+`docs/POLLYOS-PLAN.json` and its generated backlog; the
+[per-surface index](./desktop/THEMES.md#per-theme-discrepancy-tasks) maps each ID.
+Shared font metrics, icon artwork, button/selection/input/scrollbar/dialog
+coverage and native state/DPI evidence are separate entries. XP caption and
+taskbar/Start details, Classic residual colors/cascades, Win11 caption/taskbar/
+Start/corners/materials, each Mac caption/menu-bar and Dock geometry/material,
+and Mac Dock application semantics are listed individually.
+Seven bounded corrected records remain completed, including the original XP
+paint increment and the Classic frame/layout, bevel, task texture, caption and
+menu placement/input fixes. Unmeasured fidelity, unimplemented OS behavior and
+effect candidates are not presented as the same kind of defect. Recording the
+tasks does not start their implementation or a new six-theme capture matrix.
+
 **Latest user-reported physical acceptance:** Debian 13 trixie amd64 alpha.8,
 frozen runtime `a357a7d`, ISO SHA-256
 `07e1fe3292275a577ff20d9d44d62d4d5981c4d6b312d1cc828ad8d14eeeadb4`.
