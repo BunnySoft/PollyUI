@@ -165,9 +165,15 @@ function paintText(ctx, theme, geometry, title) {
   const metrics = ctx.measureText(label), ascent = metrics.actualBoundingBoxAscent, descent = metrics.actualBoundingBoxDescent;
   const available = width - metrics.width;
   const left = x + (w.textAlign === 'center' ? available / 2 : w.textAlign === 'right' ? available : 0);
-  ctx.fillStyle = geometry.active ? w.titleText : w.inactiveText;
+  const color = geometry.active ? w.titleText : w.inactiveText;
+  const baseline = y + (height - ascent - descent) / 2 + ascent;
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(label, left, y + (height - ascent - descent) / 2 + ascent);
+  if (w.surfaceStyle === 'luna' && geometry.active) {
+    ctx.fillStyle = mixColor(color, '#000000', 0.7);
+    ctx.fillText(label, left + 1, baseline + 1);
+  }
+  ctx.fillStyle = color;
+  ctx.fillText(label, left, baseline);
   ctx.restore();
 }
 function paintTitle(ctx, theme, geometry, title) {
