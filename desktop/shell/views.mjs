@@ -11,7 +11,7 @@ import { trayView } from './desktop/shell/tray.mjs';
 import { themeTextSize } from './desktop/shell/theme-layout.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
 import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
-import { bevel, surfaceStyle, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
+import { bevel, surfaceStyle, surfacePaint, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
@@ -53,15 +53,24 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       ];
     }
     if (!compact && surfaceStyle(theme, 'panel') === 'classic') {
-      Object.assign(node.props.style, { height: 22, justifyContent: 'flex-start',
-        flexDirection: 'row', gap: 4, paddingLeft: 5, fontWeight: window.active ? 700 : 400,
-        backgroundColor: window.active ? '#e8e6e0' : theme.colors.body,
-        gradientFrom: 'transparent', gradientTo: 'transparent' });
+      const options = { selected: window.active, variant: 'task' };
+      Object.assign(node.props.style, surfacePaint(theme, options), {
+        height: theme.panel.height - theme.layout.panelItemInset, flexDirection: 'row',
+        alignItems: 'center', justifyContent: 'flex-start',
+        paddingLeft: theme.layout.taskPaddingX ?? 3, paddingRight: theme.layout.taskPaddingX ?? 3 });
       const caption = labelFor(theme)(short, theme.panel.text);
       caption.props.style.pointerEvents = 'none';
       caption.props.style.fontWeight = window.active ? 700 : 400;
-      node.children = [bevel(theme, { pressed: window.active }), desktopIcon('file', theme.panel.text, 16), caption];
-      Object.assign(node.props, surfaceEvents(theme, { selected: window.active, variant: 'task' }));
+      const icon = desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16);
+      icon.props.id = 'shell-window-icon-' + window.id;
+      node.children = [bevel(theme, { pressed: window.active }),
+        h('view', { className: 'theme-focus-ring', 'aria-hidden': 'true', style: {
+          position: 'absolute', left: 3, top: 3, right: 3, bottom: 3, borderWidth: 1,
+          borderColor: theme.colors.focus, opacity: 0, pointerEvents: 'none' } }),
+        h('view', { className: 'classic-task-content', style: { ...row, position: 'relative',
+          left: window.active ? 1 : 0, top: window.active ? 1 : 0, gap: 4, minWidth: 0,
+          pointerEvents: 'none' } }, icon, caption)];
+      Object.assign(node.props, surfaceEvents(theme, options));
     }
     if (!compact && surfaceStyle(theme, 'panel') === 'fluent') {
       Object.assign(node.props.style, { height: 40, width: theme.layout.windowButtonWidth,
@@ -158,19 +167,24 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: 12, paddingLeft: 8 } }, clock)));
   }
   if (surfaceStyle(theme, 'panel') === 'classic' && panel.kind === 'taskbar') {
+    const itemHeight = panel.height - theme.layout.panelItemInset;
     return h('view', { id: 'shell-panel', style: { ...row, position: 'relative',
-      width: '100%', height: '100%', paddingTop: 2, paddingLeft: 2, paddingRight: 2,
-      gap: theme.layout.panelGap, backgroundColor: panel.from,
-      borderTopWidth: 1, borderColor: theme.colors.light } },
+      width: '100%', height: '100%', paddingTop: 2,
+      paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
+      gap: theme.layout.panelGap, backgroundColor: panel.from } },
+    h('view', { 'aria-hidden': 'true', style: { position: 'absolute', left: 0, right: 0, top: 0,
+      height: 1, backgroundColor: panel.from, pointerEvents: 'none' } }),
+    h('view', { 'aria-hidden': 'true', style: { position: 'absolute', left: 0, right: 0, top: 1,
+      height: 1, backgroundColor: theme.colors.light, pointerEvents: 'none' } }),
     button('shell-menu', 'Polly', theme, openMenu, false, { width: theme.layout.launcherWidth ?? 60,
-      height: 22, fontWeight: 700 }),
-    button('shell-panel-settings', 'Settings', theme, openSettings, false, { height: 22 }),
+      height: itemHeight, fontWeight: 700 }),
+    button('shell-panel-settings', 'Settings', theme, openSettings, false, { height: itemHeight }),
     workspace ? button('shell-workspaces', workspace.name, theme, workspace.open, false,
-      { height: 22, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) : null,
+      { height: itemHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) : null,
     windowButtons(theme, windows, toggle, actions),
     error ? label('Needs attention', panel.text, 11) : null,
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'relative',
-      height: 22, paddingLeft: 6, paddingRight: 6, gap: theme.layout.trayGap, flexShrink: 0 } },
+      height: itemHeight, paddingLeft: 6, paddingRight: 6, gap: theme.layout.trayGap, flexShrink: 0 } },
       bevel(theme, { inset: true }),
       tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
       notifications ? button('shell-notifications', String(notifications.count), theme, notifications.open,

@@ -132,7 +132,8 @@ export function captureServer2003Reference(directory) {
   document.body);
   host.render(); document.activeElement?.blur(); host.render();
   const get = id => document.getElementById(id);
-  check(get('shell-applications').offsetWidth === 380 && get('shell-applications').offsetHeight === 442,
+  check(get('shell-applications').offsetWidth === theme.layout.menuWidth &&
+    get('shell-applications').offsetHeight === theme.layout.menuHeight,
     'Two-column menu must use measured preferred dimensions without changing screen resolution');
   check(get('shell-start-profile').offsetHeight === 40 && get('shell-start-links').offsetWidth === 184,
     'Classic header/gray second column geometry must match configured measurements');
@@ -164,4 +165,110 @@ export function captureServer2003Reference(directory) {
   search.focus(); host.render();
   check(document.activeElement === search, 'Search retains actual focus in the small-height layout');
   console.log('PASS: Server Classic two-column component dimensions, low-height scrolling, launch and focus');
+}
+
+export function captureClassicBorders(directory, verify = false) {
+  check(host.width === 640 && host.height === 480, 'Classic border fixture requires unscaled 640x480');
+  const theme = DESKTOP_THEMES.find(item => item.id === 'server2003');
+  const placement = layout.applicationMenuPlacement(theme, host.width);
+  const width = placement.width ?? Math.min(theme.layout.menuWidth, host.width - theme.layout.screenInset * 2);
+  const height = layout.applicationMenuHeight(theme, host.height);
+  const menuLeft = placement.margins.left ?? 0, menuBottom = placement.margins.bottom;
+  const activations = [];
+  render(h('view', { style: { width: '100%', height: '100%', position: 'relative',
+    backgroundColor: theme.desktop.from } },
+    h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: theme.panel.height } },
+      panelView(theme, '5:05 PM', action, '', action, windows, id => activations.push(id), action)),
+    h('view', { style: { position: 'absolute', left: menuLeft, bottom: menuBottom, width, height } },
+      applicationsView(theme, entries, '', action, action, action, action, '', action))),
+  document.body);
+  host.render(); document.activeElement?.blur(); host.render();
+  const get = id => document.getElementById(id);
+  const descendants = node => [node, ...node.childNodes.flatMap(descendants)];
+  const iconFor = task => descendants(task).find(node => Number(node.style?.width) === 16 &&
+    Number(node.style?.height) === 16);
+  const panel = get('shell-panel'), first = get('shell-window-1'), second = get('shell-window-2');
+  const firstIcon = iconFor(first), secondIcon = iconFor(second);
+  check(firstIcon && secondIcon, 'Task icons must retain real 16px slots');
+  const geometry = {
+    viewport: [640, 480], panel: rectangle(panel), menu: rectangle(get('shell-applications')),
+    header: rectangle(get('shell-start-profile')), links: rectangle(get('shell-start-links')),
+    footer: rectangle(get('shell-start-footer')), activeTask: rectangle(first), inactiveTask: rectangle(second),
+    activeIcon: rectangle(firstIcon), inactiveIcon: rectangle(secondIcon),
+    taskTopGap: first.offsetTop - panel.offsetTop,
+    taskBottomGap: panel.offsetTop + panel.offsetHeight - first.offsetTop - first.offsetHeight,
+    activeIconLeftInset: firstIcon.offsetLeft - first.offsetLeft,
+    inactiveIconLeftInset: secondIcon.offsetLeft - second.offsetLeft,
+    activeIconTopGap: firstIcon.offsetTop - panel.offsetTop,
+    inactiveIconTopGap: secondIcon.offsetTop - panel.offsetTop,
+  };
+  check(host.save(directory + '\\normal-640x480.png'), 'Cannot save Classic border comparison frame');
+  const blank = () => [host.pixel(first.offsetLeft + 130, first.offsetTop + 4),
+    host.pixel(first.offsetLeft + 130, first.offsetTop + first.offsetHeight - 5)];
+  const probes = { normal: blank() };
+  const edges = task => [host.pixel(task.offsetLeft + 130, task.offsetTop),
+    host.pixel(task.offsetLeft + 130, task.offsetTop + 1),
+    host.pixel(task.offsetLeft + 130, task.offsetTop + task.offsetHeight - 2),
+    host.pixel(task.offsetLeft + 130, task.offsetTop + task.offsetHeight - 1)];
+  const edgeProbes = { active: edges(first), inactive: edges(second) };
+  host.mouse('mousemove', first.offsetLeft + 130, first.offsetTop + 10); host.render();
+  probes.hover = blank();
+  host.mouse('mousedown', first.offsetLeft + 130, first.offsetTop + 10); host.render();
+  probes.pressed = blank();
+  check(activations.length === 0, 'Painting a press must not activate a task');
+  host.mouse('mouseup', first.offsetLeft + 130, first.offsetTop + 10);
+  host.mouse('click', first.offsetLeft + 130, first.offsetTop + 10); host.render();
+  check(activations.length === 1 && activations[0] === 1, 'Actual task click must remain connected exactly once');
+  second.focus(); host.render();
+  check(document.activeElement === second, 'Task keyboard focus must remain connected');
+  if (verify) {
+    check(second.querySelector('.theme-focus-ring').style.opacity === '1' &&
+      host.pixel(second.offsetLeft + second.offsetWidth - 7, second.offsetTop + 3) === '#000000',
+    'Removing the generic outline must retain an actual visible keyboard focus indicator');
+  }
+  host.mouse('mousemove', second.offsetLeft + 130, second.offsetTop + 10);
+  host.mouse('mousedown', second.offsetLeft + 130, second.offsetTop + 10); host.render();
+  const heldIcon = rectangle(secondIcon);
+  edgeProbes.pressedInactive = edges(second);
+  host.mouse('mousemove', 630, 0); host.render();
+  const releasedIcon = rectangle(secondIcon);
+  edgeProbes.cancelledInactive = edges(second);
+  host.mouse('mouseup', 630, 0);
+  if (verify) {
+    check(geometry.taskTopGap === 4 && geometry.taskBottomGap === 2 &&
+      first.offsetHeight === 22 && firstIcon.offsetWidth === 16, 'Classic chrome and task/icon insets differ');
+    check(geometry.inactiveIconLeftInset === 3 && geometry.activeIconLeftInset === 4,
+      'Active/sunken and inactive task content must retain their measured inner offsets');
+    check(heldIcon[0] === releasedIcon[0] + 1 && heldIcon[1] === releasedIcon[1] + 1,
+      'Pointer cancellation must retire the visual content offset without moving the hitbox');
+    check(Object.values(probes).every(([top, bottom]) => top === bottom),
+      'Classic tasks must remain flat in actual normal, hovered and pressed pixels');
+    check(JSON.stringify(edgeProbes.active) === JSON.stringify(['#404040', '#808080', '#D4D0C8', '#FFFFFF']) &&
+      JSON.stringify(edgeProbes.inactive) === JSON.stringify(['#FFFFFF', '#D4D0C8', '#808080', '#404040']) &&
+      JSON.stringify(edgeProbes.pressedInactive) === JSON.stringify(edgeProbes.active) &&
+      JSON.stringify(edgeProbes.cancelledInactive) === JSON.stringify(edgeProbes.inactive),
+    'Actual two-layer task edges must not be overwritten by a generic outline');
+    check(get('shell-applications').offsetLeft === 2 && get('shell-applications').offsetTop === 12 &&
+      get('shell-applications').offsetHeight === 444, 'Menu must align its three-pixel frame with the reference');
+    const narrow = layout.applicationMenuPlacement(theme, 320);
+    const many = Array.from({ length: 20 }, (_, i) => ({ id: 'narrow-' + i, name: 'Application ' + i,
+      comment: '', keywords: [] }));
+    let launched = '';
+    render(h('view', { style: { position: 'absolute', left: narrow.margins.left, top: 0,
+      width: narrow.width, height: layout.applicationMenuHeight(theme, 240) } },
+      applicationsView(theme, many, '', action, id => { launched = id; }, action, action)), document.body);
+    host.render();
+    const narrowMenu = get('shell-applications'), list = get('shell-start-apps');
+    check(narrowMenu.offsetLeft === 2 && narrowMenu.offsetLeft + narrowMenu.offsetWidth <= 320,
+      'Menu width must account for the new inset without overflowing a narrow output');
+    host.scroll(list.offsetLeft + 30, list.offsetTop + list.offsetHeight / 2, 100000); host.render();
+    const last = get('shell-app-narrow-19').getBoundingClientRect();
+    host.mouse('mousedown', last.x + last.width / 2, last.y + last.height / 2);
+    host.mouse('mouseup', last.x + last.width / 2, last.y + last.height / 2);
+    host.mouse('click', last.x + last.width / 2, last.y + last.height / 2); host.render();
+    check(launched === 'narrow-19', 'Last app must remain reachable in the narrow, low-height menu');
+  }
+  console.log('CLASSIC_BORDERS ' + JSON.stringify({ geometry, probes, edgeProbes, activations, heldIcon, releasedIcon }));
+  console.log(verify ? 'PASS: actual Classic border/task spacing, flat state paint, cancellation, focus and single activation' :
+    'BASELINE: frozen Classic frame/states captured; new geometry/flat assertions are not applied');
 }

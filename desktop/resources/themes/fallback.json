@@ -340,7 +340,7 @@
         "workspaceWidth": 160,
         "screenInset": 0,
         "menuWidth": 380,
-        "menuHeight": 442,
+        "menuHeight": 444,
         "menuGap": 0,
         "menuTopGap": 4,
         "contentPadding": 8,
@@ -394,7 +394,11 @@
         "menuRowHeight": 22,
         "menuSideWidth": 184,
         "menuIconSize": 32,
-        "menuVerticalInset": 4
+        "menuVerticalInset": 4,
+        "menuLeftInset": 2,
+        "menuBottomOverlap": 4,
+        "taskIconSize": 16,
+        "taskPaddingX": 3
       }
     },
     {

@@ -87,7 +87,8 @@ const optionalNumbers = {
   window: { controlWidth: [8, 96], controlTop: [0, 64] },
   layout: { launcherWidth: [24, 160], dockIconSize: [16, 96], dockPadding: [0, 32],
     dockIndicatorSize: [2, 12], menuHeaderHeight: [0, 96], menuFooterHeight: [24, 96],
-    menuRowHeight: [16, 96], menuSideWidth: [80, 320], menuIconSize: [12, 48], menuVerticalInset: [0, 64] },
+    menuRowHeight: [16, 96], menuSideWidth: [80, 320], menuIconSize: [12, 48], menuVerticalInset: [0, 64],
+    menuLeftInset: [0, 64], menuBottomOverlap: [0, 8], taskIconSize: [8, 32], taskPaddingX: [0, 32] },
 };
 
 function object(value, context) {
@@ -168,6 +169,10 @@ export function validateTheme(value) {
       value.panel.height <= value.layout.panelItemInset ||
       (value.panel.kind === 'taskbar' && value.layout.buttonHeight > value.panel.height))
       throw new RangeError('Shell controls do not fit the configured panel geometry');
+    if (value.panel.surfaceStyle === 'classic' && value.panel.kind === 'taskbar' &&
+      Math.max(value.layout.taskIconSize ?? 16, value.layout.fontSize) + 4 >
+        value.panel.height - value.layout.panelItemInset)
+      throw new RangeError('Classic task icons and text do not fit the configured taskbar');
     const window = value.window;
     const top = window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) +
       (window.surfaceStyle === 'luna' ? 2 : 0);

@@ -6,6 +6,7 @@ const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import(
 const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
+const { surfacePaint, surfaceEvents, bevel } = await import('../shared/ui/surface-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
 const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url), 'utf8'));
 assert.deepEqual(catalog, recovery);
@@ -71,9 +72,41 @@ assert.equal(find(serverMenu, 'shell-start-links').props.style.width, 184);
 assert.equal(find(serverMenu, 'shell-start-links').props.style.backgroundColor, server.colors.body);
 assert.equal(find(serverMenu, 'shell-start-profile').props.style.gradientDir, 'horizontal');
 assert.equal(serverMenu.props.style.borderRadius, 0);
-assert.equal(applicationMenuHeight(server, 480), 442);
-assert.equal(applicationMenuHeight(server, 240), 204);
+assert.equal(applicationMenuHeight(server, 480), 444);
+assert.equal(applicationMenuHeight(server, 240), 208);
 assert.equal(applicationMenuHeight(server, 0), 1);
+assert.deepEqual(applicationMenuPlacement(server).margins, { left: 2, bottom: 24 });
+assert.equal(applicationMenuPlacement(server, 320).width, 316);
+assert.equal(applicationMenuPlacement(server, 0).width, 1);
+const activePaint = surfacePaint(server, { selected: true, variant: 'task' });
+assert.equal(activePaint.gradientFrom, activePaint.gradientTo);
+assert.equal(activePaint.borderWidth, 0, 'the bevel painter owns Classic task edges without a generic overlay');
+const pieces = { '.bevel-top': { style: {} }, '.bevel-inner-top': { style: {} },
+  '.bevel-inner-left': { style: {} }, '.classic-task-content': { style: {} } };
+const target = { style: {}, querySelector: key => pieces[key] };
+const event = { currentTarget: target, button: 0 };
+const taskEvents = surfaceEvents(server, { variant: 'task' });
+taskEvents.onMouseenter(event);
+assert.equal(target.style.gradientFrom, target.style.gradientTo);
+taskEvents.onMousedown(event);
+assert.equal(pieces['.bevel-top'].style.backgroundColor, '#404040');
+assert.equal(pieces['.bevel-inner-top'].style.backgroundColor, server.colors.dark);
+assert.equal(pieces['.classic-task-content'].style.top, '1');
+taskEvents.onMouseleave(event);
+assert.equal(pieces['.bevel-top'].style.backgroundColor, server.colors.light);
+assert.equal(pieces['.bevel-inner-left'].style.backgroundColor, server.colors.body);
+assert.equal(pieces['.classic-task-content'].style.top, '0');
+assert.equal(target.style.gradientFrom, target.style.gradientTo);
+taskEvents.onMousedown(event);
+taskEvents.onMousecancel(event);
+assert.equal(pieces['.classic-task-content'].style.top, '0');
+taskEvents.onMousedown(event);
+const reloaded = { ...server, colors: { ...server.colors } };
+surfaceEvents(reloaded, { variant: 'task' }).onMouseenter(event);
+assert.equal(pieces['.classic-task-content'].style.top, '0', 'a new theme snapshot retires a visual press on the retained node');
+const raisedFrame = bevel(server, { frame: true });
+assert.equal(raisedFrame.children.find(node => node.props.className === 'bevel-top').props.style.backgroundColor, server.colors.body);
+assert.equal(raisedFrame.children.find(node => node.props.className === 'bevel-inner-top').props.style.backgroundColor, server.colors.light);
 const legacy = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
   themes: { server2003: { panel: { menuStyle: 'legacy' } } } })).themes.find(theme => theme.id === 'server2003');
 const legacyMenu = applicationsView(legacy, apps, '', action, action, action, action);
@@ -83,9 +116,13 @@ assert.equal(find(legacyMenu, 'shell-app-org.pollyui.settings').props.style.heig
 assert.ok(find(legacyMenu, 'shell-app-org.pollyui.settings').children
   .filter(child => child.props?.['aria-hidden'] === 'true' && child.props?.style?.width)
   .every(child => child.props.style.width <= 22));
-for (const theme of catalog.themes.filter(theme => theme.id !== 'server2003'))
+for (const theme of catalog.themes.filter(theme => theme.id !== 'server2003')) {
   assert.equal(applicationMenuHeight(theme, 480),
     Math.max(1, Math.min(theme.layout.menuHeight, 480 - theme.panel.height - theme.layout.overlayInset * 2)));
+  assert.equal(applicationMenuPlacement(theme, 320).width,
+    Math.max(1, Math.min(theme.layout.menuWidth, 320 - theme.layout.screenInset * 2)));
+  assert.equal(Object.hasOwn(applicationMenuPlacement(theme), 'width'), false);
+}
 assert.throws(() => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
   themes: { server2003: { panel: { menuStyle: 'arbitrary-code' } } } })), /unsupported/);
 console.log('PASS: six-theme geometry, menu activation, Dock keyboard behavior, disabled commands, recovery parity and placement seams');

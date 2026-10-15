@@ -70,7 +70,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   };
   const list = h('view', { id: 'shell-start-apps', style: {
     flexGrow: 1, flexBasis: 0, minHeight: 0, minWidth: 0, overflow: 'scroll',
-    gap: grid ? 8 : 0, padding: grid ? 8 : 2,
+    gap: grid ? 8 : 0, padding: grid ? 8 : classicColumns ? 0 : 2,
     ...(grid ? { ...row, alignItems: 'flex-start', alignContent: 'flex-start', flexWrap: 'wrap' } : {}),
   }, onWheel: scrollDesktop }, filtered.slice(0, 100).map(app),
   !filtered.length ? text(theme, 'No matching applications', c.muted) : null);
@@ -81,10 +81,10 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const settings = entries.find(entry => entry.id === 'org.pollyui.settings' && !entry.unavailable);
   const files = entries.find(entry => entry.id === 'org.pollyui.files' && !entry.unavailable);
   return h('view', { id: 'shell-applications', style: { width: '100%', height: '100%',
-    backgroundColor: c.body, borderWidth: xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
+    backgroundColor: c.body, borderWidth: classic ? 0 : xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
     borderRadius: modern ? 8 : xp ? 6 : theme.window.radius, overflow: 'hidden', position: 'relative',
-    padding: classic ? classicColumns ? 2 : 3 : 0, gap: grid ? 20 : 0 } },
-  classic ? bevel(theme) : null,
+    padding: classic ? 3 : 0, gap: grid ? 20 : 0 } },
+  classic ? bevel(theme, { frame: true }) : null,
   twoColumn && (l.menuHeaderHeight ?? 64) > 0 ? h('view', { id: 'shell-start-profile', style: { ...row, height: l.menuHeaderHeight ?? 64,
     flexShrink: 0, paddingLeft: 8, gap: 10, backgroundColor: xp ? '#1c62d1' : theme.window.titleFrom,
     gradientFrom: xp ? '#1c62d1' : theme.window.titleFrom,
@@ -106,13 +106,17 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     classic && menuStyle === 'legacy' ? h('view', { id: 'shell-start-brand', 'aria-hidden': 'true', style: { width: 24,
       flexShrink: 0, backgroundColor: '#0a246a', gradientFrom: '#0a246a', gradientTo: '#a6caf0' } }) : null,
     h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, backgroundColor: xp ? c.surface : c.body,
-      padding: grid ? 0 : classicColumns ? 2 : 4, gap: 4 } },
+      padding: grid || classicColumns ? 0 : 4, gap: 4 } },
       list,
       grid ? null : search,
       filtered.length > 100 ? text(theme, 'Showing 100 matches; refine the search.', c.muted) : null),
     twoColumn ? h('view', { id: 'shell-start-links', style: { width: l.menuSideWidth ?? 132, flexShrink: 0,
       padding: classic ? 4 : 6, gap: classic ? 0 : 6, backgroundColor: xp ? '#d3e5fa' : c.body,
-      borderLeftWidth: 1, borderColor: xp ? '#95b8e9' : c.dark } },
+      borderLeftWidth: classicColumns ? 0 : 1, borderColor: xp ? '#95b8e9' : c.dark, position: 'relative' } },
+      classicColumns ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute',
+        left: 0, top: 0, bottom: 0, width: 1, backgroundColor: c.dark, pointerEvents: 'none' } }) : null,
+      classicColumns ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute',
+        left: 1, top: 0, bottom: 0, width: 1, backgroundColor: c.light, pointerEvents: 'none' } }) : null,
       classicColumns && files ? command('shell-start-files', files.name, () => launch(files.id), 'folder') : null,
       settings ? command('shell-start-settings', 'Settings', () => launch(settings.id), 'appearance') : null,
       ...tools) : null),
