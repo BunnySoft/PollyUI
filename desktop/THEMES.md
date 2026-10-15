@@ -296,6 +296,25 @@ this repairs the local 7x4 visibility contract, not OS-exact placement.
 running/minimized state and narrow-Dock scroll/click/focus behavior. This is local
 configuration consistency evidence, not a Tiger raw-reference or native Mac
 platform acceptance.
+Lion's existing `panel.from` controls the upper shelf face and `panel.to` the
+four-pixel front face. The painter previously ignored both fields; their shipped
+values already matched those two hardcoded colors, so consuming them preserves
+default pixels. The neutral top highlight, lower shelf band and front-edge
+declaration remain separate detail colors, not a promise that these two fields
+tint every layer. Tiger/Big Sur keep their existing root-gradient consumers;
+the Mac menu bar still uses `window.titleFrom/titleTo`.
+
+The bounded Lion Dock coverage in `tests/lion-dock-surface-render.mjs` is local
+design/field-consumption evidence on an actual Windows GUI raster surface:
+
+| Area | Result and boundary |
+| --- | --- |
+| Palette entry points | Confirmed defect fixed: accepted `panel.from/to` overrides now affect the upper/front faces; default 400x120 PNG is byte-identical. Top/lower neutral bands stay unchanged. |
+| Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
+| Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
+| Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
+| Mechanism/business gaps | Still missing: real glass, shadow/reflection, application grouping, pinning and magnification. This palette wiring does not implement any of them. |
+
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
