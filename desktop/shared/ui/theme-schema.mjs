@@ -190,6 +190,15 @@ export function validateTheme(value) {
       if (Object.hasOwn(value[group], key) && !allowed.includes(value[group][key]))
         throw new TypeError(prefix + '.' + key + ' is unsupported');
   }
+  if (value.panel.kind === 'dock' && ['tiger', 'lion', 'bigsur'].includes(value.panel.surfaceStyle)) {
+    // Slots are panel.height - 4, with 8px bottom padding and markers at bottom: 1.
+    const icon = value.layout.dockIconSize ?? 48;
+    const marker = value.panel.surfaceStyle === 'tiger' ? 4 :
+      value.panel.surfaceStyle === 'lion' ? 3 : value.layout.dockIndicatorSize ?? 4;
+    if (icon > Math.min(value.layout.dockTileWidth, value.layout.dockWindowWidth,
+      value.panel.height - 12, value.panel.height + 2 - 2 * marker))
+      throw new RangeError('Dock icons and running indicators do not fit the configured slot/panel geometry');
+  }
   const asset = value.desktop.asset;
   if (typeof asset !== 'string' || asset.length > 192 || (asset &&
     (!/^(?:[a-z0-9_-][a-z0-9_.-]*\/)*[a-z0-9_-][a-z0-9_.-]*\.(?:png|jpe?g)$/i.test(asset) ||

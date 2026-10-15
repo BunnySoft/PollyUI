@@ -57,6 +57,102 @@ for (const theme of catalog.themes) {
 }
 assert.equal(toggled, 6);
 assert.equal(launched, 6);
+{
+  const fitError = { name: 'RangeError',
+    message: 'Dock icons and running indicators do not fit the configured slot/panel geometry' };
+  const cases = [
+    ['tiger-default', 'aqua', {}, true],
+    ['lion-default', 'lion', {}, true],
+    ['bigsur-default', 'bigsur', {}, true],
+    ['tiger-indicator12', 'aqua', { layout: { dockIndicatorSize: 12 } }, true],
+    ['lion-custom48', 'lion', { panel: { height: 74 }, layout: {
+      dockPadding: 10, dockGap: 1, dockTileWidth: 52, dockWindowWidth: 48, dockIndicatorSize: 12 } }, true],
+    ['bigsur-custom64', 'bigsur', { panel: { height: 88 }, layout: {
+      dockIconSize: 64, dockTileWidth: 72, dockWindowWidth: 72, dockIndicatorSize: 12 } }, true],
+    ['height40-icon48', 'bigsur', { panel: { height: 40 } }, false],
+    ['icon96-slot58', 'bigsur', { layout: { dockIconSize: 96 } }, false],
+    ['icon96-height108-slot96', 'bigsur', { panel: { height: 108 }, layout: {
+      dockIconSize: 96, dockTileWidth: 96, dockWindowWidth: 96 } }, true],
+    ['tiger-height60', 'aqua', { panel: { height: 60 } }, true],
+    ['lion-height60', 'lion', { panel: { height: 60 } }, true],
+    ['bigsur-height60', 'bigsur', { panel: { height: 60 } }, true],
+    ['height59-icon48', 'bigsur', { panel: { height: 59 } }, false],
+    ['marker12-touch', 'bigsur', { panel: { height: 70 }, layout: { dockIndicatorSize: 12 } }, true],
+    ['marker12-half-overlap', 'bigsur', { panel: { height: 69 }, layout: { dockIndicatorSize: 12 } }, false],
+    ['icon16-height28', 'bigsur', { panel: { height: 28 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 4 } }, true],
+    ['icon16-marker12-height38', 'bigsur', { panel: { height: 38 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 12 } }, true],
+    ['icon16-marker12-height37', 'bigsur', { panel: { height: 37 }, layout: {
+      dockIconSize: 16, dockTileWidth: 40, dockWindowWidth: 24, dockIndicatorSize: 12 } }, false],
+    ['fixed-slot47-icon48', 'bigsur', { layout: { dockTileWidth: 47 } }, false],
+    ['window-slot47-icon48', 'bigsur', { layout: { dockWindowWidth: 47 } }, false],
+  ];
+  const original = JSON.stringify(catalog);
+  for (const [name, id, override, fits] of cases) {
+    const base = catalog.themes.find(theme => theme.id === id);
+    const theme = { ...base, panel: { ...base.panel, ...override.panel },
+      layout: { ...base.layout, ...override.layout } };
+    const parsers = [
+      () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+      () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1, themes: { [id]: override } }))
+        .themes.find(theme => theme.id === id),
+      () => parseThemeCatalog(JSON.stringify({ ...catalog,
+        themes: catalog.themes.map(item => item.id === id ? theme : item) })).themes.find(theme => theme.id === id),
+    ];
+    for (const parse of parsers) {
+      if (!fits) { assert.throws(parse, fitError, name); continue; }
+      const accepted = parse();
+      assert.deepEqual(accepted, theme, name + ' never silently adjusts explicit dimensions');
+      assert.ok(Object.isFrozen(accepted.layout));
+      const dock = dockView(accepted, action, action, action, [{ id: 1 }], action, action);
+      const fixed = find(dock, 'shell-dock-applications'), running = find(dock, 'shell-window-1');
+      assert.equal(fixed.props.style.height, theme.panel.height - 4);
+      assert.equal(fixed.props.style.paddingBottom, 8);
+      assert.equal(fixed.children[0].props.style.width, theme.layout.dockIconSize ?? 48);
+      assert.equal(running.children[1].props.style.height,
+        theme.panel.surfaceStyle === 'tiger' ? 4 : theme.panel.surfaceStyle === 'lion' ? 3 :
+          theme.layout.dockIndicatorSize ?? 4);
+      assert.equal(running.children[1].props.style.bottom, 1);
+    }
+  }
+  for (const base of catalog.themes.filter(theme => ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle))) {
+    const theme = { ...base, id: 'custom-dock', panel: { ...base.panel, height: 40 } };
+    assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })), fitError);
+    theme.panel = { ...theme.panel, kind: 'taskbar' };
+    assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })));
+    theme.panel = { ...theme.panel, kind: 'dock', surfaceStyle: 'generic' };
+    theme.layout = { ...theme.layout, dockIconSize: 96 };
+    assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })));
+  }
+  const base = catalog.themes.find(theme => theme.id === 'bigsur');
+  assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1,
+    theme: { ...base, layout: { ...base.layout, dockIconSize: 97 } } })),
+  { name: 'RangeError', message: 'bigsur.layout.dockIconSize is outside 16-96' });
+  const omitted = { ...base, panel: { ...base.panel, height: 60 }, layout: { ...base.layout } };
+  delete omitted.layout.dockIconSize;
+  delete omitted.layout.dockIndicatorSize;
+  assert.doesNotThrow(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })));
+  omitted.panel.height = 59;
+  assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })), fitError);
+  const { readUserThemeCatalog } = await import('../shell/theme-files.mjs');
+  const overrides = JSON.stringify({ schemaVersion: 1, themes: { bigsur: { panel: { height: 40 } } } });
+  assert.throws(() => readUserThemeCatalog({ readThemeFiles: () => ({ files: [], overrides }) }), fitError);
+  const installed = await import('../shared/ui/themes.mjs');
+  const previous = installed.DESKTOP_THEMES, revision = installed.THEME_REVISION;
+  const invalid = { ...catalog, themes: catalog.themes.map(theme => theme.id === 'bigsur' ?
+    { ...theme, panel: { ...theme.panel, height: 40 } } : theme) };
+  assert.throws(() => installed.installThemeCatalog(invalid), fitError);
+  assert.strictEqual(installed.DESKTOP_THEMES, previous);
+  assert.equal(installed.THEME_REVISION, revision);
+  assert.equal(JSON.stringify(catalog), original);
+  console.log('DOCK_ICON_FIT_VALIDATION ' + JSON.stringify({
+    accepted: cases.filter(item => item[3]).map(item => item[0]),
+    rejected: cases.filter(item => !item[3]).map(item => item[0]), error: fitError,
+    parsers: ['file', 'catalog', 'overrides'], rejectedInstallPreservesRevision: true,
+  }));
+  console.log('PASS: 20 styled Dock fit cases through file/catalog/overrides; fallback, generic and rejection propagation');
+}
 for (const theme of catalog.themes) {
   for (const count of [0, 1, 2]) {
     const generic = { ...theme, panel: { ...theme.panel, surfaceStyle: 'generic' } };

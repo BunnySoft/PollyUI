@@ -76,6 +76,26 @@ base theme. Arrays replace whole arrays. Unknown fields, IDs, schema versions,
 prototype keys, invalid colors and unsupported geometry are rejected. There are
 no executable hooks, imports, conditionals or recursive inheritance rules.
 
+Scalar ranges alone do not guarantee a usable combination. For `panel.kind`
+`dock` with `surfaceStyle` `tiger`, `lion` or `bigsur`, the explicit icon size
+`I = layout.dockIconSize ?? 48` must not exceed
+`Math.min(layout.dockTileWidth, layout.dockWindowWidth, panel.height - 12, panel.height + 2 - 2 * M)`.
+`M` is the running marker height: 4 for Tiger, 3 for Lion, otherwise
+`layout.dockIndicatorSize ?? 4`. This follows the existing slot height
+`panel.height - 4`, 8px bottom padding and marker bottom offset 1px. Icon and
+marker may touch; no extra blank pixel or automatic shrinking is required.
+Generic Docks and taskbars do not acquire this styled-Dock constraint.
+
+This is an intentional compatibility tightening: previously accepted non-fit
+files and overrides now raise
+`RangeError: Dock icons and running indicators do not fit the configured slot/panel geometry`
+through the existing rejection path. For example, height40/icon48,
+icon96/default58px slots, and Big Sur height69/icon48/marker12 reject.
+Defaults, Lion's icon48/window48 custom geometry and Big Sur's
+height88/icon64/slot72/marker12 remain valid. Explicit icon96 remains supported
+with both slots96 and height108 (marker4); height70/icon48/marker12 is also
+valid at the touching boundary. There is no forced global icon size.
+
 In **Appearance**, choose **Reload theme files** to load changes and
 apply them to the selected theme, including changes under the same ID. There is
 no file watcher. **Use packaged themes** restores a shipped appearance and
@@ -375,8 +395,22 @@ clamp boundaries, running/minimized truth and held reconstruction. The default
 last window while the three fixed commands stay put. Node guards derive
 natural widths from actual Dock child styles and retain the generic/non-Dock
 helper branch. This is a local layout correction, not a macOS pixel-fidelity
-score; icon-fit validation, extreme-width responsive policy, materials and
-desktop/menu-bar reference gaps remain separate work.
+score; that checkpoint excludes the separate icon-fit validation below,
+extreme-width responsive policy, materials and desktop/menu-bar reference gaps.
+
+The subsequent icon-fit checkpoint adds only the schema constraint described
+above, not new rendering. `tests/theme-alignment.mjs` covers 20 combinations
+through theme-file, catalog and override parsing (13 accepted, 7 rejected),
+optional fallbacks, custom IDs and the generic/taskbar gate. Errors propagate
+through the user-file reader and installation rejects before replacing the
+active catalog/revision. `tests/mac-dock-icon-fit-render.mjs` checks real
+560x160 slot/icon/marker boxes and marker ink, normal/focused boundary states,
+16/48/64/96px icons and held-reconstruction single activation. The legal
+half-pixel marker gap rounds at rasterization without overlap; negative
+half-pixel overlap is rejected before rendering. All three default Dock
+captures and the existing 320px narrow scroll/click/focus controls remain
+byte-identical to the gap-fixed baseline. This does not certify rounded-rim
+silhouettes, whole-Dock fit on extreme outputs or native macOS appearance.
 
 `tests/theme-alignment-render.mjs` paints the actual Shell component functions
 through PollyUI at 1280x900, scale 1, and records physical geometry. It is not a
