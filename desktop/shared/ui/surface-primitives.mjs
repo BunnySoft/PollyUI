@@ -11,26 +11,40 @@ export function surfacePaint(theme, { selected = false, pressed = false, hovered
   const face = variant === 'task' ? selected ? '#e8e6e0' : c.body :
     disabled ? c.body : selected ? c.selection : quiet ? 'transparent' :
     pressed ? theme.button.to : theme.button.from;
+  const flatTask = surfaceStyle(theme, 'panel') === 'classic' && variant === 'task';
   return { backgroundColor: quiet && (hovered || pressed) ? c.selection : face,
-    gradientFrom: quiet ? 'transparent' : pressed ? theme.button.to : face,
-    gradientTo: quiet ? 'transparent' : pressed ? theme.button.from : theme.button.to,
+    ...(flatTask || (style === 'classic' && !quiet) ? { borderWidth: 0 } : {}),
+    gradientFrom: flatTask ? face : quiet ? 'transparent' : pressed ? theme.button.to : face,
+    gradientTo: flatTask ? face : quiet ? 'transparent' : pressed ? theme.button.from : theme.button.to,
     borderRadius: theme.button.radius,
     borderColor: disabled ? c.border : focused && style !== 'classic' ? c.focus :
       quiet ? 'transparent' : c.border,
     opacity: 1 };
 }
 
-export function bevel(theme, { pressed = false, inset = false } = {}) {
-  const c = theme.colors, down = pressed || inset;
+export function bevel(theme, { pressed = false, inset = false, frame = false } = {}) {
+  const c = theme.colors;
   const side = (className, style, color) => h('view', { className, 'aria-hidden': 'true',
     style: { position: 'absolute', backgroundColor: color, pointerEvents: 'none', ...style } });
   return h('view', { className: 'theme-bevel', 'aria-hidden': 'true', style: { ...fill } },
-    side('bevel-top', { left: 0, right: 0, top: 0, height: 1 }, down ? c.dark : c.light),
-    side('bevel-left', { left: 0, top: 0, bottom: 0, width: 1 }, down ? c.dark : c.light),
-    side('bevel-bottom', { left: 0, right: 0, bottom: 0, height: 1 }, down ? c.light : '#404040'),
-    side('bevel-right', { right: 0, top: 0, bottom: 0, width: 1 }, down ? c.light : '#404040'),
-    side('bevel-inner-bottom', { left: 1, right: 1, bottom: 1, height: 1 }, down ? c.body : c.dark),
-    side('bevel-inner-right', { right: 1, top: 1, bottom: 1, width: 1 }, down ? c.body : c.dark));
+    side('bevel-top', { left: 0, right: 0, top: 0, height: 1 },
+      frame ? c.body : inset ? c.dark : pressed ? '#404040' : c.light),
+    side('bevel-left', { left: 0, top: 0, bottom: 0, width: 1 },
+      frame ? c.body : inset ? c.dark : pressed ? '#404040' : c.light),
+    side('bevel-bottom', { left: 0, right: 0, bottom: 0, height: 1 }, pressed || inset ? c.light : '#404040'),
+    side('bevel-right', { right: 0, top: 0, bottom: 0, width: 1 }, pressed || inset ? c.light : '#404040'),
+    inset ? null : [
+      side('bevel-inner-top', { left: 1, right: 1, top: 1, height: 1 }, frame ? c.light : pressed ? c.dark : c.body),
+      side('bevel-inner-left', { left: 1, top: 1, bottom: 1, width: 1 }, frame ? c.light : pressed ? c.dark : c.body),
+      side('bevel-inner-bottom', { left: 1, right: 1, bottom: 1, height: 1 }, pressed ? c.body : c.dark),
+      side('bevel-inner-right', { right: 1, top: 1, bottom: 1, width: 1 }, pressed ? c.body : c.dark),
+    ],
+    frame ? [
+      side('bevel-face-top', { left: 2, right: 2, top: 2, height: 1 }, c.body),
+      side('bevel-face-left', { left: 2, top: 2, bottom: 2, width: 1 }, c.body),
+      side('bevel-face-bottom', { left: 2, right: 2, bottom: 2, height: 1 }, c.body),
+      side('bevel-face-right', { right: 2, top: 2, bottom: 2, width: 1 }, c.body),
+    ] : null);
 }
 
 export function surfaceDetail(theme, { selected = false, quiet = false } = {}) {
@@ -58,7 +72,10 @@ export function surfaceDetail(theme, { selected = false, quiet = false } = {}) {
 
 export function surfaceEvents(theme, options = {}) {
   const paint = (event, change) => {
-    const node = event.currentTarget, state = states.get(node) || {};
+    const node = event.currentTarget, previous = states.get(node);
+    const state = previous?.theme === theme ? previous : {
+      theme, pressed: false, hovered: false, focused: node.ownerDocument?.activeElement === node,
+    };
     Object.assign(state, change); states.set(node, state);
     Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
     const focus = node.querySelector('.theme-focus-ring');
@@ -69,15 +86,22 @@ export function surfaceEvents(theme, options = {}) {
         theme.colors.accentText : theme.colors.text;
     const down = state.pressed || options.selected;
     for (const [name, color] of Object.entries({
-      top: down ? theme.colors.dark : theme.colors.light,
-      left: down ? theme.colors.dark : theme.colors.light,
+      top: down ? '#404040' : theme.colors.light,
+      left: down ? '#404040' : theme.colors.light,
       bottom: down ? theme.colors.light : '#404040',
       right: down ? theme.colors.light : '#404040',
+      'inner-top': down ? theme.colors.dark : theme.colors.body,
+      'inner-left': down ? theme.colors.dark : theme.colors.body,
       'inner-bottom': down ? theme.colors.body : theme.colors.dark,
       'inner-right': down ? theme.colors.body : theme.colors.dark,
     })) {
       const edge = node.querySelector('.bevel-' + name);
       if (edge) edge.style.backgroundColor = color;
+    }
+    const content = node.querySelector('.classic-task-content');
+    if (content) {
+      content.style.left = down ? '1' : '0';
+      content.style.top = down ? '1' : '0';
     }
   };
   return {
@@ -85,6 +109,8 @@ export function surfaceEvents(theme, options = {}) {
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },
     onMouseup: event => paint(event, { pressed: false }),
+    onMousecancel: event => paint(event, { hovered: false, pressed: false }),
+    onLostmousecapture: event => paint(event, { pressed: false }),
     onFocus: event => paint(event, { focused: true }),
     onBlur: event => paint(event, { focused: false, pressed: false }),
   };

@@ -144,6 +144,24 @@ Set its `panel.menuStyle` override to `legacy` to retain the compact single colu
 Optional `layout.menuSideWidth` and `menuIconSize` control side/app geometry.
 `menuVerticalInset` applies only to menu sizing; absence uses `overlayInset`,
 so changing the Server menu fit does not alter other panel margins.
+Classic follows the supplied Windows Server 2003 references: flat faces and real
+pixel bevel layers, not simulated blur or a modern gradient. Standard WinForms
+controls in that system theme share this appearance; WinForms is not a separate
+theme or a runtime dependency here. Menu frames use three layers;
+buttons use raised/sunken two-layer edges and the tray a single inset edge.
+Those painters own their edges: a generic one-pixel outline must not paint over
+the light/shadow layers. Classic task faces remain flat in every pointer state.
+Task content shifts by one pixel when active/pressed, without moving its hitbox;
+pointer cancellation restores inactive content. `taskIconSize`/`taskPaddingX`
+control Classic task slots. The 28px bar retains its measured 2px top chrome,
+22px controls and 2px inner top/bottom gaps.
+Optional `menuLeftInset` and `menuBottomOverlap` refine only menu placement;
+omission preserves the existing left inset and zero overlap. The existing
+placement helper can take available width to clamp against those margins.
+The supplied lossless WebP's face/shadow colors match RGB565 quantization of
+the canonical Classic palette. That is not verified display-depth metadata:
+the product keeps canonical 24-bit colors, and raw comparison error is not
+normalized or forced to zero.
 Only actual installed entries/actions are shown: no fake recommendations,
 categories, pinned history or nonfunctional search. Classic cascading Programs
 menus, true user account/profile art, and Win11 recommendation/account features

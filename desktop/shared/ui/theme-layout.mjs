@@ -20,17 +20,22 @@ export function dockSurfaceWidth(theme, windowCount, availableWidth) {
   return Math.max(1, Math.min(width, availableWidth - l.screenInset * 2));
 }
 
-export function applicationMenuPlacement(theme) {
+export function applicationMenuPlacement(theme, availableWidth) {
   const l = theme.layout, mac = theme.panel.kind === 'dock';
+  const inset = l.menuLeftInset ?? l.screenInset;
   return {
+    ...(Number.isFinite(availableWidth) ? { width: Math.max(1, Math.min(l.menuWidth,
+      availableWidth - (theme.panel.surfaceStyle === 'fluent' ? l.screenInset : inset) * 2)) } : {}),
     anchors: [mac ? 'top' : 'bottom', ...(theme.panel.surfaceStyle === 'fluent' ? [] : ['left'])],
-    margins: { ...(theme.panel.surfaceStyle === 'fluent' ? {} : { left: l.screenInset }),
-      [mac ? 'top' : 'bottom']: mac ? l.menuBarHeight + l.menuTopGap : theme.panel.height + l.menuGap },
+    margins: { ...(theme.panel.surfaceStyle === 'fluent' ? {} : { left: inset }),
+      [mac ? 'top' : 'bottom']: mac ? l.menuBarHeight + l.menuTopGap :
+        theme.panel.height + l.menuGap - (l.menuBottomOverlap ?? 0) },
   };
 }
 
 export function applicationMenuHeight(theme, availableHeight) {
   const l = theme.layout;
   return Math.max(1, Math.min(l.menuHeight,
-    availableHeight - theme.panel.height - (l.menuVerticalInset ?? l.overlayInset) * 2));
+    availableHeight - theme.panel.height + (theme.panel.kind === 'taskbar' ? l.menuBottomOverlap ?? 0 : 0) -
+      (l.menuVerticalInset ?? l.overlayInset) * 2));
 }

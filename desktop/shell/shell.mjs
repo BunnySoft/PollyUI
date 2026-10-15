@@ -715,7 +715,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       menu = newSurface(bundle.output, 'settings', {
         layer: 'overlay', width: Math.max(1, Math.min(layout.menuWidth, width - layout.screenInset * 2)),
         height: applicationMenuHeight(theme, height),
-        ...applicationMenuPlacement(theme),
+        ...applicationMenuPlacement(theme, width),
         keyboard: 'exclusive', transparent: true,
       });
     } catch (failure) {

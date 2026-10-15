@@ -303,6 +303,15 @@ The full, unscaled 88-pixel plain frame crop matches its reference, while the
 single component render confirms low-height scrolling and activation. Neither
 result establishes full-caption/text or whole-system pixel equivalence.
 
+The subsequent Classic border/spacing fix from `2ec2e2e` removes the generic
+outline that covered bevel layers and the interaction repaint that reintroduced
+a task-button gradient. Raised/sunken edge colors, flat pointer states,
+one-pixel content movement/cancellation and visible keyboard focus are retained.
+Menu placement accounts for its local inset/overlap and available width.
+Reference RGB differences remain nonzero; no palette quantization is used to
+manufacture equality. Other theme definitions and application services are
+unchanged.
+
 One isolated UI workstream owns these surfaces; SM-01 owns D-Bus/iwd backend
 and composition. Their code ownership is kept separate. Visual acceptance uses
 actual rendered windows and layout/interaction checks, not screenshots of a
