@@ -97,8 +97,12 @@ export async function checkNativeClassicFocus(directory) {
   await delay(100);
   control.focus();
   await delay(100);
+  ownerTest.gc(); await delay(30);
+  const pixel = ring.getContext('2d').getImageData(0, 0, 1, 1).data;
+  check(owner.activeElement === control && pixel[0] === 0 && pixel[1] === 0 &&
+    pixel[2] === 0 && pixel[3] === 255, 'Live-owner GC preserves actual focus and the painted focus dot');
   const before = { control: box(control), ring: box(ring), state: child.state,
-    backing: [ring.width, ring.height], business };
+    backing: [ring.width, ring.height], business, afterLiveGC: true };
   child.capture(directory + '/native-before.png');
   child.onstatechange = () => replacement++;
   const frames = [], requestFrame = globalThis.requestAnimationFrame;

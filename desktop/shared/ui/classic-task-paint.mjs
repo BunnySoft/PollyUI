@@ -24,7 +24,7 @@ function stopFocus(state) {
   const remove = state.unsubscribe?.deref(), owner = state.owner?.deref();
   if (remove) remove();
   focusFinalizers.unregister(state.finalizerToken);
-  if (owner && windowFocuses.get(owner) === remove)
+  if (owner && windowFocuses.get(owner)?.deref() === remove)
     windowFocuses.delete(owner);
   state.unsubscribe = null;
   state.owner = null;
@@ -110,7 +110,7 @@ export function paintClassicFocus(canvas, theme, focused) {
     stopFocus(state);
     state.owner = view ? new WeakRef(view) : null;
     if (view) {
-      const previous = windowFocuses.get(view);
+      const previous = windowFocuses.get(view)?.deref();
       if (previous) previous();
       const weak = new WeakRef(canvas);
       let remove;
@@ -124,7 +124,7 @@ export function paintClassicFocus(canvas, theme, focused) {
         }
       });
       state.unsubscribe = new WeakRef(remove);
-      windowFocuses.set(view, remove);
+      windowFocuses.set(view, new WeakRef(remove));
       focusFinalizers.register(canvas, new WeakRef(remove), state.finalizerToken);
     }
   }
