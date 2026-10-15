@@ -1,13 +1,15 @@
 # Runtime desktop themes
 
-PollyShell JavaScript owns theme loading, schema validation, user overrides and
-UI rendering, including the pixels of server-side window decorations. PollyWM
-accepts geometry and complete immutable GUI-rendered frame strips from the trusted
-Shell. It does not interpret theme files or execute theme code.
+PollyShell JavaScript owns theme selection, user overrides, preference writes
+and its desktop UI. A separate windowless PollyUI decorator paints server-side
+window decorations in JavaScript. PollyWM accepts geometry from the private
+Shell publisher and complete immutable frame strips from the private decorator
+renderer; those roles cannot be exchanged. It does not interpret theme files
+or execute theme code.
 File traversal, ownership checks and resource limits are implemented in
 `shared/theme-resources.mjs` over the native FileSystem SDK; the old theme-file
-C bridge is removed. Every service operation still checks the authorized Shell
-connection. Native file mappings themselves have no theme policy.
+C bridge is removed. Each service operation checks its compositor-owned
+connection and fixed role. Native file mappings themselves have no theme policy.
 
 ## Data and ownership
 
@@ -190,9 +192,10 @@ scaling. This verifies the existing theme contract, not build-tagged Windows
 11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
-Private appearance protocol v3 uses geometry-only numeric schema 4. Previous
-private Shell/WM combinations are explicitly rejected; public JSON schema 1 and
-the read-only application theme subscription remain unchanged. This paired
+Private appearance protocol v4 uses geometry-only numeric schema 4 and separates
+the publisher and renderer roles. Previous private Shell/WM/decorator combinations
+are explicitly rejected; public JSON schema 1 and the read-only application
+theme subscription remain unchanged. This paired
 upgrade/removal of the C painters follows the user's explicit choice:
 “接受同版本成套升级，移除旧 C 主题绘制路径（推荐）”.
 There is no legacy theme-ID selection or automatic schema downgrade.
@@ -209,13 +212,29 @@ geometry. C validates those dimensions and owns window management, input,
 hit testing, DPI conversion, configure/ack fencing, lifecycle and buffer
 composition. Generated C fixtures are test-only: no preset catalog, colors,
 font families, glyph rules or style/painter IDs are compiled into the WM.
-Before the GUI publishes a validated layout, it negotiates client-side decoration.
+An explicitly client-decorated or frameless application keeps that contract.
+Bare WM operation without a configured service or a published theme can negotiate
+client-side decoration; it does not claim independent server-side frames.
 
 `shared/ui/caption-paint.mjs` uses the existing GUI's detached Canvas2D and text
-shaping. `shell/decorations.mjs` services the trusted render queue. Neither
-creating canvases nor pattern tiles creates native windows. PollyWM contains
-no JavaScript engine, GUI instance, theme-specific painter or second font cache.
-No application content is sent to the renderer.
+shaping. `shared/ui/decoration-renderer.mjs`, called by `decorator/main.mjs`,
+services the private render queue in a separately supervised `pollyui --decorator`
+process. Its unowned Document has `defaultView === null`: it creates no SDL
+window, hidden Wayland surface or test-host canvas. Wayland, dispatcher, timer
+deadlines and shutdown wakeups drive a blocking event wait, not a fixed frame
+tick. Neither detached canvases nor pattern tiles create native windows.
+PollyWM contains no JavaScript engine, GUI instance, theme-specific painter or
+second font cache. No application content is sent to the renderer.
+
+The Shell remains the only preference writer and may publish a new theme at any
+time. A WM-session latch permits the decorator to bootstrap only before any
+legal theme commit and while no valid Shell transaction is staged. The decorator
+reads existing Shell preferences and user theme files without creating storage,
+taking writer locks or migrating data. Missing data uses the packaged default;
+invalid/unsafe data reports an error before an explicitly qualified default.
+An existing valid WM snapshot is never replaced by that fallback. Shell prepare
+takes priority, and prepare/commit both recheck authority; the first legal commit
+permanently consumes bootstrap authority, including across renderer reconnects.
 
 Active Luna caption text has a hard shadow using the current title text color
 mixed 70% toward black, drawn before the foreground at a one-logical-pixel
@@ -238,7 +257,7 @@ height, stride, offsets, total size and immutable regular-file seals. It convert
 GUI straight-alpha RGBA into premultiplied ARGB; it does not choose colors.
 Frames are limited to 16,777,216 total pixels and 32,768 pixels per axis, with
 a 128MiB aggregate live-mapping budget. Requests coalesce per window; the native
-Shell queue is bounded to 128. There is no palette map, per-frame timer loop
+renderer queue is bounded to 128. There is no palette map, per-frame timer loop
 or per-title native surface.
 
 Non-reused window tokens and frame revisions bind theme generation, geometry,
@@ -249,14 +268,23 @@ unchanged client buffers retain their idle-reuse path. Individual windows may
 retain an earlier complete snapshot while their new geometry/frame is pending.
 This is not a global barrier that freezes every application's content.
 
-No renderer at startup negotiates standard client-side decorations. A failed or
-unresponsive renderer (1000ms without a complete requested frame) logs/reports
-failure and requests client-side decoration; WM input never waits for JavaScript.
-The last complete frame remains until that negotiation is committed.
-Shell disconnect/restart, unmap and destruction cancel requests and reclaim
-owned scenes/FDs; a new theme commit can retry the GUI renderer. There is no
-hidden C style fallback. Frame rejection is distinct from ordinary obsolete
-replies, which return `false` rather than pretending a new frame was displayed.
+Shell disconnect/restart does not stop the decorator or remove the current
+theme, unless the explicit session-exit policy also terminates the WM. A failed
+or unresponsive renderer (1000ms without a complete requested
+frame) reports failure, cancels pending requests and retains the last complete
+presented frame. New geometry/revisions remain pending rather than stretching
+old strips, silently switching to CSD or claiming success. WM input never waits
+for JavaScript.
+
+The WM supervises the renderer independently, with three bounded automatic
+restart attempts. A new private renderer clears obsolete requests and reissues
+fresh revisions against the current snapshot; only complete matching frames
+advance presentation. Exhaustion is an explicit failed service, not logout or
+an instruction for ordinary applications to draw missing frames. Unmap,
+destruction and actual session shutdown reclaim owned requests/scenes/FDs.
+There is no hidden C style fallback. Frame rejection is distinct from ordinary
+obsolete replies, which return `false` rather than pretending a new frame was
+displayed. See [session startup and supervision](SESSION.md).
 
 ## Alignment scope and evidence
 

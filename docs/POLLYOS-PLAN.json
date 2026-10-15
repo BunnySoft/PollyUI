@@ -3307,7 +3307,7 @@
       "label": "T16.6 窗饰与 Shell 解耦",
       "kind": "subtask",
       "parent": "t16",
-      "scope": "盘点发现的架构缺口：复用现有 GUI/JS 窗饰绘制，但应用系统窗框的生命周期不应依赖桌面 Shell。先单独确认服务归属、最小权限、主题快照、启动/崩溃/恢复及无 Shell 验收，再实施；不将此前架构问答当作独立服务重构授权，不回退到 C 主题 painter。",
+      "scope": "WM 独立监督无窗口 GUI/JS 窗饰服务，Shell 仅发布主题/写偏好；分离私有连接角色、只读一次性冷启动引导、原子帧及有界故障恢复。复用既有 GUI/Canvas2D/font 与权限/FD 校验，实际证明无 Shell 的窗框和输入，不回退 C 主题 painter、隐藏窗或 WM 内嵌 JS。",
       "priority": "P1",
       "modes": [
         "common",
@@ -3317,7 +3317,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-15 用户明确询问 App 是否像 Windows 程序一样不依赖 Explorer；现行交付仍是Shell内统一GUI窗饰，失联仅请求CSD，不能保证不会自绘客户有完整窗框。2026-10-16 用户要求提交推送后继续完成剩余，并明确自主实现；父已审完并正式批准无窗口独立decorator方案，独占native分支正在实施，尚未交付。WM私有连接固定publisher/renderer角色、appearance v4、WM会话不可逆的一次性只读主题引导；Shell保唯一偏好writer。通用无窗口GUI复用字体/Document/Canvas和事件等待，不用SDL/隐藏窗/testhost/固定tick。保最后已呈现帧但新geometry/revision必须等matching frame或显式失败，重连fresh revision，三次有界重启。与Windows shell.mjs交棒后才移除Shell renderer，不回退C painter；完成须以真实独立进程冷启动/Shell退出/renderer恢复及权限/FD负例证明，当前不能宣称已具独立窗饰能力。"
+      "evidence": "2026-10-15 盘点时窗饰仍在Shell内，失联仅协商CSD，不保证不会自绘客户有框。2026-10-16 用户要求推送后自主完成剩余，父正式批准方案并合入d669ec9（源81858f44）核心，最终安装/故障回归followup仍收尾，暂不标完成。WM私有连接固定publisher/renderer角色，appearance v4，公共JSON1/geometry4保持；不可逆WM会话latch与Shell prepare优先race gate约束一次性只读引导，Shell唯一偏好writer。通用pu_gui_service复用字体/无owner Document/Canvas和Wayland/dispatcher/timer/shutdown事件等待，无SDL/隐藏窗/testhost/固定tick；producer join后才关wake/VM。失联保最后完整已呈现帧，新geometry/revision等matching frame或显式失败，重连fresh revision及三次有界恢复。父已审authority/wait/shutdown/安装源码并亲跑精确新C+当前全部JS的windowless/privatepolicy/七场真实lifecycle通过：missing/cold/normal/crash/saved/corrupt/legacy，不建namespace/lock、不写偏好；App实际点击变色和窗框title/hover/pressed/resize/DPI/min/max/restore、CSD/frameless/fullscreen、冻结/kill/newPID恢复均通过。Node合并合同89/89。子native-shell-raster与relocated安装--check/missinglauncher已通过，旧server/预算耗尽等最终followup未整合前不关闭。软件raster证据不是物理GPU/Darwin或整六OS像素认证。"
     },
     {
       "id": "t17",

@@ -56,7 +56,8 @@ apt/内核和独立救援；新安装不等待旧数据迁移整组完成。可�
 | PollyDesktop / `pollydesktop-*` | 现有桌面子项目、构建产物使用的历史名称；本文不重命名代码或文件 |
 | PollyWM | 自研 C11 Wayland 合成器；wlroots 是其基础库，不是另一个被套壳的桌面 |
 | PollyUI | 通用跨平台原生 UI 框架；不依赖 PollyWM 或 PollyOS 才能工作 |
-| PollyShell | 运行在 PollyUI 上的桌面界面，负责面板、Dock、启动器、服务策略及当前统一窗饰绘制；六页设置 UI 已在独立 Settings 进程 |
+| PollyShell | 运行在 PollyUI 上的桌面界面，负责面板、Dock、启动器、服务策略及主题选择/偏好写入；六页设置 UI 已在独立 Settings 进程 |
+| 独立窗饰服务 | WM 私有连接上的无窗口 `pollyui --decorator`；复用 GUI/JS/Canvas2D 绘制四条窗框，Shell 退出不终止它，不把 JS 或主题 painter 放进 WM |
 | `polly-app` | 当前普通用户私有应用包管理器；P0 将共享代码和全局注册接入受限管理后端，普通应用仍非 root |
 
 当前成熟度必须分开表述：
@@ -110,6 +111,9 @@ UEFI
        +-- PollyShell (PollyUI + JavaScript, private Wayland connection)
        |     wallpaper / panels / Dock / launcher / settings / service UI
        |
+       +-- windowless decorator (PollyUI + JavaScript, separate private connection)
+       |     caption/frame strips only; WM-owned supervision and geometry/input
+       |
        +-- trusted input-method process (PollyUI + librime)
        +-- private session D-Bus daemon
        +-- private PipeWire core + Polly-owned audio routing policy
@@ -127,11 +131,15 @@ Debian 使用 systemd/udev/logind；保留的 Alpine 路径使用 OpenRC/eudev/e
 PollyWM 通过 libseat/logind 获取设备访问能力，支持开发用 headless/nested 路径和直接 DRM 输入/显示路径。
 Shell 崩溃默认不终止其它应用；重启次数/退避及“Shell 正常退出是否结束会话”由显式策略决定。
 诊断入口可选择失败即退出，但不能借此结束受保护的锁定会话。
+窗饰服务与 Shell 分开监督；绘制进程失联保留最后完整已呈现帧，新几何等待合法
+matching frame，重启后以新 revision 重发。三次自动恢复耗尽明确报失败，不假装
+应用能自行补画窗框。Shell 独占偏好写入；无 Shell 冷启动仅可由 WM 会话一次性
+授权只读引导，任一合法主题提交后即永久关闭本次会话的引导权限。
 
 ### 3.2 UI 与绘制链路
 
 ```text
-application / shell JavaScript
+application / shell / decorator JavaScript
   -> QuickJS-ng
   -> DOM-like retained model
   -> Yoga Flexbox layout

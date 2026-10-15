@@ -326,12 +326,13 @@ its titlebar can move or resize. Outstanding size changes still require the
 latest matching commit, including when a theme refresh arrives while resizing.
 
 Shell appearance selection sends validated JSON and a JS-compiled geometry
-array through the private paired v3 connection. It then services bounded GUI
-render requests using the same logical rectangles as WM hit testing. Four
+array through its private paired v4 publisher connection. A separate windowless
+PollyUI decorator services bounded GUI render requests over its own private
+renderer connection, using the same logical rectangles as WM hit testing. Four
 immutable pixel strips and their revision/generation/scale/state are validated
 and atomically staged, never mixed individually with a previous frame.
 Custom IDs and same-ID edits apply without rebuilding the compositor.
-There is no legacy theme-ID selection or automatic schema downgrade. Generated
+There is no legacy theme-ID selection or automatic schema downgrade.
 Generated test fixtures contain preset geometry; the WM contains no preset
 catalog. Generated schema fields keep native bounds consistent with the JS
 layout compiler. Mixed old private versions fail
@@ -340,8 +341,12 @@ explicitly. Public theme JSON and application APIs are unchanged.
 Caption rasterization and text shaping reuse GUI Canvas2D, with no hidden
 caption window. The WM's separate theme painters, FreeType/Fontconfig face cache
 and direct font dependencies are removed. Skia/SDL/QuickJS/Yoga are not embedded
-in PollyWM. A missing or failed GUI renderer negotiates client-side decoration
-instead of invoking a second C theme renderer. See [the ownership and bounded
+in PollyWM. Shell exit leaves the independent renderer and current theme alive.
+A renderer failure retains complete presented frames while new geometry waits;
+bounded restart reissues fresh revisions rather than stretching old pixels or
+assuming the client can draw missing decorations. Failure is explicit when
+recovery is exhausted, with no second C painter. Bare WM operation without the
+service remains a separate, unqualified CSD fallback. See [the ownership and bounded
 frame contract](THEMES.md#decoration-execution-boundary).
 Painting through the GUI does not itself add accessible DOM controls to native
 captions; platform caption accessibility integration is still a separate gap.

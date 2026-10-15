@@ -33,6 +33,8 @@ typedef struct PuGuiConfig {
  * until return, and host callbacks must not enter another GUI context. */
 int pu_gui_run(const PuGuiConfig *config);
 int pu_gui_test(const PuGuiConfig *config);
+/* Production execution without SDL, Window APIs or a test host. Requires
+ * wait/wake hooks; the root Document is unowned and has defaultView == null. */
 int pu_gui_service(const PuGuiConfig *config);
 int pu_gui_demo(void);
 void pu_gui_shutdown(void);
