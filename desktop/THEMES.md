@@ -315,6 +315,17 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
 | Mechanism/business gaps | Still missing: real glass, shadow/reflection, application grouping, pinning and magnification. This palette wiring does not implement any of them. |
 
+The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
+**no confirmed product defect and makes no painter/preset change**:
+
+| Area | Current coverage and remaining boundary |
+| --- | --- |
+| Geometry | Actual detached GUI Canvas uses supplied rectangles: default 12px round controls at close/minimize/maximize x=12/32/52, y=8 in a 28px title strip; one accepted custom 16px/34px allocation and widths 1/20/44/64/300 fit without stretching strips. The fixture mirrors the metadata grammar; it does not certify native hit testing or generate an OS oracle. |
+| State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
+| Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
+| Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
+| Mechanism/content gaps | Unchanged: genuine window shadow/vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance need separate evidence or implementation decisions. |
+
 Slots currently represent windows, not macOS application grouping. The
 window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
 do not shrink, and focusing an offscreen window reveals it. The pure
