@@ -15,7 +15,7 @@ export function dockSurfaceWidth(theme, windowCount, availableWidth) {
   const count = Math.max(0, Math.floor(windowCount));
   const width = ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ?
     (l.dockPadding ?? 6) * 2 + 3 * l.dockTileWidth +
-      (count ? 13 + count * l.dockWindowWidth : 0) + (2 + count) * l.dockGap :
+      (count ? 13 + count * l.dockWindowWidth : 0) + (count ? count + 3 : 2) * l.dockGap :
     l.dockBaseWidth + count * (l.dockWindowWidth + l.windowGap);
   return Math.max(1, Math.min(width, availableWidth - l.screenInset * 2));
 }
