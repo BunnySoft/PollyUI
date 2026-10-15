@@ -232,7 +232,7 @@ check(failedSave && currentShortcuts[0].key === 'F9', 'failed shortcut persisten
 let service = 'ready';
 const serviceWarnings = [];
 const serviceShell = createDesktopShell({ host: fakeHost, configuration, native: {
-  sessionServices: () => ({inputMethod:service}),
+  sessionServices: () => ({inputMethod:service, decorations:'ready', decorationMessage:''}),
 }, report: message => serviceWarnings.push(message) }).start();
 serviceShell.refresh(true);
 check(!serviceShell.getState().error && serviceShell.getState().services.inputMethod === 'ready',

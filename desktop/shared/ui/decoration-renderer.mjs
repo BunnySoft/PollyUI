@@ -2,7 +2,7 @@ import { parseThemeFile } from './desktop/shared/ui/theme-schema.mjs';
 import { paintCaptionFrame } from './desktop/shared/ui/caption-paint.mjs';
 
 export function createDecorationRenderer({ native, document, failure }) {
-  let running = false, draining = false, previous = null;
+  let running = false, draining = false;
   const drain = () => {
     if (!running || draining) return;
     draining = true;
@@ -14,26 +14,24 @@ export function createDecorationRenderer({ native, document, failure }) {
           native.submitDecorationFrame(request.meta, strips);
         } catch (error) {
           failure(error);
-          try { native.failDecorationFrame(request.meta, String(error)); }
-          catch (reportError) { failure(reportError); }
+          native.failDecorationFrame(request.meta, String(error));
         }
       }
-    } catch (error) { failure(error); }
-    finally { draining = false; }
+    } finally { draining = false; }
   };
   return {
     start() {
-      if (running || typeof native?.decorationRequests !== 'function') return;
-      running = true; previous = native.onDecorationRequestsChanged;
+      if (running) throw new Error('Decoration renderer is already running');
+      if (typeof native?.startDecorationRenderer !== 'function')
+        throw new Error('Independent decoration renderer v4 is unavailable');
+      running = true;
       native.onDecorationRequestsChanged = drain;
+      native.startDecorationRenderer();
     },
     stop() {
-      if (running && typeof native?.stopDecorationRenderer === 'function') {
-        try { native.stopDecorationRenderer(); }
-        catch (error) { failure(error); }
-      }
       running = false;
-      if (native?.onDecorationRequestsChanged === drain) native.onDecorationRequestsChanged = previous;
+      native.onDecorationRequestsChanged = null;
+      native.stopDecorationRenderer();
     },
   };
 }

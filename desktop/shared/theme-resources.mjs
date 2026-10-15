@@ -28,6 +28,7 @@ function environment(name) {
     } finally { buffer.close(); }
   } finally { pointer.close(); }
 }
+export { environment as readThemeEnvironment };
 function optionalOpen(parent, name, flags) {
   const result = raw('open', parent, name, flags, 0);
   if (result.value >= 0) return result.value;
@@ -130,35 +131,38 @@ function assetPath(id, path) {
   return parts;
 }
 
+export function readThemeFiles(authorize) {
+  if (typeof authorize !== 'function') throw new TypeError('Theme definitions require native authority');
+  authorize();
+  const uid = call('euid'), files = [];
+  let total = 0;
+  root('XDG_DATA_HOME', '.local/share', 'themes', uid, fd => eachEntry(fd, id => {
+    const info = status(fd, id, C.noFollowStatus), type = info.mode & C.typeMask;
+    if (type === C.symbolicLink) throw new TypeError('Theme directory links are not supported');
+    if (type !== C.directoryType) return;
+    if (!identifier(id)) throw new TypeError('Invalid theme directory name');
+    const read = directory(fd, id, uid, child => {
+      const file = readFile(child, 'theme.json', DEFINITION, true, uid);
+      if (!file) return false;
+      total += file.size;
+      if (files.length >= 64 || total > TOTAL) throw new RangeError('Theme catalog file limits exceeded');
+      files.push({ id, text: file.value });
+      return true;
+    });
+    if (read === null) throw new Error('Theme directory disappeared');
+  }));
+  const overrides = root('XDG_CONFIG_HOME', '.config', null, uid,
+    fd => readFile(fd, 'theme-overrides.json', DEFINITION, true, uid)?.value ?? null);
+  return { files, overrides };
+}
+
 export function createThemeResources(authorize, decode) {
   if (typeof authorize !== 'function' || typeof decode !== 'function')
     throw new TypeError('Theme resources require native authority and a GUI bitmap decoder');
   const assets = new Map();
   let pixels = 0;
   return Object.freeze({
-    readThemeFiles() {
-      authorize();
-      const uid = call('euid'), files = [];
-      let total = 0;
-      root('XDG_DATA_HOME', '.local/share', 'themes', uid, fd => eachEntry(fd, id => {
-        const info = status(fd, id, C.noFollowStatus), type = info.mode & C.typeMask;
-        if (type === C.symbolicLink) throw new TypeError('Theme directory links are not supported');
-        if (type !== C.directoryType) return;
-        if (!identifier(id)) throw new TypeError('Invalid theme directory name');
-        const read = directory(fd, id, uid, child => {
-          const file = readFile(child, 'theme.json', DEFINITION, true, uid);
-          if (!file) return false;
-          total += file.size;
-          if (files.length >= 64 || total > TOTAL) throw new RangeError('Theme catalog file limits exceeded');
-          files.push({ id, text: file.value });
-          return true;
-        });
-        if (read === null) throw new Error('Theme directory disappeared');
-      }));
-      const overrides = root('XDG_CONFIG_HOME', '.config', null, uid,
-        fd => readFile(fd, 'theme-overrides.json', DEFINITION, true, uid)?.value ?? null);
-      return { files, overrides };
-    },
+    readThemeFiles() { return readThemeFiles(authorize); },
     loadThemeAsset(...args) {
       authorize();
       if (args.length !== 2) throw new TypeError('Theme asset requires an ID and relative bitmap path');

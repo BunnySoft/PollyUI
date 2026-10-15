@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="3">
-    <description summary="trusted Shell appearance selection">
-      This private global is restricted to the compositor-owned Shell connection.
-      Version 3 requires a matching GUI renderer and geometry-only schema 4.
+  <interface name="polly_appearance_v1" version="4">
+    <description summary="separate trusted appearance publisher and renderer">
+      This private global is restricted to compositor-owned Shell and decorator
+      connections. The Shell publishes themes but cannot render. The decorator
+      renders but can publish only the first theme, before a Shell transaction.
+      Version 4 requires the separately supervised GUI service and geometry schema 4.
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
     </description>
     <enum name="error">
-      <entry name="unauthorized" value="1" summary="connection is not the trusted Shell"/>
+      <entry name="unauthorized" value="1" summary="connection does not own this role"/>
     </enum>
     <request name="destroy" type="destructor"/>
     <request name="prepare" since="2">
@@ -93,6 +95,18 @@
     <event name="render_cancelled" since="3">
       <description summary="discard queued requests for an unmapped, closed or unavailable frame"/>
       <arg name="token" type="uint"/>
+    </event>
+    <event name="renderer_status" since="4">
+      <description summary="service health and advisory bootstrap eligibility">
+        State is 0 disabled, 1 starting or recovering, 2 ready, or 3 failed.
+        Bootstrap eligibility is advisory, is sent only to the decorator, and
+        is checked again on prepare and commit. Any successful theme commit
+        consumes it for the lifetime of this compositor, including reconnects.
+        A Shell prepare takes priority over a staged bootstrap.
+      </description>
+      <arg name="state" type="uint"/>
+      <arg name="bootstrap" type="uint"/>
+      <arg name="message" type="string"/>
     </event>
   </interface>
   <interface name="polly_theme_manager_v1" version="1">

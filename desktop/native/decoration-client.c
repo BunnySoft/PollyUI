@@ -20,10 +20,14 @@ static struct {
     JSValue api;
     struct polly_appearance_v1 *appearance;
     struct wl_display *display;
+    int (*roundtrip)(struct wl_display *display);
     struct RenderRequest *requests;
     uint32_t serial, reply, phase, accepted, frame_token, frame_revision, frame_status;
     unsigned count;
     bool enabled, enable_reply, frame_reply;
+    bool painter, bootstrap, status_changed;
+    uint32_t service_state;
+    char service_message[192];
     char error[192];
 } renderer;
 static int property(JSContext *ctx, JSValueConst object, const char *key, JSValue value)
@@ -95,10 +99,28 @@ static void frame_result(void *data, struct polly_appearance_v1 *appearance, uin
 }
 static void closed(void *data, struct polly_appearance_v1 *appearance, uint32_t token)
 { (void)data; (void)appearance; remove_request(token); }
+static void service_status(void *data, struct polly_appearance_v1 *appearance,
+    uint32_t state, uint32_t bootstrap, const char *message)
+{
+    (void)data; (void)appearance;
+    renderer.service_state = state; renderer.bootstrap = bootstrap == 1;
+    snprintf(renderer.service_message, sizeof(renderer.service_message), "%s", message);
+    renderer.status_changed = true;
+}
 const struct polly_appearance_v1_listener pu_decoration_client_listener = {
     .prepared = prepared, .applied = applied, .renderer_enabled = enabled,
     .render_request = requested, .frame_result = frame_result, .render_cancelled = closed,
+    .renderer_status = service_status,
 };
+void pu_decoration_client_attach(struct polly_appearance_v1 *appearance, struct wl_display *display,
+    int (*roundtrip)(struct wl_display *display))
+{ renderer.appearance = appearance; renderer.display = display; renderer.roundtrip = roundtrip; }
+uint32_t pu_decoration_client_status(bool *bootstrap, const char **message)
+{
+    if (bootstrap) *bootstrap = renderer.bootstrap;
+    if (message) *message = renderer.service_message;
+    return renderer.service_state;
+}
 static bool read_integer(JSContext *ctx, JSValueConst value, uint32_t *word)
 {
     double number;
@@ -183,7 +205,7 @@ static JSValue submit(JSContext *ctx, JSValueConst self, int argc, JSValueConst 
     renderer.frame_token = meta[0]; renderer.frame_revision = meta[1]; renderer.frame_reply = false;
     polly_appearance_v1_submit_frame(renderer.appearance, meta[0], meta[1], fd, bytes);
     close(fd);
-    if (!pu_desktop_wayland_roundtrip(renderer.display) || !renderer.frame_reply)
+    if (!renderer.roundtrip(renderer.display) || !renderer.frame_reply)
         return JS_ThrowInternalError(ctx, "GUI frame submission was not acknowledged");
     if (renderer.frame_status > 1)
         return JS_ThrowInternalError(ctx, "GUI frame rejected: %s", renderer.error);
@@ -213,6 +235,29 @@ static JSValue fail_frame(JSContext *ctx, JSValueConst self, int argc, JSValueCo
         return JS_ThrowInternalError(ctx, "Cannot report GUI decoration failure");
     return JS_UNDEFINED;
 }
+static JSValue start_renderer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!renderer.painter || !renderer.appearance || !renderer.roundtrip)
+        return JS_ThrowTypeError(ctx, "A private decorator connection is required");
+    renderer.enable_reply = false;
+    polly_appearance_v1_enable_renderer(renderer.appearance);
+    if (!renderer.roundtrip(renderer.display) || !renderer.enable_reply || !renderer.enabled)
+        return JS_ThrowInternalError(ctx, "Cannot enable independent renderer: %s", renderer.error);
+    return JS_UNDEFINED;
+}
+static JSValue get_status(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    JSValue result = JS_NewObject(ctx);
+    if (JS_IsException(result)) return result;
+    if (!property(ctx, result, "state", JS_NewUint32(ctx, renderer.service_state)) ||
+        !property(ctx, result, "bootstrap", JS_NewBool(ctx, renderer.bootstrap)) ||
+        !property(ctx, result, "message", JS_NewString(ctx, renderer.service_message))) {
+        JS_FreeValue(ctx, result); return JS_EXCEPTION;
+    }
+    return result;
+}
 JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *argv,
     struct polly_appearance_v1 *appearance, struct wl_display *display)
 {
@@ -220,17 +265,10 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     if (argc != 2 || !JS_IsObject(argv[0])) return JS_ThrowTypeError(ctx, "A theme and paired GUI layout are required");
     if (!read_words(ctx, argv[1], words, PU_APPEARANCE_WORDS)) return JS_EXCEPTION;
     if (!pu_appearance_decode(&layout, words)) return JS_ThrowRangeError(ctx, "Invalid decoration geometry");
-    if (!appearance || polly_appearance_v1_get_version(appearance) < 3)
-        return JS_ThrowTypeError(ctx, "GUI decorations require paired PollyWM/Shell appearance v3");
+    if (!appearance || polly_appearance_v1_get_version(appearance) < 4)
+        return JS_ThrowTypeError(ctx, "GUI decorations require paired PollyWM/Shell/decorator appearance v4");
     renderer.appearance = appearance; renderer.display = display;
-    if (!renderer.enabled) {
-        JSValue callback = JS_GetPropertyStr(ctx, renderer.api, "onDecorationRequestsChanged");
-        bool installed = JS_IsFunction(ctx, callback); JS_FreeValue(ctx, callback);
-        if (!installed) return JS_ThrowTypeError(ctx, "Install the GUI decoration renderer before selecting a theme");
-        renderer.enable_reply = false; polly_appearance_v1_enable_renderer(appearance);
-        if (!pu_desktop_wayland_roundtrip(display) || !renderer.enable_reply || !renderer.enabled)
-            return JS_ThrowInternalError(ctx, "Cannot enable GUI decoration renderer: %s", renderer.error);
-    }
+    if (!renderer.roundtrip) renderer.roundtrip = pu_desktop_wayland_roundtrip;
     JSValue id = JS_GetPropertyStr(ctx, argv[0], "id"), envelope = JS_NewObject(ctx), serialized = JS_UNDEFINED;
     size_t id_length = 0;
     const char *name = JS_IsString(id) ? JS_ToCStringLen(ctx, &id_length, id) : NULL, *document = NULL;
@@ -252,17 +290,25 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     renderer.reply = renderer.phase = renderer.accepted = 0; renderer.error[0] = 0;
     polly_appearance_v1_prepare(appearance, serial, name, &configuration, fd, (uint32_t)length);
     close(fd); fd = -1;
-    if (!pu_desktop_wayland_roundtrip(display) || renderer.reply != serial || renderer.phase != 1 || renderer.accepted != 1) {
+    if (!renderer.roundtrip(display) || renderer.reply != serial || renderer.phase != 1 || renderer.accepted != 1) {
         polly_appearance_v1_cancel(appearance, serial);
+        if (renderer.painter && renderer.reply == serial && renderer.phase == 1 &&
+            !renderer.accepted && !renderer.bootstrap) goto obsolete;
         JS_ThrowInternalError(ctx, "GUI appearance preparation failed: %s", renderer.error); goto failure;
     }
     renderer.phase = 0; polly_appearance_v1_commit(appearance, serial);
-    if (!pu_desktop_wayland_roundtrip(display) || renderer.reply != serial || renderer.phase != 2 || renderer.accepted != 1) {
+    if (!renderer.roundtrip(display) || renderer.reply != serial || renderer.phase != 2 || renderer.accepted != 1) {
+        if (renderer.painter && renderer.reply == serial && renderer.phase == 2 &&
+            !renderer.accepted && !renderer.bootstrap) goto obsolete;
         JS_ThrowInternalError(ctx, "Cannot confirm GUI appearance commit: %s", renderer.error); goto failure;
     }
     JS_FreeCString(ctx, name); JS_FreeCString(ctx, document);
     JS_FreeValue(ctx, id); JS_FreeValue(ctx, envelope); JS_FreeValue(ctx, serialized);
-    return JS_UNDEFINED;
+    return renderer.painter ? JS_NewBool(ctx, true) : JS_UNDEFINED;
+obsolete:
+    JS_FreeCString(ctx, name); JS_FreeCString(ctx, document);
+    JS_FreeValue(ctx, id); JS_FreeValue(ctx, envelope); JS_FreeValue(ctx, serialized);
+    return JS_NewBool(ctx, false);
 failure:
     if (fd >= 0) close(fd);
     JS_FreeCString(ctx, name); JS_FreeCString(ctx, document);
@@ -272,33 +318,57 @@ failure:
 int pu_decoration_client_install(JSContext *ctx, JSValueConst api)
 {
     renderer.ctx = ctx; renderer.api = JS_DupValue(ctx, api);
+    return 1;
+}
+int pu_decoration_renderer_install(JSContext *ctx, JSValueConst api)
+{
+    if (!pu_decoration_client_install(ctx, api)) return 0;
+    renderer.painter = true;
     return property(ctx, api, "decorationRequests", JS_NewCFunction(ctx, requests, "decorationRequests", 0)) &&
         property(ctx, api, "submitDecorationFrame", JS_NewCFunction(ctx, submit, "submitDecorationFrame", 2)) &&
         property(ctx, api, "failDecorationFrame", JS_NewCFunction(ctx, fail_frame, "failDecorationFrame", 2)) &&
         property(ctx, api, "stopDecorationRenderer", JS_NewCFunction(ctx, stop_renderer, "stopDecorationRenderer", 0)) &&
-        property(ctx, api, "onDecorationRequestsChanged", JS_NULL);
+        property(ctx, api, "startDecorationRenderer", JS_NewCFunction(ctx, start_renderer, "startDecorationRenderer", 0)) &&
+        property(ctx, api, "decorationStatus", JS_NewCFunction(ctx, get_status, "decorationStatus", 0)) &&
+        property(ctx, api, "onDecorationRequestsChanged", JS_NULL) &&
+        property(ctx, api, "onDecorationStatusChanged", JS_NULL);
 }
-int pu_decoration_client_pump(void)
+static int notify(const char *name)
 {
-    if (!renderer.ctx || !renderer.requests) return 0;
-    JSValue callback = JS_GetPropertyStr(renderer.ctx, renderer.api, "onDecorationRequestsChanged"), result = JS_UNDEFINED;
+    JSValue callback = JS_GetPropertyStr(renderer.ctx, renderer.api, name), result = JS_UNDEFINED;
     if (JS_IsException(callback)) result = JS_EXCEPTION;
     else if (JS_IsFunction(renderer.ctx, callback)) result = JS_Call(renderer.ctx, callback, renderer.api, 0, NULL);
-    if (JS_IsException(result)) {
+    bool failed = JS_IsException(result);
+    if (failed) {
         JSValue error = JS_GetException(renderer.ctx);
         const char *message = JS_ToCString(renderer.ctx, error);
         fprintf(stderr, "[decoration] GUI callback failed: %s\n", message ? message : "unknown");
         JS_FreeCString(renderer.ctx, message); JS_FreeValue(renderer.ctx, error);
     }
     JS_FreeValue(renderer.ctx, callback); JS_FreeValue(renderer.ctx, result);
-    return 1;
+    return failed ? -1 : 1;
 }
+int pu_decoration_client_pump(void)
+{
+    if (!renderer.ctx || !renderer.painter) return 0;
+    int work = 0;
+    if (renderer.status_changed) {
+        renderer.status_changed = false;
+        work = notify("onDecorationStatusChanged");
+        if (work < 0) return work;
+    }
+    if (renderer.requests) return notify("onDecorationRequestsChanged");
+    return work;
+}
+bool pu_decoration_client_pending(void)
+{ return renderer.painter && (renderer.requests || renderer.status_changed); }
 void pu_decoration_client_disconnect(void)
 {
     while (renderer.requests) {
         struct RenderRequest *request = renderer.requests; renderer.requests = request->next; free_request(request);
     }
     renderer.count = 0; renderer.enabled = false; renderer.appearance = NULL; renderer.display = NULL;
+    renderer.roundtrip = NULL;
 }
 void pu_decoration_client_shutdown(void)
 {

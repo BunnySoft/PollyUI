@@ -2,6 +2,7 @@
 #include "private-process.h"
 #include "session-lock.h"
 #include "input-method.h"
+#include "decorator-process.h"
 
 #include <errno.h>
 #include <signal.h>
@@ -21,6 +22,10 @@ bool pu_desktop_global_filter(const struct wl_client *client,
 {
     const struct PuDesktop *desktop = data;
     const char *name = wl_global_get_interface(global)->name;
+    if (pu_decorator_allowed(desktop, client))
+        return !strcmp(name, "polly_appearance_v1") || !strcmp(name, "polly_theme_manager_v1");
+    if (!strcmp(name, "polly_appearance_v1"))
+        return desktop->shell_client && client == desktop->shell_client;
     if (!strcmp(name, "ext_session_lock_manager_v1"))
         return pu_session_lock_allowed(desktop, client);
     if (!strcmp(name, "polly_session_status_v1"))
@@ -29,7 +34,6 @@ bool pu_desktop_global_filter(const struct wl_client *client,
         return pu_input_method_allowed(desktop, client);
     if (strcmp(name, "zwlr_layer_shell_v1") == 0 ||
         strcmp(name, "zwlr_foreign_toplevel_manager_v1") == 0 ||
-        strcmp(name, "polly_appearance_v1") == 0 ||
         strcmp(name, "ext_workspace_manager_v1") == 0 ||
         strcmp(name, "polly_workspace_toplevel_manager_v1") == 0 ||
         strcmp(name, "polly_shortcuts_v1") == 0 ||

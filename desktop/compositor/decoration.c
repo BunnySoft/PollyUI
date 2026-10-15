@@ -1,4 +1,5 @@
 #include "decoration.h"
+#include "decorator-process.h"
 #include "decoration-layout.h"
 #include "decoration-frame.h"
 #include "appearance-document.h"
@@ -41,6 +42,7 @@ struct PuDecorations {
     struct AppearanceClient *renderer;
     struct wl_list appearance_clients, theme_watchers;
     uint32_t theme_revision, next_token;
+    bool initial_theme_consumed;
 };
 struct AppearanceClient {
     struct PuDecorations *state;
@@ -48,6 +50,8 @@ struct AppearanceClient {
     struct wl_list link;
     struct Snapshot *staged;
     uint32_t serial;
+    uint64_t base_generation;
+    bool renderer_role;
 };
 struct ThemeWatcher {
     struct PuDecorations *state;
@@ -68,6 +72,30 @@ struct PuDecoration {
     bool decorated, failed;
     char *title;
 };
+
+static bool publisher_preparing(struct PuDecorations *state)
+{
+    struct AppearanceClient *owner;
+    wl_list_for_each(owner, &state->appearance_clients, link)
+        if (!owner->renderer_role && owner->staged) return true;
+    return false;
+}
+static bool bootstrap_allowed(struct AppearanceClient *owner)
+{
+    struct PuDecorations *state = owner->state;
+    return owner->renderer_role && state->renderer == owner &&
+        !state->initial_theme_consumed && state->snapshot->fd < 0 && !publisher_preparing(state);
+}
+void pu_decorations_service_changed(struct PuDesktop *desktop)
+{
+    struct PuDecorations *state = desktop->decorations;
+    if (!state || desktop->stopping) return;
+    const char *message;
+    uint32_t service = pu_decorator_status(desktop, &message);
+    struct AppearanceClient *owner;
+    wl_list_for_each(owner, &state->appearance_clients, link)
+        polly_appearance_v1_send_renderer_status(owner->resource, service, bootstrap_allowed(owner), message);
+}
 
 static struct Snapshot *snapshot_ref(struct Snapshot *snapshot)
 { if (snapshot) snapshot->refs++; return snapshot; }
@@ -217,18 +245,24 @@ const char *pu_decoration_cursor(int part)
 }
 static void renderer_unavailable(struct PuDecoration *d, const char *message, bool failure)
 {
-    wlr_log(failure ? WLR_ERROR : WLR_INFO, "GUI decoration %u unavailable; requesting client-side decoration: %s",
+    wlr_log(failure ? WLR_ERROR : WLR_INFO, "GUI decoration %u unavailable; retaining presented frame: %s",
         d->token, message);
     d->failed = true;
     stop_timeout(d);
     if (d->view->desktop->decorations->renderer)
         polly_appearance_v1_send_render_cancelled(d->view->desktop->decorations->renderer->resource, d->token);
     frame_drop(d->ready); d->ready = NULL;
-    pu_decoration_configure(d->view);
-    pu_desktop_redecorate(d->view);
+    snapshot_drop(d->requested); d->requested = NULL;
+    if (d->view->desktop->decoration_pressed == d->view) {
+        d->view->desktop->decoration_pressed = NULL;
+        d->view->desktop->decoration_part = 0;
+    }
 }
 static void renderer_failed(struct PuDecoration *d, const char *message)
-{ renderer_unavailable(d, message, true); }
+{
+    renderer_unavailable(d, message, true);
+    pu_decorator_fail(d->view->desktop, message);
+}
 static int render_timeout(void *data)
 {
     struct PuDecoration *d = data;
@@ -245,6 +279,7 @@ static bool request_frame(struct PuDesktopView *view)
     struct PuDecorations *state = view->desktop->decorations;
     if (!state->renderer || d->failed) return false;
     struct Snapshot *snapshot = pending ? d->pending : d->current;
+    if (!snapshot || snapshot->fd < 0) return false;
     const struct PuDecorationLayout *layout = &snapshot->layout;
     struct wlr_box geometry = view->toplevel->base->geometry;
     uint32_t serial = view->toplevel->base->current.configure_serial;
@@ -285,8 +320,10 @@ static bool request_frame(struct PuDesktopView *view)
     char *copy = strndup(title, 2048);
     if (!copy) { renderer_failed(d, "cannot retain caption text"); return false; }
     if (d->revision && !memcmp(meta, d->meta, sizeof(meta)) && d->title && !strcmp(copy, d->title)) {
-        free(copy);
-        return d->ready || (d->shown && !memcmp(d->shown->meta, meta, sizeof(meta)));
+        if (d->ready || (d->shown && !memcmp(d->shown->meta, meta, sizeof(meta)))) {
+            free(copy); return true;
+        }
+        if (d->timeout && d->requested) { free(copy); return false; }
     }
     if (d->revision == UINT32_MAX) {
         free(copy); renderer_failed(d, "frame revision exhausted"); return false;
@@ -381,7 +418,7 @@ void pu_decoration_configure(struct PuDesktopView *view)
     if (!d || !d->protocol || !view->toplevel->base->initialized) return;
     enum wlr_xdg_toplevel_decoration_v1_mode mode =
         d->protocol->requested_mode == WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE ||
-        !view->desktop->decorations->renderer || d->failed || view->desktop->decorations->snapshot->fd < 0 ?
+        (!pu_decorator_configured(view->desktop) && view->desktop->decorations->snapshot->fd < 0) ?
         WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE : WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;
     wlr_xdg_toplevel_decoration_v1_set_mode(d->protocol, mode);
 }
@@ -427,9 +464,10 @@ static void appearance_released(struct wl_resource *resource)
         wl_list_for_each(view, &state->desktop->all_views, all_link)
             if (view->decoration && !state->desktop->stopping &&
                 (server_side(view->decoration, true) || view->decoration->decorated))
-                renderer_failed(view->decoration, "trusted Shell renderer disconnected");
+                renderer_failed(view->decoration, "Independent GUI renderer disconnected");
     }
     wl_list_remove(&owner->link); snapshot_drop(owner->staged); free(owner);
+    pu_decorations_service_changed(state->desktop);
 }
 static void notify_theme(struct PuDecorations *state)
 {
@@ -483,29 +521,55 @@ static void theme_feed_bind(struct wl_client *client, void *data, uint32_t versi
 }
 static bool authorized(struct wl_client *client, struct AppearanceClient *owner)
 {
-    if (client == owner->state->desktop->shell_client) return true;
-    wl_resource_post_error(owner->resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Shell authorization was revoked");
+    struct PuDesktop *desktop = owner->state->desktop;
+    if (owner->renderer_role ? pu_decorator_allowed(desktop, client) : client == desktop->shell_client)
+        return true;
+    wl_resource_post_error(owner->resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "Appearance role was revoked");
+    return false;
+}
+static bool renderer_authorized(struct wl_client *client, struct AppearanceClient *owner)
+{
+    if (!authorized(client, owner)) return false;
+    if (owner->renderer_role) return true;
+    wl_resource_post_error(owner->resource, POLLY_APPEARANCE_V1_ERROR_UNAUTHORIZED, "The Shell cannot act as renderer");
     return false;
 }
 static void enable_renderer(struct wl_client *client, struct wl_resource *resource)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
-    if (!authorized(client, owner)) return;
+    if (!renderer_authorized(client, owner)) return;
     struct PuDecorations *state = owner->state;
     bool accepted = !state->renderer || state->renderer == owner;
     if (accepted) state->renderer = owner;
     polly_appearance_v1_send_renderer_enabled(resource, accepted, accepted ? "" : "A GUI renderer is already active");
+    if (!accepted) return;
+    pu_decorator_ready(state->desktop);
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &state->desktop->all_views, all_link) {
+        struct PuDecoration *d = view->decoration;
+        if (!d) continue;
+        d->failed = false;
+        stop_timeout(d);
+        frame_drop(d->ready); d->ready = NULL;
+        snapshot_drop(d->requested); d->requested = NULL;
+        free(d->title); d->title = NULL;
+        pu_decoration_configure(view);
+        if (state->snapshot->fd >= 0 && (d->decorated || server_side(d, true)))
+            pu_desktop_redecorate(view);
+    }
+    pu_decorations_service_changed(state->desktop);
 }
 static void disable_renderer(struct wl_client *client, struct wl_resource *resource)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
-    if (!authorized(client, owner) || owner->state->renderer != owner) return;
+    if (!renderer_authorized(client, owner) || owner->state->renderer != owner) return;
     owner->state->renderer = NULL;
     snapshot_drop(owner->staged); owner->staged = NULL; owner->serial = 0;
     struct PuDesktopView *view;
     wl_list_for_each(view, &owner->state->desktop->all_views, all_link)
         if (view->decoration && (server_side(view->decoration, true) || view->decoration->decorated))
-            renderer_unavailable(view->decoration, "Shell renderer stopped", false);
+            renderer_unavailable(view->decoration, "Independent GUI renderer stopped", false);
+    pu_decorator_fail(owner->state->desktop, "Independent GUI renderer stopped");
 }
 static void prepare_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
     const char *name, struct wl_array *configuration, int32_t document, uint32_t length)
@@ -513,30 +577,47 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     if (!authorized(client, owner)) { close(document); return; }
     snapshot_drop(owner->staged); owner->staged = NULL; owner->serial = 0;
+    if (owner->renderer_role && !bootstrap_allowed(owner)) {
+        close(document);
+        polly_appearance_v1_send_prepared(resource, serial, 0, "Bootstrap authority is unavailable");
+        pu_decorations_service_changed(owner->state->desktop);
+        return;
+    }
     struct PuDecorationLayout layout;
-    bool valid = owner->state->renderer == owner && serial && pu_appearance_identifier(name) &&
+    bool valid = serial && pu_appearance_identifier(name) &&
         configuration->size == PU_APPEARANCE_WORDS * sizeof(uint32_t) &&
         pu_appearance_document_valid(document, length);
     uint32_t words[PU_APPEARANCE_WORDS];
     if (valid) { memcpy(words, configuration->data, sizeof(words)); valid = pu_appearance_decode(&layout, words); }
     if (!valid) {
-        close(document); polly_appearance_v1_send_prepared(resource, serial, 0, "A paired GUI renderer and geometry schema 4 are required"); return;
+        close(document); polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 4 are required"); return;
     }
     owner->staged = calloc(1, sizeof(*owner->staged));
     if (!owner->staged) { close(document); wl_resource_post_no_memory(resource); return; }
     *owner->staged = (struct Snapshot) {.refs = 1, .layout = layout, .fd = document, .length = length};
+    owner->base_generation = owner->state->snapshot->generation;
+    if (!owner->renderer_role) {
+        struct AppearanceClient *other;
+        wl_list_for_each(other, &owner->state->appearance_clients, link)
+            if (other->renderer_role) {
+                snapshot_drop(other->staged); other->staged = NULL; other->serial = 0;
+            }
+    }
     owner->serial = serial; polly_appearance_v1_send_prepared(resource, serial, 1, "");
+    pu_decorations_service_changed(owner->state->desktop);
 }
 static void commit_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     struct PuDecorations *state = owner->state;
     if (!authorized(client, owner)) return;
-    if (!serial || owner->serial != serial || !owner->staged || state->snapshot->generation == UINT64_MAX) {
+    if (!serial || owner->serial != serial || !owner->staged || state->snapshot->generation == UINT64_MAX ||
+        (owner->renderer_role && (!bootstrap_allowed(owner) || owner->base_generation != state->snapshot->generation))) {
         polly_appearance_v1_send_applied(resource, serial, 0, "No matching prepared appearance"); return;
     }
     owner->staged->generation = state->snapshot->generation + 1;
     snapshot_drop(state->snapshot); state->snapshot = owner->staged;
+    state->initial_theme_consumed = true;
     owner->staged = NULL; owner->serial = 0;
     struct PuDesktopView *view;
     wl_list_for_each(view, &state->desktop->all_views, all_link) {
@@ -553,12 +634,14 @@ static void commit_theme(struct wl_client *client, struct wl_resource *resource,
     }
     notify_theme(state);
     polly_appearance_v1_send_applied(resource, serial, 1, "");
+    pu_decorations_service_changed(state->desktop);
 }
 static void cancel_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     if (!authorized(client, owner) || owner->serial != serial) return;
     snapshot_drop(owner->staged); owner->staged = NULL; owner->serial = 0;
+    pu_decorations_service_changed(owner->state->desktop);
 }
 static struct PuDecoration *find_decoration(struct PuDecorations *state, uint32_t token)
 {
@@ -610,7 +693,7 @@ static void submit_frame(struct wl_client *client, struct wl_resource *resource,
     uint32_t revision, int32_t fd, uint32_t length)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
-    if (!authorized(client, owner)) { close(fd); return; }
+    if (!renderer_authorized(client, owner)) { close(fd); return; }
     struct PuDecoration *d = find_decoration(owner->state, token);
     if (d) request_frame(d->view);
     if (owner->state->renderer != owner || !d || d->failed || d->revision != revision ||
@@ -632,7 +715,7 @@ static void frame_failed(struct wl_client *client, struct wl_resource *resource,
     uint32_t revision, const char *message)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
-    if (!authorized(client, owner)) return;
+    if (!renderer_authorized(client, owner)) return;
     struct PuDecoration *d = find_decoration(owner->state, token);
     if (owner->state->renderer == owner && d && d->revision == revision)
         renderer_failed(d, strnlen(message, 193) <= 192 ? message : "GUI painter failed");
@@ -645,19 +728,23 @@ static const struct polly_appearance_v1_interface appearance_impl = {
 static void appearance_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 {
     struct PuDecorations *state = data;
-    if (client != state->desktop->shell_client || version < 3) {
-        wl_client_post_implementation_error(client, "Appearance control requires the trusted paired GUI Shell v3"); return;
+    bool rendering = pu_decorator_allowed(state->desktop, client);
+    if ((!rendering && client != state->desktop->shell_client) || version < 4) {
+        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v4"); return;
     }
-    if (wl_list_length(&state->appearance_clients) >= 8) {
-        wl_client_post_implementation_error(client, "Appearance binding limit reached"); return;
-    }
+    struct AppearanceClient *existing;
+    wl_list_for_each(existing, &state->appearance_clients, link)
+        if (existing->renderer_role == rendering) {
+            wl_client_post_implementation_error(client, "Appearance role is already bound"); return;
+        }
     struct AppearanceClient *owner = calloc(1, sizeof(*owner));
     if (!owner) { wl_client_post_no_memory(client); return; }
     struct wl_resource *resource = wl_resource_create(client, &polly_appearance_v1_interface, version, id);
     if (!resource) { free(owner); wl_client_post_no_memory(client); return; }
-    owner->state = state; owner->resource = resource;
+    owner->state = state; owner->resource = resource; owner->renderer_role = rendering;
     wl_list_insert(&state->appearance_clients, &owner->link);
     wl_resource_set_implementation(resource, &appearance_impl, owner, appearance_released);
+    pu_decorations_service_changed(state->desktop);
 }
 bool pu_decorations_init(struct PuDesktop *desktop)
 {
@@ -672,7 +759,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 3, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 4, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

@@ -1,5 +1,6 @@
 #include "server.h"
 #include "decoration.h"
+#include "decorator-process.h"
 #include "decoration-layout-fixtures.h"
 #include "workspace.h"
 #include "data-device.h"
@@ -1010,6 +1011,12 @@ static bool workspace_suite(void)
 
 static bool layer_suite(const char *path)
 {
+    if (!pu_decorator_configured(&desktop)) {
+        char *renderer[] = {(char *)path, "--trusted", "-1", NULL};
+        CHECK(pu_decorator_spawn(&desktop, renderer));
+        for (int i = 0; i < 600 && pu_decorator_status(&desktop, NULL) != 2; i++) CHECK(pump());
+        CHECK(pu_decorator_status(&desktop, NULL) == 2);
+    }
     int sockets[2];
     CHECK(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == 0);
     CHECK(fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == 0);

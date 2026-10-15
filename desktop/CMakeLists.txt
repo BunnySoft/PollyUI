@@ -96,6 +96,7 @@ add_library(pollywm-core STATIC
     compositor/cursor.c
     "${PROTOCOL_DIR}/cursor-shape-v1-protocol.h"
     compositor/private-process.c
+    compositor/decorator-process.c
     compositor/input-method.c
     "${PROTOCOL_DIR}/polly-session-status-server.h" "${PROTOCOL_DIR}/polly-session-status.c"
     compositor/session-lock.c

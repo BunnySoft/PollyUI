@@ -1502,6 +1502,54 @@ int pu_gui_test(const PuGuiConfig *config)
     return rc;
 }
 
+static void service_wake(void *user)
+{
+    const PuGuiConfig *config = user;
+    config->hooks->wake(config->user);
+}
+
+int pu_gui_service(const PuGuiConfig *config)
+{
+    if (!config || !config->script || config->prelude || !config->hooks ||
+        !config->hooks->wait || !config->hooks->wake) {
+        fprintf(stderr, "[gui] Windowless services require a script and an event-driven host\n");
+        return 2;
+    }
+    if (!pu_font_system_init()) return 1;
+    PuScript *script = pu_script_create();
+    if (!script) return 1;
+    PuBridge *bridge = pu_bridge_install(pu_script_jsctx(script));
+    PuDispatch *dispatch = pu_dispatch_new();
+    int result = 1;
+    if (!bridge || !dispatch) goto done;
+    pu_script_set_dispatch(script, dispatch);
+    pu_dispatch_set_waker(dispatch, service_wake, (void *)config);
+    pu_async_install(pu_script_jsctx(script), dispatch);
+    int installed = !config->hooks->install ||
+        config->hooks->install(pu_script_jsctx(script), dispatch, 0, config->user);
+    if (installed) {
+        result = run_entry(script, config);
+        while (!result) {
+            if (config->hooks->pump && config->hooks->pump(config->user) < 0) { result = 1; break; }
+            pu_script_pump(script);
+            if (pu_script_failed(script)) { result = 1; break; }
+            int wait = config->hooks->wait(pu_script_next_timeout(script), config->user);
+            if (wait) { result = wait < 0; break; }
+        }
+        if (pu_script_finish(script)) result = 1;
+    } else fprintf(stderr, "[gui] Cannot install windowless service extensions\n");
+    if (config->hooks->stop) config->hooks->stop(config->user);
+    pu_async_shutdown();
+    if (config->hooks->windows_closed) config->hooks->windows_closed(config->user);
+    pu_dispatch_set_waker(dispatch, NULL, NULL);
+    if (config->hooks->dispose) config->hooks->dispose(config->user);
+done:
+    if (bridge) pu_bridge_free(bridge);
+    pu_script_destroy(script);
+    if (dispatch) pu_dispatch_free(dispatch);
+    return result;
+}
+
 int pu_gui_run(const PuGuiConfig *config)
 {
     if (!config || !config->script) {

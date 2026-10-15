@@ -248,20 +248,20 @@ static void frame_result(void *data, struct polly_appearance_v1 *appearance,
 }
 static void frame_closed(void *data, struct polly_appearance_v1 *appearance, uint32_t token)
 { (void)data; (void)appearance; (void)token; }
+static void renderer_status(void *data, struct polly_appearance_v1 *appearance,
+    uint32_t state, uint32_t bootstrap, const char *message)
+{ (void)data; (void)appearance; (void)state; (void)bootstrap; (void)message; }
 static const struct polly_appearance_v1_listener appearance_listener = {
     .prepared = appearance_prepared, .applied = appearance_applied,
     .renderer_enabled = renderer_enabled, .render_request = render_fixture,
     .frame_result = frame_result, .render_cancelled = frame_closed,
+    .renderer_status = renderer_status,
 };
 
 static void configure_appearance(struct Client *client, unsigned index)
 {
     const struct PuDecorationLayout *theme = &pu_decoration_layouts[index].layout;
     uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, theme->left_controls};
-    if (!client->renderer_enabled) {
-        polly_appearance_v1_enable_renderer(client->appearance);
-        if (wl_display_roundtrip(client->display) < 0 || !client->renderer_enabled) die("enable fixture renderer");
-    }
     unsigned position = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
     words[position++] = (uint32_t)(theme->field * (scale) + 0.5);
@@ -808,8 +808,8 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        if (version < 3) die("appearance configuration requires paired protocol version 3");
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 3);
+        if (version < 4) die("appearance configuration requires paired protocol version 4");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 4);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
@@ -1038,9 +1038,15 @@ int main(int argc, char **argv)
     if (!client.display) die("connect");
     struct wl_registry *registry = wl_display_get_registry(client.display);
     wl_registry_add_listener(registry, &registry_listener, &client);
-    if (wl_display_roundtrip(client.display) < 0 ||
-        !client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
-    if (client.appearance) configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
+    if (wl_display_roundtrip(client.display) < 0) die("registry");
+    bool render_only = client.appearance && !client.compositor;
+    if (render_only) {
+        polly_appearance_v1_enable_renderer(client.appearance);
+        if (wl_display_roundtrip(client.display) < 0 || !client.renderer_enabled) die("enable separate fixture renderer");
+    } else {
+        if (!client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
+        if (client.appearance) configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
+    }
     bool running = true;
     while (running) {
         if (wl_display_dispatch_pending(client.display) < 0 ||
@@ -1204,7 +1210,7 @@ int main(int argc, char **argv)
             break;
         case TEST_QUERY: break;
         case TEST_MINIMIZE: xdg_toplevel_set_minimized(window->toplevel); break;
-        case TEST_RENAME: xdg_toplevel_set_title(window->toplevel, "Updated title"); break;
+        case TEST_RENAME: xdg_toplevel_set_title(window->toplevel, request.id ? "Updated title again" : "Updated title"); break;
         case TEST_FOREIGN_QUERY: break;
         case TEST_FOREIGN_MINIMIZE: zwlr_foreign_toplevel_handle_v1_set_minimized(foreign->handle); break;
         case TEST_FOREIGN_RESTORE: zwlr_foreign_toplevel_handle_v1_unset_minimized(foreign->handle); break;

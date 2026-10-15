@@ -371,7 +371,7 @@ function settingsBackend({ native, state, calls }) {
         class: 'Audio/Source', state: 'idle', volume: 1, muted: false },
     ] };
   native.audioAvailable = true;
-  native.sessionServices = () => ({ inputMethod: 'disabled' });
+  native.sessionServices = () => ({ inputMethod: 'disabled', decorations: 'ready', decorationMessage: '' });
   native.startNetwork = () => calls.push(['start-network']);
   native.stopNetwork = () => calls.push(['stop-network']);
   native.refreshNetworks = () => calls.push(['refresh-network']);

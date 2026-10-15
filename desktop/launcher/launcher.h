@@ -11,6 +11,7 @@ typedef struct PuLaunchOptions {
     int lock_mode;
     int greeter_mode;
     int no_legacy_storage;
+    int decorator_mode;
 } PuLaunchOptions;
 
 int pu_application_run(const PuLaunchOptions *options);

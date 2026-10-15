@@ -2,6 +2,7 @@
 #include "server.h"
 #include "polly-session-status-server.h"
 #include "decoration.h"
+#include "decorator-process.h"
 #include "workspace.h"
 #include "shortcut-control.h"
 #include "session-lock.h"
@@ -2418,6 +2419,7 @@ void pu_desktop_finish(struct PuDesktop *desktop)
     pu_input_method_stop(desktop);
     pu_session_lock_finish(desktop);
     pu_desktop_stop_shell(desktop);
+    pu_decorator_stop(desktop);
     if (desktop->display) wl_display_destroy_clients(desktop->display);
     pu_input_method_finish(desktop);
     pu_data_device_finish(desktop);

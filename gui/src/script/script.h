@@ -17,6 +17,8 @@ void pu_script_set_dispatch(PuScript *s, PuDispatch *d);
 /* Non-blocking: run all immediately-runnable work (microtasks, async
  * deliveries, due timers). Returns how many items ran. */
 int pu_script_pump(PuScript *s);
+/* Delay to the next timer; -1 when only external wakeups can make progress. */
+int pu_script_next_timeout(PuScript *s);
 
 /* Fire all pending requestAnimationFrame callbacks once, passing `ts` (a
  * monotonic millisecond timestamp). Returns how many ran. Call once per frame. */

@@ -8,6 +8,7 @@
 #include "sysrt/ffi/ffi.h"
 #if defined(PU_DESKTOP_SERVICES)
 #include "native/applications.h"
+#include "native/decorator-client.h"
 #endif
 #if defined(PU_LAYER_SHELL)
 #include "host/sdl/layer_shell.h"
@@ -96,6 +97,16 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
     LaunchState *state = user;
     const PuLaunchOptions *options = state->options;
     const char *test_storage = getenv("PU_TEST_STORAGE");
+    if (options && options->decorator_mode) {
+#if defined(PU_DESKTOP_SERVICES)
+        if (!pu_decorator_client_install(ctx) || !install_application(ctx, state) ||
+            !pu_fetch_install(ctx, dispatch) || !(state->ffi = sr_ffi_register(ctx, dispatch)))
+            return 0;
+        return 1;
+#else
+        return 0;
+#endif
+    }
     const char *storage = headless ? (test_storage ? test_storage : "build/_localstorage.dat") : state->paths.storage;
     if ((headless || !options->no_legacy_storage) && !pu_storage_install(ctx, storage)) return 0;
     if (!pu_fetch_install(ctx, dispatch)) return 0;
@@ -147,7 +158,11 @@ static int install_services(JSContext *ctx, PuDispatch *dispatch, int headless, 
 
 static int pump_services(void *user)
 {
-    (void)user;
+    LaunchState *state = user;
+#if defined(PU_DESKTOP_SERVICES)
+    if (state->options && state->options->decorator_mode) return pu_decorator_client_pump();
+#endif
+    (void)state;
     int work = 0;
 #if defined(PU_DESKTOP_SERVICES)
     work += pu_applications_pump();
@@ -173,6 +188,9 @@ static int pump_services(void *user)
 static void stop_services(void *user)
 {
     LaunchState *state = user;
+#if defined(PU_DESKTOP_SERVICES)
+    if (state->options && state->options->decorator_mode) pu_decorator_client_stop();
+#endif
     sr_ffi_shutdown(state->ffi);
     pu_fetch_shutdown();
 #if defined(PU_DESKTOP_SERVICES)
@@ -185,7 +203,11 @@ static void stop_services(void *user)
 
 static void close_services(void *user)
 {
-    (void)user;
+    LaunchState *state = user;
+#if defined(PU_DESKTOP_SERVICES)
+    if (state->options && state->options->decorator_mode) pu_decorator_client_close();
+#endif
+    (void)state;
 #if defined(PU_INPUT_METHOD)
     pu_input_client_shutdown();
 #endif
@@ -199,13 +221,34 @@ static void close_services(void *user)
 
 static void dispose_services(void *user)
 {
-    (void)user;
+    LaunchState *state = user;
+#if defined(PU_DESKTOP_SERVICES)
+    if (state->options && state->options->decorator_mode) pu_decorator_client_dispose();
+#endif
+    (void)state;
     pu_storage_shutdown();
+}
+static int wait_service(int timeout_ms, void *user)
+{
+    (void)user;
+#if defined(PU_DESKTOP_SERVICES)
+    return pu_decorator_client_wait(timeout_ms);
+#else
+    (void)timeout_ms; return -1;
+#endif
+}
+static void wake_service(void *user)
+{
+    (void)user;
+#if defined(PU_DESKTOP_SERVICES)
+    pu_decorator_client_wake();
+#endif
 }
 
 static const PuGuiHooks services = {
     .install = install_services, .pump = pump_services, .stop = stop_services,
     .windows_closed = close_services, .dispose = dispose_services,
+    .wait = wait_service, .wake = wake_service,
 };
 
 int pu_application_run(const PuLaunchOptions *options)
@@ -217,7 +260,19 @@ int pu_application_run(const PuLaunchOptions *options)
 #if defined(__linux__)
     if (!module_root(&state)) return 1;
 #endif
-    if (!pu_app_paths_init(&state.paths, options->script, options->app_id)) return 1;
+    if (options->decorator_mode) {
+#if defined(__linux__)
+        const char identity[] = "org.pollyui.decorator";
+        if (options->app_id && strcmp(options->app_id, identity)) {
+            fprintf(stderr, "[decorator] The dedicated decorator identity is required\n"); return 2;
+        }
+        state.paths.id = malloc(sizeof(identity));
+        if (!state.paths.id) { fprintf(stderr, "[decorator] Cannot allocate service identity\n"); return 1; }
+        memcpy(state.paths.id, identity, sizeof(identity));
+#else
+        fprintf(stderr, "[decorator] Windowless decorator is Linux-only\n"); return 2;
+#endif
+    } else if (!pu_app_paths_init(&state.paths, options->script, options->app_id)) return 1;
 #if defined(__linux__)
     const char *sdl_id = getenv("SDL_APP_ID");
     if ((!sdl_id || !*sdl_id) && setenv("SDL_APP_ID", state.paths.id, 1) < 0) {
@@ -228,14 +283,14 @@ int pu_application_run(const PuLaunchOptions *options)
     PuGuiConfig config = {
         .script = options->script, .hooks = &services, .user = &state,
 #if defined(__linux__)
-        .prelude = !options->greeter_mode && !options->lock_mode && !options->input_method_mode ?
+        .prelude = !options->greeter_mode && !options->lock_mode && !options->input_method_mode && !options->decorator_mode ?
             "./desktop/launcher/services.mjs" : NULL,
         .module_root = state.module_root,
 #endif
         .keep_alive = options->input_method_mode || options->lock_mode || options->greeter_mode,
         .redact_errors = options->greeter_mode,
     };
-    int result = pu_gui_run(&config);
+    int result = options->decorator_mode ? pu_gui_service(&config) : pu_gui_run(&config);
     pu_app_paths_free(&state.paths);
     return result;
 }

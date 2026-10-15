@@ -72,3 +72,31 @@ closed handles reject use. FileSystem itself has no application capacity quota.
 
 This alpha loop targets Linux x86_64 glibc/musl Shell only, not a configuration
 registry, other applications' migration, or cross-platform configuration.
+
+## Read-only decoration bootstrap
+
+The independent Linux decorator does not own an application preference store
+or call `openShellConfiguration()`. It does not create Shell or decorator
+configuration/data/cache directories, a writer lock, migration output, or a
+second preference file. In a compositor that has never committed a theme, it
+may read the existing Shell namespace's JSON with the same private-file checks
+and complete validator. Only when JSON is absent may it read and decode the
+existing legacy file; this does not write the migration. It respects
+`theme.filesEnabled` and reuses the shared bounded user-theme reader, validator
+and JS geometry encoder.
+
+The WM, not a daemon-local flag, controls this one-shot bootstrap authority.
+A valid Shell prepare invalidates any staged bootstrap and takes priority.
+Both bootstrap prepare and commit check the current WM generation and absence
+of a Shell transaction. Shell cancellation/disconnection can reopen eligibility
+only while no theme has ever committed. Any successful theme commit permanently
+consumes bootstrap permission for that WM session, including renderer restarts.
+The Shell may always publish a later valid theme using its normal transaction.
+
+Missing preferences select the packaged default. Corrupt, unsafe or unreadable
+data produces an explicit diagnostic and may use the packaged default only
+while bootstrap is still authorized; the file is never repaired or overwritten.
+If even the packaged recovery theme is unavailable, initialization fails.
+Once the WM holds a valid theme, the renderer uses its request documents rather
+than rereading preferences or replacing it with a fallback when the Shell exits.
+This is separate from the Shell's strict write/migration failure policy above.

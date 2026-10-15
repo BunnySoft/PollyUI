@@ -50,6 +50,9 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/sysrt/sdk" "${CMAKE_SOURCE_DIR}/sysrt/bin
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/shell"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs")
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/decorator"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.mjs")
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/launcher/services.mjs"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/launcher" COMPONENT PollyDesktop)
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/services"
@@ -110,6 +113,7 @@ install(FILES "${CMAKE_SOURCE_DIR}/desktop/session/greetd-launch.py"
     "${CMAKE_SOURCE_DIR}/desktop/session/greeter-dependencies.json"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/pollyui" COMPONENT PollyDesktop)
 install(PROGRAMS "${CMAKE_SOURCE_DIR}/desktop/tools/run-session.sh"
+    "${CMAKE_SOURCE_DIR}/desktop/tools/run-decorator.sh"
     "${CMAKE_SOURCE_DIR}/desktop/tools/run-input-method.sh"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/tools" COMPONENT PollyDesktop)
 install(FILES "${CMAKE_SOURCE_DIR}/desktop/tools/session-bus.sh"

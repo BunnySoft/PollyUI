@@ -95,7 +95,7 @@ function fixture(t, { maximumSchema = 4, initialTheme = 'xp', failure = null } =
   const backend = {
     maximumSchema, failure, rejectedTheme: null, committed: null,
     applicationFiles: () => [],
-    sessionServices: () => ({ inputMethod: 'disabled' }),
+    sessionServices: () => ({ inputMethod: 'disabled', decorations: 'ready', decorationMessage: '' }),
     configureAppearance(theme, words) {
       assert.deepEqual(words, encodeDecorationLayout(theme));
       attempts.push({ theme, words });

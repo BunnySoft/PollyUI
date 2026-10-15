@@ -14,7 +14,11 @@ async function scenario(frames, options = {}) {
   };
   const native = {
     get audioAvailable() { return frame().audio !== undefined; },
-    sessionServices() { if (frame().error) throw new Error(frame().error); return { inputMethod: frame().ime }; },
+    sessionServices() {
+      if (frame().error) throw new Error(frame().error);
+      return { inputMethod: frame().ime, decorations: frame().decorations ?? 'ready',
+        decorationMessage: frame().decorationMessage ?? '' };
+    },
     audioState: () => frame().audio,
   };
   let error = '';
@@ -56,7 +60,7 @@ check(result.error.includes('Invalid input-method'), 'unknown protocol status is
 let clock = 0, status = 'starting', audioError = '';
 const warnings = [];
 const monitor = createSessionMonitor({
-  native: { sessionServices: () => ({inputMethod:status}), audioAvailable:true,
+  native: { sessionServices: () => ({inputMethod:status, decorations:'ready', decorationMessage:''}), audioAvailable:true,
     audioState: () => ({ready:!audioError,error:audioError}) },
   now: () => clock, report: message => warnings.push(message),
 });
@@ -77,3 +81,9 @@ status = 'unknown';
 check(monitor.refresh().message.includes('Cannot inspect'), 'invalid runtime status does not masquerade as ready');
 monitor.reset();
 check(!monitor.snapshot().message, 'stopped Shell drops old service warning state');
+result = await scenario([{ime:'ready', decorations:'starting'}, {ime:'ready', decorations:'ready'}]);
+check(!result.error && result.index === 1, 'Shell surfaces cannot bypass independent renderer readiness');
+result = await scenario([{ime:'ready', decorations:'failed', decorationMessage:'restart budget exhausted'}]);
+check(result.error.includes('restart budget exhausted'), 'renderer failure remains explicit');
+result = await scenario([{ime:'ready', decorations:'disabled'}]);
+check(result.error.includes('not configured'), 'renderer-less session is not falsely healthy');

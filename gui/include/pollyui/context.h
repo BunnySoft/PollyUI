@@ -11,6 +11,10 @@ typedef struct PuGuiHooks {
     void (*stop)(void *user);
     void (*windows_closed)(void *user);
     void (*dispose)(void *user);
+    /* Windowless host: wait returns 0 on wake, 1 on shutdown, -1 on error.
+     * wake may be called by producers; remove it only after they are joined. */
+    int (*wait)(int timeout_ms, void *user);
+    void (*wake)(void *user);
 } PuGuiHooks;
 
 typedef struct PuGuiConfig {
@@ -29,6 +33,7 @@ typedef struct PuGuiConfig {
  * until return, and host callbacks must not enter another GUI context. */
 int pu_gui_run(const PuGuiConfig *config);
 int pu_gui_test(const PuGuiConfig *config);
+int pu_gui_service(const PuGuiConfig *config);
 int pu_gui_demo(void);
 void pu_gui_shutdown(void);
 
