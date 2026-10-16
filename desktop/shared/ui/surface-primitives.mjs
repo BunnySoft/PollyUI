@@ -5,6 +5,12 @@ import { controlStates as states } from './desktop/shared/ui/control-state.mjs';
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
 export const surfaceStyle = (theme, group = 'button') => theme[group].surfaceStyle || 'generic';
 export const hasSurfacePaint = theme => ['classic', 'aqua', 'fluent'].includes(surfaceStyle(theme));
+export const selectionInk = (theme, legacy) => theme.colors.selectionText ?? legacy;
+function paintIconInk(node, color) {
+  if (node.className === 'theme-icon-ink-fill') node.style.backgroundColor = color;
+  if (node.className === 'theme-icon-ink-border') node.style.borderColor = color;
+  for (const child of node.childNodes) paintIconInk(child, color);
+}
 
 export function surfacePaint(theme, { selected = false, pressed = false, hovered = false,
   focused = false, disabled = false, quiet = false, variant = 'button' } = {}) {
@@ -81,17 +87,23 @@ export function surfaceEvents(theme, options = {}) {
       Object.assign(state, change);
       states.set(node, state);
     }
-    Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
+    if (!options.inkOnly) Object.assign(node.style, surfacePaint(theme, { ...options, ...state }));
+    const highlighted = state.hovered || state.pressed || options.selected;
+    const label = node.querySelector('.theme-command-label');
+    if (label && options.quiet) label.style.color = disabled ? theme.colors.muted : highlighted ?
+      selectionInk(theme, surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text) : theme.colors.text;
+    const icon = options.quiet && node.querySelector('.theme-command-icon');
+    if (icon) {
+      const ink = disabled ? theme.colors.muted : highlighted ? selectionInk(theme, theme.colors.accent) : theme.colors.accent;
+      paintIconInk(icon, ink);
+    }
+    if (options.inkOnly) return;
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
     const focusPaint = node.querySelector('.classic-focus-paint');
     if (focusPaint) paintClassicFocus(focusPaint, theme, state.focused);
     const texture = node.querySelector('.classic-task-paint');
     if (texture) paintClassicTask(texture, theme, { ...options, ...state });
-    const label = node.querySelector('.theme-command-label');
-    if (!disabled && label && options.quiet && surfaceStyle(theme) === 'classic')
-      label.style.color = state.hovered || state.pressed || options.selected ?
-        theme.colors.accentText : theme.colors.text;
     const down = state.pressed || options.selected;
     for (const [name, color] of Object.entries({
       top: down ? '#404040' : theme.colors.light,
@@ -125,7 +137,7 @@ export function surfaceEvents(theme, options = {}) {
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },
     onMouseup: event => paint(event, { pressed: false }),
-    onMousecancel: event => paint(event, { hovered: false, pressed: false }),
+    onMousecancel: event => paint(event, { ...(options.inkOnly ? {} : { hovered: false }), pressed: false }),
     onLostmousecapture: event => paint(event, { pressed: false }),
     onFocus: event => paint(event, { focused: true }),
     onBlur: event => paint(event, { focused: false, pressed: false }),
