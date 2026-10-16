@@ -7,6 +7,12 @@ keeps absolute `bottom: 0`/`right: 0` children inside the same painted/clipped
 bounds reported by geometry APIs. The local Yoga correction retains its existing
 dimension rounding, text floor/ceil and point-scale-zero behavior; it does not
 change theme sizes, apply a physical-DPI policy or move pixels only in the API.
+Unrounded position/dimension snapshots remain solver/cache inputs and are
+restored before each Yoga calculation, then projected to rounded public results.
+Each API calculation adds an O(n) restore and reruns pixel-grid projection,
+including its ancestor walks, even for a cached root. It does not invalidate
+solver caches or mark nodes dirty. PollyUI's existing
+layout version/viewport gate still skips the calculation entirely while idle.
 
 The Naive factories in `sdk/js/naive.mjs` default to the existing SDK light/dark
 palette. They do not import desktop presets. Selection is controlled: render the new `value` or

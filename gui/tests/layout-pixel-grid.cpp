@@ -11,31 +11,32 @@ static bool close(float actual, float expected)
     return std::fabs(actual - expected) < 0.0001f;
 }
 
-static void readBoxes(YGNodeRef nodes[3], Box boxes[3])
+static void readBoxes(YGNodeRef nodes[4], Box boxes[4])
 {
     float x = 0, y = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         x += YGNodeLayoutGetLeft(nodes[i]); y += YGNodeLayoutGetTop(nodes[i]);
         boxes[i] = {x, y, YGNodeLayoutGetWidth(nodes[i]), YGNodeLayoutGetHeight(nodes[i])};
     }
 }
 
-static bool same(const Box actual[3], const Box expected[3])
+static bool same(const Box actual[4], const Box expected[4])
 {
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 4; i++)
         if (!close(actual[i].left, expected[i].left) || !close(actual[i].top, expected[i].top) ||
             !close(actual[i].width, expected[i].width) || !close(actual[i].height, expected[i].height))
             return false;
     return true;
 }
 
-static bool check(const float scales[3], bool textParent, float shift, Box result[3], bool cache)
+static bool check(const float scales[4], bool textParent, float shift, Box result[4], bool cache,
+    float leafSize = 5.4f)
 {
-    YGConfigRef configs[3];
-    YGNodeRef nodes[3];
-    const float starts[3] = {0, 13.4f + shift, 7.6f};
-    const float sizes[3] = {300, 100.4f, 20.6f};
-    for (int i = 0; i < 3; i++) {
+    YGConfigRef configs[4];
+    YGNodeRef nodes[4];
+    const float starts[4] = {0, 13.4f + shift, 7.6f, 5.4f};
+    const float sizes[4] = {300, 100.4f, 20.6f, leafSize};
+    for (int i = 0; i < 4; i++) {
         configs[i] = YGConfigNew();
         YGConfigSetPointScaleFactor(configs[i], 0);
         nodes[i] = YGNodeNewWithConfig(configs[i]);
@@ -48,17 +49,17 @@ static bool check(const float scales[3], bool textParent, float shift, Box resul
     }
     if (textParent) YGNodeSetNodeType(nodes[1], YGNodeTypeText);
     YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
-    Box raw[3];
-    for (int i = 0; i < 3; i++)
+    Box raw[4];
+    for (int i = 0; i < 4; i++)
         raw[i] = {YGNodeLayoutGetLeft(nodes[i]), YGNodeLayoutGetTop(nodes[i]),
             YGNodeLayoutGetWidth(nodes[i]), YGNodeLayoutGetHeight(nodes[i])};
-    for (int i = 0; i < 3; i++) YGConfigSetPointScaleFactor(configs[i], scales[i]);
+    for (int i = 0; i < 4; i++) YGConfigSetPointScaleFactor(configs[i], scales[i]);
     YGNodeStyleSetWidth(nodes[0], 301);
     YGNodeStyleSetWidth(nodes[0], 300);
     YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
     float rawLeft = 0, rawTop = 0, actualLeft = 0, actualTop = 0;
     bool passed = true;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         rawLeft += raw[i].left; rawTop += raw[i].top;
         bool text = textParent && i == 1;
         float expectedLeft = scales[i] == 0 ? actualLeft + raw[i].left :
@@ -89,7 +90,7 @@ static bool check(const float scales[3], bool textParent, float shift, Box resul
     }
     readBoxes(nodes, result);
     if (cache) {
-        Box repeated[3], changed[3], fresh[3];
+        Box repeated[4], changed[4], fresh[4];
         for (int repeat = 0; repeat < 3; repeat++) {
             YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
             readBoxes(nodes, repeated);
@@ -103,7 +104,82 @@ static bool check(const float scales[3], bool textParent, float shift, Box resul
         YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
         readBoxes(nodes, changed);
         if (!check(scales, textParent, shift + 0.2f, fresh, false) || !same(changed, fresh)) {
-            std::fputs("FAIL: ancestor-only fractional move differs from fresh layout\n", stderr);
+            std::fprintf(stderr, "FAIL: ancestor-only fractional move differs from fresh layout: C=%g,%g fresh=%g,%g scales=%g,%g,%g,%g textParent=%d\n",
+                changed[3].left, changed[3].top, fresh[3].left, fresh[3].top,
+                scales[0], scales[1], scales[2], scales[3], textParent);
+            passed = false;
+        }
+        if (passed && !textParent && scales[0] == 1 && scales[1] == 1 && scales[2] == 1 && scales[3] == 1)
+            std::printf("PASS: four-layer ancestor move C=%g,%g fresh=%g,%g\n",
+                changed[3].left, changed[3].top, fresh[3].left, fresh[3].top);
+        YGNodeRef cloned[4] = {YGNodeClone(nodes[0]), nullptr, nullptr, nullptr};
+        YGNodeCalculateLayout(cloned[0], 300, 300, YGDirectionLTR);
+        for (int i = 1; i < 4; i++) cloned[i] = YGNodeGetChild(cloned[i - 1], 0);
+        readBoxes(cloned, repeated);
+        if (!same(repeated, fresh)) {
+            std::fputs("FAIL: cloned cached layout lost raw geometry\n", stderr);
+            passed = false;
+        }
+        YGNodeFreeRecursive(cloned[0]);
+        readBoxes(nodes, repeated);
+        if (!same(repeated, changed)) {
+            std::fputs("FAIL: cloned layout changed its source tree\n", stderr);
+            passed = false;
+        }
+        YGNodeStyleSetDisplay(nodes[2], YGDisplayNone);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        if (YGNodeLayoutGetWidth(nodes[2]) != 0 || YGNodeLayoutGetHeight(nodes[3]) != 0) {
+            std::fputs("FAIL: raw snapshot overwrote display:none\n", stderr);
+            passed = false;
+        }
+        YGNodeStyleSetDisplay(nodes[2], YGDisplayFlex);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        readBoxes(nodes, repeated);
+        if (!same(repeated, fresh)) {
+            std::fputs("FAIL: restored display differs from fresh layout\n", stderr);
+            passed = false;
+        }
+        YGNodeStyleSetWidth(nodes[3], 6.6f);
+        YGNodeStyleSetHeight(nodes[3], 6.6f);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        readBoxes(nodes, repeated);
+        if (!check(scales, textParent, shift + 0.2f, fresh, false, 6.6f) || !same(repeated, fresh)) {
+            std::fputs("FAIL: raw snapshot overwrote dirty dimensions\n", stderr);
+            passed = false;
+        }
+        YGNodeRemoveChild(nodes[2], nodes[3]);
+        YGNodeReset(nodes[3]);
+        YGNodeStyleSetPositionType(nodes[3], YGPositionTypeAbsolute);
+        YGNodeStyleSetPosition(nodes[3], YGEdgeLeft, 5.4f);
+        YGNodeStyleSetPosition(nodes[3], YGEdgeTop, 5.4f);
+        YGNodeStyleSetWidth(nodes[3], 5.4f);
+        YGNodeStyleSetHeight(nodes[3], 5.4f);
+        YGNodeInsertChild(nodes[2], nodes[3], 0);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        readBoxes(nodes, repeated);
+        if (!check(scales, textParent, shift + 0.2f, fresh, false) || !same(repeated, fresh)) {
+            std::fputs("FAIL: reset reused stale raw dimensions or positions\n", stderr);
+            passed = false;
+        }
+        const float unrounded[4] = {0, 0, 0, 0};
+        for (YGConfigRef config : configs) YGConfigSetPointScaleFactor(config, 0);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        readBoxes(nodes, repeated);
+        if (!check(unrounded, textParent, shift + 0.2f, fresh, false) || !same(repeated, fresh)) {
+            std::fputs("FAIL: scale zero retained rounded geometry\n", stderr);
+            passed = false;
+        }
+        for (int i = 0; i < 4; i++) YGConfigSetPointScaleFactor(configs[i], scales[i]);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        readBoxes(nodes, repeated);
+        if (!check(scales, textParent, shift + 0.2f, fresh, false) || !same(repeated, fresh)) {
+            std::fputs("FAIL: restored point scale differs from fresh layout\n", stderr);
+            passed = false;
+        }
+        YGNodeSetHasNewLayout(nodes[3], false);
+        YGNodeCalculateLayout(nodes[0], 300, 300, YGDirectionLTR);
+        if (YGNodeGetHasNewLayout(nodes[3])) {
+            std::fputs("FAIL: projection marked a cached descendant as new layout\n", stderr);
             passed = false;
         }
     }
@@ -114,11 +190,11 @@ static bool check(const float scales[3], bool textParent, float shift, Box resul
 
 int main()
 {
-    const float cases[][3] = {{0, 0, 0}, {1, 1, 1}, {1.25f, 1.25f, 1.25f},
-        {1, 0, 1.25f}, {1.25f, 1, 0}, {0, 1.25f, 1}};
-    Box result[3];
+    const float cases[][4] = {{0, 0, 0, 0}, {1, 1, 1, 1}, {1.25f, 1.25f, 1.25f, 1.25f},
+        {1, 0, 1.25f, 1}, {1.25f, 1, 0, 1.25f}, {0, 1.25f, 1, 0}};
+    Box result[4];
     for (const auto& scales : cases)
         if (!check(scales, false, 0, result, true) || !check(scales, true, 0, result, true)) return 1;
-    std::puts("PASS: absolute starts, existing dimensions, scale 0/1/1.25/mixed/Text parent, repeated layout and ancestor-only cached move match fresh layout");
+    std::puts("PASS: four-layer starts/dimensions, scale 0/1/1.25/mixed/Text parent, repeated/ancestor-move cache, clone/reset/display and dirty dimensions match fresh layout");
     return 0;
 }

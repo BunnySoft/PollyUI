@@ -2336,6 +2336,14 @@ bool calculateLayoutInternal(
   return (needToVisitNode || cachedResults == nullptr);
 }
 
+static void restoreUnroundedLayout(yoga::Node* node) {
+  node->getLayout().restoreUnroundedLayout();
+  node->cloneChildrenIfNeeded();
+  for (yoga::Node* child : node->getChildren()) {
+    restoreUnroundedLayout(child);
+  }
+}
+
 void calculateLayout(
     yoga::Node* const node,
     const float ownerWidth,
@@ -2343,6 +2351,8 @@ void calculateLayout(
     const Direction ownerDirection) {
   Event::publish<Event::LayoutPassStart>(node);
   LayoutData markerData = {};
+  // Cached descendants must remain solver inputs, not rounded paint outputs.
+  restoreUnroundedLayout(node);
 
   // Increment the generation count. This will force the recursive routine to
   // visit all dirty nodes at least once. Subsequent visits will be skipped if
@@ -2419,8 +2429,8 @@ void calculateLayout(
           0, // tree root
           gCurrentGenerationCount.load(std::memory_order_relaxed))) {
     node->setPosition(node->getLayout().direction(), ownerWidth, ownerHeight);
-    roundLayoutResultsToPixelGrid(node, 0.0f, 0.0f);
   }
+  roundLayoutResultsToPixelGrid(node, 0.0f, 0.0f);
 
   Event::publish<Event::LayoutPassEnd>(node, {&markerData});
 }

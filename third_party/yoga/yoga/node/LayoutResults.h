@@ -78,6 +78,20 @@ struct LayoutResults {
     position_[yoga::to_underlying(physicalEdge)] = dimension;
   }
 
+  void saveUnroundedLayout() {
+    unroundedPosition_ = position_;
+    unroundedDimensions_ = dimensions_;
+    hasUnroundedLayout_ = true;
+  }
+
+  void restoreUnroundedLayout() {
+    if (hasUnroundedLayout_) {
+      position_ = unroundedPosition_;
+      dimensions_ = unroundedDimensions_;
+      hasUnroundedLayout_ = false;
+    }
+  }
+
   float margin(PhysicalEdge physicalEdge) const {
     return margin_[yoga::to_underlying(physicalEdge)];
   }
@@ -117,6 +131,9 @@ struct LayoutResults {
   std::array<float, 4> margin_ = {};
   std::array<float, 4> border_ = {};
   std::array<float, 4> padding_ = {};
+  std::array<float, 4> unroundedPosition_ = {};
+  std::array<float, 2> unroundedDimensions_ = {{YGUndefined, YGUndefined}};
+  bool hasUnroundedLayout_ = false;
 };
 
 } // namespace facebook::yoga

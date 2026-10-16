@@ -66,6 +66,7 @@ void roundLayoutResultsToPixelGrid(
     yoga::Node* const node,
     const double absoluteLeft,
     const double absoluteTop) {
+  node->getLayout().saveUnroundedLayout();
   const auto pointScaleFactor = node->getConfig()->getPointScaleFactor();
 
   const double nodeLeft = node->getLayout().position(PhysicalEdge::Left);
