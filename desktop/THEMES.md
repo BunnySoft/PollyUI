@@ -359,9 +359,10 @@ a root reused as another scroll view. Component rendering/input and the
 separate native owner probe are not native output-resize, Windows pixel or
 arbitrary-geometry accessibility certification.
 
-True recommendation/account history and app-grouping semantics still need
-backend/design decisions. Full-window corners/shadows and Mica/Acrylic remain
-separate mechanisms; solid/gradient painting is not represented as those effects.
+True recommendation/account history still needs backend/design decisions.
+Application grouping and independent persistent pins are described below.
+Full-window corners/shadows use the separate native-effects contract;
+solid/gradient painting is not represented as Mica/Acrylic.
 E22.22 remains partial.
 
 Classic follows the supplied Windows Server 2003 references: flat faces and real
@@ -388,13 +389,18 @@ the canonical Classic palette. That is not verified display-depth metadata:
 the product keeps canonical 24-bit colors, and raw comparison error is not
 normalized or forced to zero.
 Only actual installed entries/actions are shown: no fake recommendations,
-categories, pinned history or nonfunctional search. Classic now has a flat
-All Programs submenu inside its existing RootMenu client. It uses real catalog
+account history or nonfunctional search. Classic's All Programs defaults to a
+flat list inside its existing RootMenu client. An optional Categories entry
+derives nonexclusive exact tags from the actual catalog, including a distinct
+no-tags group; it is not an installed-directory hierarchy. It uses real catalog
 IDs and existing launch/Pin services, preserves two-column and legacy layouts,
-and supports Back/Left/Escape, keyboard navigation and bounded scrolling.
-Stable per-open row slots and menu epochs prevent a held or retired row from
-activating another application after catalog reconciliation. The submenu stays
-inside the existing input viewport; no native popup or new authority is added.
+and supports hierarchical Back/Left/Escape, header/list Tab navigation and bounded
+scrolling. Stable per-view row slots and menu epochs prevent a held or retired
+row from activating another application. Category actions require successful
+catalog refresh and current membership; discovery failure reports an error and
+retains the previous visible catalog without authorizing an action from stale
+data. The submenu stays inside the existing input viewport; no native popup or
+new authority is added.
 See [the Shell contract](shell/README.md). Multi-level directory menus, true user
 account/profile art, and Win11 recommendation/account features are not reproduced.
 Existing application launch, desktop shortcut, keyboard and logout actions remain
@@ -522,6 +528,11 @@ their reason and Unpin action instead of stale launch arguments. Display slots,
 Dock width, image retention and live callback guards share the same model.
 Settings pins retain the existing owned Settings launch route. Repeated or
 composing Dock activation does not launch; discrete activation still does.
+The existing pin menu also offers Earlier/Later for one-step saved ordering,
+including unavailable pins, omitting directions at the ends of the list.
+These commands share Pin/Unpin's atomic publication and committed-error handling,
+recheck the current menu/output/task and expected pin position, and do not alter
+desktop shortcuts.
 These are Polly launcher semantics, not native MRU, drag sorting or Dock
 magnification, and do not alter Classic/XP per-window mode.
 
@@ -690,7 +701,15 @@ Generic platform font fallback remains intentional: no forced aliases or
 proprietary font files are installed. These missing pixels prevent a 1:1 claim.
 Files list names now use the theme body size and metadata its status size;
 Processes uses the existing body/status/heading and spacing tokens as well.
-Their fixed-row geometry, columns, inputs and controllers are unchanged.
+Both retain their fixed-row geometry, columns and data-operation controllers.
+Processes also uses the shared 10px overlay scrollbar in its trailing padding.
+Drag, paging and keyboard changes update its actual virtual PID rows through
+the controller's optional scroll notification without another process sample;
+retained observations remain scrollable during refresh and after a sample error.
+File Text explicitly opts into the existing public theme helpers for the whole
+app, sharing its subscription with the chooser and preserving text/selection
+and every existing read/save consent rule. Its default API remains neutral;
+the packaged wrapper selects `--theme`, with `--no-theme` as an explicit opt-out.
 Settings frame/About/Keyboard titles, body/status text and spacing also consume
 their existing semantic tokens; Audio controls wrap in narrow pages without
 changing acknowledgement or Apply behavior. Files Places/Properties/empty

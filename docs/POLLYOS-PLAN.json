@@ -965,7 +965,7 @@
       "label": "E22.15 Classic 菜单与级联",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "区分已完成灰色双列 chrome、真实 flat All Programs 子菜单与仍缺的多级目录、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。内容和布局使用真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
+      "scope": "区分已完成灰色双列 chrome、默认 flat All Programs 及真实metadata辅助分类，与仍缺的安装目录多级菜单、profile/account 区、分组/列表内容密度及原OS图标资格；保留单列 override、现有可用搜索/Pin/日志入口。内容和布局使用真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1271,7 +1271,7 @@
       "label": "E22.34 Mac Dock 分组与放大",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "三MacDock已支持确切appId分组、独立持久固定和固定槽内的有界悬停强调；继续核启动/running标记、最小化窗口、原生/参考资格及完整相邻联动动画。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
+      "scope": "三MacDock已支持确切appId分组、独立持久固定、菜单Earlier/Later一步排序和固定槽内的有界悬停强调；继续核启动/running标记、最小化窗口、原生/参考资格及完整相邻联动动画。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -5623,6 +5623,7 @@
     "- 2026-10-16 独立固定应用：aa0cdbd/8c9d7ca/7d1a9aa合113302a，Shell配置v3新增launchers v1有序≤32catalog引用，与desktop v1独立；v1/v2沿原atomicwriter一次保全域迁移、未知版本不写空默认、旧reader回退边界有明确文档。Modern/三Mac及applications optin支持Apps Taskbar+/Dock+与真实RootMenu Pin/Unpin，零窗launcher走当前catalog/原SettingsBridge，唯一关联真实group同槽/count；missing/unavailable仍可Tab/ContextMenu管理，旧手势/成员/workspace/callback/重复IME activation拒绝，无fake Window.id/MRU/drag排序。实际displaycount/width/cache同model，Settings synthetic名称与真实注册关联分层，Unicode/空格opaqueID不猜suffix。父组合145项通过、现Python fixture仅AST语法和JS安装fixture仅syntax，未冒跑native矩阵；子一次旧911软件GUI看新idle/count2/missing槽及独立控件，非物理DPI/真实持久WM端到端资格。父补decorator-installed版本期望3及synthetic Settings位图保留/映射。原native Bug未合入、未更新SDK/ISO/C/权限；E22广项不因此全关。",
     "- 2026-10-16 共享原生能力的预设采用：38fca16/29a338f合0c39dca/366a392，仅Modern明确rounded/原radius8/shadow0、三Mac明确rounded-shadow/原radius6/5/10与shadow20/18/24，JS旧policy编成sigma10/9/12、active24/inactive12、black，未改数值/颜色/布局或C/renderer/ABI/schema，Classic/XP与custom missing/none路径保持。只更新现policy契约和生成test几何；Node5+generatorcheck、Windows911当前生产caption producer/missing-none逐byte兼容过，历史冻结native机制资格不改写。本次只读Linux入口无首marker导致scene/caption均未执行，新的live WM/default-preset复验单列blocked任务，无新hash核验或GPU/OS原图资格宣称；不为数据采用重建环境。矩形input、max/full/CSD/frameless排除合同、paired effectsABI2/private6前提原样，未做glass/vibrancy/倒影或更新媒体。",
     "- 2026-10-16 Dock悬停范围选择：用户ask_user当前不可用并委托自主决策，协调者选固定槽内pointer-only/无动画（非用户逐项点选）。afcb7ef合cca643e仅原art paint-space scale，optional dockHoverPercent整数100..125/缺100，三Mac120；真实slot/clip祖先/body交集夹限，40可画48或空间不足46/1，marker/count/input/所有layout不改。共享弱controlStates及现bounded settling处理clock/retime/scroll，无新RAFloop/observer。父补VNode baseline scale1以防DOM跨分支复用带旧zoom，组合143+现原transform6通过；子一次软件GUI入口验证同DOM/盒不变、clip/leave/cancel/keyboard不放大与原色图，无新repoApp测试文件/矩阵/receipt或Native构建。完整相邻联动/动画及原生/物理资格仍独立remaining。",
-    "- 2026-10-16 导航与FileText续批：f951b22合7bc4b25让Files中性PageUp/Down按实际viewport/42沿排序过滤后的精确identity分页，沿原select/focus/reveal/scrollbar，无新滚动算法。c86764a+d5d792d合11c0e9e/445aefe在Classic AllPrograms保默认平铺，增真实非独占tag分类/无tag组、层级Back/Left/Esc/完整headerTab和Allapps直达，原epoch/稳定槽/gesture串当前view，调用时刷新catalog并查活category成员；失败明确bool中止，不以保留旧列表冒fresh执行，非Windows安装目录/XDG XML或新Nativepopup。9b2b29f合a15b601让明确optin的FileText本体接既有公共Theme/输入/命令/滚动，App+chooser复用同底层订阅并准确cleanup，neutral默认API和原4096UTF8/conditionalwrite/ESTALE/committedreadback/NoReplay不变；packaged wrapper选择公开--desktop/--theme，--no-theme退出，不赋Shell管理权限。现组合162项通过，无新App样式测试文件/矩阵/环境或Native构建；旧软件GUI入口的分类导航资格只在软件输入/renderer范围，不冒安装目录/物理WM。"
+    "- 2026-10-16 导航与FileText续批：f951b22合7bc4b25让Files中性PageUp/Down按实际viewport/42沿排序过滤后的精确identity分页，沿原select/focus/reveal/scrollbar，无新滚动算法。c86764a+d5d792d合11c0e9e/445aefe在Classic AllPrograms保默认平铺，增真实非独占tag分类/无tag组、层级Back/Left/Esc/完整headerTab和Allapps直达，原epoch/稳定槽/gesture串当前view，调用时刷新catalog并查活category成员；失败明确bool中止，不以保留旧列表冒fresh执行，非Windows安装目录/XDG XML或新Nativepopup。9b2b29f合a15b601让明确optin的FileText本体接既有公共Theme/输入/命令/滚动，App+chooser复用同底层订阅并准确cleanup，neutral默认API和原4096UTF8/conditionalwrite/ESTALE/committedreadback/NoReplay不变；packaged wrapper选择公开--desktop/--theme，--no-theme退出，不赋Shell管理权限。现组合162项通过，无新App样式测试文件/矩阵/环境或Native构建；旧软件GUI入口的分类导航资格只在软件输入/renderer范围，不冒安装目录/物理WM。",
+    "- 2026-10-16 当前交互收尾：ff79d66合3b5bfed让固定应用菜单内Earlier/Later沿现有序v3配置交换相邻两项，missing/unavailable可管理、首尾省略无效方向、非pin无排序；同Pin/Unpin唯一atomic写入/committed报错策略，currentMenu/output/taskidentity/expectedposition与held方向identity检查，desktop shortcuts不变，不是拖拽或动画。d47156c合09c5cba完整接Processes既有overlay10/SDK controller：optional onScroll严格函数/undefined、构造/idle/stop不通知、actual normalized value改变一次，含clamp、同步嵌套合并与异常原样抛/鼠标up必释放capture；拖动/page/keyboard据原fixedRowWindow重绘真实PID DOM，不额外sample，错误/refresh保留观察可滚。行42/列/overscan/2秒cooperative采样/readonly及原owner两帧测量不变。父现scrollbar/Processes/Files/menu/config/group/theme组合141项通过；原Processes软件GUI900x640实际4096model/12DOMrows及nativecapture/末PID/Home/不增sample通过，无新测试文件/样式矩阵/Native构建/VM或环境操作。E22.8/9/10/15/34的全部原OS/物理与剩余业务资格并未因此标完成，native preset live recheck继续blocked，vendor小数边线候选仍未合。"
   ]
 }
