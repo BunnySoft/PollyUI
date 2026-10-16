@@ -63,6 +63,7 @@ export function checkLionDockSurface(directory, verify = true) {
       check(colors.upper === theme.panel.from && colors.front === theme.panel.to,
         name + ' shelf consumes configured upper face and front colors');
     }
+
     check(colors.top === '#eeeeee' && colors.lower === '#999999',
       'Existing neutral highlight and lower band stay unchanged: ' + JSON.stringify(colors));
     const geometry = { dock: rect(dock), shelf: rect(shelf), separator: rect(get('shell-dock-separator')),
@@ -138,4 +139,143 @@ export function checkLionDockSurface(directory, verify = true) {
     strip: rect(strip), scrollLeft: strip.scrollLeft }));
   console.log(verify ? 'PASS: Lion shelf palette consumption, perspective geometry, running state and actual input' :
     'BASELINE: Lion shelf palette consumption and bounded surface coverage recorded');
+}
+
+export async function checkDockMagnification() {
+  check(host.width === 400 && host.height === 120, 'Existing unscaled 400x120 Dock scene');
+  const baseline = getDesktopTheme('lion'), calls = [];
+  let theme = baseline;
+  const windows = [{ id: 1, title: 'Real group', grouped: true, appId: 'fixture', count: 2, active: true },
+    { id: 2, title: 'Second', minimized: true }];
+  windows[0].windows = [{ id: 11 }, { id: 12 }];
+  const source = document.createElement('canvas');
+  source.width = source.height = 16;
+  const context = source.getContext('2d');
+  context.fillStyle = '#2090e0'; context.fillRect(0, 0, 16, 16);
+  const blob = await new Promise(resolve => source.toBlob(resolve));
+  const bitmap = createBitmap(await blob.arrayBuffer(), 16 * 16);
+  const images = new Map([[1, bitmap.key]]);
+  let width = 368, peer = false;
+  const originalRequest = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
+  const pending = new Set();
+  let frames = 0;
+  globalThis.requestAnimationFrame = callback => {
+    let id;
+    id = originalRequest(time => { pending.delete(id); frames++; callback(time); });
+    pending.add(id); return id;
+  };
+  globalThis.cancelAnimationFrame = id => { pending.delete(id); originalCancel(id); };
+  const scene = () => {
+    render(h('view', { style: { width: '100%', height: '100%', backgroundColor: '#406080' } },
+      h('view', { style: { position: 'absolute', left: 16, top: 16, width, height: theme.panel.height } },
+        dockView(theme, () => calls.push('settings'), () => calls.push('about'), () => calls.push('apps'),
+          windows, id => calls.push(id), action, images)),
+      peer ? h('view', { id: 'independent-dock', style: {
+        position: 'absolute', left: 230, top: 16, width: 140, height: theme.panel.height } },
+      dockView(baseline, action, action, action)) : null), document.body);
+    host.render();
+  };
+  const settle = async () => {
+    for (let i = 0; i < 28; i++) { await Promise.resolve(); host.render(); }
+    check(pending.size === 0, 'Distance transitions and layout settlement become completely idle');
+  };
+  const ids = ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about', 'shell-window-1', 'shell-window-2'];
+  const art = id => get(id).querySelector('.shell-dock-art');
+  const scales = () => ids.map(id => Number(art(id).style.scale || 1));
+  const point = id => {
+    const r = art(id).getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2];
+  };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  try {
+    scene(); await settle();
+    check(frames === 2, 'An untouched Dock performs only its original two layout-settlement frames');
+    const slots = ids.map(id => get(id)), geometry = slots.map(rect);
+    const [x, y] = point(ids[1]);
+    host.mouse('mousemove', x, y); host.render();
+    const entering = scales();
+    scene();
+    theme = { ...theme, colors: { ...theme.colors } }; scene();
+    await settle();
+    const centered = scales();
+    check(centered[1] > centered[0] && centered[0] > 1 && centered[2] > 1,
+      'Pointer center magnifies both visible neighbors, not only the hit slot');
+    check(entering[1] < centered[1] && slots.every((slot, index) => get(ids[index]) === slot),
+      'Entry remains a bounded transition across retained clock and immutable-theme updates');
+    const [right] = point(ids[2]);
+    host.mouse('mousemove', x + (right - x) / 4, y); await settle();
+    const between = scales();
+    check(between[1] > between[2] && between[2] > between[0] && between[0] > 1,
+      'A between-centers pointer produces continuous unequal neighbor weights');
+    const beforeClock = scales(), count = frames;
+    scene(); await settle();
+    check(same(scales(), beforeClock) && frames - count === 2, 'Clock repaint preserves pointer/scale without restarting an animation');
+    theme = { ...theme, colors: { ...theme.colors, accent: '#8040a0' } };
+    scene(); await settle();
+    check(slots.every((slot, index) => get(ids[index]) === slot) && same(scales(), beforeClock),
+      'Immutable retheme preserves the same physical pointer and instance scale');
+    host.mouse('mousemove', ...point(ids[2])); await settle();
+    const crossStrip = scales();
+    check(crossStrip[1] > 1 && crossStrip[3] > 1 && crossStrip[2] > crossStrip[3],
+      'Fixed entries and window strip share one visible neighboring sequence across the separator');
+    const imageBounds = art(ids[3]).getBoundingClientRect();
+    check(art(ids[3]).style.backgroundImage === bitmap.key &&
+      host.pixel(Math.floor(imageBounds.x + imageBounds.width / 2),
+        Math.floor(imageBounds.y + imageBounds.height / 2)).toLowerCase() === '#2090e0',
+      'Registered bitmap participates in the same distance field without recoloring');
+    check(same(slots.map(rect), geometry), 'Magnification changes no tile, slot or hitbox geometry');
+    const [wx, wy] = point(ids[3]);
+    host.mouse('mousedown', wx, wy); host.mouse('mouseup', wx, wy); host.mouse('click', wx, wy);
+    await settle();
+    check(same(calls, [1]), 'Original grouped-task callback still activates exactly once');
+    host.mouse('mousedown', wx, wy); host.mouse('mousecancel', 0, 0); await settle();
+    check(scales().every(scale => scale === 1), 'Cancellation settles all neighbors exactly to scale one');
+    host.mouse('mousemove', ...point(ids[1])); await settle();
+    host.mouse('mousemove', 399, 119); await settle();
+    check(scales().every(scale => scale === 1), 'Leaving settles the complete sequence to one and idle');
+    theme = { ...theme, icons: { ...theme.icons, dockHoverPercent: 100 } };
+    scene(); await settle(); host.mouse('mousemove', ...point(ids[1])); await settle();
+    check(scales().every(scale => scale === 1), 'One hundred percent disables distance magnification');
+    theme = { ...theme, icons: { ...baseline.icons, dockMagnificationRadius: 0 } };
+    scene(); await settle(); host.mouse('mousemove', 399, 119); host.mouse('mousemove', ...point(ids[1])); await settle();
+    const legacy = scales();
+    check(legacy[1] > 1 && legacy.filter(scale => scale > 1).length === 1, 'Radius zero retains single-slot hover behavior');
+    const missing = { ...theme.icons }; delete missing.dockMagnificationRadius;
+    theme = { ...theme, icons: missing }; scene(); await settle();
+    check(same(scales(), legacy), 'Omitting radius preserves the exact existing single-hover scales');
+    theme = baseline; scene(); await settle();
+    check(scales()[0] > 1 && scales()[2] > 1, 'Enabling distance policy on retheme retains the stationary physical pointer');
+    theme = baseline; width = 140; scene(); await settle();
+    const dock = get('shell-dock-viewport'), r = dock.getBoundingClientRect();
+    host.mouse('mousemove', r.x + r.width - 2, y); await settle();
+    const clipped = scales();
+    for (const id of ids) {
+      const a = art(id).getBoundingClientRect();
+      if (a.x < r.x || a.x + a.width > r.x + r.width)
+        check(Number(art(id).style.scale) === 1, 'Clipped artwork cannot magnify');
+    }
+    host.scroll(r.x + r.width / 2, y, 10000); await settle();
+    check(Number(dock.scrollLeft) > 0, 'Outer Dock wheel remains available with distance magnification');
+    get(ids[0]).focus(); await settle();
+    check(document.activeElement === slots[0], 'Existing focus reveal keeps its actual command');
+    peer = true; scene(); await settle();
+    host.mouse('mousemove', ...point(ids[0])); await settle();
+    const independent = get('independent-dock').querySelector('#shell-dock-viewport');
+    const peerArt = independent.querySelectorAll('.shell-dock-art');
+    check(peerArt.every(node => Number(node.style.scale || 1) === 1), 'An independent Dock has no pointer-state bleed');
+    const target = peerArt[1].getBoundingClientRect();
+    host.mouse('mousemove', target.x + target.width / 2, target.y + target.height / 2); await settle();
+    check(Number(peerArt[1].style.scale) > 1 && scales().every(scale => scale === 1),
+      'Moving to a second instance magnifies only its own visible sequence');
+    host.mouse('mousemove', ...point(ids[0])); host.render();
+    render(null, document.body); await settle();
+    check(pending.size === 0, 'Ancestor retirement stops all pending distance and layout frames');
+    console.log('DOCK_DISTANCE_MAGNIFICATION ' + JSON.stringify({ entering, centered, between, crossStrip, clipped,
+      geometry, calls, idleFrames: pending.size, peakPercent: 120, radius: 2,
+      scope: 'Existing actual software GUI Dock artwork only; fixed hitboxes, no macOS displacement or compositor qualification' }));
+  } finally {
+    render(null, document.body);
+    for (const id of pending) originalCancel(id);
+    globalThis.requestAnimationFrame = originalRequest; globalThis.cancelAnimationFrame = originalCancel;
+    bitmap.close();
+  }
 }

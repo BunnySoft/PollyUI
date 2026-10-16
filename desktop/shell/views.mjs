@@ -123,44 +123,166 @@ const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, ...bodyFont(theme), fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
 const dockLayouts = new WeakMap();
+function dockViewport(node) {
+  while (node && node.id !== 'shell-dock-viewport') node = node.parentNode;
+  return node;
+}
+function liveDock(node) {
+  const owner = node.ownerDocument;
+  if (!owner || owner.defaultView?.closed) return false;
+  for (let parent = node; parent; parent = parent.parentNode) if (parent === owner.body) return true;
+  return false;
+}
+function dockSlots(viewport) {
+  return Array.from(viewport.firstChild.childNodes).flatMap(child =>
+    child.id === 'shell-dock-windows' ? Array.from(child.childNodes) :
+      ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about'].includes(child.id) ? [child] : []);
+}
+function dockArtBounds(slot, percent) {
+  const art = slot.querySelector('.shell-dock-art');
+  if (!art) return null;
+  const bounds = art.getBoundingClientRect(), clip = slot.getBoundingClientRect();
+  let left = clip.x, top = clip.y, right = left + clip.width, bottom = top + clip.height;
+  const body = slot.ownerDocument.body;
+  for (let parent = slot.parentNode; parent; parent = parent.parentNode) {
+    if (parent !== body && !['hidden', 'scroll'].includes(parent.style.overflow)) continue;
+    const box = parent.getBoundingClientRect();
+    left = Math.max(left, box.x); top = Math.max(top, box.y);
+    right = Math.min(right, box.x + box.width); bottom = Math.min(bottom, box.y + box.height);
+  }
+  const visible = bounds.width > 0 && bounds.height > 0 && bounds.x >= left && bounds.y >= top &&
+    bounds.x + bounds.width <= right && bounds.y + bounds.height <= bottom;
+  const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+  return { art, x, y, height: clip.height, visible, maximum: visible ? Math.max(1, Math.min(percent / 100,
+    2 * (x - left) / bounds.width, 2 * (right - x) / bounds.width,
+    2 * (y - top) / bounds.height, 2 * (bottom - y) / bounds.height)) : 1 };
+}
 function paintDockHover(slot) {
   const state = controlStates.get(slot);
-  if (state?.dockHoverPercent === undefined) return;
+  if (state?.dockHoverPercent === undefined || !slot.ownerDocument) return;
   const art = slot.querySelector('.shell-dock-art');
   if (!art) return;
-  let scale = 1;
-  if (state.dockHovered && state.dockHoverPercent > 100) {
-    const bounds = art.getBoundingClientRect(), clip = slot.getBoundingClientRect();
-    let left = clip.x, top = clip.y, right = left + clip.width, bottom = top + clip.height;
-    const body = slot.ownerDocument.body;
-    for (let parent = slot.parentNode; parent; parent = parent.parentNode) {
-      if (parent !== body && !['hidden', 'scroll'].includes(parent.style.overflow)) continue;
-      const box = parent.getBoundingClientRect();
-      left = Math.max(left, box.x); top = Math.max(top, box.y);
-      right = Math.min(right, box.x + box.width); bottom = Math.min(bottom, box.y + box.height);
-    }
-    if (bounds.width > 0 && bounds.height > 0 && bounds.x >= left && bounds.y >= top &&
-        bounds.x + bounds.width <= right && bounds.y + bounds.height <= bottom) {
-      const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
-      scale = Math.max(1, Math.min(state.dockHoverPercent / 100,
-        2 * (x - left) / bounds.width, 2 * (right - x) / bounds.width,
-        2 * (y - top) / bounds.height, 2 * (bottom - y) / bounds.height));
-    }
-  }
+  const maximum = dockArtBounds(slot, state.dockHoverPercent).maximum;
+  const scale = state.dockMagnificationRadius ? Math.min(maximum, state.dockScale ?? 1) :
+    state.dockHovered && state.dockHoverPercent > 100 ? maximum : 1;
   if (Number(art.style.scale || 1) !== scale) art.style.scale = String(scale);
 }
-function refreshDockHover(node) {
-  let viewport = node;
-  while (viewport && viewport.id !== 'shell-dock-viewport') viewport = viewport.parentNode;
-  if (!viewport) return;
-  for (const child of viewport.firstChild.childNodes) {
-    paintDockHover(child);
-    if (child.id === 'shell-dock-windows') for (const slot of child.childNodes) paintDockHover(slot);
+function stopDockLayout(viewport, done = () => {}) {
+  const state = dockLayouts.get(viewport);
+  if (state) {
+    dockLayouts.delete(viewport);
+    if (state.frame !== null) cancelAnimationFrame(state.frame);
+    if (state.animation !== null) cancelAnimationFrame(state.animation);
+    state.frame = state.animation = null;
+    state.pointer = null;
+    for (const slot of dockSlots(viewport)) {
+      const control = controlStates.get(slot);
+      if (control) Object.assign(control, { dockScale: 1, dockTarget: 1, dockHovered: false });
+      const art = slot.querySelector('.shell-dock-art');
+      if (art) art.style.scale = '1';
+    }
   }
+  done();
 }
-function dockHover(node, percent, hovered) {
+function animateDock(viewport, state) {
+  if (state.animation !== null) return;
+  const weak = new WeakRef(viewport);
+  const tick = time => {
+    state.animation = null;
+    const node = weak.deref();
+    if (!node || dockLayouts.get(node) !== state) return;
+    if (!liveDock(node)) { stopDockLayout(node); return; }
+    if (state.start === null) state.start = time;
+    // Bound even a manually pumped/frozen test clock; normal frames use 140ms.
+    const progress = ++state.steps >= 24 ? 1 : Math.min(1, (time - state.start) / 140);
+    const eased = progress * progress * (3 - 2 * progress);
+    for (const slot of dockSlots(node)) {
+      const control = controlStates.get(slot);
+      if (!control?.dockMagnificationRadius) continue;
+      control.dockScale = progress === 1 ? control.dockTarget :
+        control.dockFrom + (control.dockTarget - control.dockFrom) * eased;
+      paintDockHover(slot);
+    }
+    if (progress < 1) state.animation = requestAnimationFrame(tick);
+  };
+  state.animation = requestAnimationFrame(tick);
+}
+function magnifyDock(viewport) {
+  const state = dockLayouts.get(viewport);
+  if (!state) return;
+  if (!liveDock(viewport)) { stopDockLayout(viewport); return; }
+  const slots = dockSlots(viewport);
+  if (!state.radius || state.percent <= 100) {
+    if (state.animation !== null) cancelAnimationFrame(state.animation);
+    state.animation = null;
+    for (const slot of slots) {
+      const control = controlStates.get(slot);
+      if (control) Object.assign(control, { dockScale: 1, dockTarget: 1 });
+      paintDockHover(slot);
+    }
+    return;
+  }
+  const entries = slots.map(slot => ({ slot, ...dockArtBounds(slot, state.percent) }));
+  const visible = entries.filter(entry => entry.visible);
+  let position = 0;
+  const pointer = state.pointer;
+  if (pointer && visible.length) {
+    let index = visible.findIndex(entry => entry.x >= pointer.x);
+    if (index < 0) index = visible.length - 1;
+    const left = visible[Math.max(0, index - 1)], right = visible[index];
+    position = left === right ? index + (pointer.x - right.x) / Math.max(1, right.slot.offsetWidth) :
+      index - 1 + (pointer.x - left.x) / Math.max(1, right.x - left.x);
+  }
+  let changed = false, moving = false, visibleIndex = -1;
+  for (const entry of entries) {
+    const index = entry.visible ? ++visibleIndex : -1;
+    const control = controlStates.get(entry.slot);
+    if (!control) continue;
+    const distance = pointer && index >= 0 ? Math.hypot(index - position,
+      (pointer.y - entry.y) / Math.max(1, entry.height)) : Infinity;
+    const weight = distance < state.radius ? (1 + Math.cos(Math.PI * distance / state.radius)) / 2 : 0;
+    const target = Math.min(entry.maximum, 1 + (state.percent / 100 - 1) * weight);
+    const current = Math.min(entry.maximum, control.dockScale ?? 1);
+    control.dockScale = current;
+    if (control.dockTarget !== target) { control.dockTarget = target; changed = true; }
+    if (target !== current) moving = true;
+    paintDockHover(entry.slot);
+  }
+  if (!changed) return;
+  if (!moving) {
+    if (state.animation !== null) cancelAnimationFrame(state.animation);
+    state.animation = null;
+    return;
+  }
+  for (const slot of slots) {
+    const control = controlStates.get(slot);
+    if (control) control.dockFrom = control.dockScale ?? 1;
+  }
+  state.start = null; state.steps = 0;
+  animateDock(viewport, state);
+}
+function dockPointer(event, leaving = false) {
+  const viewport = dockViewport(event.currentTarget);
+  if (!viewport) return;
+  const state = dockLayouts.get(viewport);
+  if (!state) return;
+  if (!liveDock(viewport)) { stopDockLayout(viewport); return; }
+  const box = viewport.getBoundingClientRect();
+  state.pointer = !leaving && event.clientX >= box.x && event.clientX < box.x + box.width &&
+    event.clientY >= box.y && event.clientY < box.y + box.height ?
+    { x: event.clientX, y: event.clientY } : null;
+  if (state.radius) magnifyDock(viewport);
+}
+function refreshDockHover(node) {
+  const viewport = dockViewport(node);
+  if (!viewport) return;
+  if (dockLayouts.get(viewport)?.radius) magnifyDock(viewport);
+  else for (const slot of dockSlots(viewport)) paintDockHover(slot);
+}
+function dockHover(node, percent, radius, hovered) {
   const state = controlStates.get(node) ?? {};
   state.dockHoverPercent = percent;
+  state.dockMagnificationRadius = radius;
   if (hovered !== undefined) state.dockHovered = hovered;
   controlStates.set(node, state);
   paintDockHover(node);
@@ -188,17 +310,28 @@ function revealDockSlot(event) {
   }
   refreshDockHover(event.currentTarget);
 }
-function syncDockLayout(node) {
+function syncDockLayout(node, percent, radius) {
   let state = dockLayouts.get(node);
-  if (!state) { state = { frame: null, geometry: '' }; dockLayouts.set(node, state); }
+  if (!state) {
+    state = { frame: null, geometry: '', animation: null, pointer: null, start: null, steps: 0 };
+    dockLayouts.set(node, state);
+  }
+  state.percent = percent; state.radius = radius;
+  if (liveDock(node)) refreshDockHover(node);
   if (state.frame !== null) return;
   const weak = new WeakRef(node);
   // Settle attachment/layout once; unchanged clock reconciliation must not undo manual scrolling.
   state.frame = requestAnimationFrame(() => {
+    state.frame = null;
+    const current = weak.deref();
+    if (!current || dockLayouts.get(current) !== state) return;
+    if (!liveDock(current)) { stopDockLayout(current); return; }
     state.frame = requestAnimationFrame(() => {
       state.frame = null;
       const viewport = weak.deref();
-      if (!viewport?.parentNode || !viewport.offsetWidth) return;
+      if (!viewport || dockLayouts.get(viewport) !== state) return;
+      if (!liveDock(viewport)) { stopDockLayout(viewport); return; }
+      if (!viewport.offsetWidth) return;
       const surface = viewport.firstChild, strip = surface.querySelector('#shell-dock-windows');
       const geometry = [viewport.offsetWidth, surface.offsetWidth, strip?.offsetWidth ?? 0,
         strip ? dockScrollMaximum(strip) : 0, ...surface.childNodes.flatMap(child =>
@@ -496,11 +629,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
     const materialOpacity = panel.materialOpacityPercent ?? 100;
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
+    const hoverPercent = theme.icons.dockHoverPercent ?? 100, radius = theme.icons.dockMagnificationRadius ?? 0;
     const slot = (id, title, icon, action, running = false, window = null) => {
       const art = taskArtwork(window, images, iconSize - 8, desktopIcon(icon, theme.colors.accent, iconSize - 8));
       art.props.className = 'shell-dock-art';
       art.props.style.scale = 1;
-      const hoverPercent = theme.icons.dockHoverPercent ?? 100;
       const node = h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
         ...(window?.grouped || window?.launcher ? { 'aria-pressed': String(!!window.active) } : {}),
         ...(window?.unavailable ? { 'aria-description': window.unavailable } : {}),
@@ -508,11 +641,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
-        onMount: node => dockHover(node, hoverPercent),
-        onUpdate: node => dockHover(node, hoverPercent),
-        onMouseenter: event => dockHover(event.currentTarget, hoverPercent, true),
-        onMouseleave: event => dockHover(event.currentTarget, hoverPercent, false),
-        onMousecancel: event => dockHover(event.currentTarget, hoverPercent, false),
+        onMount: node => dockHover(node, hoverPercent, radius),
+        onUpdate: node => dockHover(node, hoverPercent, radius),
+        onMouseenter: event => { dockHover(event.currentTarget, hoverPercent, radius, true); dockPointer(event); },
+        onMouseleave: event => { dockHover(event.currentTarget, hoverPercent, radius, false); dockPointer(event); },
+        onMousecancel: event => { dockHover(event.currentTarget, hoverPercent, radius, false); dockPointer(event, true); },
         onFocus: revealDockSlot,
         onClick: event => {
           if (event.button === 0) { event.stopPropagation(); return action(); }
@@ -561,7 +694,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         borderColor: materialColor(materialOpacity, '#d6d6d6'), pointerEvents: 'none' } })) : null;
     return h('view', { id: 'shell-dock-viewport', style: {
       width: '100%', height: '100%', overflow: 'visible' },
-      onWheel: scrollDock, onMount: syncDockLayout, onUpdate: syncDockLayout },
+      onWheel: scrollDock, onMount: node => syncDockLayout(node, hoverPercent, radius),
+      onUpdate: node => syncDockLayout(node, hoverPercent, radius), onLeave: stopDockLayout,
+      onMousemove: dockPointer, onMouseleave: dockPointer, onMousecancel: event => dockPointer(event, true) },
     h('view', { id: 'shell-dock', style: { ...row, position: 'relative',
       width: '100%', minWidth: dockSurfaceWidth(theme, windows.length ? 1 : 0, Infinity),
       height: '100%', flexShrink: 0, alignItems: 'flex-end', justifyContent: 'center',
