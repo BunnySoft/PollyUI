@@ -572,13 +572,10 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
 }
 
 export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
-  const label = labelFor(theme);
-  return h('view', { id: 'shell-window-actions', style: {
-    width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
-    backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    borderRadius: theme.window.radius,
-  } },
-  label(window.title || window.appId || 'Untitled', theme.colors.text, 14),
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu' },
+  label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
   button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
   button('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize', theme,
     () => action(window.minimized ? 'restoreWindow' : 'minimizeWindow')),
@@ -587,65 +584,63 @@ export function windowActionsView(theme, window, action, close, error = '', work
   button('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen', theme,
     () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
   button('shell-window-close', 'Close application window', theme, () => action('closeWindow')),
-  workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, 11) : null,
+  workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, l.statusFontSize) : null,
   workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>
     button('shell-window-workspace-' + workspace.id, workspace.name, theme, () => move(workspace.id))),
   button('shell-window-menu-close', 'Close menu', theme, close),
-  error ? label(error, theme.colors.text, 11) : null);
+  error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 
 export function workspacesView(theme, workspaces, activate, remove, create, close, error = '', settings = null) {
-  const label = labelFor(theme);
-  return h('view', { id: 'shell-workspace-menu', style: {
-    width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap,
-    backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    borderRadius: theme.window.radius,
-  } },
-  h('view', { style: { ...row, gap: theme.layout.contentGap } }, label('Workspaces', theme.colors.text, 16),
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  return panelViewport(theme, { id: 'shell-workspace-menu', variant: 'menu' },
+  h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
+    label('Workspaces', theme.colors.text, l.headingFontSize),
     h('view', { style: { flexGrow: 1 } }), button('shell-workspace-add', 'Add', theme, create),
     button('shell-workspace-close', 'Close', theme, close)),
-  label('All displays switch together. Empty workspaces stay.', theme.colors.muted, 10),
-  h('view', { style: { gap: theme.layout.controlGap, display: settings?.editor ? 'flex' : 'none' } },
+  label('All displays switch together. Empty workspaces stay.', theme.colors.muted, l.statusFontSize),
+  h('view', { style: { gap: l.controlGap, flexShrink: 0, minWidth: 0,
+    display: settings?.editor ? 'flex' : 'none' } },
     settings?.editor ? [
-    h('view', { style: { height: Number(settings.editor.input.root.style.height) },
+    h('view', { style: { height: Number(settings.editor.input.root.style.height), flexShrink: 0, minWidth: 0 },
       onMount: node => node.appendChild(settings.editor.input.root) }),
-    h('view', { style: { ...row, gap: theme.layout.controlGap } },
+    h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
       button('shell-workspace-name-save', 'Save name', theme, settings.save),
       button('shell-workspace-name-cancel', 'Cancel', theme, settings.cancel))] : []),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.controlGap } },
+  h('view', { style: { flexShrink: 0, minWidth: 0, gap: l.controlGap } },
     workspaces.map((workspace, index) => h('view', { key: workspace.id,
-      style: { gap: theme.layout.controlGap, flexShrink: 0 } },
-      h('view', { style: { ...row, gap: theme.layout.controlGap } },
+      style: { gap: l.controlGap, flexShrink: 0, minWidth: 0 } },
+      h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
       button('shell-workspace-' + workspace.id, workspace.name, theme, () => activate(workspace.id),
         workspace.active, { flexGrow: 1, flexBasis: 0, minWidth: 0, overflow: 'hidden' }),
       workspace.canRemove ? button('shell-workspace-remove-' + workspace.id, 'Remove', theme,
-        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, 10)),
-      settings ? h('view', { style: { ...row, gap: theme.layout.controlGap } },
+        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, l.statusFontSize)),
+      settings ? h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
         button('shell-workspace-rename-' + workspace.id, 'Rename', theme, () => settings.rename(workspace.id),
           false, { height: theme.layout.compactButtonHeight }),
         index ? button('shell-workspace-earlier-' + workspace.id, 'Earlier', theme,
           () => settings.reorder(workspace.id, index - 1), false, { height: theme.layout.compactButtonHeight }) : null,
         index + 1 < workspaces.length ? button('shell-workspace-later-' + workspace.id, 'Later', theme,
           () => settings.reorder(workspace.id, index + 1), false, { height: theme.layout.compactButtonHeight }) : null) : null))),
-  label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, 10),
-  label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, 10),
+  label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, l.statusFontSize),
+  label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, l.statusFontSize),
   settings && error ? button('shell-workspace-save-current', 'Save current layout', theme, settings.saveCurrent) : null,
-  error ? label(error, theme.colors.text, 11) : null);
+  error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 
 export function switcherView(theme, snapshot, accept, rows = theme.layout.switcherMaxRows) {
-  const label = labelFor(theme);
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
   const start = Math.max(0, Math.min(snapshot.items.length - rows, snapshot.selected - Math.floor(rows / 2)));
-  return h('view', { id: 'shell-window-switcher', style: {
-    width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.controlGap, backgroundColor: theme.colors.body,
-    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.window.radius,
-  } },
-  label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length, theme.colors.text, 15),
+  return panelViewport(theme, { id: 'shell-window-switcher' },
+  label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,
+    theme.colors.text, l.headingFontSize),
   snapshot.items.slice(start, start + rows).map((item, offset) =>
     button('shell-switcher-item-' + (start + offset), item.title || item.appId || 'Untitled', theme,
       () => accept(snapshot.serial, start + offset), snapshot.selected === start + offset,
       { height: theme.layout.choiceHeight, alignItems: 'flex-start', overflow: 'hidden' })),
-  label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, 10));
+  label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, l.statusFontSize));
 }
 
 export function displayConfirmationView(theme, remaining, keep, revert) {

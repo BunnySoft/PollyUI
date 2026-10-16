@@ -1,7 +1,8 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { wallpaper } from './desktop/shell/appearance.mjs';
-import { desktopIcon, desktopText, desktopCommand, scrollDesktop, selectionInk } from './desktop/shell/presentation.mjs';
+import { desktopIcon, desktopText, desktopCommand, selectionInk } from './desktop/shell/presentation.mjs';
 import { DESKTOP_GRID } from './desktop/shell/desktop-shortcuts.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 function shortcutLabel(theme, name, selected) {
   const shadow = !selected && theme.icons.desktopLabelStyle === 'shadow';
@@ -60,9 +61,9 @@ export function desktopView(theme, asset, state, entries, message = '', images =
 export function desktopMenuView(theme, state, entries, actions, error = '') {
   const catalog = new Map(entries.map(entry => [entry.id, entry]));
   const focused = state.shortcuts.find(item => item.id === state.focused);
-  return h('view', { id: 'shell-desktop-menu', style: { width: '100%', height: '100%', padding: 16,
-    gap: 10, overflow: 'scroll', backgroundColor: theme.colors.body }, onWheel: scrollDesktop },
-  desktopText('Desktop shortcuts', theme.colors.text, 18),
+  const l = theme.layout;
+  return panelViewport(theme, { id: 'shell-desktop-menu', variant: 'menu' },
+  desktopText('Desktop shortcuts', theme.colors.text, l.headingFontSize),
   desktopCommand('shell-desktop-open', 'Open focused shortcut', theme, () => actions.open(state.focused),
     { icon: 'open', enabled: !!focused }),
   desktopCommand('shell-desktop-remove', 'Remove selected shortcuts', theme, actions.remove,
@@ -71,10 +72,11 @@ export function desktopMenuView(theme, state, entries, actions, error = '') {
   desktopCommand('shell-desktop-add', 'Add from Applications', theme, actions.applications, { icon: 'add' }),
   desktopCommand('shell-desktop-settings', 'System Settings', theme, actions.settings, { icon: 'appearance' }),
   desktopCommand('shell-desktop-close', 'Close', theme, actions.close),
-  desktopText('Removing a shortcut does not uninstall or delete an application.', theme.colors.muted, 12,
-    { flexShrink: 1 }),
-  state.shortcuts.map(item => h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 0 } },
-    desktopText(catalog.get(item.id)?.name || item.name, theme.colors.text, 12, { flexGrow: 1, flexShrink: 1 }),
+  desktopText('Removing a shortcut does not uninstall or delete an application.', theme.colors.muted, l.statusFontSize),
+  state.shortcuts.map(item => h('view', { style: { flexDirection: 'row', alignItems: 'center',
+    gap: l.controlGap, flexShrink: 0, minWidth: 0, flexWrap: 'wrap' } },
+    desktopText(catalog.get(item.id)?.name || item.name, theme.colors.text, l.fontSize,
+      { flexGrow: 1, flexShrink: 1, minWidth: 0 }),
     desktopCommand('shell-desktop-remove-' + item.id, 'Remove', theme, () => actions.removeOne(item.id)))),
-  error ? desktopText(error, theme.colors.text, 13, { flexShrink: 1 }) : null);
+  error ? desktopText(error, theme.colors.text, l.statusFontSize) : null);
 }
