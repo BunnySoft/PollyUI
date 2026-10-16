@@ -1,7 +1,7 @@
 # GUI SDK selection controls
 
-The Naive factories in `sdk/js/naive.mjs` use the existing SDK light/dark palette,
-not desktop theme presets. Selection is controlled: render the new `value` or
+The Naive factories in `sdk/js/naive.mjs` default to the existing SDK light/dark
+palette. They do not import desktop presets. Selection is controlled: render the new `value` or
 `checked` supplied by a callback; the factory never mutates caller props, options
 or panes. Focus/navigation state is local and does not move a control's hitbox.
 
@@ -30,6 +30,65 @@ light/dark pixels and dimensions are preserved. Existing callbacks, including a
 menu or primary-clicked tab/radio reporting its current item, remain usable;
 tab/radio keyboard navigation does not emit a redundant change for the already
 selected item.
+
+## Per-instance selection appearance
+
+The six factories accept an optional `appearance` object. Omitting it preserves
+the previous light/dark palette, geometry and default unhovered/unfocused pixels.
+It does not call `useTheme`, so different controls/windows can retain different
+appearances at the same time.
+
+```js
+NCheckbox({
+  checked, onChange,
+  appearance: {
+    colors: { primary: '#0a246a', text: '#000000', border: '#808080', focus: '#000000' },
+    metrics: { fontSize: 11, markerSize: 13, radius: 0 }
+  }
+}, 'Enabled');
+```
+
+`colors` projects the SDK palette (`primary`, `card`, `body`, `text`,
+`textSecondary`, `textDisabled`, `solidText`, `border`, `railOff`, `trackBg`, and
+the other existing semantic status colors), plus `selected`, `selectedText`,
+`focus`, `hover`, `pressed`. Values must be nonempty bounded CSS color strings.
+`metrics` projects `fontSize`, `markerSize`, `radioDot`, `radius`, `gap`,
+`switchWidth`, `switchHeight`, `knobSize`, `switchPadding`, `controlHeight`,
+`optionHeight`, `menuHeight`, `paddingX`, `popupPadding`, `popupGap`,
+`popupMaxHeight`, `tabGap`, `panePadding`, `disabledOpacity`. Metrics are finite
+and bounded; contradictory knob/rail, dot/marker or font/row geometry fails.
+The same option height/gap/padding drives popup placement, scroll limits and
+active-row reveal, rather than only changing a painted outer border.
+
+Two optional generic adapter hooks support existing application-owned painters:
+`decorate(vnode, {kind, checked?, selected?, active?, disabled})` adds paint-only
+parts at authoring time, without replacing the control's role or handlers;
+`paint(state)` returns styles for `root` or named `.n-selection-<part>` descendants
+(`marker`, `knob`, `glyph`, `label`, `arrow`, `icon`, `underline`, `active`, or
+adapter-added parts). State includes the same context, `hovered`, `pressed`,
+actual `focused`, `disabled`, and resolved `colors`/`metrics`. The SDK chains
+existing events/lifecycles, retains the gesture identity and controlled callbacks,
+and does not contain platform-name branches. A bounded string `revision` joins
+colors/metrics in the appearance signature when an adapter changes its face
+without changing those values. Hooks must not add timers, mutate caller data or
+replace the keyboard/portal controller.
+
+`desktop/shared/ui/selection-controls.mjs` is the single desktop adapter. It
+projects the existing six themes, reuses Classic bevels and the current
+Classic/Luna Canvas focus ownership/lifecycle, and supplies the existing
+Luna/Aqua highlight/gloss and Fluent flat-face treatment. Desktop
+`themedCheckbox`, `themedSwitch`, `themedRadioGroup`, `themedTabs`, `themedSelect`
+and `themedMenu` remain ordinary controlled SDK factories. Old systems without a
+native switch receive a **Polly-themed switch**, not a claimed original OS
+control. Original font-rendered marker art is retained; this is not certification
+against qualified raw OS screenshots.
+
+Settings Displays uses a named checked checkbox for the existing enabled draft
+field, and Audio uses a named mute switch. Space now controls those roles (not
+button Enter); stable IDs, primary-only activation, busy/null-capability guards,
+output Apply/confirmation policy and audio generation/revision/instance checks
+are unchanged. Audio stays at the acknowledged value and saves only after the
+existing service policy observes acknowledgement.
 
 ## Select overlay lifecycle
 
@@ -78,6 +137,11 @@ adapter check. The native 1/1.5/2 check injects private `WM_DPICHANGED` test
 messages; it is not a change to monitor settings or OS/compositor qualification.
 These contracts do not claim OS-exact six-theme checkbox/radio art, a native
 accessibility bridge, typeahead, nested menus or a native popup grab.
+The desktop `selection-theme-controls-render.mjs` state sheet and
+`selection-settings-render.mjs` consumers exercise instance isolation, open
+portal retheme/metrics and the real Settings policies. The small
+`selection-theme-native.mjs` owner-runner check covers sub-row host resize and
+closed-owner collection; it does not qualify a hardware/compositor backend.
 
 ## Input typography and selection foreground
 

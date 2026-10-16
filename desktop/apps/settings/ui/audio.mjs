@@ -2,6 +2,7 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { horizontal, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { themedSwitch } from './desktop/shared/ui/selection-controls.mjs';
 
 export function audioSettingsView(theme, snapshot, busy, command) {
   const label = (value, size = 12) => h('view', { style: { color: theme.colors.text,
@@ -46,8 +47,10 @@ export function audioSettingsView(theme, snapshot, busy, command) {
           () => change(node, 'volume', Math.min(1, Math.max(0, node.volume - 0.1))), snapshot.ready && node.volume !== null),
         button('shell-audio-raise-' + node.id, '+10%', () => change(node, 'volume', Math.min(1, node.volume + 0.1)),
           snapshot.ready && node.volume !== null && node.volume < 1),
-        button('shell-audio-mute-' + node.id, node.muted ? 'Unmute' : 'Mute', () => change(node, 'mute', !node.muted),
-          snapshot.ready && node.muted !== null)),
+        h('view', { style: { ...horizontal, gap: theme.layout.controlGap } },
+          themedSwitch(theme, { id: 'shell-audio-mute-' + node.id, value: node.muted === true,
+            'aria-label': 'Mute ' + node.description, disabled: busy || snapshot.busy || !snapshot.ready || node.muted === null,
+            onUpdate: muted => change(node, 'mute', muted) }), label('Mute'))),
       node.class === 'Audio/Sink' || node.class.startsWith('Audio/Source') ?
         button('shell-audio-default-' + node.id,
           snapshot.defaultSink === node.id || snapshot.defaultSource === node.id ? 'Selected default' : 'Use as default',

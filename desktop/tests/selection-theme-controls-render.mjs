@@ -1,4 +1,5 @@
 import { h, createApp, reactive } from './gui/sdk/js/vue.mjs';
+import { render } from './gui/sdk/js/reconciler.mjs';
 import { NOverlayHost, theme as sdkTheme } from './gui/sdk/js/naive.mjs';
 import { getDesktopTheme } from './desktop/shared/ui/themes.mjs';
 import { themedSwitch, themedCheckbox, themedRadioGroup, themedTabs, themedSelect, themedMenu } from './desktop/shared/ui/selection-controls.mjs';
@@ -53,6 +54,7 @@ export async function checkThemedSelectionControls(directory) {
       'Each instance consumes its own complete theme rather than module-global green');
     results.push(result);
   }
+
   check(host.save(directory + '/six-theme-selection.png'), 'Save actual shared six-theme sheet');
   for (const id of ids) {
     const marker = find(id + '-check').querySelector('.n-selection-marker'), theme = getDesktopTheme(id);
@@ -116,4 +118,37 @@ export async function checkThemedSelectionControls(directory) {
   document.activeElement?.blur(); await settle();
   console.log('SIX_THEME_SELECTION ' + JSON.stringify({ results, calls, sameDOM: true,
     globalsUnchanged: JSON.stringify(sdkTheme) === sdkBefore, scope: 'Actual shared components, not qualified OS screenshot equivalence' }));
+}
+
+export function checkClassicSelectionEdges(verify = true) {
+  const theme = getDesktopTheme('server2003');
+  render(h('view', { style: { padding: 20, gap: 20, alignItems: 'flex-start', backgroundColor: theme.colors.body } },
+    themedCheckbox(theme, { id: 'edge-checkbox', checked: true }, 'Checkbox'),
+    themedSwitch(theme, { id: 'edge-switch', value: false }),
+    themedSelect(theme, { id: 'edge-select', value: 'a', options: [{ value: 'a', label: 'Selected' }] }),
+    themedTabs(theme, { id: 'edge-tabs', value: 'a', panes: [{ name: 'a', label: 'Active tab', content: 'Pane' }] })),
+  document.body);
+  host.render();
+  const find = id => document.getElementById(id);
+  const components = [
+    [find('edge-checkbox'), find('edge-checkbox').querySelector('.n-selection-marker'), 'checkbox', ['#808080', '#ffffff', '#808080', '#ffffff']],
+    [find('edge-switch'), find('edge-switch').querySelector('.n-selection-knob'), 'knob', ['#ffffff', '#404040', '#ffffff', '#404040']],
+    [find('edge-select'), find('edge-select'), 'select', ['#808080', '#ffffff', '#808080', '#ffffff']],
+    [find('edge-tabs-tab-0'), find('edge-tabs-tab-0'), 'tab', ['#ffffff', '#404040', '#ffffff', '#404040']],
+  ];
+  const samples = [];
+  for (const [control, part, kind, expected] of components) {
+    for (const phase of ['initial', 'hover', 'down', 'cancel', 'leave']) {
+      const r = control.getBoundingClientRect();
+      if (phase !== 'initial') host.mouse({ hover: 'mousemove', down: 'mousedown', cancel: 'mousecancel', leave: 'mousemove' }[phase],
+        phase === 'leave' ? 799 : r.x + r.width / 2, phase === 'leave' ? 599 : r.y + r.height / 2);
+      host.render();
+      const p = part.getBoundingClientRect(), x = Math.floor(p.x + p.width / 2), y = Math.floor(p.y + p.height / 2);
+      const edges = [host.pixel(x, p.y), host.pixel(x, p.bottom - 1), host.pixel(p.x, y), host.pixel(p.right - 1, y)];
+      samples.push({ kind, phase, box: [p.x, p.y, p.width, p.height], edges });
+      if (verify) check(edges.every((color, index) => color.toLowerCase() === expected[index]),
+        'Passive Classic bevel owns all real outer pixels through ' + kind + '/' + phase + ': ' + JSON.stringify(edges));
+    }
+  }
+  console.log('CLASSIC_SELECTION_BEVEL ' + JSON.stringify({ verify, samples, edgeOrder: ['top', 'bottom', 'left', 'right'] }));
 }

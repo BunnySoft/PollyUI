@@ -40,7 +40,7 @@ export function createDisplayPage() {
         { status: snapshot.status, forget: () => command('ForgetDisplayProfile', snapshot.serial) });
       function disable(node) {
         if (node.props?.id === 'shell-output-close') { node.props.style.display = 'none'; node.props.tabIndex = -1; }
-        if (busy && node.props?.role === 'button') { node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
+        if (busy && ['button', 'checkbox'].includes(node.props?.role)) { node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
           node.props.onClick = node.props.onKeydown = () => {}; }
         node.children?.forEach(disable);
       }

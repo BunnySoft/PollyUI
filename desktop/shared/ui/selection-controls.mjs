@@ -8,14 +8,20 @@ const appearances = new WeakMap();
 const find = (node, part) => node.props?.className === 'n-selection-' + part ? node :
   node.children?.map(child => find(child, part)).find(Boolean);
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
+function passiveBevel(theme, inset) {
+  const detail = bevel(theme, { inset });
+  // Marker/field edges are not the root button's held-state bevel.
+  for (const edge of detail.children) edge.props.className = 'n-selection-' + edge.props.className;
+  return detail;
+}
 function decorateSelection(theme, vnode, context) {
   const { kind, disabled } = context, style = surfaceStyle(theme);
   const marker = find(vnode, kind === 'switch' ? 'knob' : 'marker');
   if (marker && style === 'classic' && kind !== 'radio') {
-    const detail = bevel(theme, { inset: kind === 'checkbox' });
-    for (const edge of detail.children) edge.props.className += ' n-selection-' + edge.props.className;
-    marker.children.push(detail);
+    marker.children.push(passiveBevel(theme, kind === 'checkbox'));
   }
+  if (style === 'classic' && (kind === 'select' || kind === 'tab'))
+    vnode.children.push(passiveBevel(theme, kind === 'select'));
   if (marker && (style === 'aqua' || style === 'luna')) marker.children.push(h('view', {
     className: 'n-selection-gloss', 'aria-hidden': 'true', style: { ...fill, bottom: '50%',
       borderRadius: theme.button.radius, backgroundColor: theme.colors.light, opacity: style === 'aqua' ? 0.4 : 0.2 } }));
@@ -58,14 +64,14 @@ export function selectionAppearance(theme) {
     paint: state => {
       const { kind, checked, selected, disabled, hovered, pressed, focused, active, metrics: m } = state;
       const entry = kind === 'menuitem' || kind === 'option';
-      const highlighted = !disabled && (selected || hovered || active);
+      const highlighted = !disabled && (selected || hovered || active || pressed);
       const face = luna ? lunaButtonPaint(theme, { pressed, hovered, disabled, selected: false, focused }) :
         surfacePaint(theme, { pressed, hovered, disabled, focused });
       const text = disabled ? c.muted : entry && highlighted ? c.selectionText ?? c.text : c.text;
       const root = { opacity: disabled ? m.disabledOpacity : 1, backgroundColor: 'transparent',
         gradientFrom: 'transparent', gradientTo: 'transparent', borderWidth: 0, borderRadius: theme.button.radius };
       if (kind === 'select' || kind === 'tab') Object.assign(root, face, {
-        borderWidth: 1, backgroundColor: disabled ? c.body : kind === 'tab' && selected ? c.surface : face.backgroundColor,
+        borderWidth: classic ? 0 : 1, backgroundColor: disabled ? c.body : kind === 'tab' && selected ? c.surface : face.backgroundColor,
         borderColor: focused ? c.focus : hovered ? c.accent : c.border });
       if (entry) Object.assign(root, { backgroundColor: disabled ? 'transparent' : pressed ? c.accent :
         highlighted ? c.selection : 'transparent', gradientFrom: 'transparent', gradientTo: 'transparent' });
@@ -75,7 +81,8 @@ export function selectionAppearance(theme) {
         backgroundColor: disabled ? c.body : checked ? c.accent : c.body });
       const markerRadius = Math.min(theme.button.radius, Math.floor(m.markerSize / 4));
       const marker = { borderRadius: kind === 'radio' ? m.markerSize / 2 : markerRadius,
-        borderWidth: 1, borderColor: disabled ? c.border : hovered || focused ? c.accent : c.border,
+        borderWidth: classic && kind === 'checkbox' ? 0 : 1,
+        borderColor: disabled ? c.border : hovered || focused ? c.accent : c.border,
         backgroundColor: disabled ? c.body : checked && kind !== 'radio' && !classic && !luna ? c.accent : c.surface,
         gradientFrom: 'transparent', gradientTo: 'transparent' };
       if ((style === 'aqua' || luna) && !disabled) Object.assign(marker, {
@@ -83,7 +90,7 @@ export function selectionAppearance(theme) {
         gradientTo: pressed ? c.body : theme.button.to });
       return { root, marker, knob: { borderRadius: classic ? 0 : luna ? theme.button.radius : m.knobSize / 2,
         backgroundColor: disabled ? c.body : pressed ? theme.button.to : theme.button.from,
-        borderWidth: 1, borderColor: disabled ? c.border : c.dark,
+        borderWidth: classic ? 0 : 1, borderColor: disabled ? c.border : c.dark,
         gradientFrom: classic ? c.body : theme.button.from, gradientTo: classic ? c.body : theme.button.to },
       glyph: kind === 'radio' ? { backgroundColor: disabled ? c.muted : classic ? c.text : c.accent } :
         { color: disabled ? c.muted : classic || luna ? c.text : c.accentText },
