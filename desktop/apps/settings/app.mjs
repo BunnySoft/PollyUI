@@ -134,7 +134,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     controller.navigate(page); pages.activate(page);
   }
   function keydown(event) {
-    if (!event.defaultPrevented && event.key === 'Escape') {
+    if (!event.isComposing && !event.defaultPrevented && event.key === 'Escape') {
       event.preventDefault(); event.stopPropagation(); stop();
     }
   }

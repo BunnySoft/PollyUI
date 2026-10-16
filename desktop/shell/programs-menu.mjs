@@ -159,6 +159,7 @@ export function programsMenu(theme, entries, desktop, state) {
     onUpdate: node => commandStates.delete(node),
   }), identity + ':vacant:' + id)) : [];
   const key = event => {
+    if (event.isComposing) return;
     if (event.key === 'Escape' || event.key === 'ArrowLeft') {
       event.preventDefault(); event.stopPropagation(); backAction(); return;
     }

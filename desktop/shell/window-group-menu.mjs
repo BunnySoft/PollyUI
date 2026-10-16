@@ -95,6 +95,7 @@ export function windowGroupMenu(theme, group, state) {
     state.slots.push(window.id); known.add(window.id);
   }
   const navigate = event => {
+    if (event.isComposing) return;
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation();
     const nodes = commands(event.currentTarget), index = nodes.indexOf(event.currentTarget.ownerDocument.activeElement);

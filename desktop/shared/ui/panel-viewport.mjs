@@ -207,7 +207,7 @@ export function panelViewport(theme, { id, framed = true, variant = 'dialog', si
     style: { flexGrow: content ? 0 : 1, flexShrink: 1, flexBasis: content ? 'auto' : 0, minHeight: 0, minWidth: 0,
       gap: appearance.gap, overflow: 'scroll', ...(horizontal ? { flexDirection: 'row', alignItems: 'center' } : {}) },
     onMount: node => bindViewport(node, axis), onUpdate: node => bindViewport(node, axis),
-    onKeydown: event => { if (event.key === 'Tab') queueReveal(event.currentTarget, true); },
+    onKeydown: event => { if (event.key === 'Tab' && !event.isComposing) queueReveal(event.currentTarget, true); },
     onLeave: (node, done) => { releaseViewport(node); done(); },
   }, children);
   return h('view', { id, style: { ...appearance, gap: 0, width: '100%', height: content ? 'auto' : '100%',

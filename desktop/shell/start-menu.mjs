@@ -119,6 +119,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     focusStyle: { borderColor: c.accent },
     onTextinput: event => changeQuery(Array.from(query + event.data).slice(0, 128).join('')),
     onKeydown: event => {
+      if (event.isComposing) return;
       if (event.key === 'Backspace') {
         event.preventDefault(); changeQuery(Array.from(query).slice(0, -1).join(''));
       } else if (event.key === 'Enter' && !event.isComposing && filtered.find(entry => !entry.unavailable)) {
@@ -212,6 +213,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
           placement.top >= trigger.offsetTop + trigger.offsetHeight - root.offsetTop) programs.change(true, 'first');
     };
     programTrigger.props.onKeydown = event => {
+      if (event.isComposing) return;
       if (event.key === 'ArrowRight') {
         event.preventDefault(); event.stopPropagation(); programs.change(true, 'first');
       } else key?.(event);
@@ -225,6 +227,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
       onLeave: stopGridScroll } : {}),
     ...(supportsPrograms && programs?.open ? {
       onKeydown: event => {
+        if (event.isComposing) return;
         if (event.key === 'Escape' || event.key === 'ArrowLeft') {
           event.preventDefault(); event.stopPropagation();
           if (programs.back && programs.view !== 'all') programs.back();

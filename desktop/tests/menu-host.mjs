@@ -390,6 +390,10 @@ scenario('Menu scrollbar: shared overlay follows wheel/focus, retains capture on
   }
   f.flushFrames();
   assert.equal(track.tabIndex, 0);
+  track.focus();
+  const composingEnd = domEvent(track, 'keydown', { key: 'End', isComposing: true });
+  assert.equal(composingEnd.defaultPrevented, false);
+  assert.ok(owner.activeElement === track, 'Menu navigation must not reinterpret a composing scrollbar key');
   domEvent(list, 'wheel', { deltaY: 100000 });
   assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
   assert.ok(Number(thumb.style.top) > 0);
@@ -1323,6 +1327,13 @@ scenario('XP Programs: real catalog and categories reuse bounded RootMenu naviga
   assert.ok(find(menu, 'shell-app-launcher-editor.desktop'));
   const trigger = find(menu, 'shell-all-programs');
   trigger.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  const composingFocus = menu.document.activeElement;
+  for (const name of ['ArrowDown', 'Home', 'End', 'ArrowLeft', 'Escape']) {
+    assert.equal(key(menu, name, { isComposing: true }).defaultPrevented, false);
+    assert.ok(menu.document.activeElement === composingFocus);
+    assert.ok(menu.document.getElementById('shell-program-overlay'), 'Composing navigation leaves Programs open');
+    assert.equal(menu.closed, false);
+  }
   assert.ok(find(menu, 'shell-program-editor.desktop'));
   assert.ok(find(menu, 'shell-program-categories'));
   click(find(menu, 'shell-program-categories')); f.flushFrames();
@@ -1706,6 +1717,8 @@ scenario('internal pointer/focus/scroll and a consumed child Escape do not dismi
   assert.equal(key(menu, 'Escape').defaultPrevented, true);
   assert.equal(menu.closed, false);
   child.removeEventListener('keydown', callback(child, 'keydown'));
+  assert.equal(key(menu, 'Escape', { isComposing: true }).defaultPrevented, false);
+  assert.equal(menu.closed, false, 'An unconsumed composing Escape must not dismiss the RootMenu');
   key(menu, 'Escape');
   assert.equal(menu.closed, true);
   assert.ok(menu.document.activeElement === null, 'closed menu releases DOM focus');
@@ -1932,6 +1945,11 @@ scenario('retired display confirmation callbacks cannot finish a replacement tra
   assert.equal(f.state.output.pendingToken, 2);
   assert.equal(replacement.closed, false);
   assert.equal(first.document.body.listeners.get('keydown').length, 0);
+  for (const name of ['Escape', 'Enter']) {
+    assert.equal(key(replacement, name, { isComposing: true }).defaultPrevented, false);
+    assert.equal(replacement.closed, false);
+    assert.equal(f.state.output.pendingToken, 2, 'Composing keys cannot Keep or Revert a trusted display transaction');
+  }
   key(replacement, 'Enter');
   assert.equal(replacement.closed, true);
   assert.equal(f.state.output.pendingToken, 0);

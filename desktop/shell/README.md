@@ -81,6 +81,10 @@ retain their existing command-navigation path. Short lists hide/disable the bar.
 Same-DOM retheming keeps the controller and current drag, and leaving cancels
 pending bounded layout work, capture and listeners. This does not add a popup,
 new input authority or an idle animation/observer loop.
+Composing keyboard events remain untouched throughout the ancestor chain:
+desktop selection, menu navigation/dismissal and trusted display Keep/Revert
+shortcuts do not reinterpret them after a child control returns. Ordinary
+navigation and token-bound confirmation retain their existing behavior.
 
 `desktop/tests/classic-programs-render.mjs` exports the bounded actual GUI and
 native-client geometry fixtures. `desktop/tests/menu-host.mjs` covers the real

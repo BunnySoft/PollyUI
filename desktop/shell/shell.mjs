@@ -1062,7 +1062,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const body = current.window.document.body;
     body.tabIndex = 0;
     listen(current, 'keydown', event => {
-      if (!currentMenu(current)) return;
+      if (!currentMenu(current) || event.isComposing) return;
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
         event.preventDefault(); event.stopPropagation(); closeMenu(current, current.mode === 'window-group');
@@ -1236,7 +1236,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const body = displayConfirmation.window.document.body;
       body.tabIndex = 0;
       listen(current, 'keydown', event => {
-        if (!running || displayConfirmation !== current || current.window.closed || pendingDisplayToken !== token) return;
+        if (!running || displayConfirmation !== current || current.window.closed ||
+            pendingDisplayToken !== token || event.isComposing) return;
         if (event.key === 'Escape' || event.key === 'Enter') {
           event.preventDefault(); finishDisplayChange(token, event.key === 'Enter');
         }

@@ -66,6 +66,12 @@ test('selection, Ctrl toggle, Shift range, empty clear, Ctrl+A, arrows and focus
   assert.deepEqual(ids(c.state.selected), [items[2].id]);
   click(items[3].id, { shiftKey: true });
   assert.equal(c.state.selected.size, 4);
+  const composingState = c.state;
+  for (const key of ['a', 'End', 'Enter', 'Escape'])
+    assert.equal(c.key({ key, ctrlKey: key === 'a', isComposing: true }), false);
+  assert.deepEqual(ids(c.state.selected), ids(composingState.selected));
+  assert.equal(c.state.focused, composingState.focused);
+  assert.deepEqual(launches, []);
   c.key({ key: 'a', ctrlKey: true }); c.key({ key: 'Enter' });
   assert.deepEqual(launches, [items[3].id]);
   c.key({ key: 'ArrowLeft' }); assert.equal(c.state.focused, items[2].id);

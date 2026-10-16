@@ -99,7 +99,7 @@ export function createDesktopInteraction({ changed = () => {}, save = () => {}, 
     },
     key(event) {
       const key = event.key;
-      if (event.altKey || event.metaKey) return false;
+      if (event.isComposing || event.altKey || event.metaKey) return false;
       if (key === 'Escape') {
         if (held) cancel();
         else { selected = new Set(); anchor = null; notify(); }

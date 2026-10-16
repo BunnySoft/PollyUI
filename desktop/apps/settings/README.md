@@ -34,6 +34,7 @@ arrow/Home/End navigation selects a draft value, while Enter does not select a
 radio. Busy pages disable the actual radio/checkbox factories. Preset IDs stay
 the same; radio truth is `aria-checked`, not a toggle button's `aria-pressed`.
 Composing keys are left to the input method without selecting a preset.
+The Settings window also leaves composing Escape untouched rather than closing.
 These are output scales for desktop, decorations and application buffers, not
 an app-only font zoom. Choosing a scale only edits that monitor's draft; Apply
 uses the existing native transaction and trusted 15-second Keep/Revert prompt.

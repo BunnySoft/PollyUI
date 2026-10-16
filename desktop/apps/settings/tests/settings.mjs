@@ -206,6 +206,11 @@ function domainFixture(t) {
 test('Displays edits live in the independent Settings document; Apply preserves trusted pending state through detach/reopen', async t => {
   const f = domainFixture(t); await tick();
   const find = id => f.document.getElementById(id);
+  let composingConsumed = 0;
+  await deliver(f.document.body, 'keydown', { key: 'Escape', isComposing: true,
+    preventDefault() { composingConsumed++; }, stopPropagation() { composingConsumed++; } });
+  assert.equal(composingConsumed, 0);
+  assert.equal(f.app.getWindow().closed, false, 'Composing Escape does not close Settings');
   assert.ok(find('shell-displays')); assert.equal(find('settings-open-managed-displays'), null);
   const inputTheme = BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'xp');
   assert.equal(find('shell-output-1-width').style.borderColor, inputTheme.colors.border);
