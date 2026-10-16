@@ -222,6 +222,15 @@ nodes or arrows, the 28px minimum thumb and the existing 42px keyboard step.
 The caller supplies the scrollbar role/label and updates the controller after
 layout, content or scroll changes; the controller starts no timer or frame loop.
 
+Optional `onScroll(value)` synchronously reports a changed, clamped numeric
+`viewport.scrollTop` after an update, including keyboard, capture and external
+scroll changes. It must be a function or omitted, and is validated before any
+listeners attach. Construction, unchanged updates and stopped controllers never
+notify. Consumers may update virtual rows and call `update()` synchronously;
+reentrant updates coalesce without a notification loop. Callback exceptions
+propagate, with mouseup capture still released. This callback is independent of
+appearance painting and does not sample or observe application data.
+
 An optional appearance contains `metrics`, `paint(state, parts)` and
 `decorate(parts)`. Metrics are bounded logical-pixel values: `width`,
 `thumbInset`, `minThumbHeight` (default 28), `arrowSize` (default 0), and

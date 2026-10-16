@@ -81,6 +81,57 @@ test('appearance validation rejects unknown fields, geometry overrides and inval
   assert.throws(() => verticalScrollMetrics(fixture().viewport, 200, { startInset: -1 }), RangeError);
 });
 
+test('optional scroll notification reports changed clamped values without constructor, idle or reentrant callbacks', () => {
+  const f = fixture(), values = [];
+  f.viewport.scrollTop = 9000;
+  let controller;
+  controller = createVerticalScrollbar({ ...f, appearance: { metrics: { width: 10 } },
+    onScroll(value) { values.push(value); controller.update(); } });
+  assert.equal(f.viewport.scrollTop, 4000);
+  assert.deepEqual(values, [], 'Construction never calls the consumer before it receives its controller');
+  controller.update(); controller.update();
+  assert.deepEqual(values, []);
+  fire(f.track, 'keydown', { key: 'Home' });
+  fire(f.track, 'keydown', { key: 'ArrowDown' });
+  assert.deepEqual(values, [0, 42]);
+  f.viewport.scrollTop = 9000; controller.update();
+  assert.deepEqual(values, [0, 42, 4000], 'External changes publish their normalized value once');
+  f.viewport.childNodes[0].offsetHeight = 420; controller.update();
+  assert.deepEqual(values, [0, 42, 4000, 220], 'Content shrink publishes its actual clamp');
+  controller.update(); controller.setAppearance({ metrics: { arrowSize: 16 } });
+  assert.equal(values.length, 4, 'Retheme and idle updates are not scroll events');
+  const key = f.track.listeners.get('keydown')[0];
+  controller.stop();
+  key({ key: 'End', preventDefault() {}, stopPropagation() {} }); controller.update();
+  assert.equal(values.length, 4, 'Stop retires both live and retained controller callbacks');
+  const closing = fixture();
+  let closes = 0, owned;
+  owned = createVerticalScrollbar({ ...closing, onScroll() { closes++; owned.stop(); } });
+  owned.update();
+  fire(closing.track, 'keydown', { key: 'End' }); owned.update();
+  assert.equal(closes, 1, 'A consumer can stop its controller during synchronous notification');
+  assert.ok([...closing.track.listeners.values()].every(list => list.length === 0));
+});
+
+test('scroll callback validation precedes mutations and callback failure still releases mouseup capture', () => {
+  for (const onScroll of [null, true, 1, 'changed', {}]) {
+    const f = fixture(), before = [f.doc.styleWrites, f.doc.attributeWrites];
+    assert.throws(() => createVerticalScrollbar({ ...f, onScroll }), TypeError);
+    assert.deepEqual([f.doc.styleWrites, f.doc.attributeWrites], before);
+    assert.equal(f.track.listeners.size, 0);
+    assert.equal(f.track.childNodes.length, 1);
+  }
+  const f = fixture(), failure = new Error('Consumer scroll failed');
+  let calls = 0;
+  const controller = createVerticalScrollbar({ ...f, onScroll() { calls++; throw failure; } });
+  controller.update(); fire(f.track, 'mousedown');
+  assert.equal(f.doc.captured, f.track);
+  assert.throws(() => fire(f.track, 'mouseup', { clientY: 150 }), error => error === failure);
+  assert.equal(f.doc.captured, null);
+  controller.update(); assert.equal(calls, 1, 'An unchanged value does not replay a failed notification');
+  controller.stop();
+});
+
 test('one controller owns arrow steps, held/drag/focus states and idle-paint deduplication', () => {
   const f = fixture(), states = [];
   const appearance = { metrics: { width: 16, thumbInset: 1, arrowSize: 16, stepSize: 17 },

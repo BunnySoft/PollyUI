@@ -20,6 +20,13 @@ range calculation. All observed processes remain in the model, sort and count,
 and both ends remain reachable by scrolling; this is not an extra process limit.
 Loading, error and theme updates preserve the viewport, and native owner resizing
 remeasures it in bounded post-layout callbacks instead of polling.
+The existing themed overlay scrollbar occupies the last column's trailing
+10px padding without changing cell widths or the 42px rows. Drag, track paging,
+arrows and focused keyboard navigation use the shared SDK controller; its scroll
+notification updates only the virtual row range, never takes another process
+sample. Retheme preserves the same list/track/thumb and capture owner. Retained
+data stays scrollable during refresh or after a failed sample, and closing
+releases the scrollbar together with the app's existing lifecycle.
 CPU is
 `delta(utime + stime) / delta(machine CPU ticks) * 100`, the share of total
 machine CPU, not a per-core percentage or cgroup-normalized quota. Aggregate

@@ -56,6 +56,20 @@ export async function checkProcessesTable(directory) {
     click(get('processes-sort-pid'));
     check(app.controller.getState().sort.key === 'pid' && get('processes-pid-1'),
       'Actual sort control reveals the ascending PID window');
+    const track = get('processes-scrollbar'), thumb = get('processes-scroll-thumb'), sampled = calls;
+    track.focus(); host.key('PageDown', 'keydown', { text: false }); settle();
+    check(Number(list.scrollTop) === list.offsetHeight && !get('processes-pid-1'),
+      'Real scrollbar PageDown replaces the virtual rows, not just its thumb');
+    host.key('Home', 'keydown', { text: false }); settle();
+    let rail = track.getBoundingClientRect(), knob = thumb.getBoundingClientRect();
+    const x = rail.x + rail.width / 2, y = knob.y + knob.height / 2;
+    host.mouse('mousedown', x, y); settle();
+    check(track.hasMouseCapture(), 'Actual scrollbar thumb owns native mouse capture');
+    host.mouse('mousemove', x, rail.bottom - 1); host.mouse('mouseup', x, rail.bottom - 1); settle();
+    check(!track.hasMouseCapture() && get('processes-pid-4096'),
+      'Actual captured drag reveals the final observed process and releases capture');
+    host.key('Home', 'keydown', { text: false }); settle();
+    check(get('processes-pid-1') && calls === sampled, 'Scrollbar interactions never request a process sample');
     wheel(1e6);
     const last = get('processes-pid-4096'), end = bounded(), box = last?.getBoundingClientRect();
     const viewport = list.getBoundingClientRect();
