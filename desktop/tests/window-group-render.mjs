@@ -207,6 +207,32 @@ export function checkWindowGroups(directory) {
   click(get('shell-window-11'), 2);
   check(contexts.at(-1) === 11 && !open, 'Legacy context retains original per-window interface');
   save('legacy-negative');
+  for (const [from, to] of [['server2003', 'modern'], ['modern', 'server2003']]) {
+    render(h('view', {}), document.body);
+    const group = windowTasks(documents(3), 'applications', catalog)[0];
+    const state = { slots: [], action: (id, action) => calls.push([action, id]), close() {} };
+    const retheme = id => {
+      const base = getDesktopTheme(id);
+      const custom = { ...base, panel: { ...base.panel, taskGrouping: 'applications' } };
+      render(h('view', { style: { width: 380, height: 360 } },
+        windowGroupMenu(custom, group, state)), document.body);
+      settle();
+    };
+    retheme(from);
+    const target = get('shell-group-close-11'), list = get('shell-group-list');
+    target.focus(); settle();
+    const before = calls.length;
+    retheme(to);
+    const sameDOM = get('shell-group-close-11') === target;
+    const focusedCurrent = document.activeElement === target;
+    console.log('WINDOW_GROUP_RETHEME ' + JSON.stringify({ from, to, sameDOM, focusedCurrent }));
+    check(sameDOM && get('shell-group-list') === list && focusedCurrent,
+      'Classic/Modern passive detail changes retain the same close-11 DOM and actual focus');
+    key('Enter');
+    check(calls.length === before + 1 && JSON.stringify(calls.at(-1)) === '["closeWindow",11]',
+      'Enter after Classic/Modern retheme closes only the originally focused window 11 once');
+    records.push({ from, to, sameDOM, focusedCurrent, action: calls.at(-1) });
+  }
   console.log('WINDOW_GROUP_GUI ' + JSON.stringify({ records, calls, contexts,
     proof: 'actual GUI renderer and input against nonempty appId fixture snapshots; not compositor/MRU certification' }));
   console.log('PASS: Modern/Big Sur grouped slots, chooser pointer/keyboard, count-width, long-list reveal, held target guards and XP negative');

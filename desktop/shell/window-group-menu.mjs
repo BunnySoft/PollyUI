@@ -105,7 +105,6 @@ export function windowGroupMenu(theme, group, state) {
     style: { ...panelAppearance(theme, 'menu'), width: '100%', height: '100%',
       minHeight: 0, minWidth: 0, overflow: 'hidden' },
     onKeydown: navigate },
-  panelDetail(theme, 'menu'),
   h('view', { style: { height: theme.layout.buttonHeight, minWidth: 0, overflow: 'hidden', flexShrink: 0 } },
     label(taskLabel(group))),
   h('view', { id: 'shell-group-list', style: { flexGrow: 1, flexBasis: 0, minHeight: 0,
@@ -133,5 +132,6 @@ export function windowGroupMenu(theme, group, state) {
       minimize, close));
   })),
   command('shell-group-menu-close', 'Close menu', state.close),
-  state.error ? label(state.error) : null);
+  state.error ? label(state.error) : null,
+  panelDetail(theme, 'menu'));
 }
