@@ -533,7 +533,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded hover and genuine material alpha are now delivered separately; backdrop blur/reflection, Dock shadow and full neighboring-icon animation remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
+| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded neighboring-artwork magnification and genuine material alpha are delivered separately; backdrop blur/reflection, Dock shadow and original-system qualification remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -615,14 +615,23 @@ These are Polly launcher semantics, not native MRU, drag sorting or Dock
 magnification. Classic retains its original mode; XP retains independent
 per-window tasks alongside its explicit Quick Launch prefix.
 
-Mac-style Docks now also provide bounded pointer-hover emphasis through optional
-`icons.dockHoverPercent` (integer 100-125, missing/100 disables; packaged presets
-use 120). Only the passive glyph/bitmap scales about its center, limited by the
-actual slot, clipping ancestors and client viewport. Slot/tile/hit geometry,
-counts and running marks stay fixed. Leave/cancel restores the art; existing
-weak control state and Dock settling handle retheme/scroll without a new frame
-loop. This is not neighboring-icon displacement, animated magnification or
-keyboard-focus enlargement.
+Mac-style Docks also provide bounded pointer-distance magnification through
+optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
+`icons.dockMagnificationRadius` (integer 0-3, missing/0 preserves the previous
+single-hover behavior). Packaged/recovery Mac presets explicitly select peak
+120 and radius 2. Visible fixed commands and window-strip items share a natural
+neighbor sequence across the separator, with continuous distance weights.
+Only the passive glyph/bitmap scales about its center, limited by the actual
+slot, clipping ancestors and client viewport. Slot/tile/hit geometry, counts,
+running marks and native surface dimensions stay fixed.
+
+Entry, movement and leave use a finite 140ms smoothstep transition with a
+24-callback safety bound; settled state has no animation frames. Clock and
+immutable retheme preserve the pointer and instance state, while scroll/focus
+settling recomputes visible bounds. Leave/cancel restores every affected icon;
+retirement cancels pending work even after ancestor removal. This is not
+neighboring-slot displacement, a larger native input area, keyboard-focus
+enlargement or original macOS magnification/MRU qualification.
 
 Long Programs/category and window-group management lists now opt into the same
 themed 10px overlay scrollbar used by existing desktop consumers. The shared
@@ -1021,7 +1030,7 @@ specific task IDs, not another independently maintained status table.
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded hover emphasis; native/reference qualification and full neighboring-icon animation remain |
+| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded animated neighboring-artwork magnification; native/reference qualification remains |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened

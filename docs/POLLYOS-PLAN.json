@@ -1272,7 +1272,7 @@
       "label": "E22.34 Mac Dock 分组与放大",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "三MacDock已支持确切appId分组、独立持久固定、菜单Earlier/Later一步排序和固定槽内的有界悬停强调；继续核启动/running标记、最小化窗口、原生/参考资格及完整相邻联动动画。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
+      "scope": "三MacDock已支持确切appId分组、独立持久固定、菜单Earlier/Later一步排序及固定槽内按实际指针距离联动的有界相邻图标动画；optional radius0..3缺省/0保旧single-hover，三Mac显式2/原peak120。动画不扩大slot/hitbox/native surface，继续核启动/running标记、最小化窗口与原生/原OS参考资格，不冒macOS完整位移/幅度或nativeMRU。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1281,7 +1281,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "历史882f9182已修窗口区溢出可达性，不重新标Dock所有功能未实现。后续c98628d/f57d958合31b7236：builtin/fallback仅Modern及aqua/lion/bigsur显式optional panel.taskGrouping=applications，strict schema1；共享windowTasks按非空exact native appId分组、准确running/active/minimized/count，空或缺失appId保Window.id，catalog仅exact名称否则真实appId，无PID/title/basename猜测。Dock render/width同缓存task count，原gap/fit/三固定入口/inner-outer scroll保留。Mac单窗activate/restore不minimize，所有多窗primary/context进既有RootMenu真实chooser，逐窗activate/minimize/restore/close，无close-all/launch伪行为。父Node50及真Modern/BigSur GUI、XPnegative、held/workspace/member/operation guards和真实native child bounds通过；子原gap/fit16–96/extreme定向回归green。b9b2bc5合2b17a28使chooser共用panel menu policy，短list/focus/原actions父actual再次通过。只是fixture snapshots配真实软件GUI/child几何，不冒全WM枚举、native MRU、真实macOS/Metal/物理DPI或OS原图；pinning/magnification及其它参考资格仍待做，E22.34保持partial。"
+      "evidence": "历史882f9182已修窗口区溢出可达性，不重新标Dock所有功能未实现。后续c98628d/f57d958合31b7236：builtin/fallback仅Modern及aqua/lion/bigsur显式optional panel.taskGrouping=applications，strict schema1；共享windowTasks按非空exact native appId分组、准确running/active/minimized/count，空或缺失appId保Window.id，catalog仅exact名称否则真实appId，无PID/title/basename猜测。Dock render/width同缓存task count，原gap/fit/三固定入口/inner-outer scroll保留。Mac单窗activate/restore不minimize，所有多窗primary/context进既有RootMenu真实chooser，逐窗activate/minimize/restore/close，无close-all/launch伪行为。父Node50及真Modern/BigSur GUI、XPnegative、held/workspace/member/operation guards和真实native child bounds通过；子原gap/fit16–96/extreme定向回归green。b9b2bc5合2b17a28使chooser共用panel menu policy，短list/focus/原actions父actual再次通过。只是fixture snapshots配真实软件GUI/child几何，不冒全WM枚举、native MRU、真实macOS/Metal/物理DPI或OS原图。后续已交独立持久pins/EarlierLater与single-hover；2026-10-17源76a6e33+6b04688合106598f交真实邻近distance动画：实际中心间距连续位置/余弦权重，固定三项与visible window strip同序列，140ms smoothstep/24callback safety，原glyph/bitmap不染色、slot/tile/marker/count/hitbox/surface全不变，所有clip祖先与body限制。父审出每次retarget清start使持续移动饥饿，原Native host.render(ms)实际RED六帧全1；修活动chain保前tick/idle清时钟后，每16ms两次真实pointermove六帧中心1.007234到1.039231，指针未停已放大，末目标11帧内settle/pending0。原scene center[1.1,1.2,1.1]、quarter-pointer不同权重、跨separator/真bitmap原色、clock/retheme/mixed/clip/wheel/focus/retire/单次group action通过。8ac原producer与现源码missing/zero/peak100各idle/hover六wholePNG bytes exact；父组合276/276及schema生成检查通过。旧extreme入口raw alpha断言在8ac及current同RED，不冒全绿；仅session显式material100复用该入口窄屏/双scroll/held/各actions通过，未弱化旧断言或改alpha。无新build/VM/SDK/环境操作，仍非原OS位移/Metal/物理GPU/原图或全WM资格，E22.34保持partial。"
     },
     {
       "id": "classic-layout-corrected",
