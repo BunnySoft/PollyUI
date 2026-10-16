@@ -1,5 +1,7 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { isLuna } from './desktop/shell/luna-primitives.mjs';
+import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 export function trayView(theme, items, activate, scroll, error = '') {
   return h('view', { id: 'shell-tray', role: 'toolbar',
@@ -61,15 +63,11 @@ export function createTray({ native, report, changed, host, theme }) {
   }
   function menuButton(id, label, callback, enabled = true) {
     const current = theme();
-    return h('view', { id, className: 'tray-menu-entry', role: 'menuitem', 'aria-disabled': String(!enabled), tabIndex: enabled ? 0 : -1,
-      style: { padding: current.layout.serviceButtonPadding, minHeight: current.layout.trayMenuRowHeight,
-        flexShrink: 0, color: enabled ? current.colors.text : current.colors.muted,
-        fontSize: current.layout.fontSize, borderRadius: current.button.radius, backgroundColor: current.colors.surface },
-      hoverStyle: enabled ? { backgroundColor: current.colors.selection } : {},
-      focusStyle: enabled ? { backgroundColor: current.colors.selection } : {},
-      onClick: () => { if (enabled) callback(); },
-      onKeydown: event => { if (enabled && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); callback(); } },
-    }, label);
+    const node = desktopCommand(id, label, current, callback, { role: 'menuitem', enabled, quiet: true,
+      style: { height: 'auto', padding: current.layout.serviceButtonPadding,
+        minHeight: current.layout.trayMenuRowHeight } });
+    node.props.className = 'tray-menu-entry';
+    return node;
   }
   function openMenu(item, root) {
     try { native.openTrayMenu(item.id, item.revision, root); paintMenu(); }
@@ -115,7 +113,7 @@ export function createTray({ native, report, changed, host, theme }) {
     }
     const current = theme(), target = items.find(item => item.id === state.itemId);
     if (!target) { closeMenu(); return; }
-    Object.assign(menu.window.document.body.style, { backgroundColor: current.colors.body, padding: current.layout.serviceButtonPadding });
+    Object.assign(menu.window.document.body.style, { backgroundColor: 'transparent', padding: 0 });
     const label = text => text.replace(/__|_/g, match => match === '__' ? '_' : '');
     const entries = state.items.map(entry => entry.separator ? h('view', { style: { height: current.layout.borderWidth, backgroundColor: current.colors.border } }) :
       menuButton('shell-tray-menu-item-' + entry.id,
@@ -128,12 +126,14 @@ export function createTray({ native, report, changed, host, theme }) {
             catch (error) { report('[shell] Tray menu action failed: ' + String(error)); paintMenu(); }
           }
         }, entry.enabled));
-    render(h('view', { id: 'shell-tray-menu', role: 'menu', style: { flex: 1, gap: current.layout.trayGap, overflow: 'scroll' } },
+    const view = panelViewport(current, { id: 'shell-tray-menu', variant: 'menu' },
       menuButton('shell-tray-menu-close', 'Close', closeMenu),
       state.root ? menuButton('shell-tray-menu-root', 'Main menu', () => openMenu(target, 0)) : null,
       state.pending ? h('view', { style: { color: current.colors.text, fontSize: current.layout.fontSize } }, 'Loading menu...') :
-        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: current.layout.fontSize } }, state.error) : entries),
-    menu.window.document.body);
+        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: current.layout.fontSize } }, state.error) : entries);
+    view.props.role = 'menu';
+    view.children[0].props.style.gap = current.layout.trayGap;
+    render(view, menu.window.document.body);
     if (!menu.window.document.activeElement)
       menu.window.document.querySelectorAll('.tray-menu-entry').find(node => node.tabIndex >= 0)?.focus();
   }
