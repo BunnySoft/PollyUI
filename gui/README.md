@@ -208,12 +208,19 @@ Canvas -> ring -> detail -> control ancestry, not a new focus controller.
 
 `setAppearance(value)` rethemes the same viewport/track/thumb and preserves
 active thumb capture. `setAppearance(undefined)` restores the original surface
-styles and removes owned arrows/decorations. Unchanged appearance/state updates
-do not notify paint or rewrite styles. `stop()` releases capture, unregisters
+styles and removes owned arrows/decorations. Unchanged appearance/state/bounds
+updates do not notify paint or rewrite styles. Real track bounds changes notify
+the existing focus painter without a frame loop. `stop()` releases capture, unregisters
 listeners and disposes decorations. `step(-1|1)` uses the same clamped step as
 arrow regions and ArrowUp/ArrowDown; arrows never acquire a second input owner.
 Tiny themed rails retain truthful overflow and arrow/keyboard access even when
 no thumb travel fits; short content still hides/disables the rail.
+Surface `track.opacity` is preserved while enabled and gated to zero when hidden;
+restored overflow restores that surface opacity. Captured retheme/resize reanchors
+the pointer in the new arrow lane without scrolling a stationary pointer.
+Invalid initial appearance configuration is rejected before listeners attach;
+failed initial paint/decoration rolls back owned listeners, nodes, styles and
+accessibility state and rethrows the original error.
 
 `verticalScrollMetrics` optionally accepts a third argument
 `{ minThumbHeight, startInset, endInset }`; `top` includes the start inset and
@@ -222,3 +229,6 @@ The SDK imports no desktop palette. Desktop's single
 `desktop/shared/ui/scrollbar-appearance.mjs` adapter derives its surfaces from
 theme tokens, namespaces passive bevels, and reuses existing Classic/Luna focus
 painting. Its end-arrow policy is not a claim of exact original-OS layouts.
+Its `full` (default) and `overlay` variants share that policy; `overlay` keeps
+Files' existing 10px footprint without shrinking its rows or metadata columns.
+Unknown variants reject explicitly.

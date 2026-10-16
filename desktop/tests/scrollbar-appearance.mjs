@@ -19,6 +19,12 @@ test('one cached immutable scrollbar adapter derives six theme surfaces without 
     assert.ok(appearance.metrics.width > appearance.metrics.thumbInset * 2);
     assert.equal(typeof appearance.paint, 'function'); assert.equal(typeof appearance.decorate, 'function');
     assert.equal(JSON.stringify(theme), before);
+    const overlay = scrollbarAppearance(theme, 'overlay');
+    assert.equal(scrollbarAppearance(theme, 'overlay'), overlay);
+    assert.equal(overlay.metrics.width, 10);
+    assert.ok(overlay.metrics.thumbInset * 2 < overlay.metrics.width);
+    assert.equal(overlay.metrics.arrowSize, appearance.metrics.arrowSize ? 10 : 0);
+    assert.throws(() => scrollbarAppearance(theme, 'thin-blue'), /Unknown scrollbar variant/);
   }
 });
 

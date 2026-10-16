@@ -4,7 +4,7 @@ import { bevel, surfaceStyle, surfacePaint, surfaceDetail } from './desktop/shar
 import { isLuna, lunaButtonPaint, lunaButtonDetail } from './desktop/shared/ui/luna-primitives.mjs';
 import { paintClassicFocus } from './desktop/shared/ui/classic-task-paint.mjs';
 
-const appearances = new WeakMap();
+const appearances = { full: new WeakMap(), overlay: new WeakMap() };
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
 function scrollbarBevel(theme, part, options = {}) {
   const node = bevel(theme, options);
@@ -13,12 +13,15 @@ function scrollbarBevel(theme, part, options = {}) {
   return node;
 }
 
-export function scrollbarAppearance(theme) {
-  let appearance = appearances.get(theme);
+export function scrollbarAppearance(theme, variant = 'full') {
+  if (!Object.hasOwn(appearances, variant)) throw new RangeError('Unknown scrollbar variant: ' + variant);
+  const cache = appearances[variant];
+  let appearance = cache.get(theme);
   if (appearance) return appearance;
   const c = theme.colors, style = surfaceStyle(theme), classic = style === 'classic', luna = isLuna(theme);
-  const width = Math.max(12, Math.min(24, theme.layout.fontSize + theme.layout.borderWidth * 4));
-  const inset = classic || luna ? 1 : Math.max(2, Math.min(4, theme.layout.controlGap / 2));
+  const overlay = variant === 'overlay';
+  const width = overlay ? 10 : Math.max(12, Math.min(24, theme.layout.fontSize + theme.layout.borderWidth * 4));
+  const inset = classic || luna ? 1 : overlay ? 2 : Math.max(2, Math.min(4, theme.layout.controlGap / 2));
   const arrows = classic || luna || style === 'aqua';
   function face(disabled, hovered, pressed) {
     return { ...(luna ? lunaButtonPaint(theme, { disabled, hovered, pressed }) :
@@ -91,6 +94,6 @@ export function scrollbarAppearance(theme) {
       increment: face(disabled || atEnd, hovered === 'increment', held === 'increment') };
     },
   });
-  appearances.set(theme, appearance);
+  cache.set(theme, appearance);
   return appearance;
 }
