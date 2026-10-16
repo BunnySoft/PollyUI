@@ -1,4 +1,5 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
+import { controlStates as visualStates } from './desktop/shared/ui/control-state.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' };
 export const isLuna = (theme, group = 'button') => theme[group].surfaceStyle === 'luna';
@@ -100,8 +101,6 @@ export function lunaButtonDetail(theme, variant = 'button', disabled = false) {
       borderColor: variant === 'task' ? theme.panel.text : '#efb73b', opacity: 0 } }), focus);
 }
 
-const visualStates = new WeakMap();
-
 export function lunaVisualEvents(theme, options = {}) {
   const paint = (event, change) => {
     const node = event.currentTarget;
@@ -120,17 +119,20 @@ export function lunaVisualEvents(theme, options = {}) {
       tint.style.opacity = pressed ? '0.18' : hovered ? '0.12' : '0';
     }
   };
-  const syncDisabled = node => {
-    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true')
-      paint({ currentTarget: node }, {});
+  const syncState = node => {
+    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+        visualStates.has(node) || node.ownerDocument?.activeElement === node)
+      paint({ currentTarget: node }, { focused: node.ownerDocument?.activeElement === node });
   };
   return {
-    onMount: syncDisabled,
-    onUpdate: syncDisabled,
+    onMount: syncState,
+    onUpdate: syncState,
     onMouseenter: event => paint(event, { hovered: true }),
     onMouseleave: event => paint(event, { hovered: false, pressed: false }),
     onMousedown: event => { if (event.button === 0) paint(event, { pressed: true }); },
     onMouseup: event => paint(event, { pressed: false }),
+    onMousecancel: event => paint(event, { hovered: false, pressed: false }),
+    onLostmousecapture: event => paint(event, { pressed: false }),
     onFocus: event => paint(event, { focused: true }),
     onBlur: event => paint(event, { focused: false, pressed: false }),
   };
