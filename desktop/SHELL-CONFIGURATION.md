@@ -1,4 +1,4 @@
-# Shell configuration v2
+# Shell configuration v3
 
 Shell is the sole writer of `application.configDir/shell-preferences.json`.
 Independent Settings requests changes through the existing authenticated IPC;
@@ -6,8 +6,8 @@ it never receives a configuration handle. Linux Shell composition passes
 `--no-legacy-storage`; ordinary applications, protected roles, headless tests
 and Windows retain their existing localStorage composition by default.
 
-The JSON object has exactly `version: 2`, `theme: { id, filesEnabled }`,
-`audio`, `display`, `workspace`, `shortcuts`, and `desktop`. A null theme ID selects the
+The JSON object has exactly `version: 3`, `theme: { id, filesEnabled }`,
+`audio`, `display`, `workspace`, `shortcuts`, `desktop`, and `launchers`. A null theme ID selects the
 packaged default; `filesEnabled` defaults to true. Null preference sections
 mean no saved profile. Non-null audio/display/workspace sections retain their
 existing v1 domain schemas and validation limits; shortcuts store only
@@ -23,12 +23,21 @@ from the catalog, and launching rechecks availability. IDs are unique globally;
 coordinates are nonnegative integer logical output pixels, at most 32768.
 Unknown fields and malformed output identities fail rather than dropping pins.
 
-Existing v1 JSON is validated, upgraded once by the same atomic writer, and
+`launchers` is `{ version: 1, applications: [catalogId, ...] }`, initially empty.
+It is an independent ordered list of at most 32 unique bounded catalog IDs, not
+commands, runtime app IDs, PIDs or live window handles. Unknown applications remain
+pinned and visibly unavailable until removed or registered again. Removing a
+taskbar/Dock pin never removes a desktop shortcut, and shortcut changes do not
+modify launcher pins. Only explicit `applications` task grouping displays them.
+Running groups merge with a pin only through the existing unique exact/explicit
+catalog identity association; ambiguous associations retain separate running tasks.
+
+Existing v1/v2 JSON is validated, upgraded once by the same atomic writer, and
 preserves every original domain. It does not reread legacy localStorage.
-An upgrade write failure is explicit, retains the uncommitted v1 file, and
+An upgrade write failure is explicit, retains the uncommitted original file, and
 does not create a success-shaped in-memory configuration. A post-rename
-durability failure retains the published v2 file and reports uncertain durability.
-Older binaries do not read v2; downgrading the Shell requires a separate,
+durability failure retains the published v3 file and reports uncertain durability.
+The desktop shortcut domain remains version 1. Older binaries do not read v3; downgrading the Shell requires a separate,
 explicit configuration compatibility decision.
 
 Layouts match output-management connector/make/model/serial tuples. SDL display

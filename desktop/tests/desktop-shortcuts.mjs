@@ -115,7 +115,7 @@ test('only selected moved IDs are published; snapped no-op and Ctrl-deselected p
   assert.deepEqual(saves, [[items[0].id]]);
 });
 test('v1 JSON atomically upgrades once preserving all original domains; failed migration never falls back', () => {
-  const { desktop, ...defaults } = defaultShellConfiguration();
+  const { desktop, launchers, ...defaults } = defaultShellConfiguration();
   const legacy = { ...defaults, version: 1, theme: { id: 'xp', filesEnabled: false },
     workspace: { version: 1, names: ['Code', 'Notes'], active: 1 } };
   let bytes = encodeUtf8(JSON.stringify(legacy)), writes = 0;
@@ -123,11 +123,11 @@ test('v1 JSON atomically upgrades once preserving all original domains; failed m
     assert.equal(initial, false); bytes = next; writes++;
   } };
   const store = createShellConfiguration(files, () => assert.fail('legacy storage read'));
-  assert.deepEqual(store.snapshot, { ...legacy, version: 2, desktop });
+  assert.deepEqual(store.snapshot, { ...legacy, version: 3, desktop, launchers });
   store.close();
   createShellConfiguration(files, () => assert.fail('legacy storage read')).close();
   assert.equal(writes, 1);
-  assert.equal(JSON.parse(decodeUtf8(bytes)).version, 2);
+  assert.equal(JSON.parse(decodeUtf8(bytes)).version, 3);
   for (const committed of [false, true]) {
     const badFiles = { read: () => encodeUtf8(JSON.stringify(legacy)), close() {},
       write() { throw Object.assign(new Error('migration write failure'), { committed }); } };

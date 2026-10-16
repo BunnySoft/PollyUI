@@ -6,6 +6,7 @@ register('./root-loader.mjs', import.meta.url);
 const { createShellConfiguration, defaultShellConfiguration, migrateShellConfiguration,
   validateShellConfiguration } = await import('../shell/configuration.mjs');
 const { encodeUtf8, decodeUtf8 } = await import('../../sysrt/sdk/js/encoding.mjs');
+const { fixtureShortcuts } = await import('./configuration-memory.mjs');
 
 test('typed configuration defaults, complete validation, immutable copy, restart and once-only migration', () => {
   let bytes = null, legacyReads = 0, writes = 0;
@@ -73,6 +74,78 @@ test('invalid existing JSON never reads legacy or writes a replacement, and clos
     }, () => assert.fail('legacy fallback')));
     assert.equal(closes, 1);
   }
+});
+
+test('v1 and v2 migrate atomically to v3 once preserving every saved domain and desktop shortcut', () => {
+  const populated = { ...defaultShellConfiguration(), theme: { id: 'bigsur', filesEnabled: false },
+    audio: { version: 1, preferredSink: 'speaker', preferredSource: '', devices: [
+      { name: 'speaker', class: 'Audio/Sink', volume: 0.4, muted: false }] },
+    display: { version: 1, heads: [{ name: 'DP-1', make: 'Fixture', model: 'Display', serialNumber: 'A',
+      enabled: true, width: 1280, height: 720, refresh: 60000, scale: 1, transform: 0, x: 0, y: 0, adaptiveSync: false }] },
+    workspace: { version: 1, names: ['Code', 'Notes'], active: 1 },
+    shortcuts: fixtureShortcuts.map(({ action, key, modifiers }) => ({ action, key, modifiers })),
+    desktop: { version: 1, shortcuts: [{ id: 'files.desktop', name: 'Files',
+      output: { name: 'DP-1', make: 'Fixture', model: 'Display', serialNumber: 'A' }, x: 16, y: 16 }] } };
+  for (const version of [1, 2]) {
+    const { launchers, ...source } = populated;
+    source.version = version;
+    if (version === 1) delete source.desktop;
+    let bytes = encodeUtf8(JSON.stringify(source)), writes = 0;
+    const expected = { ...populated, desktop: version === 1 ? { version: 1, shortcuts: [] } : populated.desktop };
+    const files = { read: () => bytes, close() {}, write(next, initial) {
+      assert.equal(initial, false); bytes = next.slice(); writes++;
+    } };
+    let store = createShellConfiguration(files, () => assert.fail('JSON migration cannot reread legacy'));
+    assert.deepEqual(store.snapshot, expected);
+    assert.equal(writes, 1);
+    store.close();
+    store = createShellConfiguration(files, () => assert.fail('JSON restart cannot reread legacy'));
+    assert.deepEqual(store.snapshot, expected);
+    assert.equal(writes, 1);
+    store.close();
+    for (const committed of [false, true]) {
+      bytes = encodeUtf8(JSON.stringify(source));
+      assert.throws(() => createShellConfiguration({ read: () => bytes, close() {},
+        write(next) {
+          if (committed) bytes = next.slice();
+          throw Object.assign(new Error('migration failure'), { committed });
+        } }, () => assert.fail('invalid migration fallback')), error => error.committed === committed);
+      assert.deepEqual(JSON.parse(decodeUtf8(bytes)), committed ? expected : source);
+    }
+  }
+});
+
+test('launcher pins are strict ordered independent snapshots and follow actual publication on failure', () => {
+  let bytes = encodeUtf8(JSON.stringify(defaultShellConfiguration())), fault = '';
+  const store = createShellConfiguration({ read: () => bytes, close() {}, write(next) {
+    if (fault === 'before') throw new Error('disk full');
+    bytes = next.slice();
+    if (fault === 'after') throw Object.assign(new Error('directory sync failed'), { committed: true });
+  } }, () => assert.fail('legacy read'));
+  const applications = ['bundle:org.example.notes', 'files.desktop', 'uninstalled.desktop'];
+  store.update({ launchers: { version: 1, applications } });
+  applications.reverse();
+  assert.deepEqual(store.snapshot.launchers.applications, [...applications].reverse());
+  assert.ok(Object.isFrozen(store.snapshot.launchers.applications));
+  const pins = store.snapshot.launchers;
+  store.update({ desktop: { version: 1, shortcuts: [] }, workspace: { version: 1, names: ['Only'], active: 0 } });
+  assert.deepEqual(store.snapshot.launchers, pins);
+  const desktop = store.snapshot.desktop, before = store.snapshot;
+  for (const launchers of [null, [], {}, { version: 2, applications: [] }, { version: 1, applications: [], extra: true },
+    { version: 1, applications: Array(33).fill('files.desktop') }, { version: 1, applications: ['x', 'x'] },
+    ...[null, 4, '', 'has space', '/file.desktop', '../file.desktop', 'a\\b', 'x\0', 'x'.repeat(256)].map(id =>
+      ({ version: 1, applications: [id] }))])
+    assert.throws(() => store.update({ launchers }));
+  assert.equal(store.snapshot, before);
+  fault = 'before';
+  assert.throws(() => store.update({ launchers: { version: 1, applications: [] } }), /disk full/);
+  assert.equal(store.snapshot, before);
+  fault = 'after';
+  assert.throws(() => store.update({ launchers: { version: 1, applications: [] } }), error => error.committed);
+  assert.deepEqual(store.snapshot.launchers.applications, []);
+  assert.deepEqual(store.snapshot.desktop, desktop);
+  assert.deepEqual(store.snapshot, JSON.parse(decodeUtf8(bytes)));
+  store.close();
 });
 
 test('shortcut publication failure keeps acknowledged bindings; uncommitted failure restores them', async () => {
