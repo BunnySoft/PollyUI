@@ -10,6 +10,7 @@ import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint }
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
 import { fixedRowWindow } from './gui/sdk/js/virtual-list.mjs';
 import { selectionTextColor, paintSelectionText } from './gui/sdk/js/selection-text.mjs';
+import { selectionAppearance, selectionSkin } from './gui/sdk/js/selection-appearance.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -75,9 +76,9 @@ function optionPointer(kind, value, disabled, activate) {
     },
   };
 }
-const selectionFocus = () => h('view', { className: 'n-selection-focus', 'aria-hidden': 'true',
+const selectionFocus = (color = theme.primary) => h('view', { className: 'n-selection-focus', 'aria-hidden': 'true',
   style: clean({ position: 'absolute', left: 1, top: 1, right: 1, bottom: 1,
-    borderWidth: 1, borderColor: theme.primary, borderRadius: 2, opacity: 0, pointerEvents: 'none' }) });
+    borderWidth: 1, borderColor: color, borderRadius: 2, opacity: 0, pointerEvents: 'none' }) });
 function syncSelectionFocus(node) {
   const ring = node.querySelector('.n-selection-focus');
   if (ring) ring.style.opacity = node.getAttribute('aria-disabled') !== 'true' &&
@@ -220,54 +221,65 @@ export function NTag(props = {}, label) {
 
 export function NSwitch(props = {}) {
   const { value = false, onUpdate, disabled = false, id } = props;
-  const W = 40, H = 22, knob = 18, pad = 2;
-  return h('view', {
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
+  const W = m.switchWidth, H = m.switchHeight, knob = m.knobSize, pad = m.switchPadding;
+  return selectionSkin(h('view', {
     id, role: 'switch', 'aria-label': props['aria-label'], tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(value)),
     'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
-    style: clean({ width: W, height: H, borderRadius: H / 2, position: 'relative', backgroundColor: value ? theme.primary : theme.railOff, opacity: disabled ? 0.5 : 1 }),
+    style: clean({ width: W, height: H, borderRadius: H / 2, position: 'relative',
+      backgroundColor: value ? c.primary : c.railOff, opacity: disabled ? m.disabledOpacity : 1 }),
     onClick: event => { if (!disabled && primaryClick(event)) onUpdate?.(!value); },
     onKeydown: event => {
       if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onUpdate?.(!value); }
     },
-  }, h('view', { style: clean({ position: 'absolute', top: pad, left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2, backgroundColor: '#ffffff' }) }), selectionFocus());
+  }, h('view', { className: 'n-selection-knob', style: clean({ position: 'absolute', top: pad,
+    left: value ? W - knob - pad : pad, width: knob, height: knob, borderRadius: knob / 2,
+    backgroundColor: skin.custom ? c.card : '#ffffff', pointerEvents: 'none' }) }), selectionFocus(c.focus)),
+  skin, { kind: 'switch', checked: Boolean(value), disabled });
 }
 
 // ---- NCheckbox --------------------------------------------------------------
 
 export function NCheckbox(props = {}, label) {
   const { checked = false, disabled = false, onChange, id } = props;
-  return h('view', {
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
+  return selectionSkin(h('view', {
     id, role: 'checkbox', 'aria-label': props['aria-label'], tabIndex: disabled ? -1 : 0, 'aria-checked': String(Boolean(checked)),
     'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
-    style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: disabled ? 0.5 : 1 }),
+    style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: m.gap, opacity: disabled ? m.disabledOpacity : 1 }),
     onClick: event => { if (!disabled && primaryClick(event)) onChange?.(!checked); },
     onKeydown: event => {
       if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onChange?.(!checked); }
     },
   },
-    h('view', { style: clean({ width: 18, height: 18, borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: checked ? theme.primary : theme.card, borderWidth: checked ? 0 : 1, borderColor: theme.border }) },
-      checked ? h('view', { style: { color: theme.solidText, fontSize: '13', fontWeight: 'bold' } }, '✓') : null),
-    label ? h('view', { style: { color: theme.text, fontSize: '14' } }, label) : null, selectionFocus());
+    h('view', { className: 'n-selection-marker', style: clean({ position: 'relative', flexShrink: 0,
+      width: m.markerSize, height: m.markerSize, borderRadius: m.radius, alignItems: 'center', justifyContent: 'center',
+      backgroundColor: checked ? c.primary : c.card, borderWidth: checked ? 0 : 1, borderColor: c.border }) },
+      checked ? h('view', { className: 'n-selection-glyph', style: { color: c.solidText,
+        fontSize: String(skin.custom ? Math.max(8, m.markerSize - 2) : 13), fontWeight: 'bold', pointerEvents: 'none' } }, '✓') : null),
+    label ? h('view', { className: 'n-selection-label', style: { color: c.text, fontSize: String(m.fontSize), pointerEvents: 'none' } }, label) : null,
+    selectionFocus(c.focus)), skin, { kind: 'checkbox', checked: Boolean(checked), disabled });
 }
 
 // ---- NRadioGroup ------------------------------------------------------------
 
 export function NRadioGroup(props = {}) {
   const { value, onUpdate, options = [], vertical = false, disabled = false, id } = props;
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
   const selected = options.findIndex(opt => opt.value === value);
   const entry = options.findIndex((opt, index) => !disabled && !opt.disabled &&
     (index === selected || !options.some(item => item.value === value && !item.disabled)));
   return h('view', { id, role: 'radiogroup', 'aria-disabled': String(Boolean(disabled)),
     'aria-orientation': vertical ? 'vertical' : 'horizontal',
     onUpdate: node => syncRoving(node, selected),
-    style: { flexDirection: vertical ? 'column' : 'row', gap: '16' } },
+    style: { flexDirection: vertical ? 'column' : 'row', gap: String(skin.custom ? m.gap : 16) } },
     ...options.map((opt, index) => {
       const on = opt.value === value;
       const off = disabled || opt.disabled;
       const choose = position => { if (!disabled && !options[position].disabled && options[position].value !== value) onUpdate?.(options[position].value); };
-      return h('view', { role: 'radio', tabIndex: index === entry ? 0 : -1, 'aria-label': opt.label,
+      return selectionSkin(h('view', { role: 'radio', tabIndex: index === entry ? 0 : -1, 'aria-label': opt.label,
         'aria-checked': String(on), 'aria-disabled': String(Boolean(off)), ...selectionEvents(),
-        style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: 8, opacity: off ? 0.5 : 1 }),
+        style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: m.gap, opacity: off ? m.disabledOpacity : 1 }),
         ...optionPointer('radio', opt.value, off, event => { event.currentTarget.focus(); onUpdate?.(opt.value); }),
         onKeydown: event => {
           if (off) return;
@@ -275,9 +287,13 @@ export function NRadioGroup(props = {}) {
           const horizontal = ['ArrowLeft', 'ArrowRight'].includes(event.key);
           roveSelection(event, event.currentTarget.parentNode, horizontal, choose);
         } },
-        h('view', { style: clean({ width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.card, borderWidth: 2, borderColor: on ? theme.primary : theme.border }) },
-          on ? h('view', { style: { width: '8', height: '8', borderRadius: '4', backgroundColor: theme.primary } }) : null),
-        h('view', { style: { color: theme.text, fontSize: '14' } }, opt.label), selectionFocus());
+        h('view', { className: 'n-selection-marker', style: clean({ position: 'relative', flexShrink: 0,
+          width: m.markerSize, height: m.markerSize, borderRadius: m.markerSize / 2, alignItems: 'center', justifyContent: 'center',
+          backgroundColor: c.card, borderWidth: 2, borderColor: on ? c.primary : c.border }) },
+          on ? h('view', { className: 'n-selection-glyph', style: clean({ width: m.radioDot, height: m.radioDot,
+            borderRadius: m.radioDot / 2, backgroundColor: c.primary, pointerEvents: 'none' }) }) : null),
+        h('view', { className: 'n-selection-label', style: { color: c.text, fontSize: String(m.fontSize), pointerEvents: 'none' } }, opt.label),
+        selectionFocus(c.focus)), skin, { kind: 'radio', checked: on, disabled: Boolean(off) });
     }));
 }
 
@@ -332,6 +348,7 @@ export function NAlert(props = {}, content) {
 
 export function NTabs(props = {}) {
   const { value, onUpdate, panes = [], disabled = false, id } = props;
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
   const active = panes.find(p => p.name === value) || panes.find(p => !p.disabled) || panes[0];
   const selected = panes.indexOf(active);
   const entry = panes.findIndex((pane, index) => !disabled && !pane.disabled &&
@@ -342,27 +359,37 @@ export function NTabs(props = {}) {
   return h('view', { id, style: { flexDirection: 'column' } },
     h('view', { role: 'tablist', 'aria-disabled': String(Boolean(disabled)),
       onUpdate: node => syncRoving(node, selected),
-      style: clean({ flexDirection: 'row', gap: 24, borderBottomWidth: 0 }) },
+      style: clean({ flexDirection: 'row', gap: m.tabGap, borderBottomWidth: 0 }) },
       ...panes.map((p, index) => {
         const on = active && p.name === active.name;
         const off = disabled || p.disabled;
-        return h('view', { id: id ? id + '-tab-' + index : undefined, role: 'tab', tabIndex: entry === index ? 0 : -1,
+        return selectionSkin(h('view', { id: id ? id + '-tab-' + index : undefined, role: 'tab', tabIndex: entry === index ? 0 : -1,
           'aria-selected': String(Boolean(on)), 'aria-disabled': String(Boolean(off)),
           'aria-controls': id ? id + '-panel' : undefined, ...selectionEvents(),
-          style: clean({ position: 'relative', flexDirection: 'column', gap: 8, paddingTop: 10, opacity: off ? 0.5 : 1 }),
+          style: clean({ position: 'relative', flexDirection: 'column', gap: m.gap, paddingTop: 10,
+            ...(skin.custom ? { height: m.controlHeight + 4, justifyContent: 'center', gap: 0, paddingTop: 0,
+              paddingLeft: m.paddingX, paddingRight: m.paddingX } : {}),
+            opacity: off ? m.disabledOpacity : 1 }),
           ...optionPointer('tab', p.name, off, event => { event.currentTarget.focus(); onUpdate?.(p.name); }),
           onKeydown: event => {
             if (off) return;
             if (activationKey(event)) { event.preventDefault(); choose(index); }
             roveSelection(event, event.currentTarget.parentNode, true, choose);
           } },
-          h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 'bold' : 'normal', paddingBottom: 8 }) }, p.label),
-          h('view', { style: clean({ height: 2, borderRadius: 1, backgroundColor: on ? theme.primary : 'transparent' }) }),
-          selectionFocus());
+          h('view', { className: 'n-selection-label', style: clean({ color: on ? c.primary : c.text, fontSize: m.fontSize,
+            fontWeight: on ? 'bold' : 'normal', paddingBottom: skin.custom ? 0 : 8, pointerEvents: 'none' }) }, p.label),
+          h('view', { className: 'n-selection-underline', style: clean({ height: 2, borderRadius: 1,
+            ...(skin.custom ? { position: 'absolute', left: 0, right: 0, bottom: 0 } : {}),
+            backgroundColor: on ? c.primary : 'transparent', pointerEvents: 'none' }) }),
+          selectionFocus(c.focus)), skin, { kind: 'tab', selected: Boolean(on), disabled: Boolean(off) });
       })),
     h('view', { id: id ? id + '-panel' : undefined, role: 'tabpanel',
       'aria-labelledby': id && selected >= 0 ? id + '-tab-' + selected : undefined,
-      style: { paddingTop: '16' } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
+      className: 'n-selection-pane',
+      style: { paddingTop: String(m.panePadding),
+        ...(skin.custom ? { backgroundColor: c.card, color: c.text, fontSize: m.fontSize,
+          borderWidth: 1, borderColor: c.border, paddingLeft: m.paddingX, paddingRight: m.paddingX,
+          paddingBottom: m.panePadding } : {}) } }, active ? (typeof active.content === 'function' ? active.content() : active.content) : null));
 }
 
 // ---- NModal -----------------------------------------------------------------
@@ -613,8 +640,10 @@ function selectConfigChanged(a, b) {
 }
 function selectPlacement(node, config) {
   const rect = node.getBoundingClientRect(), body = node.ownerDocument.body;
+  const m = config.appearance.metrics;
   const width = Math.min(rect.width, Math.max(0, body.offsetWidth - 8));
-  const needed = Math.min(240, Math.max(1, config.options.length) * 34 + 8);
+  const needed = Math.min(m.popupMaxHeight, Math.max(1, config.options.length) * (m.optionHeight + m.popupGap) +
+    m.popupPadding * 2 + 2 - m.popupGap);
   const available = Math.max(0, body.offsetHeight - 8);
   const below = Math.max(0, Math.min(available, body.offsetHeight - rect.bottom - 8)),
     above = Math.max(0, Math.min(available, rect.top - 8));
@@ -696,7 +725,7 @@ function commitSelect(state, value) {
   callback?.(option.value);
 }
 function selectDropdown(state) {
-  const config = state.config, place = state.placement;
+  const config = state.config, place = state.placement, skin = config.appearance, c = skin.colors, m = skin.metrics;
   return h('view', { id: state.listId, role: 'listbox', className: 'n-select-list',
     onMount: node => {
       state.list = new WeakRef(node);
@@ -718,23 +747,30 @@ function selectDropdown(state) {
     onWheel: event => {
       event.preventDefault();
       const node = event.currentTarget;
-      node.scrollTop = Math.max(0, Math.min(Math.max(0, config.options.length * 34 + 8 - node.offsetHeight),
+      node.scrollTop = Math.max(0, Math.min(Math.max(0, config.options.length * (m.optionHeight + m.popupGap) +
+        m.popupPadding * 2 + 2 - m.popupGap - node.offsetHeight),
         node.scrollTop + event.deltaY));
     },
     style: clean({ width: place.width, height: place.height, overflow: 'scroll', flexShrink: 0,
-      backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, padding: 4, gap: 2 }),
-  }, config.options.length ? config.options.map((option, index) => h('view', {
+      backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: m.radius,
+      padding: m.popupPadding, gap: m.popupGap }),
+  }, config.options.length ? config.options.map((option, index) => selectionSkin(h('view', {
     id: state.listId + '-option-' + index, role: 'option', className: 'n-select-option',
     'aria-selected': String(option.value === config.value), 'aria-disabled': String(Boolean(option.disabled)),
-    style: clean({ position: 'relative', height: 32, flexShrink: 0, paddingLeft: 10, paddingRight: 10, borderRadius: 3,
-      justifyContent: 'center', opacity: option.disabled ? 0.5 : 1,
-      backgroundColor: option.value === config.value ? theme.primary + '1f' : 'transparent' }),
+    style: clean({ position: 'relative', height: m.optionHeight, flexShrink: 0,
+      paddingLeft: skin.custom ? m.paddingX : 10, paddingRight: skin.custom ? m.paddingX : 10, borderRadius: m.radius,
+      justifyContent: 'center', opacity: option.disabled ? m.disabledOpacity : 1,
+      backgroundColor: option.value === config.value ? c.selected : 'transparent' }),
     ...optionPointer(state.listId, option.value, config.disabled || option.disabled, () => commitSelect(state, option.value)),
-  }, h('view', { style: { color: option.value === config.value ? theme.primary : theme.text, fontSize: '14',
+  }, h('view', { className: 'n-selection-label', style: { color: option.value === config.value ? c.selectedText : c.text,
+    fontSize: String(m.fontSize),
     minWidth: 0, flexShrink: 1, overflow: 'hidden', pointerEvents: 'none' } }, option.label),
-  h('view', { 'aria-hidden': 'true', style: clean({ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
-    borderWidth: 1, borderColor: theme.primary, opacity: state.active === index ? 1 : 0, pointerEvents: 'none' }) }))) :
-    h('view', { role: 'status', style: { height: 32, color: theme.textDisabled, fontSize: 14 } }, 'No options'));
+  h('view', { 'aria-hidden': 'true', className: 'n-selection-active',
+    style: clean({ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0,
+      borderWidth: 1, borderColor: c.focus, opacity: state.active === index ? 1 : 0, pointerEvents: 'none' }) })),
+  skin, { kind: 'option', selected: option.value === config.value, active: state.active === index,
+    disabled: Boolean(option.disabled || config.disabled) })) :
+    h('view', { role: 'status', style: { height: m.optionHeight, color: c.textDisabled, fontSize: m.fontSize } }, 'No options'));
 }
 function syncSelect(node, config) {
   let state = selectStates.get(node);
@@ -800,10 +836,11 @@ function openSelect(node, config, last = false) {
 
 export function NSelect(props = {}) {
   const { value, options = [], onUpdate, placeholder = 'Select', width = 200, id, disabled = false } = props;
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
   const sel = options.find(o => o.value === value);
   const config = { value, options: options.map(option => ({ ...option })), onUpdate, width, disabled,
-    palette: [theme.name, theme.primary, theme.card, theme.border, theme.text].join(':') };
-  return h('view', {
+    appearance: skin, palette: skin.signature };
+  return selectionSkin(h('view', {
     id, tabIndex: disabled ? -1 : 0, role: 'combobox', 'aria-label': props['aria-label'], 'aria-haspopup': 'listbox',
     'aria-disabled': String(Boolean(disabled)), ...selectionEvents(),
     onMount: node => syncSelect(node, config), onUpdate: node => syncSelect(node, config),
@@ -821,9 +858,10 @@ export function NSelect(props = {}) {
         }
       });
     },
-    style: clean({ position: 'relative', opacity: disabled ? 0.5 : 1,
-      width, height: 34, backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 3, paddingLeft: 12, paddingRight: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
-    hoverStyle: disabled ? {} : ctrlHover(), focusStyle: disabled ? {} : ctrlFocus(),
+    style: clean({ position: 'relative', opacity: disabled ? m.disabledOpacity : 1,
+      width, height: m.controlHeight, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: m.radius,
+      paddingLeft: m.paddingX, paddingRight: m.paddingX, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }),
+    hoverStyle: disabled ? {} : { borderColor: shade(c.primary, 0.35) }, focusStyle: disabled ? {} : { borderColor: c.focus },
     onClick: event => {
       if (disabled || !primaryClick(event)) return;
       const state = syncSelect(event.currentTarget, config);
@@ -852,8 +890,11 @@ export function NSelect(props = {}) {
       _overlays.list = _overlays.list.slice();
     },
   },
-    h('view', { style: { color: sel ? theme.text : theme.textDisabled, fontSize: '14', flexShrink: 1, minWidth: 0, overflow: 'hidden' } }, sel ? sel.label : placeholder),
-    h('view', { style: { color: theme.textSecondary, fontSize: '12', flexShrink: 0 } }, '▾'), selectionFocus());
+    h('view', { className: 'n-selection-label', style: { color: sel ? c.text : c.textDisabled,
+      fontSize: String(m.fontSize), flexShrink: 1, minWidth: 0, overflow: 'hidden' } }, sel ? sel.label : placeholder),
+    h('view', { className: 'n-selection-arrow', style: { color: c.textSecondary,
+      fontSize: String(skin.custom ? m.fontSize : 12), flexShrink: 0, pointerEvents: 'none' } }, '▾'), selectionFocus(c.focus)),
+  skin, { kind: 'select', selected: false, disabled });
 }
 
 // ---- NTooltip ---------------------------------------------------------------
@@ -1197,23 +1238,26 @@ export function NCollapse(props = {}) {
 
 export function NMenu(props = {}) {
   const { value, onUpdate, items = [], mode = 'vertical', id, disabled = false } = props;
+  const skin = selectionAppearance(props.appearance, theme), c = skin.colors, m = skin.metrics;
   const horizontal = mode === 'horizontal';
   const selected = items.findIndex(item => item.key === value);
   const entry = items.findIndex((item, index) => !disabled && !item.disabled &&
     (index === selected || !items.some(candidate => candidate.key === value && !candidate.disabled)));
   return h('view', { id, role: horizontal ? 'menubar' : 'menu', 'aria-orientation': horizontal ? 'horizontal' : 'vertical',
     'aria-disabled': String(Boolean(disabled)), onUpdate: node => syncRoving(node, selected),
-    style: clean({ flexDirection: horizontal ? 'row' : 'column', gap: horizontal ? 4 : 4, padding: horizontal ? 0 : 8, backgroundColor: theme.card }) },
+    style: clean({ flexDirection: horizontal ? 'row' : 'column', gap: skin.custom ? m.popupGap : 4,
+      padding: horizontal ? 0 : skin.custom ? m.popupPadding : 8, backgroundColor: c.card }) },
     ...items.map((it, index) => {
       const on = it.key === value;
       const off = disabled || it.disabled;
       const activate = () => { if (!off) onUpdate?.(it.key); };
-      return h('view', {
+      return selectionSkin(h('view', {
         id: id ? id + '-item-' + index : undefined, role: 'menuitem', 'aria-current': on ? 'true' : undefined,
         'aria-disabled': String(Boolean(off)), tabIndex: entry === index ? 0 : -1, ...selectionEvents(),
-        style: clean({ position: 'relative', opacity: off ? 0.5 : 1,
-          height: 40, paddingLeft: 16, paddingRight: 16, borderRadius: 3, flexDirection: 'row', alignItems: 'center', gap: 8,
-          backgroundColor: on ? theme.primary + '1f' : 'transparent' }),
+        style: clean({ position: 'relative', opacity: off ? m.disabledOpacity : 1,
+          height: m.menuHeight, paddingLeft: skin.custom ? m.paddingX : 16,
+          paddingRight: skin.custom ? m.paddingX : 16, borderRadius: m.radius, flexDirection: 'row',
+          alignItems: 'center', gap: m.gap, backgroundColor: on ? c.selected : 'transparent' }),
         ...optionPointer('menu', it.key, off, event => { event.currentTarget.focus(); activate(); }),
         onKeydown: event => {
           if (off) return;
@@ -1221,9 +1265,11 @@ export function NMenu(props = {}) {
           roveSelection(event, event.currentTarget.parentNode, horizontal);
         },
       },
-        it.icon ? h('view', { style: clean({ color: on ? theme.primary : theme.textSecondary, fontSize: 15 }) }, it.icon) : null,
-        h('view', { style: clean({ color: on ? theme.primary : theme.text, fontSize: 14, fontWeight: on ? 500 : 400 }) }, it.label),
-        selectionFocus());
+        it.icon ? h('view', { className: 'n-selection-icon', style: clean({ color: on ? c.selectedText : c.textSecondary,
+          fontSize: skin.custom ? m.fontSize : 15, pointerEvents: 'none' }) }, it.icon) : null,
+        h('view', { className: 'n-selection-label', style: clean({ color: on ? c.selectedText : c.text,
+          fontSize: m.fontSize, fontWeight: on ? 500 : 400, pointerEvents: 'none' }) }, it.label),
+        selectionFocus(c.focus)), skin, { kind: 'menuitem', selected: on, disabled: Boolean(off) });
     }));
 }
 
