@@ -489,6 +489,111 @@ scenario('Launcher pins: save failures repaint the actual committed snapshot and
   assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
 }, groupedWindows);
 
+function orderedPinFixture(f) {
+  pinnedFixture(f);
+  f.saved.update({ launchers: { version: 1,
+    applications: ['fixture.desktop', 'missing.desktop', 'last.desktop'] } });
+}
+
+scenario('Launcher order: unavailable pins move through keyboard Earlier/Later, persist and preserve desktop shortcuts', f => {
+  f.shell.addDesktopShortcut(1, 'fixture.desktop');
+  const desktop = f.saved.snapshot.desktop;
+  const task = find(f.surface('panel'), pinnedNodeId('missing.desktop'));
+  task.focus(); key(f.surface('panel'), 'ContextMenu');
+  const menu = latestGroup(f);
+  assert.ok(find(menu, 'shell-group-pin-earlier'));
+  assert.ok(find(menu, 'shell-group-pin-later'));
+  key(menu, 'Home'); key(menu, 'ArrowDown');
+  assert.ok(menu.document.activeElement === find(menu, 'shell-group-pin-earlier'));
+  key(menu, 'Enter'); f.flushFrames();
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['missing.desktop', 'fixture.desktop', 'last.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-earlier'), null, 'first item has no Earlier command');
+  assert.equal(menu.closed, false);
+  key(menu, 'Home'); key(menu, 'Tab');
+  assert.ok(menu.document.activeElement === find(menu, 'shell-group-pin-later'), 'existing Tab traversal reaches order controls');
+  key(menu, 'Enter'); f.flushFrames();
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'last.desktop', 'missing.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-later'), null, 'last item has no Later command');
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  assert.deepEqual(find(f.surface('panel'), 'shell-window-list').childNodes.slice(0, 3).map(node => node.id),
+    f.saved.snapshot.launchers.applications.map(pinnedNodeId));
+  f.shell.stop(); f.shell.start();
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'last.desktop', 'missing.desktop']);
+  assert.deepEqual(find(f.surface('panel'), 'shell-window-list').childNodes.slice(0, 3).map(node => node.id),
+    f.saved.snapshot.launchers.applications.map(pinnedNodeId));
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  assert.equal(f.calls.some(call => ['launch', 'activate', 'close-window'].includes(call[0])), false,
+    'launcher order is not a window or process operation');
+}, orderedPinFixture);
+
+scenario('Launcher order: stale position and held direction cannot overwrite concurrent pin ordering', f => {
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), earlier = find(menu, 'shell-group-pin-earlier');
+  const old = callback(earlier, 'click');
+  press(earlier);
+  f.saved.update({ launchers: { version: 1,
+    applications: ['missing.desktop', 'last.desktop', 'fixture.desktop'] } });
+  f.native.onWindowsChanged(); f.flushFrames();
+  const saved = f.saved.snapshot;
+  assert.ok(find(menu, 'shell-group-pin-later') === earlier, 'existing positional DOM changed from Earlier to Later');
+  domEvent(earlier, 'mouseup'); domEvent(earlier, 'click');
+  assert.equal(old(event('click', { currentTarget: earlier })), false);
+  assert.ok(f.saved.snapshot === saved, 'old position/direction cannot republish a stale array');
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['last.desktop', 'missing.desktop', 'fixture.desktop'],
+    'a new deliberate gesture swaps only its current adjacent entries');
+  const retired = callback(find(menu, 'shell-group-pin-later'), 'click');
+  f.shell.showApplications(2);
+  const replaced = f.saved.snapshot;
+  assert.equal(retired(event('click')), false);
+  assert.ok(f.saved.snapshot === replaced, 'a replaced menu cannot reorder pins');
+}, orderedPinFixture);
+
+scenario('Launcher order: removed output or pin and unpinned groups have no stale sorting authority', f => {
+  click(find(f.surface('panel', 2), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), later = callback(find(menu, 'shell-group-pin-later'), 'click');
+  f.state.outputs = f.state.outputs.filter(output => output.id !== 2);
+  const previous = f.saved.snapshot;
+  assert.equal(later(event('click')), false, 'removed output is checked before the next repaint');
+  assert.ok(f.saved.snapshot === previous);
+  f.shell.refresh(true);
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const current = latestGroup(f), move = callback(find(current, 'shell-group-pin-earlier'), 'click');
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop', 'last.desktop'] } });
+  const removed = f.saved.snapshot;
+  assert.equal(move(event('click')), false);
+  assert.ok(f.saved.snapshot === removed, 'a removed pin cannot be reintroduced through an order callback');
+  f.native.onWindowsChanged();
+  f.saved.update({ launchers: { version: 1, applications: [] } });
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), groupId), 2);
+  const unpinned = latestGroup(f);
+  assert.equal(unpinned.document.getElementById('shell-group-pin-earlier'), null);
+  assert.equal(unpinned.document.getElementById('shell-group-pin-later'), null);
+}, orderedPinFixture);
+
+scenario('Launcher order: prepublication failure retains order and committed failure publishes order without rollback', f => {
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), before = f.saved.snapshot, desktop = before.desktop;
+  f.state.configurationFailure = new Error('fixture order write refused');
+  click(find(menu, 'shell-group-pin-earlier'));
+  assert.ok(f.saved.snapshot === before);
+  assert.match(f.shell.getState().error, /were not changed.*fixture order write refused/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('fixture order durability uncertain'), { committed: true });
+  click(find(menu, 'shell-group-pin-earlier'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['missing.desktop', 'fixture.desktop', 'last.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-earlier'), null);
+  assert.match(f.shell.getState().error, /saved.*durability/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  f.state.configurationFailure = null;
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'missing.desktop', 'last.desktop']);
+  assert.equal(f.shell.getState().error, '', 'a later successful order change uses the shared pin error recovery');
+}, orderedPinFixture);
+
 scenario('Launcher pins: limit errors keep the stored order and stale held Apps controls cannot pin a different entry', f => {
   f.saved.update({ launchers: { version: 1, applications: Array.from({ length: 32 }, (_, i) => 'missing-' + i + '.desktop') } });
   const menu = f.shell.showApplications(1), previous = f.saved.snapshot.launchers;
@@ -515,6 +620,15 @@ scenario('Launcher pins: registered Settings pin merges its runtime windows and 
   const list = find(f.surface('panel'), 'shell-window-list');
   assert.equal(list.childNodes.length, 1);
   assert.match(list.firstChild.getAttribute('aria-label'), /2 windows/);
+  click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')), 2);
+  const single = latestGroup(f);
+  assert.equal(single.document.getElementById('shell-group-pin-earlier'), null);
+  assert.equal(single.document.getElementById('shell-group-pin-later'), null, 'a single pin has no direction commands');
+  f.saved.update({ launchers: { version: 1, applications: ['missing.desktop', 'polly-settings.desktop'] } });
+  f.native.onWindowsChanged();
+  click(find(single, 'shell-group-pin-earlier'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['polly-settings.desktop', 'missing.desktop'],
+    'ordering uses the same canonical registered Settings ID as pinning');
   f.state.windows = [];
   f.native.onWindowsChanged();
   click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')));

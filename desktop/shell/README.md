@@ -103,7 +103,15 @@ Running pins keep the existing single-window/multi-window behavior below.
 Missing or unavailable registrations are retained, visibly labeled unavailable
 and remain keyboard focusable. Primary click or ContextMenu/Shift+F10 opens the
 existing RootMenu with the reason and Unpin; it never uses old argv or a fabricated
-window handle. A running group's chooser also provides Pin/Unpin when its real
+window handle. Its pinned-app controls also offer **Earlier / Later** to move one
+position in the existing saved list, including unavailable entries. The first
+item omits Earlier and the last omits Later; an unpinned group has no order
+controls. These commands use the same atomic publication and error reporting as
+Pin/Unpin, never alter desktop shortcuts, and reject callbacks for a closed menu,
+removed output/pin or changed expected position. Keyboard traversal and focused
+command reveal stay inside the existing menu. This is explicit one-step ordering,
+not drag-and-drop reordering or animation. A running group's chooser also provides
+Pin/Unpin when its real
 catalog association is unambiguous. Held launcher-to-running transitions and
 changed membership/workspaces invalidate the old gesture. Pin write errors are
 reported and the UI follows the actually committed configuration snapshot,
