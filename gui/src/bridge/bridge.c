@@ -650,8 +650,17 @@ static JSValue js_node_addEventListener(JSContext *ctx, JSValueConst this_val,
         return JS_ThrowTypeError(ctx, "addEventListener(type, fn)");
     const char *type = JS_ToCString(ctx, argv[0]);
     if (!type) return JS_EXCEPTION;
-    pu_node_add_listener(self, type, JS_DupValue(ctx, argv[1]));
+    if (self->listener_serial == UINT64_MAX) {
+        JS_FreeCString(ctx, type);
+        return JS_ThrowRangeError(ctx, "Event listener registration identity exhausted");
+    }
+    JSValue func = JS_DupValue(ctx, argv[1]);
+    bool added = pu_node_add_listener(self, type, func);
     JS_FreeCString(ctx, type);
+    if (!added) {
+        JS_FreeValue(ctx, func);
+        return JS_ThrowOutOfMemory(ctx);
+    }
     return JS_UNDEFINED;
 }
 
@@ -764,8 +773,9 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     if (!b || !target || !type) return 0;
     JSContext *ctx = b->ctx;
 
+    pu_node_ref(target);
     JSValue ev = JS_NewObject(ctx);                       /* one event for the whole walk */
-    if (JS_IsException(ev)) { dispatch_report(ctx); return 0; }
+    if (JS_IsException(ev)) { dispatch_report(ctx); pu_node_unref(target); return 0; }
     JS_SetPropertyStr(ctx, ev, "type", JS_NewString(ctx, type));
     JS_SetPropertyStr(ctx, ev, "target", pu_node_wrapper(ctx, target));
     JS_SetPropertyStr(ctx, ev, "defaultPrevented", JS_NewBool(ctx, 0));
@@ -841,14 +851,26 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
         JS_NewCFunction(ctx, js_event_prevent, "preventDefault", 0));
     if (JS_HasException(ctx)) goto failed;
 
-    for (PuNode *n = target; n; n = n->parent) {
+    PuNode *n = target;
+    pu_node_ref(n);
+    while (n) {
+        uint64_t boundary = n->listener_serial, cursor = 0;
         JS_SetPropertyStr(ctx, ev, "currentTarget", pu_node_wrapper(ctx, n));
-        for (int i = 0; i < n->listener_count; i++) {
-            if (strcmp(n->listeners[i].type, type) != 0) continue;
+        for (;;) {
+            /* Registered serials stay sorted across removals; additions exceed this phase's boundary. */
+            int low = 0, high = n->listener_count;
+            while (low < high) {
+                int middle = low + (high - low) / 2;
+                if (n->listeners[middle].serial <= cursor) low = middle + 1;
+                else high = middle;
+            }
+            if (low == n->listener_count || n->listeners[low].serial > boundary) break;
+            cursor = n->listeners[low].serial;
+            if (strcmp(n->listeners[low].type, type) != 0) continue;
             /* Dup the callback across the call: a handler that removeEventListeners
              * itself (e.g. a reconciler swapping handlers on re-render) would
              * otherwise free a function that is still executing. */
-            JSValue func = JS_DupValue(ctx, n->listeners[i].func);
+            JSValue func = JS_DupValue(ctx, n->listeners[low].func);
             JSValue self = pu_node_wrapper(ctx, n);
             JSValue arg = ev;
             JSValue r = JS_Call(ctx, func, self, 1, &arg);
@@ -858,7 +880,10 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
             JS_FreeValue(ctx, func);
             if (js_event_flag(ctx, ev, "__stopImmediate")) break;
         }
-        if (!bubble || js_event_flag(ctx, ev, "__stop")) break;
+        PuNode *parent = bubble && !js_event_flag(ctx, ev, "__stop") ? n->parent : NULL;
+        pu_node_ref(parent);
+        pu_node_unref(n);
+        n = parent;
     }
 
     if (!bubble && (!strcmp(type,"load") || !strcmp(type,"error") || !strncmp(type,"webglcontext",12)) &&
@@ -877,10 +902,12 @@ static int dispatch_impl(PuBridge *b, PuNode *target, const char *type, const Pu
     }
     int prevented = js_event_flag(ctx, ev, "defaultPrevented");
     JS_FreeValue(ctx, ev);
+    pu_node_unref(target);
     return prevented;
 failed:
     dispatch_report(ctx);
     JS_FreeValue(ctx, ev);
+    pu_node_unref(target);
     return 0;
 }
 

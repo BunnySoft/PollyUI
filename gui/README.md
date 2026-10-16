@@ -290,3 +290,19 @@ painting. Its end-arrow policy is not a claim of exact original-OS layouts.
 Its `full` (default) and `overlay` variants share that policy; `overlay` keeps
 Files' existing 10px footprint without shrinking its rows or metadata columns.
 Unknown variants reject explicitly.
+
+## Native event listener mutation
+
+Each node's dispatch phase visits its registrations in order, at most once.
+Listeners added during that phase wait for a later phase; registrations removed
+before their turn are skipped. Removing and readding the same function creates
+a new registration. Duplicate registrations remain distinct, and
+`removeEventListener` removes only the first matching type/function registration.
+Nested dispatch has its own boundary; an ancestor starts its phase only when
+the existing dynamic bubble walk reaches it.
+
+`stopPropagation` allows the remaining same-node listeners;
+`stopImmediatePropagation` also stops that phase. `preventDefault` remains visible
+without suppressing listeners. Exceptions are explicitly reported and do not
+silently suppress subsequent listeners. Registration allocation or identity
+exhaustion throws rather than claiming success while dropping a callback.
