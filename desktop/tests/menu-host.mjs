@@ -299,6 +299,253 @@ function scenario(name, run, configure) {
   });
 }
 
+function groupedWindows({ state, native, calls }) {
+  state.windows = [
+    { id: 10, appId: 'fixture.desktop', title: 'First document', active: true, minimized: false, workspaceId: 7 },
+    { id: 11, appId: 'fixture.desktop', title: 'Second document', minimized: true, workspaceId: 7 },
+    { id: 12, appId: 'other.application', title: 'Other application', workspaceId: 7 },
+    { id: 13, appId: '', title: 'Unknown one', workspaceId: 7 },
+    { id: 14, title: 'Unknown two', workspaceId: 7 },
+    { id: 15, appId: 'fixture.desktop', title: 'Other workspace', workspaceId: 9 },
+  ];
+  native.restoreWindow = id => calls.push(['restore', id]);
+}
+const groupId = 'shell-window-app-fixture.desktop';
+const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
+
+scenario('Application tasks: Modern and Big Sur use one model and both outputs size Dock by display tasks', f => {
+  for (const theme of ['modern', 'bigsur']) {
+    f.shell.selectTheme(theme);
+    for (const output of [1, 2]) {
+      const surface = f.surface(theme === 'modern' ? 'panel' : 'dock', output);
+      const group = find(surface, groupId);
+      assert.equal(group.getAttribute('aria-label'), 'Fixture (2 windows), some minimized');
+      assert.equal(group.getAttribute('aria-pressed'), 'true');
+      const list = find(surface, theme === 'modern' ? 'shell-window-list' : 'shell-dock-windows');
+      assert.equal(list.childNodes.length, 4);
+      assert.ok(find(surface, 'shell-window-13'));
+      assert.ok(find(surface, 'shell-window-14'));
+      assert.equal(surface.document.getElementById('shell-window-15'), null);
+      if (theme === 'bigsur') {
+        const current = getDesktopTheme(theme), l = current.layout;
+        const natural = 2 * l.dockPadding + 3 * l.dockTileWidth + 13 + 4 * l.dockWindowWidth + 7 * l.dockGap;
+        assert.equal(surface.options.width, Math.min(natural, f.state.outputs[output - 1].width - 2 * l.screenInset));
+      }
+      click(group);
+      const menu = latestGroup(f);
+      assert.ok(menu);
+      assert.ok(find(menu, 'shell-group-activate-10'));
+      assert.ok(find(menu, 'shell-group-activate-11'));
+      assert.equal(menu.document.getElementById('shell-group-activate-15'), null);
+      assert.equal(menu.options.keyboard, 'exclusive');
+      assert.equal(menu.options.exclusiveZone, -1);
+      key(menu, 'Escape');
+      assert.equal(menu.closed, true);
+      assert.equal(surface.document.activeElement, group);
+    }
+  }
+  assert.deepEqual(f.calls.filter(call => ['activate', 'minimize', 'restore', 'close-window'].includes(call[0])), []);
+}, groupedWindows);
+
+scenario('Application tasks: live single-window Modern minimizes, Mac activates; XP remains per window', f => {
+  f.state.windows = [f.state.windows[0]];
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), groupId));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+  f.shell.selectTheme('bigsur');
+  const dock = f.surface('dock');
+  click(find(dock, groupId));
+  assert.deepEqual(f.calls.at(-1), ['activate', 10], 'active Mac application is not minimized');
+  f.state.windows[0].minimized = true;
+  f.native.onWindowsChanged();
+  click(find(dock, groupId));
+  assert.deepEqual(f.calls.at(-1), ['activate', 10], 'minimized Mac application uses actual activate/restore API');
+  f.state.windows[0].minimized = false;
+  f.native.onWindowsChanged();
+  click(find(dock, groupId), 2);
+  const menu = latestGroup(f);
+  assert.ok(menu);
+  click(find(menu, 'shell-group-minimize-10'));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+  f.shell.selectTheme('xp');
+  assert.equal(f.surface('panel').document.getElementById(groupId), null);
+  click(find(f.surface('panel'), 'shell-window-10'));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+}, groupedWindows);
+
+scenario('Application tasks: unchanged clock paints do not reread catalog or window backends', f => {
+  const group = find(f.surface('panel'), groupId);
+  let catalogReads = 0, windowReads = 0;
+  const files = f.native.applicationFiles, windows = f.native.windows;
+  f.native.applicationFiles = () => { catalogReads++; return files(); };
+  f.native.windows = () => { windowReads++; return windows(); };
+  for (let count = 0; count < 3; count++) f.shell.refresh();
+  assert.equal(catalogReads, 0);
+  assert.equal(windowReads, 0);
+  assert.equal(find(f.surface('panel'), groupId), group);
+}, groupedWindows);
+
+scenario('Application tasks: operation failures retain the live chooser and surface the actual error', f => {
+  click(find(f.surface('panel'), groupId));
+  const menu = latestGroup(f);
+  f.native.activateWindow = () => { throw new Error('fixture window service refused activation'); };
+  const first = find(menu, 'shell-group-activate-10');
+  assert.equal(callback(first, 'click')(event('click', { currentTarget: first })), false);
+  assert.equal(menu.closed, false);
+  assert.match(text(find(menu, 'shell-window-group')), /fixture window service refused activation/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, groupedWindows);
+
+scenario('Application tasks: chooser commands target real windows; keyboard wraps and stale closed/replaced handlers reject', f => {
+  const panel = f.surface('panel'), group = find(panel, groupId);
+  group.focus(); key(panel, 'Enter');
+  const menu = latestGroup(f);
+  const first = find(menu, 'shell-group-activate-10');
+  assert.equal(menu.document.activeElement, first);
+  key(menu, 'End');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-menu-close'));
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, first);
+  key(menu, 'Tab', { shiftKey: true });
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-menu-close'));
+  key(menu, 'Home'); key(menu, 'ArrowDown'); key(menu, 'ArrowRight'); key(menu, 'ArrowDown');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-activate-11'));
+  const old = callback(menu.document.activeElement, 'click');
+  key(menu, 'Enter');
+  assert.deepEqual(f.calls.at(-1), ['activate', 11]);
+  assert.equal(menu.closed, true);
+  const count = f.calls.length;
+  assert.equal(old(event('click')), false);
+  assert.equal(f.calls.length, count);
+  click(group);
+  const next = latestGroup(f);
+  assert.notEqual(next, menu);
+  assert.equal(old(event('click')), false);
+  click(find(next, 'shell-group-minimize-11'));
+  assert.deepEqual(f.calls.slice(-2), [['restore', 11], ['activate', 11]]);
+  click(group);
+  click(find(latestGroup(f), 'shell-group-close-10'));
+  assert.deepEqual(f.calls.at(-1), ['close-window', 10], 'no process-wide close');
+}, groupedWindows);
+
+scenario('Application tasks: held row removal/reordering cannot retarget a release; metadata and clock retain live nodes', f => {
+  const panel = f.surface('panel'), group = find(panel, groupId);
+  click(group);
+  const menu = latestGroup(f), first = find(menu, 'shell-group-activate-10');
+  const old = callback(first, 'click');
+  press(first);
+  f.state.windows = f.state.windows.filter(window => window.id !== 10).reverse();
+  f.state.windows.push({ id: 16, appId: 'fixture.desktop', title: 'New document', workspaceId: 7 });
+  f.native.onWindowsChanged();
+  assert.equal(menu.closed, false);
+  assert.equal(menu.document.getElementById('shell-group-activate-10'), null);
+  assert.equal(find(menu, 'shell-group-activate-11').parentNode,
+    find(menu, 'shell-group-list').childNodes[1], 'removed stable slot is not assigned to another window');
+  assert.equal(old(event('click')), false);
+  domEvent(first, 'mouseup'); domEvent(first, 'click');
+  assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+  const remaining = find(menu, 'shell-group-activate-11');
+  f.state.windows.find(window => window.id === 11).title = 'Renamed actual document';
+  f.state.windows.reverse();
+  f.native.onWindowsChanged();
+  f.shell.refresh();
+  assert.equal(find(menu, 'shell-group-activate-11'), remaining);
+  assert.match(remaining.getAttribute('aria-label'), /Renamed actual document/);
+  assert.equal(find(panel, groupId), group);
+  click(remaining);
+  assert.deepEqual(f.calls.at(-1), ['activate', 11]);
+}, groupedWindows);
+
+scenario('Application tasks: held task identity and command meaning survive no retargeting across live changes', f => {
+  const panel = f.surface('panel'), group = find(panel, groupId);
+  const oldOpen = callback(group, 'click');
+  press(group);
+  f.state.windows = f.state.windows.filter(window => ![10, 11].includes(window.id));
+  f.native.onWindowsChanged();
+  assert.equal(group.id, 'shell-window-app-other.application', 'positional node is now a different application');
+  domEvent(group, 'mouseup'); domEvent(group, 'click');
+  assert.equal(latestGroup(f), undefined, 'held old application must not open the replacement');
+  assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+  assert.equal(oldOpen(event('click')), false, 'task click returns no success after old group disappears');
+
+  f.state.windows.push({ id: 20, appId: 'other.application', title: 'Other two', workspaceId: 7 });
+  f.native.onWindowsChanged();
+  click(find(panel, 'shell-window-app-other.application'));
+  const menu = latestGroup(f), minimize = find(menu, 'shell-group-minimize-12');
+  press(minimize);
+  f.state.windows.find(window => window.id === 12).minimized = true;
+  f.native.onWindowsChanged();
+  domEvent(minimize, 'mouseup'); domEvent(minimize, 'click');
+  assert.equal(f.calls.some(call => ['restore', 'minimize'].includes(call[0])), false,
+    'held Minimize must not turn into Restore');
+  assert.equal(menu.closed, false);
+}, groupedWindows);
+
+scenario('Application tasks: callbacks recheck native membership and workspace even before change notification', f => {
+  const group = find(f.surface('panel'), groupId);
+  const open = () => { click(group); return latestGroup(f); };
+  let menu = open(), old = callback(find(menu, 'shell-group-activate-11'), 'click');
+  f.state.windows.find(window => window.id === 11).appId = 'different.application';
+  assert.equal(old(event('click')), false);
+  assert.equal(menu.closed, false);
+  f.state.windows.find(window => window.id === 11).appId = 'fixture.desktop';
+  f.state.windows.find(window => window.id === 11).workspaceId = 9;
+  assert.equal(old(event('click')), false);
+  f.state.windows.find(window => window.id === 11).workspaceId = 7;
+  f.state.workspaces.forEach(workspace => { workspace.active = workspace.id === 9; });
+  assert.equal(old(event('click')), false);
+  f.native.onWorkspacesChanged();
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+  f.state.workspaces.forEach(workspace => { workspace.active = workspace.id === 7; });
+  f.native.onWorkspacesChanged();
+  menu = open();
+  old = callback(find(menu, 'shell-group-close-10'), 'click');
+  f.state.windows = f.state.windows.filter(window => window.appId !== 'fixture.desktop');
+  f.native.onWindowsChanged();
+  assert.equal(menu.closed, true);
+  assert.equal(old(event('click')), false);
+  assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
+}, groupedWindows);
+
+scenario('Application tasks: held application cannot follow the same app ID into a different workspace after repaint', f => {
+  const panel = f.surface('panel'), group = find(panel, groupId);
+  const original = callback(group, 'click');
+  press(group);
+  f.state.workspaces.forEach(workspace => { workspace.active = workspace.id === 9; });
+  assert.equal(original(event('click')), false, 'old closure checks native workspace before notification');
+  f.native.onWorkspacesChanged();
+  assert.equal(find(panel, groupId), group, 'same app still occupies the same positional node in new workspace');
+  domEvent(group, 'mouseup'); domEvent(group, 'click');
+  assert.equal(latestGroup(f), undefined);
+  assert.equal(f.calls.some(call => ['activate', 'minimize'].includes(call[0])), false,
+    'new DOM handler does not inherit the previous workspace pointer gesture');
+  click(group);
+  assert.deepEqual(f.calls.at(-1), ['activate', 15], 'a new deliberate gesture can select the current workspace');
+}, groupedWindows);
+
+scenario('Application tasks: output/menu replacement and theme changes retire old chooser callbacks', f => {
+  click(find(f.surface('panel'), groupId));
+  const first = latestGroup(f), old = callback(find(first, 'shell-group-close-10'), 'click');
+  click(find(f.surface('panel', 2), groupId));
+  const second = latestGroup(f);
+  assert.equal(first.closed, true);
+  assert.equal(old(event('click')), false);
+  assert.equal(second.options.output, 2);
+  const close = callback(find(second, 'shell-group-close-10'), 'click');
+  f.state.outputs = f.state.outputs.filter(output => output.id !== 2);
+  assert.equal(close(event('click')), false, 'removed output is checked even before Shell refresh');
+  f.shell.refresh(true);
+  assert.equal(second.closed, true);
+  assert.equal(close(event('click')), false);
+  click(find(f.surface('panel'), groupId));
+  const third = latestGroup(f), previous = callback(find(third, 'shell-group-activate-10'), 'click');
+  f.shell.selectTheme('xp');
+  assert.equal(third.closed, true);
+  assert.equal(previous(event('click')), false);
+  assert.equal(f.calls.some(call => ['activate', 'close-window'].includes(call[0])), false);
+}, groupedWindows);
+
 scenario('Classic Programs uses current registered IDs and retains only live menu callbacks', f => {
   f.shell.selectTheme('server2003');
   const menu = f.shell.showApplications(1);
