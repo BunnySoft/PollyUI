@@ -246,7 +246,7 @@ Pin/Unpin when its real
 catalog association is unambiguous. Held launcher-to-running transitions and
 changed membership/workspaces invalidate the old gesture. Pin write errors are
 reported and the UI follows the actually committed configuration snapshot,
-including durability failures. There is no drag ordering, MRU, magnification,
+including durability failures. There is no drag ordering, MRU,
 process-wide close, new native API or extra bitmap cache. Classic and custom
 `windows` mode keep the original per-window behavior and do not display launchers.
 
@@ -273,25 +273,35 @@ for a single known application. Unknown windows and explicit per-window mode kee
 the old actions. The three fixed Dock entries, running markers, icon sizing,
 natural gap/fitting math and inner/outer scrolling are unchanged.
 
-## Bounded Dock hover emphasis
+## Bounded Dock distance magnification
 
-Mac-style `tiger`, `lion` and `bigsur` Dock surfaces can emphasize only the
-pointer-hovered glyph or registered bitmap. Optional schema-version-1 theme
-`icons.dockHoverPercent` accepts integer 100-125; missing or 100 keeps the original
-size, and the three packaged/recovery Mac-style presets explicitly use 120.
-An override can disable it without a new preference or native setting.
+Mac-style `tiger`, `lion` and `bigsur` Dock surfaces emphasize glyphs and registered
+bitmaps without moving their slots. Optional schema-version-1 theme
+`icons.dockHoverPercent` still accepts integer 100-125; missing or 100 disables
+enlargement. Optional `icons.dockMagnificationRadius` accepts integer 0-3:
+missing/0 retains the exact previous single-hover behavior, while a positive
+radius weights visible neighbors continuously by pointer distance. The three
+packaged/recovery Mac presets select peak 120 and radius 2. Fixed Apps/Settings/
+About and the visible window strip form one adjacent sequence; the separator
+does not become an action or interrupt that sequence.
 
 Scaling is center-based paint only, limited by the actual slot, clipping
 ancestors and the native client body's visible viewport. A normally 40px
 artwork can paint at 48px with enough room, less when space is restricted,
 or remain unscaled if it is already clipped. Slot/tile sizes, hit testing,
 running indicators, counts, fixed actions and window dimensions never expand;
-bitmaps retain their original color. Leave or pointer cancellation restores
-the original art. Clock reconciliation and retheming reuse existing control
-state and bounded Dock layout settling, without a polling/animation loop.
+bitmaps retain their original color. Entry, movement and leave use a 140ms
+smoothstep transition with a finite 24-callback safety bound; settled state has
+no animation frames. Leave or pointer cancellation restores every affected icon
+exactly to scale 1. Clock reconciliation and immutable retheming preserve the
+physical pointer and per-instance state without restarting unchanged transitions.
+Wheel/focus/layout settling recomputes actual clipping bounds; clipped artwork
+cannot magnify. Retirement cancels pending layout and animation work through
+the existing owner checks, including ownerless ancestor removal.
 Keyboard focus keeps its existing outline and does not trigger magnification.
-This first stage is hover emphasis, not neighboring-icon displacement or full
-animated macOS magnification; those remain separate work.
+This is bounded artwork magnification, not neighboring-slot displacement, a
+larger native input/surface region, or full commercial macOS magnification/MRU
+qualification. It adds no compositor, animation framework or preference service.
 
 The chooser occupies the existing bounded RootMenu client window, not Alt+Tab or
 a native popup. Its passive outer chrome consumes the shared `panelAppearance`

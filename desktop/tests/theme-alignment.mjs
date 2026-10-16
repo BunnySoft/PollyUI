@@ -96,10 +96,27 @@ const action = () => {};
 {
   for (const theme of catalog.themes) assert.equal(theme.icons.dockHoverPercent,
     ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 120 : undefined);
+  for (const theme of catalog.themes) assert.equal(theme.icons.dockMagnificationRadius,
+    ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 2 : undefined);
   const base = catalog.themes.find(theme => theme.id === 'bigsur');
   const omitted = { ...base, icons: { ...base.icons } };
   delete omitted.icons.dockHoverPercent;
+  delete omitted.icons.dockMagnificationRadius;
   assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })).icons.dockHoverPercent, undefined);
+  assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })).icons.dockMagnificationRadius, undefined);
+  for (const value of [0, 1, 2, 3, -1, 4, 1.5, '2', null, true]) {
+    const theme = { ...base, icons: { ...base.icons, dockMagnificationRadius: value } };
+    for (const parse of [
+      () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+      () => parseThemeCatalog(JSON.stringify({ ...catalog,
+        themes: catalog.themes.map(item => item.id === base.id ? theme : item) })),
+      () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+        themes: { [base.id]: { icons: { dockMagnificationRadius: value } } } })),
+    ]) {
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3) assert.doesNotThrow(parse);
+      else assert.throws(parse, /dockMagnificationRadius/);
+    }
+  }
   for (const value of [100, 120, 125, 99, 126, 120.5, '120', null, true]) {
     const theme = { ...base, icons: { ...base.icons, dockHoverPercent: value } };
     for (const parse of [
@@ -313,12 +330,14 @@ for (const theme of catalog.themes) {
   const vnode = dockView(custom, action, action, action, Array.from({ length: 20 }, (_, id) => ({ id })));
   const viewport = { id: 'shell-dock-viewport', offsetLeft: 0, offsetWidth: 304, scrollLeft: 0,
     parentNode: {}, ownerDocument: {}, style: {} };
+  viewport.ownerDocument.body = viewport.parentNode;
   const surface = { id: 'shell-dock', offsetLeft: 0, offsetWidth: 391, parentNode: viewport };
   const strip = { id: 'shell-dock-windows', offsetLeft: 324, offsetWidth: 58, scrollLeft: 0,
     parentNode: surface };
-  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface }));
+  const fixed = [9, 99, 189].map(offsetLeft => ({ offsetLeft, offsetWidth: 58, parentNode: surface,
+    querySelector: () => null }));
   strip.childNodes = Array.from({ length: 20 }, (_, i) =>
-    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip }));
+    ({ offsetLeft: 324 + 90 * i, offsetWidth: 58, parentNode: strip, querySelector: () => null }));
   surface.childNodes = [...fixed, strip];
   surface.querySelector = () => strip;
   viewport.childNodes = [surface];
