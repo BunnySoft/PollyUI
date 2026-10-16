@@ -61,7 +61,7 @@ function stopGridScroll(node, done) {
 }
 
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
-  error = '', logout = null, desktop = null, programs = null) {
+  error = '', logout = null, desktop = null, programs = null, images = null) {
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
   const menuStyle = theme.panel.menuStyle ?? (modern ? 'grid' : xp ? 'two-column' : 'legacy');
@@ -133,12 +133,20 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
           { flexGrow: 1, flexBasis: 0, minWidth: 0 }),
       },
     });
+    let art = item.children.find(child => child.props?.className === 'theme-command-icon');
     if (grid && item.children.length) {
       const label = item.children.at(-1);
-      label.props.style.fontSize = 12;
-      const art = item.children.find(child => child.props?.['aria-hidden'] === 'true' && child.props?.style?.width === 20);
-      if (art) item.children[item.children.indexOf(art)] = desktopIcon(icon, c.accent, 32);
+      label.props.style.fontSize = l.smallFontSize;
+      if (art?.props.style.width === 20) {
+        const index = item.children.indexOf(art);
+        art = desktopIcon(icon, c.accent, 32);
+        item.children[index] = art;
+      }
     }
+    const image = images?.get(entry.id);
+    if (image && art) item.children[item.children.indexOf(art)] = h('view', {
+      'aria-hidden': 'true', style: { ...art.props.style, backgroundImage: image },
+    });
     if (entry.unavailable) item.props['aria-description'] = entry.unavailable;
     revealGrid(item);
     return h('view', { key: entry.id, style: { ...row, flexShrink: 0, gap: cardGap,

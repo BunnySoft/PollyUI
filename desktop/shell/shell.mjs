@@ -179,6 +179,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const editor = workspaceEditor;
     workspaceEditor = null;
     editor?.input.root.blur();
+    if (running && surface.mode === 'applications') syncShellIcons(getDesktopTheme(themeId));
     return true;
   }
 
@@ -339,6 +340,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function syncShellIcons(theme) {
     const ids = new Set(configuration.snapshot.desktop.shortcuts.map(item => item.id));
+    if (menu?.mode === 'applications' && currentMenu(menu)) {
+      const query = menu.query.toLowerCase();
+      for (const entry of desktopCatalog().filter(entry =>
+        [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
+          .join(' ').toLowerCase().includes(query)).slice(0, 100)) ids.add(entry.id);
+    }
     const appIds = new Set(displayTasks(theme).map(task => task.appId).filter(Boolean));
     const entries = applications.filter(entry => entry.icon && (ids.has(entry.id) || appIds.has(entry.id) ||
       entry.id.startsWith('bundle:') && appIds.has(entry.id.slice('bundle:'.length))));
@@ -351,12 +358,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
         iconResources = module.createDesktopIconResources(globalThis.createBitmap);
         iconLoading = false;
         for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+        repaintMenu();
       }).catch(failure => {
         if (!running || scope !== iconScope) return;
         iconLoadError = failure;
         for (const entry of entries) iconFailure(entry, failure);
         // Do not retry a failed module import on every Shell repaint.
         for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+        repaintMenu();
       });
     }
     if (!iconResources) {
@@ -716,6 +725,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       }
       const programsEpoch = current.programsEpoch ?? 0;
       const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
+      syncShellIcons(menuTheme);
       render(applicationMenu(menuTheme, desktopCatalog(), current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error,
@@ -759,7 +769,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
               target?.focus();
             });
           }),
-        }),
+        }, desktopImages),
         current.window.document.body);
       return;
     }

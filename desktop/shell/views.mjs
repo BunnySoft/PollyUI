@@ -511,9 +511,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true, images) : null);
 }
 
-export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
+export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
+  logout = null, desktop = null, programs = null, images = null) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
-    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop);
+    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs, images);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
