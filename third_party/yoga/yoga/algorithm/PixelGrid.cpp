@@ -85,12 +85,26 @@ void roundLayoutResultsToPixelGrid(
     // size as this could lead to unwanted text truncation.
     const bool textRounding = node->getNodeType() == NodeType::Text;
 
+    // Ancestors have already been rounded, possibly with a different scale or
+    // text policy. Match their actual origin instead of rounding local offsets.
+    double roundedParentLeft = 0.0;
+    double roundedParentTop = 0.0;
+    for (auto owner = node->getOwner(); owner != nullptr;
+         owner = owner->getOwner()) {
+      roundedParentLeft += owner->getLayout().position(PhysicalEdge::Left);
+      roundedParentTop += owner->getLayout().position(PhysicalEdge::Top);
+    }
+
     node->setLayoutPosition(
-        roundValueToPixelGrid(nodeLeft, pointScaleFactor, false, textRounding),
+        roundValueToPixelGrid(
+            absoluteNodeLeft, pointScaleFactor, false, textRounding) -
+            roundedParentLeft,
         PhysicalEdge::Left);
 
     node->setLayoutPosition(
-        roundValueToPixelGrid(nodeTop, pointScaleFactor, false, textRounding),
+        roundValueToPixelGrid(
+            absoluteNodeTop, pointScaleFactor, false, textRounding) -
+            roundedParentTop,
         PhysicalEdge::Top);
 
     // We multiply dimension by scale factor and if the result is close to the

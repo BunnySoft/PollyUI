@@ -84,6 +84,13 @@ add_executable(pollyui-playground examples/playground/main.c)
 target_link_libraries(pollyui-playground PRIVATE pollyui-engine)
 
 if (BUILD_TESTING)
+    add_executable(pollyui-layout-pixel-grid-test tests/layout-pixel-grid.cpp)
+    target_link_libraries(pollyui-layout-pixel-grid-test PRIVATE yogacore)
+    add_test(NAME gui-layout-pixel-grid-numeric COMMAND pollyui-layout-pixel-grid-test)
+    add_test(NAME gui-layout-pixel-grid COMMAND pollyui-playground --test
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/layout-pixel-grid.js")
+    set_tests_properties(gui-layout-pixel-grid PROPERTIES TIMEOUT 15
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=raster")
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_executable(pollyui-windowless-test tests/windowless-service.c)
         target_link_libraries(pollyui-windowless-test PRIVATE pollyui-engine)

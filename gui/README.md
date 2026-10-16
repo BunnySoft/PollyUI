@@ -1,5 +1,13 @@
 # GUI SDK selection controls
 
+Native layout snaps absolute element edges to Yoga's configured pixel grid.
+Child positions are relative to the parent's actual snapped origin, including
+fractional-positioned, auto-height and percentage-constrained containers. This
+keeps absolute `bottom: 0`/`right: 0` children inside the same painted/clipped
+bounds reported by geometry APIs. The local Yoga correction retains its existing
+dimension rounding, text floor/ceil and point-scale-zero behavior; it does not
+change theme sizes, apply a physical-DPI policy or move pixels only in the API.
+
 The Naive factories in `sdk/js/naive.mjs` default to the existing SDK light/dark
 palette. They do not import desktop presets. Selection is controlled: render the new `value` or
 `checked` supplied by a callback; the factory never mutates caller props, options
