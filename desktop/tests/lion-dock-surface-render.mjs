@@ -191,8 +191,23 @@ export async function checkDockMagnification() {
     check(frames === 2, 'An untouched Dock performs only its original two layout-settlement frames');
     const slots = ids.map(id => get(id)), geometry = slots.map(rect);
     const [x, y] = point(ids[1]);
+    // host.render(ms) delivers that same timestamp to the real native rAF queue.
+    host.mouse('mousemove', x, y); host.render(1000);
+    const motion = [];
+    for (let index = 1; index <= 6; index++) {
+      host.mouse('mousemove', x + index * 2 - 1, y);
+      host.mouse('mousemove', x + index * 2, y); host.render(1000 + index * 16);
+      motion.push(scales());
+    }
+    console.log('DOCK_CONTINUOUS_POINTER ' + JSON.stringify({ millisecondsPerFrame: 16, pointerMovesPerFrame: 2, scales: motion }));
+    check(motion[0][1] > 1 && motion.at(-1)[1] > motion[0][1],
+      'Artwork follows continuous per-frame pointer movement before the pointer stops');
+    for (let index = 7; index <= 17; index++) host.render(1000 + index * 16);
+    check(pending.size === 0, 'The last moving target settles without a lingering frame chain');
+    host.mouse('mousemove', 399, 119); await settle();
     host.mouse('mousemove', x, y); host.render();
     const entering = scales();
+    check(entering.every(scale => scale === 1), 'Idle entry does not inherit an old native animation timestamp');
     scene();
     theme = { ...theme, colors: { ...theme.colors } }; scene();
     await settle();

@@ -174,6 +174,7 @@ function stopDockLayout(viewport, done = () => {}) {
     if (state.frame !== null) cancelAnimationFrame(state.frame);
     if (state.animation !== null) cancelAnimationFrame(state.animation);
     state.frame = state.animation = null;
+    state.lastTick = null;
     state.pointer = null;
     for (const slot of dockSlots(viewport)) {
       const control = controlStates.get(slot);
@@ -193,6 +194,7 @@ function animateDock(viewport, state) {
     if (!node || dockLayouts.get(node) !== state) return;
     if (!liveDock(node)) { stopDockLayout(node); return; }
     if (state.start === null) state.start = time;
+    state.lastTick = time;
     // Bound even a manually pumped/frozen test clock; normal frames use 140ms.
     const progress = ++state.steps >= 24 ? 1 : Math.min(1, (time - state.start) / 140);
     const eased = progress * progress * (3 - 2 * progress);
@@ -204,6 +206,7 @@ function animateDock(viewport, state) {
       paintDockHover(slot);
     }
     if (progress < 1) state.animation = requestAnimationFrame(tick);
+    else state.lastTick = null;
   };
   state.animation = requestAnimationFrame(tick);
 }
@@ -215,6 +218,7 @@ function magnifyDock(viewport) {
   if (!state.radius || state.percent <= 100) {
     if (state.animation !== null) cancelAnimationFrame(state.animation);
     state.animation = null;
+    state.lastTick = null;
     for (const slot of slots) {
       const control = controlStates.get(slot);
       if (control) Object.assign(control, { dockScale: 1, dockTarget: 1 });
@@ -252,13 +256,16 @@ function magnifyDock(viewport) {
   if (!moving) {
     if (state.animation !== null) cancelAnimationFrame(state.animation);
     state.animation = null;
+    state.lastTick = null;
     return;
   }
   for (const slot of slots) {
     const control = controlStates.get(slot);
     if (control) control.dockFrom = control.dockScale ?? 1;
   }
-  state.start = null; state.steps = 0;
+  // An active chain already has the native rAF time origin; idle entry does not.
+  state.start = state.animation !== null ? state.lastTick : null;
+  state.steps = 0;
   animateDock(viewport, state);
 }
 function dockPointer(event, leaving = false) {
@@ -313,7 +320,7 @@ function revealDockSlot(event) {
 function syncDockLayout(node, percent, radius) {
   let state = dockLayouts.get(node);
   if (!state) {
-    state = { frame: null, geometry: '', animation: null, pointer: null, start: null, steps: 0 };
+    state = { frame: null, geometry: '', animation: null, pointer: null, start: null, lastTick: null, steps: 0 };
     dockLayouts.set(node, state);
   }
   state.percent = percent; state.radius = radius;
