@@ -7,12 +7,21 @@ const { validateTheme } = await import('../shared/ui/theme-schema.mjs');
 const { DECORATION_LAYOUT_FIELDS, decorationLayout, encodeDecorationLayout } =
   await import('../shared/ui/caption-layout.mjs');
 
-test('existing radius and preview shadow do not silently opt native windows in', () => {
-  for (const id of ['modern', 'xp', 'aqua']) {
+test('Modern explicitly opts into rounded effects; other presets and missing fields stay none', () => {
+  const modern = getDesktopTheme('modern');
+  assert.equal(modern.window.nativeEffects, 'rounded');
+  assert.equal(modern.window.radius, 8);
+  assert.equal(modern.window.shadow, 0);
+  assert.equal(decorationLayout(modern).effect_radius, 8);
+  for (const id of ['xp', 'server2003', 'aqua', 'lion', 'bigsur']) {
     const theme = getDesktopTheme(id);
     assert.equal(decorationLayout(theme).effect_radius, 0);
     assert.equal(encodeDecorationLayout(theme)[0], 6);
   }
+  const legacy = structuredClone(modern);
+  delete legacy.window.nativeEffects;
+  assert.equal(decorationLayout(validateTheme(legacy)).effect_radius, 0);
+  assert.equal(encodeDecorationLayout(modern)[0], 6);
 });
 test('optional native effects select only validated numeric radius', () => {
   const theme = structuredClone(getDesktopTheme('modern'));
