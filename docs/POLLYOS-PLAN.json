@@ -881,6 +881,22 @@
       "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留，但父最终review/主线集成暂停，均未合入或发布。依用户要求作为非阻塞Bug停放，主线继续可见图标/字号等修复；后续须同时保证paint/clip、fresh/cache和旧整数语义，不单收38b。"
     },
     {
+      "id": "native-preset-live-revalidation",
+      "label": "原生预设效果复验（环境受阻）",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "在已有匹配effects ABI2/private6运行栈恢复可用后，复验当前预设圆角/阴影采用及生产GUI-strip到合成器接缝。与已冻结共享机制资格、纯JS数据/数值编译/producer检查分开；不以入口exit0或Windows软件GUI替代wlroots/物理GPU。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": [],
+      "evidence": "本次只读main0c39dca的WSL enterns尝试退出0但未出现容器首marker，scene/caption命令未实际执行，也未续核runtime hash。限定只读诊断确认WSL直接cat可用、enterns只有检测到特定systemd PID且非1才转发argv，无else可空成功；条件核验/proc/1/comm实为init(podman-mac，guard给NAMESPACE_NOT_READY/exit86，未执行podman或两验证命令。已停止后续路线/构建/安装/机器或服务修改。历史62a9545-runtime Pixman/一次coverage及软件GLSL资格保持原范围。当前38fca16/29a338f的明确预设数据和Node数值编译、既有生产caption producer/缺字段none字节检查通过，不冒称新的live WM/GPU/default-preset全景验收；日志在f864 session effects-limited-validation-20261016-1740、enterns-readonly-diagnostic-20261016-1814.log、effects-namespace-final-20261016-1817.log。"
+    },
+    {
       "id": "theme-native-state-geometry",
       "label": "E22.11 原生状态与缩放对照",
       "kind": "subtask",
@@ -1255,7 +1271,7 @@
       "label": "E22.34 Mac Dock 分组与放大",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "三MacDock已按确切appId分组并支持独立持久固定；继续核启动/running标记、最小化窗口处理及尚无magnification的差异。放大先选交互/动画范围；保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
+      "scope": "三MacDock已支持确切appId分组、独立持久固定和固定槽内的有界悬停强调；继续核启动/running标记、最小化窗口、原生/参考资格及完整相邻联动动画。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -3591,7 +3607,7 @@
       "requires": [
         "t12-m15-8"
       ],
-      "evidence": "2026-10-15 盘点：桌面 App 快捷方式/框选/内部排列与保存已由 cbe4000/0881e09 集成，Shell 有真实任务按钮、三种 Dock、可滚动窗口区及启动联动。窗口按 App 分组、固定/图标解析和共享注册完整闭环仍未完成；已具界面不以未来共享包注册为由重新标成完全未实现。"
+      "evidence": "2026-10-15盘点已有桌面App快捷方式/框选/内部排列和保存cbe4000/0881e09、真实任务按钮/三Dock/滚动区。后续31b7236补确切App分组和真实窗口chooser；8fd7af8/b97958c补既有安全PNG/JPEG资源到taskbar/Dock/Start/Apps，52e22dd补显式runtime身份+四内置原创图标/真实installprefix；113302a补独立persistent pins、当前catalog启动、running同槽/真实count、不可用键盘管理、v1/v2全域原子升级v3，search/oldcallback/权限不变。cca643e补固定槽内pointer hover强调，不是完整邻近动画。只在现套件补必要数据/行为契约，未以metadata本身冒UI完成。当前剩余完整共享包/SystemData权威注册依赖t12-m15-8仍pending、命名/SVG图标通用解析与更广原生验收亦未交付，所以本广项保持in_progress，不重新声称已交付分组/固定/位图显示全未实现。"
     },
     {
       "id": "t21-m17-2",
@@ -5604,6 +5620,8 @@
     "- 2026-10-16 应用身份与实际资源续批：370fcc9合52e22dd增加可选显式X-Polly-AppId，bundle直接取validated manifest.id；共用匹配helper exactcatalogid优先/显式唯一才采用/冲突保rawfallback，修内置org.pollyui.*与polly-*.desktop不一致造成任务label/图标不能关联，不猜名称/后缀，不改groupkeys/launch权限。四个Polly原创64px PNG与可再生成几何源已交付，五desktop声明真实wrapper ID与安装期Icon；actual CMake安装规则在独立目录验证--prefix覆盖后所有Icon仍指向同PNG，保原safe decoder/budget，不新增resolver/native/build/VM。既有及必要数据身份契约60项通过；不是新App样式测试或商业OS图标认证。7156719令Files Properties名字/完整path/link复用现readonly rawtext viewport，值与操作不变。真实搜索输入消费继续独立推进，本条不宣称已完成；非阻塞vendor Bug继续未合入，媒体未更新。",
     "- 2026-10-16 搜索与常用操作续批：d778768+d343222合b9ada0f/2a678a5将生产Start/Apps搜索接现SDK真实输入，保currentMenu/ownerwindow/原32或24高度、ID/query128/first100/launch权限，支持caret/选区/Delete/剪贴板/IME并在refresh/theme变更保同DOM，composition占位hint不重叠、关闭清空并拒旧回调。SDK可选maxLength只在原replaceSelection裁插入且保suffix/caret，初值/setter同bound、缺省不变；父原输入39和相关菜单/功能87及hint47通过，现实际productionShell软件GUI入口再过中间编辑/refresh选区/真实preedit Enter拒绝/normalEnter1，无OS launch。6a5bd57补Files CtrlF当前folderfilter/CtrlShiftN原新建确认/AltEnter属性，保modal/composition/AltGr/repeat/身份守卫，dddf738将原filter128上限接同输入引擎而不在事后回滚caret；现Files34通过。这是输入/键盘功能，只有既有套件必要行为契约，无新增App样式测试文件或矩阵。独立持久taskbar/Dock pins仍在产品整合，不因model checkpoint就标已交付；原生Bug停放且媒体不变。",
     "- 2026-10-16 Files路径复制：0454c97合62c3bf9，通过现clipboard.writeText能力注入提供Properties/context/非编辑CtrlShiftC三个入口，同一controller按selected generation/identity复制原样literal path，成功显式message、关闭context/保Properties并退休旧callback；缺能力禁用，写失败report且保ready目录/selection/Properties。只复制文字不读写文件，不冒文件剪贴板copy/权限桥接。现Files37项以inert clipboard验证Unicode/quotes、一次动作/旧身份/compose/modal/repeat/无FS，未触用户真实clipboard；无新测试文件或环境矩阵。",
-    "- 2026-10-16 独立固定应用：aa0cdbd/8c9d7ca/7d1a9aa合113302a，Shell配置v3新增launchers v1有序≤32catalog引用，与desktop v1独立；v1/v2沿原atomicwriter一次保全域迁移、未知版本不写空默认、旧reader回退边界有明确文档。Modern/三Mac及applications optin支持Apps Taskbar+/Dock+与真实RootMenu Pin/Unpin，零窗launcher走当前catalog/原SettingsBridge，唯一关联真实group同槽/count；missing/unavailable仍可Tab/ContextMenu管理，旧手势/成员/workspace/callback/重复IME activation拒绝，无fake Window.id/MRU/drag排序。实际displaycount/width/cache同model，Settings synthetic名称与真实注册关联分层，Unicode/空格opaqueID不猜suffix。父组合145项通过、现Python fixture仅AST语法和JS安装fixture仅syntax，未冒跑native矩阵；子一次旧911软件GUI看新idle/count2/missing槽及独立控件，非物理DPI/真实持久WM端到端资格。父补decorator-installed版本期望3及synthetic Settings位图保留/映射。原native Bug未合入、未更新SDK/ISO/C/权限；E22广项不因此全关。"
+    "- 2026-10-16 独立固定应用：aa0cdbd/8c9d7ca/7d1a9aa合113302a，Shell配置v3新增launchers v1有序≤32catalog引用，与desktop v1独立；v1/v2沿原atomicwriter一次保全域迁移、未知版本不写空默认、旧reader回退边界有明确文档。Modern/三Mac及applications optin支持Apps Taskbar+/Dock+与真实RootMenu Pin/Unpin，零窗launcher走当前catalog/原SettingsBridge，唯一关联真实group同槽/count；missing/unavailable仍可Tab/ContextMenu管理，旧手势/成员/workspace/callback/重复IME activation拒绝，无fake Window.id/MRU/drag排序。实际displaycount/width/cache同model，Settings synthetic名称与真实注册关联分层，Unicode/空格opaqueID不猜suffix。父组合145项通过、现Python fixture仅AST语法和JS安装fixture仅syntax，未冒跑native矩阵；子一次旧911软件GUI看新idle/count2/missing槽及独立控件，非物理DPI/真实持久WM端到端资格。父补decorator-installed版本期望3及synthetic Settings位图保留/映射。原native Bug未合入、未更新SDK/ISO/C/权限；E22广项不因此全关。",
+    "- 2026-10-16 共享原生能力的预设采用：38fca16/29a338f合0c39dca/366a392，仅Modern明确rounded/原radius8/shadow0、三Mac明确rounded-shadow/原radius6/5/10与shadow20/18/24，JS旧policy编成sigma10/9/12、active24/inactive12、black，未改数值/颜色/布局或C/renderer/ABI/schema，Classic/XP与custom missing/none路径保持。只更新现policy契约和生成test几何；Node5+generatorcheck、Windows911当前生产caption producer/missing-none逐byte兼容过，历史冻结native机制资格不改写。本次只读Linux入口无首marker导致scene/caption均未执行，新的live WM/default-preset复验单列blocked任务，无新hash核验或GPU/OS原图资格宣称；不为数据采用重建环境。矩形input、max/full/CSD/frameless排除合同、paired effectsABI2/private6前提原样，未做glass/vibrancy/倒影或更新媒体。",
+    "- 2026-10-16 Dock悬停范围选择：用户ask_user当前不可用并委托自主决策，协调者选固定槽内pointer-only/无动画（非用户逐项点选）。afcb7ef合cca643e仅原art paint-space scale，optional dockHoverPercent整数100..125/缺100，三Mac120；真实slot/clip祖先/body交集夹限，40可画48或空间不足46/1，marker/count/input/所有layout不改。共享弱controlStates及现bounded settling处理clock/retime/scroll，无新RAFloop/observer。父补VNode baseline scale1以防DOM跨分支复用带旧zoom，组合143+现原transform6通过；子一次软件GUI入口验证同DOM/盒不变、clip/leave/cancel/keyboard不放大与原色图，无新repoApp测试文件/矩阵/receipt或Native构建。完整相邻联动/动画及原生/物理资格仍独立remaining。"
   ]
 }

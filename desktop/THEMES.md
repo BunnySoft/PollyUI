@@ -525,6 +525,15 @@ composing Dock activation does not launch; discrete activation still does.
 These are Polly launcher semantics, not native MRU, drag sorting or Dock
 magnification, and do not alter Classic/XP per-window mode.
 
+Mac-style Docks now also provide bounded pointer-hover emphasis through optional
+`icons.dockHoverPercent` (integer 100-125, missing/100 disables; packaged presets
+use 120). Only the passive glyph/bitmap scales about its center, limited by the
+actual slot, clipping ancestors and client viewport. Slot/tile/hit geometry,
+counts and running marks stay fixed. Leave/cancel restores the art; existing
+weak control state and Dock settling handle retheme/scroll without a new frame
+loop. This is not neighboring-icon displacement, animated magnification or
+keyboard-focus enlargement.
+
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
 a separator and a window strip require four root gaps plus `count - 1` inner
@@ -875,7 +884,7 @@ specific task IDs, not another independently maintained status table.
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: delivered exact-appId grouping, real window chooser and independent persistent pins; native/reference qualification and magnification remain |
+| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded hover emphasis; native/reference qualification and full neighboring-icon animation remain |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened
@@ -930,8 +939,10 @@ Missing or `"none"` preserves the previous native path; existing preview
 radius/shadow values do not silently enable effects. `"rounded"` applies the
 existing `window.radius`; `"rounded-shadow"` also uses `window.shadow` as the
 blur-size input, with Gaussian sigma `ceil(shadow / 2)`. A zero shadow size
-disables the shadow without disabling rounded clipping. No builtin preset
-automatically opts in.
+disables the shadow without disabling rounded clipping. Modern now explicitly
+selects `rounded` at its existing 8px radius and zero shadow. Aqua, Lion and
+Big Sur explicitly select `rounded-shadow`, retaining their respective 6/5/10px
+radii and 20/18/24 shadow-size inputs. Classic and XP do not opt in.
 
 Optional `nativeShadowColor` is an RGB color (default black);
 `nativeShadowOpacity` and `nativeShadowInactiveOpacity` are integer percentages
@@ -991,6 +1002,12 @@ its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
 The complete WM GLES path remains unqualified without a usable DRM device.
 Regional backdrop sampling remains separate work.
+Those compositor results describe the frozen shared-mechanism qualification.
+For the current preset-policy adoption, numeric compiler and production GUI
+caption/legacy-none checks pass; the attempted paired-Linux rerun did not reach
+its first execution marker, so no new live-compositor or GPU result is claimed.
+That environment revalidation remains separately tracked rather than triggering
+a new SDK/VM build or blocking unrelated interface work.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

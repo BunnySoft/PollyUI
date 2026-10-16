@@ -34,7 +34,12 @@ Optional `nativeShadowColor` is RGB; active/inactive `nativeShadowOpacity` and
 `nativeShadowInactiveOpacity` are integer percentages (JS defaults 24/12), and
 `nativeShadowX`/`nativeShadowY` are integer offsets within -64..64. The JS defaults
 are black, x=0 and y=round(window.shadow/4); none are interpreted as presets in C.
-Preview-only `window.shadow` never enables native shadows without that explicit mode.
+`window.shadow` alone never enables native shadows without that explicit mode.
+Packaged Modern explicitly selects `rounded` with its existing radius 8 and no
+shadow; Aqua, Lion and Big Sur select `rounded-shadow` with their existing
+radius/shadow tokens. Classic and XP remain on the previous native path.
+Custom themes with a missing field stay unchanged, and an explicit `"none"`
+override disables the effect.
 Maximized/fullscreen, explicit client-side decorations and undecorated
 windows remain unaffected. Popups are separate from the rounded client-plus-frame
 subtree. Input regions intentionally remain the existing rectangles, including
