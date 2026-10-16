@@ -1,10 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=Settings
+X-Polly-AppId=org.pollyui.settings
 GenericName=Desktop settings
 Comment=Appearance and About; other controls open in the desktop control panel
 Exec=polly-settings
-Icon=preferences-system
+Icon=@CMAKE_INSTALL_FULL_DATADIR@/icons/hicolor/64x64/apps/polly-settings.png
 Terminal=false
 Categories=Settings;DesktopSettings;
 Keywords=preferences;desktop;appearance;

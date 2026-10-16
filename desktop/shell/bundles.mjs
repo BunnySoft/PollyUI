@@ -17,7 +17,7 @@ export function bundleCatalog(files, manager, canExecute, report) {
       const { digest, manifest } = record.current;
       if (manifest.id !== file.id) throw new Error('Application record identity mismatch');
       const root = file.store + '/objects/' + digest;
-      result.push({ id: 'bundle:' + manifest.id, path: root, name: manifest.name,
+      result.push({ id: 'bundle:' + manifest.id, appId: manifest.id, path: root, name: manifest.name,
         comment: 'Managed application ' + manifest.version, genericName: '',
         icon: manifest.icon ? root + '/' + manifest.icon : '', terminal: false,
         categories: [], keywords: [manifest.id, manifest.version], cwd: '',
