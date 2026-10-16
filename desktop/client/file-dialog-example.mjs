@@ -4,6 +4,10 @@ import { utf8Bytes } from './desktop/shell/documents.mjs';
 import { requireFileSystem, fileEntry, fileError, parentPath, pathValue,
   textObservation } from './desktop/apps/files/logic/model.mjs';
 import { showFileDialog } from './desktop/client/file-dialog.mjs';
+import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
+import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { desktopCommand, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 
 export function parseFileTextArguments(values) {
   if (!Array.isArray(values) || values.some(value => typeof value !== 'string'))
@@ -12,13 +16,14 @@ export function parseFileTextArguments(values) {
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
     if (value === '--theme') options.optInTheme = true;
+    else if (value === '--no-theme') options.optInTheme = false;
     else if (value === '--file') {
       if (options.initialFile !== null || values[index + 1] === undefined)
         throw new Error('--file requires exactly one absolute local file path');
       options.initialFile = pathValue(values[++index]);
     } else {
       if (value.startsWith('--') || options.initialDirectory !== null)
-        throw new Error('Use one initial directory, --file LOCALPATH, and optional --theme');
+        throw new Error('Use one initial directory, --file LOCALPATH, and optional --theme or --no-theme');
       options.initialDirectory = pathValue(value);
     }
   }
@@ -32,6 +37,8 @@ export function createFileTextApp({ host = window, files,
   let surface = null, dialog = null, closed = false, generation = 0, busy = false;
   let status = 'Open reads a real file. Save writes your text only after a target is chosen.';
   let contents = '', lastPath = '', saved = null, controls = null, output = null, text = null;
+  let root = null, themeBinding = null, themeError = '', appliedInputTheme = null;
+  let theme = optInTheme ? getDesktopTheme(DEFAULT_DESKTOP_THEME) : null;
   let unavailable = '';
   if (files === undefined) {
     try { files = requireFileSystem(native); }
@@ -40,7 +47,24 @@ export function createFileTextApp({ host = window, files,
   const live = token => !closed && !surface.closed && token === generation;
   function paint() {
     if (!surface || closed || surface.closed) return;
-    const button = (id, caption, action) => h('view', { id, role: 'button', tabIndex: busy ? -1 : 0,
+    if (theme) {
+      Object.assign(root.style, { padding: theme.layout.contentPadding, gap: theme.layout.contentGap,
+        backgroundColor: theme.colors.body });
+      if (appliedInputTheme !== theme) {
+        text.setAppearance(inputAppearance(theme));
+        appliedInputTheme = theme;
+      }
+    }
+    const label = (id, caption, muted, size, role) => {
+      if (!theme) return h('view', { id, style: { color: muted ? '#666a73' : '#333639', fontSize: size } }, caption);
+      const node = desktopText(caption, theme.colors[muted ? 'muted' : 'text'], size, { minWidth: 0, flexShrink: 0 });
+      node.props.id = id;
+      if (role) node.props.role = role;
+      return node;
+    };
+    const button = (id, caption, action) => theme ?
+      desktopCommand(id, caption, theme, action, { enabled: !busy, style: { maxWidth: '100%', minWidth: 0 } }) :
+      h('view', { id, role: 'button', tabIndex: busy ? -1 : 0,
       'aria-disabled': String(busy), style: { padding: 10, borderWidth: 1, borderRadius: 3,
         borderColor: '#cbd5e1', backgroundColor: '#ffffff', opacity: busy ? 0.5 : 1 },
       focusStyle: { borderColor: '#2080f0' }, onClick: event => {
@@ -48,16 +72,22 @@ export function createFileTextApp({ host = window, files,
       }, onKeydown: event => {
         if (!busy && ['Enter', ' '].includes(event.key)) { event.preventDefault(); return action(); }
       } }, caption);
-    render(h('view', { style: { gap: 10 } },
-      h('view', { style: { fontSize: 20, color: '#333639' } }, 'Native file chooser - real text use'),
-      h('view', { style: { flexDirection: 'row', gap: 8 } },
+    render(h('view', { style: { gap: theme ? theme.layout.contentGap : 10 } },
+      label(null, 'Native file chooser - real text use', false, theme ? theme.layout.headingFontSize : 20),
+      h('view', { style: { flexDirection: 'row', gap: theme ? theme.layout.controlGap : 8,
+        ...(theme ? { flexWrap: 'wrap' } : {}) } },
         button('file-text-open', 'Open and read', open),
         button('file-text-save', 'Choose target and write text', save)),
-      h('view', { style: { color: '#666a73', fontSize: 13 } }, 'Text to write (one line, at most 4096 UTF-8 bytes):')), controls);
-    render(h('view', { style: { gap: 9 } },
-      h('view', { id: 'file-text-status', style: { color: '#333639', fontSize: 14 } }, unavailable || status),
-      h('view', { id: 'file-text-path', style: { color: '#666a73', fontSize: 13 } }, lastPath),
-      h('view', { id: 'file-text-content', style: { color: '#333639', fontSize: 14 } }, contents)), output);
+      label(null, 'Text to write (one line, at most 4096 UTF-8 bytes):', true,
+        theme ? theme.layout.statusFontSize : 13)), controls);
+    render(h('view', { style: { gap: theme ? theme.layout.contentGap : 9 } },
+      label('file-text-status', unavailable || status, false, theme ? theme.layout.fontSize : 14, 'status'),
+      label('file-text-path', lastPath, true, theme ? theme.layout.statusFontSize : 13),
+      label('file-text-content', contents, false, theme ? theme.layout.fontSize : 14),
+      optInTheme ? h('view', { id: 'file-text-theme-error', role: 'alert',
+        style: { display: themeError ? 'flex' : 'none', minWidth: 0,
+          color: theme.colors.text, fontSize: theme.layout.statusFontSize } },
+        themeError ? 'Theme error: ' + themeError : '') : null), output);
   }
   function chooser(mode, notice = '') {
     dialog = showFileDialog({ parent: surface, files, native, optInTheme,
@@ -161,6 +191,7 @@ export function createFileTextApp({ host = window, files,
     if (closed) return;
     closed = true; generation++;
     dialog?.dispose(); dialog = null;
+    themeBinding?.stop(); themeBinding = null;
     if (surface && !surface.closed) surface.close();
   }
   return {
@@ -174,12 +205,17 @@ export function createFileTextApp({ host = window, files,
       controls = surface.document.createElement('view'); output = surface.document.createElement('view');
       text = createTextInput({ document: surface.document, value: 'PollyUI saved text', width: '100%', fontSize: 14 });
       text.root.id = 'file-text-input'; text.root.setAttribute('aria-label', 'Text to write');
-      const root = surface.document.createElement('view');
+      root = surface.document.createElement('view');
       root.id = 'file-text-root';
       Object.assign(root.style, { width: '100%', height: '100%', padding: '18', gap: '12',
         backgroundColor: '#f5f7fa', overflow: 'scroll' });
       root.appendChild(controls); root.appendChild(text.root); root.appendChild(output);
+      if (optInTheme) {
+        for (const node of [controls, text.root, output]) Object.assign(node.style, { flexShrink: 0, minWidth: 0 });
+        controls.style.width = output.style.width = '100%';
+      }
       root.addEventListener('wheel', event => {
+        if (optInTheme) { scrollDesktop(event); return; }
         event.preventDefault();
         const height = root.childNodes.reduce((end, node) =>
           Math.max(end, node.offsetTop + node.offsetHeight - root.offsetTop), 0);
@@ -187,6 +223,19 @@ export function createFileTextApp({ host = window, files,
       });
       surface.document.body.appendChild(root);
       host.close(); paint();
+      if (optInTheme) {
+        const failed = error => {
+          if (closed || surface.closed) return;
+          themeError = fileError(error); reportError(themeError); paint();
+        };
+        try {
+          themeBinding = subscribeDesktopTheme(snapshot => {
+            if (closed || surface.closed) return;
+            theme = snapshot.ready ? snapshot.theme : getDesktopTheme(DEFAULT_DESKTOP_THEME);
+            themeError = ''; paint();
+          }, { native, onError: failed });
+        } catch (error) { failed(error); }
+      }
       if (initialFile !== null) openPath(initialFile);
       return this;
     },

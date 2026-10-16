@@ -9,6 +9,7 @@ const { showFileDialog } = await import('../client/file-dialog.mjs');
 const { createFileTextApp } = await import('../client/file-dialog-example.mjs');
 const { getDesktopTheme } = await import('../shared/ui/themes.mjs');
 const { panelAppearance } = await import('../shared/ui/panel-appearance.mjs');
+const { applicationHost } = await import('./application-host.mjs');
 const HOME = '/home/polly', EXISTING = HOME + '/hello.txt';
 const textFilters = [{ label: 'Text', extensions: ['txt', 'md'] }, { label: 'All', extensions: [] }];
 function controller(options = {}) {
@@ -472,6 +473,54 @@ test('real consumer wiring reads chosen identity and writes bounded text then re
   assert.equal(f.get(HOME + '/saved.txt').text, 'PollyUI saved text');
   assert.match(app.getState().status, /Saved and read back/);
   assert.ok(f.calls.some(call => call[0] === 'writeText' && call[2] === 'saved.txt'));
+});
+
+test('File Text theme opt-in preserves its input and shares one owned subscription with its chooser', async t => {
+  const host = applicationHost(t), f = fixtureFiles(), errors = [];
+  let theme = getDesktopTheme('lion'), revision = 1, active = false, starts = 0, stops = 0, themeError = '';
+  const previous = () => {};
+  const native = { onDesktopThemeChanged: previous,
+    startThemeSubscription() { active = true; starts++; },
+    stopThemeSubscription() { active = false; stops++; },
+    desktopThemeState: () => ({ available: active, ready: active, revision, error: themeError,
+      document: JSON.stringify({ schemaVersion: 1, theme }) }) };
+  const neutral = createFileTextApp({ host, files: f.files, native }).start();
+  assert.equal(starts, 0, 'Default API remains neutral and never subscribes');
+  neutral.stop();
+  const app = createFileTextApp({ host, files: f.files, native, optInTheme: true,
+    reportError: message => errors.push(message) }).start();
+  t.after(app.stop);
+  const doc = app.getWindow().document, root = doc.getElementById('file-text-root');
+  const input = doc.getElementById('file-text-input');
+  input.focus(); deliver(input, 'keydown', { key: 'Home' });
+  deliver(input, 'keydown', { key: 'ArrowRight', shiftKey: true });
+  const selected = input.firstChild.childNodes.length;
+  const slots = [...root.childNodes];
+  const status = app.getState().status;
+  theme = getDesktopTheme('modern'); revision++; native.onDesktopThemeChanged();
+  assert.equal(doc.getElementById(input.id), input);
+  assert.deepEqual(root.childNodes, slots, 'Retheme keeps the original controls/input/output slots without another frame');
+  assert.equal(doc.activeElement, input);
+  assert.equal(input.firstChild.childNodes.length, selected);
+  deliver(input, 'textinput', { data: 'P' });
+  assert.equal(input.childNodes[1].firstChild.textContent, 'PollyUI saved text',
+    'Retained selection replacement edits at its original position, not an assigned end caret');
+  const saving = app.save(); await settled();
+  assert.equal(starts, 1, 'App and chooser reuse the same native theme connection');
+  themeError = 'Theme service temporarily unavailable'; native.onDesktopThemeChanged();
+  assert.equal(app.getState().status, status, 'Theme failure never overwrites file-operation status');
+  assert.match(doc.getElementById('file-text-theme-error').textContent, /Theme error.*temporarily unavailable/);
+  assert.equal(errors.filter(message => message.includes(themeError)).length, 2,
+    'App and open chooser independently report their shared connection error');
+  themeError = ''; revision++; native.onDesktopThemeChanged();
+  assert.equal(doc.getElementById('file-text-theme-error').textContent, '');
+  app.getDialog().controller.cancel(); await saving;
+  assert.equal(stops, 0, 'Closing the chooser leaves the app subscription alive');
+  assert.match(app.getState().status, /Save cancelled/);
+  app.stop();
+  assert.equal(stops, 1);
+  assert.equal(native.onDesktopThemeChanged, previous);
+  assert.equal(f.calls.some(call => ['writeText', 'replaceText'].includes(call[0])), false);
 });
 
 test('consumer replacement ESTALE reopens fresh chooser and requires new explicit confirmation, no automatic overwrite retry', async t => {
