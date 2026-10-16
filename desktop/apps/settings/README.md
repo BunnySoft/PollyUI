@@ -29,6 +29,11 @@ Displays offers per-monitor **100%**, **150%** and **200%** scale shortcuts
 (factors 1, 1.5 and 2). The Custom field still accepts factors from 0.25 to 4,
 and `+` still increments by 0.25. Shortcuts reflect the current draft field:
 a custom 1.25 does not select 100%, and typing or incrementing updates selection.
+The three presets are a named, per-display themed radio group: Space or
+arrow/Home/End navigation selects a draft value, while Enter does not select a
+radio. Busy pages disable the actual radio/checkbox factories. Preset IDs stay
+the same; radio truth is `aria-checked`, not a toggle button's `aria-pressed`.
+Composing keys are left to the input method without selecting a preset.
 These are output scales for desktop, decorations and application buffers, not
 an app-only font zoom. Choosing a scale only edits that monitor's draft; Apply
 uses the existing native transaction and trusted 15-second Keep/Revert prompt.

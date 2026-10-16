@@ -18,7 +18,7 @@ export function checkDisplayScalePresets(directory) {
   const preset = percent => find('shell-output-1-scale-' + percent);
   const selected = percent => {
     for (const value of [100, 150, 200])
-      check(preset(value).getAttribute('aria-pressed') === String(value === percent), 'Actual preset truth ' + value);
+      check(preset(value).getAttribute('aria-checked') === String(value === percent), 'Actual radio preset truth ' + value);
   };
   const click = node => {
     const rect = node.getBoundingClientRect();
@@ -31,12 +31,19 @@ export function checkDisplayScalePresets(directory) {
   try {
     paint(); host.render(); selected(null);
     const input = find('shell-output-1-scale');
+    check(preset(100).getAttribute('role') === 'radio' &&
+      find('shell-output-1-scale-presets').getAttribute('role') === 'radiogroup',
+    'Production presets expose actual radio/group semantics');
     click(preset(100)); selected(100);
     check(input.textContent === '1', 'Actual pointer selects factor 1');
     click(preset(150)); selected(150);
     check(input.textContent === '1.5', 'Actual pointer selects factor 1.5');
-    preset(200).focus(); host.key('Enter'); host.render(); selected(200);
-    check(input.textContent === '2' && commands.length === 0, 'Enter edits the draft, never applies or confirms');
+    preset(200).focus(); host.key('Enter', 'keydown', { text: false }); host.render(); selected(150);
+    host.key(' ', 'keydown', { text: false }); host.render(); selected(200);
+    check(input.textContent === '2' && commands.length === 0, 'Space selects a radio draft; Enter does not select or apply');
+    host.key('ArrowLeft', 'keydown', { text: false }); host.render(); selected(150);
+    check(document.activeElement === preset(150) && input.textContent === '1.5', 'Arrow navigation selects and focuses within the group');
+    host.key('End', 'keydown', { text: false }); host.render(); selected(200);
     click(input); host.key('a', 'keydown', { ctrlKey: true });
     const before = paints;
     host.text('1.25'); host.render(); selected(null);
@@ -60,8 +67,10 @@ export function checkDisplayScalePresets(directory) {
     busy = true; paint(); host.render();
     const disabled = preset(150), beforeBusy = paints;
     check(disabled.getAttribute('aria-disabled') === 'true' && disabled.tabIndex === -1, 'Actual busy semantics');
-    click(disabled); disabled.focus(); host.key('Enter'); host.render();
-    check(paints === beforeBusy && commands.length === 0 && input.textContent === '2', 'Busy pointer and Enter are inert');
+    click(disabled); disabled.focus();
+    for (const key of ['Enter', ' ', 'ArrowRight', 'Home', 'End']) host.key(key, 'keydown', { text: false });
+    host.render();
+    check(paints === beforeBusy && commands.length === 0 && input.textContent === '2', 'Busy factory disables pointer, Space and radio navigation');
     busy = false; paint(); host.render(); click(preset(150)); selected(150);
     check(host.save(directory + '\\display-scale-150.png'), 'Save native percentage selector page');
     click(find('shell-output-apply'));

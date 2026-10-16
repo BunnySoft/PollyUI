@@ -39,10 +39,10 @@ export function createDisplayPage() {
           } catch (failure) { error = String(failure.message || failure); repaint(); }
         }, () => {},
         error || snapshot.error,
-        { status: snapshot.status, forget: () => command('ForgetDisplayProfile', snapshot.serial) });
+        { status: snapshot.status, forget: () => command('ForgetDisplayProfile', snapshot.serial) }, busy);
       function disable(node) {
         if (node.props?.id === 'shell-output-close') { node.props.style.display = 'none'; node.props.tabIndex = -1; }
-        if (busy && ['button', 'checkbox'].includes(node.props?.role)) { node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
+        if (busy && node.props?.role === 'button') { node.props['aria-disabled'] = 'true'; node.props.tabIndex = -1;
           node.props.onClick = node.props.onKeydown = () => {}; }
         node.children?.forEach(disable);
       }
