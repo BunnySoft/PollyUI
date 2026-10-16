@@ -3,6 +3,8 @@ import { DESKTOP_THEMES } from './desktop/shared/ui/themes.mjs';
 import { panelView, applicationsView } from './desktop/shell/views.mjs';
 import { applicationMenuHeight, applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 import { parseThemeFile } from './desktop/shared/ui/theme-schema.mjs';
+import { windowTasks } from './desktop/shell/window-groups.mjs';
+import { programsPlacement } from './desktop/shell/programs-menu.mjs';
 
 const check = (value, message) => { if (!value) throw new Error(message); };
 const rect = node => [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight];
@@ -15,7 +17,7 @@ const entries = [
   { id: 'unavailable', name: 'Unavailable', unavailable: 'Not installed' },
   ...Array.from({ length: 10 }, (_, i) => ({ id: 'app' + i, name: 'Application ' + i })),
 ];
-export function checkXpShellSurface(directory, expectFixed = true) {
+export function checkXpShellSurface(directory, expectFixed = true, quickLaunchImages = null) {
   let opens = 0, toggles = 0, launches = 0, pins = 0, closed = 0, refreshed = 0, loggedOut = 0, query = '';
   const action = () => {};
   function mount(theme, width, height) {
@@ -142,5 +144,90 @@ export function checkXpShellSurface(directory, expectFixed = true) {
   } else check(Number(links.scrollTop) === 0 && visibleTop + close.offsetHeight > links.offsetTop + links.offsetHeight,
     'Baseline reproduces clipped, unscrollable final right-column command');
   capture('narrow-low');
+  const running = [{ id: 10, appId: 'org.pollyui.files', title: 'Running Files', active: true, workspaceId: 7 },
+    { id: 11, appId: 'org.pollyui.files', title: 'Another Files window', workspaceId: 7 },
+    { id: 12, title: 'Unknown app', workspaceId: 7 }];
+  let tasks = windowTasks(running, xp.panel.taskGrouping, entries,
+    ['org.pollyui.files', 'org.pollyui.settings'], 7);
+  const quickCalls = [], windowCalls = [];
+  const paintQuick = width => {
+    render(h('view', { style: { width, height: 90, backgroundColor: xp.desktop.from } },
+      h('view', { style: { width, height: xp.panel.height } },
+        panelView(xp, '22:30', action, '', action, tasks, id => {
+          const task = tasks.find(task => task.id === id);
+          if (task.quickLaunch) quickCalls.push(task.catalogId);
+          else windowCalls.push([task.active && !task.minimized ? 'minimize' : 'activate', task.id]);
+        }, action, null, null, null, quickLaunchImages))), document.body);
+    host.render();
+  };
+  render(h('view', {}), document.body); paintQuick(800);
+  const quick = get('shell-window-pin-org.pollyui.files'), real = get('shell-window-10');
+  check(quick.offsetWidth < real.offsetWidth && quick.offsetHeight === real.offsetHeight,
+    'Quick Launch is a compact icon-only slot, not a full-width text task');
+  check(quick.getAttribute('aria-label').includes('pinned launcher') &&
+    !quick.getAttribute('aria-label').includes('not running'), 'Quick Launch labels do not deny existing windows');
+  click(quick); click(real); click(get('shell-window-11'));
+  check(JSON.stringify(quickCalls) === '["org.pollyui.files"]' &&
+    JSON.stringify(windowCalls) === '[["minimize",10],["activate",11]]',
+    'Actual XP pointer invokes one launcher independently and original per-window actions');
+  capture('quick-launch-normal');
+  tasks = windowTasks(running, xp.panel.taskGrouping, entries, entries.map(entry => entry.id), 7);
+  paintQuick(360);
+  const strip = get('shell-window-list'), lastTask = get('shell-window-12');
+  lastTask.focus(); host.render();
+  const shown = lastTask.getBoundingClientRect(), clip = strip.getBoundingClientRect();
+  check(Number(strip.scrollLeft) > 0 && shown.x + shown.width > clip.x && shown.x < clip.x + clip.width,
+    'Low-width focus reveals a real window after all Quick Launch pins');
+  const firstQuick = get('shell-window-pin-org.pollyui.files');
+  firstQuick.focus(); host.render();
+  check(Number(strip.scrollLeft) === 0, 'Focus returns through the same viewport to the first launcher');
+  host.key('Tab', 'keydown', { text: false }); host.render();
+  check(document.activeElement === get('shell-window-pin-org.pollyui.settings'),
+    'Native Tab traverses compact Quick Launch buttons');
+  const stripBox = strip.getBoundingClientRect();
+  host.scroll(stripBox.x + stripBox.width / 2, stripBox.y + stripBox.height / 2, 10000); host.render();
+  check(Number(strip.scrollLeft) > 0, 'The original horizontal wheel reaches later windows beyond Quick Launch');
+  capture('quick-launch');
+  render(h('view', { id: 'xp-programs-stage', style: { width: 360, height: 260 } }), document.body);
+  const programStage = get('xp-programs-stage');
+  let programsOpen = false, placement, programEpoch = 0, programSlots = [], programCalls = 0;
+  const changePrograms = (next, focus = '') => {
+    if (next) placement = programsPlacement(get('shell-applications'), get('shell-all-programs'),
+      xp.layout.menuRowHeight ?? 32);
+    programsOpen = next; programEpoch++;
+    if (!next) programSlots = [];
+    paintPrograms(); host.render();
+    if (focus === 'trigger') get('shell-all-programs').focus();
+    else if (focus) (get('shell-program-list').childNodes.find(node => node.tabIndex >= 0) ??
+      get('shell-program-back')).focus();
+  };
+  function paintPrograms() {
+    render(applicationsView(xp, entries, '', action, action, action, action, '', null, null, {
+      open: programsOpen, placement, epoch: programEpoch, slots: programSlots, change: changePrograms,
+      launch: id => { if (programsOpen && entries.some(entry => entry.id === id && !entry.unavailable)) programCalls++; },
+    }), programStage);
+  }
+  paintPrograms(); host.render();
+  const programTrigger = get('shell-all-programs');
+  programTrigger.focus(); host.key('ArrowRight', 'keydown', { text: false });
+  for (let i = 0; i < 4; i++) host.render();
+  const programRoot = get('shell-program-menu'), startRoot = get('shell-applications');
+  const pb = programRoot.getBoundingClientRect(), sb = startRoot.getBoundingClientRect();
+  check(programsOpen && pb.x >= sb.x && pb.y >= sb.y &&
+    pb.x + pb.width <= sb.x + sb.width && pb.y + pb.height <= sb.y + sb.height,
+    'XP All Programs stays inside the actual existing Start client bounds');
+  host.key('End', 'keydown', { text: false }); host.render();
+  const programLast = get('shell-program-app9'), programList = get('shell-program-list');
+  const pl = programLast.getBoundingClientRect(), pc = programList.getBoundingClientRect();
+  check(document.activeElement === programLast && pl.y >= pc.y && pl.y + pl.height <= pc.y + pc.height,
+    'XP Programs reveals the final real entry through the existing long-list path');
+  host.key('Enter', 'keydown', { text: false }); host.render();
+  check(programCalls === 1, 'XP All Programs actual keyboard activation executes one registered entry');
+  host.key('Escape', 'keydown', { text: false }); host.render();
+  check(!programsOpen && document.activeElement === programTrigger, 'XP All Programs Escape returns to its Start trigger');
+  console.log('XP_PROGRAMS ' + JSON.stringify({ root: [sb.x, sb.y, sb.width, sb.height],
+    menu: [pb.x, pb.y, pb.width, pb.height], programCalls, focusReturned: document.activeElement === programTrigger }));
   console.log('PASS: actual XP taskbar/Start surface geometry, states, actions, custom width and low-height reachability');
+  console.log('XP_QUICK_LAUNCH ' + JSON.stringify({ quickCalls, windowCalls, pins: entries.length,
+    scrollLeft: Number(strip.scrollLeft), firstLauncher: rect(firstQuick), lastWindow: rect(lastTask) }));
 }

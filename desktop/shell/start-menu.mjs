@@ -65,6 +65,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   error = '', logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null) {
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
+  const supportsPrograms = classic || xp;
   const menuStyle = theme.panel.menuStyle ?? (modern ? 'grid' : xp ? 'two-column' : 'legacy');
   const grid = menuStyle === 'grid', twoColumn = menuStyle === 'two-column';
   const scrollGrid = modern && grid;
@@ -159,7 +160,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     const pinId = launchers?.id(entry.id);
     const pinned = launchers?.has(pinId);
     const launcher = launchers ? command('shell-app-launcher-' + entry.id,
-      (launchers.target === 'Dock' ? 'Dock' : 'Taskbar') + (pinned ? '-' : '+'),
+      (launchers.target === 'Dock' ? 'Dock' : launchers.target === 'Quick Launch' ? 'Quick' : 'Taskbar') + (pinned ? '-' : '+'),
       () => launchers.change(pinId, pinned), '', {
         height: grid ? gridPinHeight : l.menuRowHeight ?? 32, width: 80,
         paddingLeft: 3, paddingRight: 3 }) : null;
@@ -194,7 +195,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   ];
   const settings = entries.find(entry => entry.id === 'org.pollyui.settings' && !entry.unavailable);
   const files = entries.find(entry => entry.id === 'org.pollyui.files' && !entry.unavailable);
-  const programTrigger = classic && programs ? command('shell-all-programs', 'All Programs >',
+  const programTrigger = supportsPrograms && programs ? command('shell-all-programs', 'All Programs >',
     () => programs.change(true, 'first'), 'apps') : null;
   if (programTrigger) {
     programTrigger.props['aria-haspopup'] = 'menu';
@@ -222,7 +223,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     padding: classic ? 3 : 0, gap: grid ? 20 : 0 },
     ...(scrollGrid ? { onWheel: scrollDesktop, onMount: syncGridScroll, onUpdate: syncGridScroll,
       onLeave: stopGridScroll } : {}),
-    ...(classic && programs?.open ? {
+    ...(supportsPrograms && programs?.open ? {
       onKeydown: event => {
         if (event.key === 'Escape' || event.key === 'ArrowLeft') {
           event.preventDefault(); event.stopPropagation();
@@ -290,10 +291,10 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     menuStyle === 'legacy' ? tools : null,
     h('view', { style: { flexGrow: 1 } }),
     logout ? command('shell-app-logout', 'Log out...', logout, '', { height: 28 }) : null),
-  classic && programs ? h('view', { role: 'alert', style: {
+  supportsPrograms && programs ? h('view', { role: 'alert', style: {
     display: error ? 'flex' : 'none', padding: error ? 6 : 0, backgroundColor: c.selection,
   } }, error ? text(theme, error, c.accentText) : null) :
     error ? h('view', { role: 'alert', style: { padding: 6, backgroundColor: c.selection } },
       text(theme, error, classic ? c.accentText : c.text)) : null,
-  classic && programs?.open ? programsMenu(theme, entries, desktop, { ...programs, error }) : null);
+  supportsPrograms && programs?.open ? programsMenu(theme, entries, desktop, { ...programs, error }) : null);
 }

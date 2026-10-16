@@ -61,6 +61,30 @@ test('independent ordered pins merge only unambiguous real running groups and re
   assert.equal(twoSettingsPins.filter(task => task.count > 0).length, 1, 'a real group can be consumed by only one pin');
 });
 
+test('windows-launchers prepends ordered launch-only pins without grouping or reordering real windows', () => {
+  const catalog = [{ id: 'files.desktop', appId: 'org.example.files', name: 'Files' }];
+  const windows = Object.freeze([
+    Object.freeze({ id: 9, appId: 'org.example.files', title: 'Already running', active: true, workspaceId: 7 }),
+    Object.freeze({ id: 2, appId: 'org.example.files', title: 'Second window', workspaceId: 7 }),
+    Object.freeze({ id: 4, appId: '', title: 'Unknown application', workspaceId: 7 }),
+  ]);
+  const tasks = windowTasks(windows, 'windows-launchers', catalog, ['files.desktop', 'gone.desktop'], 7);
+  assert.deepEqual(tasks.slice(0, 2).map(task => task.catalogId), ['files.desktop', 'gone.desktop']);
+  assert.ok(tasks.slice(0, 2).every(task => task.quickLaunch && task.launcher && !task.grouped &&
+    task.count === 0 && task.windows.length === 0 && !task.active));
+  assert.deepEqual(tasks.slice(2), windows);
+  assert.ok(tasks[2] === windows[0] && tasks[3] === windows[1] && tasks[4] === windows[2]);
+  assert.match(taskLabel(tasks[0]), /pinned launcher/);
+  assert.doesNotMatch(taskLabel(tasks[0]), /not running/, 'Quick Launch makes no claim about running windows');
+  assert.match(taskLabel(tasks[1]), /unavailable/);
+  const merged = windowTasks(windows, 'applications', catalog, ['files.desktop'], 7)[0];
+  assert.equal(merged.count, 2);
+  assert.notEqual(taskIdentity(tasks[0]), taskIdentity(merged), 'mode changes invalidate held launcher actions');
+  assert.deepEqual(windowTasks(windows, 'windows-launchers', catalog), windows, 'zero pins leave no prefix or separator');
+  assert.deepEqual(windowTasks(windows, undefined, catalog, ['files.desktop'], 7), windows);
+  assert.deepEqual(windowTasks(windows, 'windows', catalog, ['files.desktop'], 7), windows);
+});
+
 test('registered runtime IDs are optional bounded metadata, not inferred desktop-file aliases', () => {
   const file = extra => ({ id: 'registered.desktop', path: '/apps/registered.desktop',
     contents: '[Desktop Entry]\nType=Application\nName=Registered\nExec=program\n' + extra });
@@ -193,12 +217,13 @@ test('taskGrouping is optional schema-1 data, strict in file/catalog/overrides w
   const fallback = parseThemeCatalog(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url), 'utf8'));
   for (const source of [catalog, fallback])
     for (const theme of source.themes) assert.equal(theme.panel.taskGrouping,
-      ['modern', 'aqua', 'lion', 'bigsur'].includes(theme.id) ? 'applications' : undefined);
+      ['modern', 'aqua', 'lion', 'bigsur'].includes(theme.id) ? 'applications' :
+        theme.id === 'xp' ? 'windows-launchers' : undefined);
   const custom = JSON.parse(JSON.stringify(catalog.themes.find(theme => theme.id === 'modern')));
   custom.id = 'custom-legacy';
   delete custom.panel.taskGrouping;
   assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: custom })).panel.taskGrouping, undefined);
-  for (const mode of ['windows', 'applications']) {
+  for (const mode of ['windows', 'windows-launchers', 'applications']) {
     custom.panel.taskGrouping = mode;
     assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: custom })).panel.taskGrouping, mode);
     assert.equal(applyThemeOverrides(catalog, encode({ modern: { panel: { taskGrouping: mode } } }))
