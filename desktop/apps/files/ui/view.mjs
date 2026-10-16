@@ -181,6 +181,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       onContextmenu: event => context(entry, event),
       onKeydown: event => {
         if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) context(entry, event);
+        else if (event.altKey && event.key === 'Enter') return;
         else if (usable && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
           if (controller.select(entry.path, entry.identity, generation) && event.key === 'Enter')
@@ -336,8 +337,13 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     },
     onKeydown: event => {
       if (event.defaultPrevented) return;
+      if (event.isComposing && event.key !== 'Escape') return;
       const editing = inInput(event.target);
-      if ((event.ctrlKey && event.key.toLowerCase() === 'l') || (event.altKey && event.key.toLowerCase() === 'd')) {
+      if (usable && event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        if (state.context) controller.cancel(generation);
+        event.currentTarget.ownerDocument.getElementById('files-filter')?.focus();
+      } else if ((event.ctrlKey && event.key.toLowerCase() === 'l') || (event.altKey && event.key.toLowerCase() === 'd')) {
         event.preventDefault(); controller.editAddress(null, generation);
       } else if (event.key === 'Escape') {
         event.preventDefault(); controller.cancel(generation);
@@ -355,7 +361,11 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         const old = items.indexOf(document?.activeElement);
         items[(old + (event.key === 'ArrowUp' || event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
       } else if (modal) return;
-      else if (usable && event.ctrlKey && event.key.toLowerCase() === 'x') {
+      else if (usable && event.ctrlKey && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault(); if (!event.repeat) controller.beginCreate(generation);
+      } else if (usable && event.altKey && event.key === 'Enter' && selection) {
+        event.preventDefault(); if (!event.repeat) controller.showProperties(generation, selection.identity);
+      } else if (usable && event.ctrlKey && event.key.toLowerCase() === 'x') {
         event.preventDefault(); controller.cut(generation, selection?.identity);
       } else if (usable && event.ctrlKey && event.key.toLowerCase() === 'v') {
         event.preventDefault(); controller.beginPaste(generation);

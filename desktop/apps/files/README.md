@@ -48,6 +48,10 @@ selection. Arrow keys, Home and End move through the visible sorted/filtered row
 F2 focuses the inline rename field, Enter explicitly confirms, and Escape cancels
 and restores row focus. F5 refreshes, Alt+Left/Right navigate history, Alt+Up goes
 to the parent, and Ctrl+L/Alt+D opens an editable absolute address.
+Ctrl+F focuses **Filter this folder** (not a recursive filesystem search),
+Ctrl+Shift+N opens the existing New folder confirmation, and Alt+Enter opens
+the selected item's Properties without opening the file. These commands leave
+an active modal input or composition alone; creating still requires confirmation.
 The first ready snapshot receives list focus, so these keys work before a
 pointer click. Deferred reveal/focus work cannot steal a later input click.
 Retired address/name inputs are explicitly detached, including when their

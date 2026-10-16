@@ -399,6 +399,41 @@ test('column sorting and folder-local filtering preserve exact identities and re
   assert.equal(controller.getState().dialog, null);
   assert.equal(operations.filter(item => item[0] === 'rename').length, 0);
 });
+test('local filter, create and Properties shortcuts reuse guarded actions without opening or mutating files', async () => {
+  const { controller, operations, opened } = fixture(); await controller.start();
+  let focused = 0;
+  const currentTarget = { ownerDocument: { getElementById(id) {
+    assert.equal(id, 'files-filter'); return { focus() { focused++; } };
+  } } };
+  const key = extra => {
+    const event = { target: { id: 'files-list' }, currentTarget,
+      preventDefault() { this.defaultPrevented = true; }, ...extra };
+    filesView(controller.getState(), controller).props.onKeydown(event);
+    return event;
+  };
+  key({ key: 'f', ctrlKey: true, isComposing: true });
+  key({ key: 'f', ctrlKey: true, altKey: true });
+  assert.equal(focused, 0, 'Composition and AltGr do not invoke the filter shortcut');
+  assert.equal(key({ key: 'f', ctrlKey: true }).defaultPrevented, true);
+  assert.equal(focused, 1);
+  key({ key: 'N', ctrlKey: true, shiftKey: true });
+  assert.equal(controller.getState().dialog.kind, 'create');
+  key({ key: 'f', ctrlKey: true });
+  assert.equal(focused, 1, 'A modal operation keeps its own input focus');
+  controller.cancel();
+  key({ key: 'N', ctrlKey: true, shiftKey: true, repeat: true });
+  assert.equal(controller.getState().dialog, null, 'A held command cannot reopen a dismissed operation');
+  const chosen = select(controller, '/fixture/literal %u; 中文.txt');
+  const row = flatten(filesView(controller.getState(), controller))
+    .find(node => node.props?.['data-path'] === chosen.path);
+  row.props.onKeydown({ key: 'Enter', altKey: true });
+  assert.equal(opened.length, 0, 'Row activation leaves Alt+Enter to Properties');
+  key({ key: 'Enter', altKey: true });
+  assert.equal(controller.getState().properties, true);
+  assert.equal(controller.getState().selection.identity, chosen.identity);
+  assert.equal(opened.length, 0);
+  assert.equal(operations.filter(item => ['mkdir', 'rename', 'move'].includes(item[0])).length, 0);
+});
 test('overlay scrollbar preserves continuous list and metadata widths at normal and narrow sizes', async () => {
   const { controller } = fixture(); await controller.start();
   for (const width of [1040, 680, 640]) {
