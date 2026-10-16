@@ -3,6 +3,8 @@ import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
+import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
@@ -44,7 +46,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
     return node;
   }
   const label = (value, size = 12) => h('view', { style: {
-    fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0 } }, value);
+    fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0, minWidth: 0 } }, value);
   function perform(action, target, revision = state.revision) {
     try {
       error = ''; confirmation = null;
@@ -65,9 +67,14 @@ export function createNetworkSettings({ native, host, theme, report }) {
     if (!surface || surface.window.closed) return;
     if (!state) {
       if (contentMode !== 'unavailable') { render(null, surface.root); contentMode = 'unavailable'; }
-      render(h('view', { style: { padding: theme().layout.contentPadding, gap: theme().layout.contentGap } },
+      const current = theme();
+      render(h('view', { id: 'shell-network-settings', onWheel: scrollDesktop, style: {
+        ...(surface.owned ? panelAppearance(current, 'dialog') :
+          { padding: current.layout.contentPadding, gap: current.layout.contentGap, backgroundColor: current.colors.body }),
+        width: '100%', height: '100%', minHeight: 0, overflow: 'scroll' } },
         h('view', { role: 'alert' }, label(error || 'Network state is unavailable.')),
-        button('shell-network-retry', 'Refresh / retry', retry)), surface.root);
+        button('shell-network-retry', 'Refresh / retry', retry),
+        surface.owned ? panelDetail(current, 'dialog') : null), surface.root);
       return;
     }
     const current = theme(), owner = surface.window.document, auth = state.authentication;
@@ -79,12 +86,14 @@ export function createNetworkSettings({ native, host, theme, report }) {
         focusCredentials = true;
         prompt = auth.id;
         promptKind = auth.kind;
-        password = createTextInput({ document: owner, password: true, width: 420, fontSize: current.layout.sectionFontSize });
+        password = createTextInput({ document: owner, password: true, width: '100%', fontSize: current.layout.sectionFontSize });
+        password.root.style.maxWidth = '420';
         password.root.id = 'shell-network-password';
         password.root.setAttribute('role', 'textbox');
         password.root.setAttribute('aria-label', 'Wi-Fi password');
         if (auth.kind === 'username-password') {
-          username = createTextInput({ document: owner, value: auth.username, width: 420, fontSize: current.layout.sectionFontSize });
+          username = createTextInput({ document: owner, value: auth.username, width: '100%', fontSize: current.layout.sectionFontSize });
+          username.root.style.maxWidth = '420';
           username.root.id = 'shell-network-username';
           username.root.setAttribute('role', 'textbox');
           username.root.setAttribute('aria-label', 'Wi-Fi username');
@@ -134,7 +143,8 @@ export function createNetworkSettings({ native, host, theme, report }) {
         'iwd IP configuration status is not available.'));
       for (const [index, device] of state.devices.entries()) {
         content.push(label(device.name + ' - ' + (device.powered ? device.state || device.mode : 'powered off'), 14));
-        content.push(h('view', { style: { flexDirection: 'row', gap: 6, flexShrink: 0 } },
+        content.push(h('view', { style: { flexDirection: 'row', flexWrap: 'wrap',
+          gap: current.layout.controlGap, flexShrink: 0 } },
           button('shell-network-power-' + index, device.powered ? 'Turn Wi-Fi off' : 'Turn Wi-Fi on',
             () => perform(device.powered ? 'power-off' : 'power-on', device.id, revision), state.ready && !state.operation),
           button('shell-network-scan-' + index, device.scanning ? 'Scanning...' : 'Scan',
@@ -144,7 +154,8 @@ export function createNetworkSettings({ native, host, theme, report }) {
         const entries = state.networks.filter(item => item.device === device.id).sort((a, b) => a.order - b.order);
         for (const [at, entry] of entries.entries()) {
           const supported = entry.type === 'open' || entry.type === 'psk' || (entry.type === '8021x' && entry.known);
-          content.push(h('view', { style: { gap: 4, padding: 8, borderWidth: 1, borderColor: current.colors.border, flexShrink: 0 } },
+          content.push(h('view', { id: 'shell-network-entry-' + index + '-' + at,
+            style: { ...panelAppearance(current, 'card'), flexShrink: 0 } },
             label(entry.name + ' [' + entry.type + '] ' + (entry.signal === null ? '' : entry.signal + ' dBm') +
               (entry.connected ? ' (connected)' : '')),
             entry.type === '8021x' && !entry.known ? label('Provision an EAP profile and certificate policy in iwd first.') : null,
@@ -152,24 +163,33 @@ export function createNetworkSettings({ native, host, theme, report }) {
               () => confirm('connect', entry, revision), state.ready && supported && device.powered && device.station &&
                 state.registered && !state.operation && !entry.connected),
             entry.known ? button('shell-network-forget-' + index + '-' + at, 'Forget...', () => confirm('forget', entry, revision),
-              state.ready && !state.operation) : null));
+              state.ready && !state.operation) : null, panelDetail(current, 'card')));
         }
       }
     }
-    render(h('view', { id: 'shell-network-settings', style: { flex: 1,
-      padding: current.layout.contentPadding, gap: current.layout.contentGap,
-      overflow: 'scroll', backgroundColor: current.colors.body } },
-      h('view', { style: { flexDirection: 'row', gap: 8, flexShrink: 0 } }, label('Wi-Fi (iwd)', 18),
+    render(h('view', { id: 'shell-network-settings', onWheel: scrollDesktop, style: {
+      ...(surface.owned ? panelAppearance(current, 'dialog') :
+        { padding: current.layout.contentPadding, gap: current.layout.contentGap, backgroundColor: current.colors.body }),
+      width: '100%', height: '100%', minHeight: 0, overflow: 'scroll' } },
+      h('view', { style: { flexDirection: 'row', flexWrap: 'wrap', gap: current.layout.controlGap, flexShrink: 0 } },
+        label('Wi-Fi (iwd)', 18),
         button('shell-network-retry', 'Refresh / retry', retry, !state.operation),
         surface.owned ? button('shell-network-close', 'Close', close) : null),
-      state.operation || state.refreshing ? h('view', { role: 'status', 'aria-live': 'polite' },
-        label(state.operation ? 'Operation: ' + state.operation : 'Refreshing Wi-Fi networks...')) : null,
-      state.operation === 'connect' ? button('shell-network-connect-cancel', 'Cancel connection', () => {
+      h('view', { role: 'status', 'aria-live': 'polite', style: { flexShrink: 0,
+        display: state.operation || state.refreshing ? 'flex' : 'none' } },
+        label(state.operation ? 'Operation: ' + state.operation : 'Refreshing Wi-Fi networks...')),
+      h('view', { style: { flexShrink: 0, display: state.operation === 'connect' ? 'flex' : 'none' } },
+        state.operation === 'connect' ? button('shell-network-connect-cancel', 'Cancel connection', () => {
         try { native.cancelNetworkConnection(); clearCredentials(); refresh(); }
         catch (value) { failure(value); }
-      }) : null,
-      error || state.error ? h('view', { role: 'alert' }, label(error || state.error)) : null,
-      ...content), surface.root);
+      }) : null),
+      h('view', { role: 'alert', style: { flexShrink: 0, display: error || state.error ? 'flex' : 'none' } },
+        label(error || state.error)),
+      h('view', { id: 'shell-network-content', style: auth || confirmation ?
+        { ...panelAppearance(current, 'card'), flexShrink: 0 } :
+        { gap: current.layout.contentGap, flexShrink: 0 } },
+        ...content, auth || confirmation ? panelDetail(current, 'card') : null),
+      surface.owned ? panelDetail(current, 'dialog') : null), surface.root);
     if (focusCredentials) (username || password).root.focus();
   }
   function refresh() {

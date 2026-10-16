@@ -1,4 +1,8 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { button as themedButton } from './desktop/shared/ui/button.mjs';
+import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 function inventory(value) {
   if (!value || value.version !== 1 || !['idle', 'waiting', 'ready', 'committed'].includes(value.phase) ||
@@ -120,19 +124,13 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
     if (state.action !== 'logout') return;
     const current = theme();
     const target = surface;
-    const button = (id, label, action) => h('view', { id, role: 'button', tabIndex: 0,
-      style: { padding: 10, borderWidth: 1, borderColor: current.colors.border,
-        backgroundColor: current.colors.surface, color: current.colors.text, flexShrink: 0 },
-      onClick: event => { if (surface === target && !target.closed && event.button === 0) action(); },
-      onKeydown: event => {
-        if (surface === target && !target.closed && (event.key === 'Enter' || event.key === ' ')) {
-          event.preventDefault(); action();
-        }
-      } }, label);
-    const label = text => h('view', { style: { color: current.colors.text, flexShrink: 0 } }, text);
-    render(h('view', { id: 'shell-logout', style: { padding: 16, gap: 10, height: '100%',
-      backgroundColor: current.colors.body, overflow: 'scroll' } },
-      label('Log out'),
+    const button = (id, label, action) => themedButton(id, label, current,
+      () => { if (surface === target && !target.closed) return action(); }, false,
+      { height: current.layout.choiceHeight, flexShrink: 0 });
+    const label = (text, role = 12) => desktopText(text, current.colors.text, themeTextSize(current, role), { minWidth: 0 });
+    render(h('view', { id: 'shell-logout', onWheel: scrollDesktop, style: {
+      ...panelAppearance(current, 'dialog'), width: '100%', height: '100%', minHeight: 0, overflow: 'scroll' } },
+      label('Log out', 18),
       label(state.profile === 'installed' ? 'End this user session and return to the login screen.' :
         state.profile === 'live' ? 'End this Live desktop and return to your ordinary, temporary console.' :
         'End this development desktop session.'),
@@ -151,7 +149,8 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
       state.phase === 'ready' ? button('shell-logout-commit', 'Log out now', controller.confirmCommit) : null,
       state.phase === 'committing' ? label('Ending this session...') : null,
       state.error ? h('view', { role: 'alert' }, label(state.error)) : null,
-      state.canCancel ? button('shell-logout-cancel', 'Keep this session', close) : null), surface.document.body);
+      state.canCancel ? button('shell-logout-cancel', 'Keep this session', close) : null,
+      panelDetail(current, 'dialog')), surface.document.body);
   }
   let unsubscribe = controller.subscribe(paint);
   return {
