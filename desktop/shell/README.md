@@ -11,6 +11,12 @@ scrolling. Long message bodies scroll vertically; action strips scroll
 horizontally without consuming an application's notification action. Available
 width is shared with the application label so Dismiss remains accessible.
 Notification identities, revisions, expiry and action dispatch remain unchanged.
+Only the center opts into the shared themed overlay scrollbar and bounded focus
+reveal, keeping later Dismiss/action buttons visible when tabbing in a low window.
+It retains transparent gaps, zero outer padding and the existing card order,
+not a Settings-style frame/fill. A manual wheel position survives an unchanged
+refresh; closing releases the center's shared scrolling/focus lifecycle. Toasts
+keep their original keyboard mode, geometry, count and More action.
 
 # Desktop popup menus
 
