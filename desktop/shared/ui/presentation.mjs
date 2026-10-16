@@ -2,12 +2,13 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
-import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
+import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
+export { selectionInk };
 
 // Original, native rectangle/line artwork. No platform icon font or downloaded assets.
 export function desktopIcon(name, color, size = 20) {
@@ -15,12 +16,15 @@ export function desktopIcon(name, color, size = 20) {
     position: 'absolute', left: left * size / 24, top: top * size / 24,
     width: width * size / 24, height: height * size / 24, pointerEvents: 'none', ...extra,
   } });
-  const outline = (x, y, w, z, radius = 2) => box(x, y, w, z,
-    { borderWidth: 1.5, borderColor: color, borderRadius: radius });
-  const line = (x, y, w, rotation = 0) => box(x, y, w, 1.5, { backgroundColor: color, rotate: rotation });
+  const ink = (node, part) => { node.props.className = 'theme-icon-ink-' + part; return node; };
+  const outline = (x, y, w, z, radius = 2) => ink(box(x, y, w, z,
+    { borderWidth: 1.5, borderColor: color, borderRadius: radius }), 'border');
+  const line = (x, y, w, rotation = 0) => ink(box(x, y, w, 1.5,
+    { backgroundColor: color, rotate: rotation }), 'fill');
+  const dot = (x, y, w, z, extra = {}) => ink(box(x, y, w, z, { backgroundColor: color, ...extra }), 'fill');
   let art;
   if (name === 'folder' || name === 'home' || name === 'downloads' || name === 'desktop')
-    art = [outline(3, 7, 18, 13), box(3, 4, 8, 4, { borderWidth: 1.5, borderColor: color, borderRadius: 2 }),
+    art = [outline(3, 7, 18, 13), ink(box(3, 4, 8, 4, { borderWidth: 1.5, borderColor: color, borderRadius: 2 }), 'border'),
       name === 'downloads' ? line(9, 14, 6, 90) : null];
   else if (name === 'file' || name === 'documents')
     art = [outline(5, 3, 14, 18), line(8, 9, 8), line(8, 13, 8), line(8, 17, 5)];
@@ -31,21 +35,21 @@ export function desktopIcon(name, color, size = 20) {
   else if (name === 'search') art = [outline(4, 3, 12, 12, 7), line(14, 17, 7, 45)];
   else if (name === 'refresh') art = [outline(4, 4, 16, 16, 8), line(14, 6, 6, 45), line(14, 3, 6)];
   else if (name === 'appearance') art = [outline(3, 3, 18, 18, 5),
-    box(6, 6, 6, 6, { borderRadius: 3, backgroundColor: color }), line(7, 17, 10, -35)];
+    dot(6, 6, 6, 6, { borderRadius: 3 }), line(7, 17, 10, -35)];
   else if (name === 'displays') art = [outline(2, 4, 20, 13), line(8, 21, 8), line(10, 19, 4, 90)];
   else if (name === 'network') art = [outline(3, 3, 18, 18, 10), outline(7, 7, 10, 10, 5),
-    box(10, 10, 4, 4, { borderRadius: 2, backgroundColor: color })];
+    dot(10, 10, 4, 4, { borderRadius: 2 })];
   else if (name === 'audio') art = [outline(3, 8, 5, 8), outline(8, 5, 7, 14),
     line(18, 8, 7, 65), line(18, 16, 7, -65)];
   else if (name === 'keyboard') art = [outline(2, 5, 20, 14),
-    ...[5, 9, 13, 17].map(x => box(x, 9, 2, 2, { backgroundColor: color })), line(6, 15, 12)];
+    ...[5, 9, 13, 17].map(x => dot(x, 9, 2, 2)), line(6, 15, 12)];
   else if (name === 'rename') art = [line(4, 12, 18, -45), line(3, 21, 8), outline(15, 3, 5, 5, 1)];
   else if (name === 'open') art = [outline(3, 8, 13, 13), line(9, 9, 14, -45), line(15, 3, 7), line(21, 3, 7, 90)];
   else if (name === 'apps') art = [outline(3, 3, 7, 7), outline(14, 3, 7, 7),
     outline(3, 14, 7, 7), outline(14, 14, 7, 7)];
   else if (name === 'add') art = [line(4, 12, 16), line(4, 12, 16, 90)];
   else art = [outline(3, 3, 18, 18, 10), line(9, 13, 6, 90),
-    box(11, 6, 2, 2, { backgroundColor: color, borderRadius: 1 })];
+    dot(11, 6, 2, 2, { borderRadius: 1 })];
   return h('view', { 'aria-hidden': 'true', style: {
     width: size, height: size, flexShrink: 0, position: 'relative', pointerEvents: 'none',
   } }, art);
@@ -58,9 +62,13 @@ export function desktopText(text, color, size = 14, extra = {}) {
 export function desktopCommand(id, text, theme, action, { icon = '', selected = false, enabled = true,
   quiet = false, style = {}, role = 'button', iconSize = 0 } = {}) {
   const luna = isLuna(theme) && !quiet, painted = hasSurfacePaint(theme);
-  const color = !enabled ? theme.colors.muted :
-    selected && surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text;
-  const options = { selected, disabled: !enabled, quiet };
+  const legacy = selected && surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text;
+  const color = !enabled ? theme.colors.muted : selected && quiet ? selectionInk(theme, legacy) : legacy;
+  const options = { selected, disabled: !enabled, quiet, inkOnly: !painted };
+  const iconView = icon ? desktopIcon(icon, !enabled ? theme.colors.muted :
+    quiet && selected ? selectionInk(theme, theme.colors.accent) : theme.colors.accent,
+    iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null;
+  if (iconView) iconView.props.className = 'theme-command-icon';
   const caption = desktopText(text, color, themeTextSize(theme), { pointerEvents: 'none',
     flexShrink: 1, minWidth: 0 });
   caption.props.className = 'theme-command-label';
@@ -76,11 +84,10 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
         painted ? { ...surfacePaint(theme, options), position: 'relative', overflow: 'hidden' } : {}), ...style },
     hoverStyle: enabled && !luna && !painted ? { backgroundColor: theme.colors.selection } : {},
     focusStyle: luna || painted ? {} : { borderColor: theme.colors.focus },
-    ...(luna ? lunaVisualEvents(theme, options) : painted ? surfaceEvents(theme, options) : {}),
+    ...(luna ? lunaVisualEvents(theme, options) : painted || quiet ? surfaceEvents(theme, options) : {}),
     ...activationEvents(action, enabled),
   }, luna ? lunaButtonDetail(theme, 'button', !enabled) : painted ? surfaceDetail(theme, options) : null,
-  icon ? desktopIcon(icon, !enabled ? theme.colors.muted : theme.colors.accent,
-    iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null,
+  iconView,
   caption);
 }
 

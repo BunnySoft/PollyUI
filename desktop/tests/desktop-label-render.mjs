@@ -91,8 +91,8 @@ export async function checkDesktopLabels(directory, verify = true) {
         check(controller.state.selected.has('label-0') && launches.length === 0,
           'Real label single-click selects without launching');
         check(label(0).style.backgroundColor === theme.colors.selection &&
-          label(0).style.color === theme.colors.text && label(0).childNodes.length === 1,
-        'Selection keeps existing colors and removes decorative shadow');
+          label(0).style.color === (theme.colors.selectionText ?? theme.colors.text) && label(0).childNodes.length === 1,
+        'Selection consumes its foreground token and removes decorative shadow');
         check(host.save(directory + '\\' + id + '-selected.png'), 'Save selected desktop labels');
         click(label(0), true);
         check(JSON.stringify(launches) === '["label-0"]', 'Real label double-click activates once');
