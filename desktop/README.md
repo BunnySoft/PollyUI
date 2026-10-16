@@ -157,6 +157,26 @@ It remains a memory-only development candidate; the earlier Alpine alpha.4
 physical baseline and Debian alpha.4-r1 boot media remain separate preserved
 artifacts, not silently upgraded installations.
 
+Caption text in all six themes uses the shared GUI Canvas2D renderer. Its
+sanitized title remains capped at 512 code points; Linux ICU boundaries move
+that cap down to a complete grapheme and keep measured prefix-plus-ellipsis
+fitting from splitting combining sequences, emoji ZWJ sequences or flags.
+Empty or too-narrow text boxes draw no extra ellipsis. Other platforms retain
+the SDK's existing code-point fallback, not a newly qualified grapheme backend.
+
+Custom theme `window.fontFamily` accepts the existing `sans-serif`, `serif` and
+`monospace` defaults or a single literal installed family such as `DejaVu Sans`.
+Names are bounded to 128 UTF-16 units and allow letters, combining marks,
+numbers, spaces and common name punctuation (`.`, `_`, `-`, parentheses and
+internal apostrophes). Controls, URLs, paths, quoted names, comma-separated
+lists and font-resource declarations are rejected. This setting accepts no
+font-file path and downloads no font. GUI system-font matching chooses the family;
+a missing family follows the existing backend fallback and is not certified
+as installed. Builtin/recovery themes and public theme version 1 are unchanged.
+Focused checks are `node --test desktop/tests/caption-font-contract.mjs` and
+Linux `PU_RENDERER=raster pollyui --test desktop/tests/caption-text-render.mjs`;
+the latter requires the native ICU/Canvas runtime.
+
 The compositor does not link QuickJS, Yoga, Skia or SDL. The generic PollyUI
 engine must not depend on the desktop. Use wlroots' scene graph for external
 applications rather than importing their buffers into the PollyUI DOM.
@@ -169,7 +189,7 @@ applications rather than importing their buffers into the PollyUI DOM.
 | Display settings - implemented | Native resolution/refresh, scaling, rotation, placement and enable/disable controls; confirmed layout persistence with exact-identity startup restoration; compositor-owned keep/revert watchdog with Shell-loss/topology recovery. |
 | Clipboard and pointer drag transport | Native UTF-8/MIME clipboard, primary selection, validated Wayland pointer drags and icons, cancellation/focus recovery, and incoming PollyUI text/file drops. PollyUI outgoing drag-source and full DataTransfer APIs remain deferred. |
 | Native input method | Separately trusted Rime service, public text-input-v3 relay, compositor-positioned PollyUI candidates, inline preedit, click-to-commit, cancellation, sensitive-field isolation and service-loss typing recovery. |
-| Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Compositor title captions still use their separate simple FreeType path. |
+| Linux Unicode text | HarfBuzz shaping, ICU bidi and grapheme/line boundaries, shared measurement/drawing, whole-grapheme editor movement/deletion, RTL hit testing and selection. Shared JS caption text uses GUI Canvas measurement/drawing and ICU-safe truncation. |
 | Session bus and notifications | Owned private D-Bus daemon per development session; validated app inheritance, bus-loss cleanup, standard notifications with native themed toasts/center/actions and bounded sender-owned state. |
 | Status tray | Sender-owned asynchronous StatusNotifier watcher/host, native memory icons, status changes, pointer/scroll actions and themed DBusMenu submenus with stale/disabled-action protection. Icon-name-only items use labels; legacy XEmbed remains deferred. |
 | Wi-Fi client | Native iwd settings for discovery/RSSI, scanning, radio power, connection, bounded interactive authentication and forgetting profiles, with root-owner verification and service-restart recovery. Isolated protocol/UI fixtures pass; real radios and DHCP/DNS need hardware qualification. |
