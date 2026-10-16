@@ -65,6 +65,7 @@ test('legacy geometry, 28px minimum, page/42px key step and capture path remain 
   fire(f.track, 'mouseup', { clientY: 1000 }); assert.equal(f.doc.captured, null);
   fire(f.track, 'keydown', { key: 'Home' });
   fire(f.track, 'mousedown', { clientY: 180 }); assert.equal(f.viewport.scrollTop, 200);
+  fire(f.track, 'wheel', { deltaY: 37 }); assert.equal(f.viewport.scrollTop, 237);
   controller.stop();
   assert.ok([...f.track.listeners.values()].every(list => list.length === 0));
 });
@@ -93,6 +94,10 @@ test('one controller owns arrow steps, held/drag/focus states and idle-paint ded
   controller.setAppearance(appearance);
   assert.equal(states.length, count, 'unchanged caller update is not a paint notification');
   assert.deepEqual([f.doc.styleWrites, f.doc.attributeWrites], writes, 'idle updates do not write styles or attributes either');
+  f.track.offsetHeight = 240; controller.update();
+  assert.equal(states.length, count + 1, 'actual internal bounds changes notify the existing surface/focus painter once');
+  controller.update(); assert.equal(states.length, count + 1, 'the new unchanged bounds are deduplicated too');
+  f.track.offsetHeight = 200; controller.update();
   fire(f.track, 'mousedown', { clientY: 212 });
   assert.equal(f.viewport.scrollTop, 17);
   assert.equal(states.at(-1).held, 'increment'); assert.equal(f.doc.captured, null);
