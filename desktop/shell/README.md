@@ -117,6 +117,15 @@ retention. Available registered PNG/JPEG artwork replaces the existing glyph
 in the same box without theme recoloring. Missing or unsupported artwork keeps
 the original fallback. Classic All Programs retains its existing text layout.
 
+Production Start/Apps search mounts one real SDK text input owned by the current
+menu window. Caret movement, selection replacement, Delete, clipboard editing and
+IME use the existing input implementation; committed search is bounded to 128
+code points without discarding an unselected suffix. Repainting retains the input
+and does not assign an unchanged value. Enter launches the first available match
+only outside composition; Escape/Tab keep their existing menu routes. Closing
+cancels composition, clears and retires the input, and rejects its old callbacks.
+Pure view-only callers retain their compatible fallback search rendering.
+
 # Trusted display and logout confirmation surfaces
 
 The existing token-bound display Keep/Revert layer and save-before-logout layer

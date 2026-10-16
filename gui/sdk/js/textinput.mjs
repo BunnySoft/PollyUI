@@ -18,6 +18,14 @@ const el = (owner, tag, style) => {
 };
 
 export function createTextInput(opts = {}) {
+  const maxLength = opts.maxLength;
+  if (maxLength !== undefined && (!Number.isSafeInteger(maxLength) || maxLength < 0))
+    throw new RangeError('Input maxLength must be a non-negative safe integer');
+  const bounded = (value, budget = maxLength) => {
+    if (budget === undefined) return value;
+    const prefix = Array.from(value).slice(0, budget).join('');
+    return value.slice(0, clampTextIndex(value, prefix.length));
+  };
   const surface = opts.window ?? (typeof window !== 'undefined' && (!opts.document || opts.document === window.document) ? window : null);
   const owner = opts.document ?? surface?.document ?? document;
   let fontSize = opts.fontSize ?? 18;
@@ -30,7 +38,7 @@ export function createTextInput(opts = {}) {
   const secure = purpose === 'password' || purpose === 'pin';
   const displayed = value => secure ? '\u2022'.repeat(Array.from(value).length) : value;
 
-  const st = { value: String(opts.value ?? ''), caret: 0, anchor: null, focused: false, dragging: false, hovered: false, composition: null };
+  const st = { value: bounded(String(opts.value ?? '')), caret: 0, anchor: null, focused: false, dragging: false, hovered: false, composition: null };
   st.caret = st.value.length;
 
   const root = el(owner, 'view', {
@@ -185,6 +193,8 @@ export function createTextInput(opts = {}) {
     endDrag(true);
     const r = selRange();
     const [s, e] = r ? r : [st.caret, st.caret];
+    if (maxLength !== undefined)
+      insert = bounded(insert, Math.max(0, maxLength - Array.from(st.value.slice(0, s) + st.value.slice(e)).length));
     st.value = st.value.slice(0, s) + insert + st.value.slice(e);
     st.caret = s + insert.length;
     st.anchor = null;
@@ -245,7 +255,7 @@ export function createTextInput(opts = {}) {
   return {
     root,
     get value() { return st.value; },
-    set value(v) { endDrag(true); if (st.composition) root.cancelComposition(); st.value = String(v); st.caret = st.value.length; st.anchor = null; render(); },
+    set value(v) { endDrag(true); if (st.composition) root.cancelComposition(); st.value = bounded(String(v)); st.caret = st.value.length; st.anchor = null; render(); },
     getCaret: () => st.caret,
     getSelection: () => selRange(),
     selectAll: () => { st.anchor = 0; st.caret = st.value.length; st.focused = true; render(); },
