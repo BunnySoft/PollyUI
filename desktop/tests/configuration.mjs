@@ -122,7 +122,7 @@ test('launcher pins are strict ordered independent snapshots and follow actual p
     bytes = next.slice();
     if (fault === 'after') throw Object.assign(new Error('directory sync failed'), { committed: true });
   } }, () => assert.fail('legacy read'));
-  const applications = ['bundle:org.example.notes', 'files.desktop', 'uninstalled.desktop'];
+  const applications = ['bundle:org.example.notes', 'Files \u8d44\u6599.desktop', 'uninstalled.desktop'];
   store.update({ launchers: { version: 1, applications } });
   applications.reverse();
   assert.deepEqual(store.snapshot.launchers.applications, [...applications].reverse());
@@ -133,7 +133,7 @@ test('launcher pins are strict ordered independent snapshots and follow actual p
   const desktop = store.snapshot.desktop, before = store.snapshot;
   for (const launchers of [null, [], {}, { version: 2, applications: [] }, { version: 1, applications: [], extra: true },
     { version: 1, applications: Array(33).fill('files.desktop') }, { version: 1, applications: ['x', 'x'] },
-    ...[null, 4, '', 'has space', '/file.desktop', '../file.desktop', 'a\\b', 'x\0', 'x'.repeat(256)].map(id =>
+    ...[null, 4, '', '/file.desktop', '../file.desktop', 'a\\b', 'x\0', '\ud800', 'x'.repeat(256)].map(id =>
       ({ version: 1, applications: [id] }))])
     assert.throws(() => store.update({ launchers }));
   assert.equal(store.snapshot, before);

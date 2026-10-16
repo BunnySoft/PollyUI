@@ -28,7 +28,11 @@ It is an independent ordered list of at most 32 unique bounded catalog IDs, not
 commands, runtime app IDs, PIDs or live window handles. Unknown applications remain
 pinned and visibly unavailable until removed or registered again. Removing a
 taskbar/Dock pin never removes a desktop shortcut, and shortcut changes do not
-modify launcher pins. Only explicit `applications` task grouping displays them.
+modify launcher pins. IDs are opaque references of at most 255 UTF-16 code units;
+valid Unicode and spaces are retained exactly, while control characters, lone
+surrogates and slash/backslash path components are rejected. They are never
+interpreted as executable names, paths or URLs. Only explicit `applications`
+task grouping displays them.
 Running groups merge with a pin only through the existing unique exact/explicit
 catalog identity association; ambiguous associations retain separate running tasks.
 
@@ -38,7 +42,11 @@ An upgrade write failure is explicit, retains the uncommitted original file, and
 does not create a success-shaped in-memory configuration. A post-rename
 durability failure retains the published v3 file and reports uncertain durability.
 The desktop shortcut domain remains version 1. Older binaries do not read v3; downgrading the Shell requires a separate,
-explicit configuration compatibility decision.
+explicit configuration compatibility decision. Before returning to an older
+binary, restore an original backup or otherwise provide a configuration that
+that binary understands; there is no automatic downgrade or backup framework.
+An unknown schema is never replaced with empty defaults. With an empty launcher
+list, taskbar/Dock slots retain their previous running-task behavior.
 
 Layouts match output-management connector/make/model/serial tuples. SDL display
 IDs are not output-management head IDs: the Shell associates them by the

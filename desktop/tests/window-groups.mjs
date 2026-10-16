@@ -44,6 +44,21 @@ test('independent ordered pins merge only unambiguous real running groups and re
   const afterUninstall = windowTasks(windows, 'applications', [], ['files.desktop'], 7);
   assert.equal(afterUninstall[0].launcher, true);
   assert.equal(afterUninstall[1].appId, 'org.example.files');
+  const unicode = { id: 'Files \u8d44\u6599 \ud83d\udc30.desktop', appId: 'org.example.files', name: 'Unicode Files' };
+  const unicodeTask = windowTasks(windows, 'applications', [unicode], [unicode.id], 7)[0];
+  assert.equal(unicodeTask.catalogId, unicode.id);
+  assert.equal(unicodeTask.count, 2);
+  const syntheticSettings = { id: 'org.pollyui.settings', name: 'Settings' };
+  const registeredSettings = { id: 'polly-settings.desktop', appId: syntheticSettings.id, name: 'Settings' };
+  const settingsTasks = windowTasks([{ id: 50, appId: syntheticSettings.id, workspaceId: 7 }],
+    'applications', [syntheticSettings, registeredSettings], [registeredSettings.id], 7, [registeredSettings]);
+  assert.equal(settingsTasks.length, 1);
+  assert.equal(settingsTasks[0].catalogId, registeredSettings.id);
+  assert.equal(settingsTasks[0].count, 1);
+  const twoSettingsPins = windowTasks([{ id: 50, appId: syntheticSettings.id, workspaceId: 7 }],
+    'applications', [syntheticSettings, registeredSettings], [syntheticSettings.id, registeredSettings.id], 7,
+    [registeredSettings]);
+  assert.equal(twoSettingsPins.filter(task => task.count > 0).length, 1, 'a real group can be consumed by only one pin');
 });
 
 test('registered runtime IDs are optional bounded metadata, not inferred desktop-file aliases', () => {

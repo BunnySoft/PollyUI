@@ -316,6 +316,199 @@ function groupedWindows({ state, native, calls }) {
 const groupId = 'shell-window-app-fixture.desktop';
 const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
 
+const pinnedNodeId = id => 'shell-window-pin-' + encodeURIComponent(id);
+function pinnedFixture(f) {
+  groupedWindows(f);
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop', 'missing.desktop'] } });
+}
+
+scenario('Launcher pins: Apps pin control persists independently and leaves real search and desktop shortcuts untouched', f => {
+  f.shell.addDesktopShortcut(1, 'fixture.desktop');
+  const before = f.saved.snapshot.desktop;
+  assert.equal(before.shortcuts.length, 1);
+  const menu = f.shell.showApplications(1), search = find(menu, 'shell-app-search');
+  search.focus();
+  const pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  assert.equal(pin.getAttribute('aria-label'), 'Pin Fixture to taskbar');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.deepEqual(f.saved.snapshot.desktop, before);
+  assert.equal(find(menu, 'shell-app-search'), search);
+  assert.equal(menu.closed, false);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.equal(f.surface('panel').document.getElementById(groupId), null, 'running group is not duplicated');
+  assert.ok(find(menu, 'shell-app-pin-fixture.desktop'), 'existing desktop pin remains independent');
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.deepEqual(f.saved.snapshot.desktop, before);
+  f.shell.selectTheme('xp');
+  const legacy = f.shell.showApplications(1);
+  assert.equal(legacy.document.getElementById('shell-app-launcher-fixture.desktop'), null);
+}, groupedWindows);
+
+scenario('Launcher pins: pinned order, real group counts, unavailable retention and Dock width use the same model on two outputs', f => {
+  for (const theme of ['modern', 'bigsur']) {
+    f.shell.selectTheme(theme);
+    for (const output of [1, 2]) {
+      const surface = f.surface(theme === 'modern' ? 'panel' : 'dock', output);
+      const list = find(surface, theme === 'modern' ? 'shell-window-list' : 'shell-dock-windows');
+      assert.deepEqual(list.childNodes.slice(0, 2).map(node => node.id),
+        ['fixture.desktop', 'missing.desktop'].map(pinnedNodeId));
+      assert.match(find(surface, pinnedNodeId('fixture.desktop')).getAttribute('aria-label'), /2 windows/);
+      assert.match(find(surface, pinnedNodeId('missing.desktop')).getAttribute('aria-label'), /unavailable/);
+      assert.equal(list.childNodes.length, 5, 'two pins including one real group plus three unpinned windows');
+      if (theme === 'bigsur') {
+        const l = getDesktopTheme(theme).layout;
+        assert.equal(surface.options.width, Math.min(2 * l.dockPadding + 3 * l.dockTileWidth + 13 +
+          5 * l.dockWindowWidth + 8 * l.dockGap, f.state.outputs[output - 1].width - 2 * l.screenInset));
+      }
+    }
+  }
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'missing.desktop']);
+}, pinnedFixture);
+
+scenario('Launcher pins: idle pin launches once; its context can unpin a missing app without inventing a window', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  const surface = f.surface('panel');
+  const idle = find(surface, pinnedNodeId('fixture.desktop'));
+  idle.focus(); key(surface, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(f.calls.some(call => ['activate', 'minimize'].includes(call[0])), false);
+  const missing = find(f.surface('panel'), pinnedNodeId('missing.desktop'));
+  assert.equal(missing.tabIndex, 0, 'uninstalled pins remain keyboard manageable');
+  missing.focus(); key(f.surface('panel'), 'ContextMenu');
+  const menu = latestGroup(f);
+  assert.ok(menu);
+  assert.equal(menu.document.getElementById('shell-group-activate-10'), null);
+  assert.match(find(menu, 'shell-group-pin').getAttribute('aria-label'), /Unpin from taskbar/);
+  assert.match(text(find(menu, 'shell-window-group')), /no longer in the catalog/);
+  key(menu, 'Escape');
+  click(missing);
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1, 'missing primary opens management, not stale launch');
+  click(find(latestGroup(f), 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
+}, pinnedFixture);
+
+scenario('Launcher pins: old launch gesture cannot become window activation when a pinned app starts', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  const surface = f.surface('panel'), idle = find(surface, pinnedNodeId('fixture.desktop'));
+  const old = callback(idle, 'click');
+  press(idle);
+  f.state.windows = [{ id: 30, appId: 'fixture.desktop', title: 'Running now', workspaceId: 7, active: true }];
+  f.native.onWindowsChanged();
+  assert.equal(find(surface, pinnedNodeId('fixture.desktop')) === idle, true);
+  domEvent(idle, 'mouseup'); domEvent(idle, 'click');
+  assert.equal(old(event('click', { currentTarget: idle })), false);
+  assert.equal(f.calls.some(call => ['activate', 'minimize', 'launch'].includes(call[0])), false);
+  click(idle);
+  assert.deepEqual(f.calls.at(-1), ['minimize', 30]);
+}, pinnedFixture);
+
+scenario('Launcher pins: launch rechecks the live catalog instead of executing removed or unavailable argv', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  f.native.applicationFiles = () => [];
+  click(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.match(f.shell.getState().error, /no longer available/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  const menu = f.shell.showApplications(1);
+  assert.equal(menu.document.getElementById('shell-app-fixture.desktop'), null);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')), 'uninstall does not erase the pin');
+}, pinnedFixture);
+
+scenario('Launcher pins: unavailable registered launchers stay focusable and Shift+F10 can unpin without launch', f => {
+  const surface = f.surface('panel'), task = find(surface, pinnedNodeId('fixture.desktop'));
+  assert.equal(task.tabIndex, 0);
+  task.focus(); key(surface, 'F10', { shiftKey: true });
+  const menu = latestGroup(f);
+  assert.match(text(find(menu, 'shell-window-group')), /Executable is unavailable/);
+  click(find(menu, 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.equal(f.calls.some(call => ['launch', 'activate', 'minimize'].includes(call[0])), false);
+}, f => {
+  pinnedFixture(f);
+  f.state.windows = [];
+  f.native.canExecute = () => false;
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop'] } });
+});
+
+scenario('Launcher pins: current running chooser can pin and unpin without modifying desktop shortcuts', f => {
+  const original = f.saved.snapshot.desktop;
+  click(find(f.surface('panel'), groupId), 2);
+  const menu = latestGroup(f), pin = find(menu, 'shell-group-pin'), old = callback(pin, 'click');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.equal(menu.closed, true);
+  old(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  click(find(f.surface('panel'), pinnedNodeId('fixture.desktop')), 2);
+  click(find(latestGroup(f), 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.deepEqual(f.saved.snapshot.desktop, original);
+}, groupedWindows);
+
+scenario('Launcher pins: save failures repaint the actual committed snapshot and old menu callbacks cannot mutate replacements', f => {
+  const menu = f.shell.showApplications(1), pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  const old = callback(pin, 'click');
+  f.state.configurationFailure = new Error('fixture pin write refused');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.match(f.shell.getState().error, /were not changed.*fixture pin write refused/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('fixture pin durability uncertain'), { committed: true });
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.match(f.shell.getState().error, /saved.*durability/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+  f.shell.showApplications(2);
+  old(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+}, groupedWindows);
+
+scenario('Launcher pins: limit errors keep the stored order and stale held Apps controls cannot pin a different entry', f => {
+  f.saved.update({ launchers: { version: 1, applications: Array.from({ length: 32 }, (_, i) => 'missing-' + i + '.desktop') } });
+  const menu = f.shell.showApplications(1), previous = f.saved.snapshot.launchers;
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers, previous);
+  assert.match(f.shell.getState().error, /At most 32/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.saved.update({ launchers: { version: 1, applications: [] } });
+  f.shell.refresh();
+  const pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  press(pin);
+  f.native.applicationFiles = () => [{ id: 'replacement.desktop', path: '/replacement.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Replacement\nExec=replacement\n' }];
+  click(find(menu, 'shell-app-refresh'));
+  domEvent(pin, 'mouseup'); domEvent(pin, 'click');
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+}, groupedWindows);
+
+scenario('Launcher pins: registered Settings pin merges its runtime windows and both Apps entries share one pin identity', f => {
+  const menu = f.shell.showApplications(1);
+  click(find(menu, 'shell-app-launcher-org.pollyui.settings'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['polly-settings.desktop']);
+  assert.match(find(menu, 'shell-app-launcher-polly-settings.desktop').getAttribute('aria-label'), /Unpin/);
+  const list = find(f.surface('panel'), 'shell-window-list');
+  assert.equal(list.childNodes.length, 1);
+  assert.match(list.firstChild.getAttribute('aria-label'), /2 windows/);
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'settings-open'), [['settings-open', 'appearance']]);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+}, ({ state, native }) => {
+  state.windows = [10, 11].map(id => ({ id, appId: 'org.pollyui.settings', title: 'Settings ' + id, workspaceId: 7 }));
+  native.applicationFiles = () => [{ id: 'polly-settings.desktop', path: '/polly-settings.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Settings\nX-Polly-AppId=org.pollyui.settings\nExec=polly-settings\n' }];
+});
+
 test('Application tasks: group-menu chrome uses the shared menu policy without masking custom tokens', () => {
   const group = windowTasks([{ id: 10, appId: 'fixture.desktop', title: 'Document', workspaceId: 7 }],
     'applications')[0];

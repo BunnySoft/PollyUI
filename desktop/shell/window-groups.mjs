@@ -2,7 +2,7 @@ import { applicationForWindow } from './applications.mjs';
 import { pinnedTasks } from './launcher-pins.mjs';
 
 // The caller supplies the current workspace's real window snapshots.
-export function windowTasks(windows, grouping = 'windows', catalog = [], pins = [], workspaceId) {
+export function windowTasks(windows, grouping = 'windows', catalog = [], pins = [], workspaceId, registrations = catalog) {
   if (!['windows', 'applications'].includes(grouping)) throw new TypeError('Unsupported task grouping');
   if (grouping === 'windows') return [...windows];
   const ordered = [...windows].sort((a, b) => a.id - b.id);
@@ -28,7 +28,7 @@ export function windowTasks(windows, grouping = 'windows', catalog = [], pins = 
     group.minimized = group.windows.every(window => window.minimized);
     group.partiallyMinimized = !group.minimized && group.windows.some(window => window.minimized);
   }
-  return pins.length ? pinnedTasks(tasks, pins, catalog, workspaceId) : tasks;
+  return pins.length ? pinnedTasks(tasks, pins, catalog, workspaceId, registrations) : tasks;
 }
 
 export function taskIdentity(task) {

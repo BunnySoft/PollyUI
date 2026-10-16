@@ -130,7 +130,10 @@ export function windowGroupMenu(theme, group, state) {
       () => state.action(id, 'activateWindow'), window.active),
     h('view', { style: { flexDirection: 'row', minWidth: 0, gap: theme.layout.controlGap } },
       minimize, close));
-  })),
+  }),
+  h('view', { style: { flexShrink: 0, display: state.pin ? 'flex' : 'none' } },
+    state.pin ? command('shell-group-pin', state.pin.label + state.pin.target, state.pin.change,
+      false, {}, state.pin.label + state.pin.target) : null)),
   command('shell-group-menu-close', 'Close menu', state.close),
   state.error ? label(state.error) : null,
   panelDetail(theme, 'menu'));
