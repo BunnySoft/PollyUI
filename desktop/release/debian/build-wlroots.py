@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import urllib.request
+from importlib.util import module_from_spec, spec_from_file_location
 
 here = Path(__file__).resolve().parent
 sources = json.loads((here / "sources.json").read_text())
@@ -24,10 +25,17 @@ for name in ("wlr-protocols", "wlroots"):
     if name == "wlr-protocols":
         subprocess.run(["make", "install", "PREFIX=/usr/local"], cwd=directory, check=True)
     else:
+        spec = spec_from_file_location("polly_wlroots_effects", here / "apply-wlroots-effects.py")
+        effects = module_from_spec(spec)
+        spec.loader.exec_module(effects)
+        effects_record = effects.apply(directory)
         subprocess.run(["meson", "setup", str(directory / "build"), str(directory),
                         "--prefix=/opt/pollyui-wlroots", "--libdir=lib", "--buildtype=release",
                         "--wrap-mode=nofallback", "-Dexamples=false", "-Dxwayland=disabled",
                         "-Dbackends=drm,libinput", "-Drenderers=gles2", "-Dsession=enabled",
-                        "-Dcolor-management=enabled"], check=True)
+                        "-Dcolor-management=enabled",
+                        "-Dpolly-effects-sha256=" + effects_record["patchSha256"]], check=True)
         subprocess.run(["meson", "compile", "-C", str(directory / "build"), "-j", "2"], check=True)
         subprocess.run(["meson", "install", "-C", str(directory / "build")], check=True)
+        effects.record_install(Path("/opt/pollyui-wlroots"))
+        effects.check_install(Path("/opt/pollyui-wlroots"))

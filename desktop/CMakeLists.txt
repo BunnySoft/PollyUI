@@ -13,6 +13,21 @@ endif()
 find_package(PkgConfig REQUIRED)
 # 0.19.3 fixes the SHM buffer destructor used by the Pixman/nested path.
 pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET "wlroots-0.19>=0.19.3" "wlroots-0.19<0.20")
+include(CheckCSourceCompiles)
+set(CMAKE_REQUIRED_LIBRARIES PkgConfig::WLROOTS)
+unset(PU_WLROOTS_EFFECTS_ABI_1 CACHE)
+check_c_source_compiles("#define WLR_USE_UNSTABLE
+#include <wlr/types/wlr_scene.h>
+#if !defined(WLR_SCENE_EFFECTS_ABI) || WLR_SCENE_EFFECTS_ABI != 1
+#error Paired PollyUI scene effects SDK required
+#endif
+int main(void) { return wlr_scene_effects_abi_v1() != WLR_SCENE_EFFECTS_ABI ||
+    wlr_scene_effects_source_sha256_v1() == 0; }"
+    PU_WLROOTS_EFFECTS_ABI_1)
+unset(CMAKE_REQUIRED_LIBRARIES)
+if (NOT PU_WLROOTS_EFFECTS_ABI_1)
+    message(FATAL_ERROR "Build the pinned PollyUI wlroots scene effects SDK; stock/old headers or libraries are unsupported")
+endif()
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)
 pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
@@ -115,6 +130,11 @@ add_library(pollywm-core STATIC
     "${PROTOCOL_DIR}/xdg-shell-protocol.h")
 target_include_directories(pollywm-core PUBLIC compositor shared "${PROTOCOL_DIR}")
 target_compile_definitions(pollywm-core PUBLIC WLR_USE_UNSTABLE _POSIX_C_SOURCE=200809L)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/release/debian/wlroots-effects.json" PU_WLROOTS_EFFECTS_RECIPE)
+string(JSON PU_WLROOTS_EFFECTS_SHA256 GET "${PU_WLROOTS_EFFECTS_RECIPE}" patchSha256)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/release/debian/wlroots-effects.json")
+target_compile_definitions(pollywm-core PRIVATE PU_WLROOTS_EFFECTS_SHA256="${PU_WLROOTS_EFFECTS_SHA256}")
 file(RELATIVE_PATH PU_CURSOR_FROM_BIN "${CMAKE_INSTALL_FULL_BINDIR}"
     "${CMAKE_INSTALL_FULL_DATADIR}/icons")
 target_compile_definitions(pollywm-core PRIVATE

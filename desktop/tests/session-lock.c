@@ -1,6 +1,7 @@
 #include "server.h"
 #include "session-lock.h"
 #include "cursor.h"
+#include <drm_fourcc.h>
 #include <signal.h>
 #include <string.h>
 #include <stdio.h>
@@ -9,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_buffer.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -45,6 +47,30 @@ static bool black_at(struct PuDesktop *desktop, double x, double y)
     struct wlr_scene_rect *rect = wl_container_of(node, rect, node);
     return rect->color[0] == 0 && rect->color[1] == 0 && rect->color[2] == 0 && rect->color[3] == 1;
 }
+static bool locked_effect_pixels(struct PuDesktop *desktop)
+{
+    uint64_t renders = desktop->scene->effects_render_count;
+    struct wlr_output_layout_output *entry;
+    wl_list_for_each(entry, &desktop->layout->outputs, link) {
+        struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop->scene, entry->output);
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        if (!wlr_scene_output_build_state(output, &state, NULL) || !state.buffer) return false;
+        void *pixels; uint32_t format; size_t stride;
+        if (!wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+            &pixels, &format, &stride)) { wlr_output_state_finish(&state); return false; }
+        bool black = format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888;
+        for (int y = 0; y < state.buffer->height; y++) for (int x = 0; x < state.buffer->width; x++) {
+            uint32_t pixel;
+            memcpy(&pixel, (char *)pixels + y * stride + x * 4, 4);
+            if (pixel & 0xffffff) black = false;
+        }
+        wlr_buffer_end_data_ptr_access(state.buffer);
+        wlr_output_state_finish(&state);
+        if (!black) return false;
+    }
+    return renders == desktop->scene->effects_render_count;
+}
 int main(int argc, char **argv)
 {
     if (argc != 2 && argc != 4 && argc != 5) return 2;
@@ -58,7 +84,9 @@ int main(int argc, char **argv)
     wlr_keyboard_init(&keyboard, &keyboard_impl, "lock-fixture-keyboard");
     keyboard_ready = true;
     wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
-    struct wlr_scene_rect *background = wlr_scene_rect_create(desktop.windows, 2560, 720, (float[4]){1, 0, 0, 1});
+    struct wlr_scene_tree *effect = wlr_scene_tree_create(desktop.windows);
+    CHECK(effect && wlr_scene_tree_set_rounding(effect, &(struct wlr_box){0, 0, 2560, 720}, 32));
+    struct wlr_scene_rect *background = wlr_scene_rect_create(effect, 2560, 720, (float[4]){1, 0, 0, 1});
     CHECK(background);
     for (int i = 0; i < 20; i++) tick(&desktop);
     CHECK(!black_at(&desktop, 20, 20));
@@ -80,6 +108,7 @@ int main(int argc, char **argv)
     wlr_seat_pointer_notify_button(desktop.seat, 1, BTN_LEFT, WL_POINTER_BUTTON_STATE_PRESSED);
     CHECK(pu_session_lock_spawn(&desktop, crash));
     CHECK(pu_session_lock_active(&desktop) && black_at(&desktop, 20, 20));
+    CHECK(locked_effect_pixels(&desktop));
     CHECK(desktop.seat->pointer_state.button_count == 0);
     CHECK(!pu_cursor_timer_active(&desktop) && !strcmp(pu_cursor_selected(&desktop), "default"));
     struct wlr_output_layout_output *cursor_output =

@@ -16,8 +16,9 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
     libgl1-mesa-dri libegl-mesa0 libglx-mesa0 libgles2 xkb-data adwaita-icon-theme foot \
     ca-certificates && \
     dpkg-query -W -f='${binary:Package}\t${Version}\n' > /usr/share/polly-sdk-packages.txt
-COPY release/debian/build-wlroots.py release/debian/sources.json /opt/pollyui-build/debian/
-RUN python3 /opt/pollyui-build/debian/build-wlroots.py && \
+COPY release/debian/build-wlroots.py release/debian/sources.json release/debian/apply-wlroots-effects.py release/debian/wlroots-effects.json /opt/pollyui-wlr-recipe/desktop/release/debian/
+COPY patches/wlroots-scene-effects.patch /opt/pollyui-wlr-recipe/desktop/patches/
+RUN python3 /opt/pollyui-wlr-recipe/desktop/release/debian/build-wlroots.py && \
     printf '/opt/pollyui-wlroots/lib\n/usr/local/lib\n' > /etc/ld.so.conf.d/polly-sdk.conf && ldconfig
 COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
 RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia

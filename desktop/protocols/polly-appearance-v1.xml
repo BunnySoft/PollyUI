@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="4">
+  <interface name="polly_appearance_v1" version="5">
     <description summary="separate trusted appearance publisher and renderer">
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
       renders but can publish only the first theme, before a Shell transaction.
-      Version 4 requires the separately supervised GUI service and geometry schema 4.
+      Version 5 requires the separately supervised GUI service and geometry schema 5.
+      The optional native radius is numeric geometry, not a style identifier.
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
     </description>
@@ -15,7 +16,7 @@
     <request name="destroy" type="destructor"/>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
-        Configuration contains schema 4, left-controls (0 or 1), and the
+        Configuration contains schema 5, left-controls (0 or 1), and the
         geometry-only metrics specified by appearance-fields.h. Colors, fonts,
         glyphs, materials and style selection are interpreted only by the GUI.
         Unsupported data is rejected through

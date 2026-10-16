@@ -29,6 +29,7 @@ void pu_decoration_schedule(struct PuDesktopView *view);
 void pu_decoration_configure(struct PuDesktopView *view);
 bool pu_decoration_mode_pending(struct PuDesktopView *view);
 void pu_decoration_present(struct PuDesktopView *view);
+bool pu_decoration_effects(struct PuDesktopView *view);
 bool pu_decoration_ready(struct PuDesktopView *view);
 void pu_decoration_update(struct PuDesktopView *view);
 void pu_decoration_inset(struct PuDesktopView *view, struct wlr_box *bounds, bool pending);
