@@ -13,15 +13,22 @@ function reveal(viewport, force = false) {
   const owner = viewport.ownerDocument, node = owner?.activeElement;
   if (!state || !owner || !contains(owner.body, viewport) || !node || node === viewport || !contains(viewport, node)) return;
   const target = node.getBoundingClientRect(), clip = viewport.getBoundingClientRect();
-  if (clip.height <= 0 || target.height <= 0) return;
-  const geometry = [viewport.offsetWidth, viewport.offsetHeight, node.offsetTop - viewport.offsetTop,
+  const horizontal = state.axis === 'horizontal';
+  if ((horizontal ? clip.width : clip.height) <= 0 || (horizontal ? target.width : target.height) <= 0) return;
+  const geometry = [state.axis, viewport.offsetWidth, viewport.offsetHeight,
+    horizontal ? node.offsetLeft - viewport.offsetLeft : node.offsetTop - viewport.offsetTop,
     node.offsetWidth, node.offsetHeight].join(':');
   const unchanged = state.focus?.deref() === node && state.geometry === geometry;
   state.focus = new WeakRef(node); state.geometry = geometry;
   // Repainting unchanged content must not undo an intentional wheel scroll.
   if (unchanged && !force) return;
-  const delta = target.top < clip.top ? target.top - clip.top : target.bottom > clip.bottom ? target.bottom - clip.bottom : 0;
-  if (delta) viewport.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(viewport).maximum, viewport.scrollTop + delta));
+  if (horizontal) {
+    const delta = target.left < clip.left ? target.left - clip.left : target.right > clip.right ? target.right - clip.right : 0;
+    if (delta) scrollDesktop({ currentTarget: viewport, deltaX: delta, preventDefault() {} }, true);
+  } else {
+    const delta = target.top < clip.top ? target.top - clip.top : target.bottom > clip.bottom ? target.bottom - clip.bottom : 0;
+    if (delta) viewport.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(viewport).maximum, viewport.scrollTop + delta));
+  }
 }
 function queueReveal(viewport, force = false) {
   const state = viewports.get(viewport);
@@ -49,12 +56,13 @@ function queueReveal(viewport, force = false) {
     });
   });
 }
-function bindViewport(viewport) {
+function bindViewport(viewport, axis) {
   let state = viewports.get(viewport);
   if (!state) {
     state = { frame: null, queued: false, bindings: [], bound: new WeakSet() };
     viewports.set(viewport, state);
   }
+  state.axis = axis;
   state.bindings = state.bindings.filter(({ node }) => node.deref());
   const weak = new WeakRef(viewport);
   const walk = node => {
@@ -77,22 +85,26 @@ function releaseViewport(viewport) {
   viewports.delete(viewport);
 }
 
-// Fixed-size chrome and content scrolling are separate surfaces. Embedded pages use
+// Chrome and content scrolling are separate surfaces. Embedded pages use
 // their existing spacing/body but never acquire another window/dialog frame.
-export function panelViewport(theme, { id, framed = true, variant = 'dialog' }, ...children) {
+export function panelViewport(theme, { id, framed = true, variant = 'dialog', sizing = 'fixed', axis = 'vertical' }, ...children) {
+  if (!['fixed', 'content'].includes(sizing)) throw new RangeError('Unknown panel viewport sizing: ' + sizing);
+  if (!['vertical', 'horizontal'].includes(axis)) throw new RangeError('Unknown panel viewport axis: ' + axis);
+  const horizontal = axis === 'horizontal', content = sizing === 'content';
   const appearance = framed ? panelAppearance(theme, variant) :
     { padding: theme.layout.contentPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body };
-  return h('view', { id, style: { ...appearance, gap: 0, width: '100%', height: '100%',
+  return h('view', { id, style: { ...appearance, gap: 0, width: '100%', height: content ? 'auto' : '100%',
     minHeight: 0, minWidth: 0, overflow: 'hidden' },
     onWheel: event => {
       scrollDesktop({ currentTarget: event.currentTarget.firstChild, deltaX: event.deltaX, deltaY: event.deltaY,
-        preventDefault: () => event.preventDefault() });
+        preventDefault: () => event.preventDefault() }, horizontal);
       event.stopPropagation();
     },
     onLeave: (node, done) => { releaseViewport(node.firstChild); done(); },
   }, h('view', { id: id + '-viewport', className: 'theme-panel-viewport',
-    style: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0, minWidth: 0, gap: appearance.gap, overflow: 'scroll' },
-    onMount: bindViewport, onUpdate: bindViewport,
+    style: { flexGrow: content ? 0 : 1, flexShrink: 1, flexBasis: content ? 'auto' : 0, minHeight: 0, minWidth: 0,
+      gap: appearance.gap, overflow: 'scroll', ...(horizontal ? { flexDirection: 'row', alignItems: 'center' } : {}) },
+    onMount: node => bindViewport(node, axis), onUpdate: node => bindViewport(node, axis),
     onKeydown: event => { if (event.key === 'Tab') queueReveal(event.currentTarget, true); },
     onLeave: (node, done) => { releaseViewport(node); done(); },
   }, children), framed ? panelDetail(theme, variant) : null);

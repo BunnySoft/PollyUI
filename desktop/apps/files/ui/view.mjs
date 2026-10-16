@@ -6,7 +6,7 @@ import { parentPath } from './desktop/apps/files/logic/model.mjs';
 import { formatSize, formatModified, fileType, visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
-import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 function inInput(node) {
   for (let current = node; current; current = current.parentNode)
@@ -72,17 +72,18 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   for (const part of state.path.split('/').filter(Boolean)) {
     current += '/' + part; crumbs.push({ name: part, path: current });
   }
+  const breadcrumb = panelViewport(theme, { id: 'files-breadcrumbs', variant: 'inset', axis: 'horizontal' },
+    crumbs.map((crumb, index) => command('files-crumb-' + index, crumb.name,
+      () => controller.navigate(crumb.path), !modal, '', { paddingLeft: 8, paddingRight: 8, height: 32 },
+      crumb.path === state.path)));
+  Object.assign(breadcrumb.props, { role: 'navigation', 'aria-label': 'Folder path',
+    onDblclick: guarded(() => controller.editAddress(null, generation)) });
+  Object.assign(breadcrumb.props.style, { height: 36, width: 'auto', flexGrow: 1, flexBasis: 0, minWidth: 80 });
+  breadcrumb.children[0].props.style.gap = 2;
   const address = state.address !== null
     ? input('files-address', state.address, 'Absolute folder path',
       value => controller.editAddress(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 })
-    : h('view', { id: 'files-breadcrumbs', role: 'navigation', 'aria-label': 'Folder path',
-      style: { ...panelAppearance(theme, 'inset'), ...horizontal, height: 36, flexGrow: 1, flexBasis: 0, minWidth: 80, gap: 2,
-        overflow: 'scroll' },
-      onWheel: event => scrollDesktop(event, true),
-      onDblclick: guarded(() => controller.editAddress(null, generation)),
-    }, panelDetail(theme, 'inset'), crumbs.map((crumb, index) => command('files-crumb-' + index, crumb.name,
-      () => controller.navigate(crumb.path), !modal, '', { paddingLeft: 8, paddingRight: 8, height: 32 },
-      crumb.path === state.path)));
+    : breadcrumb;
   const filter = input('files-filter', state.filter, 'Filter this folder',
     value => controller.filter(Array.from(value).slice(0, 128).join(''), generation),
     { flexGrow: 1, flexBasis: 0, minWidth: 0 });
@@ -267,13 +268,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   if (state.dialog || state.openWith) {
     const operation = state.dialog;
     const editing = operation && operation.kind !== 'link';
-    dialog = h('view', { id: 'files-confirmation', role: 'dialog', 'aria-modal': String(!inlineRename),
-      ...(inlineRename ? { style: { padding: 10, paddingLeft: 20, gap: 8, flexShrink: 0,
-        backgroundColor: color('selection') } } : {
-      style: { ...panelAppearance(theme, 'dialog'), position: 'absolute', left: '10%', top: '18%',
-        width: '80%', maxWidth: 620, maxHeight: '78%', minWidth: 0, overflow: 'scroll' },
-      onWheel: scrollDesktop }) },
-      inlineRename ? null : panelDetail(theme, 'dialog'),
+    const content = [
       desktopText(state.openWith ? 'Open with' : operation.kind === 'link' ? 'Follow symbolic link?' :
         operation.kind === 'rename' ? 'Rename' : operation.kind === 'move' ? 'Move cut file here?' : 'New folder',
         color('text'), 22, { fontWeight: 600 }),
@@ -304,12 +299,16 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' :
           operation.kind === 'move' ? 'Move file' : 'Create folder',
           theme, guarded(() => controller.confirm(generation)), { enabled: ready })),
-    );
+    ];
+    dialog = inlineRename ? h('view', { id: 'files-confirmation', style: {
+      padding: 10, paddingLeft: 20, gap: 8, flexShrink: 0, backgroundColor: color('selection') } }, content) :
+      panelViewport(theme, { id: 'files-confirmation', sizing: 'content' }, content);
+    Object.assign(dialog.props, { role: 'dialog', 'aria-modal': String(!inlineRename) });
+    if (!inlineRename) Object.assign(dialog.props.style, { position: 'absolute', left: '10%', top: '18%',
+      width: '80%', maxWidth: 620, maxHeight: '78%', minWidth: 0 });
   }
-  const contextMenu = state.context && !modal && usable ? h('view', { id: 'files-context', role: 'menu', 'aria-label': 'Selected item',
-    style: { ...panelAppearance(theme, 'menu'), position: 'absolute', left: state.context.x, top: state.context.y,
-      width: 224, maxHeight: Math.max(1, height - state.context.y - 8), overflow: 'scroll' }, onWheel: scrollDesktop },
-    panelDetail(theme, 'menu'),
+  const contextMenu = state.context && !modal && usable ? panelViewport(theme, {
+    id: 'files-context', variant: 'menu', sizing: 'content' },
     [['open', 'Open', () => controller.open(generation, selection?.identity), true, 'open'],
       ['open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity), selection?.type === 'file', 'apps'],
       ['rename', 'Rename', () => controller.beginRename(generation, selection?.identity), true, 'rename'],
@@ -319,6 +318,11 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         const node = command('files-context-' + id, text, action, enabled, icon);
         node.props.role = 'menuitem'; return node;
       })) : null;
+  if (contextMenu) {
+    Object.assign(contextMenu.props, { role: 'menu', 'aria-label': 'Selected item' });
+    Object.assign(contextMenu.props.style, { position: 'absolute', left: state.context.x, top: state.context.y,
+      width: 224, maxHeight: Math.max(1, height - state.context.y - 8) });
+  }
   return h('view', { id: 'files-root', style: { width: '100%', height: '100%', flexDirection: 'column',
     minWidth: 0, minHeight: 0, color: color('text'), backgroundColor: color('body'), overflow: 'hidden', position: 'relative' },
     onMousedown: event => {

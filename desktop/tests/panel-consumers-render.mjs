@@ -297,3 +297,130 @@ export async function checkPanelConsumers(directory) {
     scope: 'Production Files/chooser/Settings views, controllers and native GUI renderer/input; bounded memory FS only; scale 1; not OS reference pixels or physical/compositor input',
     longTokenBoundary: 'Readonly path/error viewports expose complete raw long tokens by wheel and Home/End; no claim of automatic long-token wrapping' }));
 }
+
+export async function checkFilesPanelViewports(verify = true) {
+  const { files, operations, put } = memoryFiles(), launches = [], errors = [];
+  let theme = getDesktopTheme('server2003'), revision = 1;
+  const applications = Array.from({ length: 24 }, (_, index) => ({
+    id: 'editor-' + index + '.desktop', path: '/fixture/applications/editor-' + index + '.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Fixture editor ' + String(index).padStart(2, '0') +
+      '\nExec=/fixture/editor-' + index + ' %f\nMimeType=text/plain;\n',
+  }));
+  const native = { fileSystem: files, startThemeSubscription() {}, stopThemeSubscription() {},
+    desktopThemeState: () => ({ available: true, ready: true, revision,
+      document: JSON.stringify({ schemaVersion: 1, theme }) }),
+    applicationFiles: () => applications, documentPlatform: 'linux', documentMimeType: () => 'text/plain',
+    canExecute: () => true, mimeAssociationFiles: () => [{ path: '/fixture/mimeapps.list', directory: '/fixture/applications',
+      desktopSpecific: false, contents: '[Default Applications]\ntext/plain=editor-0.desktop;\n[Added Associations]\ntext/plain=' +
+        applications.map(item => item.id).join(';') + ';\n' }],
+    spawnApplication(argv) { launches.push(argv); } };
+  const surface = { document, closed: false, close() { this.closed = true; this.onclose?.(); } };
+  const interval = globalThis.setInterval, clear = globalThis.clearInterval, clock = {};
+  globalThis.setInterval = (callback, ms) => { check(ms === 100, 'Only the existing Files layout clock is controlled'); return clock; };
+  globalThis.clearInterval = token => { if (token !== clock) clear(token); };
+  const app = createFilesApp({ host: { create: () => surface, close() {} }, native, reportError: error => errors.push(error) });
+  const find = id => document.getElementById('files-' + id);
+  const edgePixels = node => {
+    const [x, y, w, h] = rect(node);
+    return [host.pixel(Math.floor(x + w / 2), y), host.pixel(Math.floor(x + w / 2), y + h - 1),
+      host.pixel(x, Math.floor(y + h / 2)), host.pixel(x + w - 1, Math.floor(y + h / 2))];
+  };
+  const wheel = async (node, amount, horizontal = false) => {
+    const [x, y, width, height] = rect(node);
+    host.scroll(x + width / 2, y + height / 2, horizontal ? 0 : amount, horizontal ? amount : 0);
+    await settle();
+  };
+  const samples = [];
+  try {
+    app.start(); await settle();
+    const controller = app.controller, target = controller.getState().snapshot.entries.find(item => item.path === '/fixture/old.txt');
+    controller.select(target.path, target.identity); controller.showOpenWith(); await settle();
+    check(find('confirmation'), 'Long handler fixture opens the existing controller modal: ' + JSON.stringify(errors));
+    let panel = find('confirmation'), viewport = find('confirmation-viewport') || panel;
+    const before = edgePixels(panel), oldAction = find('handler-0').__listeners.click, naturalBox = rect(panel);
+    await wheel(panel, 10000);
+    const after = edgePixels(panel);
+    const openWith = { surface: 'open-with', panel: naturalBox, viewport: rect(viewport),
+      before, after, outerScroll: Number(panel.scrollTop), contentScroll: Number(viewport.scrollTop) };
+    if (verify) {
+      check(before.join(':') === after.join(':') && panel.scrollTop === 0 && viewport.scrollTop > 0,
+        'Long Open With scrolls only content while its four outer frame pixels remain fixed');
+      const cancel = find('handler-cancel');
+      cancel.focus(); await settle(); contained(cancel, viewport);
+      const generation = controller.getState().generation;
+      controller.cancel(); await settle();
+      oldAction({ currentTarget: cancel, button: 0, stopPropagation() {} }); await settle();
+      check(controller.getState().generation > generation && launches.length === 0,
+        'Retired handler callback still cannot launch from a different generation');
+      controller.select(target.path, target.identity); controller.showOpenWith(); await settle();
+      const last = find('handler-23'); last.focus(); await settle();
+      contained(last, find('confirmation-viewport'));
+      const chosenHandler = controller.getState().openWith.applications[23];
+      host.key('Enter', 'keydown', { text: false }); await settle();
+      check(launches.length === 1 && launches[0][0].startsWith('/fixture/editor-') &&
+        launches[0][1] === target.path && !find('confirmation') && chosenHandler,
+        'One actual focused handler action keeps the exact controlled path/launcher contract');
+    } else { controller.cancel(); await settle(); }
+    samples.push(openWith);
+
+    controller.select(target.path, target.identity);
+    controller.showContext(target.path, target.identity, 32, host.height - 100); await settle();
+    panel = find('context'); viewport = find('context-viewport') || panel;
+    const contextBefore = edgePixels(panel), contextBox = rect(panel);
+    await wheel(panel, 10000);
+    const contextAfter = edgePixels(panel);
+    if (verify) {
+      check(contextBefore.join(':') === contextAfter.join(':') && panel.scrollTop === 0 && viewport.scrollTop > 0,
+        'Low context menu keeps its passive outer edges while the inner menu scrolls');
+      find('context-open').focus(); await settle();
+      for (let i = 0; i < 4; i++) { host.key('ArrowDown', 'keydown', { text: false }); await settle(); }
+      contained(document.activeElement, viewport);
+      check(document.activeElement.id === 'files-context-properties', 'Existing context keyboard navigation reveals the final action');
+    }
+    samples.push({ surface: 'context', panel: contextBox, viewport: rect(viewport), before: contextBefore, after: contextAfter,
+      outerScroll: Number(panel.scrollTop), contentScroll: Number(viewport.scrollTop) });
+    controller.cancel(); await settle();
+
+    let path = '/fixture';
+    for (let i = 0; i < 8; i++) { path += '/long-directory-' + i; put(path, 'directory'); }
+    await controller.navigate(path); await settle();
+    const crumbs = find('breadcrumbs'), crumbViewport = find('breadcrumbs-viewport') || crumbs;
+    const crumbBefore = edgePixels(crumbs), crumbBox = rect(crumbs);
+    await wheel(crumbs, 10000, true);
+    const crumbAfter = edgePixels(crumbs);
+    if (verify) {
+      check(crumbBefore.join(':') === crumbAfter.join(':') && crumbs.scrollLeft === 0 && crumbViewport.scrollLeft > 0,
+        'Horizontal breadcrumb content cannot carry its inset frame away');
+      const originalCrumb = find('crumb-0'); originalCrumb.focus(); await settle();
+      contained(originalCrumb, crumbViewport);
+      const lastCrumb = find('crumb-9'); lastCrumb.focus(); await settle();
+      contained(lastCrumb, crumbViewport);
+      check(controller.getState().path === path && lastCrumb.getAttribute('aria-pressed') === 'true',
+        'Horizontal focus reveal does not navigate or change the original raw breadcrumb path');
+    }
+    samples.push({ surface: 'breadcrumbs', panel: crumbBox, viewport: rect(crumbViewport), before: crumbBefore, after: crumbAfter,
+      outerScroll: Number(crumbs.scrollLeft), contentScroll: Number(crumbViewport.scrollLeft) });
+
+    await controller.navigate('/fixture'); await settle();
+    controller.beginCreate(); await settle();
+    panel = find('confirmation'); const shortBox = rect(panel), input = find('name');
+    if (verify) {
+      check(shortBox[3] > input.offsetHeight && shortBox[3] < host.height * 0.78,
+        'Short content-sized modal keeps its natural height instead of collapsing or filling the maximum');
+      input.focus(); host.key('a', 'keydown', { ctrlKey: true, text: false }); await settle();
+      const selection = input.firstChild.childNodes.length, parent = input.parentNode;
+      const committedText = input.childNodes[1].firstChild.textContent, caretBefore = input.childNodes[2].style.left;
+      theme = getDesktopTheme('xp'); revision++; native.onDesktopThemeChanged(); await settle();
+      check(find('name') === input && input.parentNode === parent && document.activeElement === input &&
+        input.firstChild.childNodes.length === selection && input.childNodes[1].firstChild.textContent === committedText &&
+        input.childNodes[2].style.left === caretBefore, 'Auto-height panel retheme keeps the native input/wrapper/value/caret/selection/focus');
+      host.text('Viewport-created'); await settle();
+      find('confirm').focus(); host.key('Enter', 'keydown', { text: false }); await settle();
+      check(operations.filter(item => item[0] === 'create').length === 1, 'One actual confirmation retains the original create controller call');
+    } else { controller.cancel(); await settle(); }
+    samples.push({ surface: 'short-create', naturalPanel: shortBox, maximumHeight: host.height * 0.78 });
+    check(errors.length === 0, 'All controlled file operations and callbacks remain error-free');
+    console.log('FILES_PANEL_VIEWPORT ' + JSON.stringify({ verify, viewport: [host.width, host.height], samples, launches, operations,
+      scope: 'Production Files view/app/controller with bounded in-memory files and launcher; no host file or process operations' }));
+  } finally { app.stop(); globalThis.setInterval = interval; globalThis.clearInterval = clear; }
+}
