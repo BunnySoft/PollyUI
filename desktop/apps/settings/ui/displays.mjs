@@ -1,10 +1,11 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopText } from './desktop/shared/ui/presentation.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
 import { themedCheckbox, themedRadioGroup } from './desktop/shared/ui/selection-controls.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null, busy = false) {
   const label = (value, color = theme.colors.text, size = theme.layout.fontSize, extra = {}) =>
     desktopText(value, color, size, extra);
@@ -24,17 +25,7 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
     });
     return group;
   }
-  return h('view', { id: 'shell-displays', style: {
-    width: '100%', height: '100%', minHeight: 0, padding: theme.layout.contentPadding,
-    gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
-  } },
-  h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
-    desktopText('Connected displays', theme.colors.text, theme.layout.headingFontSize,
-      { fontWeight: 600, flexShrink: 1, minWidth: 0 }),
-    h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
-    button('shell-output-close', 'Close', theme, close)),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll',
-    gap: theme.layout.contentGap }, onWheel: scrollDesktop },
+  const list = panelViewport(theme, { id: 'shell-displays-list', framed: false, scrollbar: true },
     draft.heads.map(head => h('view', { style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
     h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
       label(head.name, theme.colors.text, theme.layout.fontSize, { flexShrink: 1, minWidth: 0 }),
@@ -67,7 +58,18 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
         label('0 = auto', theme.colors.muted, theme.layout.statusFontSize)),
     ] : label('Enable this display to edit its configuration.', theme.colors.muted, theme.layout.statusFontSize,
       { minWidth: 0 }),
-    panelDetail(theme, 'card')))),
+    panelDetail(theme, 'card'))));
+  Object.assign(list.props.style, { flexGrow: 1, flexBasis: 0, height: 'auto', padding: 0 });
+  return h('view', { id: 'shell-displays', style: {
+    width: '100%', height: '100%', minHeight: 0, padding: theme.layout.contentPadding,
+    gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
+  } },
+  h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
+    desktopText('Connected displays', theme.colors.text, theme.layout.headingFontSize,
+      { fontWeight: 600, flexShrink: 1, minWidth: 0 }),
+    h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
+    button('shell-output-close', 'Close', theme, close)),
+  list,
   label('Keep changes within 15 seconds or they revert.', theme.colors.muted, theme.layout.statusFontSize, { minWidth: 0 }),
   profile ? label(profile.status, theme.colors.muted, theme.layout.statusFontSize, { minWidth: 0 }) : null,
   profile ? button('shell-output-forget-profile', 'Forget saved layout', theme, profile.forget) : null,
