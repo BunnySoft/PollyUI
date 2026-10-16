@@ -9,7 +9,7 @@ const labelFor = theme => (value, color, size = theme.layout.statusFontSize) =>
 import { shortcutText } from './desktop/shared/shortcuts.mjs';
 export function shortcutsView(theme, bindings, recording, record, disable, reset, close, error = '') {
   const label = labelFor(theme);
-  const list = panelViewport(theme, { id: 'shell-shortcuts-list', framed: false },
+  const list = panelViewport(theme, { id: 'shell-shortcuts-list', framed: false, scrollbar: true },
     bindings.map(binding => h('view', { style: { ...panelAppearance(theme), flexShrink: 0, minWidth: 0 } },
     panelDetail(theme),
     desktopText(binding.label, theme.colors.text, theme.layout.fontSize, { fontWeight: 600 }),
@@ -20,7 +20,7 @@ export function shortcutsView(theme, bindings, recording, record, disable, reset
       button('shell-shortcut-' + binding.action, 'Change', theme, () => record(binding.action)),
       button('shell-shortcut-disable-' + binding.action, 'Off', theme, () => disable(binding.action))))));
   Object.assign(list.props.style, { flexGrow: 1, flexBasis: 0, height: 'auto', padding: 0 });
-  list.children[0].props.style.gap = theme.layout.controlGap;
+  list.children[0].children[0].props.style.gap = theme.layout.controlGap;
   return h('view', { id: 'shell-shortcuts', style: {
     width: '100%', height: '100%', minHeight: 0, padding: theme.layout.compactPadding,
     gap: theme.layout.contentGap, backgroundColor: theme.colors.body,

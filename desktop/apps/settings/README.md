@@ -41,6 +41,11 @@ Only Keep saves the confirmed layout; hotplug discards the stale draft.
 Display headings, ordinary labels, status messages and page spacing follow the
 existing theme tokens. Display headers and action rows wrap in narrow content
 areas without resizing the retained numeric fields or changing their draft values.
+Displays' head list, Keyboard's binding list and Audio's existing content pane
+use the shared bounded viewport with its themed overlay scrollbar and focus
+reveal. Dragging, track paging and keyboard scrolling do not invoke service
+commands; Displays' Apply/header and Keyboard's reset/footer remain outside
+their scrolling lists. These embedded panes add no second window frame.
 
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;
