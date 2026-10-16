@@ -1,6 +1,6 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
-import { desktopText } from './desktop/shared/ui/presentation.mjs';
+import { themedText } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
@@ -127,7 +127,7 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
     const button = (id, label, action) => themedButton(id, label, current,
       () => { if (surface === target && !target.closed) return action(); }, false,
       { height: current.layout.choiceHeight, flexShrink: 0 });
-    const label = (text, role = 12) => desktopText(text, current.colors.text, themeTextSize(current, role), { minWidth: 0 });
+    const label = (text, role = 12) => themedText(current, text, current.colors.text, themeTextSize(current, role), { minWidth: 0 });
     render(panelViewport(current, { id: 'shell-logout' },
       label('Log out', 18),
       label(state.profile === 'installed' ? 'End this user session and return to the login screen.' :

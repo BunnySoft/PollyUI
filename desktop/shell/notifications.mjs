@@ -1,3 +1,4 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
@@ -29,13 +30,13 @@ export function createNotificationSurfaces({ host, native, theme, report, change
         borderColor: notice.urgency === 2 ? current.colors.accent : current.colors.border,
         borderRadius: current.window.radius, backgroundColor: current.colors.body } },
     h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: current.layout.contentGap } },
-      h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, fontSize: current.layout.mutedFontSize,
+      h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, ...bodyFont(current), fontSize: current.layout.mutedFontSize,
         color: current.colors.muted, maxHeight: current.layout.noticeHeaderHeight, overflow: 'hidden' } },
         notice.application || 'Application'),
       button('shell-notification-close-' + notice.id, 'Dismiss', current, () => action(notice, null))),
-    h('view', { style: { minWidth: 0, fontSize: current.layout.sectionFontSize, color: current.colors.text,
+    h('view', { style: { minWidth: 0, ...bodyFont(current), fontSize: current.layout.sectionFontSize, color: current.colors.text,
       maxHeight: current.layout.noticeTitleHeight, overflow: 'hidden' } }, notice.summary),
-    notice.body ? h('view', { style: { minWidth: 0, fontSize: current.layout.fontSize, color: current.colors.text,
+    notice.body ? h('view', { style: { minWidth: 0, ...bodyFont(current), fontSize: current.layout.fontSize, color: current.colors.text,
       maxHeight: current.layout.noticeBodyHeight, overflow: 'scroll' }, onWheel: event => {
         const before = Number(event.currentTarget.scrollTop);
         scrollDesktop(event);

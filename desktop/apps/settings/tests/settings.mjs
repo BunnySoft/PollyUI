@@ -731,6 +731,23 @@ test('standalone controller acknowledges writes, shows real failures, and never 
   assert.throws(() => controller.managed('appearance'));
   controller.close(); await controller.select('xp');
   assert.equal(calls.at(-1)[0], 'close');
+  const guardedCalls = [], guardedReports = [];
+  const catalog = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  catalog.themes.find(theme => theme.id === 'bigsur').layout.fontFamily = 'Consolas';
+  current = { ...appearance(), catalog };
+  const guarded = createSettingsController({ client: {
+    async call(member) { guardedCalls.push(member); return JSON.stringify(current); }, close() {},
+  }, report: value => guardedReports.push(value) });
+  await guarded.refresh();
+  const accepted = guarded.getState().appearance;
+  assert.ok(accepted, 'Inactive named-family entries remain valid data on an older provider');
+  await guarded.select('bigsur');
+  assert.deepEqual(guardedCalls, ['GetAppearance'], 'Unsupported named family cannot dispatch a theme selection');
+  assert.match(guarded.getState().error, /font-family-aware/);
+  current = { ...current, themeId: 'bigsur' };
+  await guarded.refresh();
+  assert.equal(guarded.getState().appearance, accepted, 'Unsupported active snapshots cannot replace the accepted theme');
+  guarded.close();
 });
 test('owned native PID/UID, presentation owner and final generation gate every Shell operation', async () => {
   let materialReads = 0;

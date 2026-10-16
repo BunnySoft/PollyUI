@@ -1,7 +1,7 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { themedText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 import { taskLabel } from './desktop/shell/window-groups.mjs';
@@ -79,7 +79,7 @@ function settleList(node) {
 }
 
 export function windowGroupMenu(theme, group, state) {
-  const label = (value, muted = false) => desktopText(value,
+  const label = (value, muted = false) => themedText(theme, value,
     muted ? theme.colors.muted : theme.colors.text, themeTextSize(theme));
   const command = (id, title, action, selected = false, style = {}, identity = id) => {
     const node = button(id, title, theme, action, selected, {

@@ -3,7 +3,7 @@ import { fixedRowWindow } from './gui/sdk/js/virtual-list.mjs';
 import { createVerticalScrollbar } from './gui/sdk/js/scrollbar.mjs';
 import { scrollbarAppearance } from './desktop/shared/ui/scrollbar-appearance.mjs';
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shell/themes.mjs';
-import { desktopText, desktopCommand, desktopIcon, horizontal } from './desktop/shell/presentation.mjs';
+import { themedText, desktopCommand, desktopIcon, horizontal } from './desktop/shell/presentation.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { formatSize } from './desktop/apps/files/ui/format.mjs';
 import { createProcessController } from './desktop/apps/processes/logic/controller.mjs';
@@ -59,7 +59,7 @@ export function createProcessesApp({ provider, host = window, native = typeof de
     const rows = sorted.rows;
     const range = fixedRowWindow(rows.length, 42, viewportHeight, Number(viewport?.scrollTop || 0));
     painted = range;
-    const text = (value, muted = false) => desktopText(value, theme.colors[muted ? 'muted' : 'text'],
+    const text = (value, muted = false) => themedText(theme, value, theme.colors[muted ? 'muted' : 'text'],
       theme.layout[muted ? 'statusFontSize' : 'fontSize'],
       { flexShrink: 1, minWidth: 0, overflow: 'hidden' });
     const cell = (content, index) => h('view', { style: { width: ['34%', '12%', '20%', '17%', '17%'][index],
@@ -68,7 +68,7 @@ export function createProcessesApp({ provider, host = window, native = typeof de
       h('view', { style: { ...horizontal, padding: theme.layout.contentPadding,
         gap: theme.layout.controlGap, flexShrink: 0 } },
         desktopIcon('apps', theme.colors.accent, 28),
-        desktopText('Processes', theme.colors.text, theme.layout.headingFontSize),
+        themedText(theme, 'Processes', theme.colors.text, theme.layout.headingFontSize),
         h('view', { style: { flexGrow: 1 } }),
         desktopCommand('processes-refresh', state.loading ? 'Refreshing...' : 'Refresh', theme,
           guard(controller.refresh), { enabled: !state.loading, icon: 'refresh' })),

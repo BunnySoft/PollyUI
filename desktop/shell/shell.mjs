@@ -20,7 +20,8 @@ import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { bodyFont, preflightBodyFont } from './desktop/shared/ui/body-font.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID } from './desktop/shell/settings.mjs';
@@ -605,6 +606,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
     const theme = getDesktopTheme(nextTheme);
+    preflightBodyFont(theme);
     const outputs = host.displays();
     const staged = [];
     const plans = [];
@@ -710,7 +712,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function selectTheme(id) {
     if (!running) throw new Error('Shell is not running');
-    getDesktopTheme(id);
+    preflightBodyFont(getDesktopTheme(id));
     appearanceStatus = 'Applying and saving appearance...';
     repaintMenu();
     try {
@@ -733,6 +735,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const previous = { schemaVersion: 1, default: DEFAULT_DESKTOP_THEME, themes: DESKTOP_THEMES };
     const selected = catalog.themes.some(theme => theme.id === themeId) ? themeId : enabled ? null : DEFAULT_DESKTOP_THEME;
     if (!selected) throw new Error('The active theme is missing; restore a packaged theme before removing it');
+    preflightBodyFont(catalog.themes.find(theme => theme.id === selected));
     let installed = false;
     try {
       installThemeCatalog(catalog); installed = true;
@@ -802,14 +805,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
     record.submit = submit; record.focused = focused;
     if (record.input.value !== current.query) record.input.value = current.query;
     if (record.theme !== theme) {
-      record.input.setAppearance(inputAppearance(theme));
+      setInputAppearance(record.input, inputAppearance(theme));
       record.theme = theme;
     }
     record.input.root.style.height = String(style.height);
     return h('view', { id: 'shell-app-search-slot', style: { ...style, position: 'relative' },
       onMount: node => node.insertBefore(record.input.root, node.firstChild) },
     h('view', { id: 'shell-app-search-hint', 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
-      color: theme.colors.muted, fontSize: theme.layout.fontSize, pointerEvents: 'none',
+      color: theme.colors.muted, fontSize: theme.layout.fontSize, ...bodyFont(theme), pointerEvents: 'none',
       display: current.query || record.composing ? 'none' : 'flex' } }, placeholder));
   }
 
@@ -821,7 +824,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     };
     const close = scoped(() => closeMenu(current));
     if (current.mode === 'workspaces') {
-      if (workspaceEditor) workspaceEditor.input.setAppearance(inputAppearance(getDesktopTheme(themeId)));
+      if (workspaceEditor) setInputAppearance(workspaceEditor.input, inputAppearance(getDesktopTheme(themeId)));
       render(workspacesView(getDesktopTheme(themeId), workspaces,
         scoped(id => workspaceAction('activateWorkspace', id)), scoped(id => workspaceAction('removeWorkspace', id)),
         scoped(() => workspaceAction('createWorkspace')), close, error,
@@ -1422,7 +1425,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const input = workspaceEditor?.input || createTextInput({ document: menu.window.document, value: selected.name,
         width: Math.max(1, menu.window.document.body.offsetWidth - theme.layout.compactPadding * 2),
         fontSize: theme.layout.fontSize, color: theme.colors.text, background: theme.colors.surface });
-      input.setAppearance(inputAppearance(theme));
+      setInputAppearance(input, inputAppearance(theme));
       input.root.id = 'shell-workspace-name';
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', 'Workspace name');

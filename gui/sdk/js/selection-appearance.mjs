@@ -1,3 +1,5 @@
+import { requireFontFamily } from './gui/sdk/js/font-family.mjs';
+
 const states = new WeakMap();
 const metricDefaults = Object.freeze({ fontSize: 14, markerSize: 18, radioDot: 8, radius: 3, gap: 8,
   switchWidth: 40, switchHeight: 22, knobSize: 18, switchPadding: 2,
@@ -13,9 +15,10 @@ export function selectionAppearance(value, theme) {
     focus: theme.primary, hover: theme.primary + '14', pressed: theme.primary + '2e' };
   if (value === undefined) return { colors, metrics: metricDefaults, signature: JSON.stringify(colors), custom: false };
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      Object.keys(value).some(key => !['colors', 'metrics', 'paint', 'decorate', 'revision'].includes(key)))
+      Object.keys(value).some(key => !['colors', 'metrics', 'paint', 'decorate', 'revision', 'fontFamily'].includes(key)))
     throw new TypeError('Invalid selection appearance');
   const metrics = { ...metricDefaults };
+  const fontFamily = requireFontFamily(value.fontFamily);
   for (const [group, target, allowed] of [['colors', colors, colors], ['metrics', metrics, metricLimits]]) {
     const source = value[group];
     if (source === undefined) continue;
@@ -40,8 +43,8 @@ export function selectionAppearance(value, theme) {
     if (value[key] !== undefined && typeof value[key] !== 'function') throw new TypeError('Invalid selection ' + key);
   if (value.revision !== undefined && (typeof value.revision !== 'string' || value.revision.length > 256))
     throw new TypeError('Invalid selection appearance revision');
-  return { colors, metrics, paint: value.paint, decorate: value.decorate, custom: true,
-    signature: JSON.stringify([colors, metrics, value.revision]) };
+  return { colors, metrics, fontFamily, paint: value.paint, decorate: value.decorate, custom: true,
+    signature: JSON.stringify([colors, metrics, value.revision, fontFamily]) };
 }
 
 function paint(node, appearance, context, change = {}) {
@@ -66,6 +69,13 @@ function paint(node, appearance, context, change = {}) {
 
 export function selectionSkin(vnode, appearance, context) {
   if (!appearance.custom) return vnode;
+  if (appearance.fontFamily !== undefined) {
+    const apply = node => {
+      if (node.props?.style?.fontSize !== undefined) node.props.style.fontFamily = appearance.fontFamily;
+      node.children?.forEach(apply);
+    };
+    apply(vnode);
+  }
   if (appearance.decorate) appearance.decorate(vnode, context);
   const props = vnode.props;
   for (const [name, change] of Object.entries({ onMouseenter: { hovered: true }, onMouseleave: { hovered: false, pressed: false },

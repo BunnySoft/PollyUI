@@ -6,7 +6,7 @@ export function selectionTextColor(value) {
 
 // Use the same full-string DOM renderer, including color glyphs and native
 // shaping. Each decorative copy is clipped, never a separately shaped slice.
-export function paintSelectionText(layer, { text, fontSize, ranges, width, height, foreground, selection, background, textTop = 0 }) {
+export function paintSelectionText(layer, { text, fontSize, fontFamily, ranges, width, height, foreground, selection, background, textTop = 0 }) {
   const owner = layer.ownerDocument;
   if (!owner) throw new Error('Selected text requires its attached owning document');
   const create = style => {
@@ -30,6 +30,7 @@ export function paintSelectionText(layer, { text, fontSize, ranges, width, heigh
     fill.style.backgroundColor = selection;
     Object.assign(copy.style, { left: String(-range.x), top: String(textTop), width: String(Math.ceil(width) + 1),
       fontSize: String(fontSize), color: foreground });
+    if (fontFamily !== undefined || copy.style.fontFamily) copy.style.fontFamily = fontFamily ?? '';
     copy.firstChild.textContent = text;
   });
 }

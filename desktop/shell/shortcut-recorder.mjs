@@ -1,5 +1,5 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
-import { desktopText, desktopCommand } from './desktop/shared/ui/presentation.mjs';
+import { themedText, desktopCommand } from './desktop/shared/ui/presentation.mjs';
 import { shortcutFromEvent } from './desktop/shared/shortcuts.mjs';
 
 export function createShortcutRecorder({ native, host, theme, report = console.error }) {
@@ -46,8 +46,8 @@ export function createShortcutRecorder({ native, host, theme, report = console.e
       const currentTheme = theme();
       render(h('view', { id: 'shell-shortcut-recording', style: { padding: 20, gap: 14,
         height: '100%', backgroundColor: currentTheme.colors.body } },
-        desktopText('Record shortcut: ' + action, currentTheme.colors.text, 18),
-        desktopText('Press the shortcut here. Escape, focus loss or closing Settings cancels.',
+        themedText(currentTheme, 'Record shortcut: ' + action, currentTheme.colors.text, 18),
+        themedText(currentTheme, 'Press the shortcut here. Escape, focus loss or closing Settings cancels.',
           currentTheme.colors.muted, 14, { flexShrink: 1 }),
         desktopCommand('shell-shortcut-recording-cancel', 'Cancel recording', currentTheme, end)), surface.document.body);
       surface.document.body.focus();

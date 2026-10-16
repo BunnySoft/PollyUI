@@ -1,11 +1,13 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, themedText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const isCommandFocus = node => ['theme-focus-ring', 'luna-focus-ring'].includes(node?.props?.className);
-const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
+const labelFor = theme => (value, color, size = 12) => h('view', { style: {
+  color, fontSize: themeTextSize(theme, size), ...bodyFont(theme), flexShrink: 0 } }, value);
 import { DESKTOP_THEMES } from './desktop/shared/ui/themes.mjs';
 import { wallpaper as previewWallpaper } from './desktop/shared/ui/wallpaper.mjs';
 export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '', themes = DESKTOP_THEMES) {
@@ -17,7 +19,7 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
     backgroundColor: theme.colors.body, minHeight: 0, flexShrink: 0,
   }, onWheel: scrollDesktop },
   h('view', { style: { ...row, gap: theme.layout.contentGap, flexWrap: 'wrap', flexShrink: 0 } },
-    embedded ? null : desktopText(about ? 'PollyDesktop' : 'Desktop appearance',
+    embedded ? null : themedText(theme, about ? 'PollyDesktop' : 'Desktop appearance',
       theme.colors.text, theme.layout.largeHeadingFontSize, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }),
     embedded ? null : button('shell-settings-close', 'Close', theme, close)),
@@ -33,8 +35,8 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Login and locking depend on deployed session policy.', theme.colors.muted, 10),
       ]
     : [
-        desktopText('Choose a look for your desktop', theme.colors.text, theme.layout.headingFontSize, { fontWeight: 600 }),
-        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, theme.layout.fontSize,
+        themedText(theme, 'Choose a look for your desktop', theme.colors.text, theme.layout.headingFontSize, { fontWeight: 600 }),
+        themedText(theme, 'Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, theme.layout.fontSize,
           { flexShrink: 1, minWidth: 0 }),
         h('view', { id: 'settings-theme-gallery', style: { ...row, flexWrap: 'wrap', gap: theme.layout.contentGap, alignItems: 'stretch',
           flexShrink: 0 } }, themes.map(preset => {
@@ -57,14 +59,14 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
           // Retain the focus wrapper, but not the command's bevel/gloss, above the custom card content.
           const focusDetail = tile.children.find(child => child.children?.some(isCommandFocus));
           if (focusDetail) focusDetail.children = focusDetail.children.filter(isCommandFocus);
-          tile.children = [art, desktopText(preset.name, theme.colors.text, theme.layout.fontSize,
+          tile.children = [art, themedText(theme, preset.name, theme.colors.text, theme.layout.fontSize,
             { pointerEvents: 'none', fontWeight: 600 }),
-            desktopText(selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted,
+            themedText(theme, selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted,
               theme.layout.statusFontSize,
               { pointerEvents: 'none' }), ...(focusDetail ? [focusDetail] : [])];
           return tile;
         })),
-        desktopText('Theme previews are illustrations, not hardware screenshots. Solid surfaces; no simulated blur.',
+        themedText(theme, 'Theme previews are illustrations, not hardware screenshots. Solid surfaces; no simulated blur.',
           theme.colors.muted, theme.layout.statusFontSize, { flexShrink: 1 }),
         themeFiles ? settingsCard(theme, 'Theme library', themeFiles.enabled ? 'User theme files enabled' : 'Packaged themes active', [
           h('view', { style: { ...row, flexWrap: 'wrap', gap: theme.layout.controlGap } },
@@ -79,12 +81,12 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   power ? button('shell-power-settings-open', 'Power', theme, power) : null,
   status ? h('view', { role: 'status', 'aria-live': 'polite', style: { ...panelAppearance(theme),
     backgroundColor: theme.colors.selection, flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
-    desktopText(status, theme.colors.selectionText ?? theme.colors.text,
+    themedText(theme, status, theme.colors.selectionText ?? theme.colors.text,
       theme.layout.statusFontSize, { flexShrink: 1, minWidth: 0 })) : null,
   error ? h('view', { role: 'alert', style: { ...panelAppearance(theme), borderColor: '#b42318',
     flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
-    desktopText(error, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 }),
+    themedText(theme, error, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 }),
     desktopCommand('shell-retry', 'Refresh status', theme, retry, { icon: 'refresh' })) : null,
-  desktopText(embedded ? 'Preferences in a memory-only Live session reset after reboot.' : 'Escape closes this menu.',
+  themedText(theme, embedded ? 'Preferences in a memory-only Live session reset after reboot.' : 'Escape closes this menu.',
     theme.colors.muted, theme.layout.statusFontSize));
 }

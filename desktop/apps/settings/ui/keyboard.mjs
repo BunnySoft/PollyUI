@@ -1,21 +1,22 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopText } from './desktop/shared/ui/presentation.mjs';
+import { themedText } from './desktop/shared/ui/presentation.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const labelFor = theme => (value, color, size = theme.layout.statusFontSize) =>
-  h('view', { style: { color, fontSize: size, flexShrink: 0 } }, value);
+  h('view', { style: { color, ...bodyFont(theme), fontSize: size, flexShrink: 0 } }, value);
 import { shortcutText } from './desktop/shared/shortcuts.mjs';
 export function shortcutsView(theme, bindings, recording, record, disable, reset, close, error = '') {
   const label = labelFor(theme);
   const list = panelViewport(theme, { id: 'shell-shortcuts-list', framed: false, scrollbar: true },
     bindings.map(binding => h('view', { style: { ...panelAppearance(theme), flexShrink: 0, minWidth: 0 } },
     panelDetail(theme),
-    desktopText(binding.label, theme.colors.text, theme.layout.fontSize, { fontWeight: 600 }),
+    themedText(theme, binding.label, theme.colors.text, theme.layout.fontSize, { fontWeight: 600 }),
     h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
       h('view', { style: { flexGrow: 1, flexBasis: 0, overflow: 'hidden',
-        color: theme.colors.text, fontSize: theme.layout.statusFontSize } },
+        color: theme.colors.text, ...bodyFont(theme), fontSize: theme.layout.statusFontSize } },
         recording === binding.action ? 'Press a shortcut...' : shortcutText(binding)),
       button('shell-shortcut-' + binding.action, 'Change', theme, () => record(binding.action)),
       button('shell-shortcut-disable-' + binding.action, 'Off', theme, () => disable(binding.action))))));
@@ -26,7 +27,7 @@ export function shortcutsView(theme, bindings, recording, record, disable, reset
     gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
   } },
   h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
-    desktopText('Desktop shortcuts', theme.colors.text, theme.layout.headingFontSize, { fontWeight: 600 }),
+    themedText(theme, 'Desktop shortcuts', theme.colors.text, theme.layout.headingFontSize, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }), button('shell-shortcuts-close', 'Close', theme, close)),
   button('shell-shortcuts-reset', 'Reset defaults', theme, reset),
   list,

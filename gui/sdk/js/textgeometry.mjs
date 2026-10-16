@@ -1,19 +1,23 @@
 import { nextTextIndex, clampTextIndex } from './gui/sdk/js/textindex.mjs';
+import { requireFontFamily } from './gui/sdk/js/font-family.mjs';
 
 const cache = new Map();
-export function textGeometry(value, size) {
-  const key = size + ':' + value;
+export function textGeometry(value, size, family, weight = 400) {
+  requireFontFamily(family);
+  const key = JSON.stringify([size, family, weight, value]);
   let layout = cache.get(key);
   if (!layout) {
-    if (typeof layoutText === 'function') layout = layoutText(value, size);
+    const measure = text => family === undefined && weight === 400 ? measureText(text, size) : measureText(text, size, weight, family);
+    if (typeof layoutText === 'function') layout = family === undefined && weight === 400 ?
+      layoutText(value, size) : layoutText(value, size, weight, family);
     else {
       const clusters = [];
       for (let start = 0; start < value.length;) {
-        const end = nextTextIndex(value, start), x = measureText(value.slice(0, start), size);
-        clusters.push({ start, end, x, width: measureText(value.slice(0, end), size) - x, rtl: false });
+        const end = nextTextIndex(value, start), x = measure(value.slice(0, start));
+        clusters.push({ start, end, x, width: measure(value.slice(0, end)) - x, rtl: false });
         start = end;
       }
-      layout = { clusters, width: measureText(value, size) };
+      layout = { clusters, width: measure(value) };
     }
     if (cache.size >= 32) cache.delete(cache.keys().next().value);
     if (value.length <= 16384) cache.set(key, layout);

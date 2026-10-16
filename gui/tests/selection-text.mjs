@@ -96,8 +96,9 @@ check(secure.root.querySelector('.input-selection-text').textContent === '\u2022
 host.compose('must-not-display', 3, 0);
 check(!secure.root.textContent.includes('must') && !secure.root.textContent.includes('private'), 'Secure preedit and copies do not expose credentials');
 secure.root.blur(); document.body.removeChild(secure.root);
-const model = reactive({ value: 'AV cafe\u0301', foreground: white });
+const model = reactive({ value: 'AV cafe\u0301', foreground: white, family: undefined });
 createApp({ setup: () => () => NInput({ id: 'selection-naive', value: model.value, fontSize: 20,
+  fontFamily: model.family,
   selectionColor: shade, selectionTextColor: model.foreground, onInput: value => { model.value = value; } }) }).mount(document.body);
 await settle();
 const node = document.getElementById('selection-naive');
@@ -111,5 +112,22 @@ check(!node.querySelector('.input-selection-text') && model.value === 'AV cafe\u
 host.text('done'); await settle();
 check(model.value === 'done', 'Controlled IME commit still updates once');
 node.blur(); await settle();
+if (measureText.supportsFontFamily === true) {
+  model.value = 'WiWiWi'; model.family = globalThis.namedTestFont || 'monospace'; await settle();
+  node.focus(); host.key('Home', 'keydown', { text: false }); host.key('ArrowRight', 'keydown', { text: false }); await settle();
+  const caret = () => node.childNodes.find(child => Number(child.style.width) === 1.5);
+  check(Math.abs(Number(caret().style.left) - 12 - textGeometry(model.value, 20, model.family).caret(1)) < 0.01,
+    'Controlled NInput caret uses the per-instance named-family metrics');
+  host.key('a', 'keydown', { ctrlKey: true, text: false }); await settle();
+  model.family = 'sans-serif'; await settle();
+  const copy = node.querySelector('.input-selection-text').firstChild.childNodes[1];
+  check(document.getElementById(node.id) === node && document.activeElement === node &&
+    copy.style.fontFamily === model.family, 'Controlled family change retains selection and same-font full-string ink');
+  host.text('x'); await settle();
+  check(model.value === 'x', 'Named-family retheme preserves the actual controlled selected range');
+  model.family = undefined; await settle();
+  check(!node.firstChild.style.fontFamily, 'Removing the optional family restores the legacy input font');
+  node.blur(); await settle();
+}
 console.log('SELECTION_TEXT_NATIVE ' + JSON.stringify(results));
 console.log('PASS: native same-font full-string range clipping, emoji/combining/RTL, partial/all, secure and controlled IME lifecycle');

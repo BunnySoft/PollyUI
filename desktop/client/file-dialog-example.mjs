@@ -6,8 +6,9 @@ import { requireFileSystem, fileEntry, fileError, parentPath, pathValue,
 import { showFileDialog } from './desktop/client/file-dialog.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
-import { desktopCommand, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
+import { desktopCommand, themedText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 
 export function parseFileTextArguments(values) {
   if (!Array.isArray(values) || values.some(value => typeof value !== 'string'))
@@ -51,13 +52,13 @@ export function createFileTextApp({ host = window, files,
       Object.assign(root.style, { padding: theme.layout.contentPadding, gap: theme.layout.contentGap,
         backgroundColor: theme.colors.body });
       if (appliedInputTheme !== theme) {
-        text.setAppearance(inputAppearance(theme));
+        setInputAppearance(text, inputAppearance(theme));
         appliedInputTheme = theme;
       }
     }
     const label = (id, caption, muted, size, role) => {
       if (!theme) return h('view', { id, style: { color: muted ? '#666a73' : '#333639', fontSize: size } }, caption);
-      const node = desktopText(caption, theme.colors[muted ? 'muted' : 'text'], size, { minWidth: 0, flexShrink: 0 });
+      const node = themedText(theme, caption, theme.colors[muted ? 'muted' : 'text'], size, { minWidth: 0, flexShrink: 0 });
       node.props.id = id;
       if (role) node.props.role = role;
       return node;
@@ -86,7 +87,7 @@ export function createFileTextApp({ host = window, files,
       label('file-text-content', contents, false, theme ? theme.layout.fontSize : 14),
       optInTheme ? h('view', { id: 'file-text-theme-error', role: 'alert',
         style: { display: themeError ? 'flex' : 'none', minWidth: 0,
-          color: theme.colors.text, fontSize: theme.layout.statusFontSize } },
+          color: theme.colors.text, fontSize: theme.layout.statusFontSize, ...bodyFont(theme) } },
         themeError ? 'Theme error: ' + themeError : '') : null), output);
   }
   function chooser(mode, notice = '') {

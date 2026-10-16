@@ -1,3 +1,4 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
@@ -8,7 +9,7 @@ import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 export function audioSettingsView(theme, snapshot, busy, command) {
   const label = (value, size = 12) => h('view', { style: { color: theme.colors.text,
-    fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
+    ...bodyFont(theme), fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
   function button(id, text, action, enabled = true) {
     enabled = enabled && !busy && !snapshot.busy;
     const node = themedButton(id, text, theme, () => { if (enabled) return action(); }, false,

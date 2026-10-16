@@ -1,3 +1,4 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
 export { button };
 export { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
@@ -10,7 +11,7 @@ import { DESKTOP_THEMES } from './desktop/shell/themes.mjs';
 import { trayView } from './desktop/shell/tray.mjs';
 import { themeTextSize, dockSurfaceWidth } from './desktop/shell/theme-layout.mjs';
 import { isLuna, lunaBands, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents, lunaSymbol } from './desktop/shell/luna-primitives.mjs';
-import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
+import { desktopCommand, themedText, desktopIcon, settingsCard, scrollDesktop } from './desktop/shell/presentation.mjs';
 import { bevel, surfaceStyle, surfacePaint, surfaceEvents, surfaceDetail } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
@@ -119,7 +120,7 @@ function syncFluentPanel(node, theme) {
   });
 }
 const labelFor = theme => (value, color, size = 12) =>
-  h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
+  h('view', { style: { color, ...bodyFont(theme), fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
 const dockLayouts = new WeakMap();
 function paintDockHover(slot) {
@@ -311,7 +312,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false, images 
       'aria-hidden': 'true', style: { position: 'absolute', right: 1, top: 1,
         minWidth: 12, height: 14, paddingLeft: 2, paddingRight: 2, borderRadius: 3,
         backgroundColor: theme.colors.accent, color: theme.colors.accentText,
-        fontSize: theme.layout.smallFontSize, pointerEvents: 'none' } }, String(window.count)));
+        ...bodyFont(theme), fontSize: theme.layout.smallFontSize, pointerEvents: 'none' } }, String(window.count)));
     }
     node.props.onClick = event => {
       if (event.button === 0) { event.stopPropagation(); return toggle(window.id); }
@@ -353,7 +354,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     });
     Object.assign(launcher.props, lunaVisualEvents(theme, { variant: 'launcher' }));
     launcher.children = [lunaButtonDetail(theme, 'launcher'), lunaSymbol('polly', panel.launcherText, 22),
-      h('view', { style: { color: panel.launcherText, fontSize: 18, fontWeight: 700,
+      h('view', { style: { color: panel.launcherText, ...bodyFont(theme), fontSize: 18, fontWeight: 700,
         fontStyle: 'italic', pointerEvents: 'none' } }, 'Polly')];
     return h('view', { id: 'shell-panel', style: {
       ...row, width: '100%', height: '100%', gap: theme.layout.panelGap,
@@ -371,7 +372,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       } }, lunaBands(theme, 'tray', panel.height),
         tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
         notifications ? tool('shell-notifications', 'Notifications ' + notifications.count, 'notification', notifications.open) : null,
-        h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: theme.layout.fontSize,
+        h('view', { id: 'shell-clock', style: { color: panel.text, ...bodyFont(theme), fontSize: theme.layout.fontSize,
           paddingLeft: 5, flexShrink: 0 } }, clock)));
   }
   if (surfaceStyle(theme, 'panel') === 'fluent') {
@@ -406,10 +407,10 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       tasks),
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'absolute', right: 12, top: 1,
       height: panel.height - 1, gap: 4, backgroundColor: panel.from } },
-      error ? desktopText('Needs attention', panel.text, 11) : null,
+      error ? themedText(theme, 'Needs attention', panel.text, 11) : null,
       tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
       notifications ? iconButton('shell-notifications', 'Notifications ' + notifications.count, 'info', notifications.open) : null,
-      h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: 12, paddingLeft: 8 } }, clock)));
+      h('view', { id: 'shell-clock', style: { color: panel.text, ...bodyFont(theme), fontSize: 12, paddingLeft: 8 } }, clock)));
   }
   if (surfaceStyle(theme, 'panel') === 'classic' && panel.kind === 'taskbar') {
     const itemHeight = panel.height - theme.layout.panelItemInset;
@@ -434,7 +435,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
       notifications ? button('shell-notifications', String(notifications.count), theme, notifications.open,
         false, { height: 20, borderWidth: 0 }) : null,
-      h('view', { id: 'shell-clock', style: { color: panel.text, fontSize: 11 } }, clock)));
+      h('view', { id: 'shell-clock', style: { color: panel.text, ...bodyFont(theme), fontSize: 11 } }, clock)));
   }
   if (['tiger', 'lion', 'bigsur'].includes(surfaceStyle(theme, 'panel')) && panel.kind === 'dock') {
     let menuTheme = menuThemes.get(theme);
@@ -463,7 +464,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     error ? label('Needs attention', panel.text, 11) : null,
     tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
     notifications ? menuItem('shell-notifications', 'Notifications ' + notifications.count, notifications.open) : null,
-    h('view', { id: 'shell-clock', style: { color: theme.colors.text, fontSize: theme.layout.fontSize,
+    h('view', { id: 'shell-clock', style: { color: theme.colors.text, ...bodyFont(theme), fontSize: theme.layout.fontSize,
       paddingLeft: 8 } }, clock));
   }
   return h('view', { id: 'shell-panel', style: {
@@ -533,7 +534,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       window?.grouped && window.count > 1 ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', right: 1, top: 1, minWidth: 14, height: 16, borderRadius: 4,
         paddingLeft: 3, paddingRight: 3, backgroundColor: theme.colors.accent,
-        color: theme.colors.accentText, fontSize: theme.layout.smallFontSize,
+        color: theme.colors.accentText, ...bodyFont(theme), fontSize: theme.layout.smallFontSize,
         pointerEvents: 'none' } }, String(window.count)) : null,
       running ? style === 'tiger' ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', bottom: 1, width: indicator, height: 4, pointerEvents: 'none' } },
@@ -666,7 +667,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },
-    desktopText('Your applications', theme.colors.muted, 13), h('view', { style: { flexGrow: 1 } }),
+    themedText(theme, 'Your applications', theme.colors.muted, 13), h('view', { style: { flexGrow: 1 } }),
     logout ? desktopCommand('shell-app-logout', 'Log out...', theme, logout, { quiet: true }) : null),
   error ? h('view', { role: 'alert', style: { padding: theme.layout.controlGap, backgroundColor: theme.colors.selection } },
     label(error, theme.colors.text, 11)) : null);
@@ -674,7 +675,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
 
 export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
   const l = theme.layout;
-  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
   return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu' },
   label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
   button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
@@ -694,7 +695,7 @@ export function windowActionsView(theme, window, action, close, error = '', work
 
 export function workspacesView(theme, workspaces, activate, remove, create, close, error = '', settings = null) {
   const l = theme.layout;
-  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
   return panelViewport(theme, { id: 'shell-workspace-menu', variant: 'menu' },
   h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
     label('Workspaces', theme.colors.text, l.headingFontSize),
@@ -732,7 +733,7 @@ export function workspacesView(theme, workspaces, activate, remove, create, clos
 
 export function switcherView(theme, snapshot, accept, rows = theme.layout.switcherMaxRows) {
   const l = theme.layout;
-  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
   const start = Math.max(0, Math.min(snapshot.items.length - rows, snapshot.selected - Math.floor(rows / 2)));
   return panelViewport(theme, { id: 'shell-window-switcher' },
   label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,

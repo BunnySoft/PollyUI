@@ -1,8 +1,9 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
@@ -46,7 +47,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
     return node;
   }
   const label = (value, size = 12) => h('view', { style: {
-    fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0, minWidth: 0 } }, value);
+    ...bodyFont(theme()), fontSize: themeTextSize(theme(), size), color: theme().colors.text, flexShrink: 0, minWidth: 0 } }, value);
   function perform(action, target, revision = state.revision) {
     try {
       error = ''; confirmation = null;
@@ -82,13 +83,13 @@ export function createNetworkSettings({ native, host, theme, report }) {
         focusCredentials = true;
         prompt = auth.id;
         promptKind = auth.kind;
-        password = createTextInput({ document: owner, password: true, width: '100%', fontSize: current.layout.sectionFontSize });
+        password = createTextInput({ document: owner, password: true, width: '100%', ...bodyFont(theme()), fontSize: current.layout.sectionFontSize });
         password.root.style.maxWidth = '420';
         password.root.id = 'shell-network-password';
         password.root.setAttribute('role', 'textbox');
         password.root.setAttribute('aria-label', 'Wi-Fi password');
         if (auth.kind === 'username-password') {
-          username = createTextInput({ document: owner, value: auth.username, width: '100%', fontSize: current.layout.sectionFontSize });
+          username = createTextInput({ document: owner, value: auth.username, width: '100%', ...bodyFont(theme()), fontSize: current.layout.sectionFontSize });
           username.root.style.maxWidth = '420';
           username.root.id = 'shell-network-username';
           username.root.setAttribute('role', 'textbox');
@@ -97,7 +98,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
       }
     }
     if (credentialTheme !== current) {
-      for (const field of [username, password]) if (field) field.setAppearance(inputAppearance(current, 14));
+      for (const field of [username, password]) if (field) setInputAppearance(field, inputAppearance(current, 14));
       credentialTheme = current;
     }
     const mode = auth ? 'authentication:' + auth.id + ':' + auth.kind :

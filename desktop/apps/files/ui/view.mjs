@@ -1,7 +1,8 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { NInput } from './gui/sdk/js/naive.mjs';
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shell/themes.mjs';
-import { desktopCommand, desktopIcon, desktopText, horizontal, scrollDesktop } from './desktop/shell/presentation.mjs';
+import { desktopCommand, desktopIcon, themedText, horizontal, scrollDesktop } from './desktop/shell/presentation.mjs';
 import { parentPath } from './desktop/apps/files/logic/model.mjs';
 import { formatSize, formatModified, fileType, visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
@@ -24,7 +25,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const guarded = action => (...args) => controller.getState().generation === generation ? action(...args) : false;
   const label = (id, text, key = 'text', extra = {}) => h('view', { id, style: {
     color: color(key), fontFamily: 'sans-serif',
-    fontSize: theme.layout[key === 'muted' ? 'statusFontSize' : 'fontSize'], flexShrink: 0, ...extra,
+    ...bodyFont(theme), fontSize: theme.layout[key === 'muted' ? 'statusFontSize' : 'fontSize'], flexShrink: 0, ...extra,
   } }, text);
   function pathLabel(id, text, key = 'muted', size = 13) {
     const sync = node => {
@@ -43,7 +44,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         scrollDesktop({ currentTarget: event.currentTarget, deltaX: delta, preventDefault: () => event.preventDefault() }, true);
         event.stopPropagation();
       },
-    }, label(null, text, key, { fontSize: size, minWidth: Math.ceil(measureText(text, size)) }));
+    }, label(null, text, key, { fontSize: size, minWidth: Math.ceil(
+      theme.layout.fontFamily === undefined ? measureText(text, size) : measureText(text, size, 400, theme.layout.fontFamily)) }));
   }
   const command = (id, text, action, enabled = true, icon = '', style = {}, selected = false) =>
     desktopCommand(id, text, theme, guarded(action), { enabled, icon, style, selected, quiet: true });
@@ -55,10 +57,10 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       const root = inputFor(id, value, placeholder, guarded(onInput), enabled, theme);
       return h('view', { id: id + '-slot', style: { width: '100%', height: appearance.fontSize + 18, flexShrink: 0, minWidth: 0,
         position: 'relative', ...style }, onMount: node => node.insertBefore(root, node.firstChild) },
-        value ? null : desktopText(placeholder, color('muted'), appearance.fontSize, { position: 'absolute',
+        value ? null : themedText(theme, placeholder, color('muted'), appearance.fontSize, { position: 'absolute',
           left: 10, top: 9, pointerEvents: 'none' }));
     }
-    const node = NInput({ id, value, placeholder, width: '100%', fontSize: appearance.fontSize, onInput: guarded(onInput),
+    const node = NInput({ id, value, placeholder, width: '100%', ...bodyFont(theme), fontSize: appearance.fontSize, onInput: guarded(onInput),
       selectionColor: appearance.selectionColor, selectionTextColor: appearance.selectionTextColor });
     Object.assign(node.props, { role: 'textbox', 'aria-label': placeholder, 'aria-disabled': String(!ready),
       style: { ...node.props.style, ...style, backgroundColor: appearance.background,
@@ -127,7 +129,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       .filter(([, message]) => message).map(([id, message]) =>
       h('view', { id, role: 'alert',
         style: { borderLeftWidth: 3, borderColor: '#b42318', padding: 10, backgroundColor: color('surface'), flexShrink: 0 } },
-      desktopText(message, color('text'), 14, { flexShrink: 1 }))));
+      themedText(theme, message, color('text'), 14, { flexShrink: 1 }))));
   const columnStyle = (key, header = false) => ({
     width: key === 'name' ? '44%' : key === 'modified' ? '23%' : key === 'type' ? '21%' : '12%',
     flexShrink: 0, minWidth: 0, height: header ? 38 : 40, paddingLeft: key === 'name' ? 12 : 8,
@@ -194,7 +196,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       glyph,
       inlineRename && chosen ? input('files-name', state.dialog.name, 'Single folder or file name',
         value => controller.editName(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 }) :
-        rowText(desktopText(entry.name, color('text'), theme.layout.fontSize,
+        rowText(themedText(theme, entry.name, color('text'), theme.layout.fontSize,
           { flexShrink: 1, minWidth: 0, height: 20, overflow: 'hidden', pointerEvents: 'none' }), color('text'))),
     rowText(label(null, formatModified(entry.mtimeMs), 'muted',
       { ...columnStyle('modified'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')),
@@ -207,10 +209,10 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   if (!entries.length) rows.push(h('view', { id: ready ? state.filter ? 'files-no-matches' : 'files-empty' : 'files-list-state',
     style: { padding: 32, gap: 12, alignItems: 'center', flexShrink: 0 } },
     desktopIcon('folder', color('muted'), 40),
-    desktopText(ready ? state.filter ? 'No matching names in this snapshot' : 'This folder is empty' :
+    themedText(theme, ready ? state.filter ? 'No matching names in this snapshot' : 'This folder is empty' :
       state.phase === 'loading' ? 'Reading folder...' : state.phase === 'error' ? 'Could not read this folder' : 'Waiting for Files...',
     color('text'), theme.layout.headingFontSize),
-    desktopText(ready ? state.filter ? 'Change the folder filter to see more items.' : 'Use New folder to get started.' :
+    themedText(theme, ready ? state.filter ? 'Change the folder filter to see more items.' : 'Use New folder to get started.' :
       'Choose a location or refresh to try again.', color('muted'), theme.layout.statusFontSize)));
   const list = h('view', { id: 'files-list', role: 'listbox', 'aria-label': 'Files and folders',
     'aria-multiselectable': 'false', tabIndex: usable ? 0 : -1,
@@ -221,7 +223,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     style: { width: width < 760 ? 142 : 184, minWidth: 120, flexShrink: 0, padding: 8, gap: 4,
       backgroundColor: color('body'), borderRightWidth: 1, borderColor: color('border'), overflow: 'scroll' },
     onWheel: scrollDesktop },
-    desktopText('Places', color('muted'), theme.layout.statusFontSize,
+    themedText(theme, 'Places', color('muted'), theme.layout.statusFontSize,
       { padding: theme.layout.compactPadding, fontWeight: 600 }),
     Object.entries(state.locations ?? {}).map(([key, path]) => command('files-place-' + key,
       key[0].toUpperCase() + key.slice(1), () => controller.navigate(path), !modal, key,
@@ -231,7 +233,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       width: width < 900 ? 200 : 260, flexShrink: 0,
       borderLeftWidth: 1, borderColor: color('border'), overflow: 'scroll' }, onWheel: scrollDesktop },
     h('view', { style: { ...horizontal, flexWrap: 'wrap', gap: 6, flexShrink: 0 } },
-      desktopText('Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
+      themedText(theme, 'Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
       command('files-details-copy-path', state.copyPathAvailable ? 'Copy path' : 'Copy path (unavailable)',
         () => controller.copyPath(generation, selection.identity), state.copyPathAvailable, '',
         { minWidth: 0, maxWidth: '100%' }),
@@ -262,14 +264,14 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0 } }, columns, listRegion), details);
   const footer = h('view', { id: 'files-status', role: 'status', style: { ...horizontal, flexShrink: 0,
     padding: 10, paddingLeft: 16, gap: 12, borderTopWidth: 1, borderColor: color('border'), flexWrap: 'wrap' } },
-    desktopText(state.phase === 'working' ? 'Applying operation...' : state.phase === 'opening' ? 'Opening...' :
+    themedText(theme, state.phase === 'working' ? 'Applying operation...' : state.phase === 'opening' ? 'Opening...' :
       state.phase === 'loading' ? 'Reading folder...' : state.snapshot ?
         entries.length + ' / ' + state.snapshot.entries.length + ' items' + (selection ? ' | 1 selected' : '') : 'Folder unavailable',
     color('muted'), 12),
     h('view', { style: { flexGrow: 1 } }),
     label('files-operation-limits', 'Moves: one regular file, same filesystem | No file copy, delete or trash', 'muted',
       { fontSize: 12, flexShrink: 1 }),
-    desktopText(state.message || (state.cut ? 'Cut: ' + state.cut.entry.name + ' | Paste reviews a move; no overwrite.' :
+    themedText(theme, state.message || (state.cut ? 'Cut: ' + state.cut.entry.name + ' | Paste reviews a move; no overwrite.' :
       'Folders first | Filter: loaded names only'), color('muted'), 12));
 
   let dialog = null;
@@ -277,7 +279,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     const operation = state.dialog;
     const editing = operation && operation.kind !== 'link';
     const content = [
-      desktopText(state.openWith ? 'Open with' : operation.kind === 'link' ? 'Follow symbolic link?' :
+      themedText(theme, state.openWith ? 'Open with' : operation.kind === 'link' ? 'Follow symbolic link?' :
         operation.kind === 'rename' ? 'Rename' : operation.kind === 'move' ? 'Move cut file here?' : 'New folder',
         color('text'), 22, { fontWeight: 600 }),
       editing && !inlineRename ? input('files-name', operation.name, 'Single folder or file name',

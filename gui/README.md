@@ -166,6 +166,28 @@ closed-owner collection; it does not qualify a hardware/compositor backend.
 
 ## Input typography and selection foreground
 
+`measureText(text, size, weight, family)` and, where present,
+`layoutText(text, size, weight, family)` accept an optional fourth literal family
+name. Each supporting function exposes readonly/nonconfigurable
+`supportsFontFamily: true`. Omitted family keeps the original metric path;
+Linux complex text still uses the native full-string shaping/layout implementation.
+The SDK rejects an explicit family before mutation if either installed provider
+lacks that declaration; it never infers support from a function ignoring extra
+arguments. This is capability support, not proof that an arbitrary face is
+installed: use a locally installed family. Existing platform font fallback is
+unchanged, and no font resources are loaded or installed.
+
+`createTextInput({ fontFamily })`, `setAppearance({ fontFamily })`,
+`NInput({ fontFamily })` and selection-control `appearance.fontFamily` opt in per
+instance. Names use the same bounded 128-UTF-16-unit literal rule as captions:
+Unicode family names are permitted, but paths, URLs, resource syntax, fallback
+lists and controls are not. Geometry caches include family/weight; painting,
+click hit-testing, caret, preedit, selected ranges and full-string selected ink
+share the same family. A family update preserves the retained input/value and
+selection. Explicit `fontFamily: undefined` clears an earlier opt-in; other
+partial appearance updates leave the current family alone. Open Select portals
+consume the latest family without affecting another instance or global SDK theme.
+
 `NInput({ fontSize })` accepts a finite 8–64 logical-pixel size; omitting it keeps
 the existing `size` mapping. The same size feeds painting, measurement, caret,
 selection and composition geometry.
