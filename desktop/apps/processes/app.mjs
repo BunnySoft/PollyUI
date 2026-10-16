@@ -50,21 +50,26 @@ export function createProcessesApp({ provider, host = window, native = typeof de
     const rows = sorted.rows;
     const range = fixedRowWindow(rows.length, 42, viewportHeight, Number(viewport?.scrollTop || 0));
     painted = range;
-    const text = (value, muted = false) => desktopText(value, theme.colors[muted ? 'muted' : 'text'], 14,
+    const text = (value, muted = false) => desktopText(value, theme.colors[muted ? 'muted' : 'text'],
+      theme.layout[muted ? 'statusFontSize' : 'fontSize'],
       { flexShrink: 1, minWidth: 0, overflow: 'hidden' });
     const cell = (content, index) => h('view', { style: { width: ['34%', '12%', '20%', '17%', '17%'][index],
       minWidth: 0, padding: 10, overflow: 'hidden', flexShrink: 0 } }, content);
     render(h('view', { id: 'processes-root', style: { height: '100%', minHeight: 0, backgroundColor: theme.colors.body } },
-      h('view', { style: { ...horizontal, padding: 18, gap: 12, flexShrink: 0 } },
-        desktopIcon('apps', theme.colors.accent, 28), desktopText('Processes', theme.colors.text, 24),
+      h('view', { style: { ...horizontal, padding: theme.layout.contentPadding,
+        gap: theme.layout.controlGap, flexShrink: 0 } },
+        desktopIcon('apps', theme.colors.accent, 28),
+        desktopText('Processes', theme.colors.text, theme.layout.headingFontSize),
         h('view', { style: { flexGrow: 1 } }),
         desktopCommand('processes-refresh', state.loading ? 'Refreshing...' : 'Refresh', theme,
           guard(controller.refresh), { enabled: !state.loading, icon: 'refresh' })),
-      h('view', { style: { paddingLeft: 18, paddingRight: 18, paddingBottom: 12, flexShrink: 0 } },
+      h('view', { style: { paddingLeft: theme.layout.contentPadding, paddingRight: theme.layout.contentPadding,
+        paddingBottom: theme.layout.contentGap, flexShrink: 0 } },
         text('Read-only monitor. No process termination or administrator actions are available.', true),
         text('CPU is the sampled share of total machine CPU time; the first sample is unavailable. Memory is resident (RSS).', true)),
       h('view', { id: 'processes-error', role: 'alert',
-        style: { display: state.error || themeError ? 'flex' : 'none', padding: 12, flexShrink: 0 } },
+        style: { display: state.error || themeError ? 'flex' : 'none',
+          padding: theme.layout.contentPadding, flexShrink: 0 } },
         state.error || themeError ? text(state.error || themeError) : null,
         (state.error || themeError) && state.updated !== null ?
           text('Last successful sample retained; these rows are stale.', true) : null),
@@ -86,9 +91,10 @@ export function createProcessesApp({ provider, host = window, native = typeof de
             item.cpuPercent === null ? 'Unavailable' : item.cpuPercent.toFixed(1) + '%']
             .map((value, index) => cell(text(value), index)))),
         h('view', { 'aria-hidden': 'true', style: { height: (rows.length - range.end) * 42, flexShrink: 0 } }),
-        !rows.length ? h('view', { style: { padding: 24 } },
+        !rows.length ? h('view', { style: { padding: theme.layout.contentPadding } },
           text(state.loading ? 'Reading processes...' : state.error ? 'Process list unavailable' : 'No visible processes')) : null),
-      h('view', { id: 'processes-status', role: 'status', style: { padding: 12, gap: 6, flexShrink: 0 } },
+      h('view', { id: 'processes-status', role: 'status', style: {
+        padding: theme.layout.contentPadding, gap: theme.layout.controlGap, flexShrink: 0 } },
         text(rows.length + ' processes' + (state.updated === null ? '' : ' | Sample: ' + new Date(state.updated).toLocaleTimeString()), true),
         !state.complete ? text('Partial list: the 4096-process snapshot limit was reached.', true) : null,
         state.skipped ? text(state.skipped + ' processes exited, changed identity or were denied by OS permissions during this sample.', true) : null)),
