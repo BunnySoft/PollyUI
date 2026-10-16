@@ -52,7 +52,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
       dragging: enabled && !!drag, focused: enabled && focused,
       disabled: !enabled, overflow: !!lastMetrics?.maximum,
       atStart: !lastMetrics || lastMetrics.value <= 0, atEnd: !lastMetrics || lastMetrics.value >= lastMetrics.maximum };
-    const signature = JSON.stringify(state);
+    const signature = JSON.stringify([state, track.offsetWidth, track.offsetHeight]);
     if (signature === lastPaint) return;
     if (skin.paint)
       for (const [node, style] of scrollbarStyles(skin.paint({ ...state, metrics: skin.metrics }, parts), parts)) {

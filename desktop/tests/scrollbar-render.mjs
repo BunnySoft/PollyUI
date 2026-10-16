@@ -49,6 +49,10 @@ export function checkThemedScrollbars(directory) {
     if (['server2003', 'xp'].includes(id))
       check(focusEdges(track, theme.colors.focus).every(Boolean), 'Reused Classic/Luna focus painter retains all four edges');
     check(host.save(directory + '\\' + id + '-focus.png'), 'Save actual themed focus');
+    track.style.height = '240'; draw(controller);
+    if (['server2003', 'xp'].includes(id))
+      check(focusEdges(track, theme.colors.focus).every(Boolean), 'Focused same-theme internal track resize refreshes every existing Canvas edge');
+    track.style.height = '200'; draw(controller);
     mouse('mousemove', x, b.y + initial.top + 5); draw(controller);
     check(host.save(directory + '\\' + id + '-hover.png'), 'Save actual themed thumb hover');
     viewport.scrollTop = 1000; draw(controller);
@@ -114,6 +118,10 @@ export function checkThemedScrollbars(directory) {
       track.focus(); host.key('ArrowDown', 'keydown', { text: false }); draw(controller);
       check(viewport.scrollTop === 42, 'A tiny flat scrollbar keeps the common keyboard step');
     }
+    check(host.save(directory + '\\' + id + '-tiny.png'), 'Save actual tiny-track decoration bounds');
+    for (let px = tiny.x; px < tiny.right; px++)
+      check(host.pixel(px, tiny.y - 1).toLowerCase() === '#eef0f3' &&
+        host.pixel(px, tiny.bottom).toLowerCase() === '#eef0f3', 'Tiny scrollbar decoration stays inside its actual track');
     viewport.style.height = '200'; track.style.height = '200'; draw(controller);
     check(controller.update().thumbHeight === 28, 'Growing the viewport restores the measured thumb');
     controller.setAppearance(undefined); draw(controller);
