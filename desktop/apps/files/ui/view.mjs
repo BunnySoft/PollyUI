@@ -192,14 +192,14 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       glyph,
       inlineRename && chosen ? input('files-name', state.dialog.name, 'Single folder or file name',
         value => controller.editName(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 }) :
-        rowText(desktopText(entry.name, color('text'), 14,
+        rowText(desktopText(entry.name, color('text'), theme.layout.fontSize,
           { flexShrink: 1, minWidth: 0, height: 20, overflow: 'hidden', pointerEvents: 'none' }), color('text'))),
     rowText(label(null, formatModified(entry.mtimeMs), 'muted',
-      { ...columnStyle('modified'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+      { ...columnStyle('modified'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')),
     rowText(label(null, managed ? 'Application' : fileType(entry), 'muted',
-      { ...columnStyle('type'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+      { ...columnStyle('type'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')),
     rowText(label(null, entry.type === 'directory' ? '-' : formatSize(entry.bytes), 'muted',
-      { ...columnStyle('size'), fontSize: 13, pointerEvents: 'none' }), color('muted')));
+      { ...columnStyle('size'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')));
     return node;
   });
   if (!entries.length) rows.push(h('view', { id: ready ? state.filter ? 'files-no-matches' : 'files-empty' : 'files-list-state',
