@@ -232,6 +232,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       borderLeftWidth: 1, borderColor: color('border'), overflow: 'scroll' }, onWheel: scrollDesktop },
     h('view', { style: { ...horizontal, flexWrap: 'wrap', gap: 6, flexShrink: 0 } },
       desktopText('Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
+      command('files-details-copy-path', state.copyPathAvailable ? 'Copy path' : 'Copy path (unavailable)',
+        () => controller.copyPath(generation, selection.identity), state.copyPathAvailable),
       command('files-details-close', 'Close', () => controller.cancel(generation), true, '',
         { paddingLeft: 6, paddingRight: 6 })),
     pathLabel('files-property-name', selection.name, 'text', theme.layout.fontSize),
@@ -264,7 +266,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         entries.length + ' / ' + state.snapshot.entries.length + ' items' + (selection ? ' | 1 selected' : '') : 'Folder unavailable',
     color('muted'), 12),
     h('view', { style: { flexGrow: 1 } }),
-    label('files-operation-limits', 'Moves: one regular file, same filesystem | No copy, delete or trash', 'muted',
+    label('files-operation-limits', 'Moves: one regular file, same filesystem | No file copy, delete or trash', 'muted',
       { fontSize: 12, flexShrink: 1 }),
     desktopText(state.message || (state.cut ? 'Cut: ' + state.cut.entry.name + ' | Paste reviews a move; no overwrite.' :
       'Folders first | Filter: loaded names only'), color('muted'), 12));
@@ -318,6 +320,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       ['open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity), selection?.type === 'file', 'apps'],
       ['rename', 'Rename', () => controller.beginRename(generation, selection?.identity), true, 'rename'],
       ['cut', 'Cut', () => controller.cut(generation, selection?.identity), state.moveAvailable && selection?.type === 'file', ''],
+      ['copy-path', state.copyPathAvailable ? 'Copy path' : 'Copy path (unavailable)',
+        () => controller.copyPath(generation, selection?.identity), state.copyPathAvailable, ''],
       ['properties', 'Properties', () => controller.showProperties(generation, selection?.identity), true, 'info']]
       .map(([id, text, action, enabled, icon]) => {
         const node = command('files-context-' + id, text, action, enabled, icon);
@@ -352,12 +356,16 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       } else if (event.target?.id === 'files-address' && event.key === 'Enter') {
         event.preventDefault(); if (controller.getState().generation === generation) controller.navigate(state.address);
       } else if (editing) return;
+      else if (usable && event.ctrlKey && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        if (!event.repeat && selection && state.copyPathAvailable) controller.copyPath(generation, selection.identity);
+      }
       else if (state.context && ['ArrowDown', 'ArrowUp', 'Tab'].includes(event.key)) {
         event.preventDefault();
         const document = event.currentTarget?.ownerDocument;
         const items = ['open', ...(selection?.type === 'file' ? ['open-with'] : []), 'rename',
-          ...(state.moveAvailable && selection?.type === 'file' ? ['cut'] : []), 'properties']
-          .map(id => document?.getElementById('files-context-' + id)).filter(Boolean);
+          ...(state.moveAvailable && selection?.type === 'file' ? ['cut'] : []), 'copy-path', 'properties']
+          .map(id => document?.getElementById('files-context-' + id)).filter(node => node && node.tabIndex >= 0);
         const old = items.indexOf(document?.activeElement);
         items[(old + (event.key === 'ArrowUp' || event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
       } else if (modal) return;
