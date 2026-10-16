@@ -530,7 +530,7 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 
 对所选圆角/模糊/阴影/动画/形状输入分别测量；已有 alpha 不重做。
 
-- [ ] **E13.1 窗口视觉效果** · 已延期 / 待实现 · P2 · installed：按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。 来源：M17.5。
+- [ ] **E13.1 窗口视觉效果** · 已延期 / 进行中/部分完成 · P2 · installed：按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。 来源：M17.5。 证据：2026-10-16 09:44 在共通主题修复895ff98冻结后进入下一批，唯一native owner负责共享整窗圆角裁剪和外阴影，随后才接区域背景采样/模糊；Windows/Mac主题不分别改共享合成层。现stock wlroots0.19.3场景仅矩形clip/opacity/filter sampling，尚无已实现rounded/shadow能力；四strip/角色v4/schema4/atomic frame合同继续保持，preview字段不当作交付。实现须保子surface/alpha/变换/scale、damage/idle、max/fullscreen/lock与输入权限，不能背景色角贴片、JS截图或wholewindow透明绘图窗。若必须改固定依赖/renderer ABI或输出管线，先收敛唯一最小配套方案再实施，不暗改共享SDK/系统库。本状态仅表示本批已开始，不声明圆角、阴影、模糊、动画或形状输入已完成。
 
 #### E16 可复测性能预算
 
