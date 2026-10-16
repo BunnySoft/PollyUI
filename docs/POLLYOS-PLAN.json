@@ -882,6 +882,22 @@
       "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留，但父最终review/主线集成暂停，均未合入或发布。依用户要求作为非阻塞Bug停放，主线继续可见图标/字号等修复；后续须同时保证paint/clip、fresh/cache和旧整数语义，不单收38b。"
     },
     {
+      "id": "bug-live-listener-redispatch",
+      "label": "Bug：事件监听重绑重复派发（非阻塞）",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "独立调查generic事件派发在handler内repaint移除/重绑live listener时，同一事件调用新handler的问题。保既有单次activation/传播/移除语义，不用tray局部flag掩C root cause；按既有边界bug策略不阻塞菜单scrollbar交付，不擅自扩C/SDK/build或原生环境路线。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "2026-10-17三菜单真实759软件GUI+inert provider发现：geometry替换后首次Enter submenu的opens为[0,77,0]、root0、invoke[]/reports[]，应停root77；git show精确19e原tray producer与当前593e618同场相同RED/Uncaught断言，非新scrollbar回归。父只读核当前bridge.c dispatch_impl在JS_Call后继续遍历可变listener_count；node remove以memmove移位、add可追加，尚无dispatch代际snapshot，root cause需独立最小修复验证。原geometry retire/native close0/帧释放及普通未替换submenu/pending/error/action单次路径均通过，但不冒异常首次Enter绿色。Common session files management-menus-geometry-current.log与management-tray-geometry-baseline.log保留失败；没有为此改C/SDK/业务或弱化断言。"
+    },
+    {
       "id": "native-preset-live-revalidation",
       "label": "原生预设效果复验（环境受阻）",
       "kind": "subtask",
@@ -5591,6 +5607,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-17 E22.9/E22.10三管理菜单：源593e618合b4b3aee，仅windowActions/workspaces/tray已存fixed panelViewport opt scrollbar、准确trayGap及局部retire render(null)释放。真实759软件GUI/inert provider三root420x220/420x220/280x236与inner388x188/388x188/248x204 before/after全保持，overlay不减command宽，tray gap8原值；末项focus/Tab/ShiftTab/Page/dragcapture/wheel、sameDOM/retheme/manualscroll、workspace真实input/value/caret/selection/focus及local move12/activate12各一次通过；tray disabled无invoke、普通submenu/root/pending/error/短bar隐藏与Enter仅[7,4,20]一次、原nativeclose计数/全部pending0通过。父97/97含原workspace contracts，native tray-shell仅syntax。geometry替换首次Enter的旧/新相同RED另见bug-live-listener-redispatch，不称全绿；无实际窗口/工作区/DBus/外部托盘授权或物理输入资格。",
     "- 2026-10-17 E22.9/E22.10 Power导航：源bf9975a合752a254，仅既有root→shared framed:false/bar:true与精确close释放，保持原560x196 surface/padding24/fill、phase/permission/revision/request/sent/uncertain/cancel/commit逻辑。真实759软件GUI+完全惰性provider旧Tab2 Cancel y999/scroll0不可见，现inner[24,24,512,148]、scroll867、Cancel y132..172完整；ShiftTab、手动wheel后refresh/retheme同DOM保0、PageDown148/End/Home/真实dragcapture、sent无Cancel且Close disabled、uncertain NoRepeat/Retry disabled、idleRefresh惰性stop/start各1、waitingClose原sessionExit.cancel1/nativeCancel0、externalqueuedclose pending0/subscriptions0/forbidden[]通过。父102/102包括原power-actions/permission/outcome/NoReplay合同，fixture仅标准rAF/cancel/owner/offset适配且cleanup帧0；native power-shell仅syntax，未运行真实DBus/logind/系统power/注销/进程Close或物理资格，整体E22状态不假关。",
     "- 2026-10-08 Alpha 范围重排：延期项目保留来源和状态，不因移出 Alpha 假标完成；代码 main=ce73a3c，已交付 ISO/VHDX仍 e879，未来集中新候选才携当前修复。",
     "- 当前 Live 体验 ISO：677,996,544 字节/SHA256 d52d36a3627831ac93767a83bb13f96bffe43c41b00150542a7903484154287f，QEMU只读光盘实际桌面，PNG fd2d4a880650fdc2363945dba224385f0c1e9f268386f3539c2bb1d0152ef09c；无空白盘安装器、临时数据、公开开发密码，不用它解释用户 PollyOS installed 问题。",

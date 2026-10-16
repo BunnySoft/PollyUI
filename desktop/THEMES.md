@@ -633,8 +633,9 @@ retirement cancels pending work even after ancestor removal. This is not
 neighboring-slot displacement, a larger native input area, keyboard-focus
 enlargement or original macOS magnification/MRU qualification.
 
-Long Programs/category and window-group management lists now opt into the same
-themed 10px overlay scrollbar used by existing desktop consumers. The shared
+Programs/category, window-group, window-action, workspace and tray management
+lists opt into the same themed 10px overlay scrollbar used by existing desktop
+consumers. The shared
 panel viewport offers explicit `scrollbar: true` only for fixed vertical layouts;
 its omitted/default, content-sized and horizontal paths retain their former
 output. Existing menu list IDs and direct command slots stay inside the original
@@ -663,6 +664,17 @@ states, explicit final confirmation and request/cancel ordering are unchanged.
 The software GUI check uses entirely inert native/session-exit functions;
 no actual shutdown, restart, logout, login-service or application-close request
 is performed or qualified by that check.
+
+The existing window-action/workspace/tray menu frames, command widths and
+surface geometry remain unchanged; tray rows retain their original `trayGap`.
+Paging and captured dragging share the same SDK controller, and workspace
+editing retains its native input, value, caret, selection and focus. Retiring a
+tray view releases its controllers before the original close path without
+adding a native menu action. A separately tracked pre-existing event-dispatch
+defect can reopen the root on the first submenu Enter after geometry replacement:
+the exact old producer and current producer both reproduce that failure.
+Normal-flow scrollbar checks do not certify that failing event sequence or
+live Linux D-Bus/tray authorization.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
