@@ -332,14 +332,15 @@ index f51548a..4349c82 100644
 +	v_position = pos;
  }
 diff --git a/render/gles2/shaders/quad.frag b/render/gles2/shaders/quad.frag
-index 97d3a31..45decf8 100644
+index 97d3a31..fe48e80 100644
 --- a/render/gles2/shaders/quad.frag
 +++ b/render/gles2/shaders/quad.frag
-@@ -7,7 +7,45 @@ precision mediump float;
+@@ -7,7 +7,46 @@ precision mediump float;
  varying vec4 v_color;
  varying vec2 v_texcoord;
  uniform vec4 color;
 +#ifdef GL_FRAGMENT_PRECISION_HIGH
++precision highp float;
 +varying highp vec2 v_position;
 +uniform highp vec2 size;
 +uniform highp float corner_radius;
