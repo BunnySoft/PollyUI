@@ -158,9 +158,11 @@ export function checkWindowGroups(directory) {
   check(Number(list.scrollTop) > 0, 'Actual wheel reaches final real window');
   save('long-list');
   records.push({ theme: 'modern-long', menu: box(get('shell-window-group')), last: box(last), scroll: list.scrollTop });
-  menuHeight = 180; menuWidth = 260; paint(); settle(); bounded();
+  menuHeight = 148; menuWidth = 260; paint(); settle(); bounded();
   get('shell-group-activate-29').focus(); settle();
   const short = box(get('shell-group-activate-29')), shortList = box(list);
+  check(shortList[3] < get('shell-group-row-29').offsetHeight && shortList[3] >= short[3],
+    'Short viewport fits a command but not a whole member row under the shared menu policy');
   check(short[1] >= shortList[1] && short[1] + short[3] <= shortList[1] + shortList[3],
     'Short live viewport reveals the focused command, even when a whole member row is taller');
   save('short-list');
