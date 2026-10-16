@@ -181,3 +181,39 @@ same native-font DOM reference, including a present color glyph, combining text,
 mixed RTL input, secure masks, controlled IME and unchanged unselected pixels.
 Its log records whether the runner actually supplies native `layoutText`;
 mixed text on a runner without it does not certify ICU/bidi behavior.
+
+## Per-instance vertical scrollbar appearance
+
+`createVerticalScrollbar({ viewport, track, thumb, isCurrent, appearance })`
+retains the existing single geometry, drag/capture, page, wheel and keyboard
+controller. Omit `appearance` for unchanged caller-owned styling, no decoration
+nodes or arrows, the 28px minimum thumb and the existing 42px keyboard step.
+The caller supplies the scrollbar role/label and updates the controller after
+layout, content or scroll changes; the controller starts no timer or frame loop.
+
+An optional appearance contains `metrics`, `paint(state, parts)` and
+`decorate(parts)`. Metrics are bounded logical-pixel values: `width`,
+`thumbInset`, `minThumbHeight` (default 28), `arrowSize` (default 0), and
+`stepSize` (default 42). `paint` returns surface styles for `track`, `thumb`,
+`decrement` and `increment`, never geometry. State reports hovered/held part,
+dragging, keyboard focus, disabled, actual overflow and start/end boundaries.
+`decorate` owns only passive content inside the provided detail slots and may
+return cleanup. The focus slot is the detail wrapper for the existing
+Canvas -> ring -> detail -> control ancestry, not a new focus controller.
+
+`setAppearance(value)` rethemes the same viewport/track/thumb and preserves
+active thumb capture. `setAppearance(undefined)` restores the original surface
+styles and removes owned arrows/decorations. Unchanged appearance/state updates
+do not notify paint or rewrite styles. `stop()` releases capture, unregisters
+listeners and disposes decorations. `step(-1|1)` uses the same clamped step as
+arrow regions and ArrowUp/ArrowDown; arrows never acquire a second input owner.
+Tiny themed rails retain truthful overflow and arrow/keyboard access even when
+no thumb travel fits; short content still hides/disables the rail.
+
+`verticalScrollMetrics` optionally accepts a third argument
+`{ minThumbHeight, startInset, endInset }`; `top` includes the start inset and
+travel excludes both arrow regions. Existing two-argument calls are unchanged.
+The SDK imports no desktop palette. Desktop's single
+`desktop/shared/ui/scrollbar-appearance.mjs` adapter derives its surfaces from
+theme tokens, namespaces passive bevels, and reuses existing Classic/Luna focus
+painting. Its end-arrow policy is not a claim of exact original-OS layouts.
