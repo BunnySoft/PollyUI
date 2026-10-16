@@ -115,6 +115,7 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
   let surface = null;
   const close = () => {
     if (!controller.cancel()) return;
+    if (surface) render(null, surface.document.body);
     if (surface && !surface.closed) surface.close();
     surface = null;
   };
@@ -128,7 +129,7 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
       () => { if (surface === target && !target.closed) return action(); }, false,
       { height: current.layout.choiceHeight, flexShrink: 0 });
     const label = (text, role = 12) => themedText(current, text, current.colors.text, themeTextSize(current, role), { minWidth: 0 });
-    render(panelViewport(current, { id: 'shell-logout' },
+    render(panelViewport(current, { id: 'shell-logout', scrollbar: true },
       label('Log out', 18),
       label(state.profile === 'installed' ? 'End this user session and return to the login screen.' :
         state.profile === 'live' ? 'End this Live desktop and return to your ordinary, temporary console.' :
@@ -174,6 +175,7 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
       surface.onclose = () => {
         if (surface !== current) return;
         if (controller.snapshot().canCancel) controller.cancel();
+        render(null, current.document.body);
         surface = null;
       };
       surface.document.body.addEventListener('keydown', event => {
@@ -188,7 +190,9 @@ export function createLogoutSurface({ controller, host, theme, commit }) {
     stop() {
       if (unsubscribe) unsubscribe();
       unsubscribe = null;
+      const body = surface ? surface.document.body : null;
       if (surface && !surface.closed) surface.close();
+      if (body) render(null, body);
       surface = null;
     },
   };
