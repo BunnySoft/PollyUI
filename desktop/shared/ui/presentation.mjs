@@ -3,6 +3,7 @@ import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
 import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
+import { activationEvents } from './desktop/shared/ui/activation.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
@@ -55,10 +56,6 @@ export function desktopText(text, color, size = 14, extra = {}) {
 
 export function desktopCommand(id, text, theme, action, { icon = '', selected = false, enabled = true,
   quiet = false, style = {}, role = 'button', iconSize = 0 } = {}) {
-  const activate = event => {
-    if (!enabled || (event?.button !== undefined && event.button !== 0)) return false;
-    event?.stopPropagation?.(); return action();
-  };
   const luna = isLuna(theme) && !quiet, painted = hasSurfacePaint(theme);
   const color = !enabled ? theme.colors.muted :
     selected && surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text;
@@ -79,9 +76,7 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
     hoverStyle: enabled && !luna && !painted ? { backgroundColor: theme.colors.selection } : {},
     focusStyle: luna || painted ? {} : { borderColor: theme.colors.focus },
     ...(luna ? lunaVisualEvents(theme, options) : painted ? surfaceEvents(theme, options) : {}),
-    onClick: activate, onKeydown: event => {
-      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(event); }
-    },
+    ...activationEvents(action, enabled),
   }, luna ? lunaButtonDetail(theme, 'button', !enabled) : painted ? surfaceDetail(theme, options) : null,
   icon ? desktopIcon(icon, !enabled ? theme.colors.muted : theme.colors.accent,
     iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null,

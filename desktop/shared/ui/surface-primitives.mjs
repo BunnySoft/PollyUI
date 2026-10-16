@@ -1,10 +1,10 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { paintClassicTask, classicFocusPaint, paintClassicFocus } from './desktop/shared/ui/classic-task-paint.mjs';
+import { controlStates as states } from './desktop/shared/ui/control-state.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, pointerEvents: 'none' };
 export const surfaceStyle = (theme, group = 'button') => theme[group].surfaceStyle || 'generic';
 export const hasSurfacePaint = theme => ['classic', 'aqua', 'fluent'].includes(surfaceStyle(theme));
-const states = new WeakMap();
 
 export function surfacePaint(theme, { selected = false, pressed = false, hovered = false,
   focused = false, disabled = false, quiet = false, variant = 'button' } = {}) {
@@ -70,9 +70,10 @@ export function surfaceEvents(theme, options = {}) {
   const paint = (event, change) => {
     const node = event.currentTarget, previous = states.get(node);
     const disabled = options.disabled || node.getAttribute?.('aria-disabled') === 'true';
-    const state = !disabled && previous?.theme === theme ? previous : {
+    const state = !disabled && previous ? previous : {
       theme, pressed: false, hovered: false, focused: node.ownerDocument?.activeElement === node,
     };
+    state.theme = theme;
     if (disabled) {
       Object.assign(state, { pressed: false, hovered: false, focused: false });
       states.delete(node);
@@ -113,8 +114,9 @@ export function surfaceEvents(theme, options = {}) {
   };
   const syncState = node => {
     if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+        states.has(node) || node.ownerDocument?.activeElement === node ||
         surfaceStyle(theme, 'panel') === 'fluent' && options.variant === 'task')
-      paint({ currentTarget: node }, {});
+      paint({ currentTarget: node }, { focused: node.ownerDocument?.activeElement === node });
   };
   return {
     onMount: syncState,
