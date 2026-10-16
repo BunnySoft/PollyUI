@@ -28,16 +28,26 @@ RootMenu window. The normal two-column menu and explicit legacy single-column
 layout retain their application list, Search, Pin/Unpin, available Files/Settings
 links, Refresh, Close menu and logout actions.
 
-The submenu lists the actual Shell desktop catalog and uses the existing launch
-and desktop shortcut services. It does not manufacture Windows programs, accounts,
-recent documents or directory paths. Desktop-entry categories are non-exclusive
-tags, not an installed Programs directory hierarchy; this implementation is a
-flat All Programs submenu, not a complete multi-level Programs tree.
+The submenu defaults to the actual flat Shell desktop catalog and uses the existing
+launch and desktop shortcut services. Its optional **Categories** header entry
+browses exact, non-exclusive `entry.categories` metadata tags; the same application
+can appear under several tags. Entries without tags appear in **Uncategorized
+(no tags)**, distinct from a literal category tag named `Uncategorized`. Only
+categories with current catalog members are listed. All apps is always available
+from the category index or a leaf, and root Search/Pin/Refresh/logout are unchanged.
+This does not manufacture Windows programs, accounts, recent documents or paths,
+or implement an installed directory hierarchy or XDG menu XML tree.
 
 When space permits the submenu occupies the right-hand area beside its trigger.
 Otherwise it overlays existing content below the trigger, bounded by the same
-window's actual client viewport. Back, Left and Escape return to the trigger.
-Right opens it; Up/Down, Home/End and Tab navigate enabled commands. Long lists
+window's actual client viewport. At the flat root, Back, Left and Escape return
+to the trigger.
+Right opens it; Up/Down and Home/End keep navigating enabled list commands.
+Tab/Shift+Tab also include the compact, single-row Back and Categories/All apps
+header controls, rather than trapping focus in the application rows. In a
+category leaf, Back/Left/Escape returns to its category; from the category index
+they return to flat All Programs; from flat All Programs they return to the
+Start trigger. Enter or Right opens a focused category. Long lists
 scroll, and keyboard focus reveals the actual command. Hover can open the submenu
 without crossing an unowned popup surface. In a viewport too small for one command
 and its header, content remains clipped rather than claiming a fully usable fit.
@@ -47,7 +57,12 @@ and appearance repaint retain its state and scroll. A live catalog update leaves
 removed rows inert until the submenu closes, because the small reconciler is
 positional: a pressed row must never become a different application. Reopening
 releases those vacant slots. Callback generations and current-menu/catalog guards
-reject stale launches, shortcut actions and deferred focus.
+reject stale launches, shortcut actions and deferred focus. Category navigation
+is scoped to this RootMenu only, with a new epoch on every view transition and
+reset on close. Launch/Pin callbacks recheck current catalog membership in that
+exact leaf (including untagged membership), not just global application existence.
+Metadata changes can leave an empty leaf with Back/All apps instead of redirecting
+a held command to a different category or silently launching a removed member.
 
 No new native window, popup grab, permission, namespace or input routing is added.
 The existing `PollyShell.menu` outside-dismiss, exclusive-zone and session-lock

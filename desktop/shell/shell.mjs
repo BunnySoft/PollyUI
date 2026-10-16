@@ -7,7 +7,7 @@ import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, programCategories, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
 import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
@@ -850,8 +850,40 @@ export function createDesktopShell({ host = window, configuration, report = cons
         current.programsOpen = false;
         current.programsEpoch = (current.programsEpoch ?? 0) + 1;
         current.programsSlots = [];
+        current.programsView = 'all';
+        current.programsCategory = null;
       }
       const programsEpoch = current.programsEpoch ?? 0;
+      const programsView = current.programsView ?? 'all', programsCategory = current.programsCategory ?? null;
+      const programsLive = () => currentMenu(current) && current.programsOpen &&
+        current.programsEpoch === programsEpoch && (current.programsView ?? 'all') === programsView &&
+        (current.programsCategory ?? null) === programsCategory;
+      const programEntries = () => programsView === 'categories' ? [] : programsView === 'category' ?
+        categoryEntries(desktopCatalog(), programsCategory) : desktopCatalog();
+      const navigatePrograms = (view, category = null, focus = 'first') => {
+        if (!programsLive() || !['all', 'categories', 'category'].includes(view)) return false;
+        if (view === 'category') {
+          reloadApplications();
+          if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
+        }
+        current.programsView = view;
+        current.programsCategory = view === 'category' ? category : null;
+        current.programsEpoch = programsEpoch + 1;
+        current.programsSlots = [];
+        repaintMenu();
+        const epoch = current.programsEpoch;
+        const list = current.window.document.getElementById('shell-program-list');
+        if (list) list.scrollTop = 0;
+        requestAnimationFrame(() => {
+          if (!currentMenu(current) || !current.programsOpen || current.programsEpoch !== epoch) return;
+          const document = current.window.document;
+          const target = focus === 'first' ?
+            Array.from(document.getElementById('shell-program-list')?.childNodes ?? []).find(node => node.tabIndex >= 0) :
+            document.getElementById(focus);
+          (target ?? document.getElementById('shell-program-back'))?.focus();
+        });
+        return true;
+      };
       const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
       syncShellIcons(menuTheme);
       const searchFocused = current.search?.input.root === current.window.document.activeElement;
@@ -864,16 +896,27 @@ export function createDesktopShell({ host = window, configuration, report = cons
           remove: scoped(id => removeDesktopShortcuts([id])),
         }, {
           open: current.programsOpen === true,
+          view: programsView, category: programsCategory, epoch: programsEpoch,
           slots: current.programsSlots ??= [],
           placement: current.programsPlacement,
+          navigate: navigatePrograms,
+          back: () => {
+            if (!programsLive()) return false;
+            if (programsView === 'category') return navigatePrograms('categories', null, programCategoryId(programsCategory));
+            if (programsView === 'categories') return navigatePrograms('all', null, 'shell-program-categories');
+            return false;
+          },
           launch: scoped(id => {
-            if (current.programsOpen && current.programsEpoch === programsEpoch &&
-                desktopCatalog().some(entry => entry.id === id && !entry.unavailable))
+            if (!programsLive()) return false;
+            reloadApplications();
+            if (programsLive() && programEntries().some(entry => entry.id === id && !entry.unavailable))
               return launchApplication(id);
+            return false;
           }),
           pin: scoped(id => {
-            if (!current.programsOpen || current.programsEpoch !== programsEpoch ||
-                !desktopCatalog().some(entry => entry.id === id)) return;
+            if (!programsLive()) return false;
+            reloadApplications();
+            if (!programsLive() || !programEntries().some(entry => entry.id === id)) return false;
             if (configuration.snapshot.desktop.shortcuts.some(item => item.id === id)) return removeDesktopShortcuts([id]);
             return addDesktopShortcut(current.output, id);
           }),
@@ -886,7 +929,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
             }
             if (current.programsOpen !== open) current.programsEpoch = (current.programsEpoch ?? 0) + 1;
             current.programsOpen = open;
-            if (!open) current.programsSlots = [];
+            if (!open) {
+              current.programsSlots = [];
+              current.programsView = 'all';
+              current.programsCategory = null;
+            }
             repaintMenu();
             const epoch = current.programsEpoch;
             if (focus) requestAnimationFrame(() => {

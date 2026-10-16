@@ -12,6 +12,7 @@ const { applicationsView } = await import('./desktop/shell/views.mjs');
 const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
+const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -296,9 +297,9 @@ function fixture(configure = () => {}) {
   return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings, flushFrames };
 }
 function scenario(name, run, configure) {
-  test(name, () => {
+  test(name, async () => {
     const f = fixture(configure);
-    try { run(f); } finally { f.done(); }
+    try { await run(f); } finally { f.done(); }
   });
 }
 
@@ -823,6 +824,169 @@ scenario('Classic Programs rejects stale launch and Pin after live registry remo
   assert.equal(f.calls.filter(call => call[0] === 'launch' || call[0] === 'shortcuts').length, 0);
   assert.equal(menu.closed, false);
 }, ({ state }) => { state.windows = []; });
+
+function categorizedPrograms({ native, state }) {
+  state.windows = [];
+  state.categoryFiles = [
+    { id: 'editor.desktop', name: 'Editor', tags: ['Utility', '\u6587\u6863'] },
+    { id: 'viewer.desktop', name: 'Viewer', tags: ['\u6587\u6863'] },
+    { id: 'plain.desktop', name: 'No tags', tags: [] },
+    { id: 'literal.desktop', name: 'Literal tag', tags: ['Uncategorized'] },
+  ];
+  native.applicationFiles = () => state.categoryFiles.map(entry => ({ id: entry.id, path: '/' + entry.id,
+    contents: '[Desktop Entry]\nType=Application\nName=' + entry.name + '\nExec=fixture\nCategories=' +
+      entry.tags.join(';') + ';\n' }));
+}
+function categoryMenu(f) {
+  f.shell.selectTheme('server2003');
+  const menu = f.shell.showApplications(1);
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  return menu;
+}
+function browseCategory(f, menu, tag) {
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, programCategoryId(tag))); f.flushFrames();
+}
+
+test('Classic Programs category metadata is exact, non-exclusive, Unicode and separate from untagged applications', () => {
+  const entries = Object.freeze([
+    Object.freeze({ id: 'one', categories: Object.freeze(['Utility', '\u6587\u6863', 'Utility']) }),
+    Object.freeze({ id: 'two', categories: Object.freeze(['\u6587\u6863']) }),
+    Object.freeze({ id: 'three', categories: Object.freeze([]) }),
+    Object.freeze({ id: 'four', categories: Object.freeze(['Uncategorized', 'utility']) }),
+  ]);
+  const categories = programCategories(entries);
+  assert.equal(categories.find(item => item.tag === 'Utility').count, 1, 'duplicate tag counts an application only once');
+  assert.equal(categories.find(item => item.tag === '\u6587\u6863').count, 2);
+  assert.equal(categories.find(item => item.tag === 'utility').count, 1, 'tags match with exact case');
+  assert.deepEqual(categoryEntries(entries, '\u6587\u6863').map(entry => entry.id), ['one', 'two']);
+  assert.deepEqual(categoryEntries(entries, null).map(entry => entry.id), ['three']);
+  assert.notEqual(programCategoryId(null), programCategoryId('Uncategorized'));
+  assert.deepEqual(programCategories([...entries].reverse()), categories, 'tag browsing order is independent of catalog order');
+  assert.deepEqual(programCategories([]), []);
+});
+
+scenario('Classic Programs categories keep the default flat view and layer Back/Escape while Tab includes the header', f => {
+  const menu = categoryMenu(f), search = find(menu, 'shell-app-search');
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  key(menu, 'End'); key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-back'));
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-categories'));
+  key(menu, 'Enter'); f.flushFrames();
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null);
+  const category = find(menu, programCategoryId('\u6587\u6863'));
+  assert.match(category.getAttribute('aria-label'), /\(2\)/);
+  category.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-plain.desktop'), null);
+  key(menu, 'Home'); key(menu, 'ArrowDown'); key(menu, 'Enter'); f.flushFrames();
+  assert.equal(f.saved.snapshot.desktop.shortcuts[0].id, 'editor.desktop', 'leaf Pin invokes only the original desktop service');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.activeElement, find(menu, programCategoryId('\u6587\u6863')));
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-categories'));
+  assert.ok(find(menu, 'shell-program-plain.desktop'), 'category index Back returns to flat All applications');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.closed, false);
+  assert.equal(menu.document.activeElement, find(menu, 'shell-all-programs'));
+  assert.equal(find(menu, 'shell-app-search'), search, 'category navigation never replaces real root search');
+}, categorizedPrograms);
+
+scenario('Classic Programs categories provide nonexclusive leaves, direct All applications and a real Uncategorized view', f => {
+  const menu = categoryMenu(f);
+  browseCategory(f, menu, 'Utility');
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-viewer.desktop'), null);
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  browseCategory(f, menu, '\u6587\u6863');
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'the same app participates in multiple exact category tags');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  browseCategory(f, menu, null);
+  assert.ok(find(menu, 'shell-program-plain.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-literal.desktop'), null, 'literal Uncategorized is a different real tag');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  browseCategory(f, menu, 'Uncategorized');
+  assert.ok(find(menu, 'shell-program-literal.desktop'));
+  click(find(menu, 'shell-program-literal.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, categorizedPrograms);
+
+scenario('Classic Programs category epochs reject old callbacks and held rows after navigation changes', f => {
+  const menu = categoryMenu(f);
+  const first = find(menu, 'shell-program-editor.desktop'), oldFlat = callback(first, 'click');
+  press(first);
+  browseCategory(f, menu, '\u6587\u6863');
+  domEvent(first, 'mouseup'); domEvent(first, 'click');
+  oldFlat(event('click', { currentTarget: first }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'held flat command cannot become a leaf command');
+  const row = find(menu, 'shell-program-editor.desktop');
+  const oldLeaf = callback(row, 'click'), oldPin = callback(find(menu, 'shell-program-pin-editor.desktop'), 'click');
+  key(menu, 'Escape'); f.flushFrames();
+  const oldCategory = callback(find(menu, programCategoryId('\u6587\u6863')), 'click');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  oldLeaf(event('click', { currentTarget: row }));
+  oldPin(event('click'));
+  oldCategory(event('click'));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+  assert.ok(find(menu, 'shell-program-plain.desktop'), 'obsolete category callback cannot switch the current view');
+  browseCategory(f, menu, '\u6587\u6863');
+  oldLeaf(event('click', { currentTarget: row }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'returning to the same tag has a new navigation epoch');
+}, categorizedPrograms);
+
+scenario('Classic Programs category membership is rechecked live for both launch and Pin, including an empty removed tag', f => {
+  const menu = categoryMenu(f);
+  browseCategory(f, menu, '\u6587\u6863');
+  const row = find(menu, 'shell-program-editor.desktop'), pin = find(menu, 'shell-program-pin-editor.desktop');
+  const oldLaunch = callback(row, 'click'), oldPin = callback(pin, 'click');
+  press(row);
+  f.state.categoryFiles[0].tags = ['Utility'];
+  oldLaunch(event('click', { currentTarget: row }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'native catalog change is checked before stale leaf activation');
+  oldPin(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, [], 'removed membership cannot pin through an old leaf');
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null);
+  assert.ok(find(menu, 'shell-program-viewer.desktop').parentNode === find(menu, 'shell-program-list'),
+    'remaining member stays in the actual list');
+  assert.equal(find(menu, 'shell-program-list').childNodes.indexOf(find(menu, 'shell-program-viewer.desktop')), 2,
+    'removed membership leaves stable vacant rows');
+  f.state.categoryFiles[1].tags = [];
+  click(find(menu, 'shell-app-refresh')); f.flushFrames();
+  assert.match(text(find(menu, 'shell-program-list')), /No applications in this category/);
+  assert.ok(find(menu, 'shell-program-all'));
+  key(menu, 'Home'); key(menu, 'Tab');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.getElementById(programCategoryId('\u6587\u6863')), null);
+  assert.ok(menu.document.activeElement === find(menu, 'shell-program-back'), 'removed category has a bounded focus fallback');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'global application stays available outside the removed category');
+}, categorizedPrograms);
+
+scenario('Classic Programs category selection rejects a removed tag before refresh and navigation resets on reopen', f => {
+  const menu = categoryMenu(f);
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  const category = find(menu, programCategoryId('\u6587\u6863')), old = callback(category, 'click');
+  f.state.categoryFiles.forEach(entry => { entry.tags = []; });
+  assert.equal(old(event('click', { currentTarget: category })), false);
+  assert.equal(menu.document.getElementById(programCategoryId('\u6587\u6863')), null);
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null, 'rejected category leaves the category index open');
+  click(find(menu, programCategoryId(null))); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  f.shell.showApplications(2);
+  old(event('click', { currentTarget: category }));
+  const next = f.created.findLast(window => !window.closed && window.document.getElementById('shell-all-programs'));
+  assert.ok(next !== menu && menu.closed);
+  find(next, 'shell-all-programs').focus(); key(next, 'ArrowRight'); f.flushFrames();
+  assert.ok(find(next, 'shell-program-editor.desktop'));
+  assert.ok(find(next, 'shell-program-categories'), 'a replacement RootMenu starts with flat All Programs');
+}, categorizedPrograms);
 
 scenario('Non-Classic applications keeps the existing applications consumer', f => {
   f.shell.selectTheme('bigsur');
