@@ -7,7 +7,7 @@ import { filesView } from './desktop/apps/files/ui/view.mjs';
 import { visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createVerticalScrollbar } from './gui/sdk/js/scrollbar.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { scrollbarAppearance } from './desktop/shared/ui/scrollbar-appearance.mjs';
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
 
@@ -51,7 +51,7 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
     record.input.root.setAttribute('aria-label', placeholder);
     record.input.root.setAttribute('aria-disabled', String(!enabled));
     record.input.root.style.pointerEvents = enabled ? 'auto' : 'none';
-    record.input.setAppearance(inputAppearance(theme, 14));
+    setInputAppearance(record.input, inputAppearance(theme, 14));
     return record.input.root;
   }
   function paint() {

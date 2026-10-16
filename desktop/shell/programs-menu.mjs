@@ -1,6 +1,6 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
-import { desktopCommand, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, themedText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
@@ -271,12 +271,12 @@ export function programsMenu(theme, entries, desktop, state) {
   h('view', { id: 'shell-program-header', style: { flexDirection: 'row', alignItems: 'center',
     height: 24, flexShrink: 0, minWidth: 0, overflow: 'hidden' } }, back, browse),
   h('view', { id: 'shell-program-error', role: 'alert', style: { display: state.error ? 'flex' : 'none', padding: 4, flexShrink: 0 } },
-    state.error ? desktopText(state.error, theme.colors.text, themeTextSize(theme)) : null),
+    state.error ? themedText(theme, state.error, theme.colors.text, themeTextSize(theme)) : null),
   withPanelScrollbar(theme, h('view', { id: 'shell-program-list', style: {
     flexGrow: 1, flexBasis: 0, minHeight: 0, minWidth: 0, overflow: 'scroll',
   }, onWheel: scrollDesktop, onMouseleave: leave,
     onMount: clampPrograms, onUpdate: clampPrograms, onLeave: leavePrograms }, items,
-  !current.size ? desktopText(view === 'categories' ? 'No application categories available' :
+  !current.size ? themedText(theme, view === 'categories' ? 'No application categories available' :
     view === 'folders' ? 'No applications or subfolders in this source folder' :
     view === 'category' ? 'No applications in this category' : 'No applications available',
     theme.colors.muted, themeTextSize(theme)) : null))));

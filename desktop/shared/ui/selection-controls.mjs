@@ -3,6 +3,7 @@ import { NSwitch, NCheckbox, NRadioGroup, NTabs, NSelect, NMenu } from './gui/sd
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 
 const appearances = new WeakMap();
 const find = (node, part) => node.props?.className === 'n-selection-' + part ? node :
@@ -48,6 +49,7 @@ export function selectionAppearance(theme) {
   const fontSize = themeTextSize(theme), height = theme.layout.buttonHeight;
   const markerSize = Math.max(12, Math.min(18, fontSize + 2));
   appearance = {
+    ...bodyFont(theme),
     revision: style,
     colors: { primary: c.accent, card: c.surface, body: c.body, text: c.text, textSecondary: c.muted,
       textDisabled: c.muted, border: c.border, solidText: c.accentText, railOff: c.body,

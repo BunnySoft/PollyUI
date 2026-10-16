@@ -1,6 +1,6 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
-import { desktopCommand, desktopIcon, desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, desktopIcon, themedText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { surfaceStyle, bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { programsMenu, programsPlacement } from './desktop/shell/programs-menu.mjs';
@@ -8,7 +8,7 @@ import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
 const text = (theme, value, color = theme.colors.text, extra = {}) =>
-  desktopText(value, color, themeTextSize(theme), extra);
+  themedText(theme, value, color, themeTextSize(theme), extra);
 
 function revealGridItem(item) {
   let innerScroll = 0;
@@ -251,7 +251,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     xp ? h('view', { style: { width: 48, height: 48, borderRadius: 4, borderWidth: 2,
       borderColor: '#ffffff', backgroundColor: '#e5f2ff', justifyContent: 'center', alignItems: 'center' } },
       desktopIcon('apps', c.accent, 32)) : null,
-    desktopText('PollyDesktop', theme.window.titleText, classic ? 20 : 18,
+    themedText(theme, 'PollyDesktop', theme.window.titleText, classic ? 20 : 18,
       { fontWeight: 700, fontStyle: classic ? 'italic' : 'normal' })) : null,
   grid ? search : null,
   grid ? h('view', { style: { ...row, paddingLeft: 36, paddingRight: 36, gap: 12 } },

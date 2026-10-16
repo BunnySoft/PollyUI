@@ -10,6 +10,7 @@
 import { previousTextIndex, nextTextIndex, clampTextIndex } from './gui/sdk/js/textindex.mjs';
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
 import { selectionTextColor, paintSelectionText } from './gui/sdk/js/selection-text.mjs';
+import { requireFontFamily, fontFamilyStyle } from './gui/sdk/js/font-family.mjs';
 
 const el = (owner, tag, style) => {
   const n = owner.createElement(tag);
@@ -18,6 +19,7 @@ const el = (owner, tag, style) => {
 };
 
 export function createTextInput(opts = {}) {
+  let fontFamily = requireFontFamily(opts.fontFamily);
   const maxLength = opts.maxLength;
   if (maxLength !== undefined && (!Number.isSafeInteger(maxLength) || maxLength < 0))
     throw new RangeError('Input maxLength must be a non-negative safe integer');
@@ -50,7 +52,8 @@ export function createTextInput(opts = {}) {
   root.tabIndex = 0;
 
   const highlight = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2, pointerEvents: 'none' });
-  const textEl = el(owner, 'view', { color, fontSize, pointerEvents: 'none', flexShrink: 0, position: 'relative' });
+  const textEl = el(owner, 'view', { color, fontSize, ...fontFamilyStyle(fontFamily),
+    pointerEvents: 'none', flexShrink: 0, position: 'relative' });
   const textNode = owner.createTextNode(displayed(st.value));
   textEl.appendChild(textNode);
   const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent', pointerEvents: 'none' });
@@ -62,11 +65,11 @@ export function createTextInput(opts = {}) {
   root.appendChild(underline);
 
   const displayIndex = (value, i) => displayed(value.slice(0, i)).length;
-  const xOf = (i, value = st.value) => textGeometry(displayed(value), fontSize).caret(displayIndex(value, i));
+  const xOf = (i, value = st.value) => textGeometry(displayed(value), fontSize, fontFamily).caret(displayIndex(value, i));
 
   // Map a text-local x (px from the text start) to the nearest caret index.
   function indexAtX(localX) {
-    const index = textGeometry(displayed(st.value), fontSize).nearest(localX);
+    const index = textGeometry(displayed(st.value), fontSize, fontFamily).nearest(localX);
     return secure ? clampTextIndex(st.value, Array.from(st.value).slice(0, index).join('').length) : index;
   }
 
@@ -89,7 +92,7 @@ export function createTextInput(opts = {}) {
     textNode.textContent = displayed(value);
     caret.style.left = String(padding + xOf(cursor, value));
     caret.style.backgroundColor = st.focused && (!composition || composition.cursor >= 0) ? color : 'transparent';
-    const geometry = textGeometry(displayed(value), fontSize);
+    const geometry = textGeometry(displayed(value), fontSize, fontFamily);
     const innerWidth = root.offsetWidth - padding * 2 - 2;
     if (innerWidth > 0) {
       const x = xOf(cursor, value), current = Number(root.scrollLeft);
@@ -109,7 +112,7 @@ export function createTextInput(opts = {}) {
         selectedText.setAttribute('aria-hidden', 'true');
         textEl.appendChild(selectedText);
       }
-      paintSelectionText(selectedText, { text: displayed(value), fontSize, ranges, width: geometry.width, height: fontSize,
+      paintSelectionText(selectedText, { text: displayed(value), fontSize, fontFamily, ranges, width: geometry.width, height: fontSize,
         foreground: selTextColor, selection: selColor, background: root.style.backgroundColor });
     } else if (selectedText?.parentNode) {
       selectedText.parentNode.removeChild(selectedText);
@@ -262,7 +265,9 @@ export function createTextInput(opts = {}) {
     setAppearance(values) {
       if (!values || typeof values !== 'object' || Array.isArray(values))
         throw new TypeError('Input appearance must be an object');
+      if (Object.hasOwn(values, 'fontFamily')) requireFontFamily(values.fontFamily);
       for (const [key, value] of Object.entries(values)) {
+        if (key === 'fontFamily') continue;
         if (key === 'borderRadius' || key === 'fontSize') {
           if (!Number.isFinite(value) || value < (key === 'fontSize' ? 8 : 0) ||
             value > (key === 'fontSize' ? 64 : 256))
@@ -272,6 +277,11 @@ export function createTextInput(opts = {}) {
           throw new TypeError('Invalid input appearance field: ' + key);
       }
       if (Object.hasOwn(values, 'color')) { color = values.color; textEl.style.color = color; }
+      if (Object.hasOwn(values, 'fontFamily')) {
+        const changed = fontFamily !== values.fontFamily;
+        fontFamily = values.fontFamily;
+        if (changed) textEl.style.fontFamily = fontFamily ?? '';
+      }
       if (Object.hasOwn(values, 'selectionColor')) selColor = values.selectionColor;
       if (Object.hasOwn(values, 'selectionTextColor')) selTextColor = values.selectionTextColor;
       if (Object.hasOwn(values, 'background')) root.style.backgroundColor = values.background;

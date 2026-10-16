@@ -7,6 +7,7 @@ const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = aw
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const { button } = await import('../shared/ui/button.mjs');
+const { preflightBodyFont } = await import('../shared/ui/body-font.mjs');
 const { surfacePaint, surfaceEvents, bevel, hasSurfacePaint } = await import('../shared/ui/surface-primitives.mjs');
 const { lunaVisualEvents } = await import('../shared/ui/luna-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
@@ -14,6 +15,22 @@ const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fal
 assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
+{
+  const theme = structuredClone(catalog.themes[0]);
+  assert.equal(theme.layout.fontFamily, undefined);
+  for (const family of ['Consolas', '\u5fae\u8f6f\u96c5\u9ed1', 'Noto Sans CJK SC']) {
+    theme.layout.fontFamily = family;
+    assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })).layout.fontFamily, family,
+      'Font schema is data-only even without a runtime provider');
+  }
+  for (const family of [null, 12, '', '/font.ttf', 'url(font)', 'Arial, serif', 'a'.repeat(129)]) {
+    theme.layout.fontFamily = family;
+    assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })), TypeError);
+  }
+  theme.layout.fontFamily = 'Consolas';
+  assert.throws(() => preflightBodyFont(theme), /font-family-aware/);
+  assert.doesNotThrow(() => preflightBodyFont(catalog.themes[0]));
+}
 {
   for (const base of catalog.themes) {
     assert.equal(base.panel.menuBarOpacityPercent, base.id === 'bigsur' ? 88 : undefined);

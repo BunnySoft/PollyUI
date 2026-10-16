@@ -50,6 +50,15 @@ their scrolling lists. These embedded panes add no second window frame.
 The page-navigation sidebar uses the same bounded themed scrollbar and focus
 reveal, so all six page commands remain reachable in low windows. Its header
 scrolls with the commands; ordinary repaints retain an intentional wheel position.
+Schema-1 user overrides may set optional `layout.fontFamily` for first-party UI
+body text independently of `window.fontFamily` captions. It is per theme/instance,
+uses an already-installed literal family and leaves all packaged presets unchanged.
+Active-theme consumers preflight named measurement support before accepting a
+snapshot or applying a selection; unsupported providers report an error rather
+than displaying named text with Sans caret metrics. Inactive catalog entries do
+not require runtime support. Shared themed text/input/control adapters carry the
+family through Settings, Files, Processes, opt-in File Text/chooser and Shell
+labels; neutral APIs and legacy `desktopText` keep their explicit Sans defaults.
 
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;

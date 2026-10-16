@@ -1,4 +1,11 @@
 import { parseAppearance, parseAbout, settingsPage } from './desktop/client/settings-contract.mjs';
+import { preflightBodyFont } from './desktop/shared/ui/body-font.mjs';
+
+function activeAppearance(value) {
+  const appearance = parseAppearance(value);
+  preflightBodyFont(appearance.catalog.themes.find(theme => theme.id === appearance.themeId));
+  return appearance;
+}
 
 export function createSettingsController({ client, page = 'appearance', changed = () => {}, report = console.error }) {
   const state = { page: settingsPage(page), appearance: null, about: null, busy: false,
@@ -16,7 +23,7 @@ export function createSettingsController({ client, page = 'appearance', changed 
     const scope = serial;
     refreshing = true;
     try {
-      const appearance = parseAppearance(await client.call('GetAppearance'));
+      const appearance = activeAppearance(await client.call('GetAppearance'));
       const about = state.page === 'about' ? parseAbout(await client.call('GetAbout')) : state.about;
       if (!state.closed && scope === serial) { state.appearance = appearance; state.about = about; }
     } catch (failure) { if (!state.closed && scope === serial) error(failure); }
@@ -28,11 +35,11 @@ export function createSettingsController({ client, page = 'appearance', changed 
     state.busy = true; state.error = ''; changed();
     try {
       const reply = await client.call(member, argument);
-      if (!state.closed && scope === serial && member !== 'OpenManagedPage') state.appearance = parseAppearance(reply);
+      if (!state.closed && scope === serial && member !== 'OpenManagedPage') state.appearance = activeAppearance(reply);
     } catch (failure) {
       if (!state.closed && scope === serial) {
         error(failure);
-        try { state.appearance = parseAppearance(await client.call('GetAppearance')); }
+        try { state.appearance = activeAppearance(await client.call('GetAppearance')); }
         catch (snapshotError) { state.error += '\nCurrent Shell state unavailable: ' + String(snapshotError); }
       }
     } finally { if (!state.closed && scope === serial) { state.busy = false; changed(); } }
@@ -41,7 +48,13 @@ export function createSettingsController({ client, page = 'appearance', changed 
     getState: () => ({ ...state }),
     refresh,
     navigate(page) { if (state.closed) return; state.page = settingsPage(page); changed(); return refresh(); },
-    select: id => command('SelectTheme', id), reload: () => command('ReloadThemes'), restore: () => command('RestoreThemes'),
+    select: id => {
+      if (state.closed || state.unavailable || state.busy || !state.appearance) return;
+      try { preflightBodyFont(state.appearance?.catalog.themes.find(theme => theme.id === id)); }
+      catch (failure) { error(failure); changed(); return; }
+      return command('SelectTheme', id);
+    },
+    reload: () => command('ReloadThemes'), restore: () => command('RestoreThemes'),
     managed: page => command('OpenManagedPage', settingsPage(page, true)),
     fail: failure => { if (!state.closed) { state.unavailable = true; error(failure); changed(); } },
     close() { if (!state.closed) { state.closed = true; serial++; client.close(); } },

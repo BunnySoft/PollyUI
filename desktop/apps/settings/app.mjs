@@ -3,7 +3,7 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shared/ui/them
 import { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
 import { systemSettingsView, aboutSettingsView } from './desktop/apps/settings/ui/frame.mjs';
 import { SETTINGS_APP_ID, SETTINGS_VERSION, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
-import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, themedText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
@@ -127,7 +127,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       if (!controller.getState().busy && !controller.getState().unavailable && controller.getState().appearance)
         return action(...args);
     });
-    const label = text => desktopText(text, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 });
+    const label = text => themedText(theme, text, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 });
     const build = state.appearance?.build || ownBuild;
     let content;
     if (state.page === 'appearance') {
@@ -190,12 +190,12 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       h('view', { id: 'settings-material-status', role: 'status', onWheel: scrollDesktop,
         style: { display: materialError ? 'flex' : 'none', minWidth: 0, maxHeight: '25%', flexShrink: 0,
           padding: theme.layout.compactPadding, paddingLeft: theme.layout.contentPadding, overflow: 'scroll' } },
-      desktopText(materialError ? 'Wallpaper material unavailable: ' + materialError : '',
+      themedText(theme, materialError ? 'Wallpaper material unavailable: ' + materialError : '',
         theme.colors.text, theme.layout.statusFontSize, { minWidth: 0 })));
     if (optInMaterial && materialReady) tree.props.style.backgroundColor = 'transparent';
     if (JSON.stringify(build) !== JSON.stringify(ownBuild))
       tree.children.push(h('view', { role: 'status', style: { padding: theme.layout.compactPadding, flexShrink: 0,
-        backgroundColor: theme.colors.selection } }, desktopText('Settings runtime differs: ' + buildLabel(ownBuild),
+        backgroundColor: theme.colors.selection } }, themedText(theme, 'Settings runtime differs: ' + buildLabel(ownBuild),
         selectionInk(theme, theme.colors.text), theme.layout.statusFontSize, { flexShrink: 1 })));
     if (state.busy || !state.appearance)
       tree.props['aria-busy'] = 'true';

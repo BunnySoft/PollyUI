@@ -5,6 +5,7 @@ import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './d
 import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, selectionInk, defaultActionFlag, defaultActionCue } from './desktop/shared/ui/surface-primitives.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
@@ -58,6 +59,9 @@ export function desktopIcon(name, color, size = 20) {
 export function desktopText(text, color, size = 14, extra = {}) {
   return h('view', { style: { ...desktopType, color, fontSize: size, flexShrink: 0, ...extra } }, text);
 }
+export function themedText(theme, text, color, size = 14, extra = {}) {
+  return desktopText(text, color, size, { ...bodyFont(theme), ...extra });
+}
 
 export function desktopCommand(id, text, theme, action, configuration = {}) {
   if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration) ||
@@ -74,7 +78,7 @@ export function desktopCommand(id, text, theme, action, configuration = {}) {
     quiet && selected ? selectionInk(theme, theme.colors.accent) : theme.colors.accent,
     iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null;
   if (iconView) iconView.props.className = 'theme-command-icon';
-  const caption = desktopText(text, color, themeTextSize(theme), { pointerEvents: 'none',
+  const caption = themedText(theme, text, color, themeTextSize(theme), { pointerEvents: 'none',
     flexShrink: 1, minWidth: 0 });
   caption.props.className = 'theme-command-label';
   return h('view', { id, role, tabIndex: enabled ? 0 : -1, 'aria-label': text,
@@ -101,8 +105,8 @@ export function desktopCommand(id, text, theme, action, configuration = {}) {
 
 export function settingsCard(theme, title, subtitle, children = [], id) {
   return h('view', { id, style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
-  title ? desktopText(title, theme.colors.text, themeTextSize(theme, 16), { fontWeight: 600 }) : null,
-  subtitle ? desktopText(subtitle, theme.colors.muted, themeTextSize(theme, 13), { flexShrink: 1 }) : null,
+  title ? themedText(theme, title, theme.colors.text, themeTextSize(theme, 16), { fontWeight: 600 }) : null,
+  subtitle ? themedText(theme, subtitle, theme.colors.muted, themeTextSize(theme, 13), { flexShrink: 1 }) : null,
   children, panelDetail(theme, 'card'));
 }
 

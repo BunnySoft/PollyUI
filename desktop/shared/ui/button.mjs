@@ -3,9 +3,11 @@ import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
 import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, defaultActionFlag, defaultActionCue } from './desktop/shared/ui/surface-primitives.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 const center = { alignItems: 'center', justifyContent: 'center' };
 const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
-const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
+const labelFor = theme => (value, color, size = 12) => h('view', { style: { color,
+  fontSize: themeTextSize(theme, size), ...bodyFont(theme), flexShrink: 0 } }, value);
 export function button(id, text, theme, action, selected = false, extra = {}, options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options) || Reflect.ownKeys(options).some(key => key !== 'defaultAction'))
     throw new TypeError('Button options accept only defaultAction');

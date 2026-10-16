@@ -1,21 +1,21 @@
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
-import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { inputAppearance, setInputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 
 export function displayField(owner, inputs, head, field, theme, width = 78, onInput = null) {
   const id = 'shell-output-' + head.id + '-' + field;
   const fontSize = themeTextSize(theme, 12);
   const appearance = inputAppearance(theme);
   const existing = inputs.get(id);
-  if (existing) { existing.setAppearance(appearance); existing.onDisplayInput = onInput; }
+  if (existing) { setInputAppearance(existing, appearance); existing.onDisplayInput = onInput; }
   return h('view', { style: { width, height: fontSize + 16, flexShrink: 0 }, onMount: node => {
     let input = inputs.get(id);
     if (!input) {
       input = createTextInput({ document: owner, value: field === 'refresh' ? head[field] / 1000 : head[field],
         width, fontSize, padding: 7, purpose: 'number', color: theme.colors.text, background: theme.colors.surface,
         selectionColor: theme.colors.selection });
-      input.setAppearance(appearance);
+      setInputAppearance(input, appearance);
       input.root.id = id;
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', head.name + ' ' + field);

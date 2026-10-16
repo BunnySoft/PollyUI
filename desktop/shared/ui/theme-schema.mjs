@@ -1,3 +1,5 @@
+import { fontFamily } from '../../../gui/sdk/js/font-family.mjs';
+
 export const DECORATION_METRICS = [
   ['border_width', 'borderWidth', 0, 8, 1],
   ['title_height', 'titleHeight', 16, 96, 1],
@@ -152,7 +154,8 @@ export function validateTheme(value) {
   for (const group of groups) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
-      ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])];
+      ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] :
+        group === 'layout' ? ['fontFamily'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
       prefix, true, optional);
@@ -162,6 +165,7 @@ export function validateTheme(value) {
     if (group === 'colors' && Object.hasOwn(value.colors, 'selectionText') &&
         (typeof value.colors.selectionText !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.colors.selectionText)))
       throw new TypeError(prefix + '.selectionText must be an RGB color');
+    if (group === 'layout' && Object.hasOwn(value.layout, 'fontFamily')) fontFamily(value.layout.fontFamily);
     if (group === 'window' && Object.hasOwn(value.window, 'nativeShadowColor') &&
         (typeof value.window.nativeShadowColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.window.nativeShadowColor)))
       throw new TypeError(prefix + '.nativeShadowColor must be an RGB color');
@@ -188,11 +192,7 @@ export function validateTheme(value) {
         value.panel.height - value.layout.panelItemInset)
       throw new RangeError('Classic task icons and text do not fit the configured taskbar');
     const window = value.window;
-    text(window.fontFamily, 128, value.id + '.window.fontFamily');
-    if (window.fontFamily !== window.fontFamily.trim() ||
-        !/^[\p{L}\p{N}][\p{L}\p{M}\p{N} ._()'-]*$/u.test(window.fontFamily) ||
-        /['"]$|\burl *\(/i.test(window.fontFamily))
-      throw new TypeError(value.id + '.window.fontFamily must be a bounded family name, not a font resource');
+    fontFamily(window.fontFamily);
     const top = window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) +
       (window.surfaceStyle === 'luna' ? 2 : 0);
     if ((window.surfaceStyle === 'luna' && window.controlSize + 4 > window.titleHeight) ||

@@ -1,6 +1,7 @@
 // textinput.mjs — click-to-position caret, drag-to-select, edit-with-selection.
 
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
+import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
 
 let pass = 0, fail = 0;
 function check(n, c) { if (c) { pass++; console.log('PASS: ' + n); } else { fail++; console.log('FAIL: ' + n); } }
@@ -148,6 +149,70 @@ for (const maxLength of [-1, 1.5, '128', null, NaN, Number.MAX_SAFE_INTEGER + 1]
 }
 input.value = 'unbounded'.repeat(30);
 check('omitted maxLength preserves unbounded legacy input', input.value.length === 270);
+
+if (measureText.supportsFontFamily === true) {
+  const family = globalThis.namedTestFont || 'monospace', other = 'sans-serif', size = 20, value = 'WiWiWi';
+  check('font-family measurement capability is readonly and nonconfigurable',
+    Object.getOwnPropertyDescriptor(measureText, 'supportsFontFamily').writable === false &&
+    Object.getOwnPropertyDescriptor(measureText, 'supportsFontFamily').configurable === false);
+  for (const invalid of [null, 12, '', '/font.ttf', 'url(font)', 'Arial, serif', 'a'.repeat(129)]) {
+    let rejected = false;
+    try { measureText(value, size, 400, invalid); } catch (error) { rejected = error instanceof TypeError; }
+    check('native named measurement rejects invalid literal family: ' + String(invalid), rejected);
+  }
+  const namedWidth = measureText(value, size, 400, family);
+  check('named text uses a distinct installed face advance',
+    Math.abs(namedWidth - measureText(value, size, 400, other)) > 1);
+  const named = createTextInput({ value, width: 300, fontSize: size, fontFamily: family,
+    selectionTextColor: '#ffffff' });
+  const mixed = createTextInput({ value, width: 300, fontSize: size, fontFamily: other });
+  document.body.appendChild(named.root); document.body.appendChild(mixed.root); host.render(); named.root.focus();
+  const measured = document.createElement('view');
+  Object.assign(measured.style, { fontFamily: family, fontSize: size, position: 'absolute', left: 0, top: 0 });
+  measured.textContent = value; document.body.appendChild(measured); host.render();
+  host.key('Home', 'keydown', { text: false });
+  host.key('ArrowRight', 'keydown', { text: false }); host.render();
+  const position = textGeometry(value, size, family).caret(1);
+  console.log('NAMED_INPUT_METRICS ' + JSON.stringify({ family, size, value, namedWidth,
+    defaultWidth: measureText(value, size, 400, other), renderedWidth: measured.offsetWidth,
+    firstCaret: position, actualCaret: Number(named.root.childNodes[2].style.left) - 8,
+    complexLayoutAvailable: typeof layoutText === 'function' }));
+  check('named input caret follows its rendered font, not default Sans',
+    Math.abs(Number(named.root.childNodes[2].style.left) - 8 - position) < 0.01 &&
+    Math.abs(measured.offsetWidth - namedWidth) <= 1);
+  host.key('ArrowRight', 'keydown', { shiftKey: true, text: false }); host.render();
+  const selection = JSON.stringify(named.getSelection()), caret = named.getCaret();
+  named.setAppearance({ fontFamily: other }); host.render();
+  check('same input font change preserves value, caret and selection',
+    named.value === value && named.getCaret() === caret && JSON.stringify(named.getSelection()) === selection &&
+    document.activeElement === named.root && named.root.childNodes[1].style.fontFamily === other);
+  check('selected full-string copy uses the same changed font',
+    named.root.querySelector('.input-selection-text').firstChild.childNodes[1].style.fontFamily === other);
+  named.setAppearance({ fontFamily: family }); host.render();
+  const box = named.root.getBoundingClientRect();
+  const x = box.x + 8 + textGeometry(value, size, family).caret(3);
+  host.mouse('mousedown', x, box.y + 18); host.mouse('mouseup', x, box.y + 18);
+  check('named-font hit testing lands on the actual glyph boundary', named.getCaret() === 3);
+  check('two mixed-font instances and cached geometries stay isolated',
+    mixed.root.childNodes[1].style.fontFamily === other &&
+    textGeometry(value, size, other).width !== textGeometry(value, size, family).width);
+  host.compose('pending', 7, 0); host.render(); named.setAppearance({ fontFamily: other });
+  host.compose(''); host.text('x');
+  check('font change preserves IME commit value semantics', named.value === 'WiWxiWi');
+  named.root.blur();
+  const originalMeasure = globalThis.measureText, originalLayout = globalThis.layoutText;
+  const before = [named.value, named.getCaret(), named.root.childNodes[1].style.color];
+  try {
+    globalThis.measureText = () => 0; globalThis.layoutText = undefined;
+    let rejected = false;
+    try { named.setAppearance({ color: '#ff0000', fontFamily: family }); } catch (error) { rejected = /font-family-aware/.test(String(error)); }
+    check('old providers reject a named input appearance before changing text, caret or DOM',
+      rejected && JSON.stringify(before) === JSON.stringify([named.value, named.getCaret(), named.root.childNodes[1].style.color]));
+    rejected = false;
+    try { createTextInput({ value: 'old provider', fontFamily: family }); } catch (error) { rejected = /font-family-aware/.test(String(error)); }
+    check('named input construction does not silently use an old default-family provider', rejected);
+  } finally { globalThis.measureText = originalMeasure; globalThis.layoutText = originalLayout; }
+}
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 if (fail) throw new Error('Text input assertions failed');

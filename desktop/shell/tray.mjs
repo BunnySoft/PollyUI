@@ -1,3 +1,4 @@
+import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { isLuna } from './desktop/shell/luna-primitives.mjs';
 import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
@@ -7,7 +8,7 @@ export function trayView(theme, items, activate, scroll, error = '') {
   return h('view', { id: 'shell-tray', role: 'toolbar',
     style: { flexDirection: 'row', alignItems: 'center', flexShrink: 1,
       maxWidth: theme.layout.trayWidth, gap: theme.layout.trayGap, overflow: 'scroll' } },
-  error ? h('view', { role: 'alert', style: { color: theme.panel.text, fontSize: theme.layout.smallFontSize } },
+  error ? h('view', { role: 'alert', style: { color: theme.panel.text, ...bodyFont(theme), fontSize: theme.layout.smallFontSize } },
     'Tray unavailable') : null,
   ...items.filter(item => item.status !== 'Passive').map(item => {
     const act = (event, kind) => {
@@ -37,7 +38,7 @@ export function trayView(theme, items, activate, scroll, error = '') {
         scroll(item, Math.round(-(horizontal ? event.deltaX : event.deltaY) * 3), horizontal);
       },
     }, item.icon ? h('view', { style: { width: theme.layout.trayIconSize, height: theme.layout.trayIconSize, backgroundImage: item.icon } }) :
-      h('view', { style: { fontSize: theme.layout.smallFontSize,
+      h('view', { style: { ...bodyFont(theme), fontSize: theme.layout.smallFontSize,
         color: isLuna(theme, 'panel') ? theme.panel.text : theme.colors.text } }, item.title));
   }));
 }
@@ -130,8 +131,8 @@ export function createTray({ native, report, changed, host, theme }) {
     const view = panelViewport(current, { id: 'shell-tray-menu', variant: 'menu' },
       menuButton('shell-tray-menu-close', 'Close', closeMenu),
       state.root ? menuButton('shell-tray-menu-root', 'Main menu', () => openMenu(target, 0)) : null,
-      state.pending ? h('view', { style: { color: current.colors.text, fontSize: current.layout.fontSize } }, 'Loading menu...') :
-        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, fontSize: current.layout.fontSize } }, state.error) : entries);
+      state.pending ? h('view', { style: { color: current.colors.text, ...bodyFont(current), fontSize: current.layout.fontSize } }, 'Loading menu...') :
+        state.error ? h('view', { role: 'alert', style: { color: current.colors.text, ...bodyFont(current), fontSize: current.layout.fontSize } }, state.error) : entries);
     view.props.role = 'menu';
     view.children[0].props.style.gap = current.layout.trayGap;
     render(view, menu.window.document.body);
