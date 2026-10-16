@@ -45,9 +45,16 @@ The sidebar, breadcrumbs, Up, Back, Forward and Refresh navigate real directory
 snapshots. There is no preselected entry. Single-click selects; double-click or
 Enter opens. The command bar and right-click/Shift+F10 menu operate on that exact
 selection. Arrow keys, Home and End move through the visible sorted/filtered rows;
+PageUp/PageDown from the list or a row move the single selection by one visible
+viewport of 42px rows, clamped to the first/last match. Inputs, modal/context menus
+and Ctrl/Alt/Meta-modified Page keys retain their own behavior.
 F2 focuses the inline rename field, Enter explicitly confirms, and Escape cancels
 and restores row focus. F5 refreshes, Alt+Left/Right navigate history, Alt+Up goes
 to the parent, and Ctrl+L/Alt+D opens an editable absolute address.
+Ctrl+F focuses **Filter this folder** (not a recursive filesystem search),
+Ctrl+Shift+N opens the existing New folder confirmation, and Alt+Enter opens
+the selected item's Properties without opening the file. These commands leave
+an active modal input or composition alone; creating still requires confirmation.
 The first ready snapshot receives list focus, so these keys work before a
 pointer click. Deferred reveal/focus work cannot steal a later input click.
 Retired address/name inputs are explicitly detached, including when their
@@ -82,6 +89,18 @@ the shared selection-ink state painter. Leaving an unselected row restores each
 part's original text/muted/directory color. Missing tokens keep the former
 per-part fallback; inline rename inputs and bitmap art are not recolored. This
 changes no row/column geometry, selection generation or filesystem action.
+Places, empty-state text and Properties use the same theme typography as the
+file list; property-panel spacing also follows the existing layout tokens.
+Properties names, full paths and symbolic-link targets use the existing
+read-only raw-text viewports, including wheel and Left/Right/Home/End access.
+**Copy path** in Properties or the selected-item context menu, and Ctrl+Shift+C
+outside an input/composition, copy that exact selected path as plain clipboard
+text. This is not file copying or a file-transfer clipboard format; plain Ctrl+C
+remains input text copying. The action requires the existing GUI text clipboard
+capability, otherwise it is visibly unavailable and disabled. Clipboard errors
+stay explicit without closing Properties or discarding the ready folder/selection.
+Successful context copy dismisses the menu through the existing row-focus path;
+retired generations and selected identities cannot copy a replacement item.
 
 Filter, address and inline name fields use the same SDK text input, not a second
 editor. Captured dragging continues outside the field/window and release records
@@ -122,6 +141,16 @@ gap 10 and 800-by-640 maximum panel, with no decoration layer or subscription.
 Opt-in path/error details use the same existing horizontal scroll primitive;
 ordinary message words still wrap, while an unbroken token remains fully reachable.
 This is application-panel consistency, not original-OS screenshot matching.
+
+The packaged `polly-file-text` launcher enables `--theme` for both its ordinary
+app content and chooser, using the same public `--desktop` client API as Files,
+not Shell management authority. `--no-theme` opts out; the last theme flag wins.
+Direct `createFileTextApp` calls still default to neutral, unsubscribed content.
+Opt-in preserves the same text input/value/selection and controls/input/output
+slots, uses shared theme commands and scrolling, and shares one refcounted native
+theme connection with an open chooser. Theme errors are reported separately from
+file read/write status. This remains a bounded single-line text example: its
+4096-byte save limit, conditional replacement and readback policy are unchanged.
 
 Rows show name, type, file size and a local-calendar modification date. Properties
 retains the full name/path, exact timestamp, permission mode, UID/GID, link target

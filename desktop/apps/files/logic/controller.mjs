@@ -1,13 +1,15 @@
 import { pathValue, childPath, parentPath, directorySnapshot, fileEntry, fileError } from './desktop/apps/files/logic/model.mjs';
 
-export function createFilesController({ api, launcher = null, onChange = () => {},
+export function createFilesController({ api, launcher = null, copyText = null, onChange = () => {},
   reportError = message => console.error('[files] ' + message) } = {}) {
+  if (copyText !== null && typeof copyText !== 'function') throw new TypeError('Files copyText must be a function or null');
   let disposed = false, serial = 0, history = [], position = -1;
   let state = { phase: 'idle', generation: 0, path: '', snapshot: null, selection: null,
     locations: null, error: '', message: '', dialog: null, openWith: null,
     sort: { key: 'name', direction: 1 }, filter: '', context: null, properties: false, address: null,
     applications: [], applicationError: '', canBack: false, canForward: false };
   state.moveAvailable = api?.moveFile === true && typeof api.move === 'function';
+  state.copyPathAvailable = copyText !== null;
   state.cut = null;
   function update(fields) {
     if (disposed) return;
@@ -134,6 +136,20 @@ export function createFilesController({ api, launcher = null, onChange = () => {
       if (!selected(generation, identity)) return false;
       update({ generation: state.generation + 1, properties: true, context: null, dialog: null, openWith: null });
       return true;
+    },
+    copyPath(generation = state.generation, identity = state.selection?.identity) {
+      const entry = selected(generation, identity);
+      if (!entry || state.dialog || state.openWith) return false;
+      try {
+        if (!copyText) throw new Error('Clipboard text copying is unavailable in this engine');
+        copyText(entry.path);
+        update({ generation: state.generation + 1, context: null, error: '', message: 'Copied path to clipboard.' });
+        return true;
+      } catch (error) {
+        const message = 'Copy path failed: ' + fileError(error);
+        reportError(message); update({ error: message, message: '' });
+        return false;
+      }
     },
     async open(generation = state.generation, identity = state.selection?.identity, followLink = false) {
       let entry = selected(generation, identity);

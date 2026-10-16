@@ -12,6 +12,7 @@ const { applicationsView } = await import('./desktop/shell/views.mjs');
 const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
+const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -85,7 +86,7 @@ class Node {
     domEvent(this, 'blur');
   }
   setInputMethod() {}
-  cancelComposition() {}
+  cancelComposition() { domEvent(this, 'compositionend'); }
   getBoundingClientRect() {
     return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight,
       right: this.offsetLeft + this.offsetWidth, bottom: this.offsetTop + this.offsetHeight };
@@ -262,7 +263,7 @@ function fixture(configure = () => {}) {
         for (const key of ['output', 'anchors', 'keyboard', 'exclusiveZone', 'margins'])
           assert.equal(options[key], undefined, key + ' requires a layer surface');
       if (state.failCreate) throw new Error('fixture surface creation failed');
-      const window = { options, document: document(), closed: false, closeCount: 0,
+      const window = { options, document: document(), closed: false, closeCount: 0, setCursor() {},
         close() {
           if (this.closed) return;
           this.closed = true; this.closeCount++;
@@ -296,9 +297,9 @@ function fixture(configure = () => {}) {
   return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings, flushFrames };
 }
 function scenario(name, run, configure) {
-  test(name, () => {
+  test(name, async () => {
     const f = fixture(configure);
-    try { run(f); } finally { f.done(); }
+    try { await run(f); } finally { f.done(); }
   });
 }
 
@@ -315,6 +316,330 @@ function groupedWindows({ state, native, calls }) {
 }
 const groupId = 'shell-window-app-fixture.desktop';
 const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
+
+const pinnedNodeId = id => 'shell-window-pin-' + encodeURIComponent(id);
+function pinnedFixture(f) {
+  groupedWindows(f);
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop', 'missing.desktop'] } });
+}
+
+scenario('Launcher pins: Apps pin control persists independently and leaves real search and desktop shortcuts untouched', f => {
+  f.shell.addDesktopShortcut(1, 'fixture.desktop');
+  const before = f.saved.snapshot.desktop;
+  assert.equal(before.shortcuts.length, 1);
+  const menu = f.shell.showApplications(1), search = find(menu, 'shell-app-search');
+  search.focus();
+  const pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  assert.equal(pin.getAttribute('aria-label'), 'Pin Fixture to taskbar');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.deepEqual(f.saved.snapshot.desktop, before);
+  assert.equal(find(menu, 'shell-app-search'), search);
+  assert.equal(menu.closed, false);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.equal(f.surface('panel').document.getElementById(groupId), null, 'running group is not duplicated');
+  assert.ok(find(menu, 'shell-app-pin-fixture.desktop'), 'existing desktop pin remains independent');
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.deepEqual(f.saved.snapshot.desktop, before);
+  f.shell.selectTheme('xp');
+  const legacy = f.shell.showApplications(1);
+  assert.equal(legacy.document.getElementById('shell-app-launcher-fixture.desktop'), null);
+}, groupedWindows);
+
+scenario('Launcher pins: pinned order, real group counts, unavailable retention and Dock width use the same model on two outputs', f => {
+  for (const theme of ['modern', 'bigsur']) {
+    f.shell.selectTheme(theme);
+    for (const output of [1, 2]) {
+      const surface = f.surface(theme === 'modern' ? 'panel' : 'dock', output);
+      const list = find(surface, theme === 'modern' ? 'shell-window-list' : 'shell-dock-windows');
+      assert.deepEqual(list.childNodes.slice(0, 2).map(node => node.id),
+        ['fixture.desktop', 'missing.desktop'].map(pinnedNodeId));
+      assert.match(find(surface, pinnedNodeId('fixture.desktop')).getAttribute('aria-label'), /2 windows/);
+      assert.match(find(surface, pinnedNodeId('missing.desktop')).getAttribute('aria-label'), /unavailable/);
+      assert.equal(list.childNodes.length, 5, 'two pins including one real group plus three unpinned windows');
+      if (theme === 'bigsur') {
+        const l = getDesktopTheme(theme).layout;
+        assert.equal(surface.options.width, Math.min(2 * l.dockPadding + 3 * l.dockTileWidth + 13 +
+          5 * l.dockWindowWidth + 8 * l.dockGap, f.state.outputs[output - 1].width - 2 * l.screenInset));
+      }
+    }
+  }
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'missing.desktop']);
+}, pinnedFixture);
+
+scenario('Launcher pins: idle pin launches once; its context can unpin a missing app without inventing a window', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  const surface = f.surface('panel');
+  const idle = find(surface, pinnedNodeId('fixture.desktop'));
+  idle.focus(); key(surface, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(f.calls.some(call => ['activate', 'minimize'].includes(call[0])), false);
+  const missing = find(f.surface('panel'), pinnedNodeId('missing.desktop'));
+  assert.equal(missing.tabIndex, 0, 'uninstalled pins remain keyboard manageable');
+  missing.focus(); key(f.surface('panel'), 'ContextMenu');
+  const menu = latestGroup(f);
+  assert.ok(menu);
+  assert.equal(menu.document.getElementById('shell-group-activate-10'), null);
+  assert.match(find(menu, 'shell-group-pin').getAttribute('aria-label'), /Unpin from taskbar/);
+  assert.match(text(find(menu, 'shell-window-group')), /no longer in the catalog/);
+  key(menu, 'Escape');
+  click(missing);
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1, 'missing primary opens management, not stale launch');
+  click(find(latestGroup(f), 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.equal(f.calls.some(call => call[0] === 'close-window'), false);
+}, pinnedFixture);
+
+scenario('Launcher pins: old launch gesture cannot become window activation when a pinned app starts', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  const surface = f.surface('panel'), idle = find(surface, pinnedNodeId('fixture.desktop'));
+  const old = callback(idle, 'click');
+  press(idle);
+  f.state.windows = [{ id: 30, appId: 'fixture.desktop', title: 'Running now', workspaceId: 7, active: true }];
+  f.native.onWindowsChanged();
+  assert.equal(find(surface, pinnedNodeId('fixture.desktop')) === idle, true);
+  domEvent(idle, 'mouseup'); domEvent(idle, 'click');
+  assert.equal(old(event('click', { currentTarget: idle })), false);
+  assert.equal(f.calls.some(call => ['activate', 'minimize', 'launch'].includes(call[0])), false);
+  click(idle);
+  assert.deepEqual(f.calls.at(-1), ['minimize', 30]);
+}, pinnedFixture);
+
+scenario('Launcher pins: Dock repeated or composing Enter/Space cannot launch, while a discrete Enter launches once', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  f.shell.selectTheme('bigsur');
+  const dock = f.surface('dock'), idle = find(dock, pinnedNodeId('fixture.desktop'));
+  idle.focus();
+  for (const name of ['Enter', ' ']) {
+    key(dock, name, { repeat: true });
+    key(dock, name, { isComposing: true });
+  }
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(dock, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  key(dock, 'F10', { shiftKey: true });
+  assert.ok(latestGroup(f), 'the same slot retains keyboard management');
+}, pinnedFixture);
+
+scenario('Launcher pins: launch rechecks the live catalog instead of executing removed or unavailable argv', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  f.native.applicationFiles = () => [];
+  click(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.match(f.shell.getState().error, /no longer available/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  const menu = f.shell.showApplications(1);
+  assert.equal(menu.document.getElementById('shell-app-fixture.desktop'), null);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')), 'uninstall does not erase the pin');
+}, pinnedFixture);
+
+scenario('Launcher pins: unavailable registered launchers stay focusable and Shift+F10 can unpin without launch', f => {
+  const surface = f.surface('panel'), task = find(surface, pinnedNodeId('fixture.desktop'));
+  assert.equal(task.tabIndex, 0);
+  task.focus(); key(surface, 'F10', { shiftKey: true });
+  const menu = latestGroup(f);
+  assert.match(text(find(menu, 'shell-window-group')), /Executable is unavailable/);
+  click(find(menu, 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.equal(f.calls.some(call => ['launch', 'activate', 'minimize'].includes(call[0])), false);
+}, f => {
+  pinnedFixture(f);
+  f.state.windows = [];
+  f.native.canExecute = () => false;
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop'] } });
+});
+
+scenario('Launcher pins: current running chooser can pin and unpin without modifying desktop shortcuts', f => {
+  const original = f.saved.snapshot.desktop;
+  click(find(f.surface('panel'), groupId), 2);
+  const menu = latestGroup(f), pin = find(menu, 'shell-group-pin'), old = callback(pin, 'click');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.equal(menu.closed, true);
+  old(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  click(find(f.surface('panel'), pinnedNodeId('fixture.desktop')), 2);
+  click(find(latestGroup(f), 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.deepEqual(f.saved.snapshot.desktop, original);
+}, groupedWindows);
+
+scenario('Launcher pins: save failures repaint the actual committed snapshot and old menu callbacks cannot mutate replacements', f => {
+  const menu = f.shell.showApplications(1), pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  const old = callback(pin, 'click');
+  f.state.configurationFailure = new Error('fixture pin write refused');
+  click(pin);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+  assert.match(f.shell.getState().error, /were not changed.*fixture pin write refused/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('fixture pin durability uncertain'), { committed: true });
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.match(f.shell.getState().error, /saved.*durability/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = null;
+  f.shell.showApplications(2);
+  old(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+}, groupedWindows);
+
+function orderedPinFixture(f) {
+  pinnedFixture(f);
+  f.saved.update({ launchers: { version: 1,
+    applications: ['fixture.desktop', 'missing.desktop', 'last.desktop'] } });
+}
+
+scenario('Launcher order: unavailable pins move through keyboard Earlier/Later, persist and preserve desktop shortcuts', f => {
+  f.shell.addDesktopShortcut(1, 'fixture.desktop');
+  const desktop = f.saved.snapshot.desktop;
+  const task = find(f.surface('panel'), pinnedNodeId('missing.desktop'));
+  task.focus(); key(f.surface('panel'), 'ContextMenu');
+  const menu = latestGroup(f);
+  assert.ok(find(menu, 'shell-group-pin-earlier'));
+  assert.ok(find(menu, 'shell-group-pin-later'));
+  key(menu, 'Home'); key(menu, 'ArrowDown');
+  assert.ok(menu.document.activeElement === find(menu, 'shell-group-pin-earlier'));
+  key(menu, 'Enter'); f.flushFrames();
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['missing.desktop', 'fixture.desktop', 'last.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-earlier'), null, 'first item has no Earlier command');
+  assert.equal(menu.closed, false);
+  key(menu, 'Home'); key(menu, 'Tab');
+  assert.ok(menu.document.activeElement === find(menu, 'shell-group-pin-later'), 'existing Tab traversal reaches order controls');
+  key(menu, 'Enter'); f.flushFrames();
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'last.desktop', 'missing.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-later'), null, 'last item has no Later command');
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  assert.deepEqual(find(f.surface('panel'), 'shell-window-list').childNodes.slice(0, 3).map(node => node.id),
+    f.saved.snapshot.launchers.applications.map(pinnedNodeId));
+  f.shell.stop(); f.shell.start();
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'last.desktop', 'missing.desktop']);
+  assert.deepEqual(find(f.surface('panel'), 'shell-window-list').childNodes.slice(0, 3).map(node => node.id),
+    f.saved.snapshot.launchers.applications.map(pinnedNodeId));
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  assert.equal(f.calls.some(call => ['launch', 'activate', 'close-window'].includes(call[0])), false,
+    'launcher order is not a window or process operation');
+}, orderedPinFixture);
+
+scenario('Launcher order: stale position and held direction cannot overwrite concurrent pin ordering', f => {
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), earlier = find(menu, 'shell-group-pin-earlier');
+  const old = callback(earlier, 'click');
+  press(earlier);
+  f.saved.update({ launchers: { version: 1,
+    applications: ['missing.desktop', 'last.desktop', 'fixture.desktop'] } });
+  f.native.onWindowsChanged(); f.flushFrames();
+  const saved = f.saved.snapshot;
+  assert.ok(find(menu, 'shell-group-pin-later') === earlier, 'existing positional DOM changed from Earlier to Later');
+  domEvent(earlier, 'mouseup'); domEvent(earlier, 'click');
+  assert.equal(old(event('click', { currentTarget: earlier })), false);
+  assert.ok(f.saved.snapshot === saved, 'old position/direction cannot republish a stale array');
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['last.desktop', 'missing.desktop', 'fixture.desktop'],
+    'a new deliberate gesture swaps only its current adjacent entries');
+  const retired = callback(find(menu, 'shell-group-pin-later'), 'click');
+  f.shell.showApplications(2);
+  const replaced = f.saved.snapshot;
+  assert.equal(retired(event('click')), false);
+  assert.ok(f.saved.snapshot === replaced, 'a replaced menu cannot reorder pins');
+}, orderedPinFixture);
+
+scenario('Launcher order: removed output or pin and unpinned groups have no stale sorting authority', f => {
+  click(find(f.surface('panel', 2), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), later = callback(find(menu, 'shell-group-pin-later'), 'click');
+  f.state.outputs = f.state.outputs.filter(output => output.id !== 2);
+  const previous = f.saved.snapshot;
+  assert.equal(later(event('click')), false, 'removed output is checked before the next repaint');
+  assert.ok(f.saved.snapshot === previous);
+  f.shell.refresh(true);
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const current = latestGroup(f), move = callback(find(current, 'shell-group-pin-earlier'), 'click');
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop', 'last.desktop'] } });
+  const removed = f.saved.snapshot;
+  assert.equal(move(event('click')), false);
+  assert.ok(f.saved.snapshot === removed, 'a removed pin cannot be reintroduced through an order callback');
+  f.native.onWindowsChanged();
+  f.saved.update({ launchers: { version: 1, applications: [] } });
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), groupId), 2);
+  const unpinned = latestGroup(f);
+  assert.equal(unpinned.document.getElementById('shell-group-pin-earlier'), null);
+  assert.equal(unpinned.document.getElementById('shell-group-pin-later'), null);
+}, orderedPinFixture);
+
+scenario('Launcher order: prepublication failure retains order and committed failure publishes order without rollback', f => {
+  click(find(f.surface('panel'), pinnedNodeId('missing.desktop')), 2);
+  const menu = latestGroup(f), before = f.saved.snapshot, desktop = before.desktop;
+  f.state.configurationFailure = new Error('fixture order write refused');
+  click(find(menu, 'shell-group-pin-earlier'));
+  assert.ok(f.saved.snapshot === before);
+  assert.match(f.shell.getState().error, /were not changed.*fixture order write refused/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.state.configurationFailure = Object.assign(new Error('fixture order durability uncertain'), { committed: true });
+  click(find(menu, 'shell-group-pin-earlier'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['missing.desktop', 'fixture.desktop', 'last.desktop']);
+  assert.equal(menu.document.getElementById('shell-group-pin-earlier'), null);
+  assert.match(f.shell.getState().error, /saved.*durability/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  f.state.configurationFailure = null;
+  click(find(menu, 'shell-group-pin-later'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'missing.desktop', 'last.desktop']);
+  assert.equal(f.shell.getState().error, '', 'a later successful order change uses the shared pin error recovery');
+}, orderedPinFixture);
+
+scenario('Launcher pins: limit errors keep the stored order and stale held Apps controls cannot pin a different entry', f => {
+  f.saved.update({ launchers: { version: 1, applications: Array.from({ length: 32 }, (_, i) => 'missing-' + i + '.desktop') } });
+  const menu = f.shell.showApplications(1), previous = f.saved.snapshot.launchers;
+  click(find(menu, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers, previous);
+  assert.match(f.shell.getState().error, /At most 32/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.saved.update({ launchers: { version: 1, applications: [] } });
+  f.shell.refresh();
+  const pin = find(menu, 'shell-app-launcher-fixture.desktop');
+  press(pin);
+  f.native.applicationFiles = () => [{ id: 'replacement.desktop', path: '/replacement.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Replacement\nExec=replacement\n' }];
+  click(find(menu, 'shell-app-refresh'));
+  domEvent(pin, 'mouseup'); domEvent(pin, 'click');
+  assert.deepEqual(f.saved.snapshot.launchers.applications, []);
+}, groupedWindows);
+
+scenario('Launcher pins: registered Settings pin merges its runtime windows and both Apps entries share one pin identity', f => {
+  const menu = f.shell.showApplications(1);
+  click(find(menu, 'shell-app-launcher-org.pollyui.settings'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['polly-settings.desktop']);
+  assert.match(find(menu, 'shell-app-launcher-polly-settings.desktop').getAttribute('aria-label'), /Unpin/);
+  const list = find(f.surface('panel'), 'shell-window-list');
+  assert.equal(list.childNodes.length, 1);
+  assert.match(list.firstChild.getAttribute('aria-label'), /2 windows/);
+  click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')), 2);
+  const single = latestGroup(f);
+  assert.equal(single.document.getElementById('shell-group-pin-earlier'), null);
+  assert.equal(single.document.getElementById('shell-group-pin-later'), null, 'a single pin has no direction commands');
+  f.saved.update({ launchers: { version: 1, applications: ['missing.desktop', 'polly-settings.desktop'] } });
+  f.native.onWindowsChanged();
+  click(find(single, 'shell-group-pin-earlier'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['polly-settings.desktop', 'missing.desktop'],
+    'ordering uses the same canonical registered Settings ID as pinning');
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'settings-open'), [['settings-open', 'appearance']]);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+}, ({ state, native }) => {
+  state.windows = [10, 11].map(id => ({ id, appId: 'org.pollyui.settings', title: 'Settings ' + id, workspaceId: 7 }));
+  native.applicationFiles = () => [{ id: 'polly-settings.desktop', path: '/polly-settings.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Settings\nX-Polly-AppId=org.pollyui.settings\nExec=polly-settings\n' }];
+});
 
 test('Application tasks: group-menu chrome uses the shared menu policy without masking custom tokens', () => {
   const group = windowTasks([{ id: 10, appId: 'fixture.desktop', title: 'Document', workspaceId: 7 }],
@@ -613,6 +938,206 @@ scenario('Classic Programs rejects stale launch and Pin after live registry remo
   assert.equal(f.calls.filter(call => call[0] === 'launch' || call[0] === 'shortcuts').length, 0);
   assert.equal(menu.closed, false);
 }, ({ state }) => { state.windows = []; });
+
+function categorizedPrograms({ native, state }) {
+  state.windows = [];
+  state.categoryFiles = [
+    { id: 'editor.desktop', name: 'Editor', tags: ['Utility', '\u6587\u6863'] },
+    { id: 'viewer.desktop', name: 'Viewer', tags: ['\u6587\u6863'] },
+    { id: 'plain.desktop', name: 'No tags', tags: [] },
+    { id: 'literal.desktop', name: 'Literal tag', tags: ['Uncategorized'] },
+  ];
+  native.applicationFiles = () => state.categoryFiles.map(entry => ({ id: entry.id, path: '/' + entry.id,
+    contents: '[Desktop Entry]\nType=Application\nName=' + entry.name + '\nExec=fixture\nCategories=' +
+      entry.tags.join(';') + ';\n' }));
+}
+function categoryMenu(f) {
+  f.shell.selectTheme('server2003');
+  const menu = f.shell.showApplications(1);
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  return menu;
+}
+function browseCategory(f, menu, tag) {
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, programCategoryId(tag))); f.flushFrames();
+}
+
+test('Classic Programs category metadata is exact, non-exclusive, Unicode and separate from untagged applications', () => {
+  const entries = Object.freeze([
+    Object.freeze({ id: 'one', categories: Object.freeze(['Utility', '\u6587\u6863', 'Utility']) }),
+    Object.freeze({ id: 'two', categories: Object.freeze(['\u6587\u6863']) }),
+    Object.freeze({ id: 'three', categories: Object.freeze([]) }),
+    Object.freeze({ id: 'four', categories: Object.freeze(['Uncategorized', 'utility']) }),
+  ]);
+  const categories = programCategories(entries);
+  assert.equal(categories.find(item => item.tag === 'Utility').count, 1, 'duplicate tag counts an application only once');
+  assert.equal(categories.find(item => item.tag === '\u6587\u6863').count, 2);
+  assert.equal(categories.find(item => item.tag === 'utility').count, 1, 'tags match with exact case');
+  assert.deepEqual(categoryEntries(entries, '\u6587\u6863').map(entry => entry.id), ['one', 'two']);
+  assert.deepEqual(categoryEntries(entries, null).map(entry => entry.id), ['three']);
+  assert.notEqual(programCategoryId(null), programCategoryId('Uncategorized'));
+  assert.deepEqual(programCategories([...entries].reverse()), categories, 'tag browsing order is independent of catalog order');
+  assert.deepEqual(programCategories([]), []);
+});
+
+scenario('Classic Programs categories keep the default flat view and layer Back/Escape while Tab includes the header', f => {
+  const menu = categoryMenu(f), search = find(menu, 'shell-app-search');
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  key(menu, 'End'); key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-back'));
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-categories'));
+  key(menu, 'Enter'); f.flushFrames();
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null);
+  const category = find(menu, programCategoryId('\u6587\u6863'));
+  assert.match(category.getAttribute('aria-label'), /\(2\)/);
+  category.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-plain.desktop'), null);
+  key(menu, 'Home'); key(menu, 'ArrowDown'); key(menu, 'Enter'); f.flushFrames();
+  assert.equal(f.saved.snapshot.desktop.shortcuts[0].id, 'editor.desktop', 'leaf Pin invokes only the original desktop service');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.activeElement, find(menu, programCategoryId('\u6587\u6863')));
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.equal(menu.document.activeElement, find(menu, 'shell-program-categories'));
+  assert.ok(find(menu, 'shell-program-plain.desktop'), 'category index Back returns to flat All applications');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.closed, false);
+  assert.equal(menu.document.activeElement, find(menu, 'shell-all-programs'));
+  assert.equal(find(menu, 'shell-app-search'), search, 'category navigation never replaces real root search');
+}, categorizedPrograms);
+
+scenario('Classic Programs categories provide nonexclusive leaves, direct All applications and a real Uncategorized view', f => {
+  const menu = categoryMenu(f);
+  browseCategory(f, menu, 'Utility');
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-viewer.desktop'), null);
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-viewer.desktop'));
+  browseCategory(f, menu, '\u6587\u6863');
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'the same app participates in multiple exact category tags');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  browseCategory(f, menu, null);
+  assert.ok(find(menu, 'shell-program-plain.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-literal.desktop'), null, 'literal Uncategorized is a different real tag');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  browseCategory(f, menu, 'Uncategorized');
+  assert.ok(find(menu, 'shell-program-literal.desktop'));
+  click(find(menu, 'shell-program-literal.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, categorizedPrograms);
+
+scenario('Classic Programs category epochs reject old callbacks and held rows after navigation changes', f => {
+  const menu = categoryMenu(f);
+  const first = find(menu, 'shell-program-editor.desktop'), oldFlat = callback(first, 'click');
+  press(first);
+  browseCategory(f, menu, '\u6587\u6863');
+  domEvent(first, 'mouseup'); domEvent(first, 'click');
+  oldFlat(event('click', { currentTarget: first }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'held flat command cannot become a leaf command');
+  const row = find(menu, 'shell-program-editor.desktop');
+  const oldLeaf = callback(row, 'click'), oldPin = callback(find(menu, 'shell-program-pin-editor.desktop'), 'click');
+  key(menu, 'Escape'); f.flushFrames();
+  const oldCategory = callback(find(menu, programCategoryId('\u6587\u6863')), 'click');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  oldLeaf(event('click', { currentTarget: row }));
+  oldPin(event('click'));
+  oldCategory(event('click'));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+  assert.ok(find(menu, 'shell-program-plain.desktop'), 'obsolete category callback cannot switch the current view');
+  browseCategory(f, menu, '\u6587\u6863');
+  oldLeaf(event('click', { currentTarget: row }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'returning to the same tag has a new navigation epoch');
+}, categorizedPrograms);
+
+scenario('Classic Programs category membership is rechecked live for both launch and Pin, including an empty removed tag', f => {
+  const menu = categoryMenu(f);
+  browseCategory(f, menu, '\u6587\u6863');
+  const row = find(menu, 'shell-program-editor.desktop'), pin = find(menu, 'shell-program-pin-editor.desktop');
+  const oldLaunch = callback(row, 'click'), oldPin = callback(pin, 'click');
+  press(row);
+  f.state.categoryFiles[0].tags = ['Utility'];
+  oldLaunch(event('click', { currentTarget: row }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'native catalog change is checked before stale leaf activation');
+  oldPin(event('click', { currentTarget: pin }));
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, [], 'removed membership cannot pin through an old leaf');
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null);
+  assert.ok(find(menu, 'shell-program-viewer.desktop').parentNode === find(menu, 'shell-program-list'),
+    'remaining member stays in the actual list');
+  assert.equal(find(menu, 'shell-program-list').childNodes.indexOf(find(menu, 'shell-program-viewer.desktop')), 2,
+    'removed membership leaves stable vacant rows');
+  f.state.categoryFiles[1].tags = [];
+  click(find(menu, 'shell-app-refresh')); f.flushFrames();
+  assert.match(text(find(menu, 'shell-program-list')), /No applications in this category/);
+  assert.ok(find(menu, 'shell-program-all'));
+  key(menu, 'Home'); key(menu, 'Tab');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.getElementById(programCategoryId('\u6587\u6863')), null);
+  assert.ok(menu.document.activeElement === find(menu, 'shell-program-back'), 'removed category has a bounded focus fallback');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'global application stays available outside the removed category');
+}, categorizedPrograms);
+
+scenario('Classic Programs category actions reject failed catalog refresh without discarding retained entries, then recover', f => {
+  const menu = categoryMenu(f), read = f.native.applicationFiles;
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  const category = find(menu, programCategoryId('\u6587\u6863'));
+  const snapshot = f.saved.snapshot;
+  const fail = () => { throw new Error('fixture catalog read failed'); };
+  const acknowledgeFailure = () => {
+    assert.match(f.shell.getState().error, /Application discovery failed.*fixture catalog read failed/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.ok(f.saved.snapshot === snapshot, 'failed catalog actions do not publish preferences');
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  };
+  f.native.applicationFiles = fail;
+  assert.equal(callback(category, 'click')(event('click', { currentTarget: category })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.ok(find(menu, programCategoryId('\u6587\u6863')), 'retained category remains visible, not accepted as fresh');
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null, 'failed entry did not navigate');
+  f.native.applicationFiles = read;
+  click(find(menu, programCategoryId('\u6587\u6863'))); f.flushFrames();
+  const row = find(menu, 'shell-program-editor.desktop'), pin = find(menu, 'shell-program-pin-editor.desktop');
+  assert.equal(f.shell.getState().error, '', 'successful refresh clears discovery failure');
+  f.native.applicationFiles = fail;
+  assert.equal(callback(row, 'click')(event('click', { currentTarget: row })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'retained application stays visible in its current leaf');
+  assert.equal(callback(pin, 'click')(event('click', { currentTarget: pin })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.match(text(find(menu, 'shell-program-error')), /fixture catalog read failed/);
+  f.native.applicationFiles = read;
+  click(find(menu, 'shell-program-pin-editor.desktop')); f.flushFrames();
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['editor.desktop']);
+  assert.equal(f.shell.getState().error, '');
+  click(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, categorizedPrograms);
+
+scenario('Classic Programs category selection rejects a removed tag before refresh and navigation resets on reopen', f => {
+  const menu = categoryMenu(f);
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  const category = find(menu, programCategoryId('\u6587\u6863')), old = callback(category, 'click');
+  f.state.categoryFiles.forEach(entry => { entry.tags = []; });
+  assert.equal(old(event('click', { currentTarget: category })), false);
+  assert.equal(menu.document.getElementById(programCategoryId('\u6587\u6863')), null);
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null, 'rejected category leaves the category index open');
+  click(find(menu, programCategoryId(null))); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  f.shell.showApplications(2);
+  old(event('click', { currentTarget: category }));
+  const next = f.created.findLast(window => !window.closed && window.document.getElementById('shell-all-programs'));
+  assert.ok(next !== menu && menu.closed);
+  find(next, 'shell-all-programs').focus(); key(next, 'ArrowRight'); f.flushFrames();
+  assert.ok(find(next, 'shell-program-editor.desktop'));
+  assert.ok(find(next, 'shell-program-categories'), 'a replacement RootMenu starts with flat All Programs');
+}, categorizedPrograms);
 
 scenario('Non-Classic applications keeps the existing applications consumer', f => {
   f.shell.selectTheme('bigsur');
@@ -943,7 +1468,7 @@ scenario('internal pointer/focus/scroll and a consumed child Escape do not dismi
   const search = find(menu, 'shell-app-search');
   press(search);
   domEvent(search, 'textinput', { data: 'fix' });
-  assert.match(find(menu, 'shell-app-search').lastChild.firstChild.textContent, /fix/);
+  assert.equal(find(menu, 'shell-app-search').childNodes[1].firstChild.textContent, 'fix');
   press(find(menu, 'shell-applications'));
   domEvent(find(menu, 'shell-applications'), 'wheel', { deltaY: 40 });
   key(menu, 'Tab');
@@ -984,7 +1509,7 @@ scenario('Tab/Shift+Tab retain host navigation and Enter/Space/Escape act on the
 
 scenario('retained callbacks from closed/replaced menus cannot close, mutate, launch or capture', f => {
   const first = f.shell.showApplications(1);
-  const oldSearch = callback(find(first, 'shell-app-search'), 'textinput');
+  const oldSearch = find(first, 'shell-app-search').listeners.get('textinput').at(-1);
   const oldLaunch = callback(find(first, 'shell-app-fixture.desktop'), 'click');
   const oldClose = callback(find(first, 'shell-app-close'), 'click');
   const oldKey = callback(first.document.body, 'keydown');
@@ -997,7 +1522,8 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   oldOnclose();
   assert.equal(next.closed, false);
   assert.equal(next.document.activeElement.id, 'shell-app-search');
-  assert.equal(find(next, 'shell-app-search').lastChild.firstChild.textContent, 'Search applications');
+  assert.equal(find(next, 'shell-app-search').childNodes[1].firstChild.textContent, '');
+  assert.equal(find(next, 'shell-app-search-slot').lastChild.firstChild.textContent, 'Search applications');
   assert.equal(f.calls.some(call => call[0] === 'launch'), false);
   assert.ok(first.document.activeElement === null, 'replaced menu releases DOM focus');
   assert.equal(first.document.body.listeners.get('keydown').length, 0);
@@ -1019,6 +1545,61 @@ scenario('current search launch and fixed Settings routes retain their actual la
   assert.equal(f.shell.showShortcuts(1), 123); assert.equal(f.shell.showDisplays(1), 123);
   assert.equal(f.calls.some(call => call[0] === 'capture'), false);
   assert.equal(f.calls.some(call => call[0] === 'apply-outputs'), false);
+});
+
+scenario('application search retains native editing, bounded paste, composition and retired input guards', f => {
+  const menu = f.shell.showApplications(1), field = find(menu, 'shell-app-search');
+  const text = () => field.childNodes[1].firstChild.textContent;
+  const previousClipboard = globalThis.clipboard;
+  let clipboardText = '';
+  globalThis.clipboard = { readText: () => clipboardText, writeText: value => { clipboardText = value; } };
+  try {
+    const hint = find(menu, 'shell-app-search-hint');
+    domEvent(field, 'compositionstart');
+    domEvent(field, 'compositionupdate', { data: 'preedit', selectionStart: 3 });
+    assert.equal(hint.style.display, 'none', 'Empty committed query hides its placeholder during preedit');
+    domEvent(field, 'compositionend');
+    assert.equal(hint.style.display, 'flex', 'Cancelling an empty composition restores the placeholder');
+    domEvent(field, 'textinput', { data: 'Fxiture' });
+    key(menu, 'Home'); key(menu, 'ArrowRight'); key(menu, 'Delete'); key(menu, 'ArrowRight');
+    domEvent(field, 'textinput', { data: 'x' });
+    assert.equal(text(), 'Fixture', 'Delete and insertion edit at the caret instead of appending');
+    key(menu, 'Home'); key(menu, 'ArrowRight', { shiftKey: true });
+    const selection = field.firstChild.childNodes.map(node => ({ ...node.style }));
+    click(find(menu, 'shell-app-refresh'));
+    assert.ok(find(menu, 'shell-app-search') === field);
+    field.focus();
+    assert.deepEqual(field.firstChild.childNodes.map(node => ({ ...node.style })), selection);
+    clipboardText = 'F';
+    key(menu, 'v', { ctrlKey: true });
+    assert.equal(text(), 'Fixture', 'Pasting replaces the retained selection');
+    key(menu, 'Home'); key(menu, 'ArrowRight');
+    clipboardText = 'x'.repeat(200);
+    key(menu, 'v', { ctrlKey: true });
+    assert.equal(text(), 'F' + 'x'.repeat(121) + 'ixture', 'Overlong middle paste preserves the suffix within 128 code points');
+    key(menu, 'Delete');
+    assert.equal(text(), 'F' + 'x'.repeat(121) + 'xture', 'Paste leaves the caret immediately before the preserved suffix');
+    key(menu, 'a', { ctrlKey: true }); clipboardText = 'Fixture'; key(menu, 'v', { metaKey: true });
+    domEvent(field, 'compositionstart');
+    domEvent(field, 'compositionupdate', { data: 'input-method preedit', selectionStart: 3 });
+    key(menu, 'Enter');
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'Actual composition blocks launching even without an event flag');
+    domEvent(field, 'compositionend');
+    key(menu, 'Enter', { isComposing: true });
+    key(menu, 'Enter', { repeat: true });
+    assert.equal(menu.closed, false);
+    const retired = field.listeners.get('keydown').at(-1);
+    key(menu, 'Enter');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+    const next = f.shell.showApplications(2);
+    retired(event('keydown', { key: 'Enter' }));
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+    assert.equal(next.closed, false);
+    assert.equal(text(), '', 'Closing clears the owned search input');
+  } finally {
+    if (previousClipboard === undefined) delete globalThis.clipboard;
+    else globalThis.clipboard = previousClipboard;
+  }
 });
 
 scenario('workspace editor focus is internal and retired Enter cannot save a replacement editor', f => {

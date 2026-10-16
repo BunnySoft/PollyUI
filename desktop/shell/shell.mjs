@@ -1,13 +1,13 @@
 import { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
-import { render } from './gui/sdk/js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
-import { createApplicationLauncher } from './desktop/shell/applications.mjs';
+import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, programCategories, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
 import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
@@ -179,6 +179,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const editor = workspaceEditor;
     workspaceEditor = null;
     editor?.input.root.blur();
+    const search = surface.search;
+    surface.search = null;
+    if (search) {
+      search.input.root.cancelComposition();
+      search.input.root.blur();
+      search.input.value = '';
+    }
+    if (running && surface.mode === 'applications') syncShellIcons(getDesktopTheme(themeId));
     return true;
   }
 
@@ -276,10 +284,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function displayTasks(theme) {
     const grouping = theme.panel.taskGrouping ?? 'windows';
+    const pins = configuration.snapshot.launchers.applications;
     if (!taskCache || taskCache.windows !== windows || taskCache.workspaces !== workspaces ||
-        taskCache.applications !== applications || taskCache.grouping !== grouping)
-      taskCache = { windows, workspaces, applications, grouping,
-        items: windowTasks(visibleWindows(), grouping, desktopCatalog()) };
+        taskCache.applications !== applications || taskCache.grouping !== grouping || taskCache.pins !== pins)
+      taskCache = { windows, workspaces, applications, grouping, pins,
+        items: windowTasks(visibleWindows(), grouping, desktopCatalog(), pins,
+          workspaces.find(workspace => workspace.active)?.id, applications) };
     return taskCache.items;
   }
 
@@ -328,7 +338,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     surface.desktopController.update(items, area);
     const overflow = shortcuts.length - items.length;
     const displaced = shortcuts.some(item => !bundle.identity || outputKey(item.output) !== outputKey(bundle.identity));
-    syncDesktopIcons();
+    syncShellIcons(theme);
     const imageError = items.map(item => desktopImageErrors.get(item.id)?.message).find(Boolean);
     const message = desktopStatus || (errorKind === 'application' ? error : '') || imageError ||
       (overflow ? overflow + ' shortcut(s) do not fit. Right-click to manage them or enlarge this output.' :
@@ -337,10 +347,28 @@ export function createDesktopShell({ host = window, configuration, report = cons
       surface.window.document.body);
   }
 
-  function syncDesktopIcons() {
+  function syncShellIcons(theme) {
     const ids = new Set(configuration.snapshot.desktop.shortcuts.map(item => item.id));
-    const entries = applications.filter(entry => ids.has(entry.id) && entry.icon &&
-      (entry.id.startsWith('bundle:') || entry.icon.startsWith('/')));
+    if (theme.panel.taskGrouping === 'applications')
+      for (const id of configuration.snapshot.launchers.applications) {
+        ids.add(id);
+        if (id === SETTINGS_APPLICATION_ID) {
+          const registered = applicationForWindow(applications, SETTINGS_APPLICATION_ID);
+          if (registered) ids.add(registered.id);
+        }
+      }
+    if (menu?.mode === 'applications' && currentMenu(menu)) {
+      const query = menu.query.toLowerCase();
+      for (const entry of desktopCatalog().filter(entry =>
+        [entry.name, entry.genericName || '', entry.comment || '', ...(entry.keywords || [])]
+          .join(' ').toLowerCase().includes(query)).slice(0, 100)) ids.add(entry.id);
+    }
+    const appIds = new Set(displayTasks(theme).map(task => task.appId).filter(Boolean));
+    for (const appId of appIds) {
+      const entry = applicationForWindow(applications, appId);
+      if (entry) ids.add(entry.id);
+    }
+    const entries = applications.filter(entry => entry.icon && ids.has(entry.id));
     if (!iconResources && entries.length && !iconLoading) {
       iconLoading = true;
       const scope = iconScope;
@@ -349,13 +377,15 @@ export function createDesktopShell({ host = window, configuration, report = cons
         if (typeof globalThis.createBitmap !== 'function') throw new Error('GUI bitmap decoding is unavailable');
         iconResources = module.createDesktopIconResources(globalThis.createBitmap);
         iconLoading = false;
-        for (const bundle of bundles.values()) paintDesktop(bundle);
+        for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+        repaintMenu();
       }).catch(failure => {
         if (!running || scope !== iconScope) return;
         iconLoadError = failure;
         for (const entry of entries) iconFailure(entry, failure);
         // Do not retry a failed module import on every Shell repaint.
-        for (const bundle of bundles.values()) paintDesktop(bundle);
+        for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+        repaintMenu();
       });
     }
     if (!iconResources) {
@@ -377,6 +407,57 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const message = 'Cannot load ' + entry.name + ' icon; using original fallback artwork. ' + String(failure);
     desktopImageErrors.set(entry.id, { path: entry.icon, message });
     report('[shell] ' + message);
+  }
+
+  function updateLauncherPins(change) {
+    if (!running || getDesktopTheme(themeId).panel.taskGrouping !== 'applications') return false;
+    try {
+      const next = change(configuration.snapshot.launchers.applications);
+      if (!next) return false;
+      configuration.update({ launchers: { version: 1, applications: next } });
+      if (errorKind === 'launchers') { error = ''; errorKind = ''; }
+    } catch (failure) {
+      error = (failure.committed ? 'Launcher pins saved, but durability confirmation failed: ' :
+        'Launcher pins were not changed: ') + String(failure);
+      errorKind = 'launchers';
+      report('[shell] ' + error);
+      refresh(true); repaintMenu();
+      return false;
+    }
+    refresh(true); repaintMenu();
+    return true;
+  }
+
+  function changeLauncherPin(id, pinned) {
+    id = launcherCatalogId(id);
+    return updateLauncherPins(previous => {
+      if (previous.includes(id) === pinned) return null;
+      if (pinned) {
+        if (id !== SETTINGS_APPLICATION_ID) applications = launcher.refresh();
+        const entry = desktopCatalog().find(entry => entry.id === id);
+        if (!entry || entry.unavailable) throw new Error(entry?.unavailable || 'Application is no longer in the catalog');
+        if (previous.length >= 32) throw new Error('At most 32 applications can be pinned');
+      }
+      return pinned ? [...previous, id] : previous.filter(value => value !== id);
+    });
+  }
+
+  function moveLauncherPin(id, position, direction) {
+    id = launcherCatalogId(id);
+    return updateLauncherPins(previous => {
+      const next = position + direction;
+      if (![1, -1].includes(direction) || previous[position] !== id || next < 0 || next >= previous.length) return null;
+      const applications = [...previous];
+      [applications[position], applications[next]] = [applications[next], applications[position]];
+      return applications;
+    });
+  }
+
+  function launcherCatalogId(id) {
+    const registered = applicationForWindow(applications, SETTINGS_APPLICATION_ID);
+    if (id !== SETTINGS_APPLICATION_ID && id !== registered?.id) return id;
+    return configuration.snapshot.launchers.applications.includes(SETTINGS_APPLICATION_ID) ?
+      SETTINGS_APPLICATION_ID : registered?.id || SETTINGS_APPLICATION_ID;
   }
 
   function cancelDesktopInteractions() {
@@ -469,17 +550,25 @@ export function createDesktopShell({ host = window, configuration, report = cons
       name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
     } : null;
     if (!background.window.closed) paintDesktop(bundle, theme);
+    else syncShellIcons(theme);
+    const taskImages = new Map();
+    for (const task of listed) {
+      const entry = task.catalogId ? applications.find(entry => entry.id === task.catalogId) ||
+        (task.catalogId === SETTINGS_APPLICATION_ID ? applicationForWindow(applications, SETTINGS_APPLICATION_ID) : null) :
+        applicationForWindow(applications, task.appId);
+      if (entry && desktopImages.has(entry.id)) taskImages.set(task.id, desktopImages.get(entry.id));
+    }
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error || serviceError, () => showSystemSettings(bundle.output.id), listed,
       taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
+          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }, taskImages),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
       () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed,
-      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true)), dock.window.document.body);
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;
@@ -652,6 +741,56 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function reloadThemes() { return changeThemeFiles(true); }
   function restoreThemes() { return changeThemeFiles(false); }
 
+  function applicationSearch(current, theme, { style, placeholder, submit, focused }) {
+    let record = current.search;
+    if (!record) {
+      const input = createTextInput({ window: current.window, value: current.query, width: '100%',
+        fontSize: theme.layout.fontSize, padding: 4, maxLength: 128 });
+      record = current.search = { input, theme: null, composing: false };
+      input.root.id = 'shell-app-search';
+      input.root.setAttribute('role', 'textbox');
+      input.root.setAttribute('aria-label', 'Search applications');
+      const live = () => currentMenu(current) && current.search === record;
+      const edited = () => {
+        if (!live() || current.query === input.value) return;
+        current.query = input.value;
+        repaintMenu();
+      };
+      const hint = composing => {
+        if (!live()) return;
+        record.composing = composing;
+        const node = current.window.document.getElementById('shell-app-search-hint');
+        if (node) node.style.display = composing || input.value ? 'none' : 'flex';
+      };
+      input.root.addEventListener('textinput', edited);
+      input.root.addEventListener('auxclick', edited);
+      input.root.addEventListener('compositionstart', () => hint(true));
+      input.root.addEventListener('compositionend', () => hint(false));
+      input.root.addEventListener('focus', event => { if (live()) record.focused?.(event); });
+      input.root.addEventListener('keydown', event => {
+        if (!live()) return;
+        if (['Backspace', 'Delete'].includes(event.key) ||
+            ((event.ctrlKey || event.metaKey) && ['x', 'v'].includes(event.key.toLowerCase()))) edited();
+        if (event.key === 'Enter') {
+          event.preventDefault(); event.stopPropagation();
+          if (!event.repeat && !event.isComposing && !record.composing) record.submit();
+        } else if (event.defaultPrevented) event.stopPropagation();
+      });
+    }
+    record.submit = submit; record.focused = focused;
+    if (record.input.value !== current.query) record.input.value = current.query;
+    if (record.theme !== theme) {
+      record.input.setAppearance(inputAppearance(theme));
+      record.theme = theme;
+    }
+    record.input.root.style.height = String(style.height);
+    return h('view', { id: 'shell-app-search-slot', style: { ...style, position: 'relative' },
+      onMount: node => node.insertBefore(record.input.root, node.firstChild) },
+    h('view', { id: 'shell-app-search-hint', 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
+      color: theme.colors.muted, fontSize: theme.layout.fontSize, pointerEvents: 'none',
+      display: current.query || record.composing ? 'none' : 'flex' } }, placeholder));
+  }
+
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
     const current = menu;
@@ -681,11 +820,21 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return;
     }
     if (current.mode === 'window-group') {
-      const group = displayTasks(getDesktopTheme(themeId)).find(task => task.id === current.windowId && task.grouped);
-      if (!group || group.appId !== current.groupAppId ||
+      const group = displayTasks(getDesktopTheme(themeId)).find(task =>
+        task.id === current.windowId && (task.grouped || task.launcher));
+      if (!group || group.appId !== current.groupAppId || group.catalogId !== current.groupCatalogId ||
+          !!group.launcher !== current.groupLauncher ||
           workspaces.find(workspace => workspace.active)?.id !== current.groupWorkspaceId) {
         closeMenu(current); return;
       }
+      const entry = group.catalogId ? desktopCatalog().find(entry => entry.id === group.catalogId) :
+        applicationForWindow(applications, group.appId);
+      const catalogId = group.catalogId || entry?.id;
+      const pinId = catalogId ? launcherCatalogId(catalogId) : null;
+      const pins = configuration.snapshot.launchers.applications, pinIndex = pins.indexOf(pinId);
+      const pinned = pinIndex >= 0;
+      const livePinMenu = () => currentMenu(current) && host.displays().some(output => output.id === current.output) &&
+        liveTasks(current.groupWorkspaceId).some(task => task.id === group.id && taskIdentity(task) === taskIdentity(group));
       render(windowGroupMenu(getDesktopTheme(themeId), group, {
         slots: current.groupSlots,
         action: (id, action) => {
@@ -701,7 +850,21 @@ export function createDesktopShell({ host = window, configuration, report = cons
           } catch (failure) { windowFailure(failure); return false; }
         },
         close: () => currentMenu(current) ? closeMenu(current, true) : false,
-        error,
+        pin: group.pinned || entry ? {
+          label: pinned || group.pinned ? 'Unpin from ' : 'Pin to ',
+          target: getDesktopTheme(themeId).panel.kind === 'dock' ? 'Dock' : 'taskbar',
+          order: pinned ? {
+            id: pinId, position: pinIndex, earlier: pinIndex > 0, later: pinIndex + 1 < pins.length,
+            move: direction => livePinMenu() ? moveLauncherPin(pinId, pinIndex, direction) : false,
+          } : null,
+          change: () => {
+            if (!livePinMenu()) return false;
+            const changed = changeLauncherPin(group.catalogId || entry.id, !pinned && !group.pinned);
+            if (changed && currentMenu(current)) closeMenu(current, true);
+            return changed;
+          },
+        } : null,
+        error: error || group.unavailable,
       }), current.window.document.body);
       return;
     }
@@ -711,9 +874,43 @@ export function createDesktopShell({ host = window, configuration, report = cons
         current.programsOpen = false;
         current.programsEpoch = (current.programsEpoch ?? 0) + 1;
         current.programsSlots = [];
+        current.programsView = 'all';
+        current.programsCategory = null;
       }
       const programsEpoch = current.programsEpoch ?? 0;
+      const programsView = current.programsView ?? 'all', programsCategory = current.programsCategory ?? null;
+      const programsLive = () => currentMenu(current) && current.programsOpen &&
+        current.programsEpoch === programsEpoch && (current.programsView ?? 'all') === programsView &&
+        (current.programsCategory ?? null) === programsCategory;
+      const programEntries = () => programsView === 'categories' ? [] : programsView === 'category' ?
+        categoryEntries(desktopCatalog(), programsCategory) : desktopCatalog();
+      const navigatePrograms = (view, category = null, focus = 'first') => {
+        if (!programsLive() || !['all', 'categories', 'category'].includes(view)) return false;
+        if (view === 'category') {
+          if (!reloadApplications()) return false;
+          if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
+        }
+        current.programsView = view;
+        current.programsCategory = view === 'category' ? category : null;
+        current.programsEpoch = programsEpoch + 1;
+        current.programsSlots = [];
+        repaintMenu();
+        const epoch = current.programsEpoch;
+        const list = current.window.document.getElementById('shell-program-list');
+        if (list) list.scrollTop = 0;
+        requestAnimationFrame(() => {
+          if (!currentMenu(current) || !current.programsOpen || current.programsEpoch !== epoch) return;
+          const document = current.window.document;
+          const target = focus === 'first' ?
+            Array.from(document.getElementById('shell-program-list')?.childNodes ?? []).find(node => node.tabIndex >= 0) :
+            document.getElementById(focus);
+          (target ?? document.getElementById('shell-program-back'))?.focus();
+        });
+        return true;
+      };
       const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
+      syncShellIcons(menuTheme);
+      const searchFocused = current.search?.input.root === current.window.document.activeElement;
       render(applicationMenu(menuTheme, desktopCatalog(), current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error,
@@ -723,16 +920,27 @@ export function createDesktopShell({ host = window, configuration, report = cons
           remove: scoped(id => removeDesktopShortcuts([id])),
         }, {
           open: current.programsOpen === true,
+          view: programsView, category: programsCategory, epoch: programsEpoch,
           slots: current.programsSlots ??= [],
           placement: current.programsPlacement,
+          navigate: navigatePrograms,
+          back: () => {
+            if (!programsLive()) return false;
+            if (programsView === 'category') return navigatePrograms('categories', null, programCategoryId(programsCategory));
+            if (programsView === 'categories') return navigatePrograms('all', null, 'shell-program-categories');
+            return false;
+          },
           launch: scoped(id => {
-            if (current.programsOpen && current.programsEpoch === programsEpoch &&
-                desktopCatalog().some(entry => entry.id === id && !entry.unavailable))
+            if (!programsLive()) return false;
+            if (!reloadApplications()) return false;
+            if (programsLive() && programEntries().some(entry => entry.id === id && !entry.unavailable))
               return launchApplication(id);
+            return false;
           }),
           pin: scoped(id => {
-            if (!current.programsOpen || current.programsEpoch !== programsEpoch ||
-                !desktopCatalog().some(entry => entry.id === id)) return;
+            if (!programsLive()) return false;
+            if (!reloadApplications()) return false;
+            if (!programsLive() || !programEntries().some(entry => entry.id === id)) return false;
             if (configuration.snapshot.desktop.shortcuts.some(item => item.id === id)) return removeDesktopShortcuts([id]);
             return addDesktopShortcut(current.output, id);
           }),
@@ -745,7 +953,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
             }
             if (current.programsOpen !== open) current.programsEpoch = (current.programsEpoch ?? 0) + 1;
             current.programsOpen = open;
-            if (!open) current.programsSlots = [];
+            if (!open) {
+              current.programsSlots = [];
+              current.programsView = 'all';
+              current.programsCategory = null;
+            }
             repaintMenu();
             const epoch = current.programsEpoch;
             if (focus) requestAnimationFrame(() => {
@@ -757,8 +969,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
               target?.focus();
             });
           }),
-        }),
+        }, desktopImages, options => applicationSearch(current, menuTheme, options),
+        menuTheme.panel.taskGrouping === 'applications' ? {
+          target: menuTheme.panel.kind === 'dock' ? 'Dock' : 'taskbar',
+          id: launcherCatalogId,
+          has: id => configuration.snapshot.launchers.applications.includes(id),
+          change: scoped((id, expected) => host.displays().some(output => output.id === current.output) &&
+            configuration.snapshot.launchers.applications.includes(id) === expected ?
+            changeLauncherPin(id, !expected) : false),
+        } : null),
         current.window.document.body);
+      const search = current.search?.input.root;
+      const slot = current.window.document.getElementById('shell-app-search-slot');
+      if (search && slot && search.parentNode !== slot) slot.insertBefore(search, slot.firstChild);
+      if (searchFocused && search && current.window.document.activeElement !== search) search.focus();
       return;
     }
     if (current.mode === 'desktop') {
@@ -1091,7 +1315,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (current !== workspaceId) return [];
     const live = native.windows().filter(window =>
       typeof native.workspaces !== 'function' || window.workspaceId === current);
-    return windowTasks(live, getDesktopTheme(themeId).panel.taskGrouping, desktopCatalog());
+    return windowTasks(live, getDesktopTheme(themeId).panel.taskGrouping, desktopCatalog(),
+      configuration.snapshot.launchers.applications, current, applications);
   }
 
   function taskCallback(bundle, surface, context) {
@@ -1105,9 +1330,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
         if (!host.displays().some(output => output.id === bundle.output.id)) return false;
         const task = liveTasks(workspaceId).find(task => task.id === id);
         if (!task || taskIdentity(task) !== identities.get(id)) return false;
-        if (!task.grouped) return context ? showWindowActions(bundle.output.id, id) : toggleWindow(id);
-        if (context || task.count > 1) return openMenu(bundle.output.id, 'window-group', task.id, {
+        if (task.launcher && !context && !task.unavailable) return launchApplication(task.catalogId, bundle.output.id);
+        if (!task.grouped && !task.launcher) return context ? showWindowActions(bundle.output.id, id) : toggleWindow(id);
+        if (task.launcher || context || task.count > 1) return openMenu(bundle.output.id, 'window-group', task.id, {
           groupAppId: task.appId, groupWorkspaceId: workspaceId, groupSlots: [],
+          groupCatalogId: task.catalogId, groupLauncher: !!task.launcher,
           returnFocus: () => {
             try {
               if (!surface.window.closed && bundles.get(bundle.output.id)?.surfaces[surface.kind] === surface &&
@@ -1201,17 +1428,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function reloadApplications() {
     if (!launcher) throw new Error('Application launching requires --desktop');
+    lastCatalogPoll = Date.now();
+    let succeeded = false;
     try {
       applications = launcher.refresh();
       if (errorKind === 'application') { error = ''; errorKind = ''; }
+      succeeded = true;
     } catch (failure) {
-      applications = [];
       error = 'Application discovery failed: ' + String(failure);
       errorKind = 'application';
       report('[shell] ' + error);
     }
     repaintMenu();
-    for (const bundle of bundles.values()) paintDesktop(bundle);
+    refresh(true);
+    return succeeded;
   }
 
   function showApplications(outputId) {
@@ -1250,6 +1480,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
       return null;
     };
     try {
+      if (applicationForWindow(applications, SETTINGS_APPLICATION_ID)?.id === id) {
+        applications = launcher.refresh();
+        if (applicationForWindow(applications, SETTINGS_APPLICATION_ID)?.id === id)
+          return showSystemSettings(outputId);
+      }
       const result = launcher.launch(id);
       return result && typeof result.then === 'function' ? result.then(succeeded, failed) : succeeded(result);
     } catch (failure) { return failed(failure); }

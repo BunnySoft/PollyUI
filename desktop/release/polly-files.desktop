@@ -1,6 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=Files
+X-Polly-AppId=org.pollyui.files
+Icon=@CMAKE_INSTALL_FULL_DATADIR@/icons/hicolor/64x64/apps/polly-files.png
 Comment=Browse local files with ordinary user permissions
 Exec=/usr/bin/polly-files
 TryExec=/usr/bin/polly-files

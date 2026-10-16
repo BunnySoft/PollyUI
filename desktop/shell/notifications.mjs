@@ -1,15 +1,15 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { button as themedButton } from './desktop/shared/ui/button.mjs';
+import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 
 function button(id, label, theme, action) {
-  return h('view', { id, role: 'button', 'aria-label': label, tabIndex: 0,
-    style: { padding: theme.layout.notificationButtonPadding, borderWidth: theme.layout.borderWidth,
-      borderColor: theme.colors.border, borderRadius: theme.button.radius,
-      backgroundColor: theme.colors.surface, color: theme.colors.text, fontSize: theme.layout.fontSize },
-    onClick: event => { event.stopPropagation(); action(); },
-    onKeydown: event => {
-      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); action(); }
-    },
-  }, label);
+  const padding = theme.layout.notificationButtonPadding;
+  const node = themedButton(id, label, theme, action, false, { height: 'auto',
+    paddingLeft: padding, paddingRight: padding, paddingTop: padding, paddingBottom: padding,
+    minWidth: 0, maxWidth: '100%' });
+  node.children.at(-1).props.style.fontSize = theme.layout.fontSize;
+  delete node.props['aria-pressed'];
+  return node;
 }
 export function createNotificationSurfaces({ host, native, theme, report, changed }) {
   let started = false, notices = [], toast = null, center = null, previous;
@@ -25,19 +25,26 @@ export function createNotificationSurfaces({ host, native, theme, report, change
     const current = theme();
     return h('view', { id: 'shell-notification-' + notice.id, role: 'status',
       style: { padding: current.layout.noticeCardPadding, gap: current.layout.noticeCardGap,
-        flexShrink: 0, borderWidth: current.layout.borderWidth,
+        minWidth: 0, flexShrink: 0, borderWidth: current.layout.borderWidth,
         borderColor: notice.urgency === 2 ? current.colors.accent : current.colors.border,
         borderRadius: current.window.radius, backgroundColor: current.colors.body } },
     h('view', { style: { flexDirection: 'row', alignItems: 'center', gap: current.layout.contentGap } },
-      h('view', { style: { flexGrow: 1, fontSize: current.layout.mutedFontSize,
+      h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, fontSize: current.layout.mutedFontSize,
         color: current.colors.muted, maxHeight: current.layout.noticeHeaderHeight, overflow: 'hidden' } },
         notice.application || 'Application'),
       button('shell-notification-close-' + notice.id, 'Dismiss', current, () => action(notice, null))),
-    h('view', { style: { fontSize: current.layout.sectionFontSize, color: current.colors.text,
+    h('view', { style: { minWidth: 0, fontSize: current.layout.sectionFontSize, color: current.colors.text,
       maxHeight: current.layout.noticeTitleHeight, overflow: 'hidden' } }, notice.summary),
-    notice.body ? h('view', { style: { fontSize: current.layout.fontSize, color: current.colors.text,
-      maxHeight: current.layout.noticeBodyHeight, overflow: 'scroll' } }, notice.body) : null,
-    notice.actions.length ? h('view', { style: { flexDirection: 'row', gap: current.layout.controlGap, overflow: 'scroll', flexShrink: 0 } },
+    notice.body ? h('view', { style: { minWidth: 0, fontSize: current.layout.fontSize, color: current.colors.text,
+      maxHeight: current.layout.noticeBodyHeight, overflow: 'scroll' }, onWheel: event => {
+        const before = Number(event.currentTarget.scrollTop);
+        scrollDesktop(event);
+        if (Number(event.currentTarget.scrollTop) !== before) event.stopPropagation();
+      } }, notice.body) : null,
+    notice.actions.length ? h('view', { style: { flexDirection: 'row', minWidth: 0,
+      gap: current.layout.controlGap, overflow: 'scroll', flexShrink: 0 }, onWheel: event => {
+        scrollDesktop(event, true); event.stopPropagation();
+      } },
       ...notice.actions.map((item, index) => button('shell-notification-action-' + notice.id + '-' + index,
         item.label, current, () => action(notice, item.key)))) : null);
   }
@@ -83,7 +90,8 @@ export function createNotificationSurfaces({ host, native, theme, report, change
     const current = theme(), target = center || toast;
     Object.assign(target.window.document.body.style, { gap: current.layout.noticeStackGap, backgroundColor: '#00000000' });
     render(h('view', { id: center ? 'shell-notification-center' : 'shell-notification-toasts',
-      style: { flex: 1, gap: current.layout.noticeStackGap, overflow: 'scroll' } },
+      style: { width: '100%', height: '100%', minWidth: 0, minHeight: 0,
+        gap: current.layout.noticeStackGap, overflow: 'scroll' }, onWheel: scrollDesktop },
       center ? button('shell-notification-center-close', 'Close notifications', current, () => {
         close(center.window); center = null; paint();
       }) : null,

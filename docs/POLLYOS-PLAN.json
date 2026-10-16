@@ -782,7 +782,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "六主题原系统字体未分发，Classic GDI基线/栅格资格仍不齐。2026-10-16 用户要求共通先行，876d126（源e549b336）统一六主题caption fitter：复用现SDK/LinuxICU完整字素，512codepoint预算向下贴cluster，省略测完整prefix+ellipsis；baseline/clip/shadow原坐标不动。window.fontFamily兼容三generic并接受128UTF16上限单个literal已装family名，严格拒路径/URL/control/格式控制/列表/资源，不load字体、不改builtin/fallback/JSON1。父Node5/5与真实5906LinuxCanvas/ICU验证capRepairs3（combining/ZWJ/flag）、ellipsisRepairs0如实，六主题ASCII/empty/narrowellipsis四strip bytes不变且clip外像素/侧条保持；已装DejaVuSerif/Sans实际字宽130.078125/122.421875。非Linux仍既有codepointfallback，不假称全平台grapheme或OS字体像素一致；E22.5保持partial。"
+      "evidence": "六主题原系统字体未分发，Classic GDI基线/栅格资格仍不齐。2026-10-16 用户要求共通先行，876d126（源e549b336）统一六主题caption fitter：复用现SDK/LinuxICU完整字素，512codepoint预算向下贴cluster，省略测完整prefix+ellipsis；baseline/clip/shadow原坐标不动。window.fontFamily兼容三generic并接受128UTF16上限单个literal已装family名，严格拒路径/URL/control/格式控制/列表/资源，不load字体、不改builtin/fallback/JSON1。父Node5/5与真实5906LinuxCanvas/ICU验证capRepairs3（combining/ZWJ/flag）、ellipsisRepairs0如实，六主题ASCII/empty/narrowellipsis四strip bytes不变且clip外像素/侧条保持；已装DejaVuSerif/Sans实际字宽130.078125/122.421875。后续294677a合16d8898让Files普通name接fontSize、三metadata接statusFontSize，Classic/XP11/11、Mac13/13、Modern14/12，保42px/列/selectionink/input/panel/bar/controller。1d27b5e让Processes正文/状态/标题及留白接同现theme token，不改虚拟化/采样/只读行为。应用样式直接修、复用既有检查，无新测试或字体/排版架构。非Linux仍既有codepointfallback，不假称全平台grapheme、原OS字体或像素一致；E22.5保持partial。"
     },
     {
       "id": "theme-icon-artwork",
@@ -798,7 +798,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。2026-10-16 合入并推送 b7f2916（源 e3d7201）：新增严格可选 icons.desktopLabelStyle=capsule|shadow，缺省及显式 capsule 保持 schema1 原样，仅有桌面原图参考的 Tiger/BigSur 主动启用 shadow，Lion/XP 不变。原 native 主文本布局、86宽/44高裁剪、36图标及持久位置不变；阴影是同宽、向下1logicalpx、aria-hidden/pointer-none的原生文本层，selected 保旧色和结构。父 Node12/0 与真实GUI四主题的 wrap/Unicode/bitmap/fallback/选中/双击/Enter/拖放/框选通过；Lion/XP全图bytes不变，Tiger/BigSur变化限定原标签框。另真实私有Wayland六场1/1.5/2使用已冻结WM/GUI和当前JS通过，不是物理HiDPI、Darwin或完整main-native认证；平台A11y provider不可用，不宣称screenreader实测。合法系统品牌资源、精确字体/阴影raw、Lion桌面图标参考及全图标资格仍待完成，不以此标签子集关闭E22.6。"
+      "evidence": "现用 Polly 原创图标；Classic 参考曾无可同内容比对的普通任务图标，Mac authentic icons 明确未实现。2026-10-16 合入并推送 b7f2916（源 e3d7201）：新增严格可选 icons.desktopLabelStyle=capsule|shadow，缺省及显式 capsule 保持 schema1 原样，仅有桌面原图参考的 Tiger/BigSur 主动启用 shadow，Lion/XP 不变。原 native 主文本布局、86宽/44高裁剪、36图标及持久位置不变；阴影是同宽、向下1logicalpx、aria-hidden/pointer-none的原生文本层，selected 保旧色和结构。父 Node12/0 与真实GUI四主题的 wrap/Unicode/bitmap/fallback/选中/双击/Enter/拖放/框选通过；Lion/XP全图bytes不变，Tiger/BigSur变化限定原标签框。另真实私有Wayland六场1/1.5/2使用已冻结WM/GUI和当前JS通过，不是物理HiDPI、Darwin或完整main-native认证；平台A11y provider不可用，不宣称screenreader实测。后续1df7866合8fd7af8复用原safe bitmap loader/cache，将实际注册PNG/JPEG接Windows taskbar与三MacDock任务/分组slot；retain是桌面shortcut与当前任务所需资源并集，异步ready重画实际panel/Dock，保原16/24/内图盒、原色、count/marker/guards/几何。exact catalog或受校验bundle身份，不按title/PID/basename猜；missing/命名/SVG/非法资源走明确report与原fallback，不新增resolver/C/schema/cache架构或应用测试。本host无实际注册PNG/JPEG，故未冒系统catalog端到端图标实证，不为查看启动VM/环境支线。合法系统品牌资源、精确字体/阴影raw、Lion桌面图标参考及全图标资格仍待完成，不以此子集关闭E22.6。"
     },
     {
       "id": "theme-button-state-coverage",
@@ -814,7 +814,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集。3760f36 公共 disabled checkpoint：修 shared surface/Luna 对既有 aria-disabled=true 和 disabled option 的视觉状态同步，paint 不覆盖 caller opacity；真实 Settings Audio view 的禁用 Classic held 290px、Luna hover276px/held1300px 变化修为0，held→disabled/retheme/reenable保留DOM和focus、selected truth、一次enabled action实测通过；额外caller disabledOpacity0.37保持，不改默认值1或palette。第二批 actual GUI 原证据：120x22四边完整，420x80缺47/47/5/5点，500x96缺87/87/13/13点；当时因缺owner关联而延期，未交不完整Canvas，该历史proof保留。后续父按已授权端到端任务自主选择最小generic document.defaultView+window.observeState（不冒称用户点击API选项），重编真实C runner并完成只读/foreign-context反查/关闭null/GC及业务callback重赋、隔离snapshot、dispatch中增删/close/异常report兼容。现Classic普通focus以JS Canvas复用2x2 repeat、每边独立相位，任务focus相位未改；800x600/scale1实际420x80、500x96四完整边missing均0，120x22原整块2640px crop差0，无resize/mask。真实Win32 child纯hostresize 420x180→640x290，无VNode更新/forced render，两次有界rAF跨layout后backing634x284及presented PNG四边on/off错误全0，后写业务onstatechange仍工作；disable/reenable/retheme、calleropacity0.37、selection/focus与单次activation保持。1.25仅私有WM_DPICHANGED adapter/backing边界，不是monitor DPI认证。Linux exact cached SDK共享C增量编译+SDL-dummy生命周期通过，不当作compositor/GPU证据。tests/classic-focus-render.mjs与gui/tests/window-owner-state*覆盖此缺口；E22.7仍partial，default-button/全SDK状态、font/选择控件/输入滚动条/对话框仍独立remaining。"
+      "evidence": "ce21f540/2ec2e2e/5bb181c 已交付 shared button、command、Classic 边线和 Aqua gloss 子集。3760f36 公共 disabled checkpoint：修 shared surface/Luna 对既有 aria-disabled=true 和 disabled option 的视觉状态同步，paint 不覆盖 caller opacity；真实 Settings Audio view 的禁用 Classic held 290px、Luna hover276px/held1300px 变化修为0，held→disabled/retheme/reenable保留DOM和focus、selected truth、一次enabled action实测通过；额外caller disabledOpacity0.37保持，不改默认值1或palette。第二批 actual GUI 原证据：120x22四边完整，420x80缺47/47/5/5点，500x96缺87/87/13/13点；当时因缺owner关联而延期，未交不完整Canvas，该历史proof保留。后续父按已授权端到端任务自主选择最小generic document.defaultView+window.observeState（不冒称用户点击API选项），重编真实C runner并完成只读/foreign-context反查/关闭null/GC及业务callback重赋、隔离snapshot、dispatch中增删/close/异常report兼容。现Classic普通focus以JS Canvas复用2x2 repeat、每边独立相位，任务focus相位未改；800x600/scale1实际420x80、500x96四完整边missing均0，120x22原整块2640px crop差0，无resize/mask。真实Win32 child纯hostresize 420x180→640x290，无VNode更新/forced render，两次有界rAF跨layout后backing634x284及presented PNG四边on/off错误全0，后写业务onstatechange仍工作；disable/reenable/retheme、calleropacity0.37、selection/focus与单次activation保持。1.25仅私有WM_DPICHANGED adapter/backing边界，不是monitor DPI认证。Linux exact cached SDK共享C增量编译+SDL-dummy生命周期通过，不当作compositor/GPU证据。tests/classic-focus-render.mjs与gui/tests/window-owner-state*覆盖此缺口。后续830256f合64efd18增加独立opt-in defaultAction：button保原6参+第7严格options，desktopCommand原命名参数同boolean；Classic外outline与原bevel绘制内移、其它现accent边，disabled抑cue，default不污染selected/aria-pressed。不换face/label、不动box/padding/原Canvas祖先与phase、calleropacity或输入/权限/routing，仅现display Keep和Files-confirm两flag。按用户减测规则不增App样式fixture/矩阵/receipt，只复用theme-alignment小shared类型/真假态契约与common-button既有入口；父原100项及该入口opt-out/opt-in均通过，原DOM/selected/caller0.73和0.61/primary/repeat/held/retheme/cancel/focus保持。不是全OS default-key/focus迁移/pulse行为或完整SDK/原图资格，E22.7仍partial；其它选择控件/输入滚动条/面板的已交付进展见E22.8-.10，不再列为全未实现。"
     },
     {
       "id": "theme-selection-controls",
@@ -863,6 +863,38 @@
       "status": "in_progress",
       "requires": [],
       "evidence": "用户原问题包括控件背景/边框/字体；独立Settings功能已完成。后续f09d49f/9300761冻结唯一被动panelAppearance/panelDetail，父合abe1304；card/dialog/menu/inset取原theme token，无presetID/RGB启发式或controller/订阅。Classic border0、原border inset转padding，默认1/custom2实际四边均正确。e68d964合1fabe25令settingsCard和Audio/Displays card消费；b22ae560合62a2413接Files modal/context/breadcrumb、opt-in chooser及Settings Appearance/Keyboard；b9b2bc5合2b17a28令新application-window chooser也消费同menu策略。父Node73及Win800×600/640×480四代表theme真实Files create各一次、context stale callback拒绝、move/link取消、MIME literal长path一次、chooser一次result/旧callback拒绝、输入同DOM/focus/selection及Settings卡片/Tab通过；neutral整PNG精确SHA8928e179f46fc61c97ae490b65a195589656643fd55afe6ab00161e66d832f85保持。长token不伪称wrap：只读rawchild配既有横轴scrollDesktop，wheel/Left/Right/Home/End和实际focus-border像素确认完整可达，普通文案仍wrap；不改API值或JS分字。仅紧耦合actionrow回收时显式归零scrollLeft。子同版Linux complex-text runtime SHA41ebe883实际markers/边/消费者通过。后续1bc2683/0a32154合35391f0/71a4a96，将既有Wi-Fi credential/confirmation/network cards、display confirmation和logout view接同helper/shared button/typography；embedded Settings根不套第二frame。Network真实窄420字段right428越界，现100%/max420及bounded root使fieldright403，保原promptID/kind contentMode清secret/重建、sameNative username/password mask/caret/selection/focus与live status稳定slots，旧callback不能送新prompt。Display token/15秒/revert及logoutinventory/wait/seal/显式finalcommit/cancel均未改，repeat Enter不再重复action。父新增真实260×90 scroll14带走Classic底边red后，唯一弱panel-viewport保outer不滚/inner滚，wheel前后四边精确body/#404；300×180网络Tab密码及directFocus取消可见、300×130退出同样固定四边。focus/Tab共享最多2one-shot跨layout读取当前实际activeElement、leave取消帧和弱listeners、不夺旧target或undo手动scroll、无poll/idle循环。父combined Node120与原业务/新固定frame actual全部通过；不会发送真实凭据/改变网络、显示或终止会话。autoheight networkentry bottom part相对声明bounds既有1px舍入独立披露，不改冻结helper/C或假称pixelperfect。617c0e4合6c19891再将group menu被动detail置末，修实际Classic↔Modern丢close11 DOM/focus，原window action仍一次。c73ddf1合b63ae05复用同viewport的content sizing/horizontal axis修真实Files长OpenWith/低高context/横向breadcrumb：800×600 outer均0而inner380/55/434、四边wheel前后精确不变；640×480同样无scroll新增丢边。短create天然118/119与原exact，保caller top18%/max78%，不塌到padding或填满max；最后真实MIMEhandler Enter1launch、旧generation拒绝、path不导航、原input DOM/parent/value/caret/selection/focus、inlineRename无frame及所有protected rows/42px/cols/newbar/appbind/controller原样。父新Node39/cleanup后35与两尺寸四theme原consumerworkflow、fixed3root defaults及neutral wholeSHA再次通过。640百分比max374.4测375时初始insidebottom为body，精确71a4旧view实证本已如此；只修scroll导致右边也丢的回归，不掩static rounding、不改C。证据仍是production views/controllers和software GUI dispatcher配memory FS/domain fixture，不是用户真实FS、物理输入、所有Apps或原OS像素认证；E22.10保持partial。"
+    },
+    {
+      "id": "bug-native-fractional-layout",
+      "label": "Bug：小数布局边线偏移（非阻塞）",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "独立处理泛型布局的fractional/autoheight边界：absolute底/右边线与父声明bounds相差1px或被clip。低频、不影响当前常用UI主流程；修复耗时不阻塞其它E22交付，不靠App补像素、改reportedbbox或禁cache掩盖。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "pending",
+      "requires": [],
+      "evidence": "integer几何正常，640×480 maxHeight78%=374.4报告375时insidebottom为body，autoheight bottom part亦可落在parent.bottom。原始baseline已独立复现，非JS viewport修复新增。Yoga局部round与absolute尺寸基准、深层cached rounded被当raw是已定位边界；本地38b9a01+a0c7585及独立Win/Linux输出已保留，但父最终review/主线集成暂停，均未合入或发布。依用户要求作为非阻塞Bug停放，主线继续可见图标/字号等修复；后续须同时保证paint/clip、fresh/cache和旧整数语义，不单收38b。"
+    },
+    {
+      "id": "native-preset-live-revalidation",
+      "label": "原生预设效果复验（环境受阻）",
+      "kind": "subtask",
+      "parent": "e22",
+      "scope": "在已有匹配effects ABI2/private6运行栈恢复可用后，复验当前预设圆角/阴影采用及生产GUI-strip到合成器接缝。与已冻结共享机制资格、纯JS数据/数值编译/producer检查分开；不以入口exit0或Windows软件GUI替代wlroots/物理GPU。",
+      "priority": "P2",
+      "modes": [
+        "installed",
+        "live"
+      ],
+      "sources": [],
+      "status": "blocked",
+      "requires": [],
+      "evidence": "本次只读main0c39dca的WSL enterns尝试退出0但未出现容器首marker，scene/caption命令未实际执行，也未续核runtime hash。限定只读诊断确认WSL直接cat可用、enterns只有检测到特定systemd PID且非1才转发argv，无else可空成功；条件核验/proc/1/comm实为init(podman-mac，guard给NAMESPACE_NOT_READY/exit86，未执行podman或两验证命令。已停止后续路线/构建/安装/机器或服务修改。历史62a9545-runtime Pixman/一次coverage及软件GLSL资格保持原范围。当前38fca16/29a338f的明确预设数据和Node数值编译、既有生产caption producer/缺字段none字节检查通过，不冒称新的live WM/GPU/default-preset全景验收；日志在f864 session effects-limited-validation-20261016-1740、enterns-readonly-diagnostic-20261016-1814.log、effects-namespace-final-20261016-1817.log。"
     },
     {
       "id": "theme-native-state-geometry",
@@ -933,7 +965,7 @@
       "label": "E22.15 Classic 菜单与级联",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "区分已完成灰色双列 chrome、真实 flat All Programs 子菜单与仍缺的多级目录、profile/account 区、分组/列表内容密度及真实快捷图标；保留单列 override、现有可用搜索/Pin/日志入口。内容和布局使用真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
+      "scope": "区分已完成灰色双列 chrome、默认 flat All Programs 及真实metadata辅助分类，与仍缺的安装目录多级菜单、profile/account 区、分组/列表内容密度及原OS图标资格；保留单列 override、现有可用搜索/Pin/日志入口。内容和布局使用真实后端，不为了像素接近删除功能或添加假的系统管理/打印/Run/Shutdown。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1047,7 +1079,7 @@
       "label": "E22.22 Win11 任务栏与 Start",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。确切appId分组已交付；推荐历史/account完整业务、固定等剩余差异关联既有T21任务，不造假推荐/不可用入口。",
+      "scope": "分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。确切appId分组与独立持久固定已交付；推荐历史/account完整业务等剩余差异关联既有T21任务，不造假推荐/不可用入口。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1239,7 +1271,7 @@
       "label": "E22.34 Mac Dock 分组与放大",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "三MacDock已按确切appId分组；继续核固定/启动与running标记、最小化窗口处理，以及尚无magnification的差异。固定关联T21，放大先选交互/动画范围；保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
+      "scope": "三MacDock已支持确切appId分组、独立持久固定、菜单Earlier/Later一步排序和固定槽内的有界悬停强调；继续核启动/running标记、最小化窗口、原生/参考资格及完整相邻联动动画。保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -3575,7 +3607,7 @@
       "requires": [
         "t12-m15-8"
       ],
-      "evidence": "2026-10-15 盘点：桌面 App 快捷方式/框选/内部排列与保存已由 cbe4000/0881e09 集成，Shell 有真实任务按钮、三种 Dock、可滚动窗口区及启动联动。窗口按 App 分组、固定/图标解析和共享注册完整闭环仍未完成；已具界面不以未来共享包注册为由重新标成完全未实现。"
+      "evidence": "2026-10-15盘点已有桌面App快捷方式/框选/内部排列和保存cbe4000/0881e09、真实任务按钮/三Dock/滚动区。后续31b7236补确切App分组和真实窗口chooser；8fd7af8/b97958c补既有安全PNG/JPEG资源到taskbar/Dock/Start/Apps，52e22dd补显式runtime身份+四内置原创图标/真实installprefix；113302a补独立persistent pins、当前catalog启动、running同槽/真实count、不可用键盘管理、v1/v2全域原子升级v3，search/oldcallback/权限不变。cca643e补固定槽内pointer hover强调，不是完整邻近动画。只在现套件补必要数据/行为契约，未以metadata本身冒UI完成。当前剩余完整共享包/SystemData权威注册依赖t12-m15-8仍pending、命名/SVG图标通用解析与更广原生验收亦未交付，所以本广项保持in_progress，不重新声称已交付分组/固定/位图显示全未实现。"
     },
     {
       "id": "t21-m17-2",
@@ -5582,6 +5614,18 @@
     "- 2026-10-16 推送进展：79b88ed及此前23个本地提交已正常推送并核远端一致，之后桌面标签b7f2916也已审查、定点实测并正常推送。前条源分支仍未推送仅属原记录时间；最新ISO依然b7e7a700，没有把新源码提交冒称新媒体。当前继续SDK选择控件、Classic所有程序、独立窗饰服务与最小MT02壁纸派生客户端材质；MT03跨应用采样、完整品牌/字体/OS像素与外部硬件资格不因此标绿。",
     "- 2026-10-16 本批具体交付已闭合：桌面标签、Classic flat All Programs、SDK六选择控件及两项真实review修复、可选壁纸派生opaque client材质、无Shell独立窗饰及干净退出/安装闭环。前四项已推至7bf4538；窗饰核心d669ec9/收尾83eda5f与本条状态一并正常推送。长期E22仍按局部证据partial，物理GPU/Mac、字体/品牌资源、完整OS像素及MT03不冒称完成；未更新ISO、VHDX或VERSION。",
     "- 2026-10-16 08:34 共通先行批已闭合：单一公共owner合7169e5a/4281df3/31044cd，统一按钮物理状态与激活、所有现选输入消费者完整appearance和真实选区文字；不相交caption876d126统一六主题字素截断/显式合法系统字体，默认原图保持。然后唯一Windowsowner合9c83846修Luna焦点完整四边，直接复用公共Canvas/owner/FR不另造实现。父最终Node140/140、Win原生像素/消费者及nativeResize/GC、Linux真实ICU/bidi/彩色emoji选区和caption通过；静态边界精确区分已移除native.setAppearance与合法input.setAppearance，未放松旧C painter/协议拒绝。用户不可用时协调者按快速收口决定新原生合成效果留下一批，未声称用户点选，圆角/阴影/跨Appblur和OS参考/业务缺口仍保留；本批不重打ISO。",
-    "- 2026-10-16 09:44 后续共享原生批已完成圆角/外阴影基础：先真实源码判定stock scene API不足，再批准单一固定wlroots补丁，唯一native owner实现分组AA、非input阴影及SDK/release严格配套；合6b9f0e9/4603005/1f670dd，E13及E22.23保留后续效果/样式资格而非全关。旧theme默认none，显式nativeEffects启用；private6/schema6和effects ABI2需同套重建，旧stockSDK明确拒绝，Alpine现入口明确未支持。父精确最终库/补丁哈希与真实生产windowlessdecorator coldmissing/normal收尾通过，代码不再有活动writer；只资格Pixman原生及软件GLSL原语，不冒完整WM GLES/DRM或物理GPU。未更新ISO/VHDX/VERSION，区域背景模糊仍独立待做。"
+    "- 2026-10-16 09:44 后续共享原生批已完成圆角/外阴影基础：先真实源码判定stock scene API不足，再批准单一固定wlroots补丁，唯一native owner实现分组AA、非input阴影及SDK/release严格配套；合6b9f0e9/4603005/1f670dd，E13及E22.23保留后续效果/样式资格而非全关。旧theme默认none，显式nativeEffects启用；private6/schema6和effects ABI2需同套重建，旧stockSDK明确拒绝，Alpine现入口明确未支持。父精确最终库/补丁哈希与真实生产windowlessdecorator coldmissing/normal收尾通过，代码不再有活动writer；只资格Pixman原生及软件GLSL原语，不冒完整WM GLES/DRM或物理GPU。未更新ISO/VHDX/VERSION，区域背景模糊仍独立待做。",
+    "- 2026-10-16 可见界面续批：9ed4ae1合de7ea1e令Settings框架/About/Keyboard字号与留白接已有token、Audio窄页控制换行，保page196/min142/42/max900与所有输入/事务。2781a6e+56d7ae6合b97958c，将已有受限bitmap资源接Start与Mac generic Apps同尺寸图盒，当前查询前100与shortcut/task并集retain，菜单关闭释放extra、异步ready重画当前menu；无新resolver/素材/权限/AllPrograms布局变化。98279b7补Files Places/Properties/empty-state排版与Power bounded root/wheel，安全shutdown逻辑不变。按用户规则未新增App测试/场景/矩阵/receipt，只复用现有Settings20、menu47、Power/Files40项；旧Power mock仅补真实querySelector标准能力、无新增case。低频fractional布局问题留独立非阻塞Bug，vendor候选38b+a0未合入；本批不重建native、媒体或更改OS设置，也不冒真实注册图标端到端/原OS像素资格。",
+    "- 2026-10-16 桌面弹出界面批：cdedb3c合eb2245e统一窗口操作/工作区/桌面快捷方式管理/窗口切换四菜单的既有panelViewport和主题字号，工作区行换行、原namefield挂载/ID/所有callbacks与switcher serial不变。b9bbf5f合c592166将tray菜单接shared command/selection ink与同滚动外框，保原submenu/toggle/itemRevision/nativewheel；父仅删除非toggle menuitem多余aria-pressed。856c0ca补notification bounded viewport、message/actions纵横wheel、应用名让位Dismiss，Appearance画廊标题/标签/状态/间距接原token而illustration/tile166/focuswrapper不变。复用既有workspace/menu/Settings合69项与syntax，无新App测试/场景/框架，无原生suite/真实notificationDBus资格冒称。低频Bug继续停放，未改Native/C/SDK/schema/协议、未重打ISO。",
+    "- 2026-10-16 应用身份与实际资源续批：370fcc9合52e22dd增加可选显式X-Polly-AppId，bundle直接取validated manifest.id；共用匹配helper exactcatalogid优先/显式唯一才采用/冲突保rawfallback，修内置org.pollyui.*与polly-*.desktop不一致造成任务label/图标不能关联，不猜名称/后缀，不改groupkeys/launch权限。四个Polly原创64px PNG与可再生成几何源已交付，五desktop声明真实wrapper ID与安装期Icon；actual CMake安装规则在独立目录验证--prefix覆盖后所有Icon仍指向同PNG，保原safe decoder/budget，不新增resolver/native/build/VM。既有及必要数据身份契约60项通过；不是新App样式测试或商业OS图标认证。7156719令Files Properties名字/完整path/link复用现readonly rawtext viewport，值与操作不变。真实搜索输入消费继续独立推进，本条不宣称已完成；非阻塞vendor Bug继续未合入，媒体未更新。",
+    "- 2026-10-16 搜索与常用操作续批：d778768+d343222合b9ada0f/2a678a5将生产Start/Apps搜索接现SDK真实输入，保currentMenu/ownerwindow/原32或24高度、ID/query128/first100/launch权限，支持caret/选区/Delete/剪贴板/IME并在refresh/theme变更保同DOM，composition占位hint不重叠、关闭清空并拒旧回调。SDK可选maxLength只在原replaceSelection裁插入且保suffix/caret，初值/setter同bound、缺省不变；父原输入39和相关菜单/功能87及hint47通过，现实际productionShell软件GUI入口再过中间编辑/refresh选区/真实preedit Enter拒绝/normalEnter1，无OS launch。6a5bd57补Files CtrlF当前folderfilter/CtrlShiftN原新建确认/AltEnter属性，保modal/composition/AltGr/repeat/身份守卫，dddf738将原filter128上限接同输入引擎而不在事后回滚caret；现Files34通过。这是输入/键盘功能，只有既有套件必要行为契约，无新增App样式测试文件或矩阵。独立持久taskbar/Dock pins仍在产品整合，不因model checkpoint就标已交付；原生Bug停放且媒体不变。",
+    "- 2026-10-16 Files路径复制：0454c97合62c3bf9，通过现clipboard.writeText能力注入提供Properties/context/非编辑CtrlShiftC三个入口，同一controller按selected generation/identity复制原样literal path，成功显式message、关闭context/保Properties并退休旧callback；缺能力禁用，写失败report且保ready目录/selection/Properties。只复制文字不读写文件，不冒文件剪贴板copy/权限桥接。现Files37项以inert clipboard验证Unicode/quotes、一次动作/旧身份/compose/modal/repeat/无FS，未触用户真实clipboard；无新测试文件或环境矩阵。",
+    "- 2026-10-16 独立固定应用：aa0cdbd/8c9d7ca/7d1a9aa合113302a，Shell配置v3新增launchers v1有序≤32catalog引用，与desktop v1独立；v1/v2沿原atomicwriter一次保全域迁移、未知版本不写空默认、旧reader回退边界有明确文档。Modern/三Mac及applications optin支持Apps Taskbar+/Dock+与真实RootMenu Pin/Unpin，零窗launcher走当前catalog/原SettingsBridge，唯一关联真实group同槽/count；missing/unavailable仍可Tab/ContextMenu管理，旧手势/成员/workspace/callback/重复IME activation拒绝，无fake Window.id/MRU/drag排序。实际displaycount/width/cache同model，Settings synthetic名称与真实注册关联分层，Unicode/空格opaqueID不猜suffix。父组合145项通过、现Python fixture仅AST语法和JS安装fixture仅syntax，未冒跑native矩阵；子一次旧911软件GUI看新idle/count2/missing槽及独立控件，非物理DPI/真实持久WM端到端资格。父补decorator-installed版本期望3及synthetic Settings位图保留/映射。原native Bug未合入、未更新SDK/ISO/C/权限；E22广项不因此全关。",
+    "- 2026-10-16 共享原生能力的预设采用：38fca16/29a338f合0c39dca/366a392，仅Modern明确rounded/原radius8/shadow0、三Mac明确rounded-shadow/原radius6/5/10与shadow20/18/24，JS旧policy编成sigma10/9/12、active24/inactive12、black，未改数值/颜色/布局或C/renderer/ABI/schema，Classic/XP与custom missing/none路径保持。只更新现policy契约和生成test几何；Node5+generatorcheck、Windows911当前生产caption producer/missing-none逐byte兼容过，历史冻结native机制资格不改写。本次只读Linux入口无首marker导致scene/caption均未执行，新的live WM/default-preset复验单列blocked任务，无新hash核验或GPU/OS原图资格宣称；不为数据采用重建环境。矩形input、max/full/CSD/frameless排除合同、paired effectsABI2/private6前提原样，未做glass/vibrancy/倒影或更新媒体。",
+    "- 2026-10-16 Dock悬停范围选择：用户ask_user当前不可用并委托自主决策，协调者选固定槽内pointer-only/无动画（非用户逐项点选）。afcb7ef合cca643e仅原art paint-space scale，optional dockHoverPercent整数100..125/缺100，三Mac120；真实slot/clip祖先/body交集夹限，40可画48或空间不足46/1，marker/count/input/所有layout不改。共享弱controlStates及现bounded settling处理clock/retime/scroll，无新RAFloop/observer。父补VNode baseline scale1以防DOM跨分支复用带旧zoom，组合143+现原transform6通过；子一次软件GUI入口验证同DOM/盒不变、clip/leave/cancel/keyboard不放大与原色图，无新repoApp测试文件/矩阵/receipt或Native构建。完整相邻联动/动画及原生/物理资格仍独立remaining。",
+    "- 2026-10-16 导航与FileText续批：f951b22合7bc4b25让Files中性PageUp/Down按实际viewport/42沿排序过滤后的精确identity分页，沿原select/focus/reveal/scrollbar，无新滚动算法。c86764a+d5d792d合11c0e9e/445aefe在Classic AllPrograms保默认平铺，增真实非独占tag分类/无tag组、层级Back/Left/Esc/完整headerTab和Allapps直达，原epoch/稳定槽/gesture串当前view，调用时刷新catalog并查活category成员；失败明确bool中止，不以保留旧列表冒fresh执行，非Windows安装目录/XDG XML或新Nativepopup。9b2b29f合a15b601让明确optin的FileText本体接既有公共Theme/输入/命令/滚动，App+chooser复用同底层订阅并准确cleanup，neutral默认API和原4096UTF8/conditionalwrite/ESTALE/committedreadback/NoReplay不变；packaged wrapper选择公开--desktop/--theme，--no-theme退出，不赋Shell管理权限。现组合162项通过，无新App样式测试文件/矩阵/环境或Native构建；旧软件GUI入口的分类导航资格只在软件输入/renderer范围，不冒安装目录/物理WM。",
+    "- 2026-10-16 当前交互收尾：ff79d66合3b5bfed让固定应用菜单内Earlier/Later沿现有序v3配置交换相邻两项，missing/unavailable可管理、首尾省略无效方向、非pin无排序；同Pin/Unpin唯一atomic写入/committed报错策略，currentMenu/output/taskidentity/expectedposition与held方向identity检查，desktop shortcuts不变，不是拖拽或动画。d47156c合09c5cba完整接Processes既有overlay10/SDK controller：optional onScroll严格函数/undefined、构造/idle/stop不通知、actual normalized value改变一次，含clamp、同步嵌套合并与异常原样抛/鼠标up必释放capture；拖动/page/keyboard据原fixedRowWindow重绘真实PID DOM，不额外sample，错误/refresh保留观察可滚。行42/列/overscan/2秒cooperative采样/readonly及原owner两帧测量不变。父现scrollbar/Processes/Files/menu/config/group/theme组合141项通过；原Processes软件GUI900x640实际4096model/12DOMrows及nativecapture/末PID/Home/不增sample通过，无新测试文件/样式矩阵/Native构建/VM或环境操作。E22.8/9/10/15/34的全部原OS/物理与剩余业务资格并未因此标完成，native preset live recheck继续blocked，vendor小数边线候选仍未合。",
+    "- 2026-10-16 Displays应用层主题收口：d9228ec合f3bba39，让页面、显示器标题、正文、说明和pending/unavailable状态直接消费现heading/body/status与content/control/window spacing tokens，显示器header允许换行而原actionrows继续wrap。display-inputs未改，所有数值输入尺寸/对象/value/caret/selection、3缩放preset IDs/selected、checkbox/mode/rotate/draft callbacks、serial/hotplug/detach及原15秒Apply/Keep/Revert事务保持。父原Settings/theme入口21项通过，子仅原800x600 selection-settings软件GUI验证checkbox/retime/busy/Apply serial7及pending15000，原AudioACK亦通过。仅3个App paths、无新增或扩展testcase/fixture/matrix/环境/Native构建；这是现公共token采用，不是原OS字体、物理输出或全部E22资格。",
+    "- 2026-10-16 Keyboard低窗口焦点修复：304fc61合bb273ae，唯一keyboard view复用现framed:false panelViewport，padding0/原flex分配/inner controlGap保card定位，root title/reset/list/footer槽和Change/Off/录制/禁用/错误原callbacks保持，无新frame/RAF/timer/observer/engine。一次软件560x260同driver红到绿：Tab13末Change原y907且list y112..212/scroll0不可见，修后Change及Off均y180..212/scroll727，原list x16/y112/w528/h100不变；Enter原record/disable各一次、manualwheel回0后普通repaint仍0，同DOM及detach退出通过。父现Settings/panel/theme组合22项通过，无新增测试文件/case/样式矩阵/mock或原生构建；只证明软件renderer下真实focus/scroll，不冒物理DPI或可信录制端到端重新认证。"
   ]
 }

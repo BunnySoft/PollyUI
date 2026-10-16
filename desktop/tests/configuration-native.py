@@ -8,9 +8,9 @@ import tempfile
 
 runtime, oracle = map(str, sys.argv[1:])
 repo = Path(__file__).resolve().parents[2]
-default = dict(version=2, theme=dict(id=None, filesEnabled=True),
+default = dict(version=3, theme=dict(id=None, filesEnabled=True),
                audio=None, display=None, workspace=None, shortcuts=None,
-               desktop=dict(version=1, shortcuts=[]))
+               desktop=dict(version=1, shortcuts=[]), launchers=dict(version=1, applications=[]))
 with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporary:
     root = Path(temporary)
     paths = {name: str(root / child) for name, child in (("configDir", "config"), ("dataDir", "data"))}
@@ -42,11 +42,16 @@ with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporar
     changed = {**default, "theme": dict(id="bigsur", filesEnabled=False),
                "workspace": dict(version=1, names=["Code", "\u8d44\u6599\U0001f430"], active=1)}
     run("load", changed)
-    old_json = {key: value for key, value in changed.items() if key != "desktop"}
+    old_json = {key: value for key, value in changed.items() if key not in ("desktop", "launchers")}
     old_json["version"] = 1
     put(config, json.dumps(old_json).encode())
     run("reject", fault="write")
     assert json.loads(config.read_bytes()) == old_json
+    run("load", changed)
+    assert json.loads(config.read_bytes()) == changed
+    old_v2 = {key: value for key, value in changed.items() if key != "launchers"}
+    old_v2["version"] = 2
+    put(config, json.dumps(old_v2).encode())
     run("load", changed)
     assert json.loads(config.read_bytes()) == changed
     put(old, b"broken old file must never be read")

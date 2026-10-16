@@ -6,17 +6,17 @@ import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
 const check = (value, message) => { if (!value) throw new Error(message); };
 const rgb = color => color.toLowerCase();
 const settle = () => { host.render(); host.render(); host.render(); };
-export function checkCommonButtons(verify = false) {
+export function checkCommonButtons(verify = false, defaultAction = false) {
   const results = [];
   for (const id of ['server2003', 'xp', 'modern']) {
     let theme = getDesktopTheme(id), disabled = false, calls = 0;
     const scene = () => {
       const node = button('common-button', 'Button', theme, () => { if (!disabled) calls++; }, true,
-        { width: 140, height: 30, opacity: 0.73 });
+        { width: 140, height: 30, opacity: 0.73 }, { defaultAction });
       node.props['aria-disabled'] = String(disabled);
       render(h('view', { style: { padding: 20, gap: 20 } }, node,
         desktopCommand('common-command', 'Command', theme, () => calls++,
-          { enabled: !disabled, style: { width: 140, height: 30, opacity: 0.61 } })), document.body);
+          { enabled: !disabled, defaultAction, style: { width: 140, height: 30, opacity: 0.61 } })), document.body);
       settle();
     };
     const point = node => { const r = node.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; };
@@ -48,6 +48,8 @@ export function checkCommonButtons(verify = false) {
     const hoveredRing = command.querySelector('.luna-hot-ring');
     if (verify && hoveredRing) check(Number(hoveredRing.style.opacity) === 1, 'Immutable retheme keeps the live Luna hover ring');
     disabled = true; scene(); const beforeDisabled = calls;
+    if (verify && defaultAction) check(Number(command.querySelector('.theme-default-action-cue').style.opacity) === 0,
+      'Disabled designation cannot paint an active default cue');
     mouse('mousedown', node); mouse('mouseup', node); mouse('click', node);
     disabled = false; scene();
     const result = { id, nonPrimary, repeats, heldFrom, rethemeFrom, canceledFrom, focusOpacity, heldAgain, lostFrom,
@@ -61,6 +63,9 @@ export function checkCommonButtons(verify = false) {
       check(focusOpacity === 1 && result.sameDOM && result.selected === 'true' &&
         result.opacity[0] === 0.73 && result.opacity[1] === 0.61 && result.disabledCalls === 0,
         'Retheme preserves focus/selection/caller opacity and disabled guard');
+      if (defaultAction) check(command.getAttribute('data-default-action') === 'true' &&
+        command.getAttribute('aria-pressed') === 'false' && Number(command.querySelector('.theme-default-action-cue').style.opacity) === 1,
+        'Default designation stays independent from toggle truth on the existing state path');
     }
     results.push(result);
     render(null, document.body);
@@ -74,5 +79,5 @@ export function checkCommonButtons(verify = false) {
   host.key('ArrowDown', 'keydown', { text: false });
   check(ancestor === 1, 'Unrelated navigation still bubbles to its existing owner');
   render(null, document.body);
-  console.log('COMMON_BUTTON_CONTRACT ' + JSON.stringify({ verify, results }));
+  console.log('COMMON_BUTTON_CONTRACT ' + JSON.stringify({ verify, defaultAction, results }));
 }

@@ -23,7 +23,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const usable = ready && !modal, entries = visibleEntries(state);
   const guarded = action => (...args) => controller.getState().generation === generation ? action(...args) : false;
   const label = (id, text, key = 'text', extra = {}) => h('view', { id, style: {
-    color: color(key), fontFamily: 'sans-serif', fontSize: 14, flexShrink: 0, ...extra,
+    color: color(key), fontFamily: 'sans-serif',
+    fontSize: theme.layout[key === 'muted' ? 'statusFontSize' : 'fontSize'], flexShrink: 0, ...extra,
   } }, text);
   function pathLabel(id, text, key = 'muted', size = 13) {
     const sync = node => {
@@ -180,6 +181,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       onContextmenu: event => context(entry, event),
       onKeydown: event => {
         if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) context(entry, event);
+        else if (event.altKey && event.key === 'Enter') return;
         else if (usable && (event.key === 'Enter' || event.key === ' ')) {
           event.preventDefault();
           if (controller.select(entry.path, entry.identity, generation) && event.key === 'Enter')
@@ -192,14 +194,14 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       glyph,
       inlineRename && chosen ? input('files-name', state.dialog.name, 'Single folder or file name',
         value => controller.editName(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 }) :
-        rowText(desktopText(entry.name, color('text'), 14,
+        rowText(desktopText(entry.name, color('text'), theme.layout.fontSize,
           { flexShrink: 1, minWidth: 0, height: 20, overflow: 'hidden', pointerEvents: 'none' }), color('text'))),
     rowText(label(null, formatModified(entry.mtimeMs), 'muted',
-      { ...columnStyle('modified'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+      { ...columnStyle('modified'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')),
     rowText(label(null, managed ? 'Application' : fileType(entry), 'muted',
-      { ...columnStyle('type'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+      { ...columnStyle('type'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')),
     rowText(label(null, entry.type === 'directory' ? '-' : formatSize(entry.bytes), 'muted',
-      { ...columnStyle('size'), fontSize: 13, pointerEvents: 'none' }), color('muted')));
+      { ...columnStyle('size'), fontSize: theme.layout.statusFontSize, pointerEvents: 'none' }), color('muted')));
     return node;
   });
   if (!entries.length) rows.push(h('view', { id: ready ? state.filter ? 'files-no-matches' : 'files-empty' : 'files-list-state',
@@ -207,9 +209,9 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     desktopIcon('folder', color('muted'), 40),
     desktopText(ready ? state.filter ? 'No matching names in this snapshot' : 'This folder is empty' :
       state.phase === 'loading' ? 'Reading folder...' : state.phase === 'error' ? 'Could not read this folder' : 'Waiting for Files...',
-    color('text'), 18),
+    color('text'), theme.layout.headingFontSize),
     desktopText(ready ? state.filter ? 'Change the folder filter to see more items.' : 'Use New folder to get started.' :
-      'Choose a location or refresh to try again.', color('muted'), 13)));
+      'Choose a location or refresh to try again.', color('muted'), theme.layout.statusFontSize)));
   const list = h('view', { id: 'files-list', role: 'listbox', 'aria-label': 'Files and folders',
     'aria-multiselectable': 'false', tabIndex: usable ? 0 : -1,
     style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, overflow: 'scroll', padding: 4,
@@ -219,27 +221,33 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     style: { width: width < 760 ? 142 : 184, minWidth: 120, flexShrink: 0, padding: 8, gap: 4,
       backgroundColor: color('body'), borderRightWidth: 1, borderColor: color('border'), overflow: 'scroll' },
     onWheel: scrollDesktop },
-    desktopText('Places', color('muted'), 12, { padding: 12, fontWeight: 600 }),
+    desktopText('Places', color('muted'), theme.layout.statusFontSize,
+      { padding: theme.layout.compactPadding, fontWeight: 600 }),
     Object.entries(state.locations ?? {}).map(([key, path]) => command('files-place-' + key,
       key[0].toUpperCase() + key.slice(1), () => controller.navigate(path), !modal, key,
       { height: 42, paddingLeft: 10 }, path === state.path)));
   const details = state.properties && selection ? h('view', { id: 'files-details', role: 'region', 'aria-label': 'Properties',
-    style: { padding: 16, gap: 12, width: width < 900 ? 200 : 260, flexShrink: 0,
+    style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap,
+      width: width < 900 ? 200 : 260, flexShrink: 0,
       borderLeftWidth: 1, borderColor: color('border'), overflow: 'scroll' }, onWheel: scrollDesktop },
     h('view', { style: { ...horizontal, flexWrap: 'wrap', gap: 6, flexShrink: 0 } },
-      desktopText('Properties', color('text'), 18, { fontWeight: 600 }),
+      desktopText('Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
+      command('files-details-copy-path', state.copyPathAvailable ? 'Copy path' : 'Copy path (unavailable)',
+        () => controller.copyPath(generation, selection.identity), state.copyPathAvailable, '',
+        { minWidth: 0, maxWidth: '100%' }),
       command('files-details-close', 'Close', () => controller.cancel(generation), true, '',
         { paddingLeft: 6, paddingRight: 6 })),
-    label('files-property-name', selection.name, 'text'),
-    label('files-property-path', selection.path, 'muted', { fontSize: 12 }),
+    pathLabel('files-property-name', selection.name, 'text', theme.layout.fontSize),
+    pathLabel('files-property-path', selection.path, 'muted', theme.layout.statusFontSize),
     label(null, fileType(selection) + ' | ' + formatSize(selection.bytes)),
     label(null, 'Modified: ' + (Number.isFinite(new Date(selection.mtimeMs).getTime()) ?
       new Date(selection.mtimeMs).toISOString() : String(selection.mtimeMs) + ' ms (outside date range)'),
-      'muted', { fontSize: 12 }),
-    label(null, 'Permissions: ' + selection.permissions + ' | UID ' + selection.uid + ' | GID ' + selection.gid, 'muted', { fontSize: 12 }),
-    label(null, (selection.readable ? 'Readable' : 'Not readable') + ' | ' + (selection.writable ? 'Writable' : 'Not writable'), 'muted', { fontSize: 12 }),
-    selection.type === 'symlink' ? label('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
-      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''), 'muted', { fontSize: 12 }) : null,
+      'muted'),
+    label(null, 'Permissions: ' + selection.permissions + ' | UID ' + selection.uid + ' | GID ' + selection.gid, 'muted'),
+    label(null, (selection.readable ? 'Readable' : 'Not readable') + ' | ' + (selection.writable ? 'Writable' : 'Not writable'), 'muted'),
+    selection.type === 'symlink' ? pathLabel('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
+      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''),
+      'muted', theme.layout.statusFontSize) : null,
     ) : null;
   const listRegion = h('view', { id: 'files-list-region', style: { position: 'relative', flexGrow: 1,
     flexBasis: 0, minWidth: 0, minHeight: 0 } }, list,
@@ -259,7 +267,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         entries.length + ' / ' + state.snapshot.entries.length + ' items' + (selection ? ' | 1 selected' : '') : 'Folder unavailable',
     color('muted'), 12),
     h('view', { style: { flexGrow: 1 } }),
-    label('files-operation-limits', 'Moves: one regular file, same filesystem | No copy, delete or trash', 'muted',
+    label('files-operation-limits', 'Moves: one regular file, same filesystem | No file copy, delete or trash', 'muted',
       { fontSize: 12, flexShrink: 1 }),
     desktopText(state.message || (state.cut ? 'Cut: ' + state.cut.entry.name + ' | Paste reviews a move; no overwrite.' :
       'Folders first | Filter: loaded names only'), color('muted'), 12));
@@ -298,7 +306,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         command('files-cancel', 'Cancel', () => controller.cancel(generation)),
         desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' :
           operation.kind === 'move' ? 'Move file' : 'Create folder',
-          theme, guarded(() => controller.confirm(generation)), { enabled: ready })),
+          theme, guarded(() => controller.confirm(generation)), { enabled: ready, defaultAction: true })),
     ];
     dialog = inlineRename ? h('view', { id: 'files-confirmation', style: {
       padding: 10, paddingLeft: 20, gap: 8, flexShrink: 0, backgroundColor: color('selection') } }, content) :
@@ -313,6 +321,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       ['open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity), selection?.type === 'file', 'apps'],
       ['rename', 'Rename', () => controller.beginRename(generation, selection?.identity), true, 'rename'],
       ['cut', 'Cut', () => controller.cut(generation, selection?.identity), state.moveAvailable && selection?.type === 'file', ''],
+      ['copy-path', state.copyPathAvailable ? 'Copy path' : 'Copy path (unavailable)',
+        () => controller.copyPath(generation, selection?.identity), state.copyPathAvailable, ''],
       ['properties', 'Properties', () => controller.showProperties(generation, selection?.identity), true, 'info']]
       .map(([id, text, action, enabled, icon]) => {
         const node = command('files-context-' + id, text, action, enabled, icon);
@@ -332,8 +342,14 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     },
     onKeydown: event => {
       if (event.defaultPrevented) return;
+      if (event.isComposing && event.key !== 'Escape') return;
       const editing = inInput(event.target);
-      if ((event.ctrlKey && event.key.toLowerCase() === 'l') || (event.altKey && event.key.toLowerCase() === 'd')) {
+      const pageKey = event.key === 'PageUp' || event.key === 'PageDown';
+      if (usable && event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        if (state.context) controller.cancel(generation);
+        event.currentTarget.ownerDocument.getElementById('files-filter')?.focus();
+      } else if ((event.ctrlKey && event.key.toLowerCase() === 'l') || (event.altKey && event.key.toLowerCase() === 'd')) {
         event.preventDefault(); controller.editAddress(null, generation);
       } else if (event.key === 'Escape') {
         event.preventDefault(); controller.cancel(generation);
@@ -342,16 +358,24 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       } else if (event.target?.id === 'files-address' && event.key === 'Enter') {
         event.preventDefault(); if (controller.getState().generation === generation) controller.navigate(state.address);
       } else if (editing) return;
+      else if (usable && event.ctrlKey && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        if (!event.repeat && selection && state.copyPathAvailable) controller.copyPath(generation, selection.identity);
+      }
       else if (state.context && ['ArrowDown', 'ArrowUp', 'Tab'].includes(event.key)) {
         event.preventDefault();
         const document = event.currentTarget?.ownerDocument;
         const items = ['open', ...(selection?.type === 'file' ? ['open-with'] : []), 'rename',
-          ...(state.moveAvailable && selection?.type === 'file' ? ['cut'] : []), 'properties']
-          .map(id => document?.getElementById('files-context-' + id)).filter(Boolean);
+          ...(state.moveAvailable && selection?.type === 'file' ? ['cut'] : []), 'copy-path', 'properties']
+          .map(id => document?.getElementById('files-context-' + id)).filter(node => node && node.tabIndex >= 0);
         const old = items.indexOf(document?.activeElement);
         items[(old + (event.key === 'ArrowUp' || event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
       } else if (modal) return;
-      else if (usable && event.ctrlKey && event.key.toLowerCase() === 'x') {
+      else if (usable && event.ctrlKey && !event.altKey && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault(); if (!event.repeat) controller.beginCreate(generation);
+      } else if (usable && event.altKey && event.key === 'Enter' && selection) {
+        event.preventDefault(); if (!event.repeat) controller.showProperties(generation, selection.identity);
+      } else if (usable && event.ctrlKey && event.key.toLowerCase() === 'x') {
         event.preventDefault(); controller.cut(generation, selection?.identity);
       } else if (usable && event.ctrlKey && event.key.toLowerCase() === 'v') {
         event.preventDefault(); controller.beginPaste(generation);
@@ -359,12 +383,16 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); controller.back(generation); }
       else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); controller.forward(generation); }
       else if (event.altKey && event.key === 'ArrowUp') { event.preventDefault(); controller.parent(generation); }
-      else if (usable && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) &&
-          (event.target?.id?.startsWith('files-entry-') || event.target?.id === 'files-list' || !event.target)) {
+      else if (usable && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key) &&
+          (!pageKey || (!state.context && !event.ctrlKey && !event.altKey && !event.metaKey)) &&
+          (event.target?.id?.startsWith('files-entry-') || event.target?.id === 'files-list' || (!event.target && !pageKey))) {
         event.preventDefault();
         const old = entries.findIndex(entry => entry.path === selection?.path && entry.identity === selection?.identity);
+        const step = pageKey ? Math.max(1, Math.floor(
+          event.currentTarget.ownerDocument.getElementById('files-list').offsetHeight / 42)) : 1;
         const index = event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1 :
-          Math.max(0, Math.min(entries.length - 1, old < 0 ? 0 : old + (event.key === 'ArrowDown' ? 1 : -1)));
+          Math.max(0, Math.min(entries.length - 1, old < 0 ? 0 :
+            old + (event.key === 'ArrowDown' || event.key === 'PageDown' ? step : -step)));
         const entry = entries[index];
         if (entry) controller.select(entry.path, entry.identity, generation);
       } else if (event.key === 'F5') { event.preventDefault(); controller.refresh(generation); }

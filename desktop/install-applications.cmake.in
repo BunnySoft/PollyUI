@@ -1,0 +1,13 @@
+if(IS_ABSOLUTE "@CMAKE_INSTALL_DATADIR@")
+    set(CMAKE_INSTALL_FULL_DATADIR "@CMAKE_INSTALL_DATADIR@")
+else()
+    set(CMAKE_INSTALL_FULL_DATADIR "${CMAKE_INSTALL_PREFIX}/@CMAKE_INSTALL_DATADIR@")
+endif()
+file(TO_CMAKE_PATH "${CMAKE_INSTALL_FULL_DATADIR}" CMAKE_INSTALL_FULL_DATADIR)
+file(MAKE_DIRECTORY "@CMAKE_BINARY_DIR@/desktop-entry-install")
+foreach(PU_APPLICATION IN ITEMS polly-files polly-settings polly-processes polly-file-text polly-file-text-open)
+    configure_file("@CMAKE_SOURCE_DIR@/desktop/release/${PU_APPLICATION}.desktop"
+        "@CMAKE_BINARY_DIR@/desktop-entry-install/${PU_APPLICATION}.desktop" @ONLY NEWLINE_STYLE UNIX)
+    file(INSTALL DESTINATION "${CMAKE_INSTALL_FULL_DATADIR}/applications" TYPE FILE
+        FILES "@CMAKE_BINARY_DIR@/desktop-entry-install/${PU_APPLICATION}.desktop")
+endforeach()

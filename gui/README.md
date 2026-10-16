@@ -108,6 +108,23 @@ The shared Settings card and those two consumer cards use the single desktop
 outside pixels without a second generic border; titles, child controls and
 transaction handlers keep their existing APIs.
 
+## Desktop default-action appearance
+
+Shared desktop `button(id, text, theme, action, selected, extraStyle, options)`
+keeps its original six arguments and accepts an optional seventh
+`{ defaultAction: true }`. `desktopCommand` accepts the same boolean in its
+existing named options. Omitted/false leaves the previous appearance unchanged;
+invalid types and unknown option keys are rejected.
+
+This opt-in adds only passive, pointer-transparent, accessibility-hidden
+decoration from existing theme tokens. Classic gives its raised/sunken bevel an
+independent outside outline; Luna and the other faces use an accent edge while
+retaining their existing highlight, gloss and focus paint. Disabled controls
+suppress the cue. Selected/checked truth, `aria-pressed`, content geometry,
+caller opacity, focus ownership and activation routing do not change. Only the
+existing display **Keep** and Files **confirm** actions opt in; this is not a
+global Enter handler, focus migration policy or an OS-default pulse animation.
+
 ## Select overlay lifecycle
 
 Keep the existing `NOverlayHost()` as the final child of a viewport-filling,
@@ -167,6 +184,15 @@ closed-owner collection; it does not qualify a hardware/compositor backend.
 the existing `size` mapping. The same size feeds painting, measurement, caret,
 selection and composition geometry.
 
+`createTextInput({ maxLength })` optionally bounds the committed value to a
+non-negative safe-integer count of Unicode code points. Initial `value` and
+programmatic assignments truncate at the existing text-index boundary; assignments
+keep their original end-caret/cleared-selection semantics. Interactive insertion,
+selection replacement and clipboard/IME commits share the existing insertion
+path: only inserted text is trimmed to the remaining budget, preserving the
+unselected suffix and insertion caret. Transient IME preedit is not committed
+value. Omitting the option keeps the previous unbounded behavior.
+
 `createTextInput({ selectionTextColor })`, its `setAppearance` method, and
 `NInput({ selectionTextColor })` optionally set selected glyph foreground.
 Omitting the field preserves the original SDK painting. The existing
@@ -209,6 +235,15 @@ controller. Omit `appearance` for unchanged caller-owned styling, no decoration
 nodes or arrows, the 28px minimum thumb and the existing 42px keyboard step.
 The caller supplies the scrollbar role/label and updates the controller after
 layout, content or scroll changes; the controller starts no timer or frame loop.
+
+Optional `onScroll(value)` synchronously reports a changed, clamped numeric
+`viewport.scrollTop` after an update, including keyboard, capture and external
+scroll changes. It must be a function or omitted, and is validated before any
+listeners attach. Construction, unchanged updates and stopped controllers never
+notify. Consumers may update virtual rows and call `update()` synchronously;
+reentrant updates coalesce without a notification loop. Callback exceptions
+propagate, with mouseup capture still released. This callback is independent of
+appearance painting and does not sample or observe application data.
 
 An optional appearance contains `metrics`, `paint(state, parts)` and
 `decorate(parts)`. Metrics are bounded logical-pixel values: `width`,

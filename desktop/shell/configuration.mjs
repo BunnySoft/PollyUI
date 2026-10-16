@@ -4,12 +4,13 @@ import { validateDisplayProfile, readDisplayProfile } from './desktop/shell/disp
 import { validateWorkspacePreferences, readWorkspacePreferences } from './desktop/shell/workspaces.mjs';
 import { validateShortcuts } from './desktop/shell/shortcuts.mjs';
 import { validateDesktopShortcuts } from './desktop/shell/desktop-shortcuts.mjs';
+import { validateLauncherPins } from './desktop/shell/launcher-pins.mjs';
 
 export const SHELL_CONFIGURATION_FILE = 'shell-preferences.json';
 export function defaultShellConfiguration() {
-  return { version: 2, theme: { id: null, filesEnabled: true },
+  return { version: 3, theme: { id: null, filesEnabled: true },
     audio: null, display: null, workspace: null, shortcuts: null,
-    desktop: { version: 1, shortcuts: [] } };
+    desktop: { version: 1, shortcuts: [] }, launchers: { version: 1, applications: [] } };
 }
 function keys(value, expected) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
@@ -17,16 +18,19 @@ function keys(value, expected) {
 }
 export function validateShellConfiguration(value) {
   const legacy = value?.version === 1 && keys(value, 'audio,display,shortcuts,theme,version,workspace');
-  if ((!legacy && (!keys(value, 'audio,desktop,display,shortcuts,theme,version,workspace') || value.version !== 2)) ||
+  const previous = value?.version === 2 && keys(value, 'audio,desktop,display,shortcuts,theme,version,workspace');
+  const current = value?.version === 3 && keys(value, 'audio,desktop,display,launchers,shortcuts,theme,version,workspace');
+  if ((!legacy && !previous && !current) ||
       !keys(value.theme, 'filesEnabled,id') || typeof value.theme.filesEnabled !== 'boolean' ||
       (value.theme.id !== null && (typeof value.theme.id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.theme.id))))
     throw new TypeError('Invalid or unsupported Shell configuration schema');
-  return { version: 2, theme: { ...value.theme },
+  return { version: 3, theme: { ...value.theme },
     audio: value.audio === null ? null : validateAudioPreferences(value.audio),
     display: value.display === null ? null : validateDisplayProfile(value.display),
     workspace: value.workspace === null ? null : validateWorkspacePreferences(value.workspace),
     shortcuts: value.shortcuts === null ? null : validateShortcuts(value.shortcuts),
-    desktop: legacy ? { version: 1, shortcuts: [] } : validateDesktopShortcuts(value.desktop) };
+    desktop: legacy ? { version: 1, shortcuts: [] } : validateDesktopShortcuts(value.desktop),
+    launchers: current ? validateLauncherPins(value.launchers) : { version: 1, applications: [] } };
 }
 function freeze(value) {
   if (value && typeof value === 'object') {
@@ -91,7 +95,7 @@ export function createShellConfiguration(files, readLegacy) {
     else {
       const parsed = JSON.parse(decodeUtf8(bytes));
       const migrated = snapshot(parsed);
-      if (parsed.version === 1) publish(migrated);
+      if (parsed.version !== 3) publish(migrated);
       else current = migrated;
     }
   } catch (error) {

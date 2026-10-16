@@ -17,6 +17,7 @@ import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
 import { taskLabel, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
+import { controlStates } from './desktop/shared/ui/control-state.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -116,6 +117,48 @@ const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
 const dockLayouts = new WeakMap();
+function paintDockHover(slot) {
+  const state = controlStates.get(slot);
+  if (state?.dockHoverPercent === undefined) return;
+  const art = slot.querySelector('.shell-dock-art');
+  if (!art) return;
+  let scale = 1;
+  if (state.dockHovered && state.dockHoverPercent > 100) {
+    const bounds = art.getBoundingClientRect(), clip = slot.getBoundingClientRect();
+    let left = clip.x, top = clip.y, right = left + clip.width, bottom = top + clip.height;
+    const body = slot.ownerDocument.body;
+    for (let parent = slot.parentNode; parent; parent = parent.parentNode) {
+      if (parent !== body && !['hidden', 'scroll'].includes(parent.style.overflow)) continue;
+      const box = parent.getBoundingClientRect();
+      left = Math.max(left, box.x); top = Math.max(top, box.y);
+      right = Math.min(right, box.x + box.width); bottom = Math.min(bottom, box.y + box.height);
+    }
+    if (bounds.width > 0 && bounds.height > 0 && bounds.x >= left && bounds.y >= top &&
+        bounds.x + bounds.width <= right && bounds.y + bounds.height <= bottom) {
+      const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+      scale = Math.max(1, Math.min(state.dockHoverPercent / 100,
+        2 * (x - left) / bounds.width, 2 * (right - x) / bounds.width,
+        2 * (y - top) / bounds.height, 2 * (bottom - y) / bounds.height));
+    }
+  }
+  if (Number(art.style.scale || 1) !== scale) art.style.scale = String(scale);
+}
+function refreshDockHover(node) {
+  let viewport = node;
+  while (viewport && viewport.id !== 'shell-dock-viewport') viewport = viewport.parentNode;
+  if (!viewport) return;
+  for (const child of viewport.firstChild.childNodes) {
+    paintDockHover(child);
+    if (child.id === 'shell-dock-windows') for (const slot of child.childNodes) paintDockHover(slot);
+  }
+}
+function dockHover(node, percent, hovered) {
+  const state = controlStates.get(node) ?? {};
+  state.dockHoverPercent = percent;
+  if (hovered !== undefined) state.dockHovered = hovered;
+  controlStates.set(node, state);
+  paintDockHover(node);
+}
 function dockScrollMaximum(node) {
   return node.childNodes.reduce((maximum, child) => Math.max(maximum,
     child.offsetLeft + child.offsetWidth - node.offsetLeft - node.offsetWidth), 0);
@@ -123,6 +166,7 @@ function dockScrollMaximum(node) {
 function scrollDock(event) {
   const start = Number(event.currentTarget.scrollLeft);
   scrollDesktop(event, true);
+  refreshDockHover(event.currentTarget);
   if (Number(event.currentTarget.scrollLeft) !== start) event.stopPropagation?.();
 }
 function revealDockSlot(event) {
@@ -136,6 +180,7 @@ function revealDockSlot(event) {
     viewport.scrollLeft = Math.max(0, Math.min(dockScrollMaximum(viewport), next));
     target = viewport;
   }
+  refreshDockHover(event.currentTarget);
 }
 function syncDockLayout(node) {
   let state = dockLayouts.get(node);
@@ -152,6 +197,7 @@ function syncDockLayout(node) {
       const geometry = [viewport.offsetWidth, surface.offsetWidth, strip?.offsetWidth ?? 0,
         strip ? dockScrollMaximum(strip) : 0, ...surface.childNodes.flatMap(child =>
           [child.offsetLeft - surface.offsetLeft, child.offsetWidth])].join(':');
+      refreshDockHover(viewport);
       if (state.geometry === geometry) return;
       state.geometry = geometry;
       viewport.style.overflow = surface.offsetWidth > viewport.offsetWidth ? 'scroll' : 'visible';
@@ -160,11 +206,19 @@ function syncDockLayout(node) {
       const active = viewport.ownerDocument?.activeElement;
       for (let parent = active; parent; parent = parent.parentNode)
         if (parent === viewport) { revealDockSlot({ currentTarget: active }); break; }
+      refreshDockHover(viewport);
     });
   });
 }
 
-function windowButtons(theme, windows, toggle, actions, compact = false) {
+function taskArtwork(window, images, size, fallback) {
+  const image = window && (images?.get(window.id) || images?.get(window.appId));
+  return image ? h('view', { 'aria-hidden': 'true', style: {
+    width: size, height: size, flexShrink: 0, backgroundImage: image, pointerEvents: 'none',
+  } }) : fallback;
+}
+
+function windowButtons(theme, windows, toggle, actions, compact = false, images = null) {
   return h('view', { id: 'shell-window-list', style: {
     ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, gap: theme.layout.windowGap, overflow: 'scroll',
   }, onWheel: event => {
@@ -190,7 +244,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       const caption = labelFor(theme)(short, theme.panel.text);
       caption.props.style.pointerEvents = 'none';
       node.children = [
-        lunaButtonDetail(theme, 'task'), lunaSymbol('document'),
+        lunaButtonDetail(theme, 'task'), taskArtwork(window, images, 16, lunaSymbol('document')),
         caption,
       ];
     }
@@ -203,7 +257,8 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       const caption = labelFor(theme)(short, theme.panel.text);
       caption.props.style.pointerEvents = 'none';
       caption.props.style.fontWeight = window.active ? 700 : 400;
-      const icon = desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16);
+      const icon = taskArtwork(window, images, theme.layout.taskIconSize ?? 16,
+        desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16));
       icon.props.id = 'shell-window-icon-' + window.id;
       const stipple = theme.panel.taskTexture === 'stipple';
       node.children = [
@@ -226,12 +281,15 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       Object.assign(node.props, surfaceEvents(theme, options));
       const focus = node.props.onFocus;
       node.props.onFocus = event => { focus(event); revealFluentTask(event); };
-      node.children = [surfaceDetail(theme, options), desktopIcon('file', theme.colors.accent, 24),
+      node.children = [surfaceDetail(theme, options),
+        taskArtwork(window, images, 24, desktopIcon(window.launcher ? 'apps' : 'file', theme.colors.accent, 24)),
         h('view', { 'aria-hidden': 'true', style: { position: 'absolute', bottom: 0,
           width: window.active ? 16 : 6, height: 3, borderRadius: 2,
-          backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
+          backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none',
+          opacity: window.launcher ? 0 : 1 } })];
     }
     node.props['aria-label'] = taskLabel(window);
+    if (window.unavailable) node.props['aria-description'] = window.unavailable;
     if (window.grouped && window.count > 1) {
       node.props.style.position = 'relative';
       node.children.push(h('view', {
@@ -256,7 +314,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null, images = null) {
   const panel = theme.panel;
   const label = labelFor(theme);
   if (isLuna(theme, 'panel') && panel.kind === 'taskbar') {
@@ -285,7 +343,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     } }, lunaBands(theme, 'panel', panel.height), launcher,
       tool('shell-panel-settings', 'Settings', 'appearance', openSettings),
       workspace ? tool('shell-workspaces', workspace.name, 'workspace', workspace.open) : null,
-      windowButtons(theme, windows, toggle, actions),
+      windowButtons(theme, windows, toggle, actions, false, images),
       error ? label('Desktop needs attention', panel.text, 11) : null,
       h('view', { id: 'shell-notification-area', style: {
         ...row, flexShrink: 0, height: panel.height, position: 'relative',
@@ -308,7 +366,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       return node;
     };
     const sync = node => syncFluentPanel(node, theme);
-    const tasks = windowButtons(theme, windows, toggle, actions);
+    const tasks = windowButtons(theme, windows, toggle, actions, false, images);
     tasks.props.style.minWidth = windows.length ? theme.layout.windowButtonWidth : 0;
     const wheel = tasks.props.onWheel;
     tasks.props.onWheel = event => { event.stopPropagation(); wheel(event); };
@@ -349,7 +407,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     button('shell-panel-settings', 'Settings', theme, openSettings, false, { height: itemHeight }),
     workspace ? button('shell-workspaces', workspace.name, theme, workspace.open, false,
       { height: itemHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) : null,
-    windowButtons(theme, windows, toggle, actions),
+    windowButtons(theme, windows, toggle, actions, false, images),
     error ? label('Needs attention', panel.text, 11) : null,
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'relative',
       height: itemHeight, paddingLeft: 6, paddingRight: 6, gap: theme.layout.trayGap, flexShrink: 0 } },
@@ -400,7 +458,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   workspace ? button('shell-workspaces', Array.from(workspace.name).slice(0, theme.layout.workspaceTitleLimit).join(''),
     theme, workspace.open, false, { height: theme.layout.compactButtonHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) :
     label('PollyDesktop', panel.text, 12),
-  panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
+  panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions, false, images) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
   tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
@@ -410,25 +468,38 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
 }
 
 export function dockView(theme, openSettings, openAbout, openApplications = openSettings,
-  windows = [], toggle = () => {}, actions = () => {}) {
+  windows = [], toggle = () => {}, actions = () => {}, images = null) {
   const panel = theme.panel;
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
     const slot = (id, title, icon, action, running = false, window = null) => {
+      const art = taskArtwork(window, images, iconSize - 8, desktopIcon(icon, theme.colors.accent, iconSize - 8));
+      art.props.className = 'shell-dock-art';
+      art.props.style.scale = 1;
+      const hoverPercent = theme.icons.dockHoverPercent ?? 100;
       const node = h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
-        ...(window?.grouped ? { 'aria-pressed': String(!!window.active) } : {}),
+        ...(window?.grouped || window?.launcher ? { 'aria-pressed': String(!!window.active) } : {}),
+        ...(window?.unavailable ? { 'aria-description': window.unavailable } : {}),
         style: { ...center, position: 'relative', width: window ? theme.layout.dockWindowWidth : theme.layout.dockTileWidth,
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
+        onMount: node => dockHover(node, hoverPercent),
+        onUpdate: node => dockHover(node, hoverPercent),
+        onMouseenter: event => dockHover(event.currentTarget, hoverPercent, true),
+        onMouseleave: event => dockHover(event.currentTarget, hoverPercent, false),
+        onMousecancel: event => dockHover(event.currentTarget, hoverPercent, false),
         onFocus: revealDockSlot,
         onClick: event => {
           if (event.button === 0) { event.stopPropagation(); return action(); }
           return false;
         },
         onKeydown: event => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (!event.repeat && !event.isComposing) action();
+          }
           else if (window && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
             event.preventDefault(); actions(window.id);
           }
@@ -436,7 +507,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         onContextmenu: window ? event => { event.preventDefault(); event.stopPropagation(); actions(window.id); } : undefined,
       }, h('view', { style: { ...center, width: iconSize, height: iconSize,
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
-        pointerEvents: 'none' } }, desktopIcon(icon, theme.colors.accent, iconSize - 8)),
+        pointerEvents: 'none' } }, art),
       window?.grouped && window.count > 1 ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', right: 1, top: 1, minWidth: 14, height: 16, borderRadius: 4,
         paddingLeft: 3, paddingRight: 3, backgroundColor: theme.colors.accent,
@@ -486,7 +557,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         gap: theme.layout.dockGap, overflow: 'scroll',
       }, onWheel: scrollDock },
       windows.map(window => slot('shell-window-' + window.id, taskLabel(window),
-        'file', () => toggle(window.id), true, window))) : null));
+        window.launcher ? 'apps' : 'file', () => toggle(window.id), !window.launcher, window))) : null));
   }
   const tile = { height: panel.height - theme.layout.panelItemInset, width: theme.layout.dockTileWidth,
     borderRadius: theme.icons.dockTiles ? theme.icons.radius : theme.button.radius };
@@ -498,16 +569,38 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   button('shell-dock-applications', 'Apps', theme, openApplications, false, tile),
   button('shell-dock-settings', 'Settings', theme, openSettings, false, tile),
   button('shell-dock-about', 'About', theme, openAbout, false, tile),
-  windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
+  windows.length ? windowButtons(theme, windows, toggle, actions, true, images) : null);
 }
 
-export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
+export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
+  logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
-    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop);
+    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs,
+      images, searchInput, launchers);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
       entry.keywords.join(' ')).toLowerCase().includes(query.toLowerCase()));
+  const appCommand = entry => {
+    const node = desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
+      { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
+        quiet: true, style: { height: 54, paddingLeft: 16, flexGrow: 1, flexBasis: 0, minWidth: 0 } });
+    const art = node.children.find(child => child.props?.className === 'theme-command-icon');
+    const image = images?.get(entry.id);
+    if (image && art) node.children[node.children.indexOf(art)] = h('view', {
+      'aria-hidden': 'true', style: { ...art.props.style, backgroundImage: image },
+    });
+    return node;
+  };
+  const launcherCommand = entry => {
+    const pinId = launchers.id(entry.id), pinned = launchers.has(pinId);
+    const node = desktopCommand('shell-app-launcher-' + entry.id,
+      (pinned ? 'Unpin from ' : 'Pin to ') + launchers.target, theme,
+      () => launchers.change(pinId, pinned), { quiet: true });
+    node.props['aria-label'] = (pinned ? 'Unpin ' : 'Pin ') + entry.name +
+      (pinned ? ' from ' : ' to ') + launchers.target;
+    return guardTaskGesture(node, pinId + ':' + pinned);
+  };
   return h('view', { id: 'shell-applications', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
     borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
@@ -518,7 +611,11 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label('Applications', isLuna(theme) ? theme.window.titleText : theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }), button('shell-app-refresh', 'Refresh', theme, refresh),
     button('shell-app-close', 'Close', theme, close)),
-  h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
+  searchInput ? searchInput({
+    style: { height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, minWidth: 0 },
+    placeholder: 'Type to search...',
+    submit: () => { const first = filtered.find(entry => !entry.unavailable); if (first) launch(first.id); },
+  }) : h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
     style: { padding: theme.layout.serviceButtonPadding, height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, backgroundColor: theme.colors.surface,
       borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
       borderRadius: isLuna(theme) ? 0 : theme.button.radius },
@@ -526,7 +623,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     onTextinput: event => changeQuery(Array.from(query + event.data).slice(0, 128).join('')),
     onKeydown: event => {
       if (event.key === 'Backspace') { event.preventDefault(); changeQuery(Array.from(query).slice(0, -1).join('')); }
-      if (event.key === 'Enter' && filtered[0]) { event.preventDefault(); launch(filtered[0].id); }
+      if (event.key === 'Enter' && !event.isComposing && filtered[0]) { event.preventDefault(); launch(filtered[0].id); }
     },
   }, label(query || 'Type to search...', query ? theme.colors.text : theme.colors.muted)),
   h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.windowGap } },
@@ -535,13 +632,12 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
           padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
         } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
           label(entry.unavailable, theme.colors.muted, 10))
-      : h('view', { style: { ...row, gap: 6, flexShrink: 0 } },
-        desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
-          { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
-            quiet: true, style: { height: 54, paddingLeft: 16, flexGrow: 1, flexBasis: 0, minWidth: 0 } }),
+      : h('view', { style: { ...row, gap: 6, flexShrink: 0, ...(launchers ? { flexWrap: 'wrap' } : {}) } },
+        appCommand(entry),
         desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
           theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
-          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null)),
+          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null,
+        launchers ? launcherCommand(entry) : null)),
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },
@@ -552,13 +648,10 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
 }
 
 export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
-  const label = labelFor(theme);
-  return h('view', { id: 'shell-window-actions', style: {
-    width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'scroll',
-    backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    borderRadius: theme.window.radius,
-  } },
-  label(window.title || window.appId || 'Untitled', theme.colors.text, 14),
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu' },
+  label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
   button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
   button('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize', theme,
     () => action(window.minimized ? 'restoreWindow' : 'minimizeWindow')),
@@ -567,65 +660,63 @@ export function windowActionsView(theme, window, action, close, error = '', work
   button('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen', theme,
     () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
   button('shell-window-close', 'Close application window', theme, () => action('closeWindow')),
-  workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, 11) : null,
+  workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, l.statusFontSize) : null,
   workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>
     button('shell-window-workspace-' + workspace.id, workspace.name, theme, () => move(workspace.id))),
   button('shell-window-menu-close', 'Close menu', theme, close),
-  error ? label(error, theme.colors.text, 11) : null);
+  error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 
 export function workspacesView(theme, workspaces, activate, remove, create, close, error = '', settings = null) {
-  const label = labelFor(theme);
-  return h('view', { id: 'shell-workspace-menu', style: {
-    width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap,
-    backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
-    borderRadius: theme.window.radius,
-  } },
-  h('view', { style: { ...row, gap: theme.layout.contentGap } }, label('Workspaces', theme.colors.text, 16),
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
+  return panelViewport(theme, { id: 'shell-workspace-menu', variant: 'menu' },
+  h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
+    label('Workspaces', theme.colors.text, l.headingFontSize),
     h('view', { style: { flexGrow: 1 } }), button('shell-workspace-add', 'Add', theme, create),
     button('shell-workspace-close', 'Close', theme, close)),
-  label('All displays switch together. Empty workspaces stay.', theme.colors.muted, 10),
-  h('view', { style: { gap: theme.layout.controlGap, display: settings?.editor ? 'flex' : 'none' } },
+  label('All displays switch together. Empty workspaces stay.', theme.colors.muted, l.statusFontSize),
+  h('view', { style: { gap: l.controlGap, flexShrink: 0, minWidth: 0,
+    display: settings?.editor ? 'flex' : 'none' } },
     settings?.editor ? [
-    h('view', { style: { height: Number(settings.editor.input.root.style.height) },
+    h('view', { style: { height: Number(settings.editor.input.root.style.height), flexShrink: 0, minWidth: 0 },
       onMount: node => node.appendChild(settings.editor.input.root) }),
-    h('view', { style: { ...row, gap: theme.layout.controlGap } },
+    h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
       button('shell-workspace-name-save', 'Save name', theme, settings.save),
       button('shell-workspace-name-cancel', 'Cancel', theme, settings.cancel))] : []),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.controlGap } },
+  h('view', { style: { flexShrink: 0, minWidth: 0, gap: l.controlGap } },
     workspaces.map((workspace, index) => h('view', { key: workspace.id,
-      style: { gap: theme.layout.controlGap, flexShrink: 0 } },
-      h('view', { style: { ...row, gap: theme.layout.controlGap } },
+      style: { gap: l.controlGap, flexShrink: 0, minWidth: 0 } },
+      h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
       button('shell-workspace-' + workspace.id, workspace.name, theme, () => activate(workspace.id),
         workspace.active, { flexGrow: 1, flexBasis: 0, minWidth: 0, overflow: 'hidden' }),
       workspace.canRemove ? button('shell-workspace-remove-' + workspace.id, 'Remove', theme,
-        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, 10)),
-      settings ? h('view', { style: { ...row, gap: theme.layout.controlGap } },
+        () => remove(workspace.id)) : label('Last workspace', theme.colors.muted, l.statusFontSize)),
+      settings ? h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
         button('shell-workspace-rename-' + workspace.id, 'Rename', theme, () => settings.rename(workspace.id),
           false, { height: theme.layout.compactButtonHeight }),
         index ? button('shell-workspace-earlier-' + workspace.id, 'Earlier', theme,
           () => settings.reorder(workspace.id, index - 1), false, { height: theme.layout.compactButtonHeight }) : null,
         index + 1 < workspaces.length ? button('shell-workspace-later-' + workspace.id, 'Later', theme,
           () => settings.reorder(workspace.id, index + 1), false, { height: theme.layout.compactButtonHeight }) : null) : null))),
-  label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, 10),
-  label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, 10),
+  label('Removing a workspace moves its windows, not closes them.', theme.colors.muted, l.statusFontSize),
+  label('Ctrl+Super+Left/Right switches workspaces.', theme.colors.muted, l.statusFontSize),
   settings && error ? button('shell-workspace-save-current', 'Save current layout', theme, settings.saveCurrent) : null,
-  error ? label(error, theme.colors.text, 11) : null);
+  error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 
 export function switcherView(theme, snapshot, accept, rows = theme.layout.switcherMaxRows) {
-  const label = labelFor(theme);
+  const l = theme.layout;
+  const label = (value, color, size = l.fontSize) => desktopText(value, color, size, { minWidth: 0 });
   const start = Math.max(0, Math.min(snapshot.items.length - rows, snapshot.selected - Math.floor(rows / 2)));
-  return h('view', { id: 'shell-window-switcher', style: {
-    width: '100%', height: '100%', padding: theme.layout.contentPadding, gap: theme.layout.controlGap, backgroundColor: theme.colors.body,
-    borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border, borderRadius: theme.window.radius,
-  } },
-  label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length, theme.colors.text, 15),
+  return panelViewport(theme, { id: 'shell-window-switcher' },
+  label('Switch windows  ' + (snapshot.selected + 1) + ' / ' + snapshot.items.length,
+    theme.colors.text, l.headingFontSize),
   snapshot.items.slice(start, start + rows).map((item, offset) =>
     button('shell-switcher-item-' + (start + offset), item.title || item.appId || 'Untitled', theme,
       () => accept(snapshot.serial, start + offset), snapshot.selected === start + offset,
       { height: theme.layout.choiceHeight, alignItems: 'flex-start', overflow: 'hidden' })),
-  label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, 10));
+  label('Release shortcut modifiers to activate. Esc cancels.', theme.colors.muted, l.statusFontSize));
 }
 
 export function displayConfirmationView(theme, remaining, keep, revert) {
@@ -634,7 +725,7 @@ export function displayConfirmationView(theme, remaining, keep, revert) {
   label('Keep these display settings?', theme.colors.text, 15),
   label('Reverting in ' + Math.ceil(remaining / 1000) + ' seconds.', theme.colors.muted, 12),
   h('view', { style: { ...row, gap: theme.layout.compactPadding, flexWrap: 'wrap', flexShrink: 0 } },
-    button('shell-output-keep', 'Keep', theme, keep),
+    button('shell-output-keep', 'Keep', theme, keep, false, {}, { defaultAction: true }),
     button('shell-output-revert', 'Revert', theme, revert)),
   label('Enter keeps changes. Escape reverts.', theme.colors.muted, 10));
 }

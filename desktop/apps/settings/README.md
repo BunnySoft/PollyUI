@@ -33,6 +33,9 @@ These are output scales for desktop, decorations and application buffers, not
 an app-only font zoom. Choosing a scale only edits that monitor's draft; Apply
 uses the existing native transaction and trusted 15-second Keep/Revert prompt.
 Only Keep saves the confirmed layout; hotplug discards the stale draft.
+Display headings, ordinary labels, status messages and page spacing follow the
+existing theme tokens. Display headers and action rows wrap in narrow content
+areas without resizing the retained numeric fields or changing their draft values.
 
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;
@@ -79,6 +82,14 @@ theme buttons. Theme previews are native primitive artwork, not screenshots
 of hardware; the modern material is solid, not a claim of Mica or blur.
 About keeps system/session information separate from expandable technical paths,
 storage identities and Settings's own application version.
+
+The Settings frame, About and Keyboard text/spacing consume the existing theme
+typography and layout tokens; Audio action rows wrap within the available width.
+This is client presentation, not certification of original operating-system fonts.
+The Keyboard shortcut list reuses the shared frameless focus viewport: Tab to
+Change/Off reveals the focused command in short windows, while ordinary repaint
+preserves intentional wheel scrolling. Recording still uses the same trusted
+focus-bound capture path.
 
 Every page, including loading, unavailable and failed states, retains the
 system release and short build revision/source marker in its footer. Both strict
@@ -129,3 +140,6 @@ a second generic border. Status text uses the selection foreground when supplied
 Decorations are non-interactive and add no focus stops, recording lifecycle,
 subscription or RPC behavior. Other page/control migrations remain independently
 owned; this contract is not a claim of original-OS pixel certification.
+Appearance gallery headings, labels, status and spacing follow the same existing
+theme typography/layout tokens; preview illustrations and selection behavior
+retain their original geometry and lifecycle.

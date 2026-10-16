@@ -19,11 +19,13 @@ export function createDisplayPage() {
       if (changed || snapshot.pendingToken || !snapshot.available) reset();
       if (changed) error = 'Outputs changed; the old draft was discarded. Review the new values.';
       if (!snapshot.available || snapshot.pendingToken) {
-        render(h('view', { id: 'settings-display-status', role: 'status', style: { padding: 16, gap: 12 } },
-          desktopText(snapshot.pendingToken ? 'Display changes await trusted confirmation' : 'Displays unavailable', theme.colors.text, 18),
+        render(h('view', { id: 'settings-display-status', role: 'status',
+          style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap } },
+          desktopText(snapshot.pendingToken ? 'Display changes await trusted confirmation' : 'Displays unavailable',
+            theme.colors.text, theme.layout.headingFontSize, { minWidth: 0 }),
           desktopText(snapshot.pendingToken ? 'Use the trusted Keep / Revert prompt. Automatic rollback in ' +
             Math.ceil(snapshot.remainingMs / 1000) + ' seconds. Closing Settings does not confirm or reset that deadline.' :
-            snapshot.status, theme.colors.muted, 14, { flexShrink: 1 })), root);
+            snapshot.status, theme.colors.muted, theme.layout.fontSize, { flexShrink: 1, minWidth: 0 })), root);
         return;
       }
       if (!draft) draft = { serial: snapshot.serial, heads: snapshot.heads.map(head => ({ ...head })) };

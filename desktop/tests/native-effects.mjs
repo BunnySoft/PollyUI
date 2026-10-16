@@ -7,12 +7,44 @@ const { validateTheme } = await import('../shared/ui/theme-schema.mjs');
 const { DECORATION_LAYOUT_FIELDS, decorationLayout, encodeDecorationLayout } =
   await import('../shared/ui/caption-layout.mjs');
 
-test('existing radius and preview shadow do not silently opt native windows in', () => {
-  for (const id of ['modern', 'xp', 'aqua']) {
+test('Modern and Mac presets explicitly opt into effects; Classic, XP and legacy modes stay none', () => {
+  const modern = getDesktopTheme('modern');
+  assert.equal(modern.window.nativeEffects, 'rounded');
+  assert.equal(modern.window.radius, 8);
+  assert.equal(modern.window.shadow, 0);
+  assert.equal(decorationLayout(modern).effect_radius, 8);
+  for (const [id, radius, shadow] of [['aqua', 6, 20], ['lion', 5, 18], ['bigsur', 10, 24]]) {
+    const theme = getDesktopTheme(id), layout = decorationLayout(theme);
+    assert.equal(theme.window.nativeEffects, 'rounded-shadow');
+    assert.equal(theme.window.radius, radius);
+    assert.equal(theme.window.shadow, shadow);
+    assert.equal(layout.effect_radius, radius);
+    assert.equal(layout.shadow_sigma, Math.ceil(shadow / 2));
+    assert.equal(layout.shadow_rgb, 0);
+    assert.equal(layout.shadow_active, 24);
+    assert.equal(layout.shadow_inactive, 12);
+    assert.equal(layout.shadow_x_bias, 64);
+    assert.equal(layout.shadow_y_bias, 64 + Math.round(shadow / 4));
+    for (const mode of [undefined, 'none']) {
+      const legacy = structuredClone(theme);
+      delete legacy.window.nativeEffects;
+      if (mode !== undefined) legacy.window.nativeEffects = mode;
+      const oldLayout = decorationLayout(validateTheme(legacy));
+      assert.equal(oldLayout.effect_radius, 0);
+      assert.equal(oldLayout.shadow_sigma, 0);
+      assert.equal(oldLayout.shadow_active, 0);
+      assert.equal(oldLayout.shadow_inactive, 0);
+    }
+  }
+  for (const id of ['xp', 'server2003']) {
     const theme = getDesktopTheme(id);
     assert.equal(decorationLayout(theme).effect_radius, 0);
     assert.equal(encodeDecorationLayout(theme)[0], 6);
   }
+  const legacy = structuredClone(modern);
+  delete legacy.window.nativeEffects;
+  assert.equal(decorationLayout(validateTheme(legacy)).effect_radius, 0);
+  assert.equal(encodeDecorationLayout(modern)[0], 6);
 });
 test('optional native effects select only validated numeric radius', () => {
   const theme = structuredClone(getDesktopTheme('modern'));

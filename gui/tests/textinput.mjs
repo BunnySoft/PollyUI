@@ -124,5 +124,30 @@ check('long text scrolls the caret into the field', input.root.scrollLeft > 0);
 host.key('Home'); host.render();
 check('Home returns horizontal scroll to the start', input.root.scrollLeft === 0);
 
+const limited = createTextInput({ maxLength: 128, value: 'a'.repeat(127) + '\u{1f642}x' });
+document.body.appendChild(limited.root); limited.root.focus();
+check('maxLength bounds initial code points without splitting a surrogate',
+  limited.value === 'a'.repeat(127) + '\u{1f642}');
+limited.value = 'tail';
+host.key('Home', 'keydown', { text: false });
+host.text('x'.repeat(200));
+check('bounded middle insertion keeps the unselected suffix and insertion caret',
+  limited.value === 'x'.repeat(124) + 'tail' && limited.getCaret() === 124 && limited.getSelection() === null);
+host.key('Delete', 'keydown', { text: false });
+check('Delete follows the bounded insertion caret rather than jumping to the end', limited.value === 'x'.repeat(124) + 'ail');
+limited.selectAll(); host.text('\u{1f642}'.repeat(129));
+check('selected text releases its code-point budget for the replacement',
+  limited.value === '\u{1f642}'.repeat(128) && limited.getCaret() === 256);
+limited.value = 'z'.repeat(129);
+check('programmatic value assignment uses the same bound and existing end-caret semantics',
+  limited.value.length === 128 && limited.getCaret() === 128);
+for (const maxLength of [-1, 1.5, '128', null, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+  let rejected = false;
+  try { createTextInput({ maxLength }); } catch (error) { rejected = error instanceof RangeError; }
+  check('invalid maxLength is rejected: ' + String(maxLength), rejected);
+}
+input.value = 'unbounded'.repeat(30);
+check('omitted maxLength preserves unbounded legacy input', input.value.length === 270);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 if (fail) throw new Error('Text input assertions failed');

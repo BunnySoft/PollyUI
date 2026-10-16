@@ -34,7 +34,12 @@ Optional `nativeShadowColor` is RGB; active/inactive `nativeShadowOpacity` and
 `nativeShadowInactiveOpacity` are integer percentages (JS defaults 24/12), and
 `nativeShadowX`/`nativeShadowY` are integer offsets within -64..64. The JS defaults
 are black, x=0 and y=round(window.shadow/4); none are interpreted as presets in C.
-Preview-only `window.shadow` never enables native shadows without that explicit mode.
+`window.shadow` alone never enables native shadows without that explicit mode.
+Packaged Modern explicitly selects `rounded` with its existing radius 8 and no
+shadow; Aqua, Lion and Big Sur select `rounded-shadow` with their existing
+radius/shadow tokens. Classic and XP remain on the previous native path.
+Custom themes with a missing field stay unchanged, and an explicit `"none"`
+override disables the effect.
 Maximized/fullscreen, explicit client-side decorations and undecorated
 windows remain unaffected. Popups are separate from the rounded client-plus-frame
 subtree. Input regions intentionally remain the existing rectangles, including
@@ -117,8 +122,27 @@ platform-owned icons. Uninstalled/unavailable apps retain an explicitly labelled
 shortcut and cannot launch a stale command. Labels use current catalog names;
 the saved label is only a snapshot for a missing entry.
 
-The [v2 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
-theme/audio/display/workspace/keyboard preferences and atomically migrates v1.
+Packaged Files, Settings, Processes and File Text include original 64px Polly
+PNG tiles in `share/icons/hicolor/64x64/apps`. Their desktop entries are
+configured with the installation data prefix and declare `X-Polly-AppId` to
+match the real launcher identity. The same registered artwork serves desktop
+shortcuts, application menus and running taskbar/Dock groups. This is explicit
+registration, not a title, executable-name or desktop-file-suffix guess; an
+ambiguous runtime identity keeps the fallback instead of choosing arbitrarily.
+Managed bundles use the already-validated manifest ID for this association.
+
+The artwork source is `tools/generate-application-icons.mjs`, using only native
+rectangles and gradients, with no downloaded or platform-owned assets. To
+regenerate from the repository root with the existing playground, set
+`PU_RENDERER=raster`, `PU_TEST_W=64`, `PU_TEST_H=64` and run
+`pollyui-playground --test desktop/tools/generate-application-icons.mjs`.
+The checked-in PNGs are installed directly; regeneration is not a runtime or
+release dependency.
+
+The [v3 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
+theme/audio/display/workspace/keyboard/desktop preferences and atomically migrates
+v1/v2 profiles. Taskbar/Dock pins are independent of desktop shortcuts; returning
+to an older Shell requires a configuration version it understands.
 This feature is PollyOS Shell behavior, not Windows Explorer/macOS replacement,
 a desktop filesystem, cross-app drag-and-drop, animation, or an accessibility
 system bridge. The icon list exposes option/multiselect semantics and roving

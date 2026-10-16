@@ -18,7 +18,9 @@ export function verticalScrollMetrics(viewport, trackHeight = viewport.offsetHei
     top: startInset + (maximum ? value / maximum * travel : 0) };
 }
 
-export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = () => true, appearance }) {
+export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = () => true, appearance, onScroll }) {
+  if (onScroll !== undefined && typeof onScroll !== 'function')
+    throw new TypeError('Scrollbar onScroll must be a function or undefined');
   const initial = scrollbarAppearance(appearance);
   const initialState = initial ? {
     scrollTop: viewport.scrollTop, tabIndex: track.tabIndex,
@@ -29,6 +31,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   let drag = null, stopped = false, skin = null, source, cleanup = null, parts = null;
   let hovered = null, held = null, enabled = false, lastMetrics = null, lastPaint = '';
   let surfaceOpacity = 1;
+  let ready = false, notifying = false, scrollValue = Number(viewport.scrollTop);
   let focused = track.ownerDocument.activeElement === track;
   const originals = new Map();
   const listeners = [];
@@ -79,8 +82,8 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   function cancel(release = false) {
     const capture = drag;
     drag = null;
-    clearHeld();
-    if (release && capture) track.releaseMouseCapture();
+    try { clearHeld(); }
+    finally { if (release && capture) track.releaseMouseCapture(); }
   }
   function clearHeld() { held = null; paint(); }
   function update() {
@@ -132,11 +135,18 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     if (track.style.opacity !== visibility) track.style.opacity = visibility;
     const hit = enabled ? 'auto' : 'none';
     if (track.style.pointerEvents !== hit) track.style.pointerEvents = hit;
+    // Virtual-row consumers can update synchronously; nested updates coalesce.
+    if (ready && onScroll && !notifying && Number(viewport.scrollTop) !== scrollValue) {
+      scrollValue = Number(viewport.scrollTop);
+      notifying = true;
+      try { onScroll(scrollValue); }
+      finally { notifying = false; scrollValue = Number(viewport.scrollTop); }
+    }
     return metrics;
   }
   function scrollTo(value) {
     const metrics = update();
-    if (!metrics) { cancel(true); return null; }
+    if (!metrics || stopped) { cancel(true); return null; }
     viewport.scrollTop = Math.max(0, Math.min(metrics.maximum, value));
     update();
     return Number(viewport.scrollTop);
@@ -149,7 +159,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   listen('mousedown', event => {
     if (event.button !== 0) return;
     const metrics = update();
-    if (!metrics || !metrics.maximum) return;
+    if (!metrics || stopped || !metrics.maximum) return;
     const part = hit(event);
     if (!metrics.travel && (!skin || !['decrement', 'increment'].includes(part))) return;
     event.preventDefault(); event.stopPropagation();
@@ -182,8 +192,8 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   listen('mousemove', move);
   listen('mouseup', event => {
     if (event.button !== 0) return;
-    if (drag) move(event);
-    cancel(true);
+    try { if (drag) move(event); }
+    finally { cancel(true); }
   });
   listen('mouseenter', event => { if (skin) { hovered = hit(event); paint(); } });
   listen('mouseleave', () => { hovered = null; if (!drag) held = null; paint(); });
@@ -194,7 +204,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   listen('wheel', event => { event.preventDefault(); const metrics = update(); if (metrics) scrollTo(metrics.value + event.deltaY); });
   listen('keydown', event => {
     const metrics = update();
-    if (!metrics) return;
+    if (!metrics || stopped) return;
     const delta = { ArrowUp: -42, ArrowDown: 42, PageUp: -metrics.height, PageDown: metrics.height };
     if (event.key === 'Home' || event.key === 'End' || Object.hasOwn(delta, event.key)) {
       event.preventDefault(); event.stopPropagation();
@@ -265,6 +275,8 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     track.tabIndex = initialState.tabIndex; viewport.scrollTop = initialState.scrollTop;
     throw error;
   }
+  scrollValue = Number(viewport.scrollTop);
+  ready = true;
   return { update, cancel, step, setAppearance,
     stop() {
       stopped = true; cancel(true);

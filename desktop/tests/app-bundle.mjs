@@ -83,8 +83,8 @@ rejects(() => validateBundleRecord({...record,current:{...descriptor,digest:'../
 const logs = [];
 const catalog = bundleCatalog([{id:source.id,store:'/apps',contents:JSON.stringify(record)}],
   '/usr/bin/polly-app', () => true, message => logs.push(message));
-check(catalog[0].id === 'bundle:org.example.notes' &&
+check(catalog[0].id === 'bundle:org.example.notes' && catalog[0].appId === source.id &&
   catalog[0].argv.join('|') === '/usr/bin/polly-app|run|org.example.notes|'+'a'.repeat(64),
-  'Shell launch includes the observed digest, preventing stale catalog execution');
+  'Shell catalog declares the validated runtime identity and launch includes the observed digest');
 check(bundleCatalog([{id:source.id,store:'/apps',contents:'broken'}],'/usr/bin/polly-app',()=>true,
   message=>logs.push(message)).length === 0 && logs.length === 1, 'corrupt catalog records are logged and not launched');

@@ -359,9 +359,10 @@ a root reused as another scroll view. Component rendering/input and the
 separate native owner probe are not native output-resize, Windows pixel or
 arbitrary-geometry accessibility certification.
 
-True recommendation/account history and app-grouping semantics still need
-backend/design decisions. Full-window corners/shadows and Mica/Acrylic remain
-separate mechanisms; solid/gradient painting is not represented as those effects.
+True recommendation/account history still needs backend/design decisions.
+Application grouping and independent persistent pins are described below.
+Full-window corners/shadows use the separate native-effects contract;
+solid/gradient painting is not represented as Mica/Acrylic.
 E22.22 remains partial.
 
 Classic follows the supplied Windows Server 2003 references: flat faces and real
@@ -388,13 +389,18 @@ the canonical Classic palette. That is not verified display-depth metadata:
 the product keeps canonical 24-bit colors, and raw comparison error is not
 normalized or forced to zero.
 Only actual installed entries/actions are shown: no fake recommendations,
-categories, pinned history or nonfunctional search. Classic now has a flat
-All Programs submenu inside its existing RootMenu client. It uses real catalog
+account history or nonfunctional search. Classic's All Programs defaults to a
+flat list inside its existing RootMenu client. An optional Categories entry
+derives nonexclusive exact tags from the actual catalog, including a distinct
+no-tags group; it is not an installed-directory hierarchy. It uses real catalog
 IDs and existing launch/Pin services, preserves two-column and legacy layouts,
-and supports Back/Left/Escape, keyboard navigation and bounded scrolling.
-Stable per-open row slots and menu epochs prevent a held or retired row from
-activating another application after catalog reconciliation. The submenu stays
-inside the existing input viewport; no native popup or new authority is added.
+and supports hierarchical Back/Left/Escape, header/list Tab navigation and bounded
+scrolling. Stable per-view row slots and menu epochs prevent a held or retired
+row from activating another application. Category actions require successful
+catalog refresh and current membership; discovery failure reports an error and
+retains the previous visible catalog without authorizing an action from stale
+data. The submenu stays inside the existing input viewport; no native popup or
+new authority is added.
 See [the Shell contract](shell/README.md). Multi-level directory menus, true user
 account/profile art, and Win11 recommendation/account features are not reproduced.
 Existing application launch, desktop shortcut, keyboard and logout actions remain
@@ -452,7 +458,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Exact-appId grouping is now delivered separately below; glass/reflection, preset effect adoption, pinning and magnification remain separate work. |
+| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Grouping and independent persistent pins are now delivered separately below; glass/reflection, preset effect adoption and magnification remain separate work. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -468,8 +474,20 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 Modern and all three Mac presets now explicitly select optional
 `panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
 nonempty exact native `appId` values; missing/empty IDs remain independent
-`Window.id` tasks. Catalog names are used only on an exact ID match, otherwise
-the real app ID is displayed. No title, PID or basename aliases are inferred.
+`Window.id` tasks. Catalog names use an exact entry ID first, then a unique
+explicit `X-Polly-AppId` (validated manifest ID for bundles); an ambiguous
+registration keeps the real app ID. No title, PID or basename aliases are inferred.
+Taskbar and Dock tasks now reuse the desktop's existing bounded bitmap resource
+cache for registered PNG/JPEG artwork, retaining the union required by desktop
+shortcuts and current tasks. Images keep their original colors and slot sizes;
+missing, named, SVG or unsupported resources retain explicit fallback/reporting.
+This does not add an icon-theme resolver or claim that unavailable artwork has
+been rendered end to end.
+Files, Settings, Processes and File Text now ship original Polly PNG tiles and
+explicit runtime IDs, so their own registered resources can reach desktop,
+menus and running groups. Installation resolves absolute icon paths against
+the actual prefix, including packaging's `--prefix` override. The artwork is
+Polly-owned, not commercial-OS icon replication.
 Missing grouping or explicit `"windows"` preserves the original input order
 and per-window interface; Classic and XP keep that mode.
 
@@ -490,11 +508,42 @@ seam; they do not create surfaces or change state by themselves.
 `tests/window-groups.mjs`, `tests/menu-host.mjs` and
 `tests/window-group-render.mjs` cover the model, live guards and actual GUI
 input/native child bounds using nonempty-appId fixture snapshots. They do not
-certify full-WM application enumeration, native MRU, pinning, magnification,
+certify full-WM application enumeration, native MRU, magnification,
 physical DPI or macOS pixel fidelity.
 Passive menu details are appended after the stable header/list/close slots.
 Actual custom Classic application grouping can retheme to Modern and back
 without replacing the focused real-window command or changing its action.
+
+Modern and the three Mac presets also display independent persistent application
+pins. Apps menus distinguish taskbar/Dock pin controls from desktop shortcuts;
+the window chooser can pin or unpin the corresponding registered application.
+At most 32 ordered catalog IDs are saved in Shell configuration v3, with atomic
+v1/v2 migration preserving every existing preference domain. Unpinning never
+removes a desktop shortcut. The older reader cannot read v3 automatically.
+
+An idle pin launches through the existing current-catalog policy, while a
+uniquely associated running group occupies that same pinned slot with its real
+window count. Missing or unavailable entries remain keyboard-manageable, with
+their reason and Unpin action instead of stale launch arguments. Display slots,
+Dock width, image retention and live callback guards share the same model.
+Settings pins retain the existing owned Settings launch route. Repeated or
+composing Dock activation does not launch; discrete activation still does.
+The existing pin menu also offers Earlier/Later for one-step saved ordering,
+including unavailable pins, omitting directions at the ends of the list.
+These commands share Pin/Unpin's atomic publication and committed-error handling,
+recheck the current menu/output/task and expected pin position, and do not alter
+desktop shortcuts.
+These are Polly launcher semantics, not native MRU, drag sorting or Dock
+magnification, and do not alter Classic/XP per-window mode.
+
+Mac-style Docks now also provide bounded pointer-hover emphasis through optional
+`icons.dockHoverPercent` (integer 100-125, missing/100 disables; packaged presets
+use 120). Only the passive glyph/bitmap scales about its center, limited by the
+actual slot, clipping ancestors and client viewport. Slot/tile/hit geometry,
+counts and running marks stay fixed. Leave/cancel restores the art; existing
+weak control state and Dock settling handle retheme/scroll without a new frame
+loop. This is not neighboring-icon displacement, animated magnification or
+keyboard-focus enlargement.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -606,8 +655,16 @@ zero wrong on/off pixels on every full edge. Business callback reassignment,
 retained focus, caller opacity, selection truth, retheme, blur and single
 activation are covered. A private WM_DPICHANGED 1.25 test checks adapter/backing
 refresh only, not monitor-DPI qualification. No C theme rendering is added.
-E22.7 remains partial: this does not certify default-button styles, every SDK
-widget/state, fonts or full OS appearance.
+E22.7 remains partial: this does not certify every SDK widget/state, fonts or
+full OS default-button behavior.
+
+Desktop buttons and commands now accept an explicit `defaultAction` visual,
+independent of selected/toggle truth. It adds passive theme-token outlines,
+suppressed when disabled, without changing content geometry, caller opacity,
+focus ownership or activation routing. Existing display Keep and Files confirm
+opt in; no global Enter handler, platform focus migration or pulse animation is
+introduced. Ordinary callers retain their prior appearance. This shared API
+uses small additions to existing checks, not new application-style fixtures.
 
 The native Canvas painter cache keeps its Document, window and remover weak;
 the finalizer holds a weak remover and an owner-free unregister token. Real
@@ -642,6 +699,30 @@ button gloss are covered. SDK text-input caret/selection, every bespoke dialog,
 global scrollbars and third-party clients are not certified as OS-identical.
 Generic platform font fallback remains intentional: no forced aliases or
 proprietary font files are installed. These missing pixels prevent a 1:1 claim.
+Files list names now use the theme body size and metadata its status size;
+Processes uses the existing body/status/heading and spacing tokens as well.
+Both retain their fixed-row geometry, columns and data-operation controllers.
+Processes also uses the shared 10px overlay scrollbar in its trailing padding.
+Drag, paging and keyboard changes update its actual virtual PID rows through
+the controller's optional scroll notification without another process sample;
+retained observations remain scrollable during refresh and after a sample error.
+File Text explicitly opts into the existing public theme helpers for the whole
+app, sharing its subscription with the chooser and preserving text/selection
+and every existing read/save consent rule. Its default API remains neutral;
+the packaged wrapper selects `--theme`, with `--no-theme` as an explicit opt-out.
+Settings frame/About/Keyboard and Displays titles, body/status text and spacing
+also consume their existing semantic tokens. Displays headers and action rows
+wrap in narrow content areas, while numeric input dimensions, draft values and
+the trusted Apply/Keep/Revert transaction stay unchanged. Audio controls wrap
+without changing acknowledgement behavior. Files Places/Properties/empty
+states follow the same typography. Power uses an explicit bounded client area
+and the existing wheel handler, with shutdown permissions and confirmation
+coordination unchanged. These are application-style changes, not new font,
+layout or test infrastructure.
+The Keyboard shortcut list also uses the existing frameless panel viewport to
+reveal focused Change/Off commands at low heights. It preserves card spacing,
+intentional wheel position on repaint, and the trusted recording lifecycle;
+no second frame or focus engine is introduced.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
@@ -717,6 +798,11 @@ inventory/wait/seal/explicit final commit remain controller-owned.
 region. Its default fixed sizing serves the credential/confirmation surfaces;
 content sizing preserves Files' natural dialog/menu height under the caller's
 existing maximum, and an explicit horizontal axis serves breadcrumbs.
+Window actions, workspace/desktop management, the window switcher and tray
+menus also consume the same helper instead of separate bare scroll frames.
+Workspace actions wrap in narrow menus, and tray commands reuse the shared
+enabled/selection-foreground/activation behavior. Their native identities,
+management callbacks and application-owned tray scroll actions are unchanged.
 Frame pixels stay fixed while content
 scrolls; one weak, bounded post-layout helper reveals the current real focus,
 including manually attached credential fields. Tab/focus requests coalesce,
@@ -823,7 +909,7 @@ specific task IDs, not another independently maintained status table.
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: delivered exact-appId grouping and real window chooser; remaining pinning, native/reference qualification and unimplemented magnification |
+| Shared Mac Dock semantics | E22.34: delivered grouping, window chooser, independent pins and bounded hover emphasis; native/reference qualification and full neighboring-icon animation remain |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened
@@ -878,8 +964,10 @@ Missing or `"none"` preserves the previous native path; existing preview
 radius/shadow values do not silently enable effects. `"rounded"` applies the
 existing `window.radius`; `"rounded-shadow"` also uses `window.shadow` as the
 blur-size input, with Gaussian sigma `ceil(shadow / 2)`. A zero shadow size
-disables the shadow without disabling rounded clipping. No builtin preset
-automatically opts in.
+disables the shadow without disabling rounded clipping. Modern now explicitly
+selects `rounded` at its existing 8px radius and zero shadow. Aqua, Lion and
+Big Sur explicitly select `rounded-shadow`, retaining their respective 6/5/10px
+radii and 20/18/24 shadow-size inputs. Classic and XP do not opt in.
 
 Optional `nativeShadowColor` is an RGB color (default black);
 `nativeShadowOpacity` and `nativeShadowInactiveOpacity` are integer percentages
@@ -939,6 +1027,12 @@ its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
 The complete WM GLES path remains unqualified without a usable DRM device.
 Regional backdrop sampling remains separate work.
+Those compositor results describe the frozen shared-mechanism qualification.
+For the current preset-policy adoption, numeric compiler and production GUI
+caption/legacy-none checks pass; the attempted paired-Linux rerun did not reach
+its first execution marker, so no new live-compositor or GPU result is claimed.
+That environment revalidation remains separately tracked rather than triggering
+a new SDK/VM build or blocking unrelated interface work.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

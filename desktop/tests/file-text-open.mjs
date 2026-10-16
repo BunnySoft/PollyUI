@@ -12,6 +12,9 @@ test('File Text --file parser preserves the original directory/theme interface a
   for (const args of [[HOME, '--theme'], ['--theme', HOME]])
     assert.deepEqual(parseFileTextArguments(args), { initialDirectory: HOME, initialFile: null, optInTheme: true });
   assert.deepEqual(parseFileTextArguments(['--theme']), { initialDirectory: null, initialFile: null, optInTheme: true });
+  assert.equal(parseFileTextArguments(['--theme', '--no-theme']).optInTheme, false);
+  assert.equal(parseFileTextArguments(['--no-theme', '--theme']).optInTheme, true);
+  assert.equal(parseFileTextArguments(['--theme', '--file', FILE, '--no-theme']).initialFile, FILE);
   assert.deepEqual(parseFileTextArguments(['--file', FILE, '--theme']),
     { initialDirectory: null, initialFile: FILE, optInTheme: true });
   assert.deepEqual(parseFileTextArguments([HOME, '--file', FILE]),
@@ -63,6 +66,8 @@ test('File Text --file production entry routes argv to real consumer code; direc
   await import('../examples/file-dialog.mjs?file-text-directory-entry'); await settled();
   assert.equal(windows.length, 2); assert.equal(f.calls.length, calls, 'legacy directory/theme start does not auto-read');
   assert.match(windows[1].document.getElementById('file-text-status').textContent, /Open reads a real file/);
+  assert.match(windows[1].document.getElementById('file-text-theme-error').textContent, /Theme error.*native --desktop API/,
+    'Explicit opt-in without the public theme API reports separately from file status');
 });
 
 test('File Text --file missing backend and stale content errors are visible, with no read-success fallback', async t => {
