@@ -684,10 +684,15 @@ The logout inventory opts into the bar while retaining its existing frame and
 focus reveal. Cancellation must succeed before user-close cleanup; external
 close and owner-stop cleanup preserve the original controller order.
 
-The existing native Tab enumerator still caps its focus array at 256. Software
-GUI coverage proves direct-focus reveal of the hundredth three-command Apps
-row and actual Tab/Shift+Tab traversal of a 60-row list below that limit, not
-complete 100-row native keyboard traversal. Controlled logout checks use inert
+The former native 256-candidate Tab array has been replaced by one existing-order
+tree walk with constant traversal state and no candidate cap or allocator.
+Hidden-subtree filtering, element/tab-index eligibility, forward/reverse wrap
+and missing-focus fallback retain their original semantics. Native input checks
+cover 1100 candidates, including indices 256/1024/1099. The actual software Apps
+scene now traverses all 305 controls for 100 rows and both pin actions in both
+directions, retaining its original geometry, search state, selection and preedit.
+This uses an isolated matching Windows validation helper; it is not a new SDK
+image, Linux compositor or physical-input qualification. Controlled logout checks use inert
 inventory/counters, including cancellation-acknowledgment failure and rejection
 of user close during commit; they do not close real applications or end sessions.
 
