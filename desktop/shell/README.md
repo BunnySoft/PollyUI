@@ -38,6 +38,37 @@ from the category index or a leaf, and root Search/Pin/Refresh/logout are unchan
 This does not manufacture Windows programs, accounts, recent documents or paths,
 or implement an installed directory hierarchy or XDG menu XML tree.
 
+When the final catalog includes qualified nested desktop-entry sources, the
+category index also offers **Source folders >**, separate from any identically
+named metadata tag. This is a merged tree of the actual recursive registration
+sources, not a filesystem browser or a Windows Programs directory. A source
+qualifies only when its absolute `entry.path` has valid nonempty path segments
+(no dot/dot-dot segments, backslashes, controls or invalid Unicode), and the
+tail of exactly `entry.id.length` characters starts after a slash and produces
+that exact `.desktop` ID when its slashes are replaced by dashes. This follows
+the native scanner's length-preserving ID projection; it never splits a
+hyphenated ID to guess folders or assumes a particular XDG installation root.
+Only the final override winner's path is used. Virtual Settings entries, managed
+bundles and any unverifiable sources stay available in All apps but do not gain
+invented source paths. No nested qualified sources means no Source folders entry.
+
+Each source view shows direct subfolders and directly registered applications;
+identical relative folders from different actual roots merge. Enter/Right opens
+a subfolder. Back/Left/Escape walks its parent folders, then the merged source
+root, category index, flat All Programs and finally the Start trigger. Every
+level retains All apps. Folder state is menu-local and separate from category
+tags; transitions change the existing navigation epoch. Entry/folder activation
+requires a successful fresh catalog read and rechecks the exact current folder
+or direct membership, so moving the same ID across a slash/hyphen boundary does
+not preserve an old leaf's authority. A removed directory can remain as an empty
+view with Back/All apps rather than redirecting a held action. Returning to an
+already-owned direct parent needs no new catalog read, so Back/Left/Escape remain
+safe exits during an I/O failure. That retained display does not clear the error
+or authorize launch/Pin; entering a new folder and every application action still
+require a successful fresh membership check. This does not scan
+directories, expose empty/unregistered filesystem folders, add XDG menu XML,
+change application identity/launch routing, or persist another preference.
+
 When space permits the submenu occupies the right-hand area beside its trigger.
 Otherwise it overlays existing content below the trigger, bounded by the same
 window's actual client viewport. At the flat root, Back, Left and Escape return

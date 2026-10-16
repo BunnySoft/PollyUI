@@ -7,7 +7,8 @@ import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
 import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement, programCategories, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, programCategories, categoryEntries, programCategoryId,
+  programFolderContents, programFolderId } from './desktop/shell/programs-menu.mjs';
 import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
 import { createNotificationSurfaces } from './desktop/shell/notifications.mjs';
 import { createTray } from './desktop/shell/tray.mjs';
@@ -885,22 +886,34 @@ export function createDesktopShell({ host = window, configuration, report = cons
         current.programsSlots = [];
         current.programsView = 'all';
         current.programsCategory = null;
+        current.programsFolder = '';
       }
       const programsEpoch = current.programsEpoch ?? 0;
       const programsView = current.programsView ?? 'all', programsCategory = current.programsCategory ?? null;
+      const programsFolder = current.programsFolder ?? '';
       const programsLive = () => currentMenu(current) && current.programsOpen &&
         current.programsEpoch === programsEpoch && (current.programsView ?? 'all') === programsView &&
-        (current.programsCategory ?? null) === programsCategory;
-      const programEntries = () => programsView === 'categories' ? [] : programsView === 'category' ?
+        (current.programsCategory ?? null) === programsCategory && (current.programsFolder ?? '') === programsFolder;
+      const programEntries = () => programsView === 'folders' ? programFolderContents(desktopCatalog(), programsFolder).entries :
+        programsView === 'categories' ? [] : programsView === 'category' ?
         categoryEntries(desktopCatalog(), programsCategory) : desktopCatalog();
-      const navigatePrograms = (view, category = null, focus = 'first') => {
-        if (!programsLive() || !['all', 'categories', 'category'].includes(view)) return false;
+      const navigatePrograms = (view, category = null, focus = 'first', folder = '') => {
+        if (!programsLive() || !['all', 'categories', 'category', 'folders'].includes(view)) return false;
         if (view === 'category') {
           if (!reloadApplications()) return false;
           if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
         }
+        if (view === 'folders') {
+          const returning = programsView === 'folders' && programsFolder &&
+            folder === programsFolder.split('/').slice(0, -1).join('/');
+          if (!returning) {
+            if (!reloadApplications()) return false;
+            if (!programsLive() || !programFolderContents(desktopCatalog(), folder).exists) return false;
+          }
+        }
         current.programsView = view;
         current.programsCategory = view === 'category' ? category : null;
+        current.programsFolder = view === 'folders' ? folder : '';
         current.programsEpoch = programsEpoch + 1;
         current.programsSlots = [];
         repaintMenu();
@@ -929,12 +942,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
           remove: scoped(id => removeDesktopShortcuts([id])),
         }, {
           open: current.programsOpen === true,
-          view: programsView, category: programsCategory, epoch: programsEpoch,
+          view: programsView, category: programsCategory, folder: programsFolder, epoch: programsEpoch,
           slots: current.programsSlots ??= [],
           placement: current.programsPlacement,
           navigate: navigatePrograms,
+          navigateFolder: (folder, focus = 'first') => navigatePrograms('folders', null, focus, folder),
           back: () => {
             if (!programsLive()) return false;
+            if (programsView === 'folders') return programsFolder ?
+              navigatePrograms('folders', null, programFolderId(programsFolder), programsFolder.split('/').slice(0, -1).join('/')) :
+              navigatePrograms('categories', null, 'shell-program-source-folders');
             if (programsView === 'category') return navigatePrograms('categories', null, programCategoryId(programsCategory));
             if (programsView === 'categories') return navigatePrograms('all', null, 'shell-program-categories');
             return false;
@@ -966,6 +983,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
               current.programsSlots = [];
               current.programsView = 'all';
               current.programsCategory = null;
+              current.programsFolder = '';
             }
             repaintMenu();
             const epoch = current.programsEpoch;
