@@ -1,5 +1,6 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { desktopCommand, desktopIcon, desktopText, settingsCard, horizontal, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 import { SETTINGS_APP_ID, SETTINGS_PAGES, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
 
 export const SETTINGS_APPLICATION_ID = SETTINGS_APP_ID;
@@ -9,14 +10,7 @@ const titles = { appearance: 'Appearance', displays: 'Displays', network: 'Netwo
 
 export function systemSettingsView(theme, page, navigate, close, content, mount = null, title = 'Settings', controls = [],
   build = runtimeBuild()) {
-  return h('view', { id: 'shell-system-settings', style: {
-    width: '100%', height: '100%', minHeight: 0, backgroundColor: theme.colors.body, overflow: 'hidden',
-  } },
-  h('view', { style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0, minHeight: 0 } },
-    h('view', { role: 'navigation', 'aria-label': 'Settings pages', style: {
-      width: 196, minWidth: 142, flexShrink: 1, padding: theme.layout.contentPadding, gap: theme.layout.controlGap,
-      overflow: 'scroll', backgroundColor: theme.colors.body,
-    }, onWheel: scrollDesktop },
+  const navigation = panelViewport(theme, { id: 'shell-settings-navigation', framed: false, scrollbar: true },
     h('view', { style: { ...horizontal, gap: theme.layout.controlGap, height: 64,
       paddingLeft: theme.layout.compactPadding, flexShrink: 0 } },
       desktopIcon('appearance', theme.colors.accent, 28),
@@ -26,7 +20,15 @@ export function systemSettingsView(theme, page, navigate, close, content, mount 
         { icon: id, quiet: true, selected: page === id, style: { height: 42 } });
       item.props['aria-current'] = page === id ? 'page' : null;
       return item;
-    })),
+    }));
+  Object.assign(navigation.props, { role: 'navigation', 'aria-label': 'Settings pages' });
+  Object.assign(navigation.props.style, { width: 196, minWidth: 142, flexShrink: 1 });
+  navigation.children[0].children[0].props.style.gap = theme.layout.controlGap;
+  return h('view', { id: 'shell-system-settings', style: {
+    width: '100%', height: '100%', minHeight: 0, backgroundColor: theme.colors.body, overflow: 'hidden',
+  } },
+  h('view', { style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0, minHeight: 0 } },
+    navigation,
     h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0,
       paddingTop: theme.layout.contentPadding, paddingRight: theme.layout.contentPadding } },
       h('view', { style: { ...horizontal, flexShrink: 0, gap: theme.layout.contentGap,
