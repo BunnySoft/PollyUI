@@ -327,8 +327,11 @@ test('Application tasks: group-menu chrome uses the shared menu policy without m
     const menu = windowGroupMenu(theme, group, { slots: [], action() {}, close() {} });
     assert.deepEqual(menu.props.style, { ...panelAppearance(theme, 'menu'),
       width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' });
+    assert.equal(menu.children[1].props.id, 'shell-group-list', 'list keeps its positional slot across themes');
+    assert.equal(menu.children[2].props.id, 'shell-group-menu-close', 'close keeps its positional slot across themes');
     const detail = panelDetail(theme, 'menu');
-    if (detail) assert.deepEqual(menu.children[0], detail, 'Classic passive detail is actually mounted in the menu');
+    if (detail) assert.deepEqual(menu.children.at(-1), detail,
+      'Classic passive detail is mounted after stable interactive slots');
     assert.equal(menu.props.role, 'menu');
   }
 });
