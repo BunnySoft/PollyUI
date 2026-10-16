@@ -9,6 +9,7 @@
 
 import { previousTextIndex, nextTextIndex, clampTextIndex } from './gui/sdk/js/textindex.mjs';
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
+import { selectionTextColor, paintSelectionText } from './gui/sdk/js/selection-text.mjs';
 
 const el = (owner, tag, style) => {
   const n = owner.createElement(tag);
@@ -24,6 +25,7 @@ export function createTextInput(opts = {}) {
   const width    = opts.width ?? 240;
   let color    = opts.color ?? '#0f172a';
   let selColor = opts.selectionColor ?? '#93c5fd';
+  let selTextColor = selectionTextColor(opts.selectionTextColor), selectedText = null;
   const purpose = opts.password ? 'password' : opts.purpose ?? 'text';
   const secure = purpose === 'password' || purpose === 'pin';
   const displayed = value => secure ? '\u2022'.repeat(Array.from(value).length) : value;
@@ -40,7 +42,7 @@ export function createTextInput(opts = {}) {
   root.tabIndex = 0;
 
   const highlight = el(owner, 'view', { position: 'absolute', top: 0, left: 0, width, height: fontSize + padding * 2, pointerEvents: 'none' });
-  const textEl = el(owner, 'view', { color, fontSize, pointerEvents: 'none', flexShrink: 0 });
+  const textEl = el(owner, 'view', { color, fontSize, pointerEvents: 'none', flexShrink: 0, position: 'relative' });
   const textNode = owner.createTextNode(displayed(st.value));
   textEl.appendChild(textNode);
   const caret = el(owner, 'view', { position: 'absolute', top: padding, left: padding, width: 2, height: fontSize, backgroundColor: 'transparent', pointerEvents: 'none' });
@@ -89,8 +91,22 @@ export function createTextInput(opts = {}) {
     paintRanges(underline, composition ? geometry.ranges(displayIndex(value, composition.start),
       displayIndex(value, composition.start + composition.text.length)) : [], padding + fontSize, 1, color);
     const r = composition ? null : selRange();
-    paintRanges(highlight, r && st.focused ? geometry.ranges(displayIndex(value, r[0]), displayIndex(value, r[1])) : [],
+    const ranges = r && st.focused ? geometry.ranges(displayIndex(value, r[0]), displayIndex(value, r[1])) : [];
+    paintRanges(highlight, ranges,
       padding, fontSize, selColor);
+    if (selTextColor !== undefined && selTextColor !== color && ranges.length) {
+      if (!selectedText) {
+        selectedText = el(owner, 'view', { position: 'absolute', left: 0, top: 0, pointerEvents: 'none' });
+        selectedText.className = 'input-selection-text';
+        selectedText.setAttribute('aria-hidden', 'true');
+        textEl.appendChild(selectedText);
+      }
+      paintSelectionText(selectedText, { text: displayed(value), fontSize, ranges, width: geometry.width, height: fontSize,
+        foreground: selTextColor, selection: selColor, background: root.style.backgroundColor });
+    } else if (selectedText?.parentNode) {
+      selectedText.parentNode.removeChild(selectedText);
+      selectedText = null;
+    }
     if (st.focused && owner.activeElement === root && root.ownerDocument === owner && !surface?.closed)
       root.setInputMethod({ purpose, x: padding + xOf(cursor, value), y: padding, width: 2, height: fontSize });
   }
@@ -241,12 +257,13 @@ export function createTextInput(opts = {}) {
           if (!Number.isFinite(value) || value < (key === 'fontSize' ? 8 : 0) ||
             value > (key === 'fontSize' ? 64 : 256))
             throw new RangeError('Invalid input appearance metric: ' + key);
-        } else if (!['color', 'selectionColor', 'background', 'borderColor', 'focusColor'].includes(key) ||
+        } else if (!['color', 'selectionColor', 'selectionTextColor', 'background', 'borderColor', 'focusColor'].includes(key) ||
           typeof value !== 'string' || !value.length || value.length > 64)
           throw new TypeError('Invalid input appearance field: ' + key);
       }
       if (Object.hasOwn(values, 'color')) { color = values.color; textEl.style.color = color; }
       if (Object.hasOwn(values, 'selectionColor')) selColor = values.selectionColor;
+      if (Object.hasOwn(values, 'selectionTextColor')) selTextColor = values.selectionTextColor;
       if (Object.hasOwn(values, 'background')) root.style.backgroundColor = values.background;
       if (Object.hasOwn(values, 'borderColor')) root.style.borderColor = values.borderColor;
       if (Object.hasOwn(values, 'focusColor')) root.style['focus:borderColor'] = values.focusColor;

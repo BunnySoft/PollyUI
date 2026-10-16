@@ -78,3 +78,38 @@ adapter check. The native 1/1.5/2 check injects private `WM_DPICHANGED` test
 messages; it is not a change to monitor settings or OS/compositor qualification.
 These contracts do not claim OS-exact six-theme checkbox/radio art, a native
 accessibility bridge, typeahead, nested menus or a native popup grab.
+
+## Input typography and selection foreground
+
+`NInput({ fontSize })` accepts a finite 8–64 logical-pixel size; omitting it keeps
+the existing `size` mapping. The same size feeds painting, measurement, caret,
+selection and composition geometry.
+
+`createTextInput({ selectionTextColor })`, its `setAppearance` method, and
+`NInput({ selectionTextColor })` optionally set selected glyph foreground.
+Omitting the field preserves the original SDK painting. The existing
+`selectionColor` remains the highlight background. Desktop opt-in consumers map
+the optional RGB `colors.selectionText` token through their shared appearance
+helper; legacy themes without it use `colors.text`. Neutral/non-opt-in consumers
+do not load or infer a desktop palette.
+
+The selection painter reuses the **native DOM full-string renderer** within
+the actual visual selection ranges. It does not separately shape substrings or
+use Canvas outlined text, so combining/kerning, native bidi runs and available
+color emoji stay on the original rendering path. Each clipped range first
+replaces the underlying glyph pixels with the input/selection background; white
+glyphs are not simply drawn over old black antialiasing.
+
+Decorative full-string copies are `aria-hidden` and `pointerEvents: none`.
+`input.value` and the original text node retain the actual value. As with other
+DOM decorations, aggregate `root.textContent` can include these hidden copies;
+use the input API/controlled value for editing or persistence. Password copies
+contain only the displayed mask; active composition suppresses selection copies.
+Blur removes the extra layer. There are no owner-window caches, frame loops or
+new native APIs in this painter.
+
+`gui/tests/selection-text.mjs` compares full and partial selections against the
+same native-font DOM reference, including a present color glyph, combining text,
+mixed RTL input, secure masks, controlled IME and unchanged unselected pixels.
+Its log records whether the runner actually supplies native `layoutText`;
+mixed text on a runner without it does not certify ICU/bidi behavior.

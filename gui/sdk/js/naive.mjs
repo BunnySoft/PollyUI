@@ -9,6 +9,7 @@ import { h, reactive } from './gui/sdk/js/vue.mjs';
 import { clampTextIndex, previousTextIndex, nextTextIndex, removeLastCodePoint } from './gui/sdk/js/textindex.mjs';
 import { textGeometry } from './gui/sdk/js/textgeometry.mjs';
 import { fixedRowWindow } from './gui/sdk/js/virtual-list.mjs';
+import { selectionTextColor, paintSelectionText } from './gui/sdk/js/selection-text.mjs';
 
 // ---- themes -----------------------------------------------------------------
 
@@ -433,13 +434,24 @@ export function NInput(props = {}) {
   }
   const localX = (e) => e.clientX - (e.currentTarget.offsetLeft + pad);
   const sel = (st && st.anchor != null && st.anchor !== st.caret) ? [Math.min(st.anchor, st.caret), Math.max(st.anchor, st.caret)] : null;
+  const selectedForeground = selectionTextColor(props.selectionTextColor);
+  const ranges = focused && sel && !composition ? geometry.ranges(displayIndex(sel[0]), displayIndex(sel[1])) : [];
+  const selectedPaint = layer => paintSelectionText(layer, {
+    text: displayed(text), fontSize: fs, ranges, width: geometry.width, height: fs + 2,
+    foreground: selectedForeground, selection: selectionColor, background: theme.card, textTop: 1,
+  });
 
   const kids = [];
   if (focused && sel && !composition)
     for (const range of geometry.ranges(displayIndex(sel[0]), displayIndex(sel[1])))
       kids.push(h('view', { style: clean({ position: 'absolute', left: pad + range.x, top: (h0 - fs) / 2 - 1,
         width: range.width, height: fs + 2, backgroundColor: selectionColor }) }));
-  kids.push(h('view', { style: { color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } }, isPh ? placeholder : displayed(text)));
+  kids.push(h('view', { style: { position: 'relative', color: isPh ? theme.textDisabled : theme.text, fontSize: String(fs) } },
+    isPh ? placeholder : displayed(text),
+    selectedForeground !== undefined && ranges.length ? h('view', { 'aria-hidden': 'true', className: 'input-selection-text',
+      style: { position: 'absolute', left: 0, top: -1, pointerEvents: 'none' },
+      onMount: layer => { Promise.resolve().then(() => { if (layer.ownerDocument) selectedPaint(layer); }); },
+      onUpdate: selectedPaint }) : null));
   if (focused && _caret.on && (!composition || composition.cursor >= 0))
     kids.push(h('view', { style: clean({ position: 'absolute', left: xOf(cursor), top: (h0 - fs) / 2, width: 1.5, height: fs + 2, backgroundColor: theme.text }) }));
   if (composition)

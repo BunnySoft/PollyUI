@@ -48,6 +48,7 @@
         "accent": "#316ac5",
         "accentText": "#ffffff",
         "selection": "#c1d2ee",
+        "selectionText": "#000000",
         "light": "#ffffff",
         "dark": "#aca899",
         "focus": "#000000"
@@ -229,6 +230,7 @@
         "accent": "#0a246a",
         "accentText": "#ffffff",
         "selection": "#0a246a",
+        "selectionText": "#ffffff",
         "light": "#ffffff",
         "dark": "#808080",
         "focus": "#000000"
@@ -461,6 +463,7 @@
         "accent": "#0055cb",
         "accentText": "#ffffff",
         "selection": "#3875d7",
+        "selectionText": "#ffffff",
         "light": "#ffffff",
         "dark": "#6b8193",
         "focus": "#6d9fe1"
@@ -1630,6 +1633,7 @@
         "accent": "#0055cb",
         "accentText": "#ffffff",
         "selection": "#3875d7",
+        "selectionText": "#ffffff",
         "light": "#ffffff",
         "dark": "#656b73",
         "focus": "#6d9fe1"
@@ -1848,6 +1852,7 @@
         "accent": "#007aff",
         "accentText": "#ffffff",
         "selection": "#b3d7ff",
+        "selectionText": "#262626",
         "light": "#ffffff",
         "dark": "#778393",
         "focus": "#79b7ff"
@@ -2054,6 +2059,7 @@
         "accent": "#0067c0",
         "accentText": "#ffffff",
         "selection": "#e5f1fb",
+        "selectionText": "#1a1a1a",
         "light": "#ffffff",
         "dark": "#8a8a8a",
         "focus": "#1a1a1a"
