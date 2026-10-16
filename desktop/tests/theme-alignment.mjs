@@ -15,6 +15,37 @@ assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
 {
+  for (const theme of catalog.themes) assert.equal(theme.panel.materialOpacityPercent,
+    ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 88 : undefined);
+  for (const base of catalog.themes.filter(theme => theme.panel.kind === 'dock')) {
+    const omitted = { ...base, panel: { ...base.panel } };
+    delete omitted.panel.materialOpacityPercent;
+    assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted }))
+      .panel.materialOpacityPercent, undefined);
+    const tree = theme => dockView(theme, action, action, action, [{ id: 1 }], action, action);
+    const solid = { ...base, panel: { ...base.panel, materialOpacityPercent: 100 } };
+    assert.equal(JSON.stringify(tree(omitted)), JSON.stringify(tree(solid)), 'Missing/100 retain exact opaque markup');
+    for (const value of [0, 88, 100, -1, 101, 88.5, '88', null, true]) {
+      const theme = { ...base, panel: { ...base.panel, materialOpacityPercent: value } };
+      for (const parse of [
+        () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+        () => parseThemeCatalog(JSON.stringify({ ...catalog,
+          themes: catalog.themes.map(item => item.id === base.id ? theme : item) })),
+        () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+          themes: { [base.id]: { panel: { materialOpacityPercent: value } } } })),
+      ]) {
+        if (Number.isInteger(value) && value >= 0 && value <= 100) assert.doesNotThrow(parse);
+        else assert.throws(parse, /materialOpacityPercent/);
+      }
+    }
+    const transparent = tree({ ...base, panel: { ...base.panel, materialOpacityPercent: 0 } });
+    for (const id of ['shell-dock-applications', 'shell-dock-settings', 'shell-dock-about',
+      'shell-dock-separator', 'shell-dock-windows'])
+      assert.equal(JSON.stringify(find(transparent, id)), JSON.stringify(find(tree(solid), id)),
+        'Material alpha leaves foreground and input markup unchanged');
+  }
+}
+{
   for (const theme of catalog.themes) assert.equal(theme.icons.dockHoverPercent,
     ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 120 : undefined);
   const base = catalog.themes.find(theme => theme.id === 'bigsur');
@@ -366,7 +397,7 @@ for (const theme of catalog.themes) {
 }
 for (const id of ['aqua', 'lion', 'bigsur']) {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
-    themes: { [id]: { panel: { from: '#804020', to: '#204080' } } } })).themes.find(theme => theme.id === id);
+    themes: { [id]: { panel: { from: '#804020', to: '#204080', materialOpacityPercent: 100 } } } })).themes.find(theme => theme.id === id);
   const dock = find(dockView(theme, action, action, action, [{ id: 1, minimized: true }]), 'shell-dock');
   if (id === 'lion') {
     const shelf = dock.children[0];
