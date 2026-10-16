@@ -370,6 +370,21 @@ rendering and damage behavior: no idle full-screen redraw loop or repeated
 full-screen CPU blur. Backend, cost limits and final API remain decisions for
 the implementation proposal; this discussion does not fix them in advance.
 
+The next native-effects implementation, started on 2026-10-16, isolates a
+window's client/frame subtree before applying one antialiased rounded coverage.
+Masking each surface separately is not equivalent: overlapping subsurfaces
+would accumulate coverage at their edges. The work retains the pinned wlroots
+scene/output machinery through a versioned generic dependency patch, with
+compositor-owned bounded caches and paired SDK/release ABI checks. Popups and
+external shadows remain separate from the clipped content group; input shape
+does not implicitly change with visual clipping.
+
+This is an in-progress implementation, not delivered backdrop blur or a change
+to default theme effects. Rounded clipping is the first checkpoint, external
+shadow the next; regional scene sampling remains separate. New native support
+must not silently turn preview-only radius/shadow values into enabled effects
+for existing theme files.
+
 ### 5.2 Native mouse ownership
 
 Mouse state belongs to each `PuBridge` document, not the shared JS realm.
