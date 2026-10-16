@@ -51,7 +51,7 @@
       "geometry": { "dockIcon": 48, "dockSlot": 54, "dockHeight": 62, "dockInset": 0, "indicator": [7, 4], "menuBar": 22 },
       "treatment": "2D glass rim, centered icon slots, black running triangles; not the Leopard 3D shelf",
       "fontReference": "Lucida Grande; not bundled",
-      "gaps": ["unscaled licensed capture with Dock size/magnification settings", "real Dock transparency", "system icon and font art; registered application PNG/JPEG and original Polly tiles are already supported"]
+      "gaps": ["unscaled licensed capture with Dock size/magnification settings", "current Wayland and OS-reference qualification of Dock translucency; genuine material alpha is implemented without blur", "system icon and font art; registered application PNG/JPEG and original Polly tiles are already supported"]
     },
     {
       "id": "lion",
@@ -61,7 +61,7 @@
       "geometry": { "dockIcon": 48, "dockSlot": 56, "dockHeight": 66, "dockInset": 0, "indicator": [8, 3], "menuBar": 22 },
       "treatment": "perspective shelf with luminous running indicators; no fabricated reflection",
       "fontReference": "Lucida Grande; not bundled",
-      "gaps": ["unscaled reference capture", "actual icon/window reflection", "Dock glass transparency and shadow; selected whole-window rounded-shadow effects are a separate mechanism", "font and system icon pixels"]
+      "gaps": ["unscaled reference capture", "actual icon/window reflection", "Dock backdrop glass effects and shadow beyond implemented basic material alpha; selected whole-window rounded-shadow effects are a separate mechanism", "font and system icon pixels"]
     },
     {
       "id": "bigsur",
@@ -75,7 +75,7 @@
     }
   ],
   "controls": {
-    "covered": ["shared button and desktopCommand states", "launcher app rows and real search input", "menu selection and category navigation", "disabled/default command and focus ring", "per-instance themed switch/checkbox/radio/tabs/select/menu factories", "controlled Displays checkbox and Audio switch", "Files and Processes themed scrollbar controllers", "shared file/confirmation/authentication panel consumers"],
+    "covered": ["shared button and desktopCommand states", "launcher app rows and real search input", "menu selection and category navigation", "disabled/default command and focus ring", "per-instance themed switch/checkbox/radio/tabs/select/menu factories with composing-key protection", "controlled Displays checkbox and scale radios plus Audio switch", "Files, Processes and long Shell-menu themed scrollbar controllers", "shared file/confirmation/authentication panel consumers"],
     "notCertified": ["original-OS glyph and font pixels for all six systems", "third-party client widgets", "all remaining bespoke controls", "physical input and native accessibility-provider behavior", "all native compositor states and display scales"],
     "policy": "Do not claim every OS widget is covered; keep input focus, credentials and selection untouched."
   }

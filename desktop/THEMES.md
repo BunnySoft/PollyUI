@@ -426,8 +426,15 @@ consistency, not a claim about authentic OS menu highlight shapes or Mac input.
 The three Dock painters have real icon slots, separators and running indicators:
 Tiger has triangles and a 2D rim, Lion has a perspective shelf and luminous
 indicators, Big Sur a floating rounded rectangle and dark dots. Minimized windows
-are still running. These are **opaque material approximations**, without
-compositor blur, reflection, wallpaper tint, magnification or authentic OS icons.
+are still running. Their passive materials now use genuine alpha composition
+through the existing transparent Dock layer. Optional
+`panel.materialOpacityPercent` accepts integers 0..100; missing/100 retains the
+exact opaque path, 0 clears only the material, and the three presets select 88
+as a configurable Polly default, not a measured OS value. Gradients and shelf
+fills are tinted once rather than fading their parent: registered artwork,
+focus, badges, separators, running markers and input geometry remain unchanged.
+This does not provide compositor blur, reflection, wallpaper tint, full animated
+magnification or authentic OS icons.
 Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
 with centered integer insets, retaining the default 7x4 geometry. Very narrow
 even widths degenerate to a symmetric bar rather than spilling outside the
@@ -458,7 +465,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Grouping and independent persistent pins are now delivered separately below; glass/reflection, preset effect adoption and magnification remain separate work. |
+| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded hover and genuine material alpha are now delivered separately; backdrop blur/reflection, Dock shadow and full neighboring-icon animation remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -469,7 +476,7 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 | State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
 | Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
 | Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
-| Mechanism/content gaps | Unchanged: genuine window shadow/vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance need separate evidence or implementation decisions. |
+| Mechanism/content gaps | Generic whole-window shadow is implemented and selected separately; this caption checkpoint does not qualify its current compositor/native Mac output. Vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance still need actual mechanisms or evidence. Dock material alpha is not vibrancy. |
 
 Modern and all three Mac presets now explicitly select optional
 `panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
@@ -544,6 +551,16 @@ counts and running marks stay fixed. Leave/cancel restores the art; existing
 weak control state and Dock settling handle retheme/scroll without a new frame
 loop. This is not neighboring-icon displacement, animated magnification or
 keyboard-focus enlargement.
+
+Long Programs/category and window-group management lists now opt into the same
+themed 10px overlay scrollbar used by existing desktop consumers. The shared
+panel viewport offers explicit `scrollbar: true` only for fixed vertical layouts;
+its omitted/default, content-sized and horizontal paths retain their former
+output. Existing menu list IDs and direct command slots stay inside the original
+flex allocation. Wheel, focused-command reveal and bounded layout settlement
+synchronize the thumb; SDK paging, keyboard steps and captured dragging remain
+the single input implementation. Leaving releases the controller and pending
+work, and ordinary repaint does not undo intentional scrolling.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -726,7 +743,13 @@ no second frame or focus engine is introduced.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
-focus. Mapped options cancel a pointer gesture if reconciliation changes its
+focus. All six leave composing keyboard events untouched, including an already
+open Select popup; they do not change selection, consume the IME event or move
+focus during composition. Displays scale presets use a real, named per-head
+themed radio group. Space and arrow/Home/End navigation edit only that head's
+draft, custom values can leave every preset unchecked, and Enter does not select
+a radio. Busy pages disable the factories rather than only replacing handlers.
+Mapped options cancel a pointer gesture if reconciliation changes its
 identity. Open Select popups follow native owner geometry, remove their observer
 on close and keep the existing window-local portal; a very short viewport can
 show only part of a row. These are functional improvements, not six-theme
@@ -920,6 +943,19 @@ fake OS actions. Preserve customization and request a decision before changes
 that force fonts/resolution, remove search/actions or alter cross-theme policy.
 No new screenshot campaign, six-theme test matrix or product changes are
 started merely by recording these tasks.
+
+Completing the numbered E22 tasks requires both their product behavior and their
+stated evidence, not just the latest component check. Version/build, display
+scale and original-size state captures remain necessary for the OS-reference
+items; installed generic font substitutions do not establish proprietary font
+pixels. The paired compositor run, physical input/display checks and native
+macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
+The existing whole-window effect tree samples only its own client and frame;
+the wallpaper-material helper paints an opaque, wallpaper-derived client base.
+Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
+Real reflection, Snap layouts and installed-directory/account/history behavior
+also require actual mechanisms or data, rather than additional decorative rows.
+These boundaries do not block independent control, input and menu fixes.
 
 ## Bitmap resources
 
