@@ -1,15 +1,13 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
+import { button as themedButton } from './desktop/shared/ui/button.mjs';
 
 function button(id, label, theme, action) {
-  return h('view', { id, role: 'button', 'aria-label': label, tabIndex: 0,
-    style: { padding: theme.layout.notificationButtonPadding, borderWidth: theme.layout.borderWidth,
-      borderColor: theme.colors.border, borderRadius: theme.button.radius,
-      backgroundColor: theme.colors.surface, color: theme.colors.text, fontSize: theme.layout.fontSize },
-    onClick: event => { event.stopPropagation(); action(); },
-    onKeydown: event => {
-      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); action(); }
-    },
-  }, label);
+  const padding = theme.layout.notificationButtonPadding;
+  const node = themedButton(id, label, theme, action, false, { height: 'auto',
+    paddingLeft: padding, paddingRight: padding, paddingTop: padding, paddingBottom: padding });
+  node.children.at(-1).props.style.fontSize = theme.layout.fontSize;
+  delete node.props['aria-pressed'];
+  return node;
 }
 export function createNotificationSurfaces({ host, native, theme, report, changed }) {
   let started = false, notices = [], toast = null, center = null, previous;
