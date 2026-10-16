@@ -27,11 +27,12 @@ class Node {
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   getAttribute(key) { return this.attributes.get(key) ?? null; }
   removeAttribute(key) { this.attributes.delete(key); }
-  querySelector(selector) {
+  querySelectorAll(selector) {
     assert.match(selector, /^\.[a-zA-Z][\w-]*$/);
-    return descendants(this).slice(1).find(node =>
-      (node.className || '').split(/\s+/).includes(selector.slice(1))) || null;
+    return descendants(this).slice(1).filter(node =>
+      (node.className || '').split(/\s+/).includes(selector.slice(1)));
   }
+  querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   addEventListener(type, callback) {
     this.listeners.set(type, [...(this.listeners.get(type) || []), callback]);
   }

@@ -305,9 +305,12 @@ test('Displays presets honor busy/disabled state and serial/pending changes reti
   const before = paints;
   await deliver(retired, 'textinput', { data: '2' });
   assert.equal(paints, before, 'retired input cannot repaint a replacement draft');
-  await deliver(find('shell-output-1-enabled'));
+  assert.equal(find('shell-output-1-enabled').getAttribute('role'), 'checkbox');
+  assert.equal(find('shell-output-1-enabled').getAttribute('aria-checked'), 'true');
+  await deliver(find('shell-output-1-enabled'), 'keydown', { key: ' ' });
   assert.equal(find('shell-output-1-scale-100'), null, 'disabled heads have no scale actions');
-  await deliver(find('shell-output-1-enabled'));
+  assert.equal(find('shell-output-1-enabled').getAttribute('aria-checked'), 'false');
+  await deliver(find('shell-output-1-enabled'), 'keydown', { key: ' ' });
   await deliver(find('shell-output-1-scale-200'));
   snapshot = { ...snapshot, pendingToken: 9, remainingMs: 15000 }; paint();
   assert.equal(find('shell-output-1-scale-200'), null);
@@ -335,6 +338,7 @@ test('Audio page uses one owner policy; actual acknowledgement persists after pa
   await deliver(find('shell-audio-retry')); await tick();
   assert.equal(f.calls.filter(item => item[0] === 'audio-start').length, 1, 'explicit refresh never creates a second policy owner');
   assert.equal(find('shell-audio-mute-11').getAttribute('aria-disabled'), 'true');
+  assert.equal(find('shell-audio-mute-11').getAttribute('role'), 'switch');
   await deliver(find('shell-audio-lower-10')); await tick();
   assert.deepEqual(f.calls.find(item => item[0] === 'volume'), ['volume', 10, 1, 0.9]);
   assert.equal(f.saved().audio, null);
@@ -349,6 +353,25 @@ test('Audio page uses one owner policy; actual acknowledgement persists after pa
   assert.throws(() => f.domains.forgetAudio(JSON.stringify({ generation: f.sound.generation - 1,
     revision: f.sound.revision })), /state changed/);
   assert.equal(f.calls.filter(item => item[0] === 'volume').length, 1);
+});
+test('themed Audio mute switch preserves identity checks and persists only after the native acknowledgement', async t => {
+  const f = domainFixture(t); await f.app.present('audio'); await tick();
+  let mute = f.document.getElementById('shell-audio-mute-10');
+  assert.equal(mute.getAttribute('role'), 'switch');
+  assert.equal(mute.getAttribute('aria-checked'), 'false');
+  await deliver(mute, 'keydown', { key: 'Enter' }); await tick();
+  assert.equal(f.calls.some(item => item[0] === 'mute'), false, 'switch Enter is not button activation');
+  await deliver(mute, 'keydown', { key: ' ' }); await tick();
+  assert.deepEqual(f.calls.find(item => item[0] === 'mute'), ['mute', 10, 1, true]);
+  assert.equal(f.saved().audio, null);
+  mute = f.document.getElementById('shell-audio-mute-10');
+  assert.equal(mute.getAttribute('aria-disabled'), 'true');
+  await deliver(mute, 'keydown', { key: ' ' }); await deliver(mute); await tick();
+  assert.equal(f.calls.filter(item => item[0] === 'mute').length, 1, 'pending acknowledgement blocks duplicate operations');
+  f.sound.nodes[0].muted = true; f.sound.nodes[0].revision++; f.sound.revision++;
+  f.audio.snapshot(); await f.app.present('audio'); await tick();
+  assert.equal(f.saved().audio.devices[0].muted, true);
+  assert.equal(f.document.getElementById('shell-audio-mute-10').getAttribute('aria-checked'), 'true');
 });
 test('Keyboard records only in the small trusted active surface, cancels on focus loss/detach, preserves catalog conflict errors', async t => {
   const f = domainFixture(t); await f.app.present('keyboard'); await tick();

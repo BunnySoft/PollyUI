@@ -9,6 +9,9 @@ const copy = JSON.stringify(input), projected = selectionAppearance(input, theme
 assert.equal(projected.colors.primary, '#123456');
 assert.equal(projected.metrics.markerSize, 13);
 assert.equal(selectionAppearance(undefined, theme).custom, false);
+const defaults = selectionAppearance(undefined, theme).metrics;
+assert.throws(() => { defaults.fontSize = 63; }, TypeError);
+assert.equal(selectionAppearance(undefined, theme).metrics.fontSize, 14, 'Default metrics cannot leak mutation into another instance');
 assert.equal(JSON.stringify(theme), before);
 assert.equal(JSON.stringify(input), copy);
 for (const appearance of [null, [], 3, { other: true }, { colors: { unknown: 'red' } }, { colors: { primary: 3 } },

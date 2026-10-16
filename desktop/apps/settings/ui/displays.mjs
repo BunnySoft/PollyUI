@@ -5,6 +5,7 @@ import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
+import { themedCheckbox } from './desktop/shared/ui/selection-controls.mjs';
 export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null) {
   const label = labelFor(theme);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width,
@@ -20,8 +21,8 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
       borderWidth: 1, borderRadius: 8, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
     h('view', { style: { ...row, gap: theme.layout.controlGap } }, label(head.name, theme.colors.text, 12),
       h('view', { style: { flexGrow: 1 } }),
-      button('shell-output-' + head.id + '-enabled', head.enabled ? 'On' : 'Off', theme,
-        () => { head.enabled = !head.enabled; repaint(); }, head.enabled)),
+      themedCheckbox(theme, { id: 'shell-output-' + head.id + '-enabled', checked: head.enabled,
+        'aria-label': 'Enable ' + head.name, onChange: enabled => { head.enabled = enabled; repaint(); } }, 'Enabled')),
     head.enabled ? [
       h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, field(head, 'width'), label('x', theme.colors.text),
         field(head, 'height'),

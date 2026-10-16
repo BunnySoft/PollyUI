@@ -1,8 +1,8 @@
 const states = new WeakMap();
-const metricDefaults = { fontSize: 14, markerSize: 18, radioDot: 8, radius: 3, gap: 8,
+const metricDefaults = Object.freeze({ fontSize: 14, markerSize: 18, radioDot: 8, radius: 3, gap: 8,
   switchWidth: 40, switchHeight: 22, knobSize: 18, switchPadding: 2,
   controlHeight: 34, optionHeight: 32, menuHeight: 40, paddingX: 12,
-  popupPadding: 4, popupGap: 2, popupMaxHeight: 240, tabGap: 24, panePadding: 16, disabledOpacity: 0.5 };
+  popupPadding: 4, popupGap: 2, popupMaxHeight: 240, tabGap: 24, panePadding: 16, disabledOpacity: 0.5 });
 const metricLimits = { fontSize: [8, 64], markerSize: [8, 64], radioDot: [2, 48], radius: [0, 64],
   gap: [0, 64], switchWidth: [16, 160], switchHeight: [12, 80], knobSize: [4, 76], switchPadding: [0, 16],
   controlHeight: [16, 128], optionHeight: [16, 128], menuHeight: [16, 128], paddingX: [0, 64],
