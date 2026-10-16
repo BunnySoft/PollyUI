@@ -11,6 +11,14 @@ function paintIconInk(node, color) {
   if (node.className === 'theme-icon-ink-border') node.style.borderColor = color;
   for (const child of node.childNodes) paintIconInk(child, color);
 }
+function paintSelectionParts(node, theme, highlighted) {
+  if (node.getAttribute('role') === 'textbox') return;
+  if (node.className === 'theme-selection-text') {
+    const normal = node.getAttribute('data-selection-ink');
+    node.style.color = highlighted ? selectionInk(theme, normal) : normal;
+  }
+  for (const child of node.childNodes) paintSelectionParts(child, theme, highlighted);
+}
 
 export function surfacePaint(theme, { selected = false, pressed = false, hovered = false,
   focused = false, disabled = false, quiet = false, variant = 'button' } = {}) {
@@ -94,9 +102,11 @@ export function surfaceEvents(theme, options = {}) {
       selectionInk(theme, surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text) : theme.colors.text;
     const icon = options.quiet && node.querySelector('.theme-command-icon');
     if (icon) {
-      const ink = disabled ? theme.colors.muted : highlighted ? selectionInk(theme, theme.colors.accent) : theme.colors.accent;
+      const normal = icon.getAttribute('data-selection-ink') ?? theme.colors.accent;
+      const ink = disabled ? theme.colors.muted : highlighted ? selectionInk(theme, normal) : normal;
       paintIconInk(icon, ink);
     }
+    if (options.selectionParts) paintSelectionParts(node, theme, !disabled && highlighted);
     if (options.inkOnly) return;
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
@@ -125,7 +135,7 @@ export function surfaceEvents(theme, options = {}) {
     }
   };
   const syncState = node => {
-    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+    if (options.selectionParts || options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
         states.has(node) || node.ownerDocument?.activeElement === node ||
         surfaceStyle(theme, 'panel') === 'fluent' && options.variant === 'task')
       paint({ currentTarget: node }, { focused: node.ownerDocument?.activeElement === node });

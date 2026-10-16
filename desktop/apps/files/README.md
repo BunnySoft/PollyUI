@@ -69,6 +69,12 @@ more than 1024 entries is explicitly **partial**, never presented as complete.
 The bounded file-list viewport uses the engine's explicit `flexGrow` and
 `flexBasis` properties, not unsupported CSS `flex` shorthand. Rows overflow
 inside that viewport; status and partial/error notices remain within the window.
+Selected or hovered rows consume the existing optional `colors.selectionText`
+for name/metadata and explicitly marked original monochrome icon strokes, using
+the shared selection-ink state painter. Leaving an unselected row restores each
+part's original text/muted/directory color. Missing tokens keep the former
+per-part fallback; inline rename inputs and bitmap art are not recolored. This
+changes no row/column geometry, selection generation or filesystem action.
 
 Filter, address and inline name fields use the same SDK text input, not a second
 editor. Captured dragging continues outside the field/window and release records
