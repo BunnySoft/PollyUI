@@ -693,10 +693,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
         current.query = input.value;
         repaintMenu();
       };
+      const hint = composing => {
+        if (!live()) return;
+        record.composing = composing;
+        const node = current.window.document.getElementById('shell-app-search-hint');
+        if (node) node.style.display = composing || input.value ? 'none' : 'flex';
+      };
       input.root.addEventListener('textinput', edited);
       input.root.addEventListener('auxclick', edited);
-      input.root.addEventListener('compositionstart', () => { if (live()) record.composing = true; });
-      input.root.addEventListener('compositionend', () => { if (live()) record.composing = false; });
+      input.root.addEventListener('compositionstart', () => hint(true));
+      input.root.addEventListener('compositionend', () => hint(false));
       input.root.addEventListener('focus', event => { if (live()) record.focused?.(event); });
       input.root.addEventListener('keydown', event => {
         if (!live()) return;
@@ -717,9 +723,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
     record.input.root.style.height = String(style.height);
     return h('view', { id: 'shell-app-search-slot', style: { ...style, position: 'relative' },
       onMount: node => node.insertBefore(record.input.root, node.firstChild) },
-    h('view', { 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
+    h('view', { id: 'shell-app-search-hint', 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
       color: theme.colors.muted, fontSize: theme.layout.fontSize, pointerEvents: 'none',
-      display: current.query ? 'none' : 'flex' } }, placeholder));
+      display: current.query || record.composing ? 'none' : 'flex' } }, placeholder));
   }
 
   function repaintMenu() {

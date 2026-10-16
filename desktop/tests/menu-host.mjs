@@ -1029,6 +1029,12 @@ scenario('application search retains native editing, bounded paste, composition 
   let clipboardText = '';
   globalThis.clipboard = { readText: () => clipboardText, writeText: value => { clipboardText = value; } };
   try {
+    const hint = find(menu, 'shell-app-search-hint');
+    domEvent(field, 'compositionstart');
+    domEvent(field, 'compositionupdate', { data: 'preedit', selectionStart: 3 });
+    assert.equal(hint.style.display, 'none', 'Empty committed query hides its placeholder during preedit');
+    domEvent(field, 'compositionend');
+    assert.equal(hint.style.display, 'flex', 'Cancelling an empty composition restores the placeholder');
     domEvent(field, 'textinput', { data: 'Fxiture' });
     key(menu, 'Home'); key(menu, 'ArrowRight'); key(menu, 'Delete'); key(menu, 'ArrowRight');
     domEvent(field, 'textinput', { data: 'x' });
