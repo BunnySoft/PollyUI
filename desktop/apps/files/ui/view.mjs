@@ -5,6 +5,7 @@ import { desktopCommand, desktopIcon, desktopText, horizontal, scrollDesktop } f
 import { parentPath } from './desktop/apps/files/logic/model.mjs';
 import { formatSize, formatModified, fileType, visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 function inInput(node) {
@@ -152,6 +153,12 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const rows = entries.map((entry, index) => {
     const chosen = selection?.path === entry.path && selection?.identity === entry.identity;
     const managed = state.applications.find(app => app.id.startsWith('bundle:') && app.path === entry.path);
+    const rowText = (node, normal) => {
+      node.props.className = 'theme-selection-text'; node.props['data-selection-ink'] = normal; return node;
+    };
+    const glyphInk = entry.type === 'directory' ? '#b07816' : color('accent');
+    const glyph = desktopIcon(entry.type === 'directory' ? 'folder' : 'file', glyphInk, 20);
+    glyph.props.className = 'theme-command-icon'; glyph.props['data-selection-ink'] = glyphInk;
     const node = h('view', { id: 'files-entry-' + index, role: 'option',
       'data-path': entry.path, 'data-identity': entry.identity, 'aria-label': entry.name,
       'aria-selected': String(chosen), tabIndex: usable && (chosen || (!selection && index === 0)) ? 0 : -1,
@@ -159,6 +166,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         borderColor: chosen ? color('accent') : 'transparent',
         backgroundColor: chosen ? color('selection') : color('surface') },
       hoverStyle: { backgroundColor: color('selection') }, focusStyle: { borderColor: color('focus') },
+      ...surfaceEvents(theme, { quiet: true, inkOnly: true, selectionParts: true, selected: chosen }),
       onClick: event => {
         if (event?.button !== undefined && event.button !== 0) return false;
         event?.stopPropagation?.();
@@ -180,14 +188,17 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     },
     h('view', { style: { ...columnStyle('name'), ...horizontal, gap: 10, justifyContent: 'flex-start',
       ...(inlineRename && chosen ? {} : { pointerEvents: 'none' }) } },
-      desktopIcon(entry.type === 'directory' ? 'folder' : 'file', entry.type === 'directory' ? '#b07816' : color('accent'), 20),
+      glyph,
       inlineRename && chosen ? input('files-name', state.dialog.name, 'Single folder or file name',
         value => controller.editName(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 }) :
-        desktopText(entry.name, color('text'), 14, { flexShrink: 1, minWidth: 0, height: 20, overflow: 'hidden', pointerEvents: 'none' })),
-    label(null, formatModified(entry.mtimeMs), 'muted', { ...columnStyle('modified'), fontSize: 13, pointerEvents: 'none' }),
-    label(null, managed ? 'Application' : fileType(entry), 'muted', { ...columnStyle('type'), fontSize: 13, pointerEvents: 'none' }),
-    label(null, entry.type === 'directory' ? '-' : formatSize(entry.bytes), 'muted',
-      { ...columnStyle('size'), fontSize: 13, pointerEvents: 'none' }));
+        rowText(desktopText(entry.name, color('text'), 14,
+          { flexShrink: 1, minWidth: 0, height: 20, overflow: 'hidden', pointerEvents: 'none' }), color('text'))),
+    rowText(label(null, formatModified(entry.mtimeMs), 'muted',
+      { ...columnStyle('modified'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+    rowText(label(null, managed ? 'Application' : fileType(entry), 'muted',
+      { ...columnStyle('type'), fontSize: 13, pointerEvents: 'none' }), color('muted')),
+    rowText(label(null, entry.type === 'directory' ? '-' : formatSize(entry.bytes), 'muted',
+      { ...columnStyle('size'), fontSize: 13, pointerEvents: 'none' }), color('muted')));
     return node;
   });
   if (!entries.length) rows.push(h('view', { id: ready ? state.filter ? 'files-no-matches' : 'files-empty' : 'files-list-state',

@@ -6,7 +6,7 @@ const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import(
 const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
-const { surfacePaint, surfaceEvents, bevel } = await import('../shared/ui/surface-primitives.mjs');
+const { surfacePaint, surfaceEvents, bevel, hasSurfacePaint } = await import('../shared/ui/surface-primitives.mjs');
 const { lunaVisualEvents } = await import('../shared/ui/luna-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
 const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fallback.json', import.meta.url), 'utf8'));
@@ -312,7 +312,7 @@ for (const theme of catalog.themes) {
       const strip = { id: 'shell-start-links', offsetTop: 88, offsetHeight: 100, scrollTop: 0,
         childNodes: [{ offsetTop: 94, offsetHeight: 34 }, { offsetTop: 134, offsetHeight: 34 },
           { offsetTop: 174, offsetHeight: 34 }], style: { padding: 6 } };
-      const node = { parentNode: strip, offsetTop: 174, offsetHeight: 34 };
+      const node = { parentNode: strip, offsetTop: 174, offsetHeight: 34, querySelector: () => null };
       close.props.onFocus({ currentTarget: node });
       assert.equal(strip.scrollTop, 20);
       close.props.onFocus({ currentTarget: node });
@@ -354,7 +354,7 @@ for (const id of ['aqua', 'lion', 'bigsur']) {
       menu.props[name]?.({ currentTarget: node, button: 0 });
       assert.equal(node.style.borderRadius, 0, id + ' menubar radius during ' + name);
     }
-    if (menu.props.onMouseenter) {
+    if (menu.props.onMouseenter && hasSurfacePaint(theme)) {
       const event = { currentTarget: node, button: 0 };
       menu.props.onMouseenter(event);
       const rebuilt = find(panelView(theme, '10:32', action, '', action), 'shell-menu');

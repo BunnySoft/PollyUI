@@ -160,6 +160,11 @@ Omitting the field preserves the original SDK painting. The existing
 the optional RGB `colors.selectionText` token through their shared appearance
 helper; legacy themes without it use `colors.text`. Neutral/non-opt-in consumers
 do not load or infer a desktop palette.
+Desktop quiet commands and selected shortcut captions/status also consume that
+same optional foreground token, including the explicitly marked strokes of
+original monochrome fallback art. Missing tokens retain each consumer's prior
+fallback. Normal/non-quiet button faces and bitmap icon content are not
+recolored by the selection token.
 
 The selection painter reuses the **native DOM full-string renderer** within
 the actual visual selection ranges. It does not separately shape substrings or

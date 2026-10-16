@@ -1,13 +1,13 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { wallpaper } from './desktop/shell/appearance.mjs';
-import { desktopIcon, desktopText, desktopCommand, scrollDesktop } from './desktop/shell/presentation.mjs';
+import { desktopIcon, desktopText, desktopCommand, scrollDesktop, selectionInk } from './desktop/shell/presentation.mjs';
 import { DESKTOP_GRID } from './desktop/shell/desktop-shortcuts.mjs';
 
 function shortcutLabel(theme, name, selected) {
   const shadow = !selected && theme.icons.desktopLabelStyle === 'shadow';
   return h('view', { style: { maxWidth: DESKTOP_GRID.width - 10, maxHeight: 44, overflow: 'hidden', pointerEvents: 'none',
     padding: 2, borderRadius: 3, backgroundColor: selected ? theme.colors.selection : shadow ? 'transparent' : '#243348',
-    color: selected ? theme.colors.text : '#ffffff', fontSize: 12, textAlign: 'center',
+    color: selected ? selectionInk(theme, theme.colors.text) : '#ffffff', fontSize: 12, textAlign: 'center',
     ...(shadow ? { position: 'relative' } : {}) } },
   // The direct text retains native wrapping; the decorative copy uses its same content width.
   shadow ? h('view', { 'aria-hidden': 'true', style: { position: 'absolute', left: 2, right: 2, top: 3,
@@ -41,9 +41,9 @@ export function desktopView(theme, asset, state, entries, message = '', images =
       hoverStyle: selected ? {} : { borderColor: theme.colors.light },
     }, images.has(item.id) ? h('view', { 'aria-hidden': 'true', style: { width: 36, height: 36, flexShrink: 0,
       backgroundImage: images.get(item.id), pointerEvents: 'none' } }) :
-      desktopIcon(glyph, selected ? theme.colors.accent : '#ffffff', 36),
+      desktopIcon(glyph, selected ? selectionInk(theme, theme.colors.accent) : '#ffffff', 36),
     shortcutLabel(theme, name, selected),
-    unavailable ? desktopText('Unavailable', selected ? theme.colors.text : '#ffffff', 10, { pointerEvents: 'none' }) : null);
+    unavailable ? desktopText('Unavailable', selected ? selectionInk(theme, theme.colors.text) : '#ffffff', 10, { pointerEvents: 'none' }) : null);
   })),
   h('view', { id: 'shell-desktop-marquee', 'aria-hidden': 'true', style: {
     position: 'absolute', left: state.rectangle?.x ?? 0, top: state.rectangle?.y ?? 0,
