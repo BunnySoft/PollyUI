@@ -353,7 +353,7 @@ not certified SP3/DPI raw-pixel oracles. Existing colors and artwork are unchang
 | Taskbar and green launcher | Actual 30px bar, default 97px launcher, band/tint hover/held/cancel; `layout.launcherWidth` now controls actual launcher layout and hitbox (tested 123px) | Reference lacks certified launcher hover/held state crops; original Polly mark is not Windows art |
 | Active/inactive tasks and compact tools | Actual 26px tasks retain per-window activation/minimize; explicit XP Quick Launch now prepends saved catalog pins as compact icon-only launchers, independently of running windows. The same horizontal strip supports wheel and focus reveal | This is a real Polly launcher implementation, not an external XP profile/Quick Launch folder import or original system artwork |
 | Cyan notification area and clock | Actual 30px area and visible clock; existing tray/notification paths retained | No full SNI external-icon/state or original-font pixel certification |
-| Start header, left apps and Search/Pin | Actual 64px header, 380x480 preferred menu; left list scroll, disabled app, single launch/Pin and real text search retained. XP also reuses the guarded flat All Programs/metadata Categories menu and its shared scrollbar | Header remains original Polly identity, not a real account/profile; metadata categories are not installed-directory hierarchy or Recent history |
+| Start header, left apps and Search/Pin | Actual 64px header, 380x480 preferred menu; left list scroll, disabled app, single launch/Pin and real text search retained. XP also reuses guarded All Programs, metadata Categories and verified source folders. Production startup supplies a readonly local name/username/UID snapshot to the existing header | Local display metadata is not authentication, NSS or account management; original Polly avatar remains. Source folders are not imported Windows directories or Recent history |
 | Right links and column separator | Existing Settings/Refresh/Close rows and palette/border retained; XP right column now independently scrolls and locally reveals focused commands using existing unscrolled offset/scroll metrics | No invented categories/group dividers without backend groups or qualified state references; Classic and other preset paths unchanged |
 | Footer and low-height fit | Actual 42px footer stays fixed with header while either column scrolls; logout remains reachable at 360x260 local layout | Below the combined fixed header/footer/Search minimum, fitting all content requires a separate layout policy; this batch does not change menu preferred height or global insets |
 
@@ -364,6 +364,23 @@ viewport: Close previously extended below it, and now wheel/focus scroll 20px
 to reveal the full command. Header/footer rectangles do not move; reverse wheel
 clamps at zero and repeated focus does not jitter. This is actual component
 layout/input evidence, not a native compositor output resize or XP fidelity score.
+
+Classic and XP production headers now use one immutable startup snapshot from
+the real uid/euid and a bounded, root-owned, identity-checked `/etc/passwd` read.
+The existing 40px/64px header shows the full display name and username/UID with
+the shared body-font projection; clipping does not truncate the accessible name.
+Unavailable records show **User &lt;uid&gt;** or **User unavailable**, plus
+**Local name unavailable**. A sanitized diagnostic is reported once without
+overwriting service/action errors. No reread on clock/menu updates, environment
+name guess, credential operation or new account authority is added.
+
+Legacy callers with no explicit profile retain their original PollyDesktop
+header markup; single-column and zero-header layouts do not acquire a new area.
+The existing generic avatar, Search/input identity, Programs/source folders,
+both pin domains, Quick Launch and logout remain unchanged. The original XP
+software GUI entry verifies injected Unicode/success/unavailable snapshots in
+the real header and actual pointer launch; it does not certify a live Linux
+passwd source, Windows account, original-system art or native compositor.
 
 ### Fluent taskbar and Start surface coverage
 
@@ -443,8 +460,10 @@ guard entry and app actions. Back to an already-owned parent remains available
 during I/O failure without clearing the error or authorizing stale app actions.
 Unverifiable sources remain in All apps. This is neither arbitrary filesystem
 browsing, an imported Windows Programs directory nor an XDG menu XML tree.
-See [the Shell contract](shell/README.md). Multi-level directory menus, true user
-account/profile art, and Win11 recommendation/account features are not reproduced.
+See [the Shell contract](shell/README.md). Readonly local display profiles are
+connected in the existing Classic/XP headers. OS-native multi-surface cascades,
+account photographs/management and Win11 recommendation/account features are not
+reproduced.
 Existing application launch, desktop shortcut, keyboard and logout actions remain
 connected. E22.15 therefore remains partial.
 
@@ -996,7 +1015,7 @@ specific task IDs, not another independently maintained status table.
 | Shared controls | E22.7: button borders, backgrounds and hover/press/disabled/default/focus; E22.8: checkbox/radio/switch/select/tabs/list selection; E22.9: text-box bevel/padding/caret/selection and scrollbars; E22.10: Settings/dialog/confirmation/authentication surfaces |
 | Actual geometry and state | E22.11: bounded native active/inactive/press/cancel/maximize/restore, narrow/low-screen and supported DPI checks, not just component fixtures |
 | XP SP3 Luna | E22.2: completed historical base-paint increment; E22.12: remaining caption bands, edges, text shadow and caption-control states; E22.13: taskbar/Start/quick-launch/tray/clock and two-column menu details |
-| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: flat/tag/source-folder browsing is delivered, while account/profile, full OS cascade/reference and content-density/layout qualification remain |
+| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: flat/tag/source-folder browsing and readonly local profile headers are delivered, while account art/management, full OS cascade/reference and content-density/layout qualification remain |
 | Server 2003 Classic corrected records | E22.16: bevel/outline ownership; E22.17: flat state, stipple, focus and icon spacing; E22.18: caption glyph size/offset and gradient span; E22.19: native menu/taskbar gap; E22.20: outside-menu caption input, linked to the existing functional task; E22.35: base frame metrics, solid desktop and gray two-column default with single-column override |
 | Windows 11 24H2 light | E22.21: caption backplates/glyphs/states; E22.22: centered taskbar, running markers, Start search/grid/footer; E22.23: full-client corner clipping/shadows; E22.24: Mica-like versus Acrylic backdrop mechanisms |
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |

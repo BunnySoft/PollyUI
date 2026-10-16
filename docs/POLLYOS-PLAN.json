@@ -934,7 +934,7 @@
       "label": "E22.13 XP 任务栏与 Start",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分项核30px bar、绿色Start/Polly launcher、任务按钮与托盘/clock；XP显式windows-launchers已交真实Quick Launch，saved catalog pins独立启动且原Window.id任务不分组，Start复用真实Programs/metadata Categories。profile/header、分隔线/字体/外部SNI与原图状态仍待资格，不加假账号/历史或声称导入外部XP目录。",
+      "scope": "分项核30px bar、绿色Start/Polly launcher、任务按钮与托盘/clock；XP显式windows-launchers已交真实Quick Launch，saved catalog pins独立启动且原Window.id任务不分组，Start复用真实Programs/metadata Categories/source folders。现64px header已接一次readonly本地uid/passwd姓名与username/UID，失败明确unavailable，原generic头像和legacy无profile品牌不变。账号管理/原图头像、分隔线/字体/外部SNI与原图状态仍待资格，不加假账号/历史或声称导入外部XP目录。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -943,7 +943,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-15 XP现有taskbar/Start表面批：修Luna launcher硬码97未消费现layout.launcherWidth，合法123 override实际布局/命中生效而默认不变；XP双列右links复用scrollDesktop/minHeight0与局部chain onFocus、verticalScrollMetrics clamp，低高Settings/Refresh/Close不再裁失，不扩SDK机制或改Classic。实际GUI800x600量测bar30/launcher97/tasks26、tray30/menu380x480/header64/footer42，default before/after PNG SHA相同；360x260局部布局menu206/links100，Close原bottom208越过footer188，修后wheel/focus scroll20完整显示，末项pointer/Enter各单次，重复focus不抖、反向wheel归零。左右列独立scroll且header/footer不动；Search/Pin/disabled app/launcher hover-held-cancel/任务focus及窄条滚动激活保留。THEMES有界表区分现有合同/已修缺陷/待参考/缺业务；源色/字体/其它五preset路径未改。原XP字体/认证SP3-DPI raw、Start account/profile/Programs级联、完整QuickLaunch与tray外部状态仍缺；更低于固定header/footer/Search总高的布局策略未选。本证据为actual GUI component，不冒充native resize/OS精确误差，E22.13保持partial。"
+      "evidence": "2026-10-15 XP现有taskbar/Start表面批：修Luna launcher硬码97未消费现layout.launcherWidth，合法123 override实际布局/命中生效而默认不变；XP双列右links复用scrollDesktop/minHeight0与局部chain onFocus、verticalScrollMetrics clamp，低高Settings/Refresh/Close不再裁失，不扩SDK机制或改Classic。实际GUI800x600量测bar30/launcher97/tasks26、tray30/menu380x480/header64/footer42，default before/after PNG SHA相同；360x260局部布局menu206/links100，Close原bottom208越过footer188，修后wheel/focus scroll20完整显示，末项pointer/Enter各单次，重复focus不抖、反向wheel归零。左右列独立scroll且header/footer不动；Search/Pin/disabled app/launcher hover-held-cancel/任务focus及窄条滚动激活保留。THEMES有界表区分现有合同/已修缺陷/待参考/缺业务；源色/字体/其它五preset路径未改。原XP字体/认证SP3-DPI raw、Start account/profile/Programs级联、完整QuickLaunch与tray外部状态仍缺；更低于固定header/footer/Search总高的布局策略未选。本证据为actual GUI component，不冒充native resize/OS精确误差，E22.13保持partial。后续2026-10-17源93f9e82合a2789e8已补完整readonly local display profile：main启动仅一次读真实uid/euid与固定trusted passwd，constructor验证copy/freeze/失败report一次，原64px header显示Unicode姓名与username/UID；失败保可靠UID或unknown并明确Local name unavailable，不用环境猜名、不覆盖独立业务error、不加账号权限。原Search/两Pin/Programs/source folders/QuickLaunch/legacy-null品牌保留，named body font同投影。父组合276/276通过；原XP实际软件GUI同header/rootinput/焦点、pointer launch1、success/knownfail/unknownfail/legacy通过，header[0,0,360,64]。仅注入display data+actual软件GUI与mock FS source contract，不是当前Linux passwd/认证/NSS/原图头像/原生compositor资格，整体仍partial。"
     },
     {
       "id": "classic-residual-colors",
@@ -966,7 +966,7 @@
       "label": "E22.15 Classic 菜单与级联",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "保留灰色双列chrome、默认flat All Programs与真实metadata分类；已交基于严格登记ID/path映射的真实source-folder多级浏览，不是任意FS/Windows目录导入或XDG XML。继续核profile/account、OS原生级联/内容密度/布局及图标参考资格，保单列override与搜索/Pin/日志，不为像素造假管理/打印/Run/Shutdown入口。",
+      "scope": "保留灰色双列chrome、默认flat All Programs与真实metadata分类；已交基于严格登记ID/path映射的真实source-folder多级浏览，不是任意FS/Windows目录导入或XDG XML。现40px header已接readonly本地姓名与username/UID，不可用明确显示并单次报告；不是认证/NSS/账号管理。继续核账号原图/管理、OS原生级联/内容密度/布局及图标参考资格，保单列override与搜索/Pin/日志，不为像素造假管理/打印/Run/Shutdown入口。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -975,7 +975,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "真实 Win2K3 Start-open JPEG 与实际 Polly 菜单的完整profile/内容行差异仍未认证。2026-10-16 合入f20c38b（源73f5ce24）：Classic现有RootMenu内增加真实desktopCatalog的flat All Programs，保默认双列/legacy单列及原Search/Pin/Files/Settings/Refresh/Close/logout；右贴或同client覆盖，Back/Left/Escape恢复trigger，键盘/wheel/focus可达长列表。每次open稳定行槽避免positional reconciler把held行变另一app，epoch/currentMenu/livecatalog拒绝旧launch/Pin/延迟focus，clock/retheme保状态。父Node35/35、真实GUI384x480/260x180/legacy180x140通过；真nativechild submenu分别[197,3,184,474]与[3,29,174,108]完全在client输入document内，末行focus完整可见。没有增加surface/native权限或放松RootMenu outside/lock合同，但此Win32client边界不是Linuxcompositor outside-dismiss认证。categories非目录path，不造多级目录/Accounts/Recent后端；极小viewport只最大可见，不冒完整fit。E22.15保持partial。"
+      "evidence": "真实 Win2K3 Start-open JPEG 与实际 Polly 菜单的完整profile/内容行差异仍未认证。2026-10-16 合入f20c38b（源73f5ce24）：Classic现有RootMenu内增加真实desktopCatalog的flat All Programs，保默认双列/legacy单列及原Search/Pin/Files/Settings/Refresh/Close/logout；右贴或同client覆盖，Back/Left/Escape恢复trigger，键盘/wheel/focus可达长列表。每次open稳定行槽避免positional reconciler把held行变另一app，epoch/currentMenu/livecatalog拒绝旧launch/Pin/延迟focus，clock/retheme保状态。父Node35/35、真实GUI384x480/260x180/legacy180x140通过；真nativechild submenu分别[197,3,184,474]与[3,29,174,108]完全在client输入document内，末行focus完整可见。没有增加surface/native权限或放松RootMenu outside/lock合同，但此Win32client边界不是Linuxcompositor outside-dismiss认证。categories非目录path，不造多级目录/Accounts/Recent后端；极小viewport只最大可见，不冒完整fit。后续47c55cd已补verified source folders；2026-10-17源93f9e82合a2789e8补同一readonly本地profile在原40px Classic双列header，legacy-null品牌/零header/单列不造新区，fullaria/themedText、单次diagnostic和原Search/Pin/Programs/权限保持。父276/276含Classic/XP真实DOM交互合同通过；passwd数据源仅mock FS契约，原XP软件GUI使用注入snapshot，不称当前Linux/NSS/账号管理/照片或原图native级联认证。E22.15保持partial。"
     },
     {
       "id": "classic-frame-bevel-corrected",

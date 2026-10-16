@@ -137,6 +137,14 @@ registration, not a title, executable-name or desktop-file-suffix guess; an
 ambiguous runtime identity keeps the fallback instead of choosing arbitrarily.
 Managed bundles use the already-validated manifest ID for this association.
 
+Classic/XP Start headers receive one immutable local display profile at production
+startup, using real uid/euid and a bounded, identity-checked local passwd record.
+They show the display name and actual username/UID, or explicit unavailable
+labels; the original generic avatar remains. This readonly metadata grants no
+authentication/account-management authority and never guesses from environment
+variables. Legacy callers without a profile retain the PollyDesktop brand.
+See [the Shell contract](shell/README.md#local-session-display-profile).
+
 The artwork source is `tools/generate-application-icons.mjs`, using only native
 rectangles and gradients, with no downloaded or platform-owned assets. To
 regenerate from the repository root with the existing playground, set
