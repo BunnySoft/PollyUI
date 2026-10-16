@@ -1112,7 +1112,7 @@
       "label": "E22.24 Win11 背景材质",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "登记Win11 Mica-like壁纸基色与Start/taskbar Acrylic背景采样的质感差异；当前opaque/gradient不能代替真实backdrop。分别关联已存在MT-02/MT-03候选，先选具体效果/机制再实现，保留solid/reduced-transparency方案；本次登记不自动授权blur/GPU新功能。",
+      "scope": "MT02已由packaged Settings真实消费缓存opaque wallpaper-derived客户端base，procedural/bitmap皆有实际来源且保solid；仍需区分DWM Mica、桌面坐标对齐与Start/taskbar live Acrylic/跨App采样，不能拿此opaque子集代替MT03或原OS资格，不自动扩GPU/WM/第三方CSD策略。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1121,7 +1121,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "普通窗口alpha已交付但不是backgroundblur。2026-10-16 用户要求自主完成剩余后，合入d94a94a（源f1085d9b）的有界MT02子集：通用Canvas filter none/singleblur(px)，JS-owned真实wallpaper/theme派生opaque客户端base，source/blur/tint缓存、padding预算、activation/size/scale/sourceRevision失效、错误显式并可主动恢复solid。仅opt-in desktop/examples/material.mjs，不强改Settings/Files/主题或nativecaption；纹理跨client映射而非desktop-position对齐。父Node8/8和精确新C runner实际raster+真实GUI owner cleanup通过；中点[226,199,228,255]证实真Gaussian，全部alpha255，八次无变重绘work counters不变，前景sharp。SDK/native脚本同CMake内嵌构建，旧C runner不用于新filter资格。不是Windows DWM Mica、liveAcrylic或MT03；默认App/Start/taskbar材质、retainedDOM背景采样、跨App合成与OS像素资格仍未完成，E22.24保持partial。"
+      "evidence": "历史d94a94a（源f1085d9b）交通用Canvas filter none/singleblur和JS opaque wallpaper helper，原真Gaussian/缓存/owner/dispose资格在自有Linuxvolume（不是已存在Windows资格）。7165623+cbdfcf5合a2dadc1现完整接packaged Settings：optional clientMaterial缺/solid旧路、仅Modern声明wallpaper，直接API默认false/runtime显式true；bitmap只读GetMaterialSource经既有ownedPID/UID/末generation授权与经握手pin的唯一Shell owner，当前已持asset128side/128KiB PNG无FS再读或caller path/key/scene，严格header/维度/canonicalbase64+theme/rev/gen。foreground/input/右mount保留，active只tint，idle六计数各1、stop/旧reply/decode拒；错误独立正常layout行不盖永久footer、不clock重试。必要一次隔离Windows GUI helper编已合Cfilter无C修改/新SDK/旧缓存覆盖，实际exe78cd4ff；原material/Settings入口真bitmap→PNG→decode/blur基底全opaque、输入2560/选区caret整crop同，errorBox504..552/footer552..600且footer crop同，无Uncaught。父现208通过及generatorcheck，Linux借用FFI扩展本轮仅syntax、不报guard86环境liveRPC/installed资格。仍不是DWM Mica/坐标对齐/liveAcrylic/MT03/物理或原OS像素认证；Start/taskbar及其它consumer未自动启用，E22.24保持partial。"
     },
     {
       "id": "tiger-window-menubar",

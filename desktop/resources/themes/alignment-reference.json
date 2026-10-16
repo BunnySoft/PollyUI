@@ -41,7 +41,7 @@
       "qualification": "Microsoft titlebar guidance specifies 32px height and state behavior; it is not a build-tagged 24H2 raw screenshot. Taskbar/Start values are reconstruction targets, not measured 24H2 pixels.",
       "geometry": { "captionContent": 32, "captionOuter": 33, "captionButton": [46, 32], "taskbar": 48, "taskSlot": 44, "taskIcon": 24, "start": [640, 660] },
       "fontReference": "Segoe UI Variable/Segoe UI, 12px caption, 14px controls; not bundled",
-      "gaps": ["build-tagged 24H2/100 percent raw crops", "Mica/Acrylic backdrop adoption; the existing wallpaper-derived opaque client material is not live Acrylic", "current-preset compositor revalidation: generic clipping/shadow is implemented and rounded radius 8 is selected, but the paired live run is blocked", "Segoe font pixels", "Snap layout flyout is not implemented"]
+      "gaps": ["build-tagged 24H2/100 percent raw crops", "DWM Mica/live Acrylic and Start/taskbar backdrop sampling; packaged Settings already consumes the opaque wallpaper-derived client material", "current-preset compositor revalidation: generic clipping/shadow is implemented and rounded radius 8 is selected, but the paired live run is blocked", "Segoe font pixels", "Snap layout flyout is not implemented"]
     },
     {
       "id": "aqua",

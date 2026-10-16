@@ -8,7 +8,7 @@ all live in that one application's own window/document, process/QuickJS realm
 and event loop. There is no complete Shell-owned settings window or
 **Open desktop controls** delegation. Theme changes,
 other application activity and launcher dismissal do not close it.
-Escape (unless consumed by an input), Alt+F4 and the window-frame close control
+Escape (unless composing or consumed by an input), Alt+F4 and the window-frame close control
 close only Settings. Use its normal taskbar/window-switcher entry to restore a
 minimized Settings window. Launch buttons and `polly-settings` request the same
 owned instance's navigation/presentation; Shell activates its current window.
@@ -41,8 +41,13 @@ in a persistent footer, even while loading or displaying an error. The strict
 Appearance/About snapshots carry the actual Shell build; the Settings runtime
 is labelled separately if it differs. Appearance has a wrapping native preview
 gallery and grouped theme-library controls. Illustrated previews are not
-hardware captures. The shared layout uses original icons, 14px body text, solid
-surfaces and card/list hierarchy; native window captions remain authoritative.
+hardware captures. The shared layout uses original icons, theme typography,
+opaque cards and card/list hierarchy; native window captions remain authoritative.
+Packaged Settings additionally honors explicit `window.clientMaterial:"wallpaper"`
+(Modern opts in) using the cached, opaque wallpaper-derived client base. Missing
+or solid policy and direct app API defaults preserve the solid path. Foreground,
+inputs and the permanent footer remain separate; a material failure reports its
+own bounded status row without covering the version or changing a page's error.
 
 ## Ownership and lifetime
 
@@ -75,6 +80,12 @@ claimed identity. No-reply calls perform no effects. Timeout/cancel/disconnect
 do not prove rollback; writes never reconnect, retry or replay automatically.
 This is not a sandbox against an attacker already controlling the same UID or
 ptrace. See `apps/settings/README.md` for the exact first-version boundaries.
+The argument-free `GetMaterialSource` read is bound to the verified unique Shell
+owner and current Settings generation. It projects only the already-held,
+committed wallpaper bitmap as a PNG of at most 128 pixels per axis and 128 KiB;
+it takes no client file path, resource key or window target. It does not capture
+the desktop/other apps, provide native management connections, or implement live
+Acrylic, desktop-coordinate Mica or compositor backdrop blur.
 
 Navigation detaches the previous Settings page before mounting the next one.
 Network detach wipes credential fields

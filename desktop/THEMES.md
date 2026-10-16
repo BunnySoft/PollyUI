@@ -19,8 +19,11 @@ classic presets. Modern now targets Windows 11 24H2 light geometry, not Windows
 unavailable configuration; saved classic choices and user overrides are not
 silently rewritten. It uses a solid 48px taskbar, centered icon tasks, a 32px
 caption content band with 46x32px controls, and original Polly artwork.
-No proprietary platform logos/assets are bundled. This preset does not
-automatically enable a material or blur; the separate
+No proprietary platform logos/assets are bundled. Modern explicitly selects
+`window.clientMaterial: "wallpaper"` for opt-in consumers. Packaged Settings
+uses the cached opaque base; direct app API calls and missing/`"solid"` policy
+retain the previous solid path. Other applications and compositor surfaces
+are not changed automatically. The
 [opt-in wallpaper-derived client helper](../gui/sdk/CANVAS.md#opt-in-wallpaper-derived-client-base)
 is not native DWM Mica or compositor Acrylic.
 `resources/themes/fallback.json` is a packaged recovery catalog.
@@ -989,6 +992,14 @@ macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
 The existing whole-window effect tree samples only its own client and frame;
 the wallpaper-material helper paints an opaque, wallpaper-derived client base.
 Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
+For bitmap wallpaper, packaged Settings reads only a bounded projection of the
+Shell's already-held committed asset through its authenticated, unique-owner
+`GetMaterialSource` binding. The PNG is at most 128 pixels per axis and 128 KiB;
+no caller path/key, other application's pixels or arbitrary file access enters
+that operation. The client rejects stale theme/revision/generation replies,
+keeps foreground DOM and inputs separate, and releases the material on stop.
+Failures retain the solid fill and an independent status row before the
+permanent footer, without covering the version or retrying on every clock.
 Real reflection, Snap layouts and installed-directory/account/history behavior
 also require actual mechanisms or data, rather than additional decorative rows.
 These boundaries do not block independent control, input and menu fixes.

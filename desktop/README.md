@@ -23,6 +23,12 @@ The Shell-owned [System Settings window](./SETTINGS.md) brings Appearance,
 Displays, Network, Audio, Keyboard and About together using the existing native
 controllers. Unavailable services remain explicit; closing Settings does not
 stop the desktop, audio policy or independent applications.
+Packaged Settings now opts into a cached, opaque wallpaper-derived client base
+when the theme explicitly requests it (Modern does). Bitmap sources use a
+bounded authenticated projection of the current committed wallpaper, not
+filesystem permissions or live background capture. The direct app API and
+missing/solid policy retain the solid path; see the
+[Settings material contract](apps/settings/README.md#opaque-wallpaper-derived-client-base).
 
 ## Optional native window effects
 
