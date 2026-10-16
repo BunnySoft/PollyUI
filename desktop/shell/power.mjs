@@ -1,7 +1,7 @@
 import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shell/views.mjs';
-import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 export function createPowerSettings({ native, host, theme, report, sessionExit = null }) {
   let surface = null, previous, started = false, state = null, error = '', notice = '', revision = 0;
@@ -104,6 +104,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
     if (current) {
       current.document.body.removeEventListener('keydown', keydown);
       current.document.activeElement?.blur();
+      render(null, current.document.body);
       if (!current.closed) current.close();
     }
   }
@@ -207,10 +208,7 @@ export function createPowerSettings({ native, host, theme, report, sessionExit =
     ];
     const cancellable = active && !state?.sent &&
       (status.canCancel || (status.phase === 'committing' && state?.cancellable));
-    render(h('view', { id: 'shell-power-settings', style: {
-      width: '100%', height: '100%', minHeight: 0, minWidth: 0, padding: current.layout.contentPadding,
-      gap: current.layout.contentGap, backgroundColor: current.colors.body, overflow: 'scroll' },
-      onWheel: scrollDesktop },
+    render(panelViewport(current, { id: 'shell-power-settings', framed: false, scrollbar: true },
       h('view', { style: { color: current.colors.text, ...bodyFont(current), fontSize: current.layout.headingFontSize,
         fontWeight: 600, flexShrink: 0 } }, 'Power'),
       button('shell-power-close', 'Close', close, !active || cancellable ||

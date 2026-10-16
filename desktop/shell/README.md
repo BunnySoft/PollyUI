@@ -3,6 +3,11 @@
 Power uses the existing theme typography and bounded, wheel-scrollable client
 area. Application-close coordination, cancellation, permission checks and the
 explicit final shutdown/restart confirmation remain unchanged.
+Its existing unframed content pane uses the shared themed overlay scrollbar and
+focus reveal, keeping later Cancel/Refresh controls reachable below a long
+waiting inventory or in a low window. Manual wheel position survives unchanged
+refreshes; closing releases the shared viewport only after the original
+cancellation decision, without changing when a request can be sent or cancelled.
 
 # Notifications
 

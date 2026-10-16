@@ -12,6 +12,7 @@ class Node {
   constructor(owner) {
     Object.assign(this, { ownerDocument: owner, childNodes: [], style: {}, listeners: new Map(),
       attributes: new Map(), parentNode: null, id: '', tabIndex: -1 });
+    Object.assign(this, { scrollTop: 0, scrollLeft: 0, offsetTop: 0, offsetLeft: 0, offsetWidth: 560, offsetHeight: 640 });
   }
   get firstChild() { return this.childNodes[0] || null; }
   appendChild(node) { node.parentNode?.removeChild(node); node.parentNode = this; this.childNodes.push(node); return node; }
@@ -31,10 +32,19 @@ class Node {
   addEventListener(type, action) { this.listeners.set(type, [...(this.listeners.get(type) || []), action]); }
   removeEventListener(type, action) { this.listeners.set(type, (this.listeners.get(type) || []).filter(item => item !== action)); }
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
+  getBoundingClientRect() {
+    return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight,
+      right: this.offsetLeft + this.offsetWidth, bottom: this.offsetTop + this.offsetHeight };
+  }
 }
 function nodes(root) { return [root, ...root.childNodes.flatMap(nodes)]; }
 export function fixture(coordinator = true, controllerFactory = null) {
   const previousDocument = globalThis.document;
+  const previousFrames = { requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame };
+  const frames = new Map();
+  let frameSerial = 0;
+  globalThis.requestAnimationFrame = callback => { frames.set(++frameSerial, callback); return frameSerial; };
+  globalThis.cancelAnimationFrame = id => frames.delete(id);
   const document = { activeElement: null, createElement: () => new Node(document),
     createTextNode: text => Object.assign(new Node(document), { textContent: text }),
     getElementById: id => nodes(document.body).find(node => node.id === id) };
@@ -131,7 +141,13 @@ export function fixture(coordinator = true, controllerFactory = null) {
     },
     status: () => exit.snapshot(),
     notify() { native.onPowerChanged(); },
-    async done() { power.stop(); await drain(); assert.equal(subscribers.size, 0); globalThis.document = previousDocument; },
+    async done() {
+      try {
+        power.stop(); await drain();
+        assert.equal(subscribers.size, 0);
+        assert.equal(frames.size, 0, 'Close cancels bounded viewport settlement without polling');
+      } finally { globalThis.document = previousDocument; Object.assign(globalThis, previousFrames); }
+    },
   };
 }
 
