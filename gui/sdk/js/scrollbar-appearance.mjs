@@ -1,7 +1,8 @@
 const limits = { width: [4, 128], thumbInset: [0, 32], minThumbHeight: [1, 256],
   arrowSize: [0, 128], stepSize: [1, 4096] };
-const styleKeys = new Set(['backgroundColor', 'gradientFrom', 'gradientTo', 'gradientDir',
+export const scrollbarStyleKeys = Object.freeze(['backgroundColor', 'gradientFrom', 'gradientTo', 'gradientDir',
   'borderColor', 'borderWidth', 'borderRadius', 'color', 'opacity']);
+const styleKeys = new Set(scrollbarStyleKeys);
 
 export function scrollbarAppearance(value) {
   if (value === undefined) return null;

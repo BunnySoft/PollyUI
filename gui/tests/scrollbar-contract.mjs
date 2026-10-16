@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
 register('../../desktop/tests/root-loader.mjs', import.meta.url);
-const { createVerticalScrollbar, verticalScrollMetrics } = await import('../sdk/js/scrollbar.mjs');
-const { scrollbarAppearance, scrollbarStyles } = await import('../sdk/js/scrollbar-appearance.mjs');
+const target = process.env.SCROLLBAR_CONTRACT_MODULE || new URL('../sdk/js/scrollbar.mjs', import.meta.url).href;
+const { createVerticalScrollbar, verticalScrollMetrics } = await import(target);
+const { scrollbarAppearance, scrollbarStyles, scrollbarStyleKeys } = await import('../sdk/js/scrollbar-appearance.mjs');
 
 function fixture() {
   const doc = { activeElement: null, captured: null, styleWrites: 0, attributeWrites: 0, createElement: () => new Node() };
@@ -22,6 +23,7 @@ function fixture() {
     removeChild(node) { this.childNodes.splice(this.childNodes.indexOf(node), 1); node.parentNode = null; }
     setAttribute(key, value) { doc.attributeWrites++; this.attributes.set(key, String(value)); }
     getAttribute(key) { return this.attributes.get(key) ?? null; }
+    removeAttribute(key) { this.attributes.delete(key); }
     addEventListener(type, fn) {
       const list = this.listeners.get(type) ?? [];
       list.push(fn); this.listeners.set(type, list);
@@ -138,4 +140,98 @@ test('overflow truth, tiny tracks, resize clamp, cancellation, opt-out and stop 
   controller.stop(); assert.equal(controller.update(), null);
   assert.throws(() => controller.setAppearance(appearance), /stopped/);
   assert.throws(() => controller.step(2), RangeError);
+});
+
+test('arrow-lane drag has exact no-motion invariance and measured midrange delta mapping', () => {
+  const f = fixture(), appearance = { metrics: { arrowSize: 15 } };
+  const controller = createVerticalScrollbar({ ...f, appearance });
+  f.viewport.scrollTop = 1000;
+  const metrics = controller.update(), y = f.track.offsetTop + metrics.top + 7;
+  fire(f.track, 'mousedown', { clientY: y });
+  fire(f.track, 'mousemove', { clientY: y });
+  assert.equal(f.viewport.scrollTop, 1000, 'same-coordinate move must not add the arrow-lane origin');
+  fire(f.track, 'mouseup', { clientY: y });
+  assert.equal(f.viewport.scrollTop, 1000, 'same-coordinate release must not scroll either');
+  fire(f.track, 'mousedown', { clientY: y });
+  const delta = 14, expected = 1000 + delta / metrics.travel * metrics.maximum;
+  fire(f.track, 'mousemove', { clientY: y + delta });
+  assert.equal(f.viewport.scrollTop, expected, 'only the pointer delta maps through measured thumb travel');
+  fire(f.track, 'mouseup', { clientY: y + delta });
+  assert.equal(f.viewport.scrollTop, expected);
+  controller.stop();
+});
+
+test('captured retheme and resize reanchor the lane without a no-motion value jump', () => {
+  const f = fixture(), controller = createVerticalScrollbar({ ...f, appearance: { metrics: { arrowSize: 15 } } });
+  f.viewport.scrollTop = 1000;
+  const before = controller.update(), y = f.track.offsetTop + before.top + 7;
+  fire(f.track, 'mousedown', { clientY: y });
+  controller.setAppearance({ metrics: { arrowSize: 0 } });
+  assert.equal(f.doc.captured, f.track);
+  fire(f.track, 'mousemove', { clientY: y });
+  assert.equal(f.viewport.scrollTop, 1000, 'removing arrows must not reinterpret the old grab position');
+  const after = controller.update(), delta = 10, expected = 1000 + delta / after.travel * after.maximum;
+  fire(f.track, 'mousemove', { clientY: y + delta });
+  assert.equal(f.viewport.scrollTop, expected);
+  f.track.offsetHeight = 240; controller.update();
+  fire(f.track, 'mousemove', { clientY: y + delta });
+  fire(f.track, 'mouseup', { clientY: y + delta });
+  assert.equal(f.viewport.scrollTop, expected, 'a resized lane keeps the same captured pointer/value anchor');
+  controller.stop();
+});
+
+test('rejected initial schema/callbacks leave no listeners, owned nodes, style or aria mutations on retry', () => {
+  for (const kind of ['schema', 'callback-type', 'decorate', 'paint', 'cleanup']) {
+    const f = fixture(), original = new Error('initial ' + kind), cleanupError = new Error('cleanup failure');
+    f.track.setAttribute('aria-valuemax', '17');
+    const keys = [...scrollbarStyleKeys, 'width', 'left', 'right', 'top', 'height', 'display', 'pointerEvents'];
+    const style = node => keys.map(key => [key, node.style[key] ?? '']);
+    const before = [style(f.track), style(f.thumb)], errors = [], report = console.error;
+    let cleaned = 0, caught;
+    const appearance = kind === 'schema' ? { metrics: { width: 0 } } : kind === 'callback-type' ? { paint: 7 } : {
+      metrics: { width: 16, thumbInset: 1, arrowSize: 16 },
+      decorate(parts) {
+        parts.trackDetail.insertBefore(f.doc.createElement('view'), null);
+        if (kind === 'decorate') throw original;
+        return () => { cleaned++; if (kind === 'cleanup') throw cleanupError; };
+      },
+      paint() { throw original; },
+    };
+    console.error = message => errors.push(message);
+    try { createVerticalScrollbar({ ...f, appearance }); } catch (error) { caught = error; }
+    finally { console.error = report; }
+    assert.ok(caught instanceof Error);
+    if (!['schema', 'callback-type'].includes(kind)) assert.equal(caught, original, 'the original callback exception is rethrown unchanged');
+    assert.ok([...f.track.listeners.values()].every(list => list.length === 0), kind + ': no ghost listeners');
+    assert.equal(f.track.childNodes.length, 1); assert.equal(f.thumb.childNodes.length, 0);
+    assert.deepEqual([style(f.track), style(f.thumb)], before);
+    assert.equal(f.track.getAttribute('aria-valuemax'), '17');
+    assert.equal(f.track.getAttribute('aria-disabled'), null); assert.equal(f.track.tabIndex, -1);
+    if (['paint', 'cleanup'].includes(kind)) assert.equal(cleaned, 1);
+    assert.equal(errors.length, kind === 'cleanup' ? 1 : 0, 'cleanup failure must be explicit, not swallowed');
+    const controller = createVerticalScrollbar({ ...f, appearance: { metrics: { arrowSize: 16 } } });
+    fire(f.track, 'mousedown', { clientY: 212 }); fire(f.track, 'mouseup', { clientY: 212 });
+    assert.equal(f.viewport.scrollTop, 42, 'retry arrow invokes one original step');
+    fire(f.track, 'keydown', { key: 'ArrowDown' });
+    assert.equal(f.viewport.scrollTop, 84, 'retry key invokes one step, not a leaked controller');
+    controller.stop();
+  }
+});
+
+test('surface opacity is consumed while visibility still hides fitted content and legacy opt-out stays exact', () => {
+  const f = fixture(), appearance = {
+    paint: state => ({ track: { opacity: state.focused ? 0.6 : 0.37 } }),
+  };
+  const controller = createVerticalScrollbar({ ...f, appearance });
+  assert.equal(f.track.style.opacity, '0.37');
+  f.track.focus(); assert.equal(f.track.style.opacity, '0.6', 'focus paint applies its legal opacity immediately');
+  fire(f.track, 'blur'); assert.equal(f.track.style.opacity, '0.37');
+  f.doc.activeElement = null;
+  f.viewport.childNodes[0].offsetHeight = 42; controller.update();
+  assert.equal(f.track.style.opacity, '0', 'no-overflow visibility wins over surface opacity');
+  f.viewport.childNodes[0].offsetHeight = 4200; controller.update();
+  assert.equal(f.track.style.opacity, '0.37', 'restored overflow restores the declared surface opacity');
+  controller.setAppearance(undefined); controller.update();
+  assert.equal(f.track.style.opacity, '1', 'unconfigured legacy visibility remains unchanged');
+  controller.stop();
 });

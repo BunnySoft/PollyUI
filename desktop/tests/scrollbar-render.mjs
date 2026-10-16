@@ -51,6 +51,18 @@ export function checkThemedScrollbars(directory) {
     check(host.save(directory + '\\' + id + '-focus.png'), 'Save actual themed focus');
     mouse('mousemove', x, b.y + initial.top + 5); draw(controller);
     check(host.save(directory + '\\' + id + '-hover.png'), 'Save actual themed thumb hover');
+    viewport.scrollTop = 1000; draw(controller);
+    const mid = controller.update(), midY = b.y + mid.top + 5;
+    mouse('mousedown', x, midY); mouse('mousemove', x, midY, { buttons: 1 }); mouse('mouseup', x, midY);
+    check(viewport.scrollTop === 1000, 'Native same-coordinate down/move/up does not scroll an arrow lane');
+    mouse('mousedown', x, midY); mouse('mousemove', x, midY + 14, { buttons: 1 });
+    const expectedMid = 1000 + 14 / mid.travel * mid.maximum, movedMid = Number(viewport.scrollTop);
+    // The existing native scroll property stores doubles with C's six-digit %g.
+    check(movedMid === Number(expectedMid.toPrecision(6)),
+      'Native midrange pointer delta follows the one measured travel mapping: ' + JSON.stringify({ id, mid, midY, expectedMid, movedMid }));
+    mouse('mouseup', x, midY + 14);
+    check(viewport.scrollTop === movedMid, 'Same-coordinate native release preserves the exact stored scroll value');
+    host.key('Home', 'keydown', { text: false }); draw(controller);
     if (skin.metrics.arrowSize) {
       click(x, b.bottom - skin.metrics.arrowSize / 2); draw(controller);
       check(viewport.scrollTop === 42 && !track.hasMouseCapture(), 'End arrow takes exactly the existing generic 42px step without a second capture owner');
@@ -58,8 +70,9 @@ export function checkThemedScrollbars(directory) {
     }
     click(x, b.y + skin.metrics.arrowSize + initial.thumbHeight + 30); draw(controller);
     check(viewport.scrollTop === 200, 'Theme decoration does not turn the page region into an arrow or thumb');
-    host.key('Home', 'keydown', { text: false }); draw(controller);
-    mouse('mousedown', x, b.y + controller.update().top + 5);
+    viewport.scrollTop = 1000; draw(controller);
+    const heldY = b.y + controller.update().top + 5;
+    mouse('mousedown', x, heldY);
     check(track.hasMouseCapture(), 'The original track owns themed thumb capture');
     draw(controller);
     check(host.save(directory + '\\' + id + '-held.png'), 'Save actual themed held thumb');
@@ -68,6 +81,8 @@ export function checkThemedScrollbars(directory) {
     draw(controller);
     check(track === originalTrack && thumb === originalThumb && document.activeElement === track && track.hasMouseCapture(),
       'Retheme retains the same track/thumb DOM, keyboard focus and sole capture owner');
+    mouse('mousemove', x, heldY, { buttons: 1 });
+    check(viewport.scrollTop === 1000, 'Changing arrow inset during native capture does not jump at the same pointer coordinate');
     mouse('mousemove', x + 200, b.bottom + 200, { buttons: 1 });
     mouse('mouseup', x + 200, b.bottom + 200); draw(controller);
     check(viewport.scrollTop === 4000 && !track.hasMouseCapture(), 'Rethemed outside drag clamps to the actual bottom and releases');

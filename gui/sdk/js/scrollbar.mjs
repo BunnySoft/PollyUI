@@ -1,4 +1,4 @@
-import { scrollbarAppearance, scrollbarStyles } from './gui/sdk/js/scrollbar-appearance.mjs';
+import { scrollbarAppearance, scrollbarStyles, scrollbarStyleKeys } from './gui/sdk/js/scrollbar-appearance.mjs';
 
 // Geometry is unscrolled absolute layout, matching the native overflow contract.
 export function verticalScrollMetrics(viewport, trackHeight = viewport.offsetHeight,
@@ -19,8 +19,16 @@ export function verticalScrollMetrics(viewport, trackHeight = viewport.offsetHei
 }
 
 export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = () => true, appearance }) {
+  const initial = scrollbarAppearance(appearance);
+  const initialState = initial ? {
+    scrollTop: viewport.scrollTop, tabIndex: track.tabIndex,
+    attributes: ['aria-valuemin', 'aria-valuemax', 'aria-valuenow', 'aria-disabled'].map(key => [key, track.getAttribute(key)]),
+    styles: [track, thumb].map(node => [node, [...scrollbarStyleKeys,
+      'width', 'left', 'right', 'top', 'height', 'display', 'pointerEvents'].map(key => [key, node.style[key]])]),
+  } : null;
   let drag = null, stopped = false, skin = null, source, cleanup = null, parts = null;
   let hovered = null, held = null, enabled = false, lastMetrics = null, lastPaint = '';
+  let surfaceOpacity = 1;
   let focused = track.ownerDocument.activeElement === track;
   const originals = new Map();
   const listeners = [];
@@ -47,11 +55,20 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     const signature = JSON.stringify(state);
     if (signature === lastPaint) return;
     if (skin.paint)
-      for (const [node, style] of scrollbarStyles(skin.paint({ ...state, metrics: skin.metrics }, parts), parts))
-        write(node, style, true);
+      for (const [node, style] of scrollbarStyles(skin.paint({ ...state, metrics: skin.metrics }, parts), parts)) {
+        if (node === track && Object.hasOwn(style, 'opacity')) {
+          surfaceOpacity = style.opacity;
+          const { opacity, ...surface } = style;
+          write(node, surface, true);
+        } else write(node, style, true);
+      }
+    write(track, { opacity: enabled ? surfaceOpacity : 0 }, true);
     lastPaint = signature;
   }
   function arrowSize() { return skin ? Math.min(skin.metrics.arrowSize, Math.max(0, track.offsetHeight / 2)) : 0; }
+  function dragGeometry(metrics, arrow) {
+    return [track.getBoundingClientRect().y, arrow, metrics.travel, metrics.thumbHeight, metrics.maximum].join(':');
+  }
   function hit(event) {
     const box = track.getBoundingClientRect(), x = event.clientX - box.x, y = event.clientY - box.y;
     if (x < 0 || x >= box.width || y < 0 || y >= box.height) return null;
@@ -93,6 +110,14 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     if (skin) write(thumb, { display: metrics.thumbHeight > 0 ? '' : 'none' }, true);
     lastMetrics = metrics;
     if (Number(viewport.scrollTop) !== metrics.value) viewport.scrollTop = metrics.value;
+    if (drag) {
+      const geometry = dragGeometry(metrics, arrow);
+      if (drag.geometry !== geometry) {
+        drag.value = metrics.value;
+        drag.laneY = drag.lastY - track.getBoundingClientRect().y - arrow;
+        drag.geometry = geometry;
+      }
+    }
     enabled = metrics.maximum > 0 && metrics.height > 0 && (skin ? track.offsetHeight > 0 : metrics.travel > 0);
     if (!enabled) cancel(true);
     const style = { top: String(metrics.top), height: String(metrics.thumbHeight) };
@@ -103,7 +128,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
       'aria-valuenow': String(metrics.value), 'aria-disabled': String(!enabled) }))
       if (track.getAttribute(key) !== value) track.setAttribute(key, value);
     paint();
-    const visibility = enabled ? '1' : '0';
+    const visibility = enabled ? String(skin ? surfaceOpacity : 1) : '0';
     if (track.style.opacity !== visibility) track.style.opacity = visibility;
     const hit = enabled ? 'auto' : 'none';
     if (track.style.pointerEvents !== hit) track.style.pointerEvents = hit;
@@ -140,7 +165,8 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
       return;
     }
     track.setMouseCapture();
-    drag = { grab: y - metrics.top };
+    drag = { value: metrics.value, laneY: y - arrowSize(), lastY: event.clientY,
+      geometry: dragGeometry(metrics, arrowSize()) };
     paint();
   });
   function move(event) {
@@ -148,8 +174,10 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     if (!drag) return;
     const metrics = update();
     if (!metrics || !drag) { cancel(true); return; }
-    const top = event.clientY - track.getBoundingClientRect().y - drag.grab;
-    scrollTo(metrics.travel ? top / metrics.travel * metrics.maximum : 0);
+    if (event.clientY === drag.lastY) return;
+    drag.lastY = event.clientY;
+    const laneY = event.clientY - track.getBoundingClientRect().y - arrowSize();
+    scrollTo(drag.value + (metrics.travel ? (laneY - drag.laneY) / metrics.travel * metrics.maximum : 0));
   }
   listen('mousemove', move);
   listen('mouseup', event => {
@@ -175,20 +203,28 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     } else if (event.key === 'Escape') cancel(true);
   });
   function removeSkin() {
-    if (cleanup) cleanup();
+    const dispose = cleanup;
     cleanup = null;
-    if (parts) for (const key of ['trackDetail', 'trackFocus', 'thumbDetail', 'decrement', 'increment']) {
-      const node = parts[key];
-      if (node?.parentNode) node.parentNode.removeChild(node);
+    try {
+      if (dispose) dispose();
+    } finally {
+      if (parts) for (const key of ['trackDetail', 'trackFocus', 'thumbDetail', 'decrement', 'increment']) {
+        const node = parts[key];
+        if (node?.parentNode) node.parentNode.removeChild(node);
+      }
+      for (const [node, style] of originals) for (const [key, value] of style) node.style[key] = value ?? '';
+      originals.clear(); parts = null;
     }
-    for (const [node, style] of originals) for (const [key, value] of style) node.style[key] = value ?? '';
-    originals.clear(); parts = null;
   }
   function setAppearance(value) {
     if (stopped) throw new Error('Scrollbar is stopped');
     if (source === value) return;
     const next = scrollbarAppearance(value);
+    installAppearance(value, next);
+  }
+  function installAppearance(value, next) {
     removeSkin(); source = value; skin = next; lastPaint = '';
+    surfaceOpacity = 1;
     if (skin) {
       const add = (parent, name, first = false) => {
         const node = track.ownerDocument.createElement('view');
@@ -215,10 +251,23 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
     }
     update();
   }
-  if (appearance !== undefined) setAppearance(appearance);
+  try {
+    if (initial) installAppearance(appearance, initial);
+  } catch (error) {
+    stopped = true;
+    for (const [type, callback] of listeners) track.removeEventListener(type, callback);
+    try { removeSkin(); }
+    catch (cleanupError) { console.error('[scrollbar] Failed appearance cleanup: ' + String(cleanupError)); }
+    for (const [node, styles] of initialState.styles)
+      for (const [key, value] of styles) node.style[key] = value ?? '';
+    for (const [key, value] of initialState.attributes)
+      if (value === null) track.removeAttribute(key); else track.setAttribute(key, value);
+    track.tabIndex = initialState.tabIndex; viewport.scrollTop = initialState.scrollTop;
+    throw error;
+  }
   return { update, cancel, step, setAppearance,
     stop() {
-      cancel(true); stopped = true;
+      stopped = true; cancel(true);
       for (const [type, callback] of listeners) track.removeEventListener(type, callback);
       removeSkin();
     },
