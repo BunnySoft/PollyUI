@@ -203,6 +203,7 @@ export function createVerticalScrollbar({ viewport, track, thumb, isCurrent = ()
   listen('focus', () => { focused = true; paint(); });
   listen('wheel', event => { event.preventDefault(); const metrics = update(); if (metrics) scrollTo(metrics.value + event.deltaY); });
   listen('keydown', event => {
+    if (event.isComposing) return;
     const metrics = update();
     if (!metrics || stopped) return;
     const delta = { ArrowUp: -42, ArrowDown: 42, PageUp: -metrics.height, PageDown: metrics.height };

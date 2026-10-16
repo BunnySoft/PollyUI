@@ -221,6 +221,7 @@ controller. Omit `appearance` for unchanged caller-owned styling, no decoration
 nodes or arrows, the 28px minimum thumb and the existing 42px keyboard step.
 The caller supplies the scrollbar role/label and updates the controller after
 layout, content or scroll changes; the controller starts no timer or frame loop.
+Composing keyboard events neither scroll nor cancel capture, and are not consumed.
 
 Optional `onScroll(value)` synchronously reports a changed, clamped numeric
 `viewport.scrollTop` after an update, including keyboard, capture and external
