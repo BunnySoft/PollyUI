@@ -1,6 +1,7 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { controlStates as visualStates } from './desktop/shared/ui/control-state.mjs';
 import { classicFocusPaint, paintClassicFocus } from './desktop/shared/ui/classic-task-paint.mjs';
+import { defaultActionCue, syncDefaultAction } from './desktop/shared/ui/surface-primitives.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' };
 const panelFocusThemes = new WeakMap();
@@ -91,7 +92,7 @@ export function lunaButtonPaint(theme, { selected = false, hovered = false, pres
   };
 }
 
-export function lunaButtonDetail(theme, variant = 'button', disabled = false) {
+export function lunaButtonDetail(theme, variant = 'button', disabled = false, defaultAction = false) {
   const paint = classicFocusPaint(focusTheme(theme, variant), disabled);
   paint.props.className = 'luna-focus-paint';
   const focus = h('view', { className: 'luna-focus-ring', style: { ...fill, left: 3, top: 3, right: 3, bottom: 3,
@@ -106,7 +107,8 @@ export function lunaButtonDetail(theme, variant = 'button', disabled = false) {
       pointerEvents: 'none', backgroundColor: disabled ? theme.colors.body : theme.colors.light, opacity: 0.65 } }),
     h('view', { className: 'luna-hot-ring', style: { ...fill, left: 1, top: 1,
       right: 1, bottom: 1, width: 'auto', height: 'auto', borderWidth: 2,
-      borderColor: variant === 'task' ? theme.panel.text : '#efb73b', opacity: 0 } }), focus);
+      borderColor: variant === 'task' ? theme.panel.text : '#efb73b', opacity: 0 } }), focus,
+    defaultActionCue(theme, defaultAction, disabled));
 }
 
 export function lunaVisualEvents(theme, options = {}) {
@@ -118,6 +120,7 @@ export function lunaVisualEvents(theme, options = {}) {
     else { Object.assign(state, change); visualStates.set(node, state); }
     const { hovered, pressed, focused } = state;
     Object.assign(node.style, lunaButtonPaint(theme, { ...options, hovered, pressed, focused }));
+    syncDefaultAction(node, theme, { ...options, disabled });
     const hot = node.querySelector('.luna-hot-ring'), focus = node.querySelector('.luna-focus-ring');
     if (hot) hot.style.opacity = hovered && !pressed ? '1' : '0';
     if (focus) focus.style.opacity = focused ? '1' : '0';
@@ -130,7 +133,7 @@ export function lunaVisualEvents(theme, options = {}) {
     }
   };
   const syncState = node => {
-    if (options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+    if (options.defaultAction || options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
         visualStates.has(node) || node.ownerDocument?.activeElement === node)
       paint({ currentTarget: node }, { focused: node.ownerDocument?.activeElement === node });
   };

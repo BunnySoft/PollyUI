@@ -2,7 +2,7 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
-import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
+import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents, selectionInk, defaultActionFlag, defaultActionCue } from './desktop/shared/ui/surface-primitives.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
@@ -59,12 +59,17 @@ export function desktopText(text, color, size = 14, extra = {}) {
   return h('view', { style: { ...desktopType, color, fontSize: size, flexShrink: 0, ...extra } }, text);
 }
 
-export function desktopCommand(id, text, theme, action, { icon = '', selected = false, enabled = true,
-  quiet = false, style = {}, role = 'button', iconSize = 0 } = {}) {
+export function desktopCommand(id, text, theme, action, configuration = {}) {
+  if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration) ||
+      Reflect.ownKeys(configuration).some(key => !['icon', 'selected', 'enabled', 'quiet', 'style', 'role', 'iconSize', 'defaultAction'].includes(key)))
+    throw new TypeError('Unknown desktop command options');
+  const { icon = '', selected = false, enabled = true, quiet = false, style = {}, role = 'button',
+    iconSize = 0, defaultAction: requestedDefault = false } = configuration;
+  const defaultAction = defaultActionFlag(requestedDefault);
   const luna = isLuna(theme) && !quiet, painted = hasSurfacePaint(theme);
   const legacy = selected && surfaceStyle(theme) === 'classic' ? theme.colors.accentText : theme.colors.text;
   const color = !enabled ? theme.colors.muted : selected && quiet ? selectionInk(theme, legacy) : legacy;
-  const options = { selected, disabled: !enabled, quiet, inkOnly: !painted };
+  const options = { selected, disabled: !enabled, quiet, defaultAction, inkOnly: !painted };
   const iconView = icon ? desktopIcon(icon, !enabled ? theme.colors.muted :
     quiet && selected ? selectionInk(theme, theme.colors.accent) : theme.colors.accent,
     iconSize || Math.min(20, theme.layout.buttonHeight - 6)) : null;
@@ -74,6 +79,7 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
   caption.props.className = 'theme-command-label';
   return h('view', { id, role, tabIndex: enabled ? 0 : -1, 'aria-label': text,
     'aria-disabled': String(!enabled), 'aria-pressed': String(selected),
+    ...(defaultAction ? { 'data-default-action': 'true' } : {}),
     style: { ...horizontal, height: theme.layout.buttonHeight, gap: theme.layout.controlGap,
       paddingLeft: theme.layout.buttonPaddingX, paddingRight: theme.layout.buttonPaddingX, flexShrink: 0,
       borderWidth: theme.layout.borderWidth, borderRadius: theme.button.radius, borderColor: selected ? theme.colors.accent :
@@ -81,12 +87,14 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
       backgroundColor: selected ? theme.colors.selection : quiet ? 'transparent' : theme.colors.surface,
       opacity: enabled ? 1 : theme.layout.disabledOpacity,
       ...(luna ? { ...lunaButtonPaint(theme, options), position: 'relative', overflow: 'hidden' } :
-        painted ? { ...surfacePaint(theme, options), position: 'relative', overflow: 'hidden' } : {}), ...style },
+        painted ? { ...surfacePaint(theme, options), position: 'relative', overflow: 'hidden' } : {}),
+      ...(defaultAction ? { position: 'relative' } : {}), ...style },
     hoverStyle: enabled && !luna && !painted ? { backgroundColor: theme.colors.selection } : {},
     focusStyle: luna || painted ? {} : { borderColor: theme.colors.focus },
-    ...(luna ? lunaVisualEvents(theme, options) : painted || quiet ? surfaceEvents(theme, options) : {}),
+    ...(luna ? lunaVisualEvents(theme, options) : painted || quiet || defaultAction ? surfaceEvents(theme, options) : {}),
     ...activationEvents(action, enabled),
-  }, luna ? lunaButtonDetail(theme, 'button', !enabled) : painted ? surfaceDetail(theme, options) : null,
+  }, luna ? lunaButtonDetail(theme, 'button', !enabled, defaultAction) :
+    painted ? surfaceDetail(theme, options) : defaultActionCue(theme, defaultAction, !enabled),
   iconView,
   caption);
 }

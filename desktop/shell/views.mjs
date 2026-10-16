@@ -634,7 +634,7 @@ export function displayConfirmationView(theme, remaining, keep, revert) {
   label('Keep these display settings?', theme.colors.text, 15),
   label('Reverting in ' + Math.ceil(remaining / 1000) + ' seconds.', theme.colors.muted, 12),
   h('view', { style: { ...row, gap: theme.layout.compactPadding, flexWrap: 'wrap', flexShrink: 0 } },
-    button('shell-output-keep', 'Keep', theme, keep),
+    button('shell-output-keep', 'Keep', theme, keep, false, {}, { defaultAction: true }),
     button('shell-output-revert', 'Revert', theme, revert)),
   label('Enter keeps changes. Escape reverts.', theme.colors.muted, 10));
 }

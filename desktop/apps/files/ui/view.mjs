@@ -298,7 +298,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
         command('files-cancel', 'Cancel', () => controller.cancel(generation)),
         desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' :
           operation.kind === 'move' ? 'Move file' : 'Create folder',
-          theme, guarded(() => controller.confirm(generation)), { enabled: ready })),
+          theme, guarded(() => controller.confirm(generation)), { enabled: ready, defaultAction: true })),
     ];
     dialog = inlineRename ? h('view', { id: 'files-confirmation', style: {
       padding: 10, paddingLeft: 20, gap: 8, flexShrink: 0, backgroundColor: color('selection') } }, content) :
