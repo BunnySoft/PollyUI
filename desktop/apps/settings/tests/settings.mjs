@@ -3,7 +3,10 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 register('../../../tests/root-loader.mjs', import.meta.url);
 const { BUILTIN_THEME_CATALOG } = await import('./desktop/shell/themes.mjs');
-const { parseAppearance, parseAbout, SETTINGS_APP_ID, runtimeBuild, buildLabel } = await import('./desktop/client/settings-contract.mjs');
+const { parseAppearance, parseAbout, parseMaterialSource, SETTINGS_APP_ID, runtimeBuild, buildLabel } = await import('./desktop/client/settings-contract.mjs');
+const { createSettingsClient } = await import('./desktop/client/settings.mjs');
+const { createMaterialSource } = await import('./desktop/shell/material-source.mjs');
+const { parseThemeFile, applyThemeOverrides } = await import('./desktop/shared/ui/theme-schema.mjs');
 const { createSettingsController } = await import('./desktop/apps/settings/logic/controller.mjs');
 const { createSettingsService } = await import('./desktop/shell/settings-service.mjs');
 const { createSettingsNetworkClient } = await import('./desktop/apps/settings/network-client.mjs');
@@ -25,6 +28,78 @@ const about = () => ({ version: 1, services: { inputMethod: 'disabled', audio: '
   outputs: 2, themeId: 'xp', applicationId: 'org.pollyui.shell', build: runtimeBuild(),
   profiles: { display: 'Confirmed layout saved', audio: 'Saved audio profile', workspace: 'Saved workspace profile' } });
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
+// Header-only DTO boundary input; real PNG decoding/pixels use the existing material-render entry.
+const materialPNG = (width = 2, height = 1) => {
+  const bytes = Buffer.alloc(33);
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
+  bytes.writeUInt32BE(width, 16); bytes.writeUInt32BE(height, 20);
+  return 'data:image/png;base64,' + bytes.toString('base64');
+};
+const materialDTO = (extra = {}) => ({ version: 1, revision: 1, generation: 1, themeId: 'modern',
+  width: 2, height: 1, dataURL: materialPNG(), ...extra });
+test('client material is strict optional schema-1 policy, only Modern opts in and explicit solid overrides it', () => {
+  assert.deepEqual(BUILTIN_THEME_CATALOG.themes.filter(theme => theme.window.clientMaterial === 'wallpaper')
+    .map(theme => theme.id), ['modern']);
+  const theme = structuredClone(BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'modern'));
+  delete theme.window.clientMaterial;
+  assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })).window.clientMaterial, undefined);
+  for (const value of ['solid', 'wallpaper'])
+    assert.equal(applyThemeOverrides(BUILTIN_THEME_CATALOG, JSON.stringify({ schemaVersion: 1,
+      themes: { modern: { window: { clientMaterial: value } } } })).themes.find(theme => theme.id === 'modern').window.clientMaterial, value);
+  for (const value of [true, 1, null, 'acrylic'])
+    assert.throws(() => parseThemeFile(JSON.stringify({ schemaVersion: 1,
+      theme: { ...theme, window: { ...theme.window, clientMaterial: value } } })));
+});
+test('material DTO bounds format, header dimensions, exact fields and owned identity', async () => {
+  assert.equal(parseMaterialSource(JSON.stringify(materialDTO())).width, 2);
+  for (const change of [{ version: 2 }, { generation: 0 }, { revision: -1 }, { themeId: '../modern' },
+    { width: 129 }, { height: 0 }, { extra: true }, { dataURL: 'file:///private.png' },
+    { dataURL: materialPNG(3, 1) }, { dataURL: materialPNG() + '\n' },
+    { dataURL: 'data:image/png;base64,' + 'A'.repeat(128 * 1024) }])
+    assert.throws(() => parseMaterialSource(JSON.stringify(materialDTO(change))));
+  let reply = materialDTO(), pending = false, closed = false;
+  const calls = [], raw = { call(target, signature, args) {
+    calls.push([target, signature, args]);
+    return { poll: () => pending ? { state: 'pending' } : { state: 'reply', value: JSON.stringify(reply) } };
+  }, close() { closed = true; } };
+  const client = createSettingsClient(raw), snapshot = { ...appearance(), themeId: 'modern' };
+  await assert.rejects(client.getMaterialSource(snapshot), /authenticated/);
+  await assert.rejects(client.call('GetMaterialSource'), /authenticated/);
+  client.bindMaterialOwner(':shell.1', 1);
+  assert.throws(() => client.bindMaterialOwner(':shell.2', 2));
+  assert.equal((await client.getMaterialSource(snapshot)).themeId, 'modern');
+  assert.equal(calls[0][0].destination, ':shell.1');
+  assert.deepEqual(calls[0].slice(1), ['', []], 'No caller path, key or argv goes over this RPC');
+  for (const change of [{ themeId: 'xp' }, { revision: 2 }, { generation: 2 }]) {
+    reply = materialDTO(change); await assert.rejects(client.getMaterialSource(snapshot), /match/);
+  }
+  pending = true; const retired = client.getMaterialSource(snapshot);
+  client.close(); pending = false;
+  await assert.rejects(retired, /retired/); assert.equal(closed, true);
+});
+test('producer projects only committed live bitmap, caches encode/failure and releases scratch pixels', () => {
+  let encodes = 0, reads = 0, fail = false;
+  const canvases = [], source = { width: 2, height: 1 };
+  const projection = createMaterialSource({ bitmap(key) {
+    reads++; assert.match(key, /^committed/); if (fail) throw new Error('owned bitmap retired'); return source;
+  }, document: () => ({ createElement() {
+    const canvas = { width: 300, height: 150, getContext: () => ({ drawImage: value => assert.equal(value, source) }),
+      toDataURL() { encodes++; return materialPNG(this.width, this.height); } };
+    canvases.push(canvas); return canvas;
+  } }) });
+  const value = { themeId: 'modern', revision: 1, asset: 'committed:1' };
+  assert.equal(projection.read(value).dataURL, materialPNG());
+  assert.equal(projection.read({ ...value, revision: 2 }).revision, 2);
+  assert.equal(reads, 1); assert.equal(encodes, 1);
+  projection.read({ ...value, asset: 'committed:2' }); assert.equal(encodes, 2);
+  assert.ok(canvases.every(canvas => canvas.width === 0 && canvas.height === 0));
+  fail = true;
+  assert.throws(() => projection.read({ ...value, asset: 'committed:bad' }), /retired/);
+  assert.throws(() => projection.read({ ...value, asset: 'committed:bad' }), /retired/);
+  assert.equal(reads, 3, 'Failed committed source is not reread on every clock');
+  assert.throws(() => projection.read({ ...value, asset: '' }), /no bitmap/);
+  projection.close();
+});
 const deviceId = '/net/connman/iwd/0/1', networkId = deviceId + '/test_psk';
 const networkState = () => ({ version: 1, ready: true, registered: true, refreshing: false, revision: 3,
   operationId: 0, error: '', operation: '', target: '', networkConfiguration: true,
@@ -118,8 +193,12 @@ test('standalone Settings mounts Network in its own document, preserves masked p
   assert.ok(find('shell-network-settings')); assert.equal(find('shell-network-password'), null);
   assert.deepEqual(reports, []);
 });
-function domainFixture(t) {
+function domainFixture(t, materialOptions = null) {
+  let app;
+  t.after(() => app?.stop());
   const host = applicationHost(t), errors = [], calls = [], owner = {};
+  let appearanceState = materialOptions?.appearance || appearance();
+  const observers = new Set();
   const canvasDocument = document => {
     const create = document.createElement;
     document.createElement = type => {
@@ -127,14 +206,22 @@ function domainFixture(t) {
       if (type === 'canvas') node.getContext = () => ({
         fillRect() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {},
         resetTransform() {}, createPattern: () => ({}),
+        ...(materialOptions ? { filter: 'none', rotate() {}, beginPath() {}, roundRect() {}, fill() {}, stroke() {},
+          drawImage() {}, createLinearGradient: () => ({ addColorStop() {} }) } : {}),
       });
+      if (type === 'img' && materialOptions) node.decode = () => materialOptions.decode?.() || Promise.resolve();
       return node;
     };
   };
   canvasDocument(globalThis.document);
   const createWindow = host.create;
   host.create = options => {
-    const surface = createWindow(options); canvasDocument(surface.document); return surface;
+    const surface = createWindow(options); canvasDocument(surface.document);
+    if (materialOptions) {
+      surface.state = { width: 900, height: 650, scale: 1, active: true };
+      surface.observeState = callback => { observers.add(callback); return () => observers.delete(callback); };
+    }
+    return surface;
   };
   host.displays = () => [{ id: 1, width: 1280, height: 720 }];
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -183,7 +270,7 @@ function domainFixture(t) {
     updateOutputs() {}, displayError: () => '', report });
   const client = { async call(member, argument) {
     calls.push(['rpc', member]);
-    if (member === 'GetAppearance') return JSON.stringify(appearance());
+    if (member === 'GetAppearance') return JSON.stringify(appearanceState);
     if (member === 'GetAbout') return JSON.stringify(about());
     if (member === 'DetachPage') { if (argument === 'keyboard') domains.detach(owner); return; }
     if (member === 'GetDisplays') return JSON.stringify(domains.displays());
@@ -197,12 +284,114 @@ function domainFixture(t) {
     if (member === 'KeyboardAction') { domains.keyboardAction(owner, argument); return JSON.stringify(domains.keyboard(owner)); }
     if (member === 'CancelShortcutRecording') { domains.cancelRecording(owner, argument); return JSON.stringify(domains.keyboard(owner)); }
     throw new Error('Unexpected RPC ' + member);
-  }, close() {} };
-  const app = createSettingsApp({ client, host, report, page: 'displays' }).start();
+  }, ...(materialOptions ? { getMaterialSource(snapshot) {
+    calls.push(['source', snapshot.revision]); return materialOptions.source(snapshot);
+  } } : {}), close() {} };
+  app = createSettingsApp({ client, host, report, page: 'displays',
+    ...(materialOptions ? { optInMaterial: materialOptions.optIn !== false } : {}) }).start();
   t.after(() => { app.stop(); recorder.stop(); audio.stop(); });
   return { app, host, calls, errors, owner, domains, native, output, sound, audio, recorder, persistence, configuration,
-    document: app.getWindow().document, saved: () => saved };
+    document: app.getWindow().document, saved: () => saved,
+    appearance(value) { appearanceState = value; },
+    ownerState(value) { Object.assign(app.getWindow().state, value); for (const observer of observers) observer(app.getWindow().state); },
+    observers };
 }
+const materialAppearance = (revision = 1, bitmap = false, policy = 'wallpaper') => ({
+  ...appearance(), themeId: 'modern', revision,
+  catalog: { ...BUILTIN_THEME_CATALOG, themes: BUILTIN_THEME_CATALOG.themes.map(theme => theme.id !== 'modern' ? theme :
+    { ...theme, desktop: { ...theme.desktop, asset: bitmap ? 'wallpaper.png' : '' },
+      window: { ...theme.window, clientMaterial: policy } }) },
+});
+test('direct Settings API/default and explicit solid have no material work; packaged opt-in preserves input and mount identity', async t => {
+  for (const [name, options] of [['api-default', null],
+    ['opt-out', { optIn: false, appearance: materialAppearance() }],
+    ['explicit-solid', { appearance: materialAppearance(1, true, 'solid') }]]) {
+    await t.test(name, async t => {
+      const f = domainFixture(t, options); await tick();
+      assert.equal(f.document.getElementById('settings-material-base'), null);
+      assert.equal(f.calls.some(([kind]) => kind === 'source'), false);
+      assert.deepEqual(f.app.getMaterialState(), { ready: false, error: '', stats: null });
+      assert.equal(f.observers.size, 0);
+      f.app.stop();
+    });
+  }
+  await t.test('opaque-underlay', async t => {
+    const f = domainFixture(t, { appearance: materialAppearance() }); await tick();
+    const base = f.document.getElementById('settings-material-base');
+    const root = f.document.getElementById('shell-system-settings'), slot = f.document.getElementById('settings-display-slot');
+    const input = f.document.getElementById('shell-output-1-width');
+    assert.ok(base && f.app.getMaterialState().ready);
+    assert.equal(f.document.body.firstChild, base);
+    assert.equal(base.getAttribute('aria-hidden'), 'true'); assert.equal(base.style.pointerEvents, 'none');
+    assert.equal(root.style.backgroundColor, 'transparent');
+    input.focus(); await deliver(input, 'keydown', { key: 'a', ctrlKey: true });
+    await deliver(input, 'textinput', { data: '2560' });
+    const text = input.textContent, first = f.app.getMaterialState().stats;
+    for (let i = 0; i < 4; ++i) await f.app.controller.refresh();
+    assert.deepEqual(f.app.getMaterialState().stats, first);
+    f.ownerState({ active: false });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(f.app.getMaterialState().stats.blurs, first.blurs);
+    assert.equal(f.app.getMaterialState().stats.composites, first.composites + 1);
+    assert.equal(f.document.getElementById(input.id), input); assert.equal(input.textContent, text);
+    assert.equal(f.document.activeElement, input); assert.equal(f.document.getElementById(slot.id), slot);
+    f.ownerState({ width: 700, scale: 1.5 }); await tick();
+    assert.equal(f.app.getMaterialState().stats.blurs, first.blurs + 1);
+    assert.equal(f.host.windows.length, 1);
+    f.app.stop(); assert.equal(f.observers.size, 0);
+    assert.equal(base.width, 0); assert.equal(base.height, 0); assert.equal(base.parentNode, null);
+  });
+});
+test('bitmap consumer binds one source per appearance, retires stale replies, reports independently and never retries on clock', async t => {
+  const replies = [];
+  const f = domainFixture(t, { appearance: materialAppearance(1, true),
+    source: snapshot => new Promise(resolve => replies.push({ resolve, revision: snapshot.revision })) });
+  await tick();
+  assert.equal(replies.length, 1);
+  for (let i = 0; i < 3; ++i) await f.app.controller.refresh();
+  assert.equal(replies.length, 1);
+  f.appearance(materialAppearance(2, true)); await f.app.controller.refresh(); await tick();
+  replies[0].resolve(materialDTO()); await tick();
+  assert.equal(f.app.getMaterialState().ready, false);
+  replies[1].resolve(materialDTO({ revision: 2 })); await tick();
+  assert.equal(f.app.getMaterialState().stats.decodes, 1);
+  f.appearance({ ...materialAppearance(3, true), error: 'Existing Shell service error' });
+  await f.app.controller.refresh(); await tick();
+  replies[2].resolve(materialDTO({ revision: 3, dataURL: 'file:///private/path' })); await tick();
+  assert.equal(f.document.getElementById('settings-material-base'), null);
+  assert.match(f.app.getMaterialState().error, /PNG/);
+  assert.equal(f.document.getElementById('settings-material-status').style.display, 'flex');
+  assert.equal(f.app.controller.getState().error, '', 'Material status never replaces a service error');
+  assert.equal(f.app.controller.getState().appearance.error, 'Existing Shell service error');
+  assert.equal(f.errors.length, 1);
+  for (let i = 0; i < 3; ++i) await f.app.controller.refresh();
+  f.ownerState({ active: false, width: 700 }); await tick();
+  assert.equal(replies.length, 3); assert.equal(f.errors.length, 1);
+  await f.app.present('about'); await tick();
+  assert.equal(f.document.body.lastChild, f.document.getElementById('settings-material-status'),
+    'Independent material error remains visible above a remounted page root');
+  f.appearance(materialAppearance(4, true)); await f.app.controller.refresh(); await tick();
+  f.app.stop(); replies[3].resolve(materialDTO({ revision: 4 })); await tick();
+  assert.equal(f.document.getElementById('settings-material-base'), null);
+  assert.equal(f.observers.size, 0); assert.equal(f.errors.length, 1);
+});
+test('pending image decode cannot publish or repaint after solid switch or owner stop', async t => {
+  const decodes = [];
+  const f = domainFixture(t, { appearance: materialAppearance(1, true),
+    source: async snapshot => materialDTO({ revision: snapshot.revision }),
+    decode: () => new Promise(resolve => decodes.push(resolve)) });
+  await tick(); assert.equal(decodes.length, 1);
+  const base = f.document.getElementById('settings-material-base');
+  f.appearance(materialAppearance(2, true, 'solid')); await f.app.controller.refresh();
+  decodes[0](); await tick();
+  assert.equal(base.width, 0); assert.equal(base.parentNode, null);
+  assert.equal(f.document.getElementById('shell-system-settings').style.backgroundColor,
+    BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'modern').colors.body);
+  f.appearance(materialAppearance(3, true)); await f.app.controller.refresh(); await tick();
+  f.app.stop(); decodes[1](); await tick();
+  assert.equal(f.document.getElementById('settings-material-base'), null);
+  assert.equal(f.app.getMaterialState().ready, false); assert.deepEqual(f.errors, []);
+});
 test('Displays edits live in the independent Settings document; Apply preserves trusted pending state through detach/reopen', async t => {
   const f = domainFixture(t); await tick();
   const find = id => f.document.getElementById(id);
@@ -527,6 +716,7 @@ test('standalone controller acknowledges writes, shows real failures, and never 
   assert.equal(calls.at(-1)[0], 'close');
 });
 test('owned native PID/UID, presentation owner and final generation gate every Shell operation', async () => {
+  let materialReads = 0;
   const queue = [], effects = [], reports = [], credentials = new Map([
     [':owned', { pid: 42, uid: 1000 }], [':presentation', { pid: 42, uid: 1000 }],
     [':intruder', { pid: 88, uid: 1000 }], [':root', { pid: 42, uid: 0 }],
@@ -572,6 +762,7 @@ test('owned native PID/UID, presentation owner and final generation gate every S
   const bridge = createSettingsService({ service: { poll: () => queue.shift() || null, close() {} }, client, network, domains,
     pid: 7, uid: 1000, spawn: page => { effects.push(['spawn', page, SETTINGS_APP_ID]); return 42; },
     activate: () => effects.push(['activate']), appearance, about,
+    materialSource: () => { materialReads++; return materialDTO({ themeId: 'xp' }); },
     select: id => { effects.push(['select', id]); return id !== 'fail'; },
     reload: () => { effects.push(['reload']); return true; }, restore: () => true,
     managed: page => effects.push(['managed', page]), report: value => reports.push(value) });
@@ -587,6 +778,11 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     assert.deepEqual(connected.value, [7, 1, 'appearance']);
     assert.equal((await opening).value[0], 42);
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
+    assert.equal(parseMaterialSource((await request('GetMaterialSource')).value[0]).generation, 1);
+    assert.equal(materialReads, 1);
+    assert.match((await request('GetMaterialSource', ['private/key'])).name, /Failed/);
+    for (const sender of [':intruder', ':root'])
+      assert.match((await request('GetMaterialSource', [], sender)).name, /AccessDenied/);
     await request('Open', ['about'], ':intruder');
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
     assert.ok(effects.some(effect => effect.join() === 'present,:presentation,about'));
@@ -594,10 +790,12 @@ test('owned native PID/UID, presentation owner and final generation gate every S
       assert.match((await request('SelectTheme', ['bigsur'], sender)).name, /AccessDenied/);
     for (const member of ['Open', 'SelectTheme', 'ReloadThemes', 'RestoreThemes', 'OpenManagedPage',
       'NetworkAction', 'RefreshNetwork', 'ReplyNetworkAuthentication', 'CancelNetworkConnection', 'DetachNetwork',
-      'ApplyDisplays', 'ForgetDisplayProfile', 'AudioAction', 'RefreshAudio', 'ForgetAudio', 'KeyboardAction', 'CancelShortcutRecording', 'DetachPage'])
+      'ApplyDisplays', 'ForgetDisplayProfile', 'AudioAction', 'RefreshAudio', 'ForgetAudio', 'KeyboardAction', 'CancelShortcutRecording', 'DetachPage',
+      'GetMaterialSource'])
       await request(member, ['xp'], ':owned', true);
     assert.equal(effects.some(([kind]) => kind === 'select'), false);
     assert.equal(effects.filter(([kind]) => kind === 'spawn').length, 1);
+    assert.equal(materialReads, 1, 'Malformed, foreign and no-reply requests never project a bitmap');
     credentials.set(':presentation', { pid: 88, uid: 1000 });
     assert.match((await request('Connect')).name, /AccessDenied/);
     credentials.set(':presentation', { pid: 42, uid: 1000 });
@@ -650,8 +848,11 @@ test('owned native PID/UID, presentation owner and final generation gate every S
     await request('NetworkAction', [action]);
     delayed = ':owned';
     const stale = request('ReloadThemes');
+    const staleMaterial = request('GetMaterialSource');
     await tick(); bridge.exited({ pid: 42 }); delayed = null;
     assert.match((await stale).name, /AccessDenied/);
+    assert.match((await staleMaterial).name, /AccessDenied/);
+    assert.equal(materialReads, 1, 'A retired authorization generation cannot encode or return a source');
     assert.equal(effects.some(([kind]) => kind === 'reload'), false);
     assert.equal(canceled, 2, 'actual owned process exit retires only its pending connect');
     assert.deepEqual(reports, []);

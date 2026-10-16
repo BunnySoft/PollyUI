@@ -62,7 +62,12 @@ scenario('valid', () => {
     result.files[0].text === '{"theme":"fixture"}' && result.overrides === '{"overrides":"fixture"}',
   'Catalog contract uses actual user-owned definitions and overrides');
   const key = service.loadThemeAsset('fixture', 'nested/bitmap.jpg');
+  const borrowed = service.getThemeAssetBitmap(key);
+  check(borrowed.key === key && borrowed.width === 2 && borrowed.height === 2,
+    'Trusted read borrows the exact already-decoded owned bitmap without rereading a path');
+  rejects(() => service.getThemeAssetBitmap(key, 'path'), 'Exact bitmap borrow argument count');
   service.releaseThemeAsset(key);
+  rejects(() => service.getThemeAssetBitmap(key), 'Retired asset cannot be borrowed');
   rejects(() => service.releaseThemeAsset(key), 'No duplicate release');
   rejects(() => service.releaseThemeAsset(key, 1), 'Exact release argument count');
   for (const id of ['../fixture', 'Fixture', 'a\n', 'a\0', 'a'.repeat(65)])
@@ -157,5 +162,6 @@ const beforeChecks = checks;
 rejects(() => service.readThemeFiles(), 'Read requires current Shell authority');
 rejects(() => service.loadThemeAsset('fixture', 'bitmap.png'), 'Load requires current Shell authority');
 rejects(() => service.releaseThemeAsset('unknown'), 'Release requires current Shell authority');
-check(checks === beforeChecks + 3 && descriptorCount() === before, 'Every unauthorized call checks before opening files');
+rejects(() => service.getThemeAssetBitmap('unknown'), 'Borrow requires current Shell authority');
+check(checks === beforeChecks + 4 && descriptorCount() === before, 'Every unauthorized call checks before opening files');
 fs.dispose();

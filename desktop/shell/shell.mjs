@@ -30,6 +30,7 @@ import { createDesktopInteraction, bindDesktopInteraction } from './desktop/shel
 import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
 import { windowTasks, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
+import { createMaterialSource } from './desktop/shell/material-source.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
@@ -47,6 +48,18 @@ export function createDesktopShell({ host = window, configuration, report = cons
   let menu = null;
   let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
   let appearanceRevision = 0;
+  const materialSource = createMaterialSource({
+    document() {
+      if (!running) throw new Error('Shell material source is stopped');
+      const surface = [...bundles.values()].find(bundle => !bundle.surfaces.wallpaper.window.closed)?.surfaces.wallpaper;
+      if (!surface) throw new Error('No live wallpaper document is available');
+      return surface.window.document;
+    },
+    bitmap: key => {
+      if (typeof native?.getThemeAssetBitmap !== 'function') throw new Error('Owned wallpaper bitmap projection is unavailable');
+      return native.getThemeAssetBitmap(key);
+    },
+  });
   let switcher = null;
   let displayConfirmation = null;
   let pendingDisplayToken = 0;
@@ -1125,6 +1138,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function startSettingsBridge() {
     const scope = settingsScope;
     const handlers = { native, network: native, domains, appearance: appearanceSnapshot, about: aboutSnapshot,
+      materialSource: () => materialSource.read({ themeId, revision: appearanceRevision, asset: themeAsset }),
       select: selectTheme, reload: reloadThemes, restore: restoreThemes,
       managed(page) {
         return showSystemSettings(host.displays()[0]?.id, page);
@@ -1640,6 +1654,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       iconScope = {};
       settingsScope = {};
       settingsBridge?.close(); settingsBridge = null; settingsReady = null;
+      materialSource.close();
       applicationLaunchScope = {};
       serviceMonitor.reset(); serviceError = '';
       notifications.stop();

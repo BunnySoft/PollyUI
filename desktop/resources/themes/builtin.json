@@ -2080,6 +2080,7 @@
       },
       "window": {
         "surfaceStyle": "fluent",
+        "clientMaterial": "wallpaper",
         "nativeEffects": "rounded",
         "radius": 8,
         "border": "#a0a0a0",

@@ -1,5 +1,7 @@
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
 import { createWallpaperMaterial } from './desktop/shared/ui/material.mjs';
+import { createMaterialSource } from './desktop/shell/material-source.mjs';
+import { parseMaterialSource } from './desktop/client/settings-contract.mjs';
 
 const check = (value, message) => { if (!value) throw new Error(message); };
 const theme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
@@ -7,7 +9,16 @@ const fixture = document.createElement('canvas'); fixture.width = 160; fixture.h
 const ink = fixture.getContext('2d');
 ink.fillStyle = '#ff0000'; ink.fillRect(0, 0, 80, 96);
 ink.fillStyle = '#0000ff'; ink.fillRect(80, 0, 80, 96);
-const asset = fixture.toDataURL();
+const blob = await new Promise(resolve => fixture.toBlob(resolve));
+const bitmap = createBitmap(await blob.arrayBuffer(), 160 * 96);
+let projected = 0;
+const projection = createMaterialSource({ document: () => document,
+  bitmap: key => { check(key === bitmap.key, 'Projection only receives the committed owned bitmap key'); projected++; return bitmap; } });
+const current = { themeId: theme.id, revision: 1, asset: bitmap.key };
+const dto = parseMaterialSource(JSON.stringify({ ...projection.read(current), generation: 1 }));
+check(dto.width <= 128 && dto.height <= 128 && dto.dataURL.length <= 128 * 1024, 'Real bitmap preview is bounded');
+check(projection.read(current).dataURL === dto.dataURL && projected === 1, 'Unchanged projection does no bitmap read or PNG encode');
+const asset = dto.dataURL;
 const errors = [], material = createWallpaperMaterial({ onError: error => errors.push(error.message) });
 const value = { theme, width: 160, height: 96, blur: 12, asset };
 const pixel = (x, y) => [...material.canvas.getContext('2d').getImageData(x, y, 1, 1).data];
@@ -72,8 +83,23 @@ try {
   console.log('MATERIAL_PIXELS ' + JSON.stringify({ left, middle, right, green, cached, final: material.stats,
     foregroundSharp: true, allOpaque: true, scale: 'explicit input; --test host remains 1.0' }));
 } finally {
-  material.dispose(); fixture.width = fixture.height = 0;
+  material.dispose(); projection.close(); bitmap.close(); fixture.width = fixture.height = 0;
 }
 check(material.stats.disposed && material.canvas.width === 0 && material.canvas.height === 0,
   'Dispose releases published backing pixels');
 console.log('PASS: real raster wallpaper material pixels, clamped edges, sharp foreground, cache, invalidation, errors and disposal');
+{
+  const original = document.createElement('canvas'); original.width = 4; original.height = 2;
+  const ink = original.getContext('2d'); ink.fillStyle = '#ff0000'; ink.fillRect(0, 0, 2, 2);
+  const blob = await new Promise(resolve => original.toBlob(resolve));
+  const owned = createBitmap(await blob.arrayBuffer(), 8);
+  const source = createMaterialSource({ document: () => document, bitmap: () => owned });
+  const image = new Image(), output = document.createElement('canvas'); output.width = 4; output.height = 2;
+  try {
+    image.src = source.read({ themeId: theme.id, revision: 1, asset: owned.key }).dataURL;
+    await image.decode(); output.getContext('2d').drawImage(image, 0, 0);
+    check(output.getContext('2d').getImageData(3, 0, 1, 1).data[3] === 0 &&
+      output.getContext('2d').getImageData(0, 0, 1, 1).data[3] === 255,
+    'Read-only PNG projection preserves actual transparent and opaque bitmap alpha, without scene pixels');
+  } finally { source.close(); owned.close(); image.removeAttribute('src'); original.width = output.width = 0; }
+}
