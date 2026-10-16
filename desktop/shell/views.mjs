@@ -24,6 +24,11 @@ export { wallpaper } from './desktop/shell/appearance.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const center = { alignItems: 'center', justifyContent: 'center' };
 const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
+function materialColor(percent, color) {
+  if (percent === 100 || color === 'transparent') return color;
+  const alpha = Math.round(parseInt(color.slice(7) || 'ff', 16) * percent / 100);
+  return color.slice(0, 7) + alpha.toString(16).padStart(2, '0');
+}
 const menuThemes = new WeakMap();
 const fluentPanels = new WeakMap();
 const panelFinalizers = new FinalizationRegistry(weak => weak.deref()?.());
@@ -447,8 +452,10 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     };
     return h('view', { id: 'shell-panel', role: 'menubar', style: { ...row, width: '100%', height: '100%',
       paddingLeft: theme.layout.panelPaddingLeft, paddingRight: theme.layout.panelPaddingRight,
-      backgroundColor: theme.window.titleFrom, gradientFrom: theme.window.titleFrom,
-      gradientTo: theme.window.titleTo, borderBottomWidth: 1, borderColor: '#9a9a9a' } },
+      backgroundColor: (panel.menuBarOpacityPercent ?? 100) < 100 ? 'transparent' : theme.window.titleFrom,
+      gradientFrom: materialColor(panel.menuBarOpacityPercent ?? 100, theme.window.titleFrom),
+      gradientTo: materialColor(panel.menuBarOpacityPercent ?? 100, theme.window.titleTo),
+      borderBottomWidth: 1, borderColor: '#9a9a9a' } },
     menuItem('shell-menu', 'Polly', openMenu, true),
     menuItem('shell-panel-settings', 'Settings', openSettings),
     workspace ? menuItem('shell-workspaces', workspace.name, workspace.open) : null,
@@ -487,11 +494,6 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
     const materialOpacity = panel.materialOpacityPercent ?? 100;
-    const materialColor = color => {
-      if (materialOpacity === 100 || color === 'transparent') return color;
-      const alpha = Math.round(parseInt(color.slice(7) || 'ff', 16) * materialOpacity / 100);
-      return color.slice(0, 7) + alpha.toString(16).padStart(2, '0');
-    };
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
     const slot = (id, title, icon, action, running = false, window = null) => {
       const art = taskArtwork(window, images, iconSize - 8, desktopIcon(icon, theme.colors.accent, iconSize - 8));
@@ -552,10 +554,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       position: 'absolute', left: 0, right: 0, bottom: 0, height: 28, pointerEvents: 'none' } },
       Array.from({ length: 24 }, (_, y) => h('view', { style: {
         position: 'absolute', top: y, left: 12 - y / 2, right: 12 - y / 2,
-        height: 1, backgroundColor: materialColor(y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999'), pointerEvents: 'none' } })),
+        height: 1, backgroundColor: materialColor(materialOpacity, y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999'), pointerEvents: 'none' } })),
       h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4,
-        backgroundColor: materialColor(panel.to), borderTopWidth: 1,
-        borderColor: materialColor('#d6d6d6'), pointerEvents: 'none' } })) : null;
+        backgroundColor: materialColor(materialOpacity, panel.to), borderTopWidth: 1,
+        borderColor: materialColor(materialOpacity, '#d6d6d6'), pointerEvents: 'none' } })) : null;
     return h('view', { id: 'shell-dock-viewport', style: {
       width: '100%', height: '100%', overflow: 'visible' },
       onWheel: scrollDock, onMount: syncDockLayout, onUpdate: syncDockLayout },
@@ -565,9 +567,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       paddingLeft: theme.layout.dockPadding ?? 6, paddingRight: theme.layout.dockPadding ?? 6,
       gap: theme.layout.dockGap, overflow: 'hidden', borderRadius: panel.radius,
       ...(style === 'lion' ? { backgroundColor: 'transparent' } : {
-        ...gradient(materialColor(panel.from), materialColor(panel.to)),
+        ...gradient(materialColor(materialOpacity, panel.from), materialColor(materialOpacity, panel.to)),
         ...(materialOpacity < 100 ? { backgroundColor: 'transparent' } : {}),
-        borderWidth: 1, borderColor: materialColor(style === 'tiger' ? '#eeeeee' : '#bdbdbd') }) } },
+        borderWidth: 1, borderColor: materialColor(materialOpacity, style === 'tiger' ? '#eeeeee' : '#bdbdbd') }) } },
       shelf,
       slot('shell-dock-applications', 'Applications', 'apps', openApplications),
       slot('shell-dock-settings', 'Settings', 'appearance', openSettings),

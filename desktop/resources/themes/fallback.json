@@ -1940,6 +1940,7 @@
         "radius": 16,
         "inset": 9,
         "surfaceStyle": "bigsur",
+        "menuBarOpacityPercent": 88,
         "materialOpacityPercent": 88,
         "taskGrouping": "applications"
       },

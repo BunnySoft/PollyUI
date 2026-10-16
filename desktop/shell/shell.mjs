@@ -300,7 +300,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       wallpaper: { layer: 'background', width: 0, height: 0,
         anchors: ['top', 'bottom', 'left', 'right'], exclusiveZone: -1, keyboard: 'on-demand' },
       panel: { layer: 'top', width: 0, height: dock ? layout.menuBarHeight : theme.panel.height,
-        anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height },
+        anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height,
+        ...(dock && (theme.panel.menuBarOpacityPercent ?? 100) < 100 ? { transparent: true } : {}) },
     };
     if (dock) result.dock = {
       layer: 'top', width: dockSurfaceWidth(theme, displayTasks(theme).length, output.width), height: theme.panel.height,
@@ -544,10 +545,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function paint(bundle, theme) {
     const { wallpaper: background, panel, dock } = bundle.surfaces;
+    const surfaceAction = (surface, callback) => (...args) => {
+      if (!running || surface.expectedClose || surface.window.closed ||
+          bundles.get(bundle.output.id) !== bundle || bundle.surfaces[surface.kind] !== surface ||
+          !host.displays().some(output => output.id === bundle.output.id)) return false;
+      return callback(...args);
+    };
     const listed = displayTasks(theme);
     const current = workspaces.find(workspace => workspace.active);
     const workspaceControl = typeof native?.workspaces === 'function' ? {
-      name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
+      name: current?.name || 'Workspaces', open: surfaceAction(panel, () => showWorkspaces(bundle.output.id)),
     } : null;
     if (!background.window.closed) paintDesktop(bundle, theme);
     else syncShellIcons(theme);
@@ -558,16 +565,17 @@ export function createDesktopShell({ host = window, configuration, report = cons
         applicationForWindow(applications, task.appId);
       if (entry && desktopImages.has(entry.id)) taskImages.set(task.id, desktopImages.get(entry.id));
     }
-    if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error || serviceError, () => showSystemSettings(bundle.output.id), listed,
+    if (!panel.window.closed) render(panelView(theme, clock(), surfaceAction(panel, () => showApplications(bundle.output.id)),
+      error || serviceError, surfaceAction(panel, () => showSystemSettings(bundle.output.id)), listed,
       taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
-      notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
-      { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
+      notifications.count() ? { count: notifications.count(), open: surfaceAction(panel, notifications.show) } : null,
+      { items: tray.items(), error: tray.error(), activate: surfaceAction(panel, (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }, taskImages),
+          bundle.output.height - theme.panel.height : 0))), scroll: surfaceAction(panel, tray.scroll) }, taskImages),
       panel.window.document.body);
-    if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
-      () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed,
+    if (dock && !dock.window.closed) render(dockView(theme, surfaceAction(dock, () => showSystemSettings(bundle.output.id)),
+      surfaceAction(dock, () => showSystemSettings(bundle.output.id, 'about')),
+      surfaceAction(dock, () => showApplications(bundle.output.id)), listed,
       taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
