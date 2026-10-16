@@ -328,7 +328,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     surface.desktopController.update(items, area);
     const overflow = shortcuts.length - items.length;
     const displaced = shortcuts.some(item => !bundle.identity || outputKey(item.output) !== outputKey(bundle.identity));
-    syncDesktopIcons();
+    syncShellIcons(theme);
     const imageError = items.map(item => desktopImageErrors.get(item.id)?.message).find(Boolean);
     const message = desktopStatus || (errorKind === 'application' ? error : '') || imageError ||
       (overflow ? overflow + ' shortcut(s) do not fit. Right-click to manage them or enlarge this output.' :
@@ -337,10 +337,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
       surface.window.document.body);
   }
 
-  function syncDesktopIcons() {
+  function syncShellIcons(theme) {
     const ids = new Set(configuration.snapshot.desktop.shortcuts.map(item => item.id));
-    const entries = applications.filter(entry => ids.has(entry.id) && entry.icon &&
-      (entry.id.startsWith('bundle:') || entry.icon.startsWith('/')));
+    const appIds = new Set(displayTasks(theme).map(task => task.appId).filter(Boolean));
+    const entries = applications.filter(entry => entry.icon && (ids.has(entry.id) || appIds.has(entry.id) ||
+      entry.id.startsWith('bundle:') && appIds.has(entry.id.slice('bundle:'.length))));
     if (!iconResources && entries.length && !iconLoading) {
       iconLoading = true;
       const scope = iconScope;
@@ -349,13 +350,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
         if (typeof globalThis.createBitmap !== 'function') throw new Error('GUI bitmap decoding is unavailable');
         iconResources = module.createDesktopIconResources(globalThis.createBitmap);
         iconLoading = false;
-        for (const bundle of bundles.values()) paintDesktop(bundle);
+        for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
       }).catch(failure => {
         if (!running || scope !== iconScope) return;
         iconLoadError = failure;
         for (const entry of entries) iconFailure(entry, failure);
         // Do not retry a failed module import on every Shell repaint.
-        for (const bundle of bundles.values()) paintDesktop(bundle);
+        for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
       });
     }
     if (!iconResources) {
@@ -469,17 +470,18 @@ export function createDesktopShell({ host = window, configuration, report = cons
       name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
     } : null;
     if (!background.window.closed) paintDesktop(bundle, theme);
+    else syncShellIcons(theme);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error || serviceError, () => showSystemSettings(bundle.output.id), listed,
       taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
+          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }, desktopImages),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
       () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed,
-      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true)), dock.window.document.body);
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), desktopImages), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;

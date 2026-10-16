@@ -164,7 +164,14 @@ function syncDockLayout(node) {
   });
 }
 
-function windowButtons(theme, windows, toggle, actions, compact = false) {
+function taskArtwork(window, images, size, fallback) {
+  const image = window?.appId && (images?.get(window.appId) || images?.get('bundle:' + window.appId));
+  return image ? h('view', { 'aria-hidden': 'true', style: {
+    width: size, height: size, flexShrink: 0, backgroundImage: image, pointerEvents: 'none',
+  } }) : fallback;
+}
+
+function windowButtons(theme, windows, toggle, actions, compact = false, images = null) {
   return h('view', { id: 'shell-window-list', style: {
     ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, gap: theme.layout.windowGap, overflow: 'scroll',
   }, onWheel: event => {
@@ -190,7 +197,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       const caption = labelFor(theme)(short, theme.panel.text);
       caption.props.style.pointerEvents = 'none';
       node.children = [
-        lunaButtonDetail(theme, 'task'), lunaSymbol('document'),
+        lunaButtonDetail(theme, 'task'), taskArtwork(window, images, 16, lunaSymbol('document')),
         caption,
       ];
     }
@@ -203,7 +210,8 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       const caption = labelFor(theme)(short, theme.panel.text);
       caption.props.style.pointerEvents = 'none';
       caption.props.style.fontWeight = window.active ? 700 : 400;
-      const icon = desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16);
+      const icon = taskArtwork(window, images, theme.layout.taskIconSize ?? 16,
+        desktopIcon('file', theme.panel.text, theme.layout.taskIconSize ?? 16));
       icon.props.id = 'shell-window-icon-' + window.id;
       const stipple = theme.panel.taskTexture === 'stipple';
       node.children = [
@@ -226,7 +234,8 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
       Object.assign(node.props, surfaceEvents(theme, options));
       const focus = node.props.onFocus;
       node.props.onFocus = event => { focus(event); revealFluentTask(event); };
-      node.children = [surfaceDetail(theme, options), desktopIcon('file', theme.colors.accent, 24),
+      node.children = [surfaceDetail(theme, options),
+        taskArtwork(window, images, 24, desktopIcon('file', theme.colors.accent, 24)),
         h('view', { 'aria-hidden': 'true', style: { position: 'absolute', bottom: 0,
           width: window.active ? 16 : 6, height: 3, borderRadius: 2,
           backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
@@ -256,7 +265,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null, images = null) {
   const panel = theme.panel;
   const label = labelFor(theme);
   if (isLuna(theme, 'panel') && panel.kind === 'taskbar') {
@@ -285,7 +294,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     } }, lunaBands(theme, 'panel', panel.height), launcher,
       tool('shell-panel-settings', 'Settings', 'appearance', openSettings),
       workspace ? tool('shell-workspaces', workspace.name, 'workspace', workspace.open) : null,
-      windowButtons(theme, windows, toggle, actions),
+      windowButtons(theme, windows, toggle, actions, false, images),
       error ? label('Desktop needs attention', panel.text, 11) : null,
       h('view', { id: 'shell-notification-area', style: {
         ...row, flexShrink: 0, height: panel.height, position: 'relative',
@@ -308,7 +317,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       return node;
     };
     const sync = node => syncFluentPanel(node, theme);
-    const tasks = windowButtons(theme, windows, toggle, actions);
+    const tasks = windowButtons(theme, windows, toggle, actions, false, images);
     tasks.props.style.minWidth = windows.length ? theme.layout.windowButtonWidth : 0;
     const wheel = tasks.props.onWheel;
     tasks.props.onWheel = event => { event.stopPropagation(); wheel(event); };
@@ -349,7 +358,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     button('shell-panel-settings', 'Settings', theme, openSettings, false, { height: itemHeight }),
     workspace ? button('shell-workspaces', workspace.name, theme, workspace.open, false,
       { height: itemHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) : null,
-    windowButtons(theme, windows, toggle, actions),
+    windowButtons(theme, windows, toggle, actions, false, images),
     error ? label('Needs attention', panel.text, 11) : null,
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'relative',
       height: itemHeight, paddingLeft: 6, paddingRight: 6, gap: theme.layout.trayGap, flexShrink: 0 } },
@@ -400,7 +409,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
   workspace ? button('shell-workspaces', Array.from(workspace.name).slice(0, theme.layout.workspaceTitleLimit).join(''),
     theme, workspace.open, false, { height: theme.layout.compactButtonHeight, maxWidth: theme.layout.workspaceWidth, overflow: 'hidden' }) :
     label('PollyDesktop', panel.text, 12),
-  panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions) :
+  panel.kind === 'taskbar' ? windowButtons(theme, windows, toggle, actions, false, images) :
     h('view', { style: { flexGrow: 1 } }),
   error ? label('Desktop needs attention', panel.text, 11) : null,
   tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
@@ -410,7 +419,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
 }
 
 export function dockView(theme, openSettings, openAbout, openApplications = openSettings,
-  windows = [], toggle = () => {}, actions = () => {}) {
+  windows = [], toggle = () => {}, actions = () => {}, images = null) {
   const panel = theme.panel;
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
@@ -436,7 +445,8 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         onContextmenu: window ? event => { event.preventDefault(); event.stopPropagation(); actions(window.id); } : undefined,
       }, h('view', { style: { ...center, width: iconSize, height: iconSize,
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
-        pointerEvents: 'none' } }, desktopIcon(icon, theme.colors.accent, iconSize - 8)),
+        pointerEvents: 'none' } }, taskArtwork(window, images, iconSize - 8,
+          desktopIcon(icon, theme.colors.accent, iconSize - 8))),
       window?.grouped && window.count > 1 ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', right: 1, top: 1, minWidth: 14, height: 16, borderRadius: 4,
         paddingLeft: 3, paddingRight: 3, backgroundColor: theme.colors.accent,
@@ -498,7 +508,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   button('shell-dock-applications', 'Apps', theme, openApplications, false, tile),
   button('shell-dock-settings', 'Settings', theme, openSettings, false, tile),
   button('shell-dock-about', 'About', theme, openAbout, false, tile),
-  windows.length ? windowButtons(theme, windows, toggle, actions, true) : null);
+  windows.length ? windowButtons(theme, windows, toggle, actions, true, images) : null);
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
