@@ -654,6 +654,16 @@ pending focus/scroll work. Toast markup, keyboard mode, sizing/count and More
 behavior are unchanged. Actual software GUI checks use the production controller
 with inert notices, not a real D-Bus sender or notification-authorization claim.
 
+Power's existing unframed pane uses the same viewport/bar with its original
+content padding, gap, fill and surface geometry. Long waiting inventories and
+low windows retain keyboard access to Cancel/Refresh; unchanged updates do not
+undo manual scrolling. Close releases the viewport after the original
+cancellation decision and focus/key cleanup. Permission checks, sent/uncertain
+states, explicit final confirmation and request/cancel ordering are unchanged.
+The software GUI check uses entirely inert native/session-exit functions;
+no actual shutdown, restart, logout, login-service or application-close request
+is performed or qualified by that check.
+
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
 a separator and a window strip require four root gaps plus `count - 1` inner

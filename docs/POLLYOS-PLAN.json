@@ -838,7 +838,7 @@
       "label": "E22.9 输入框光标与滚动条",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "逐主题登记文本框内凹/边框、padding、caret、selection 色和默认滚动条/滑块/箭头的可见差异；Files、Processes、长Shell菜单及通知中心已消费同一SDK scrollbar controller和主题adapter，未覆盖consumer与原OS精确资格仍分别核。通知中心保原透明/零padding/卡片/动作，低高Tab及sharedbar可达，toast/真实通知协议权限未改。保留输入内容、selection、IME、捕获和键盘焦点；未测默认和bespoke路线不能合并标绿。",
+      "scope": "逐主题登记文本框内凹/边框、padding、caret、selection 色和默认滚动条/滑块/箭头的可见差异；Files、Processes、长Shell菜单、通知中心与Power面板已消费同一SDK scrollbar controller和主题adapter，未覆盖consumer与原OS精确资格仍分别核。通知中心保原透明/零padding/卡片/动作，Power保原padding/gap/fill与授权/取消次序，低高Tab及sharedbar可达；toast/真实服务协议权限未改。保留输入内容、selection、IME、捕获和键盘焦点；未测默认和bespoke路线不能合并标绿。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -854,7 +854,7 @@
       "label": "E22.10 对话框与面板一致性",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分别核 Settings 六页、打开/保存、确认/错误/认证小面板及现有通知中心的背景、边线、留白、标题和按钮布局，标明窗口内部模板与系统窗饰边界。通知中心已复用共享viewport/focus/scrollbar而不增加frame/fill或改变toast。仅处理已存在的界面，不制造 Windows/Mac 未实现业务入口；保留密码遮罩、值/selection/focus 及 trusted confirmation 权限。",
+      "scope": "分别核 Settings 六页、打开/保存、确认/错误/认证小面板、现有通知中心与Power的背景、边线、留白、标题和按钮布局，标明窗口内部模板与系统窗饰边界。通知中心与Power已复用共享viewport/focus/scrollbar而不增加frame；保通知透明/原toast及Power原padding/fill/业务phase。仅处理已存在的界面，不制造 Windows/Mac 未实现业务入口；保留密码遮罩、值/selection/focus 及 trusted confirmation 权限。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -5591,6 +5591,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-17 E22.9/E22.10 Power导航：源bf9975a合752a254，仅既有root→shared framed:false/bar:true与精确close释放，保持原560x196 surface/padding24/fill、phase/permission/revision/request/sent/uncertain/cancel/commit逻辑。真实759软件GUI+完全惰性provider旧Tab2 Cancel y999/scroll0不可见，现inner[24,24,512,148]、scroll867、Cancel y132..172完整；ShiftTab、手动wheel后refresh/retheme同DOM保0、PageDown148/End/Home/真实dragcapture、sent无Cancel且Close disabled、uncertain NoRepeat/Retry disabled、idleRefresh惰性stop/start各1、waitingClose原sessionExit.cancel1/nativeCancel0、externalqueuedclose pending0/subscriptions0/forbidden[]通过。父102/102包括原power-actions/permission/outcome/NoReplay合同，fixture仅标准rAF/cancel/owner/offset适配且cleanup帧0；native power-shell仅syntax，未运行真实DBus/logind/系统power/注销/进程Close或物理资格，整体E22状态不假关。",
     "- 2026-10-08 Alpha 范围重排：延期项目保留来源和状态，不因移出 Alpha 假标完成；代码 main=ce73a3c，已交付 ISO/VHDX仍 e879，未来集中新候选才携当前修复。",
     "- 当前 Live 体验 ISO：677,996,544 字节/SHA256 d52d36a3627831ac93767a83bb13f96bffe43c41b00150542a7903484154287f，QEMU只读光盘实际桌面，PNG fd2d4a880650fdc2363945dba224385f0c1e9f268386f3539c2bb1d0152ef09c；无空白盘安装器、临时数据、公开开发密码，不用它解释用户 PollyOS installed 问题。",
     "- 当前未初始化 VHDX：1,692,401,664 字节，虚拟容量3,568,304,128，SHA256 a0849d5dc0836193c6f56e4bebee2abf8954288463c069a85d5052d0effdb858；用户 Hyper-V 控制台首次设密与 installed 桌面已观察，但首次图形登录/重启差异原因未确认，未读取凭据，不能反向当完整 fresh 图形验收。",
