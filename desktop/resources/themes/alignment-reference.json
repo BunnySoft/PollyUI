@@ -67,7 +67,7 @@
       "id": "bigsur",
       "system": "macOS 11 Big Sur, light",
       "sources": ["https://512pixels.net/projects/aqua-screenshot-library/macos-11-0-big-sur/"],
-      "qualification": "Reference describes wallpaper tint enabled. Opaque local material cannot reproduce its backdrop. Icons explicitly 48px, magnification off.",
+      "qualification": "Reference describes wallpaper tint enabled. Local Dock/menu-bar material now has genuine basic alpha, but alpha alone does not reproduce wallpaper-tinted vibrancy or behind-scene blur. Icons explicitly 48px, magnification off.",
       "geometry": { "dockIcon": 48, "dockSlot": 58, "dockHeight": 70, "dockInset": 9, "indicator": [4, 4], "menuBar": 24 },
       "treatment": "floating rounded rectangle, separated content slots, dark running dots",
       "fontReference": "San Francisco; not bundled",

@@ -435,6 +435,13 @@ fills are tinted once rather than fading their parent: registered artwork,
 focus, badges, separators, running markers and input geometry remain unchanged.
 This does not provide compositor blur, reflection, wallpaper tint, full animated
 magnification or authentic OS icons.
+Big Sur's menu bar separately selects `panel.menuBarOpacityPercent: 88`.
+This optional integer 0..100 defaults to 100, leaving Tiger/Lion and older
+custom menus unchanged. Values below 100 request the existing transparent
+menu-bar surface, with alpha applied only to its passive gradient, not text,
+clock, tray, focus or hitboxes. Missing/100 keeps the exact opaque path; changing
+that surface option uses the existing replacement lifecycle. Fixed panel/Dock
+callbacks now reject closed, replaced or disconnected surfaces before dispatch.
 Tiger's four one-pixel triangle rows honor `layout.dockIndicatorSize` (2-12)
 with centered integer insets, retaining the default 7x4 geometry. Very narrow
 even widths degenerate to a symmetric bar rather than spilling outside the
@@ -753,7 +760,11 @@ The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
 focus. All six leave composing keyboard events untouched, including an already
 open Select popup; they do not change selection, consume the IME event or move
-focus during composition. Displays scale presets use a real, named per-head
+focus during composition. The scrollbar and desktop/menu ancestors also leave
+composing keys untouched: they do not navigate, dismiss Settings or menus, or
+Keep/Revert a trusted display transaction after a child returns. Ordinary
+keyboard behavior and display token/deadline handling stay unchanged.
+Displays scale presets use a real, named per-head
 themed radio group. Space and arrow/Home/End navigation edit only that head's
 draft, custom values can leave every preset unchecked, and Enter does not select
 a radio. Busy pages disable the factories rather than only replacing handlers.
