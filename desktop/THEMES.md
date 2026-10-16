@@ -468,14 +468,20 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 Modern and all three Mac presets now explicitly select optional
 `panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
 nonempty exact native `appId` values; missing/empty IDs remain independent
-`Window.id` tasks. Catalog names are used only on an exact ID match, otherwise
-the real app ID is displayed. No title, PID or basename aliases are inferred.
+`Window.id` tasks. Catalog names use an exact entry ID first, then a unique
+explicit `X-Polly-AppId` (validated manifest ID for bundles); an ambiguous
+registration keeps the real app ID. No title, PID or basename aliases are inferred.
 Taskbar and Dock tasks now reuse the desktop's existing bounded bitmap resource
 cache for registered PNG/JPEG artwork, retaining the union required by desktop
 shortcuts and current tasks. Images keep their original colors and slot sizes;
 missing, named, SVG or unsupported resources retain explicit fallback/reporting.
 This does not add an icon-theme resolver or claim that unavailable artwork has
 been rendered end to end.
+Files, Settings, Processes and File Text now ship original Polly PNG tiles and
+explicit runtime IDs, so their own registered resources can reach desktop,
+menus and running groups. Installation resolves absolute icon paths against
+the actual prefix, including packaging's `--prefix` override. The artwork is
+Polly-owned, not commercial-OS icon replication.
 Missing grouping or explicit `"windows"` preserves the original input order
 and per-window interface; Classic and XP keep that mode.
 
