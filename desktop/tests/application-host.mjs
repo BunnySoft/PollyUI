@@ -63,10 +63,17 @@ function document() {
   doc.body = new Node(doc); return doc;
 }
 export function applicationHost(t) {
-  const previous = { document: globalThis.document, measureText: globalThis.measureText };
+  const previous = { document: globalThis.document, measureText: globalThis.measureText,
+    requestAnimationFrame: globalThis.requestAnimationFrame, cancelAnimationFrame: globalThis.cancelAnimationFrame };
   globalThis.document = document(); globalThis.measureText = value => String(value).length * 7;
+  const frames = new Set();
+  globalThis.requestAnimationFrame = callback => {
+    const frame = setTimeout(() => { frames.delete(frame); callback(Date.now()); }, 0);
+    frames.add(frame); return frame;
+  };
+  globalThis.cancelAnimationFrame = frame => { clearTimeout(frame); frames.delete(frame); };
   const windows = [];
-  t.after(() => { Object.assign(globalThis, previous); });
+  t.after(() => { for (const frame of frames) clearTimeout(frame); Object.assign(globalThis, previous); });
   return { windows, create(options) {
     const surface = { ...options, document: document(), closed: false,
       close() { if (!this.closed) { this.closed = true; this.onclose?.(); } } };

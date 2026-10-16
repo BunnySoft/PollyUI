@@ -87,7 +87,8 @@ snapshots, not evidence of compositor permissions, physical DPI or native MRU.
 # Trusted display and logout confirmation surfaces
 
 The existing token-bound display Keep/Revert layer and save-before-logout layer
-consume the shared passive dialog appearance/detail and bounded scrolling.
+consume the shared passive dialog appearance/detail. Their outer frame remains
+fixed; `panel-viewport.mjs` gives only the inner content bounded scrolling.
 Logout buttons use the shared primary/nonrepeating/noncomposing activation and
 theme typography rather than another button painter. Their content is already
 an undecorated Shell layer; this does not add a second frame to ordinary
@@ -99,3 +100,9 @@ inventory/seal and explicit final action remain owned by the original
 controllers. `desktop/tests/transient-panel-render.mjs` uses real GUI consumers
 with inert bounded service dependencies; it neither connects a network,
 transmits real credentials, changes displays nor ends an actual session.
+`desktop/tests/panel-viewport-render.mjs` additionally checks real wheel pixels,
+Tab/programmatic focus visibility and bounded reveal cancellation. The helper
+observes only the current actual focus, never changes focus or stores a stale
+target, and uses no polling or ongoing frame loop. Unchanged content repaints
+do not undo a manual scroll; another focus/Tab change or actual layout change
+is required to reveal again.

@@ -66,8 +66,11 @@ only the existing independently owned network layer uses the shared dialog
 frame. Native credential inputs retain their objects and wrappers across
 retheme and live status changes, with `100%` available width capped at the
 previous 420px size. A new authentication ID/kind still clears credentials and
-resets the content mode. Bounded content uses the existing `scrollDesktop`
-handler so cancellation stays reachable in shorter surfaces. No iwd/RPC,
+resets the content mode. The shared `panel-viewport.mjs` keeps the outer surface
+fixed while only an inner bounded viewport uses `scrollDesktop`. Current
+keyboard/programmatic focus is revealed after at most two coalesced layout
+frames; pending work/listeners are released on leave. Cancellation therefore
+stays reachable without moving the outer frame. No iwd/RPC,
 revision, prompt-token, credential or connection policy changes are implied.
 
 The original Windows-11-inspired presentation uses a persistent sidebar,

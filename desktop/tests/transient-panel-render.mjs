@@ -82,7 +82,7 @@ export async function checkTransientPanels(directory, verify = true) {
       root.style.height = '280'; await settle();
       check(first.passwordFits && password.offsetWidth <= 420, 'Actual constrained credential input fits the narrow card');
     }
-    await reveal(password, form);
+    await reveal(password, document.getElementById('shell-network-settings-viewport'));
     password.focus(); host.text('fixture-only-secret'); await settle();
     host.key('Home', 'keydown', { text: false }); host.key('ArrowRight', 'keydown', { shiftKey: true, text: false }); await settle();
     const caret = password.childNodes[2].style.left;
@@ -107,7 +107,7 @@ export async function checkTransientPanels(directory, verify = true) {
     retiredSubmit({ currentTarget: nextPassword, button: 0, stopPropagation() {} });
     check(replies.length === 0, 'Retired authentication callbacks cannot deliver replacement-prompt credentials');
     nextPassword.focus(); host.text('fixture-only-passphrase'); await settle();
-    const viewport = document.getElementById('shell-network-settings');
+    const viewport = document.getElementById('shell-network-settings-viewport');
     const cancel = document.getElementById('shell-network-auth-cancel');
     if (verify) {
       const [x, y, w, height] = rect(viewport);
@@ -121,7 +121,7 @@ export async function checkTransientPanels(directory, verify = true) {
       nextPassword.childNodes[1].textContent === '', 'One controlled cancellation clears masked secrets without submitting them');
     nativeState.operation = ''; nativeState.refreshing = false; native.onNetworkChanged(); await settle();
     const connect = document.getElementById('shell-network-connect-0-0');
-    await reveal(connect, document.getElementById('shell-network-settings')); connect.focus(); await key('Enter');
+    await reveal(connect, document.getElementById('shell-network-settings-viewport')); connect.focus(); await key('Enter');
     const confirm = document.getElementById('shell-network-confirm'), oldConfirm = confirm.__listeners.click;
     nativeState.revision++; native.onNetworkChanged(); await settle();
     check(document.getElementById('shell-network-confirm').getAttribute('aria-disabled') === 'true',
@@ -133,7 +133,7 @@ export async function checkTransientPanels(directory, verify = true) {
     if (verify) {
       const card = document.getElementById('shell-network-entry-0-0');
       root.style.height = '560'; await settle();
-      document.getElementById('shell-network-settings').scrollTop = 0; await settle();
+      document.getElementById('shell-network-settings-viewport').scrollTop = 0; await settle();
       const detail = card.lastChild;
       first.entryDecoration = ['top', 'bottom', 'left', 'right'].map(side => {
         const edge = detail.querySelector('.bevel-' + side), r = edge.getBoundingClientRect();
@@ -147,10 +147,10 @@ export async function checkTransientPanels(directory, verify = true) {
       nativeState.authentication = { id: 9, network: 'network', kind: 'passphrase' };
       native.onNetworkChanged(); await settle();
       const finalPassword = document.getElementById('shell-network-password');
-      await reveal(finalPassword, document.getElementById('shell-network-settings')); finalPassword.focus();
+      await reveal(finalPassword, document.getElementById('shell-network-settings-viewport')); finalPassword.focus();
       host.text('fixture-secret-not-logged'); await settle();
       const submit = document.getElementById('shell-network-auth-submit');
-      await reveal(submit, document.getElementById('shell-network-settings')); submit.focus(); await key('Enter');
+      await reveal(submit, document.getElementById('shell-network-settings-viewport')); submit.focus(); await key('Enter');
       check(replies.length === 2 && replies[1].id === 9 && !replies[1].cancelled && replies[1].passwordPresent &&
         !document.getElementById('shell-network-password') && finalPassword.childNodes[1].textContent === '',
         'One controlled authentication action keeps the prompt contract and clears credentials after the inert service reply');
@@ -175,7 +175,8 @@ export async function checkTransientPanels(directory, verify = true) {
     const keep = document.getElementById('shell-output-keep'), revert = document.getElementById('shell-output-revert');
     const [x, y, width, height] = rect(confirmation);
     host.scroll(x + width / 2, y + height / 2, 10000); await settle();
-    await reveal(revert, confirmation); check(inBounds(revert, displayRoot), 'Revert is wheel/keyboard reachable in a short confirmation');
+    await reveal(revert, document.getElementById('shell-output-confirmation-viewport'));
+    check(inBounds(revert, displayRoot), 'Revert is wheel/keyboard reachable in a short confirmation');
     keep.focus(); await key('Enter'); revert.focus(); await key(' ');
     check(keeps === 1 && reverts === 1 && display.textDeadline, 'Original Keep/Revert callbacks remain single actions and preserve the countdown text');
   }
@@ -236,7 +237,7 @@ export async function checkTransientPanels(directory, verify = true) {
       await key('Enter');
       check(controller.snapshot().phase === 'waiting' && sessionCalls.filter(call => call === 'request-close').length === 1 &&
         commit === 0 && !document.getElementById('shell-logout-commit'), 'Closing applications never bypasses the explicit final commit');
-      const waiting = document.getElementById('shell-logout'), cancel = document.getElementById('shell-logout-cancel');
+      const waiting = document.getElementById('shell-logout-viewport'), cancel = document.getElementById('shell-logout-cancel');
       const [x, y, width, height] = rect(waiting);
       host.scroll(x + width / 2, y + height / 2, 10000); await settle(); await reveal(cancel, waiting);
       check(inBounds(cancel, active.document.body), 'Long unsaved-window inventory keeps cancellation wheel/keyboard reachable');
@@ -246,7 +247,7 @@ export async function checkTransientPanels(directory, verify = true) {
       inventory.pendingWindows = 1; await key('Enter');
       check(commit === 0 && !sessionCalls.includes('seal'), 'A late window still prevents the actual final action');
       inventory.pendingWindows = 0; inventory.phase = 'ready'; controller.refresh(); await settle();
-      const viewport = document.getElementById('shell-logout');
+      const viewport = document.getElementById('shell-logout-viewport');
       const final = document.getElementById('shell-logout-commit'); await reveal(final, viewport);
       check(inBounds(final, active.document.body), 'Explicit final action remains reachable in the short logout surface');
       final.focus(); await key(' ');
