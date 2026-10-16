@@ -643,6 +643,17 @@ synchronize the thumb; SDK paging, keyboard steps and captured dragging remain
 the single input implementation. Leaving releases the controller and pending
 work, and ordinary repaint does not undo intentional scrolling.
 
+The existing notification center also consumes this shared scrollbar and focus
+viewport, preserving its transparent gaps, zero outer padding, card order and
+surface geometry. Low-height Tab/Shift+Tab reveals later Dismiss/action buttons;
+ordinary refresh and immutable retheme do not undo a manual wheel position.
+Long message bodies consume their own vertical wheel movement before chaining
+at the boundary, while action strips retain horizontal scrolling without
+invoking an action. Closing or externally retiring the center releases its
+pending focus/scroll work. Toast markup, keyboard mode, sizing/count and More
+behavior are unchanged. Actual software GUI checks use the production controller
+with inert notices, not a real D-Bus sender or notification-authorization claim.
+
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
 a separator and a window strip require four root gaps plus `count - 1` inner
