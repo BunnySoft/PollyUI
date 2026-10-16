@@ -1,7 +1,18 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { controlStates as visualStates } from './desktop/shared/ui/control-state.mjs';
+import { classicFocusPaint, paintClassicFocus } from './desktop/shared/ui/classic-task-paint.mjs';
 
 const fill = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' };
+const panelFocusThemes = new WeakMap();
+function focusTheme(theme, variant) {
+  if (variant === 'button') return theme;
+  let adapter = panelFocusThemes.get(theme);
+  if (!adapter) {
+    adapter = { colors: { focus: theme.panel.text } };
+    panelFocusThemes.set(theme, adapter);
+  }
+  return adapter;
+}
 export const isLuna = (theme, group = 'button') => theme[group].surfaceStyle === 'luna';
 export const gradient = (from, to) => ({ backgroundColor: from, gradientFrom: from, gradientTo: to });
 
@@ -81,18 +92,15 @@ export function lunaButtonPaint(theme, { selected = false, hovered = false, pres
 }
 
 export function lunaButtonDetail(theme, variant = 'button', disabled = false) {
+  const paint = classicFocusPaint(focusTheme(theme, variant), disabled);
+  paint.props.className = 'luna-focus-paint';
   const focus = h('view', { className: 'luna-focus-ring', style: { ...fill, left: 3, top: 3, right: 3, bottom: 3,
-    width: 'auto', height: 'auto', overflow: 'hidden', opacity: 0 } },
-    [0, 1].map(side => h('view', { style: { position: 'absolute', left: 0, right: 0,
-      [side ? 'bottom' : 'top']: 0, height: 1, pointerEvents: 'none' } },
-      Array.from({ length: 80 }, (_, i) => h('view', { style: {
-        position: 'absolute', left: i * 2, top: 0, width: 1, height: 1,
-        backgroundColor: variant === 'button' ? theme.colors.focus : theme.panel.text, pointerEvents: 'none',
-      } })))));
+    width: 'auto', height: 'auto', overflow: 'hidden', opacity: 0 } }, paint);
   if (variant === 'launcher') return h('view', { 'aria-hidden': 'true', style: { ...fill } },
     lunaBands(theme, 'launcher', theme.panel.height),
     h('view', { className: 'luna-launcher-tint', style: { ...fill, backgroundColor: '#ffffff', opacity: 0 } }), focus);
-  if (variant === 'tool') return focus;
+  // Keep the shared painter's Canvas/ring/detail/control ancestry for tools too.
+  if (variant === 'tool') return h('view', { 'aria-hidden': 'true', style: { ...fill } }, focus);
   return h('view', { 'aria-hidden': 'true', style: { ...fill, borderRadius: theme.button.radius } },
     h('view', { style: { position: 'absolute', left: 1, right: 1, top: 1, height: 1,
       pointerEvents: 'none', backgroundColor: disabled ? theme.colors.body : theme.colors.light, opacity: 0.65 } }),
@@ -113,6 +121,8 @@ export function lunaVisualEvents(theme, options = {}) {
     const hot = node.querySelector('.luna-hot-ring'), focus = node.querySelector('.luna-focus-ring');
     if (hot) hot.style.opacity = hovered && !pressed ? '1' : '0';
     if (focus) focus.style.opacity = focused ? '1' : '0';
+    const canvas = node.querySelector('.luna-focus-paint');
+    if (canvas) paintClassicFocus(canvas, focusTheme(theme, options.variant ?? 'button'), !disabled && focused);
     const tint = node.querySelector('.luna-launcher-tint');
     if (tint) {
       tint.style.backgroundColor = pressed ? '#000000' : '#ffffff';
