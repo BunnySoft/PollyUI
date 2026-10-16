@@ -6,6 +6,7 @@ const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import(
 const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
+const { button } = await import('../shared/ui/button.mjs');
 const { surfacePaint, surfaceEvents, bevel, hasSurfacePaint } = await import('../shared/ui/surface-primitives.mjs');
 const { lunaVisualEvents } = await import('../shared/ui/luna-primitives.mjs');
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
@@ -13,6 +14,24 @@ const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fal
 assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
+{
+  const theme = catalog.themes[0];
+  for (const create of [
+    options => button('default-action', 'Action', theme, action, false, {}, options),
+    options => desktopCommand('default-action', 'Action', theme, action, options),
+  ]) {
+    assert.equal(create().props['data-default-action'], undefined);
+    const marked = create({ defaultAction: true });
+    assert.equal(marked.props['data-default-action'], 'true');
+    assert.equal(marked.props['aria-pressed'], 'false', 'Default action is not toggle state');
+    assert.equal(create({ defaultAction: false }).props['data-default-action'], undefined);
+    for (const options of [null, [], 'default', { defaultAction: 1 }, { defaultAction: 'true' }, { defaultAction: null },
+      { defaultActon: true }, { [Symbol('unknown')]: true }])
+      assert.throws(() => create(options), TypeError);
+  }
+  assert.equal(desktopCommand('toggle', 'Toggle', theme, action, { defaultAction: true, selected: true })
+    .props['aria-pressed'], 'true', 'Explicit toggle truth remains independent');
+}
 const apps = [{ id: 'org.pollyui.settings', name: 'Settings', comment: '', keywords: [] }];
 let toggled = 0, launched = 0;
 for (const theme of catalog.themes) {

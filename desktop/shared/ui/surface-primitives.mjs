@@ -6,6 +6,26 @@ const fill = { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, point
 export const surfaceStyle = (theme, group = 'button') => theme[group].surfaceStyle || 'generic';
 export const hasSurfacePaint = theme => ['classic', 'aqua', 'fluent'].includes(surfaceStyle(theme));
 export const selectionInk = (theme, legacy) => theme.colors.selectionText ?? legacy;
+export function defaultActionFlag(value = false) {
+  if (typeof value !== 'boolean') throw new TypeError('defaultAction must be a boolean');
+  return value;
+}
+const defaultCueColor = theme => surfaceStyle(theme) === 'classic' ? theme.colors.focus : theme.colors.accent;
+export function defaultActionCue(theme, defaultAction = false, disabled = false) {
+  // The native parent border paints above children; keep the cue inside it.
+  const classic = surfaceStyle(theme) === 'classic', inset = classic ? 0 : 1;
+  return defaultAction ? h('view', { className: 'theme-default-action-cue', 'aria-hidden': 'true',
+    style: { ...fill, left: inset, top: inset, right: inset, bottom: inset,
+      borderWidth: surfaceStyle(theme) === 'aqua' ? 2 : 1, borderColor: defaultCueColor(theme),
+      borderRadius: Math.max(0, theme.button.radius - inset), opacity: disabled ? 0 : 1 } }) : null;
+}
+export function syncDefaultAction(node, theme, { defaultAction = false, disabled = false } = {}) {
+  const cue = node.querySelector('.theme-default-action-cue');
+  if (cue) {
+    cue.style.opacity = defaultAction && !disabled ? '1' : '0';
+    cue.style.borderColor = defaultCueColor(theme);
+  }
+}
 function paintIconInk(node, color) {
   if (node.className === 'theme-icon-ink-fill') node.style.backgroundColor = color;
   if (node.className === 'theme-icon-ink-border') node.style.borderColor = color;
@@ -67,17 +87,20 @@ export function bevel(theme, { pressed = false, inset = false, frame = false } =
     ] : null);
 }
 
-export function surfaceDetail(theme, { selected = false, quiet = false, disabled = false } = {}) {
+export function surfaceDetail(theme, { selected = false, quiet = false, disabled = false, defaultAction = false } = {}) {
   const classic = surfaceStyle(theme) === 'classic';
+  const edges = classic && !quiet ? bevel(theme, { pressed: selected }) : null;
+  if (edges && defaultAction) Object.assign(edges.props.style, { left: 1, top: 1, right: 1, bottom: 1 });
   return h('view', { 'aria-hidden': 'true', style: { ...fill } },
-    classic && !quiet ? bevel(theme, { pressed: selected }) : null,
+    edges,
     surfaceStyle(theme) === 'aqua' && !quiet ? h('view', { style: {
       ...fill, bottom: '50%', borderRadius: theme.button.radius,
       backgroundColor: '#ffffff', opacity: 0.45 } }) : null,
     h('view', { className: 'theme-focus-ring', style: {
       ...fill, left: 3, top: 3, right: 3, bottom: 3, borderWidth: classic ? 0 : 1,
       borderColor: theme.colors.focus, borderRadius: Math.max(0, theme.button.radius - 2),
-      opacity: 0, overflow: 'hidden' } }, classic ? classicFocusPaint(theme, disabled) : null));
+      opacity: 0, overflow: 'hidden' } }, classic ? classicFocusPaint(theme, disabled) : null),
+    defaultActionCue(theme, defaultAction, disabled));
 }
 
 export function surfaceEvents(theme, options = {}) {
@@ -107,6 +130,7 @@ export function surfaceEvents(theme, options = {}) {
       paintIconInk(icon, ink);
     }
     if (options.selectionParts) paintSelectionParts(node, theme, !disabled && highlighted);
+    syncDefaultAction(node, theme, { ...options, disabled });
     if (options.inkOnly) return;
     const focus = node.querySelector('.theme-focus-ring');
     if (focus) focus.style.opacity = state.focused ? '1' : '0';
@@ -135,7 +159,7 @@ export function surfaceEvents(theme, options = {}) {
     }
   };
   const syncState = node => {
-    if (options.selectionParts || options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
+    if (options.defaultAction || options.selectionParts || options.disabled || node.getAttribute?.('aria-disabled') === 'true' ||
         states.has(node) || node.ownerDocument?.activeElement === node ||
         surfaceStyle(theme, 'panel') === 'fluent' && options.variant === 'task')
       paint({ currentTarget: node }, { focused: node.ownerDocument?.activeElement === node });

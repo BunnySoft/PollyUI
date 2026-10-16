@@ -94,6 +94,23 @@ The shared Settings card and those two consumer cards use the single desktop
 outside pixels without a second generic border; titles, child controls and
 transaction handlers keep their existing APIs.
 
+## Desktop default-action appearance
+
+Shared desktop `button(id, text, theme, action, selected, extraStyle, options)`
+keeps its original six arguments and accepts an optional seventh
+`{ defaultAction: true }`. `desktopCommand` accepts the same boolean in its
+existing named options. Omitted/false leaves the previous appearance unchanged;
+invalid types and unknown option keys are rejected.
+
+This opt-in adds only passive, pointer-transparent, accessibility-hidden
+decoration from existing theme tokens. Classic gives its raised/sunken bevel an
+independent outside outline; Luna and the other faces use an accent edge while
+retaining their existing highlight, gloss and focus paint. Disabled controls
+suppress the cue. Selected/checked truth, `aria-pressed`, content geometry,
+caller opacity, focus ownership and activation routing do not change. Only the
+existing display **Keep** and Files **confirm** actions opt in; this is not a
+global Enter handler, focus migration policy or an OS-default pulse animation.
+
 ## Select overlay lifecycle
 
 Keep the existing `NOverlayHost()` as the final child of a viewport-filling,
