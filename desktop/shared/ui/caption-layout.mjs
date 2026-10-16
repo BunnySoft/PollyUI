@@ -9,6 +9,7 @@ export const DECORATION_LAYOUT_FIELDS = [
   ['control_gap', 'controlGap', 0, 32, 1],
   ['text_inset', 'textInset', 0, 64, 1],
   ['text_gap', 'textGap', 0, 32, 1],
+  ['effect_radius', 'nativeRadius', 0, 64, 1],
 ];
 
 export function decorationLayout(theme) {
@@ -21,10 +22,11 @@ export function decorationLayout(theme) {
     control_inset: w.controlInset, close_gap: w.controlGap,
     control_gap: w.surfaceStyle === 'classic' ? 0 : w.controlGap,
     text_inset: w.textInset, text_gap: w.textGap,
+    effect_radius: w.nativeEffects === 'rounded' ? w.radius : 0,
   });
 }
 
 export function encodeDecorationLayout(theme) {
   const layout = decorationLayout(theme);
-  return [4, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
+  return [5, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
 }

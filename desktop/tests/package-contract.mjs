@@ -100,6 +100,32 @@ try {
   const relocated = { ...manifest, files: files.map(file => file.path === original.path ? { ...file, ...processed.after } : file),
     runtimeContract: { ...manifest.runtimeContract, postprocess: [processed] } };
   check(relocated);
+  const effects = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/wlroots-effects.json'), 'utf8'));
+  const privateLibrary = { path: 'usr/lib/pollyui/libwlroots-0.19-polly-effects1.so',
+    sha256: digest('private-wlroots-effects-library'), size: 32 };
+  const privateInput = { path: 'usr/lib/pollyui/libinput.so.10', sha256: digest('private-input'), size: 16 };
+  const notices = ['wlroots-scene-effects.patch', 'wlroots-effects.json', 'apply-wlroots-effects.py'].map(name =>
+    ({ path: 'usr/share/licenses/pollyui/wlroots/' + name, sha256: digest(name), size: name.length }));
+  const privateRelocation = { path: privateLibrary.path, tool: 'patchelf', rpath: '$ORIGIN',
+    before: { sha256: digest('unrelocated-effects-library'), size: 30 }, after: privateLibrary };
+  const debian = { ...relocated, debian: true,
+    files: [...relocated.files, privateLibrary, privateInput, ...notices],
+    runtimeContract: { ...relocated.runtimeContract, wlrootsEffects: effects,
+      postprocess: [...relocated.runtimeContract.postprocess, privateRelocation],
+      bundledLibraries: [...relocated.runtimeContract.bundledLibraries,
+        { binary: 'usr/bin/pollywm', soname: 'libwlroots-0.19-polly-effects1.so',
+          path: privateLibrary.path, sha256: privateLibrary.sha256 },
+        { binary: 'usr/bin/pollywm', soname: 'libinput.so.10', path: privateInput.path, sha256: privateInput.sha256 }] } };
+  const privateSbom = { packages: [...sbom.packages, { name: 'wlroots', versionInfo: effects.version }] };
+  check(debian, inputs, packages, privateSbom);
+  assert.throws(() => check({ ...debian, runtimeContract: { ...debian.runtimeContract,
+    wlrootsEffects: undefined } }, inputs, packages, privateSbom), /scene-effects identity/);
+  assert.throws(() => check({ ...debian, runtimeContract: { ...debian.runtimeContract,
+    wlrootsEffects: { ...effects, patchSha256: '0'.repeat(64) } } }, inputs, packages, privateSbom),
+  /patch differs from build inputs/);
+  assert.throws(() => check({ ...debian, files: debian.files.filter(file => file.path !== notices[0].path) },
+    inputs, packages, privateSbom), /scene-effects source/);
+  assert.throws(() => check(debian, inputs, packages, sbom), /scene-effects SBOM/);
   assert.throws(() => check({ ...relocated, runtimeContract: { ...relocated.runtimeContract,
     postprocess: [{ ...processed, before: { ...processed.before, sha256: '0'.repeat(64) } }] } }), /original CMake/);
   assert.throws(() => check({ ...relocated, runtimeContract: { ...relocated.runtimeContract,

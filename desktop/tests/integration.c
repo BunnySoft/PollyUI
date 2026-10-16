@@ -715,6 +715,64 @@ static bool decoration_pixels(struct PuDesktopView *view, unsigned theme_id, uin
     return true;
 }
 
+static bool effect_pixel(struct PuDesktopView *view, int x, int y, uint32_t *pixel)
+{
+    struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop.scene, view->output);
+    struct wlr_box bounds;
+    wlr_output_layout_get_box(desktop.layout, view->output, &bounds);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_lock_attach_render(view->output, true);
+    bool built = wlr_scene_output_build_state(output, &state, NULL);
+    wlr_output_lock_attach_render(view->output, false);
+    CHECK(built && state.buffer);
+    void *pixels; uint32_t format; size_t stride;
+    CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ,
+        &pixels, &format, &stride));
+    int px = (int)roundf((x - bounds.x) * view->output->scale);
+    int py = (int)roundf((y - bounds.y) * view->output->scale);
+    CHECK(px >= 0 && py >= 0 && px < state.buffer->width && py < state.buffer->height);
+    memcpy(pixel, (char *)pixels + py * stride + px * 4, 4);
+    wlr_buffer_end_data_ptr_access(state.buffer);
+    wlr_output_state_finish(&state);
+    CHECK(format == DRM_FORMAT_XRGB8888 || format == DRM_FORMAT_ARGB8888);
+    return true;
+}
+
+static bool native_effect_suite(struct TestClient *client, struct PuDesktopView *view)
+{
+    CHECK(!view->effects->rounding);
+    CHECK(command(&shell_client, TEST_EFFECT_APPEARANCE, PU_DECORATION_DEFAULT_LAYOUT, 0, 24));
+    CHECK(command(client, TEST_EFFECT_SUBSURFACE, 1, 0, 0));
+    CHECK(settle_decoration(view) && view->effects->rounding);
+    struct wlr_box inset = {0};
+    pu_decoration_inset(view, &inset, false);
+    int left = view->tree->node.x - inset.x, top = view->tree->node.y - inset.y;
+    int right = view->tree->node.x + view->toplevel->base->geometry.width + inset.x - 1;
+    int bottom = view->tree->node.y + view->toplevel->base->geometry.height + inset.x - 1;
+    int corners[][2] = {{left, top}, {right, top}, {left, bottom}, {right, bottom}};
+    uint32_t hidden[4], shown;
+    wlr_scene_node_set_enabled(&view->tree->node, false);
+    for (unsigned i = 0; i < 4; i++)
+        CHECK(effect_pixel(view, corners[i][0], corners[i][1], &hidden[i]));
+    wlr_scene_node_set_enabled(&view->tree->node, true);
+    for (unsigned i = 0; i < 4; i++) {
+        CHECK(effect_pixel(view, corners[i][0], corners[i][1], &shown));
+        CHECK((shown & 0xffffff) == (hidden[i] & 0xffffff));
+    }
+    CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0) && !view->effects->rounding);
+    CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
+    CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0) && !view->effects->rounding);
+    CHECK(command(client, TEST_UNFULLSCREEN, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
+    CHECK(command(client, TEST_DECORATION, 1, 0, 0) && !view->effects->rounding);
+    CHECK(command(client, TEST_DECORATION, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
+    CHECK(command(client, TEST_EFFECT_SUBSURFACE, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_EFFECT_APPEARANCE, PU_DECORATION_DEFAULT_LAYOUT, 0, 0));
+    CHECK(settle_decoration(view) && !view->effects->rounding);
+    puts("PASS: real client and overlapping extending subsurface are clipped with all four frame corners; maximize/fullscreen/CSD disable and floating restore");
+    return true;
+}
+
 static bool decoration_suite(const char *path)
 {
     struct TestClient *client = &clients[2];
@@ -723,6 +781,7 @@ static bool decoration_suite(const char *path)
     struct PuDesktopView *view = find_view(7);
     CHECK(view && client->reply.decoration_mode == 2 && !client->reply.appearance_capability);
     CHECK(shell_client.reply.appearance_capability);
+    if (!nested) CHECK(native_effect_suite(client, view));
     struct wlr_box box;
     CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
     CHECK(pu_decoration_hit(view, 80, -16) == PU_DECORATION_TITLE);

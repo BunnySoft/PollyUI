@@ -102,6 +102,9 @@ struct Client {
     size_t offer_count;
     struct wl_surface *drag_icon, *drag_child;
     struct wl_subsurface *drag_subsurface;
+    struct wl_surface *effect_surface;
+    struct wl_subsurface *effect_subsurface;
+    uint32_t effect_radius;
     struct zwp_text_input_manager_v3 *text_manager;
     struct zwp_text_input_v3 *text_input;
     struct zwp_input_method_manager_v2 *ime_manager;
@@ -260,7 +263,9 @@ static const struct polly_appearance_v1_listener appearance_listener = {
 
 static void configure_appearance(struct Client *client, unsigned index)
 {
-    const struct PuDecorationLayout *theme = &pu_decoration_layouts[index].layout;
+    struct PuDecorationLayout geometry = pu_decoration_layouts[index].layout;
+    geometry.effect_radius = (int)client->effect_radius;
+    const struct PuDecorationLayout *theme = &geometry;
     uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, theme->left_controls};
     unsigned position = 2;
 #define ENCODE_METRIC(type, field, token, minimum, maximum, scale) \
@@ -808,8 +813,8 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        if (version < 4) die("appearance configuration requires paired protocol version 4");
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 4);
+        if (version < 5) die("appearance configuration requires paired protocol version 5");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 5);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
@@ -1067,6 +1072,25 @@ int main(int argc, char **argv)
             request.command == TEST_WORKSPACE_MOVE ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
+        case TEST_EFFECT_APPEARANCE:
+            client.effect_radius = request.edges;
+            configure_appearance(&client, (unsigned)request.id);
+            break;
+        case TEST_EFFECT_SUBSURFACE:
+            if (client.effect_subsurface) wl_subsurface_destroy(client.effect_subsurface);
+            if (client.effect_surface) wl_surface_destroy(client.effect_surface);
+            client.effect_subsurface = NULL; client.effect_surface = NULL;
+            if (request.id) {
+                client.effect_surface = wl_compositor_create_surface(client.compositor);
+                client.effect_subsurface = wl_subcompositor_get_subsurface(client.subcompositor,
+                    client.effect_surface, window->surface);
+                wl_subsurface_set_position(client.effect_subsurface, -8, -8);
+                wl_surface_attach(client.effect_surface,
+                    make_buffer(&client, window->width + 16, window->height + 16), 0, 0);
+                wl_surface_commit(client.effect_surface);
+            }
+            wl_surface_commit(window->surface);
+            break;
         case TEST_CURSOR_INVALID: invalid_cursor_shape(argv[1]); break;
         case TEST_DRAG_TARGET:
             client.drag_action = request.edges;

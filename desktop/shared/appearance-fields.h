@@ -11,5 +11,6 @@
     X(int, close_gap, closeGap, 0, 32, 1) \
     X(int, control_gap, controlGap, 0, 32, 1) \
     X(int, text_inset, textInset, 0, 64, 1) \
-    X(int, text_gap, textGap, 0, 32, 1)
+    X(int, text_gap, textGap, 0, 32, 1) \
+    X(int, effect_radius, nativeRadius, 0, 64, 1)
 #endif

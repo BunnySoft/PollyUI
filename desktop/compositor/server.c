@@ -883,6 +883,10 @@ static void present_view(struct PuDesktopView *view)
     };
     wlr_scene_subsurface_tree_set_clip(&view->content->node,
         view->mode != PU_DESKTOP_FLOATING ? &clip : NULL);
+    if (!pu_decoration_effects(view)) {
+        fail(view->desktop, "Cannot apply native window effects");
+        return;
+    }
     update_layer_focus(view->desktop);
     sync_foreign(view->desktop);
 }
@@ -2086,7 +2090,14 @@ static void new_toplevel(struct wl_listener *listener, void *data)
         return;
     }
     view->backdrop = wlr_scene_rect_create(view->tree, 1, 1, (float[4]){0, 0, 0, 1});
-    view->content = wlr_scene_xdg_surface_create(view->tree, toplevel->base);
+    view->effects = wlr_scene_tree_create(view->tree);
+    view->content = view->effects ? wlr_scene_xdg_surface_create(view->effects, toplevel->base) : NULL;
+    if (!view->effects || !view->content) {
+        wlr_scene_node_destroy(&view->tree->node);
+        free(view);
+        wl_resource_post_no_memory(toplevel->resource);
+        return;
+    }
     bool decorated = pu_decoration_create(view);
     view->popups = wlr_scene_tree_create(view->tree);
     if (!view->backdrop || !view->content || !view->popups || !decorated) {
@@ -2296,6 +2307,12 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
     wl_list_init(&desktop->layers);
+    if (wlr_scene_effects_abi_v1() != WLR_SCENE_EFFECTS_ABI ||
+        strcmp(wlr_scene_effects_source_sha256_v1(), PU_WLROOTS_EFFECTS_SHA256)) {
+        wlr_log(WLR_ERROR, "PollyWM requires its paired wlroots scene effects ABI");
+        desktop->failed = true;
+        return false;
+    }
     desktop->display = wl_display_create();
     if (!desktop->display) { fail(desktop, "Cannot create Wayland display"); return false; }
     wl_display_set_global_filter(desktop->display, pu_desktop_global_filter, desktop);

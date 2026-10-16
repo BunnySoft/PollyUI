@@ -7,17 +7,17 @@ static const struct PuDecorationPreset {
     struct PuDecorationLayout layout;
 } pu_decoration_layouts[] = {
     { .id = "xp", .layout = { .left_controls = false,
-      .border_width = 3, .title_height = 30, .control_width = 21, .control_height = 21, .control_top = 6, .control_inset = 6, .close_gap = 2, .control_gap = 2, .text_inset = 26, .text_gap = 6 } },
+      .border_width = 3, .title_height = 30, .control_width = 21, .control_height = 21, .control_top = 6, .control_inset = 6, .close_gap = 2, .control_gap = 2, .text_inset = 26, .text_gap = 6, .effect_radius = 0 } },
     { .id = "server2003", .layout = { .left_controls = false,
-      .border_width = 4, .title_height = 23, .control_width = 16, .control_height = 14, .control_top = 6, .control_inset = 6, .close_gap = 2, .control_gap = 0, .text_inset = 24, .text_gap = 4 } },
+      .border_width = 4, .title_height = 23, .control_width = 16, .control_height = 14, .control_top = 6, .control_inset = 6, .close_gap = 2, .control_gap = 0, .text_inset = 24, .text_gap = 4, .effect_radius = 0 } },
     { .id = "aqua", .layout = { .left_controls = true,
-      .border_width = 1, .title_height = 22, .control_width = 14, .control_height = 14, .control_top = 4, .control_inset = 8, .close_gap = 6, .control_gap = 6, .text_inset = 10, .text_gap = 8 } },
+      .border_width = 1, .title_height = 22, .control_width = 14, .control_height = 14, .control_top = 4, .control_inset = 8, .close_gap = 6, .control_gap = 6, .text_inset = 10, .text_gap = 8, .effect_radius = 0 } },
     { .id = "lion", .layout = { .left_controls = true,
-      .border_width = 1, .title_height = 22, .control_width = 14, .control_height = 14, .control_top = 4, .control_inset = 8, .close_gap = 6, .control_gap = 6, .text_inset = 10, .text_gap = 8 } },
+      .border_width = 1, .title_height = 22, .control_width = 14, .control_height = 14, .control_top = 4, .control_inset = 8, .close_gap = 6, .control_gap = 6, .text_inset = 10, .text_gap = 8, .effect_radius = 0 } },
     { .id = "bigsur", .layout = { .left_controls = true,
-      .border_width = 1, .title_height = 28, .control_width = 12, .control_height = 12, .control_top = 8, .control_inset = 12, .close_gap = 8, .control_gap = 8, .text_inset = 10, .text_gap = 8 } },
+      .border_width = 1, .title_height = 28, .control_width = 12, .control_height = 12, .control_top = 8, .control_inset = 12, .close_gap = 8, .control_gap = 8, .text_inset = 10, .text_gap = 8, .effect_radius = 0 } },
     { .id = "modern", .layout = { .left_controls = false,
-      .border_width = 1, .title_height = 33, .control_width = 46, .control_height = 32, .control_top = 1, .control_inset = 1, .close_gap = 0, .control_gap = 0, .text_inset = 16, .text_gap = 8 } },
+      .border_width = 1, .title_height = 33, .control_width = 46, .control_height = 32, .control_top = 1, .control_inset = 1, .close_gap = 0, .control_gap = 0, .text_inset = 16, .text_gap = 8, .effect_radius = 0 } },
 };
 #define PU_DECORATION_LAYOUT_COUNT (sizeof(pu_decoration_layouts) / sizeof(pu_decoration_layouts[0]))
 #define PU_DECORATION_DEFAULT_LAYOUT 5

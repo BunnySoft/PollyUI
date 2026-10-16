@@ -17,6 +17,8 @@ RECIPE_PATHS = (
     "desktop/release/debian/build-libinput.sh", "desktop/tools/build-skia-linux.sh",
     "desktop/tools/skia-linux.gn", "desktop/tools/build-sdl-linux.sh", "desktop/tools/build-harfbuzz-linux.sh",
     "desktop/patches/sdl-wayland-sync-lifetime.patch",
+    "desktop/patches/wlroots-scene-effects.patch",
+    "desktop/release/debian/apply-wlroots-effects.py", "desktop/release/debian/wlroots-effects.json",
 )
 MESA_RECIPE_PATHS = (
     "desktop/release/debian/mesa.json", "desktop/release/debian/build-mesa.py",
@@ -137,6 +139,8 @@ def retain(output):
             shutil.copyfile(source, sources / source.name)
             records.append({"name": name, "version": expected["version"], "url": expected["url"],
                             "sha512": expected["sha512"], "file": "sources/" + source.name})
+        subprocess.run(["python3", str(REPO / "desktop/release/debian/apply-wlroots-effects.py"),
+                        "/opt/pollyui-wlroots", "--check-installed"], check=True)
         input_pin = json.loads((REPO / "desktop/release/debian/libinput.json").read_text())
         descriptor = Path("/opt/pollyui-input-source") / ("libinput_" + input_pin["version"] + ".dsc")
         version, archives = dsc_files(descriptor.read_text())

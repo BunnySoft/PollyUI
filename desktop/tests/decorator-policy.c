@@ -93,14 +93,14 @@ static bool public_probe(struct Probe *probe)
     struct wl_display *display = wl_display_connect(name);
     CHECK(display);
     struct wl_registry *registry = wl_display_get_registry(display);
-    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 4);
+    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 5);
     CHECK(forged && wl_display_roundtrip(display) < 0 && wl_display_get_error(display) == EPROTO);
     wl_proxy_destroy((struct wl_proxy *)forged); wl_registry_destroy(registry); wl_display_disconnect(display);
     return true;
 }
 static bool child(int fd, uint32_t version)
 {
-    if (version < 4) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
+    if (version < 5) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct Probe probe = {.version = version};
     probe.display = wl_display_connect(NULL);
     CHECK(probe.display);
@@ -108,7 +108,7 @@ static bool child(int fd, uint32_t version)
     CHECK(probe.registry && !wl_registry_add_listener(probe.registry, &registry_listener, &probe));
     CHECK(wl_display_roundtrip(probe.display) >= 0);
     int initial = wl_display_roundtrip(probe.display);
-    if (version < 4) {
+    if (version < 5) {
         probe.reply.denied = initial < 0 && wl_display_get_error(probe.display) == EPROTO;
         CHECK(send(fd, &probe.reply, sizeof(probe.reply), MSG_NOSIGNAL) == sizeof(probe.reply));
         return probe.reply.denied;
@@ -137,7 +137,7 @@ static bool child(int fd, uint32_t version)
         case PUBLIC_PROBE: probe.reply.denied = public_probe(&probe); break;
         case DUPLICATE:
             CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
-            wl_registry_bind(probe.registry, probe.name, &polly_appearance_v1_interface, 4); break;
+            wl_registry_bind(probe.registry, probe.name, &polly_appearance_v1_interface, 5); break;
         }
         int roundtrip = wl_display_roundtrip(probe.display);
         if (command == FORBIDDEN || command == DUPLICATE) {
@@ -185,12 +185,12 @@ static int start(const char *self, bool renderer, const char *version, struct Re
 static bool suite(const char *self)
 {
     struct Reply r, p;
-    int renderer = start(self, true, "4", &r);
+    int renderer = start(self, true, "5", &r);
     CHECK(renderer >= 0 && r.globals == 3);
     CHECK(command(renderer, ENABLE, &r) && r.accepted && r.bootstrap);
     CHECK(command(renderer, PUBLIC_PROBE, &r) && r.denied);
     CHECK(command(renderer, PREPARE, &r) && r.accepted);
-    int publisher = start(self, false, "4", &p);
+    int publisher = start(self, false, "5", &p);
     CHECK(publisher >= 0 && (p.globals & 4));
     CHECK(command(publisher, PREPARE, &p) && p.accepted);
     CHECK(command(renderer, COMMIT, &r) && !r.accepted);
@@ -200,7 +200,7 @@ static bool suite(const char *self)
     CHECK(command(renderer, PREPARE, &r) && r.accepted);
     CHECK(command(renderer, COMMIT, &r) && r.accepted && !r.bootstrap);
     pu_decorator_stop(&desktop); close(renderer);
-    renderer = start(self, true, "4", &r);
+    renderer = start(self, true, "5", &r);
     CHECK(renderer >= 0);
     CHECK(command(renderer, ENABLE, &r) && r.accepted && !r.bootstrap);
     CHECK(command(renderer, PREPARE, &r) && !r.accepted);
@@ -211,7 +211,7 @@ static bool suite(const char *self)
     CHECK(command(renderer, QUERY, &r) && !r.bootstrap);
     CHECK(command(renderer, DUPLICATE, &r) && r.denied);
     pu_decorator_stop(&desktop); close(renderer);
-    renderer = start(self, true, "3", &r);
+    renderer = start(self, true, "4", &r);
     CHECK(renderer >= 0 && r.denied);
     pu_decorator_stop(&desktop); close(renderer);
     char *failed[] = {"/bin/false", NULL};
@@ -225,7 +225,7 @@ static bool suite(const char *self)
     CHECK(!pu_decorator_pid(&desktop) && pu_decorator_status(&desktop, &message) == 3);
     CHECK(strstr(message, "budget exhausted") && !desktop.failed);
     pu_decorator_stop(&desktop);
-    puts("PASS: real private roles, public second connection, bootstrap prepare race/cancel/one-shot/reconnect, publisher override, duplicate role and old v3 rejection");
+    puts("PASS: real private roles, public second connection, bootstrap prepare race/cancel/one-shot/reconnect, publisher override, duplicate role and old v4 rejection");
     puts("PASS: renderer restart budget exhaustion is explicit and does not end the WM session");
     return true;
 }
@@ -239,7 +239,7 @@ static bool legacy_server(const char *ui)
     struct wl_display *display = wl_display_create();
     CHECK(display);
     const char *socket = wl_display_add_socket_auto(display);
-    CHECK(socket && wl_global_create(display, &polly_appearance_v1_interface, 3, NULL, legacy_bind));
+    CHECK(socket && wl_global_create(display, &polly_appearance_v1_interface, 4, NULL, legacy_bind));
     int errors[2];
     CHECK(!pipe(errors));
     pid_t pid = fork();
@@ -272,8 +272,8 @@ static bool legacy_server(const char *ui)
     wl_display_destroy_clients(display); wl_display_destroy(display);
     CHECK(length > 0); message[length] = 0;
     CHECK(reaped && WIFEXITED(status) && WEXITSTATUS(status) == 1);
-    CHECK(strstr(message, "appearance v4 is required"));
-    puts("PASS: production v4 renderer explicitly rejects a real old-version Wayland server");
+    CHECK(strstr(message, "appearance v5 is required"));
+    puts("PASS: production v5 renderer explicitly rejects a real old-version Wayland server");
     return true;
 }
 int main(int argc, char **argv)

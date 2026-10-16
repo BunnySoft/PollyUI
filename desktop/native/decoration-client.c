@@ -270,8 +270,8 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
     if (argc != 2 || !JS_IsObject(argv[0])) return JS_ThrowTypeError(ctx, "A theme and paired GUI layout are required");
     if (!read_words(ctx, argv[1], words, PU_APPEARANCE_WORDS)) return JS_EXCEPTION;
     if (!pu_appearance_decode(&layout, words)) return JS_ThrowRangeError(ctx, "Invalid decoration geometry");
-    if (!appearance || polly_appearance_v1_get_version(appearance) < 4)
-        return JS_ThrowTypeError(ctx, "GUI decorations require paired PollyWM/Shell/decorator appearance v4");
+    if (!appearance || polly_appearance_v1_get_version(appearance) < 5)
+        return JS_ThrowTypeError(ctx, "GUI decorations require paired PollyWM/Shell/decorator appearance v5");
     renderer.appearance = appearance; renderer.display = display;
     if (!renderer.roundtrip) renderer.roundtrip = pu_desktop_wayland_roundtrip;
     JSValue id = JS_GetPropertyStr(ctx, argv[0], "id"), envelope = JS_NewObject(ctx), serialized = JS_UNDEFINED;

@@ -197,6 +197,22 @@ void pu_decoration_present(struct PuDesktopView *view)
         stop_timeout(d);
     }
 }
+bool pu_decoration_effects(struct PuDesktopView *view)
+{
+    struct PuDecoration *d = view->decoration;
+    if (!d || !d->decorated || !d->shown || view->mode != PU_DESKTOP_FLOATING ||
+        !d->current->layout.effect_radius)
+        return wlr_scene_tree_set_rounding(view->effects, NULL, 0);
+    const uint32_t *meta = d->shown->meta;
+    int border = meta[PU_FRAME_BORDER], title = meta[PU_FRAME_TITLE];
+    struct wlr_box box = {-border, -title,
+        (int)meta[PU_FRAME_CLIENT_WIDTH] + 2 * border,
+        (int)meta[PU_FRAME_CLIENT_HEIGHT] + title + border};
+    float radius = d->current->layout.effect_radius;
+    if (radius > box.width / 2.0f) radius = box.width / 2.0f;
+    if (radius > box.height / 2.0f) radius = box.height / 2.0f;
+    return wlr_scene_tree_set_rounding(view->effects, &box, radius);
+}
 bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_box *box)
 {
     struct PuDecoration *d = view->decoration;
@@ -370,7 +386,7 @@ bool pu_decoration_create(struct PuDesktopView *view)
     if (!d) return false;
     d->view = view; d->token = ++state->next_token;
     d->current = snapshot_ref(state->snapshot); d->pending = snapshot_ref(state->snapshot);
-    d->tree = wlr_scene_tree_create(view->tree);
+    d->tree = wlr_scene_tree_create(view->effects);
     if (!d->tree) { snapshot_drop(d->current); snapshot_drop(d->pending); free(d); return false; }
     wlr_scene_node_set_enabled(&d->tree->node, false);
     view->decoration = d;
@@ -591,7 +607,7 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     if (valid) { memcpy(words, configuration->data, sizeof(words)); valid = pu_appearance_decode(&layout, words); }
     if (!valid) {
         close(document);
-        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 4 are required");
+        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 5 are required");
         pu_decorations_service_changed(owner->state->desktop);
         return;
     }
@@ -732,8 +748,8 @@ static void appearance_bind(struct wl_client *client, void *data, uint32_t versi
 {
     struct PuDecorations *state = data;
     bool rendering = pu_decorator_allowed(state->desktop, client);
-    if ((!rendering && client != state->desktop->shell_client) || version < 4) {
-        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v4"); return;
+    if ((!rendering && client != state->desktop->shell_client) || version < 5) {
+        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v5"); return;
     }
     struct AppearanceClient *existing;
     wl_list_for_each(existing, &state->appearance_clients, link)
@@ -762,7 +778,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 4, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 5, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

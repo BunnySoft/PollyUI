@@ -14,7 +14,7 @@ struct PuDecorationLayout {
 #define PU_COUNT_FIELD(type, field, token, minimum, maximum, scale) +1
 enum { PU_APPEARANCE_WORDS = 2 PU_APPEARANCE_METRICS(PU_COUNT_FIELD) };
 #undef PU_COUNT_FIELD
-#define PU_APPEARANCE_SCHEMA 4
+#define PU_APPEARANCE_SCHEMA 5
 #define PU_APPEARANCE_DOCUMENT_LIMIT 32768
 
 static inline bool pu_appearance_identifier(const char *name)

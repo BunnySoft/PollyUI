@@ -13,7 +13,7 @@ The ledger owns all sequencing and status; current D1 and private application
 stores below remain unchanged until separately verified migration.
 
 An experimental Linux desktop subproject. **PollyWM** is our own C11 Wayland
-compositor built on **wlroots 0.19.3 or newer 0.19.x**, not labwc, GNOME or KDE.
+compositor built on **the pinned PollyUI wlroots 0.19.3 scene-effects SDK**, not labwc, GNOME or KDE.
 It includes a native development **PollyShell** with themed wallpaper, panels,
 Dock and appearance settings. An unsigned, memory-only x86_64 UEFI development
 ISO now boots this desktop in a disposable VM. It is **not yet a complete,
@@ -23,6 +23,35 @@ The Shell-owned [System Settings window](./SETTINGS.md) brings Appearance,
 Displays, Network, Audio, Keyboard and About together using the existing native
 controllers. Unavailable services remain explicit; closing Settings does not
 stop the desktop, audio policy or independent applications.
+
+## Optional native window effects
+
+Theme JSON remains version 1. `window.nativeEffects: "rounded"` opts server-decorated
+floating windows into the existing `window.radius`; missing or `"none"` preserves
+the old rectangular native window. Preview-only `window.shadow` is not implicitly
+enabled. Maximized/fullscreen, explicit client-side decorations and undecorated
+windows remain unaffected. Popups are separate from the rounded client-plus-frame
+subtree. Input regions intentionally remain the existing rectangles, including
+visually clipped corners; this feature does not introduce corner click-through.
+
+The compositor isolates real scene descendants, preserving source crop, buffer
+transforms, alpha and subsurfaces, then applies antialiased coverage once. It never
+asks JavaScript to capture client pixels. Existing scene output commits, damage,
+frame callbacks and lock visibility remain authoritative. Rounded trees cannot
+direct-scan out; visibility is conservative so clipped corners retain real underlay.
+Caches are per output/scale/pixel phase and invalidated by subtree changes.
+Each target is limited to 32768 pixels per axis and 16 megapixels. All targets
+share a 128MiB backing-plus-workspace reservation; allocation/budget failure
+explicitly fails composition rather than substituting a square window.
+
+The source patch and SHA-256 pin live in `patches/wlroots-scene-effects.patch` and
+`release/debian/wlroots-effects.json`. The SDK recipe and release checks use the
+same applier; the private library has a distinct effects-ABI SONAME. CMake checks
+both its header ABI and required linked symbols; startup and packaging also compare
+the actual library's embedded patch SHA-256, not only an adjacent receipt file.
+Private appearance protocol and
+geometry schema 5 reject older WM/Shell/decorator pairings; stock SDKs are not a
+supported fallback. These effects are not backdrop sampling or live blur.
 
 ## Desktop application shortcuts
 
