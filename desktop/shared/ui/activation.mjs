@@ -8,9 +8,10 @@ export function activationEvents(action, enabled = true) {
   return {
     onClick: activate,
     onKeydown: event => {
-      if (event.key === 'Enter' || event.key === ' ') {
+      if (!event.isComposing && (event.key === 'Enter' || event.key === ' ')) {
         event.preventDefault();
-        if (!event.repeat && !event.isComposing) return activate(event);
+        event.stopPropagation();
+        if (!event.repeat) return activate(event);
       }
     },
   };

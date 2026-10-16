@@ -7,6 +7,7 @@ import { filesView } from './desktop/apps/files/ui/view.mjs';
 import { visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createVerticalScrollbar } from './gui/sdk/js/scrollbar.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 
 export function createFilesApp({ host = window, native = typeof desktop === 'undefined' ? null : desktop,
   initialPath = null, optInTheme = true, reportError = message => console.error('[files] ' + message) } = {}) {
@@ -22,7 +23,7 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
   }
   try { api = requireFileSystem(native); } catch (error) { apiError = error; reportError(String(error)); }
   const launcher = native && typeof native.applicationFiles === 'function' ? createApplicationLauncher(native, reportError) : null;
-  function inputFor(id, value, placeholder, changed, enabled, colors) {
+  function inputFor(id, value, placeholder, changed, enabled, theme) {
     let record = inputs.get(id);
     if (!record) {
       const input = createTextInput({ window: surface, value, width: '100%', fontSize: 14, padding: 9 });
@@ -45,8 +46,7 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
     record.input.root.setAttribute('aria-label', placeholder);
     record.input.root.setAttribute('aria-disabled', String(!enabled));
     record.input.root.style.pointerEvents = enabled ? 'auto' : 'none';
-    record.input.setAppearance({ color: colors.text, background: colors.surface,
-      selectionColor: colors.selection, borderColor: colors.border, focusColor: colors.focus, borderRadius: 6 });
+    record.input.setAppearance(inputAppearance(theme, 14));
     return record.input.root;
   }
   function paint() {

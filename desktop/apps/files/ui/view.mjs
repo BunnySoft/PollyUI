@@ -4,6 +4,7 @@ import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shell/themes.m
 import { desktopCommand, desktopIcon, desktopText, horizontal, scrollDesktop } from './desktop/shell/presentation.mjs';
 import { parentPath } from './desktop/apps/files/logic/model.mjs';
 import { formatSize, formatModified, fileType, visibleEntries } from './desktop/apps/files/ui/format.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 
 function inInput(node) {
   for (let current = node; current; current = current.parentNode)
@@ -25,20 +26,22 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const command = (id, text, action, enabled = true, icon = '', style = {}, selected = false) =>
     desktopCommand(id, text, theme, guarded(action), { enabled, icon, style, selected, quiet: true });
   function input(id, value, placeholder, onInput, style = {}) {
+    const appearance = inputAppearance(theme, 14);
     if (inputFor) {
       const enabled = id === 'files-filter' ? usable : id === 'files-address' ?
         !['working', 'opening'].includes(state.phase) : ready;
-      const root = inputFor(id, value, placeholder, guarded(onInput), enabled, theme.colors);
-      return h('view', { id: id + '-slot', style: { width: '100%', height: 34, flexShrink: 0, minWidth: 0,
+      const root = inputFor(id, value, placeholder, guarded(onInput), enabled, theme);
+      return h('view', { id: id + '-slot', style: { width: '100%', height: appearance.fontSize + 18, flexShrink: 0, minWidth: 0,
         position: 'relative', ...style }, onMount: node => node.insertBefore(root, node.firstChild) },
-        value ? null : desktopText(placeholder, color('muted'), 14, { position: 'absolute',
+        value ? null : desktopText(placeholder, color('muted'), appearance.fontSize, { position: 'absolute',
           left: 10, top: 9, pointerEvents: 'none' }));
     }
-    const node = NInput({ id, value, placeholder, width: '100%', onInput: guarded(onInput),
-      selectionColor: color('selection') });
+    const node = NInput({ id, value, placeholder, width: '100%', fontSize: appearance.fontSize, onInput: guarded(onInput),
+      selectionColor: appearance.selectionColor });
     Object.assign(node.props, { role: 'textbox', 'aria-label': placeholder, 'aria-disabled': String(!ready),
-      style: { ...node.props.style, ...style, backgroundColor: color('surface'), borderColor: color('border'), borderRadius: 6 },
-      focusStyle: { borderColor: color('accent') } });
+      style: { ...node.props.style, ...style, backgroundColor: appearance.background,
+        borderColor: appearance.borderColor, borderRadius: appearance.borderRadius },
+      focusStyle: { borderColor: appearance.focusColor } });
     for (const child of node.children)
       if (child.props?.style?.color) child.props.style.color = value ? color('text') : color('muted');
     return node;
