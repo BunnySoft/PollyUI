@@ -318,9 +318,9 @@ not certified SP3/DPI raw-pixel oracles. Existing colors and artwork are unchang
 | Surface | Verified existing contract / correction | Remaining boundary |
 |---|---|---|
 | Taskbar and green launcher | Actual 30px bar, default 97px launcher, band/tint hover/held/cancel; `layout.launcherWidth` now controls actual launcher layout and hitbox (tested 123px) | Reference lacks certified launcher hover/held state crops; original Polly mark is not Windows art |
-| Active/inactive tasks and compact tools | Actual 26px tasks, single activation, keyboard focus; overflowing task strip remains wheel-accessible at narrow width | Settings/workspace shortcuts are real actions, not a full configurable historical Quick Launch implementation |
+| Active/inactive tasks and compact tools | Actual 26px tasks retain per-window activation/minimize; explicit XP Quick Launch now prepends saved catalog pins as compact icon-only launchers, independently of running windows. The same horizontal strip supports wheel and focus reveal | This is a real Polly launcher implementation, not an external XP profile/Quick Launch folder import or original system artwork |
 | Cyan notification area and clock | Actual 30px area and visible clock; existing tray/notification paths retained | No full SNI external-icon/state or original-font pixel certification |
-| Start header, left apps and Search/Pin | Actual 64px header, 380x480 default menu; left list scroll, disabled app, single launch/Pin and text search retained | Header is original Polly identity, not a real account/profile; Programs cascade is absent |
+| Start header, left apps and Search/Pin | Actual 64px header, 380x480 preferred menu; left list scroll, disabled app, single launch/Pin and real text search retained. XP also reuses the guarded flat All Programs/metadata Categories menu and its shared scrollbar | Header remains original Polly identity, not a real account/profile; metadata categories are not installed-directory hierarchy or Recent history |
 | Right links and column separator | Existing Settings/Refresh/Close rows and palette/border retained; XP right column now independently scrolls and locally reveals focused commands using existing unscrolled offset/scroll metrics | No invented categories/group dividers without backend groups or qualified state references; Classic and other preset paths unchanged |
 | Footer and low-height fit | Actual 42px footer stays fixed with header while either column scrolls; logout remains reachable at 360x260 local layout | Below the combined fixed header/footer/Search minimum, fitting all content requires a separate layout policy; this batch does not change menu preferred height or global insets |
 
@@ -496,7 +496,10 @@ menus and running groups. Installation resolves absolute icon paths against
 the actual prefix, including packaging's `--prefix` override. The artwork is
 Polly-owned, not commercial-OS icon replication.
 Missing grouping or explicit `"windows"` preserves the original input order
-and per-window interface; Classic and XP keep that mode.
+and per-window interface; Classic keeps that mode. XP explicitly selects
+`"windows-launchers"`, which prepends saved compact launchers while preserving
+every real window task, including its original order and Window.id. Quick Launch
+never consolidates running windows or turns a launcher click into activation.
 
 The same display-task count drives rendering and Dock width. Multi-window
 groups open the existing bounded RootMenu chooser, with real activate,
@@ -541,7 +544,8 @@ These commands share Pin/Unpin's atomic publication and committed-error handling
 recheck the current menu/output/task and expected pin position, and do not alter
 desktop shortcuts.
 These are Polly launcher semantics, not native MRU, drag sorting or Dock
-magnification, and do not alter Classic/XP per-window mode.
+magnification. Classic retains its original mode; XP retains independent
+per-window tasks alongside its explicit Quick Launch prefix.
 
 Mac-style Docks now also provide bounded pointer-hover emphasis through optional
 `icons.dockHoverPercent` (integer 100-125, missing/100 disables; packaged presets
@@ -740,6 +744,10 @@ The Keyboard shortcut list also uses the existing frameless panel viewport to
 reveal focused Change/Off commands at low heights. It preserves card spacing,
 intentional wheel position on repaint, and the trusted recording lifecycle;
 no second frame or focus engine is introduced.
+Audio's bounded content pane and the Displays/Keyboard lists also opt into the
+same themed scrollbar and focus viewport. The latter two retain fixed headers
+and footer actions. Scroll input issues no audio, display or shortcut service
+command, and does not replace the retained display fields or radio groups.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only

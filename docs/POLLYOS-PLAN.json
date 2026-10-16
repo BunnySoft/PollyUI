@@ -711,9 +711,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "blocked",
       "requires": [],
-      "evidence": "本批 GUIdebook 原系统参考URL/SHA/明确crop已入 xp-reference.json；原截图SP3/精确96DPI未认证，字体与品牌资源不打包。参考认证与完整状态对照仍进行中，不把公开截图当全部1:1基线完成。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。"
+      "evidence": "GUIdebook原系统参考URL/SHA/明确crop已入xp-reference.json，但原截图SP3/精确96DPI未认证，字体与品牌资源不打包。历史用户将全量参考/DPI/状态测量列为系统优化并延后；新要求完成全部E22后已重新核现有材料，仍缺可验证版本/缩放/交互状态的原尺寸包。明确询问素材路径时用户不可用，不能从自主工作指示推定来源、授权或精确DPI；等待合格输入，不以公开阅读图或组件预览补造验收。"
     },
     {
       "id": "xp-painted-components",
@@ -746,11 +746,12 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "blocked",
       "requires": [
-        "xp-painted-components"
+        "xp-painted-components",
+        "xp-reference-baseline"
       ],
-      "evidence": "临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标仍未覆盖。 XP 全量参考/DPI/状态测量仍有差异，用户要求列为系统优化并延后，不继续视觉测试或宣称官方 1:1。"
+      "evidence": "历史临时集成c49真实1/1.25/1.5/2组成36截图，a5重验13native与3pixelfixtures；30px无文本caption strip原对照MAE1.0222不是桌面分数，SP/DPI认证、完整reference/disabled/focus/SNI外部图标未覆盖。新全E22目标下仍受xp-reference-baseline缺合格原图及当前paired compositor环境所阻；旧证据保留，不拿新软件fixture或旧ISO冒同版本完整桌面验收。"
     },
     {
       "id": "theme-reference-metadata",
@@ -764,9 +765,9 @@
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "blocked",
       "requires": [],
-      "evidence": "alignment-reference.json 已有六目标/公开阅读来源；用户 Win2K3 VM 截图 a92ec32d... 与 e333e3f9... 提供真实状态但为 JPEG，SP/DPI/显示深度仍未认证。Mac 暂无完整原尺寸授权 raw pack，不能把未测项描述成已证实的特定像素错误。"
+      "evidence": "alignment-reference.json已有六目标/公开阅读来源；用户Win2K3 VM截图a92ec32d...与e333e3f9...提供真实状态但为JPEG，SP/DPI/显示深度未认证。Mac无完整原尺寸合规raw pack，Win11无build-tagged全状态原图。全E22推进时已明确询问本地路径/来源但用户不可用，现无可据其补齐的元数据；不得猜测、把JPEG转PNG冒原图或将未测项写成确定像素bug。"
     },
     {
       "id": "theme-font-metrics",
@@ -908,9 +909,9 @@
         "live"
       ],
       "sources": [],
-      "status": "in_progress",
+      "status": "blocked",
       "requires": [],
-      "evidence": "现有组件及 native 四 strip/真实 pointer 回归覆盖有限状态，Classic 菜单 DOM fixture 与真实 layer 的 28px 差异已修；不能回填所有六主题/DPI/fullscene qualification。"
+      "evidence": "既有组件及native四strip/真实pointer回归覆盖有限状态，Classic菜单DOMfixture与真实layer的28px差异已修。当前paired compositor运行入口最后只读条件核验为PID1 init(podman-mac/guard86，未执行新验证；恢复machine/service已明确询问但无具体授权，故不重启、不换路线或重建SDK。另缺同版本/缩放的原OS状态包；软件透明frame、组件预览、GLSL原语及旧ISO不能回填六主题/DPI/fullscene资格。"
     },
     {
       "id": "xp-caption-finish",
@@ -933,7 +934,7 @@
       "label": "E22.13 XP 任务栏与 Start",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分项核 30px bar、绿色 Start/Polly launcher、任务按钮、quick-launch 与托盘/clock 的尺寸/色带/边线/间距；两列 Start 的 profile/header、左右行、分组分隔线/footer 与字体另逐状态对照。基础结构已存在，缺真实业务/历史项不加假按钮，完整 quick-launch 行为不以画出图标代替。",
+      "scope": "分项核30px bar、绿色Start/Polly launcher、任务按钮与托盘/clock；XP显式windows-launchers已交真实Quick Launch，saved catalog pins独立启动且原Window.id任务不分组，Start复用真实Programs/metadata Categories。profile/header、分隔线/字体/外部SNI与原图状态仍待资格，不加假账号/历史或声称导入外部XP目录。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -5627,6 +5628,7 @@
     "- 2026-10-16 当前交互收尾：ff79d66合3b5bfed让固定应用菜单内Earlier/Later沿现有序v3配置交换相邻两项，missing/unavailable可管理、首尾省略无效方向、非pin无排序；同Pin/Unpin唯一atomic写入/committed报错策略，currentMenu/output/taskidentity/expectedposition与held方向identity检查，desktop shortcuts不变，不是拖拽或动画。d47156c合09c5cba完整接Processes既有overlay10/SDK controller：optional onScroll严格函数/undefined、构造/idle/stop不通知、actual normalized value改变一次，含clamp、同步嵌套合并与异常原样抛/鼠标up必释放capture；拖动/page/keyboard据原fixedRowWindow重绘真实PID DOM，不额外sample，错误/refresh保留观察可滚。行42/列/overscan/2秒cooperative采样/readonly及原owner两帧测量不变。父现scrollbar/Processes/Files/menu/config/group/theme组合141项通过；原Processes软件GUI900x640实际4096model/12DOMrows及nativecapture/末PID/Home/不增sample通过，无新测试文件/样式矩阵/Native构建/VM或环境操作。E22.8/9/10/15/34的全部原OS/物理与剩余业务资格并未因此标完成，native preset live recheck继续blocked，vendor小数边线候选仍未合。",
     "- 2026-10-16 Displays应用层主题收口：d9228ec合f3bba39，让页面、显示器标题、正文、说明和pending/unavailable状态直接消费现heading/body/status与content/control/window spacing tokens，显示器header允许换行而原actionrows继续wrap。display-inputs未改，所有数值输入尺寸/对象/value/caret/selection、3缩放preset IDs/selected、checkbox/mode/rotate/draft callbacks、serial/hotplug/detach及原15秒Apply/Keep/Revert事务保持。父原Settings/theme入口21项通过，子仅原800x600 selection-settings软件GUI验证checkbox/retime/busy/Apply serial7及pending15000，原AudioACK亦通过。仅3个App paths、无新增或扩展testcase/fixture/matrix/环境/Native构建；这是现公共token采用，不是原OS字体、物理输出或全部E22资格。",
     "- 2026-10-16 Keyboard低窗口焦点修复：304fc61合bb273ae，唯一keyboard view复用现framed:false panelViewport，padding0/原flex分配/inner controlGap保card定位，root title/reset/list/footer槽和Change/Off/录制/禁用/错误原callbacks保持，无新frame/RAF/timer/observer/engine。一次软件560x260同driver红到绿：Tab13末Change原y907且list y112..212/scroll0不可见，修后Change及Off均y180..212/scroll727，原list x16/y112/w528/h100不变；Enter原record/disable各一次、manualwheel回0后普通repaint仍0，同DOM及detach退出通过。父现Settings/panel/theme组合22项通过，无新增测试文件/case/样式矩阵/mock或原生构建；只证明软件renderer下真实focus/scroll，不冒物理DPI或可信录制端到端重新认证。",
-    "- 2026-10-16 全E22持续推进而非小批完工：2dd6981合4de0f78让Displays三个scale preset成为每head独立named themedRadioGroup，保原ID/custominput和draft/Apply15秒事务，真实busy传factory。父先复现composing Space错误改1到1.5且prevent，六selection入口最早isComposing return后原probe零更新/零consume；现SDK原basic/controls及原scale软件GUI通过，父Settings/panel/theme22项通过。e59a07a合55c4a46让Programs/category及windowgroup真实长列表复用同SDK/desktop overlay10，显式panelViewport scrollbar:true只fixedvertical，默认/content/horizontal旧合同保持；同DOM/capture、wheel/focus/clamp同步、leave释放，原epoch/稳定命令槽/header/close未换义，父组合115项通过。da63fdd仅挑6paths合fff78bf，绝不merge含暂停vendor的支线祖先：optional panel.materialOpacityPercent整数0..100/missing100原opaque逐byte，三Mac88为Polly默认非OS实测，只passive材质RGBA，不淡化原色bitmap/focus/marker/badge/separator、不改boxes/hover/input。原软件透明frame实测material alpha255/224/0，旧100/new100整PNG bytes同、clear中原opaque foreground全部ARGB保持、所有actualboxes同；父当前组合116及原generatorcheck通过。没有新repo测试文件/样式矩阵/Native构建/VM或环境恢复。原生owner只读确认MT02仅自身wallpaperopaque、现effect tree仅本窗client/frame，无可复用MT03behind-scene采样候选；所需regional damage/budget/privacy/ABI和pairedcompositor资格未交。环境恢复明确询问未获具体授权，因此无machine/service重启；E22原图/字体/物理/native资格及Snap/真实目录/完整邻近动画/reflection仍不能标done，继续实际XPQuickLaunch产品项。"
+    "- 2026-10-16 全E22持续推进而非小批完工：2dd6981合4de0f78让Displays三个scale preset成为每head独立named themedRadioGroup，保原ID/custominput和draft/Apply15秒事务，真实busy传factory。父先复现composing Space错误改1到1.5且prevent，六selection入口最早isComposing return后原probe零更新/零consume；现SDK原basic/controls及原scale软件GUI通过，父Settings/panel/theme22项通过。e59a07a合55c4a46让Programs/category及windowgroup真实长列表复用同SDK/desktop overlay10，显式panelViewport scrollbar:true只fixedvertical，默认/content/horizontal旧合同保持；同DOM/capture、wheel/focus/clamp同步、leave释放，原epoch/稳定命令槽/header/close未换义，父组合115项通过。da63fdd仅挑6paths合fff78bf，绝不merge含暂停vendor的支线祖先：optional panel.materialOpacityPercent整数0..100/missing100原opaque逐byte，三Mac88为Polly默认非OS实测，只passive材质RGBA，不淡化原色bitmap/focus/marker/badge/separator、不改boxes/hover/input。原软件透明frame实测material alpha255/224/0，旧100/new100整PNG bytes同、clear中原opaque foreground全部ARGB保持、所有actualboxes同；父当前组合116及原generatorcheck通过。没有新repo测试文件/样式矩阵/Native构建/VM或环境恢复。原生owner只读确认MT02仅自身wallpaperopaque、现effect tree仅本窗client/frame，无可复用MT03behind-scene采样候选；所需regional damage/budget/privacy/ABI和pairedcompositor资格未交。环境恢复明确询问未获具体授权，因此无machine/service重启；E22原图/字体/物理/native资格及Snap/真实目录/完整邻近动画/reflection仍不能标done，继续实际XPQuickLaunch产品项。",
+    "- 2026-10-16 XP与Settings续批：25cf27b合de90bb3，仅XP builtin/fallback显式windows-launchers，复用原v3有序pins/注册bitmap/cache/atomic失败策略，以compact实际28x26启动按钮前置，原每窗160x26和Window.id/顺序/activeclick保持；已运行App仍真实catalog launch一次，未知窗不合并，缺项可键盘Unpin/前后移，canonicalSettings走原bridge。XP Start也复用Classic现真实Programs/Categories/epoch/live-membership/scrollbar，不改realSearch记录或desktopPin域、不造安装目录/账号/Recent。原XP软件GUI一趟实测PNG16、launch1/minimize10/activate11、13pins窄栏Tab/wheel与Programs真实client内末项/Enter1/Esc回trigger。79eab7e合cfb8a8f只4Apppaths让Audio/Displays/Keyboard消费既有framed:false scrollbar:true+focusreveal，后两页头尾固定，输入/radio/音频ACK/可信录制/App业务无改，无新增testcase/文件；现Settings+shared34通过，原软件selectionSettings入口Apply/15秒/AudioACK通过。父最终XP/config/menu/theme/nativepolicy/Settings/sharedscroll组合130通过及generatorcheck；所有原图/字体/native物理资格保持独立。素材路径再次询问无输入，public查找工具504且替代页面仅泛用摘要，未获合格SP3/DPI状态包；E22.1/3/4/11明确blocked，不更改验收口径或伪造来源。"
   ]
 }
