@@ -101,7 +101,13 @@ Files dialog, context-menu and breadcrumb surfaces share the passive
 body/surface colors come from the current theme, not preset IDs. Classic uses
 the existing bevel alone at the outside edge while preserving the border's
 content inset; inline rename remains an unframed, non-modal row edit.
-Bounded modal/menu content uses the existing scroll handler. Retheming does
+Content-sized Files modals and context menus use `panel-viewport.mjs` so their
+passive outer frames remain fixed while only inner content scrolls. Intrinsic
+height is preserved below the consumer's existing `maxHeight`; a short panel
+does not fill that maximum or collapse to padding. Breadcrumbs use the same
+mechanism on its horizontal axis, including first/last focus reveal through the
+existing horizontal scroll primitive. The original bounded two-frame focus
+settlement is shared, not a separate Files focus engine. Retheming does
 not replace input roots or change confirmation generations, permissions or
 filesystem operations.
 Read-only modal source/target paths expose their unchanged full text in bounded
