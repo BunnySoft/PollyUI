@@ -23,7 +23,8 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const usable = ready && !modal, entries = visibleEntries(state);
   const guarded = action => (...args) => controller.getState().generation === generation ? action(...args) : false;
   const label = (id, text, key = 'text', extra = {}) => h('view', { id, style: {
-    color: color(key), fontFamily: 'sans-serif', fontSize: 14, flexShrink: 0, ...extra,
+    color: color(key), fontFamily: 'sans-serif',
+    fontSize: theme.layout[key === 'muted' ? 'statusFontSize' : 'fontSize'], flexShrink: 0, ...extra,
   } }, text);
   function pathLabel(id, text, key = 'muted', size = 13) {
     const sync = node => {
@@ -207,9 +208,9 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     desktopIcon('folder', color('muted'), 40),
     desktopText(ready ? state.filter ? 'No matching names in this snapshot' : 'This folder is empty' :
       state.phase === 'loading' ? 'Reading folder...' : state.phase === 'error' ? 'Could not read this folder' : 'Waiting for Files...',
-    color('text'), 18),
+    color('text'), theme.layout.headingFontSize),
     desktopText(ready ? state.filter ? 'Change the folder filter to see more items.' : 'Use New folder to get started.' :
-      'Choose a location or refresh to try again.', color('muted'), 13)));
+      'Choose a location or refresh to try again.', color('muted'), theme.layout.statusFontSize)));
   const list = h('view', { id: 'files-list', role: 'listbox', 'aria-label': 'Files and folders',
     'aria-multiselectable': 'false', tabIndex: usable ? 0 : -1,
     style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, overflow: 'scroll', padding: 4,
@@ -219,27 +220,29 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     style: { width: width < 760 ? 142 : 184, minWidth: 120, flexShrink: 0, padding: 8, gap: 4,
       backgroundColor: color('body'), borderRightWidth: 1, borderColor: color('border'), overflow: 'scroll' },
     onWheel: scrollDesktop },
-    desktopText('Places', color('muted'), 12, { padding: 12, fontWeight: 600 }),
+    desktopText('Places', color('muted'), theme.layout.statusFontSize,
+      { padding: theme.layout.compactPadding, fontWeight: 600 }),
     Object.entries(state.locations ?? {}).map(([key, path]) => command('files-place-' + key,
       key[0].toUpperCase() + key.slice(1), () => controller.navigate(path), !modal, key,
       { height: 42, paddingLeft: 10 }, path === state.path)));
   const details = state.properties && selection ? h('view', { id: 'files-details', role: 'region', 'aria-label': 'Properties',
-    style: { padding: 16, gap: 12, width: width < 900 ? 200 : 260, flexShrink: 0,
+    style: { padding: theme.layout.contentPadding, gap: theme.layout.contentGap,
+      width: width < 900 ? 200 : 260, flexShrink: 0,
       borderLeftWidth: 1, borderColor: color('border'), overflow: 'scroll' }, onWheel: scrollDesktop },
     h('view', { style: { ...horizontal, flexWrap: 'wrap', gap: 6, flexShrink: 0 } },
-      desktopText('Properties', color('text'), 18, { fontWeight: 600 }),
+      desktopText('Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
       command('files-details-close', 'Close', () => controller.cancel(generation), true, '',
         { paddingLeft: 6, paddingRight: 6 })),
     label('files-property-name', selection.name, 'text'),
-    label('files-property-path', selection.path, 'muted', { fontSize: 12 }),
+    label('files-property-path', selection.path, 'muted'),
     label(null, fileType(selection) + ' | ' + formatSize(selection.bytes)),
     label(null, 'Modified: ' + (Number.isFinite(new Date(selection.mtimeMs).getTime()) ?
       new Date(selection.mtimeMs).toISOString() : String(selection.mtimeMs) + ' ms (outside date range)'),
-      'muted', { fontSize: 12 }),
-    label(null, 'Permissions: ' + selection.permissions + ' | UID ' + selection.uid + ' | GID ' + selection.gid, 'muted', { fontSize: 12 }),
-    label(null, (selection.readable ? 'Readable' : 'Not readable') + ' | ' + (selection.writable ? 'Writable' : 'Not writable'), 'muted', { fontSize: 12 }),
+      'muted'),
+    label(null, 'Permissions: ' + selection.permissions + ' | UID ' + selection.uid + ' | GID ' + selection.gid, 'muted'),
+    label(null, (selection.readable ? 'Readable' : 'Not readable') + ' | ' + (selection.writable ? 'Writable' : 'Not writable'), 'muted'),
     selection.type === 'symlink' ? label('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
-      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''), 'muted', { fontSize: 12 }) : null,
+      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''), 'muted') : null,
     ) : null;
   const listRegion = h('view', { id: 'files-list-region', style: { position: 'relative', flexGrow: 1,
     flexBasis: 0, minWidth: 0, minHeight: 0 } }, list,

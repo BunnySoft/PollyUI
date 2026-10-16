@@ -1,3 +1,9 @@
+# Power panel
+
+Power uses the existing theme typography and bounded, wheel-scrollable client
+area. Application-close coordination, cancellation, permission checks and the
+explicit final shutdown/restart confirmation remain unchanged.
+
 # Classic All Programs
 
 The Classic applications menu adds an All Programs submenu inside the existing

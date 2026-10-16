@@ -23,6 +23,11 @@ class Node {
   setAttribute(key, value) { this.attributes.set(key, String(value)); }
   getAttribute(key) { return this.attributes.get(key) ?? null; }
   removeAttribute(key) { this.attributes.delete(key); }
+  querySelector(selector) {
+    return nodes(this).slice(1).find(node => selector.startsWith('#') ?
+      node.id === selector.slice(1) : selector.startsWith('.') &&
+        String(node.className || '').split(/\s+/).includes(selector.slice(1))) ?? null;
+  }
   addEventListener(type, action) { this.listeners.set(type, [...(this.listeners.get(type) || []), action]); }
   removeEventListener(type, action) { this.listeners.set(type, (this.listeners.get(type) || []).filter(item => item !== action)); }
   blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = null; }
