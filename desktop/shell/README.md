@@ -61,7 +61,11 @@ tags; transitions change the existing navigation epoch. Entry/folder activation
 requires a successful fresh catalog read and rechecks the exact current folder
 or direct membership, so moving the same ID across a slash/hyphen boundary does
 not preserve an old leaf's authority. A removed directory can remain as an empty
-view with Back/All apps rather than redirecting a held action. This does not scan
+view with Back/All apps rather than redirecting a held action. Returning to an
+already-owned direct parent needs no new catalog read, so Back/Left/Escape remain
+safe exits during an I/O failure. That retained display does not clear the error
+or authorize launch/Pin; entering a new folder and every application action still
+require a successful fresh membership check. This does not scan
 directories, expose empty/unregistered filesystem folders, add XDG menu XML,
 change application identity/launch routing, or persist another preference.
 

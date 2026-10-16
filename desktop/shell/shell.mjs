@@ -904,10 +904,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
           if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
         }
         if (view === 'folders') {
-          if (!reloadApplications()) return false;
           const returning = programsView === 'folders' && programsFolder &&
             folder === programsFolder.split('/').slice(0, -1).join('/');
-          if (!programsLive() || !returning && !programFolderContents(desktopCatalog(), folder).exists) return false;
+          if (!returning) {
+            if (!reloadApplications()) return false;
+            if (!programsLive() || !programFolderContents(desktopCatalog(), folder).exists) return false;
+          }
         }
         current.programsView = view;
         current.programsCategory = view === 'category' ? category : null;
