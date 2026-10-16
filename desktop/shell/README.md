@@ -70,6 +70,18 @@ guards remain authoritative. Component host input is not evidence of compositor
 outside-dismiss behavior; the native bounds fixture separately measures the
 submenu against a real child window's client input document.
 
+Long All Programs/category lists and window-group/launcher management lists
+opt into the shared themed 10px vertical overlay scrollbar. Their original
+list IDs and direct command slots remain unchanged inside a flex scroll area;
+the scrollbar is a passive-layout sibling, so it does not reduce command widths
+or move the menu's header/Close slots. Wheel and command focus reveal synchronize
+the same thumb, while the SDK owns page clicks, drag capture, arrow/keyboard
+scrolling and theme appearance. Tab includes an enabled scrollbar; list arrows
+retain their existing command-navigation path. Short lists hide/disable the bar.
+Same-DOM retheming keeps the controller and current drag, and leaving cancels
+pending bounded layout work, capture and listeners. This does not add a popup,
+new input authority or an idle animation/observer loop.
+
 `desktop/tests/classic-programs-render.mjs` exports the bounded actual GUI and
 native-client geometry fixtures. `desktop/tests/menu-host.mjs` covers the real
 Shell controller's callback lifetime, launch and existing menu authority seams.

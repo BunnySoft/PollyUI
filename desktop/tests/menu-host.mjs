@@ -13,6 +13,7 @@ const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs'
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
 const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
+const { render } = await import('./gui/sdk/js/reconciler.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -316,6 +317,53 @@ function groupedWindows({ state, native, calls }) {
 }
 const groupId = 'shell-window-app-fixture.desktop';
 const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
+
+scenario('Menu scrollbar: shared overlay follows wheel/focus, retains capture on retheme and stops on leave', f => {
+  const owner = f.surface('wallpaper').document, container = owner.createElement('view');
+  owner.body.appendChild(container);
+  const group = windowTasks(Array.from({ length: 8 }, (_, i) => ({
+    id: i + 1, appId: 'fixture.desktop', title: 'Window ' + (i + 1), workspaceId: 7,
+  })), 'applications')[0], state = { slots: [], action() {}, close() {} };
+  const paint = theme => render(windowGroupMenu(theme, group, state), container);
+  paint(getDesktopTheme('modern'));
+  const root = owner.getElementById('shell-window-group'), list = owner.getElementById('shell-group-list');
+  const track = owner.getElementById('shell-group-list-scrollbar');
+  const thumb = owner.getElementById('shell-group-list-scroll-thumb');
+  list.offsetTop = 0; list.offsetHeight = 100;
+  track.offsetTop = 0; track.offsetWidth = 10; track.offsetHeight = 100;
+  list.childNodes.forEach((node, i) => { node.offsetTop = i * 60; node.offsetHeight = i < 8 ? 56 : 0; });
+  for (const node of descendants(list).filter(node => node.tabIndex >= 0)) {
+    node.offsetTop = node.parentNode.offsetTop; node.offsetHeight = 24;
+  }
+  f.flushFrames();
+  assert.equal(track.tabIndex, 0);
+  domEvent(list, 'wheel', { deltaY: 100000 });
+  assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
+  assert.ok(Number(thumb.style.top) > 0);
+  const last = owner.getElementById('shell-group-activate-8');
+  last.offsetTop = 420; last.focus(); f.flushFrames();
+  assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
+  domEvent(list, 'wheel', { deltaY: -100000 });
+  paint(getDesktopTheme('modern')); f.flushFrames();
+  assert.equal(Number(list.scrollTop), 0, 'unchanged focused content does not undo manual wheel scrolling');
+  const down = { button: 0, clientX: 5, clientY: Number(thumb.style.top) + 3 };
+  domEvent(track, 'mousedown', down);
+  assert.ok(owner.captured === track);
+  paint(getDesktopTheme('aqua')); f.flushFrames();
+  assert.ok(owner.getElementById('shell-group-list-scrollbar') === track);
+  assert.ok(owner.getElementById('shell-group-list-scroll-thumb') === thumb);
+  assert.ok(owner.captured === track, 'same controller keeps the original drag across appearance changes');
+  domEvent(track, 'mousemove', { clientX: 5, clientY: 65 });
+  assert.ok(Number(list.scrollTop) > 0);
+  render(null, container);
+  assert.equal(owner.captured, null);
+  assert.equal([...track.listeners.values()].flat().length, 0, 'stopping the overlay removes all input listeners');
+  const scroll = Number(list.scrollTop);
+  domEvent(track, 'mousemove', { clientX: 5, clientY: 99 });
+  f.flushFrames();
+  assert.equal(Number(list.scrollTop), scroll, 'retired drag cannot change the detached list');
+  assert.ok(!root.parentNode);
+});
 
 const pinnedNodeId = id => 'shell-window-pin-' + encodeURIComponent(id);
 function pinnedFixture(f) {
@@ -652,7 +700,8 @@ test('Application tasks: group-menu chrome uses the shared menu policy without m
     const menu = windowGroupMenu(theme, group, { slots: [], action() {}, close() {} });
     assert.deepEqual(menu.props.style, { ...panelAppearance(theme, 'menu'),
       width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' });
-    assert.equal(menu.children[1].props.id, 'shell-group-list', 'list keeps its positional slot across themes');
+    assert.equal(menu.children[1].props.id, 'shell-group-list-scroll-area', 'list area keeps its positional slot across themes');
+    assert.equal(menu.children[1].children[0].props.id, 'shell-group-list', 'original list ID and direct command rows are retained');
     assert.equal(menu.children[2].props.id, 'shell-group-menu-close', 'close keeps its positional slot across themes');
     const detail = panelDetail(theme, 'menu');
     if (detail) assert.deepEqual(menu.children.at(-1), detail,
