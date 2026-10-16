@@ -116,8 +116,12 @@ a visible warning rather than claiming that the requested files were applied.
 
 - `window`: active/inactive colors, border/title dimensions, control size,
   spacing, inset and radius, control gradients, glyph dimensions/visibility,
-  stripe treatment, hover/inactive mixing, gradient direction, generic caption
-  font family, size, weight and alignment. Text and controls must fit their
+  stripe treatment, hover/inactive mixing, gradient direction, caption font
+  family, size, weight and alignment. `fontFamily` accepts the three existing
+  generic names or a bounded literal installed family name, not a path, URL,
+  font resource or comma-separated list. No font is downloaded or bundled,
+  and a missing family still uses the GUI backend's existing fallback.
+  Text and controls must fit their
   configured titlebar. Optional `controlWidth` (8-96) and `controlTop` (0-64)
   give genuinely rectangular buttons; `controlSize` remains their height.
   Absent fields preserve the old square/centered geometry. Round controls must
@@ -336,7 +340,7 @@ schema, caption painting and application/backend actions are unchanged.
 
 | Surface | Verified contract / correction | Remaining boundary |
 |---|---|---|
-| Icon task states and focus | A Fluent-only task variant supplies both initial and event paint: active uses `button.from`, inactive is transparent, hover uses `colors.selection`, held uses `button.to`, with transparent gradients. Leave/cancel/blur restore the original face. Existing stretch focus detail is retained alongside the 16px/6px running markers. Clock reconciliation preserves hover/held/focus for the same immutable theme; replacement theme identity clears stale interaction state | These are existing theme design colors, not measured Windows state-color errors |
+| Icon task states and focus | A Fluent-only task variant supplies both initial and event paint: active uses `button.from`, inactive is transparent, hover uses `colors.selection`, held uses `button.to`, with transparent gradients. Leave/cancel/blur restore the original face. Existing stretch focus detail is retained alongside the 16px/6px running markers. Shared physical-state tracking preserves current hover/held/focus through clock reconciliation and immutable retheme, applying the new palette; cancellation and disabling clear obsolete gestures | These are existing theme design colors, not measured Windows state-color errors |
 | Centered group and notification area | Measure actual fixed slot, task and notification-area widths after layout; keep the full group centered when it fits before the tray, otherwise retreat into the available interval. The 800px default remains at x280/width240. At 360px it is x12/width226; at 260px x12/width126. Notification/clock remain outside it. The task strip retains at least one configured task width; when fixed actions also overflow, the group independently scrolls and local focus reveals the inner viewport. Inner task wheel does not scroll the outer group | A tray consuming almost the entire output can leave less than one full configured slot; this is a physical layout boundary, not a claim of complete fit at arbitrary width/item count |
 | Nested Start app and Pin focus | Chain the existing focus handler through inner and outer viewports. At 640px/available660 the last app/Pin scrolls 46/68px and Search/footer stay fixed. The follow-up fixes the former collapsed 180px menu: its app/Pin body is now 118px, with outer maximum146. The full 80px app and 20px Pin, Search, Refresh, Close and logout have real pointer/keyboard access without shrinking fonts or controls. Inner wheel consumes movement before chaining at its boundary. Filtering and retained growth clamp stale scroll; unchanged reconciliation does not undo manual scrolling | Whole-menu scrolling intentionally moves Search/header/footer only when their existing chrome and one card cannot fit. A 40px root exposes at most 40px of an 80px app, not full fit. Initial pre-layout Search focus does reveal all 32px in that root, using outer16. This is not certification at arbitrary geometry or a new native popup/input mechanism |
 | Native owner sizing/lifetime | Subscribe after attachment, not the earlier ownerless mount. Actual host-only 240→680→240→680 resize completes in three bounded layout/reveal frames; later business `onstatechange` remains intact. Leave cancels pending frames and unsubscribes. A closed subscribed panel, its Document and handle all collect after GC | Uses generic owner/state APIs, weak remover values and owner-free finalizer tokens; no C theme painting or periodic layout polling |
@@ -402,7 +406,9 @@ radius of zero is shared by their factory and state painter; ordinary buttons
 still consume the original theme radius. A menu-only `WeakMap` reuses that derived
 object for each immutable source theme, so clock-driven reconstruction does not
 reset hover/held state on the retained menu node. A new source theme gets a new
-derived object and palette rather than retaining the old input state.
+derived object and palette while the shared control-state cache preserves only
+the live physical gesture/focus. Actual cancel, capture loss or disabling clears
+that gesture instead of treating theme identity as a cancellation event.
 Previously the default Tiger/Aqua
 surface painter changed the menu-item radius from 0 to 8 after input. Default
 Lion/Big Sur use the generic path and were not affected; their supported
@@ -621,6 +627,22 @@ show only part of a row. These are functional improvements, not six-theme
 OS-exact glyphs or native accessibility-provider certification. See
 [the SDK contract](../gui/README.md).
 
+Desktop command and button consumers share primary-button, nonrepeating
+Enter/Space activation. Recognized repeated activation keys are consumed rather
+than leaking to ancestor menu handlers; composing keys are left to IME handling.
+Surface and Luna painters share weak per-node physical state, so immutable
+theme replacement preserves a real press with the new palette. Cancel, lost
+capture, blur and disabled state clear the appropriate transient paint, without
+changing caller opacity or the control's hitbox.
+
+Settings display/credential inputs, Files, opt-in file dialogs and workspace
+editors use `shared/ui/input-appearance.mjs` for the complete existing input
+appearance: foreground, background, selection, border/focus colors, radius and
+semantic font size. First paint and retained updates use the same contract.
+The existing inputs remain attached: values, caret, selection, password masking,
+composition and callback lifetimes are not replaced. Non-opt-in file dialogs
+keep their explicit neutral appearance and do not acquire a theme subscription.
+
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing
 credential controls preserves their values, selection and focus. Theme data does
@@ -630,8 +652,10 @@ The standalone appearance preview is still a simulated sample. Its samples use
 the same data but do not certify every compositor effect. `window.shadow` and
 `unifiedToolbar` retain their preview meaning; real client clipping, compositor
 shadows/blur and arbitrary font-file loading are not added by this theme
-system. Captions now reuse the GUI text backend, but font equivalence,
-grapheme-safe ellipsis and full platform/state qualification remain incomplete.
+system. Captions reuse the GUI text backend; on Linux, the existing ICU
+boundaries now keep the 512-codepoint cap and measured ellipsis on complete
+graphemes. Other platforms retain the SDK's existing code-point fallback.
+Font equivalence and full platform/state qualification remain incomplete.
 
 ### Per-theme discrepancy tasks
 

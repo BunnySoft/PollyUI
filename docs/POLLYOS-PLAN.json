@@ -697,7 +697,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "原 E22 的 XP IDs/证据和 Alpha 非前置边界保留。2026-10-15 用户要求把此前 Windows/Mac UI 不一致逐项列入任务，现扩为六主题具体缺口。依据 desktop/THEMES.md、alignment-reference.json、XP-LUNA.md 和实际 Win2K3 参考/原生回归；不是新增一轮全主题测试或材质/品牌素材/业务后端实施授权。in_progress 表示有已交付子集，不表示正在后台运行实现会话。"
+      "evidence": "原 E22 的 XP IDs/证据和 Alpha 非前置边界保留。2026-10-15 依THEMES/alignment-reference/XP-LUNA与实际Win2K3参考登记35个六主题差异，不把所有待核区域当confirmedbug。2026-10-16 用户明确快速实现、先共通后独特：主会话统一分析，公共组件仅71d8单writer、caption/schema字体仅b1ef不相交writer，Windows/Mac私有writer暂缓。已合7169e5a共享activation/weakphysicalstate与4281df3完整inputAppearance（源c99+5e99），统一Settings显示/凭据、Files、chooser和workspace，保neutraloptout/DOM/value/caret/IME/securemask，补NInput合法fontsize与重复键不漏ancestor；父Node122/真实GUI代表消费者通过。876d126共享caption字素cap/ellipsis与合法系统family名字，默认六theme strips不变。深选区前景缺口交同一公共owner继续最小SDK/token合同，独有修复须先消费已合共享基线，不能各分支重复改公共组件。真实圆角/阴影/跨Appblur归共享compositor机制（实际wlroots0.19.3仅矩形clip/无effects接口），不能per-theme角贴片/渐变伪造。in_progress仍表示partial，不等于全部35条正在运行；合法品牌/字体/OSraw及业务后端缺口不伪关。"
     },
     {
       "id": "xp-reference-baseline",
@@ -780,9 +780,9 @@
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "六主题 fontReference 与 THEMES.md 明确原系统字体未分发，真实 Classic caption 仍有 GDI 文字基线/栅格差异；GUI shaping 复用已实现，不等于字体像素一致。"
+      "evidence": "六主题原系统字体未分发，Classic GDI基线/栅格资格仍不齐。2026-10-16 用户要求共通先行，876d126（源e549b336）统一六主题caption fitter：复用现SDK/LinuxICU完整字素，512codepoint预算向下贴cluster，省略测完整prefix+ellipsis；baseline/clip/shadow原坐标不动。window.fontFamily兼容三generic并接受128UTF16上限单个literal已装family名，严格拒路径/URL/control/格式控制/列表/资源，不load字体、不改builtin/fallback/JSON1。父Node5/5与真实5906LinuxCanvas/ICU验证capRepairs3（combining/ZWJ/flag）、ellipsisRepairs0如实，六主题ASCII/empty/narrowellipsis四strip bytes不变且clip外像素/侧条保持；已装DejaVuSerif/Sans实际字宽130.078125/122.421875。非Linux仍既有codepointfallback，不假称全平台grapheme或OS字体像素一致；E22.5保持partial。"
     },
     {
       "id": "theme-icon-artwork",
