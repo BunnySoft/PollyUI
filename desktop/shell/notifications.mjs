@@ -2,6 +2,7 @@ import { bodyFont } from './desktop/shared/ui/body-font.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 function button(id, label, theme, action) {
   const padding = theme.layout.notificationButtonPadding;
@@ -14,7 +15,12 @@ function button(id, label, theme, action) {
 }
 export function createNotificationSurfaces({ host, native, theme, report, changed }) {
   let started = false, notices = [], toast = null, center = null, previous;
-  const close = surface => { if (surface && !surface.closed) surface.close(); };
+  const close = surface => {
+    if (surface && !surface.closed) {
+      if (surface === center?.window) render(null, surface.document.body);
+      surface.close();
+    }
+  };
   function action(notice, key) {
     try {
       if (key === null) native.dismissNotification(notice.id, notice.revision);
@@ -69,7 +75,10 @@ export function createNotificationSurfaces({ host, native, theme, report, change
       ...size,
       margins: { top: theme().layout.notificationTopMargin, right: theme().layout.overlayRightMargin },
       exclusiveZone: -1, transparent: true });
-    result.onclose = () => { if (toast?.window === result) toast = null; if (center?.window === result) center = null; };
+    result.onclose = () => {
+      if (toast?.window === result) toast = null;
+      if (center?.window === result) { render(null, result.document.body); center = null; }
+    };
     return { window: result, output: output.id, geometry: JSON.stringify(size) };
   }
   function paint() {
@@ -90,15 +99,23 @@ export function createNotificationSurfaces({ host, native, theme, report, change
     if (center) { close(toast?.window); toast = null; }
     const current = theme(), target = center || toast;
     Object.assign(target.window.document.body.style, { gap: current.layout.noticeStackGap, backgroundColor: '#00000000' });
-    render(h('view', { id: center ? 'shell-notification-center' : 'shell-notification-toasts',
-      style: { width: '100%', height: '100%', minWidth: 0, minHeight: 0,
-        gap: current.layout.noticeStackGap, overflow: 'scroll' }, onWheel: scrollDesktop },
+    const contents = [
       center ? button('shell-notification-center-close', 'Close notifications', current, () => {
         close(center.window); center = null; paint();
       }) : null,
       ...(center ? notices : notices.slice(0, current.layout.notificationVisibleCount)).map(card),
       !center && notices.length > current.layout.notificationVisibleCount ? button('shell-notification-more', 'All notifications (' + notices.length + ')',
-        current, show) : null), target.window.document.body);
+        current, show) : null,
+    ];
+    const view = center ? panelViewport(current, { id: 'shell-notification-center', framed: false, scrollbar: true }, contents) :
+      h('view', { id: 'shell-notification-toasts',
+        style: { width: '100%', height: '100%', minWidth: 0, minHeight: 0,
+          gap: current.layout.noticeStackGap, overflow: 'scroll' }, onWheel: scrollDesktop }, contents);
+    if (center) {
+      Object.assign(view.props.style, { padding: 0, backgroundColor: 'transparent' });
+      view.children[0].children[0].props.style.gap = current.layout.noticeStackGap;
+    }
+    render(view, target.window.document.body);
   }
   function refresh() {
     if (!started) return;
