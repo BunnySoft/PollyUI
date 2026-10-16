@@ -196,7 +196,7 @@ scaling. This verifies the existing theme contract, not build-tagged Windows
 11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
-Private appearance protocol v4 uses geometry-only numeric schema 4 and separates
+Private appearance protocol v5 uses geometry-only numeric schema 5 and separates
 the publisher and renderer roles. Previous private Shell/WM/decorator combinations
 are explicitly rejected; public JSON schema 1 and the read-only application
 theme subscription remain unchanged. This paired
@@ -729,7 +729,7 @@ and limits are desktop policy, not built into the decoder.
 ## Native and application boundary
 
 Private `desktop.configureAppearance(theme, layout)` uses appearance protocol
-v3 with geometry-only numeric schema 4. Prepare validates the bounded
+v5 with geometry-only numeric schema 5. Prepare validates the bounded
 JS-compiled layout and an immutable descriptor; commit publishes the snapshot.
 The existing GUI renders complete four-strip pixel responses, not C theme
 commands. Each window owns current and pending snapshots so a delayed
@@ -745,6 +745,29 @@ geometry is test-only; the compositor has no bootstrap style or theme-ID
 registry. Runtime theme IDs and visual values do not require recompilation.
 Old private versions are explicitly rejected; the public application theme
 subscription and JSON schema remain unchanged.
+
+### Native rounded-window checkpoint
+
+The in-progress native-effects batch adds explicit
+`window.nativeEffects: "rounded"` over the existing radius. Missing or `"none"`
+preserves the previous native path; preview shadow values do not silently
+enable native effects. This checkpoint is not the completed external-shadow or
+regional-backdrop implementation.
+
+The compositor groups the real client and frame descendants into a bounded
+offscreen target, then applies one antialiased coverage to that group. Popups
+remain separate, and hit testing retains the existing rectangular contract.
+A pinned wlroots scene-effects patch supplies the generic composition mechanism;
+the WM still does not interpret preset names, colors or theme JSON. Runtime
+library identity, headers, linked ABI and the packaged patch hash must match.
+Stock SDKs are explicitly rejected rather than producing a square fallback.
+
+The first checkpoint has actual Pixman output evidence for overlap, alpha,
+source cropping, buffer/output rotation, fractional scale, cache reuse and
+aggregate budget refusal. GLES code is compiled but not runtime-qualified in
+the current environment, which has no usable DRM device. External shadow,
+real-GUI outer-corner ownership and final SDK/build-entry checks are still
+being completed; no physical-GPU or full-theme pixel qualification is implied.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

@@ -183,7 +183,7 @@ root/ptrace、被攻破的可信 Shell、应用主动修改自身数据等不在
 | 组件 | 当前用途/选择 |
 |---|---|
 | Debian / glibc / kernel | Debian 13 trixie amd64、glibc 2.41；当前 Live 为 `6.12.111+deb13-amd64` 内核 |
-| wlroots | 固定 0.19.3；提供设备、协议、场景与合成基础设施；不使用发行版不兼容的 0.18 ABI |
+| wlroots | 固定 0.19.3；当前原生效果批次增加有独立 ABI/SONAME/补丁哈希的公共 scene-effects 配套，旧 stock SDK 明确拒绝；提供设备、协议、场景与合成基础设施，不使用发行版不兼容的 0.18 ABI |
 | QuickJS-ng / Yoga / Skia | JS、布局、绘制；Skia 固定 m124 对应源码，Linux 构建使用匹配工具链 |
 | SDL3 | 3.4.10 加 Wayland show/hide 回调生命周期修复；源码与补丁一起校验 |
 | HarfBuzz / ICU / Rime | 文本 shaping/Unicode 边界/独立中文输入服务；默认 Rime schema 限定到实际安装集合 |

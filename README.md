@@ -1241,9 +1241,9 @@ colors, and edge/corner resizing. Fullscreen hides decorations; maximized
 content respects both panel reservations and frame extents.
 
 The trusted Shell supplies validated theme JSON and a JS-compiled layout to
-private `desktop.configureAppearance(theme, layout)`. Appearance protocol v4
+private `desktop.configureAppearance(theme, layout)`. Appearance protocol v5
 separates that publisher from a WM-supervised, windowless `pollyui --decorator`
-renderer, using geometry-only numeric schema 4 and immutable descriptors.
+renderer, using geometry-only numeric schema 5 and immutable descriptors.
 The existing GUI renders four detached Canvas2D strips; PollyWM validates and
 atomically composes them with matching geometry, scale and state. Shell exit
 does not stop the renderer unless the explicit session-exit policy also stops
@@ -1257,9 +1257,11 @@ There is no C theme painter or preset registry. Regenerate geometry bounds and
 test-only fixtures with `node desktop/tools/generate-decoration-themes.mjs`;
 `--check` verifies those files. Caption fonts and shaping use the existing GUI
 text backend, not a separate WM Fontconfig/FreeType cache. PollyWM still does
-not embed SDL, Skia, QuickJS or Yoga. Blur,
-frame shadows, fully rounded client-content clipping and polished animations
-remain separate appearance work.
+not embed SDL, Skia, QuickJS or Yoga. The current native-effects checkpoint adds
+explicit opt-in grouped antialiased window clipping through the paired wlroots
+scene patch; old theme files do not implicitly enable it. External frame shadows
+and final effect integration are still being completed. Background blur and
+polished animations remain separate appearance work.
 
 ### Window switcher and shortcut settings
 
