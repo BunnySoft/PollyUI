@@ -1,12 +1,90 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { register } from 'node:module';
 import { test } from 'node:test';
-import { windowTasks, taskLabel } from '../shell/window-groups.mjs';
 import { parseThemeCatalog, parseThemeFile, applyThemeOverrides } from '../shared/ui/theme-schema.mjs';
 import { dockSurfaceWidth } from '../shared/ui/theme-layout.mjs';
+register('./root-loader.mjs', import.meta.url);
+const { windowTasks, taskLabel } = await import('../shell/window-groups.mjs');
+const { applicationForWindow, parseDesktopEntry, applicationCatalog } = await import('../shell/applications.mjs');
 
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
 const encode = themes => JSON.stringify({ schemaVersion: 1, themes });
+
+test('registered runtime IDs are optional bounded metadata, not inferred desktop-file aliases', () => {
+  const file = extra => ({ id: 'registered.desktop', path: '/apps/registered.desktop',
+    contents: '[Desktop Entry]\nType=Application\nName=Registered\nExec=program\n' + extra });
+  const original = parseDesktopEntry(file(''));
+  assert.equal(Object.hasOwn(original, 'appId'), false, 'legacy catalog shape is unchanged');
+  assert.equal(applicationForWindow([original], 'registered.desktop'), original);
+  assert.equal(applicationForWindow([original], 'registered'), null, 'no suffix stripping');
+  for (const appId of ['org.pollyui.files', 'Foo', 'Mixed_Case-App.2', 'a'.repeat(255)]) {
+    const parsed = parseDesktopEntry(file('X-Polly-AppId=' + appId + '\n'));
+    assert.equal(parsed.appId, appId);
+    assert.deepEqual(parsed.argv, original.argv, 'display metadata cannot change launch argv');
+    assert.equal(parsed.id, original.id, 'persisted desktop-entry IDs do not change');
+    assert.equal(applicationForWindow([parsed], appId), parsed);
+  }
+  for (const invalid of ['', ' Foo', 'Foo ', 'with space', 'Foo\\sBar', 'Foo\\tBar', 'Foo\\n',
+    '../app', '/app', 'C:\\\\app', 'https://app', 'polly-memory:1', 'a'.repeat(256), 'Foo\u007f']) {
+    assert.throws(() => parseDesktopEntry(file('X-Polly-AppId=' + invalid + '\n')), /X-Polly-AppId/);
+  }
+  const reports = [];
+  assert.equal(applicationCatalog([file('X-Polly-AppId=/invalid\n')], {}, message => reports.push(message)).length, 0);
+  assert.match(reports[0], /Skipping.*X-Polly-AppId/, 'invalid registration is explicitly reported');
+});
+
+test('task naming and artwork entry selection share exact-first and unambiguous explicit runtime identity', () => {
+  const registered = { id: 'polly-files.desktop', appId: 'org.pollyui.files', name: 'Files', icon: '/icons/files.png' };
+  const other = { id: 'other.desktop', appId: 'org.pollyui.files', name: 'Other Files', icon: '/icons/other.png' };
+  const exact = { id: 'org.pollyui.files', name: 'Exact Files', icon: '/icons/exact.png' };
+  const snapshot = [{ id: 1, appId: 'org.pollyui.files', title: 'A document', workspaceId: 7 },
+    { id: 2, appId: 'org.pollyui.files', title: 'B document', workspaceId: 7 }];
+  for (const entries of [[registered, other], [other, registered]]) {
+    assert.equal(applicationForWindow(entries, snapshot[0].appId), null);
+    assert.equal(windowTasks(snapshot, 'applications', entries)[0].title, snapshot[0].appId,
+      'conflicting claims keep the real ID/fallback instead of selecting arbitrary artwork');
+  }
+  for (const entries of [[registered, other, exact], [exact, other, registered]]) {
+    assert.equal(applicationForWindow(entries, snapshot[0].appId), exact);
+    assert.equal(windowTasks(snapshot, 'applications', entries)[0].title, exact.name);
+  }
+  const group = windowTasks(snapshot, 'applications', [registered])[0];
+  assert.equal(applicationForWindow([registered], group.appId).icon, registered.icon);
+  assert.equal(group.title, 'Files');
+  assert.equal(group.id, 'app-org.pollyui.files', 'the grouping key remains the real runtime appId');
+  assert.deepEqual(group.windows, snapshot, 'metadata does not change membership or snapshots');
+  const settings = { id: 'org.pollyui.settings', name: 'Settings' };
+  const registeredSettings = { id: 'polly-settings.desktop', appId: settings.id, name: 'Registered Settings',
+    icon: '/icons/settings.png' };
+  assert.equal(applicationForWindow([settings, registeredSettings], settings.id), settings);
+  assert.equal(applicationForWindow([registeredSettings], settings.id), registeredSettings,
+    'resource-only catalog resolves the actual registration without losing synthetic display identity');
+  const bundle = { id: 'bundle:org.example.notes', appId: 'org.example.notes', name: 'Notes' };
+  assert.equal(applicationForWindow([bundle], bundle.appId), bundle);
+  assert.equal(applicationForWindow([{ id: bundle.id }], bundle.appId), null, 'no inferred bundle-prefix alias');
+});
+
+test('packaged desktop registrations declare their actual wrapper IDs and one shared hidden text handler', () => {
+  const entries = [];
+  for (const [name, appId] of [['files', 'org.pollyui.files'], ['settings', 'org.pollyui.settings'],
+    ['processes', 'org.pollyui.processes'], ['file-text', 'org.pollyui.file-text'],
+    ['file-text-open', 'org.pollyui.file-text']]) {
+    const id = 'polly-' + name + '.desktop';
+    const file = { id, path: '/applications/' + id,
+      contents: readFileSync(new URL('../release/' + id, import.meta.url), 'utf8') };
+    const parsed = parseDesktopEntry(file, { documentHandlers: true });
+    const wrapper = readFileSync(new URL('../tools/polly-' + (name === 'file-text-open' ? 'file-text' : name) +
+      '.in', import.meta.url), 'utf8');
+    assert.match(wrapper, new RegExp('--app-id ' + appId.replaceAll('.', '\\.') + ' '));
+    assert.equal(parsed.appId, appId);
+    assert.equal(parsed.icon, '@CMAKE_INSTALL_FULL_DATADIR@/icons/hicolor/64x64/apps/polly-' +
+      (name === 'file-text-open' ? 'file-text' : name) + '.png', 'parser leaves build configuration placeholders literal');
+    if (name === 'file-text-open') assert.equal(parseDesktopEntry(file), null);
+    else entries.push(parseDesktopEntry(file));
+  }
+  assert.equal(applicationForWindow(entries, 'org.pollyui.file-text').id, 'polly-file-text.desktop');
+});
 
 test('exact nonempty app IDs only; unknown windows and the old Window.id interface stay independent', () => {
   const windows = [

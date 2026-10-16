@@ -70,8 +70,11 @@ infer grouping from their ID, styling or panel kind.
 One pure `windowTasks` model feeds both the panel/Dock and the native Dock width
 calculation. It groups only exact, nonempty real `appId` values on the current
 workspace; an unknown ID leaves each original Window.id independent. Names come
-from an exact current catalog match or the actual app ID, not guessed executable
-aliases, installation status or launchability. Windows stay running while
+from an exact catalog ID or a unique explicitly registered `X-Polly-AppId`
+(validated manifest ID for bundles), otherwise the actual app ID. Exact catalog
+IDs take precedence; conflicting registrations do not depend on catalog order.
+No executable/title/desktop-file-suffix guesses or launchability assumptions are
+made. Windows stay running while
 minimized; labels distinguish all versus some minimized, and multi-window groups
 show their count. In applications mode, stable numeric window order is independent
 of active/clock changes; per-window mode preserves its input order. Catalog/model

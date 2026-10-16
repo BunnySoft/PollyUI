@@ -84,6 +84,8 @@ per-part fallback; inline rename inputs and bitmap art are not recolored. This
 changes no row/column geometry, selection generation or filesystem action.
 Places, empty-state text and Properties use the same theme typography as the
 file list; property-panel spacing also follows the existing layout tokens.
+Properties names, full paths and symbolic-link targets use the existing
+read-only raw-text viewports, including wheel and Left/Right/Home/End access.
 
 Filter, address and inline name fields use the same SDK text input, not a second
 editor. Captured dragging continues outside the field/window and release records

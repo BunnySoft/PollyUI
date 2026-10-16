@@ -21,13 +21,14 @@ install(PROGRAMS "${CMAKE_BINARY_DIR}/polly-desktop"
 install(PROGRAMS "${CMAKE_BINARY_DIR}/polly-files" "${CMAKE_BINARY_DIR}/polly-file-text" "${CMAKE_BINARY_DIR}/polly-settings"
     "${CMAKE_BINARY_DIR}/polly-processes"
     DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT PollyDesktop)
-install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/polly-files.desktop"
-    "${CMAKE_SOURCE_DIR}/desktop/release/polly-settings.desktop"
-    "${CMAKE_SOURCE_DIR}/desktop/release/polly-processes.desktop"
-    "${CMAKE_SOURCE_DIR}/desktop/release/polly-file-text.desktop"
-    "${CMAKE_SOURCE_DIR}/desktop/release/polly-file-text-open.desktop"
-    "${CMAKE_SOURCE_DIR}/desktop/release/polly-mimeapps.list"
+configure_file("${CMAKE_SOURCE_DIR}/desktop/install-applications.cmake.in"
+    "${CMAKE_BINARY_DIR}/install-applications.cmake" @ONLY)
+install(SCRIPT "${CMAKE_BINARY_DIR}/install-applications.cmake" COMPONENT PollyDesktop)
+install(FILES "${CMAKE_SOURCE_DIR}/desktop/release/polly-mimeapps.list"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications" COMPONENT PollyDesktop)
+install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/resources/application-icons/"
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/64x64/apps" COMPONENT PollyDesktop
+    FILES_MATCHING PATTERN "*.png")
 install(DIRECTORY "${CMAKE_SOURCE_DIR}/desktop/apps/files"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/pollyui/desktop/apps" COMPONENT PollyDesktop
     FILES_MATCHING PATTERN "*.mjs" PATTERN "tests" EXCLUDE)

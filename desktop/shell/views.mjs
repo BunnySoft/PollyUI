@@ -165,7 +165,7 @@ function syncDockLayout(node) {
 }
 
 function taskArtwork(window, images, size, fallback) {
-  const image = window?.appId && (images?.get(window.appId) || images?.get('bundle:' + window.appId));
+  const image = window?.appId && images?.get(window.appId);
   return image ? h('view', { 'aria-hidden': 'true', style: {
     width: size, height: size, flexShrink: 0, backgroundImage: image, pointerEvents: 'none',
   } }) : fallback;

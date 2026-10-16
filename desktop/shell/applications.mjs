@@ -156,6 +156,19 @@ export function applicationActivationTarget(id) {
   return { busName, objectPath: '/' + busName.replaceAll('.', '/').replaceAll('-', '_') };
 }
 
+export function applicationForWindow(entries, appId) {
+  if (typeof appId !== 'string' || !appId.length) return null;
+  const exact = entries.find(entry => entry.id === appId);
+  if (exact) return exact;
+  let match = null;
+  for (const entry of entries) {
+    if (entry.appId !== appId) continue;
+    if (match && match.id !== entry.id) return null;
+    match = entry;
+  }
+  return match;
+}
+
 export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], canExecute = () => true,
   activationAvailable = false, documentHandlers = false } = {}) {
   if (file.contents.includes('\0')) throw new Error('Desktop entry contains NUL');
@@ -176,7 +189,7 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     if (separator < 1) throw new Error('Invalid desktop-entry key');
     const key = line.slice(0, separator).trim();
     if (values.has(key)) throw new Error('Duplicate desktop-entry key: ' + key);
-    values.set(key, line.slice(separator + 1).trim());
+    values.set(key, key === 'X-Polly-AppId' ? raw.slice(raw.indexOf('=') + 1) : line.slice(separator + 1).trim());
   }
   if (!found || values.get('Type') !== 'Application') return null;
   if (boolean(values, 'Hidden') || (boolean(values, 'NoDisplay') && !documentHandlers)) return null;
@@ -203,6 +216,13 @@ export function parseDesktopEntry(file, { locale = 'C', desktops = ['Polly'], ca
     keywords: listValue(localized(values, 'Keywords', locale, false)), argv: null, activation: null, unavailable: '',
     mimeTypes: listValue(values.get('MimeType')).map(mimeType), exec: '', documentField: '',
   };
+  if (values.has('X-Polly-AppId')) {
+    const appId = unescapeValue(values.get('X-Polly-AppId'));
+    const match = /^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,254}$/.exec(appId);
+    if (!match || match[0] !== appId)
+      throw new Error('X-Polly-AppId must be a nonempty application identifier of at most 255 characters');
+    entry.appId = appId;
+  }
   if (entry.cwd && !entry.cwd.startsWith('/')) throw new Error('Relative application working directories are unsupported');
   if (!values.get('Exec')) {
     if (!dbusActivatable) throw new Error('Application entry requires Exec');

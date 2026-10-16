@@ -5,7 +5,7 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISIO
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
 import { panelView, dockView, settingsView, applicationsView, windowActionsView, workspacesView, switcherView, displayConfirmationView, button } from './desktop/shell/views.mjs';
-import { createApplicationLauncher } from './desktop/shell/applications.mjs';
+import { createApplicationLauncher, applicationForWindow } from './desktop/shell/applications.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { programsPlacement } from './desktop/shell/programs-menu.mjs';
 import { surfaceStyle } from './desktop/shared/ui/surface-primitives.mjs';
@@ -347,8 +347,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
           .join(' ').toLowerCase().includes(query)).slice(0, 100)) ids.add(entry.id);
     }
     const appIds = new Set(displayTasks(theme).map(task => task.appId).filter(Boolean));
-    const entries = applications.filter(entry => entry.icon && (ids.has(entry.id) || appIds.has(entry.id) ||
-      entry.id.startsWith('bundle:') && appIds.has(entry.id.slice('bundle:'.length))));
+    for (const appId of appIds) {
+      const entry = applicationForWindow(applications, appId);
+      if (entry) ids.add(entry.id);
+    }
+    const entries = applications.filter(entry => entry.icon && ids.has(entry.id));
     if (!iconResources && entries.length && !iconLoading) {
       iconLoading = true;
       const scope = iconScope;
@@ -480,17 +483,22 @@ export function createDesktopShell({ host = window, configuration, report = cons
     } : null;
     if (!background.window.closed) paintDesktop(bundle, theme);
     else syncShellIcons(theme);
+    const taskImages = new Map();
+    for (const task of listed) {
+      const entry = applicationForWindow(applications, task.appId);
+      if (entry && desktopImages.has(entry.id)) taskImages.set(task.appId, desktopImages.get(entry.id));
+    }
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
       error || serviceError, () => showSystemSettings(bundle.output.id), listed,
       taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }, desktopImages),
+          bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }, taskImages),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
       () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed,
-      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), desktopImages), dock.window.document.body);
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;

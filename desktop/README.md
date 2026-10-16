@@ -117,6 +117,23 @@ platform-owned icons. Uninstalled/unavailable apps retain an explicitly labelled
 shortcut and cannot launch a stale command. Labels use current catalog names;
 the saved label is only a snapshot for a missing entry.
 
+Packaged Files, Settings, Processes and File Text include original 64px Polly
+PNG tiles in `share/icons/hicolor/64x64/apps`. Their desktop entries are
+configured with the installation data prefix and declare `X-Polly-AppId` to
+match the real launcher identity. The same registered artwork serves desktop
+shortcuts, application menus and running taskbar/Dock groups. This is explicit
+registration, not a title, executable-name or desktop-file-suffix guess; an
+ambiguous runtime identity keeps the fallback instead of choosing arbitrarily.
+Managed bundles use the already-validated manifest ID for this association.
+
+The artwork source is `tools/generate-application-icons.mjs`, using only native
+rectangles and gradients, with no downloaded or platform-owned assets. To
+regenerate from the repository root with the existing playground, set
+`PU_RENDERER=raster`, `PU_TEST_W=64`, `PU_TEST_H=64` and run
+`pollyui-playground --test desktop/tools/generate-application-icons.mjs`.
+The checked-in PNGs are installed directly; regeneration is not a runtime or
+release dependency.
+
 The [v2 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
 theme/audio/display/workspace/keyboard preferences and atomically migrates v1.
 This feature is PollyOS Shell behavior, not Windows Explorer/macOS replacement,
