@@ -90,6 +90,13 @@ including notification-before/after workspace and membership guards. The exporte
 client geometry respectively. They use explicitly nonempty app-ID fixture
 snapshots, not evidence of compositor permissions, physical DPI or native MRU.
 
+Start and generic Apps menus reuse the same bounded bitmap cache as desktop
+shortcuts and taskbar/Dock tasks. Only the current filtered list (up to 100
+entries) adds menu-specific resources; closing the menu releases that extra
+retention. Available registered PNG/JPEG artwork replaces the existing glyph
+in the same box without theme recoloring. Missing or unsupported artwork keeps
+the original fallback. Classic All Programs retains its existing text layout.
+
 # Trusted display and logout confirmation surfaces
 
 The existing token-bound display Keep/Revert layer and save-before-logout layer

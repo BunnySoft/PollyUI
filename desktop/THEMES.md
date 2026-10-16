@@ -659,6 +659,13 @@ proprietary font files are installed. These missing pixels prevent a 1:1 claim.
 Files list names now use the theme body size and metadata its status size;
 Processes uses the existing body/status/heading and spacing tokens as well.
 Their fixed-row geometry, columns, inputs and controllers are unchanged.
+Settings frame/About/Keyboard titles, body/status text and spacing also consume
+their existing semantic tokens; Audio controls wrap in narrow pages without
+changing acknowledgement or Apply behavior. Files Places/Properties/empty
+states follow the same typography. Power uses an explicit bounded client area
+and the existing wheel handler, with shutdown permissions and confirmation
+coordination unchanged. These are application-style changes, not new font,
+layout or test infrastructure.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
