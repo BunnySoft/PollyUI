@@ -469,6 +469,7 @@
         "focus": "#6d9fe1"
       },
       "window": {
+        "nativeEffects": "rounded-shadow",
         "radius": 6,
         "border": "#7b91a4",
         "borderWidth": 1,
@@ -1640,6 +1641,7 @@
         "focus": "#6d9fe1"
       },
       "window": {
+        "nativeEffects": "rounded-shadow",
         "radius": 5,
         "border": "#777d85",
         "borderWidth": 1,
@@ -1860,6 +1862,7 @@
         "focus": "#79b7ff"
       },
       "window": {
+        "nativeEffects": "rounded-shadow",
         "radius": 10,
         "border": "#b1b9c6",
         "borderWidth": 1,
