@@ -101,6 +101,20 @@ The Dock parent is not faded, geometry/input are unchanged, and no background
 pixels are sampled. This is alpha composition, not Acrylic, vibrancy or blur;
 Lion reflection/Dock shadow and Big Sur wallpaper tint/live blur remain absent.
 
+Big Sur also selects `panel.menuBarOpacityPercent: 88` for the menu bar's passive
+background gradient. This separate optional integer 0..100 field defaults to 100;
+missing/100 retains the old opaque panel surface, and an override of 100 restores
+it through the existing surface replacement lifecycle. Dock-kind panels below
+100 request the existing transparent surface option so their RGBA background can
+actually reveal the scene behind it. At 0 the background is clear; text, clock,
+tray, buttons, focus, the existing bottom edge and all hitboxes are unchanged.
+Tiger/Lion have no default menu-bar override and retain their old opaque path.
+This is customizable Polly alpha policy, not measured macOS opacity, wallpaper
+tint, vibrancy or backdrop blur.
+Fixed panel/Dock actions also recheck their live surface and output before
+dispatch, so callbacks retained from an opaque/transparent surface replacement
+cannot reopen menus or act through a retired panel.
+
 `panel.taskGrouping` is optional schema-version-1 theme data: missing or `windows`
 retains the original per-window task API and active-click minimize behavior.
 The packaged and recovery Modern, Aqua/Tiger, Lion and Big Sur presets explicitly

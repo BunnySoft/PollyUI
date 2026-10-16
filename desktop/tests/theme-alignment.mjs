@@ -15,6 +15,37 @@ assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
 {
+  for (const base of catalog.themes) {
+    assert.equal(base.panel.menuBarOpacityPercent, base.id === 'bigsur' ? 88 : undefined);
+    if (base.panel.kind !== 'dock') continue;
+    const omitted = { ...base, panel: { ...base.panel } };
+    delete omitted.panel.menuBarOpacityPercent;
+    const tree = theme => panelView(theme, '10:31', action, '', action);
+    const solid = { ...base, panel: { ...base.panel, menuBarOpacityPercent: 100 } };
+    assert.equal(JSON.stringify(tree(omitted)), JSON.stringify(tree(solid)),
+      'Missing/100 preserve exact opaque menu-bar markup');
+    for (const value of [0, 88, 100, -1, 101, 88.5, '88', null, true]) {
+      const theme = { ...base, panel: { ...base.panel, menuBarOpacityPercent: value } };
+      for (const parse of [
+        () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+        () => parseThemeCatalog(JSON.stringify({ ...catalog,
+          themes: catalog.themes.map(item => item.id === base.id ? theme : item) })),
+        () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+          themes: { [base.id]: { panel: { menuBarOpacityPercent: value } } } })),
+      ]) {
+        if (Number.isInteger(value) && value >= 0 && value <= 100) assert.doesNotThrow(parse);
+        else assert.throws(parse, /menuBarOpacityPercent/);
+      }
+    }
+    const clear = tree({ ...base, panel: { ...base.panel, menuBarOpacityPercent: 0 } });
+    assert.equal(JSON.stringify(clear.children), JSON.stringify(tree(solid).children),
+      'Menu-bar alpha changes no foreground or input markup');
+    assert.equal(clear.props.style.backgroundColor, 'transparent');
+    assert.equal(clear.props.style.gradientFrom, base.window.titleFrom + '00');
+    assert.equal(clear.props.style.opacity, undefined);
+  }
+}
+{
   for (const theme of catalog.themes) assert.equal(theme.panel.materialOpacityPercent,
     ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 88 : undefined);
   for (const base of catalog.themes.filter(theme => theme.panel.kind === 'dock')) {

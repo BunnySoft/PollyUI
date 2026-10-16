@@ -7,7 +7,7 @@ register('./menu-host-loader.mjs', import.meta.url);
 const { createDesktopShell } = await import('./desktop/shell/shell.mjs');
 const { memoryConfiguration, fixtureShortcuts } = await import('./desktop/tests/configuration-memory.mjs');
 const { defaultShellConfiguration } = await import('./desktop/shell/configuration.mjs');
-const { getDesktopTheme } = await import('./desktop/shell/themes.mjs');
+const { getDesktopTheme, BUILTIN_THEME_CATALOG, installThemeCatalog } = await import('./desktop/shell/themes.mjs');
 const { applicationsView } = await import('./desktop/shell/views.mjs');
 const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
@@ -303,6 +303,59 @@ function scenario(name, run, configure) {
     try { await run(f); } finally { f.done(); }
   });
 }
+
+test('menu-bar alpha uses existing transparent surface creation and retires replaced callbacks', () => {
+  const f = fixture(({ native, state }) => {
+    state.menuBarPercent = undefined;
+    native.readThemeFiles = () => ({ files: [], overrides: JSON.stringify({ schemaVersion: 1,
+      themes: { modern: { panel: { menuBarOpacityPercent: 0 } },
+        bigsur: { panel: state.menuBarPercent === undefined ? {} :
+          { menuBarOpacityPercent: state.menuBarPercent } } } }) });
+  });
+  try {
+    const select = id => { assert.equal(f.state.settingsHandlers.select(id), true); return f.surface('panel'); };
+    assert.equal(f.surface('panel').options.transparent, undefined, 'Taskbar stays opaque even with explicit zero');
+    for (const id of ['aqua', 'lion']) {
+      assert.equal(select(id).options.transparent, undefined, 'Unchanged menu bar does not add a surface option');
+      assert.equal(f.surface('dock').options.transparent, true, 'Existing transparent Dock is unchanged');
+    }
+    const alpha = select('bigsur'), oldBody = callback(alpha.document.body, 'mousedown');
+    const oldMenu = callback(find(alpha, 'shell-menu'), 'click');
+    const oldSettings = callback(find(alpha, 'shell-panel-settings'), 'click');
+    assert.equal(alpha.options.transparent, true);
+    assert.equal(alpha.options.height, 24);
+    assert.deepEqual(alpha.options.anchors, ['top', 'left', 'right']);
+    assert.equal(alpha.options.exclusiveZone, 24);
+    f.state.menuBarPercent = 100;
+    assert.equal(f.state.settingsHandlers.reload(), true);
+    const solid = f.surface('panel');
+    assert.equal(alpha.closed, true);
+    const { transparent, ...alphaOptions } = alpha.options;
+    assert.equal(transparent, true);
+    assert.deepEqual(solid.options, alphaOptions, 'Solid restores the same spec without the transparent option');
+    const count = f.created.length;
+    const calls = f.calls.length;
+    assert.equal(oldMenu(event('click')), false, 'Retired child menu opener cannot acquire a new surface');
+    assert.equal(oldSettings(event('click')), false);
+    oldBody(event('mousedown', { target: alpha.document.body }));
+    assert.equal(alpha.document.body.listeners.get('mousedown').length, 0);
+    assert.equal(f.created.length, count, 'Retired body handler gains no authority');
+    assert.equal(f.calls.length, calls);
+    click(find(solid, 'shell-menu'));
+    assert.equal(f.created.length, count + 1, 'Live opener still creates one menu');
+    key(f.created.at(-1), 'Escape');
+    f.state.menuBarPercent = 0;
+    assert.equal(f.state.settingsHandlers.reload(), true);
+    assert.equal(solid.closed, true);
+    const clear = f.surface('panel');
+    assert.equal(clear.options.transparent, true);
+    assert.deepEqual(clear.options, alpha.options);
+    assert.equal(f.calls.some(call => ['launch', 'capture', 'apply-outputs'].includes(call[0])), false);
+  } finally {
+    f.done();
+    installThemeCatalog(BUILTIN_THEME_CATALOG);
+  }
+});
 
 function groupedWindows({ state, native, calls }) {
   state.windows = [
