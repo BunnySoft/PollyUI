@@ -163,7 +163,8 @@ test('appearance uses runtime configuration without legacy selection or downgrad
   assert.match(read('desktop/shared/ui/decoration-renderer.mjs'), /paintCaptionFrame/);
   assert.match(read('desktop/compositor/decoration.c'), /pu_decorator_allowed/);
   assert.match(read('desktop/protocols/polly-appearance-v1.xml'), /name="polly_appearance_v1" version="4"/);
-  assert.doesNotMatch(shell, /setAppearance|compatibilityTheme|appearanceWarning|startupGeneric/);
+  assert.doesNotMatch(shell, /\b(?:native|desktop)\s*(?:\.|\?\.)\s*setAppearance\b|compatibilityTheme|appearanceWarning|startupGeneric/);
+  assert.match(shell, /workspaceEditor\.input\.setAppearance\(inputAppearance\(/);
   assert.equal(existsSync(new URL('desktop/shell/appearance-compatibility.mjs', root)), false);
   assert.equal(existsSync(new URL('desktop/tests/xp-startup-compatibility.mjs', root)), false);
   assert.doesNotMatch(read('desktop/native/windows.c'), /set_appearance|setAppearance|decoration-themes\.h/);

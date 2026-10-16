@@ -643,6 +643,26 @@ The existing inputs remain attached: values, caret, selection, password masking,
 composition and callback lifetimes are not replaced. Non-opt-in file dialogs
 keep their explicit neutral appearance and do not acquire a theme subscription.
 
+Optional RGB `colors.selectionText` supplies selected-glyph foreground separately
+from the existing selection background. Missing values preserve the legacy
+`colors.text` mapping. Classic, Tiger and Lion explicitly use white on their
+existing blue selection; XP, Big Sur and Modern retain their original text ink.
+Both SDK input paths reuse full-string native DOM rendering inside selection
+clips, preserving shaping and available color glyphs rather than recoloring an
+entire field or reshaping text slices. Decorations are noninteractive and hidden
+from accessibility naming; the input API value remains authoritative. Neutral
+SDK inputs without the option keep their previous painting.
+Software-raster checks exercise both the Windows native text path and Linux's
+ICU/bidi path, including available color glyphs; they are not OS screenshot or
+physical display qualifications.
+
+The Luna-only fixed 80-dot, two-edge focus approximation is replaced by the
+same bounded owner-aware Canvas repeat painter already used by Classic.
+Luna keeps its original inset and button/panel focus colors; all four edges now
+follow the actual control bounds, including native host-only resize. This adds
+no duplicate painter, owner observer or finalizer mechanism, and changes neither
+unfocused pixels nor control geometry.
+
 Main Shell surfaces reconcile when their geometry changes. Other service panels
 repaint immediately; their preferred sizes apply when opened. Retheming existing
 credential controls preserves their values, selection and focus. Theme data does

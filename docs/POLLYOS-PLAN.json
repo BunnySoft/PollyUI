@@ -697,7 +697,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "原 E22 的 XP IDs/证据和 Alpha 非前置边界保留。2026-10-15 依THEMES/alignment-reference/XP-LUNA与实际Win2K3参考登记35个六主题差异，不把所有待核区域当confirmedbug。2026-10-16 用户明确快速实现、先共通后独特：主会话统一分析，公共组件仅71d8单writer、caption/schema字体仅b1ef不相交writer，Windows/Mac私有writer暂缓。已合7169e5a共享activation/weakphysicalstate与4281df3完整inputAppearance（源c99+5e99），统一Settings显示/凭据、Files、chooser和workspace，保neutraloptout/DOM/value/caret/IME/securemask，补NInput合法fontsize与重复键不漏ancestor；父Node122/真实GUI代表消费者通过。876d126共享caption字素cap/ellipsis与合法系统family名字，默认六theme strips不变。深选区前景缺口交同一公共owner继续最小SDK/token合同，独有修复须先消费已合共享基线，不能各分支重复改公共组件。真实圆角/阴影/跨Appblur归共享compositor机制（实际wlroots0.19.3仅矩形clip/无effects接口），不能per-theme角贴片/渐变伪造。in_progress仍表示partial，不等于全部35条正在运行；合法品牌/字体/OSraw及业务后端缺口不伪关。"
+      "evidence": "原 E22 的 XP IDs/证据和 Alpha 非前置边界保留。2026-10-15 依THEMES/alignment-reference/XP-LUNA与实际Win2K3参考登记35个六主题差异，不把所有待核区域当confirmedbug。2026-10-16 用户要求快速实现、先共通后独特：主会话统一分析，公共组件71d8单writer、caption/schema字体b1ef不相交writer；共享基线冻结合入后，Windows只接Luna焦点文件，Mac不重复改共享层。已合7169e5a共享activation/weakphysicalstate、4281df3完整inputAppearance、876d126 caption字素截断/合法系统family、31044cd可选selectionText同nativeDOM全串选区前景，保neutraloptout/DOM/value/caret/IME/securemask，NInput字号与测量一致，重复激活键不漏ancestor。父Node127/实际GUI输入与零误差选区/真实彩色emoji通过；Mac五menubar回归leave/blur/reconcile全图0差。再合9c83846 Luna独有fixed80dots/缺左右边：直接复用原ClassicCanvasfocus，未改genericowner/FR，120x22和420x80四边missing/extra全0，真实hostresize两帧、blur/leave取消与关闭GC通过。共通层未由各皮肤重复实现；默认caption六路ASCII四strip bytes保持。真实圆角/阴影/跨Appblur需共享compositor新机制（实际wlroots0.19.3仅矩形clip/无effects接口），不可per-theme角贴片/渐变伪造；父询问重大scope时用户不可用并要求自主，协调者为快速收口将新原生管线留下一批，不称用户点选。in_progress仍表示长期partial，不等于35条正在后台运行；合法品牌/字体/OSraw与业务后端缺口不伪关。"
     },
     {
       "id": "xp-reference-baseline",
@@ -846,7 +846,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "Settings displayField 初始appearance接线checkpoint：新建与复用统一调用既有setAppearance对象，首帧不再保留SDK默认border#cbd5e1/radius6。真实Settings displaysView+display-inputs+SDK输入800x600/scale1：Classic初始→same-theme repaint原238px差、Modern原236px差均修为0；现有theme border/radius/font、padding7、selection/caret colors实消费，value1920/selection[0,4]/caret/focus同DOM跨retheme保持，实际输入2560并一次Apply回调draft roundtrip通过。未改主题catalog/SDK API/defaultfocusColor/显示事务。仅此局部已交付；全SDKcaret/selection、global scrollbar及其它bespoke输入仍未认证，Files功能滚动证据不等于OS视觉一致。"
+      "evidence": "历史displayField新建/复用已统一setAppearance，Classic/Modern首帧与repaint原238/236px差修0，value1920/selection[0,4]/caret/focus、编辑2560与一次Apply保持；该历史批次未改SDK默认。2026-10-16 4281df3再统一Settings显示/凭据、Files、chooser及workspace完整inputAppearance，补漏focusColor/字号/radius；Files fallback NInput新fontSize8..64与测量/caret/IME同源，不仅改文字CSS。31044cd新增可选SDK selectionTextColor与schema1 optional RGB colors.selectionText（missing映射原text），仅Classic/Tiger/Lion数据白字，其他原text，highlight背景不改。共享35行DOM full-string clip painter取真实textGeometry ranges，先覆盖原AA再同nativeDOM完整串着色；不slice/不Canvasoutline，所以真实colorbitmapemoji不丢，decorations aria-hidden/pointer-none、API.value/原textNode仍权威，password仅mask、preedit抑制副本。父实际Latin/combining/emoji188彩色像素/mixedtext full/partial选区误差0、blur0差、sameDOM/selection/IME及真实consumeredit/rename/choose/auth各一次通过；Winrunner无layoutText，mixed只同renderer一致，不冒ICU/bidi认证。选区Node/file/catalog/override及combined127/127通过；深色token白glyph0→187，XP187保持，旧未optin默认wholePNG bytes原样。globalScrollbar、所有bespoke/OS像素资格仍独立未完成，E22.9保持partial。"
     },
     {
       "id": "theme-dialog-panel-coverage",
@@ -5579,6 +5579,7 @@
     "- 新增两项用户要求已落源码：每显示器100/150/200系统缩放，以及只读任务管理器响应/采样性能，分别有UI/真实私有输出和GUI/真实proc证据；历史Live硬链接仍b7e7a700，未以本地代码提交冒称新介质已生成。源分支仍未推送。",
     "- 扩展检查保留两个精确基线红项：module-boundaries的旧configureAppearance(theme)静态regex，与Files专用fake DOM缺querySelector；均在未改基线上复现，未为新功能隐去或修改生产guard。定点相关测试通过不表示所有历史suite全绿。",
     "- 2026-10-16 推送进展：79b88ed及此前23个本地提交已正常推送并核远端一致，之后桌面标签b7f2916也已审查、定点实测并正常推送。前条源分支仍未推送仅属原记录时间；最新ISO依然b7e7a700，没有把新源码提交冒称新媒体。当前继续SDK选择控件、Classic所有程序、独立窗饰服务与最小MT02壁纸派生客户端材质；MT03跨应用采样、完整品牌/字体/OS像素与外部硬件资格不因此标绿。",
-    "- 2026-10-16 本批具体交付已闭合：桌面标签、Classic flat All Programs、SDK六选择控件及两项真实review修复、可选壁纸派生opaque client材质、无Shell独立窗饰及干净退出/安装闭环。前四项已推至7bf4538；窗饰核心d669ec9/收尾83eda5f与本条状态一并正常推送。长期E22仍按局部证据partial，物理GPU/Mac、字体/品牌资源、完整OS像素及MT03不冒称完成；未更新ISO、VHDX或VERSION。"
+    "- 2026-10-16 本批具体交付已闭合：桌面标签、Classic flat All Programs、SDK六选择控件及两项真实review修复、可选壁纸派生opaque client材质、无Shell独立窗饰及干净退出/安装闭环。前四项已推至7bf4538；窗饰核心d669ec9/收尾83eda5f与本条状态一并正常推送。长期E22仍按局部证据partial，物理GPU/Mac、字体/品牌资源、完整OS像素及MT03不冒称完成；未更新ISO、VHDX或VERSION。",
+    "- 2026-10-16 08:34 共通先行批已闭合：单一公共owner合7169e5a/4281df3/31044cd，统一按钮物理状态与激活、所有现选输入消费者完整appearance和真实选区文字；不相交caption876d126统一六主题字素截断/显式合法系统字体，默认原图保持。然后唯一Windowsowner合9c83846修Luna焦点完整四边，直接复用公共Canvas/owner/FR不另造实现。父最终Node140/140、Win原生像素/消费者及nativeResize/GC、Linux真实ICU/bidi/彩色emoji选区和caption通过；静态边界精确区分已移除native.setAppearance与合法input.setAppearance，未放松旧C painter/协议拒绝。用户不可用时协调者按快速收口决定新原生合成效果留下一批，未声称用户点选，圆角/阴影/跨Appblur和OS参考/业务缺口仍保留；本批不重打ISO。"
   ]
 }
