@@ -12,6 +12,21 @@ function boundedName(value) {
   catch { return false; }
 }
 
+export function validateUserProfile(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).sort().join(',') !== 'displayName,error,uid,username,version' || value.version !== 1 ||
+      value.uid !== null && !validUid(value.uid) ||
+      typeof value.username !== 'string' || typeof value.displayName !== 'string' || typeof value.error !== 'string')
+    throw new TypeError('Invalid local display profile snapshot.');
+  if (value.error) {
+    if (!boundedName(value.error) || value.username || value.displayName)
+      throw new TypeError('Invalid unavailable local display profile snapshot.');
+  } else if (!validUid(value.uid) || !boundedName(value.username) || !boundedName(value.displayName)) {
+    throw new TypeError('Invalid available local display profile snapshot.');
+  }
+  return profile(value.uid, value.username, value.displayName, value.error);
+}
+
 // This snapshot is local display metadata, not an authentication or NSS result.
 export function parseLocalUserProfile(text, uid) {
   if (!validUid(uid)) return unavailable(null, 'Current user ID is invalid.');

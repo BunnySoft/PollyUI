@@ -16,6 +16,8 @@ const { programCategories, categoryEntries, programCategoryId, programSourcePath
   programFolderContents, programFolderId } = await import('./desktop/shell/programs-menu.mjs');
 const { applicationCatalog } = await import('./desktop/shell/applications.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
+const { startMenuView } = await import('./desktop/shell/start-menu.mjs');
+const { parseLocalUserProfile } = await import('./desktop/shared/user-profile.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -278,8 +280,9 @@ function fixture(configure = () => {}) {
       return window;
     },
   };
-  configure({ native, state, calls, saved });
-  const shell = createDesktopShell({ host, native, configuration: saved, report: value => warnings.push(value),
+  configure({ native, state, calls, saved, expectedWarnings });
+  const shell = createDesktopShell({ host, native, configuration: saved, displayProfile: state.displayProfile,
+    report: value => warnings.push(value),
     settingsFactory(handlers) {
       state.settingsHandlers = handlers;
       return { open(page) { calls.push(['settings-open', page]); return 123; },
@@ -297,7 +300,7 @@ function fixture(configure = () => {}) {
       assert.deepEqual(warnings, expectedWarnings);
     } finally { Object.assign(globalThis, previous); }
   };
-  return { shell, native, state, calls, created, surface, done, timers, saved, expectedWarnings, flushFrames };
+  return { shell, native, state, calls, created, surface, done, timers, saved, warnings, expectedWarnings, flushFrames };
 }
 function scenario(name, run, configure) {
   test(name, async () => {
@@ -305,6 +308,75 @@ function scenario(name, run, configure) {
     try { await run(f); } finally { f.done(); }
   });
 }
+
+test('Start display profile: real metadata or explicit unavailable labels do not replace brand defaults, search or menu authority', async () => {
+  const name = '\u7231\u4e3d\u4e1d \ud83d\udc30 ' + '\u957f\u540d'.repeat(20);
+  const available = parseLocalUserProfile('alice:x:1000:1000:' + name + ',Unused:/not-returned:/not-returned\n', 1000);
+  for (const displayProfile of [undefined, available, parseLocalUserProfile('', 1000), parseLocalUserProfile('', undefined)]) {
+    const f = fixture(context => {
+      sourcePrograms(context);
+      context.state.displayProfile = displayProfile;
+      if (displayProfile?.error)
+        context.expectedWarnings.push('[shell] Local display profile unavailable: ' + displayProfile.error);
+    });
+    try {
+      for (const theme of ['xp', 'server2003']) {
+        f.shell.selectTheme(theme);
+        const menu = f.shell.showApplications(1), header = find(menu, 'shell-start-profile');
+        const search = find(menu, 'shell-app-search');
+        const expectedName = !displayProfile ? 'PollyDesktop' : !displayProfile.error ? name :
+          displayProfile.uid === null ? 'User unavailable' : 'User ' + displayProfile.uid;
+        if (displayProfile) {
+          assert.equal(find(menu, 'shell-start-user-name').getAttribute('aria-label'), expectedName);
+          assert.equal(text(find(menu, 'shell-start-user-detail')).trim(), displayProfile.error ?
+            'Local name unavailable' : 'alice | UID 1000');
+          assert.equal(find(menu, 'shell-start-user').tabIndex, -1, 'profile is not an account management command');
+        } else {
+          assert.equal(text(header).trim(), expectedName, 'legacy Shell caller retains original brand');
+          assert.equal(menu.document.getElementById('shell-start-user'), null);
+        }
+        search.focus(); domEvent(search, 'textinput', { data: 'Editor' });
+        assert.ok(find(menu, 'shell-app-a-b-editor.desktop'));
+        click(find(menu, 'shell-app-pin-a-b-editor.desktop'));
+        assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['a-b-editor.desktop']);
+        if (theme === 'xp') {
+          click(find(menu, 'shell-app-launcher-a-b-editor.desktop'));
+          assert.deepEqual(f.saved.snapshot.launchers.applications, ['a-b-editor.desktop']);
+        }
+        for (const timer of [...f.timers]) timer();
+        assert.ok(find(menu, 'shell-start-profile') === header && find(menu, 'shell-app-search') === search,
+          'clock and pin repaint retain the original header and root input');
+        search.focus(); key(menu, 'a', { ctrlKey: true }); key(menu, 'Backspace');
+        find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+        click(find(menu, 'shell-program-categories')); f.flushFrames();
+        click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+        click(find(menu, programFolderId('a'))); f.flushFrames();
+        const launches = f.calls.filter(call => call[0] === 'launch').length;
+        click(find(menu, 'shell-program-a-b-editor.desktop'));
+        assert.equal(f.calls.filter(call => call[0] === 'launch').length, launches + 1);
+        assert.equal(menu.closed, true, 'original launch policy closes only the live menu');
+        assert.equal(f.shell.getState().error, '', 'display diagnostics do not overwrite service/action status');
+        f.saved.update({ desktop: { version: 1, shortcuts: [] }, launchers: { version: 1, applications: [] } });
+      }
+      const menu = f.shell.showApplications(1), reader = f.native.applicationFiles;
+      f.native.applicationFiles = () => { throw new Error('fixture independent catalog failure'); };
+      click(find(menu, 'shell-app-refresh'));
+      assert.match(f.shell.getState().error, /independent catalog failure/);
+      f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+      f.native.applicationFiles = reader;
+      click(find(menu, 'shell-app-refresh'));
+      assert.equal(f.warnings.filter(value => value.startsWith('[shell] Local display profile unavailable:')).length,
+        displayProfile?.error ? 1 : 0, 'open/clock/retheme never repeats profile diagnostics');
+      await Promise.resolve();
+    } finally { f.done(); }
+  }
+  const theme = getDesktopTheme('xp'), noop = () => {};
+  const tree = startMenuView({ ...theme, layout: { ...theme.layout, menuHeaderHeight: 0 } },
+    [], '', noop, noop, noop, noop, '', null, null, null, null, null, null, available);
+  const flatten = node => [node, ...(node.children ?? []).flatMap(flatten)];
+  assert.equal(flatten(tree).some(node => node.props?.id === 'shell-start-profile'), false,
+    'explicit header-height zero does not manufacture a profile area');
+});
 
 test('menu-bar alpha uses existing transparent surface creation and retires replaced callbacks', () => {
   const f = fixture(({ native, state }) => {

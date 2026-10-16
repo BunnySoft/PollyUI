@@ -5,6 +5,7 @@ import { surfaceStyle, bevel } from './desktop/shared/ui/surface-primitives.mjs'
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { programsMenu, programsPlacement } from './desktop/shell/programs-menu.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
+import { validateUserProfile } from './desktop/shared/user-profile.mjs';
 
 const row = { flexDirection: 'row', alignItems: 'center' };
 const text = (theme, value, color = theme.colors.text, extra = {}) =>
@@ -62,7 +63,9 @@ function stopGridScroll(node, done) {
 }
 
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
-  error = '', logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null) {
+  error = '', logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null,
+  displayProfile = null) {
+  if (displayProfile !== null) displayProfile = validateUserProfile(displayProfile);
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
   const supportsPrograms = classic || xp;
@@ -72,6 +75,10 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
   const gridAppHeight = 80, gridPinHeight = 20, cardGap = 2, gridPadding = 8;
   const classicColumns = classic && twoColumn;
   const rowHeight = l.menuRowHeight ?? 32;
+  const userName = displayProfile ? displayProfile.error ?
+    displayProfile.uid === null ? 'User unavailable' : 'User ' + displayProfile.uid : displayProfile.displayName : '';
+  const userDetail = displayProfile ? displayProfile.error ? 'Local name unavailable' :
+    displayProfile.username + ' | UID ' + displayProfile.uid : '';
   const appHeight = twoColumn ? Math.max(rowHeight, (l.menuIconSize ?? 0) + 8) : rowHeight;
   const linkHeight = twoColumn ? Math.max(rowHeight, classicColumns ? 28 : l.menuIconSize ?? 0) : rowHeight;
   const filtered = entries.filter(entry =>
@@ -249,8 +256,21 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     gradientDir: classic ? 'horizontal' : 'vertical',
     borderBottomWidth: xp ? 1 : 0, borderColor: '#efb843', overflow: 'hidden' } },
     xp ? h('view', { style: { width: 48, height: 48, borderRadius: 4, borderWidth: 2,
-      borderColor: '#ffffff', backgroundColor: '#e5f2ff', justifyContent: 'center', alignItems: 'center' } },
+      borderColor: '#ffffff', backgroundColor: '#e5f2ff', justifyContent: 'center', alignItems: 'center',
+      ...(displayProfile ? { flexShrink: 0 } : {}) } },
       desktopIcon('apps', c.accent, 32)) : null,
+    displayProfile && supportsPrograms ? h('view', { id: 'shell-start-user', role: 'group',
+      'aria-label': userName + ', ' + userDetail,
+      'aria-description': displayProfile.error || 'Local display metadata only, not authentication or account authority.',
+      style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0, height: '100%',
+        justifyContent: 'center', overflow: 'hidden', paddingRight: 8 } },
+      h('view', { id: 'shell-start-user-name', 'aria-label': userName,
+        style: { minWidth: 0, height: classic ? 24 : 22, flexShrink: 0, overflow: 'hidden' } },
+        themedText(theme, userName, theme.window.titleText, classic ? 20 : 18,
+          { fontWeight: 700, fontStyle: classic ? 'italic' : 'normal' })),
+      h('view', { id: 'shell-start-user-detail', 'aria-label': userDetail,
+        style: { minWidth: 0, height: l.statusFontSize + 2, flexShrink: 0, overflow: 'hidden' } },
+        themedText(theme, userDetail, theme.window.titleText, l.statusFontSize))) :
     themedText(theme, 'PollyDesktop', theme.window.titleText, classic ? 20 : 18,
       { fontWeight: 700, fontStyle: classic ? 'italic' : 'normal' })) : null,
   grid ? search : null,

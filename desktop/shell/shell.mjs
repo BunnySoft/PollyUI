@@ -32,9 +32,12 @@ import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
 import { windowTasks, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
 import { createMaterialSource } from './desktop/shell/material-source.mjs';
+import { validateUserProfile } from './desktop/shared/user-profile.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
-  native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
+  native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null, displayProfile = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
+  if (displayProfile !== null) displayProfile = validateUserProfile(displayProfile);
+  if (displayProfile?.error) report('[shell] Local display profile unavailable: ' + displayProfile.error);
   const bundles = new Map();
   let themeId = DEFAULT_DESKTOP_THEME;
   let themeAsset = '';
@@ -946,7 +949,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         });
         return true;
       };
-      const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
+      const applicationMenu = ['classic', 'luna'].includes(surfaceStyle(menuTheme, 'panel')) ? startMenuView : applicationsView;
       syncShellIcons(menuTheme);
       const searchFocused = current.search?.input.root === current.window.document.activeElement;
       render(applicationMenu(menuTheme, desktopCatalog(), current.query,
@@ -1021,7 +1024,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
           change: scoped((id, expected) => host.displays().some(output => output.id === current.output) &&
             configuration.snapshot.launchers.applications.includes(id) === expected ?
             changeLauncherPin(id, !expected) : false),
-        } : null),
+        } : null, displayProfile),
         current.window.document.body);
       const search = current.search?.input.root;
       const slot = current.window.document.getElementById('shell-app-search-slot');

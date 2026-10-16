@@ -5,6 +5,8 @@ import { applicationMenuHeight, applicationMenuPlacement } from './desktop/share
 import { parseThemeFile } from './desktop/shared/ui/theme-schema.mjs';
 import { windowTasks } from './desktop/shell/window-groups.mjs';
 import { programsPlacement } from './desktop/shell/programs-menu.mjs';
+import { startMenuView } from './desktop/shell/start-menu.mjs';
+import { parseLocalUserProfile } from './desktop/shared/user-profile.mjs';
 
 const check = (value, message) => { if (!value) throw new Error(message); };
 const rect = node => [node.offsetLeft, node.offsetTop, node.offsetWidth, node.offsetHeight];
@@ -227,6 +229,47 @@ export function checkXpShellSurface(directory, expectFixed = true, quickLaunchIm
   check(!programsOpen && document.activeElement === programTrigger, 'XP All Programs Escape returns to its Start trigger');
   console.log('XP_PROGRAMS ' + JSON.stringify({ root: [sb.x, sb.y, sb.width, sb.height],
     menu: [pb.x, pb.y, pb.width, pb.height], programCalls, focusReturned: document.activeElement === programTrigger }));
+  const profileName = '\u6797\u6d69 \ud83d\udc30 ' + '\u957f\u663e\u793a\u540d'.repeat(12);
+  let displayProfile = parseLocalUserProfile('lin:x:1000:1000:' + profileName + ',Unused:/unused:/unused\n', 1000);
+  let profileLaunches = 0;
+  const paintProfile = () => {
+    render(startMenuView(xp, entries, '', action, () => profileLaunches++, action, action,
+      '', null, null, null, null, null, null, displayProfile), programStage);
+    for (let i = 0; i < 4; i++) host.render();
+  };
+  paintProfile();
+  const profileHeader = get('shell-start-profile'), profileSearch = get('shell-app-search'),
+    profileApp = get('shell-app-org.pollyui.files');
+  const headerBounds = profileHeader.getBoundingClientRect();
+  check(headerBounds.height === 64 && get('shell-start-user-name').getAttribute('aria-label') === profileName,
+    'Injected local Unicode display name keeps the 64px XP header and complete accessible name');
+  for (const id of ['shell-start-user-name', 'shell-start-user-detail']) {
+    const b = get(id).getBoundingClientRect();
+    check(b.x >= headerBounds.x && b.y >= headerBounds.y && b.right <= headerBounds.right && b.bottom <= headerBounds.bottom,
+      'Local name and UID remain clipped inside the original header bounds');
+  }
+  check(get('shell-start-user-detail').getAttribute('aria-label') === 'lin | UID 1000',
+    'Only the injected actual username and numeric UID become secondary display metadata');
+  check(host.save(directory + '\\xp-shell-local-profile.png'), 'Save local display profile');
+  profileApp.focus();
+  displayProfile = parseLocalUserProfile('', 1000); paintProfile();
+  check(get('shell-start-user-name').getAttribute('aria-label') === 'User 1000' &&
+    get('shell-start-user-detail').getAttribute('aria-label') === 'Local name unavailable',
+    'Unavailable local record uses the known UID and a visible diagnostic instead of a guessed user');
+  displayProfile = parseLocalUserProfile('', undefined); paintProfile();
+  check(get('shell-start-user-name').getAttribute('aria-label') === 'User unavailable',
+    'Unknown UID is not presented as root or a fabricated account');
+  check(get('shell-start-profile') === profileHeader && get('shell-app-search') === profileSearch &&
+    get('shell-app-org.pollyui.files') === profileApp && document.activeElement === profileApp,
+    'Display snapshot changes retain the original header, root input, app control and current focus');
+  click(profileApp);
+  check(profileLaunches === 1, 'Original application pointer action still activates once with a display profile');
+  displayProfile = null; paintProfile();
+  check(!get('shell-start-user') && profileHeader.textContent.includes('PollyDesktop'),
+    'Legacy profile-null view retains the original brand');
+  console.log('XP_LOCAL_PROFILE ' + JSON.stringify({ header: rect(profileHeader), fullName: profileName,
+    profileLaunches, sameSearch: get('shell-app-search') === profileSearch,
+    scope: 'Injected local display snapshots and actual software GUI only; not Windows account, Linux passwd or authentication qualification' }));
   console.log('PASS: actual XP taskbar/Start surface geometry, states, actions, custom width and low-height reachability');
   console.log('XP_QUICK_LAUNCH ' + JSON.stringify({ quickCalls, windowCalls, pins: entries.length,
     scrollLeft: Number(strip.scrollLeft), firstLauncher: rect(firstQuick), lastWindow: rect(lastTask) }));

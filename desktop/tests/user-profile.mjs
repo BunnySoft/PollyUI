@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
 register('./root-loader.mjs', import.meta.url);
-const { parseLocalUserProfile, readUserProfile } = await import('../shared/user-profile.mjs');
+const { parseLocalUserProfile, readUserProfile, validateUserProfile } = await import('../shared/user-profile.mjs');
 const { encodeUtf8 } = await import('../../sysrt/sdk/js/encoding.mjs');
 
 const secret = 'not-a-real-password-field';
@@ -39,6 +39,22 @@ function provider(text = record()) {
   };
   return { state, calls, metadata, source };
 }
+
+test('display snapshot injection validates the readonly shape and takes an immutable copy', () => {
+  for (const source of [parseLocalUserProfile(record(), 1000), parseLocalUserProfile('', 1000),
+    parseLocalUserProfile('', undefined)]) {
+    const input = { ...source }, value = validateUserProfile(input);
+    input.username = 'changed';
+    assert.deepEqual(value, source);
+    assert.ok(Object.isFrozen(value));
+  }
+  const valid = parseLocalUserProfile(record(), 1000);
+  for (const value of [null, [], { ...valid, version: 2 }, { ...valid, uid: null }, { ...valid, uid: -1 },
+    { ...valid, displayName: '' }, { ...valid, username: '\ud800' }, { ...valid, displayName: 'x'.repeat(257) },
+    { ...valid, password: secret }, { ...valid, error: 'Unavailable' },
+    { ...valid, username: '', displayName: '', error: 'Invalid\ntext' }])
+    assert.throws(() => validateUserProfile(value), /local display profile snapshot/);
+});
 
 test('exact UID match scans the whole local database and returns only frozen display metadata', () => {
   const value = parseLocalUserProfile(record('0', 'root', 'Root') + record('1001', 'alice-other') +
