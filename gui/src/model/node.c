@@ -1,6 +1,7 @@
 #include "model/node.h"
 #include "render/canvas_c.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -329,18 +330,25 @@ void pu_node_set_text(PuNode *n, const char *text)
 
 /* ---- events ----------------------------------------------------------------*/
 
-void pu_node_add_listener(PuNode *n, const char *type, JSValue func)
+bool pu_node_add_listener(PuNode *n, const char *type, JSValue func)
 {
+    if (n->listener_serial == UINT64_MAX) return false;
     if (n->listener_count == n->listener_cap) {
+        if (n->listener_cap > INT_MAX / 2) return false;
         int ncap = n->listener_cap ? n->listener_cap * 2 : 4;
+        if ((size_t)ncap > SIZE_MAX / sizeof(PuListener)) return false;
         PuListener *l = (PuListener *)realloc(n->listeners, (size_t)ncap * sizeof(PuListener));
-        if (!l) { if (g_rt) JS_FreeValueRT(g_rt, func); return; }
+        if (!l) return false;
         n->listeners = l;
         n->listener_cap = ncap;
     }
-    n->listeners[n->listener_count].type = pu_strdup(type);
+    char *copy = pu_strdup(type);
+    if (!copy) return false;
+    n->listeners[n->listener_count].type = copy;
     n->listeners[n->listener_count].func = func; /* takes ownership */
+    n->listeners[n->listener_count].serial = ++n->listener_serial;
     n->listener_count++;
+    return true;
 }
 
 void pu_node_remove_listener(PuNode *n, const char *type, JSValueConst func)
