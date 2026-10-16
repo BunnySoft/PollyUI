@@ -7,7 +7,8 @@ export function inputAppearance(theme, role = 12, fallback = null) {
     return { ...fallback };
   }
   return { color: theme.colors.text, background: theme.colors.surface,
-    selectionColor: theme.colors.selection, borderColor: theme.colors.border,
+    selectionColor: theme.colors.selection, selectionTextColor: theme.colors.selectionText ?? theme.colors.text,
+    borderColor: theme.colors.border,
     focusColor: theme.colors.focus, borderRadius: theme.button.radius,
     fontSize: themeTextSize(theme, role) };
 }

@@ -53,7 +53,7 @@ export async function checkCommonFileInputs() {
     const highlightBefore = filter.firstChild.childNodes.length;
     await retheme('modern');
     check(document.getElementById(filter.id) === filter && document.activeElement === filter &&
-      filter.childNodes[1].textContent === 'old' && filter.firstChild.childNodes.length === highlightBefore,
+      filter.childNodes[1].firstChild.textContent === 'old' && filter.firstChild.childNodes.length === highlightBefore,
       'Files same input/focus/content/selection survive retheme');
     app.controller.filter(''); await settle();
     app.controller.select(file.path, file.identity); app.controller.beginRename(); await settle();

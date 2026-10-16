@@ -146,13 +146,17 @@ export function validateTheme(value) {
   text(value.era, 240, 'Theme description');
   for (const group of groups) {
     const prefix = value.id + '.' + group;
-    const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {})];
+    const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
+      ...(group === 'colors' ? ['selectionText'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
       prefix, true, optional);
     for (const key of colors[group])
       if (typeof value[group][key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(value[group][key]))
         throw new TypeError(prefix + '.' + key + ' must be an RGB color');
+    if (group === 'colors' && Object.hasOwn(value.colors, 'selectionText') &&
+        (typeof value.colors.selectionText !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.colors.selectionText)))
+      throw new TypeError(prefix + '.selectionText must be an RGB color');
     for (const [key, [minimum, maximum, scale = 1]] of Object.entries(numbers[group])) {
       const number = value[group][key];
       if (!Number.isFinite(number) || number < minimum || number > maximum ||
@@ -251,7 +255,7 @@ export function applyThemeOverrides(catalog, text) {
     for (const group of groups) {
       if (!Object.hasOwn(override, group)) continue;
       keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {}),
-        ...Object.keys(optionalNumbers[group] || {})],
+        ...Object.keys(optionalNumbers[group] || {}), ...(group === 'colors' ? ['selectionText'] : [])],
         theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }

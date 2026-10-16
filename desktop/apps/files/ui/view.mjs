@@ -37,7 +37,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
           left: 10, top: 9, pointerEvents: 'none' }));
     }
     const node = NInput({ id, value, placeholder, width: '100%', fontSize: appearance.fontSize, onInput: guarded(onInput),
-      selectionColor: appearance.selectionColor });
+      selectionColor: appearance.selectionColor, selectionTextColor: appearance.selectionTextColor });
     Object.assign(node.props, { role: 'textbox', 'aria-label': placeholder, 'aria-disabled': String(!ready),
       style: { ...node.props.style, ...style, backgroundColor: appearance.background,
         borderColor: appearance.borderColor, borderRadius: appearance.borderRadius },
