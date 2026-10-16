@@ -769,6 +769,22 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
       (pinned ? ' from ' : ' to ') + launchers.target;
     return guardTaskGesture(node, pinId + ':' + pinned);
   };
+  const list = panelViewport(theme, { id: 'shell-app-list', framed: false, scrollbar: true },
+    filtered.slice(0, 100).map(entry => entry.unavailable
+      ? h('view', { id: 'shell-app-' + entry.id, 'aria-disabled': 'true', style: {
+          padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
+        } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
+          label(entry.unavailable, theme.colors.muted, 10))
+      : h('view', { style: { ...row, gap: 6, flexShrink: 0, ...(launchers ? { flexWrap: 'wrap' } : {}) } },
+        appCommand(entry),
+        desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
+          theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
+          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null,
+        launchers ? launcherCommand(entry) : null)),
+    !filtered.length ? label('No matching applications', theme.colors.muted) : null);
+  Object.assign(list.props.style, { flexGrow: 1, flexBasis: 0, width: 'auto', height: 'auto',
+    padding: 0, backgroundColor: 'transparent' });
+  list.children[0].children[0].props.style.gap = theme.layout.windowGap;
   return h('view', { id: 'shell-applications', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
     borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
@@ -794,19 +810,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
       if (event.key === 'Enter' && !event.isComposing && filtered[0]) { event.preventDefault(); launch(filtered[0].id); }
     },
   }, label(query || 'Type to search...', query ? theme.colors.text : theme.colors.muted)),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.windowGap } },
-    filtered.slice(0, 100).map(entry => entry.unavailable
-      ? h('view', { id: 'shell-app-' + entry.id, 'aria-disabled': 'true', style: {
-          padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
-        } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
-          label(entry.unavailable, theme.colors.muted, 10))
-      : h('view', { style: { ...row, gap: 6, flexShrink: 0, ...(launchers ? { flexWrap: 'wrap' } : {}) } },
-        appCommand(entry),
-        desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
-          theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
-          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null,
-        launchers ? launcherCommand(entry) : null)),
-    !filtered.length ? label('No matching applications', theme.colors.muted) : null),
+  list,
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },
     themedText(theme, 'Your applications', theme.colors.muted, 13), h('view', { style: { flexGrow: 1 } }),

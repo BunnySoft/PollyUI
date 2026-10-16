@@ -38,6 +38,20 @@ reveal; tray spacing remains its own `trayGap`. Retiring a tray menu releases
 that view's scrolling lifecycle before its original close route, with no extra
 native action.
 
+# Applications and logout lists
+
+The generic/Mac applications list uses the shared focus-revealing viewport and
+themed overlay scrollbar inside its original flex allocation, with zero padding,
+transparent fill and its existing `windowGap`. Search, header, footer, match cap,
+launch and the two independent pin actions keep their original slots and rules.
+This does not raise the native Tab enumeration limit, which large three-command
+catalogs can still exceed.
+The existing logout pane also opts into that scrollbar without changing its
+frame or inventory/confirmation content. A user close releases the view only
+after cancellation succeeds; external close and owner stop preserve their
+original cancellation order while retiring queued scrolling work. Committed
+operations still refuse user close and are never cancelled or replayed by cleanup.
+
 # Local session display profile
 
 The production Shell entry reads one local display snapshot at startup from real
