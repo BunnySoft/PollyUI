@@ -2069,6 +2069,7 @@
       },
       "window": {
         "surfaceStyle": "fluent",
+        "nativeEffects": "rounded",
         "radius": 8,
         "border": "#a0a0a0",
         "borderWidth": 1,

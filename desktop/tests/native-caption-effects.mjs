@@ -6,6 +6,7 @@ const base = DESKTOP_THEMES.find(theme => theme.id === 'modern');
 function paint(mode, scale, state) {
   const theme = { ...base, window: { ...base.window, radius: 16, titleHeight: 32, borderWidth: 0,
     surfaceStyle: 'generic' } };
+  delete theme.window.nativeEffects;
   if (mode !== undefined) theme.window.nativeEffects = mode;
   const bits = new Uint32Array(new Float32Array([scale]).buffer)[0];
   const meta = [1, 1, 2, 0, 64, 64, bits, state, 0, theme.window.titleHeight, ...Array(16).fill(0)];

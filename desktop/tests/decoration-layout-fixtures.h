@@ -17,7 +17,7 @@ static const struct PuDecorationPreset {
     { .id = "bigsur", .layout = { .left_controls = true,
       .border_width = 1, .title_height = 28, .control_width = 12, .control_height = 12, .control_top = 8, .control_inset = 12, .close_gap = 8, .control_gap = 8, .text_inset = 10, .text_gap = 8, .effect_radius = 0, .shadow_sigma = 0, .shadow_rgb = 0, .shadow_active = 0, .shadow_inactive = 0, .shadow_x_bias = 64, .shadow_y_bias = 70 } },
     { .id = "modern", .layout = { .left_controls = false,
-      .border_width = 1, .title_height = 33, .control_width = 46, .control_height = 32, .control_top = 1, .control_inset = 1, .close_gap = 0, .control_gap = 0, .text_inset = 16, .text_gap = 8, .effect_radius = 0, .shadow_sigma = 0, .shadow_rgb = 0, .shadow_active = 0, .shadow_inactive = 0, .shadow_x_bias = 64, .shadow_y_bias = 64 } },
+      .border_width = 1, .title_height = 33, .control_width = 46, .control_height = 32, .control_top = 1, .control_inset = 1, .close_gap = 0, .control_gap = 0, .text_inset = 16, .text_gap = 8, .effect_radius = 8, .shadow_sigma = 0, .shadow_rgb = 0, .shadow_active = 0, .shadow_inactive = 0, .shadow_x_bias = 64, .shadow_y_bias = 64 } },
 };
 #define PU_DECORATION_LAYOUT_COUNT (sizeof(pu_decoration_layouts) / sizeof(pu_decoration_layouts[0]))
 #define PU_DECORATION_DEFAULT_LAYOUT 5
