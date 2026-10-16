@@ -606,8 +606,16 @@ zero wrong on/off pixels on every full edge. Business callback reassignment,
 retained focus, caller opacity, selection truth, retheme, blur and single
 activation are covered. A private WM_DPICHANGED 1.25 test checks adapter/backing
 refresh only, not monitor-DPI qualification. No C theme rendering is added.
-E22.7 remains partial: this does not certify default-button styles, every SDK
-widget/state, fonts or full OS appearance.
+E22.7 remains partial: this does not certify every SDK widget/state, fonts or
+full OS default-button behavior.
+
+Desktop buttons and commands now accept an explicit `defaultAction` visual,
+independent of selected/toggle truth. It adds passive theme-token outlines,
+suppressed when disabled, without changing content geometry, caller opacity,
+focus ownership or activation routing. Existing display Keep and Files confirm
+opt in; no global Enter handler, platform focus migration or pulse animation is
+introduced. Ordinary callers retain their prior appearance. This shared API
+uses small additions to existing checks, not new application-style fixtures.
 
 The native Canvas painter cache keeps its Document, window and remover weak;
 the finalizer holds a weak remover and an owner-free unregister token. Real
