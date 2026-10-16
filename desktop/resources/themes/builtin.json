@@ -543,6 +543,7 @@
         "radius": 7,
         "inset": 0,
         "surfaceStyle": "tiger",
+        "materialOpacityPercent": 88,
         "taskGrouping": "applications"
       },
       "layout": {
@@ -1714,6 +1715,7 @@
         "radius": 0,
         "inset": 0,
         "surfaceStyle": "lion",
+        "materialOpacityPercent": 88,
         "taskGrouping": "applications"
       },
       "layout": {
@@ -1937,6 +1939,7 @@
         "radius": 16,
         "inset": 9,
         "surfaceStyle": "bigsur",
+        "materialOpacityPercent": 88,
         "taskGrouping": "applications"
       },
       "layout": {

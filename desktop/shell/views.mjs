@@ -472,6 +472,12 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   const panel = theme.panel;
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
+    const materialOpacity = panel.materialOpacityPercent ?? 100;
+    const materialColor = color => {
+      if (materialOpacity === 100 || color === 'transparent') return color;
+      const alpha = Math.round(parseInt(color.slice(7) || 'ff', 16) * materialOpacity / 100);
+      return color.slice(0, 7) + alpha.toString(16).padStart(2, '0');
+    };
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
     const slot = (id, title, icon, action, running = false, window = null) => {
       const art = taskArtwork(window, images, iconSize - 8, desktopIcon(icon, theme.colors.accent, iconSize - 8));
@@ -532,9 +538,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       position: 'absolute', left: 0, right: 0, bottom: 0, height: 28, pointerEvents: 'none' } },
       Array.from({ length: 24 }, (_, y) => h('view', { style: {
         position: 'absolute', top: y, left: 12 - y / 2, right: 12 - y / 2,
-        height: 1, backgroundColor: y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999', pointerEvents: 'none' } })),
+        height: 1, backgroundColor: materialColor(y === 0 ? '#eeeeee' : y < 12 ? panel.from : '#999999'), pointerEvents: 'none' } })),
       h('view', { style: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 4,
-        backgroundColor: panel.to, borderTopWidth: 1, borderColor: '#d6d6d6', pointerEvents: 'none' } })) : null;
+        backgroundColor: materialColor(panel.to), borderTopWidth: 1,
+        borderColor: materialColor('#d6d6d6'), pointerEvents: 'none' } })) : null;
     return h('view', { id: 'shell-dock-viewport', style: {
       width: '100%', height: '100%', overflow: 'visible' },
       onWheel: scrollDock, onMount: syncDockLayout, onUpdate: syncDockLayout },
@@ -544,7 +551,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       paddingLeft: theme.layout.dockPadding ?? 6, paddingRight: theme.layout.dockPadding ?? 6,
       gap: theme.layout.dockGap, overflow: 'hidden', borderRadius: panel.radius,
       ...(style === 'lion' ? { backgroundColor: 'transparent' } : {
-        ...gradient(panel.from, panel.to), borderWidth: 1, borderColor: style === 'tiger' ? '#eeeeee' : '#bdbdbd' }) } },
+        ...gradient(materialColor(panel.from), materialColor(panel.to)),
+        ...(materialOpacity < 100 ? { backgroundColor: 'transparent' } : {}),
+        borderWidth: 1, borderColor: materialColor(style === 'tiger' ? '#eeeeee' : '#bdbdbd') }) } },
       shelf,
       slot('shell-dock-applications', 'Applications', 'apps', openApplications),
       slot('shell-dock-settings', 'Settings', 'appearance', openSettings),

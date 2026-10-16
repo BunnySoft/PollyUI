@@ -86,6 +86,7 @@ const optionalOptions = {
     taskGrouping: ['windows', 'applications'] },
 };
 const optionalNumbers = {
+  panel: { materialOpacityPercent: [0, 100] },
   icons: { dockHoverPercent: [100, 125] },
   window: { controlWidth: [8, 96], controlTop: [0, 64], nativeShadowOpacity: [0, 100],
     nativeShadowInactiveOpacity: [0, 100], nativeShadowX: [-64, 64], nativeShadowY: [-64, 64] },
