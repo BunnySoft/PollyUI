@@ -47,6 +47,9 @@ use the shared bounded viewport with its themed overlay scrollbar and focus
 reveal. Dragging, track paging and keyboard scrolling do not invoke service
 commands; Displays' Apply/header and Keyboard's reset/footer remain outside
 their scrolling lists. These embedded panes add no second window frame.
+The page-navigation sidebar uses the same bounded themed scrollbar and focus
+reveal, so all six page commands remain reachable in low windows. Its header
+scrolls with the commands; ordinary repaints retain an intentional wheel position.
 
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;
