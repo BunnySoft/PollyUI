@@ -12,7 +12,9 @@ const { applicationsView } = await import('./desktop/shell/views.mjs');
 const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
-const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
+const { programCategories, categoryEntries, programCategoryId, programSourcePath,
+  programFolderContents, programFolderId } = await import('./desktop/shell/programs-menu.mjs');
+const { applicationCatalog } = await import('./desktop/shell/applications.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
@@ -1320,6 +1322,184 @@ scenario('Classic Programs category selection rejects a removed tag before refre
   assert.ok(find(next, 'shell-program-editor.desktop'));
   assert.ok(find(next, 'shell-program-categories'), 'a replacement RootMenu starts with flat All Programs');
 }, categorizedPrograms);
+
+test('Programs source folders qualify exact native suffix mappings without inferring directories from IDs', () => {
+  const source = (id, path) => Object.freeze({ id, path });
+  const first = source('a-b-editor.desktop', '/arbitrary/root/a/b-editor.desktop');
+  const moved = source(first.id, '/another-root/a-b/editor.desktop');
+  const unicode = source('\u5de5\u5177-\u6587\u6863-my-editor.desktop', '/user-selected/applications/\u5de5\u5177/\u6587\u6863/my-editor.desktop');
+  const sibling = source('a-tools-helper.desktop', '/independent-root/a/tools/helper.desktop');
+  const flat = source('flat-tool.desktop', '/root-with-hyphen/flat-tool.desktop');
+  const entries = Object.freeze([first, unicode, sibling, flat]);
+  assert.equal(programSourcePath(first), 'a/b-editor.desktop');
+  assert.equal(programSourcePath(moved), 'a-b/editor.desktop', 'slash-to-dash preserves identity when a source changes folders');
+  assert.equal(programSourcePath(unicode), '\u5de5\u5177/\u6587\u6863/my-editor.desktop');
+  assert.equal(programSourcePath(flat), 'flat-tool.desktop');
+  assert.deepEqual(programFolderContents(entries).folders.map(item => item.folder), ['a', '\u5de5\u5177']);
+  assert.deepEqual(programFolderContents(entries).entries, [flat], 'a hyphenated filename is not a directory');
+  assert.deepEqual(programFolderContents(entries, 'a').folders.map(item => item.folder), ['a/tools']);
+  assert.deepEqual(programFolderContents(entries, 'a').entries, [first]);
+  assert.deepEqual(programFolderContents(entries, 'a/tools').entries, [sibling]);
+  assert.equal(programFolderContents([flat]).exists, false, 'flat qualified records alone do not create a folders entry');
+  assert.equal(programFolderContents(entries, 'absent').exists, false);
+  assert.deepEqual(programFolderContents([...entries].reverse()).folders, programFolderContents(entries).folders);
+  assert.notEqual(programFolderId('a-b'), programFolderId('a/b'));
+  assert.notEqual(programFolderId('Source folders'), programCategoryId('Source folders'));
+  for (const entry of [
+    source(first.id, '/apps/not/a/b-editor.desktop.extra'), source(first.id, '/apps/xa/b-editor.desktop'),
+    source(first.id, 'apps/a/b-editor.desktop'), source(first.id, '/apps/../a/b-editor.desktop'),
+    source(first.id, '/apps/./a/b-editor.desktop'), source(first.id, '/apps//a/b-editor.desktop'),
+    source(first.id, '/apps/a\\b-editor.desktop'), source(first.id, '/apps/\0/a/b-editor.desktop'),
+    source(first.id, '/apps/\ud800/a/b-editor.desktop'), source('a-.desktop', '/apps/a/.desktop'),
+    source('bundle:a-b-editor.desktop', '/apps/bundle:a/b-editor.desktop'),
+    { id: 'org.pollyui.settings' }, source('unqualified.desktop', '/apps/other.desktop'),
+  ]) assert.equal(programSourcePath(entry), null, 'unqualified paths are excluded instead of guessed');
+  const file = entry => ({ ...entry, contents: '[Desktop Entry]\nType=Application\nName=Editor\nExec=editor\n' });
+  const final = applicationCatalog([file(moved), file(first)]);
+  assert.equal(final.length, 1);
+  assert.deepEqual(programFolderContents(final).folders.map(item => item.folder), ['a-b'],
+    'only the winning override registration supplies the folder source');
+});
+
+function sourcePrograms({ native, state }) {
+  state.windows = [];
+  state.sourceFiles = [
+    { id: 'a-b-editor.desktop', path: '/apps/a/b-editor.desktop', name: 'Editor', tags: ['Source folders'] },
+    { id: 'a-sub-view.desktop', path: '/other-root/a/sub/view.desktop', name: 'Viewer', tags: ['Utility'] },
+    { id: 'a-one.desktop', path: '/another-root/a/one.desktop', name: 'Another', tags: [] },
+    { id: 'top.desktop', path: '/custom-root/top.desktop', name: 'Top-level', tags: [] },
+    { id: 'orphan.desktop', path: '/unqualified/something-else.desktop', name: 'Unqualified source', tags: [] },
+  ];
+  native.applicationFiles = () => {
+    if (state.sourceReadFailed) throw new Error('fixture source catalog read failed');
+    return state.sourceFiles.map(entry => ({ id: entry.id, path: entry.path,
+      contents: '[Desktop Entry]\nType=Application\nName=' + entry.name + '\nExec=fixture\nCategories=' +
+        entry.tags.join(';') + ';\n' }));
+  };
+}
+function openSources(f, theme = 'server2003') {
+  f.shell.selectTheme(theme);
+  const menu = f.shell.showApplications(1);
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+  return menu;
+}
+
+scenario('Programs sources: Classic and XP browse direct folders and apps, retain All apps, and return through every parent', f => {
+  for (const theme of ['server2003', 'xp']) {
+    const menu = openSources(f, theme), search = find(menu, 'shell-app-search');
+    assert.ok(find(menu, programFolderId('a')));
+    assert.ok(find(menu, 'shell-program-top.desktop'));
+    assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null, 'root does not flatten nested sources');
+    assert.equal(menu.document.getElementById('shell-program-orphan.desktop'), null, 'unqualified source is not invented in this tree');
+    find(menu, programFolderId('a')).focus(); key(menu, 'ArrowRight'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-b-editor.desktop'));
+    assert.ok(find(menu, 'shell-program-a-one.desktop'), 'different real roots merge the same relative source folder');
+    assert.ok(find(menu, programFolderId('a/sub')));
+    assert.equal(menu.document.getElementById('shell-program-a-sub-view.desktop'), null);
+    click(find(menu, programFolderId('a/sub'))); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-sub-view.desktop'));
+    click(find(menu, 'shell-program-pin-a-sub-view.desktop')); f.flushFrames();
+    assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['a-sub-view.desktop']);
+    assert.deepEqual(f.saved.snapshot.launchers.applications, [], 'source-tree Pin is still desktop-only');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, programFolderId('a/sub')));
+    key(menu, 'ArrowLeft'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, programFolderId('a')));
+    click(find(menu, 'shell-program-back')); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-source-folders'));
+    assert.ok(find(menu, programCategoryId('Source folders')), 'same-named tag has a separate exact metadata command');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-orphan.desktop'), 'All apps retains unqualified registrations');
+    key(menu, 'Escape'); f.flushFrames();
+    assert.ok(menu.document.activeElement === find(menu, 'shell-all-programs'));
+    assert.ok(find(menu, 'shell-app-search') === search);
+    find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+    click(find(menu, 'shell-program-categories')); f.flushFrames();
+    click(find(menu, programCategoryId('Source folders'))); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-a-b-editor.desktop'), 'literal tag remains a normal category, not the directory tree');
+    click(find(menu, 'shell-program-all')); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-orphan.desktop'));
+    f.saved.update({ desktop: { version: 1, shortcuts: [] } });
+  }
+}, sourcePrograms);
+
+scenario('Programs sources: fresh path moves, navigation epochs and catalog read failures reject stale direct-source actions', f => {
+  const menu = openSources(f), snapshots = [];
+  click(find(menu, programFolderId('a'))); f.flushFrames();
+  const row = find(menu, 'shell-program-a-b-editor.desktop'), pin = find(menu, 'shell-program-pin-a-b-editor.desktop');
+  const oldLaunch = callback(row, 'click'), oldPin = callback(pin, 'click');
+  press(row);
+  f.state.sourceFiles[0].path = '/apps/a-b/editor.desktop';
+  assert.equal(oldLaunch(event('click', { currentTarget: row })), false, 'same native ID has moved to another qualified folder');
+  assert.equal(oldPin(event('click', { currentTarget: pin })), false);
+  assert.equal(programSourcePath(f.state.sourceFiles[0]), 'a-b/editor.desktop');
+  assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null);
+  assert.ok(find(menu, 'shell-program-a-one.desktop'));
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  const folder = find(menu, programFolderId('a-b')), oldFolder = callback(folder, 'click');
+  f.state.sourceReadFailed = true;
+  assert.equal(oldFolder(event('click', { currentTarget: folder })), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.match(f.shell.getState().error, /source catalog read failed/);
+  assert.ok(find(menu, programFolderId('a-b')), 'read failure retains the current source index without entering it');
+  f.state.sourceReadFailed = false;
+  click(find(menu, programFolderId('a-b'))); f.flushFrames();
+  const moved = find(menu, 'shell-program-a-b-editor.desktop'), movedLaunch = callback(moved, 'click'),
+    movedPin = callback(find(menu, 'shell-program-pin-a-b-editor.desktop'), 'click');
+  f.state.sourceReadFailed = true;
+  snapshots.push(f.saved.snapshot);
+  press(moved);
+  assert.equal(movedLaunch(event('click', { currentTarget: moved })), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(movedPin(event('click')), false);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.ok(f.saved.snapshot === snapshots[0], 'no preferences publish while fresh membership is unavailable');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  f.state.sourceReadFailed = false;
+  key(menu, 'Escape'); f.flushFrames();
+  oldFolder(event('click'));
+  assert.equal(menu.document.getElementById('shell-program-a-b-editor.desktop'), null, 'old directory epoch cannot reenter a leaf');
+  click(find(menu, programFolderId('a-b'))); f.flushFrames();
+  oldLaunch(event('click', { currentTarget: row }));
+  movedLaunch(event('click', { currentTarget: moved }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'returning to the same leaf does not revive callbacks');
+  click(find(menu, 'shell-program-a-b-editor.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, sourcePrograms);
+
+scenario('Programs sources: removed folders keep a safe empty view and stale folder gestures never become app commands', f => {
+  const menu = openSources(f), branch = find(menu, programFolderId('a')), oldBranch = callback(branch, 'click');
+  press(branch);
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  domEvent(branch, 'mouseup'); domEvent(branch, 'click');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  oldBranch(event('click'));
+  assert.ok(find(menu, 'shell-program-orphan.desktop'));
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+  click(find(menu, programFolderId('a'))); f.flushFrames();
+  click(find(menu, programFolderId('a/sub'))); f.flushFrames();
+  f.state.sourceFiles = f.state.sourceFiles.filter(entry => !entry.id.startsWith('a-'));
+  click(find(menu, 'shell-app-refresh')); f.flushFrames();
+  assert.match(text(find(menu, 'shell-program-list')), /No applications or subfolders in this source folder/);
+  key(menu, 'Escape'); f.flushFrames();
+  assert.match(find(menu, 'shell-program-menu').getAttribute('aria-label'), /source folders: a$/);
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-top.desktop'));
+  key(menu, 'Escape'); f.flushFrames();
+  assert.equal(menu.document.getElementById('shell-program-source-folders'), null, 'no qualified nested registrations means no entry');
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-orphan.desktop'));
+  f.shell.showApplications(2);
+  oldBranch(event('click'));
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+}, sourcePrograms);
 
 scenario('XP Programs: real catalog and categories reuse bounded RootMenu navigation while search and both pin domains stay independent', f => {
   f.shell.selectTheme('xp');

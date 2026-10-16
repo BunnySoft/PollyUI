@@ -1,6 +1,7 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, categoryEntries, programCategoryId, programFolderContents,
+  programFolderId } from './desktop/shell/programs-menu.mjs';
 import { getDesktopTheme } from './desktop/shared/ui/themes.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
@@ -33,15 +34,16 @@ export async function checkClassicPrograms(directory) {
   const launched = [], pinned = [];
   const geometries = [];
   let slots = [];
-  let view = 'all', category = null, epoch = 0;
+  let view = 'all', category = null, folder = '', epoch = 0;
   let query = '', error = '', refreshes = 0, closes = 0, logouts = 0, revision = 0;
-  const members = () => view === 'categories' ? [] : view === 'category' ? categoryEntries(entries, category) : entries;
+  const members = () => view === 'folders' ? programFolderContents(entries, folder).entries :
+    view === 'categories' ? [] : view === 'category' ? categoryEntries(entries, category) : entries;
   const active = id => open && members().some(entry => entry.id === id && !entry.unavailable);
   const change = (next, focus = '') => {
     if (next) placement = programsPlacement(get('shell-applications'), get('shell-all-programs'), theme.layout.menuRowHeight ?? 32);
     if (open !== next) epoch++;
     open = next;
-    if (!next) { slots = []; view = 'all'; category = null; }
+    if (!next) { slots = []; view = 'all'; category = null; folder = ''; }
     mount();
     if (focus) requestAnimationFrame(() => {
       if (open !== next) return;
@@ -50,8 +52,9 @@ export async function checkClassicPrograms(directory) {
       node?.focus();
     });
   };
-  const navigate = (next, tag = null, focus = 'first') => {
-    view = next; category = next === 'category' ? tag : null; epoch++; slots = [];
+  const navigate = (next, tag = null, focus = 'first', sourceFolder = '') => {
+    view = next; category = next === 'category' ? tag : null; folder = next === 'folders' ? sourceFolder : '';
+    epoch++; slots = [];
     mount();
     get('shell-program-list').scrollTop = 0;
     const generation = epoch;
@@ -67,7 +70,8 @@ export async function checkClassicPrograms(directory) {
         startMenuView(theme, entries, query, value => { query = value; mount(); },
           id => launched.push(id), () => refreshes++, () => closes++, error, () => logouts++,
           { has: id => pinned.includes(id), add: id => pinned.push(id), remove: id => pinned.splice(pinned.indexOf(id), 1) },
-          enabled ? { open, placement, change, slots, view, category, epoch, navigate,
+          enabled ? { open, placement, change, slots, view, category, folder, epoch, navigate,
+            navigateFolder: (path, focus = 'first') => navigate('folders', null, focus, path),
             launch: id => { if (active(id)) launched.push(id); },
             pin: id => {
               if (!open || !members().some(entry => entry.id === id)) return;
@@ -250,6 +254,47 @@ export async function checkClassicPrograms(directory) {
   click(get('shell-program-all')); await wait(); settle();
   check(view === 'all' && get('shell-program-app29'), 'All applications header bypasses categories without losing original rows');
   key('Escape'); await wait(); settle();
+  const flatEntries = entries;
+  entries = Array.from({ length: 20 }, (_, index) => ({
+    id: 'Tools-' + (index === 0 ? 'direct' : 'Docs-app' + index) + '.desktop',
+    path: (index % 2 ? '/user-selected/registry/' : '/another-root/') +
+      (index === 0 ? 'Tools/direct.desktop' : 'Tools/Docs/app' + index + '.desktop'),
+    name: 'Registered source application ' + index, categories: ['Source folders'],
+  })).concat({ id: 'flat.desktop', path: '/arbitrary-root/flat.desktop', name: 'Direct root application' });
+  mount(); get('shell-all-programs').focus(); key('ArrowRight'); await wait(); settle();
+  click(get('shell-program-categories')); await wait(); settle();
+  check(get(programCategoryId('Source folders')) && get('shell-program-source-folders'),
+    'Source folder helper entry is distinct from a literal same-named category tag');
+  click(get('shell-program-source-folders')); await wait(); settle();
+  inside();
+  check(get(programFolderId('Tools')) && get('shell-program-flat.desktop'),
+    'Source root shows only direct folders and directly registered applications');
+  get(programFolderId('Tools')).focus(); key('ArrowRight'); await wait(); settle();
+  check(get(programFolderId('Tools/Docs')) && get('shell-program-Tools-direct.desktop') &&
+    !get('shell-program-Tools-Docs-app19.desktop'), 'Source folder does not flatten its nested leaf');
+  click(get(programFolderId('Tools/Docs'))); await wait(); settle();
+  inside(); key('End');
+  const sourceLast = get('shell-program-pin-Tools-Docs-app19.desktop'), sourceList = get('shell-program-list');
+  const targetBox = box(sourceLast), sourceClip = box(sourceList);
+  check(document.activeElement === sourceLast && Number(sourceList.scrollTop) > 0 &&
+    targetBox[1] >= sourceClip[1] && targetBox[1] + targetBox[3] <= sourceClip[1] + sourceClip[3] &&
+    Number(get('shell-program-list-scrollbar').getAttribute('aria-valuenow')) === Number(sourceList.scrollTop),
+    'Nested source leaf End reveals its final real Pin command and synchronizes the existing scrollbar');
+  save('source-folder-leaf');
+  key('ArrowUp'); key('Enter');
+  check(launched.at(-1) === 'Tools-Docs-app19.desktop', 'Nested source app activation invokes its registered ID once');
+  key('Escape'); await wait(); settle();
+  check(folder === 'Tools' && document.activeElement === get(programFolderId('Tools/Docs')),
+    'Nested source Escape returns to its immediate parent and the original folder command');
+  key('ArrowLeft'); await wait(); settle();
+  check(folder === '' && document.activeElement === get(programFolderId('Tools')), 'Source Back returns to merged root');
+  key('Escape'); await wait(); settle();
+  check(view === 'categories' && document.activeElement === get('shell-program-source-folders'),
+    'Source-root Back returns to the existing category index');
+  click(get('shell-program-all')); await wait(); settle();
+  check(view === 'all' && get('shell-program-Tools-Docs-app19.desktop'), 'All apps bypasses every source-folder level');
+  key('Escape'); await wait(); settle();
+  entries = flatEntries; mount();
   for (const [nextWidth, nextHeight, style] of [[260, 180, 'two-column'], [180, 140, 'legacy']]) {
     width = nextWidth; height = nextHeight;
     theme = { ...getDesktopTheme('server2003'), panel: { ...theme.panel, menuStyle: style } };
@@ -306,7 +351,7 @@ export async function checkClassicPrograms(directory) {
   host.mouse('mouseup', groupPoint[0], groupPoint[1] + 60); settle();
   check(Number(groupList.scrollTop) === removedScroll, 'Removed window-group overlay cannot continue a captured drag');
   console.log('CLASSIC_PROGRAMS ' + JSON.stringify({ geometries, launched, pinned, revision, refreshes, closes, logouts }));
-  console.log('PASS: actual Classic Programs/window-group themed scrollbar wheel, focus, page, retained drag/retime and leave; original bounded category and stale-command behavior');
+  console.log('PASS: actual Classic Programs source-folder hierarchy, categories and bounded navigation; themed scrollbar and original stale-command behavior');
 }
 
 export async function checkNativeClassicPrograms() {
