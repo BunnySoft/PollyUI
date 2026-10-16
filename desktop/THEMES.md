@@ -452,7 +452,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Exact-appId grouping is now delivered separately below; glass/reflection, preset effect adoption, pinning and magnification remain separate work. |
+| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Grouping and independent persistent pins are now delivered separately below; glass/reflection, preset effect adoption and magnification remain separate work. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -502,11 +502,28 @@ seam; they do not create surfaces or change state by themselves.
 `tests/window-groups.mjs`, `tests/menu-host.mjs` and
 `tests/window-group-render.mjs` cover the model, live guards and actual GUI
 input/native child bounds using nonempty-appId fixture snapshots. They do not
-certify full-WM application enumeration, native MRU, pinning, magnification,
+certify full-WM application enumeration, native MRU, magnification,
 physical DPI or macOS pixel fidelity.
 Passive menu details are appended after the stable header/list/close slots.
 Actual custom Classic application grouping can retheme to Modern and back
 without replacing the focused real-window command or changing its action.
+
+Modern and the three Mac presets also display independent persistent application
+pins. Apps menus distinguish taskbar/Dock pin controls from desktop shortcuts;
+the window chooser can pin or unpin the corresponding registered application.
+At most 32 ordered catalog IDs are saved in Shell configuration v3, with atomic
+v1/v2 migration preserving every existing preference domain. Unpinning never
+removes a desktop shortcut. The older reader cannot read v3 automatically.
+
+An idle pin launches through the existing current-catalog policy, while a
+uniquely associated running group occupies that same pinned slot with its real
+window count. Missing or unavailable entries remain keyboard-manageable, with
+their reason and Unpin action instead of stale launch arguments. Display slots,
+Dock width, image retention and live callback guards share the same model.
+Settings pins retain the existing owned Settings launch route. Repeated or
+composing Dock activation does not launch; discrete activation still does.
+These are Polly launcher semantics, not native MRU, drag sorting or Dock
+magnification, and do not alter Classic/XP per-window mode.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -858,7 +875,7 @@ specific task IDs, not another independently maintained status table.
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: delivered exact-appId grouping and real window chooser; remaining pinning, native/reference qualification and unimplemented magnification |
+| Shared Mac Dock semantics | E22.34: delivered exact-appId grouping, real window chooser and independent persistent pins; native/reference qualification and magnification remain |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened

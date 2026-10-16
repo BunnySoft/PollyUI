@@ -1063,7 +1063,7 @@
       "label": "E22.22 Win11 任务栏与 Start",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。确切appId分组已交付；推荐历史/account完整业务、固定等剩余差异关联既有T21任务，不造假推荐/不可用入口。",
+      "scope": "分别核居中48px任务栏、44pxslot/24pxicon、运行/激活标记与tray/clock间距；Start的640x660搜索/网格/footer、圆角和内容留白按真实可用App核对。确切appId分组与独立持久固定已交付；推荐历史/account完整业务等剩余差异关联既有T21任务，不造假推荐/不可用入口。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -1255,7 +1255,7 @@
       "label": "E22.34 Mac Dock 分组与放大",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "三MacDock已按确切appId分组；继续核固定/启动与running标记、最小化窗口处理，以及尚无magnification的差异。固定关联T21，放大先选交互/动画范围；保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
+      "scope": "三MacDock已按确切appId分组并支持独立持久固定；继续核启动/running标记、最小化窗口处理及尚无magnification的差异。放大先选交互/动画范围；保空appId独立Window.id语义，不把未知身份窗口伪装成应用，不在视觉任务中悄加包管理。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -5603,6 +5603,7 @@
     "- 2026-10-16 桌面弹出界面批：cdedb3c合eb2245e统一窗口操作/工作区/桌面快捷方式管理/窗口切换四菜单的既有panelViewport和主题字号，工作区行换行、原namefield挂载/ID/所有callbacks与switcher serial不变。b9bbf5f合c592166将tray菜单接shared command/selection ink与同滚动外框，保原submenu/toggle/itemRevision/nativewheel；父仅删除非toggle menuitem多余aria-pressed。856c0ca补notification bounded viewport、message/actions纵横wheel、应用名让位Dismiss，Appearance画廊标题/标签/状态/间距接原token而illustration/tile166/focuswrapper不变。复用既有workspace/menu/Settings合69项与syntax，无新App测试/场景/框架，无原生suite/真实notificationDBus资格冒称。低频Bug继续停放，未改Native/C/SDK/schema/协议、未重打ISO。",
     "- 2026-10-16 应用身份与实际资源续批：370fcc9合52e22dd增加可选显式X-Polly-AppId，bundle直接取validated manifest.id；共用匹配helper exactcatalogid优先/显式唯一才采用/冲突保rawfallback，修内置org.pollyui.*与polly-*.desktop不一致造成任务label/图标不能关联，不猜名称/后缀，不改groupkeys/launch权限。四个Polly原创64px PNG与可再生成几何源已交付，五desktop声明真实wrapper ID与安装期Icon；actual CMake安装规则在独立目录验证--prefix覆盖后所有Icon仍指向同PNG，保原safe decoder/budget，不新增resolver/native/build/VM。既有及必要数据身份契约60项通过；不是新App样式测试或商业OS图标认证。7156719令Files Properties名字/完整path/link复用现readonly rawtext viewport，值与操作不变。真实搜索输入消费继续独立推进，本条不宣称已完成；非阻塞vendor Bug继续未合入，媒体未更新。",
     "- 2026-10-16 搜索与常用操作续批：d778768+d343222合b9ada0f/2a678a5将生产Start/Apps搜索接现SDK真实输入，保currentMenu/ownerwindow/原32或24高度、ID/query128/first100/launch权限，支持caret/选区/Delete/剪贴板/IME并在refresh/theme变更保同DOM，composition占位hint不重叠、关闭清空并拒旧回调。SDK可选maxLength只在原replaceSelection裁插入且保suffix/caret，初值/setter同bound、缺省不变；父原输入39和相关菜单/功能87及hint47通过，现实际productionShell软件GUI入口再过中间编辑/refresh选区/真实preedit Enter拒绝/normalEnter1，无OS launch。6a5bd57补Files CtrlF当前folderfilter/CtrlShiftN原新建确认/AltEnter属性，保modal/composition/AltGr/repeat/身份守卫，dddf738将原filter128上限接同输入引擎而不在事后回滚caret；现Files34通过。这是输入/键盘功能，只有既有套件必要行为契约，无新增App样式测试文件或矩阵。独立持久taskbar/Dock pins仍在产品整合，不因model checkpoint就标已交付；原生Bug停放且媒体不变。",
-    "- 2026-10-16 Files路径复制：0454c97合62c3bf9，通过现clipboard.writeText能力注入提供Properties/context/非编辑CtrlShiftC三个入口，同一controller按selected generation/identity复制原样literal path，成功显式message、关闭context/保Properties并退休旧callback；缺能力禁用，写失败report且保ready目录/selection/Properties。只复制文字不读写文件，不冒文件剪贴板copy/权限桥接。现Files37项以inert clipboard验证Unicode/quotes、一次动作/旧身份/compose/modal/repeat/无FS，未触用户真实clipboard；无新测试文件或环境矩阵。"
+    "- 2026-10-16 Files路径复制：0454c97合62c3bf9，通过现clipboard.writeText能力注入提供Properties/context/非编辑CtrlShiftC三个入口，同一controller按selected generation/identity复制原样literal path，成功显式message、关闭context/保Properties并退休旧callback；缺能力禁用，写失败report且保ready目录/selection/Properties。只复制文字不读写文件，不冒文件剪贴板copy/权限桥接。现Files37项以inert clipboard验证Unicode/quotes、一次动作/旧身份/compose/modal/repeat/无FS，未触用户真实clipboard；无新测试文件或环境矩阵。",
+    "- 2026-10-16 独立固定应用：aa0cdbd/8c9d7ca/7d1a9aa合113302a，Shell配置v3新增launchers v1有序≤32catalog引用，与desktop v1独立；v1/v2沿原atomicwriter一次保全域迁移、未知版本不写空默认、旧reader回退边界有明确文档。Modern/三Mac及applications optin支持Apps Taskbar+/Dock+与真实RootMenu Pin/Unpin，零窗launcher走当前catalog/原SettingsBridge，唯一关联真实group同槽/count；missing/unavailable仍可Tab/ContextMenu管理，旧手势/成员/workspace/callback/重复IME activation拒绝，无fake Window.id/MRU/drag排序。实际displaycount/width/cache同model，Settings synthetic名称与真实注册关联分层，Unicode/空格opaqueID不猜suffix。父组合145项通过、现Python fixture仅AST语法和JS安装fixture仅syntax，未冒跑native矩阵；子一次旧911软件GUI看新idle/count2/missing槽及独立控件，非物理DPI/真实持久WM端到端资格。父补decorator-installed版本期望3及synthetic Settings位图保留/映射。原native Bug未合入、未更新SDK/ISO/C/权限；E22广项不因此全关。"
   ]
 }
