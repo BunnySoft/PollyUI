@@ -4,6 +4,7 @@ import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { isLuna, lunaButtonPaint, lunaButtonDetail, lunaVisualEvents } from './desktop/shared/ui/luna-primitives.mjs';
 import { hasSurfacePaint, surfaceStyle, surfacePaint, surfaceDetail, surfaceEvents } from './desktop/shared/ui/surface-primitives.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 export const desktopType = { fontFamily: 'sans-serif', fontSize: 14 };
 export const horizontal = { flexDirection: 'row', alignItems: 'center' };
@@ -84,10 +85,10 @@ export function desktopCommand(id, text, theme, action, { icon = '', selected = 
 }
 
 export function settingsCard(theme, title, subtitle, children = [], id) {
-  return h('view', { id, style: { padding: 18, gap: 12, flexShrink: 0,
-    borderRadius: 8, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
-  title ? desktopText(title, theme.colors.text, 16, { fontWeight: 600 }) : null,
-  subtitle ? desktopText(subtitle, theme.colors.muted, 13, { flexShrink: 1 }) : null, children);
+  return h('view', { id, style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
+  title ? desktopText(title, theme.colors.text, themeTextSize(theme, 16), { fontWeight: 600 }) : null,
+  subtitle ? desktopText(subtitle, theme.colors.muted, themeTextSize(theme, 13), { flexShrink: 1 }) : null,
+  children, panelDetail(theme, 'card'));
 }
 
 export function scrollDesktop(event, horizontalScroll = false) {

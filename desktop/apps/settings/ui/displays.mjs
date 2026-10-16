@@ -6,6 +6,7 @@ const row = { flexDirection: 'row', alignItems: 'center' };
 const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
 import { themedCheckbox } from './desktop/shared/ui/selection-controls.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null) {
   const label = labelFor(theme);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width,
@@ -17,8 +18,7 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
     h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
     button('shell-output-close', 'Close', theme, close)),
   h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 12 }, onWheel: scrollDesktop },
-    draft.heads.map(head => h('view', { style: { padding: 16, gap: 12, flexShrink: 0,
-      borderWidth: 1, borderRadius: 8, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
+    draft.heads.map(head => h('view', { style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
     h('view', { style: { ...row, gap: theme.layout.controlGap } }, label(head.name, theme.colors.text, 12),
       h('view', { style: { flexGrow: 1 } }),
       themedCheckbox(theme, { id: 'shell-output-' + head.id + '-enabled', checked: head.enabled,
@@ -49,7 +49,8 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
         label('Y', theme.colors.text, 11), field(head, 'y')),
       h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Refresh Hz', theme.colors.text, 11), field(head, 'refresh'),
         label('0 = auto', theme.colors.muted, 10)),
-    ] : label('Enable this display to edit its configuration.', theme.colors.muted, 10)))),
+    ] : label('Enable this display to edit its configuration.', theme.colors.muted, 10),
+    panelDetail(theme, 'card')))),
   label('Keep changes within 15 seconds or they revert.', theme.colors.muted, 10),
   profile ? label(profile.status, theme.colors.muted, 10) : null,
   profile ? button('shell-output-forget-profile', 'Forget saved layout', theme, profile.forget) : null,

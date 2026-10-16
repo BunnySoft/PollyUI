@@ -3,6 +3,7 @@ import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { horizontal, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themedSwitch } from './desktop/shared/ui/selection-controls.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 export function audioSettingsView(theme, snapshot, busy, command) {
   const label = (value, size = 12) => h('view', { style: { color: theme.colors.text,
@@ -38,8 +39,7 @@ export function audioSettingsView(theme, snapshot, busy, command) {
       label('Preferred output is unavailable; using an available fallback.') : null,
     snapshot.preferredSource && !nodes.some(node => node.name === snapshot.preferredSource) ?
       label('Preferred input is unavailable; using an available fallback.') : null,
-    nodes.map(node => h('view', { style: { padding: 8, gap: 6, flexShrink: 0,
-      borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border } },
+    nodes.map(node => h('view', { style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
       label(node.description, 14), label(node.class + ' - ' + node.state),
       label(node.volume === null ? 'Volume control unavailable' : 'Volume: ' + Math.round(node.volume * 100) + '%'),
       h('view', { style: { ...horizontal, gap: 6, flexShrink: 0 } },
@@ -54,5 +54,6 @@ export function audioSettingsView(theme, snapshot, busy, command) {
       node.class === 'Audio/Sink' || node.class.startsWith('Audio/Source') ?
         button('shell-audio-default-' + node.id,
           snapshot.defaultSink === node.id || snapshot.defaultSource === node.id ? 'Selected default' : 'Use as default',
-          () => change(node, 'default'), snapshot.ready && snapshot.defaultSink !== node.id && snapshot.defaultSource !== node.id) : null)));
+          () => change(node, 'default'), snapshot.ready && snapshot.defaultSink !== node.id && snapshot.defaultSource !== node.id) : null,
+      panelDetail(theme, 'card'))));
 }

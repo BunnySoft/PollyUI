@@ -89,6 +89,10 @@ button Enter); stable IDs, primary-only activation, busy/null-capability guards,
 output Apply/confirmation policy and audio generation/revision/instance checks
 are unchanged. Audio stays at the acknowledged value and saves only after the
 existing service policy observes acknowledgement.
+The shared Settings card and those two consumer cards use the single desktop
+`panel-appearance.mjs` passive surface projection. Classic bevels own their
+outside pixels without a second generic border; titles, child controls and
+transaction handlers keep their existing APIs.
 
 ## Select overlay lifecycle
 
