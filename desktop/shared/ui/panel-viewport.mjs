@@ -5,13 +5,19 @@ import { verticalScrollMetrics, createVerticalScrollbar } from './gui/sdk/js/scr
 import { scrollbarAppearance } from './desktop/shared/ui/scrollbar-appearance.mjs';
 
 const scrollAreas = new WeakMap();
+// Removing an ancestor does not necessarily invoke descendant leave hooks.
+function liveOwner(node) {
+  const owner = node.ownerDocument;
+  return owner && !owner.defaultView?.closed && contains(owner.body, node) ? owner : null;
+}
 function currentArea(node, state) {
-  return scrollAreas.get(node) === state && contains(node.ownerDocument.body, node) &&
-    !node.ownerDocument.defaultView?.closed;
+  return scrollAreas.get(node) === state && !!liveOwner(node);
 }
 function updateArea(node) {
   const state = scrollAreas.get(node);
-  if (state && currentArea(node, state)) state.controller?.update();
+  if (!state) return;
+  if (currentArea(node, state)) state.controller?.update();
+  else releaseArea(node);
 }
 function bindArea(node, theme, leave) {
   let state = scrollAreas.get(node);
@@ -34,15 +40,21 @@ function bindArea(node, theme, leave) {
   };
   walk(node.firstChild);
   if (state.controller) {
+    if (!currentArea(node, state)) { releaseArea(node); return; }
     state.controller.setAppearance(state.appearance);
     state.controller.update();
   }
   if (state.frame !== null) return;
   state.frame = requestAnimationFrame(() => {
+    state.frame = null;
+    const area = weak.deref();
+    if (!area || scrollAreas.get(area) !== state) return;
+    if (!currentArea(area, state)) { releaseArea(area); return; }
     state.frame = requestAnimationFrame(() => {
       state.frame = null;
       const area = weak.deref();
-      if (!area || !currentArea(area, state)) return;
+      if (!area || scrollAreas.get(area) !== state) return;
+      if (!currentArea(area, state)) { releaseArea(area); return; }
       const viewport = area.firstChild, track = area.childNodes[1];
       if (!state.controller) {
         state.controller = createVerticalScrollbar({
@@ -65,11 +77,14 @@ function releaseArea(node) {
   if (!state) return;
   scrollAreas.delete(node);
   if (state.frame !== null) cancelAnimationFrame(state.frame);
-  try { state.controller?.stop(); }
+  state.frame = null;
+  const controller = state.controller, leave = state.leave;
+  state.controller = null; state.leave = null;
+  try { controller?.stop(); }
   finally {
     if (state.trackWheel) node.childNodes[1].removeEventListener('wheel', state.trackWheel);
-    for (const { node: target, focused } of state.bindings) target.deref()?.removeEventListener('focus', focused);
-    state.leave?.(node.firstChild, () => {});
+    for (const { node: target, focused } of state.bindings.splice(0)) target.deref()?.removeEventListener('focus', focused);
+    leave?.(node.firstChild, () => {});
   }
 }
 export function updatePanelScrollbar(viewport) {
@@ -116,8 +131,10 @@ const contains = (parent, node) => {
 };
 function reveal(viewport, force = false) {
   const state = viewports.get(viewport);
-  const owner = viewport.ownerDocument, node = owner?.activeElement;
-  if (!state || !owner || !contains(owner.body, viewport) || !node || node === viewport || !contains(viewport, node)) return;
+  if (!state) return;
+  const owner = liveOwner(viewport), node = owner?.activeElement;
+  if (!owner) { retireViewport(viewport); return; }
+  if (!node || node === viewport || !contains(viewport, node)) return;
   const target = node.getBoundingClientRect(), clip = viewport.getBoundingClientRect();
   const horizontal = state.axis === 'horizontal';
   if ((horizontal ? clip.width : clip.height) <= 0 || (horizontal ? target.width : target.height) <= 0) return;
@@ -146,13 +163,19 @@ function queueReveal(viewport, force = false) {
   const weak = new WeakRef(viewport);
   Promise.resolve().then(() => {
     state.queued = false;
-    const node = weak.deref(), owner = node?.ownerDocument;
-    if (!owner || viewports.get(node) !== state || !contains(owner.body, node) || !contains(node, owner.activeElement)) return;
+    const node = weak.deref();
+    if (!node || viewports.get(node) !== state) return;
+    const owner = liveOwner(node);
+    if (!owner) { retireViewport(node); return; }
+    if (!contains(node, owner.activeElement)) return;
     reveal(node, state.force); state.force = false;
     // Native rAF runs before layout. These two bounded callbacks observe the
     // intervening layout without retaining a document or a stale focus target.
     state.frame = requestAnimationFrame(() => {
-      if (!weak.deref() || viewports.get(weak.deref()) !== state) return;
+      state.frame = null;
+      const node = weak.deref();
+      if (!node || viewports.get(node) !== state) return;
+      if (!liveOwner(node)) { retireViewport(node); return; }
       state.frame = requestAnimationFrame(() => {
         state.frame = null;
         const current = weak.deref();
@@ -187,9 +210,14 @@ function bindViewport(viewport, axis) {
 function releaseViewport(viewport) {
   const state = viewports.get(viewport);
   if (!state) return;
-  if (state.frame !== null) cancelAnimationFrame(state.frame);
-  for (const { node, focused } of state.bindings) node.deref()?.removeEventListener('focus', focused);
   viewports.delete(viewport);
+  if (state.frame !== null) cancelAnimationFrame(state.frame);
+  state.frame = null;
+  for (const { node, focused } of state.bindings.splice(0)) node.deref()?.removeEventListener('focus', focused);
+}
+function retireViewport(viewport) {
+  releaseViewport(viewport);
+  if (scrollAreas.has(viewport.parentNode)) releaseArea(viewport.parentNode);
 }
 
 // Chrome and content scrolling are separate surfaces. Embedded pages use
