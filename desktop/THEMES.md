@@ -401,6 +401,15 @@ catalog refresh and current membership; discovery failure reports an error and
 retains the previous visible catalog without authorizing an action from stale
 data. The submenu stays inside the existing input viewport; no native popup or
 new authority is added.
+When exact desktop-entry ID/path mappings prove nested registration sources,
+Classic and XP also offer a merged Source folders tree from the category index.
+It shows real direct subfolders and registrations with bounded multilevel
+navigation, not folders guessed from hyphenated IDs. Directory command keys
+cannot collide with application keys; fresh reads and direct membership still
+guard entry and app actions. Back to an already-owned parent remains available
+during I/O failure without clearing the error or authorizing stale app actions.
+Unverifiable sources remain in All apps. This is neither arbitrary filesystem
+browsing, an imported Windows Programs directory nor an XDG menu XML tree.
 See [the Shell contract](shell/README.md). Multi-level directory menus, true user
 account/profile art, and Win11 recommendation/account features are not reproduced.
 Existing application launch, desktop shortcut, keyboard and logout actions remain
@@ -751,6 +760,14 @@ The Keyboard shortcut list also uses the existing frameless panel viewport to
 reveal focused Change/Off commands at low heights. It preserves card spacing,
 intentional wheel position on repaint, and the trusted recording lifecycle;
 no second frame or focus engine is introduced.
+Settings' page-navigation sidebar uses that same viewport and scrollbar so the
+last page remains visible after Tab/direct focus in short windows. Sidebar
+dimensions and commands stay unchanged, while the right content mount and footer
+are untouched; fitting-height navigation keeps its previous Tab order.
+Ancestor removal also retires the shared viewport's queued work, controller and
+focus/wheel listeners if descendant leave hooks were not invoked. A detached
+native node can have no `ownerDocument`; this is a normal lifecycle condition,
+not a reason to retain its capture state or hide an uncaught callback error.
 Audio's bounded content pane and the Displays/Keyboard lists also opt into the
 same themed scrollbar and focus viewport. The latter two retain fixed headers
 and footer actions. Scroll input issues no audio, display or shortcut service
@@ -945,7 +962,7 @@ specific task IDs, not another independently maintained status table.
 | Shared controls | E22.7: button borders, backgrounds and hover/press/disabled/default/focus; E22.8: checkbox/radio/switch/select/tabs/list selection; E22.9: text-box bevel/padding/caret/selection and scrollbars; E22.10: Settings/dialog/confirmation/authentication surfaces |
 | Actual geometry and state | E22.11: bounded native active/inactive/press/cancel/maximize/restore, narrow/low-screen and supported DPI checks, not just component fixtures |
 | XP SP3 Luna | E22.2: completed historical base-paint increment; E22.12: remaining caption bands, edges, text shadow and caption-control states; E22.13: taskbar/Start/quick-launch/tray/clock and two-column menu details |
-| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: multi-level Programs directories beyond the delivered flat submenu, profile and content-density/layout choices |
+| Server 2003 Classic remaining | E22.14: residual raw border/menu/taskbar color errors; E22.15: flat/tag/source-folder browsing is delivered, while account/profile, full OS cascade/reference and content-density/layout qualification remain |
 | Server 2003 Classic corrected records | E22.16: bevel/outline ownership; E22.17: flat state, stipple, focus and icon spacing; E22.18: caption glyph size/offset and gradient span; E22.19: native menu/taskbar gap; E22.20: outside-menu caption input, linked to the existing functional task; E22.35: base frame metrics, solid desktop and gray two-column default with single-column override |
 | Windows 11 24H2 light | E22.21: caption backplates/glyphs/states; E22.22: centered taskbar, running markers, Start search/grid/footer; E22.23: full-client corner clipping/shadows; E22.24: Mica-like versus Acrylic backdrop mechanisms |
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
