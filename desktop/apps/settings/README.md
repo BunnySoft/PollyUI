@@ -86,6 +86,10 @@ storage identities and Settings's own application version.
 The Settings frame, About and Keyboard text/spacing consume the existing theme
 typography and layout tokens; Audio action rows wrap within the available width.
 This is client presentation, not certification of original operating-system fonts.
+The Keyboard shortcut list reuses the shared frameless focus viewport: Tab to
+Change/Off reveals the focused command in short windows, while ordinary repaint
+preserves intentional wheel scrolling. Recording still uses the same trusted
+focus-bound capture path.
 
 Every page, including loading, unavailable and failed states, retains the
 system release and short build revision/source marker in its footer. Both strict

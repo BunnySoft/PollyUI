@@ -719,6 +719,10 @@ states follow the same typography. Power uses an explicit bounded client area
 and the existing wheel handler, with shutdown permissions and confirmation
 coordination unchanged. These are application-style changes, not new font,
 layout or test infrastructure.
+The Keyboard shortcut list also uses the existing frameless panel viewport to
+reveal focused Change/Off commands at low heights. It preserves card spacing,
+intentional wheel position on repaint, and the trusted recording lifecycle;
+no second frame or focus engine is introduced.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
