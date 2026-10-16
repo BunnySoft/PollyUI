@@ -31,6 +31,12 @@ theme typography. Workspace action rows wrap on narrow surfaces; the native
 name field and all management callbacks retain their existing ownership.
 Tray menus use the same scrolling surface and shared enabled/selection-ink
 commands. Tray item wheel events still go to the offering application.
+The existing window-action, workspace and tray menus opt into the same themed
+overlay scrollbar without changing their frames, command widths or order.
+Paging and dragging use the existing SDK controller alongside shared focus
+reveal; tray spacing remains its own `trayGap`. Retiring a tray menu releases
+that view's scrolling lifecycle before its original close route, with no extra
+native action.
 
 # Local session display profile
 

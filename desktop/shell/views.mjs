@@ -818,7 +818,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
 export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
   const l = theme.layout;
   const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
-  return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu' },
+  return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu', scrollbar: true },
   label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
   button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
   button('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize', theme,
@@ -838,7 +838,7 @@ export function windowActionsView(theme, window, action, close, error = '', work
 export function workspacesView(theme, workspaces, activate, remove, create, close, error = '', settings = null) {
   const l = theme.layout;
   const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
-  return panelViewport(theme, { id: 'shell-workspace-menu', variant: 'menu' },
+  return panelViewport(theme, { id: 'shell-workspace-menu', variant: 'menu', scrollbar: true },
   h('view', { style: { ...row, gap: l.controlGap, flexWrap: 'wrap', flexShrink: 0 } },
     label('Workspaces', theme.colors.text, l.headingFontSize),
     h('view', { style: { flexGrow: 1 } }), button('shell-workspace-add', 'Add', theme, create),
