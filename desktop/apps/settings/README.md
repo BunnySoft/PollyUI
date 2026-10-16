@@ -80,6 +80,10 @@ of hardware; the modern material is solid, not a claim of Mica or blur.
 About keeps system/session information separate from expandable technical paths,
 storage identities and Settings's own application version.
 
+The Settings frame, About and Keyboard text/spacing consume the existing theme
+typography and layout tokens; Audio action rows wrap within the available width.
+This is client presentation, not certification of original operating-system fonts.
+
 Every page, including loading, unavailable and failed states, retains the
 system release and short build revision/source marker in its footer. Both strict
 snapshots include `build:{version,revision,sourceDirty}` generated from the

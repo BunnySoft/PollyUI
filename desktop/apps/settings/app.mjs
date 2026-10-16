@@ -4,6 +4,7 @@ import { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
 import { systemSettingsView, aboutSettingsView } from './desktop/apps/settings/ui/frame.mjs';
 import { SETTINGS_APP_ID, SETTINGS_VERSION, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
 import { desktopCommand, desktopText, settingsCard } from './desktop/shared/ui/presentation.mjs';
+import { selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
 import { createNetworkSettings } from './desktop/apps/settings/ui/network.mjs';
@@ -34,7 +35,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       if (!controller.getState().busy && !controller.getState().unavailable && controller.getState().appearance)
         return action(...args);
     });
-    const label = text => desktopText(text, theme.colors.text, 14, { flexShrink: 1 });
+    const label = text => desktopText(text, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 });
     const build = state.appearance?.build || ownBuild;
     let content;
     if (state.page === 'appearance') {
@@ -60,18 +61,18 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       else {
         const action = (operation, action = '') => command('KeyboardAction',
           JSON.stringify({ revision: snapshot.revision, operation, action }));
-        pageContent = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: 10 } },
+        pageContent = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: theme.layout.contentGap } },
           shortcutsView(theme, snapshot.bindings, snapshot.recording?.action || null,
             id => action('record', id), id => action('disable', id), () => action('reset'), () => {}, snapshot.error),
           label('Recording uses a small trusted focus-bound prompt. It is not another Settings window or a global keyboard hook.'),
           snapshot.recording ? desktopCommand('settings-keyboard-cancel', 'Cancel recording', theme,
             guarded(() => pages.command('CancelShortcutRecording', snapshot.recording.token)), { enabled: !busy }) : null);
       }
-      content = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: 10 } },
+      content = h('view', { style: { minHeight: 0, flexGrow: 1, flexBasis: 0, gap: theme.layout.contentGap } },
         state.error || error ? h('view', { role: 'alert' }, label(state.error || error)) : null,
         pageContent);
     } else {
-      content = h('view', { style: { minHeight: 0, gap: 12, flexShrink: 0 } },
+      content = h('view', { style: { minHeight: 0, gap: theme.layout.contentGap, flexShrink: 0 } },
         state.error && state.about ? h('view', { role: 'alert' }, label(state.error)) : null,
         state.about ? aboutSettingsView(theme, state.about) : label(state.error || 'Inspecting the running desktop...'),
         desktopCommand('settings-about-details', details ? 'Hide technical details' : 'Technical details', theme,
@@ -94,8 +95,9 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       surface.document.getElementById('shell-settings-page-' + page)?.focus();
     }), stop, content, null, 'Settings', [], build);
     if (JSON.stringify(build) !== JSON.stringify(ownBuild))
-      tree.children.push(h('view', { role: 'status', style: { padding: 8, flexShrink: 0,
-        backgroundColor: theme.colors.selection } }, label('Settings runtime differs: ' + buildLabel(ownBuild))));
+      tree.children.push(h('view', { role: 'status', style: { padding: theme.layout.compactPadding, flexShrink: 0,
+        backgroundColor: theme.colors.selection } }, desktopText('Settings runtime differs: ' + buildLabel(ownBuild),
+        selectionInk(theme, theme.colors.text), theme.layout.statusFontSize, { flexShrink: 1 })));
     if (state.busy || !state.appearance)
       tree.props['aria-busy'] = 'true';
     function disable(node) {
