@@ -142,6 +142,16 @@ Opt-in path/error details use the same existing horizontal scroll primitive;
 ordinary message words still wrap, while an unbroken token remains fully reachable.
 This is application-panel consistency, not original-OS screenshot matching.
 
+The packaged `polly-file-text` launcher enables `--theme` for both its ordinary
+app content and chooser, using the same public `--desktop` client API as Files,
+not Shell management authority. `--no-theme` opts out; the last theme flag wins.
+Direct `createFileTextApp` calls still default to neutral, unsubscribed content.
+Opt-in preserves the same text input/value/selection and controls/input/output
+slots, uses shared theme commands and scrolling, and shares one refcounted native
+theme connection with an open chooser. Theme errors are reported separately from
+file read/write status. This remains a bounded single-line text example: its
+4096-byte save limit, conditional replacement and readback policy are unchanged.
+
 Rows show name, type, file size and a local-calendar modification date. Properties
 retains the full name/path, exact timestamp, permission mode, UID/GID, link target
 and actual effective-UID read/write accessibility. Long row labels are clipped,

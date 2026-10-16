@@ -15,6 +15,10 @@ test('Files and File Text are ordinary Apps entries; the document-only entry is 
   assert.deepEqual(catalog.map(entry => entry.id).sort(), ['polly-file-text.desktop', 'polly-files.desktop']);
   assert.deepEqual(catalog.find(entry => entry.id === 'polly-file-text.desktop').argv, ['/usr/bin/polly-file-text']);
   assert.deepEqual(catalog.find(entry => entry.id === 'polly-files.desktop').argv, ['/usr/bin/polly-files']);
+  const wrapper = readFileSync(new URL('../tools/polly-file-text.in', import.meta.url), 'utf8');
+  assert.match(wrapper, /--desktop --app-id org\.pollyui\.file-text/);
+  assert.match(wrapper, /desktop\/examples\/file-dialog\.mjs" --theme "\$@"/,
+    'Packaged File Text opts into themes before user arguments, allowing explicit --no-theme');
 });
 
 test('standalone Settings has an ordinary fixed launcher entry without desktop privilege flags', () => {
