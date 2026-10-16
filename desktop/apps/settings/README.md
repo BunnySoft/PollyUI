@@ -60,6 +60,15 @@ Already-established connections survive page close. iwd retains credential and
 installed/Live persistence authority; no reboot-persistence guarantee is added.
 Failures and uncertain delivery remain visible, writes are never replayed, and
 credential fields are wiped on prompt change, service failure, navigation or close.
+Credential/confirmation content and network entries consume the shared passive
+card surface. Embedded Settings content does not add a second window frame;
+only the existing independently owned network layer uses the shared dialog
+frame. Native credential inputs retain their objects and wrappers across
+retheme and live status changes, with `100%` available width capped at the
+previous 420px size. A new authentication ID/kind still clears credentials and
+resets the content mode. Bounded content uses the existing `scrollDesktop`
+handler so cancellation stays reachable in shorter surfaces. No iwd/RPC,
+revision, prompt-token, credential or connection policy changes are implied.
 
 The original Windows-11-inspired presentation uses a persistent sidebar,
 grouped surface cards and illustrated theme previews, rather than full-width

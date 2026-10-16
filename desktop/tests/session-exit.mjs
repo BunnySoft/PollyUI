@@ -3,6 +3,7 @@ import { register } from 'node:module';
 import { test } from 'node:test';
 register('./root-loader.mjs', import.meta.url);
 const { createSessionExitController, createLogoutSurface } = await import('../shell/session-exit.mjs');
+const { getDesktopTheme } = await import('../shared/ui/themes.mjs');
 
 function fixture() {
   let current = { version: 1, phase: 'idle', pendingWindows: 1, pendingApplications: 1,
@@ -121,12 +122,12 @@ test('cancellation during a changed callback invalidates subsequent close or com
 });
 
 test('a retired logout surface close callback cannot cancel a reopened confirmation', async t => {
-  const { fixtureHost } = await import('./file-dialog-fixtures.mjs');
-  const { host } = fixtureHost(t);
+  const { applicationHost } = await import('./application-host.mjs');
+  const host = applicationHost(t);
   host.displays = () => [{ id: 1, width: 800, height: 600 }];
   const f = fixture();
   const surface = createLogoutSurface({ controller: f.controller, host, commit() {},
-    theme: () => ({ colors: { text: '#000000', border: '#999999', surface: '#ffffff', body: '#eeeeee' } }) });
+    theme: () => getDesktopTheme('modern') });
   const old = surface.show(1);
   old.close = function () { this.closed = true; };
   f.controller.stop(); surface.stop(); f.controller.start();

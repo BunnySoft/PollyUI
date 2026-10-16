@@ -83,3 +83,19 @@ including notification-before/after workspace and membership guards. The exporte
 `desktop/tests/window-group-render.mjs` cover actual renderer/input and native
 client geometry respectively. They use explicitly nonempty app-ID fixture
 snapshots, not evidence of compositor permissions, physical DPI or native MRU.
+
+# Trusted display and logout confirmation surfaces
+
+The existing token-bound display Keep/Revert layer and save-before-logout layer
+consume the shared passive dialog appearance/detail and bounded scrolling.
+Logout buttons use the shared primary/nonrepeating/noncomposing activation and
+theme typography rather than another button painter. Their content is already
+an undecorated Shell layer; this does not add a second frame to ordinary
+WM-decorated applications.
+
+These are view changes only: the display token, deadline and Enter/Escape
+routes, and logout close-request, cancellation, pending-app/save wait, fresh
+inventory/seal and explicit final action remain owned by the original
+controllers. `desktop/tests/transient-panel-render.mjs` uses real GUI consumers
+with inert bounded service dependencies; it neither connects a network,
+transmits real credentials, changes displays nor ends an actual session.
