@@ -45,6 +45,9 @@ The sidebar, breadcrumbs, Up, Back, Forward and Refresh navigate real directory
 snapshots. There is no preselected entry. Single-click selects; double-click or
 Enter opens. The command bar and right-click/Shift+F10 menu operate on that exact
 selection. Arrow keys, Home and End move through the visible sorted/filtered rows;
+PageUp/PageDown from the list or a row move the single selection by one visible
+viewport of 42px rows, clamped to the first/last match. Inputs, modal/context menus
+and Ctrl/Alt/Meta-modified Page keys retain their own behavior.
 F2 focuses the inline rename field, Enter explicitly confirms, and Escape cancels
 and restores row focus. F5 refreshes, Alt+Left/Right navigate history, Alt+Up goes
 to the parent, and Ctrl+L/Alt+D opens an editable absolute address.

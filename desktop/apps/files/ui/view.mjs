@@ -344,6 +344,7 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       if (event.defaultPrevented) return;
       if (event.isComposing && event.key !== 'Escape') return;
       const editing = inInput(event.target);
+      const pageKey = event.key === 'PageUp' || event.key === 'PageDown';
       if (usable && event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'f') {
         event.preventDefault();
         if (state.context) controller.cancel(generation);
@@ -382,12 +383,16 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       else if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); controller.back(generation); }
       else if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); controller.forward(generation); }
       else if (event.altKey && event.key === 'ArrowUp') { event.preventDefault(); controller.parent(generation); }
-      else if (usable && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) &&
-          (event.target?.id?.startsWith('files-entry-') || event.target?.id === 'files-list' || !event.target)) {
+      else if (usable && ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageUp', 'PageDown'].includes(event.key) &&
+          (!pageKey || (!state.context && !event.ctrlKey && !event.altKey && !event.metaKey)) &&
+          (event.target?.id?.startsWith('files-entry-') || event.target?.id === 'files-list' || (!event.target && !pageKey))) {
         event.preventDefault();
         const old = entries.findIndex(entry => entry.path === selection?.path && entry.identity === selection?.identity);
+        const step = pageKey ? Math.max(1, Math.floor(
+          event.currentTarget.ownerDocument.getElementById('files-list').offsetHeight / 42)) : 1;
         const index = event.key === 'Home' ? 0 : event.key === 'End' ? entries.length - 1 :
-          Math.max(0, Math.min(entries.length - 1, old < 0 ? 0 : old + (event.key === 'ArrowDown' ? 1 : -1)));
+          Math.max(0, Math.min(entries.length - 1, old < 0 ? 0 :
+            old + (event.key === 'ArrowDown' || event.key === 'PageDown' ? step : -step)));
         const entry = entries[index];
         if (entry) controller.select(entry.path, entry.identity, generation);
       } else if (event.key === 'F5') { event.preventDefault(); controller.refresh(generation); }

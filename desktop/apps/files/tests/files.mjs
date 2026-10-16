@@ -531,7 +531,40 @@ test('overlay scrollbar preserves continuous list and metadata widths at normal 
   }
 });
 test('keyboard movement follows the sorted filtered rows, address mode and inline rename do not swallow input keys', async () => {
-  const { controller } = fixture(); await controller.start();
+  const { controller, directories, operations } = fixture();
+  directories.get('/fixture').push(...Array.from({ length: 10 }, (_, i) => entry('/fixture/Page-0' + i)));
+  await controller.start();
+  controller.filter('Page-'); controller.sortBy('name');
+  let height = 126;
+  const page = (key, extra = {}) => {
+    const event = { key, target: { id: 'files-list' },
+      currentTarget: { ownerDocument: { getElementById(id) {
+        assert.equal(id, 'files-list'); return { offsetHeight: height };
+      } } }, preventDefault() { this.defaultPrevented = true; }, ...extra };
+    filesView(controller.getState(), controller).props.onKeydown(event);
+    return event;
+  };
+  const selectedIndex = () => visibleEntries(controller.getState()).findIndex(item =>
+    item.identity === controller.getState().selection?.identity);
+  const observed = operations.length;
+  page('PageDown'); assert.equal(selectedIndex(), 0, 'No selection starts at the first visible sorted match');
+  page('PageDown'); assert.equal(selectedIndex(), 3, '126px viewport advances three 42px rows');
+  page('PageUp', { target: { id: 'files-entry-3' } }); assert.equal(selectedIndex(), 0);
+  height = 4200; page('PageDown'); assert.equal(selectedIndex(), 9, 'PageDown clamps at the last match');
+  page('PageUp'); assert.equal(selectedIndex(), 0, 'PageUp clamps at the first match');
+  height = 20; page('PageDown'); assert.equal(selectedIndex(), 1, 'Short viewports still advance one row');
+  const beforeIgnored = controller.getState().generation;
+  for (const extra of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { isComposing: true },
+    { target: { id: 'files-filter' } }, { target: { id: 'files-property-path' } }])
+    assert.equal(page('PageDown', extra).defaultPrevented, undefined);
+  assert.equal(controller.getState().generation, beforeIgnored);
+  const chosen = controller.getState().selection;
+  controller.showContext(chosen.path, chosen.identity, 20, 20);
+  assert.equal(page('PageDown').defaultPrevented, undefined, 'Open context menu keeps its own keyboard route');
+  controller.cancel(); controller.beginCreate();
+  assert.equal(page('PageDown').defaultPrevented, undefined, 'Modal operations do not page the underlying list');
+  controller.cancel();
+  assert.equal(operations.length, observed, 'Paging changes only selection, never the filesystem');
   controller.filter('中文');
   filesView(controller.getState(), controller).props.onKeydown({ key: 'ArrowDown', preventDefault() {} });
   assert.equal(controller.getState().selection.name, 'literal %u; 中文.txt');
