@@ -183,9 +183,11 @@ export async function runFilesInteractions({ app, flow, evidence, samples, until
     const bounds = rect(track), thumb = rect(node('scroll-thumb'));
     await gesture(track, Math.round(bounds.x + bounds.width / 2), Math.round(thumb.y + thumb.height / 2),
       doc.body.offsetWidth + 12, Math.round(bounds.y + bounds.height + 12));
-    let metrics = verticalScrollMetrics(list, track.offsetHeight);
+    const arrow = track.querySelector('.scrollbar-decrement');
+    const inset = arrow ? arrow.offsetHeight : 0;
+    let metrics = verticalScrollMetrics(list, track.offsetHeight, { startInset: inset, endInset: inset });
     check('outside drag reaches actual list bottom', metrics.value === metrics.maximum &&
-      Math.abs(Number(node('scroll-thumb').style.top) - metrics.travel) < 0.1, metrics);
+      Math.abs(Number(node('scroll-thumb').style.top) - metrics.top) < 0.1, metrics);
     evidence.bounds = true;
     await captureFrame('scrollbar-bottom');
     await request('keycode 102 0');
@@ -195,7 +197,7 @@ export async function runFilesInteractions({ app, flow, evidence, samples, until
     evidence.keyboard = true;
     await request('keycode 102 0');
     const lower = rect(track);
-    await request('click ' + Math.round(lower.x + lower.width / 2) + ' ' + Math.round(lower.y + lower.height - 10));
+    await request('click ' + Math.round(lower.x + lower.width / 2) + ' ' + Math.round(lower.y + lower.height - inset - 2));
     check('native track press pages exactly one viewport', Math.abs(Number(list.scrollTop) - list.offsetHeight) < 0.1);
     evidence.page = true;
     await wheel(180);

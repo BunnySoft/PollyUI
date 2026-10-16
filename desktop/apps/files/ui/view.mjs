@@ -245,10 +245,9 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     h('view', { id: 'files-scrollbar', role: 'scrollbar', 'aria-label': 'Scroll files and folders',
       'aria-controls': 'files-list', 'aria-orientation': 'vertical', tabIndex: -1,
       style: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 10,
-        backgroundColor: color('body'), opacity: 0, pointerEvents: 'none', borderRadius: 5 },
-      focusStyle: { backgroundColor: color('selection') } },
+        opacity: 0, pointerEvents: 'none' } },
       h('view', { id: 'files-scroll-thumb', style: { position: 'absolute', left: 2, top: 0, width: 4,
-        height: 28, borderRadius: 2, backgroundColor: color('muted'), pointerEvents: 'none' } })));
+        height: 28, pointerEvents: 'none' } })));
   const viewport = h('view', { id: 'files-viewport', style: { flexDirection: 'row', flexGrow: 1, flexBasis: 0,
     flexShrink: 1, minHeight: 100, overflow: 'hidden' } }, sidebar,
     h('view', { style: { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: 0 } }, columns, listRegion), details);

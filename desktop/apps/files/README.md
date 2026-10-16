@@ -61,6 +61,13 @@ has a 28px minimum and clamps at both ends; short/empty lists hide the rail.
 The 10px overlay occupies existing trailing padding, without subtracting width
 from the file rows or metadata columns, including 640/680px windows. Wheel,
 keyboard row revelation, filtering and layout changes keep the thumb synchronized.
+Its surfaces come from the one desktop scrollbar adapter's `overlay` variant;
+Classic/Luna/Aqua end-arrow regions use the same generic 42px step as the keyboard.
+The `full` variant remains available for consumers with a reserved wider gutter.
+Retheming keeps the same track/thumb and capture owner. Hover, held, drag, focus,
+disabled and start/end states reuse passive theme primitives; the existing
+100ms layout update does not redraw unchanged scrollbar states. No row/column
+width or selection-ink policy is changed to accommodate the rail.
 Column headers toggle ascending/descending order;
 folders remain first. **Filter this folder** matches loaded names only, never
 starts a full-disk search or reads file contents. Filtering hides an unmatched

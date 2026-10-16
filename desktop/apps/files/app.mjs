@@ -8,6 +8,8 @@ import { visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { createVerticalScrollbar } from './gui/sdk/js/scrollbar.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { scrollbarAppearance } from './desktop/shared/ui/scrollbar-appearance.mjs';
+import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
 
 export function createFilesApp({ host = window, native = typeof desktop === 'undefined' ? null : desktop,
   initialPath = null, optInTheme = true, reportError = message => console.error('[files] ' + message) } = {}) {
@@ -77,13 +79,15 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
       if (slot && input.root.parentNode !== slot) slot.insertBefore(input.root, slot.firstChild);
     }
     const track = document.getElementById('files-scrollbar');
+    const scrollAppearance = scrollbarAppearance(theme || getDesktopTheme(DEFAULT_DESKTOP_THEME), 'overlay');
     if (track !== scrollTrack) {
       scrollbar?.stop(); scrollTrack = track;
       scrollbar = track ? createVerticalScrollbar({ viewport: document.getElementById('files-list'),
-        track, thumb: document.getElementById('files-scroll-thumb'),
+        track, thumb: document.getElementById('files-scroll-thumb'), appearance: scrollAppearance,
         isCurrent: () => !stopped && !surface?.closed && controller.getState().phase === 'ready' &&
           !controller.getState().dialog && !controller.getState().openWith }) : null;
     }
+    scrollbar?.setAppearance(scrollAppearance);
     scrollbar?.update();
     previous = state;
     let id = dialogOpened && state.dialog.kind !== 'link' ? 'files-name' :
