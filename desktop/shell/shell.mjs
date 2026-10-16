@@ -863,7 +863,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const navigatePrograms = (view, category = null, focus = 'first') => {
         if (!programsLive() || !['all', 'categories', 'category'].includes(view)) return false;
         if (view === 'category') {
-          reloadApplications();
+          if (!reloadApplications()) return false;
           if (!programsLive() || !programCategories(desktopCatalog()).some(item => item.tag === category)) return false;
         }
         current.programsView = view;
@@ -908,14 +908,14 @@ export function createDesktopShell({ host = window, configuration, report = cons
           },
           launch: scoped(id => {
             if (!programsLive()) return false;
-            reloadApplications();
+            if (!reloadApplications()) return false;
             if (programsLive() && programEntries().some(entry => entry.id === id && !entry.unavailable))
               return launchApplication(id);
             return false;
           }),
           pin: scoped(id => {
             if (!programsLive()) return false;
-            reloadApplications();
+            if (!reloadApplications()) return false;
             if (!programsLive() || !programEntries().some(entry => entry.id === id)) return false;
             if (configuration.snapshot.desktop.shortcuts.some(item => item.id === id)) return removeDesktopShortcuts([id]);
             return addDesktopShortcut(current.output, id);
@@ -1405,17 +1405,19 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function reloadApplications() {
     if (!launcher) throw new Error('Application launching requires --desktop');
     lastCatalogPoll = Date.now();
+    let succeeded = false;
     try {
       applications = launcher.refresh();
       if (errorKind === 'application') { error = ''; errorKind = ''; }
+      succeeded = true;
     } catch (failure) {
-      applications = [];
       error = 'Application discovery failed: ' + String(failure);
       errorKind = 'application';
       report('[shell] ' + error);
     }
     repaintMenu();
     refresh(true);
+    return succeeded;
   }
 
   function showApplications(outputId) {

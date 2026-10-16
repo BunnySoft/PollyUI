@@ -969,6 +969,43 @@ scenario('Classic Programs category membership is rechecked live for both launch
   assert.ok(find(menu, 'shell-program-editor.desktop'), 'global application stays available outside the removed category');
 }, categorizedPrograms);
 
+scenario('Classic Programs category actions reject failed catalog refresh without discarding retained entries, then recover', f => {
+  const menu = categoryMenu(f), read = f.native.applicationFiles;
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  const category = find(menu, programCategoryId('\u6587\u6863'));
+  const snapshot = f.saved.snapshot;
+  const fail = () => { throw new Error('fixture catalog read failed'); };
+  const acknowledgeFailure = () => {
+    assert.match(f.shell.getState().error, /Application discovery failed.*fixture catalog read failed/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.ok(f.saved.snapshot === snapshot, 'failed catalog actions do not publish preferences');
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  };
+  f.native.applicationFiles = fail;
+  assert.equal(callback(category, 'click')(event('click', { currentTarget: category })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.ok(find(menu, programCategoryId('\u6587\u6863')), 'retained category remains visible, not accepted as fresh');
+  assert.equal(menu.document.getElementById('shell-program-editor.desktop'), null, 'failed entry did not navigate');
+  f.native.applicationFiles = read;
+  click(find(menu, programCategoryId('\u6587\u6863'))); f.flushFrames();
+  const row = find(menu, 'shell-program-editor.desktop'), pin = find(menu, 'shell-program-pin-editor.desktop');
+  assert.equal(f.shell.getState().error, '', 'successful refresh clears discovery failure');
+  f.native.applicationFiles = fail;
+  assert.equal(callback(row, 'click')(event('click', { currentTarget: row })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.ok(find(menu, 'shell-program-editor.desktop'), 'retained application stays visible in its current leaf');
+  assert.equal(callback(pin, 'click')(event('click', { currentTarget: pin })), false);
+  f.flushFrames(); acknowledgeFailure();
+  assert.match(text(find(menu, 'shell-program-error')), /fixture catalog read failed/);
+  f.native.applicationFiles = read;
+  click(find(menu, 'shell-program-pin-editor.desktop')); f.flushFrames();
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['editor.desktop']);
+  assert.equal(f.shell.getState().error, '');
+  click(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+}, categorizedPrograms);
+
 scenario('Classic Programs category selection rejects a removed tag before refresh and navigation resets on reopen', f => {
   const menu = categoryMenu(f);
   click(find(menu, 'shell-program-categories')); f.flushFrames();
