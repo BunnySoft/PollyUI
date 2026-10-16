@@ -1345,6 +1345,8 @@ test('Programs source folders qualify exact native suffix mappings without infer
   assert.deepEqual(programFolderContents([...entries].reverse()).folders, programFolderContents(entries).folders);
   assert.notEqual(programFolderId('a-b'), programFolderId('a/b'));
   assert.notEqual(programFolderId('Source folders'), programCategoryId('Source folders'));
+  assert.notEqual(programFolderId('x.desktop'), 'shell-program-source-folder-x.desktop',
+    'folder command IDs contain a slash that qualified desktop application IDs cannot contain');
   for (const entry of [
     source(first.id, '/apps/not/a/b-editor.desktop.extra'), source(first.id, '/apps/xa/b-editor.desktop'),
     source(first.id, 'apps/a/b-editor.desktop'), source(first.id, '/apps/../a/b-editor.desktop'),
@@ -1387,6 +1389,11 @@ function openSources(f, theme = 'server2003') {
 }
 
 scenario('Programs sources: Classic and XP browse direct folders and apps, retain All apps, and return through every parent', f => {
+  f.state.sourceFiles.push(
+    { id: 'x.desktop-child.desktop', path: '/apps/x.desktop/child.desktop', name: 'Nested child', tags: [] },
+    { id: 'source-folder-x.desktop', path: '/apps/source-folder-x.desktop', name: 'Root application', tags: [] });
+  assert.equal(programSourcePath(f.state.sourceFiles.at(-2)), 'x.desktop/child.desktop');
+  assert.equal(programSourcePath(f.state.sourceFiles.at(-1)), 'source-folder-x.desktop');
   for (const theme of ['server2003', 'xp']) {
     const menu = openSources(f, theme), search = find(menu, 'shell-app-search');
     assert.ok(find(menu, programFolderId('a')));
@@ -1421,6 +1428,26 @@ scenario('Programs sources: Classic and XP browse direct folders and apps, retai
     assert.ok(find(menu, 'shell-program-a-b-editor.desktop'), 'literal tag remains a normal category, not the directory tree');
     click(find(menu, 'shell-program-all')); f.flushFrames();
     assert.ok(find(menu, 'shell-program-orphan.desktop'));
+    click(find(menu, 'shell-program-categories')); f.flushFrames();
+    click(find(menu, 'shell-program-source-folders')); f.flushFrames();
+    const folder = find(menu, programFolderId('x.desktop'));
+    const rootApp = find(menu, 'shell-program-source-folder-x.desktop');
+    assert.ok(folder !== rootApp && folder.parentNode === rootApp.parentNode,
+      'qualified source folder and previously colliding root application coexist');
+    const beforeLaunch = f.calls.filter(call => call[0] === 'launch').length;
+    press(folder);
+    click(find(menu, 'shell-app-refresh')); f.flushFrames();
+    assert.ok(find(menu, programFolderId('x.desktop')) === folder, 'refresh retains the held directory command');
+    domEvent(folder, 'mouseup'); domEvent(folder, 'click'); f.flushFrames();
+    assert.ok(find(menu, 'shell-program-x.desktop-child.desktop'));
+    assert.equal(menu.document.getElementById(rootApp.id), null, 'directory activation enters only its direct child view');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, beforeLaunch);
+    key(menu, 'ArrowLeft'); f.flushFrames();
+    click(find(menu, 'shell-program-source-folder-x.desktop'));
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, beforeLaunch + 1,
+      'root application activation launches once instead of entering the same-named folder');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').at(-1)[3], 'source-folder-x.desktop');
+    assert.equal(menu.closed, true);
     f.saved.update({ desktop: { version: 1, shortcuts: [] } });
   }
 }, sourcePrograms);

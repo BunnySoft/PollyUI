@@ -59,7 +59,7 @@ export function programFolderContents(entries, folder = '') {
 }
 
 export function programFolderId(folder) {
-  return 'shell-program-source-folder-' + encodeURIComponent(folder);
+  return 'shell-program-source-folder/' + encodeURIComponent(folder);
 }
 
 const pendingLayouts = new WeakMap();
