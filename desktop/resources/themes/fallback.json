@@ -521,6 +521,7 @@
         "size": 48,
         "radius": 0,
         "dockTiles": false,
+        "dockHoverPercent": 120,
         "desktopLabelStyle": "shadow"
       },
       "button": {
@@ -1692,7 +1693,8 @@
       "icons": {
         "size": 48,
         "radius": 0,
-        "dockTiles": false
+        "dockTiles": false,
+        "dockHoverPercent": 120
       },
       "button": {
         "from": "#ffffff",
@@ -1914,6 +1916,7 @@
         "size": 48,
         "radius": 10,
         "dockTiles": true,
+        "dockHoverPercent": 120,
         "desktopLabelStyle": "shadow"
       },
       "button": {

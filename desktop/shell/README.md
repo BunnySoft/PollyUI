@@ -119,6 +119,26 @@ for a single known application. Unknown windows and explicit per-window mode kee
 the old actions. The three fixed Dock entries, running markers, icon sizing,
 natural gap/fitting math and inner/outer scrolling are unchanged.
 
+## Bounded Dock hover emphasis
+
+Mac-style `tiger`, `lion` and `bigsur` Dock surfaces can emphasize only the
+pointer-hovered glyph or registered bitmap. Optional schema-version-1 theme
+`icons.dockHoverPercent` accepts integer 100-125; missing or 100 keeps the original
+size, and the three packaged/recovery Mac-style presets explicitly use 120.
+An override can disable it without a new preference or native setting.
+
+Scaling is center-based paint only, limited by the actual slot, clipping
+ancestors and the native client body's visible viewport. A normally 40px
+artwork can paint at 48px with enough room, less when space is restricted,
+or remain unscaled if it is already clipped. Slot/tile sizes, hit testing,
+running indicators, counts, fixed actions and window dimensions never expand;
+bitmaps retain their original color. Leave or pointer cancellation restores
+the original art. Clock reconciliation and retheming reuse existing control
+state and bounded Dock layout settling, without a polling/animation loop.
+Keyboard focus keeps its existing outline and does not trigger magnification.
+This first stage is hover emphasis, not neighboring-icon displacement or full
+animated macOS magnification; those remain separate work.
+
 The chooser occupies the existing bounded RootMenu client window, not Alt+Tab or
 a native popup. Its passive outer chrome consumes the shared `panelAppearance`
 and `panelDetail` menu policy; only its bounded geometry belongs to this consumer.

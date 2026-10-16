@@ -17,6 +17,7 @@ import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
 import { taskLabel, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
+import { controlStates } from './desktop/shared/ui/control-state.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -116,6 +117,48 @@ const labelFor = theme => (value, color, size = 12) =>
   h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 
 const dockLayouts = new WeakMap();
+function paintDockHover(slot) {
+  const state = controlStates.get(slot);
+  if (state?.dockHoverPercent === undefined) return;
+  const art = slot.querySelector('.shell-dock-art');
+  if (!art) return;
+  let scale = 1;
+  if (state.dockHovered && state.dockHoverPercent > 100) {
+    const bounds = art.getBoundingClientRect(), clip = slot.getBoundingClientRect();
+    let left = clip.x, top = clip.y, right = left + clip.width, bottom = top + clip.height;
+    const body = slot.ownerDocument.body;
+    for (let parent = slot.parentNode; parent; parent = parent.parentNode) {
+      if (parent !== body && !['hidden', 'scroll'].includes(parent.style.overflow)) continue;
+      const box = parent.getBoundingClientRect();
+      left = Math.max(left, box.x); top = Math.max(top, box.y);
+      right = Math.min(right, box.x + box.width); bottom = Math.min(bottom, box.y + box.height);
+    }
+    if (bounds.width > 0 && bounds.height > 0 && bounds.x >= left && bounds.y >= top &&
+        bounds.x + bounds.width <= right && bounds.y + bounds.height <= bottom) {
+      const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+      scale = Math.max(1, Math.min(state.dockHoverPercent / 100,
+        2 * (x - left) / bounds.width, 2 * (right - x) / bounds.width,
+        2 * (y - top) / bounds.height, 2 * (bottom - y) / bounds.height));
+    }
+  }
+  if (Number(art.style.scale || 1) !== scale) art.style.scale = String(scale);
+}
+function refreshDockHover(node) {
+  let viewport = node;
+  while (viewport && viewport.id !== 'shell-dock-viewport') viewport = viewport.parentNode;
+  if (!viewport) return;
+  for (const child of viewport.firstChild.childNodes) {
+    paintDockHover(child);
+    if (child.id === 'shell-dock-windows') for (const slot of child.childNodes) paintDockHover(slot);
+  }
+}
+function dockHover(node, percent, hovered) {
+  const state = controlStates.get(node) ?? {};
+  state.dockHoverPercent = percent;
+  if (hovered !== undefined) state.dockHovered = hovered;
+  controlStates.set(node, state);
+  paintDockHover(node);
+}
 function dockScrollMaximum(node) {
   return node.childNodes.reduce((maximum, child) => Math.max(maximum,
     child.offsetLeft + child.offsetWidth - node.offsetLeft - node.offsetWidth), 0);
@@ -123,6 +166,7 @@ function dockScrollMaximum(node) {
 function scrollDock(event) {
   const start = Number(event.currentTarget.scrollLeft);
   scrollDesktop(event, true);
+  refreshDockHover(event.currentTarget);
   if (Number(event.currentTarget.scrollLeft) !== start) event.stopPropagation?.();
 }
 function revealDockSlot(event) {
@@ -136,6 +180,7 @@ function revealDockSlot(event) {
     viewport.scrollLeft = Math.max(0, Math.min(dockScrollMaximum(viewport), next));
     target = viewport;
   }
+  refreshDockHover(event.currentTarget);
 }
 function syncDockLayout(node) {
   let state = dockLayouts.get(node);
@@ -152,6 +197,7 @@ function syncDockLayout(node) {
       const geometry = [viewport.offsetWidth, surface.offsetWidth, strip?.offsetWidth ?? 0,
         strip ? dockScrollMaximum(strip) : 0, ...surface.childNodes.flatMap(child =>
           [child.offsetLeft - surface.offsetLeft, child.offsetWidth])].join(':');
+      refreshDockHover(viewport);
       if (state.geometry === geometry) return;
       state.geometry = geometry;
       viewport.style.overflow = surface.offsetWidth > viewport.offsetWidth ? 'scroll' : 'visible';
@@ -160,6 +206,7 @@ function syncDockLayout(node) {
       const active = viewport.ownerDocument?.activeElement;
       for (let parent = active; parent; parent = parent.parentNode)
         if (parent === viewport) { revealDockSlot({ currentTarget: active }); break; }
+      refreshDockHover(viewport);
     });
   });
 }
@@ -427,6 +474,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
     const slot = (id, title, icon, action, running = false, window = null) => {
+      const art = taskArtwork(window, images, iconSize - 8, desktopIcon(icon, theme.colors.accent, iconSize - 8));
+      art.props.className = 'shell-dock-art';
+      const hoverPercent = theme.icons.dockHoverPercent ?? 100;
       const node = h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
         ...(window?.grouped || window?.launcher ? { 'aria-pressed': String(!!window.active) } : {}),
         ...(window?.unavailable ? { 'aria-description': window.unavailable } : {}),
@@ -434,6 +484,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
+        onMount: node => dockHover(node, hoverPercent),
+        onUpdate: node => dockHover(node, hoverPercent),
+        onMouseenter: event => dockHover(event.currentTarget, hoverPercent, true),
+        onMouseleave: event => dockHover(event.currentTarget, hoverPercent, false),
+        onMousecancel: event => dockHover(event.currentTarget, hoverPercent, false),
         onFocus: revealDockSlot,
         onClick: event => {
           if (event.button === 0) { event.stopPropagation(); return action(); }
@@ -451,8 +506,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         onContextmenu: window ? event => { event.preventDefault(); event.stopPropagation(); actions(window.id); } : undefined,
       }, h('view', { style: { ...center, width: iconSize, height: iconSize,
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
-        pointerEvents: 'none' } }, taskArtwork(window, images, iconSize - 8,
-          desktopIcon(icon, theme.colors.accent, iconSize - 8))),
+        pointerEvents: 'none' } }, art),
       window?.grouped && window.count > 1 ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', right: 1, top: 1, minWidth: 14, height: 16, borderRadius: 4,
         paddingLeft: 3, paddingRight: 3, backgroundColor: theme.colors.accent,
