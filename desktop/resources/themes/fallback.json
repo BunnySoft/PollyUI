@@ -116,6 +116,7 @@
       },
       "panel": {
         "surfaceStyle": "luna",
+        "taskGrouping": "windows-launchers",
         "kind": "taskbar",
         "from": "#245edb",
         "to": "#2663e0",

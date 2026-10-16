@@ -288,6 +288,16 @@ function windowButtons(theme, windows, toggle, actions, compact = false, images 
           backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none',
           opacity: window.launcher ? 0 : 1 } })];
     }
+    if (window.quickLaunch) {
+      const luna = isLuna(theme, 'panel');
+      Object.assign(node.props.style, { width: theme.layout.compactButtonHeight + 2 * (theme.layout.taskPaddingX ?? 3),
+        height: theme.panel.height - theme.layout.panelItemInset,
+        paddingLeft: 0, paddingRight: 0, justifyContent: 'center', alignItems: 'center',
+        ...(luna ? lunaButtonPaint(theme, { variant: 'tool' }) : {}) });
+      if (luna) Object.assign(node.props, lunaVisualEvents(theme, { variant: 'tool' }));
+      node.children = [luna ? lunaButtonDetail(theme, 'tool') : surfaceDetail(theme, { quiet: true }),
+        taskArtwork(window, images, 16, desktopIcon('apps', theme.panel.text, 16))];
+    }
     node.props['aria-label'] = taskLabel(window);
     if (window.unavailable) node.props['aria-description'] = window.unavailable;
     if (window.grouped && window.count > 1) {
@@ -309,6 +319,10 @@ function windowButtons(theme, windows, toggle, actions, compact = false, images 
         event.preventDefault(); actions(window.id);
       } else activate(event);
     };
+    if (theme.panel.taskGrouping === 'windows-launchers') {
+      const focus = node.props.onFocus;
+      node.props.onFocus = event => { focus?.(event); revealFluentTask(event); };
+    }
     return guardTaskGesture(node, taskIdentity(window));
   }));
 }
