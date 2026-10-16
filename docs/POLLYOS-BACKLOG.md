@@ -530,7 +530,7 @@ A0 是当前 Alpha 门槛；A1 是系统自带 App，B1 是系统构建，O1 是
 
 对所选圆角/模糊/阴影/动画/形状输入分别测量；已有 alpha 不重做。
 
-- [ ] **E13.1 窗口视觉效果** · 已延期 / 进行中/部分完成 · P2 · installed：按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。 来源：M17.5。 证据：2026-10-16 09:44 在共通主题修复895ff98冻结后进入下一批，唯一native owner负责共享整窗圆角裁剪和外阴影，随后才接区域背景采样/模糊；Windows/Mac主题不分别改共享合成层。现stock wlroots0.19.3场景仅矩形clip/opacity/filter sampling，尚无已实现rounded/shadow能力；四strip/角色v4/schema4/atomic frame合同继续保持，preview字段不当作交付。实现须保子surface/alpha/变换/scale、damage/idle、max/fullscreen/lock与输入权限，不能背景色角贴片、JS截图或wholewindow透明绘图窗。若必须改固定依赖/renderer ABI或输出管线，先收敛唯一最小配套方案再实施，不暗改共享SDK/系统库。本状态仅表示本批已开始，不声明圆角、阴影、模糊、动画或形状输入已完成。
+- [ ] **E13.1 窗口视觉效果** · 已延期 / 进行中/部分完成 · P2 · installed：按优先级实现内容圆角裁剪、模糊、阴影、动画和形状输入；真实 alpha 已有，不重做。 来源：M17.5。 证据：2026-10-16 09:44 在共通主题修复895ff98冻结后进入下一批，唯一native owner负责共享整窗圆角裁剪和外阴影，随后才接区域背景采样/模糊；Windows/Mac主题不分别改共享合成层。已核真实stock wlroots0.19.3源：scene TREE展平为逐leaf render且先算opaque occlusion，只有矩形clip/opacity，单leaf AA会在重叠subsurface边缘重复混合。09:49协调者据此批准固定0.19.3局部generic effect-tree补丁：compositor-owned有界分组离屏后只施加一次AA coverage，扩existingPixman/GLES2，保持原scene/outputcommit/damage/lock，不更换合成库或重写WM输出；二值阶梯硬裁不采用。SDK/release严格applier/base+patchhash、compile/link/runtime ABI标识和旧库错配拒绝须成套，禁止暗改共享SDK/系统库；四strip合法原子帧不因外效果放松，不把preview字段假报交付。当前已进入源码实现，第一rounded+cache/ABI/真nativepixel checkpoint后才接shadow；预算、子surface/alpha/变换/scale、occlusion/directscanout/damage/idle、max/fullscreen及输入/锁屏权限必须验证，不能背景角盖图、JS截图或wholewindow透明绘图窗。本状态不声明任何新原生效果已完成。
 
 #### E16 可复测性能预算
 
