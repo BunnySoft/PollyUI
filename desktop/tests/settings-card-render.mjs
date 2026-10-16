@@ -46,7 +46,7 @@ export async function checkSettingsMaterialAdoption() {
   ink.fillStyle = '#ff0000'; ink.fillRect(0, 0, 80, 96); ink.fillStyle = '#0000ff'; ink.fillRect(80, 0, 80, 96);
   const blob = await new Promise(resolve => fixture.toBlob(resolve));
   const bitmap = createBitmap(await blob.arrayBuffer(), 160 * 96);
-  let encodes = 0, reads = 0;
+  let encodes = 0, reads = 0, sourceFailure = null;
   const projection = createMaterialSource({ document: () => document, bitmap: () => { encodes++; return bitmap; } });
   const modern = getDesktopTheme('modern');
   const theme = { ...modern, desktop: { ...modern.desktop, asset: 'original-fixture.png' } };
@@ -68,6 +68,7 @@ export async function checkSettingsMaterialAdoption() {
     throw new Error('Unexpected Settings fixture method: ' + member);
   }, async getMaterialSource(snapshot) {
     reads++;
+    if (sourceFailure) throw sourceFailure;
     return parseMaterialSource(JSON.stringify({ ...projection.read({ themeId: theme.id,
       revision: snapshot.revision, asset: bitmap.key }), generation: 1 }));
   }, close() {} };
@@ -122,8 +123,39 @@ export async function checkSettingsMaterialAdoption() {
       document.getElementById(field.id) === field && field.textContent === before && document.activeElement === field,
     'Explicit solid override restores original Settings fill without replacing input or window');
     check(reports.length === 0, 'No Settings/material errors were hidden');
+    const version = document.getElementById('settings-system-version'), footer = version.parentNode;
+    const status = document.getElementById('settings-material-status');
+    const versionText = version.textContent, footerPixels = pixels(footer);
+    check(status.style.display === 'none' && status.parentNode === root, 'Opt-in status row is retained in normal layout while hidden');
+    sourceFailure = new Error('Fixture material source failure. The original Settings version remains visible.');
+    display.error = 'Existing display service error';
+    appearance = { ...appearance, revision: 3, catalog };
+    await app.controller.refresh(); await app.pages.refresh(); await settle();
+    const statusBox = status.getBoundingClientRect(), footerBox = footer.getBoundingClientRect();
+    const versionBox = version.getBoundingClientRect();
+    check(document.getElementById('settings-system-version') === version && version.parentNode === footer &&
+      document.getElementById('settings-material-status') === status && root.childNodes[1] === status &&
+      root.childNodes[2] === footer && statusBox.height > 0 && statusBox.bottom <= footerBox.y &&
+      footerBox.bottom <= host.height && versionBox.y >= footerBox.y && versionBox.height > 0 &&
+      versionBox.bottom <= host.height && version.textContent === versionText && pixels(footer) === footerPixels,
+    'Actual failed-material row stays above the same visible version/footer with no overlap or lost footer pixels');
+    check(Number(status.firstChild.style.fontSize) === theme.layout.statusFontSize &&
+      status.textContent.includes(sourceFailure.message) && document.body.textContent.includes(display.error) &&
+      app.pages.getState().snapshot.error === display.error && reports.length === 1,
+    'Error text uses the theme status font and never replaces the independent display service error');
+    const failedReads = reads;
+    for (let i = 0; i < 3; i++) { await app.controller.refresh(); host.render(); }
+    check(reads === failedReads && reports.length === 1, 'Failed source is not retried by existing refreshes');
+    appearance = { ...appearance, revision: 4, catalog: { ...catalog, themes: catalog.themes.map(value =>
+      value.id === theme.id ? { ...theme, window: { ...theme.window, clientMaterial: 'solid' } } : value) } };
+    await app.controller.refresh(); await settle();
+    check(status.style.display === 'none' && status.textContent === '' &&
+      document.getElementById('settings-system-version') === version && pixels(footer) === footerPixels,
+    'Solid recovery hides and clears the same status row without replacing or covering the permanent footer');
     console.log('SETTINGS_MATERIAL_ADOPTION ' + JSON.stringify({ left, right, reads, encodes, idle: JSON.parse(stats),
-      input: before, foregroundPixelIdentical: true, nativeScale: 1, scope: 'Actual GUI and production app; controlled scalar service/owner, not live Linux RPC' }));
+      input: before, foregroundPixelIdentical: true, errorBox: [statusBox.y, statusBox.bottom],
+      footerBox: [footerBox.y, footerBox.bottom], sameFooterPixels: true, failedSourceRetries: reads - failedReads,
+      nativeScale: 1, scope: 'Actual GUI and production app; controlled scalar service/owner, not live Linux RPC' }));
   } finally {
     app?.stop(); projection.close(); bitmap.close(); fixture.width = fixture.height = 0;
     render(null, document.body); globalThis.setInterval = intervals; globalThis.clearInterval = clear;

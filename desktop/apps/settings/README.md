@@ -139,7 +139,10 @@ pins this read to the verified unique Shell bus owner and owned generation.
 Replies must also match the displayed theme and appearance revision; superseded
 replies/decodes cannot publish, including after solid switch, owner loss or stop.
 Failed material has its own visible status and report, never overwrites a
-service/page error and is not retried by clock/resize/focus activity. A new
+service/page error and is not retried by clock/resize/focus activity. Its stable,
+themed status row lives in normal layout immediately before the permanent build
+footer, not over the window bottom. Long error text scrolls within a bounded row;
+showing/hiding it preserves the version/footer DOM and visibility. A new
 appearance or explicit solid selection is needed to recover. Stop unsubscribes
 and disposes all material backing/source ownership.
 

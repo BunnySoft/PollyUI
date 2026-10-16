@@ -312,6 +312,7 @@ test('direct Settings API/default and explicit solid have no material work; pack
       assert.equal(f.calls.some(([kind]) => kind === 'source'), false);
       assert.deepEqual(f.app.getMaterialState(), { ready: false, error: '', stats: null });
       assert.equal(f.observers.size, 0);
+      assert.equal(f.document.getElementById('settings-material-status') === null, options?.optIn === false || !options);
       f.app.stop();
     });
   }
@@ -347,6 +348,10 @@ test('bitmap consumer binds one source per appearance, retires stale replies, re
   const f = domainFixture(t, { appearance: materialAppearance(1, true),
     source: snapshot => new Promise(resolve => replies.push({ resolve, revision: snapshot.revision })) });
   await tick();
+  const root = f.document.getElementById('shell-system-settings'), row = f.document.getElementById('settings-material-status');
+  const version = f.document.getElementById('settings-system-version'), footer = version.parentNode;
+  assert.equal(row.parentNode, root); assert.equal(root.childNodes[1], row);
+  assert.equal(root.childNodes[2], footer); assert.equal(row.style.display, 'none');
   assert.equal(replies.length, 1);
   for (let i = 0; i < 3; ++i) await f.app.controller.refresh();
   assert.equal(replies.length, 1);
@@ -361,6 +366,11 @@ test('bitmap consumer binds one source per appearance, retires stale replies, re
   assert.equal(f.document.getElementById('settings-material-base'), null);
   assert.match(f.app.getMaterialState().error, /PNG/);
   assert.equal(f.document.getElementById('settings-material-status').style.display, 'flex');
+  assert.equal(f.document.getElementById('settings-material-status'), row);
+  assert.equal(f.document.getElementById('settings-system-version'), version);
+  assert.equal(version.parentNode, footer); assert.equal(root.childNodes[2], footer);
+  assert.match(row.textContent, /Wallpaper material unavailable:.*PNG/);
+  assert.equal(row.firstChild.style.fontSize, String(BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'modern').layout.statusFontSize));
   assert.equal(f.app.controller.getState().error, '', 'Material status never replaces a service error');
   assert.equal(f.app.controller.getState().appearance.error, 'Existing Shell service error');
   assert.equal(f.errors.length, 1);
@@ -368,9 +378,16 @@ test('bitmap consumer binds one source per appearance, retires stale replies, re
   f.ownerState({ active: false, width: 700 }); await tick();
   assert.equal(replies.length, 3); assert.equal(f.errors.length, 1);
   await f.app.present('about'); await tick();
-  assert.equal(f.document.body.lastChild, f.document.getElementById('settings-material-status'),
-    'Independent material error remains visible above a remounted page root');
+  const remountedRoot = f.document.getElementById('shell-system-settings');
+  const remountedRow = f.document.getElementById('settings-material-status');
+  const remountedVersion = f.document.getElementById('settings-system-version');
+  assert.equal(remountedRoot.childNodes[1], remountedRow);
+  assert.equal(remountedRoot.childNodes[2], remountedVersion.parentNode);
+  assert.match(remountedRow.textContent, /Wallpaper material unavailable:.*PNG/);
   f.appearance(materialAppearance(4, true)); await f.app.controller.refresh(); await tick();
+  assert.equal(f.document.getElementById('settings-material-status'), remountedRow);
+  assert.equal(remountedRow.style.display, 'none'); assert.equal(remountedRow.textContent, '');
+  assert.equal(f.document.getElementById('settings-system-version'), remountedVersion);
   f.app.stop(); replies[3].resolve(materialDTO({ revision: 4 })); await tick();
   assert.equal(f.document.getElementById('settings-material-base'), null);
   assert.equal(f.observers.size, 0); assert.equal(f.errors.length, 1);

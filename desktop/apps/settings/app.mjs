@@ -3,7 +3,7 @@ import { DEFAULT_DESKTOP_THEME, getDesktopTheme } from './desktop/shared/ui/them
 import { settingsView } from './desktop/apps/settings/ui/appearance.mjs';
 import { systemSettingsView, aboutSettingsView } from './desktop/apps/settings/ui/frame.mjs';
 import { SETTINGS_APP_ID, SETTINGS_VERSION, runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
-import { desktopCommand, desktopText, settingsCard } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { selectionInk } from './desktop/shared/ui/surface-primitives.mjs';
 import { createSettingsController } from './desktop/apps/settings/logic/controller.mjs';
 import { createSettingsNetworkClient } from './desktop/apps/settings/network-client.mjs';
@@ -20,7 +20,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   onStop = () => {}, optInMaterial = false }) {
   if (typeof optInMaterial !== 'boolean') throw new TypeError('Settings material opt-in must be boolean');
   let surface = null, timer = null, pageTimer = null, stopped = false, revision = 0, details = false;
-  let material = null, materialUnsubscribe = null, materialStatus = null, materialKey = '', materialInput = '';
+  let material = null, materialUnsubscribe = null, materialKey = '', materialInput = '', materialStatusPaint = false;
   let materialGeneration = 0, materialReady = false, materialError = '', materialSource = null, materialLoading = false;
   const ownBuild = runtimeBuild(identity);
   let currentTheme = getDesktopTheme(DEFAULT_DESKTOP_THEME);
@@ -34,13 +34,16 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     const root = surface.document.getElementById('shell-system-settings');
     if (root) root.style.backgroundColor = materialReady ? 'transparent' : currentTheme.colors.body;
     if (material) material.canvas.style.display = materialReady ? 'flex' : 'none';
-    if (materialStatus) {
-      if (surface.document.body.lastChild !== materialStatus) surface.document.body.appendChild(materialStatus);
-      materialStatus.style.display = materialError ? 'flex' : 'none';
-      materialStatus.style.backgroundColor = currentTheme.colors.body;
-      materialStatus.style.color = currentTheme.colors.text;
-      materialStatus.textContent = materialError ? 'Wallpaper material unavailable: ' + materialError : '';
-    }
+  }
+  function setMaterialError(message) {
+    if (materialError === message) return;
+    materialError = message;
+    if (materialStatusPaint) return;
+    materialStatusPaint = true;
+    Promise.resolve().then(() => {
+      materialStatusPaint = false;
+      if (!stopped && !surface.closed) paint();
+    });
   }
   function retireMaterial() {
     materialGeneration++; materialReady = false; materialSource = null; materialLoading = false; materialInput = '';
@@ -49,7 +52,7 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   function materialFailure(error, generation) {
     if (stopped || surface?.closed || generation !== materialGeneration) return;
     retireMaterial();
-    materialError = String(error.message || error);
+    setMaterialError(String(error.message || error));
     report('[settings material] ' + materialError);
     materialPresentation();
   }
@@ -80,28 +83,20 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
   }
   function syncMaterial() {
     if (!optInMaterial || stopped || !surface || surface.closed) return;
-    if (materialStatus && surface.document.body.lastChild !== materialStatus) surface.document.body.appendChild(materialStatus);
     const { appearance, unavailable } = controller.getState();
     if (!appearance || unavailable || currentTheme.window.clientMaterial !== 'wallpaper') {
       if (materialKey) retireMaterial();
-      materialKey = ''; materialError = '';
+      materialKey = ''; setMaterialError('');
       materialUnsubscribe?.(); materialUnsubscribe = null;
       materialPresentation();
       return;
     }
     const key = JSON.stringify([appearance.revision, appearance.catalogRevision, currentTheme]);
     if (key !== materialKey) {
-      retireMaterial(); materialError = ''; materialKey = key;
+      retireMaterial(); setMaterialError(''); materialKey = key;
       materialPresentation();
       const generation = materialGeneration;
       try {
-        if (!materialStatus) {
-          materialStatus = surface.document.createElement('view');
-          materialStatus.id = 'settings-material-status'; materialStatus.setAttribute('role', 'status');
-          Object.assign(materialStatus.style, { position: 'absolute', left: '0', bottom: '0', width: '100%',
-            padding: '8', pointerEvents: 'none', display: 'none' });
-          surface.document.body.appendChild(materialStatus);
-        }
         if (!materialUnsubscribe) materialUnsubscribe = surface.observeState(() => syncMaterial());
         if (currentTheme.desktop.asset) {
           materialLoading = true;
@@ -191,6 +186,12 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
       navigate(page);
       surface.document.getElementById('shell-settings-page-' + page)?.focus();
     }), stop, content, null, 'Settings', [], build);
+    if (optInMaterial) tree.children.splice(tree.children.length - 1, 0,
+      h('view', { id: 'settings-material-status', role: 'status', onWheel: scrollDesktop,
+        style: { display: materialError ? 'flex' : 'none', minWidth: 0, maxHeight: '25%', flexShrink: 0,
+          padding: theme.layout.compactPadding, paddingLeft: theme.layout.contentPadding, overflow: 'scroll' } },
+      desktopText(materialError ? 'Wallpaper material unavailable: ' + materialError : '',
+        theme.colors.text, theme.layout.statusFontSize, { minWidth: 0 })));
     if (optInMaterial && materialReady) tree.props.style.backgroundColor = 'transparent';
     if (JSON.stringify(build) !== JSON.stringify(ownBuild))
       tree.children.push(h('view', { role: 'status', style: { padding: theme.layout.compactPadding, flexShrink: 0,
@@ -242,7 +243,6 @@ export function createSettingsApp({ client, page = 'appearance', host = window, 
     stopped = true; revision++;
     materialUnsubscribe?.(); materialUnsubscribe = null;
     retireMaterial();
-    if (materialStatus?.parentNode) materialStatus.parentNode.removeChild(materialStatus);
     if (timer !== null) clearInterval(timer);
     if (pageTimer !== null) clearInterval(pageTimer);
     surface?.document.body.removeEventListener('keydown', keydown);
