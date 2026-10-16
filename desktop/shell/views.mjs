@@ -511,13 +511,25 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   windows.length ? windowButtons(theme, windows, toggle, actions, true, images) : null);
 }
 
-export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '', logout = null, desktop = null) {
+export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
+  logout = null, desktop = null, programs = null, images = null) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
-    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop);
+    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs, images);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
       entry.keywords.join(' ')).toLowerCase().includes(query.toLowerCase()));
+  const appCommand = entry => {
+    const node = desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
+      { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
+        quiet: true, style: { height: 54, paddingLeft: 16, flexGrow: 1, flexBasis: 0, minWidth: 0 } });
+    const art = node.children.find(child => child.props?.className === 'theme-command-icon');
+    const image = images?.get(entry.id);
+    if (image && art) node.children[node.children.indexOf(art)] = h('view', {
+      'aria-hidden': 'true', style: { ...art.props.style, backgroundImage: image },
+    });
+    return node;
+  };
   return h('view', { id: 'shell-applications', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
     borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
@@ -546,9 +558,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
         } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
           label(entry.unavailable, theme.colors.muted, 10))
       : h('view', { style: { ...row, gap: 6, flexShrink: 0 } },
-        desktopCommand('shell-app-' + entry.id, entry.name, theme, () => launch(entry.id),
-          { icon: entry.id === 'org.pollyui.settings' ? 'appearance' : entry.id.includes('files') ? 'folder' : 'apps',
-            quiet: true, style: { height: 54, paddingLeft: 16, flexGrow: 1, flexBasis: 0, minWidth: 0 } }),
+        appCommand(entry),
         desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
           theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
           { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null)),
