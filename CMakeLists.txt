@@ -664,6 +664,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
             "${CMAKE_SOURCE_DIR}/desktop/apps/installer/tests/native-provider.mjs")
         set_tests_properties(desktop-install-target-ui PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-menu-host COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/menu-host.mjs")
+        add_test(NAME desktop-themed-ui-contracts COMMAND node --test
+            "${CMAKE_SOURCE_DIR}/gui/tests/selection-appearance-contract.mjs"
+            "${CMAKE_SOURCE_DIR}/gui/tests/scrollbar-contract.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/scrollbar-appearance.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/selection-ink.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/panel-appearance.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/panel-viewport.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/settings-panel-appearance.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/transient-panel-appearance.mjs"
+            "${CMAKE_SOURCE_DIR}/desktop/tests/window-groups.mjs")
+        set_tests_properties(desktop-themed-ui-contracts PROPERTIES
+            TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "source")
         add_test(NAME desktop-settings-controller COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/apps/settings/tests/settings.mjs")
         set_tests_properties(desktop-settings-controller PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         set_tests_properties(desktop-menu-host PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")

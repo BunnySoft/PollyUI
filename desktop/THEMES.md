@@ -492,6 +492,9 @@ seam; they do not create surfaces or change state by themselves.
 input/native child bounds using nonempty-appId fixture snapshots. They do not
 certify full-WM application enumeration, native MRU, pinning, magnification,
 physical DPI or macOS pixel fidelity.
+Passive menu details are appended after the stable header/list/close slots.
+Actual custom Classic application grouping can retheme to Modern and back
+without replacing the focused real-window command or changing its action.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -659,6 +662,29 @@ six-theme sheets cover palette/metric consumption, hover/press/cancel/disabled,
 retained-instance retheming and keyboard navigation; the no-appearance
 light/dark whole captures remain byte-identical.
 
+The existing vertical scrollbar controller now accepts optional per-instance
+appearance, with one desktop adapter rather than separate App drag/arrow
+controllers. Track/thumb/end-arrow surfaces use theme tokens and existing
+passive primitives; Classic parts do not nest behind another generic border.
+The same controller owns measured travel, clamped page/42px step, keyboard,
+capture and cancellation. Dragging uses a lane-relative anchor: no-motion
+move/release and captured resize/retheme do not jump the value. Rejected
+initial schema/paint/decoration rolls back owned nodes/listeners/styles/ARIA and
+rethrows the original error. Surface opacity is independent of overflow
+visibility. Actual rail-size changes refresh the existing focus painter;
+unchanged updates do not repaint or rewrite properties.
+
+Files explicitly uses the adapter's 10px `overlay` variant, preserving its
+viewport, 42px rows and column geometry. Its markup leaves surface painting to
+the controller; retained sort/refresh preserves valid focus/hover, while the
+existing generation guard cancels held capture. Actual 800x600/640x480 checks
+keep the complete `12.1 KiB` glyph crop identical with the rail shown or hidden
+and to an unclipped native text reference. The adapter's default `full` variant
+is available independently. SDK callers without appearance retain their
+original styles and byte-identical whole resting/end/held captures; this is
+not automatic theme adoption by every scrolling App, exact historical arrow
+placement, physical/compositor input or original-OS pixel certification.
+
 Displays now uses a named checkbox whose Space action changes only the draft;
 Apply still submits the original output identity/serial and keeps its trusted
 confirmation deadline. Audio uses a named mute switch and keeps its displayed
@@ -678,6 +704,40 @@ use raw-text horizontal viewports with wheel and Left/Right/Home/End access;
 ordinary messages may wrap, but long-token wrapping is not claimed. Neutral
 chooser whole-image bytes remain unchanged. This does not certify every
 credential/trusted dialog or every bespoke application surface as OS-identical.
+
+Existing Wi-Fi credentials/confirmation and network cards, display confirmation,
+and logout views also reuse these surfaces and shared buttons. Embedded Settings
+content does not acquire a second window frame. Narrow credential fields keep
+their existing 420px upper bound while fitting the viewport; prompt ID/kind
+changes still clear/recreate secrets, and retained fields keep native DOM,
+masking, caret/selection and focus. Display token/deadline/revert and logout
+inventory/wait/seal/explicit final commit remain controller-owned.
+
+`panel-viewport.mjs` separates fixed outer chrome from the bounded inner scroll
+region. Its default fixed sizing serves the credential/confirmation surfaces;
+content sizing preserves Files' natural dialog/menu height under the caller's
+existing maximum, and an explicit horizontal axis serves breadcrumbs.
+Frame pixels stay fixed while content
+scrolls; one weak, bounded post-layout helper reveals the current real focus,
+including manually attached credential fields. Tab/focus requests coalesce,
+leave cancels frames/listeners, unchanged repaint does not undo manual scroll,
+and there is no idle frame loop or added service subscription. These checks
+use inert authentication/display/session fixtures, never real credential
+delivery, network changes or logout. A separately observed autoheight network
+card bottom-edge rounding offset remains disclosed rather than described as
+pixel-perfect or hidden by changing native geometry. At 640x480, an existing
+78%-height Open With panel likewise reports 375px for 374.4 logical pixels and
+already lacks the expected inside-bottom sample before scrolling in the
+preserved baseline; the adoption fixes scroll-induced edge loss, not that
+separate static rounding boundary.
+
+Actual long Open With lists, short context menus and horizontally scrolled
+breadcrumbs keep their outer frame fixed and reveal current focused commands.
+The final real MIME handler still launches once through the existing controller;
+retired callbacks stay inert. A short create dialog retains its original
+118px/119px natural heights at 800x600/640x480 rather than collapsing or filling
+the maximum. Native name-field identity/selection, inline rename's unframed
+structure, the new table scrollbar, columns and 42px rows are unchanged.
 
 Shared quiet commands and selected desktop captions consume the optional
 selection foreground as well. Only explicitly tagged original monochrome icon
