@@ -93,9 +93,67 @@ revision, prompt-token, credential or connection policy changes are implied.
 The original Windows-11-inspired presentation uses a persistent sidebar,
 grouped surface cards and illustrated theme previews, rather than full-width
 theme buttons. Theme previews are native primitive artwork, not screenshots
-of hardware; the modern material is solid, not a claim of Mica or blur.
+of hardware. Packaged Settings explicitly enables the wallpaper-derived opaque
+client material described below; it is not Windows DWM Mica or live Acrylic.
 About keeps system/session information separate from expandable technical paths,
 storage identities and Settings's own application version.
+
+## Opaque wallpaper-derived client base
+
+The managed production runtime calls `createSettingsApp({optInMaterial:true})`.
+The direct app API still defaults to `false` and its original solid path.
+Schema-1 themes may explicitly select `window.clientMaterial:"solid"|"wallpaper"`;
+missing means solid. Only the built-in/recovery Modern preset selects wallpaper.
+An explicit solid override disables it, including for a bitmap theme. No theme-ID
+or color heuristic, new preference service, extra window/frame, whole-window
+alpha or native caption change is involved.
+
+Ready material is one `aria-hidden`, pointer-inert Canvas at the bottom of the
+existing Settings document. Only the root's body-color fill becomes transparent
+to that **opaque** sibling; cards, sidebar, right-content mount, text, inputs,
+selection/caret and actions retain their existing DOM and paint policy.
+Loading, solid and error states use the original solid root fill. The existing
+`createWallpaperMaterial` owns decoding, Gaussian blur, padding/pixel budgets,
+source/tint caches and disposal. `window.observeState` updates logical size,
+scale and activation; activation reuses the blurred image. Existing unchanged
+appearance refreshes do not read/encode/decode/blur/composite again. There is no
+new polling timer, frame loop, background sampling or implicit retry.
+
+Procedural wallpaper uses the existing validated desktop gradient/layers.
+Bitmap paths in theme JSON are **not** filesystem permissions for Settings.
+For bitmap themes only, the fixed, argument-free `GetMaterialSource() -> s`
+uses the existing current Shell-owned Settings PID/UID/generation authorization
+and rejects no-reply requests. Shell projects its already-held, committed asset
+through a small offscreen Canvas in a live wallpaper document, preserving alpha,
+and caches the PNG until the theme/owned asset changes. It neither reads the
+filesystem again nor captures the desktop, a window or other applications.
+The trusted `getThemeAssetBitmap(key)` seam uses the same native authority as
+theme asset load/release; the actual Bitmap/close capability never crosses RPC.
+
+The strict DTO is `{version:1,revision,generation,themeId,width,height,dataURL}`:
+1..128 pixels per axis, at most 128 KiB for a canonical PNG data URL, bounded
+exact fields and matching PNG header dimensions. Native decoding still validates
+the complete PNG. GetAppearance/GetAbout shapes and all mutation permissions
+remain unchanged. After the existing authenticated Connect handshake, the client
+pins this read to the verified unique Shell bus owner and owned generation.
+Replies must also match the displayed theme and appearance revision; superseded
+replies/decodes cannot publish, including after solid switch, owner loss or stop.
+Failed material has its own visible status and report, never overwrites a
+service/page error and is not retried by clock/resize/focus activity. Its stable,
+themed status row lives in normal layout immediately before the permanent build
+footer, not over the window bottom. Long error text scrolls within a bounded row;
+showing/hiding it preserves the version/footer DOM and visibility. A new
+appearance or explicit solid selection is needed to recover. Stop unsubscribes
+and disposes all material backing/source ownership.
+
+This is a client-local wallpaper-derived Mica-like **opaque** base, not
+desktop-coordinate alignment, DWM Mica, MT01 transparent window presentation,
+live cross-application Acrylic or MT03 compositor blur. Node contracts reuse
+the existing Settings/material suites; the existing material-render and
+settings-card-render GUI entries check real bitmap projection, opaque pixels,
+actual composed underlay, unchanged foreground/input and idle work counters.
+Software-raster/test-scale-1 checks do not qualify Linux's live bus/compositor,
+physical DPI, GPU, original-OS reference pixels or the entire E22.24 task.
 
 The Settings frame, About and Keyboard text/spacing consume the existing theme
 typography and layout tokens; Audio action rows wrap within the available width.

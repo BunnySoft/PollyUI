@@ -79,7 +79,8 @@ const options = {
 };
 const optionalOptions = {
   icons: { desktopLabelStyle: ['capsule', 'shadow'] },
-  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded', 'rounded-shadow'] },
+  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded', 'rounded-shadow'],
+    clientMaterial: ['solid', 'wallpaper'] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
     menuStyle: ['legacy', 'two-column', 'grid'], taskTexture: ['flat', 'stipple'],

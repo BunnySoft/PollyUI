@@ -1,4 +1,4 @@
-import { SETTINGS_METHODS, settingsTarget, daemonTarget } from './desktop/client/settings-contract.mjs';
+import { SETTINGS_METHODS, settingsTarget, daemonTarget, parseMaterialSource, matchMaterialSource } from './desktop/client/settings-contract.mjs';
 
 export function waitSettingsReply(ticket) {
   return new Promise((resolve, reject) => {
@@ -13,10 +13,11 @@ export function waitSettingsReply(ticket) {
   });
 }
 export function createSettingsClient(client) {
-  let closed = false;
+  let closed = false, materialOwner = null;
   return Object.freeze({
     call(member, argument) {
       if (closed) return Promise.reject(new Error('Settings client is closed'));
+      if (member === 'GetMaterialSource') return Promise.reject(new TypeError('Material reads require the authenticated owner binding'));
       const method = SETTINGS_METHODS[member];
       if (!method) return Promise.reject(new TypeError('Unknown Settings method'));
       try {
@@ -24,7 +25,20 @@ export function createSettingsClient(client) {
           method.signature ? [argument] : [], method.replySignature, member === 'Open' ? 8000 : 5000));
       } catch (error) { return Promise.reject(error); }
     },
-    close() { if (!closed) { closed = true; client.close(); } },
+    bindMaterialOwner(destination, generation) {
+      if (closed || materialOwner || typeof destination !== 'string' || !/^:[A-Za-z0-9_.-]+$/.test(destination) ||
+          !Number.isSafeInteger(generation) || generation < 1)
+        throw new TypeError('Material source requires one current authenticated Shell owner');
+      materialOwner = Object.freeze({ destination, generation });
+    },
+    async getMaterialSource(appearance) {
+      const owner = materialOwner;
+      if (closed || !owner) throw new Error('Material source has no authenticated Shell owner');
+      const text = await waitSettingsReply(client.call(settingsTarget('GetMaterialSource', owner.destination), '', [], 's', 5000));
+      if (closed || materialOwner !== owner) throw new Error('Material source owner retired before reply');
+      return matchMaterialSource(parseMaterialSource(text), appearance, owner.generation);
+    },
+    close() { if (!closed) { closed = true; materialOwner = null; client.close(); } },
   });
 }
 export async function settingsPeer(client, sender) {
