@@ -3,8 +3,12 @@ import { pinnedTasks } from './launcher-pins.mjs';
 
 // The caller supplies the current workspace's real window snapshots.
 export function windowTasks(windows, grouping = 'windows', catalog = [], pins = [], workspaceId, registrations = catalog) {
-  if (!['windows', 'applications'].includes(grouping)) throw new TypeError('Unsupported task grouping');
+  if (!['windows', 'windows-launchers', 'applications'].includes(grouping)) throw new TypeError('Unsupported task grouping');
   if (grouping === 'windows') return [...windows];
+  if (grouping === 'windows-launchers') return [
+    ...pinnedTasks([], pins, catalog, workspaceId, registrations).map(task => ({ ...task, quickLaunch: true })),
+    ...windows,
+  ];
   const ordered = [...windows].sort((a, b) => a.id - b.id);
   const groups = new Map(), tasks = [];
   for (const window of ordered) {
@@ -34,11 +38,12 @@ export function windowTasks(windows, grouping = 'windows', catalog = [], pins = 
 export function taskIdentity(task) {
   return JSON.stringify([task.id, task.appId, task.workspaceId,
     task.grouped ? task.windows.map(window => window.id) : null,
-    task.catalogId, task.launcher, task.unavailable]);
+    task.catalogId, task.launcher, task.unavailable, task.quickLaunch]);
 }
 
 export function taskLabel(task) {
   const title = task.title || task.appId || 'Untitled';
+  if (task.quickLaunch) return title + ' (pinned launcher' + (task.unavailable ? ', unavailable)' : ')');
   if (task.launcher) return title + (task.unavailable ? ' (unavailable)' : ' (pinned, not running)');
   return task.grouped ? title + ' (' + task.count + (task.count === 1 ? ' window' : ' windows') + ')' +
     (task.minimized ? ', all minimized' : task.partiallyMinimized ? ', some minimized' : '') : title;

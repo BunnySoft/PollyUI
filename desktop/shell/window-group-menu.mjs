@@ -5,6 +5,7 @@ import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 import { taskLabel } from './desktop/shell/window-groups.mjs';
+import { withPanelScrollbar, updatePanelScrollbar, releasePanelScrollbar } from './desktop/shared/ui/panel-viewport.mjs';
 
 const gestures = new WeakMap();
 export function guardTaskGesture(node, identity) {
@@ -46,6 +47,7 @@ function revealWindow(node) {
   list.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(list).maximum,
     top < start ? top : top + node.offsetHeight > start + list.offsetHeight ?
       top + node.offsetHeight - list.offsetHeight : start));
+  updatePanelScrollbar(list);
 }
 
 const layouts = new WeakMap();
@@ -71,6 +73,7 @@ function settleList(node) {
       if (!focused || focused === owner.body || !focused.parentNode)
         (commands(current)[0] ?? owner.getElementById('shell-group-menu-close'))?.focus();
       else if (changed) revealWindow(focused);
+      updatePanelScrollbar(current);
     });
   });
 }
@@ -104,10 +107,11 @@ export function windowGroupMenu(theme, group, state) {
   return h('view', { id: 'shell-window-group', role: 'menu', 'aria-label': taskLabel(group),
     style: { ...panelAppearance(theme, 'menu'), width: '100%', height: '100%',
       minHeight: 0, minWidth: 0, overflow: 'hidden' },
-    onKeydown: navigate },
+    onKeydown: navigate,
+    onLeave: (node, done) => { releasePanelScrollbar(node.querySelector('#shell-group-list')); done(); } },
   h('view', { style: { height: theme.layout.buttonHeight, minWidth: 0, overflow: 'hidden', flexShrink: 0 } },
     label(taskLabel(group))),
-  h('view', { id: 'shell-group-list', style: { flexGrow: 1, flexBasis: 0, minHeight: 0,
+  withPanelScrollbar(theme, h('view', { id: 'shell-group-list', style: { flexGrow: 1, flexBasis: 0, minHeight: 0,
     minWidth: 0, overflow: 'scroll', gap: theme.layout.controlGap }, onWheel: scrollDesktop,
     onMount: settleList, onUpdate: settleList,
     onLeave: (node, done) => { cancelAnimationFrame(layouts.get(node)?.frame); layouts.delete(node); done(); } },
@@ -140,7 +144,7 @@ export function windowGroupMenu(theme, group, state) {
       .map(direction => command('shell-group-pin-' + (direction < 0 ? 'earlier' : 'later'),
         direction < 0 ? 'Earlier' : 'Later', () => state.pin.order.move(direction), false,
         { flexGrow: 1, flexBasis: 0 },
-        JSON.stringify([state.pin.order.id, state.pin.order.position, direction]))) : []))),
+        JSON.stringify([state.pin.order.id, state.pin.order.position, direction]))) : [])))),
   command('shell-group-menu-close', 'Close menu', state.close),
   state.error ? label(state.error) : null,
   panelDetail(theme, 'menu'));

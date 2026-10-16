@@ -120,6 +120,22 @@ test('standalone Settings mounts Network in its own document, preserves masked p
 });
 function domainFixture(t) {
   const host = applicationHost(t), errors = [], calls = [], owner = {};
+  const canvasDocument = document => {
+    const create = document.createElement;
+    document.createElement = type => {
+      const node = create(type);
+      if (type === 'canvas') node.getContext = () => ({
+        fillRect() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {},
+        resetTransform() {}, createPattern: () => ({}),
+      });
+      return node;
+    };
+  };
+  canvasDocument(globalThis.document);
+  const createWindow = host.create;
+  host.create = options => {
+    const surface = createWindow(options); canvasDocument(surface.document); return surface;
+  };
   host.displays = () => [{ id: 1, width: 1280, height: 720 }];
   const clone = value => JSON.parse(JSON.stringify(value));
   let bindings = clone(fixtureShortcuts);
@@ -210,15 +226,28 @@ test('Displays edits live in the independent Settings document; Apply preserves 
   assert.equal(f.host.windows.length, 1);
   assert.ok(!f.host.windows.some(window => window.title === 'Desktop control panel'));
 });
-test('Displays 100/150/200 percent shortcuts edit only the draft and Apply sends exact output scale factors', async t => {
-  for (const [percent, type, key] of [[100, 'click', ''], [150, 'keydown', 'Enter'], [200, 'keydown', ' ']]) {
+test('Displays 100/150/200 percent radios edit only the draft and Apply sends exact output scale factors', async t => {
+  for (const [percent, type, key] of [[100, 'click', ''], [150, 'keydown', ' '], [200, 'keydown', 'End']]) {
     await t.test(percent + '%', async t => {
       const f = domainFixture(t); await tick();
       const find = id => f.document.getElementById(id);
+      const radio = find('shell-output-1-scale-' + percent);
+      assert.equal(radio.getAttribute('role'), 'radio');
+      assert.equal(find('shell-output-1-scale-presets').getAttribute('role'), 'radiogroup');
+      assert.match(find('shell-output-1-scale-presets').getAttribute('aria-label'), /Scale presets for /);
+      let composingPrevented = 0;
+      for (const key of [' ', 'ArrowDown', 'Home', 'End'])
+        await deliver(radio, 'keydown', { key, isComposing: true, preventDefault() { composingPrevented++; } });
+      assert.equal(composingPrevented, 0);
+      assert.equal(find('shell-output-1-scale').textContent, '1', 'IME keys leave the display draft untouched');
+      await deliver(radio, 'keydown', { key: 'Enter' });
+      assert.equal(find('shell-output-1-scale').textContent, '1', 'Enter does not select a radio');
+      if (type === 'click') await deliver(radio, 'mousedown');
       await deliver(find('shell-output-1-scale-' + percent), type, { key });
       assert.equal(find('shell-output-1-scale').textContent, String(percent / 100));
       for (const preset of [100, 150, 200])
-        assert.equal(find('shell-output-1-scale-' + preset).getAttribute('aria-pressed'), String(preset === percent));
+        assert.equal(find('shell-output-1-scale-' + preset).getAttribute('aria-checked'), String(preset === percent));
+      assert.equal(radio.getAttribute('aria-pressed'), null);
       assert.equal(f.calls.some(item => item[0] === 'display-apply'), false);
       assert.equal(f.output.heads[0].scale, 1, 'selection does not configure the live output');
       await deliver(find('shell-output-apply')); await tick();
@@ -237,10 +266,21 @@ test('Displays custom scale, typed edits and increments keep per-head preset tru
   f.output.heads.push({ ...f.output.heads[0], id: 2, name: 'DP-2', serialNumber: 'two', x: 1280, scale: 2 });
   f.output.serial++; await f.app.pages.refresh();
   const find = id => f.document.getElementById(id), input = find('shell-output-1-scale');
-  const selected = (id, percent) => find('shell-output-' + id + '-scale-' + percent).getAttribute('aria-pressed');
+  const selected = (id, percent) => find('shell-output-' + id + '-scale-' + percent).getAttribute('aria-checked');
   const firstSelection = percent => [100, 150, 200].forEach(preset =>
     assert.equal(selected(1, preset), String(preset === percent)));
   firstSelection(null); assert.equal(selected(2, 200), 'true');
+  const first = find('shell-output-1-scale-100');
+  first.focus(); await deliver(first, 'keydown', { key: 'ArrowRight' });
+  firstSelection(150);
+  assert.equal(find('shell-output-1-scale'), input);
+  assert.equal(f.document.activeElement, find('shell-output-1-scale-150'));
+  assert.equal(selected(2, 200), 'true', 'Keyboard selection is isolated to this display');
+  await deliver(find('shell-output-1-scale-150'), 'keydown', { key: 'Home' }); firstSelection(100);
+  await deliver(find('shell-output-1-scale-100'), 'keydown', { key: 'End' }); firstSelection(200);
+  assert.equal(f.calls.some(item => item[0] === 'display-apply'), false);
+  input.focus(); await deliver(input, 'keydown', { key: 'a', ctrlKey: true });
+  await deliver(input, 'textinput', { data: '1.25' }); firstSelection(null);
   await deliver(find('shell-output-1-scale-up')); firstSelection(150);
   await deliver(find('shell-output-1-scale-up')); firstSelection(null);
   await deliver(find('shell-output-1-scale-up')); firstSelection(200);
@@ -272,10 +312,12 @@ test('Displays custom scale, typed edits and increments keep per-head preset tru
   await deliver(input, 'keydown', { key: 'Delete' }); firstSelection(null);
   await deliver(input, 'auxclick', { button: 1, clientX: 7 }); firstSelection(150);
   assert.equal(selected(2, 200), 'true'); assert.equal(find('shell-output-2-scale').textContent, '2');
-  await deliver(find('shell-output-2-scale-100'));
+  await deliver(find('shell-output-2-scale-100'), 'keydown', { key: ' ' });
   firstSelection(150); assert.equal(input.textContent, '1.5');
   assert.equal(selected(2, 100), 'true');
-  await deliver(find('shell-output-2-scale-200'));
+  await deliver(find('shell-output-2-scale-100'), 'keydown', { key: 'ArrowRight' });
+  assert.equal(selected(2, 150), 'true'); firstSelection(150);
+  await deliver(find('shell-output-2-scale-150'), 'keydown', { key: 'ArrowRight' });
   await deliver(find('shell-output-apply')); await tick();
   assert.deepEqual(f.calls.find(item => item[0] === 'display-apply')[1].heads.map(head => head.scale), [1.5, 2]);
 });
@@ -291,12 +333,14 @@ test('Displays presets honor busy/disabled state and serial/pending changes reti
   for (const percent of [100, 150, 200]) {
     const preset = find('shell-output-1-scale-' + percent);
     assert.equal(preset.getAttribute('aria-disabled'), 'true'); assert.equal(preset.tabIndex, -1);
-    await deliver(preset); await deliver(preset, 'keydown', { key: 'Enter' }); await deliver(preset, 'keydown', { key: ' ' });
+    await deliver(preset, 'mousedown'); await deliver(preset);
+    for (const key of ['Enter', ' ', 'ArrowRight', 'Home', 'End']) await deliver(preset, 'keydown', { key });
   }
+  assert.equal(find('shell-output-1-scale-presets').getAttribute('aria-disabled'), 'true');
   await deliver(find('shell-output-1-scale-up')); await deliver(find('shell-output-apply'));
   assert.equal(find('shell-output-1-scale').textContent, '1'); assert.deepEqual(commands, []);
   busy = false; paint();
-  await deliver(find('shell-output-1-scale-150'));
+  await deliver(find('shell-output-1-scale-150'), 'keydown', { key: ' ' });
   const retired = find('shell-output-1-scale');
   snapshot = { ...snapshot, serial: snapshot.serial + 1 }; paint();
   assert.notEqual(find('shell-output-1-scale'), retired);
@@ -311,7 +355,7 @@ test('Displays presets honor busy/disabled state and serial/pending changes reti
   assert.equal(find('shell-output-1-scale-100'), null, 'disabled heads have no scale actions');
   assert.equal(find('shell-output-1-enabled').getAttribute('aria-checked'), 'false');
   await deliver(find('shell-output-1-enabled'), 'keydown', { key: ' ' });
-  await deliver(find('shell-output-1-scale-200'));
+  await deliver(find('shell-output-1-scale-200'), 'keydown', { key: ' ' });
   snapshot = { ...snapshot, pendingToken: 9, remainingMs: 15000 }; paint();
   assert.equal(find('shell-output-1-scale-200'), null);
   assert.match(document.body.textContent, /trusted confirmation.*15 seconds/);

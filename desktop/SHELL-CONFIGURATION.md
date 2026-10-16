@@ -31,10 +31,14 @@ taskbar/Dock pin never removes a desktop shortcut, and shortcut changes do not
 modify launcher pins. IDs are opaque references of at most 255 UTF-16 code units;
 valid Unicode and spaces are retained exactly, while control characters, lone
 surrogates and slash/backslash path components are rejected. They are never
-interpreted as executable names, paths or URLs. Only explicit `applications`
-task grouping displays them.
-Running groups merge with a pin only through the existing unique exact/explicit
-catalog identity association; ambiguous associations retain separate running tasks.
+interpreted as executable names, paths or URLs. Explicit `applications` and
+`windows-launchers` task modes display them. In `applications` mode, running groups
+merge with a pin only through the existing unique exact/explicit catalog identity
+association; ambiguous associations retain separate running tasks. XP selects
+`windows-launchers`: compact Quick Launch items always launch independently,
+followed by unchanged individual Window.id tasks. Missing/`windows` mode remains
+unchanged. All modes share this saved pin order; no new preference version or
+separate Quick Launch store is introduced.
 
 Existing v1/v2 JSON is validated, upgraded once by the same atomic writer, and
 preserves every original domain. It does not reread legacy localStorage.

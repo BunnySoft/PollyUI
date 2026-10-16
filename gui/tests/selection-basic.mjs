@@ -37,6 +37,18 @@ key(' '); check(checked && cb.getAttribute('aria-checked') === 'true' && calls.l
 key('Tab');
 let radios = Array.from(find('radio').childNodes);
 check(document.activeElement === radios[0], 'Tab enters the selected radio, not the entire group');
+let composingUpdates = 0, composingPrevented = 0;
+const composingControls = [
+  NSwitch({ onUpdate: () => composingUpdates++ }),
+  NCheckbox({ onChange: () => composingUpdates++ }),
+  NRadioGroup({ value: 'a', options, onUpdate: () => composingUpdates++ }).children[2],
+];
+for (const control of composingControls)
+  for (const name of [' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'])
+    control.props.onKeydown({ key: name, isComposing: true, currentTarget: radios[2],
+      preventDefault() { composingPrevented++; }, stopPropagation() { composingPrevented++; } });
+check(composingUpdates === 0 && composingPrevented === 0 && document.activeElement === radios[0],
+  'Composing switch, checkbox and radio keys neither select, move focus nor consume the IME event');
 key('ArrowRight'); check(radio === 'c' && document.activeElement === radios[2], 'Radio arrow skips disabled option and selects the next enabled item');
 key('Home'); check(radio === 'a' && document.activeElement === radios[0], 'Radio Home selects first enabled');
 key('End'); check(radio === 'c', 'Radio End selects last enabled');

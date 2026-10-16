@@ -70,6 +70,18 @@ guards remain authoritative. Component host input is not evidence of compositor
 outside-dismiss behavior; the native bounds fixture separately measures the
 submenu against a real child window's client input document.
 
+Long All Programs/category lists and window-group/launcher management lists
+opt into the shared themed 10px vertical overlay scrollbar. Their original
+list IDs and direct command slots remain unchanged inside a flex scroll area;
+the scrollbar is a passive-layout sibling, so it does not reduce command widths
+or move the menu's header/Close slots. Wheel and command focus reveal synchronize
+the same thumb, while the SDK owns page clicks, drag capture, arrow/keyboard
+scrolling and theme appearance. Tab includes an enabled scrollbar; list arrows
+retain their existing command-navigation path. Short lists hide/disable the bar.
+Same-DOM retheming keeps the controller and current drag, and leaving cancels
+pending bounded layout work, capture and listeners. This does not add a popup,
+new input authority or an idle animation/observer loop.
+
 `desktop/tests/classic-programs-render.mjs` exports the bounded actual GUI and
 native-client geometry fixtures. `desktop/tests/menu-host.mjs` covers the real
 Shell controller's callback lifetime, launch and existing menu authority seams.
@@ -92,12 +104,45 @@ Lion reflection/Dock shadow and Big Sur wallpaper tint/live blur remain absent.
 `panel.taskGrouping` is optional schema-version-1 theme data: missing or `windows`
 retains the original per-window task API and active-click minimize behavior.
 The packaged and recovery Modern, Aqua/Tiger, Lion and Big Sur presets explicitly
-select `applications`; XP and Classic remain per-window. Custom themes do not
+select `applications`; XP explicitly selects `windows-launchers` and Classic
+remains per-window. Custom themes do not
 infer grouping from their ID, styling or panel kind.
+
+## XP Quick Launch
+
+Explicit `windows-launchers` mode prepends the saved ordered catalog pins as
+compact icon-only Quick Launch buttons, then keeps every real window task in its
+original order and original Window.id interface. The XP packaged/recovery preset
+opts in; missing or `windows` custom/Classic themes do not. Empty pins add no
+placeholder slot or separator. The existing horizontal task viewport and wheel
+scrolling remain in use; focusing a Quick Launch button or a later real window
+reveals that target without adding a second scrolling controller or an idle loop.
+
+Quick Launch is always a launcher, including when that application already has
+windows. It does not merge those windows or turn a launcher click into activation.
+Its accessible label says "pinned launcher", not "not running". Available artwork
+uses the same retained registered bitmap cache at 16px; missing artwork uses the
+original generic fallback. Real window buttons retain their original dimensions,
+active-click minimize/otherwise activate behavior and window actions.
+
+Apps pin controls and Quick Launch context/keyboard management reuse the same
+independent v3 launcher list, canonical Settings identity, atomic write/error
+handling and Earlier/Later ordering described below. Unavailable entries remain
+focusable and manageable without executing stored argv. Settings uses the
+existing bridge, not a duplicate process. This is functional Quick Launch, not
+certification of a complete external XP profile, system tray or reference pixels.
+
+The Luna/XP Start menu also reuses the existing All Programs/Categories surface:
+the actual catalog defaults to a flat list, with optional exact metadata tags,
+desktop Pin and the shared long-list scrollbar. Back/Left/Escape and navigation
+epochs follow the same rules as Classic above. Root search, desktop Pin and
+Quick+/Quick- remain independent. This does not add an installed-directory
+backend, account profile, Recent list or another popup window, and does not
+enable Programs for Modern or Mac-style menus.
 
 ## Independent taskbar and Dock pins
 
-In explicit `applications` mode, each Apps entry has a separate Taskbar+/Taskbar-
+In explicit `applications` or `windows-launchers` mode, each Apps entry has a separate Taskbar+/Taskbar-
 or Dock+/Dock- control. Its accessible name says which application and destination
 it changes. This is independent of the existing desktop Pin/Unpin control: removing
 a taskbar or Dock launcher never deletes a desktop shortcut. The ordered list of
@@ -105,7 +150,7 @@ at most 32 unique catalog IDs persists in Shell configuration v3's version-1
 `launchers` domain. Existing v1/v2 configurations migrate atomically without losing
 their other domains; see `desktop/SHELL-CONFIGURATION.md`.
 
-Pins occupy the first display slots in saved order. A uniquely associated running
+Pins occupy the first display slots in saved order. In `applications` mode a uniquely associated running
 application uses that same slot with its real window count; other running tasks
 follow in their existing order. The model also supplies Dock surface sizing.
 Idle launchers have no running marker and invoke the existing catalog-rechecking
@@ -129,7 +174,7 @@ catalog association is unambiguous. Held launcher-to-running transitions and
 changed membership/workspaces invalidate the old gesture. Pin write errors are
 reported and the UI follows the actually committed configuration snapshot,
 including durability failures. There is no drag ordering, MRU, magnification,
-process-wide close, new native API or extra bitmap cache. Classic/XP and custom
+process-wide close, new native API or extra bitmap cache. Classic and custom
 `windows` mode keep the original per-window behavior and do not display launchers.
 
 One pure `windowTasks` model feeds both the panel/Dock and the native Dock width

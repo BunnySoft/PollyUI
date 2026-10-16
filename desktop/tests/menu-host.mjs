@@ -13,6 +13,7 @@ const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs'
 const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
 const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
 const { programCategories, categoryEntries, programCategoryId } = await import('./desktop/shell/programs-menu.mjs');
+const { render } = await import('./gui/sdk/js/reconciler.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -317,6 +318,53 @@ function groupedWindows({ state, native, calls }) {
 const groupId = 'shell-window-app-fixture.desktop';
 const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
 
+scenario('Menu scrollbar: shared overlay follows wheel/focus, retains capture on retheme and stops on leave', f => {
+  const owner = f.surface('wallpaper').document, container = owner.createElement('view');
+  owner.body.appendChild(container);
+  const group = windowTasks(Array.from({ length: 8 }, (_, i) => ({
+    id: i + 1, appId: 'fixture.desktop', title: 'Window ' + (i + 1), workspaceId: 7,
+  })), 'applications')[0], state = { slots: [], action() {}, close() {} };
+  const paint = theme => render(windowGroupMenu(theme, group, state), container);
+  paint(getDesktopTheme('modern'));
+  const root = owner.getElementById('shell-window-group'), list = owner.getElementById('shell-group-list');
+  const track = owner.getElementById('shell-group-list-scrollbar');
+  const thumb = owner.getElementById('shell-group-list-scroll-thumb');
+  list.offsetTop = 0; list.offsetHeight = 100;
+  track.offsetTop = 0; track.offsetWidth = 10; track.offsetHeight = 100;
+  list.childNodes.forEach((node, i) => { node.offsetTop = i * 60; node.offsetHeight = i < 8 ? 56 : 0; });
+  for (const node of descendants(list).filter(node => node.tabIndex >= 0)) {
+    node.offsetTop = node.parentNode.offsetTop; node.offsetHeight = 24;
+  }
+  f.flushFrames();
+  assert.equal(track.tabIndex, 0);
+  domEvent(list, 'wheel', { deltaY: 100000 });
+  assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
+  assert.ok(Number(thumb.style.top) > 0);
+  const last = owner.getElementById('shell-group-activate-8');
+  last.offsetTop = 420; last.focus(); f.flushFrames();
+  assert.equal(Number(track.getAttribute('aria-valuenow')), Number(list.scrollTop));
+  domEvent(list, 'wheel', { deltaY: -100000 });
+  paint(getDesktopTheme('modern')); f.flushFrames();
+  assert.equal(Number(list.scrollTop), 0, 'unchanged focused content does not undo manual wheel scrolling');
+  const down = { button: 0, clientX: 5, clientY: Number(thumb.style.top) + 3 };
+  domEvent(track, 'mousedown', down);
+  assert.ok(owner.captured === track);
+  paint(getDesktopTheme('aqua')); f.flushFrames();
+  assert.ok(owner.getElementById('shell-group-list-scrollbar') === track);
+  assert.ok(owner.getElementById('shell-group-list-scroll-thumb') === thumb);
+  assert.ok(owner.captured === track, 'same controller keeps the original drag across appearance changes');
+  domEvent(track, 'mousemove', { clientX: 5, clientY: 65 });
+  assert.ok(Number(list.scrollTop) > 0);
+  render(null, container);
+  assert.equal(owner.captured, null);
+  assert.equal([...track.listeners.values()].flat().length, 0, 'stopping the overlay removes all input listeners');
+  const scroll = Number(list.scrollTop);
+  domEvent(track, 'mousemove', { clientX: 5, clientY: 99 });
+  f.flushFrames();
+  assert.equal(Number(list.scrollTop), scroll, 'retired drag cannot change the detached list');
+  assert.ok(!root.parentNode);
+});
+
 const pinnedNodeId = id => 'shell-window-pin-' + encodeURIComponent(id);
 function pinnedFixture(f) {
   groupedWindows(f);
@@ -342,10 +390,81 @@ scenario('Launcher pins: Apps pin control persists independently and leaves real
   click(find(menu, 'shell-app-launcher-fixture.desktop'));
   assert.deepEqual(f.saved.snapshot.launchers.applications, []);
   assert.deepEqual(f.saved.snapshot.desktop, before);
-  f.shell.selectTheme('xp');
+  f.shell.selectTheme('server2003');
   const legacy = f.shell.showApplications(1);
   assert.equal(legacy.document.getElementById('shell-app-launcher-fixture.desktop'), null);
 }, groupedWindows);
+
+scenario('XP Quick Launch: pinned running apps launch independently while real Window.id tasks keep activate/minimize', f => {
+  f.shell.selectTheme('xp');
+  const panel = f.surface('panel');
+  assert.ok(find(panel, pinnedNodeId('fixture.desktop')));
+  assert.ok(find(panel, 'shell-window-10'));
+  assert.ok(find(panel, 'shell-window-11'));
+  assert.ok(find(panel, 'shell-window-13'));
+  assert.equal(find(panel, 'shell-window-list').childNodes.length, 7, 'two launchers plus five original windows, no grouping');
+  assert.match(find(panel, pinnedNodeId('fixture.desktop')).getAttribute('aria-label'), /pinned launcher/);
+  assert.doesNotMatch(find(panel, pinnedNodeId('fixture.desktop')).getAttribute('aria-label'), /not running/);
+  click(find(panel, pinnedNodeId('fixture.desktop')));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1, 'a running app does not turn Quick Launch into activate');
+  assert.equal(f.calls.some(call => ['activate', 'minimize'].includes(call[0])), false);
+  click(find(panel, 'shell-window-10'));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+  click(find(panel, 'shell-window-11'));
+  assert.deepEqual(f.calls.at(-1), ['activate', 11]);
+  const old = callback(find(panel, pinnedNodeId('fixture.desktop')), 'click');
+  f.shell.selectTheme('modern');
+  assert.equal(old(event('click')), false, 'retired XP mode callback cannot run under application grouping');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+}, pinnedFixture);
+
+scenario('XP Quick Launch: Apps controls use the same persistent pins and manage missing entries through the existing menu', f => {
+  f.shell.selectTheme('xp');
+  const desktop = f.saved.snapshot.desktop;
+  const apps = f.shell.showApplications(1);
+  assert.match(find(apps, 'shell-app-launcher-fixture.desktop').getAttribute('aria-label'), /Quick Launch/);
+  click(find(apps, 'shell-app-launcher-fixture.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+  const panel = f.surface('panel'), pin = find(panel, pinnedNodeId('fixture.desktop'));
+  pin.focus(); key(panel, 'Enter', { repeat: true }); key(panel, 'Enter', { isComposing: true });
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(panel, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  f.saved.update({ launchers: { version: 1, applications: ['fixture.desktop', 'missing.desktop'] } });
+  f.native.onWindowsChanged();
+  const missing = find(f.surface('panel'), pinnedNodeId('missing.desktop'));
+  assert.equal(missing.tabIndex, 0);
+  missing.focus(); key(f.surface('panel'), 'F10', { shiftKey: true });
+  const menu = latestGroup(f);
+  assert.match(text(find(menu, 'shell-window-group')), /no longer in the catalog/);
+  assert.match(find(menu, 'shell-group-pin').getAttribute('aria-label'), /Unpin from Quick Launch/);
+  click(find(menu, 'shell-group-pin-earlier'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['missing.desktop', 'fixture.desktop']);
+  click(find(menu, 'shell-group-pin'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  f.shell.stop(); f.shell.start();
+  assert.ok(find(f.surface('panel'), pinnedNodeId('fixture.desktop')), 'XP reopens the same saved launcher');
+  f.shell.selectTheme('server2003');
+  assert.equal(f.surface('panel').document.getElementById(pinnedNodeId('fixture.desktop')), null,
+    'Classic windows mode does not grow a launcher strip');
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop']);
+  assert.deepEqual(f.saved.snapshot.desktop, desktop);
+}, groupedWindows);
+
+scenario('XP Quick Launch: fresh catalog failure and unavailable entries cannot execute a stored launcher command', f => {
+  f.shell.selectTheme('xp');
+  f.native.applicationFiles = () => [];
+  click(find(f.surface('panel'), pinnedNodeId('fixture.desktop')));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  assert.match(f.shell.getState().error, /no longer available/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  f.shell.showApplications(1);
+  const missing = find(f.surface('panel'), pinnedNodeId('fixture.desktop'));
+  click(missing);
+  assert.ok(latestGroup(f), 'uninstalled launcher remains manageable rather than using stale argv');
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['fixture.desktop', 'missing.desktop']);
+}, pinnedFixture);
 
 scenario('Launcher pins: pinned order, real group counts, unavailable retention and Dock width use the same model on two outputs', f => {
   for (const theme of ['modern', 'bigsur']) {
@@ -634,6 +753,11 @@ scenario('Launcher pins: registered Settings pin merges its runtime windows and 
   click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')));
   assert.deepEqual(f.calls.filter(call => call[0] === 'settings-open'), [['settings-open', 'appearance']]);
   assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  f.shell.selectTheme('xp');
+  click(find(f.surface('panel'), pinnedNodeId('polly-settings.desktop')));
+  assert.equal(f.calls.filter(call => call[0] === 'settings-open').length, 2,
+    'XP Settings Quick Launch uses the same single Settings bridge');
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
   assert.deepEqual(f.saved.snapshot.desktop.shortcuts, []);
 }, ({ state, native }) => {
   state.windows = [10, 11].map(id => ({ id, appId: 'org.pollyui.settings', title: 'Settings ' + id, workspaceId: 7 }));
@@ -652,7 +776,8 @@ test('Application tasks: group-menu chrome uses the shared menu policy without m
     const menu = windowGroupMenu(theme, group, { slots: [], action() {}, close() {} });
     assert.deepEqual(menu.props.style, { ...panelAppearance(theme, 'menu'),
       width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' });
-    assert.equal(menu.children[1].props.id, 'shell-group-list', 'list keeps its positional slot across themes');
+    assert.equal(menu.children[1].props.id, 'shell-group-list-scroll-area', 'list area keeps its positional slot across themes');
+    assert.equal(menu.children[1].children[0].props.id, 'shell-group-list', 'original list ID and direct command rows are retained');
     assert.equal(menu.children[2].props.id, 'shell-group-menu-close', 'close keeps its positional slot across themes');
     const detail = panelDetail(theme, 'menu');
     if (detail) assert.deepEqual(menu.children.at(-1), detail,
@@ -1137,6 +1262,53 @@ scenario('Classic Programs category selection rejects a removed tag before refre
   find(next, 'shell-all-programs').focus(); key(next, 'ArrowRight'); f.flushFrames();
   assert.ok(find(next, 'shell-program-editor.desktop'));
   assert.ok(find(next, 'shell-program-categories'), 'a replacement RootMenu starts with flat All Programs');
+}, categorizedPrograms);
+
+scenario('XP Programs: real catalog and categories reuse bounded RootMenu navigation while search and both pin domains stay independent', f => {
+  f.shell.selectTheme('xp');
+  const menu = f.shell.showApplications(1), search = find(menu, 'shell-app-search');
+  assert.ok(find(menu, 'shell-app-launcher-editor.desktop'));
+  const trigger = find(menu, 'shell-all-programs');
+  trigger.focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.ok(find(menu, 'shell-program-categories'));
+  click(find(menu, 'shell-program-categories')); f.flushFrames();
+  click(find(menu, programCategoryId('\u6587\u6863'))); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(menu.document.getElementById('shell-program-plain.desktop'), null);
+  click(find(menu, 'shell-program-pin-editor.desktop')); f.flushFrames();
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['editor.desktop']);
+  assert.deepEqual(f.saved.snapshot.launchers.applications, [], 'Programs Pin remains desktop-only');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.ok(menu.document.activeElement === find(menu, programCategoryId('\u6587\u6863')));
+  key(menu, 'ArrowLeft'); f.flushFrames();
+  assert.ok(find(menu, 'shell-program-plain.desktop'), 'category index Back returns to flat All Programs');
+  key(menu, 'Escape'); f.flushFrames();
+  assert.ok(menu.document.activeElement === trigger && !menu.closed);
+  assert.ok(find(menu, 'shell-app-search') === search, 'real input is not replaced or relabeled as a menu command');
+  click(find(menu, 'shell-app-launcher-editor.desktop'));
+  assert.deepEqual(f.saved.snapshot.launchers.applications, ['editor.desktop']);
+  assert.deepEqual(f.saved.snapshot.desktop.shortcuts.map(item => item.id), ['editor.desktop']);
+}, categorizedPrograms);
+
+scenario('XP Programs: old leaf handlers reject changed membership and epochs, then fresh activation uses only its real entry', f => {
+  f.shell.selectTheme('xp');
+  const menu = f.shell.showApplications(1);
+  find(menu, 'shell-all-programs').focus(); key(menu, 'ArrowRight'); f.flushFrames();
+  browseCategory(f, menu, '\u6587\u6863');
+  const row = find(menu, 'shell-program-editor.desktop'), old = callback(row, 'click');
+  f.state.categoryFiles[0].tags = ['Utility'];
+  assert.equal(old(event('click', { currentTarget: row })), false);
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(menu, 'Escape'); f.flushFrames();
+  click(find(menu, 'shell-program-all')); f.flushFrames();
+  old(event('click', { currentTarget: row }));
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  click(find(menu, 'shell-program-editor.desktop'));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  assert.equal(menu.closed, true);
+  old(event('click', { currentTarget: row }));
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
 }, categorizedPrograms);
 
 scenario('Non-Classic applications keeps the existing applications consumer', f => {

@@ -4,6 +4,7 @@ import { desktopCommand, desktopText, scrollDesktop } from './desktop/shared/ui/
 import { bevel } from './desktop/shared/ui/surface-primitives.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
+import { withPanelScrollbar, updatePanelScrollbar, releasePanelScrollbar } from './desktop/shared/ui/panel-viewport.mjs';
 
 export function categoryEntries(entries, tag) {
   return entries.filter(entry => tag === null ? !entry.categories?.length : entry.categories?.includes(tag));
@@ -33,6 +34,7 @@ function revealProgram(node) {
   const next = top < start ? top : top + node.offsetHeight > start + list.offsetHeight ?
     top + node.offsetHeight - list.offsetHeight : start;
   list.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(list).maximum, next));
+  updatePanelScrollbar(list);
 }
 function clampPrograms(node) {
   let state = pendingLayouts.get(node);
@@ -54,6 +56,7 @@ function clampPrograms(node) {
       if (!focused || focused === owner.body || focused.parentNode === current && focused.tabIndex < 0)
         owner.getElementById('shell-program-back')?.focus();
       else if (changed && focused.parentNode === current) revealProgram(focused);
+      updatePanelScrollbar(current);
     });
   });
 }
@@ -164,7 +167,9 @@ export function programsMenu(theme, entries, desktop, state) {
     const list = event.currentTarget.querySelector('#shell-program-list');
     const members = Array.from(list.childNodes).filter(node => node.tabIndex >= 0);
     const header = event.currentTarget.querySelector('#shell-program-header');
-    const enabled = event.key === 'Tab' ? [...header.childNodes.filter(node => node.tabIndex >= 0), ...members] : members;
+    const scrollbar = event.currentTarget.querySelector('#shell-program-list-scrollbar');
+    const enabled = event.key === 'Tab' ? [...header.childNodes.filter(node => node.tabIndex >= 0), ...members,
+      ...(scrollbar.tabIndex >= 0 ? [scrollbar] : [])] : members;
     if (!enabled.length) return;
     const index = enabled.indexOf(list.ownerDocument.activeElement);
     const forward = event.key === 'ArrowDown' || event.key === 'Tab' && !event.shiftKey;
@@ -195,7 +200,8 @@ export function programsMenu(theme, entries, desktop, state) {
     const onTrigger = event.clientX >= box.x && event.clientX < box.x + box.width &&
       event.clientY >= box.y && event.clientY < box.y + box.height;
     state.change(onTrigger, onTrigger ? 'first' : 'trigger');
-  }, onKeydown: key, onMouseleave: leave },
+  }, onKeydown: key, onMouseleave: leave,
+    onLeave: (node, done) => { releasePanelScrollbar(node.querySelector('#shell-program-list')); done(); } },
   h('view', { id: 'shell-program-menu', role: 'menu', 'aria-label': view === 'categories' ?
     'Application categories (metadata tags)' : view === 'category' ?
       'Category: ' + (category ?? 'Uncategorized (no tags)') : 'All Programs', style: {
@@ -206,11 +212,11 @@ export function programsMenu(theme, entries, desktop, state) {
     height: 24, flexShrink: 0, minWidth: 0, overflow: 'hidden' } }, back, browse),
   h('view', { id: 'shell-program-error', role: 'alert', style: { display: state.error ? 'flex' : 'none', padding: 4, flexShrink: 0 } },
     state.error ? desktopText(state.error, theme.colors.text, themeTextSize(theme)) : null),
-  h('view', { id: 'shell-program-list', style: {
+  withPanelScrollbar(theme, h('view', { id: 'shell-program-list', style: {
     flexGrow: 1, flexBasis: 0, minHeight: 0, minWidth: 0, overflow: 'scroll',
   }, onWheel: scrollDesktop, onMouseleave: leave,
     onMount: clampPrograms, onUpdate: clampPrograms, onLeave: leavePrograms }, items,
   !current.size ? desktopText(view === 'categories' ? 'No application categories available' :
     view === 'category' ? 'No applications in this category' : 'No applications available',
-    theme.colors.muted, themeTextSize(theme)) : null)));
+    theme.colors.muted, themeTextSize(theme)) : null))));
 }

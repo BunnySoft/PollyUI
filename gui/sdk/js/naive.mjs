@@ -230,6 +230,7 @@ export function NSwitch(props = {}) {
       backgroundColor: value ? c.primary : c.railOff, opacity: disabled ? m.disabledOpacity : 1 }),
     onClick: event => { if (!disabled && primaryClick(event)) onUpdate?.(!value); },
     onKeydown: event => {
+      if (event.isComposing) return;
       if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onUpdate?.(!value); }
     },
   }, h('view', { className: 'n-selection-knob', style: clean({ position: 'absolute', top: pad,
@@ -249,6 +250,7 @@ export function NCheckbox(props = {}, label) {
     style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: m.gap, opacity: disabled ? m.disabledOpacity : 1 }),
     onClick: event => { if (!disabled && primaryClick(event)) onChange?.(!checked); },
     onKeydown: event => {
+      if (event.isComposing) return;
       if (event.key === ' ') { event.preventDefault(); if (!disabled && !event.repeat) onChange?.(!checked); }
     },
   },
@@ -282,7 +284,7 @@ export function NRadioGroup(props = {}) {
         style: clean({ position: 'relative', flexDirection: 'row', alignItems: 'center', gap: m.gap, opacity: off ? m.disabledOpacity : 1 }),
         ...optionPointer('radio', opt.value, off, event => { event.currentTarget.focus(); onUpdate?.(opt.value); }),
         onKeydown: event => {
-          if (off) return;
+          if (off || event.isComposing) return;
           if (event.key === ' ') { event.preventDefault(); if (!event.repeat) choose(index); }
           const horizontal = ['ArrowLeft', 'ArrowRight'].includes(event.key);
           roveSelection(event, event.currentTarget.parentNode, horizontal, choose);
@@ -372,7 +374,7 @@ export function NTabs(props = {}) {
             opacity: off ? m.disabledOpacity : 1 }),
           ...optionPointer('tab', p.name, off, event => { event.currentTarget.focus(); onUpdate?.(p.name); }),
           onKeydown: event => {
-            if (off) return;
+            if (off || event.isComposing) return;
             if (activationKey(event)) { event.preventDefault(); choose(index); }
             roveSelection(event, event.currentTarget.parentNode, true, choose);
           } },
@@ -869,7 +871,7 @@ export function NSelect(props = {}) {
       else closeSelect(state);
     },
     onKeydown: event => {
-      if (disabled) return;
+      if (disabled || event.isComposing) return;
       const state = syncSelect(event.currentTarget, config);
       if (event.key === 'Tab') { closeSelect(state, false); return; }
       if (event.key === 'Escape') { event.preventDefault(); closeSelect(state); return; }
@@ -1260,7 +1262,7 @@ export function NMenu(props = {}) {
           alignItems: 'center', gap: m.gap, backgroundColor: on ? c.selected : 'transparent' }),
         ...optionPointer('menu', it.key, off, event => { event.currentTarget.focus(); activate(); }),
         onKeydown: event => {
-          if (off) return;
+          if (off || event.isComposing) return;
           if (activationKey(event)) { event.preventDefault(); activate(); }
           roveSelection(event, event.currentTarget.parentNode, horizontal);
         },

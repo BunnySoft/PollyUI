@@ -349,7 +349,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function syncShellIcons(theme) {
     const ids = new Set(configuration.snapshot.desktop.shortcuts.map(item => item.id));
-    if (theme.panel.taskGrouping === 'applications')
+    if (['applications', 'windows-launchers'].includes(theme.panel.taskGrouping))
       for (const id of configuration.snapshot.launchers.applications) {
         ids.add(id);
         if (id === SETTINGS_APPLICATION_ID) {
@@ -410,7 +410,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function updateLauncherPins(change) {
-    if (!running || getDesktopTheme(themeId).panel.taskGrouping !== 'applications') return false;
+    if (!running || !['applications', 'windows-launchers'].includes(getDesktopTheme(themeId).panel.taskGrouping)) return false;
     try {
       const next = change(configuration.snapshot.launchers.applications);
       if (!next) return false;
@@ -852,7 +852,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         close: () => currentMenu(current) ? closeMenu(current, true) : false,
         pin: group.pinned || entry ? {
           label: pinned || group.pinned ? 'Unpin from ' : 'Pin to ',
-          target: getDesktopTheme(themeId).panel.kind === 'dock' ? 'Dock' : 'taskbar',
+          target: getDesktopTheme(themeId).panel.taskGrouping === 'windows-launchers' ? 'Quick Launch' :
+            getDesktopTheme(themeId).panel.kind === 'dock' ? 'Dock' : 'taskbar',
           order: pinned ? {
             id: pinId, position: pinIndex, earlier: pinIndex > 0, later: pinIndex + 1 < pins.length,
             move: direction => livePinMenu() ? moveLauncherPin(pinId, pinIndex, direction) : false,
@@ -870,7 +871,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
     if (current.mode === 'applications') {
       const menuTheme = getDesktopTheme(themeId);
-      if (surfaceStyle(menuTheme, 'panel') !== 'classic' && current.programsOpen) {
+      if (!['classic', 'luna'].includes(surfaceStyle(menuTheme, 'panel')) && current.programsOpen) {
         current.programsOpen = false;
         current.programsEpoch = (current.programsEpoch ?? 0) + 1;
         current.programsSlots = [];
@@ -970,8 +971,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
             });
           }),
         }, desktopImages, options => applicationSearch(current, menuTheme, options),
-        menuTheme.panel.taskGrouping === 'applications' ? {
-          target: menuTheme.panel.kind === 'dock' ? 'Dock' : 'taskbar',
+        ['applications', 'windows-launchers'].includes(menuTheme.panel.taskGrouping) ? {
+          target: menuTheme.panel.taskGrouping === 'windows-launchers' ? 'Quick Launch' :
+            menuTheme.panel.kind === 'dock' ? 'Dock' : 'taskbar',
           id: launcherCatalogId,
           has: id => configuration.snapshot.launchers.applications.includes(id),
           change: scoped((id, expected) => host.displays().some(output => output.id === current.output) &&

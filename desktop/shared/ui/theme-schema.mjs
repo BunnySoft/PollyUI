@@ -83,7 +83,7 @@ const optionalOptions = {
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
     menuStyle: ['legacy', 'two-column', 'grid'], taskTexture: ['flat', 'stipple'],
-    taskGrouping: ['windows', 'applications'] },
+    taskGrouping: ['windows', 'windows-launchers', 'applications'] },
 };
 const optionalNumbers = {
   panel: { materialOpacityPercent: [0, 100] },

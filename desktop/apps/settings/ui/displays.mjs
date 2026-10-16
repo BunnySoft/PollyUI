@@ -1,31 +1,36 @@
 import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
-import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { desktopText } from './desktop/shared/ui/presentation.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 import { displayField, setDisplayField } from './desktop/apps/settings/ui/display-inputs.mjs';
-import { themedCheckbox } from './desktop/shared/ui/selection-controls.mjs';
+import { themedCheckbox, themedRadioGroup } from './desktop/shared/ui/selection-controls.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
-export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null) {
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
+export function displaysView(theme, owner, draft, inputs, repaint, apply, close, error = '', profile = null, busy = false) {
   const label = (value, color = theme.colors.text, size = theme.layout.fontSize, extra = {}) =>
     desktopText(value, color, size, extra);
   const field = (head, name, width) => displayField(owner, inputs, head, name, theme, width,
     name === 'scale' ? repaint : null);
-  return h('view', { id: 'shell-displays', style: {
-    width: '100%', height: '100%', minHeight: 0, padding: theme.layout.contentPadding,
-    gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
-  } },
-  h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
-    desktopText('Connected displays', theme.colors.text, theme.layout.headingFontSize,
-      { fontWeight: 600, flexShrink: 1, minWidth: 0 }),
-    h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
-    button('shell-output-close', 'Close', theme, close)),
-  h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll',
-    gap: theme.layout.contentGap }, onWheel: scrollDesktop },
+  function scalePresets(head) {
+    const id = 'shell-output-' + head.id + '-scale';
+    const group = themedRadioGroup(theme, { id: id + '-presets', disabled: busy,
+      value: Number(inputs.get(id)?.value ?? head.scale),
+      options: [1, 1.5, 2].map(value => ({ value, label: value * 100 + '%' })),
+      onUpdate: value => { setDisplayField(inputs, head, 'scale', value); repaint(); } });
+    group.props['aria-label'] = 'Scale presets for ' + head.name;
+    Object.assign(group.props.style, { flexShrink: 0, flexWrap: 'wrap', minWidth: 0, maxWidth: '100%' });
+    group.children.forEach((option, index) => {
+      option.props.id = id + '-' + [100, 150, 200][index];
+      Object.assign(option.props.style, { flexShrink: 0, minHeight: theme.layout.buttonHeight });
+    });
+    return group;
+  }
+  const list = panelViewport(theme, { id: 'shell-displays-list', framed: false, scrollbar: true },
     draft.heads.map(head => h('view', { style: { ...panelAppearance(theme, 'card'), flexShrink: 0 } },
     h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
       label(head.name, theme.colors.text, theme.layout.fontSize, { flexShrink: 1, minWidth: 0 }),
       h('view', { style: { flexGrow: 1 } }),
-      themedCheckbox(theme, { id: 'shell-output-' + head.id + '-enabled', checked: head.enabled,
+      themedCheckbox(theme, { id: 'shell-output-' + head.id + '-enabled', checked: head.enabled, disabled: busy,
         'aria-label': 'Enable ' + head.name, onChange: enabled => { head.enabled = enabled; repaint(); } }, 'Enabled')),
     head.enabled ? [
       h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, field(head, 'width'), label('x', theme.colors.text),
@@ -38,9 +43,7 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
           for (const name of ['width', 'height', 'refresh']) setDisplayField(inputs, head, name, mode[name]);
         }) : null),
       h('view', { style: { ...row, gap: theme.layout.windowGap, flexWrap: 'wrap' } }, label('Scale'),
-        [1, 1.5, 2].map(scale => button('shell-output-' + head.id + '-scale-' + scale * 100, scale * 100 + '%', theme,
-          () => { setDisplayField(inputs, head, 'scale', scale); repaint(); },
-          Number(inputs.get('shell-output-' + head.id + '-scale')?.value ?? head.scale) === scale)),
+        scalePresets(head),
         label('Custom'), field(head, 'scale', 62),
         button('shell-output-' + head.id + '-scale-up', '+', theme, () => {
           const value = Number(inputs.get('shell-output-' + head.id + '-scale')?.value);
@@ -55,7 +58,18 @@ export function displaysView(theme, owner, draft, inputs, repaint, apply, close,
         label('0 = auto', theme.colors.muted, theme.layout.statusFontSize)),
     ] : label('Enable this display to edit its configuration.', theme.colors.muted, theme.layout.statusFontSize,
       { minWidth: 0 }),
-    panelDetail(theme, 'card')))),
+    panelDetail(theme, 'card'))));
+  Object.assign(list.props.style, { flexGrow: 1, flexBasis: 0, height: 'auto', padding: 0 });
+  return h('view', { id: 'shell-displays', style: {
+    width: '100%', height: '100%', minHeight: 0, padding: theme.layout.contentPadding,
+    gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
+  } },
+  h('view', { style: { ...row, gap: theme.layout.controlGap, flexWrap: 'wrap' } },
+    desktopText('Connected displays', theme.colors.text, theme.layout.headingFontSize,
+      { fontWeight: 600, flexShrink: 1, minWidth: 0 }),
+    h('view', { style: { flexGrow: 1 } }), button('shell-output-apply', 'Apply', theme, apply),
+    button('shell-output-close', 'Close', theme, close)),
+  list,
   label('Keep changes within 15 seconds or they revert.', theme.colors.muted, theme.layout.statusFontSize, { minWidth: 0 }),
   profile ? label(profile.status, theme.colors.muted, theme.layout.statusFontSize, { minWidth: 0 }) : null,
   profile ? button('shell-output-forget-profile', 'Forget saved layout', theme, profile.forget) : null,

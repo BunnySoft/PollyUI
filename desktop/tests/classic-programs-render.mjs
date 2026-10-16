@@ -3,6 +3,7 @@ import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { programsPlacement, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
 import { getDesktopTheme } from './desktop/shared/ui/themes.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
+import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
 
 const check = (value, message) => { if (!value) throw new Error(message); };
 const get = id => document.getElementById(id);
@@ -115,6 +116,10 @@ export async function checkClassicPrograms(directory) {
   key('End');
   check(document.activeElement === get('shell-program-pin-app29') &&
     Number(get('shell-program-list').scrollTop) > 0, 'End scrolls to last real command');
+  check(Number(get('shell-program-list-scrollbar').getAttribute('aria-valuenow')) === Number(get('shell-program-list').scrollTop),
+    'Programs focus reveal synchronizes the overlay thumb');
+  key('Tab');
+  check(document.activeElement === get('shell-program-list-scrollbar'), 'Tab from final command reaches the enabled overlay scrollbar');
   key('Tab');
   check(document.activeElement === get('shell-program-back'), 'Tab from final command reaches the bounded header Back');
   key('Tab');
@@ -125,6 +130,8 @@ export async function checkClassicPrograms(directory) {
   check(document.activeElement === get('shell-program-categories'), 'Reverse Tab includes Categories');
   host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
   check(document.activeElement === get('shell-program-back'), 'Reverse Tab includes Back');
+  host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
+  check(document.activeElement === get('shell-program-list-scrollbar'), 'Reverse Tab includes the enabled overlay scrollbar');
   host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
   check(document.activeElement === get('shell-program-pin-app29'), 'Reverse Tab wraps inside submenu');
   key('ArrowUp'); key('Enter');
@@ -157,6 +164,28 @@ export async function checkClassicPrograms(directory) {
   check(Number(list.scrollTop) === verticalScrollMetrics(list).maximum, 'Actual wheel reaches Programs end');
   host.scroll(...point(list), -10000); settle();
   check(Number(list.scrollTop) === 0, 'Reverse wheel clamps to beginning');
+  const track = get('shell-program-list-scrollbar'), thumb = get('shell-program-list-scroll-thumb');
+  check(track.tabIndex === 0 && Number(track.getAttribute('aria-valuenow')) === 0,
+    'Programs overflow exposes the same themed scrollbar after wheel');
+  track.focus(); key('End');
+  check(Number(list.scrollTop) === verticalScrollMetrics(list).maximum, 'Scrollbar End reaches the actual Programs limit');
+  key('Home');
+  const trackBox = box(track);
+  host.mouse('mousedown', trackBox[0] + trackBox[2] / 2, trackBox[1] + trackBox[3] * 0.75);
+  host.mouse('mouseup', trackBox[0] + trackBox[2] / 2, trackBox[1] + trackBox[3] * 0.75); settle();
+  check(Number(list.scrollTop) > 0, 'Actual themed track page press scrolls the existing list');
+  key('Home');
+  host.mouse('mousemove', ...point(thumb)); host.mouse('mousedown', ...point(thumb)); settle();
+  const dragPoint = point(thumb), beforeDrag = Number(list.scrollTop);
+  theme = { ...theme, colors: { ...theme.colors, muted: '#605040' } }; mount();
+  check(get('shell-program-list-scrollbar') === track && get('shell-program-list-scroll-thumb') === thumb,
+    'Programs retheme retains the original track/thumb DOM');
+  host.mouse('mousemove', dragPoint[0], dragPoint[1] + 36);
+  host.mouse('mouseup', dragPoint[0], dragPoint[1] + 36); settle();
+  check(Number(list.scrollTop) > beforeDrag && Number(track.getAttribute('aria-valuenow')) === Number(list.scrollTop),
+    'Retained actual thumb drag updates the same Programs scroll value');
+  host.scroll(...point(list), -10000); settle();
+  get('shell-program-back').focus(); key('Home');
   save('open');
   const held = get('shell-program-app0');
   host.mouse('contextmenu', ...point(held), { button: 2 }); settle();
@@ -240,8 +269,44 @@ export async function checkClassicPrograms(directory) {
     document.activeElement === get('shell-program-back'), 'Live empty registry clamps old scroll and recovers keyboard focus');
   key('Home'); key('End'); key('Escape'); await wait(); settle();
   check(!open, 'Empty submenu keyboard closes safely');
+  const group = { id: 'group-fixture', appId: 'fixture', title: 'Real fixture windows', grouped: true, count: 20,
+    windows: Array.from({ length: 20 }, (_, index) => ({ id: index + 1, title: 'Window ' + (index + 1) })) };
+  const groupState = { slots: [], action() {}, close() {} };
+  let groupTheme = getDesktopTheme('modern');
+  render(h('view', { id: 'group-scroll-stage', style: { width: 380, height: 180 } }), document.body);
+  const groupContainer = get('group-scroll-stage');
+  const groupScene = () => render(windowGroupMenu(groupTheme, group, groupState), groupContainer);
+  groupScene(); await wait(); settle();
+  const groupList = get('shell-group-list'), groupTrack = get('shell-group-list-scrollbar'),
+    groupThumb = get('shell-group-list-scroll-thumb');
+  const lastGroup = get('shell-group-close-20');
+  lastGroup.focus(); await wait(); settle();
+  check(Number(groupList.scrollTop) > 0 &&
+    Number(groupTrack.getAttribute('aria-valuenow')) === Number(groupList.scrollTop),
+    'Window-group focused final command synchronizes its shared themed scrollbar');
+  host.scroll(...point(groupList), -100000); settle();
+  groupScene(); await wait(); settle();
+  check(Number(groupList.scrollTop) === 0, 'Window-group repaint does not undo manual wheel scrolling');
+  groupTrack.focus(); key('End');
+  check(Number(groupList.scrollTop) === verticalScrollMetrics(groupList).maximum,
+    'Window-group scrollbar reaches the true existing window-row limit');
+  key('Home');
+  const groupPoint = point(groupThumb);
+  host.mouse('mousedown', ...groupPoint); settle();
+  groupTheme = { ...groupTheme, colors: { ...groupTheme.colors, muted: '#605040' } };
+  groupScene(); await wait(); settle();
+  check(get('shell-group-list-scrollbar') === groupTrack && get('shell-group-list-scroll-thumb') === groupThumb,
+    'Window-group retheme retains its track/thumb while held');
+  host.mouse('mousemove', groupPoint[0], groupPoint[1] + 28); settle();
+  check(Number(groupList.scrollTop) > 0, 'Window-group themed thumb drag uses the shared controller');
+  // Remove the actual menu vnode so its leave hook releases the in-progress capture.
+  render(null, groupContainer); await wait(); settle();
+  const removedScroll = Number(groupList.scrollTop);
+  host.mouse('mousemove', groupPoint[0], groupPoint[1] + 60);
+  host.mouse('mouseup', groupPoint[0], groupPoint[1] + 60); settle();
+  check(Number(groupList.scrollTop) === removedScroll, 'Removed window-group overlay cannot continue a captured drag');
   console.log('CLASSIC_PROGRAMS ' + JSON.stringify({ geometries, launched, pinned, revision, refreshes, closes, logouts }));
-  console.log('PASS: actual Classic Programs bounded pointer/keyboard, metadata categories/back/header Tab, scroll, disabled/empty/stale registry, retained state and real shortcut callbacks');
+  console.log('PASS: actual Classic Programs/window-group themed scrollbar wheel, focus, page, retained drag/retime and leave; original bounded category and stale-command behavior');
 }
 
 export async function checkNativeClassicPrograms() {
