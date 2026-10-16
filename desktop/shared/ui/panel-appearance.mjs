@@ -12,9 +12,11 @@ export function panelAppearance(theme, variant = 'card') {
   const classic = surfaceStyle(theme) === 'classic', layout = theme.layout;
   return { position: 'relative',
     backgroundColor: variant === 'dialog' || classic && variant === 'card' ? theme.colors.body : theme.colors.surface,
-    borderColor: theme.colors.border, borderWidth: layout.borderWidth,
+    borderColor: theme.colors.border, borderWidth: classic ? 0 : layout.borderWidth,
     borderRadius: variant === 'dialog' ? theme.window.radius : theme.button.radius,
-    padding: variant === 'inset' ? 0 : variant === 'menu' ? layout.compactPadding : layout.contentPadding,
+    // Classic bevel owns the outside edge; retain the generic border's content inset.
+    padding: (variant === 'inset' ? 0 : variant === 'menu' ? layout.compactPadding : layout.contentPadding) +
+      (classic ? layout.borderWidth : 0),
     gap: variant === 'inset' ? 0 : variant === 'menu' ? layout.controlGap : layout.contentGap };
 }
 

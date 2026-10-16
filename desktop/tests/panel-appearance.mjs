@@ -12,12 +12,14 @@ test('panel variants derive shape, spacing and surfaces from all six immutable t
     for (const variant of ['card', 'dialog', 'menu', 'inset']) {
       const style = panelAppearance(theme, variant);
       assert.equal(style.borderRadius, variant === 'dialog' ? theme.window.radius : theme.button.radius);
-      assert.equal(style.borderWidth, theme.layout.borderWidth);
+      const classic = theme.button.surfaceStyle === 'classic';
+      assert.equal(style.borderWidth, classic ? 0 : theme.layout.borderWidth);
       assert.equal(style.borderColor, theme.colors.border);
       assert.equal(style.backgroundColor, variant === 'dialog' ||
         theme.button.surfaceStyle === 'classic' && variant === 'card' ? theme.colors.body : theme.colors.surface);
-      assert.equal(style.padding, variant === 'inset' ? 0 :
-        variant === 'menu' ? theme.layout.compactPadding : theme.layout.contentPadding);
+      const padding = variant === 'inset' ? 0 :
+        variant === 'menu' ? theme.layout.compactPadding : theme.layout.contentPadding;
+      assert.equal(style.padding + style.borderWidth, padding + theme.layout.borderWidth);
       assert.equal(style.gap, variant === 'inset' ? 0 :
         variant === 'menu' ? theme.layout.controlGap : theme.layout.contentGap);
       assert.deepEqual(panelAppearance({ ...theme, id: 'custom' }, variant), style, 'no preset-ID dispatch');
@@ -44,6 +46,10 @@ test('custom theme tokens stay authoritative; neutral and invalid variants rejec
   assert.equal(panelAppearance(custom, 'menu').padding, 7);
   assert.equal(panelAppearance(custom, 'menu').gap, 5);
   assert.equal(panelAppearance(custom).borderWidth, 2);
+  const classic = { ...custom, button: { ...custom.button, surfaceStyle: 'classic' } };
+  assert.equal(panelAppearance(classic).borderWidth, 0);
+  assert.equal(panelAppearance(classic).padding, 21);
+  assert.equal(panelAppearance(classic, 'inset').padding, 2);
   for (const helper of [panelAppearance, panelDetail]) {
     assert.throws(() => helper(null), /neutral consumers/);
     assert.throws(() => helper(theme, 'button'), /Unknown panel variant/);
