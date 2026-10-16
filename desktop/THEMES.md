@@ -196,7 +196,7 @@ scaling. This verifies the existing theme contract, not build-tagged Windows
 11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
-Private appearance protocol v5 uses geometry-only numeric schema 5 and separates
+Private appearance protocol v6 uses bounded numeric geometry schema 6 and separates
 the publisher and renderer roles. Previous private Shell/WM/decorator combinations
 are explicitly rejected; public JSON schema 1 and the read-only application
 theme subscription remain unchanged. This paired
@@ -669,10 +669,11 @@ credential controls preserves their values, selection and focus. Theme data does
 not include application or credential content.
 
 The standalone appearance preview is still a simulated sample. Its samples use
-the same data but do not certify every compositor effect. `window.shadow` and
-`unifiedToolbar` retain their preview meaning; real client clipping, compositor
-shadows/blur and arbitrary font-file loading are not added by this theme
-system. Captions reuse the GUI text backend; on Linux, the existing ICU
+the same data but do not certify every compositor effect. `unifiedToolbar`
+retains its preview meaning. Existing radius/shadow values affect native windows
+only through the explicit native-effects opt-in described below; this does not
+add backdrop blur, default-app material adoption or arbitrary font-file loading.
+Captions reuse the GUI text backend; on Linux, the existing ICU
 boundaries now keep the 512-codepoint cap and measured ellipsis on complete
 graphemes. Other platforms retain the SDK's existing code-point fallback.
 Font equivalence and full platform/state qualification remain incomplete.
@@ -729,7 +730,7 @@ and limits are desktop policy, not built into the decoder.
 ## Native and application boundary
 
 Private `desktop.configureAppearance(theme, layout)` uses appearance protocol
-v5 with geometry-only numeric schema 5. Prepare validates the bounded
+v6 with bounded numeric geometry schema 6. Prepare validates the bounded
 JS-compiled layout and an immutable descriptor; commit publishes the snapshot.
 The existing GUI renders complete four-strip pixel responses, not C theme
 commands. Each window owns current and pending snapshots so a delayed
@@ -746,28 +747,74 @@ registry. Runtime theme IDs and visual values do not require recompilation.
 Old private versions are explicitly rejected; the public application theme
 subscription and JSON schema remain unchanged.
 
-### Native rounded-window checkpoint
+### Opt-in native window effects
 
-The in-progress native-effects batch adds explicit
-`window.nativeEffects: "rounded"` over the existing radius. Missing or `"none"`
-preserves the previous native path; preview shadow values do not silently
-enable native effects. This checkpoint is not the completed external-shadow or
-regional-backdrop implementation.
+`window.nativeEffects` accepts `"none"`, `"rounded"` or `"rounded-shadow"`.
+Missing or `"none"` preserves the previous native path; existing preview
+radius/shadow values do not silently enable effects. `"rounded"` applies the
+existing `window.radius`; `"rounded-shadow"` also uses `window.shadow` as the
+blur-size input, with Gaussian sigma `ceil(shadow / 2)`. A zero shadow size
+disables the shadow without disabling rounded clipping. No builtin preset
+automatically opts in.
+
+Optional `nativeShadowColor` is an RGB color (default black);
+`nativeShadowOpacity` and `nativeShadowInactiveOpacity` are integer percentages
+0-100 (defaults 24/12). Integer `nativeShadowX` and `nativeShadowY` are logical
+offsets -64..64; defaults are 0 and `round(shadow / 4)`. These are JS-owned
+style choices compiled into validated numbers, not a native preset registry.
+For example, an override may explicitly select:
+
+```json
+{
+  "window": {
+    "nativeEffects": "rounded-shadow",
+    "radius": 8,
+    "shadow": 20,
+    "nativeShadowColor": "#000000",
+    "nativeShadowOpacity": 24,
+    "nativeShadowInactiveOpacity": 12
+  }
+}
+```
 
 The compositor groups the real client and frame descendants into a bounded
 offscreen target, then applies one antialiased coverage to that group. Popups
-remain separate, and hit testing retains the existing rectangular contract.
-A pinned wlroots scene-effects patch supplies the generic composition mechanism;
-the WM still does not interpret preset names, colors or theme JSON. Runtime
-library identity, headers, linked ABI and the packaged patch hash must match.
-Stock SDKs are explicitly rejected rather than producing a square fallback.
+remain separate. Opt-in GUI caption strips do not premask their outer corners:
+the compositor owns that coverage once, including a square maximized frame.
+Maximized/fullscreen, explicit client-side-decorated and frameless windows
+do not acquire floating-window effects. Hit testing retains the existing
+rectangular contract, including visually clipped corners.
 
-The first checkpoint has actual Pixman output evidence for overlap, alpha,
-source cropping, buffer/output rotation, fractional scale, cache reuse and
-aggregate budget refusal. GLES code is compiled but not runtime-qualified in
-the current environment, which has no usable DRM device. External shadow,
-real-GUI outer-corner ownership and final SDK/build-entry checks are still
-being completed; no physical-GPU or full-theme pixel qualification is implied.
+The external shadow is a non-input, non-opaque sibling scene node. It computes
+an analytic Gaussian-outline falloff, clips out the original window interior
+and uses premultiplied color once. It does not sample application backgrounds,
+expand the four-strip payload, or intercept input outside the original window.
+This is neither exact Windows/macOS shadow reproduction nor live backdrop blur.
+
+A pinned wlroots scene-effects patch supplies the generic composition mechanism;
+the WM still does not interpret preset names or theme JSON. Each target is
+bounded to 32768 pixels per axis and 16 megapixels; backing plus coverage
+workspace shares a 128MiB scene-wide budget. Cache keys include output, scale and
+physical pixel phase. Damage and visibility drive invalidation and sampling:
+there is no periodic idle rendering loop. Budget/allocation failures explicitly
+fail composition rather than producing an unreported square or missing shadow.
+
+Runtime library identity, headers, effects ABI 2, distinct SONAME and the packaged
+patch hash must match.
+Stock SDKs are explicitly rejected rather than producing a square fallback.
+Current desktop builds use the paired Debian SDK; historical Alpine build and
+packaging entry points explicitly remain unsupported until that pairing is
+ported. Public theme JSON stays version 1; old private WM/Shell/decorator
+combinations fail rather than silently negotiating down.
+
+Actual Pixman output checks cover overlapping real subsurfaces, alpha, source
+crop, buffer/output rotation, fractional scale, phase-changing moves,
+occlusion/reveal, cache reuse, budget refusal, locking and external shadow
+lifecycle. Actual GUI strip pixels verify one outer-corner coverage rather than
+its square. Software llvmpipe checks exercise the pinned GLSL primitives at
+2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
+The complete WM GLES path remains unqualified without a usable DRM device.
+Regional backdrop sampling remains separate work.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the

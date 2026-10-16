@@ -522,7 +522,13 @@ Full plan and seam-by-seam details: **[docs/PORTING.md](./docs/PORTING.md)**.
 The Linux path uses SDL3, Skia Ganesh GLES or CPU drawing, and Fontconfig/FreeType system fonts.
 For the current Debian desktop/runtime build and qualification scope, see the
 [Debian guide](./desktop/release/debian/README.md). The Alpine instructions below
-remain available for the preserved first-stage path.
+describe the preserved first-stage path, not a supported build of the current
+native-effects compositor. Current PollyWM requires its paired, patched wlroots
+SDK; stock Alpine wlroots headers/libraries cannot satisfy that ABI. The
+historical Alpine container/runtime/packaging entry points fail explicitly until
+the same dependency pairing is ported and qualified there. Use the Debian SDK
+for current desktop work; the historical commands below are not current
+native-effects acceptance instructions.
 The native source recipe pins Skia to
 `08a5439a6be726021c1c1905d23ce298a3edc5e4`, matching m124, and uses Clang 18
 (newer Clang removed intrinsics used by this Skia revision). GN, the compiler,
@@ -604,8 +610,11 @@ the Release Skia dependency. It is not a sanitizer build of Skia itself.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` defines Windows native, macOS CPU-raster, and Alpine
-runtime/compositor jobs for pushes and pull requests. Actions are pinned by
+`.github/workflows/ci.yml` defines Windows native, macOS CPU-raster, and historical
+Alpine runtime/compositor jobs for pushes and pull requests. Those Alpine jobs
+are not qualification of the new paired native-effects SDK; their migration
+remains separate, and a stock dependency must fail rather than silently bypass
+the ABI checks. Actions are pinned by
 commit, repository permissions are read-only, and checkout credentials are not
 persisted. The Alpine image caches the native Skia build; runtime sources are
 compiled separately in ordinary and ASan/UBSan builds.
@@ -1241,9 +1250,9 @@ colors, and edge/corner resizing. Fullscreen hides decorations; maximized
 content respects both panel reservations and frame extents.
 
 The trusted Shell supplies validated theme JSON and a JS-compiled layout to
-private `desktop.configureAppearance(theme, layout)`. Appearance protocol v5
+private `desktop.configureAppearance(theme, layout)`. Appearance protocol v6
 separates that publisher from a WM-supervised, windowless `pollyui --decorator`
-renderer, using geometry-only numeric schema 5 and immutable descriptors.
+renderer, using bounded numeric geometry schema 6 and immutable descriptors.
 The existing GUI renders four detached Canvas2D strips; PollyWM validates and
 atomically composes them with matching geometry, scale and state. Shell exit
 does not stop the renderer unless the explicit session-exit policy also stops
@@ -1257,11 +1266,14 @@ There is no C theme painter or preset registry. Regenerate geometry bounds and
 test-only fixtures with `node desktop/tools/generate-decoration-themes.mjs`;
 `--check` verifies those files. Caption fonts and shaping use the existing GUI
 text backend, not a separate WM Fontconfig/FreeType cache. PollyWM still does
-not embed SDL, Skia, QuickJS or Yoga. The current native-effects checkpoint adds
-explicit opt-in grouped antialiased window clipping through the paired wlroots
-scene patch; old theme files do not implicitly enable it. External frame shadows
-and final effect integration are still being completed. Background blur and
-polished animations remain separate appearance work.
+not embed SDL, Skia, QuickJS or Yoga. Explicit `window.nativeEffects` selects
+grouped antialiased window clipping, optionally with an external non-input
+shadow, through the paired wlroots scene patch and effects ABI 2. Old theme
+files do not implicitly enable either effect, and input regions remain
+rectangular. The native effects have real Pixman output evidence; software GLSL
+primitive checks do not qualify the full WM GLES path or physical hardware.
+See [native effect options and limits](desktop/THEMES.md#opt-in-native-window-effects).
+Background blur and polished animations remain separate appearance work.
 
 ### Window switcher and shortcut settings
 

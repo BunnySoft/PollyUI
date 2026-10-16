@@ -1063,16 +1063,16 @@
       "label": "E22.23 Win11 内容圆角阴影",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "登记真实Win11整窗内容圆角裁剪、外阴影和输入边界差异：当前仅标题顶角、内容仍矩形且非真实系统阴影。若实施，复用E13原生clip/shadow机制项目，不在themeJS伪造透明遮角或复制另一渲染器；视觉变化须验证内容/命中一致。",
+      "scope": "登记真实Win11整窗内容圆角裁剪、外阴影和输入边界差异；复用E13共享原生clip/shadow机制，不在themeJS伪造透明遮角或复制另一渲染器。共享能力交付与Win11实际样式启用/原图资格分开，视觉变化须验证内容和命中合同。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "in_progress",
       "requires": [],
-      "evidence": "alignment-reference.json/THEMES.md/desktop README均明确full-window corner clipping和shadow未实现；theme preview的shadow字段不等于compositor效果。实现项目为e13-m17-5，本项只跟踪Win11差异验收，非重复工程授权。"
+      "evidence": "此前只有标题顶角，preview shadow不是原生能力。2026-10-16 共享E13已合6b9f0e9/4603005/1f670dd（源0393719/b531ff6/62a9545）：显式window.nativeEffects=rounded或rounded-shadow，真实client+frame/subsurface先离屏复合再一次AAcoverage，GUI opt-in标题不重复预裁外角；默认missing/none不变，max/full/CSD不启用，输入保矩形。外shadow为非input/非opaque兄弟节点，JS决定RGB/百分比alpha/sigma/offset，C只generic数值合成、不读themeJSON。固定wlroots0.19.3-polly-effects2/ABI2/patch9395ed69及private6/schema6成套严格校验，旧库/旧wire明确拒绝。父实际Pixmanchecker/重叠alpha/crop/buffer与outputrotation/四scale、phase move/occlusion-reveal/cache/budget、真实GUI topcorner单coverage54/60/max方角0/defaultnone bytes保持、生产v6daemon无Shell冷启动/正常退出恢复及Node38/144通过。软件llvmpipe真实GLSL 2048/4096/8192原语像素通过，但不是完整WM GLES/DRM/硬件资格。能力不自动改变Modern默认主题，也不声称Win11原图阴影/圆角像素一致；默认样式采用、原图/物理设备/输入形状资格仍待完成，本项保持partial，不重复另起Win11原生writer。"
     },
     {
       "id": "win11-backdrop-material",
@@ -4606,7 +4606,7 @@
       ],
       "status": "in_progress",
       "requires": [],
-      "evidence": "2026-10-16 09:44 在共通主题修复895ff98冻结后进入下一批，唯一native owner负责共享整窗圆角裁剪和外阴影，随后才接区域背景采样/模糊；Windows/Mac主题不分别改共享合成层。已核真实stock wlroots0.19.3源：scene TREE展平为逐leaf render且先算opaque occlusion，只有矩形clip/opacity，单leaf AA会在重叠subsurface边缘重复混合。09:49协调者据此批准固定0.19.3局部generic effect-tree补丁：compositor-owned有界分组离屏后只施加一次AA coverage，扩existingPixman/GLES2，保持原scene/outputcommit/damage/lock，不更换合成库或重写WM输出；二值阶梯硬裁不采用。SDK/release严格applier/base+patchhash、compile/link/runtime ABI标识和旧库错配拒绝须成套，禁止暗改共享SDK/系统库；四strip合法原子帧不因外效果放松，不把preview字段假报交付。当前已进入源码实现，第一rounded+cache/ABI/真nativepixel checkpoint后才接shadow；预算、子surface/alpha/变换/scale、occlusion/directscanout/damage/idle、max/fullscreen及输入/锁屏权限必须验证，不能背景角盖图、JS截图或wholewindow透明绘图窗。本状态不声明任何新原生效果已完成。"
+      "evidence": "2026-10-16 895ff98共通主题冻结后，唯一native owner完成整窗圆角及外阴影基础，已合6b9f0e9/4603005/1f670dd（源0393719/b531ff6/62a9545）。固定wlroots0.19.3 generic effect-tree补丁在原scene/outputcommit/damage/lock内先复合client+四frame+subsurface，再一次AAcoverage；不采用逐leaf重复AA/阶梯硬裁/背景角盖图/JS采样或隐藏绘图窗。显式nativeEffects none/rounded/rounded-shadow，旧theme缺省不变，max/full/CSD/frameless保持；外shadow非input/非opaque兄弟、analytic Gaussian-outline且剔除内部，RGB/alpha/sigma/offset由JS生成受界数值，四strip权限/FD预算不放松。scene128MiB计cache+workspace、target32768axis/16Mp，phase/scale/output缓存、damage/map/destroy失效与锁屏遮挡保守；超预算/分配失败明确fail而非square fallback。SDK/release同applier/base+patch9395ed69、独有SONAME effects2/header/link/runtime ABI2/actualembeddedhash严格配套，canonical JSON消CRLF假错，旧库/旧wire拒绝；private6/schema6，publicJSON1保持。现Debian配套源码和自有prefix真实编译，未构建新SDK发行镜像/ISO；Alpine历史入口明确early unsupported等待同套移植。父frozen snapshot实际Pixman8scale/outputtransform/alpha/overlap/crop、phase move41/43/occlusion/reveal/cache/budget、真实Wayland client/subsurface/input/lifecycle、真实GUI标题单coverage partial54/60与max方角0/旧none bytes、privatepair/oldserver/lock和actual生产v6daemon coldmissing/normal均通过；Node38与combined144通过。llvmpipe23bit真实GLSL原语2048/4096/8192通过，但完整WM GLES/DRM/物理GPU仍无设备资格；62显式precision声明仅澄清原本已highp分支，不伪称已复现数值bug。圆角/外阴影共通能力完成，区域backdrop采样/模糊、动画、形状输入和逐主题默认采用仍后续独立工作，因此E13.1保留partial。"
     },
     {
       "id": "e14",
@@ -5581,6 +5581,7 @@
     "- 扩展检查保留两个精确基线红项：module-boundaries的旧configureAppearance(theme)静态regex，与Files专用fake DOM缺querySelector；均在未改基线上复现，未为新功能隐去或修改生产guard。定点相关测试通过不表示所有历史suite全绿。",
     "- 2026-10-16 推送进展：79b88ed及此前23个本地提交已正常推送并核远端一致，之后桌面标签b7f2916也已审查、定点实测并正常推送。前条源分支仍未推送仅属原记录时间；最新ISO依然b7e7a700，没有把新源码提交冒称新媒体。当前继续SDK选择控件、Classic所有程序、独立窗饰服务与最小MT02壁纸派生客户端材质；MT03跨应用采样、完整品牌/字体/OS像素与外部硬件资格不因此标绿。",
     "- 2026-10-16 本批具体交付已闭合：桌面标签、Classic flat All Programs、SDK六选择控件及两项真实review修复、可选壁纸派生opaque client材质、无Shell独立窗饰及干净退出/安装闭环。前四项已推至7bf4538；窗饰核心d669ec9/收尾83eda5f与本条状态一并正常推送。长期E22仍按局部证据partial，物理GPU/Mac、字体/品牌资源、完整OS像素及MT03不冒称完成；未更新ISO、VHDX或VERSION。",
-    "- 2026-10-16 08:34 共通先行批已闭合：单一公共owner合7169e5a/4281df3/31044cd，统一按钮物理状态与激活、所有现选输入消费者完整appearance和真实选区文字；不相交caption876d126统一六主题字素截断/显式合法系统字体，默认原图保持。然后唯一Windowsowner合9c83846修Luna焦点完整四边，直接复用公共Canvas/owner/FR不另造实现。父最终Node140/140、Win原生像素/消费者及nativeResize/GC、Linux真实ICU/bidi/彩色emoji选区和caption通过；静态边界精确区分已移除native.setAppearance与合法input.setAppearance，未放松旧C painter/协议拒绝。用户不可用时协调者按快速收口决定新原生合成效果留下一批，未声称用户点选，圆角/阴影/跨Appblur和OS参考/业务缺口仍保留；本批不重打ISO。"
+    "- 2026-10-16 08:34 共通先行批已闭合：单一公共owner合7169e5a/4281df3/31044cd，统一按钮物理状态与激活、所有现选输入消费者完整appearance和真实选区文字；不相交caption876d126统一六主题字素截断/显式合法系统字体，默认原图保持。然后唯一Windowsowner合9c83846修Luna焦点完整四边，直接复用公共Canvas/owner/FR不另造实现。父最终Node140/140、Win原生像素/消费者及nativeResize/GC、Linux真实ICU/bidi/彩色emoji选区和caption通过；静态边界精确区分已移除native.setAppearance与合法input.setAppearance，未放松旧C painter/协议拒绝。用户不可用时协调者按快速收口决定新原生合成效果留下一批，未声称用户点选，圆角/阴影/跨Appblur和OS参考/业务缺口仍保留；本批不重打ISO。",
+    "- 2026-10-16 09:44 后续共享原生批已完成圆角/外阴影基础：先真实源码判定stock scene API不足，再批准单一固定wlroots补丁，唯一native owner实现分组AA、非input阴影及SDK/release严格配套；合6b9f0e9/4603005/1f670dd，E13及E22.23保留后续效果/样式资格而非全关。旧theme默认none，显式nativeEffects启用；private6/schema6和effects ABI2需同套重建，旧stockSDK明确拒绝，Alpine现入口明确未支持。父精确最终库/补丁哈希与真实生产windowlessdecorator coldmissing/normal收尾通过，代码不再有活动writer；只资格Pixman原生及软件GLSL原语，不冒完整WM GLES/DRM或物理GPU。未更新ISO/VHDX/VERSION，区域背景模糊仍独立待做。"
   ]
 }
