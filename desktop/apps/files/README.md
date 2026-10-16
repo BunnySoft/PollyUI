@@ -83,6 +83,27 @@ List gestures are also retired on UI-generation changes and window close.
 This adds no file operations, multi-selection, rubber-band selection or outgoing
 drag/drop.
 
+Files dialog, context-menu and breadcrumb surfaces share the passive
+`desktop/shared/ui/panel-appearance.mjs` policy. Shape, spacing, border and
+body/surface colors come from the current theme, not preset IDs. Classic uses
+the existing bevel alone at the outside edge while preserving the border's
+content inset; inline rename remains an unframed, non-modal row edit.
+Bounded modal/menu content uses the existing scroll handler. Retheming does
+not replace input roots or change confirmation generations, permissions or
+filesystem operations.
+Read-only modal source/target paths expose their unchanged full text in bounded
+horizontal viewports. Wheel and focused Left/Right/Home/End scroll those details,
+with a theme focus border, rather than adding spaces or claiming every renderer
+automatically wraps a long path token.
+
+The ordinary parent-owned `desktop/client/file-dialog.mjs` chooser uses this
+dialog surface only with `optInTheme: true`, through its existing subscription.
+Without opt-in it retains its explicit neutral palette, radius 6, padding 14,
+gap 10 and 800-by-640 maximum panel, with no decoration layer or subscription.
+Opt-in path/error details use the same existing horizontal scroll primitive;
+ordinary message words still wrap, while an unbroken token remains fully reachable.
+This is application-panel consistency, not original-OS screenshot matching.
+
 Rows show name, type, file size and a local-calendar modification date. Properties
 retains the full name/path, exact timestamp, permission mode, UID/GID, link target
 and actual effective-UID read/write accessibility. Long row labels are clipped,

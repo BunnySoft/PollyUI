@@ -2,6 +2,7 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
 import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
 import { shortcutText } from './desktop/shared/shortcuts.mjs';
@@ -14,8 +15,8 @@ export function shortcutsView(theme, bindings, recording, record, disable, reset
     h('view', { style: { flexGrow: 1 } }), button('shell-shortcuts-close', 'Close', theme, close)),
   button('shell-shortcuts-reset', 'Reset defaults', theme, reset),
   h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: 8 }, onWheel: scrollDesktop },
-    bindings.map(binding => h('view', { style: { padding: 14, gap: 8, flexShrink: 0,
-      borderWidth: 1, borderRadius: 8, borderColor: theme.colors.border, backgroundColor: theme.colors.surface } },
+    bindings.map(binding => h('view', { style: { ...panelAppearance(theme), flexShrink: 0, minWidth: 0 } },
+    panelDetail(theme),
     desktopText(binding.label, theme.colors.text, 14, { fontWeight: 600 }),
     h('view', { style: { ...row, gap: 8, flexWrap: 'wrap' } },
       h('view', { style: { flexGrow: 1, flexBasis: 0, overflow: 'hidden', color: theme.colors.text, fontSize: theme.layout.mutedFontSize } },

@@ -10,6 +10,8 @@ const { filesView } = await import('../ui/view.mjs');
 const { createFilesApp } = await import('../app.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
 const { visibleEntries } = await import('../ui/format.mjs');
+const { DESKTOP_THEMES } = await import('./desktop/shared/ui/themes.mjs');
+const { panelAppearance } = await import('./desktop/shared/ui/panel-appearance.mjs');
 // Source-only layout tests inject font metrics; native fixtures measure actual shaped text.
 globalThis.measureText = value => String(value).length * 7;
 
@@ -154,7 +156,9 @@ test('Cut survives navigation; Paste reviews exact source/destination, cancels w
   controller.beginPaste();
   const stale = controller.getState().generation;
   const nodes = flatten(filesView(controller.getState(), controller));
-  assert.match(nodes.find(node => node.props.id === 'files-operation-source').children[0].props.nodeValue, /literal/);
+  const source = nodes.find(node => node.props.id === 'files-operation-source');
+  assert.equal(flatten(source).filter(node => node.type === '#text').map(node => node.props.nodeValue).join(''),
+    '/fixture/literal %u; 中文.txt');
   controller.cancel(); assert.equal(operations.some(item => item[0] === 'move'), false);
   controller.beginPaste(); controller.editName('moved %u.txt');
   assert.equal(await controller.confirm(stale), false);
@@ -345,6 +349,31 @@ test('native Files viewport uses supported flex dimensions so rows do not expand
   assert.ok(nodes.every(node => !Object.hasOwn(node.props?.style ?? {}, 'flex')));
   const footer = nodes.find(node => node.props?.id === 'files-status');
   assert.equal(footer.props.style.flexShrink, 0);
+});
+test('Files reuses shared theme surfaces for every modal kind, context and breadcrumbs; inline rename stays unframed', async () => {
+  for (const theme of DESKTOP_THEMES) {
+    const { controller } = fixture(); await controller.start();
+    const tree = () => flatten(filesView(controller.getState(), controller, { theme }));
+    const find = id => tree().find(node => node.props?.id === id);
+    const appearance = (node, variant) => {
+      for (const [key, value] of Object.entries(panelAppearance(theme, variant)))
+        if (key !== 'position' && key !== 'gap') assert.equal(node.props.style[key], value, theme.id + ':' + variant + ':' + key);
+      assert.equal(node.children.some(child => child.props?.className === 'theme-bevel'),
+        theme.button.surfaceStyle === 'classic');
+    };
+    appearance(find('files-breadcrumbs'), 'inset');
+    controller.beginCreate(); appearance(find('files-confirmation'), 'dialog'); controller.cancel();
+    const chosen = select(controller, '/fixture/literal %u; 中文.txt');
+    controller.showContext(chosen.path, chosen.identity, 20, 20);
+    appearance(find('files-context'), 'menu'); controller.cancel();
+    controller.showOpenWith(); appearance(find('files-confirmation'), 'dialog'); controller.cancel();
+    controller.cut(); controller.beginPaste(); appearance(find('files-confirmation'), 'dialog'); controller.cancel();
+    controller.beginRename();
+    const inline = find('files-confirmation');
+    assert.equal(inline.props['aria-modal'], 'false');
+    assert.equal(inline.props.style.position, undefined);
+    assert.equal(inline.children.some(child => child.props?.className === 'theme-bevel'), false);
+  }
 });
 test('column sorting and folder-local filtering preserve exact identities and retire old row/context callbacks', async () => {
   const { controller, operations } = fixture(); await controller.start();

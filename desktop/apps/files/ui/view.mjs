@@ -5,6 +5,7 @@ import { desktopCommand, desktopIcon, desktopText, horizontal, scrollDesktop } f
 import { parentPath } from './desktop/apps/files/logic/model.mjs';
 import { formatSize, formatModified, fileType, visibleEntries } from './desktop/apps/files/ui/format.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 function inInput(node) {
   for (let current = node; current; current = current.parentNode)
@@ -23,6 +24,25 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
   const label = (id, text, key = 'text', extra = {}) => h('view', { id, style: {
     color: color(key), fontFamily: 'sans-serif', fontSize: 14, flexShrink: 0, ...extra,
   } }, text);
+  function pathLabel(id, text, key = 'muted', size = 13) {
+    const sync = node => {
+      if (node.__panelText !== text) { node.scrollLeft = 0; node.__panelText = text; }
+    };
+    return h('view', {
+      id, role: 'region', 'aria-label': 'Full path; Left/Right or Home/End to scroll', tabIndex: 0,
+      style: { flexDirection: 'row', width: '100%', minWidth: 0, flexShrink: 0, overflow: 'scroll',
+        borderWidth: theme.layout.borderWidth, borderColor: 'transparent', borderRadius: theme.button.radius },
+      focusStyle: { borderColor: color('focus') },
+      onMount: sync, onUpdate: sync,
+      onWheel: event => { scrollDesktop(event, true); event.stopPropagation(); },
+      onKeydown: event => {
+        const delta = { ArrowLeft: -40, ArrowRight: 40, Home: -Infinity, End: Infinity }[event.key];
+        if (delta === undefined) return;
+        scrollDesktop({ currentTarget: event.currentTarget, deltaX: delta, preventDefault: () => event.preventDefault() }, true);
+        event.stopPropagation();
+      },
+    }, label(null, text, key, { fontSize: size, minWidth: Math.ceil(measureText(text, size)) }));
+  }
   const command = (id, text, action, enabled = true, icon = '', style = {}, selected = false) =>
     desktopCommand(id, text, theme, guarded(action), { enabled, icon, style, selected, quiet: true });
   function input(id, value, placeholder, onInput, style = {}) {
@@ -55,11 +75,11 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     ? input('files-address', state.address, 'Absolute folder path',
       value => controller.editAddress(value, generation), { flexGrow: 1, flexBasis: 0, minWidth: 0 })
     : h('view', { id: 'files-breadcrumbs', role: 'navigation', 'aria-label': 'Folder path',
-      style: { ...horizontal, height: 36, flexGrow: 1, flexBasis: 0, minWidth: 80, gap: 2,
-        overflow: 'scroll', backgroundColor: color('surface'), borderRadius: 6, borderWidth: 1, borderColor: color('border') },
+      style: { ...panelAppearance(theme, 'inset'), ...horizontal, height: 36, flexGrow: 1, flexBasis: 0, minWidth: 80, gap: 2,
+        overflow: 'scroll' },
       onWheel: event => scrollDesktop(event, true),
       onDblclick: guarded(() => controller.editAddress(null, generation)),
-    }, crumbs.map((crumb, index) => command('files-crumb-' + index, crumb.name,
+    }, panelDetail(theme, 'inset'), crumbs.map((crumb, index) => command('files-crumb-' + index, crumb.name,
       () => controller.navigate(crumb.path), !modal, '', { paddingLeft: 8, paddingRight: 8, height: 32 },
       crumb.path === state.path)));
   const filter = input('files-filter', state.filter, 'Filter this folder',
@@ -240,26 +260,36 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     dialog = h('view', { id: 'files-confirmation', role: 'dialog', 'aria-modal': String(!inlineRename),
       ...(inlineRename ? { style: { padding: 10, paddingLeft: 20, gap: 8, flexShrink: 0,
         backgroundColor: color('selection') } } : {
-      style: { position: 'absolute', left: '10%', top: '18%', width: '80%', maxWidth: 620, padding: 22,
-        gap: 14, borderRadius: 10, borderWidth: 1, borderColor: color('accent'), backgroundColor: color('surface') } }) },
+      style: { ...panelAppearance(theme, 'dialog'), position: 'absolute', left: '10%', top: '18%',
+        width: '80%', maxWidth: 620, maxHeight: '78%', minWidth: 0, overflow: 'scroll' },
+      onWheel: scrollDesktop }) },
+      inlineRename ? null : panelDetail(theme, 'dialog'),
       desktopText(state.openWith ? 'Open with' : operation.kind === 'link' ? 'Follow symbolic link?' :
         operation.kind === 'rename' ? 'Rename' : operation.kind === 'move' ? 'Move cut file here?' : 'New folder',
         color('text'), 22, { fontWeight: 600 }),
       editing && !inlineRename ? input('files-name', operation.name, 'Single folder or file name',
         value => controller.editName(value, generation)) : null,
-      operation?.entry ? label('files-operation-source', operation.entry.path, 'muted', { fontSize: 13, flexShrink: 1 }) : null,
-      operation?.kind === 'link' ? label('files-link-target', 'Target: ' + operation.entry.linkTarget +
-        ' (' + operation.entry.targetType + '). Opening follows this link with your normal permissions.', 'text', { flexShrink: 1 }) : null,
+      operation?.entry ? inlineRename ?
+        label('files-operation-source', operation.entry.path, 'muted', { fontSize: 13, flexShrink: 1 }) :
+        pathLabel('files-operation-source', operation.entry.path) : null,
+      operation?.kind === 'link' ? [
+        pathLabel('files-link-target', 'Target: ' + operation.entry.linkTarget, 'text', 14),
+        label('files-link-note', '(' + operation.entry.targetType +
+          '). Opening follows this link with your normal permissions.', 'text', { flexShrink: 1 }),
+      ] : null,
       operation?.kind === 'rename' ? label('files-rename-note', 'Only this selected name changes. Existing destinations are never overwritten.', 'muted', { fontSize: 13, flexShrink: 1 }) : null,
-      operation?.kind === 'move' ? label('files-move-note', 'Destination: ' + state.path +
-        '\nMoves this regular file only, on the same filesystem. Existing names are never overwritten. Cancel leaves the source untouched.',
-        'muted', { fontSize: 13, flexShrink: 1 }) : null,
+      operation?.kind === 'move' ? [
+        pathLabel('files-move-destination', 'Destination: ' + state.path),
+        label('files-move-note', 'Moves this regular file only, on the same filesystem. Existing names are never overwritten. Cancel leaves the source untouched.',
+          'muted', { fontSize: 13, flexShrink: 1 }),
+      ] : null,
       state.openWith ? [
-        label('files-handler-title', state.openWith.entry.name + ' | ' + state.openWith.mimeType, 'muted', { flexShrink: 1 }),
+        pathLabel('files-handler-title', state.openWith.entry.name + ' | ' + state.openWith.mimeType),
         ...state.openWith.applications.map((app, index) => command('files-handler-' + index, app.name,
           () => controller.openWith(app.id, generation, selection?.identity), ready, 'apps')),
         command('files-handler-cancel', 'Cancel', () => controller.cancel(generation)),
-      ] : h('view', { style: { ...horizontal, gap: 8, justifyContent: 'flex-end' } },
+      ] : h('view', { style: { ...horizontal, gap: theme.layout.controlGap, flexWrap: 'wrap', justifyContent: 'flex-end' },
+        onUpdate: node => { node.scrollLeft = 0; } },
         command('files-cancel', 'Cancel', () => controller.cancel(generation)),
         desktopCommand('files-confirm', operation.kind === 'link' ? 'Follow link' : operation.kind === 'rename' ? 'Rename' :
           operation.kind === 'move' ? 'Move file' : 'Create folder',
@@ -267,8 +297,9 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
     );
   }
   const contextMenu = state.context && !modal && usable ? h('view', { id: 'files-context', role: 'menu', 'aria-label': 'Selected item',
-    style: { position: 'absolute', left: state.context.x, top: state.context.y, width: 224, padding: 6, gap: 2,
-      borderRadius: 8, borderWidth: 1, borderColor: color('border'), backgroundColor: color('surface') } },
+    style: { ...panelAppearance(theme, 'menu'), position: 'absolute', left: state.context.x, top: state.context.y,
+      width: 224, maxHeight: Math.max(1, height - state.context.y - 8), overflow: 'scroll' }, onWheel: scrollDesktop },
+    panelDetail(theme, 'menu'),
     [['open', 'Open', () => controller.open(generation, selection?.identity), true, 'open'],
       ['open-with', 'Open with', () => controller.showOpenWith(generation, selection?.identity), selection?.type === 'file', 'apps'],
       ['rename', 'Rename', () => controller.beginRename(generation, selection?.identity), true, 'rename'],
