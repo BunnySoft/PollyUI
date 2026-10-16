@@ -33,6 +33,9 @@ These are output scales for desktop, decorations and application buffers, not
 an app-only font zoom. Choosing a scale only edits that monitor's draft; Apply
 uses the existing native transaction and trusted 15-second Keep/Revert prompt.
 Only Keep saves the confirmed layout; hotplug discards the stale draft.
+Display headings, ordinary labels, status messages and page spacing follow the
+existing theme tokens. Display headers and action rows wrap in narrow content
+areas without resizing the retained numeric fields or changing their draft values.
 
 Every mutation rechecks the daemon-supplied UID/PID and current owned generation
 after asynchronous authorization. Page detach invalidates pending domain writes;
