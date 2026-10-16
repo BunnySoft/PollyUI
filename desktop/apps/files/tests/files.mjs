@@ -18,7 +18,7 @@ globalThis.measureText = value => String(value).length * 7;
 const entry = (path, type = 'file', extra = {}) => ({ path, type, name: path.split('/').at(-1) || '/',
   identity: path + ':1', bytes: 6, mtimeMs: 1000, permissions: '0600', uid: 1000, gid: 1000,
   readable: true, writable: true, linkTarget: '', targetType: '', targetIdentity: '', targetError: null, ...extra });
-function fixture() {
+function fixture({ copyText = null } = {}) {
   const directories = new Map([['/fixture', [entry('/fixture/Documents', 'directory'),
     entry('/fixture/literal %u; 中文.txt'), entry('/fixture/unmanaged.app', 'directory')]],
   ['/fixture/Documents', []], ['/fixture/unmanaged.app', []]]);
@@ -69,7 +69,7 @@ function fixture() {
       applications: [{ id: 'editor.desktop', name: 'Editor', path }] }),
     openDocuments: async (paths, id) => { opened.push(['documents', paths, id]); },
   };
-  const controller = createFilesController({ api: fs, launcher, reportError: value => errors.push(value) });
+  const controller = createFilesController({ api: fs, launcher, copyText, reportError: value => errors.push(value) });
   return { controller, fs, directories, operations, opened, launcher, errors };
 }
 const select = (controller, path) => {
@@ -434,6 +434,85 @@ test('local filter, create and Properties shortcuts reuse guarded actions withou
   assert.equal(opened.length, 0);
   assert.equal(operations.filter(item => ['mkdir', 'rename', 'move'].includes(item[0])).length, 0);
 });
+test('Copy path preserves literal text, Properties and directory state while rejecting retired actions', async () => {
+  const copied = [], { controller, directories, operations } = fixture({ copyText: value => copied.push(value) });
+  const literal = entry('/fixture/中文 %u; $(literal) "quotes".txt');
+  directories.get('/fixture').push(literal);
+  await controller.start(); select(controller, literal.path); controller.showProperties();
+  const before = controller.getState(), observed = operations.length;
+  const button = flatten(filesView(before, controller)).find(node => node.props?.id === 'files-details-copy-path');
+  button.props.onClick({ button: 2 });
+  assert.equal(copied.length, 0, 'Secondary pointer cannot copy');
+  button.props.onClick({ button: 0, stopPropagation() {} });
+  assert.deepEqual(copied, [literal.path], 'Copy uses the selected raw path without escaping or formatting');
+  assert.equal(controller.getState().phase, 'ready');
+  assert.equal(controller.getState().snapshot, before.snapshot);
+  assert.equal(controller.getState().selection, before.selection);
+  assert.equal(controller.getState().properties, true);
+  assert.match(controller.getState().message, /Copied path to clipboard/);
+  button.props.onClick({ button: 0, stopPropagation() {} });
+  assert.equal(controller.copyPath(before.generation, literal.identity), false);
+  select(controller, '/fixture/Documents');
+  assert.equal(controller.copyPath(controller.getState().generation, literal.identity), false);
+  assert.equal(copied.length, 1, 'Retired generation and former selected identity cannot copy another path');
+  controller.showContext(literal.path, literal.identity, 20, 20);
+  const menu = flatten(filesView(controller.getState(), controller))
+    .find(node => node.props?.id === 'files-context-copy-path');
+  assert.equal(menu.props.role, 'menuitem');
+  menu.props.onKeydown({ key: ' ', preventDefault() {}, stopPropagation() {} });
+  assert.deepEqual(copied, [literal.path, literal.path]);
+  assert.equal(controller.getState().context, null, 'Successful context copy uses the existing dismissal path');
+  assert.equal(operations.length, observed, 'Copy never stats, reads, launches or mutates the filesystem');
+});
+test('Copy path shortcuts leave inputs, composition, repeats and plain Ctrl+C alone', async () => {
+  const copied = [], { controller, operations } = fixture({ copyText: value => copied.push(value) });
+  await controller.start(); const chosen = select(controller, '/fixture/literal %u; 中文.txt');
+  const before = operations.length;
+  const key = extra => filesView(controller.getState(), controller).props.onKeydown({
+    key: 'C', ctrlKey: true, shiftKey: true, target: { id: 'files-list' }, preventDefault() {}, ...extra });
+  key({ repeat: true }); key({ isComposing: true }); key({ altKey: true });
+  key({ target: { id: 'files-filter' } }); key({ shiftKey: false });
+  assert.equal(copied.length, 0);
+  key({});
+  assert.deepEqual(copied, [chosen.path]);
+  controller.beginCreate(); key({});
+  assert.equal(copied.length, 1, 'An active modal cannot copy the underlying selection');
+  assert.equal(operations.length, before);
+});
+test('Unavailable or failing clipboard stays explicit without retiring the ready folder or Properties', async () => {
+  const absent = fixture(); await absent.controller.start();
+  const item = select(absent.controller, '/fixture/literal %u; 中文.txt');
+  absent.controller.showProperties();
+  const disabled = flatten(filesView(absent.controller.getState(), absent.controller))
+    .find(node => node.props?.id === 'files-details-copy-path');
+  assert.equal(disabled.props['aria-disabled'], 'true');
+  assert.equal(disabled.props.tabIndex, -1);
+  disabled.props.onClick({ button: 0, stopPropagation() {} });
+  assert.equal(absent.errors.length, 0);
+  assert.equal(absent.controller.copyPath(), false);
+  assert.match(absent.controller.getState().error, /Clipboard.*unavailable/);
+  assert.equal(absent.controller.getState().properties, true);
+  absent.controller.showContext(item.path, item.identity, 20, 20);
+  const tree = filesView(absent.controller.getState(), absent.controller), nodes = flatten(tree), focused = [];
+  const document = { activeElement: null, getElementById: id => map.get(id) };
+  const map = new Map(nodes.filter(node => node.props?.role === 'menuitem').map(node => [node.props.id, {
+    tabIndex: node.props.tabIndex, focus() { document.activeElement = this; focused.push(node.props.id); },
+  }]));
+  document.activeElement = map.get('files-context-cut');
+  tree.props.onKeydown({ key: 'ArrowDown', currentTarget: { ownerDocument: document }, preventDefault() {} });
+  assert.deepEqual(focused, ['files-context-properties'], 'Arrow navigation skips unavailable Copy path');
+  const failing = fixture({ copyText() { throw new Error('Clipboard owner unavailable'); } });
+  await failing.controller.start(); select(failing.controller, '/fixture/literal %u; 中文.txt'); failing.controller.showProperties();
+  const before = failing.controller.getState(), count = failing.operations.length;
+  assert.equal(failing.controller.copyPath(), false);
+  const after = failing.controller.getState();
+  assert.equal(after.phase, 'ready'); assert.equal(after.snapshot, before.snapshot);
+  assert.equal(after.selection, before.selection); assert.equal(after.properties, true);
+  assert.equal(after.path, before.path);
+  assert.match(after.error, /Copy path failed.*Clipboard owner unavailable/);
+  assert.equal(after.message, ''); assert.equal(failing.errors.length, 1);
+  assert.equal(failing.operations.length, count);
+});
 test('overlay scrollbar preserves continuous list and metadata widths at normal and narrow sizes', async () => {
   const { controller } = fixture(); await controller.start();
   for (const width of [1040, 680, 640]) {
@@ -535,7 +614,12 @@ test('app lifecycle rejects missing/old native API visibly and allows a fresh re
   const missing = createFilesApp({ host, native: null, optInTheme: false, reportError() {} });
   missing.stop(); assert.equal(missing.controller.getState().phase, 'disposed');
   assert.throws(() => missing.start(), /cannot restart/);
-  const fresh = createFilesApp({ host, native: { fileSystem: fixture().fs }, optInTheme: false });
+  const copied = [];
+  const fresh = createFilesApp({ host, native: { fileSystem: fixture().fs }, optInTheme: false,
+    copyText: value => copied.push(value) });
+  await fresh.controller.start(); select(fresh.controller, '/fixture/literal %u; 中文.txt');
+  fresh.controller.copyPath();
+  assert.deepEqual(copied, ['/fixture/literal %u; 中文.txt'], 'App forwards only the injected text clipboard capability');
   fresh.stop(); assert.equal(fresh.controller.getState().phase, 'disposed');
 });
 

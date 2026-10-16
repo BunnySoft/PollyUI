@@ -12,7 +12,9 @@ import { scrollbarAppearance } from './desktop/shared/ui/scrollbar-appearance.mj
 import { getDesktopTheme, DEFAULT_DESKTOP_THEME } from './desktop/shared/ui/themes.mjs';
 
 export function createFilesApp({ host = window, native = typeof desktop === 'undefined' ? null : desktop,
-  initialPath = null, optInTheme = true, reportError = message => console.error('[files] ' + message) } = {}) {
+  initialPath = null, optInTheme = true,
+  copyText = typeof clipboard !== 'undefined' && typeof clipboard.writeText === 'function' ? value => clipboard.writeText(value) : null,
+  reportError = message => console.error('[files] ' + message) } = {}) {
   let surface = null, themeBinding = null, theme = null, themeError = '', stopped = false, api = null, apiError = null;
   let previous = null;
   let scrollbar = null, scrollTrack = null, syncTimer = null, layoutWidth = 0, layoutHeight = 0;
@@ -117,7 +119,7 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
     }
   }
   const controller = createFilesController({ api: apiError ? { locations() { throw apiError; } } : api,
-    launcher, onChange: paint, reportError });
+    launcher, copyText, onChange: paint, reportError });
   function stop() {
     if (stopped) return;
     stopped = true;
