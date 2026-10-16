@@ -27,6 +27,8 @@ import { settingsPage, runtimeBuild } from './desktop/client/settings-contract.m
 import { outputIdentity, outputKey, desktopOutputIdentity, desktopArea, layoutDesktop, gridPoint } from './desktop/shell/desktop-shortcuts.mjs';
 import { createDesktopInteraction, bindDesktopInteraction } from './desktop/shell/desktop-interactions.mjs';
 import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
+import { windowTasks } from './desktop/shell/window-groups.mjs';
+import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
   if (!configuration) throw new TypeError('Shell requires its typed application configuration');
@@ -71,6 +73,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
   let applications = [];
   let windows = [];
   let workspaces = [];
+  let taskCache = null;
   let workspaceEditor = null;
   const workspacePersistence = createWorkspacePersistence({ native, configuration, failure: workspaceSettingsFailure });
   let previousWorkspacesChanged = null;
@@ -179,8 +182,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return true;
   }
 
-  function closeMenu(surface = menu) {
-    if (releaseMenu(surface)) closeSurface(surface);
+  function closeMenu(surface = menu, returnFocus = false) {
+    if (releaseMenu(surface)) {
+      closeSurface(surface);
+      if (returnFocus) surface.returnFocus?.();
+    }
   }
 
   function currentMenu(surface) {
@@ -195,7 +201,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function menuOpener(surface, event) {
     if (surface.output !== menu.output) return false;
-    const ids = event.button === 2 && menu.mode === 'windows' ? ['shell-window-' + menu.windowId] :
+    const ids = (menu.mode === 'windows' && event.button === 2 ||
+      menu.mode === 'window-group' && [0, 2].includes(event.button)) ?
+      ['shell-window-' + menu.windowId] :
       event.button === 0 ? {
         applications: ['shell-menu', 'shell-dock-applications'],
         appearance: ['shell-panel-settings', 'shell-dock-settings'],
@@ -266,6 +274,15 @@ export function createDesktopShell({ host = window, configuration, report = cons
     return windows.filter(window => window.workspaceId === current?.id);
   }
 
+  function displayTasks(theme) {
+    const grouping = theme.panel.taskGrouping ?? 'windows';
+    if (!taskCache || taskCache.windows !== windows || taskCache.workspaces !== workspaces ||
+        taskCache.applications !== applications || taskCache.grouping !== grouping)
+      taskCache = { windows, workspaces, applications, grouping,
+        items: windowTasks(visibleWindows(), grouping, desktopCatalog()) };
+    return taskCache.items;
+  }
+
   function definitions(theme, output) {
     const dock = theme.panel.kind === 'dock';
     const layout = theme.layout;
@@ -276,7 +293,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height },
     };
     if (dock) result.dock = {
-      layer: 'top', width: dockSurfaceWidth(theme, visibleWindows().length, output.width), height: theme.panel.height,
+      layer: 'top', width: dockSurfaceWidth(theme, displayTasks(theme).length, output.width), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
       transparent: true,
     };
@@ -446,23 +463,23 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function paint(bundle, theme) {
     const { wallpaper: background, panel, dock } = bundle.surfaces;
-    const listed = visibleWindows();
+    const listed = displayTasks(theme);
     const current = workspaces.find(workspace => workspace.active);
     const workspaceControl = typeof native?.workspaces === 'function' ? {
       name: current?.name || 'Workspaces', open: () => showWorkspaces(bundle.output.id),
     } : null;
     if (!background.window.closed) paintDesktop(bundle, theme);
     if (!panel.window.closed) render(panelView(theme, clock(), () => showApplications(bundle.output.id),
-      error || serviceError, () => showSystemSettings(bundle.output.id), listed, toggleWindow,
-      id => showWindowActions(bundle.output.id, id), workspaceControl,
+      error || serviceError, () => showSystemSettings(bundle.output.id), listed,
+      taskCallback(bundle, panel, false), taskCallback(bundle, panel, true), workspaceControl,
       notifications.count() ? { count: notifications.count(), open: notifications.show } : null,
       { items: tray.items(), error: tray.error(), activate: (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
           bundle.output.height - theme.panel.height : 0)), scroll: tray.scroll }),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, () => showSystemSettings(bundle.output.id),
-      () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed, toggleWindow,
-      id => showWindowActions(bundle.output.id, id)), dock.window.document.body);
+      () => showSystemSettings(bundle.output.id, 'about'), () => showApplications(bundle.output.id), listed,
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true)), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;
@@ -663,6 +680,30 @@ export function createDesktopShell({ host = window, configuration, report = cons
         scoped(id => moveWindow(selected.id, id))), current.window.document.body);
       return;
     }
+    if (current.mode === 'window-group') {
+      const group = displayTasks(getDesktopTheme(themeId)).find(task => task.id === current.windowId && task.grouped);
+      if (!group || group.appId !== current.groupAppId ||
+          workspaces.find(workspace => workspace.active)?.id !== current.groupWorkspaceId) {
+        closeMenu(current); return;
+      }
+      render(windowGroupMenu(getDesktopTheme(themeId), group, {
+        slots: current.groupSlots,
+        action: (id, action) => {
+          if (!currentMenu(current)) return false;
+          try {
+            const live = liveTasks(current.groupWorkspaceId).find(task =>
+              task.grouped && task.id === current.windowId && task.appId === current.groupAppId);
+            const selected = live?.windows.find(window => window.id === id);
+            if (!selected || action === 'minimizeWindow' && selected.minimized ||
+                action === 'restoreWindow' && !selected.minimized) return false;
+            return windowAction(id, action);
+          } catch (failure) { windowFailure(failure); return false; }
+        },
+        close: () => currentMenu(current) ? closeMenu(current, true) : false,
+        error,
+      }), current.window.document.body);
+      return;
+    }
     if (current.mode === 'applications') {
       const menuTheme = getDesktopTheme(themeId);
       if (surfaceStyle(menuTheme, 'panel') !== 'classic' && current.programsOpen) {
@@ -788,12 +829,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
     listen(current, 'keydown', event => {
       if (!currentMenu(current)) return;
       if (event.defaultPrevented) return;
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeMenu(current); }
+      if (event.key === 'Escape') {
+        event.preventDefault(); event.stopPropagation(); closeMenu(current, current.mode === 'window-group');
+      }
     });
     body.focus();
     repaintMenu();
     if (mode === 'applications' && currentMenu(current))
       current.window.document.getElementById('shell-app-search').focus();
+    if (mode === 'window-group' && currentMenu(current))
+      current.window.document.getElementById('shell-group-list')?.firstChild?.firstChild?.focus();
     return current.window;
   }
 
@@ -1037,6 +1082,40 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (!selected) throw new Error('Window no longer exists');
       return windowAction(id, selected.active && !selected.minimized ? 'minimizeWindow' : 'activateWindow');
     } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function liveTasks(workspaceId) {
+    const current = typeof native.workspaces === 'function' ?
+      native.workspaces().find(workspace => workspace.active)?.id : undefined;
+    if (current !== workspaceId) return [];
+    const live = native.windows().filter(window =>
+      typeof native.workspaces !== 'function' || window.workspaceId === current);
+    return windowTasks(live, getDesktopTheme(themeId).panel.taskGrouping, desktopCatalog());
+  }
+
+  function taskCallback(bundle, surface, context) {
+    const workspaceId = workspaces.find(workspace => workspace.active)?.id;
+    const grouping = getDesktopTheme(themeId).panel.taskGrouping ?? 'windows';
+    return id => {
+      if (!running || surface.window.closed || bundles.get(bundle.output.id)?.surfaces[surface.kind] !== surface ||
+          (getDesktopTheme(themeId).panel.taskGrouping ?? 'windows') !== grouping) return false;
+      try {
+        const task = liveTasks(workspaceId).find(task => task.id === id);
+        if (!task) return false;
+        if (!task.grouped) return context ? showWindowActions(bundle.output.id, id) : toggleWindow(id);
+        if (context || task.count > 1) return openMenu(bundle.output.id, 'window-group', task.id, {
+          groupAppId: task.appId, groupWorkspaceId: workspaceId, groupSlots: [],
+          returnFocus: () => {
+            if (!surface.window.closed && bundles.get(bundle.output.id)?.surfaces[surface.kind] === surface &&
+                liveTasks(workspaceId).some(item => item.id === id))
+              surface.window.document.getElementById('shell-window-' + id)?.focus();
+          },
+        });
+        const selected = task.windows[0];
+        return getDesktopTheme(themeId).panel.kind === 'dock' ? windowAction(selected.id, 'activateWindow') :
+          toggleWindow(selected.id);
+      } catch (failure) { windowFailure(failure); return false; }
+    };
   }
 
   function showWindowActions(outputId, id) {

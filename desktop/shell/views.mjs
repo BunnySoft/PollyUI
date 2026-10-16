@@ -14,6 +14,8 @@ import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop }
 import { bevel, surfaceStyle, surfacePaint, surfaceEvents, surfaceDetail } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
+import { taskLabel } from './desktop/shell/window-groups.mjs';
+import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -228,7 +230,12 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
           width: window.active ? 16 : 6, height: 3, borderRadius: 2,
           backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
     }
-    node.props['aria-label'] = title;
+    node.props['aria-label'] = taskLabel(window);
+    if (window.grouped && window.count > 1) node.children.push(h('view', {
+      'aria-hidden': 'true', style: { position: 'absolute', right: 1, top: 1,
+        minWidth: 12, height: 14, paddingLeft: 2, paddingRight: 2, borderRadius: 3,
+        backgroundColor: theme.colors.accent, color: theme.colors.accentText,
+        fontSize: theme.layout.smallFontSize, pointerEvents: 'none' } }, String(window.count)));
     node.props.onClick = event => {
       if (event.button === 0) { event.stopPropagation(); toggle(window.id); }
     };
@@ -239,7 +246,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
         event.preventDefault(); actions(window.id);
       } else activate(event);
     };
-    return node;
+    return guardTaskGesture(node, JSON.stringify([window.id, window.appId, window.workspaceId]));
   }));
 }
 
@@ -403,8 +410,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
-    const slot = (id, title, icon, action, running = false, window = null) =>
-      h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
+    const slot = (id, title, icon, action, running = false, window = null) => {
+      const node = h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
+        ...(window?.grouped ? { 'aria-pressed': String(!!window.active) } : {}),
         style: { ...center, position: 'relative', width: window ? theme.layout.dockWindowWidth : theme.layout.dockTileWidth,
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
@@ -421,6 +429,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       }, h('view', { style: { ...center, width: iconSize, height: iconSize,
         borderRadius: theme.icons.radius, backgroundColor: theme.icons.dockTiles ? '#ffffff' : 'transparent',
         pointerEvents: 'none' } }, desktopIcon(icon, theme.colors.accent, iconSize - 8)),
+      window?.grouped && window.count > 1 ? h('view', { 'aria-hidden': 'true', style: {
+        position: 'absolute', right: 1, top: 1, minWidth: 14, height: 16, borderRadius: 4,
+        paddingLeft: 3, paddingRight: 3, backgroundColor: theme.colors.accent,
+        color: theme.colors.accentText, fontSize: theme.layout.smallFontSize,
+        pointerEvents: 'none' } }, String(window.count)) : null,
       running ? style === 'tiger' ? h('view', { 'aria-hidden': 'true', style: {
         position: 'absolute', bottom: 1, width: indicator, height: 4, pointerEvents: 'none' } },
         Array.from({ length: 4 }, (_, y) => {
@@ -434,6 +447,8 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           width: indicator, height: style === 'lion' ? 3 : indicator, borderRadius: indicator,
           backgroundColor: style === 'lion' ? '#bde8ff' : '#303030', pointerEvents: 'none',
           ...(style === 'lion' ? { borderWidth: 1, borderColor: '#e4f7ff' } : {}) } }) : null);
+      return window ? guardTaskGesture(node, JSON.stringify([window.id, window.appId, window.workspaceId])) : node;
+    };
     const shelf = style === 'lion' ? h('view', { 'aria-hidden': 'true', style: {
       position: 'absolute', left: 0, right: 0, bottom: 0, height: 28, pointerEvents: 'none' } },
       Array.from({ length: 24 }, (_, y) => h('view', { style: {
@@ -462,7 +477,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         ...row, flexGrow: 1, flexBasis: 0, minWidth: 0, height: panel.height - 4,
         gap: theme.layout.dockGap, overflow: 'scroll',
       }, onWheel: scrollDock },
-      windows.map(window => slot('shell-window-' + window.id, window.title || window.appId || 'Untitled',
+      windows.map(window => slot('shell-window-' + window.id, taskLabel(window),
         'file', () => toggle(window.id), true, window))) : null));
   }
   const tile = { height: panel.height - theme.layout.panelItemInset, width: theme.layout.dockTileWidth,

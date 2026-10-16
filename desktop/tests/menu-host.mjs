@@ -299,6 +299,106 @@ function scenario(name, run, configure) {
   });
 }
 
+function groupedWindows({ state, native, calls }) {
+  state.windows = [
+    { id: 10, appId: 'fixture.desktop', title: 'First document', active: true, minimized: false, workspaceId: 7 },
+    { id: 11, appId: 'fixture.desktop', title: 'Second document', minimized: true, workspaceId: 7 },
+    { id: 12, appId: 'other.application', title: 'Other application', workspaceId: 7 },
+    { id: 13, appId: '', title: 'Unknown one', workspaceId: 7 },
+    { id: 14, title: 'Unknown two', workspaceId: 7 },
+    { id: 15, appId: 'fixture.desktop', title: 'Other workspace', workspaceId: 9 },
+  ];
+  native.restoreWindow = id => calls.push(['restore', id]);
+}
+const groupId = 'shell-window-app-fixture.desktop';
+const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
+
+scenario('Application tasks: Modern and Big Sur use one model and both outputs size Dock by display tasks', f => {
+  for (const theme of ['modern', 'bigsur']) {
+    f.shell.selectTheme(theme);
+    for (const output of [1, 2]) {
+      const surface = f.surface(theme === 'modern' ? 'panel' : 'dock', output);
+      const group = find(surface, groupId);
+      assert.equal(group.getAttribute('aria-label'), 'Fixture (2 windows), some minimized');
+      assert.equal(group.getAttribute('aria-pressed'), 'true');
+      const list = find(surface, theme === 'modern' ? 'shell-window-list' : 'shell-dock-windows');
+      assert.equal(list.childNodes.length, 4);
+      assert.ok(find(surface, 'shell-window-13'));
+      assert.ok(find(surface, 'shell-window-14'));
+      assert.equal(surface.document.getElementById('shell-window-15'), null);
+      if (theme === 'bigsur') {
+        const current = getDesktopTheme(theme), l = current.layout;
+        const natural = 2 * l.dockPadding + 3 * l.dockTileWidth + 13 + 4 * l.dockWindowWidth + 7 * l.dockGap;
+        assert.equal(surface.options.width, Math.min(natural, f.state.outputs[output - 1].width - 2 * l.screenInset));
+      }
+      click(group);
+      const menu = latestGroup(f);
+      assert.ok(menu);
+      assert.ok(find(menu, 'shell-group-activate-10'));
+      assert.ok(find(menu, 'shell-group-activate-11'));
+      assert.equal(menu.document.getElementById('shell-group-activate-15'), null);
+      assert.equal(menu.options.keyboard, 'exclusive');
+      assert.equal(menu.options.exclusiveZone, -1);
+      key(menu, 'Escape');
+      assert.equal(menu.closed, true);
+      assert.equal(surface.document.activeElement, group);
+    }
+  }
+  assert.deepEqual(f.calls.filter(call => ['activate', 'minimize', 'restore', 'close-window'].includes(call[0])), []);
+}, groupedWindows);
+
+scenario('Application tasks: live single-window Modern minimizes, Mac activates; XP remains per window', f => {
+  f.state.windows = [f.state.windows[0]];
+  f.native.onWindowsChanged();
+  click(find(f.surface('panel'), groupId));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+  f.shell.selectTheme('bigsur');
+  const dock = f.surface('dock');
+  click(find(dock, groupId));
+  assert.deepEqual(f.calls.at(-1), ['activate', 10], 'active Mac application is not minimized');
+  click(find(dock, groupId), 2);
+  const menu = latestGroup(f);
+  assert.ok(menu);
+  click(find(menu, 'shell-group-minimize-10'));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+  f.shell.selectTheme('xp');
+  assert.equal(f.surface('panel').document.getElementById(groupId), null);
+  click(find(f.surface('panel'), 'shell-window-10'));
+  assert.deepEqual(f.calls.at(-1), ['minimize', 10]);
+}, groupedWindows);
+
+scenario('Application tasks: chooser commands target real windows; keyboard wraps and stale closed/replaced handlers reject', f => {
+  const panel = f.surface('panel'), group = find(panel, groupId);
+  group.focus(); key(panel, 'Enter');
+  const menu = latestGroup(f);
+  const first = find(menu, 'shell-group-activate-10');
+  assert.equal(menu.document.activeElement, first);
+  key(menu, 'End');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-menu-close'));
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement, first);
+  key(menu, 'Tab', { shiftKey: true });
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-menu-close'));
+  key(menu, 'Home'); key(menu, 'ArrowDown'); key(menu, 'ArrowRight'); key(menu, 'ArrowDown');
+  assert.equal(menu.document.activeElement, find(menu, 'shell-group-activate-11'));
+  const old = callback(menu.document.activeElement, 'click');
+  key(menu, 'Enter');
+  assert.deepEqual(f.calls.at(-1), ['activate', 11]);
+  assert.equal(menu.closed, true);
+  const count = f.calls.length;
+  assert.equal(old(event('click')), false);
+  assert.equal(f.calls.length, count);
+  click(group);
+  const next = latestGroup(f);
+  assert.notEqual(next, menu);
+  assert.equal(old(event('click')), false);
+  click(find(next, 'shell-group-minimize-11'));
+  assert.deepEqual(f.calls.slice(-2), [['restore', 11], ['activate', 11]]);
+  click(group);
+  click(find(latestGroup(f), 'shell-group-close-10'));
+  assert.deepEqual(f.calls.at(-1), ['close-window', 10], 'no process-wide close');
+}, groupedWindows);
+
 scenario('Classic Programs uses current registered IDs and retains only live menu callbacks', f => {
   f.shell.selectTheme('server2003');
   const menu = f.shell.showApplications(1);

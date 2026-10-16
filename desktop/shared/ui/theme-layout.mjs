@@ -10,9 +10,9 @@ export function themeTextSize(theme, role = 12) {
   return theme.layout[key];
 }
 
-export function dockSurfaceWidth(theme, windowCount, availableWidth) {
+export function dockSurfaceWidth(theme, taskCount, availableWidth) {
   const l = theme.layout;
-  const count = Math.max(0, Math.floor(windowCount));
+  const count = Math.max(0, Math.floor(taskCount));
   const width = ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ?
     (l.dockPadding ?? 6) * 2 + 3 * l.dockTileWidth +
       (count ? 13 + count * l.dockWindowWidth : 0) + (count ? count + 3 : 2) * l.dockGap :

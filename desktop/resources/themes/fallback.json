@@ -540,7 +540,8 @@
         "height": 62,
         "radius": 7,
         "inset": 0,
-        "surfaceStyle": "tiger"
+        "surfaceStyle": "tiger",
+        "taskGrouping": "applications"
       },
       "layout": {
         "fontSize": 13,
@@ -1708,7 +1709,8 @@
         "height": 66,
         "radius": 0,
         "inset": 0,
-        "surfaceStyle": "lion"
+        "surfaceStyle": "lion",
+        "taskGrouping": "applications"
       },
       "layout": {
         "fontSize": 13,
@@ -1928,7 +1930,8 @@
         "height": 70,
         "radius": 16,
         "inset": 9,
-        "surfaceStyle": "bigsur"
+        "surfaceStyle": "bigsur",
+        "taskGrouping": "applications"
       },
       "layout": {
         "fontSize": 13,
@@ -2129,6 +2132,7 @@
       },
       "panel": {
         "surfaceStyle": "fluent",
+        "taskGrouping": "applications",
         "kind": "taskbar",
         "from": "#f3f3f3",
         "to": "#f3f3f3",
