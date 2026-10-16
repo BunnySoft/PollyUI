@@ -23,27 +23,28 @@ test('network adds a dialog frame only to its undecorated layer and keeps embedd
     } };
   const network = createNetworkSettings({ native, host, theme: () => theme,
     report: message => assert.fail(message) });
-  t.after(() => network.stop());
-  const surface = network.show(1), doc = surface.document;
-  assert.equal(surface.layer, 'overlay');
-  const panel = doc.getElementById('shell-network-settings'), password = doc.getElementById('shell-network-password');
-  assert.equal(panel.style.borderWidth, '0');
-  assert.ok(panel.querySelector('.bevel-face-top'), 'the owned layer, not an ordinary decorated app, receives the dialog frame');
-  assert.equal(password.style.width, '100%');
-  assert.equal(password.style.maxWidth, '420');
-  network.detach();
-  state.authentication = { id: 8, kind: 'username-password', network: 'fixture', username: 'fixture-user' };
-  const embedded = host.create({ title: 'Ordinary decorated Settings app' });
-  network.attach(embedded, embedded.document.body);
-  const form = embedded.document.getElementById('shell-network-settings');
-  assert.equal(form.style.borderWidth, undefined);
-  assert.equal(form.querySelector('.bevel-face-top'), null);
-  const input = embedded.document.getElementById('shell-network-password'), slot = input.parentNode;
-  state.operation = 'connect'; state.refreshing = true; native.onNetworkChanged();
-  theme = getDesktopTheme('modern'); network.refresh();
-  assert.equal(embedded.document.getElementById('shell-network-password'), input);
-  assert.equal(input.parentNode, slot, 'status insertions/retheme do not move native credential wrappers');
-  assert.equal(embedded.document.getElementById('shell-network-content').style.borderRadius, String(theme.button.radius));
+  try {
+    const surface = network.show(1), doc = surface.document;
+    assert.equal(surface.layer, 'overlay');
+    const panel = doc.getElementById('shell-network-settings'), password = doc.getElementById('shell-network-password');
+    assert.equal(panel.style.borderWidth, '0');
+    assert.ok(panel.querySelector('.bevel-face-top'), 'the owned layer, not an ordinary decorated app, receives the dialog frame');
+    assert.equal(password.style.width, '100%');
+    assert.equal(password.style.maxWidth, '420');
+    network.detach();
+    state.authentication = { id: 8, kind: 'username-password', network: 'fixture', username: 'fixture-user' };
+    const embedded = host.create({ title: 'Ordinary decorated Settings app' });
+    network.attach(embedded, embedded.document.body);
+    const form = embedded.document.getElementById('shell-network-settings');
+    assert.equal(form.style.borderWidth, undefined);
+    assert.equal(form.querySelector('.bevel-face-top'), null);
+    const input = embedded.document.getElementById('shell-network-password'), slot = input.parentNode;
+    state.operation = 'connect'; state.refreshing = true; native.onNetworkChanged();
+    theme = getDesktopTheme('modern'); network.refresh();
+    assert.equal(embedded.document.getElementById('shell-network-password'), input);
+    assert.equal(input.parentNode, slot, 'status insertions/retheme do not move native credential wrappers');
+    assert.equal(embedded.document.getElementById('shell-network-content').style.borderRadius, String(theme.button.radius));
+  } finally { network.stop(); }
 });
 
 test('display confirmation adopts the passive dialog/scroll contract without consuming transaction callbacks', () => {
@@ -53,7 +54,9 @@ test('display confirmation adopts the passive dialog/scroll contract without con
     assert.equal(tree.props.style.borderWidth, expected.borderWidth);
     assert.equal(tree.props.style.padding, expected.padding);
     assert.equal(tree.props.style.borderRadius, expected.borderRadius);
-    assert.equal(tree.props.style.overflow, 'scroll');
+    assert.equal(tree.props.style.overflow, 'hidden');
+    assert.equal(tree.children[0].props.id, 'shell-output-confirmation-viewport');
+    assert.equal(tree.children[0].props.style.overflow, 'scroll');
     assert.equal(typeof tree.props.onWheel, 'function');
     assert.ok(descendants(tree).some(node => node.props?.nodeValue?.includes('15 seconds')));
     assert.equal(descendants(tree).filter(node => node.props?.role === 'button').length, 2);

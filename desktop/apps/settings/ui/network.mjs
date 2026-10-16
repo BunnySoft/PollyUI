@@ -4,7 +4,7 @@ import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
-import { scrollDesktop } from './desktop/shared/ui/presentation.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
@@ -68,13 +68,9 @@ export function createNetworkSettings({ native, host, theme, report }) {
     if (!state) {
       if (contentMode !== 'unavailable') { render(null, surface.root); contentMode = 'unavailable'; }
       const current = theme();
-      render(h('view', { id: 'shell-network-settings', onWheel: scrollDesktop, style: {
-        ...(surface.owned ? panelAppearance(current, 'dialog') :
-          { padding: current.layout.contentPadding, gap: current.layout.contentGap, backgroundColor: current.colors.body }),
-        width: '100%', height: '100%', minHeight: 0, overflow: 'scroll' } },
+      render(panelViewport(current, { id: 'shell-network-settings', framed: surface.owned },
         h('view', { role: 'alert' }, label(error || 'Network state is unavailable.')),
-        button('shell-network-retry', 'Refresh / retry', retry),
-        surface.owned ? panelDetail(current, 'dialog') : null), surface.root);
+        button('shell-network-retry', 'Refresh / retry', retry)), surface.root);
       return;
     }
     const current = theme(), owner = surface.window.document, auth = state.authentication;
@@ -167,10 +163,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
         }
       }
     }
-    render(h('view', { id: 'shell-network-settings', onWheel: scrollDesktop, style: {
-      ...(surface.owned ? panelAppearance(current, 'dialog') :
-        { padding: current.layout.contentPadding, gap: current.layout.contentGap, backgroundColor: current.colors.body }),
-      width: '100%', height: '100%', minHeight: 0, overflow: 'scroll' } },
+    render(panelViewport(current, { id: 'shell-network-settings', framed: surface.owned },
       h('view', { style: { flexDirection: 'row', flexWrap: 'wrap', gap: current.layout.controlGap, flexShrink: 0 } },
         label('Wi-Fi (iwd)', 18),
         button('shell-network-retry', 'Refresh / retry', retry, !state.operation),
@@ -188,8 +181,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
       h('view', { id: 'shell-network-content', style: auth || confirmation ?
         { ...panelAppearance(current, 'card'), flexShrink: 0 } :
         { gap: current.layout.contentGap, flexShrink: 0 } },
-        ...content, auth || confirmation ? panelDetail(current, 'card') : null),
-      surface.owned ? panelDetail(current, 'dialog') : null), surface.root);
+        ...content, auth || confirmation ? panelDetail(current, 'card') : null)), surface.root);
     if (focusCredentials) (username || password).root.focus();
   }
   function refresh() {

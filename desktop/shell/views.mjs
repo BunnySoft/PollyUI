@@ -16,7 +16,7 @@ import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
 import { taskLabel, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
-import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
+import { panelViewport } from './desktop/shared/ui/panel-viewport.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
 
@@ -630,13 +630,11 @@ export function switcherView(theme, snapshot, accept, rows = theme.layout.switch
 
 export function displayConfirmationView(theme, remaining, keep, revert) {
   const label = labelFor(theme);
-  return h('view', { id: 'shell-output-confirmation', style: {
-    ...panelAppearance(theme, 'dialog'), width: '100%', height: '100%', minHeight: 0, overflow: 'scroll',
-  }, onWheel: scrollDesktop },
+  return panelViewport(theme, { id: 'shell-output-confirmation' },
   label('Keep these display settings?', theme.colors.text, 15),
   label('Reverting in ' + Math.ceil(remaining / 1000) + ' seconds.', theme.colors.muted, 12),
   h('view', { style: { ...row, gap: theme.layout.compactPadding, flexWrap: 'wrap', flexShrink: 0 } },
     button('shell-output-keep', 'Keep', theme, keep),
     button('shell-output-revert', 'Revert', theme, revert)),
-  label('Enter keeps changes. Escape reverts.', theme.colors.muted, 10), panelDetail(theme, 'dialog'));
+  label('Enter keeps changes. Escape reverts.', theme.colors.muted, 10));
 }
