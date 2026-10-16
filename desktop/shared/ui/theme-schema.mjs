@@ -70,7 +70,7 @@ const options = {
   colors: {},
   window: { controls: ['left', 'right'], controlShape: ['square', 'round'],
     texture: ['none', 'pinstripe'], unifiedToolbar: [true, false],
-    gradientDir: ['vertical', 'horizontal'], fontFamily: ['sans-serif', 'serif', 'monospace'],
+    gradientDir: ['vertical', 'horizontal'],
     glyphsOnHoverOnly: [true, false], textAlign: ['left', 'center', 'right'] },
   icons: { dockTiles: [true, false] },
   button: { gloss: [true, false] },
@@ -148,7 +148,8 @@ export function validateTheme(value) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {})];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
-      ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : [])], prefix, true, optional);
+      ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
+      prefix, true, optional);
     for (const key of colors[group])
       if (typeof value[group][key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(value[group][key]))
         throw new TypeError(prefix + '.' + key + ' must be an RGB color');
@@ -175,6 +176,11 @@ export function validateTheme(value) {
         value.panel.height - value.layout.panelItemInset)
       throw new RangeError('Classic task icons and text do not fit the configured taskbar');
     const window = value.window;
+    text(window.fontFamily, 128, value.id + '.window.fontFamily');
+    if (window.fontFamily !== window.fontFamily.trim() ||
+        !/^[\p{L}\p{N}][\p{L}\p{M}\p{N} ._()'-]*$/u.test(window.fontFamily) ||
+        /['"]$|\burl *\(/i.test(window.fontFamily))
+      throw new TypeError(value.id + '.window.fontFamily must be a bounded family name, not a font resource');
     const top = window.controlTop ?? Math.floor((window.titleHeight - window.controlSize) / 2) +
       (window.surfaceStyle === 'luna' ? 2 : 0);
     if ((window.surfaceStyle === 'luna' && window.controlSize + 4 > window.titleHeight) ||

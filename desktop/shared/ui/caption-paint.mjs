@@ -1,4 +1,5 @@
 import { lunaBandColor, mixColor } from './desktop/shared/ui/luna-primitives.mjs';
+import { clampTextIndex, nextTextIndex } from './gui/sdk/js/textindex.mjs';
 
 export function captionFrameGeometry(meta) {
   if (!Array.isArray(meta) || meta.length !== 26 ||
@@ -147,22 +148,39 @@ function paintControl(ctx, theme, geometry, command, box) {
   }
   ctx.restore();
 }
+export function fitCaptionText(ctx, title, width) {
+  if (width <= 0) return '';
+  const sanitized = String(title).replace(/[\x00-\x1f\x7f]/g, ' ');
+  let end = 0, count = 0;
+  for (const point of sanitized) {
+    if (count++ === 512) break;
+    end += point.length;
+  }
+  const label = sanitized.slice(0, clampTextIndex(sanitized, end));
+  if (ctx.measureText(label).width > width) {
+    const suffix = '…';
+    if (ctx.measureText(suffix).width > width) return '';
+    const boundaries = [0];
+    for (let index = 0; index < label.length;) {
+      index = nextTextIndex(label, index);
+      boundaries.push(index);
+    }
+    let low = 0, high = boundaries.length - 1;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (ctx.measureText(label.slice(0, boundaries[mid]) + suffix).width <= width) low = mid;
+      else high = mid - 1;
+    }
+    return label.slice(0, boundaries[low]) + suffix;
+  }
+  return label;
+}
 function paintText(ctx, theme, geometry, title) {
   const [x, y, width, height] = geometry.text, w = theme.window;
   if (width <= 0 || height <= 0) return;
   ctx.save(); ctx.beginPath(); ctx.rect(x, y, width, height); ctx.clip();
   ctx.font = `${w.fontWeight} ${w.fontSize}px ${w.fontFamily}`;
-  let label = Array.from(String(title).replace(/[\x00-\x1f\x7f]/g, ' ')).slice(0, 512).join('');
-  if (ctx.measureText(label).width > width) {
-    const chars = Array.from(label), suffix = '…';
-    let low = 0, high = chars.length;
-    while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
-      if (ctx.measureText(chars.slice(0, mid).join('') + suffix).width <= width) low = mid;
-      else high = mid - 1;
-    }
-    label = ctx.measureText(suffix).width <= width ? chars.slice(0, low).join('') + suffix : '';
-  }
+  const label = fitCaptionText(ctx, title, width);
   const metrics = ctx.measureText(label), ascent = metrics.actualBoundingBoxAscent, descent = metrics.actualBoundingBoxDescent;
   const available = width - metrics.width;
   const left = x + (w.textAlign === 'center' ? available / 2 : w.textAlign === 'right' ? available : 0);
