@@ -774,7 +774,7 @@
       "label": "E22.5 字体与文字基线",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "逐主题列出 Tahoma/Trebuchet、Segoe UI、Lucida Grande、San Francisco 与当前通用 fallback 的字宽、字号、粗细、标题基线及抗锯齿差异；用合法可用字体和真实度量决定可配置替代方案。保留 Unicode shaping，不打包未授权字体、不强制全局别名或固定分辨率；影响主题通用性的选择先确认。",
+      "scope": "已交可选layout.fontFamily的per-instance UI文字/输入/选择与原生度量完整链，和caption window.fontFamily独立且6个默认不变；继续核Tahoma/Trebuchet、Segoe UI、Lucida Grande、San Francisco对比的字宽/基线/栅格资格。保Unicode shaping，不打包未授权字体/不强全局alias或分辨率，原OS参考及Linux新路径live资格仍独立。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -783,7 +783,7 @@
       "sources": [],
       "status": "in_progress",
       "requires": [],
-      "evidence": "六主题原系统字体未分发，Classic GDI基线/栅格资格仍不齐。2026-10-16 用户要求共通先行，876d126（源e549b336）统一六主题caption fitter：复用现SDK/LinuxICU完整字素，512codepoint预算向下贴cluster，省略测完整prefix+ellipsis；baseline/clip/shadow原坐标不动。window.fontFamily兼容三generic并接受128UTF16上限单个literal已装family名，严格拒路径/URL/control/格式控制/列表/资源，不load字体、不改builtin/fallback/JSON1。父Node5/5与真实5906LinuxCanvas/ICU验证capRepairs3（combining/ZWJ/flag）、ellipsisRepairs0如实，六主题ASCII/empty/narrowellipsis四strip bytes不变且clip外像素/侧条保持；已装DejaVuSerif/Sans实际字宽130.078125/122.421875。后续294677a合16d8898让Files普通name接fontSize、三metadata接statusFontSize，Classic/XP11/11、Mac13/13、Modern14/12，保42px/列/selectionink/input/panel/bar/controller。1d27b5e让Processes正文/状态/标题及留白接同现theme token，不改虚拟化/采样/只读行为。应用样式直接修、复用既有检查，无新测试或字体/排版架构。非Linux仍既有codepointfallback，不假称全平台grapheme、原OS字体或像素一致；E22.5保持partial。"
+      "evidence": "六主题原系统字体未分发，Classic GDI基线/栅格资格仍不齐。历史876d126（源e549b336）caption fitter复用SDK/LinuxICU完整字素、512codepoint预算贴cluster、测完整prefix+ellipsis，原baseline/clip/shadow保持；window.fontFamily接受三generic及128UTF16 literal已装名，拒资源路径URL/control/列表，原5906LinuxCanvas/ICU capRepairs3/ellipsisRepairs0、原六主题strip bytes和DejaVu字宽130.078125/122.421875资格保留。294677a/1d27b5e等真实Files/Processes字号token消费和42px/列/IO合同亦保留。2026-10-17 d3894f7合40dbefe完整交UI body-family：generic measureText/layoutText可选第4family与readonly supportsFontFamily；SDKgeometry cache含family/weight、textinput/NInput/caret/hittest/IME/全串selectedcopy同字体，named回missing显式清旧；六selection和主要Shell/firstparty文字显式projection而非误用继承。layout.fontFamily可选、caption独立，active发布/订阅/Settings快照/select前preflight，不阻inactive；原desktopText/neutral/6JSON默认均不变，不安装/复制字体或强全局alias。隔离新Windowshelper7595739/bridge5fc9368实际Consolas20 WiWiWi advance65.9765625 vs default70.576171875，DOM66/caret10.99609375精确，hittest3/mixed/sameDOM selection+IME/oldcap先拒共56checks过；old87SDKsource/current缺省800x600整PNG bytes同SHA616a39ec。父现相关274通过/gencheck；Linuxcomplex仅既有clang /Zs宏分支syntax，无新live/RTL/CJK或原OS字体资格，仍保原完整pu_text_layout而不降级prefix，E22.5保持partial。"
     },
     {
       "id": "theme-icon-artwork",

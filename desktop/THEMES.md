@@ -140,6 +140,36 @@ a visible warning rather than claiming that the requested files were applied.
 - `colors`, `button`, `icons`, `panel`: shared palette and component treatments.
   Actions, focus policy, keyboard bindings and workspaces remain code-owned.
 
+### Optional UI font family
+
+`layout.fontFamily` selects one bounded literal installed family for first-party
+UI text and inputs, independently of `window.fontFamily` for captions. Omission
+preserves all existing defaults; none of the six packaged presets adds a family.
+The same 128-UTF-16-unit name rules reject font files, paths, URLs, fallback lists
+and control characters. No fonts are installed, bundled or globally aliased, and
+the provider's existing missing-face fallback does not prove a face is installed.
+
+Explicit themed text/input/selection projections use that family on each actual
+text part. Setting only an ancestor style is insufficient for this renderer.
+The native `measureText`/`layoutText` fourth family argument and read-only
+`supportsFontFamily` declarations pair drawing with geometry, hit testing,
+IME cursor, caret and full-string selected-text copies. Cache keys include family
+and weight. Unsupported active families are rejected before publication,
+delivery or input mutation; inactive catalog entries do not block other themes.
+Returning to missing tokens explicitly clears an earlier input family.
+Legacy `desktopText` and neutral, non-opt-in consumers keep their former behavior.
+
+For example, on a system where Consolas is installed:
+
+```json
+{"schemaVersion":1,"themes":{"modern":{"layout":{"fontFamily":"Consolas"}}}}
+```
+
+This is per-instance font support, not original Windows/macOS font distribution
+or pixel equivalence. Linux keeps the existing full shaping path with the family
+argument; the new branch has syntax coverage but no new live Linux/RTL/CJK result
+while the paired environment remains unavailable.
+
 ### Desktop shortcut labels
 
 Optional `icons.desktopLabelStyle` accepts only `capsule` or `shadow`. Omitting
@@ -944,7 +974,8 @@ The standalone appearance preview is still a simulated sample. Its samples use
 the same data but do not certify every compositor effect. `unifiedToolbar`
 retains its preview meaning. Existing radius/shadow values affect native windows
 only through the explicit native-effects opt-in described below; this does not
-add backdrop blur, default-app material adoption or arbitrary font-file loading.
+add backdrop blur or arbitrary font-file loading. Settings' separate explicit
+wallpaper-client material policy is described above; it is not enabled by radius.
 Captions reuse the GUI text backend; on Linux, the existing ICU
 boundaries now keep the 512-codepoint cap and measured ellipsis on complete
 graphemes. Other platforms retain the SDK's existing code-point fallback.
