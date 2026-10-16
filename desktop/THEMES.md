@@ -452,7 +452,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | Still missing: real glass, shadow/reflection, application grouping, pinning and magnification. This palette wiring does not implement any of them. |
+| Mechanism/business gaps | This palette checkpoint did not implement real glass, shadow/reflection, application grouping, pinning or magnification. Exact-appId grouping is now delivered separately below; glass/reflection, preset effect adoption, pinning and magnification remain separate work. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -465,11 +465,33 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 | Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
 | Mechanism/content gaps | Unchanged: genuine window shadow/vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance need separate evidence or implementation decisions. |
 
-Slots currently represent windows, not macOS application grouping. The
-window strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
-do not shrink, and focusing an offscreen window reveals it. The pure
+Modern and all three Mac presets now explicitly select optional
+`panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
+nonempty exact native `appId` values; missing/empty IDs remain independent
+`Window.id` tasks. Catalog names are used only on an exact ID match, otherwise
+the real app ID is displayed. No title, PID or basename aliases are inferred.
+Missing grouping or explicit `"windows"` preserves the original input order
+and per-window interface; Classic and XP keep that mode.
+
+The same display-task count drives rendering and Dock width. Multi-window
+groups open the existing bounded RootMenu chooser, with real activate,
+minimize/restore and close-window actions. Mac single-window clicks activate
+or restore, not minimize the active application; Modern keeps its single-window
+toggle behavior. Stable vacant row slots and workspace/member/action guards
+reject stale held targets, including live native changes not yet notified to
+the Shell. Keyboard focus and wheel scrolling reach the final command even
+when the list is shorter than a complete member row. The chooser consumes the
+same passive menu surface policy as other panels, without new native authority.
+
+The task strip scrolls horizontally when clamped; fixed Apps/Settings/About slots
+do not shrink, and focusing an offscreen task reveals it. The pure
 `dockSurfaceWidth`/`applicationMenuPlacement`/`applicationMenuHeight` functions are the Shell consumer
 seam; they do not create surfaces or change state by themselves.
+`tests/window-groups.mjs`, `tests/menu-host.mjs` and
+`tests/window-group-render.mjs` cover the model, live guards and actual GUI
+input/native child bounds using nonempty-appId fixture snapshots. They do not
+certify full-WM application enumeration, native MRU, pinning, magnification,
+physical DPI or macOS pixel fidelity.
 
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
@@ -600,9 +622,9 @@ Canvas; the painter uses their actual coordinate intersection for the outline,
 keeping the 176px backing and independent edge phases. All four visible edges
 are complete, and all six unfocused preset captures remain byte-identical.
 These cards/navigation are selected command buttons, not proof of themed
-checkbox/radio/switch/select/tab/list coverage. Those SDK controls already exist
-in `naive.mjs`, but their desktop-theme mapping and OS-state certification remain
-separate E22.8 work.
+checkbox/radio/switch/select/tab/list coverage. The later E22.8 work below adds
+desktop-theme mapping to the existing SDK controls; broader bespoke-consumer
+coverage and OS-state certification remain separate.
 
 `tests/caption-alignment.c` now checks geometry-only layout, hitboxes and the
 bounded frame codec. `tests/caption-gui.mjs` paints actual GUI caption strips;
@@ -626,6 +648,48 @@ on close and keep the existing window-local portal; a very short viewport can
 show only part of a row. These are functional improvements, not six-theme
 OS-exact glyphs or native accessibility-provider certification. See
 [the SDK contract](../gui/README.md).
+
+The six selection factories also accept strict per-instance
+`appearance={colors,metrics,paint,decorate,revision}`. One desktop adapter maps
+the existing theme tokens and passive surface primitives, without importing
+desktop policy into the SDK or changing its global theme. Classic part bevels
+own their outside pixels rather than sitting behind a second generic border;
+radio circles keep their border. Default metrics are immutable. Actual
+six-theme sheets cover palette/metric consumption, hover/press/cancel/disabled,
+retained-instance retheming and keyboard navigation; the no-appearance
+light/dark whole captures remain byte-identical.
+
+Displays now uses a named checkbox whose Space action changes only the draft;
+Apply still submits the original output identity/serial and keeps its trusted
+confirmation deadline. Audio uses a named mute switch and keeps its displayed
+value until the existing generation/revision/instance policy acknowledges the
+change; persistence happens after acknowledgement. Busy or unsupported values
+cannot activate either control. These actual GUI/controller checks use bounded
+native/domain fixtures, not hardware mutation or native screen-reader-provider
+qualification.
+
+Settings cards, Audio/Displays cards, Appearance/Keyboard panels, Files dialogs,
+context menus and breadcrumbs, opt-in file choosers and application-window
+choosers share `panel-appearance.mjs`. It is a passive token projection, not a
+second controller: Classic transfers generic border space into padding so its
+bevel alone owns the outside edge. Existing inputs, inline rename, controller
+guards and chooser subscriptions remain intact. Read-only long paths/details
+use raw-text horizontal viewports with wheel and Left/Right/Home/End access;
+ordinary messages may wrap, but long-token wrapping is not claimed. Neutral
+chooser whole-image bytes remain unchanged. This does not certify every
+credential/trusted dialog or every bespoke application surface as OS-identical.
+
+Shared quiet commands and selected desktop captions consume the optional
+selection foreground as well. Only explicitly tagged original monochrome icon
+parts follow that ink; bitmap and fixed-color art are not recolored. Ordinary
+nonquiet button faces and each missing-token legacy fallback are preserved.
+The shared weak physical-state painter keeps ink aligned with the actual
+selection/hover background across cancel, disabled state and retained retheme.
+Files rows use that same ink-only painter for explicitly marked name/metadata
+parts and original glyphs, restoring each original normal text/muted/folder
+color on leave. Traversal stops at textbox roots, so inline rename fields are
+not recolored; row height, column widths, selection identity and guarded file
+actions are unchanged.
 
 Desktop command and button consumers share primary-button, nonrepeating
 Enter/Space activation. Recognized repeated activation keys are consumed rather
@@ -699,7 +763,7 @@ specific task IDs, not another independently maintained status table.
 | OS X 10.4 Tiger | E22.25: caption/traffic lights/menu bar; E22.26: 2D Dock rim/slots/separator/black triangles; E22.27: genuine glass transparency rather than an opaque approximation |
 | OS X 10.7 Lion | E22.28: caption/traffic lights/menu bar; E22.29: perspective shelf/spacing/luminous indicators; E22.30: glass, shadow and actual reflection |
 | macOS 11 Big Sur light | E22.31: caption/traffic lights/menu bar and toolbar boundary; E22.32: floating Dock rim/radius/inset/separator/dots; E22.33: wallpaper tint, vibrancy, blur and transparency |
-| Shared Mac Dock semantics | E22.34: per-application grouping/pinning versus the current per-window slots, minimized/running behavior and unimplemented magnification |
+| Shared Mac Dock semantics | E22.34: delivered exact-appId grouping and real window chooser; remaining pinning, native/reference qualification and unimplemented magnification |
 
 The list distinguishes a measured defect, an explicit implementation gap and
 missing reference/qualification evidence. Corrected defects are not reopened
