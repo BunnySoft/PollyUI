@@ -470,6 +470,12 @@ Modern and all three Mac presets now explicitly select optional
 nonempty exact native `appId` values; missing/empty IDs remain independent
 `Window.id` tasks. Catalog names are used only on an exact ID match, otherwise
 the real app ID is displayed. No title, PID or basename aliases are inferred.
+Taskbar and Dock tasks now reuse the desktop's existing bounded bitmap resource
+cache for registered PNG/JPEG artwork, retaining the union required by desktop
+shortcuts and current tasks. Images keep their original colors and slot sizes;
+missing, named, SVG or unsupported resources retain explicit fallback/reporting.
+This does not add an icon-theme resolver or claim that unavailable artwork has
+been rendered end to end.
 Missing grouping or explicit `"windows"` preserves the original input order
 and per-window interface; Classic and XP keep that mode.
 
@@ -650,6 +656,9 @@ button gloss are covered. SDK text-input caret/selection, every bespoke dialog,
 global scrollbars and third-party clients are not certified as OS-identical.
 Generic platform font fallback remains intentional: no forced aliases or
 proprietary font files are installed. These missing pixels prevent a 1:1 claim.
+Files list names now use the theme body size and metadata its status size;
+Processes uses the existing body/status/heading and spacing tokens as well.
+Their fixed-row geometry, columns, inputs and controllers are unchanged.
 
 The SDK light/dark switch, checkbox, radio, tabs, Select and menu now provide
 keyboard navigation, disabled/controlled-value contracts and visible paint-only
