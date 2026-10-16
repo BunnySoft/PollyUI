@@ -96,6 +96,7 @@ class FixtureNode {
   }
   get textContent() { return this.type === '#text' ? this.value : this.childNodes.map(node => node.textContent).join(''); }
   set textContent(value) { this.value = String(value); this.childNodes = []; }
+  get firstChild() { return this.childNodes[0] ?? null; }
   get lastChild() { return this.childNodes.at(-1); }
   appendChild(node) { return this.insertBefore(node, null); }
   insertBefore(node, before) {

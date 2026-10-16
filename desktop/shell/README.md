@@ -65,7 +65,9 @@ the old actions. The three fixed Dock entries, running markers, icon sizing,
 natural gap/fitting math and inner/outer scrolling are unchanged.
 
 The chooser occupies the existing bounded RootMenu client window, not Alt+Tab or
-a native popup. Its live rows activate, minimize/restore or close only that real
+a native popup. Its passive outer chrome consumes the shared `panelAppearance`
+and `panelDetail` menu policy; only its bounded geometry belongs to this consumer.
+Its live rows activate, minimize/restore or close only that real
 window. No launch, pinning, process-wide close, new preferences, native protocol
 or management authority is added. Tab/arrows/Home/End navigate bounded commands;
 focus reveals long-list rows. Escape/Close menu returns to the opener when it is

@@ -9,6 +9,9 @@ const { memoryConfiguration, fixtureShortcuts } = await import('./desktop/tests/
 const { defaultShellConfiguration } = await import('./desktop/shell/configuration.mjs');
 const { getDesktopTheme } = await import('./desktop/shell/themes.mjs');
 const { applicationsView } = await import('./desktop/shell/views.mjs');
+const { windowGroupMenu } = await import('./desktop/shell/window-group-menu.mjs');
+const { windowTasks } = await import('./desktop/shell/window-groups.mjs');
+const { panelAppearance, panelDetail } = await import('./desktop/shared/ui/panel-appearance.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -312,6 +315,23 @@ function groupedWindows({ state, native, calls }) {
 }
 const groupId = 'shell-window-app-fixture.desktop';
 const latestGroup = f => f.created.findLast(window => !window.closed && window.document.getElementById('shell-window-group'));
+
+test('Application tasks: group-menu chrome uses the shared menu policy without masking custom tokens', () => {
+  const group = windowTasks([{ id: 10, appId: 'fixture.desktop', title: 'Document', workspaceId: 7 }],
+    'applications')[0];
+  for (const id of ['modern', 'server2003']) {
+    const base = getDesktopTheme(id);
+    const theme = { ...base, id: 'custom-group-menu', colors: { ...base.colors, surface: '#112233', border: '#334455' },
+      button: { ...base.button, radius: 9 }, window: { ...base.window, radius: 17 },
+      layout: { ...base.layout, compactPadding: 7, controlGap: 5, contentPadding: 19, borderWidth: 2 } };
+    const menu = windowGroupMenu(theme, group, { slots: [], action() {}, close() {} });
+    assert.deepEqual(menu.props.style, { ...panelAppearance(theme, 'menu'),
+      width: '100%', height: '100%', minHeight: 0, minWidth: 0, overflow: 'hidden' });
+    const detail = panelDetail(theme, 'menu');
+    if (detail) assert.deepEqual(menu.children[0], detail, 'Classic passive detail is actually mounted in the menu');
+    assert.equal(menu.props.role, 'menu');
+  }
+});
 
 scenario('Application tasks: Modern and Big Sur use one model and both outputs size Dock by display tasks', f => {
   for (const theme of ['modern', 'bigsur']) {

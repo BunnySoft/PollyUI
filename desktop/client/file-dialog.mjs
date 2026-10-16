@@ -4,13 +4,17 @@ import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { createFileDialogController } from './desktop/client/file-dialog-controller.mjs';
 import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
-import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
+import { desktopCommand, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { activationEvents } from './desktop/shared/ui/activation.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 
 const owners = new WeakMap();
 const descendants = node => [node, ...Array.from(node.childNodes || []).flatMap(descendants)];
 let sequence = 0;
 const row = { flexDirection: 'row', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' };
+// Positional reconciliation can recycle a scrolled details view as an action row.
+const rowProps = { style: row, onUpdate: node => { node.scrollLeft = 0; } };
+const neutralPanel = { borderWidth: '1', borderRadius: '6', padding: '14', gap: '10' };
 
 function palette(theme) {
   const color = (key, fallback) => /^#[0-9a-f]{6}$/i.test(theme?.colors?.[key]) ? theme.colors[key] : fallback;
@@ -48,7 +52,13 @@ export function showFileDialog({ parent = window, files,
   overlay.setAttribute('aria-label', settings.mode === 'save' ? 'Save file' : 'Open file');
   const panel = doc.createElement('view');
   Object.assign(panel.style, { width: '100%', height: '100%', maxWidth: '800', maxHeight: '640',
-    borderWidth: '1', borderRadius: '6', padding: '14', gap: '10' });
+    ...neutralPanel });
+  const detail = optInTheme ? doc.createElement('view') : null;
+  if (detail) {
+    detail.setAttribute('aria-hidden', 'true');
+    Object.assign(detail.style, { position: 'absolute', left: '0', top: '0', right: '0', bottom: '0', pointerEvents: 'none' });
+    panel.appendChild(detail);
+  }
   const top = doc.createElement('view'), listing = doc.createElement('view'), bottom = doc.createElement('view');
   listing.id = prefix + '-list';
   Object.assign(listing.style, { flexGrow: '1', flexShrink: '1', minHeight: '60', overflow: 'scroll' });
@@ -84,12 +94,14 @@ export function showFileDialog({ parent = window, files,
     if (parent.onclose === onclose) parent.onclose = previousClose;
     owners.delete(parent);
     render(null, top); render(null, listing); render(null, bottom);
+    if (detail) render(null, detail);
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     if (!parent.closed && previousFocus && descendants(doc.body).includes(previousFocus)) previousFocus.focus();
     resolve(parent.closed && value.status === 'selected' ? { status: 'cancelled', reason: 'parent-closed' } : value);
   }
   function button(id, caption, action, enabled = true, selected = false) {
-    if (theme) return desktopCommand(prefix + '-' + id, caption, theme, action, { enabled, selected });
+    if (theme) return desktopCommand(prefix + '-' + id, caption, theme, action,
+      { enabled, selected, style: { maxWidth: '100%', minWidth: 0 } });
     const colors = palette(theme);
     return h('view', { id: prefix + '-' + id, tabIndex: enabled ? 0 : -1, role: 'button',
       'aria-label': caption, 'aria-disabled': String(!enabled), 'aria-pressed': String(selected),
@@ -99,12 +111,40 @@ export function showFileDialog({ parent = window, files,
       focusStyle: { borderColor: colors.focus }, hoverStyle: enabled ? { borderColor: colors.accent } : {},
       ...activationEvents(action, enabled) }, caption);
   }
-  const label = (id, caption, color, size = 13) =>
-    h('view', { id: prefix + '-' + id, style: { color, fontSize: size, flexShrink: 0 } }, caption);
+  function label(id, caption, color, size = 13) {
+    if (theme && ['selected', 'error', 'notice', 'theme-error', 'overwrite-question', 'overwrite-detail'].includes(id)) {
+      const minWidth = String(caption).split(/\s+/).reduce((width, word) => Math.max(width, measureText(word, size)), 0);
+      return detailLabel({ id, caption, color, size, minWidth });
+    }
+    return h('view', { id: prefix + '-' + id, style: { color, fontSize: size, flexShrink: 0,
+      ...(theme ? { minWidth: 0, maxWidth: '100%' } : {}) },
+      ...(optInTheme ? { onUpdate: node => { node.scrollLeft = 0; } } : {}) }, caption);
+  }
+  function detailLabel({ id, caption, color, size, minWidth }) {
+    const sync = node => {
+      if (node.__panelText !== caption) { node.scrollLeft = 0; node.__panelText = caption; }
+    };
+    return h('view', { id: prefix + '-' + id, role: 'region',
+      'aria-label': 'Full details; Left/Right or Home/End to scroll', tabIndex: 0,
+      style: { flexDirection: 'row', minWidth: 0, maxWidth: '100%', flexShrink: 0, overflow: 'scroll',
+        borderWidth: theme.layout.borderWidth, borderColor: 'transparent', borderRadius: theme.button.radius },
+      focusStyle: { borderColor: theme.colors.focus },
+      onMount: sync, onUpdate: sync,
+      onWheel: event => { scrollDesktop(event, true); event.stopPropagation(); },
+      onKeydown: event => {
+        const delta = { ArrowLeft: -40, ArrowRight: 40, Home: -Infinity, End: Infinity }[event.key];
+        if (delta === undefined) return;
+        scrollDesktop({ currentTarget: event.currentTarget, deltaX: delta, preventDefault: () => event.preventDefault() }, true);
+        event.stopPropagation();
+      },
+    }, h('view', { style: { color, fontSize: size, flexShrink: 1, minWidth: Math.ceil(minWidth) } }, caption));
+  }
   function paint() {
     if (finished || !overlay.parentNode || parent.closed) return;
     const state = controller.getState(), colors = palette(theme), revision = state.revision;
-    panel.style.backgroundColor = colors.background; panel.style.borderColor = colors.border;
+    Object.assign(panel.style, theme ? panelAppearance(theme, 'dialog') :
+      { ...neutralPanel, backgroundColor: colors.background, borderColor: colors.border });
+    if (detail) render(theme ? panelDetail(theme, 'dialog') : null, detail);
     const blocked = state.phase === 'overwrite', hasFiles = !!files;
     const usable = hasFiles && !blocked && !!state.directory &&
       !['idle', 'unavailable', 'error', 'loading'].includes(state.phase);
@@ -133,7 +173,7 @@ export function showFileDialog({ parent = window, files,
       breadcrumbs;
     render(h('view', { style: { gap: 7, flexShrink: 0 } },
       label('title', state.mode === 'save' ? 'Save file' : 'Open file', colors.text, 20),
-      h('view', { style: row },
+      h('view', rowProps,
         button('home', 'Home', () => controller.navigate(state.locations.home, revision), hasFiles && !!state.locations && !blocked),
         button('up', 'Up', () => controller.up(revision), usable && state.directory.path !== '/'),
         button('refresh', 'Refresh', () => state.directory ? controller.navigate(state.directory.path, revision) : controller.start(),
@@ -161,7 +201,7 @@ export function showFileDialog({ parent = window, files,
       state.selection?.type === 'directory' || state.selection?.targetType === 'directory' ? 'Open folder' : 'Open';
     render(h('view', { style: { gap: 7, flexShrink: 0 } },
       !state.complete ? label('limited', 'Directory list limited to 1024 entries. Use Location to navigate; unlisted files are not selectable here.', colors.muted) : null,
-      !blocked && pages > 1 ? h('view', { style: row },
+      !blocked && pages > 1 ? h('view', rowProps,
         button('previous', 'Previous page', () => {
           if (currentListRevision !== listRevision) return;
           page--; listing.scrollTop = 0; paint(); focus('next');
@@ -171,7 +211,7 @@ export function showFileDialog({ parent = window, files,
           if (currentListRevision !== listRevision) return;
           page++; listing.scrollTop = 0; paint(); focus('previous');
         }, usable && page + 1 < pages)) : null,
-      h('view', { style: row }, ...state.filters.map((filter, index) => button('filter-' + index,
+      h('view', rowProps, ...state.filters.map((filter, index) => button('filter-' + index,
         filter.label, () => controller.setFilter(index, revision),
         hasFiles && !blocked && ['ready', 'validating'].includes(state.phase), state.filterIndex === index))),
       state.mode === 'save' ? label('name-label', 'Filename; chooser does not write content.', colors.muted) : null,
@@ -180,15 +220,15 @@ export function showFileDialog({ parent = window, files,
       state.error ? label('error', state.error, colors.error) : null,
       notice ? label('notice', notice, colors.error) : null,
       themeError ? label('theme-error', 'Theme error: ' + themeError, colors.error) : null,
-      blocked ? h('view', { style: { gap: 7 } },
+      blocked ? h('view', { style: { gap: 7 }, onUpdate: node => { node.scrollLeft = 0; } },
         label('overwrite-question', 'Replace existing file? ' + state.confirmation.path, colors.error, 16),
         label('overwrite-detail', 'Replacing discards this file content. Observation: ' +
           state.confirmation.target.identity + '. The consumer must use conditional writing.', colors.muted),
-        h('view', { style: row },
+        h('view', rowProps,
           button('keep', 'Keep existing file', () => controller.dismissOverwrite(revision)),
           button('replace', 'Replace this file', () => controller.confirmOverwrite(revision)),
           button('cancel', 'Cancel', () => controller.cancel('cancelled', revision)))) :
-        h('view', { style: row },
+        h('view', rowProps,
           button('accept', primary, () => controller.activate(revision),
             state.phase === 'ready' && (state.mode === 'open' ? !!state.selection : !!state.name || !!state.selection)),
           button('cancel', 'Cancel', () => controller.cancel('cancelled', revision)))), bottom);

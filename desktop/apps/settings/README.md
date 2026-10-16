@@ -109,3 +109,11 @@ native Apply/Keep, volume/mute/default, focus-bound actual-key recording/reset,
 close/new-PID reopen and eight app-buffer captures. Its software-native result
 does not qualify physical hardware, theme pixel matching, persistent reboot or
 an ISO. Existing network/full UI modes keep their separate evidence boundaries.
+
+Appearance status/error surfaces and Keyboard shortcut cards consume the shared
+passive `desktop/shared/ui/panel-appearance.mjs` card policy. Theme tokens select
+their shape, spacing and surface; Classic reuses the existing inset bevel without
+a second generic border. Status text uses the selection foreground when supplied.
+Decorations are non-interactive and add no focus stops, recording lifecycle,
+subscription or RPC behavior. Other page/control migrations remain independently
+owned; this contract is not a claim of original-OS pixel certification.

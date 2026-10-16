@@ -3,6 +3,7 @@ import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
 import { desktopText, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 import { taskLabel } from './desktop/shell/window-groups.mjs';
 
 const gestures = new WeakMap();
@@ -101,11 +102,10 @@ export function windowGroupMenu(theme, group, state) {
     nodes[next].focus();
   };
   return h('view', { id: 'shell-window-group', role: 'menu', 'aria-label': taskLabel(group),
-    style: { width: '100%', height: '100%', minHeight: 0, minWidth: 0,
-      padding: theme.layout.contentPadding, gap: theme.layout.contentGap, overflow: 'hidden',
-      backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth,
-      borderColor: theme.colors.border, borderRadius: theme.window.radius },
+    style: { ...panelAppearance(theme, 'menu'), width: '100%', height: '100%',
+      minHeight: 0, minWidth: 0, overflow: 'hidden' },
     onKeydown: navigate },
+  panelDetail(theme, 'menu'),
   h('view', { style: { height: theme.layout.buttonHeight, minWidth: 0, overflow: 'hidden', flexShrink: 0 } },
     label(taskLabel(group))),
   h('view', { id: 'shell-group-list', style: { flexGrow: 1, flexBasis: 0, minHeight: 0,
