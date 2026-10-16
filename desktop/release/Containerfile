@@ -1,4 +1,5 @@
 FROM docker.io/library/alpine:3.24
+RUN printf '%s\n' 'Unsupported current Alpine runtime recipe: new desktop packages require the pinned Debian scene-effects SDK. Existing archived Alpine images are historical artifacts, not current rebuild inputs.' >&2; exit 1
 COPY runtime-packages.txt /tmp/runtime-packages.txt
 RUN apk add --no-cache $(cat /tmp/runtime-packages.txt) && \
     rm /tmp/runtime-packages.txt && adduser -D -u 1000 polly

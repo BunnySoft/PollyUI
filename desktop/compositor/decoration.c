@@ -200,9 +200,10 @@ void pu_decoration_present(struct PuDesktopView *view)
 bool pu_decoration_effects(struct PuDesktopView *view)
 {
     struct PuDecoration *d = view->decoration;
-    if (!d || !d->decorated || !d->shown || view->mode != PU_DESKTOP_FLOATING ||
-        !d->current->layout.effect_radius)
+    if (!d || !d->decorated || !d->shown || view->mode != PU_DESKTOP_FLOATING) {
+        wlr_scene_node_set_enabled(&view->shadow->node, false);
         return wlr_scene_tree_set_rounding(view->effects, NULL, 0);
+    }
     const uint32_t *meta = d->shown->meta;
     int border = meta[PU_FRAME_BORDER], title = meta[PU_FRAME_TITLE];
     struct wlr_box box = {-border, -title,
@@ -211,7 +212,25 @@ bool pu_decoration_effects(struct PuDesktopView *view)
     float radius = d->current->layout.effect_radius;
     if (radius > box.width / 2.0f) radius = box.width / 2.0f;
     if (radius > box.height / 2.0f) radius = box.height / 2.0f;
-    return wlr_scene_tree_set_rounding(view->effects, &box, radius);
+    if (!wlr_scene_tree_set_rounding(view->effects, radius ? &box : NULL, radius)) return false;
+    const struct PuDecorationLayout *layout = &d->current->layout;
+    int opacity = d->shown->meta[PU_FRAME_STATE] & 1 ? layout->shadow_active : layout->shadow_inactive;
+    if (!layout->shadow_sigma || !opacity) {
+        wlr_scene_node_set_enabled(&view->shadow->node, false);
+        return true;
+    }
+    int dx = layout->shadow_x_bias - 64, dy = layout->shadow_y_bias - 64;
+    if (!wlr_scene_shadow_set_geometry(view->shadow, box.width, box.height, radius,
+        layout->shadow_sigma, dx, dy)) return false;
+    float alpha = opacity / 100.0f;
+    uint32_t rgb = (uint32_t)layout->shadow_rgb;
+    float color[4] = {((rgb >> 16) & 255) / 255.0f * alpha,
+        ((rgb >> 8) & 255) / 255.0f * alpha, (rgb & 255) / 255.0f * alpha, alpha};
+    wlr_scene_rect_set_color(view->shadow, color);
+    wlr_scene_node_set_position(&view->shadow->node, box.x - view->shadow->shadow_inset + dx,
+        box.y - view->shadow->shadow_inset + dy);
+    wlr_scene_node_set_enabled(&view->shadow->node, true);
+    return true;
 }
 bool pu_decoration_button_box(struct PuDesktopView *view, int part, struct wlr_box *box)
 {
@@ -607,7 +626,7 @@ static void prepare_theme(struct wl_client *client, struct wl_resource *resource
     if (valid) { memcpy(words, configuration->data, sizeof(words)); valid = pu_appearance_decode(&layout, words); }
     if (!valid) {
         close(document);
-        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 5 are required");
+        polly_appearance_v1_send_prepared(resource, serial, 0, "A valid sealed document and geometry schema 6 are required");
         pu_decorations_service_changed(owner->state->desktop);
         return;
     }
@@ -748,8 +767,8 @@ static void appearance_bind(struct wl_client *client, void *data, uint32_t versi
 {
     struct PuDecorations *state = data;
     bool rendering = pu_decorator_allowed(state->desktop, client);
-    if ((!rendering && client != state->desktop->shell_client) || version < 5) {
-        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v5"); return;
+    if ((!rendering && client != state->desktop->shell_client) || version < 6) {
+        wl_client_post_implementation_error(client, "Appearance requires paired PollyWM/Shell/decorator v6"); return;
     }
     struct AppearanceClient *existing;
     wl_list_for_each(existing, &state->appearance_clients, link)
@@ -778,7 +797,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 5, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 6, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

@@ -896,6 +896,8 @@ void pu_desktop_decoration_ready(struct PuDesktopView *view)
     if (view->desktop->stopping) return;
     present_view(view);
     pu_decoration_update(view);
+    if (!pu_decoration_effects(view))
+        fail(view->desktop, "Cannot update native window effects");
 }
 
 static void refresh_views(struct PuDesktop *desktop)
@@ -2090,9 +2092,10 @@ static void new_toplevel(struct wl_listener *listener, void *data)
         return;
     }
     view->backdrop = wlr_scene_rect_create(view->tree, 1, 1, (float[4]){0, 0, 0, 1});
+    view->shadow = wlr_scene_shadow_create(view->tree);
     view->effects = wlr_scene_tree_create(view->tree);
     view->content = view->effects ? wlr_scene_xdg_surface_create(view->effects, toplevel->base) : NULL;
-    if (!view->effects || !view->content) {
+    if (!view->shadow || !view->effects || !view->content) {
         wlr_scene_node_destroy(&view->tree->node);
         free(view);
         wl_resource_post_no_memory(toplevel->resource);
@@ -2108,6 +2111,7 @@ static void new_toplevel(struct wl_listener *listener, void *data)
         return;
     }
     wlr_scene_node_set_enabled(&view->backdrop->node, false);
+    wlr_scene_node_set_enabled(&view->shadow->node, false);
     wl_list_init(&view->link);
     wl_list_insert(&desktop->all_views, &view->all_link);
     view->owner.view = view;
@@ -2307,8 +2311,8 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
     wl_list_init(&desktop->layers);
-    if (wlr_scene_effects_abi_v1() != WLR_SCENE_EFFECTS_ABI ||
-        strcmp(wlr_scene_effects_source_sha256_v1(), PU_WLROOTS_EFFECTS_SHA256)) {
+    if (wlr_scene_effects_abi_v2() != WLR_SCENE_EFFECTS_ABI ||
+        strcmp(wlr_scene_effects_source_sha256_v2(), PU_WLROOTS_EFFECTS_SHA256)) {
         wlr_log(WLR_ERROR, "PollyWM requires its paired wlroots scene effects ABI");
         desktop->failed = true;
         return false;

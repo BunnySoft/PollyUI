@@ -28,8 +28,14 @@ stop the desktop, audio policy or independent applications.
 
 Theme JSON remains version 1. `window.nativeEffects: "rounded"` opts server-decorated
 floating windows into the existing `window.radius`; missing or `"none"` preserves
-the old rectangular native window. Preview-only `window.shadow` is not implicitly
-enabled. Maximized/fullscreen, explicit client-side decorations and undecorated
+the old rectangular native window. `"rounded-shadow"` additionally enables a real
+external Gaussian-outline shadow, using `ceil(window.shadow / 2)` as its sigma.
+Optional `nativeShadowColor` is RGB; active/inactive `nativeShadowOpacity` and
+`nativeShadowInactiveOpacity` are integer percentages (JS defaults 24/12), and
+`nativeShadowX`/`nativeShadowY` are integer offsets within -64..64. The JS defaults
+are black, x=0 and y=round(window.shadow/4); none are interpreted as presets in C.
+Preview-only `window.shadow` never enables native shadows without that explicit mode.
+Maximized/fullscreen, explicit client-side decorations and undecorated
 windows remain unaffected. Popups are separate from the rounded client-plus-frame
 subtree. Input regions intentionally remain the existing rectangles, including
 visually clipped corners; this feature does not introduce corner click-through.
@@ -37,11 +43,14 @@ visually clipped corners; this feature does not introduce corner click-through.
 The compositor isolates real scene descendants, preserving source crop, buffer
 transforms, alpha and subsurfaces, then applies antialiased coverage once. It never
 asks JavaScript to capture client pixels. Existing scene output commits, damage,
-frame callbacks and lock visibility remain authoritative. Rounded trees cannot
+frame callbacks and lock visibility remain authoritative. Opted-in caption strips
+remain square, including maximized frames, so only the compositor owns outer AA.
+Shadows have no input/opaque region, exclude the window interior, and use the same
+real underlay rather than a simulated backdrop. Rounded trees cannot
 direct-scan out; visibility is conservative so clipped corners retain real underlay.
 Caches are per output/scale/pixel phase and invalidated by subtree changes.
 Each target is limited to 32768 pixels per axis and 16 megapixels. All targets
-share a 128MiB backing-plus-workspace reservation; allocation/budget failure
+share a 128MiB backing-plus-workspace reservation, including shadow coverage workspace; allocation/budget failure
 explicitly fails composition rather than substituting a square window.
 
 The source patch and SHA-256 pin live in `patches/wlroots-scene-effects.patch` and
@@ -50,8 +59,11 @@ same applier; the private library has a distinct effects-ABI SONAME. CMake check
 both its header ABI and required linked symbols; startup and packaging also compare
 the actual library's embedded patch SHA-256, not only an adjacent receipt file.
 Private appearance protocol and
-geometry schema 5 reject older WM/Shell/decorator pairings; stock SDKs are not a
-supported fallback. These effects are not backdrop sampling or live blur.
+geometry schema 6 reject older WM/Shell/decorator pairings; the private library is
+effects ABI 2. GLES effects require 23-bit fragment highp precision, checked explicitly;
+unsupported precision fails effects rather than using a mediump shape. Ordinary
+no-effect rectangles keep their existing path. Stock SDKs are not a supported fallback.
+These effects are not backdrop sampling or live blur.
 
 ## Desktop application shortcuts
 
@@ -760,22 +772,22 @@ required by independent applications such as `foot`/libfcft.
 
 ## Build independently on Linux
 
-wlroots has an unstable API: this target deliberately accepts **0.19.3 <= version
-< 0.20**. Alpine 3.24 provides the tested `wlroots0.19` package. Earlier 0.19
+wlroots has an unstable API: this target requires the pinned 0.19.3 source plus
+the checked-in effects ABI 2 patch and embedded source identity. Stock Alpine
+`wlroots0.19-dev` is no longer a current build SDK. Earlier 0.19
 versions omit `wlr_buffer_finish()` in the SHM allocator destructor, causing
 use-after-free during nested/Pixman teardown. Upstream 0.19.3 fixes this; do not
 lower the minimum or work around it by changing teardown timing.
 Other wlroots API series need an explicit port, not an unbounded dependency change.
 The installed `wayland-protocols` must also include
-`staging/ext-workspace/ext-workspace-v1.xml`; the Alpine development image does.
+`staging/ext-workspace/ext-workspace-v1.xml`. Use the paired Debian SDK recipe.
+The historical Alpine compositor/runtime stages and new Alpine package creation
+are explicitly unsupported/deferred until the same source SDK is ported and verified;
+archived user-tested Alpine images are not current rebuild evidence.
 
 ```sh
-# Alpine 3.24, as root only for package installation:
-apk add build-base cmake ninja pkgconf wlroots0.19-dev wlr-protocols wayland-dev \
-    wayland-protocols libxkbcommon-dev xkeyboard-config capitaine-cursors \
-    fontconfig-dev freetype-dev font-dejavu
-
-# From the repository root, as a normal user:
+# Inside the pinned Debian SDK, from the repository root:
+export PKG_CONFIG_PATH=/opt/pollyui-wlroots/lib/pkgconfig:${PKG_CONFIG_PATH}
 cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/desktop
 ctest --test-dir build/desktop --output-on-failure
@@ -822,7 +834,9 @@ Public connections cannot bind it, even from the Shell's own process.
 Disconnecting or losing the initialized role invalidates readiness. A same-process
 SDK or localStorage flag is never used as service authority.
 
-On Alpine 3.24 x86_64, create a versioned package with the matching SDK sources:
+Inside the current paired Debian SDK, create a versioned package with its matching
+dependency sources. Current Alpine packaging is explicitly rejected; the archived
+Alpine artifacts and old container recipe are historical only.
 
 ```sh
 node desktop/tools/package-linux.mjs build/linux-sdl dist/pollydesktop \
@@ -839,7 +853,7 @@ The clean runtime image runs as an unprivileged user without the checkout, SDK,
 build tools or a host audio server. This does not add a production seat/login
 policy or grant host device access.
 
-Outputs include the installable `.tar.gz`, `rootfs/`, exact Alpine runtime
+Outputs include the installable `.tar.gz`, `rootfs/`, exact distribution runtime
 package versions, a file/hash/source manifest, an SPDX 2.3 dependency inventory,
 license notices, the SDL patch and `SHA256SUMS`. Libraries normally supplied by
 Alpine are not bundled in the tarball; the supplied Containerfile installs them.

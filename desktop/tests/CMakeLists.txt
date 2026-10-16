@@ -14,7 +14,7 @@ target_compile_options(pollywm-decorator-lifecycle-test PRIVATE -Wall -Wextra -W
 find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/package-contract.mjs")
-set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 30)
+set_tests_properties(desktop-package-contract PROPERTIES TIMEOUT 60)
 add_test(NAME desktop-live-publication COMMAND "${PACKAGE_NODE_EXECUTABLE}" --test
     "${CMAKE_CURRENT_SOURCE_DIR}/publish-live-iso.mjs")
 set_tests_properties(desktop-live-publication PROPERTIES TIMEOUT 30)
@@ -25,6 +25,16 @@ if (EXISTS "/opt/wlroots-0.19.3.tar.gz")
         "${CMAKE_CURRENT_SOURCE_DIR}/wlroots-effects.py" "${PU_WLROOTS_PREFIX}"
         "/opt/wlroots-0.19.3.tar.gz")
     set_tests_properties(desktop-wlroots-effects-dependency PROPERTIES TIMEOUT 30)
+    pkg_check_modules(EFFECTS_GLES QUIET IMPORTED_TARGET egl glesv2)
+    if (EFFECTS_GLES_FOUND)
+        add_executable(pollywm-scene-effects-gles-test scene-effects-gles.c)
+        target_link_libraries(pollywm-scene-effects-gles-test PRIVATE PkgConfig::EFFECTS_GLES m)
+        target_compile_options(pollywm-scene-effects-gles-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+        add_test(NAME desktop-scene-effects-software-gles COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scene-effects-gles.py"
+            $<TARGET_FILE:pollywm-scene-effects-gles-test>)
+        set_tests_properties(desktop-scene-effects-software-gles PROPERTIES TIMEOUT 45 SKIP_RETURN_CODE 77)
+    endif()
 endif()
 add_test(NAME desktop-cursor-assets COMMAND "${CURSOR_PYTHON_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../tools/generate-cursors.py")

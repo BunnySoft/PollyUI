@@ -5,7 +5,6 @@ import ctypes
 import hashlib
 import json
 from pathlib import Path
-import shutil
 import subprocess
 
 HERE = Path(__file__).resolve().parent
@@ -15,7 +14,7 @@ MANIFEST = HERE / "wlroots-effects.json"
 def definition():
     record = json.loads(MANIFEST.read_text())
     patch = HERE.parents[1] / "patches" / record["patch"]
-    if record["schemaVersion"] != 1 or record["upstreamVersion"] != "0.19.3" or record["abi"] != 1:
+    if record["schemaVersion"] != 1 or record["upstreamVersion"] != "0.19.3" or record["abi"] != 2:
         raise ValueError("Unsupported wlroots scene-effects definition")
     if hashlib.sha256(patch.read_bytes()).hexdigest() != record["patchSha256"]:
         raise ValueError("wlroots scene-effects patch checksum mismatch")
@@ -39,21 +38,21 @@ def record_install(prefix):
     definition()
     destination = prefix / "share/pollyui/wlroots-effects.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(MANIFEST, destination)
+    destination.write_text(json.dumps(json.loads(MANIFEST.read_text()), sort_keys=True, indent=2) + "\n")
 
 
 def check_install(prefix):
     record, _ = definition()
     installed = prefix / "share/pollyui/wlroots-effects.json"
-    if installed.read_bytes() != MANIFEST.read_bytes():
+    if json.loads(installed.read_text()) != record:
         raise ValueError("SDK wlroots effects recipe differs from the package source")
-    library = ctypes.CDLL(str(prefix / "lib/libwlroots-0.19-polly-effects1.so"))
-    marker = library.wlr_scene_effects_abi_v1
+    library = ctypes.CDLL(str(prefix / "lib/libwlroots-0.19-polly-effects2.so"))
+    marker = library.wlr_scene_effects_abi_v2
     marker.argtypes = []
     marker.restype = ctypes.c_uint32
     if marker() != record["abi"]:
         raise ValueError("SDK wlroots effects ABI differs from its recipe")
-    identity = library.wlr_scene_effects_source_sha256_v1
+    identity = library.wlr_scene_effects_source_sha256_v2
     identity.argtypes = []
     identity.restype = ctypes.c_char_p
     if identity().decode("ascii") != record["patchSha256"]:

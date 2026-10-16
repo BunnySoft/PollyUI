@@ -197,7 +197,9 @@ function paintText(ctx, theme, geometry, title) {
 }
 function paintTitle(ctx, theme, geometry, title) {
   const w = theme.window, { border, active } = geometry, width = geometry.width + 2 * border, height = geometry.title;
-  ctx.beginPath(); ctx.roundRect(0, 0, width, height, [w.radius, w.radius, 0, 0]); ctx.clip();
+  const nativeOutline = ['rounded', 'rounded-shadow'].includes(w.nativeEffects);
+  const radius = nativeOutline ? 0 : w.radius;
+  ctx.beginPath(); ctx.roundRect(0, 0, width, height, [radius, radius, 0, 0]); ctx.clip();
   const from = active ? w.titleFrom : w.inactiveFrom, to = active ? w.titleTo : w.inactiveTo;
   const start = w.surfaceStyle === 'classic' && geometry.text[2] > 0 ? geometry.text[0] : border;
   const end = w.surfaceStyle === 'classic' && geometry.text[2] > 0 ? start + geometry.text[2] : width - border;

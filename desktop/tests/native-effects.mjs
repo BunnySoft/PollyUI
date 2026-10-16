@@ -11,7 +11,7 @@ test('existing radius and preview shadow do not silently opt native windows in',
   for (const id of ['modern', 'xp', 'aqua']) {
     const theme = getDesktopTheme(id);
     assert.equal(decorationLayout(theme).effect_radius, 0);
-    assert.equal(encodeDecorationLayout(theme)[0], 5);
+    assert.equal(encodeDecorationLayout(theme)[0], 6);
   }
 });
 test('optional native effects select only validated numeric radius', () => {
@@ -22,13 +22,13 @@ test('optional native effects select only validated numeric radius', () => {
   assert.equal(decorationLayout(theme).effect_radius, 24);
   const encoded = encodeDecorationLayout(theme);
   assert.equal(encoded.length, DECORATION_LAYOUT_FIELDS.length + 2);
-  assert.equal(encoded.at(-1), 24);
+  assert.equal(encoded[2 + DECORATION_LAYOUT_FIELDS.findIndex(([field]) => field === 'effect_radius')], 24);
   const none = structuredClone(theme);
   none.window.nativeEffects = 'none';
   assert.equal(decorationLayout(validateTheme(none)).effect_radius, 0);
 });
 test('unknown modes, implicit booleans and invalid radii are rejected', () => {
-  for (const mode of ['blur', 'rounded-shadow', true, 1, null]) {
+  for (const mode of ['blur', 'shadow', true, 1, null]) {
     const theme = structuredClone(getDesktopTheme('modern'));
     theme.window.nativeEffects = mode;
     assert.throws(() => validateTheme(theme), /nativeEffects/);
@@ -38,5 +38,23 @@ test('unknown modes, implicit booleans and invalid radii are rejected', () => {
     theme.window.nativeEffects = 'rounded';
     theme.window.radius = radius;
     assert.throws(() => validateTheme(theme), /radius/);
+  }
+});
+test('shadow policy stays in JS and encodes signed offsets as bounded positive geometry', () => {
+  const theme = structuredClone(getDesktopTheme('modern'));
+  Object.assign(theme.window, { nativeEffects: 'rounded-shadow', nativeShadowColor: '#1234ab',
+    nativeShadowOpacity: 40, nativeShadowInactiveOpacity: 17, nativeShadowX: -8, nativeShadowY: 12 });
+  const layout = decorationLayout(validateTheme(theme));
+  assert.equal(layout.shadow_rgb, 0x1234ab);
+  assert.equal(layout.shadow_active, 40);
+  assert.equal(layout.shadow_inactive, 17);
+  assert.equal(layout.shadow_x_bias, 56);
+  assert.equal(layout.shadow_y_bias, 76);
+  assert.equal(layout.shadow_sigma, Math.ceil(theme.window.shadow / 2));
+  for (const [field, value] of [['nativeShadowColor', 'red'], ['nativeShadowColor', '#11223344'],
+    ['nativeShadowOpacity', 101], ['nativeShadowInactiveOpacity', -1], ['nativeShadowX', -65], ['nativeShadowY', 65]]) {
+    const bad = structuredClone(theme);
+    bad.window[field] = value;
+    assert.throws(() => validateTheme(bad), /nativeShadow/);
   }
 });

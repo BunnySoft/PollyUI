@@ -101,7 +101,7 @@ try {
     runtimeContract: { ...manifest.runtimeContract, postprocess: [processed] } };
   check(relocated);
   const effects = JSON.parse(readFileSync(path.join(repo, 'desktop/release/debian/wlroots-effects.json'), 'utf8'));
-  const privateLibrary = { path: 'usr/lib/pollyui/libwlroots-0.19-polly-effects1.so',
+  const privateLibrary = { path: 'usr/lib/pollyui/libwlroots-0.19-polly-effects2.so',
     sha256: digest('private-wlroots-effects-library'), size: 32 };
   const privateInput = { path: 'usr/lib/pollyui/libinput.so.10', sha256: digest('private-input'), size: 16 };
   const notices = ['wlroots-scene-effects.patch', 'wlroots-effects.json', 'apply-wlroots-effects.py'].map(name =>
@@ -113,7 +113,7 @@ try {
     runtimeContract: { ...relocated.runtimeContract, wlrootsEffects: effects,
       postprocess: [...relocated.runtimeContract.postprocess, privateRelocation],
       bundledLibraries: [...relocated.runtimeContract.bundledLibraries,
-        { binary: 'usr/bin/pollywm', soname: 'libwlroots-0.19-polly-effects1.so',
+        { binary: 'usr/bin/pollywm', soname: 'libwlroots-0.19-polly-effects2.so',
           path: privateLibrary.path, sha256: privateLibrary.sha256 },
         { binary: 'usr/bin/pollywm', soname: 'libinput.so.10', path: privateInput.path, sha256: privateInput.sha256 }] } };
   const privateSbom = { packages: [...sbom.packages, { name: 'wlroots', versionInfo: effects.version }] };

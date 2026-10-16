@@ -8,6 +8,7 @@
 #include "wire.h"
 #include "cursor.h"
 #include "session-lock.h"
+#include "shortcut-control.h"
 
 #include <errno.h>
 #include <drm_fourcc.h>
@@ -760,16 +761,40 @@ static bool native_effect_suite(struct TestClient *client, struct PuDesktopView 
         CHECK(effect_pixel(view, corners[i][0], corners[i][1], &shown));
         CHECK((shown & 0xffffff) == (hidden[i] & 0xffffff));
     }
-    CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0) && !view->effects->rounding);
+    CHECK(command(&shell_client, TEST_EFFECT_APPEARANCE, PU_DECORATION_DEFAULT_LAYOUT, 6, 24));
+    CHECK(settle_decoration(view) && view->shadow->node.enabled && view->shadow->is_shadow);
+    CHECK(fabsf(view->shadow->color[3] - 0.4f) < 0.001f);
+    struct wlr_scene_rect *white = wlr_scene_rect_create(desktop.windows, 600, 500, (float[4]){1, 1, 1, 1});
+    CHECK(white);
+    wlr_scene_node_set_position(&white->node, left - 32, top - 32);
+    wlr_scene_node_place_below(&white->node, &view->tree->node);
+    int sample_x = right + 6, sample_y = view->tree->node.y + 30;
+    wlr_scene_node_set_enabled(&view->shadow->node, false);
+    uint32_t bare, shaded;
+    CHECK(effect_pixel(view, sample_x, sample_y, &bare));
+    wlr_scene_node_set_enabled(&view->shadow->node, true);
+    CHECK(effect_pixel(view, sample_x, sample_y, &shaded));
+    CHECK((bare & 255) > (shaded & 255) + 3);
+    double nx, ny;
+    CHECK(wlr_scene_node_at(&desktop.windows->node, sample_x, sample_y, &nx, &ny) != &view->shadow->node);
+    wlr_scene_node_destroy(&white->node);
+    pu_desktop_focus_mapped(&desktop, find_view(1)->workspace_window);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    CHECK(fabsf(view->shadow->color[3] - 0.15f) < 0.001f);
+    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    CHECK(fabsf(view->shadow->color[3] - 0.4f) < 0.001f);
+    CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0) && !view->effects->rounding && !view->shadow->node.enabled);
     CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
-    CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0) && !view->effects->rounding);
+    CHECK(view->shadow->node.enabled);
+    CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0) && !view->effects->rounding && !view->shadow->node.enabled);
     CHECK(command(client, TEST_UNFULLSCREEN, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
-    CHECK(command(client, TEST_DECORATION, 1, 0, 0) && !view->effects->rounding);
+    CHECK(command(client, TEST_DECORATION, 1, 0, 0) && !view->effects->rounding && !view->shadow->node.enabled);
     CHECK(command(client, TEST_DECORATION, 0, 0, 0) && settle_decoration(view) && view->effects->rounding);
     CHECK(command(client, TEST_EFFECT_SUBSURFACE, 0, 0, 0));
     CHECK(command(&shell_client, TEST_EFFECT_APPEARANCE, PU_DECORATION_DEFAULT_LAYOUT, 0, 0));
-    CHECK(settle_decoration(view) && !view->effects->rounding);
-    puts("PASS: real client and overlapping extending subsurface are clipped with all four frame corners; maximize/fullscreen/CSD disable and floating restore");
+    CHECK(settle_decoration(view) && !view->effects->rounding && !view->shadow->node.enabled);
+    puts("PASS: real client/subsurface four-corner clipping, true external non-input shadow, presented active/inactive opacity and maximize/fullscreen/CSD/none lifecycle");
     return true;
 }
 

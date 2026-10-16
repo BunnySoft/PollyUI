@@ -31,7 +31,7 @@ int main(void)
                     text.x + text.width <= box.x));
             }
         }
-        words[0] = 3; assert(!pu_appearance_decode(&decoded, words)); words[0] = 4;
+        words[0] = 5; assert(!pu_appearance_decode(&decoded, words)); words[0] = PU_APPEARANCE_SCHEMA;
         words[1] = 2; assert(!pu_appearance_decode(&decoded, words)); words[1] = layout->left_controls;
         words[2] = 9; assert(!pu_appearance_decode(&decoded, words));
     }

@@ -105,6 +105,7 @@ struct Client {
     struct wl_surface *effect_surface;
     struct wl_subsurface *effect_subsurface;
     uint32_t effect_radius;
+    uint32_t effect_sigma;
     struct zwp_text_input_manager_v3 *text_manager;
     struct zwp_text_input_v3 *text_input;
     struct zwp_input_method_manager_v2 *ime_manager;
@@ -265,6 +266,11 @@ static void configure_appearance(struct Client *client, unsigned index)
 {
     struct PuDecorationLayout geometry = pu_decoration_layouts[index].layout;
     geometry.effect_radius = (int)client->effect_radius;
+    geometry.shadow_sigma = (int)client->effect_sigma;
+    geometry.shadow_active = 40;
+    geometry.shadow_inactive = 15;
+    geometry.shadow_x_bias = 64;
+    geometry.shadow_y_bias = 68;
     const struct PuDecorationLayout *theme = &geometry;
     uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, theme->left_controls};
     unsigned position = 2;
@@ -813,8 +819,8 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        if (version < 5) die("appearance configuration requires paired protocol version 5");
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 5);
+        if (version < 6) die("appearance configuration requires paired protocol version 6");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
@@ -1074,6 +1080,7 @@ int main(int argc, char **argv)
         switch (request.command) {
         case TEST_EFFECT_APPEARANCE:
             client.effect_radius = request.edges;
+            client.effect_sigma = request.serial;
             configure_appearance(&client, (unsigned)request.id);
             break;
         case TEST_EFFECT_SUBSURFACE:

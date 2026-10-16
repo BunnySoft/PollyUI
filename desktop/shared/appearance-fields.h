@@ -12,5 +12,11 @@
     X(int, control_gap, controlGap, 0, 32, 1) \
     X(int, text_inset, textInset, 0, 64, 1) \
     X(int, text_gap, textGap, 0, 32, 1) \
-    X(int, effect_radius, nativeRadius, 0, 64, 1)
+    X(int, effect_radius, nativeRadius, 0, 64, 1) \
+    X(int, shadow_sigma, nativeShadowSigma, 0, 64, 1) \
+    X(int, shadow_rgb, nativeShadowRGB, 0, 16777215, 1) \
+    X(int, shadow_active, nativeShadowOpacity, 0, 100, 1) \
+    X(int, shadow_inactive, nativeShadowInactiveOpacity, 0, 100, 1) \
+    X(int, shadow_x_bias, nativeShadowXBias, 0, 128, 1) \
+    X(int, shadow_y_bias, nativeShadowYBias, 0, 128, 1)
 #endif
