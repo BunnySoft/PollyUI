@@ -61,7 +61,7 @@ function stopGridScroll(node, done) {
 }
 
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
-  error = '', logout = null, desktop = null, programs = null, images = null) {
+  error = '', logout = null, desktop = null, programs = null, images = null, searchInput = null) {
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
   const menuStyle = theme.panel.menuStyle ?? (modern ? 'grid' : xp ? 'two-column' : 'legacy');
@@ -102,7 +102,13 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     }
     return revealGrid(node);
   };
-  const search = h('view', { id: 'shell-app-search', role: 'textbox', tabIndex: 0,
+  const search = searchInput ? searchInput({
+    style: { height: grid ? 32 : 24, flexShrink: 0, minWidth: 0,
+      ...(grid ? { marginTop: 24, marginLeft: 24, marginRight: 24 } : {}) },
+    placeholder: 'Search applications',
+    submit: () => { const first = filtered.find(entry => !entry.unavailable); if (first) launch(first.id); },
+    focused: scrollGrid ? event => revealGridItem(event.currentTarget) : null,
+  }) : h('view', { id: 'shell-app-search', role: 'textbox', tabIndex: 0,
     'aria-label': 'Search applications', style: { ...row, flexShrink: 0, minWidth: 0,
       height: grid ? 32 : 24, paddingLeft: 8, paddingRight: 8, gap: 8,
       ...(grid ? { marginTop: 24, marginLeft: 24, marginRight: 24 } : {}),
@@ -113,7 +119,7 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     onKeydown: event => {
       if (event.key === 'Backspace') {
         event.preventDefault(); changeQuery(Array.from(query).slice(0, -1).join(''));
-      } else if (event.key === 'Enter' && filtered.find(entry => !entry.unavailable)) {
+      } else if (event.key === 'Enter' && !event.isComposing && filtered.find(entry => !entry.unavailable)) {
         event.preventDefault(); launch(filtered.find(entry => !entry.unavailable).id);
       }
     },

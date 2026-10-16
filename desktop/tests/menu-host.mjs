@@ -85,7 +85,7 @@ class Node {
     domEvent(this, 'blur');
   }
   setInputMethod() {}
-  cancelComposition() {}
+  cancelComposition() { domEvent(this, 'compositionend'); }
   getBoundingClientRect() {
     return { x: this.offsetLeft, y: this.offsetTop, width: this.offsetWidth, height: this.offsetHeight,
       right: this.offsetLeft + this.offsetWidth, bottom: this.offsetTop + this.offsetHeight };
@@ -262,7 +262,7 @@ function fixture(configure = () => {}) {
         for (const key of ['output', 'anchors', 'keyboard', 'exclusiveZone', 'margins'])
           assert.equal(options[key], undefined, key + ' requires a layer surface');
       if (state.failCreate) throw new Error('fixture surface creation failed');
-      const window = { options, document: document(), closed: false, closeCount: 0,
+      const window = { options, document: document(), closed: false, closeCount: 0, setCursor() {},
         close() {
           if (this.closed) return;
           this.closed = true; this.closeCount++;
@@ -943,7 +943,7 @@ scenario('internal pointer/focus/scroll and a consumed child Escape do not dismi
   const search = find(menu, 'shell-app-search');
   press(search);
   domEvent(search, 'textinput', { data: 'fix' });
-  assert.match(find(menu, 'shell-app-search').lastChild.firstChild.textContent, /fix/);
+  assert.equal(find(menu, 'shell-app-search').childNodes[1].firstChild.textContent, 'fix');
   press(find(menu, 'shell-applications'));
   domEvent(find(menu, 'shell-applications'), 'wheel', { deltaY: 40 });
   key(menu, 'Tab');
@@ -984,7 +984,7 @@ scenario('Tab/Shift+Tab retain host navigation and Enter/Space/Escape act on the
 
 scenario('retained callbacks from closed/replaced menus cannot close, mutate, launch or capture', f => {
   const first = f.shell.showApplications(1);
-  const oldSearch = callback(find(first, 'shell-app-search'), 'textinput');
+  const oldSearch = find(first, 'shell-app-search').listeners.get('textinput').at(-1);
   const oldLaunch = callback(find(first, 'shell-app-fixture.desktop'), 'click');
   const oldClose = callback(find(first, 'shell-app-close'), 'click');
   const oldKey = callback(first.document.body, 'keydown');
@@ -997,7 +997,8 @@ scenario('retained callbacks from closed/replaced menus cannot close, mutate, la
   oldOnclose();
   assert.equal(next.closed, false);
   assert.equal(next.document.activeElement.id, 'shell-app-search');
-  assert.equal(find(next, 'shell-app-search').lastChild.firstChild.textContent, 'Search applications');
+  assert.equal(find(next, 'shell-app-search').childNodes[1].firstChild.textContent, '');
+  assert.equal(find(next, 'shell-app-search-slot').lastChild.firstChild.textContent, 'Search applications');
   assert.equal(f.calls.some(call => call[0] === 'launch'), false);
   assert.ok(first.document.activeElement === null, 'replaced menu releases DOM focus');
   assert.equal(first.document.body.listeners.get('keydown').length, 0);
@@ -1019,6 +1020,55 @@ scenario('current search launch and fixed Settings routes retain their actual la
   assert.equal(f.shell.showShortcuts(1), 123); assert.equal(f.shell.showDisplays(1), 123);
   assert.equal(f.calls.some(call => call[0] === 'capture'), false);
   assert.equal(f.calls.some(call => call[0] === 'apply-outputs'), false);
+});
+
+scenario('application search retains native editing, bounded paste, composition and retired input guards', f => {
+  const menu = f.shell.showApplications(1), field = find(menu, 'shell-app-search');
+  const text = () => field.childNodes[1].firstChild.textContent;
+  const previousClipboard = globalThis.clipboard;
+  let clipboardText = '';
+  globalThis.clipboard = { readText: () => clipboardText, writeText: value => { clipboardText = value; } };
+  try {
+    domEvent(field, 'textinput', { data: 'Fxiture' });
+    key(menu, 'Home'); key(menu, 'ArrowRight'); key(menu, 'Delete'); key(menu, 'ArrowRight');
+    domEvent(field, 'textinput', { data: 'x' });
+    assert.equal(text(), 'Fixture', 'Delete and insertion edit at the caret instead of appending');
+    key(menu, 'Home'); key(menu, 'ArrowRight', { shiftKey: true });
+    const selection = field.firstChild.childNodes.map(node => ({ ...node.style }));
+    click(find(menu, 'shell-app-refresh'));
+    assert.ok(find(menu, 'shell-app-search') === field);
+    field.focus();
+    assert.deepEqual(field.firstChild.childNodes.map(node => ({ ...node.style })), selection);
+    clipboardText = 'F';
+    key(menu, 'v', { ctrlKey: true });
+    assert.equal(text(), 'Fixture', 'Pasting replaces the retained selection');
+    key(menu, 'Home'); key(menu, 'ArrowRight');
+    clipboardText = 'x'.repeat(200);
+    key(menu, 'v', { ctrlKey: true });
+    assert.equal(text(), 'F' + 'x'.repeat(121) + 'ixture', 'Overlong middle paste preserves the suffix within 128 code points');
+    key(menu, 'Delete');
+    assert.equal(text(), 'F' + 'x'.repeat(121) + 'xture', 'Paste leaves the caret immediately before the preserved suffix');
+    key(menu, 'a', { ctrlKey: true }); clipboardText = 'Fixture'; key(menu, 'v', { metaKey: true });
+    domEvent(field, 'compositionstart');
+    domEvent(field, 'compositionupdate', { data: 'input-method preedit', selectionStart: 3 });
+    key(menu, 'Enter');
+    assert.equal(f.calls.some(call => call[0] === 'launch'), false, 'Actual composition blocks launching even without an event flag');
+    domEvent(field, 'compositionend');
+    key(menu, 'Enter', { isComposing: true });
+    key(menu, 'Enter', { repeat: true });
+    assert.equal(menu.closed, false);
+    const retired = field.listeners.get('keydown').at(-1);
+    key(menu, 'Enter');
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+    const next = f.shell.showApplications(2);
+    retired(event('keydown', { key: 'Enter' }));
+    assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+    assert.equal(next.closed, false);
+    assert.equal(text(), '', 'Closing clears the owned search input');
+  } finally {
+    if (previousClipboard === undefined) delete globalThis.clipboard;
+    else globalThis.clipboard = previousClipboard;
+  }
 });
 
 scenario('workspace editor focus is internal and retired Enter cannot save a replacement editor', f => {

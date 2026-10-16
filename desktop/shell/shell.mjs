@@ -1,6 +1,6 @@
 import { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
-import { render } from './gui/sdk/js/reconciler.mjs';
+import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
   BUILTIN_THEME_CATALOG, DESKTOP_THEMES, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { readUserThemeCatalog } from './desktop/shell/theme-files.mjs';
@@ -179,6 +179,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const editor = workspaceEditor;
     workspaceEditor = null;
     editor?.input.root.blur();
+    const search = surface.search;
+    surface.search = null;
+    if (search) {
+      search.input.root.cancelComposition();
+      search.input.root.blur();
+      search.input.value = '';
+    }
     if (running && surface.mode === 'applications') syncShellIcons(getDesktopTheme(themeId));
     return true;
   }
@@ -671,6 +678,50 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function reloadThemes() { return changeThemeFiles(true); }
   function restoreThemes() { return changeThemeFiles(false); }
 
+  function applicationSearch(current, theme, { style, placeholder, submit, focused }) {
+    let record = current.search;
+    if (!record) {
+      const input = createTextInput({ window: current.window, value: current.query, width: '100%',
+        fontSize: theme.layout.fontSize, padding: 4, maxLength: 128 });
+      record = current.search = { input, theme: null, composing: false };
+      input.root.id = 'shell-app-search';
+      input.root.setAttribute('role', 'textbox');
+      input.root.setAttribute('aria-label', 'Search applications');
+      const live = () => currentMenu(current) && current.search === record;
+      const edited = () => {
+        if (!live() || current.query === input.value) return;
+        current.query = input.value;
+        repaintMenu();
+      };
+      input.root.addEventListener('textinput', edited);
+      input.root.addEventListener('auxclick', edited);
+      input.root.addEventListener('compositionstart', () => { if (live()) record.composing = true; });
+      input.root.addEventListener('compositionend', () => { if (live()) record.composing = false; });
+      input.root.addEventListener('focus', event => { if (live()) record.focused?.(event); });
+      input.root.addEventListener('keydown', event => {
+        if (!live()) return;
+        if (['Backspace', 'Delete'].includes(event.key) ||
+            ((event.ctrlKey || event.metaKey) && ['x', 'v'].includes(event.key.toLowerCase()))) edited();
+        if (event.key === 'Enter') {
+          event.preventDefault(); event.stopPropagation();
+          if (!event.repeat && !event.isComposing && !record.composing) record.submit();
+        } else if (event.defaultPrevented) event.stopPropagation();
+      });
+    }
+    record.submit = submit; record.focused = focused;
+    if (record.input.value !== current.query) record.input.value = current.query;
+    if (record.theme !== theme) {
+      record.input.setAppearance(inputAppearance(theme));
+      record.theme = theme;
+    }
+    record.input.root.style.height = String(style.height);
+    return h('view', { id: 'shell-app-search-slot', style: { ...style, position: 'relative' },
+      onMount: node => node.insertBefore(record.input.root, node.firstChild) },
+    h('view', { 'aria-hidden': 'true', style: { position: 'absolute', top: 4, left: 4,
+      color: theme.colors.muted, fontSize: theme.layout.fontSize, pointerEvents: 'none',
+      display: current.query ? 'none' : 'flex' } }, placeholder));
+  }
+
   function repaintMenu() {
     if (!menu || menu.window.closed) return;
     const current = menu;
@@ -734,6 +785,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const programsEpoch = current.programsEpoch ?? 0;
       const applicationMenu = surfaceStyle(menuTheme, 'panel') === 'classic' ? startMenuView : applicationsView;
       syncShellIcons(menuTheme);
+      const searchFocused = current.search?.input.root === current.window.document.activeElement;
       render(applicationMenu(menuTheme, desktopCatalog(), current.query,
         scoped(value => { current.query = value; repaintMenu(); }),
         scoped(launchApplication), scoped(reloadApplications), close, error,
@@ -777,8 +829,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
               target?.focus();
             });
           }),
-        }, desktopImages),
+        }, desktopImages, options => applicationSearch(current, menuTheme, options)),
         current.window.document.body);
+      const search = current.search?.input.root;
+      const slot = current.window.document.getElementById('shell-app-search-slot');
+      if (search && slot && search.parentNode !== slot) slot.insertBefore(search, slot.firstChild);
+      if (searchFocused && search && current.window.document.activeElement !== search) search.focus();
       return;
     }
     if (current.mode === 'desktop') {
