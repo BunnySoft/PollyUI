@@ -1,6 +1,6 @@
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
-import { programsPlacement } from './desktop/shell/programs-menu.mjs';
+import { programsPlacement, categoryEntries, programCategoryId } from './desktop/shell/programs-menu.mjs';
 import { getDesktopTheme } from './desktop/shared/ui/themes.mjs';
 import { verticalScrollMetrics } from './gui/sdk/js/scrollbar.mjs';
 
@@ -26,21 +26,38 @@ export async function checkClassicPrograms(directory) {
   let theme = getDesktopTheme('server2003'), width = 384, height = 480, open = false, placement;
   let entries = Array.from({ length: 30 }, (_, index) => ({
     id: 'app' + index, name: 'Registered application ' + index,
+    categories: index === 0 ? ['Utility', '\u6587\u6863'] : index === 2 ? [] : [index % 2 ? 'Utility' : '\u6587\u6863'],
     ...(index === 1 ? { unavailable: 'Not installed' } : {}),
   }));
   const launched = [], pinned = [];
   const geometries = [];
   let slots = [];
+  let view = 'all', category = null, epoch = 0;
   let query = '', error = '', refreshes = 0, closes = 0, logouts = 0, revision = 0;
-  const active = id => open && entries.some(entry => entry.id === id && !entry.unavailable);
+  const members = () => view === 'categories' ? [] : view === 'category' ? categoryEntries(entries, category) : entries;
+  const active = id => open && members().some(entry => entry.id === id && !entry.unavailable);
   const change = (next, focus = '') => {
     if (next) placement = programsPlacement(get('shell-applications'), get('shell-all-programs'), theme.layout.menuRowHeight ?? 32);
-    open = next; if (!next) slots = []; mount();
+    if (open !== next) epoch++;
+    open = next;
+    if (!next) { slots = []; view = 'all'; category = null; }
+    mount();
     if (focus) requestAnimationFrame(() => {
       if (open !== next) return;
       const node = focus === 'trigger' ? get('shell-all-programs') :
         Array.from(get('shell-program-list').childNodes).find(item => item.tabIndex >= 0) ?? get('shell-program-back');
       node?.focus();
+    });
+  };
+  const navigate = (next, tag = null, focus = 'first') => {
+    view = next; category = next === 'category' ? tag : null; epoch++; slots = [];
+    mount();
+    get('shell-program-list').scrollTop = 0;
+    const generation = epoch;
+    requestAnimationFrame(() => {
+      if (!open || generation !== epoch) return;
+      const target = focus === 'first' ? get('shell-program-list').childNodes.find(item => item.tabIndex >= 0) : get(focus);
+      (target ?? get('shell-program-back'))?.focus();
     });
   };
   function mount(enabled = true) {
@@ -49,9 +66,10 @@ export async function checkClassicPrograms(directory) {
         startMenuView(theme, entries, query, value => { query = value; mount(); },
           id => launched.push(id), () => refreshes++, () => closes++, error, () => logouts++,
           { has: id => pinned.includes(id), add: id => pinned.push(id), remove: id => pinned.splice(pinned.indexOf(id), 1) },
-          enabled ? { open, placement, change, slots, launch: id => { if (active(id)) launched.push(id); },
+          enabled ? { open, placement, change, slots, view, category, epoch, navigate,
+            launch: id => { if (active(id)) launched.push(id); },
             pin: id => {
-              if (!open || !entries.some(entry => entry.id === id)) return;
+              if (!open || !members().some(entry => entry.id === id)) return;
               if (pinned.includes(id)) pinned.splice(pinned.indexOf(id), 1); else pinned.push(id);
             },
           } : null))),
@@ -98,7 +116,15 @@ export async function checkClassicPrograms(directory) {
   check(document.activeElement === get('shell-program-pin-app29') &&
     Number(get('shell-program-list').scrollTop) > 0, 'End scrolls to last real command');
   key('Tab');
-  check(document.activeElement === get('shell-program-app0'), 'Submenu Tab wraps without reaching underlying root commands');
+  check(document.activeElement === get('shell-program-back'), 'Tab from final command reaches the bounded header Back');
+  key('Tab');
+  check(document.activeElement === get('shell-program-categories'), 'Tab reaches the new Categories header entry');
+  key('Tab');
+  check(document.activeElement === get('shell-program-app0'), 'Tab returns to real list without underlying root commands');
+  host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
+  check(document.activeElement === get('shell-program-categories'), 'Reverse Tab includes Categories');
+  host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
+  check(document.activeElement === get('shell-program-back'), 'Reverse Tab includes Back');
   host.key('Tab', 'keydown', { text: false, shiftKey: true }); settle();
   check(document.activeElement === get('shell-program-pin-app29'), 'Reverse Tab wraps inside submenu');
   key('ArrowUp'); key('Enter');
@@ -145,7 +171,7 @@ export async function checkClassicPrograms(directory) {
   theme = { ...theme, colors: { ...theme.colors, selection: '#204080', accentText: '#f0f0f0' } };
   mount();
   check(open && get('shell-program-app0') === held && held.style.backgroundColor === theme.colors.selection &&
-    held.querySelector('.theme-command-label').style.color === theme.colors.accentText,
+    held.querySelector('.theme-command-label').style.color === (theme.colors.selectionText ?? theme.colors.accentText),
     'Live catalog reorder and immutable retheme retain the held ID and repaint its current state');
   entries.reverse(); mount();
   host.mouse('mouseup', ...point(held)); host.mouse('click', ...point(held)); settle();
@@ -174,6 +200,27 @@ export async function checkClassicPrograms(directory) {
   click(get('shell-app-refresh')); click(get('shell-app-close')); click(get('shell-app-logout'));
   check(refreshes === 1 && closes === 1 && logouts === 1, 'Original Refresh/Close/logout remain actual pointer actions');
   query = ''; mount();
+  get('shell-all-programs').focus(); key('ArrowRight'); await wait(); settle();
+  click(get('shell-program-categories')); await wait(); settle();
+  check(view === 'categories' && get(programCategoryId('\u6587\u6863')) && get(programCategoryId(null)),
+    'Actual header pointer opens real Unicode metadata tags and Uncategorized');
+  inside();
+  save('categories');
+  get(programCategoryId('Utility')).focus(); key('ArrowRight'); await wait(); settle();
+  check(view === 'category' && get('shell-program-app29') && !get('shell-program-app2'),
+    'Category ArrowRight shows only its real exact members');
+  save('category-utility');
+  key('End');
+  check(document.activeElement === get('shell-program-pin-app29') && Number(get('shell-program-list').scrollTop) > 0,
+    'Long category leaves preserve last real command focus reveal');
+  key('Escape'); await wait(); settle();
+  check(view === 'categories' && document.activeElement === get(programCategoryId('Utility')),
+    'Leaf Escape returns to its real category command');
+  click(get(programCategoryId(null))); await wait(); settle();
+  check(get('shell-program-app2') && !get('shell-program-app29'), 'Uncategorized uses real entries without tags');
+  click(get('shell-program-all')); await wait(); settle();
+  check(view === 'all' && get('shell-program-app29'), 'All applications header bypasses categories without losing original rows');
+  key('Escape'); await wait(); settle();
   for (const [nextWidth, nextHeight, style] of [[260, 180, 'two-column'], [180, 140, 'legacy']]) {
     width = nextWidth; height = nextHeight;
     theme = { ...getDesktopTheme('server2003'), panel: { ...theme.panel, menuStyle: style } };
@@ -194,7 +241,7 @@ export async function checkClassicPrograms(directory) {
   key('Home'); key('End'); key('Escape'); await wait(); settle();
   check(!open, 'Empty submenu keyboard closes safely');
   console.log('CLASSIC_PROGRAMS ' + JSON.stringify({ geometries, launched, pinned, revision, refreshes, closes, logouts }));
-  console.log('PASS: actual Classic Programs bounded pointer/keyboard, scroll, disabled/empty/stale registry, retained state and real shortcut callbacks');
+  console.log('PASS: actual Classic Programs bounded pointer/keyboard, metadata categories/back/header Tab, scroll, disabled/empty/stale registry, retained state and real shortcut callbacks');
 }
 
 export async function checkNativeClassicPrograms() {

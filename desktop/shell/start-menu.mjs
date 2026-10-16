@@ -225,7 +225,9 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     ...(classic && programs?.open ? {
       onKeydown: event => {
         if (event.key === 'Escape' || event.key === 'ArrowLeft') {
-          event.preventDefault(); event.stopPropagation(); programs.change(false, 'trigger');
+          event.preventDefault(); event.stopPropagation();
+          if (programs.back && programs.view !== 'all') programs.back();
+          else programs.change(false, 'trigger');
         }
       },
       onMousecancel: () => programs.change(false, 'trigger'),
