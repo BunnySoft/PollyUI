@@ -44,8 +44,8 @@ The generic/Mac applications list uses the shared focus-revealing viewport and
 themed overlay scrollbar inside its original flex allocation, with zero padding,
 transparent fill and its existing `windowGap`. Search, header, footer, match cap,
 launch and the two independent pin actions keep their original slots and rules.
-This does not raise the native Tab enumeration limit, which large three-command
-catalogs can still exceed.
+Native Tab traversal keeps its existing tree order without a fixed candidate cap,
+so all 100 application rows and both pin actions remain keyboard-reachable.
 The existing logout pane also opts into that scrollbar without changing its
 frame or inventory/confirmation content. A user close releases the view only
 after cancellation succeeds; external close and owner stop preserve their

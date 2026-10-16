@@ -97,4 +97,73 @@ check('autocomplete uses text commits', state.auto === 'complete');
 document.getElementById('mention').focus();
 host.text('@user');
 check('mention uses text commits', state.mention === '@user');
+
+const existing = document.body.childNodes.map(node => [node, node.style.display]);
+const traversal = document.createElement('view'), candidates = [];
+const negative = document.createElement('view'), hiddenParent = document.createElement('view');
+negative.tabIndex = -1; traversal.appendChild(negative);
+hiddenParent.style.display = 'none';
+const hiddenChild = document.createElement('view');
+hiddenChild.tabIndex = 0; hiddenParent.appendChild(hiddenChild); traversal.appendChild(hiddenParent);
+let mutableParent;
+for (let index = 0; index < 1100; index++) {
+  const node = document.createElement('view');
+  node.tabIndex = index === 0 ? 7 : index === 1 ? 1 : 0;
+  node.style.height = 1;
+  if (index === 512) {
+    mutableParent = document.createElement('view');
+    mutableParent.appendChild(node); traversal.appendChild(mutableParent);
+  } else traversal.appendChild(node);
+  candidates.push(node);
+}
+try {
+  for (const [node] of existing) node.style.display = 'none';
+  document.body.appendChild(traversal);
+  candidates[255].focus(); host.key('Tab');
+  check('Tab reaches eligible index 256 without a fixed collection limit', document.activeElement === candidates[256]);
+  host.key('Tab', 'keydown', { shiftKey: true });
+  check('reverse Tab crosses index 256 in preorder', document.activeElement === candidates[255]);
+  candidates[1023].focus(); host.key('Tab');
+  check('Tab reaches an eligible index beyond 1024', document.activeElement === candidates[1024]);
+  candidates[1098].focus(); host.key('Tab');
+  check('Tab reaches the actual final eligible node beyond 1024', document.activeElement === candidates[1099]);
+  host.key('Tab');
+  check('forward Tab wraps from the actual last node to first', document.activeElement === candidates[0]);
+  host.key('Tab', 'keydown', { shiftKey: true });
+  check('reverse Tab wraps from first to the actual last node', document.activeElement === candidates[1099]);
+  candidates[0].focus(); host.key('Tab');
+  check('positive tabindex keeps the existing preorder rather than browser sorting', document.activeElement === candidates[1]);
+  candidates[1].blur(); host.key('Tab');
+  check('no focused node selects first and skips hidden ancestors and negative tabindex', document.activeElement === candidates[0]);
+  candidates[0].blur(); host.key('Tab', 'keydown', { shiftKey: true });
+  check('no focused node selects the actual last in reverse', document.activeElement === candidates[1099]);
+  candidates[512].focus(); mutableParent.style.display = 'none'; host.key('Tab');
+  check('a focused node under a newly hidden ancestor falls back to first', document.activeElement === candidates[0]);
+  candidates[512].focus(); host.key('Tab', 'keydown', { shiftKey: true });
+  check('a focused node under a hidden ancestor falls back to last in reverse', document.activeElement === candidates[1099]);
+  mutableParent.style.display = '';
+  candidates[511].focus(); host.key('Tab');
+  check('restoring an ancestor restores its original preorder position', document.activeElement === candidates[512]);
+  negative.focus(); host.key('Tab');
+  check('a focused negative-tabindex node falls back to first', document.activeElement === candidates[0]);
+  candidates[600].focus(); traversal.removeChild(candidates[600]); host.key('Tab');
+  check('removing the focused node falls back safely to first', document.activeElement === candidates[0]);
+  const prevent = event => { if (event.key === 'Tab') event.preventDefault(); };
+  candidates[1024].addEventListener('keydown', prevent);
+  candidates[1024].focus(); host.key('Tab');
+  check('preventDefault still blocks traversal beyond the old collection limit', document.activeElement === candidates[1024]);
+  candidates[1024].removeEventListener('keydown', prevent); host.key('Tab');
+  check('removing preventDefault resumes the immediate preorder successor', document.activeElement === candidates[1025]);
+  traversal.style.display = 'none'; host.key('Tab');
+  check('an empty eligible tree leaves the current focus unchanged', document.activeElement === candidates[1025]);
+  const only = document.createElement('view');
+  only.tabIndex = 0; document.body.appendChild(only); only.focus();
+  host.key('Tab'); check('one eligible node wraps forward to itself', document.activeElement === only);
+  host.key('Tab', 'keydown', { shiftKey: true });
+  check('one eligible node wraps backward to itself', document.activeElement === only);
+  document.body.removeChild(only);
+} finally {
+  if (traversal.parentNode) traversal.parentNode.removeChild(traversal);
+  for (const [node, display] of existing) node.style.display = display;
+}
 console.log(passed + ' input-event assertions passed');

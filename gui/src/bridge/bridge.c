@@ -1210,29 +1210,33 @@ int pu_bridge_set_focus(PuBridge *b, PuNode *node)
     return 1; /* focus changed -> the host should repaint */
 }
 
-static void collect_focusable(PuNode *n, PuNode **arr, int *count, int cap)
+typedef struct {
+    PuNode *focused, *first, *last, *previous, *next;
+} PuFocusTraversal;
+
+static void collect_focusable(PuNode *n, PuFocusTraversal *traversal)
 {
     const char *display = pu_style_get(&n->style, "display");
     if (display && strcmp(display, "none") == 0) return;
-    if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0 && *count < cap)
-        arr[(*count)++] = n;
+    if (n->type == PU_NODE_ELEMENT && n->tab_index >= 0) {
+        if (!traversal->first) traversal->first = n;
+        if (n == traversal->focused) traversal->previous = traversal->last;
+        if (traversal->last && traversal->last == traversal->focused) traversal->next = n;
+        traversal->last = n;
+    }
     for (PuNode *c = n->first_child; c; c = c->next_sibling)
-        collect_focusable(c, arr, count, cap);
+        collect_focusable(c, traversal);
 }
 
 void pu_bridge_focus_step(PuBridge *b, int backwards)
 {
     if (!b) return;
-    PuNode *arr[256];
-    int count = 0;
-    collect_focusable(b->body, arr, &count, 256);
-    if (count == 0) return;
-    int idx = -1;
-    for (int i = 0; i < count; i++)
-        if (arr[i] == b->focused) { idx = i; break; }
-    int next = idx < 0 ? (backwards ? count - 1 : 0) :
-                        (idx + (backwards ? -1 : 1) + count) % count;
-    pu_bridge_set_focus(b, arr[next]);
+    PuFocusTraversal traversal = { .focused = b->focused };
+    collect_focusable(b->body, &traversal);
+    if (!traversal.first) return;
+    PuNode *next = backwards ? traversal.previous : traversal.next;
+    if (!next) next = backwards ? traversal.last : traversal.first;
+    pu_bridge_set_focus(b, next);
 }
 
 /* ---- document --------------------------------------------------------------*/
