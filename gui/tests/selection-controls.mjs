@@ -42,6 +42,16 @@ createApp({ setup: () => () => {
     NOverlayHost());
 } }).mount(document.body);
 await settle();
+let composingPrevented = 0;
+const composingKeys = node => {
+  for (const key of ['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Tab', 'Escape'])
+    node.__listeners.keydown({ key, isComposing: true, currentTarget: node,
+      preventDefault() { composingPrevented++; }, stopPropagation() { composingPrevented++; } });
+};
+const initialFocus = document.activeElement;
+for (const node of [find('tabs-tab-2'), find('select'), find('menu-item-2')]) composingKeys(node);
+check(composingPrevented === 0 && calls.length === 0 && !list() && document.activeElement === initialFocus,
+  'Composing tabs, Select and Menu keys preserve selection, focus and the closed portal without consuming IME events');
 find('before').focus(); await key('Tab');
 check(document.activeElement === find('tabs-tab-0'), 'Tab enters the selected tab');
 await key('ArrowRight');
@@ -59,6 +69,11 @@ check(document.activeElement === trigger, 'Tabs has one Tab stop and exits to Se
 await key('Enter');
 check(list() && trigger.getAttribute('aria-expanded') === 'true' && document.activeElement === trigger &&
   trigger.getAttribute('aria-activedescendant') === options()[0].id, 'Enter opens the window-local list with combobox focus retained');
+const composingActive = trigger.getAttribute('aria-activedescendant'), composingCount = calls.length;
+composingKeys(trigger);
+check(composingPrevented === 0 && list() && trigger.getAttribute('aria-activedescendant') === composingActive &&
+  calls.length === composingCount && document.activeElement === trigger,
+  'Composing Select keys do not navigate, commit, close or steal focus from an open popup');
 await key('ArrowDown');
 check(trigger.getAttribute('aria-activedescendant') === options()[2].id, 'Select arrows skip disabled options');
 await key('Enter');
