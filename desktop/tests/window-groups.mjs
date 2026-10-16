@@ -5,11 +5,61 @@ import { test } from 'node:test';
 import { parseThemeCatalog, parseThemeFile, applyThemeOverrides } from '../shared/ui/theme-schema.mjs';
 import { dockSurfaceWidth } from '../shared/ui/theme-layout.mjs';
 register('./root-loader.mjs', import.meta.url);
-const { windowTasks, taskLabel } = await import('../shell/window-groups.mjs');
+const { windowTasks, taskLabel, taskIdentity } = await import('../shell/window-groups.mjs');
 const { applicationForWindow, parseDesktopEntry, applicationCatalog } = await import('../shell/applications.mjs');
 
 const catalog = parseThemeCatalog(readFileSync(new URL('../resources/themes/builtin.json', import.meta.url), 'utf8'));
 const encode = themes => JSON.stringify({ schemaVersion: 1, themes });
+
+test('independent ordered pins merge only unambiguous real running groups and retain unavailable launchers', () => {
+  const catalog = [{ id: 'files.desktop', appId: 'org.example.files', name: 'Files' },
+    { id: 'notes.desktop', appId: 'org.example.notes', name: 'Notes', unavailable: 'Executable missing' }];
+  const windows = [{ id: 10, appId: 'org.example.files', workspaceId: 7, active: true },
+    { id: 11, appId: 'org.example.files', workspaceId: 7, minimized: true }, { id: 12 }];
+  const pins = Object.freeze(['notes.desktop', 'files.desktop', 'gone.desktop']);
+  const tasks = windowTasks(windows, 'applications', catalog, pins, 7);
+  assert.equal(tasks.length, 4);
+  assert.deepEqual(tasks.slice(0, 3).map(task => task.catalogId), pins);
+  assert.equal(tasks[0].launcher, true);
+  assert.equal(tasks[0].count, 0);
+  assert.equal(tasks[0].unavailable, 'Executable missing');
+  assert.equal(tasks[1].launcher, false);
+  assert.equal(tasks[1].grouped, true);
+  assert.equal(tasks[1].count, 2);
+  assert.deepEqual(tasks[1].windows, windows.slice(0, 2));
+  assert.equal(tasks[1].active, true);
+  assert.equal(tasks[2].launcher, true);
+  assert.match(taskLabel(tasks[2]), /unavailable/);
+  assert.equal(tasks[3], windows[2], 'unknown windows remain real individual tasks');
+  assert.deepEqual(windowTasks(windows, 'windows', catalog, pins, 7), windows, 'legacy mode ignores pins');
+  const stopped = windowTasks([], 'applications', catalog, pins, 7);
+  assert.equal(stopped[1].id, tasks[1].id, 'pin slot ID survives launcher/running transitions');
+  assert.notEqual(taskIdentity(stopped[1]), taskIdentity(tasks[1]), 'held launch must not become window activation');
+  assert.notEqual(taskIdentity(stopped[1]), taskIdentity({ ...stopped[1], workspaceId: 9 }));
+  const conflicting = [...catalog, { id: 'other.desktop', appId: 'org.example.files', name: 'Other' }];
+  const ambiguous = windowTasks(windows, 'applications', conflicting, ['files.desktop'], 7);
+  assert.equal(ambiguous[0].launcher, true);
+  assert.equal(ambiguous[1].appId, 'org.example.files');
+  assert.equal(ambiguous[1].count, 2, 'ambiguous registration does not consume the real running group');
+  const afterUninstall = windowTasks(windows, 'applications', [], ['files.desktop'], 7);
+  assert.equal(afterUninstall[0].launcher, true);
+  assert.equal(afterUninstall[1].appId, 'org.example.files');
+  const unicode = { id: 'Files \u8d44\u6599 \ud83d\udc30.desktop', appId: 'org.example.files', name: 'Unicode Files' };
+  const unicodeTask = windowTasks(windows, 'applications', [unicode], [unicode.id], 7)[0];
+  assert.equal(unicodeTask.catalogId, unicode.id);
+  assert.equal(unicodeTask.count, 2);
+  const syntheticSettings = { id: 'org.pollyui.settings', name: 'Settings' };
+  const registeredSettings = { id: 'polly-settings.desktop', appId: syntheticSettings.id, name: 'Settings' };
+  const settingsTasks = windowTasks([{ id: 50, appId: syntheticSettings.id, workspaceId: 7 }],
+    'applications', [syntheticSettings, registeredSettings], [registeredSettings.id], 7, [registeredSettings]);
+  assert.equal(settingsTasks.length, 1);
+  assert.equal(settingsTasks[0].catalogId, registeredSettings.id);
+  assert.equal(settingsTasks[0].count, 1);
+  const twoSettingsPins = windowTasks([{ id: 50, appId: syntheticSettings.id, workspaceId: 7 }],
+    'applications', [syntheticSettings, registeredSettings], [syntheticSettings.id, registeredSettings.id], 7,
+    [registeredSettings]);
+  assert.equal(twoSettingsPins.filter(task => task.count > 0).length, 1, 'a real group can be consumed by only one pin');
+});
 
 test('registered runtime IDs are optional bounded metadata, not inferred desktop-file aliases', () => {
   const file = extra => ({ id: 'registered.desktop', path: '/apps/registered.desktop',

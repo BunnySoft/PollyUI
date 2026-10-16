@@ -165,7 +165,7 @@ function syncDockLayout(node) {
 }
 
 function taskArtwork(window, images, size, fallback) {
-  const image = window?.appId && images?.get(window.appId);
+  const image = window && (images?.get(window.id) || images?.get(window.appId));
   return image ? h('view', { 'aria-hidden': 'true', style: {
     width: size, height: size, flexShrink: 0, backgroundImage: image, pointerEvents: 'none',
   } }) : fallback;
@@ -235,12 +235,14 @@ function windowButtons(theme, windows, toggle, actions, compact = false, images 
       const focus = node.props.onFocus;
       node.props.onFocus = event => { focus(event); revealFluentTask(event); };
       node.children = [surfaceDetail(theme, options),
-        taskArtwork(window, images, 24, desktopIcon('file', theme.colors.accent, 24)),
+        taskArtwork(window, images, 24, desktopIcon(window.launcher ? 'apps' : 'file', theme.colors.accent, 24)),
         h('view', { 'aria-hidden': 'true', style: { position: 'absolute', bottom: 0,
           width: window.active ? 16 : 6, height: 3, borderRadius: 2,
-          backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
+          backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none',
+          opacity: window.launcher ? 0 : 1 } })];
     }
     node.props['aria-label'] = taskLabel(window);
+    if (window.unavailable) node.props['aria-description'] = window.unavailable;
     if (window.grouped && window.count > 1) {
       node.props.style.position = 'relative';
       node.children.push(h('view', {
@@ -426,7 +428,8 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
     const iconSize = theme.layout.dockIconSize ?? 48, indicator = theme.layout.dockIndicatorSize ?? 4;
     const slot = (id, title, icon, action, running = false, window = null) => {
       const node = h('view', { id, role: 'button', tabIndex: 0, 'aria-label': title,
-        ...(window?.grouped ? { 'aria-pressed': String(!!window.active) } : {}),
+        ...(window?.grouped || window?.launcher ? { 'aria-pressed': String(!!window.active) } : {}),
+        ...(window?.unavailable ? { 'aria-description': window.unavailable } : {}),
         style: { ...center, position: 'relative', width: window ? theme.layout.dockWindowWidth : theme.layout.dockTileWidth,
           height: panel.height - 4, flexShrink: 0, paddingBottom: 8, borderWidth: 0 },
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
@@ -437,7 +440,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           return false;
         },
         onKeydown: event => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (!event.repeat && !event.isComposing) action();
+          }
           else if (window && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
             event.preventDefault(); actions(window.id);
           }
@@ -496,7 +502,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         gap: theme.layout.dockGap, overflow: 'scroll',
       }, onWheel: scrollDock },
       windows.map(window => slot('shell-window-' + window.id, taskLabel(window),
-        'file', () => toggle(window.id), true, window))) : null));
+        window.launcher ? 'apps' : 'file', () => toggle(window.id), !window.launcher, window))) : null));
   }
   const tile = { height: panel.height - theme.layout.panelItemInset, width: theme.layout.dockTileWidth,
     borderRadius: theme.icons.dockTiles ? theme.icons.radius : theme.button.radius };
@@ -512,9 +518,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
-  logout = null, desktop = null, programs = null, images = null, searchInput = null) {
+  logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
-    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs, images, searchInput);
+    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs,
+      images, searchInput, launchers);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
@@ -529,6 +536,15 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
       'aria-hidden': 'true', style: { ...art.props.style, backgroundImage: image },
     });
     return node;
+  };
+  const launcherCommand = entry => {
+    const pinId = launchers.id(entry.id), pinned = launchers.has(pinId);
+    const node = desktopCommand('shell-app-launcher-' + entry.id,
+      (pinned ? 'Unpin from ' : 'Pin to ') + launchers.target, theme,
+      () => launchers.change(pinId, pinned), { quiet: true });
+    node.props['aria-label'] = (pinned ? 'Unpin ' : 'Pin ') + entry.name +
+      (pinned ? ' from ' : ' to ') + launchers.target;
+    return guardTaskGesture(node, pinId + ':' + pinned);
   };
   return h('view', { id: 'shell-applications', style: {
     width: '100%', height: '100%', padding: theme.layout.compactPadding, gap: theme.layout.contentGap, backgroundColor: theme.colors.body,
@@ -561,11 +577,12 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
           padding: theme.layout.serviceButtonPadding, gap: theme.layout.contentGap / 2, opacity: theme.layout.disabledOpacity, flexShrink: 0,
         } }, label(entry.name, isLuna(theme) ? theme.colors.muted : theme.colors.text),
           label(entry.unavailable, theme.colors.muted, 10))
-      : h('view', { style: { ...row, gap: 6, flexShrink: 0 } },
+      : h('view', { style: { ...row, gap: 6, flexShrink: 0, ...(launchers ? { flexWrap: 'wrap' } : {}) } },
         appCommand(entry),
         desktop ? desktopCommand('shell-app-pin-' + entry.id, desktop.has(entry.id) ? 'Remove shortcut' : 'Add to desktop',
           theme, () => desktop.has(entry.id) ? desktop.remove(entry.id) : desktop.add(entry.id),
-          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null)),
+          { quiet: true, icon: desktop.has(entry.id) ? '' : 'add' }) : null,
+        launchers ? launcherCommand(entry) : null)),
     !filtered.length ? label('No matching applications', theme.colors.muted) : null),
   filtered.length > 100 ? label('Showing 100 matches; refine the search.', theme.colors.muted, 10) : null,
   h('view', { style: { ...row, flexShrink: 0, borderTopWidth: 1, borderColor: theme.colors.border, paddingTop: 12, gap: 10 } },

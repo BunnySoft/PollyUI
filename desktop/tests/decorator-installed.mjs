@@ -32,7 +32,7 @@ try {
   assert.doesNotMatch(ready.log, /Uncaught|did not exit|restart budget exhausted|Cannot start decorator/);
   const preferences = path.join(temporary, 'config/pollyui/org.pollyui.shell/shell-preferences.json');
   const configuration = readFileSync(preferences);
-  assert.equal(JSON.parse(configuration).version, 2);
+  assert.equal(JSON.parse(configuration).version, 3);
   for (const area of ['config', 'data', 'cache']) {
     const children = readdirSync(path.join(temporary, area, 'pollyui'));
     assert.ok(!children.includes('org.pollyui.decorator'), 'decorator creates no ' + area + ' store');

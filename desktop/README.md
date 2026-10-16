@@ -134,8 +134,10 @@ regenerate from the repository root with the existing playground, set
 The checked-in PNGs are installed directly; regeneration is not a runtime or
 release dependency.
 
-The [v2 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
-theme/audio/display/workspace/keyboard preferences and atomically migrates v1.
+The [v3 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
+theme/audio/display/workspace/keyboard/desktop preferences and atomically migrates
+v1/v2 profiles. Taskbar/Dock pins are independent of desktop shortcuts; returning
+to an older Shell requires a configuration version it understands.
 This feature is PollyOS Shell behavior, not Windows Explorer/macOS replacement,
 a desktop filesystem, cross-app drag-and-drop, animation, or an accessibility
 system bridge. The icon list exposes option/multiselect semantics and roving

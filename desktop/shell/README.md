@@ -67,6 +67,35 @@ The packaged and recovery Modern, Aqua/Tiger, Lion and Big Sur presets explicitl
 select `applications`; XP and Classic remain per-window. Custom themes do not
 infer grouping from their ID, styling or panel kind.
 
+## Independent taskbar and Dock pins
+
+In explicit `applications` mode, each Apps entry has a separate Taskbar+/Taskbar-
+or Dock+/Dock- control. Its accessible name says which application and destination
+it changes. This is independent of the existing desktop Pin/Unpin control: removing
+a taskbar or Dock launcher never deletes a desktop shortcut. The ordered list of
+at most 32 unique catalog IDs persists in Shell configuration v3's version-1
+`launchers` domain. Existing v1/v2 configurations migrate atomically without losing
+their other domains; see `desktop/SHELL-CONFIGURATION.md`.
+
+Pins occupy the first display slots in saved order. A uniquely associated running
+application uses that same slot with its real window count; other running tasks
+follow in their existing order. The model also supplies Dock surface sizing.
+Idle launchers have no running marker and invoke the existing catalog-rechecking
+launch path. Settings' synthetic and registered menu entries manage the same pin,
+and its launcher uses the existing Settings bridge rather than another process.
+Running pins keep the existing single-window/multi-window behavior below.
+
+Missing or unavailable registrations are retained, visibly labeled unavailable
+and remain keyboard focusable. Primary click or ContextMenu/Shift+F10 opens the
+existing RootMenu with the reason and Unpin; it never uses old argv or a fabricated
+window handle. A running group's chooser also provides Pin/Unpin when its real
+catalog association is unambiguous. Held launcher-to-running transitions and
+changed membership/workspaces invalidate the old gesture. Pin write errors are
+reported and the UI follows the actually committed configuration snapshot,
+including durability failures. There is no drag ordering, MRU, magnification,
+process-wide close, new native API or extra bitmap cache. Classic/XP and custom
+`windows` mode keep the original per-window behavior and do not display launchers.
+
 One pure `windowTasks` model feeds both the panel/Dock and the native Dock width
 calculation. It groups only exact, nonempty real `appId` values on the current
 workspace; an unknown ID leaves each original Window.id independent. Names come
