@@ -710,9 +710,11 @@ File Text explicitly opts into the existing public theme helpers for the whole
 app, sharing its subscription with the chooser and preserving text/selection
 and every existing read/save consent rule. Its default API remains neutral;
 the packaged wrapper selects `--theme`, with `--no-theme` as an explicit opt-out.
-Settings frame/About/Keyboard titles, body/status text and spacing also consume
-their existing semantic tokens; Audio controls wrap in narrow pages without
-changing acknowledgement or Apply behavior. Files Places/Properties/empty
+Settings frame/About/Keyboard and Displays titles, body/status text and spacing
+also consume their existing semantic tokens. Displays headers and action rows
+wrap in narrow content areas, while numeric input dimensions, draft values and
+the trusted Apply/Keep/Revert transaction stay unchanged. Audio controls wrap
+without changing acknowledgement behavior. Files Places/Properties/empty
 states follow the same typography. Power uses an explicit bounded client area
 and the existing wheel handler, with shutdown permissions and confirmation
 coordination unchanged. These are application-style changes, not new font,
