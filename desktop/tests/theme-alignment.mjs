@@ -15,6 +15,28 @@ assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
 {
+  for (const theme of catalog.themes) assert.equal(theme.icons.dockHoverPercent,
+    ['tiger', 'lion', 'bigsur'].includes(theme.panel.surfaceStyle) ? 120 : undefined);
+  const base = catalog.themes.find(theme => theme.id === 'bigsur');
+  const omitted = { ...base, icons: { ...base.icons } };
+  delete omitted.icons.dockHoverPercent;
+  assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: omitted })).icons.dockHoverPercent, undefined);
+  for (const value of [100, 120, 125, 99, 126, 120.5, '120', null, true]) {
+    const theme = { ...base, icons: { ...base.icons, dockHoverPercent: value } };
+    for (const parse of [
+      () => parseThemeFile(JSON.stringify({ schemaVersion: 1, theme })),
+      () => parseThemeCatalog(JSON.stringify({ ...catalog,
+        themes: catalog.themes.map(item => item.id === base.id ? theme : item) })),
+      () => applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1,
+        themes: { [base.id]: { icons: { dockHoverPercent: value } } } })),
+    ]) {
+      if (typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 125)
+        assert.doesNotThrow(parse);
+      else assert.throws(parse, /dockHoverPercent/);
+    }
+  }
+}
+{
   const theme = catalog.themes[0];
   for (const create of [
     options => button('default-action', 'Action', theme, action, false, {}, options),
