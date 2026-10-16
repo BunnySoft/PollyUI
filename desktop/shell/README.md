@@ -12,6 +12,15 @@ horizontally without consuming an application's notification action. Available
 width is shared with the application label so Dismiss remains accessible.
 Notification identities, revisions, expiry and action dispatch remain unchanged.
 
+# Desktop popup menus
+
+Window actions, workspace management, desktop-shortcut management and the window
+switcher share the existing fixed-frame, scrollable-content panel helper and
+theme typography. Workspace action rows wrap on narrow surfaces; the native
+name field and all management callbacks retain their existing ownership.
+Tray menus use the same scrolling surface and shared enabled/selection-ink
+commands. Tray item wheel events still go to the offering application.
+
 # Classic All Programs
 
 The Classic applications menu adds an All Programs submenu inside the existing

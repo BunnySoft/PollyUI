@@ -741,6 +741,11 @@ inventory/wait/seal/explicit final commit remain controller-owned.
 region. Its default fixed sizing serves the credential/confirmation surfaces;
 content sizing preserves Files' natural dialog/menu height under the caller's
 existing maximum, and an explicit horizontal axis serves breadcrumbs.
+Window actions, workspace/desktop management, the window switcher and tray
+menus also consume the same helper instead of separate bare scroll frames.
+Workspace actions wrap in narrow menus, and tray commands reuse the shared
+enabled/selection-foreground/activation behavior. Their native identities,
+management callbacks and application-owned tray scroll actions are unchanged.
 Frame pixels stay fixed while content
 scrolls; one weak, bounded post-layout helper reveals the current real focus,
 including manually attached credential fields. Tab/focus requests coalesce,
