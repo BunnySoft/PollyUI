@@ -1,8 +1,8 @@
 // The caller supplies the current workspace's real window snapshots.
 export function windowTasks(windows, grouping = 'windows', catalog = []) {
   if (!['windows', 'applications'].includes(grouping)) throw new TypeError('Unsupported task grouping');
+  if (grouping === 'windows') return [...windows];
   const ordered = [...windows].sort((a, b) => a.id - b.id);
-  if (grouping === 'windows') return ordered;
   const names = new Map(catalog.map(entry => [entry.id, entry.name]));
   const groups = new Map(), tasks = [];
   for (const window of ordered) {
@@ -13,7 +13,8 @@ export function windowTasks(windows, grouping = 'windows', catalog = []) {
     let group = groups.get(window.appId);
     if (!group) {
       group = { id: 'app-' + encodeURIComponent(window.appId), appId: window.appId,
-        title: names.get(window.appId) || window.appId, grouped: true, windows: [] };
+        title: names.get(window.appId) || window.appId, workspaceId: window.workspaceId,
+        grouped: true, windows: [] };
       groups.set(window.appId, group);
       tasks.push(group);
     }
@@ -26,6 +27,11 @@ export function windowTasks(windows, grouping = 'windows', catalog = []) {
     group.partiallyMinimized = !group.minimized && group.windows.some(window => window.minimized);
   }
   return tasks;
+}
+
+export function taskIdentity(task) {
+  return JSON.stringify([task.id, task.appId, task.workspaceId,
+    task.grouped ? task.windows.map(window => window.id) : null]);
 }
 
 export function taskLabel(task) {

@@ -50,8 +50,9 @@ workspace; an unknown ID leaves each original Window.id independent. Names come
 from an exact current catalog match or the actual app ID, not guessed executable
 aliases, installation status or launchability. Windows stay running while
 minimized; labels distinguish all versus some minimized, and multi-window groups
-show their count. Stable numeric window order is independent of active/clock
-changes. Catalog/model work is cached between actual snapshot changes.
+show their count. In applications mode, stable numeric window order is independent
+of active/clock changes; per-window mode preserves its input order. Catalog/model
+work is cached between actual snapshot changes.
 
 Modern single-window groups retain active-click minimize/otherwise activate.
 Mac-style single-window groups activate/restore rather than minimize an active
@@ -71,3 +72,12 @@ focus reveals long-list rows. Escape/Close menu returns to the opener when it is
 still live. Stable vacant row slots and gesture identities prevent a held row
 from becoming a different target; current-menu, application membership and live
 workspace checks reject obsolete callbacks.
+
+`desktop/tests/window-groups.mjs` covers the pure model, theme-file/catalog/override
+contract and count-based Dock width. The application-task cases in
+`desktop/tests/menu-host.mjs` exercise the real Shell controller on two outputs,
+including notification-before/after workspace and membership guards. The exported
+`checkWindowGroups(directory)` and `checkNativeWindowGroupBounds()` fixtures in
+`desktop/tests/window-group-render.mjs` cover actual renderer/input and native
+client geometry respectively. They use explicitly nonempty app-ID fixture
+snapshots, not evidence of compositor permissions, physical DPI or native MRU.

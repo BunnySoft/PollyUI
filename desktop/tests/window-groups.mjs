@@ -35,7 +35,7 @@ test('exact nonempty app IDs only; unknown windows and the old Window.id interfa
   assert.equal(JSON.stringify(windows), before);
   assert.deepEqual(windowTasks([...windows].reverse(), 'applications').map(task => task.id), tasks.map(task => task.id));
   for (const mode of [undefined, 'windows'])
-    assert.deepEqual(windowTasks(windows, mode).map(window => window.id), [1, 3, 4, 5, 6, 7, 8]);
+    assert.deepEqual(windowTasks(windows, mode).map(window => window.id), windows.map(window => window.id));
   assert.throws(() => windowTasks(windows, 'automatic'), /Unsupported/);
 });
 
@@ -50,6 +50,7 @@ test('live membership converges on close/workspace changes; all minimized is sti
   assert.equal(first.active, true);
   assert.equal(first.minimized, true);
   assert.equal(first.partiallyMinimized, false);
+  assert.equal(first.workspaceId, 7);
   const remaining = windowTasks([windows[1]], 'applications')[0];
   assert.equal(remaining.id, first.id);
   assert.equal(remaining.count, 1);
@@ -57,6 +58,7 @@ test('live membership converges on close/workspace changes; all minimized is sti
   const secondWorkspace = windowTasks(windows.filter(window => window.workspaceId === 9), 'applications')[0];
   assert.deepEqual(secondWorkspace.windows.map(window => window.id), [3]);
   assert.equal(secondWorkspace.active, false);
+  assert.equal(secondWorkspace.workspaceId, 9);
 });
 
 test('taskGrouping is optional schema-1 data, strict in file/catalog/overrides with no theme-ID heuristic', () => {
@@ -73,6 +75,8 @@ test('taskGrouping is optional schema-1 data, strict in file/catalog/overrides w
     assert.equal(parseThemeFile(JSON.stringify({ schemaVersion: 1, theme: custom })).panel.taskGrouping, mode);
     assert.equal(applyThemeOverrides(catalog, encode({ modern: { panel: { taskGrouping: mode } } }))
       .themes.find(theme => theme.id === 'modern').panel.taskGrouping, mode);
+    assert.equal(applyThemeOverrides(catalog, encode({ xp: { panel: { taskGrouping: mode } } }))
+      .themes.find(theme => theme.id === 'xp').panel.taskGrouping, mode);
   }
   for (const invalid of [null, true, 1, '', 'auto', 'Applications', ['windows']]) {
     custom.panel.taskGrouping = invalid;

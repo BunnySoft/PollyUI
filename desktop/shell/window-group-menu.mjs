@@ -41,44 +41,55 @@ function revealWindow(node) {
   while (row.parentNode && row.parentNode.id !== 'shell-group-list') row = row.parentNode;
   const list = row.parentNode;
   if (!list) return;
-  const top = row.offsetTop - list.offsetTop, start = Number(list.scrollTop);
+  const top = node.offsetTop - list.offsetTop, start = Number(list.scrollTop);
   list.scrollTop = Math.max(0, Math.min(verticalScrollMetrics(list).maximum,
-    top < start ? top : top + row.offsetHeight > start + list.offsetHeight ?
-      top + row.offsetHeight - list.offsetHeight : start));
+    top < start ? top : top + node.offsetHeight > start + list.offsetHeight ?
+      top + node.offsetHeight - list.offsetHeight : start));
 }
 
 const layouts = new WeakMap();
+const commands = node => [...(node.tabIndex >= 0 ? [node] : []), ...node.childNodes.flatMap(commands)];
 function settleList(node) {
-  if (layouts.has(node)) return;
+  let state = layouts.get(node);
+  if (!state) { state = { frame: null, geometry: '' }; layouts.set(node, state); }
+  if (state.frame !== null) return;
   const weak = new WeakRef(node);
-  const frame = requestAnimationFrame(() => {
-    const current = weak.deref();
-    if (!current) return;
-    layouts.delete(current);
-    if (current.ownerDocument?.getElementById('shell-group-list') !== current) return;
-    current.scrollTop = verticalScrollMetrics(current).value;
-    const focused = current.ownerDocument.activeElement;
-    if (focused) revealWindow(focused);
+  state.frame = requestAnimationFrame(() => {
+    state.frame = requestAnimationFrame(() => {
+      const current = weak.deref();
+      if (!current) return;
+      state.frame = null;
+      if (current.ownerDocument?.getElementById('shell-group-list') !== current ||
+          current.ownerDocument.defaultView?.closed) return;
+      const metrics = verticalScrollMetrics(current);
+      current.scrollTop = metrics.value;
+      const geometry = [current.offsetWidth, metrics.height, metrics.maximum].join(':');
+      const changed = geometry !== state.geometry;
+      state.geometry = geometry;
+      const owner = current.ownerDocument, focused = owner.activeElement;
+      if (!focused || focused === owner.body || !focused.parentNode)
+        (commands(current)[0] ?? owner.getElementById('shell-group-menu-close'))?.focus();
+      else if (changed) revealWindow(focused);
+    });
   });
-  layouts.set(node, frame);
 }
 
 export function windowGroupMenu(theme, group, state) {
   const label = (value, muted = false) => desktopText(value,
     muted ? theme.colors.muted : theme.colors.text, themeTextSize(theme));
-  const command = (id, title, action, selected = false, style = {}) => {
+  const command = (id, title, action, selected = false, style = {}, identity = id) => {
     const node = button(id, title, theme, action, selected, {
       height: theme.layout.compactButtonHeight, minWidth: 0, overflow: 'hidden', ...style });
+    node.props.role = 'menuitem';
     const focus = node.props.onFocus;
     node.props.onFocus = event => { focus?.(event); revealWindow(event.currentTarget); };
-    return guardTaskGesture(node, id);
+    return guardTaskGesture(node, identity);
   };
   const current = new Map(group.windows.map(window => [window.id, window]));
   const known = new Set(state.slots);
   for (const window of group.windows) if (!known.has(window.id)) {
     state.slots.push(window.id); known.add(window.id);
   }
-  const commands = node => [ ...(node.tabIndex >= 0 ? [node] : []), ...node.childNodes.flatMap(commands) ];
   const navigate = event => {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Tab'].includes(event.key)) return;
     event.preventDefault(); event.stopPropagation();
@@ -95,26 +106,31 @@ export function windowGroupMenu(theme, group, state) {
       backgroundColor: theme.colors.body, borderWidth: theme.layout.borderWidth,
       borderColor: theme.colors.border, borderRadius: theme.window.radius },
     onKeydown: navigate },
-  label(taskLabel(group)),
+  h('view', { style: { height: theme.layout.buttonHeight, minWidth: 0, overflow: 'hidden', flexShrink: 0 } },
+    label(taskLabel(group))),
   h('view', { id: 'shell-group-list', style: { flexGrow: 1, flexBasis: 0, minHeight: 0,
     minWidth: 0, overflow: 'scroll', gap: theme.layout.controlGap }, onWheel: scrollDesktop,
     onMount: settleList, onUpdate: settleList,
-    onLeave: (node, done) => { cancelAnimationFrame(layouts.get(node)); layouts.delete(node); done(); } },
+    onLeave: (node, done) => { cancelAnimationFrame(layouts.get(node)?.frame); layouts.delete(node); done(); } },
   state.slots.map(id => {
     const window = current.get(id);
     const height = theme.layout.compactButtonHeight * 2 + theme.layout.controlGap;
     if (!window) return h('view', { tabIndex: -1, 'aria-hidden': 'true',
       style: { height, flexShrink: 0, pointerEvents: 'none' } });
     const title = window.title || window.appId || 'Untitled';
-    return h('view', { id: 'shell-group-row-' + id,
+    const minimize = command('shell-group-minimize-' + id, window.minimized ? 'Restore' : 'Minimize',
+      () => state.action(id, window.minimized ? 'restoreWindow' : 'minimizeWindow'), false,
+      { flexGrow: 1, flexBasis: 0 }, id + ':' + !!window.minimized);
+    minimize.props['aria-label'] = (window.minimized ? 'Restore ' : 'Minimize ') + title;
+    const close = command('shell-group-close-' + id, 'Close window', () => state.action(id, 'closeWindow'),
+      false, { flexGrow: 1, flexBasis: 0 });
+    close.props['aria-label'] = 'Close window ' + title;
+    return h('view', { id: 'shell-group-row-' + id, role: 'group', 'aria-label': title,
       style: { height, flexShrink: 0, minWidth: 0, gap: theme.layout.controlGap } },
     command('shell-group-activate-' + id, (window.minimized ? '[min] ' : '') + title,
       () => state.action(id, 'activateWindow'), window.active),
     h('view', { style: { flexDirection: 'row', minWidth: 0, gap: theme.layout.controlGap } },
-      command('shell-group-minimize-' + id, window.minimized ? 'Restore' : 'Minimize',
-        () => state.action(id, window.minimized ? 'restoreWindow' : 'minimizeWindow'), false, { flexGrow: 1, flexBasis: 0 }),
-      command('shell-group-close-' + id, 'Close window', () => state.action(id, 'closeWindow'),
-        false, { flexGrow: 1, flexBasis: 0 })));
+      minimize, close));
   })),
   command('shell-group-menu-close', 'Close menu', state.close),
   state.error ? label(state.error) : null);

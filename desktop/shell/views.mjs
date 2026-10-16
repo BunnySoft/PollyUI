@@ -14,7 +14,7 @@ import { desktopCommand, desktopText, desktopIcon, settingsCard, scrollDesktop }
 import { bevel, surfaceStyle, surfacePaint, surfaceEvents, surfaceDetail } from './desktop/shared/ui/surface-primitives.mjs';
 import { startMenuView } from './desktop/shell/start-menu.mjs';
 import { classicTaskPaint } from './desktop/shared/ui/classic-task-paint.mjs';
-import { taskLabel } from './desktop/shell/window-groups.mjs';
+import { taskLabel, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { guardTaskGesture } from './desktop/shell/window-group-menu.mjs';
 
 export { wallpaper } from './desktop/shell/appearance.mjs';
@@ -231,13 +231,17 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
           backgroundColor: window.active ? theme.colors.accent : theme.colors.muted, pointerEvents: 'none' } })];
     }
     node.props['aria-label'] = taskLabel(window);
-    if (window.grouped && window.count > 1) node.children.push(h('view', {
+    if (window.grouped && window.count > 1) {
+      node.props.style.position = 'relative';
+      node.children.push(h('view', {
       'aria-hidden': 'true', style: { position: 'absolute', right: 1, top: 1,
         minWidth: 12, height: 14, paddingLeft: 2, paddingRight: 2, borderRadius: 3,
         backgroundColor: theme.colors.accent, color: theme.colors.accentText,
         fontSize: theme.layout.smallFontSize, pointerEvents: 'none' } }, String(window.count)));
+    }
     node.props.onClick = event => {
-      if (event.button === 0) { event.stopPropagation(); toggle(window.id); }
+      if (event.button === 0) { event.stopPropagation(); return toggle(window.id); }
+      return false;
     };
     node.props.onContextmenu = event => { event.preventDefault(); event.stopPropagation(); actions(window.id); };
     const activate = node.props.onKeydown;
@@ -246,7 +250,7 @@ function windowButtons(theme, windows, toggle, actions, compact = false) {
         event.preventDefault(); actions(window.id);
       } else activate(event);
     };
-    return guardTaskGesture(node, JSON.stringify([window.id, window.appId, window.workspaceId]));
+    return guardTaskGesture(node, taskIdentity(window));
   }));
 }
 
@@ -418,7 +422,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
         hoverStyle: { backgroundColor: '#ffffff18', borderRadius: 5 },
         focusStyle: { borderWidth: 1, borderColor: theme.colors.focus },
         onFocus: revealDockSlot,
-        onClick: event => { if (event.button === 0) { event.stopPropagation(); action(); } },
+        onClick: event => {
+          if (event.button === 0) { event.stopPropagation(); return action(); }
+          return false;
+        },
         onKeydown: event => {
           if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
           else if (window && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
@@ -447,7 +454,7 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           width: indicator, height: style === 'lion' ? 3 : indicator, borderRadius: indicator,
           backgroundColor: style === 'lion' ? '#bde8ff' : '#303030', pointerEvents: 'none',
           ...(style === 'lion' ? { borderWidth: 1, borderColor: '#e4f7ff' } : {}) } }) : null);
-      return window ? guardTaskGesture(node, JSON.stringify([window.id, window.appId, window.workspaceId])) : node;
+      return window ? guardTaskGesture(node, taskIdentity(window)) : node;
     };
     const shelf = style === 'lion' ? h('view', { 'aria-hidden': 'true', style: {
       position: 'absolute', left: 0, right: 0, bottom: 0, height: 28, pointerEvents: 'none' } },

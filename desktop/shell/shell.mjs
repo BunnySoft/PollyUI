@@ -27,7 +27,7 @@ import { settingsPage, runtimeBuild } from './desktop/client/settings-contract.m
 import { outputIdentity, outputKey, desktopOutputIdentity, desktopArea, layoutDesktop, gridPoint } from './desktop/shell/desktop-shortcuts.mjs';
 import { createDesktopInteraction, bindDesktopInteraction } from './desktop/shell/desktop-interactions.mjs';
 import { desktopView, desktopMenuView } from './desktop/shell/desktop-view.mjs';
-import { windowTasks } from './desktop/shell/window-groups.mjs';
+import { windowTasks, taskIdentity } from './desktop/shell/window-groups.mjs';
 import { windowGroupMenu } from './desktop/shell/window-group-menu.mjs';
 export function createDesktopShell({ host = window, configuration, report = console.error,
   native = typeof desktop === 'undefined' ? null : desktop, settingsFactory = null } = {}) {
@@ -691,6 +691,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         action: (id, action) => {
           if (!currentMenu(current)) return false;
           try {
+            if (!host.displays().some(output => output.id === current.output)) return false;
             const live = liveTasks(current.groupWorkspaceId).find(task =>
               task.grouped && task.id === current.windowId && task.appId === current.groupAppId);
             const selected = live?.windows.find(window => window.id === id);
@@ -1096,19 +1097,24 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function taskCallback(bundle, surface, context) {
     const workspaceId = workspaces.find(workspace => workspace.active)?.id;
     const grouping = getDesktopTheme(themeId).panel.taskGrouping ?? 'windows';
+    const identities = new Map(displayTasks(getDesktopTheme(themeId)).map(task => [task.id, taskIdentity(task)]));
     return id => {
       if (!running || surface.window.closed || bundles.get(bundle.output.id)?.surfaces[surface.kind] !== surface ||
           (getDesktopTheme(themeId).panel.taskGrouping ?? 'windows') !== grouping) return false;
       try {
+        if (!host.displays().some(output => output.id === bundle.output.id)) return false;
         const task = liveTasks(workspaceId).find(task => task.id === id);
-        if (!task) return false;
+        if (!task || taskIdentity(task) !== identities.get(id)) return false;
         if (!task.grouped) return context ? showWindowActions(bundle.output.id, id) : toggleWindow(id);
         if (context || task.count > 1) return openMenu(bundle.output.id, 'window-group', task.id, {
           groupAppId: task.appId, groupWorkspaceId: workspaceId, groupSlots: [],
           returnFocus: () => {
-            if (!surface.window.closed && bundles.get(bundle.output.id)?.surfaces[surface.kind] === surface &&
-                liveTasks(workspaceId).some(item => item.id === id))
-              surface.window.document.getElementById('shell-window-' + id)?.focus();
+            try {
+              if (!surface.window.closed && bundles.get(bundle.output.id)?.surfaces[surface.kind] === surface &&
+                  host.displays().some(output => output.id === bundle.output.id) &&
+                  liveTasks(workspaceId).some(item => item.id === id))
+                surface.window.document.getElementById('shell-window-' + id)?.focus();
+            } catch (failure) { windowFailure(failure); }
           },
         });
         const selected = task.windows[0];
