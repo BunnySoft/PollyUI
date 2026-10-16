@@ -21,6 +21,30 @@ name field and all management callbacks retain their existing ownership.
 Tray menus use the same scrolling surface and shared enabled/selection-ink
 commands. Tray item wheel events still go to the offering application.
 
+# Local session display profile
+
+The production Shell entry reads one local display snapshot at startup from real
+uid/euid and the fixed, trusted `/etc/passwd` record. Classic/XP two-column Start
+headers can show that record's display name and actual username/UID inside their
+existing 40px/64px header. Names use the shared theme font projection and retain
+their complete accessible labels; long Unicode text is clipped, not rewritten or
+shrunk. The existing original generic avatar is not a claimed account photograph.
+A zero-height header override or a non-two-column menu does not create a profile
+area. Older view/Shell callers that do not explicitly supply a profile keep the
+original PollyDesktop brand and header markup.
+
+The immutable snapshot is display metadata only, not authentication, NSS/directory
+service authority, an account-management capability or a login-session claim.
+No environment username/home guess, password action, account switcher, Recent
+history or new preference/IPC is added. Root/mixed-ID sessions and unsafe, absent,
+ambiguous or malformed local records remain explicitly unavailable under the
+existing filesystem restrictions. A known numeric ID displays **User &lt;uid&gt;**;
+otherwise the label is **User unavailable**, with **Local name unavailable** below.
+The sanitized diagnostic is reported once when the Shell is created, without
+overwriting service/action errors or rereading passwd on every clock/menu update.
+It does not block desktop startup, change window/launcher authority or replace
+Search, Programs/source folders, either pin domain or logout.
+
 # Classic All Programs
 
 The Classic applications menu adds an All Programs submenu inside the existing
