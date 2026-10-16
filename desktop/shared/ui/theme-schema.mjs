@@ -79,13 +79,14 @@ const options = {
 };
 const optionalOptions = {
   icons: { desktopLabelStyle: ['capsule', 'shadow'] },
-  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded'] },
+  window: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent'], nativeEffects: ['none', 'rounded', 'rounded-shadow'] },
   button: { surfaceStyle: ['generic', 'luna', 'classic', 'aqua', 'fluent'] },
   panel: { surfaceStyle: ['generic', 'luna', 'classic', 'fluent', 'tiger', 'lion', 'bigsur'],
     menuStyle: ['legacy', 'two-column', 'grid'], taskTexture: ['flat', 'stipple'] },
 };
 const optionalNumbers = {
-  window: { controlWidth: [8, 96], controlTop: [0, 64] },
+  window: { controlWidth: [8, 96], controlTop: [0, 64], nativeShadowOpacity: [0, 100],
+    nativeShadowInactiveOpacity: [0, 100], nativeShadowX: [-64, 64], nativeShadowY: [-64, 64] },
   layout: { launcherWidth: [24, 160], dockIconSize: [16, 96], dockPadding: [0, 32],
     dockIndicatorSize: [2, 12], menuHeaderHeight: [0, 96], menuFooterHeight: [24, 96],
     menuRowHeight: [16, 96], menuSideWidth: [80, 320], menuIconSize: [12, 48], menuVerticalInset: [0, 64],
@@ -147,7 +148,7 @@ export function validateTheme(value) {
   for (const group of groups) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
-      ...(group === 'colors' ? ['selectionText'] : [])];
+      ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
       prefix, true, optional);
@@ -157,6 +158,9 @@ export function validateTheme(value) {
     if (group === 'colors' && Object.hasOwn(value.colors, 'selectionText') &&
         (typeof value.colors.selectionText !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.colors.selectionText)))
       throw new TypeError(prefix + '.selectionText must be an RGB color');
+    if (group === 'window' && Object.hasOwn(value.window, 'nativeShadowColor') &&
+        (typeof value.window.nativeShadowColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(value.window.nativeShadowColor)))
+      throw new TypeError(prefix + '.nativeShadowColor must be an RGB color');
     for (const [key, [minimum, maximum, scale = 1]] of Object.entries(numbers[group])) {
       const number = value[group][key];
       if (!Number.isFinite(number) || number < minimum || number > maximum ||
@@ -255,7 +259,8 @@ export function applyThemeOverrides(catalog, text) {
     for (const group of groups) {
       if (!Object.hasOwn(override, group)) continue;
       keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {}),
-        ...Object.keys(optionalNumbers[group] || {}), ...(group === 'colors' ? ['selectionText'] : [])],
+        ...Object.keys(optionalNumbers[group] || {}),
+        ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])],
         theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }

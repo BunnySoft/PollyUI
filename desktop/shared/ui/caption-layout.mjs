@@ -10,10 +10,18 @@ export const DECORATION_LAYOUT_FIELDS = [
   ['text_inset', 'textInset', 0, 64, 1],
   ['text_gap', 'textGap', 0, 32, 1],
   ['effect_radius', 'nativeRadius', 0, 64, 1],
+  ['shadow_sigma', 'nativeShadowSigma', 0, 64, 1],
+  ['shadow_rgb', 'nativeShadowRGB', 0, 16777215, 1],
+  ['shadow_active', 'nativeShadowOpacity', 0, 100, 1],
+  ['shadow_inactive', 'nativeShadowInactiveOpacity', 0, 100, 1],
+  ['shadow_x_bias', 'nativeShadowXBias', 0, 128, 1],
+  ['shadow_y_bias', 'nativeShadowYBias', 0, 128, 1],
 ];
 
 export function decorationLayout(theme) {
   const w = theme.window;
+  const rounded = ['rounded', 'rounded-shadow'].includes(w.nativeEffects);
+  const shadow = w.nativeEffects === 'rounded-shadow';
   return Object.freeze({
     left_controls: w.controls === 'left',
     border_width: w.borderWidth, title_height: w.titleHeight,
@@ -22,11 +30,17 @@ export function decorationLayout(theme) {
     control_inset: w.controlInset, close_gap: w.controlGap,
     control_gap: w.surfaceStyle === 'classic' ? 0 : w.controlGap,
     text_inset: w.textInset, text_gap: w.textGap,
-    effect_radius: w.nativeEffects === 'rounded' ? w.radius : 0,
+    effect_radius: rounded ? w.radius : 0,
+    shadow_sigma: shadow ? Math.ceil(w.shadow / 2) : 0,
+    shadow_rgb: shadow ? Number.parseInt((w.nativeShadowColor ?? '#000000').slice(1), 16) : 0,
+    shadow_active: shadow ? w.nativeShadowOpacity ?? 24 : 0,
+    shadow_inactive: shadow ? w.nativeShadowInactiveOpacity ?? 12 : 0,
+    shadow_x_bias: (w.nativeShadowX ?? 0) + 64,
+    shadow_y_bias: (w.nativeShadowY ?? Math.round(w.shadow / 4)) + 64,
   });
 }
 
 export function encodeDecorationLayout(theme) {
   const layout = decorationLayout(theme);
-  return [5, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
+  return [6, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
 }

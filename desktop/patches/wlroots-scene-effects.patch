@@ -1,16 +1,35 @@
 diff --git a/include/render/gles2.h b/include/render/gles2.h
-index 6b852dc..56df6e6 100644
+index 6b852dc..86a0cac 100644
 --- a/include/render/gles2.h
 +++ b/include/render/gles2.h
-@@ -78,6 +78,8 @@ struct wlr_gles2_renderer {
+@@ -42,6 +42,7 @@ struct wlr_gles2_renderer {
+ 
+ 	struct wlr_egl *egl;
+ 	int drm_fd;
++	bool effects_supported;
+ 
+ 	struct wlr_drm_format_set shm_texture_formats;
+ 
+@@ -78,6 +79,11 @@ struct wlr_gles2_renderer {
  			GLuint program;
  			GLint proj;
  			GLint color;
 +			GLint corner_radius;
 +			GLint size;
++			GLint shadow;
++			GLint shadow_box;
++			GLint shadow_original_box;
  			GLint pos_attrib;
  		} quad;
  		struct wlr_gles2_tex_shader tex_rgba;
+@@ -134,6 +140,7 @@ struct wlr_gles2_texture {
+ struct wlr_gles2_render_pass {
+ 	struct wlr_render_pass base;
+ 	struct wlr_gles2_buffer *buffer;
++	bool failed;
+ 	float projection_matrix[9];
+ 	struct wlr_egl_context prev_ctx;
+ 	struct wlr_gles2_render_timer *timer;
 diff --git a/include/render/pixman.h b/include/render/pixman.h
 index 0984214..bcbaf1d 100644
 --- a/include/render/pixman.h
@@ -23,8 +42,20 @@ index 0984214..bcbaf1d 100644
  };
  
  pixman_format_code_t get_pixman_format_from_drm(uint32_t fmt);
+diff --git a/include/wlr/render/gles2.h b/include/wlr/render/gles2.h
+index 454e7eb..93efde2 100644
+--- a/include/wlr/render/gles2.h
++++ b/include/wlr/render/gles2.h
+@@ -43,6 +43,7 @@ struct wlr_gles2_texture_attribs {
+ };
+ 
+ bool wlr_renderer_is_gles2(struct wlr_renderer *wlr_renderer);
++bool wlr_gles2_renderer_supports_scene_effects(struct wlr_renderer *renderer);
+ bool wlr_render_timer_is_gles2(struct wlr_render_timer *timer);
+ bool wlr_texture_is_gles2(struct wlr_texture *texture);
+ void wlr_gles2_texture_get_attribs(struct wlr_texture *texture,
 diff --git a/include/wlr/render/pass.h b/include/wlr/render/pass.h
-index 2159bc3..4d6270c 100644
+index 2159bc3..1a2f6d7 100644
 --- a/include/wlr/render/pass.h
 +++ b/include/wlr/render/pass.h
 @@ -70,6 +70,8 @@ enum wlr_render_blend_mode {
@@ -36,17 +67,20 @@ index 2159bc3..4d6270c 100644
  };
  
  /**
-@@ -137,6 +139,8 @@ struct wlr_render_rect_options {
+@@ -137,6 +139,11 @@ struct wlr_render_rect_options {
  	const pixman_region32_t *clip;
  	/* Blend mode */
  	enum wlr_render_blend_mode blend_mode;
 +	/* Circular corner radius in destination pixels; zero preserves rectangles. */
 +	float corner_radius;
++	/* Gaussian outer-outline falloff; zero preserves ordinary rectangles. */
++	float shadow_sigma;
++	struct wlr_box shadow_box, shadow_original_box;
  };
  
  /**
 diff --git a/include/wlr/types/wlr_scene.h b/include/wlr/types/wlr_scene.h
-index 2292f1f..6130830 100644
+index 2292f1f..1abb0cd 100644
 --- a/include/wlr/types/wlr_scene.h
 +++ b/include/wlr/types/wlr_scene.h
 @@ -38,6 +38,16 @@ struct wlr_surface;
@@ -55,14 +89,14 @@ index 2292f1f..6130830 100644
  struct wlr_scene_buffer;
 +struct wlr_scene_rounding;
 +
-+#define WLR_SCENE_EFFECTS_ABI 1
++#define WLR_SCENE_EFFECTS_ABI 2
 +#define WLR_SCENE_EFFECTS_MAX_AXIS 32768
 +#define WLR_SCENE_EFFECTS_MAX_PIXELS (16u * 1024u * 1024u)
 +#define WLR_SCENE_EFFECTS_MAX_BYTES (128u * 1024u * 1024u)
 +
 +/* A separately named symbol makes a new compositor/old library mismatch fatal. */
-+uint32_t wlr_scene_effects_abi_v1(void);
-+const char *wlr_scene_effects_source_sha256_v1(void);
++uint32_t wlr_scene_effects_abi_v2(void);
++const char *wlr_scene_effects_source_sha256_v2(void);
  struct wlr_scene_output_layout;
  
  struct wlr_presentation;
@@ -83,7 +117,17 @@ index 2292f1f..6130830 100644
  
  	struct {
  		struct wl_listener linux_dmabuf_v1_destroy;
-@@ -361,6 +374,16 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
+@@ -140,6 +153,9 @@ struct wlr_scene_rect {
+ 	struct wlr_scene_node node;
+ 	int width, height;
+ 	float color[4];
++	float corner_radius, shadow_sigma;
++	int shadow_inset, shadow_offset_x, shadow_offset_y;
++	bool is_shadow;
+ };
+ 
+ struct wlr_scene_outputs_update_event {
+@@ -361,6 +377,21 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
   */
  struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
  
@@ -97,11 +141,16 @@ index 2292f1f..6130830 100644
 +bool wlr_scene_tree_set_rounding(struct wlr_scene_tree *tree,
 +	const struct wlr_box *box, float radius);
 +
++/** A non-input, non-opaque outer shadow, with no access to background pixels. */
++struct wlr_scene_rect *wlr_scene_shadow_create(struct wlr_scene_tree *parent);
++bool wlr_scene_shadow_set_geometry(struct wlr_scene_rect *shadow,
++	int width, int height, float radius, float sigma, int offset_x, int offset_y);
++
  /**
   * Add a node displaying a single surface to the scene-graph.
   *
 diff --git a/meson.build b/meson.build
-index 7aea9f0..e82d751 100644
+index 7aea9f0..936345b 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -20,6 +20,17 @@ versioned_name = '@0@-@1@.@2@'.format(meson.project_name(), version_major, versi
@@ -127,7 +176,7 @@ index 7aea9f0..e82d751 100644
  symbols_flag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), symbols_file)
  lib_wlr = library(
 -	versioned_name, wlr_files,
-+	versioned_name + '-polly-effects1', wlr_files,
++	versioned_name + '-polly-effects2', wlr_files,
  	dependencies: wlr_deps,
  	include_directories: [wlr_inc],
  	install: true,
@@ -152,10 +201,27 @@ index 5863764..c0921df 100644
  option('renderers', type: 'array', choices: ['auto', 'gles2', 'vulkan'], value: ['auto'], description: 'Select built-in renderers')
  option('backends', type: 'array', choices: ['auto', 'drm', 'libinput', 'x11'], value: ['auto'], description: 'Select built-in backends')
 diff --git a/render/gles2/pass.c b/render/gles2/pass.c
-index b10ac04..072646b 100644
+index b10ac04..fd1cf74 100644
 --- a/render/gles2/pass.c
 +++ b/render/gles2/pass.c
-@@ -157,10 +157,15 @@ static void setup_blending(enum wlr_render_blend_mode mode) {
+@@ -5,6 +5,7 @@
+ #include <unistd.h>
+ #include <wlr/render/drm_syncobj.h>
+ #include <wlr/util/transform.h>
++#include <wlr/util/log.h>
+ #include "render/egl.h"
+ #include "render/gles2.h"
+ #include "util/matrix.h"
+@@ -60,7 +61,7 @@ static bool render_pass_submit(struct wlr_render_pass *wlr_pass) {
+ 		glFlush();
+ 	}
+ 
+-	ok = true;
++	ok = !pass->failed;
+ 
+ out:
+ 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+@@ -157,10 +158,15 @@ static void setup_blending(enum wlr_render_blend_mode mode) {
  	switch (mode) {
  	case WLR_RENDER_BLEND_MODE_PREMULTIPLIED:
  		glEnable(GL_BLEND);
@@ -171,7 +237,7 @@ index b10ac04..072646b 100644
  	}
  }
  
-@@ -223,7 +228,8 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+@@ -223,7 +229,8 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
  		}
  	}
  
@@ -181,43 +247,83 @@ index b10ac04..072646b 100644
  		WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
  
  	glUseProgram(shader->program);
-@@ -263,9 +269,13 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -257,15 +264,29 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+ 		const struct wlr_render_rect_options *options) {
+ 	struct wlr_gles2_render_pass *pass = get_render_pass(wlr_pass);
+ 	struct wlr_gles2_renderer *renderer = pass->buffer->renderer;
++	if ((options->corner_radius > 0 || options->shadow_sigma > 0) && !renderer->effects_supported) {
++		wlr_log(WLR_ERROR, "Scene effects require 23-bit fragment highp precision");
++		pass->failed = true;
++		return;
++	}
+ 
+ 	const struct wlr_render_color *color = &options->color;
+ 	struct wlr_box box;
  	wlr_render_rect_options_get_box(options, pass->buffer->buffer, &box);
  
  	push_gles2_debug(renderer);
 -	setup_blending(color->a == 1.0 ? WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
-+	setup_blending(color->a == 1.0 && options->corner_radius == 0 &&
++	setup_blending(color->a == 1.0 && options->corner_radius == 0 && options->shadow_sigma == 0 &&
 +		options->blend_mode != WLR_RENDER_BLEND_MODE_DESTINATION_IN ?
 +		WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
  
  	glUseProgram(renderer->shaders.quad.program);
 +	glUniform1f(renderer->shaders.quad.corner_radius, options->corner_radius);
 +	glUniform2f(renderer->shaders.quad.size, box.width, box.height);
++	glUniform1f(renderer->shaders.quad.shadow, options->shadow_sigma);
++	const struct wlr_box *shape = &options->shadow_box, *original = &options->shadow_original_box;
++	glUniform4f(renderer->shaders.quad.shadow_box, shape->x, shape->y, shape->width, shape->height);
++	glUniform4f(renderer->shaders.quad.shadow_original_box,
++		original->x, original->y, original->width, original->height);
  
  	set_proj_matrix(renderer->shaders.quad.proj, pass->projection_matrix, &box);
  	glUniform4f(renderer->shaders.quad.color, color->r, color->g, color->b, color->a);
 diff --git a/render/gles2/renderer.c b/render/gles2/renderer.c
-index e362dae..a4a6f6d 100644
+index e362dae..9438339 100644
 --- a/render/gles2/renderer.c
 +++ b/render/gles2/renderer.c
-@@ -640,6 +640,8 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
+@@ -40,6 +40,10 @@ struct wlr_gles2_renderer *gles2_get_renderer(
+ 	return renderer;
+ }
+ 
++bool wlr_gles2_renderer_supports_scene_effects(struct wlr_renderer *renderer) {
++	return gles2_get_renderer(renderer)->effects_supported;
++}
++
+ bool wlr_render_timer_is_gles2(struct wlr_render_timer *timer) {
+ 	return timer->impl == &render_timer_impl;
+ }
+@@ -527,6 +531,9 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
+ 	}
+ 	wlr_renderer_init(&renderer->wlr_renderer, &renderer_impl, WLR_BUFFER_CAP_DMABUF);
+ 	renderer->wlr_renderer.features.output_color_transform = false;
++	GLint range[2], precision;
++	glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, range, &precision);
++	renderer->effects_supported = precision >= 23 && range[0] >= 16 && range[1] >= 16;
+ 
+ 	wl_list_init(&renderer->buffers);
+ 	wl_list_init(&renderer->textures);
+@@ -640,6 +647,11 @@ struct wlr_renderer *wlr_gles2_renderer_create(struct wlr_egl *egl) {
  	}
  	renderer->shaders.quad.proj = glGetUniformLocation(prog, "proj");
  	renderer->shaders.quad.color = glGetUniformLocation(prog, "color");
 +	renderer->shaders.quad.corner_radius = glGetUniformLocation(prog, "corner_radius");
 +	renderer->shaders.quad.size = glGetUniformLocation(prog, "size");
++	renderer->shaders.quad.shadow = glGetUniformLocation(prog, "shadow");
++	renderer->shaders.quad.shadow_box = glGetUniformLocation(prog, "shadow_box");
++	renderer->shaders.quad.shadow_original_box = glGetUniformLocation(prog, "shadow_original_box");
  	renderer->shaders.quad.pos_attrib = glGetAttribLocation(prog, "pos");
  
  	renderer->shaders.tex_rgba.program = prog =
 diff --git a/render/gles2/shaders/common.vert b/render/gles2/shaders/common.vert
-index f51548a..a9b9515 100644
+index f51548a..4349c82 100644
 --- a/render/gles2/shaders/common.vert
 +++ b/render/gles2/shaders/common.vert
 @@ -2,9 +2,11 @@ uniform mat3 proj;
  uniform mat3 tex_proj;
  attribute vec2 pos;
  varying vec2 v_texcoord;
-+varying vec2 v_position;
++varying highp vec2 v_position;
  
  void main() {
  	vec3 pos3 = vec3(pos, 1.0);
@@ -226,29 +332,57 @@ index f51548a..a9b9515 100644
 +	v_position = pos;
  }
 diff --git a/render/gles2/shaders/quad.frag b/render/gles2/shaders/quad.frag
-index 97d3a31..ccd8e24 100644
+index 97d3a31..45decf8 100644
 --- a/render/gles2/shaders/quad.frag
 +++ b/render/gles2/shaders/quad.frag
-@@ -7,7 +7,16 @@ precision mediump float;
+@@ -7,7 +7,45 @@ precision mediump float;
  varying vec4 v_color;
  varying vec2 v_texcoord;
  uniform vec4 color;
-+varying vec2 v_position;
-+uniform vec2 size;
-+uniform float corner_radius;
++#ifdef GL_FRAGMENT_PRECISION_HIGH
++varying highp vec2 v_position;
++uniform highp vec2 size;
++uniform highp float corner_radius;
++uniform highp float shadow;
++uniform highp vec4 shadow_box;
++uniform highp vec4 shadow_original_box;
++
++float rounded_distance(vec2 position, vec2 half_size, float radius) {
++	vec2 q = abs(position) - half_size + radius;
++	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
++}
++
++float gaussian_falloff(float distance, float sigma) {
++	float z = abs(distance) / (1.41421356237 * sigma);
++	float t = 1.0 / (1.0 + 0.3275911 * z);
++	float erfc = (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
++		- 0.284496736) * t + 0.254829592) * t * exp(-z * z);
++	return distance >= 0.0 ? 0.5 * erfc : 1.0 - 0.5 * erfc;
++}
  
- void main() {
--	gl_FragColor = color;
++void main() {
 +	float coverage = 1.0;
-+	if (corner_radius > 0.0) {
-+		vec2 q = abs(v_position * size - size * 0.5) - size * 0.5 + corner_radius;
-+		float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - corner_radius;
++	vec2 position = v_position * size - size * 0.5;
++	if (shadow > 0.0) {
++		vec2 local = v_position * size;
++		float distance = rounded_distance(local - shadow_box.xy - shadow_box.zw * 0.5,
++			shadow_box.zw * 0.5, corner_radius);
++		float interior = rounded_distance(local - shadow_original_box.xy - shadow_original_box.zw * 0.5,
++			shadow_original_box.zw * 0.5, corner_radius);
++		coverage = gaussian_falloff(distance, shadow) * (1.0 - clamp(0.5 - interior, 0.0, 1.0));
++	} else if (corner_radius > 0.0) {
++		float distance = rounded_distance(position, size * 0.5, corner_radius);
 +		coverage = clamp(0.5 - distance, 0.0, 1.0);
 +	}
 +	gl_FragColor = color * coverage;
++}
++#else
+ void main() {
+ 	gl_FragColor = color;
  }
++#endif
 diff --git a/render/pixman/pass.c b/render/pixman/pass.c
-index 4ae742c..6572aa9 100644
+index 4ae742c..fab6df8 100644
 --- a/render/pixman/pass.c
 +++ b/render/pixman/pass.c
 @@ -1,5 +1,7 @@
@@ -280,23 +414,36 @@ index 4ae742c..6572aa9 100644
  	}
  	abort();
  }
-@@ -205,7 +210,9 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -198,6 +203,12 @@ static void render_pass_add_texture(struct wlr_render_pass *wlr_pass,
+ 	}
+ }
+ 
++static float rounded_distance(float x, float y, float half_width, float half_height, float radius) {
++	float qx = fabsf(x) - half_width + radius;
++	float qy = fabsf(y) - half_height + radius;
++	return hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++}
++
+ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+ 		const struct wlr_render_rect_options *options) {
+ 	struct wlr_pixman_render_pass *pass = get_render_pass(wlr_pass);
+@@ -205,7 +216,9 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
  	struct wlr_box box;
  	wlr_render_rect_options_get_box(options, pass->buffer->buffer, &box);
  
 -	pixman_op_t op = get_pixman_blending(options->color.a == 1 ?
 +	pixman_op_t op = get_pixman_blending(options->color.a == 1 &&
-+		options->corner_radius == 0 &&
++		options->corner_radius == 0 && options->shadow_sigma == 0 &&
 +		options->blend_mode != WLR_RENDER_BLEND_MODE_DESTINATION_IN ?
  		WLR_RENDER_BLEND_MODE_NONE : options->blend_mode);
  
  	struct pixman_color color = {
-@@ -216,13 +223,38 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
+@@ -216,13 +229,50 @@ static void render_pass_add_rect(struct wlr_render_pass *wlr_pass,
  	};
  
  	pixman_image_t *fill = pixman_image_create_solid_fill(&color);
 +	pixman_image_t *mask = NULL;
-+	if (options->corner_radius > 0) {
++	if (options->corner_radius > 0 || options->shadow_sigma > 0) {
 +		mask = pixman_image_create_bits(PIXMAN_a8, box.width, box.height, NULL, 0);
 +		if (!mask) {
 +			wlr_log(WLR_ERROR, "Cannot allocate rounded effect coverage");
@@ -309,11 +456,23 @@ index 4ae742c..6572aa9 100644
 +		float r = options->corner_radius;
 +		for (int y = 0; y < box.height; y++) {
 +			for (int x = 0; x < box.width; x++) {
-+				float qx = fabsf(x + 0.5f - box.width * 0.5f) - box.width * 0.5f + r;
-+				float qy = fabsf(y + 0.5f - box.height * 0.5f) - box.height * 0.5f + r;
-+				float d = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) +
-+					fminf(fmaxf(qx, qy), 0) - r;
-+				pixels[y * stride + x] = roundf(fminf(fmaxf(0.5f - d, 0), 1) * 255);
++				float px = x + 0.5f - box.width * 0.5f, py = y + 0.5f - box.height * 0.5f;
++				float hw = box.width * 0.5f, hh = box.height * 0.5f;
++				float d = rounded_distance(px, py, hw, hh, r);
++				float coverage = fminf(fmaxf(0.5f - d, 0), 1);
++				if (options->shadow_sigma > 0) {
++					const struct wlr_box *shape = &options->shadow_box;
++					const struct wlr_box *original = &options->shadow_original_box;
++					d = rounded_distance(x + 0.5f - shape->x - shape->width * 0.5f,
++						y + 0.5f - shape->y - shape->height * 0.5f,
++						shape->width * 0.5f, shape->height * 0.5f, r);
++					float interior = rounded_distance(x + 0.5f - original->x - original->width * 0.5f,
++						y + 0.5f - original->y - original->height * 0.5f,
++						original->width * 0.5f, original->height * 0.5f, r);
++					coverage = 0.5f * erfcf(d / (1.41421356237f * options->shadow_sigma)) *
++						(1 - fminf(fmaxf(0.5f - interior, 0), 1));
++				}
++				pixels[y * stride + x] = roundf(coverage * 255);
 +			}
 +		}
 +	}
@@ -332,7 +491,7 @@ index 4ae742c..6572aa9 100644
  
  static const struct wlr_render_pass_impl render_pass_impl = {
 diff --git a/types/scene/wlr_scene.c b/types/scene/wlr_scene.c
-index e823d62..7af541f 100644
+index e823d62..093f81b 100644
 --- a/types/scene/wlr_scene.c
 +++ b/types/scene/wlr_scene.c
 @@ -1,10 +1,18 @@
@@ -387,11 +546,11 @@ index e823d62..7af541f 100644
 +	struct wl_list caches;
 +};
 +
-+uint32_t wlr_scene_effects_abi_v1(void) {
++uint32_t wlr_scene_effects_abi_v2(void) {
 +	return WLR_SCENE_EFFECTS_ABI;
 +}
 +
-+const char *wlr_scene_effects_source_sha256_v1(void) {
++const char *wlr_scene_effects_source_sha256_v2(void) {
 +	return WLR_SCENE_EFFECTS_SOURCE_SHA256;
 +}
 +
@@ -469,7 +628,7 @@ index e823d62..7af541f 100644
  
  		if (scene_tree == &scene->tree) {
  			assert(!node->parent);
-@@ -256,6 +358,10 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
+@@ -256,12 +358,16 @@ static bool scene_nodes_in_box(struct wlr_scene_node *node, struct wlr_box *box,
  
  static void scene_node_opaque_region(struct wlr_scene_node *node, int x, int y,
  		pixman_region32_t *opaque) {
@@ -480,6 +639,13 @@ index e823d62..7af541f 100644
  	int width, height;
  	scene_node_get_size(node, &width, &height);
  
+ 	if (node->type == WLR_SCENE_NODE_RECT) {
+ 		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
+-		if (scene_rect->color[3] != 1) {
++		if (scene_rect->is_shadow || scene_rect->color[3] != 1) {
+ 			return;
+ 		}
+ 	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
 @@ -329,12 +435,16 @@ struct render_data {
  
  	struct wlr_render_pass *render_pass;
@@ -577,7 +743,56 @@ index e823d62..7af541f 100644
  struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
  		int width, int height, const float color[static 4]) {
  	assert(parent);
-@@ -848,6 +1017,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
+@@ -731,6 +900,48 @@ struct wlr_scene_rect *wlr_scene_rect_create(struct wlr_scene_tree *parent,
+ 	return scene_rect;
+ }
+ 
++struct wlr_scene_rect *wlr_scene_shadow_create(struct wlr_scene_tree *parent) {
++	struct wlr_scene_rect *shadow = wlr_scene_rect_create(parent, 1, 1, (float[4]){0});
++	if (shadow) {
++		shadow->is_shadow = true;
++	}
++	return shadow;
++}
++
++bool wlr_scene_shadow_set_geometry(struct wlr_scene_rect *shadow,
++		int width, int height, float radius, float sigma, int offset_x, int offset_y) {
++	if (!shadow->is_shadow || width <= 0 || height <= 0 ||
++			width > WLR_SCENE_EFFECTS_MAX_AXIS || height > WLR_SCENE_EFFECTS_MAX_AXIS ||
++			!isfinite(radius) || radius < 0 || radius > fminf(width, height) / 2 ||
++			!isfinite(sigma) || sigma <= 0 || sigma > 64 ||
++			offset_x < -64 || offset_x > 64 || offset_y < -64 || offset_y > 64) {
++		wlr_log(WLR_ERROR, "Invalid generic outer shadow geometry");
++		return false;
++	}
++	int inset = ceilf(4 * sigma) + 1;
++	if (width + 2 * inset > WLR_SCENE_EFFECTS_MAX_AXIS ||
++			height + 2 * inset > WLR_SCENE_EFFECTS_MAX_AXIS) {
++		wlr_log(WLR_ERROR, "Outer shadow exceeds scene axis budget");
++		return false;
++	}
++	width += 2 * inset;
++	height += 2 * inset;
++	if (shadow->width == width && shadow->height == height &&
++			shadow->corner_radius == radius && shadow->shadow_sigma == sigma &&
++			shadow->shadow_offset_x == offset_x && shadow->shadow_offset_y == offset_y) {
++		return true;
++	}
++	shadow->width = width;
++	shadow->height = height;
++	shadow->corner_radius = radius;
++	shadow->shadow_sigma = sigma;
++	shadow->shadow_inset = inset;
++	shadow->shadow_offset_x = offset_x;
++	shadow->shadow_offset_y = offset_y;
++	scene_node_update(&shadow->node, NULL);
++	return true;
++}
++
+ void wlr_scene_rect_set_size(struct wlr_scene_rect *rect, int width, int height) {
+ 	if (rect->width == width && rect->height == height) {
+ 		return;
+@@ -848,6 +1059,7 @@ struct wlr_scene_buffer *wlr_scene_buffer_create(struct wlr_scene_tree *parent,
  
  void wlr_scene_buffer_set_buffer_with_options(struct wlr_scene_buffer *scene_buffer,
  		struct wlr_buffer *buffer, const struct wlr_scene_buffer_set_buffer_options *options) {
@@ -585,7 +800,7 @@ index e823d62..7af541f 100644
  	const struct wlr_scene_buffer_set_buffer_options default_options = {0};
  	if (options == NULL) {
  		options = &default_options;
-@@ -1160,6 +1330,9 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
+@@ -1160,6 +1372,9 @@ void wlr_scene_node_set_enabled(struct wlr_scene_node *node, bool enabled) {
  	}
  
  	node->enabled = enabled;
@@ -595,7 +810,7 @@ index e823d62..7af541f 100644
  
  	scene_node_update(node, &visible);
  }
-@@ -1227,6 +1400,16 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
+@@ -1227,6 +1442,16 @@ void wlr_scene_node_reparent(struct wlr_scene_node *node,
  	if (node->parent == new_parent) {
  		return;
  	}
@@ -612,7 +827,17 @@ index e823d62..7af541f 100644
  
  	/* Ensure that a node cannot become its own ancestor */
  	for (struct wlr_scene_tree *ancestor = new_parent; ancestor != NULL;
-@@ -1357,12 +1540,29 @@ struct render_list_entry {
+@@ -1308,6 +1533,9 @@ static bool scene_node_at_iterator(struct wlr_scene_node *node,
+ 
+ 	double rx = at_data->lx - lx;
+ 	double ry = at_data->ly - ly;
++	if (node->type == WLR_SCENE_NODE_RECT && wlr_scene_rect_from_node(node)->is_shadow) {
++		return false;
++	}
+ 
+ 	if (node->type == WLR_SCENE_NODE_BUFFER) {
+ 		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+@@ -1357,12 +1585,29 @@ struct render_list_entry {
  	int x, y;
  };
  
@@ -643,7 +868,54 @@ index e823d62..7af541f 100644
  	pixman_region32_translate(&render_region, -data->logical.x, -data->logical.y);
  	logical_to_buffer_coords(&render_region, data, true);
  	pixman_region32_intersect(&render_region, &render_region, &data->damage);
-@@ -1428,6 +1628,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1393,6 +1638,34 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+ 		break;
+ 	case WLR_SCENE_NODE_RECT:;
+ 		struct wlr_scene_rect *scene_rect = wlr_scene_rect_from_node(node);
++		size_t workspace = 0;
++		if (scene_rect->is_shadow) {
++			uint64_t pixels = (uint64_t)dst_box.width * dst_box.height;
++			workspace = (((size_t)dst_box.width + 3) & ~(size_t)3) * dst_box.height;
++			if (dst_box.width > WLR_SCENE_EFFECTS_MAX_AXIS ||
++					dst_box.height > WLR_SCENE_EFFECTS_MAX_AXIS ||
++					pixels > WLR_SCENE_EFFECTS_MAX_PIXELS ||
++					workspace > WLR_SCENE_EFFECTS_MAX_BYTES - data->output->scene->effects_cached_bytes) {
++				wlr_log(WLR_ERROR, "Outer shadow coverage exceeds aggregate effect budget");
++				if (data->failed) {
++					*data->failed = true;
++				}
++				break;
++			}
++			data->output->scene->effects_cached_bytes += workspace;
++		}
++		struct wlr_box shape = {
++			.x = x + scene_rect->shadow_inset, .y = y + scene_rect->shadow_inset,
++			.width = scene_rect->width - 2 * scene_rect->shadow_inset,
++			.height = scene_rect->height - 2 * scene_rect->shadow_inset,
++		};
++		struct wlr_box original = shape;
++		original.x -= scene_rect->shadow_offset_x;
++		original.y -= scene_rect->shadow_offset_y;
++		transform_output_box(&shape, data);
++		transform_output_box(&original, data);
++		shape.x -= dst_box.x; shape.y -= dst_box.y;
++		original.x -= dst_box.x; original.y -= dst_box.y;
+ 
+ 		wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
+ 			.box = dst_box,
+@@ -1403,7 +1676,11 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+ 				.a = scene_rect->color[3],
+ 			},
+ 			.clip = &render_region,
++			.corner_radius = scene_rect->corner_radius * data->scale,
++			.shadow_sigma = scene_rect->shadow_sigma * data->scale,
++			.shadow_box = shape, .shadow_original_box = original,
+ 		});
++		data->output->scene->effects_cached_bytes -= workspace;
+ 		break;
+ 	case WLR_SCENE_NODE_BUFFER:;
+ 		struct wlr_scene_buffer *scene_buffer = wlr_scene_buffer_from_node(node);
+@@ -1428,6 +1705,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			data->output->output->renderer);
  		if (texture == NULL) {
  			scene_output_damage(data->output, &render_region);
@@ -653,7 +925,7 @@ index e823d62..7af541f 100644
  			break;
  		}
  
-@@ -1443,7 +1646,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1443,7 +1723,7 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.clip = &render_region,
  			.alpha = &scene_buffer->opacity,
  			.filter_mode = scene_buffer->filter_mode,
@@ -662,7 +934,7 @@ index e823d62..7af541f 100644
  					!pixman_region32_empty(&opaque) ?
  				WLR_RENDER_BLEND_MODE_PREMULTIPLIED : WLR_RENDER_BLEND_MODE_NONE,
  			.wait_timeline = scene_buffer->wait_timeline,
-@@ -1454,7 +1657,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1454,7 +1734,9 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  			.output = data->output,
  			.direct_scanout = false,
  		};
@@ -673,7 +945,7 @@ index e823d62..7af541f 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +1676,201 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1471,6 +1753,208 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  	pixman_region32_fini(&render_region);
  }
  
@@ -726,6 +998,13 @@ index e823d62..7af541f 100644
 +		wlr_log(WLR_ERROR, "Scene effects require the patched Pixman or GLES2 renderer");
 +		return false;
 +	}
++#if WLR_HAS_GLES2_RENDERER
++	if (wlr_renderer_is_gles2(output->renderer) &&
++			!wlr_gles2_renderer_supports_scene_effects(output->renderer)) {
++		wlr_log(WLR_ERROR, "Scene effects require 23-bit fragment highp precision");
++		return false;
++	}
++#endif
 +	struct wlr_box physical = {
 +		.x = entry->x + rounding->box.x - data->logical.x,
 +		.y = entry->y + rounding->box.y - data->logical.y,
@@ -875,7 +1154,7 @@ index e823d62..7af541f 100644
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
  		void *data) {
  	struct wlr_scene *scene =
-@@ -1772,6 +2172,7 @@ struct render_list_constructor_data {
+@@ -1772,6 +2256,7 @@ struct render_list_constructor_data {
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -883,7 +1162,7 @@ index e823d62..7af541f 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +2187,35 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +2271,35 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -919,7 +1198,16 @@ index e823d62..7af541f 100644
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -2117,6 +2547,23 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2073,6 +2587,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+ 		.logical = { .x = scene_output->x, .y = scene_output->y },
+ 		.output = scene_output,
+ 	};
++	bool effect_failed = false;
++	render_data.failed = &effect_failed;
+ 
+ 	int resolution_width, resolution_height;
+ 	output_pending_resolution(output, state,
+@@ -2117,6 +2633,23 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -943,3 +1231,12 @@ index e823d62..7af541f 100644
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
+@@ -2330,7 +2863,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+ 	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
+ 	pixman_region32_fini(&render_data.damage);
+ 
+-	if (!wlr_render_pass_submit(render_pass)) {
++	if (!wlr_render_pass_submit(render_pass) || effect_failed) {
+ 		wlr_buffer_unlock(buffer);
+ 
+ 		// if we failed to render the buffer, it will have undefined contents

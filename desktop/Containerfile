@@ -1,4 +1,5 @@
 FROM docker.io/library/alpine:3.24 AS compositor-base
+RUN printf '%s\n' 'Unsupported current desktop SDK: Alpine stock wlroots lacks the pinned PollyUI scene-effects ABI. Use release/debian/Containerfile.sdk; this historical Alpine entry is deferred until the paired source SDK is ported.' >&2; exit 1
 
 RUN apk add --no-cache \
     build-base cmake ninja pkgconf clang compiler-rt gdb valgrind \

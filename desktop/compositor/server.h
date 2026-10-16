@@ -37,7 +37,7 @@ struct PuDesktopView {
     struct wlr_xdg_toplevel *toplevel;
     struct wlr_scene_tree *tree;
     struct wlr_scene_tree *content, *popups, *effects;
-    struct wlr_scene_rect *backdrop;
+    struct wlr_scene_rect *backdrop, *shadow;
     struct wl_list link, all_link;
     bool mapped, minimized;
     struct wlr_foreign_toplevel_handle_v1 *foreign;

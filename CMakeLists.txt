@@ -675,6 +675,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
         target_include_directories(polly-caption-alignment-test PRIVATE desktop/shared)
         target_link_libraries(polly-caption-alignment-test PRIVATE m)
         add_test(NAME desktop-caption-alignment COMMAND polly-caption-alignment-test)
+        if (PU_BUILD_DESKTOP)
+            find_program(PU_CAPTION_PYTHON python3 REQUIRED)
+            add_test(NAME desktop-native-caption-effects COMMAND "${PU_CAPTION_PYTHON}"
+                "${CMAKE_SOURCE_DIR}/desktop/tests/native-caption-effects.py"
+                $<TARGET_FILE:pollyui> $<TARGET_FILE:pollywm-scene-effects-test>)
+            set_tests_properties(desktop-native-caption-effects PROPERTIES
+                TIMEOUT 60 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        endif()
         add_test(NAME desktop-xp-startup COMMAND node --test "${CMAKE_SOURCE_DIR}/desktop/tests/xp-startup.mjs")
         set_tests_properties(desktop-xp-startup PROPERTIES TIMEOUT 30 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
         add_test(NAME desktop-debian-update-report COMMAND node "${CMAKE_SOURCE_DIR}/desktop/tests/debian-update-report.mjs")

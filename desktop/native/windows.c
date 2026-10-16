@@ -390,8 +390,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
-        if (version < 5) { control.failed = control.changed = 1; return; }
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 5);
+        if (version < 6) { control.failed = control.changed = 1; return; }
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
         if (!control.appearance ||
             polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;

@@ -13,13 +13,13 @@
 #include <wlr/util/transform.h>
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL effects:%d: %s\n", __LINE__, #c); return false; } } while (0)
-struct Pixels { struct wlr_buffer base; uint32_t pixels[24 * 20]; };
+struct Pixels { struct wlr_buffer base; uint32_t pixels[]; };
 static void destroy(struct wlr_buffer *base) { wlr_buffer_finish(base); free(base); }
 static bool access_pixels(struct wlr_buffer *base, uint32_t flags, void **data, uint32_t *format, size_t *stride)
 {
     struct Pixels *pixels = wl_container_of(base, pixels, base);
     if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
-    *data = pixels->pixels; *format = DRM_FORMAT_ARGB8888; *stride = 24 * 4;
+    *data = pixels->pixels; *format = DRM_FORMAT_ARGB8888; *stride = (size_t)base->width * 4;
     return true;
 }
 static void end_access(struct wlr_buffer *base) { (void)base; }
@@ -28,7 +28,7 @@ static const struct wlr_buffer_impl pixels_impl = {
 };
 static struct wlr_buffer *pattern(void)
 {
-    struct Pixels *pixels = calloc(1, sizeof(*pixels));
+    struct Pixels *pixels = calloc(1, sizeof(*pixels) + 24 * 20 * 4);
     if (!pixels) return NULL;
     wlr_buffer_init(&pixels->base, &pixels_impl, 24, 20);
     for (int y = 0; y < 20; y++) for (int x = 0; x < 24; x++)
@@ -55,9 +55,214 @@ static bool capture(struct PuDesktop *desktop, struct wlr_output *target, uint32
     wlr_output_state_finish(&state);
     return true;
 }
+static float distance_to_round(float x, float y, float width, float height, float radius)
+{
+    float qx = fabsf(x - width / 2) - width / 2 + radius;
+    float qy = fabsf(y - height / 2) - height / 2 + radius;
+    return hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
+}
+static bool caption_suite(struct PuDesktop *desktop, const char *file)
+{
+    FILE *input = fopen(file, "rb");
+    CHECK(input);
+    uint32_t header[2];
+    CHECK(fread(header, sizeof(header), 1, input) == 1 && header[0] == 0x50554345 && header[1] == 8);
+    struct wlr_output_layout_output *entry = wl_container_of(desktop->layout->outputs.next, entry, link);
+    struct wlr_scene_tree *background = wlr_scene_tree_create(&desktop->scene->tree);
+    CHECK(background);
+    wlr_scene_node_lower_to_bottom(&background->node);
+    for (int y = 0; y < 192; y += 8) for (int x = 0; x < 256; x += 8) {
+        float color[4] = {((x / 8 + y / 8) & 1) ? 0.2f : 0.8f, 0.4f, 0.6f, 1};
+        struct wlr_scene_rect *rect = wlr_scene_rect_create(background, 8, 8, color);
+        CHECK(rect); wlr_scene_node_set_position(&rect->node, x, y);
+    }
+    for (uint32_t record = 0; record < header[1]; record++) {
+        uint32_t meta[8];
+        CHECK(fread(meta, sizeof(meta), 1, input) == 1);
+        CHECK(meta[0] == 64 && meta[1] == 64 && meta[2] >= 16 && meta[2] <= 96 &&
+            meta[3] == 16 && meta[6] <= 512 && meta[7] <= 512);
+        float scale; memcpy(&scale, &meta[4], 4);
+        CHECK(scale == 1 || scale == 1.25f);
+        struct Pixels *pixels = calloc(1, sizeof(*pixels) + (size_t)meta[6] * meta[7] * 4);
+        CHECK(pixels);
+        wlr_buffer_init(&pixels->base, &pixels_impl, (int)meta[6], (int)meta[7]);
+        for (uint32_t i = 0; i < meta[6] * meta[7]; i++) {
+            uint8_t rgba[4];
+            CHECK(fread(rgba, sizeof(rgba), 1, input) == 1 && rgba[3] == 255);
+            pixels->pixels[i] = 0xff000000u | (uint32_t)rgba[0] << 16 | (uint32_t)rgba[1] << 8 | rgba[2];
+        }
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_custom_mode(&state, (int)(256 * scale), (int)(192 * scale), 60000);
+        wlr_output_state_set_scale(&state, scale);
+        CHECK(wlr_output_commit_state(entry->output, &state));
+        wlr_output_state_finish(&state);
+        struct wlr_scene_tree *group = wlr_scene_tree_create(desktop->windows);
+        CHECK(group); wlr_scene_node_set_position(&group->node, 40, 40);
+        CHECK(wlr_scene_rect_create(group, 64, 64 + (int)meta[2], (float[4]){0.6f, 0.2f, 0.4f, 1}));
+        struct wlr_scene_buffer *caption = wlr_scene_buffer_create(group, &pixels->base);
+        CHECK(caption); wlr_buffer_drop(&pixels->base);
+        wlr_scene_buffer_set_dest_size(caption, 64, (int)meta[2]);
+        uint32_t *plain, *behind, *actual;
+        int width, height, w, h;
+        CHECK(capture(desktop, entry->output, &plain, &width, &height));
+        wlr_scene_node_set_enabled(&group->node, false);
+        CHECK(capture(desktop, entry->output, &behind, &w, &h));
+        wlr_scene_node_set_enabled(&group->node, true);
+        bool maximized = meta[5] & 2;
+        CHECK(wlr_scene_tree_set_rounding(group, &(struct wlr_box){0, 0, 64, 64 + (int)meta[2]},
+            maximized ? 0 : 16));
+        CHECK(capture(desktop, entry->output, &actual, &w, &h));
+        int start = (int)roundf(40 * scale), size = (int)roundf(64 * scale);
+        unsigned partial = 0;
+        for (int y = 0; y < (int)(16 * scale); y++) for (int x = 0; x < size; x++) {
+            float distance = distance_to_round(x + 0.5f, y + 0.5f, size,
+                (64 + meta[2]) * scale, 16 * scale);
+            float coverage = maximized ? 1 : roundf(fminf(fmaxf(0.5f - distance, 0), 1) * 255) / 255;
+            if (coverage > 0 && coverage < 1) partial++;
+            size_t offset = (size_t)(start + y) * width + start + x;
+            for (int channel = 0; channel < 24; channel += 8) {
+                int a = (plain[offset] >> channel) & 255, b = (behind[offset] >> channel) & 255;
+                int value = (actual[offset] >> channel) & 255;
+                CHECK(abs(value - (int)roundf(a * coverage + b * (1 - coverage))) <= 3);
+            }
+        }
+        CHECK(maximized || partial > 20);
+        free(plain); free(behind); free(actual);
+        wlr_scene_node_destroy(&group->node);
+        printf("PASS: real GUI caption + native one-coverage top-corner pixels scale=%g maximized=%d partial=%u\n",
+            scale, maximized, partial);
+    }
+    CHECK(fgetc(input) == EOF && !ferror(input));
+    fclose(input);
+    wlr_scene_node_destroy(&background->node);
+    return true;
+}
+static bool shadow_suite(struct PuDesktop *desktop, struct wlr_output *output)
+{
+    struct wlr_scene_rect *shadow = wlr_scene_shadow_create(desktop->windows);
+    CHECK(shadow && wlr_scene_shadow_set_geometry(shadow, 64, 64, 16, 4, 3, 7));
+    CHECK(!wlr_scene_shadow_set_geometry(shadow, 64, 64, 16, 0, 0, 0));
+    CHECK(!wlr_scene_shadow_set_geometry(shadow, 64, 64, 16, NAN, 0, 0));
+    wlr_scene_rect_set_color(shadow, (float[4]){0, 0, 0, 0.5f});
+    wlr_scene_node_set_position(&shadow->node, 26, 30);
+    for (unsigned i = 0; i < 8; i++) {
+        float scales[] = {1, 1.25f, 1.5f, 2};
+        float scale = scales[i % 4];
+        enum wl_output_transform transform = i < 4 ? WL_OUTPUT_TRANSFORM_NORMAL : WL_OUTPUT_TRANSFORM_90;
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_custom_mode(&state, (int)((i < 4 ? 256 : 192) * scale),
+            (int)((i < 4 ? 192 : 256) * scale), 60000);
+        wlr_output_state_set_scale(&state, scale);
+        wlr_output_state_set_transform(&state, transform);
+        CHECK(wlr_output_commit_state(output, &state));
+        wlr_output_state_finish(&state);
+        uint32_t *behind, *actual;
+        int width, height, w, h;
+        wlr_scene_node_set_enabled(&shadow->node, false);
+        CHECK(capture(desktop, output, &behind, &width, &height));
+        wlr_scene_node_set_enabled(&shadow->node, true);
+        CHECK(capture(desktop, output, &actual, &w, &h) && w == width && h == height);
+        int left = (int)roundf(26 * scale), top = (int)roundf(30 * scale);
+        int right = (int)roundf(124 * scale), bottom = (int)roundf(128 * scale);
+        int sx = (int)roundf(43 * scale), sy = (int)roundf(47 * scale);
+        int sw = (int)roundf(107 * scale) - sx, sh = (int)roundf(111 * scale) - sy;
+        int ox = (int)roundf(40 * scale), oy = (int)roundf(40 * scale);
+        int ow = (int)roundf(104 * scale) - ox, oh = (int)roundf(104 * scale) - oy;
+        unsigned outside = 0, unchanged_interior = 0;
+        for (int y = top; y < bottom; y++) for (int x = left; x < right; x++) {
+            float d = distance_to_round(x + 0.5f - sx, y + 0.5f - sy, sw, sh, 16 * scale);
+            float original = distance_to_round(x + 0.5f - ox, y + 0.5f - oy, ow, oh, 16 * scale);
+            float coverage = 0.5f * erfcf(d / (1.41421356237f * 4 * scale)) *
+                (1 - fminf(fmaxf(0.5f - original, 0), 1));
+            float alpha = roundf(coverage * 255) / 255 * 0.5f;
+            struct wlr_box point = {x, y, 1, 1};
+            wlr_box_transform(&point, &point, wlr_output_transform_invert(transform),
+                (int)(256 * scale), (int)(192 * scale));
+            size_t offset = (size_t)point.y * width + point.x;
+            for (int channel = 0; channel < 24; channel += 8) {
+                int base = (behind[offset] >> channel) & 255;
+                int value = (actual[offset] >> channel) & 255;
+                CHECK(abs(value - (int)roundf(base * (1 - alpha))) <= 2);
+            }
+            if (original > 1 && alpha > 0.01f) outside++;
+            if (original < -1) {
+                CHECK((actual[offset] & 0xffffff) == (behind[offset] & 0xffffff));
+                unchanged_interior++;
+            }
+        }
+        CHECK(outside > 200 && unchanged_interior > 1000);
+        double nx, ny;
+        CHECK(wlr_scene_node_at(&desktop->windows->node, 28, 32, &nx, &ny) != &shadow->node);
+        CHECK(desktop->scene->effects_cached_bytes == 0);
+        free(behind); free(actual);
+        printf("PASS: true external Gaussian alpha shadow, untouched interior, checker composition and no input scale=%g transform=%d\n",
+            scale, transform);
+    }
+    wlr_scene_node_destroy(&shadow->node);
+    return true;
+}
+static bool phase_occlusion_suite(struct PuDesktop *desktop, struct wlr_output *output,
+    struct wlr_scene_tree *group, struct wlr_scene_buffer *buffer)
+{
+    struct wlr_scene_tree *mover = wlr_scene_tree_create(desktop->windows);
+    CHECK(mover);
+    wlr_scene_node_reparent(&group->node, mover);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, 320, 240, 60000);
+    wlr_output_state_set_scale(&state, 1.25f);
+    CHECK(wlr_output_commit_state(output, &state));
+    wlr_output_state_finish(&state);
+    uint32_t *pixels, *fresh;
+    int width, height, w, h;
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    free(pixels);
+    uint64_t before = desktop->scene->effects_render_count;
+    wlr_scene_node_set_position(&mover->node, 1, 3);
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    free(pixels);
+    CHECK(desktop->scene->effects_render_count == before + 1);
+    struct wlr_scene_rect *cover = wlr_scene_rect_create(desktop->windows, 64, 64,
+        (float[4]){0.25f, 0.5f, 0.75f, 1});
+    CHECK(cover); wlr_scene_node_set_position(&cover->node, 41, 43);
+    before = desktop->scene->effects_render_count;
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    uint32_t center = pixels[90 * width + 90];
+    CHECK(abs((int)(center & 255) - 191) <= 1 &&
+        abs((int)((center >> 8) & 255) - 128) <= 1 &&
+        abs((int)((center >> 16) & 255) - 64) <= 1);
+    free(pixels);
+    CHECK(desktop->scene->effects_render_count == before);
+    wlr_scene_buffer_set_opacity(buffer, 0.25f);
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    free(pixels);
+    CHECK(desktop->scene->effects_render_count == before);
+    wlr_scene_node_destroy(&cover->node);
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    CHECK(desktop->scene->effects_render_count == before + 1);
+    CHECK(wlr_scene_tree_set_rounding(group, NULL, 0));
+    CHECK(wlr_scene_tree_set_rounding(group, &(struct wlr_box){0, 0, 64, 64}, 16));
+    CHECK(capture(desktop, output, &fresh, &w, &h) && w == width && h == height);
+    CHECK(!memcmp(pixels, fresh, (size_t)width * height * 4));
+    free(pixels); free(fresh);
+    wlr_scene_buffer_set_opacity(buffer, 1);
+    wlr_scene_node_reparent(&group->node, desktop->windows);
+    wlr_scene_node_destroy(&mover->node);
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, 256, 192, 60000);
+    wlr_output_state_set_scale(&state, 1);
+    CHECK(wlr_output_commit_state(output, &state));
+    wlr_output_state_finish(&state);
+    CHECK(capture(desktop, output, &pixels, &width, &height));
+    free(pixels);
+    puts("PASS: ancestor move 40,40->41,43 at scale1.25 regenerates phase-keyed cache; full occlusion suppresses hidden rendering; dirty reveal matches fresh pixels");
+    return true;
+}
 static bool suite(struct PuDesktop *desktop)
 {
-    CHECK(wlr_scene_effects_abi_v1() == 1);
+    CHECK(wlr_scene_effects_abi_v2() == 2);
     struct wlr_output_layout_output *entry = wl_container_of(desktop->layout->outputs.next, entry, link);
     struct wlr_output *output = entry->output;
     struct wlr_scene_tree *background = wlr_scene_tree_create(&desktop->scene->tree);
@@ -160,6 +365,7 @@ static bool suite(struct PuDesktop *desktop)
     int last_width, last_height;
     CHECK(capture(desktop, output, &last, &last_width, &last_height));
     free(last);
+    CHECK(phase_occlusion_suite(desktop, output, group, buffer));
     size_t existing = desktop->scene->effects_cached_bytes;
     struct wlr_scene_tree *large = wlr_scene_tree_create(desktop->windows);
     CHECK(large && wlr_scene_rect_create(large, 4096, 4096, (float[4]){1, 1, 1, 1}));
@@ -175,11 +381,13 @@ static bool suite(struct PuDesktop *desktop)
     puts("PASS: aggregate old-cache plus target/workspace peak is rejected explicitly; disabling releases every cache");
     wlr_scene_node_destroy(&group->node);
     CHECK(desktop->scene->effects_cached_bytes == 0);
+    CHECK(shadow_suite(desktop, output));
     wlr_scene_node_destroy(&background->node);
     return true;
 }
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc != 1 && !(argc == 3 && !strcmp(argv[1], "--caption"))) return 2;
     char runtime[] = "/tmp/polly-effects-XXXXXX";
     if (!mkdtemp(runtime)) return 1;
     setenv("XDG_RUNTIME_DIR", runtime, 1);
@@ -188,7 +396,8 @@ int main(void)
     setenv("WLR_RENDERER", "pixman", 1);
     wlr_log_init(WLR_INFO, NULL);
     struct PuDesktop desktop;
-    bool passed = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) && suite(&desktop);
+    bool passed = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) &&
+        (argc == 3 ? caption_suite(&desktop, argv[2]) : suite(&desktop));
     pu_desktop_finish(&desktop);
     if (rmdir(runtime)) passed = false;
     return passed ? 0 : 1;

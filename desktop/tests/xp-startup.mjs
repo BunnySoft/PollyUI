@@ -78,7 +78,17 @@ function schemaRejection(schema, message = 'Unsupported or out-of-range appearan
     code: 'ERR_APPEARANCE_SCHEMA_REJECTED', appearanceSchema: schema, compositorMessage: message,
   });
 }
-function fixture(t, { maximumSchema = 5, initialTheme = 'xp', failure = null } = {}) {
+function fixture(t, { maximumSchema = 6, initialTheme = 'xp', failure = null } = {}) {
+  const originalFrame = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
+  // Publication-only fake DOM: retain pending layout work without running it.
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => {};
+  t.after(() => {
+    if (originalFrame === undefined) delete globalThis.requestAnimationFrame;
+    else globalThis.requestAnimationFrame = originalFrame;
+    if (originalCancel === undefined) delete globalThis.cancelAnimationFrame;
+    else globalThis.cancelAnimationFrame = originalCancel;
+  });
   const created = [], attempts = [], reports = [], saves = [];
   const preferences = memoryConfiguration({ ...defaultShellConfiguration(),
     theme: { id: initialTheme, filesEnabled: true } }, next => saves.push(next));
@@ -100,7 +110,7 @@ function fixture(t, { maximumSchema = 5, initialTheme = 'xp', failure = null } =
       assert.deepEqual(words, encodeDecorationLayout(theme));
       attempts.push({ theme, words });
       if (this.failure) throw this.failure(words);
-      const validHeader = words[0] === 5 && words[0] <= this.maximumSchema && words[1] <= 1;
+      const validHeader = words[0] === 6 && words[0] <= this.maximumSchema && words[1] <= 1;
       const validBounds = DECORATION_LAYOUT_FIELDS.every(([, , minimum, maximum, scale], index) =>
         words[index + 2] >= minimum * scale && words[index + 2] <= maximum * scale);
       assert.equal(words.length, 2 + DECORATION_LAYOUT_FIELDS.length);
@@ -124,7 +134,7 @@ test('startup without a saved theme applies the default without inventing a pref
 test('startup applies Luna once through the current configuration API', async t => {
   const f = fixture(t);
   f.shell.start();
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [5]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
   assert.equal(f.attempts[0].words[1], 0, 'the native flags do not encode Luna policy');
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
   assert.deepEqual(f.reports, []);
@@ -138,7 +148,7 @@ test('generic themes use their own supported data, not a downgraded Luna snapsho
   assert.equal(getDesktopTheme('xp').window.surfaceStyle, 'luna');
   const f = fixture(t, { initialTheme: 'aqua' });
   f.shell.start();
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [5]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
   assert.deepEqual(f.backend.committed, getDesktopTheme('aqua'));
   assert.deepEqual(f.reports, []);
 });
@@ -150,7 +160,7 @@ test('rejected theme selection preserves the committed snapshot, live surfaces a
   const surfaces = f.shell.getSurfaces().map(item => item.window);
   const snapshot = f.backend.committed;
   assert.equal(f.shell.selectTheme('xp'), false);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [5, 5]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [6, 6]);
   assert.equal(f.backend.committed, snapshot);
   assert.equal(f.preferences.snapshot.theme.id, 'aqua');
   assert.equal(f.shell.getState().themeId, 'aqua');
@@ -168,7 +178,7 @@ test('recovered backend accepts an explicit theme selection after rejection', t 
   assert.equal(f.shell.selectTheme('xp'), true);
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
   assert.equal(f.shell.getState().error, '');
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [5, 5, 5]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [6, 6, 6]);
 });
 
 for (const [name, failure] of [
@@ -199,7 +209,7 @@ test('generic startup rejection also fails without retrying a different appearan
   const genericFailure = new Error('Appearance preparation failed: generic rejected');
   const f = fixture(t, { initialTheme: 'aqua', failure: () => genericFailure });
   assert.throws(() => f.shell.start(), error => error === genericFailure);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [5]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
   assert.equal(f.shell.getState().running, false);
   assert.equal(f.backend.committed, null);
   assert.ok(f.created.every(surface => surface.closed));
@@ -207,10 +217,10 @@ test('generic startup rejection also fails without retrying a different appearan
 });
 
 for (const id of ['xp', 'server2003', 'modern', 'aqua']) {
-  test('paired geometry schema 5 ' + id + ' rejects an old server without a C painter fallback', t => {
-    const f = fixture(t, { maximumSchema: 4, initialTheme: id });
+  test('paired geometry schema 6 ' + id + ' rejects an old server without a C painter fallback', t => {
+    const f = fixture(t, { maximumSchema: 5, initialTheme: id });
     assert.throws(() => f.shell.start(), /Appearance preparation failed/);
-    assert.deepEqual(f.attempts.map(item => item.words[0]), [5]);
+    assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
     assert.equal(f.backend.committed, null);
     assert.equal(f.saves.length, 0);
     assert.equal(f.shell.getState().running, false);
