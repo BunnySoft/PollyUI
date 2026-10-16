@@ -934,7 +934,7 @@
       "label": "E22.13 XP 任务栏与 Start",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "分项核30px bar、绿色Start/Polly launcher、任务按钮与托盘/clock；XP显式windows-launchers已交真实Quick Launch，saved catalog pins独立启动且原Window.id任务不分组，Start复用真实Programs/metadata Categories/source folders。现64px header已接一次readonly本地uid/passwd姓名与username/UID，失败明确unavailable，原generic头像和legacy无profile品牌不变。账号管理/原图头像、分隔线/字体/外部SNI与原图状态仍待资格，不加假账号/历史或声称导入外部XP目录。",
+      "scope": "分项核30px bar、绿色Start/Polly launcher、任务按钮与托盘/clock；XP显式windows-launchers已交真实Quick Launch，saved catalog pins独立启动且原Window.id任务不分组，Start复用真实Programs/metadata Categories/source folders。现64px header已接一次readonly本地uid/passwd姓名与username/UID，失败明确unavailable，原generic头像和legacy无profile品牌不变。profile原图头像、分隔线/字体/外部SNI与原图状态仍待资格；账号管理另属后端业务，不为本视觉项新增前置，不加假账号/历史或声称导入外部XP目录。",
       "priority": "P2",
       "modes": [
         "installed",
@@ -966,7 +966,7 @@
       "label": "E22.15 Classic 菜单与级联",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "保留灰色双列chrome、默认flat All Programs与真实metadata分类；已交基于严格登记ID/path映射的真实source-folder多级浏览，不是任意FS/Windows目录导入或XDG XML。现40px header已接readonly本地姓名与username/UID，不可用明确显示并单次报告；不是认证/NSS/账号管理。继续核账号原图/管理、OS原生级联/内容密度/布局及图标参考资格，保单列override与搜索/Pin/日志，不为像素造假管理/打印/Run/Shutdown入口。",
+      "scope": "保留灰色双列chrome、默认flat All Programs与真实metadata分类；已交基于严格登记ID/path映射的真实source-folder多级浏览，不是任意FS/Windows目录导入或XDG XML。现40px header已接readonly本地姓名与username/UID，不可用明确显示并单次报告；不是认证/NSS/账号管理。继续核profile原图、OS原生级联/内容密度/布局及图标参考资格；账号管理另属后端业务，不为本视觉项新增前置。保单列override与搜索/Pin/日志，不为像素造假管理/打印/Run/Shutdown入口。",
       "priority": "P2",
       "modes": [
         "installed",
