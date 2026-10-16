@@ -19,6 +19,7 @@ import { createPowerSettings } from './desktop/shell/power.mjs';
 import { createSessionExitController, createLogoutSurface } from './desktop/shell/session-exit.mjs';
 import { createWorkspacePersistence, workspaceName } from './desktop/shell/workspaces.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 import { createDisplayPersistence } from './desktop/shell/display-profiles.mjs';
 import { createSessionMonitor } from './desktop/shell/health.mjs';
 import { SETTINGS_APPLICATION_ID } from './desktop/shell/settings.mjs';
@@ -642,6 +643,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
     };
     const close = scoped(() => closeMenu(current));
     if (current.mode === 'workspaces') {
+      if (workspaceEditor) workspaceEditor.input.setAppearance(inputAppearance(getDesktopTheme(themeId)));
       render(workspacesView(getDesktopTheme(themeId), workspaces,
         scoped(id => workspaceAction('activateWorkspace', id)), scoped(id => workspaceAction('removeWorkspace', id)),
         scoped(() => workspaceAction('createWorkspace')), close, error,
@@ -1065,6 +1067,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const input = workspaceEditor?.input || createTextInput({ document: menu.window.document, value: selected.name,
         width: Math.max(1, menu.window.document.body.offsetWidth - theme.layout.compactPadding * 2),
         fontSize: theme.layout.fontSize, color: theme.colors.text, background: theme.colors.surface });
+      input.setAppearance(inputAppearance(theme));
       input.root.id = 'shell-workspace-name';
       input.root.setAttribute('role', 'textbox');
       input.root.setAttribute('aria-label', 'Workspace name');

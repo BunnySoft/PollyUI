@@ -65,5 +65,14 @@ export function checkCommonButtons(verify = false) {
     results.push(result);
     render(null, document.body);
   }
+  let ancestor = 0, local = 0;
+  render(h('view', { onKeydown: () => ancestor++ },
+    button('nested-repeat', 'Nested', getDesktopTheme('server2003'), () => local++)), document.body);
+  document.getElementById('nested-repeat').focus();
+  host.key('Enter', 'keydown', { repeat: true, text: false });
+  check(local === 0 && ancestor === 0, 'Consumed repeated activation cannot bubble into a parent menu');
+  host.key('ArrowDown', 'keydown', { text: false });
+  check(ancestor === 1, 'Unrelated navigation still bubbles to its existing owner');
+  render(null, document.body);
   console.log('COMMON_BUTTON_CONTRACT ' + JSON.stringify({ verify, results }));
 }

@@ -489,7 +489,15 @@ test('actual reconciler dispatches injected pointer/key/textinput browser action
     }
     removeChild(node) { this.childNodes.splice(this.childNodes.indexOf(node), 1); node.parentNode = null; return node; }
     setAttribute(key, value) { this[key] = value; }
+    getAttribute(key) { return Object.hasOwn(this, key) ? String(this[key]) : null; }
     removeAttribute(key) { delete this[key]; }
+    querySelectorAll(selector) {
+      const matches = node => selector.startsWith('.') ? (node.className || '').split(' ').includes(selector.slice(1)) :
+        selector.startsWith('#') ? node.id === selector.slice(1) : false;
+      const collect = node => node.childNodes.flatMap(child => [...(matches(child) ? [child] : []), ...collect(child)]);
+      return collect(this);
+    }
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
     addEventListener(key, callback) { this.listeners.set(key, [...(this.listeners.get(key) ?? []), callback]); }
     removeEventListener(key, callback) { this.listeners.set(key, (this.listeners.get(key) ?? []).filter(item => item !== callback)); }
     fire(type, extra = {}) {

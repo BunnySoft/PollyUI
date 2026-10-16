@@ -3,6 +3,9 @@ import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { requireFileSystem } from './desktop/apps/files/logic/model.mjs';
 import { subscribeDesktopTheme } from './desktop/client/theme.mjs';
 import { createFileDialogController } from './desktop/client/file-dialog-controller.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
+import { desktopCommand } from './desktop/shared/ui/presentation.mjs';
+import { activationEvents } from './desktop/shared/ui/activation.mjs';
 
 const owners = new WeakMap();
 const descendants = node => [node, ...Array.from(node.childNodes || []).flatMap(descendants)];
@@ -86,21 +89,15 @@ export function showFileDialog({ parent = window, files,
     resolve(parent.closed && value.status === 'selected' ? { status: 'cancelled', reason: 'parent-closed' } : value);
   }
   function button(id, caption, action, enabled = true, selected = false) {
+    if (theme) return desktopCommand(prefix + '-' + id, caption, theme, action, { enabled, selected });
     const colors = palette(theme);
-    const activate = event => {
-      event.stopPropagation();
-      if (!enabled || (event.button !== undefined && event.button !== 0)) return;
-      return action();
-    };
     return h('view', { id: prefix + '-' + id, tabIndex: enabled ? 0 : -1, role: 'button',
       'aria-label': caption, 'aria-disabled': String(!enabled), 'aria-pressed': String(selected),
       style: { borderWidth: 1, borderColor: selected ? colors.accent : colors.border,
         backgroundColor: colors.surface, color: enabled ? colors.text : colors.muted, opacity: enabled ? 1 : 0.5,
         borderRadius: 3, padding: 7, flexShrink: 0 },
       focusStyle: { borderColor: colors.focus }, hoverStyle: enabled ? { borderColor: colors.accent } : {},
-      onClick: activate, onKeydown: event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); return activate(event); }
-      } }, caption);
+      ...activationEvents(action, enabled) }, caption);
   }
   const label = (id, caption, color, size = 13) =>
     h('view', { id: prefix + '-' + id, style: { color, fontSize: size, flexShrink: 0 } }, caption);
@@ -112,8 +109,8 @@ export function showFileDialog({ parent = window, files,
     const usable = hasFiles && !blocked && !!state.directory &&
       !['idle', 'unavailable', 'error', 'loading'].includes(state.phase);
     for (const input of [location, filename]) {
-      input.setAppearance({ color: colors.text, background: colors.surface,
-        borderColor: colors.border, selectionColor: colors.accent });
+      input.setAppearance(inputAppearance(theme, 14, { color: colors.text, background: colors.surface,
+        borderColor: colors.border, selectionColor: colors.accent, focusColor: '#2563eb', borderRadius: 6, fontSize: 14 }));
       const enabled = hasFiles && !blocked && (input === location ? !!state.locations :
         ['ready', 'validating'].includes(state.phase));
       input.root.tabIndex = enabled ? 0 : -1;

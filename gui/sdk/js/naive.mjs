@@ -406,7 +406,8 @@ export function NInput(props = {}) {
   const purpose = props.password ? 'password' : props.purpose ?? 'text';
   const secure = purpose === 'password' || purpose === 'pin';
   const displayed = text => secure ? '\u2022'.repeat(Array.from(text).length) : text;
-  const fs = size === 'large' ? 16 : 14;
+  const fs = props.fontSize ?? (size === 'large' ? 16 : 14);
+  if (!Number.isFinite(fs) || fs < 8 || fs > 64) throw new RangeError('Invalid input fontSize');
   const h0 = BTN_SIZE[size] ? BTN_SIZE[size].h : 34;
   const pad = 12;
   const st = id ? inputState(id, value.length) : null;

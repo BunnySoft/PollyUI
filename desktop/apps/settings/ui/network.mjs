@@ -2,6 +2,7 @@ import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { createTextInput } from './gui/sdk/js/textinput.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
 import { button as themedButton } from './desktop/shared/ui/button.mjs';
+import { inputAppearance } from './desktop/shared/ui/input-appearance.mjs';
 
 export function createNetworkSettings({ native, host, theme, report }) {
   let surface = null, state = null, previous, started = false, error = '', confirmation = null;
@@ -91,11 +92,7 @@ export function createNetworkSettings({ native, host, theme, report }) {
       }
     }
     if (credentialTheme !== current) {
-      for (const field of [username, password]) if (field) field.setAppearance({
-        color: current.colors.text, background: current.colors.surface,
-        selectionColor: current.colors.selection, borderColor: current.colors.border, borderRadius: current.button.radius,
-        fontSize: current.layout.sectionFontSize,
-      });
+      for (const field of [username, password]) if (field) field.setAppearance(inputAppearance(current, 14));
       credentialTheme = current;
     }
     const mode = auth ? 'authentication:' + auth.id + ':' + auth.kind :
