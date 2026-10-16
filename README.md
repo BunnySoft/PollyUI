@@ -1241,12 +1241,18 @@ colors, and edge/corner resizing. Fullscreen hides decorations; maximized
 content respects both panel reservations and frame extents.
 
 The trusted Shell supplies validated theme JSON and a JS-compiled layout to
-private `desktop.configureAppearance(theme, layout)`. Appearance protocol v3
-uses geometry-only numeric schema 4 and immutable descriptors. The existing GUI
-renders four detached Canvas2D strips; PollyWM validates and atomically composes
-them with matching geometry, scale and state. Missing or failed renderers
-negotiate client-side decoration; old private Shell/WM versions are explicitly
-rejected. Public application APIs and theme JSON schema 1 remain unchanged.
+private `desktop.configureAppearance(theme, layout)`. Appearance protocol v4
+separates that publisher from a WM-supervised, windowless `pollyui --decorator`
+renderer, using geometry-only numeric schema 4 and immutable descriptors.
+The existing GUI renders four detached Canvas2D strips; PollyWM validates and
+atomically composes them with matching geometry, scale and state. Shell exit
+does not stop the renderer unless the explicit session-exit policy also stops
+the WM. Renderer failure retains complete presented frames while new geometry
+waits; bounded restart reissues fresh revisions, and exhaustion is an explicit
+failure rather than a claim that clients can draw missing decorations.
+Bare WM operation without the service remains a separate CSD fallback.
+Old private Shell/WM/decorator versions are explicitly rejected.
+Public application APIs and theme JSON schema 1 remain unchanged.
 There is no C theme painter or preset registry. Regenerate geometry bounds and
 test-only fixtures with `node desktop/tools/generate-decoration-themes.mjs`;
 `--check` verifies those files. Caption fonts and shaping use the existing GUI
