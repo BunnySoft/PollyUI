@@ -899,19 +899,19 @@
     },
     {
       "id": "native-preset-live-revalidation",
-      "label": "原生预设效果复验（环境受阻）",
+      "label": "已完成冻结原生效果栈限定复验",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "在已有匹配effects ABI2/private6运行栈恢复可用后，复验当前预设圆角/阴影采用及生产GUI-strip到合成器接缝。与已冻结共享机制资格、纯JS数据/数值编译/producer检查分开；不以入口exit0或Windows软件GUI替代wlroots/物理GPU。",
+      "scope": "使用已有冻结effects ABI2/private6匹配运行栈，完成原scene primitive与当前JS productionGUI-strip到原生合成器接缝两项限定复验。与当前全部native C重建、完整预设状态/六主题/物理GPU资格分开；必须真实命令/PASS/完成marker和冻结bin hash匹配，不以入口exit0或Windows软件GUI替代。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "blocked",
+      "status": "done",
       "requires": [],
-      "evidence": "本次只读main0c39dca的WSL enterns尝试退出0但未出现容器首marker，scene/caption命令未实际执行，也未续核runtime hash。限定只读诊断确认WSL直接cat可用、enterns只有检测到特定systemd PID且非1才转发argv，无else可空成功；条件核验/proc/1/comm实为init(podman-mac，guard给NAMESPACE_NOT_READY/exit86，未执行podman或两验证命令。已停止后续路线/构建/安装/机器或服务修改。历史62a9545-runtime Pixman/一次coverage及软件GLSL资格保持原范围。当前38fca16/29a338f的明确预设数据和Node数值编译、既有生产caption producer/缺字段none字节检查通过，不冒称新的live WM/GPU/default-preset全景验收；日志在f864 session effects-limited-validation-20261016-1740、enterns-readonly-diagnostic-20261016-1814.log、effects-namespace-final-20261016-1817.log。"
+      "evidence": "历史main0c39dca的WSL enterns尝试退出0但无首marker，原两命令确未执行；旧外层PID1 init(podman-mac/guard86与日志保持。2026-10-17用户要求重试后，现machine已Running，外层PID1仍init但另有PID16 /lib/systemd/systemd；原user1000+/usr/local/bin/enterns实际输出EXACT_USER_NAMESPACE_OK及内部PID1 systemd，说明外层PID1不能作为内部namespace不可用的充分依据，不再维持该环境阻塞。无启动/重启/服务配置或环境修复。原image4ef0cd4e与effects volume只读、networknone/pullnever/UID1000/tmpfs临时目录，冻结62a9545-runtime的GUI41ebe883与scene a72a96a6 hash精确匹配；只读main267f887的现原生scene及productionGUIcaption两原命令实际完成。AA overlap/crop/rotation/alpha/cache/input及外Gaussian shadow在1/1.25/1.5/2和两transform通过，祖先移动phase cache/遮挡/reveal/预算拒绝通过；现JS GUI八条caption scale1/1.25及maximized正反一次coverage/default-none字节合同通过，EFFECTS_RETRY_COMPLETE明确出现。快照未包含完整PollyClassic cursor资源，204条missing/invalid conventional fallback诊断原样保留，不称无stderr或cursor资格。日志在父session remaining-gui-review/effects-runtime-retry-inspect.log及effects-runtime-retry-validation.log。此限定复验完成，不是当前全部C重建、新SDK/完整WM预设六主题/DPI/物理GPU/原OS像素验收；新字体/Tab/listener等C在该旧冻结Linux runtime上的资格未因此增加。"
     },
     {
       "id": "theme-native-state-geometry",
@@ -927,7 +927,7 @@
       "sources": [],
       "status": "blocked",
       "requires": [],
-      "evidence": "既有组件及native四strip/真实pointer回归覆盖有限状态，Classic菜单DOMfixture与真实layer的28px差异已修。当前paired compositor运行入口最后只读条件核验为PID1 init(podman-mac/guard86，未执行新验证；恢复machine/service已明确询问但无具体授权，故不重启、不换路线或重建SDK。另缺同版本/缩放的原OS状态包；软件透明frame、组件预览、GLSL原语及旧ISO不能回填六主题/DPI/fullscene资格。"
+      "evidence": "既有组件及native四strip/真实pointer回归覆盖有限状态，Classic菜单DOMfixture与真实layer的28px差异已修。历史外层PID1 init(podman-mac/guard86未执行验证的记录保留；2026-10-17用户要求重试后原enterns内部systemd入口及Podman实际可用，无启动/重启/服务改动。冻结62a9545-runtime配现main267f887 JS的原scene/productioncaption两限定命令通过，详见native-preset-live-revalidation；环境不可用不再是当前阻点。仍缺同版本/缩放原OS状态包及完整当前native状态/受支持DPI/fullscene资格，旧冻结Linux C不能代表当前新增字体/输入C；软件透明frame、局部primitive及旧ISO不回填六主题/物理GPU资格，本编号仍blocked。"
     },
     {
       "id": "xp-caption-finish",
