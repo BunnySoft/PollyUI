@@ -28,7 +28,8 @@ export function createFilesApp({ host = window, native = typeof desktop === 'und
   function inputFor(id, value, placeholder, changed, enabled, theme) {
     let record = inputs.get(id);
     if (!record) {
-      const input = createTextInput({ window: surface, value, width: '100%', fontSize: 14, padding: 9 });
+      const input = createTextInput({ window: surface, value, width: '100%', fontSize: 14, padding: 9,
+        ...(id === 'files-filter' ? { maxLength: 128 } : {}) });
       input.root.id = id; input.root.setAttribute('role', 'textbox');
       record = { input, changed, enabled };
       inputs.set(id, record);
