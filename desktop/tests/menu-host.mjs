@@ -407,6 +407,23 @@ scenario('Launcher pins: old launch gesture cannot become window activation when
   assert.deepEqual(f.calls.at(-1), ['minimize', 30]);
 }, pinnedFixture);
 
+scenario('Launcher pins: Dock repeated or composing Enter/Space cannot launch, while a discrete Enter launches once', f => {
+  f.state.windows = [];
+  f.native.onWindowsChanged();
+  f.shell.selectTheme('bigsur');
+  const dock = f.surface('dock'), idle = find(dock, pinnedNodeId('fixture.desktop'));
+  idle.focus();
+  for (const name of ['Enter', ' ']) {
+    key(dock, name, { repeat: true });
+    key(dock, name, { isComposing: true });
+  }
+  assert.equal(f.calls.some(call => call[0] === 'launch'), false);
+  key(dock, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'launch').length, 1);
+  key(dock, 'F10', { shiftKey: true });
+  assert.ok(latestGroup(f), 'the same slot retains keyboard management');
+}, pinnedFixture);
+
 scenario('Launcher pins: launch rechecks the live catalog instead of executing removed or unavailable argv', f => {
   f.state.windows = [];
   f.native.onWindowsChanged();

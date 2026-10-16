@@ -440,7 +440,10 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
           return false;
         },
         onKeydown: event => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action(); }
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            if (!event.repeat && !event.isComposing) action();
+          }
           else if (window && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
             event.preventDefault(); actions(window.id);
           }
