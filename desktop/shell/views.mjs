@@ -512,9 +512,9 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
-  logout = null, desktop = null, programs = null, images = null) {
+  logout = null, desktop = null, programs = null, images = null, searchInput = null) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
-    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs, images);
+    return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs, images, searchInput);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +
@@ -540,7 +540,11 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label('Applications', isLuna(theme) ? theme.window.titleText : theme.colors.text, 16),
     h('view', { style: { flexGrow: 1 } }), button('shell-app-refresh', 'Refresh', theme, refresh),
     button('shell-app-close', 'Close', theme, close)),
-  h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
+  searchInput ? searchInput({
+    style: { height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, minWidth: 0 },
+    placeholder: 'Type to search...',
+    submit: () => { const first = filtered.find(entry => !entry.unavailable); if (first) launch(first.id); },
+  }) : h('view', { id: 'shell-app-search', role: 'textbox', 'aria-label': 'Search applications', tabIndex: 0,
     style: { padding: theme.layout.serviceButtonPadding, height: theme.layout.choiceHeight + 2 * theme.layout.borderWidth, flexShrink: 0, backgroundColor: theme.colors.surface,
       borderWidth: theme.layout.borderWidth, borderColor: theme.colors.border,
       borderRadius: isLuna(theme) ? 0 : theme.button.radius },
@@ -548,7 +552,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     onTextinput: event => changeQuery(Array.from(query + event.data).slice(0, 128).join('')),
     onKeydown: event => {
       if (event.key === 'Backspace') { event.preventDefault(); changeQuery(Array.from(query).slice(0, -1).join('')); }
-      if (event.key === 'Enter' && filtered[0]) { event.preventDefault(); launch(filtered[0].id); }
+      if (event.key === 'Enter' && !event.isComposing && filtered[0]) { event.preventDefault(); launch(filtered[0].id); }
     },
   }, label(query || 'Type to search...', query ? theme.colors.text : theme.colors.muted)),
   h('view', { style: { flexGrow: 1, flexBasis: 0, minHeight: 0, overflow: 'scroll', gap: theme.layout.windowGap } },

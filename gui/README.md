@@ -170,6 +170,15 @@ closed-owner collection; it does not qualify a hardware/compositor backend.
 the existing `size` mapping. The same size feeds painting, measurement, caret,
 selection and composition geometry.
 
+`createTextInput({ maxLength })` optionally bounds the committed value to a
+non-negative safe-integer count of Unicode code points. Initial `value` and
+programmatic assignments truncate at the existing text-index boundary; assignments
+keep their original end-caret/cleared-selection semantics. Interactive insertion,
+selection replacement and clipboard/IME commits share the existing insertion
+path: only inserted text is trimmed to the remaining budget, preserving the
+unselected suffix and insertion caret. Transient IME preedit is not committed
+value. Omitting the option keeps the previous unbounded behavior.
+
 `createTextInput({ selectionTextColor })`, its `setAppearance` method, and
 `NInput({ selectionTextColor })` optionally set selected glyph foreground.
 Omitting the field preserves the original SDK painting. The existing
