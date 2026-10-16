@@ -133,3 +133,6 @@ a second generic border. Status text uses the selection foreground when supplied
 Decorations are non-interactive and add no focus stops, recording lifecycle,
 subscription or RPC behavior. Other page/control migrations remain independently
 owned; this contract is not a claim of original-OS pixel certification.
+Appearance gallery headings, labels, status and spacing follow the same existing
+theme typography/layout tokens; preview illustrations and selection behavior
+retain their original geometry and lifecycle.

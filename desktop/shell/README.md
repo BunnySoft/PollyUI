@@ -4,6 +4,14 @@ Power uses the existing theme typography and bounded, wheel-scrollable client
 area. Application-close coordination, cancellation, permission checks and the
 explicit final shutdown/restart confirmation remain unchanged.
 
+# Notifications
+
+Toast and notification-center lists use bounded client viewports with wheel
+scrolling. Long message bodies scroll vertically; action strips scroll
+horizontally without consuming an application's notification action. Available
+width is shared with the application label so Dismiss remains accessible.
+Notification identities, revisions, expiry and action dispatch remain unchanged.
+
 # Classic All Programs
 
 The Classic applications menu adds an All Programs submenu inside the existing

@@ -11,11 +11,14 @@ import { wallpaper as previewWallpaper } from './desktop/shared/ui/wallpaper.mjs
 export function settingsView(theme, select, close, retry, error = '', about = false, shortcuts = null, displays = null, network = null, audio = null, themeFiles = null, power = null, embedded = false, status = '', themes = DESKTOP_THEMES) {
   const label = labelFor(theme);
   return h('view', { id: 'shell-settings', style: {
-    width: '100%', ...(embedded ? {} : { height: '100%' }), padding: embedded ? 8 : 20, gap: 16, overflow: 'scroll',
+    width: '100%', ...(embedded ? {} : { height: '100%' }),
+    padding: embedded ? theme.layout.compactPadding : theme.layout.contentPadding,
+    gap: theme.layout.contentGap, overflow: 'scroll',
     backgroundColor: theme.colors.body, minHeight: 0, flexShrink: 0,
   }, onWheel: scrollDesktop },
-  h('view', { style: { ...row, gap: theme.layout.contentGap } },
-    embedded ? null : desktopText(about ? 'PollyDesktop' : 'Desktop appearance', theme.colors.text, 24, { fontWeight: 600 }),
+  h('view', { style: { ...row, gap: theme.layout.contentGap, flexWrap: 'wrap', flexShrink: 0 } },
+    embedded ? null : desktopText(about ? 'PollyDesktop' : 'Desktop appearance',
+      theme.colors.text, theme.layout.largeHeadingFontSize, { fontWeight: 600 }),
     h('view', { style: { flexGrow: 1 } }),
     embedded ? null : button('shell-settings-close', 'Close', theme, close)),
   about
@@ -30,10 +33,10 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
         label('Login and locking depend on deployed session policy.', theme.colors.muted, 10),
       ]
     : [
-        desktopText('Choose a look for your desktop', theme.colors.text, 18, { fontWeight: 600 }),
-        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, 14,
+        desktopText('Choose a look for your desktop', theme.colors.text, theme.layout.headingFontSize, { fontWeight: 600 }),
+        desktopText('Wallpaper, window frames and desktop colors. Changes apply now.', theme.colors.muted, theme.layout.fontSize,
           { flexShrink: 1, minWidth: 0 }),
-        h('view', { id: 'settings-theme-gallery', style: { ...row, flexWrap: 'wrap', gap: 12, alignItems: 'stretch',
+        h('view', { id: 'settings-theme-gallery', style: { ...row, flexWrap: 'wrap', gap: theme.layout.contentGap, alignItems: 'stretch',
           flexShrink: 0 } }, themes.map(preset => {
           const sample = preset.desktop ? preset : theme, selected = theme.id === preset.id;
           const art = h('view', { style: { height: 104, width: '100%', overflow: 'hidden', position: 'relative',
@@ -54,15 +57,17 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
           // Retain the focus wrapper, but not the command's bevel/gloss, above the custom card content.
           const focusDetail = tile.children.find(child => child.children?.some(isCommandFocus));
           if (focusDetail) focusDetail.children = focusDetail.children.filter(isCommandFocus);
-          tile.children = [art, desktopText(preset.name, theme.colors.text, 14, { pointerEvents: 'none', fontWeight: 600 }),
-            desktopText(selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted, 12,
+          tile.children = [art, desktopText(preset.name, theme.colors.text, theme.layout.fontSize,
+            { pointerEvents: 'none', fontWeight: 600 }),
+            desktopText(selected ? 'Selected' : 'Apply theme', selected ? theme.colors.accent : theme.colors.muted,
+              theme.layout.statusFontSize,
               { pointerEvents: 'none' }), ...(focusDetail ? [focusDetail] : [])];
           return tile;
         })),
         desktopText('Theme previews are illustrations, not hardware screenshots. Solid surfaces; no simulated blur.',
-          theme.colors.muted, 12, { flexShrink: 1 }),
+          theme.colors.muted, theme.layout.statusFontSize, { flexShrink: 1 }),
         themeFiles ? settingsCard(theme, 'Theme library', themeFiles.enabled ? 'User theme files enabled' : 'Packaged themes active', [
-          h('view', { style: { ...row, flexWrap: 'wrap', gap: 8 } },
+          h('view', { style: { ...row, flexWrap: 'wrap', gap: theme.layout.controlGap } },
             desktopCommand('shell-theme-reload', 'Reload theme files', theme, themeFiles.reload, { icon: 'refresh' }),
             desktopCommand('shell-theme-restore', 'Use packaged themes', theme, themeFiles.restore)),
         ]) : null,
@@ -74,11 +79,12 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   power ? button('shell-power-settings-open', 'Power', theme, power) : null,
   status ? h('view', { role: 'status', 'aria-live': 'polite', style: { ...panelAppearance(theme),
     backgroundColor: theme.colors.selection, flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
-    desktopText(status, theme.colors.selectionText ?? theme.colors.text, 14, { flexShrink: 1, minWidth: 0 })) : null,
+    desktopText(status, theme.colors.selectionText ?? theme.colors.text,
+      theme.layout.statusFontSize, { flexShrink: 1, minWidth: 0 })) : null,
   error ? h('view', { role: 'alert', style: { ...panelAppearance(theme), borderColor: '#b42318',
     flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
-    desktopText(error, theme.colors.text, 14, { flexShrink: 1 }),
+    desktopText(error, theme.colors.text, theme.layout.fontSize, { flexShrink: 1 }),
     desktopCommand('shell-retry', 'Refresh status', theme, retry, { icon: 'refresh' })) : null,
   desktopText(embedded ? 'Preferences in a memory-only Live session reset after reboot.' : 'Escape closes this menu.',
-    theme.colors.muted, 12));
+    theme.colors.muted, theme.layout.statusFontSize));
 }
