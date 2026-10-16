@@ -233,16 +233,17 @@ export function filesView(state, controller, { theme = null, themeError = '', wi
       desktopText('Properties', color('text'), theme.layout.headingFontSize, { fontWeight: 600 }),
       command('files-details-close', 'Close', () => controller.cancel(generation), true, '',
         { paddingLeft: 6, paddingRight: 6 })),
-    label('files-property-name', selection.name, 'text'),
-    label('files-property-path', selection.path, 'muted'),
+    pathLabel('files-property-name', selection.name, 'text', theme.layout.fontSize),
+    pathLabel('files-property-path', selection.path, 'muted', theme.layout.statusFontSize),
     label(null, fileType(selection) + ' | ' + formatSize(selection.bytes)),
     label(null, 'Modified: ' + (Number.isFinite(new Date(selection.mtimeMs).getTime()) ?
       new Date(selection.mtimeMs).toISOString() : String(selection.mtimeMs) + ' ms (outside date range)'),
       'muted'),
     label(null, 'Permissions: ' + selection.permissions + ' | UID ' + selection.uid + ' | GID ' + selection.gid, 'muted'),
     label(null, (selection.readable ? 'Readable' : 'Not readable') + ' | ' + (selection.writable ? 'Writable' : 'Not writable'), 'muted'),
-    selection.type === 'symlink' ? label('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
-      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''), 'muted') : null,
+    selection.type === 'symlink' ? pathLabel('files-property-link', 'Link target: ' + selection.linkTarget + ' (' +
+      selection.targetType + ')' + (selection.targetError ? ' | ' + selection.targetError : ''),
+      'muted', theme.layout.statusFontSize) : null,
     ) : null;
   const listRegion = h('view', { id: 'files-list-region', style: { position: 'relative', flexGrow: 1,
     flexBasis: 0, minWidth: 0, minHeight: 0 } }, list,
