@@ -8,11 +8,40 @@ const { createProcessController } = await import('../logic/controller.mjs');
 const { createProcessesApp } = await import('../app.mjs');
 const { fixedRowWindow } = await import('./gui/sdk/js/virtual-list.mjs');
 const { applicationHost, deliver } = await import('./desktop/tests/application-host.mjs');
+const { getDesktopTheme } = await import('./desktop/shared/ui/themes.mjs');
 const item = (pid = 42, start = '100', ticks = 20n) =>
   ({ pid, start, ticks, name: 'fixture', state: 'S', memoryBytes: 8192 });
 const sample = (processes, totalTicks = 1000n) => ({ processes, totalTicks, complete: true, skipped: 0 });
 function processHost(t) {
   const host = applicationHost(t), frames = new Set();
+  const create = host.create;
+  host.create = options => {
+    const surface = create(options), doc = surface.document, element = doc.createElement;
+    doc.createElement = type => {
+      const node = element(type);
+      let height = node.offsetHeight, top = node.offsetTop;
+      Object.defineProperties(node, {
+        offsetHeight: { get() {
+          if (node.id === 'processes-scrollbar') return doc.getElementById('processes-list').offsetHeight;
+          return (node.parentNode?.id === 'processes-list' || node.id === 'processes-scroll-thumb') &&
+            Number.isFinite(Number(node.style.height)) ?
+            Number(node.style.height) : height;
+        }, set(value) { height = value; } },
+        offsetTop: { get() {
+          if (node.parentNode?.id !== 'processes-list') return top;
+          const list = node.parentNode, index = list.childNodes.indexOf(node);
+          return list.offsetTop + list.childNodes.slice(0, index).reduce((sum, child) => sum + child.offsetHeight, 0);
+        }, set(value) { top = value; } },
+      });
+      node.setMouseCapture = () => { doc.captured = node; };
+      node.releaseMouseCapture = () => {
+        if (doc.captured === node) { doc.captured = null; deliver(node, 'lostmousecapture'); }
+      };
+      return node;
+    };
+    globalThis.document = doc;
+    return surface;
+  };
   const previous = { requestAnimationFrame: globalThis.requestAnimationFrame,
     cancelAnimationFrame: globalThis.cancelAnimationFrame };
   globalThis.requestAnimationFrame = callback => {
@@ -123,10 +152,14 @@ test('ordinary Processes window renders observed rows, refreshes/sorts by real c
   app.stop(); assert.equal(host.windows[0].closed, true);
 });
 test('4096 observations keep bounded DOM rows, reach either end and retain scroll through errors', async t => {
-  const host = processHost(t); let next = sample(Array.from({ length: 4096 }, (_, i) =>
+  const host = processHost(t); let calls = 0, theme = getDesktopTheme('modern'), revision = 1;
+  let next = sample(Array.from({ length: 4096 }, (_, i) =>
     ({ ...item(i + 1), memoryBytes: (i + 1) * 4096 })));
-  const app = createProcessesApp({ host, native: null, report() {},
-    provider: { snapshot() { if (next instanceof Error) throw next; return next; } } }).start();
+  const native = { startThemeSubscription() {}, stopThemeSubscription() {},
+    desktopThemeState: () => ({ available: true, ready: true, revision,
+      document: JSON.stringify({ schemaVersion: 1, theme }) }) };
+  const app = createProcessesApp({ host, native, report() {},
+    provider: { snapshot() { calls++; if (next instanceof Error) throw next; return next; } } }).start();
   t.after(() => app.stop());
   await settleFrames();
   const document = app.getWindow().document;
@@ -137,6 +170,25 @@ test('4096 observations keep bounded DOM rows, reach either end and retain scrol
   assert.ok(visible().length <= Math.ceil(list.offsetHeight / 42) + 5);
   assert.ok(document.getElementById('processes-pid-4096'));
   assert.equal(document.getElementById('processes-pid-1'), null);
+  const track = document.getElementById('processes-scrollbar'), thumb = document.getElementById('processes-scroll-thumb');
+  await deliver(track, 'keydown', { key: 'PageDown' });
+  assert.equal(list.scrollTop, list.offsetHeight);
+  assert.equal(document.getElementById('processes-pid-4096'), null, 'Keyboard scrolling publishes the new virtual range, not just thumb position');
+  await deliver(track, 'keydown', { key: 'End' });
+  assert.ok(document.getElementById('processes-pid-1'));
+  await deliver(track, 'keydown', { key: 'Home' });
+  const y = track.offsetTop + Number(thumb.style.top) + Number(thumb.style.height) / 2;
+  await deliver(track, 'mousedown', { clientX: track.offsetLeft + 5, clientY: y });
+  assert.equal(document.captured, track);
+  theme = getDesktopTheme('lion'); revision++; native.onDesktopThemeChanged();
+  assert.equal(document.getElementById('processes-scrollbar'), track);
+  assert.equal(document.getElementById('processes-scroll-thumb'), thumb);
+  assert.equal(document.captured, track, 'Retheme preserves the existing gesture owner');
+  await deliver(track, 'mousemove', { clientX: track.offsetLeft + 5, clientY: track.offsetTop + track.offsetHeight });
+  await deliver(track, 'mouseup', { clientX: track.offsetLeft + 5, clientY: track.offsetTop + track.offsetHeight });
+  assert.equal(document.captured, null);
+  assert.ok(document.getElementById('processes-pid-1'), 'Dragging publishes the final observed rows');
+  assert.equal(calls, 1, 'Scrolling, retheme and focus do not sample processes');
   await deliver(list, 'wheel', { deltaY: 1e6 });
   assert.ok(document.getElementById('processes-pid-1'));
   assert.ok(visible().length <= Math.ceil(list.offsetHeight / 42) + 5);
@@ -146,6 +198,9 @@ test('4096 observations keep bounded DOM rows, reach either end and retain scrol
   assert.strictEqual(document.getElementById('processes-list'), list);
   assert.equal(list.scrollTop, end);
   assert.match(document.getElementById('processes-error').textContent, /retained sample.*stale/);
+  assert.equal(track.getAttribute('aria-disabled'), 'false', 'Retained observations remain scrollable after sampling failure');
+  await deliver(track, 'keydown', { key: 'Home' });
+  assert.ok(document.getElementById('processes-pid-4096'));
   next = sample([item(9), item(10)], 2000n);
   await app.controller.refresh(); await settleFrames();
   assert.strictEqual(document.getElementById('processes-list'), list);
