@@ -670,11 +670,12 @@ surface geometry remain unchanged; tray rows retain their original `trayGap`.
 Paging and captured dragging share the same SDK controller, and workspace
 editing retains its native input, value, caret, selection and focus. Retiring a
 tray view releases its controllers before the original close path without
-adding a native menu action. A separately tracked pre-existing event-dispatch
-defect can reopen the root on the first submenu Enter after geometry replacement:
-the exact old producer and current producer both reproduce that failure.
-Normal-flow scrollbar checks do not certify that failing event sequence or
-live Linux D-Bus/tray authorization.
+adding a native menu action. The separately reproduced pre-existing dispatch
+defect after geometry replacement is now fixed in the generic native bridge:
+each node phase admits only registrations present at its entry, honors removals
+and defers newly rebound handlers. The production tray now opens its submenu
+once on that first Enter instead of immediately returning to the root.
+This matching-helper GUI result does not certify live Linux D-Bus/tray authority.
 
 The generic/Mac Applications list now consumes the same viewport/bar inside its
 original flex allocation, without moving its header, real search field, footer

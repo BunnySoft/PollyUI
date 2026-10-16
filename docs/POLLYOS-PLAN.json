@@ -883,19 +883,19 @@
     },
     {
       "id": "bug-live-listener-redispatch",
-      "label": "Bug：事件监听重绑重复派发（非阻塞）",
+      "label": "Bug：已修事件监听重绑重复派发",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "独立调查generic事件派发在handler内repaint移除/重绑live listener时，同一事件调用新handler的问题。保既有单次activation/传播/移除语义，不用tray局部flag掩C root cause；按既有边界bug策略不阻塞菜单scrollbar交付，不擅自扩C/SDK/build或原生环境路线。",
+      "scope": "已在generic事件派发层修复handler内repaint移除/重绑live listener导致同事件调用新handler：per-node monotonic注册身份/phase high-water、当前active serial有序后继，不新增dispatch allocation/数量cap。保single-registration一次/移除前未到跳过/同fn重绑新身份/原duplicate-firstremove/stopflags/nested与动态bubble语义；无tray/App guard或WM/public protocol改变。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "done",
       "requires": [],
-      "evidence": "2026-10-17三菜单真实759软件GUI+inert provider发现：geometry替换后首次Enter submenu的opens为[0,77,0]、root0、invoke[]/reports[]，应停root77；git show精确19e原tray producer与当前593e618同场相同RED/Uncaught断言，非新scrollbar回归。父只读核当前bridge.c dispatch_impl在JS_Call后继续遍历可变listener_count；node remove以memmove移位、add可追加，尚无dispatch代际snapshot，root cause需独立最小修复验证。原geometry retire/native close0/帧释放及普通未替换submenu/pending/error/action单次路径均通过，但不冒异常首次Enter绿色。Common session files management-menus-geometry-current.log与management-tray-geometry-baseline.log保留失败；没有为此改C/SDK/业务或弱化断言。"
+      "evidence": "2026-10-17三菜单真实759软件GUI+inert provider发现：geometry替换后首次Enter submenu的opens为[0,77,0]、root0、invoke[]/reports[]，应停root77；精确19e原tray producer与593e618同场相同RED，非scrollbar回归。后续独立源2362e06合5b3fd91在bridge/model加monotonic serial/每node phase边界与binary successor，无dispatch新allocation/cap；native target/phase refs和callback JS_DupValue保跨call lifetime，clear不重置身份，注册分配/identity耗尽显式异常。原91 helper events原6保持，新18 contract共6确切RED；新隔离final helper1dc41ef0/C2b4d4cc8、model079c5ad4/83de1183父亲核hash，父main实际events24/24，恰好1个刻意listener-dispatch-expected-error显式报告后续listener仍执行，其余非预期异常0。原input45/composition21+complete/pointer16仍过。相同production createTray/inert provider geometry首次Enter严格opens[0,77]/root77/MainMenu存在，pending/error/disabled/bar/capture/focus/manual/retheme/sameDOM和invoke[7,6,20]一次/原close4/全部pending0共26checks通过；旧RED日志保留不弱化断言。仅新隔离Windows验证build、旧91/759等全只读，无SDK/WM/ISO发布；Linux复杂宏仅syntax，无Linux live/DBus授权/物理资格或OOM故障注入声明。"
     },
     {
       "id": "native-preset-live-revalidation",
@@ -5607,6 +5607,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-17 generic listener mutation独立缺陷已修：2362e06→5b3fd91，详见bug-live-listener-redispatch。每node phase按原注册serial边界稳定投递，注册remove/readd/duplicate/nested/stopflags/defaultPrevented/exception/lifetime原语义明确，动态bubble path不改；没有新增dispatch heap/数量cap或tray局部补丁。新final helper1dc41ef0与三C源hash父亲核，父实际原events24/24且刻意expected-error严格1，原input45/composition21/pointer16保留；production tray几何替换首次Enter旧opens[0,77,0]→新[0,77]，原revision/action/close与scroll/focus全保。仅匹配Windows验证资格，不以它回填Linux live、外部托盘DBus/物理或原OS完整资格；35编号仍7done/28partial或blocked。",
     "- 2026-10-17 E22原生键盘上限修复：源b305c38合8ffd98a，仅bridge.c collect/focus_step改一次原preorder递归+5指针常数状态，无数组/新cap/allocator。保display:none整子树/ELEMENT tabIndex>=0/原正tab顺序/empty/single/隐藏或detach焦点fallback与原pu_bridge_set_focus、defaultPrevented/IME路径，dispatch_impl零diff。旧759原input26全过后index256 FAIL，真实100Apps305控件在index256跳Refresh；一次隔离新Windowsplayground91e7b555/bridge fa9d4456（父亲核新/旧bin及合入C hash）原入口45/45含1100候选/index256/1024/1099/双向wrap等，父main实际再跑45/45无Uncaught；原composition21+complete仍过。新actual生产Apps从首控件全305正反Native Tab/两端wrap，300个app/pin focus完整visible、尾第100App三次Enter仅惰性local callback各1，1216 bounded checks与原root/header/search/list/footer/首rowgeometry、input/caret/selection/preedit保持。没有降100或隐藏pin，先前仅60项真实Tab资格的限制现已在此匹配Windowshelper解除。旧759/911/78/90fc/缓存不改，未安装下载/重编Skia/发布SDK或WM；PU_COMPLEX_TEXT仅clang语法，仍无新Linux live/复杂shaping/物理输入/原OS资格。独立live-listener重绑bug未修，不因本修复假关。",
     "- 2026-10-17 E22.9/E22.10 Apps/logout列表：源931460a合1b81404，Mac generic Apps仅原list subtree→shared无frame/零padding/透明/windowGap，root440x340与header[10,10,420,22]/search[10,40,420,34]/list[10,82,420,183]/footer[10,296,420,34]及首row逐数不变。精确0dc原producer尾100行全clip/scroll0，现directFocus scroll5413后app及两pin全visible；60项真实Tab/ShiftTab与三Enter仅local launch59/desktopAdd59/launcherPin59各1，bar/page/dragcapture/manual/retheme/sameDOM/input/selection/preedit保持。原Native collect_focusable/focus_step固定256，旧/新100*3 commands尾99后Tab均Refresh→Close，未改cap，不冒100项Tab资格。logout原480x300/inner432x252与已有focus reveal保持、bar新增；cancel ACK失败保view并显式原error，成功才释放、old onclose不取消新窗、committing拒Close、ownerstop/latecompletion帧0/subscription0及原取消/commit次序保持。父104/104共通/退出合同通过；实际759软件GUI provider全部惰性，无真实launch/processClose/注销/服务或Linux资格。",
     "- 2026-10-17 E22.9/E22.10三管理菜单：源593e618合b4b3aee，仅windowActions/workspaces/tray已存fixed panelViewport opt scrollbar、准确trayGap及局部retire render(null)释放。真实759软件GUI/inert provider三root420x220/420x220/280x236与inner388x188/388x188/248x204 before/after全保持，overlay不减command宽，tray gap8原值；末项focus/Tab/ShiftTab/Page/dragcapture/wheel、sameDOM/retheme/manualscroll、workspace真实input/value/caret/selection/focus及local move12/activate12各一次通过；tray disabled无invoke、普通submenu/root/pending/error/短bar隐藏与Enter仅[7,4,20]一次、原nativeclose计数/全部pending0通过。父97/97含原workspace contracts，native tray-shell仅syntax。geometry替换首次Enter的旧/新相同RED另见bug-live-listener-redispatch，不称全绿；无实际窗口/工作区/DBus/外部托盘授权或物理输入资格。",
