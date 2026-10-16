@@ -676,6 +676,21 @@ the exact old producer and current producer both reproduce that failure.
 Normal-flow scrollbar checks do not certify that failing event sequence or
 live Linux D-Bus/tray authorization.
 
+The generic/Mac Applications list now consumes the same viewport/bar inside its
+original flex allocation, without moving its header, real search field, footer
+or alert. Its padding stays zero, fill transparent and row gap `windowGap`;
+the existing 100-match cap, disabled entries, launch and both pin domains remain.
+The logout inventory opts into the bar while retaining its existing frame and
+focus reveal. Cancellation must succeed before user-close cleanup; external
+close and owner-stop cleanup preserve the original controller order.
+
+The existing native Tab enumerator still caps its focus array at 256. Software
+GUI coverage proves direct-focus reveal of the hundredth three-command Apps
+row and actual Tab/Shift+Tab traversal of a 60-row list below that limit, not
+complete 100-row native keyboard traversal. Controlled logout checks use inert
+inventory/counters, including cancellation-acknowledgment failure and rejection
+of user close during commit; they do not close real applications or end sessions.
+
 The bounded gap-accounting follow-up in `tests/mac-dock-gap-render.mjs` corrects
 the natural width of all three styled Docks. With windows, three fixed actions,
 a separator and a window strip require four root gaps plus `count - 1` inner
