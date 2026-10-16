@@ -131,9 +131,16 @@ export function windowGroupMenu(theme, group, state) {
     h('view', { style: { flexDirection: 'row', minWidth: 0, gap: theme.layout.controlGap } },
       minimize, close));
   }),
-  h('view', { style: { flexShrink: 0, display: state.pin ? 'flex' : 'none' } },
+  h('view', { style: { flexShrink: 0, gap: theme.layout.controlGap, display: state.pin ? 'flex' : 'none' } },
     state.pin ? command('shell-group-pin', state.pin.label + state.pin.target, state.pin.change,
-      false, {}, state.pin.label + state.pin.target) : null)),
+      false, {}, state.pin.label + state.pin.target) : null,
+    h('view', { style: { flexDirection: 'row', flexWrap: 'wrap', minWidth: 0,
+      gap: theme.layout.controlGap, display: state.pin?.order?.earlier || state.pin?.order?.later ? 'flex' : 'none' } },
+    state.pin?.order ? [-1, 1].filter(direction => direction < 0 ? state.pin.order.earlier : state.pin.order.later)
+      .map(direction => command('shell-group-pin-' + (direction < 0 ? 'earlier' : 'later'),
+        direction < 0 ? 'Earlier' : 'Later', () => state.pin.order.move(direction), false,
+        { flexGrow: 1, flexBasis: 0 },
+        JSON.stringify([state.pin.order.id, state.pin.order.position, direction]))) : []))),
   command('shell-group-menu-close', 'Close menu', state.close),
   state.error ? label(state.error) : null,
   panelDetail(theme, 'menu'));

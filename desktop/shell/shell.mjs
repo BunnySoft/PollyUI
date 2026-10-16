@@ -409,20 +409,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
     report('[shell] ' + message);
   }
 
-  function changeLauncherPin(id, pinned) {
+  function updateLauncherPins(change) {
     if (!running || getDesktopTheme(themeId).panel.taskGrouping !== 'applications') return false;
-    id = launcherCatalogId(id);
-    const previous = configuration.snapshot.launchers.applications;
-    if (previous.includes(id) === pinned) return false;
     try {
-      if (pinned) {
-        if (id !== SETTINGS_APPLICATION_ID) applications = launcher.refresh();
-        const entry = desktopCatalog().find(entry => entry.id === id);
-        if (!entry || entry.unavailable) throw new Error(entry?.unavailable || 'Application is no longer in the catalog');
-        if (previous.length >= 32) throw new Error('At most 32 applications can be pinned');
-      }
-      configuration.update({ launchers: { version: 1,
-        applications: pinned ? [...previous, id] : previous.filter(value => value !== id) } });
+      const next = change(configuration.snapshot.launchers.applications);
+      if (!next) return false;
+      configuration.update({ launchers: { version: 1, applications: next } });
       if (errorKind === 'launchers') { error = ''; errorKind = ''; }
     } catch (failure) {
       error = (failure.committed ? 'Launcher pins saved, but durability confirmation failed: ' :
@@ -434,6 +426,31 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
     refresh(true); repaintMenu();
     return true;
+  }
+
+  function changeLauncherPin(id, pinned) {
+    id = launcherCatalogId(id);
+    return updateLauncherPins(previous => {
+      if (previous.includes(id) === pinned) return null;
+      if (pinned) {
+        if (id !== SETTINGS_APPLICATION_ID) applications = launcher.refresh();
+        const entry = desktopCatalog().find(entry => entry.id === id);
+        if (!entry || entry.unavailable) throw new Error(entry?.unavailable || 'Application is no longer in the catalog');
+        if (previous.length >= 32) throw new Error('At most 32 applications can be pinned');
+      }
+      return pinned ? [...previous, id] : previous.filter(value => value !== id);
+    });
+  }
+
+  function moveLauncherPin(id, position, direction) {
+    id = launcherCatalogId(id);
+    return updateLauncherPins(previous => {
+      const next = position + direction;
+      if (![1, -1].includes(direction) || previous[position] !== id || next < 0 || next >= previous.length) return null;
+      const applications = [...previous];
+      [applications[position], applications[next]] = [applications[next], applications[position]];
+      return applications;
+    });
   }
 
   function launcherCatalogId(id) {
@@ -812,7 +829,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
       }
       const entry = group.catalogId ? desktopCatalog().find(entry => entry.id === group.catalogId) :
         applicationForWindow(applications, group.appId);
-      const pinned = !!entry && configuration.snapshot.launchers.applications.includes(entry.id);
+      const catalogId = group.catalogId || entry?.id;
+      const pinId = catalogId ? launcherCatalogId(catalogId) : null;
+      const pins = configuration.snapshot.launchers.applications, pinIndex = pins.indexOf(pinId);
+      const pinned = pinIndex >= 0;
+      const livePinMenu = () => currentMenu(current) && host.displays().some(output => output.id === current.output) &&
+        liveTasks(current.groupWorkspaceId).some(task => task.id === group.id && taskIdentity(task) === taskIdentity(group));
       render(windowGroupMenu(getDesktopTheme(themeId), group, {
         slots: current.groupSlots,
         action: (id, action) => {
@@ -831,10 +853,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
         pin: group.pinned || entry ? {
           label: pinned || group.pinned ? 'Unpin from ' : 'Pin to ',
           target: getDesktopTheme(themeId).panel.kind === 'dock' ? 'Dock' : 'taskbar',
+          order: pinned ? {
+            id: pinId, position: pinIndex, earlier: pinIndex > 0, later: pinIndex + 1 < pins.length,
+            move: direction => livePinMenu() ? moveLauncherPin(pinId, pinIndex, direction) : false,
+          } : null,
           change: () => {
-            if (!currentMenu(current) || !host.displays().some(output => output.id === current.output) ||
-                !liveTasks(current.groupWorkspaceId).some(task =>
-                task.id === group.id && taskIdentity(task) === taskIdentity(group))) return false;
+            if (!livePinMenu()) return false;
             const changed = changeLauncherPin(group.catalogId || entry.id, !pinned && !group.pinned);
             if (changed && currentMenu(current)) closeMenu(current, true);
             return changed;
