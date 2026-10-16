@@ -7,6 +7,8 @@ const { fixtureFiles, fixtureHost, deliver, settled, deferred, nodes } = await i
 const { createFileDialogController } = await import('../client/file-dialog-controller.mjs');
 const { showFileDialog } = await import('../client/file-dialog.mjs');
 const { createFileTextApp } = await import('../client/file-dialog-example.mjs');
+const { getDesktopTheme } = await import('../shared/ui/themes.mjs');
+const { panelAppearance } = await import('../shared/ui/panel-appearance.mjs');
 const HOME = '/home/polly', EXISTING = HOME + '/hello.txt';
 const textFilters = [{ label: 'Text', extensions: ['txt', 'md'] }, { label: 'All', extensions: [] }];
 function controller(options = {}) {
@@ -298,6 +300,48 @@ test('optional theme failure is visible without replacing the filesystem or sele
   assert.match(dialog.element.textContent, /Theme error.*native/);
   assert.equal(dialog.controller.getState().selection, null); assert.equal(errors.length, 1);
   dialog.dispose();
+});
+
+test('chooser panel is theme-opt-in only and retheme preserves native input ownership and one result', async t => {
+  const { host } = fixtureHost(t), parent = host.create({}), f = fixtureFiles();
+  let theme = getDesktopTheme('lion'), revision = 1, starts = 0;
+  const native = { startThemeSubscription() { starts++; }, stopThemeSubscription() {},
+    desktopThemeState: () => ({ available: true, ready: true, revision,
+      document: JSON.stringify({ schemaVersion: 1, theme }) }) };
+  const settings = { mode: 'save', suggestedName: 'draft.txt' };
+  const neutral = showFileDialog({ parent, files: f.files, native, settings }); await settled();
+  const plain = neutral.element.childNodes[0];
+  assert.equal(starts, 0);
+  assert.deepEqual(['borderRadius', 'padding', 'gap', 'maxWidth', 'maxHeight'].map(key => plain.style[key]),
+    ['6', '14', '10', '800', '640']);
+  assert.equal(plain.childNodes.length, 5, 'neutral DOM gains no decoration layer');
+  neutral.dispose(); await neutral.result;
+  const chooser = showFileDialog({ parent, files: f.files, native, settings, optInTheme: true }); await settled();
+  const panel = chooser.element.childNodes[0], name = find(chooser, 'name'), location = find(chooser, 'location');
+  const expect = () => {
+    for (const [key, value] of Object.entries(panelAppearance(theme, 'dialog'))) assert.equal(panel.style[key], value);
+  };
+  expect();
+  name.focus(); deliver(name, 'keydown', { key: 'a', ctrlKey: true });
+  theme = { ...theme, button: { ...theme.button, radius: 7 }, window: { ...theme.window, radius: 11 },
+    layout: { ...theme.layout, contentPadding: 15, contentGap: 9 } };
+  revision++; native.onDesktopThemeChanged(); await settled(); expect();
+  assert.equal(find(chooser, 'name'), name); assert.equal(find(chooser, 'location'), location);
+  assert.equal(parent.document.activeElement, name); assert.equal(starts, 1);
+  await chooser.controller.navigate('/missing'); await settled();
+  const details = find(chooser, 'error');
+  details.scrollLeft = 317;
+  deliver(name, 'textinput', { data: 'chosen.txt' });
+  assert.equal(chooser.controller.getState().name, 'chosen.txt', 'retheme preserved select-all, not only value');
+  assert.equal(find(chooser, 'accept').parentNode.scrollLeft, 0,
+    'retired scrolled error details cannot shift the recycled acceptance row');
+  assert.equal(nodes(chooser.element).filter(node => node.id === chooser.id + '-accept').length, 1);
+  let count = 0; chooser.result.then(() => count++);
+  const accept = find(chooser, 'accept').listeners.get('click')[0];
+  deliver(find(chooser, 'accept')); await settled();
+  assert.equal((await chooser.result).path, HOME + '/chosen.txt');
+  accept({ button: 0, stopPropagation() {} }); chooser.dispose(); await settled();
+  assert.equal(count, 1);
 });
 
 test('loading UI disables filter/name actions without losing a deferred reply or Location supersession', async t => {

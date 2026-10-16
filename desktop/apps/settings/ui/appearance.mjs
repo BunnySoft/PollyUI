@@ -2,6 +2,7 @@ import { h } from './gui/sdk/js/reconciler.mjs';
 import { button } from './desktop/shared/ui/button.mjs';
 import { desktopCommand, desktopText, settingsCard, scrollDesktop } from './desktop/shared/ui/presentation.mjs';
 import { themeTextSize } from './desktop/shared/ui/theme-layout.mjs';
+import { panelAppearance, panelDetail } from './desktop/shared/ui/panel-appearance.mjs';
 const row = { flexDirection: 'row', alignItems: 'center' };
 const isCommandFocus = node => ['theme-focus-ring', 'luna-focus-ring'].includes(node?.props?.className);
 const labelFor = theme => (value, color, size = 12) => h('view', { style: { color, fontSize: themeTextSize(theme, size), flexShrink: 0 } }, value);
@@ -71,10 +72,11 @@ export function settingsView(theme, select, close, retry, error = '', about = fa
   network ? button('shell-network-settings-open', 'Wi-Fi', theme, network) : null,
   audio ? button('shell-audio-settings-open', 'Audio', theme, audio) : null,
   power ? button('shell-power-settings-open', 'Power', theme, power) : null,
-  status ? h('view', { role: 'status', 'aria-live': 'polite', style: { padding: 12,
-    borderRadius: 6, backgroundColor: theme.colors.selection } }, desktopText(status, theme.colors.text, 14)) : null,
-  error ? h('view', { role: 'alert', style: { gap: 10, padding: 14, borderRadius: 6,
-    borderWidth: 1, borderColor: '#b42318', backgroundColor: theme.colors.surface, flexShrink: 0 } },
+  status ? h('view', { role: 'status', 'aria-live': 'polite', style: { ...panelAppearance(theme),
+    backgroundColor: theme.colors.selection, flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
+    desktopText(status, theme.colors.selectionText ?? theme.colors.text, 14, { flexShrink: 1, minWidth: 0 })) : null,
+  error ? h('view', { role: 'alert', style: { ...panelAppearance(theme), borderColor: '#b42318',
+    flexShrink: 0, minWidth: 0 } }, panelDetail(theme),
     desktopText(error, theme.colors.text, 14, { flexShrink: 1 }),
     desktopCommand('shell-retry', 'Refresh status', theme, retry, { icon: 'refresh' })) : null,
   desktopText(embedded ? 'Preferences in a memory-only Live session reset after reboot.' : 'Escape closes this menu.',
