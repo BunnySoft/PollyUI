@@ -24,6 +24,7 @@
 #include <unistd.h>
 #include <wlr/backend.h>
 #include <wlr/backend/headless.h>
+#include <wlr/backend/multi.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_buffer.h>
@@ -270,7 +271,7 @@ static bool click(struct PuDesktopView *view, int part)
     CHECK(command(TEST_QUERY, 0, 0));
     return true;
 }
-static uint64_t frame_hash(struct PuDesktopView *view)
+static uint64_t frame_hash_at_scale(struct PuDesktopView *view, double scale)
 {
     struct wlr_box inset = {0};
     pu_decoration_inset(view, &inset, false);
@@ -281,7 +282,7 @@ static uint64_t frame_hash(struct PuDesktopView *view)
     if (!node || node->type != WLR_SCENE_NODE_BUFFER) return 0;
     struct wlr_buffer *buffer = wlr_scene_buffer_from_node(node)->buffer;
     void *data; uint32_t format; size_t stride;
-    if (!buffer || buffer->height != (int)ceil(inset.y * pu_desktop_view_scale(view)) ||
+    if (!buffer || buffer->height != (int)ceil(inset.y * scale) ||
         !wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride))
         return 0;
     uint64_t hash = UINT64_C(14695981039346656037);
@@ -291,6 +292,10 @@ static uint64_t frame_hash(struct PuDesktopView *view)
         }
     wlr_buffer_end_data_ptr_access(buffer);
     return format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888 ? hash : 0;
+}
+static uint64_t frame_hash(struct PuDesktopView *view)
+{
+    return frame_hash_at_scale(view, pu_desktop_view_scale(view));
 }
 static bool changed(struct PuDesktopView *view, uint64_t before)
 {
@@ -526,6 +531,174 @@ static bool wait_presented_frame(struct PuDesktopView *view)
         CHECK(pump());
     }
     CHECK(false);
+}
+static bool pause_renderer(void)
+{
+    pid_t pid = pu_decorator_pid(&desktop);
+    CHECK(!paused_renderer && pid > 0 && !kill(pid, SIGSTOP));
+    paused_renderer = pid;
+    int status;
+    pid_t stopped;
+    do { stopped = waitpid(pid, &status, WUNTRACED); } while (stopped < 0 && errno == EINTR);
+    CHECK(stopped == pid && WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP);
+    return true;
+}
+static void placement_key(uint32_t code)
+{
+    uint32_t codes[] = {KEY_LEFTMETA, code, code, KEY_LEFTMETA};
+    for (unsigned i = 0; i < 4; i++) {
+        struct wlr_keyboard_key_event event = {.time_msec = ++clock_ms, .keycode = codes[i],
+            .update_state = true, .state = i < 2 ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED};
+        wlr_keyboard_notify_key(&keyboard, &event);
+    }
+}
+static void find_headless(struct wlr_backend *backend, void *data)
+{
+    if (wlr_backend_is_headless(backend)) *(struct wlr_backend **)data = backend;
+}
+static bool title_drag_restore(void)
+{
+    struct PuDesktopView *view = wire_view();
+    CHECK(view && wl_list_length(&desktop.views) == 1 &&
+        command(TEST_UNCONSTRAINED, 0, 0) && wait_presented_frame(view));
+    int width = view->presented_box.width, height = view->presented_box.height;
+    for (int placement = 0; placement < 3; placement++) {
+        if (!placement) CHECK(command(TEST_MAXIMIZE, 0, 0));
+        else placement_key(placement == 1 ? KEY_LEFT : KEY_RIGHT);
+        CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view));
+        enum PuDesktopMode mode = view->mode;
+        struct wlr_box old = view->presented_box, inset = {0};
+        pu_decoration_inset(view, &inset, false);
+        int source_anchor = old.width / 2, restored_anchor = (int)(width * ((double)source_anchor / old.width));
+        double x = old.x + source_anchor, y = old.y - inset.y / 2.0;
+        clock_ms += 401;
+        motion(x, y); button(true);
+        CHECK(desktop.grabbed == view && desktop.grab == PU_DESKTOP_MOVE);
+        CHECK(wait_presented_frame(view));
+        CHECK(pause_renderer() && command(TEST_HOLD, 0, 0));
+        uint64_t before = frame_hash(view);
+        uint32_t revision = pu_decoration_presented_revision(view);
+        printf("TITLE_DRAG_BASELINE placement=%d mode=%d frameHash=%llu ownedRevision=%u\n",
+            placement, mode, (unsigned long long)before, revision);
+        CHECK(before && revision);
+        motion(x + 4, y);
+        CHECK(!view->geometry_pending && view->mode == mode && frame_hash(view) == before);
+        if (!placement) {
+            motion(x + 5, y);
+            CHECK(!view->geometry_pending && view->mode == mode && frame_hash(view) == before);
+        }
+        motion(x + 6, y);
+        CHECK(view->geometry_pending && view->drag_restore_pending && view->mode == mode &&
+            wlr_box_equal(&view->presented_box, &old) && frame_hash(view) == before);
+        motion(x + 30, y + 60);
+        CHECK(view->geometry_pending && view->drag_restore_pending && view->mode == mode &&
+            wlr_box_equal(&view->presented_box, &old) &&
+            view->tree->node.x == old.x && view->tree->node.y == old.y && frame_hash(view) == before);
+        motion(x + 50, y + 80);
+        CHECK(command(TEST_RELEASE, 0, 0));
+        CHECK(view->toplevel->base->geometry.width == width &&
+            view->toplevel->base->geometry.height == height && view->geometry_pending &&
+            view->mode == mode && !pu_decoration_presented_current(view) &&
+            view->tree->node.x == old.x && view->tree->node.y == old.y && frame_hash(view) == before);
+        motion(x + 70, y + 100);
+        int expected_x = (int)(x + 70 - restored_anchor), expected_y = old.y + 100;
+        if (placement == 1) {
+            button(false);
+            CHECK(desktop.grab == PU_DESKTOP_PASSTHROUGH);
+            motion(x + 170, y + 200);
+        }
+        CHECK(resume_renderer() && wait_presented_frame(view));
+        CHECK(view->mode == PU_DESKTOP_FLOATING && view->tree->node.x == expected_x &&
+            view->tree->node.y == expected_y && view->presented_box.width == width &&
+            view->presented_box.height == height && !view->drag_restore_pending &&
+            pu_decoration_presented_revision(view) > revision && frame_hash(view));
+        if (placement != 1) {
+            motion(x + 81, y + 113);
+            CHECK(view->tree->node.x == expected_x + 11 && view->tree->node.y == expected_y + 13);
+            button(false);
+        }
+        printf("PASS: GUI title drag %d old mode/frame held through client ACK; current frame presents saved %dx%d at pointer anchor, pending release=%d\n",
+            placement, width, height, placement == 1);
+    }
+    struct wlr_backend *backend = NULL;
+    wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+    CHECK(backend);
+    struct wlr_output *extra = wlr_headless_add_output(backend, 200, 300);
+    CHECK(extra);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_scale(&state, 1.25f);
+    CHECK(wlr_output_commit_state(extra, &state));
+    wlr_output_state_finish(&state);
+    CHECK(command(TEST_MAXIMIZE, 0, 0) && wait_presented_frame(view));
+    struct wlr_box old = view->presented_box, destination;
+    wlr_output_layout_get_box(desktop.layout, extra, &destination);
+    clock_ms += 401;
+    double x = old.x + old.width / 2, y = old.y - 16;
+    motion(x, y); button(true);
+    CHECK(wait_presented_frame(view) && pause_renderer() && command(TEST_HOLD, 0, 0));
+    uint64_t before = frame_hash(view);
+    motion(x + 10, y + 30);
+    CHECK(command(TEST_QUERY, 0, 0) && view->geometry_pending);
+    uint32_t previous_serial = view->geometry_serial;
+    motion(destination.x + destination.width / 2, destination.y + 30);
+    CHECK(view->output == extra && pu_desktop_view_scale(view) == 1.25 &&
+        view->geometry_serial != previous_serial && view->pending_box.width < width &&
+        view->mode == PU_DESKTOP_MAXIMIZED && wlr_box_equal(&view->presented_box, &old));
+    struct wlr_box expected = view->pending_box;
+    CHECK(command(TEST_APPLY_FIRST, 0, 0) && view->geometry_pending &&
+        view->mode == PU_DESKTOP_MAXIMIZED && frame_hash_at_scale(view, 1) == before);
+    CHECK(command(TEST_RELEASE, 0, 0) && view->geometry_pending &&
+        !pu_decoration_presented_current(view) && wlr_box_equal(&view->presented_box, &old));
+    CHECK(resume_renderer() && wait_presented_frame(view));
+    CHECK(view->mode == PU_DESKTOP_FLOATING && wlr_box_equal(&view->presented_box, &expected) &&
+        view->toplevel->base->geometry.width == expected.width &&
+        view->toplevel->base->geometry.height == expected.height &&
+        pu_desktop_view_scale(view) == 1.25 && frame_hash(view));
+    button(false);
+    CHECK(command(TEST_MAXIMIZE, 0, 0) && wait_presented_frame(view));
+    y = view->tree->node.y - 16;
+    int title_x = 0;
+    while (title_x < view->presented_box.width &&
+        pu_decoration_hit(view, title_x, -16) != PU_DECORATION_TITLE) title_x++;
+    CHECK(title_x < view->presented_box.width && pu_decoration_hit(view, title_x, -16) == PU_DECORATION_TITLE);
+    x = view->tree->node.x + title_x;
+    clock_ms += 401;
+    motion(x, y); button(true);
+    CHECK(desktop.grab == PU_DESKTOP_MOVE && desktop.grabbed == view);
+    CHECK(wait_presented_frame(view) && pause_renderer());
+    motion(x + 6, y + 20);
+    CHECK(command(TEST_QUERY, 0, 0) && view->geometry_pending && view->drag_restore_pending);
+    wlr_output_destroy(extra);
+    extra = NULL;
+    CHECK(!desktop.grabbed && desktop.grab == PU_DESKTOP_PASSTHROUGH && !view->drag_restore_pending);
+    button(false);
+    CHECK(command(TEST_QUERY, 0, 0) && resume_renderer() && wait_presented_frame(view));
+    CHECK(view->mode == PU_DESKTOP_FLOATING && pu_desktop_view_scale(view) == 1 &&
+        desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    puts("PASS: pending restore crossing to a smaller 125% output refits original size, rejects old output ACK, fences actual scaled GUI frame, and output retirement cancels without revival");
+    for (int retirement = 0; retirement < 2; retirement++) {
+        CHECK(command(TEST_MAXIMIZE, 0, 0) && wait_presented_frame(view));
+        double x = view->tree->node.x + 100, y = view->tree->node.y - 16;
+        clock_ms += 401;
+        motion(x, y); button(true);
+        CHECK(pause_renderer());
+        motion(x + 30, y + 50);
+        CHECK(command(TEST_QUERY, 0, 0) && view->geometry_pending && desktop.grabbed == view);
+        CHECK(command(retirement ? TEST_DESTROY_ROLE : TEST_UNMAP, 0, 0));
+        CHECK(!wire_view() && !desktop.grabbed && desktop.grab == PU_DESKTOP_PASSTHROUGH);
+        view = NULL;
+        button(false);
+        CHECK(resume_renderer());
+        if (!retirement) {
+            CHECK(command(TEST_REMAP, 0, 0));
+            view = wire_view();
+            CHECK(view && wait_presented_frame(view) && !view->drag_restore_pending);
+        }
+    }
+    CHECK(command(TEST_DESTROY, 0, 0) && command(TEST_QUIT, 0, 0));
+    puts("PASS: actual GUI pending restore cancels safely on target unmap/remap and toplevel-role retirement without stale gesture revival");
+    return true;
 }
 static bool presented_frame_fence(const char *ui)
 {
@@ -1095,6 +1268,7 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
+    if (!strcmp(mode, "title-drag")) return title_drag_restore();
     if (!strcmp(mode, "frame-fence")) return presented_frame_fence(ui);
     if (!strcmp(mode, "backdrop")) return backdrop_consumer(ui, wire);
     if (!strcmp(mode, "shell-backdrop")) return modern_backdrop_consumer(ui, wire);

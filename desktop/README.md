@@ -1415,6 +1415,27 @@ layout is actually available. The existing menu viewport, keyboard navigation
 and shared scrollbar remain usable on short displays. This is not a Windows 11
 caption-hover flyout or drag-to-snap implementation.
 
+Holding a native caption on a maximized or half-screen window arms a drag without
+changing placement. Moving more than 5 logical pixels restores the last saved
+floating size, constrained to the pointer output's actual work area and client
+size limits, with the horizontal caption fraction and vertical title offset
+anchored to the pointer. The same held gesture then moves the floating window.
+Client move/resize requests and Alt-drag remain floating-only; title double-click
+still toggles maximize/restore. A click or movement below the threshold does not
+restore early.
+
+Restoration uses the shared client-configure/native-caption presentation fence:
+the old placed frame does not move while waiting for a client buffer or GUI
+caption. Motion updates the pending landing point; release freezes that point
+even if presentation is late. Crossing to another output while pending refits
+the original saved size to that output's work area and issues a matching client
+configure and caption-scale revision; the earlier output's ACK/frame cannot
+present the new landing point. Workspace, lock/input isolation, target retirement,
+output/layout changes or another geometry command end the gesture, and a late
+frame never restarts it. Already admitted geometry can finish at its frozen point
+unless superseded or unmapped. This adds no JavaScript geometry channel, edge
+snap, hover flyout, polling or new input deadlines.
+
 Placement uses the existing restricted `polly_workspace_toplevel_v1` object,
 paired manager/child version 3. `desktop.windows()` optionally adds readonly
 `placement` (`floating`, `left`, `right`), `placementPending`,
