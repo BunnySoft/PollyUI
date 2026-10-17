@@ -638,6 +638,26 @@ workspaces and lock/grab restrictions have actual native coverage. The complete
 Windows 11 Snap flyout, drag-to-edge/restore, overview and original-system pixel
 qualification are not supplied by these keyboard operations.
 
+The existing window-action menu now exposes **Left half**, **Right half** and
+**Restore floating** through the same native placement engine. Readonly
+placement, pending and feasibility bits come from a version-3 private workspace
+toplevel object; providers without that state keep the previous menu rather
+than showing unsupported actions. Menu registration binds an actual owned layer
+surface to the live target and workspace with a server-issued epoch. Admission
+requires that exact mapped, presented, enabled, exclusive overlay to hold input
+focus, plus the existing target-family, workspace, lock, grab, recording and
+geometry checks. Names or client-supplied roles do not authorize a request.
+
+An epoch admits at most one placement; lifecycle and workspace changes revoke
+it. Rejection keeps the menu and layout intact without first activating the
+target. Native `{ admitted: true }` means configure queued, not resized or
+presented: final state still follows the original client/decoration fence.
+Unknown transport results are explicit and are not replayed. The original
+keyboard guards and configuration v4 bytes remain unchanged. Real XP pointer
+and Classic Enter actions match the keyboard geometry; short-output Tab,
+Shift+Tab and the shared scrollbar retain access to new and existing commands.
+This is pointer-accessible basic placement, not a caption-hover Snap flyout.
+
 The two previously failing native test paths are now qualified through their
 original workflows. Settings clicks use the current owner and frame-settled
 geometry rather than coordinates sampled before Fluent layout repositioning.
