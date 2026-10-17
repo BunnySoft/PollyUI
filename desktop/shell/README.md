@@ -178,7 +178,7 @@ Shell controller's callback lifetime, launch and existing menu authority seams.
 
 # Application tasks and Dock groups
 
-The Tiger, Lion and Big Sur Dock presets use `panel.materialOpacityPercent: 88`
+For legacy Dock material without `regionalBackdrop`, the Tiger, Lion and Big Sur presets use `panel.materialOpacityPercent: 88`
 for their passive bottom material only. This is a configurable Polly default,
 not a measured OS opacity. The optional schema-version-1 field accepts integer
 percentages 0..100; missing or 100 preserves the original opaque colors and
@@ -186,10 +186,31 @@ rendering path, and an override of 100 restores solid material. At 0 the bottom
 material is transparent while icons, registered bitmaps, focus, running markers,
 badges and separators retain their own original colors and opacity.
 
-The existing transparent Dock layer can show the scene behind these RGBA fills.
+Without `panel.regionalBackdrop`, the existing transparent Dock layer can show the scene behind these RGBA fills.
 The Dock parent is not faded, geometry/input are unchanged, and no background
 pixels are sampled. This is alpha composition, not Acrylic, vibrancy or blur;
-Lion reflection/Dock shadow and Big Sur wallpaper tint/live blur remain absent.
+Lion reflection/Dock shadow remain absent.
+
+The production Big Sur Dock additionally opts into
+`panel.regionalBackdrop: { sigma: 8, tint: "#e7e7e7", opacityPercent: 28 }`.
+This is a real effects3/Pixman lower-scene regional Gaussian underlay, not these
+RGBA fills and not a wallpaper-derived base. The client omits only its passive
+gradient after successful native publication; foreground, border, hitbox, scroll,
+hover and actions are unchanged. These are Polly design parameters, not measured
+macOS vibrancy. Optional schema-1 data permits sigma 1..32, RGB tint and integer
+opacity 0..100, independent of the legacy `materialOpacityPercent`. Removing the
+field restores the previous Dock path and its opacity policy. The menu bar
+does not opt in.
+
+Active selection queries the actual regional capability before creating surfaces
+or publishing appearance. Appearance7 stages numeric material against the current
+owned/mapped Dock `wl_surface`, reserves old-plus-candidate/kernel peak resources,
+and revalidates count, owner, generation, commit sequence and geometry on commit.
+Failure preserves the last committed state; it does not silently substitute alpha.
+Inactive catalog/data lookup does not query capabilities. GLES explicitly rejects
+this new capability but retains its existing radius/shadow support. Live regional
+failures are reported to the Shell and hold the last output frame until new scene
+damage permits a retry. No screenshot/readback or foreign-target API is exposed.
 
 Big Sur also selects `panel.menuBarOpacityPercent: 88` for the menu bar's passive
 background gradient. This separate optional integer 0..100 field defaults to 100;

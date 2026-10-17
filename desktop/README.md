@@ -70,11 +70,56 @@ same applier; the private library has a distinct effects-ABI SONAME. CMake check
 both its header ABI and required linked symbols; startup and packaging also compare
 the actual library's embedded patch SHA-256, not only an adjacent receipt file.
 Private appearance protocol and
-geometry schema 6 reject older WM/Shell/decorator pairings; the private library is
-effects ABI 2. GLES effects require 23-bit fragment highp precision, checked explicitly;
+geometry schema 7 reject older WM/Shell/decorator pairings; the private library is
+effects ABI 3 (`libwlroots-0.19-polly-effects3.so`). Its SDK prefix is
+`/opt/pollyui-wlroots-effects3`; do not overwrite an effects2 installation.
+GLES rounding/shadow effects still require 23-bit fragment highp precision, checked explicitly;
 unsupported precision fails effects rather than using a mediump shape. Ordinary
 no-effect rectangles keep their existing path. Stock SDKs are not a supported fallback.
-These effects are not backdrop sampling or live blur.
+Rounding and shadows do not themselves sample the backdrop.
+
+### Regional Dock backdrop (Pixman)
+
+The production Big Sur Dock explicitly opts into `panel.regionalBackdrop` in
+public theme JSON schema 1: `{ "sigma": 8, "tint": "#e7e7e7", "opacityPercent": 28 }`.
+These are original Polly design values, not measured macOS values or a claim of
+macOS vibrancy. The existing Dock rectangle is the entire effect/input footprint;
+its glyphs, bitmaps, focus, grouping, markers, counts and hover animation remain
+separate foreground content. No other panel, menu bar, application or lock surface
+automatically acquires glass.
+
+Effects3's generic non-input node composes the current lower scene in paint
+order into an expanded regional target, filters premultiplied RGBA with a
+normalized separable Gaussian truncated at three sigma, applies premultiplied
+tint and rounded coverage, and clips back to the footprint. It neither captures
+the node/foreground nor reads a previous output frame. JavaScript never receives
+scene pixels. Each output has its own scale/position-keyed cache; scene changes
+conservatively damage the footprint, not a periodic full-output repaint. Hiding,
+destroying, output removal and compositor lock/unlock release retained samples.
+The regional path is bounded to eight nodes, 4096x512 logical pixels per node,
+sigma 1..32, at most 64 physical sigma and two megapixels including kernel padding
+per output. All old/candidate buffers and filter workspace share the existing
+128MiB scene effects peak budget.
+Pixman effect SHM backing is reserved before rendering so tmpfs exhaustion is an
+explicit allocation failure rather than a later mapped-page SIGBUS.
+
+Only the authenticated Shell publisher can stage the actual mapped, fixed-size,
+bottom-anchored top-layer surface on its inherited connection. Theme preparation
+declares the expected target count; numeric material requests are preflighted
+before commit, which rechecks owner, generation, privacy epoch, surface sequence and actual box.
+Invalid or unsupported active selection preserves the committed theme/resources;
+inactive catalog lookup remains pure. Missing `regionalBackdrop` retains the
+legacy RGBA/opaque Dock rendering path. There is no silent alpha/solid fallback
+for a requested regional effect. A live composition failure reports a Shell
+error and holds the last committed output frame, retrying only after scene
+changes. The new backdrop capability is **Pixman only**; GLES activation rejects
+it before publication while the existing GLES rounding/shadow support is unchanged.
+
+`desktop-scene-effects` checks the real compositor Gaussian oracle, scale/rotation,
+foreground exclusion, movement, cache reuse, privacy clearing and missing-effect
+whole-frame byte restoration. `desktop-regional-backdrop-native` uses the actual
+Shell Dock over independently running applications and checks foreground/input,
+transaction rejection and retirement. This is not DRM/hardware qualification.
 
 ## Desktop application shortcuts
 
@@ -500,8 +545,8 @@ are opaque drawing, not compositor transparency/blur. The preview is explicitly
 labeled **SIMULATED SHELL**; it does not launch applications, modify files or
 OS settings, provide real window decorations, or manage PollyWM's other windows.
 Theme selection currently lasts for the preview process only.
-Big Sur currently provides the light appearance; a dark variant, actual
-transparency and live background blur are not implemented. The larger floating
+Big Sur's simulated preview provides the light appearance; it does not exercise
+the production Shell's opt-in Pixman regional backdrop. A dark variant is absent. The larger floating
 dock has reserved space in both normal and maximized sample-window layouts.
 
 Run from the repository root with an already built PollyUI runtime:
@@ -825,7 +870,7 @@ archived user-tested Alpine images are not current rebuild evidence.
 
 ```sh
 # Inside the pinned Debian SDK, from the repository root:
-export PKG_CONFIG_PATH=/opt/pollyui-wlroots/lib/pkgconfig:${PKG_CONFIG_PATH}
+export PKG_CONFIG_PATH=/opt/pollyui-wlroots-effects3/lib/pkgconfig:${PKG_CONFIG_PATH}
 cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/desktop
 ctest --test-dir build/desktop --output-on-failure

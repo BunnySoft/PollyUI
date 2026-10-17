@@ -630,7 +630,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
 }
 
 export function dockView(theme, openSettings, openAbout, openApplications = openSettings,
-  windows = [], toggle = () => {}, actions = () => {}, images = null) {
+  windows = [], toggle = () => {}, actions = () => {}, images = null, backdropActive = false) {
   const panel = theme.panel;
   const style = surfaceStyle(theme, 'panel');
   if (['tiger', 'lion', 'bigsur'].includes(style)) {
@@ -710,7 +710,8 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
       paddingLeft: theme.layout.dockPadding ?? 6, paddingRight: theme.layout.dockPadding ?? 6,
       gap: theme.layout.dockGap, overflow: 'hidden', borderRadius: panel.radius,
       ...(style === 'lion' ? { backgroundColor: 'transparent' } : {
-        ...gradient(materialColor(materialOpacity, panel.from), materialColor(materialOpacity, panel.to)),
+        ...(backdropActive ? { backgroundColor: 'transparent' } :
+          gradient(materialColor(materialOpacity, panel.from), materialColor(materialOpacity, panel.to))),
         ...(materialOpacity < 100 ? { backgroundColor: 'transparent' } : {}),
         borderWidth: 1, borderColor: materialColor(materialOpacity, style === 'tiger' ? '#eeeeee' : '#bdbdbd') }) } },
       shelf,

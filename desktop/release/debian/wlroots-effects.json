@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "upstreamVersion": "0.19.3",
-  "version": "0.19.3-polly-effects2",
-  "abi": 2,
+  "version": "0.19.3-polly-effects3",
+  "abi": 3,
   "patch": "wlroots-scene-effects.patch",
-  "patchSha256": "9395ed695213b7c7c96392fffba95830128d1cbfcd09d0f88bb7efcdd187d5d4"
+  "patchSha256": "db761e662f8350194cfd82813b23c75fc10d110ffe3ef49621481d2190103002"
 }

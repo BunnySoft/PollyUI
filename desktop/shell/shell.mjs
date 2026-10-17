@@ -138,6 +138,19 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (typeof previousSessionExit === 'function') previousSessionExit();
   };
   let previousExit = null;
+  let previousBackdropStatus = null;
+  function backdropStatusChanged() {
+    const message = native.backdropError();
+    if (message) {
+      error = message; errorKind = 'material';
+      report('[shell] ' + message);
+    } else if (errorKind === 'material') {
+      error = ''; errorKind = '';
+    }
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+    if (typeof previousBackdropStatus === 'function') previousBackdropStatus();
+  }
   const exited = event => {
     if (!running) return;
     settingsBridge?.exited(event);
@@ -594,7 +607,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (dock && !dock.window.closed) render(dockView(theme, surfaceAction(dock, () => showSystemSettings(bundle.output.id)),
       surfaceAction(dock, () => showSystemSettings(bundle.output.id, 'about')),
       surfaceAction(dock, () => showApplications(bundle.output.id)), listed,
-      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages), dock.window.document.body);
+      taskCallback(bundle, dock, false), taskCallback(bundle, dock, true), taskImages,
+      !!dock.backdropAppearance), dock.window.document.body);
     for (const surface of [panel, dock]) {
       if (!surface || surface.window.closed) continue;
       const body = surface.window.document.body;
@@ -609,6 +623,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
     const theme = getDesktopTheme(nextTheme);
+    if (theme.panel.regionalBackdrop && (typeof native?.backdropCapability !== 'function' ||
+        native.backdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
+      throw new Error('The active compositor does not support real regional Dock backdrops');
     preflightBodyFont(theme);
     const outputs = host.displays();
     const staged = [];
@@ -644,8 +661,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
         } else if (output.name) identity = outputIdentity(output);
         plans.push({ output, surfaces, identity });
       }
-      if (compositorAppearance !== appearance && typeof native?.configureAppearance === 'function') {
-        native.configureAppearance(theme, encodeDecorationLayout(theme));
+      if ((compositorAppearance !== appearance || theme.panel.regionalBackdrop &&
+          plans.some(plan => plan.surfaces.dock.backdropAppearance !== appearance)) &&
+          typeof native?.configureAppearance === 'function') {
+        native.configureAppearance(theme, encodeDecorationLayout(theme), dockTargets(theme, plans));
         compositorAppearance = appearance;
         configured = true;
       }
@@ -661,7 +680,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       for (const surface of staged) closeSurface(surface);
       if (configured) {
         try {
-          native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme));
+          native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme),
+            dockTargets(previousTheme, [...bundles.values()]));
           compositorAppearance = previousAppearance;
         } catch (rollback) {
           throw new Error(String(failure) + '; could not restore native appearance: ' + String(rollback));
@@ -670,6 +690,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       throw failure;
     }
     const retained = new Set(plans.flatMap(plan => Object.values(plan.surfaces)));
+    for (const plan of plans) if (plan.surfaces.dock)
+      plan.surfaces.dock.backdropAppearance = theme.panel.regionalBackdrop ? appearance : null;
     for (const bundle of bundles.values())
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
@@ -687,6 +709,13 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
     lastFailure = '';
     if (publicationFailure) throw publicationFailure;
+  }
+
+  function dockTargets(theme, plans) {
+    const material = theme.panel.regionalBackdrop;
+    return material ? plans.map(plan => [plan.surfaces.dock.window,
+      [1, 1, theme.panel.radius, material.sigma, Number.parseInt(material.tint.slice(1), 16),
+        material.opacityPercent]]) : [];
   }
 
   function releaseThemeAsset(asset) {
@@ -1616,8 +1645,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
     start() {
       if (running) throw new Error('Shell is already running');
       host.close();
-      running = true;
       if (launcher) reloadApplications();
+      running = true;
       sessionExit.start();
       if (native && typeof native.beginSessionExit === 'function') {
         previousSessionExit = native.onSessionExitRequested;
@@ -1631,6 +1660,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
         running = false; throw failure;
       }
       timer = setInterval(refresh, 1000);
+      if (typeof native?.backdropError === 'function') {
+        previousBackdropStatus = native.onBackdropStatusChanged;
+        native.onBackdropStatusChanged = backdropStatusChanged;
+      }
       if (native) { previousExit = native.onExit; native.onExit = exited; }
       if (typeof native?.windows === 'function') {
         workspacePersistence.start();
@@ -1676,6 +1709,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (timer !== null) clearInterval(timer);
       timer = null;
       if (native && native.onExit === exited) native.onExit = previousExit;
+      if (native?.onBackdropStatusChanged === backdropStatusChanged)
+        native.onBackdropStatusChanged = previousBackdropStatus;
       if (native && native.onWindowsChanged === windowsChanged) native.onWindowsChanged = previousWindowsChanged;
       if (native && native.onWorkspacesChanged === workspacesChanged) native.onWorkspacesChanged = previousWorkspacesChanged;
       if (native && native.onShortcutsChanged === shortcutsChanged) native.onShortcutsChanged = previousShortcutsChanged;

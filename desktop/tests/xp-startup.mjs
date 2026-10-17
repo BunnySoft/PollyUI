@@ -20,6 +20,7 @@ class Node {
   }
   get firstChild() { return this.childNodes[0] || null; }
   get lastChild() { return this.childNodes.at(-1) || null; }
+  getBoundingClientRect() { return { x: 0, y: 0, width: this.offsetWidth, height: this.offsetHeight }; }
   get nextSibling() { return this.parentNode?.childNodes[this.parentNode.childNodes.indexOf(this) + 1] || null; }
   appendChild(node) { return this.insertBefore(node, null); }
   insertBefore(node, before) {
@@ -78,7 +79,7 @@ function schemaRejection(schema, message = 'Unsupported or out-of-range appearan
     code: 'ERR_APPEARANCE_SCHEMA_REJECTED', appearanceSchema: schema, compositorMessage: message,
   });
 }
-function fixture(t, { maximumSchema = 6, initialTheme = 'xp', failure = null } = {}) {
+function fixture(t, { maximumSchema = 7, initialTheme = 'xp', failure = null, backdrop = false } = {}) {
   const originalFrame = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
   // Publication-only fake DOM: retain pending layout work without running it.
   globalThis.requestAnimationFrame = () => 1;
@@ -104,13 +105,14 @@ function fixture(t, { maximumSchema = 6, initialTheme = 'xp', failure = null } =
   };
   const backend = {
     maximumSchema, failure, rejectedTheme: null, committed: null,
+    backdropCapability: () => backdrop,
     applicationFiles: () => [],
     sessionServices: () => ({ inputMethod: 'disabled', decorations: 'ready', decorationMessage: '' }),
-    configureAppearance(theme, words) {
+    configureAppearance(theme, words, targets) {
       assert.deepEqual(words, encodeDecorationLayout(theme));
-      attempts.push({ theme, words });
+      attempts.push({ theme, words, targets });
       if (this.failure) throw this.failure(words);
-      const validHeader = words[0] === 6 && words[0] <= this.maximumSchema && words[1] <= 1;
+      const validHeader = words[0] === 7 && words[0] <= this.maximumSchema && words[1] <= 1;
       const validBounds = DECORATION_LAYOUT_FIELDS.every(([, , minimum, maximum, scale], index) =>
         words[index + 2] >= minimum * scale && words[index + 2] <= maximum * scale);
       assert.equal(words.length, 2 + DECORATION_LAYOUT_FIELDS.length);
@@ -134,7 +136,7 @@ test('startup without a saved theme applies the default without inventing a pref
 test('startup applies Luna once through the current configuration API', async t => {
   const f = fixture(t);
   f.shell.start();
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [7]);
   assert.equal(f.attempts[0].words[1], 0, 'the native flags do not encode Luna policy');
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
   assert.deepEqual(f.reports, []);
@@ -148,7 +150,7 @@ test('generic themes use their own supported data, not a downgraded Luna snapsho
   assert.equal(getDesktopTheme('xp').window.surfaceStyle, 'luna');
   const f = fixture(t, { initialTheme: 'aqua' });
   f.shell.start();
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [7]);
   assert.deepEqual(f.backend.committed, getDesktopTheme('aqua'));
   assert.deepEqual(f.reports, []);
 });
@@ -160,7 +162,7 @@ test('rejected theme selection preserves the committed snapshot, live surfaces a
   const surfaces = f.shell.getSurfaces().map(item => item.window);
   const snapshot = f.backend.committed;
   assert.equal(f.shell.selectTheme('xp'), false);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [6, 6]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [7, 7]);
   assert.equal(f.backend.committed, snapshot);
   assert.equal(f.preferences.snapshot.theme.id, 'aqua');
   assert.equal(f.shell.getState().themeId, 'aqua');
@@ -178,7 +180,7 @@ test('recovered backend accepts an explicit theme selection after rejection', t 
   assert.equal(f.shell.selectTheme('xp'), true);
   assert.equal(f.backend.committed.window.surfaceStyle, 'luna');
   assert.equal(f.shell.getState().error, '');
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [6, 6, 6]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [7, 7, 7]);
 });
 
 for (const [name, failure] of [
@@ -209,7 +211,7 @@ test('generic startup rejection also fails without retrying a different appearan
   const genericFailure = new Error('Appearance preparation failed: generic rejected');
   const f = fixture(t, { initialTheme: 'aqua', failure: () => genericFailure });
   assert.throws(() => f.shell.start(), error => error === genericFailure);
-  assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
+  assert.deepEqual(f.attempts.map(item => item.words[0]), [7]);
   assert.equal(f.shell.getState().running, false);
   assert.equal(f.backend.committed, null);
   assert.ok(f.created.every(surface => surface.closed));
@@ -217,12 +219,39 @@ test('generic startup rejection also fails without retrying a different appearan
 });
 
 for (const id of ['xp', 'server2003', 'modern', 'aqua']) {
-  test('paired geometry schema 6 ' + id + ' rejects an old server without a C painter fallback', t => {
-    const f = fixture(t, { maximumSchema: 5, initialTheme: id });
+  test('paired geometry schema 7 ' + id + ' rejects an old server without a C painter fallback', t => {
+    const f = fixture(t, { maximumSchema: 6, initialTheme: id });
     assert.throws(() => f.shell.start(), /Appearance preparation failed/);
-    assert.deepEqual(f.attempts.map(item => item.words[0]), [6]);
+    assert.deepEqual(f.attempts.map(item => item.words[0]), [7]);
     assert.equal(f.backend.committed, null);
     assert.equal(f.saves.length, 0);
     assert.equal(f.shell.getState().running, false);
   });
 }
+
+test('inactive regional data stays pure; unsupported activation does not allocate, publish or save', t => {
+  assert.ok(getDesktopTheme('bigsur').panel.regionalBackdrop);
+  const f = fixture(t);
+  f.shell.start();
+  const created = f.created.length, attempts = f.attempts.length, committed = f.backend.committed;
+  const surfaces = f.shell.getSurfaces().map(item => item.window);
+  assert.equal(f.shell.selectTheme('bigsur'), false);
+  assert.equal(f.created.length, created);
+  assert.equal(f.attempts.length, attempts);
+  assert.equal(f.backend.committed, committed);
+  assert.equal(f.saves.length, 0);
+  assert.ok(surfaces.every(surface => !surface.closed));
+  assert.match(f.shell.getState().error, /real regional Dock backdrops/);
+});
+
+test('supported regional publication binds the actual planned Dock Windows and generic numeric material', t => {
+  const f = fixture(t, { backdrop: true });
+  f.shell.start();
+  assert.equal(f.shell.selectTheme('bigsur'), true);
+  const attempt = f.attempts.at(-1), docks = f.shell.getSurfaces().filter(item => item.kind === 'dock');
+  assert.equal(attempt.targets.length, 2);
+  assert.deepEqual(attempt.targets.map(([window]) => window), docks.map(item => item.window));
+  assert.deepEqual(attempt.targets[0][1], [1, 1, 16, 8, 0xe7e7e7, 28]);
+  assert.equal(f.shell.selectTheme('xp'), true);
+  assert.deepEqual(f.attempts.at(-1).targets, []);
+});

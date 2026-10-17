@@ -15,17 +15,17 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET "wlroots-0.19>=0.19.3" "wlroots-0.19<0.20")
 include(CheckCSourceCompiles)
 set(CMAKE_REQUIRED_LIBRARIES PkgConfig::WLROOTS)
-unset(PU_WLROOTS_EFFECTS_ABI_2 CACHE)
+unset(PU_WLROOTS_EFFECTS_ABI_3 CACHE)
 check_c_source_compiles("#define WLR_USE_UNSTABLE
 #include <wlr/types/wlr_scene.h>
-#if !defined(WLR_SCENE_EFFECTS_ABI) || WLR_SCENE_EFFECTS_ABI != 2
+#if !defined(WLR_SCENE_EFFECTS_ABI) || WLR_SCENE_EFFECTS_ABI != 3
 #error Paired PollyUI scene effects SDK required
 #endif
-int main(void) { return wlr_scene_effects_abi_v2() != WLR_SCENE_EFFECTS_ABI ||
-    wlr_scene_effects_source_sha256_v2() == 0; }"
-    PU_WLROOTS_EFFECTS_ABI_2)
+int main(void) { return wlr_scene_effects_abi_v3() != WLR_SCENE_EFFECTS_ABI ||
+    wlr_scene_effects_source_sha256_v3() == 0; }"
+    PU_WLROOTS_EFFECTS_ABI_3)
 unset(CMAKE_REQUIRED_LIBRARIES)
-if (NOT PU_WLROOTS_EFFECTS_ABI_2)
+if (NOT PU_WLROOTS_EFFECTS_ABI_3)
     message(FATAL_ERROR "Build the pinned PollyUI wlroots scene effects SDK; stock/old headers or libraries are unsupported")
 endif()
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)

@@ -39,12 +39,12 @@ test('Modern and Mac presets explicitly opt into effects; Classic, XP and legacy
   for (const id of ['xp', 'server2003']) {
     const theme = getDesktopTheme(id);
     assert.equal(decorationLayout(theme).effect_radius, 0);
-    assert.equal(encodeDecorationLayout(theme)[0], 6);
+    assert.equal(encodeDecorationLayout(theme)[0], 7);
   }
   const legacy = structuredClone(modern);
   delete legacy.window.nativeEffects;
   assert.equal(decorationLayout(validateTheme(legacy)).effect_radius, 0);
-  assert.equal(encodeDecorationLayout(modern)[0], 6);
+  assert.equal(encodeDecorationLayout(modern)[0], 7);
 });
 test('optional native effects select only validated numeric radius', () => {
   const theme = structuredClone(getDesktopTheme('modern'));

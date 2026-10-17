@@ -8,6 +8,8 @@ struct PuDesktop;
 struct PuDesktopView;
 struct PuDecoration;
 struct PuDecorations;
+struct wlr_output;
+void pu_decorations_backdrop_status(struct PuDesktop *desktop, struct wlr_output *output, const char *message);
 
 /* Edge hit results use the wlroots edge bitmask. */
 enum PuDecorationPart {

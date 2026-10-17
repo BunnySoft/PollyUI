@@ -1,9 +1,11 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include "server.h"
 #include "decorator-process.h"
 #include "decoration-layout-fixtures.h"
 #include "appearance-document.h"
 #include "polly-appearance-client.h"
+#include "layer-shell-client-protocol.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -12,16 +14,26 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <wlr/util/log.h>
+#include <wlr/types/wlr_scene.h>
 
-enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN };
+enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN,
+    MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY };
 struct Reply { uint32_t state, bootstrap, accepted, serial, globals; bool denied; };
 struct Probe {
     struct wl_display *display;
     struct wl_registry *registry;
     struct polly_appearance_v1 *appearance;
+    struct wl_compositor *compositor;
+    struct wl_shm *shm;
+    struct zwlr_layer_shell_v1 *layer_shell;
+    struct zwlr_layer_surface_v1 *layer;
+    struct wl_surface *surface;
+    struct wl_buffer *buffer;
+    bool configured;
     uint32_t name, version, serial;
     struct Reply reply;
 };
@@ -52,9 +64,12 @@ static void status(void *data, struct polly_appearance_v1 *object, uint32_t stat
     (void)object; (void)message;
     struct Probe *probe = data; probe->reply.state = state; probe->reply.bootstrap = bootstrap;
 }
+static void capability(void *data, struct polly_appearance_v1 *object, uint32_t supported)
+{ (void)object; ((struct Probe *)data)->reply.accepted = supported; }
 static const struct polly_appearance_v1_listener listener = {
     .prepared = prepared, .applied = prepared, .renderer_enabled = enabled, .render_request = requested,
     .frame_result = result, .render_cancelled = cancelled, .renderer_status = status,
+    .backdrop_prepared = prepared, .backdrop_capability = capability,
 };
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
@@ -65,12 +80,20 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             probe->version < version ? probe->version : version);
         polly_appearance_v1_add_listener(probe->appearance, &listener, probe);
     } else if (!strcmp(interface, "polly_theme_manager_v1")) probe->reply.globals |= 2;
-    else probe->reply.globals |= 4;
+    else {
+        probe->reply.globals |= 4;
+        if (!strcmp(interface, "wl_compositor"))
+            probe->compositor = wl_registry_bind(registry, name, &wl_compositor_interface, 4);
+        else if (!strcmp(interface, "wl_shm"))
+            probe->shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
+        else if (!strcmp(interface, "zwlr_layer_shell_v1"))
+            probe->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
+    }
 }
 static void removed(void *data, struct wl_registry *registry, uint32_t name)
 { (void)data; (void)registry; (void)name; }
 static const struct wl_registry_listener registry_listener = {.global = global, .global_remove = removed};
-static bool prepare(struct Probe *probe)
+static bool prepare(struct Probe *probe, uint32_t count)
 {
     const struct PuDecorationLayout *layout = &pu_decoration_layouts[0].layout;
     uint32_t words[PU_APPEARANCE_WORDS] = {PU_APPEARANCE_SCHEMA, layout->left_controls};
@@ -83,8 +106,44 @@ static bool prepare(struct Probe *probe)
     CHECK(fd >= 0);
     struct wl_array configuration = {.size = sizeof(words), .data = words};
     polly_appearance_v1_prepare(probe->appearance, ++probe->serial, "policy", &configuration,
-        fd, sizeof(document) - 1);
+        fd, sizeof(document) - 1, count);
     close(fd);
+    return true;
+}
+static void configured(void *data, struct zwlr_layer_surface_v1 *layer,
+    uint32_t serial, uint32_t width, uint32_t height)
+{
+    (void)width; (void)height;
+    zwlr_layer_surface_v1_ack_configure(layer, serial);
+    ((struct Probe *)data)->configured = true;
+}
+static void layer_closed(void *data, struct zwlr_layer_surface_v1 *layer)
+{ (void)data; (void)layer; }
+static const struct zwlr_layer_surface_v1_listener layer_listener = {.configure = configured, .closed = layer_closed};
+static bool map_backdrop(struct Probe *probe)
+{
+    CHECK(probe->compositor && probe->shm && probe->layer_shell);
+    probe->surface = wl_compositor_create_surface(probe->compositor);
+    probe->layer = zwlr_layer_shell_v1_get_layer_surface(probe->layer_shell, probe->surface,
+        NULL, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "not-an-authorization-token");
+    CHECK(probe->surface && probe->layer);
+    zwlr_layer_surface_v1_add_listener(probe->layer, &layer_listener, probe);
+    zwlr_layer_surface_v1_set_size(probe->layer, 96, 64);
+    zwlr_layer_surface_v1_set_anchor(probe->layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
+    zwlr_layer_surface_v1_set_exclusive_zone(probe->layer, 64);
+    wl_surface_commit(probe->surface);
+    CHECK(wl_display_roundtrip(probe->display) >= 0 && probe->configured);
+    int fd = memfd_create("polly-backdrop-policy", MFD_CLOEXEC);
+    CHECK(fd >= 0 && !ftruncate(fd, 96 * 64 * 4));
+    struct wl_shm_pool *pool = wl_shm_create_pool(probe->shm, fd, 96 * 64 * 4);
+    close(fd);
+    CHECK(pool);
+    probe->buffer = wl_shm_pool_create_buffer(pool, 0, 96, 64, 96 * 4, WL_SHM_FORMAT_ARGB8888);
+    wl_shm_pool_destroy(pool);
+    CHECK(probe->buffer);
+    wl_surface_attach(probe->surface, probe->buffer, 0, 0);
+    wl_surface_damage(probe->surface, 0, 0, 96, 64);
+    wl_surface_commit(probe->surface);
     return true;
 }
 static bool public_probe(struct Probe *probe)
@@ -93,14 +152,14 @@ static bool public_probe(struct Probe *probe)
     struct wl_display *display = wl_display_connect(name);
     CHECK(display);
     struct wl_registry *registry = wl_display_get_registry(display);
-    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 6);
+    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 7);
     CHECK(forged && wl_display_roundtrip(display) < 0 && wl_display_get_error(display) == EPROTO);
     wl_proxy_destroy((struct wl_proxy *)forged); wl_registry_destroy(registry); wl_display_disconnect(display);
     return true;
 }
 static bool child(int fd, uint32_t version)
 {
-    if (version < 6) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
+    if (version < 7) CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
     struct Probe probe = {.version = version};
     probe.display = wl_display_connect(NULL);
     CHECK(probe.display);
@@ -108,7 +167,7 @@ static bool child(int fd, uint32_t version)
     CHECK(probe.registry && !wl_registry_add_listener(probe.registry, &registry_listener, &probe));
     CHECK(wl_display_roundtrip(probe.display) >= 0);
     int initial = wl_display_roundtrip(probe.display);
-    if (version < 6) {
+    if (version < 7) {
         probe.reply.denied = initial < 0 && wl_display_get_error(probe.display) == EPROTO;
         CHECK(send(fd, &probe.reply, sizeof(probe.reply), MSG_NOSIGNAL) == sizeof(probe.reply));
         return probe.reply.denied;
@@ -131,13 +190,26 @@ static bool child(int fd, uint32_t version)
         switch (command) {
         case QUERY: break;
         case ENABLE: case FORBIDDEN: polly_appearance_v1_enable_renderer(probe.appearance); break;
-        case PREPARE: CHECK(prepare(&probe)); break;
+        case PREPARE: CHECK(prepare(&probe, 0)); break;
+        case PREPARE_REGIONAL: CHECK(prepare(&probe, 1)); break;
+        case MAP_BACKDROP: CHECK(map_backdrop(&probe)); probe.reply.accepted = 1; break;
+        case STAGE_REGIONAL: {
+            uint32_t words[] = {1, 1, 12, 2, 0xe7e7e7, 28};
+            struct wl_array material = {.size = sizeof(words), .data = words};
+            polly_appearance_v1_prepare_backdrop(probe.appearance, probe.serial, probe.surface, &material);
+            break;
+        }
+        case RECOMMIT_SURFACE:
+            wl_surface_damage(probe.surface, 0, 0, 96, 64); wl_surface_commit(probe.surface); break;
+        case UNMAP_SURFACE:
+            wl_surface_attach(probe.surface, NULL, 0, 0); wl_surface_commit(probe.surface); break;
+        case BACKDROP_CAPABILITY: polly_appearance_v1_get_backdrop_capability(probe.appearance); break;
         case COMMIT: polly_appearance_v1_commit(probe.appearance, probe.serial); break;
         case CANCEL: polly_appearance_v1_cancel(probe.appearance, probe.serial); break;
         case PUBLIC_PROBE: probe.reply.denied = public_probe(&probe); break;
         case DUPLICATE:
             CHECK(signal(SIGTERM, SIG_IGN) != SIG_ERR);
-            wl_registry_bind(probe.registry, probe.name, &polly_appearance_v1_interface, 6); break;
+            wl_registry_bind(probe.registry, probe.name, &polly_appearance_v1_interface, 7); break;
         }
         int roundtrip = wl_display_roundtrip(probe.display);
         if (command == FORBIDDEN || command == DUPLICATE) {
@@ -185,12 +257,12 @@ static int start(const char *self, bool renderer, const char *version, struct Re
 static bool suite(const char *self)
 {
     struct Reply r, p;
-    int renderer = start(self, true, "6", &r);
+    int renderer = start(self, true, "7", &r);
     CHECK(renderer >= 0 && r.globals == 3);
     CHECK(command(renderer, ENABLE, &r) && r.accepted && r.bootstrap);
     CHECK(command(renderer, PUBLIC_PROBE, &r) && r.denied);
     CHECK(command(renderer, PREPARE, &r) && r.accepted);
-    int publisher = start(self, false, "6", &p);
+    int publisher = start(self, false, "7", &p);
     CHECK(publisher >= 0 && (p.globals & 4));
     CHECK(command(publisher, PREPARE, &p) && p.accepted);
     CHECK(command(renderer, COMMIT, &r) && !r.accepted);
@@ -200,18 +272,51 @@ static bool suite(const char *self)
     CHECK(command(renderer, PREPARE, &r) && r.accepted);
     CHECK(command(renderer, COMMIT, &r) && r.accepted && !r.bootstrap);
     pu_decorator_stop(&desktop); close(renderer);
-    renderer = start(self, true, "6", &r);
+    renderer = start(self, true, "7", &r);
     CHECK(renderer >= 0);
     CHECK(command(renderer, ENABLE, &r) && r.accepted && !r.bootstrap);
     CHECK(command(renderer, PREPARE, &r) && !r.accepted);
     CHECK(command(publisher, PREPARE, &p) && p.accepted);
     CHECK(command(publisher, COMMIT, &p) && p.accepted);
+    CHECK(command(renderer, BACKDROP_CAPABILITY, &r) && !r.accepted);
+    CHECK(command(publisher, BACKDROP_CAPABILITY, &p) && p.accepted);
+    CHECK(command(publisher, MAP_BACKDROP, &p) && p.accepted);
+    CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, COMMIT, &p) && !p.accepted);
+    CHECK(wl_list_empty(&desktop.scene->backdrops));
+    CHECK(command(publisher, CANCEL, &p));
+    CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, STAGE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, COMMIT, &p) && p.accepted);
+    struct PuDesktopLayer *dock = wl_container_of(desktop.layers.next, dock, link);
+    struct wlr_scene_rect *committed = dock->backdrop;
+    CHECK(committed && wl_list_length(&desktop.scene->backdrops) == 1);
+    CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, STAGE_REGIONAL, &p) && p.accepted);
+    desktop.backdrop_epoch++;
+    wlr_scene_backdrop_clear(desktop.scene);
+    CHECK(command(publisher, COMMIT, &p) && !p.accepted && dock->backdrop == committed);
+    CHECK(command(publisher, CANCEL, &p));
+    CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, STAGE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, RECOMMIT_SURFACE, &p));
+    CHECK(command(publisher, COMMIT, &p) && !p.accepted);
+    CHECK(dock->backdrop == committed);
+    CHECK(command(publisher, CANCEL, &p));
+    CHECK(wl_list_length(&desktop.scene->backdrops) == 1);
+    CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, STAGE_REGIONAL, &p) && p.accepted);
+    CHECK(command(publisher, UNMAP_SURFACE, &p));
+    CHECK(command(publisher, COMMIT, &p) && !p.accepted);
+    CHECK(command(publisher, CANCEL, &p));
+    CHECK(wl_list_empty(&desktop.scene->backdrops));
+    puts("PASS: real Shell-owned mapped wl_surface capability/count staging; privacy epoch and late actual surface commit reject without replacing committed node; unmap cancels samples; unrelated namespace grants no authority");
     CHECK(command(publisher, FORBIDDEN, &p) && p.denied);
     pu_desktop_stop_shell(&desktop); close(publisher);
     CHECK(command(renderer, QUERY, &r) && !r.bootstrap);
     CHECK(command(renderer, DUPLICATE, &r) && r.denied);
     pu_decorator_stop(&desktop); close(renderer);
-    renderer = start(self, true, "5", &r);
+    renderer = start(self, true, "6", &r);
     CHECK(renderer >= 0 && r.denied);
     pu_decorator_stop(&desktop); close(renderer);
     char *failed[] = {"/bin/false", NULL};
@@ -225,7 +330,7 @@ static bool suite(const char *self)
     CHECK(!pu_decorator_pid(&desktop) && pu_decorator_status(&desktop, &message) == 3);
     CHECK(strstr(message, "budget exhausted") && !desktop.failed);
     pu_decorator_stop(&desktop);
-    puts("PASS: real private roles, public second connection, bootstrap prepare race/cancel/one-shot/reconnect, publisher override, duplicate role and old v5 rejection");
+    puts("PASS: real private roles, public second connection, bootstrap prepare race/cancel/one-shot/reconnect, publisher override, duplicate role and old v6 rejection");
     puts("PASS: renderer restart budget exhaustion is explicit and does not end the WM session");
     return true;
 }
@@ -239,7 +344,7 @@ static bool legacy_server(const char *ui)
     struct wl_display *display = wl_display_create();
     CHECK(display);
     const char *socket = wl_display_add_socket_auto(display);
-    CHECK(socket && wl_global_create(display, &polly_appearance_v1_interface, 5, NULL, legacy_bind));
+    CHECK(socket && wl_global_create(display, &polly_appearance_v1_interface, 6, NULL, legacy_bind));
     int errors[2];
     CHECK(!pipe(errors));
     pid_t pid = fork();
@@ -272,7 +377,7 @@ static bool legacy_server(const char *ui)
     wl_display_destroy_clients(display); wl_display_destroy(display);
     CHECK(length > 0); message[length] = 0;
     CHECK(reaped && WIFEXITED(status) && WEXITSTATUS(status) == 1);
-    CHECK(strstr(message, "appearance v6 is required"));
+    CHECK(strstr(message, "appearance v7 is required"));
     puts("PASS: production v6 renderer explicitly rejects a real old-version Wayland server");
     return true;
 }

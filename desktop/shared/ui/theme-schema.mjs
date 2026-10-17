@@ -154,7 +154,7 @@ export function validateTheme(value) {
   for (const group of groups) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
-      ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] :
+      ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop'] : group === 'window' ? ['nativeShadowColor'] :
         group === 'layout' ? ['fontFamily'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
@@ -218,6 +218,15 @@ export function validateTheme(value) {
       value.panel.height - 12, value.panel.height + 2 - 2 * marker))
       throw new RangeError('Dock icons and running indicators do not fit the configured slot/panel geometry');
   }
+  if (Object.hasOwn(value.panel, 'regionalBackdrop')) {
+    const material = value.panel.regionalBackdrop;
+    keys(material, ['sigma', 'tint', 'opacityPercent'], 'panel.regionalBackdrop');
+    if (value.panel.kind !== 'dock' || value.panel.radius > value.panel.height / 2 ||
+        !Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
+        !Number.isInteger(material.opacityPercent) || material.opacityPercent < 0 || material.opacityPercent > 100 ||
+        typeof material.tint !== 'string' || !/^#[0-9a-f]{6}$/i.test(material.tint))
+      throw new TypeError('Invalid regional Dock backdrop');
+  }
   const asset = value.desktop.asset;
   if (typeof asset !== 'string' || asset.length > 192 || (asset &&
     (!/^(?:[a-z0-9_-][a-z0-9_.-]*\/)*[a-z0-9_-][a-z0-9_.-]*\.(?:png|jpe?g)$/i.test(asset) ||
@@ -264,7 +273,8 @@ export function applyThemeOverrides(catalog, text) {
       if (!Object.hasOwn(override, group)) continue;
       keys(override[group], [...Object.keys(theme[group]), ...Object.keys(optionalOptions[group] || {}),
         ...Object.keys(optionalNumbers[group] || {}),
-        ...(group === 'colors' ? ['selectionText'] : group === 'window' ? ['nativeShadowColor'] : [])],
+        ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop'] :
+          group === 'window' ? ['nativeShadowColor'] : [])],
         theme.id + '.' + group, false);
       result[group] = { ...theme[group], ...override[group] };
     }

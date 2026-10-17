@@ -123,10 +123,10 @@ static void global(void *data, struct wl_registry *registry, uint32_t name,
 {
     (void)data;
     if (strcmp(interface, "polly_appearance_v1")) return;
-    if (version < 6 || client.appearance) {
-        errno = EPROTO; failure("Paired PollyWM/Shell/decorator appearance v6 is required"); return;
+    if (version < 7 || client.appearance) {
+        errno = EPROTO; failure("Paired PollyWM/Shell/decorator appearance v7 is required"); return;
     }
-    client.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
+    client.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 7);
     if (!client.appearance || polly_appearance_v1_add_listener(client.appearance,
         &pu_decoration_client_listener, NULL) < 0) failure("Cannot bind private decoration role");
 }

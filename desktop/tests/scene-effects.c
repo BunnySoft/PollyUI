@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <wlr/backend/headless.h>
+#include <wlr/backend/multi.h>
 #include <wlr/interfaces/wlr_buffer.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -260,9 +262,238 @@ static bool phase_occlusion_suite(struct PuDesktop *desktop, struct wlr_output *
     puts("PASS: ancestor move 40,40->41,43 at scale1.25 regenerates phase-keyed cache; full occlusion suppresses hidden rendering; dirty reveal matches fresh pixels");
     return true;
 }
+static uint32_t pixel_at(const uint32_t *pixels, int width, int x, int y,
+    enum wl_output_transform transform, int transformed_width, int transformed_height)
+{
+    struct wlr_box point = {x, y, 1, 1};
+    wlr_box_transform(&point, &point, wlr_output_transform_invert(transform),
+        transformed_width, transformed_height);
+    return pixels[point.y * width + point.x];
+}
+static void find_headless(struct wlr_backend *backend, void *data)
+{
+    if (wlr_backend_is_headless(backend)) *(struct wlr_backend **)data = backend;
+}
+static bool backdrop_outputs(struct PuDesktop *desktop, struct wlr_output *first)
+{
+    struct wlr_backend *headless = NULL;
+    wlr_multi_for_each_backend(desktop->backend, find_headless, &headless);
+    CHECK(headless);
+    wlr_output_layout_add(desktop->layout, first, 0, 0);
+    struct wlr_output *second = wlr_headless_add_output(headless, 256, 192);
+    CHECK(second);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, 240, 320, 60000);
+    wlr_output_state_set_scale(&state, 1.25f);
+    wlr_output_state_set_transform(&state, WL_OUTPUT_TRANSFORM_90);
+    CHECK(wlr_output_commit_state(second, &state));
+    wlr_output_state_finish(&state);
+    wlr_output_layout_add(desktop->layout, second, 256, 0);
+    struct wlr_scene_tree *lower = wlr_scene_tree_create(desktop->windows);
+    struct wlr_scene_tree *glass = wlr_scene_tree_create(desktop->layer_trees[2]);
+    CHECK(lower && glass);
+    CHECK(wlr_scene_rect_create(lower, 256, 192, (float[4]){0.8f, 0.1f, 0.2f, 1}));
+    struct wlr_scene_rect *blue = wlr_scene_rect_create(lower, 256, 192, (float[4]){0.1f, 0.2f, 0.8f, 1});
+    CHECK(blue);
+    wlr_scene_node_set_position(&blue->node, 256, 0);
+    wlr_scene_node_set_position(&glass->node, 240, 48);
+    struct wlr_scene_rect *backdrop = wlr_scene_backdrop_create(glass,
+        &(struct wlr_box){0, 0, 32, 64}, 4, 2, (float[4]){0});
+    CHECK(backdrop);
+    wlr_scene_node_set_enabled(&backdrop->node, true);
+    uint32_t *a, *b, *changed;
+    int aw, ah, bw, bh, w, h;
+    CHECK(capture(desktop, first, &a, &aw, &ah));
+    CHECK(capture(desktop, second, &b, &bw, &bh));
+    size_t bytes = desktop->scene->effects_cached_bytes;
+    CHECK(bytes > 32u * 64u * 8u);
+    uint64_t count = desktop->scene->backdrop_render_count;
+    CHECK(capture(desktop, second, &changed, &w, &h));
+    CHECK(!memcmp(b, changed, (size_t)bw * bh * 4) && desktop->scene->backdrop_render_count == count);
+    free(changed);
+    wlr_scene_rect_set_color(blue, (float[4]){0.1f, 0.8f, 0.2f, 1});
+    CHECK(capture(desktop, second, &changed, &w, &h));
+    CHECK(memcmp(b, changed, (size_t)bw * bh * 4));
+    free(changed);
+    CHECK(capture(desktop, first, &changed, &w, &h));
+    CHECK(memcmp(a, changed, (size_t)aw * ah * 4));
+    CHECK(desktop->scene->backdrop_render_count == count + 2);
+    free(a); free(b); free(changed);
+    wlr_output_destroy(second);
+    CHECK(desktop->scene->effects_cached_bytes > 0 && desktop->scene->effects_cached_bytes < bytes);
+    wlr_scene_node_set_enabled(&glass->node, false);
+    CHECK(desktop->scene->effects_cached_bytes == 0);
+    wlr_scene_node_destroy(&glass->node);
+    wlr_scene_node_destroy(&lower->node);
+    puts("PASS: one region crosses two live outputs with different scale/transform; independent caches update from lower content, reuse when idle, and release on output/ancestor retirement");
+    return true;
+}
+static bool backdrop_suite(struct PuDesktop *desktop, struct wlr_output *output)
+{
+    CHECK(wlr_scene_backdrop_supported(desktop->renderer));
+    struct wlr_scene_tree *apps = wlr_scene_tree_create(desktop->windows);
+    CHECK(apps);
+    struct wlr_scene_tree *first = wlr_scene_tree_create(apps), *second = wlr_scene_tree_create(apps);
+    CHECK(first && second);
+    for (int y = 0; y < 192; y += 4) for (int x = 0; x < 128; x += 4) {
+        bool alternate = (x / 4 + y / 4) & 1;
+        float red[4] = {alternate ? 0.9f : 0.1f, 0.1f, 0.2f, 1};
+        float green[4] = {0.1f, alternate ? 0.8f : 0.2f, 0.3f, 1};
+        struct wlr_scene_rect *a = wlr_scene_rect_create(first, 4, 4, red);
+        struct wlr_scene_rect *b = wlr_scene_rect_create(second, 4, 4, green);
+        CHECK(a && b);
+        wlr_scene_node_set_position(&a->node, x, y);
+        wlr_scene_node_set_position(&b->node, x, y);
+    }
+    wlr_scene_node_set_position(&second->node, 96, 0);
+    struct wlr_scene_tree *dock = wlr_scene_tree_create(desktop->layer_trees[2]);
+    CHECK(dock);
+    wlr_scene_node_set_position(&dock->node, 40, 40);
+    struct wlr_scene_rect *glyph = wlr_scene_rect_create(dock, 8, 8, (float[4]){1, 1, 0, 1});
+    struct wlr_scene_rect *upper = wlr_scene_rect_create(desktop->layer_trees[3], 8, 16,
+        (float[4]){0, 0, 1, 1});
+    CHECK(glyph && upper);
+    wlr_scene_node_set_position(&glyph->node, 44, 28);
+    wlr_scene_node_set_position(&upper->node, 110, 44);
+    for (unsigned trial = 0; trial < 2; trial++) {
+        float scale = trial ? 1.25f : 1;
+        enum wl_output_transform transform = trial ? WL_OUTPUT_TRANSFORM_90 : WL_OUTPUT_TRANSFORM_NORMAL;
+        int tw = (int)(256 * scale), th = (int)(192 * scale);
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_custom_mode(&state, trial ? th : tw, trial ? tw : th, 60000);
+        wlr_output_state_set_scale(&state, scale);
+        wlr_output_state_set_transform(&state, transform);
+        CHECK(wlr_output_commit_state(output, &state));
+        wlr_output_state_finish(&state);
+        uint32_t *raw, *plain, *actual, *idle;
+        int width, height, w, h;
+        wlr_scene_node_set_enabled(&glyph->node, false);
+        wlr_scene_node_set_enabled(&upper->node, false);
+        CHECK(capture(desktop, output, &raw, &width, &height));
+        wlr_scene_node_set_enabled(&glyph->node, true);
+        wlr_scene_node_set_enabled(&upper->node, true);
+        CHECK(capture(desktop, output, &plain, &w, &h));
+        struct wlr_scene_rect *backdrop = wlr_scene_backdrop_create(dock,
+            &(struct wlr_box){0, 0, 96, 64}, 8, 2, (float[4]){0.2f, 0.2f, 0.2f, 0.25f});
+        CHECK(backdrop && !backdrop->node.enabled);
+        wlr_scene_node_set_enabled(&backdrop->node, true);
+        CHECK(capture(desktop, output, &actual, &w, &h));
+        unsigned checked = 0, changed = 0;
+        int left = (int)roundf(40 * scale), top = left;
+        int bw = (int)roundf(136 * scale) - left, bh = (int)roundf(104 * scale) - top;
+        int pad = (int)ceilf(6 * scale);
+        double weights[17], sum = 0;
+        CHECK(pad <= 8);
+        for (int i = -pad; i <= pad; i++) {
+            weights[i + pad] = exp(-(double)i * i / (8 * scale * scale));
+            sum += weights[i + pad];
+        }
+        for (int i = 0; i <= 2 * pad; i++) weights[i] /= sum;
+        for (int py = 0; py < bh; py++) for (int px = 0; px < bw; px++) {
+            int x = left + px, y = top + py;
+            uint32_t before = pixel_at(raw, width, x, y, transform, tw, th);
+            uint32_t value = pixel_at(actual, width, x, y, transform, tw, th);
+            if ((x >= (int)roundf(84 * scale) && x < (int)roundf(92 * scale) &&
+                y >= (int)roundf(68 * scale) && y < (int)roundf(76 * scale)) ||
+                (x >= (int)roundf(110 * scale) && x < (int)roundf(118 * scale) &&
+                y >= (int)roundf(44 * scale) && y < (int)roundf(60 * scale))) {
+                CHECK(value == pixel_at(plain, width, x, y, transform, tw, th));
+                continue;
+            }
+            float coverage = fminf(fmaxf(0.5f - distance_to_round(px + 0.5f, py + 0.5f,
+                bw, bh, 8 * scale), 0), 1);
+            for (int channel = 0; channel < 24; channel += 8) {
+                double blurred = 0;
+                for (int ky = -pad; ky <= pad; ky++) {
+                    double horizontal = 0;
+                    for (int kx = -pad; kx <= pad; kx++)
+                        horizontal += ((pixel_at(raw, width, x + kx, y + ky,
+                            transform, tw, th) >> channel) & 255) * weights[kx + pad];
+                    blurred += round(horizontal) * weights[ky + pad];
+                }
+                int expected = (int)round(round(51 + blurred * 0.75) * coverage +
+                    ((before >> channel) & 255) * (1 - coverage));
+                CHECK(abs((int)((value >> channel) & 255) - expected) <= 3);
+            }
+            checked++;
+            changed += (value & 0xffffff) != (before & 0xffffff);
+        }
+        CHECK(checked > 5000 && changed > 4000);
+        uint64_t count = desktop->scene->backdrop_render_count;
+        CHECK(capture(desktop, output, &idle, &w, &h));
+        CHECK(desktop->scene->backdrop_render_count == count &&
+            !memcmp(actual, idle, (size_t)w * h * 4));
+        free(idle);
+        double nx, ny;
+        CHECK(wlr_scene_node_at(&dock->node, 41, 41, &nx, &ny) != &backdrop->node);
+        CHECK(wlr_scene_node_at(&dock->node, 86, 70, &nx, &ny) == &glyph->node);
+        wlr_scene_node_set_position(&second->node, 72, 0);
+        CHECK(capture(desktop, output, &idle, &w, &h));
+        CHECK(desktop->scene->backdrop_render_count > count &&
+            memcmp(actual, idle, (size_t)w * h * 4));
+        free(idle);
+        wlr_scene_node_set_position(&second->node, 96, 0);
+        wlr_scene_backdrop_clear(desktop->scene);
+        CHECK(desktop->scene->effects_cached_bytes == 0);
+        CHECK(capture(desktop, output, &idle, &w, &h));
+        CHECK(!memcmp(actual, idle, (size_t)w * h * 4));
+        free(idle);
+        CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 4096, 512},
+            8, 32, (float[4]){0}));
+        CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 96, 64},
+            8, NAN, (float[4]){0}));
+        CHECK(capture(desktop, output, &idle, &w, &h));
+        CHECK(!memcmp(actual, idle, (size_t)w * h * 4));
+        free(idle);
+        wlr_scene_node_set_enabled(&backdrop->node, false);
+        CHECK(desktop->scene->effects_cached_bytes == 0);
+        CHECK(capture(desktop, output, &idle, &w, &h));
+        CHECK(!memcmp(plain, idle, (size_t)w * h * 4));
+        free(raw); free(plain); free(actual); free(idle);
+        wlr_scene_node_destroy(&backdrop->node);
+        printf("PASS: regional current lower-scene Gaussian oracle %u pixels; two moving app trees; foreground exclusion/glyph/input unchanged; idle reuse; privacy clear; failed candidate preserves pixels; disable byte restoration scale=%g transform=%d\n",
+            checked, scale, transform);
+    }
+    struct wlr_output_state reset;
+    wlr_output_state_init(&reset);
+    wlr_output_state_set_scale(&reset, 1);
+    wlr_output_state_set_transform(&reset, WL_OUTPUT_TRANSFORM_NORMAL);
+    wlr_output_state_set_custom_mode(&reset, 256, 192, 60000);
+    CHECK(wlr_output_commit_state(output, &reset));
+    wlr_output_state_finish(&reset);
+    struct wlr_scene_rect *retained = wlr_scene_backdrop_create(dock,
+        &(struct wlr_box){0, 0, 96, 64}, 8, 2, (float[4]){0});
+    CHECK(retained);
+    wlr_scene_node_set_enabled(&retained->node, true);
+    struct wlr_scene_tree *blocker = wlr_scene_tree_create(desktop->windows);
+    CHECK(blocker && wlr_scene_rect_create(blocker, 3900, 3900, (float[4]){0.2f, 0.4f, 0.6f, 1}));
+    CHECK(wlr_scene_tree_set_rounding(blocker, &(struct wlr_box){0, 0, 3900, 3900}, 16));
+    uint32_t *before, *after;
+    int width, height, w, h;
+    CHECK(capture(desktop, output, &before, &width, &height));
+    size_t reserved = desktop->scene->effects_cached_bytes;
+    CHECK(reserved > 120u * 1000u * 1000u);
+    CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 2048, 480}, 8, 8, (float[4]){0}));
+    CHECK(desktop->scene->effects_cached_bytes == reserved);
+    CHECK(capture(desktop, output, &after, &w, &h));
+    CHECK(w == width && h == height && !memcmp(before, after, (size_t)width * height * 4));
+    free(before); free(after);
+    wlr_scene_node_destroy(&blocker->node);
+    wlr_scene_node_destroy(&retained->node);
+    puts("PASS: real 121MiB live rounding/backdrop reservations reject an otherwise valid regional candidate at aggregate old-plus-new/workspace peak; committed whole-frame bytes remain identical");
+    wlr_scene_node_destroy(&upper->node);
+    wlr_scene_node_destroy(&dock->node);
+    wlr_scene_node_destroy(&apps->node);
+    CHECK(desktop->scene->effects_cached_bytes == 0 &&
+        desktop->scene->effects_peak_bytes <= WLR_SCENE_EFFECTS_MAX_BYTES);
+    CHECK(backdrop_outputs(desktop, output));
+    return true;
+}
 static bool suite(struct PuDesktop *desktop)
 {
-    CHECK(wlr_scene_effects_abi_v2() == 2);
+    CHECK(wlr_scene_effects_abi_v3() == 3);
     struct wlr_output_layout_output *entry = wl_container_of(desktop->layout->outputs.next, entry, link);
     struct wlr_output *output = entry->output;
     struct wlr_scene_tree *background = wlr_scene_tree_create(&desktop->scene->tree);
@@ -383,6 +614,7 @@ static bool suite(struct PuDesktop *desktop)
     CHECK(desktop->scene->effects_cached_bytes == 0);
     CHECK(shadow_suite(desktop, output));
     wlr_scene_node_destroy(&background->node);
+    CHECK(backdrop_suite(desktop, output));
     return true;
 }
 int main(int argc, char **argv)
