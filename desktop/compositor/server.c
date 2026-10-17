@@ -53,6 +53,8 @@ struct PuDesktopOutput {
     struct wlr_scene_rect *boot_background, *boot_logo[5], *boot_dots[3];
     uint32_t boot_sequence;
     bool boot_pending, boot_presented;
+    bool backdrop_stalled;
+    uint64_t backdrop_failure_revision;
 };
 
 struct PuDesktopKeyboard {
@@ -1096,6 +1098,8 @@ static void layer_unmap(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct PuDesktopLayer *layer = wl_container_of(listener, layer, unmap);
+    if (layer->backdrop) wlr_scene_node_destroy(&layer->backdrop->node);
+    layer->backdrop = NULL; layer->backdrop_owner = NULL;
     layer->ready = layer->positioned = layer->presented = false;
     arrange_layers(layer->desktop);
 }
@@ -1601,9 +1605,23 @@ static void output_frame(struct wl_listener *listener, void *data)
         wlr_scene_get_scene_output(entry->desktop->scene, entry->output);
     live_boot_frame(entry);
     pu_session_lock_prepare_frame(entry->desktop, entry->output);
+    if (entry->backdrop_stalled &&
+        entry->backdrop_failure_revision == entry->desktop->scene->backdrop_revision) return;
     if (!output || !wlr_scene_output_commit(output, NULL)) {
+        if (output && output->backdrop_failed) {
+            entry->backdrop_stalled = true;
+            entry->backdrop_failure_revision = entry->desktop->scene->backdrop_revision;
+            const char *message = "Regional backdrop composition failed; last output frame retained";
+            wlr_log(WLR_ERROR, "%s", message);
+            pu_decorations_backdrop_status(entry->desktop, entry->output, message);
+            return;
+        }
         fail(entry->desktop, "Cannot commit output frame");
         return;
+    }
+    if (entry->backdrop_stalled) {
+        entry->backdrop_stalled = false;
+        pu_decorations_backdrop_status(entry->desktop, entry->output, "");
     }
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -2311,8 +2329,8 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
     wl_list_init(&desktop->layers);
-    if (wlr_scene_effects_abi_v2() != WLR_SCENE_EFFECTS_ABI ||
-        strcmp(wlr_scene_effects_source_sha256_v2(), PU_WLROOTS_EFFECTS_SHA256)) {
+    if (wlr_scene_effects_abi_v3() != WLR_SCENE_EFFECTS_ABI ||
+        strcmp(wlr_scene_effects_source_sha256_v3(), PU_WLROOTS_EFFECTS_SHA256)) {
         wlr_log(WLR_ERROR, "PollyWM requires its paired wlroots scene effects ABI");
         desktop->failed = true;
         return false;

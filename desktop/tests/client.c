@@ -287,7 +287,7 @@ static void configure_appearance(struct Client *client, unsigned index)
     uint32_t serial = client->appearance_serial;
     client->appearance_phase = 0;
     polly_appearance_v1_prepare(client->appearance, serial, pu_decoration_layouts[index].id, &configuration,
-        fd, (uint32_t)document_length);
+        fd, (uint32_t)document_length, 0);
     close(fd);
     if (wl_display_roundtrip(client->display) < 0 || client->appearance_reply != serial ||
         client->appearance_phase != 1 || !client->appearance_accepted) die("appearance prepare failed");
@@ -819,8 +819,8 @@ static void global(void *data, struct wl_registry *registry,
     else if (strcmp(interface, zxdg_decoration_manager_v1_interface.name) == 0)
         client->decoration_manager = wl_registry_bind(registry, name, &zxdg_decoration_manager_v1_interface, 1);
     else if (strcmp(interface, polly_appearance_v1_interface.name) == 0) {
-        if (version < 6) die("appearance configuration requires paired protocol version 6");
-        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
+        if (version < 7) die("appearance configuration requires paired protocol version 7");
+        client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 7);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {

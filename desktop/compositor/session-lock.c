@@ -252,6 +252,8 @@ static void unlocked(struct wl_listener *listener, void *data)
     struct PuSessionLock *lock = wl_container_of(listener, lock, unlock);
     if (!lock->acknowledged || wl_resource_get_client(lock->session->resource) != lock->client) return;
     lock->unlocking = true; lock->active = false;
+    lock->desktop->backdrop_epoch++;
+    wlr_scene_backdrop_clear(lock->desktop->scene);
     wlr_scene_node_set_enabled(&lock->tree->node, false);
     pu_desktop_isolate_input(lock->desktop);
     pu_desktop_restore_input(lock->desktop);
@@ -312,6 +314,8 @@ bool pu_session_lock_spawn(struct PuDesktop *desktop, char *const argv[])
     bool recovering = lock->active;
     lock->client_succeeded = false;
     lock->active = true; lock->acknowledged = false; lock->unlocking = false;
+    desktop->backdrop_epoch++;
+    wlr_scene_backdrop_clear(desktop->scene);
     struct LockOutput *output;
     wl_list_for_each(output, &lock->outputs, link) if (!recovering) {
         output->presented = output->pending = false;

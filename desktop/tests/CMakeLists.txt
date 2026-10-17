@@ -9,7 +9,7 @@ add_test(NAME desktop-scene-effects COMMAND pollywm-scene-effects-test)
 set_tests_properties(desktop-scene-effects PROPERTIES TIMEOUT 30)
 target_compile_options(pollywm-window-contract-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_executable(pollywm-decorator-lifecycle-test decorator-lifecycle.c)
-target_link_libraries(pollywm-decorator-lifecycle-test PRIVATE pollywm-core)
+target_link_libraries(pollywm-decorator-lifecycle-test PRIVATE pollywm-core PkgConfig::WINDOW_PIXMAN)
 target_compile_options(pollywm-decorator-lifecycle-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 find_program(PACKAGE_NODE_EXECUTABLE node REQUIRED)
 add_test(NAME desktop-package-contract COMMAND "${PACKAGE_NODE_EXECUTABLE}"
@@ -93,6 +93,7 @@ add_custom_command(OUTPUT "${PROTOCOL_DIR}/session-lock-client.h" "${PROTOCOL_DI
     DEPENDS "${SESSION_LOCK_XML}" VERBATIM)
 add_executable(polly-lock-test-client session-lock-client.c
     "${PROTOCOL_DIR}/session-lock-client.h" "${PROTOCOL_DIR}/session-lock.c")
+add_dependencies(pollywm-decorator-lifecycle-test polly-lock-test-client)
 target_include_directories(polly-lock-test-client PRIVATE "${PROTOCOL_DIR}")
 target_compile_definitions(polly-lock-test-client PRIVATE _POSIX_C_SOURCE=200809L)
 target_link_libraries(polly-lock-test-client PRIVATE PkgConfig::WAYLAND_CLIENT)
@@ -166,7 +167,9 @@ add_custom_command(OUTPUT "${PROTOCOL_DIR}/polly-session-status-client.h"
     DEPENDS "${SESSION_STATUS_XML}" VERBATIM)
 add_executable(pollywm-shell-policy shell-policy.c "${PROTOCOL_DIR}/polly-session-status-client.h")
 target_link_libraries(pollywm-shell-policy PRIVATE pollywm-core PkgConfig::WAYLAND_CLIENT)
-add_executable(pollywm-decorator-policy decorator-policy.c "${PROTOCOL_DIR}/polly-appearance-client.h")
+add_executable(pollywm-decorator-policy decorator-policy.c "${PROTOCOL_DIR}/polly-appearance-client.h"
+    "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
+    "${PROTOCOL_DIR}/xdg-shell-protocol.c")
 target_link_libraries(pollywm-decorator-policy PRIVATE pollywm-core PkgConfig::WAYLAND_CLIENT)
 foreach(target pollywm-test-client pollywm-integration pollywm-shell-policy pollywm-decorator-policy)
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic -Werror)

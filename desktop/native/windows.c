@@ -390,8 +390,8 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             zwlr_foreign_toplevel_manager_v1_add_listener(control.manager, &manager_listener, NULL) < 0)
             control.failed = control.changed = 1;
     } else if (!control.appearance && !strcmp(interface, "polly_appearance_v1")) {
-        if (version < 6) { control.failed = control.changed = 1; return; }
-        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 6);
+        if (version < 7) { control.failed = control.changed = 1; return; }
+        control.appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 7);
         if (!control.appearance ||
             polly_appearance_v1_add_listener(control.appearance, &pu_decoration_client_listener, NULL) < 0)
             control.failed = control.changed = 1;
@@ -884,6 +884,12 @@ static JSValue session_exit(JSContext *ctx, JSValueConst self, int argc, JSValue
     return result;
 }
 
+static JSValue backdrop_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_control(ctx)) return JS_EXCEPTION;
+    return pu_decoration_client_backdrop_capability(ctx, control.appearance, control.display);
+}
 static JSValue configure_appearance(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
 {
     (void)self;
@@ -908,6 +914,7 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!pu_decoration_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
+    if (!property(ctx, api, "backdropCapability", JS_NewCFunction(ctx, backdrop_capability, "backdropCapability", 0))) return 0;
     if (!property(ctx, api, "workspaces", JS_NewCFunction(ctx, workspaces, "workspaces", 0)) ||
         !property(ctx, api, "restoreWorkspaces", JS_NewCFunction(ctx, restore_workspaces, "restoreWorkspaces", 2)) ||
         !property(ctx, api, "renameWorkspace", JS_NewCFunction(ctx, rename_workspace, "renameWorkspace", 2)) ||

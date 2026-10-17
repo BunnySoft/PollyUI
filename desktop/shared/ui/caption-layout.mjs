@@ -42,5 +42,5 @@ export function decorationLayout(theme) {
 
 export function encodeDecorationLayout(theme) {
   const layout = decorationLayout(theme);
-  return [6, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
+  return [7, Number(layout.left_controls), ...DECORATION_LAYOUT_FIELDS.map(([field]) => layout[field])];
 }

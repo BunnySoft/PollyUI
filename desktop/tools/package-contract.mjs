@@ -124,7 +124,7 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
   assert.ok(Array.isArray(contract.postprocess), 'Missing explicit packaging postprocess inventory');
   for (const item of contract.postprocess) {
     const expected = { 'usr/bin/pollywm': '$ORIGIN/../lib/pollyui',
-      'usr/lib/pollyui/libwlroots-0.19-polly-effects2.so': '$ORIGIN' };
+      'usr/lib/pollyui/libwlroots-0.19-polly-effects3.so': '$ORIGIN' };
     assert.ok(!processed.has(item.path) && item.tool === 'patchelf' && expected[item.path] === item.rpath &&
       hashPattern.test(item.before?.sha256) && Number.isSafeInteger(item.before?.size),
     'Invalid private ELF postprocess receipt');
@@ -187,15 +187,15 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
   }
   for (const [binary, soname] of [
     ['usr/bin/pollyui', 'libSDL3.so.0'],
-    ...(manifest.debian ? [['usr/bin/pollywm', 'libwlroots-0.19-polly-effects2.so'], ['usr/bin/pollywm', 'libinput.so.10']] : []),
+    ...(manifest.debian ? [['usr/bin/pollywm', 'libwlroots-0.19-polly-effects3.so'], ['usr/bin/pollywm', 'libinput.so.10']] : []),
   ]) assert.ok(contract.bundledLibraries.some(library => library.binary === binary && library.soname === soname),
     'Runtime resolves a required bundled library outside the relocated package: ' + soname);
   if (manifest.debian) {
-    for (const name of ['usr/bin/pollywm', 'usr/lib/pollyui/libwlroots-0.19-polly-effects2.so'])
+    for (const name of ['usr/bin/pollywm', 'usr/lib/pollyui/libwlroots-0.19-polly-effects3.so'])
       assert.ok(processed.has(name), 'Missing Debian private ELF relocation: ' + name);
     const effects = contract.wlrootsEffects;
-    assert.ok(effects?.schemaVersion === 1 && effects.abi === 2 && effects.upstreamVersion === '0.19.3' &&
-      effects.version === '0.19.3-polly-effects2' && hashPattern.test(effects.patchSha256),
+    assert.ok(effects?.schemaVersion === 1 && effects.abi === 3 && effects.upstreamVersion === '0.19.3' &&
+      effects.version === '0.19.3-polly-effects3' && hashPattern.test(effects.patchSha256),
     'Missing paired wlroots scene-effects identity');
     const patch = 'desktop/patches/wlroots-scene-effects.patch';
     assert.ok(inputs.sourceFiles.some(file => file.path === patch && file.sha256 === effects.patchSha256),

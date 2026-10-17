@@ -17,4 +17,6 @@ void pu_decoration_client_disconnect(void);
 void pu_decoration_client_shutdown(void);
 JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *argv,
     struct polly_appearance_v1 *appearance, struct wl_display *display);
+JSValue pu_decoration_client_backdrop_capability(JSContext *ctx,
+    struct polly_appearance_v1 *appearance, struct wl_display *display);
 #endif

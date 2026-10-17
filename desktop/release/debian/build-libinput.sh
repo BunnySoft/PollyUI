@@ -14,8 +14,8 @@ meson setup libinput-1.28.1/build libinput-1.28.1 \
 meson compile -C libinput-1.28.1/build -j 2
 DESTDIR=/opt/pollyui-input-staged meson install -C libinput-1.28.1/build
 cp -a /opt/pollyui-input-staged/opt/pollyui-input /opt/pollyui-input
-patchelf --set-rpath /opt/pollyui-input/lib /opt/pollyui-wlroots/lib/libwlroots-0.19-polly-effects2.so
-if ldd /opt/pollyui-wlroots/lib/libwlroots-0.19-polly-effects2.so | grep -E 'lib(glib|gio|gobject)-2\.0|not found'; then
+patchelf --set-rpath /opt/pollyui-input/lib /opt/pollyui-wlroots-effects3/lib/libwlroots-0.19-polly-effects3.so
+if ldd /opt/pollyui-wlroots-effects3/lib/libwlroots-0.19-polly-effects3.so | grep -E 'lib(glib|gio|gobject)-2\.0|not found'; then
     echo "Unexpected private wlroots/input dependency" >&2
     exit 1
 fi

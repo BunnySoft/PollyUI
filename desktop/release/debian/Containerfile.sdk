@@ -19,20 +19,20 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 COPY release/debian/build-wlroots.py release/debian/sources.json release/debian/apply-wlroots-effects.py release/debian/wlroots-effects.json /opt/pollyui-wlr-recipe/desktop/release/debian/
 COPY patches/wlroots-scene-effects.patch /opt/pollyui-wlr-recipe/desktop/patches/
 RUN python3 /opt/pollyui-wlr-recipe/desktop/release/debian/build-wlroots.py && \
-    printf '/opt/pollyui-wlroots/lib\n/usr/local/lib\n' > /etc/ld.so.conf.d/polly-sdk.conf && ldconfig
+    printf '/opt/pollyui-wlroots-effects3/lib\n/usr/local/lib\n' > /etc/ld.so.conf.d/polly-sdk.conf && ldconfig
 COPY tools/build-skia-linux.sh tools/skia-linux.gn /opt/pollyui-build/
 RUN sh /opt/pollyui-build/build-skia-linux.sh /opt/pollyui-skia
 COPY tools/build-sdl-linux.sh tools/build-harfbuzz-linux.sh /opt/pollyui-build/tools/
 COPY patches/sdl-wayland-sync-lifetime.patch /opt/pollyui-build/patches/
 RUN sh /opt/pollyui-build/tools/build-sdl-linux.sh /opt/pollyui-sdl && \
     sh /opt/pollyui-build/tools/build-harfbuzz-linux.sh /opt/pollyui-harfbuzz && ldconfig
-ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
+ENV PKG_CONFIG_PATH=/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots-effects3/lib/pkgconfig
 COPY release/debian/source-packages.sources /etc/apt/sources.list.d/source-packages.sources
 COPY release/debian/build-libinput.sh release/debian/libinput.json /opt/pollyui-build/debian/
 RUN chmod 644 /etc/apt/sources.list.d/source-packages.sources && \
     apt-get update -qq && apt-get install -y --no-install-recommends libevdev-dev libmtdev-dev patchelf && \
     sh /opt/pollyui-build/debian/build-libinput.sh
-ENV PKG_CONFIG_PATH=/opt/pollyui-input/lib/pkgconfig:/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots/lib/pkgconfig
+ENV PKG_CONFIG_PATH=/opt/pollyui-input/lib/pkgconfig:/opt/pollyui-text/lib/pkgconfig:/opt/pollyui-wlroots-effects3/lib/pkgconfig
 COPY release/debian/backports.sources /etc/apt/sources.list.d/backports.sources
 RUN chmod 644 /etc/apt/sources.list.d/backports.sources && \
     apt-get update -qq && apt-get install -y --no-install-recommends llvm-19 \

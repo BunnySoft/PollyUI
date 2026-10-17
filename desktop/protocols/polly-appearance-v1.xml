@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="6">
+  <interface name="polly_appearance_v1" version="7">
     <description summary="separate trusted appearance publisher and renderer">
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
       renders but can publish only the first theme, before a Shell transaction.
-      Version 6 requires the separately supervised GUI service and geometry schema 6.
+      Version 7 requires the separately supervised GUI service, geometry schema 7
+      and effects ABI 3. Regional backdrop is a separately queried capability.
       The optional native radius is numeric geometry, not a style identifier.
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
@@ -16,7 +17,7 @@
     <request name="destroy" type="destructor"/>
     <request name="prepare" since="2">
       <description summary="validate a runtime decoration snapshot without applying it">
-        Configuration contains schema 6, left-controls (0 or 1), and the
+        Configuration contains schema 7, left-controls (0 or 1), and the
         geometry-only metrics specified by appearance-fields.h. Colors, fonts,
         glyphs, materials and style selection are interpreted only by the GUI.
         Shadow color is premultiplied only at composition; RGB, active/inactive
@@ -36,6 +37,7 @@
       <arg name="configuration" type="array"/>
       <arg name="document" type="fd"/>
       <arg name="length" type="uint"/>
+      <arg name="backdrop_count" type="uint" summary="expected owned regional targets, 0-8"/>
     </request>
     <request name="commit" since="2">
       <arg name="serial" type="uint"/>
@@ -109,6 +111,42 @@
       </description>
       <arg name="state" type="uint"/>
       <arg name="bootstrap" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <request name="get_backdrop_capability" since="7"/>
+    <event name="backdrop_capability" since="7">
+      <description summary="1 only for a real supported regional renderer, otherwise 0"/>
+      <arg name="supported" type="uint"/>
+    </event>
+    <request name="prepare_backdrop" since="7">
+      <description summary="stage an owned mapped Dock underlay in the prepared theme transaction">
+        Shell publisher only, on its inherited authenticated connection. Surface
+        must be its current mapped fixed-size bottom-anchored top layer, with
+        rectangular input and no keyboard grab. No title/namespace authorization.
+        Configuration is six uint words: schema 2, role 1 (Dock), radius in
+        thousandths of a logical pixel (0-64000),
+        sigma 1-32, RGB 0-16777215, tint opacity 0-100 percent. The entire actual
+        surface is the footprint; no pixel readback is exposed. Geometry, surface
+        commit sequence, owner and theme generation are rechecked on commit.
+        Failure retains all previously committed layers and appearance. Candidate
+        resources and kernel workspace share the effects scene-wide peak budget.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="configuration" type="array"/>
+    </request>
+    <event name="backdrop_prepared" since="7">
+      <arg name="serial" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="backdrop_status" since="7">
+      <description summary="live regional output failure or recovery">
+        Nonempty message means output composition failed: the last committed
+        frame is retained, never an alpha/solid replacement. Retry requires new
+        scene damage. Empty message reports recovery. Only the current Shell
+        owner of a mapped regional layer on that output receives this event.
+      </description>
       <arg name="message" type="string"/>
     </event>
   </interface>

@@ -18,6 +18,8 @@ struct PuDesktopLayer {
     struct PuDesktopOwner owner;
     struct wlr_layer_surface_v1 *surface;
     struct wlr_scene_tree *tree, *content, *popups;
+    struct wlr_scene_rect *backdrop;
+    struct wl_resource *backdrop_owner;
     struct wl_list link;
     struct wl_listener map, unmap, commit, destroy;
     struct wlr_box pending_box;
@@ -110,6 +112,7 @@ struct PuDesktop {
     struct wlr_box grab_box;
     uint32_t grab_edges, grab_button, suppressed_button;
     int output_count;
+    uint64_t backdrop_epoch;
     bool failed, stopping;
     bool live_startup, live_splash, live_ready;
     const char *socket_name;

@@ -1945,6 +1945,7 @@
         "surfaceStyle": "bigsur",
         "menuBarOpacityPercent": 88,
         "materialOpacityPercent": 88,
+        "regionalBackdrop": { "sigma": 8, "tint": "#e7e7e7", "opacityPercent": 28 },
         "taskGrouping": "applications"
       },
       "layout": {
