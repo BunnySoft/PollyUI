@@ -204,7 +204,8 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
       assert.ok(payload.has('usr/share/licenses/pollyui/wlroots/' + name),
         'Missing paired wlroots scene-effects source: ' + name);
     assert.ok(sbom.packages.some(pkg => pkg.name === 'wlroots' && pkg.versionInfo === effects.version &&
-      typeof pkg.licenseComments === 'string' && pkg.licenseComments.endsWith(`; ABI ${effects.abi}.`)),
+      typeof pkg.licenseComments === 'string' && pkg.licenseComments.endsWith(`; ABI ${effects.abi}.`) &&
+      pkg.sourceInfo === `PollyUI wlroots patch SHA-256: ${effects.patchSha256}; effects ABI ${effects.abi}.`),
       'wlroots scene-effects SBOM differs from dependency identity');
   }
 }

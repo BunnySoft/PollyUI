@@ -82,6 +82,30 @@ not an already authenticated shell. Graphical setup/greeter, administrator UI,
 integrated locking/VT protection and account/host migration across different
 system versions remain incomplete.
 
+## Private service exit notification
+
+Each compositor display shares one SIGCHLD event source between Shell, decorator,
+input method and session lock. A notification checks every registered owner with
+its own exact-PID `waitpid(..., WNOHANG)`; ordinary application and fixture children
+remain their original owner's responsibility. Separate signalfd-backed Wayland
+sources cannot be relied on to all wake for the same pending signal.
+
+The four fixed registrations carry desktop callbacks, not pointers to allocated
+service state. Dispatch snapshots registration identities and rechecks them before
+each call, so revocation may stop or replace another owner safely. Nested shutdown
+dispatch records a new notification for another pass; it does not poll or add a
+deadline. Failed spawns roll back registration, and the last removal releases the
+source. Existing restart budgets/backoff, input-method epochs, locked privacy and
+shutdown order are unchanged.
+
+`desktop-private-process` links the production compositor core. Its ready-FD
+regression registers a dead Shell before a live IME and queues 31 other descriptors
+before releasing the Shell. This targets the existing pinned Wayland 1.23.1
+32-event dispatch boundary, not a product service/descriptor limit. Additional
+cases cover four simultaneous service exits, an unrelated child's retained wait
+status, decorator restart, callback-time replacement/removal, nested IME stop,
+spawn rollback and repeated cleanup.
+
 ## Independent window decoration service
 
 The Linux session wrapper starts a separate, compositor-supervised

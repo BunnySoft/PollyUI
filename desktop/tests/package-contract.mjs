@@ -117,7 +117,8 @@ try {
           path: privateLibrary.path, sha256: privateLibrary.sha256 },
         { binary: 'usr/bin/pollywm', soname: 'libinput.so.10', path: privateInput.path, sha256: privateInput.sha256 }] } };
   const privateSbom = { packages: [...sbom.packages, { name: 'wlroots', versionInfo: effects.version,
-    licenseComments: `Pinned scene effects patch; ABI ${effects.abi}.` }] };
+    licenseComments: `Pinned scene effects patch; ABI ${effects.abi}.`,
+    sourceInfo: `PollyUI wlroots patch SHA-256: ${effects.patchSha256}; effects ABI ${effects.abi}.` }] };
   check(debian, inputs, packages, privateSbom);
   assert.throws(() => check({ ...debian, runtimeContract: { ...debian.runtimeContract,
     wlrootsEffects: { ...effects, abi: 3, version: '0.19.3-polly-effects3' } } },
@@ -130,9 +131,11 @@ try {
   assert.throws(() => check({ ...debian, files: debian.files.filter(file => file.path !== notices[0].path) },
     inputs, packages, privateSbom), /scene-effects source/);
   assert.throws(() => check(debian, inputs, packages, sbom), /scene-effects SBOM/);
-  assert.throws(() => check(debian, inputs, packages, { packages: [...sbom.packages,
-    { name: 'wlroots', versionInfo: effects.version, licenseComments: 'Pinned scene effects patch; ABI 3.' }] }),
+  assert.throws(() => check(debian, inputs, packages, { packages: privateSbom.packages.map(pkg =>
+    pkg.name === 'wlroots' ? { ...pkg, licenseComments: 'Pinned scene effects patch; ABI 3.' } : pkg) }),
   /scene-effects SBOM/);
+  assert.throws(() => check(debian, inputs, packages, { packages: privateSbom.packages.map(pkg =>
+    pkg.name === 'wlroots' ? { ...pkg, sourceInfo: 'stale patch identity' } : pkg) }), /scene-effects SBOM/);
   assert.throws(() => check({ ...relocated, runtimeContract: { ...relocated.runtimeContract,
     postprocess: [{ ...processed, before: { ...processed.before, sha256: '0'.repeat(64) } }] } }), /original CMake/);
   assert.throws(() => check({ ...relocated, runtimeContract: { ...relocated.runtimeContract,

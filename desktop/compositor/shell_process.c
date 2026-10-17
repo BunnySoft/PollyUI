@@ -84,7 +84,10 @@ static bool reap_shell(struct PuDesktop *desktop, int options)
         }
     }
     desktop->shell_pid = 0;
+    uint64_t generation = desktop->private_processes[PU_PRIVATE_SHELL].generation;
     revoke_shell(desktop);
+    if (desktop->shell_pid || generation != desktop->private_processes[PU_PRIVATE_SHELL].generation)
+        return true;
     if (result > 0 && !desktop->stopping) {
         if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
             if (desktop->exit_with_shell && !pu_session_lock_active(desktop)) {
@@ -102,32 +105,26 @@ static bool reap_shell(struct PuDesktop *desktop, int options)
     return true;
 }
 
-static int shell_exited(int signal_number, void *data)
+static void shell_exited(struct PuDesktop *desktop)
 {
-    (void)signal_number;
-    reap_shell(data, WNOHANG);
-    return 0;
+    reap_shell(desktop, WNOHANG);
 }
 
 static bool spawn_shell(struct PuDesktop *desktop, char *const argv[])
 {
-    if (!desktop->display || !desktop->socket_name || desktop->stopping ||
+    if (!desktop->display || !desktop->socket_name || desktop->stopping || desktop->shell_stopping ||
         desktop->shell_pid || !argv || !argv[0] || !*argv[0]) {
         wlr_log(WLR_ERROR, "Cannot start shell: invalid state, command, or shell already running");
         return false;
     }
-    if (!desktop->shell_exit) {
-        desktop->shell_exit = wl_event_loop_add_signal(
-            wl_display_get_event_loop(desktop->display), SIGCHLD, shell_exited, desktop);
-        if (!desktop->shell_exit) {
-            wlr_log_errno(WLR_ERROR, "Cannot monitor shell exit");
-            return false;
-        }
-    }
+    if (!pu_private_process_watch(desktop, PU_PRIVATE_SHELL, shell_exited)) return false;
     desktop->session_exit_pending = desktop->session_exit_sealed = false;
     desktop->shell_client_destroy.notify = shell_disconnected;
     if (!pu_spawn_private(desktop, argv, "shell", &desktop->shell_client,
-        &desktop->shell_pid, &desktop->shell_client_destroy)) return false;
+        &desktop->shell_pid, &desktop->shell_client_destroy)) {
+        pu_private_process_unwatch(desktop, PU_PRIVATE_SHELL);
+        return false;
+    }
     desktop->shell_exited = false;
     return true;
 }
@@ -147,7 +144,7 @@ static void clear_supervision(struct PuDesktop *desktop)
 
 static void schedule_restart(struct PuDesktop *desktop)
 {
-    if (desktop->stopping || desktop->shell_restart_pending) return;
+    if (desktop->stopping || desktop->shell_stopping || desktop->shell_restart_pending) return;
     if (!desktop->shell_restarts_left) {
         if (desktop->exit_on_shell_failure && !pu_session_lock_active(desktop)) {
             wlr_log(WLR_ERROR, "Shell restart budget exhausted; ending the requested session with failure");
@@ -229,6 +226,9 @@ bool pu_desktop_supervise_shell(struct PuDesktop *desktop, char *const argv[], u
 
 void pu_desktop_stop_shell(struct PuDesktop *desktop)
 {
+    if (desktop->shell_stopping) return;
+    desktop->shell_stopping = true;
+    pu_private_process_unwatch(desktop, PU_PRIVATE_SHELL);
     clear_supervision(desktop);
     revoke_shell(desktop);
     if (!reap_shell(desktop, WNOHANG)) {
@@ -248,6 +248,5 @@ void pu_desktop_stop_shell(struct PuDesktop *desktop)
             }
         }
     }
-    if (desktop->shell_exit) wl_event_source_remove(desktop->shell_exit);
-    desktop->shell_exit = NULL;
+    desktop->shell_stopping = false;
 }

@@ -688,6 +688,23 @@ The Shell still has neither its renderer queue nor its frame-submission API.
 No production code or policy changed for this fixture maintenance, and it does
 not establish original-OS pixels, physical hardware or complete E22 qualification.
 
+The selected SHM allocator now reserves actual backing before mapping and
+publishing output, cursor or effect buffers. Insufficient backing is an explicit
+allocation failure with full cleanup, not a returned sparse mapping that can
+fault on first write. Real isolated 64KiB rejection and adequately provisioned
+131072-byte read/write checks cover this safety class; existing Dock, scene,
+caption and renderer-role contracts remain. ABI3 requires the updated exact patch
+identity in a separate SDK prefix. This does not explain earlier unknown
+SIGBUS/ENOSPC/reaping failures, enable held material/extent/filter candidates, or
+complete their performance or physical qualification.
+
+Private Shell, decorator, input-method and lock exits also share one event-loop
+notification source, while each owner still reaps only its exact PID. The
+production-core ready-batch regression covers the previous missed wakeup,
+simultaneous exits, restart, replacement and nested shutdown without polling or
+changing input/lock policy. This independent fix does not by itself attribute
+every historical reaping failure or qualify held effects/performance candidates.
+
 Mac-style Docks also provide bounded pointer-distance magnification through
 optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
 `icons.dockMagnificationRadius` (integer 0-3, missing/0 preserves the previous
