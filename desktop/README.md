@@ -856,7 +856,7 @@ required by independent applications such as `foot`/libfcft.
 ## Build independently on Linux
 
 wlroots has an unstable API: this target requires the pinned 0.19.3 source plus
-the checked-in effects ABI 2 patch and embedded source identity. Stock Alpine
+the checked-in effects ABI 3 patch and embedded source identity. Stock Alpine
 `wlroots0.19-dev` is no longer a current build SDK. Earlier 0.19
 versions omit `wlr_buffer_finish()` in the SHM allocator destructor, causing
 use-after-free during nested/Pixman teardown. Upstream 0.19.3 fixes this; do not

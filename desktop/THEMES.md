@@ -229,7 +229,7 @@ scaling. This verifies the existing theme contract, not build-tagged Windows
 11 24H2 raw pixels or native compositor input.
 GUI captions consume the exact button/text rectangles used by compositor hit
 testing, rather than recomputing them from style names.
-Private appearance protocol v6 uses bounded numeric geometry schema 6 and separates
+Private appearance protocol v7 uses bounded numeric geometry schema 7 and separates
 the publisher and renderer roles. Previous private Shell/WM/decorator combinations
 are explicitly rejected; public JSON schema 1 and the read-only application
 theme subscription remain unchanged. This paired
@@ -539,7 +539,7 @@ design/field-consumption evidence on an actual Windows GUI raster surface:
 | Existing geometry | Pass: 24 perspective rows plus 4px front, separator, default 317x66 Dock and 56px window slots; one legal custom 289x74 Dock with 48px slots and 12x3 indicators. This is not every accepted size or a raw OS geometry oracle. |
 | Running and input states | Pass: active/minimized remain running; normal/hover/held/focus, same-node reconstruction, single-click callbacks and fixed Apps/Settings/About work; narrow window strip scrolls and reveals the final minimized window on focus. Indicator antialiased edge pixels naturally blend with the newly configured front color. |
 | Reference qualification | Partial: same-setting licensed OS X 10.7 raw captures and font/icon/scale metadata are still missing. 48px icons and no magnification are comparison conditions, not forced system defaults. |
-| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded neighboring-artwork magnification and genuine material alpha are delivered separately; backdrop blur/reflection, Dock shadow and original-system qualification remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
+| Mechanism/business gaps | This palette checkpoint did not implement glass, shadow/reflection, application grouping, pinning or magnification. Grouping, independent persistent pins, bounded neighboring-artwork magnification and genuine material alpha are delivered separately. Regional blur now has a shared Pixman mechanism and one Big Sur Dock consumer; Lion backdrop adoption, reflection, Dock shadow and original-system qualification remain separate work. Whole-window native effect adoption does not establish those Dock effects. |
 
 The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 **no confirmed product defect and makes no painter/preset change**:
@@ -550,7 +550,7 @@ The bounded Big Sur caption check in `tests/bigsur-caption-surface.mjs` found
 | State/field consumption | Pass: active/inactive, each hovered control and valid held+hover pairs; group glyphs are hidden at rest, present in all three controls on hover. Recoloring glyphs and changing inactive opacity only affect their owning control rectangles; held changes stay in the pressed control. Custom always-visible glyphs use their configured ink. |
 | Text/scale/isolation | Pass: empty/long/narrow titles stay inside supplied text clips and do not alter edge strips; custom 1.25 backing dimensions are ceiled. Five other presets retain byte-identical before/after probe strips. This is not a full DPI/font or compositor-input matrix. |
 | Reference/behavior qualification | Partial: deleted C prior art (`5bb181c^`) showed hover glyphs per control, while current JS shows the group. Neither is a licensed Big Sur state oracle; this audit preserves current behavior rather than silently choosing a different default. Native macOS/Metal, exact inactive colors and authentic maximize/fullscreen glyph art are not certified. |
-| Mechanism/content gaps | Generic whole-window shadow is implemented and selected separately; this caption checkpoint does not qualify its current compositor/native Mac output. Vibrancy/backdrop blur, unified client toolbars, proprietary font/icon resources and native macOS acceptance still need actual mechanisms or evidence. Dock material alpha is not vibrancy. |
+| Mechanism/content gaps | Generic whole-window shadow is implemented and selected separately; this caption checkpoint does not qualify its native Mac output. The production Big Sur Dock now has real opt-in regional Pixman blur, distinct from its legacy material alpha. Exact macOS vibrancy/tint policy, unified client toolbars, proprietary font/icon resources and native macOS acceptance remain unqualified. |
 
 Modern and all three Mac presets now explicitly select optional
 `panel.taskGrouping: "applications"`. One shared `windowTasks` model groups
@@ -1131,6 +1131,9 @@ macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
 The existing whole-window effect tree samples only its own client and frame;
 the wallpaper-material helper paints an opaque, wallpaper-derived client base.
 Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
+The separate effects3 regional mechanism described below now supplies that
+lower-scene sampling for the explicitly enabled Big Sur Dock only; it does not
+turn Settings' wallpaper material into live Acrylic or enable other surfaces.
 For bitmap wallpaper, packaged Settings reads only a bounded projection of the
 Shell's already-held committed asset through its authenticated, unique-owner
 `GetMaterialSource` binding. The PNG is at most 128 pixels per axis and 128 KiB;
@@ -1161,8 +1164,9 @@ and limits are desktop policy, not built into the decoder.
 
 ## Native and application boundary
 
-Private `desktop.configureAppearance(theme, layout)` uses appearance protocol
-v6 with bounded numeric geometry schema 6. Prepare validates the bounded
+Private `desktop.configureAppearance(theme, layout, targets)` uses appearance protocol
+v7 with bounded numeric geometry schema 7. Omitted targets retain the original
+no-regional-target transaction. Prepare validates the bounded
 JS-compiled layout and an immutable descriptor; commit publishes the snapshot.
 The existing GUI renders complete four-strip pixel responses, not C theme
 commands. Each window owns current and pending snapshots so a delayed
@@ -1233,7 +1237,7 @@ physical pixel phase. Damage and visibility drive invalidation and sampling:
 there is no periodic idle rendering loop. Budget/allocation failures explicitly
 fail composition rather than producing an unreported square or missing shadow.
 
-Runtime library identity, headers, effects ABI 2, distinct SONAME and the packaged
+Runtime library identity, headers, effects ABI 3, distinct SONAME and the packaged
 patch hash must match.
 Stock SDKs are explicitly rejected rather than producing a square fallback.
 Current desktop builds use the paired Debian SDK; historical Alpine build and
@@ -1248,13 +1252,71 @@ lifecycle. Actual GUI strip pixels verify one outer-corner coverage rather than
 its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 2048/4096/8192 widths; this is not a full WM GLES/DRM or physical-GPU qualification.
 The complete WM GLES path remains unqualified without a usable DRM device.
-Regional backdrop sampling remains separate work.
-Those compositor results describe the frozen shared-mechanism qualification.
-For the current preset-policy adoption, numeric compiler and production GUI
-caption/legacy-none checks pass; the attempted paired-Linux rerun did not reach
-its first execution marker, so no new live-compositor or GPU result is claimed.
-That environment revalidation remains separately tracked rather than triggering
-a new SDK/VM build or blocking unrelated interface work.
+The original effects2 results remain historical qualifications of that frozen
+stack. A later current-source private GUI/WM pair passed the original caption
+and seven-mode decorator lifecycle checks; effects3 retains those contracts.
+None of these software/headless results is physical GPU or original-OS pixel
+qualification.
+
+### Opt-in regional Dock backdrop
+
+`panel.regionalBackdrop` is optional public-schema-1 data with integer `sigma`
+1-32, RGB `tint` and integer `opacityPercent` 0-100. Only Big Sur explicitly sets
+`{ "sigma": 8, "tint": "#e7e7e7", "opacityPercent": 28 }` in the packaged and
+recovery catalogs. These are Polly design parameters, not measured macOS values.
+Other themes, the menu bar, Settings and third-party windows do not opt in.
+Removing the field restores the prior Dock material path; retained data is
+inactive if the panel is not a Dock.
+
+The generic non-input compositor node samples the current lower scene in paint
+order, including applications behind the Dock, rather than the previous output,
+its own glyphs, upper surfaces or a JS screenshot. An expanded kernel region
+feeds a separable premultiplied Gaussian, tint and single rounded coverage,
+clipped to the existing footprint. Foreground glyphs, bitmaps, markers, counts,
+hover animation, input and surface dimensions remain separate and unchanged.
+
+Only the authenticated Shell publisher can stage its actual mapped Dock Windows.
+Appearance7 declares the target count, stages bounded numeric material and
+rechecks owner, theme generation, privacy epoch, surface sequence and box at
+commit. Private material schema 2 carries effective radius in millipixels:
+JS projects it to both configured footprint axes without rewriting theme data
+or discarding half-pixel radii. The native adapter retains and revalidates Window
+handles across getters, serialization and roundtrips; retired targets fail
+explicitly before marshaling. There is no public pixel-readback or foreign-target
+API. Capability preflight precedes active publication and resource replacement;
+inactive catalog lookup stays pure.
+
+The new regional capability is **Pixman only**. GLES explicitly rejects its
+activation before publication, while existing GLES rounding/shadows retain
+their prior support. This is not a silent alpha/solid fallback. Effects3 uses
+`libwlroots-0.19-polly-effects3.so` and a separate prefix; the old effects2
+library and frozen validation outputs are not overwritten.
+
+At most eight regional nodes are retained, with bounded dimensions, sigma and
+per-output pixels. Old/candidate caches and workspace share the scene's 128MiB
+peak budget. Damage drives invalidation; idle does not resample on a timer.
+SHM backing is reserved so exhaustion reports failure instead of a mapped-page
+SIGBUS. A live failure retains the last committed output, reports independent
+`materialError` without swallowing business/service errors, and does not retry
+the same scene revision. New damage permits recovery. Lock/unlock privacy epochs,
+unmap, owner loss and output retirement discard retained samples; lock privacy
+takes precedence over preserving a stalled frame.
+
+The actual production Dock check moves two independent applications, preserves
+13,203 opaque foreground pixels and rectangular input, rejects invalid/retired
+targets without replacing the committed Dock, and exercises real allocation
+pressure plus lock-client crash/recovery. Native scene checks compare Gaussian
+pixels, mixed-scale/rotated outputs, aggregate peak refusal and byte-exact
+disable restoration. All eight native checks pass with the frozen matching
+effects3/GUI/WM on a byte-verified native Linux source snapshot.
+
+Two runs of the same binaries against Windows/P9 source mounts hit unchanged
+window-decoration frame/startup deadlines. Their failures remain preserved:
+measured P9 import I/O overhead is not proof of the full timeout cause, and no
+startup-race fix or universally successful P9 execution is claimed. Deadlines
+and original assertions were not weakened. These results qualify the native
+Linux source-filesystem runtime, not DRM, hardware, exact macOS vibrancy,
+reflection, Dock shadow or the remaining E22 items.
 
 Ordinary Wayland clients may subscribe through `polly_theme_manager_v1`, which
 only exposes the published visual document. Notifications coalesce until the
