@@ -583,6 +583,13 @@ static bool title_drag_restore(void)
         CHECK(before && revision);
         motion(x + 4, y);
         CHECK(!view->geometry_pending && view->mode == mode && frame_hash(view) == before);
+        if (!placement) {
+            motion(x + 5, y);
+            CHECK(!view->geometry_pending && view->mode == mode && frame_hash(view) == before);
+        }
+        motion(x + 6, y);
+        CHECK(view->geometry_pending && view->drag_restore_pending && view->mode == mode &&
+            wlr_box_equal(&view->presented_box, &old) && frame_hash(view) == before);
         motion(x + 30, y + 60);
         CHECK(view->geometry_pending && view->drag_restore_pending && view->mode == mode &&
             wlr_box_equal(&view->presented_box, &old) &&
