@@ -1,6 +1,7 @@
 #include "shortcut-control.h"
 #include "server.h"
 #include "workspace.h"
+#include "workspace.h"
 #include "input-method.h"
 #include "polly-shortcuts-server.h"
 
@@ -283,6 +284,7 @@ static void recording(struct wl_client *client, struct wl_resource *resource, ui
     (void)client;
     struct Binding *binding = wl_resource_get_user_data(resource);
     binding->recording = enabled != 0;
+    if (enabled) pu_workspaces_picker_cancel(binding->state->desktop);
     if (enabled) pu_shortcuts_cancel(binding->state->desktop);
 }
 

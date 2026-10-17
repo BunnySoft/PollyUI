@@ -823,7 +823,7 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label(error, theme.colors.text, 11)) : null);
 }
 
-export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}, placementMenu = true) {
+export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}, placementMenu = true, layoutOnly = false) {
   const l = theme.layout;
   const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
   const command = (id, title, operation, enabled = true) => {
@@ -836,6 +836,16 @@ export function windowActionsView(theme, window, action, close, error = '', work
     Number.isInteger(window.placementCapabilities) && window.placementCapabilities >= 0 && window.placementCapabilities <= 7;
   const placementEnabled = bit => placementMenu && !window.placementPending && !window.fullscreen &&
     !window.minimized && (window.placementCapabilities & bit) !== 0;
+  const placements = placementSupported ? [
+    command('shell-window-tile-left', 'Left half', () => action('tileLeft'), placementEnabled(1)),
+    command('shell-window-tile-right', 'Right half', () => action('tileRight'), placementEnabled(2)),
+    command('shell-window-restore-floating', 'Restore floating', () => action('restoreFloating'), placementEnabled(4)),
+    window.placementMessage ? label(window.placementMessage, theme.colors.muted, l.statusFontSize) : null,
+  ] : [];
+  if (layoutOnly) return panelViewport(theme, { id: 'shell-layout-picker', variant: 'menu', scrollbar: true },
+    label('Window layout', theme.colors.text, l.headingFontSize), ...placements,
+    command('shell-window-menu-close', 'Close menu', close),
+    error ? label(error, theme.colors.text, l.statusFontSize) : null);
   return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu', scrollbar: true },
   label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
   command('shell-window-activate', 'Activate', () => action('activateWindow')),
@@ -847,12 +857,7 @@ export function windowActionsView(theme, window, action, close, error = '', work
     () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
   h('view', { id: 'shell-window-placement', style: { flexShrink: 0, minWidth: 0, gap: l.controlGap,
     display: placementSupported ? 'flex' : 'none' } },
-  placementSupported ? [
-    command('shell-window-tile-left', 'Left half', () => action('tileLeft'), placementEnabled(1)),
-    command('shell-window-tile-right', 'Right half', () => action('tileRight'), placementEnabled(2)),
-    command('shell-window-restore-floating', 'Restore floating', () => action('restoreFloating'), placementEnabled(4)),
-    window.placementMessage ? label(window.placementMessage, theme.colors.muted, l.statusFontSize) : null,
-  ] : []),
+  placements),
   command('shell-window-close', 'Close application window', () => action('closeWindow')),
   workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, l.statusFontSize) : null,
   workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>

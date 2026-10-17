@@ -1414,8 +1414,31 @@ half-screen/restore geometry engine, not simulated shortcuts or transforms.
 Fullscreen must be left first; minimized, modal-blocked, pending or unfit
 targets cannot be placed. Restore floating is enabled only when a saved floating
 layout is actually available. The existing menu viewport, keyboard navigation
-and shared scrollbar remain usable on short displays. This is not a Windows 11
-caption-hover flyout.
+and shared scrollbar remain usable on short displays.
+
+Packaged Modern additionally opts into a basic native maximize-button hover
+picker with the optional strict boolean `window.layoutPicker` in schema 1.
+Missing/false retains the old behavior. A single **500ms UI hover delay** (not an
+input deadline) opens the existing QuickJS Shell menu with **Left half**,
+**Right half**, and **Restore floating**. Tab/Shift+Tab, Enter, Escape, pointer
+input and the shared short-viewport scrollbar use the ordinary menu controls.
+The actual native button and output supply output-local logical anchoring;
+the Shell clamps the popup to that output, including negative global origins.
+
+This requires explicitly advertised paired workspace manager/child v4
+capability. v3 retains existing window menus and maximize clicks without
+synthesizing a hover feature. Only the authenticated Shell can opt in. The
+compositor issues a single-use grant bound to the actual hit, presented native
+frame, target lifetime, workspace and output. Leaving the button cancels an
+unredeemed grant; after registration the pointer may enter the exact owned
+menu without canceling on the target's ordinary inactive caption repaint.
+Registration does not bypass the existing mapped/presented/exclusive input
+and placement-epoch checks. Clicks on native captions keep their old behavior;
+placement admits once and closes without retries on an unknown transport
+outcome. Target/output/workspace retirement, lock, grabs, recording, retheme
+and Shell stop revoke the picker. Business errors remain separate from
+material errors. No quadrants, arbitrary ratios, overview, new renderer,
+preview or full Windows 11 Snap flyout is implemented.
 
 Holding a native caption on a maximized or half-screen window arms a drag without
 changing placement. Moving more than 5 logical pixels restores the last saved

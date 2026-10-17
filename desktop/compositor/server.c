@@ -182,6 +182,7 @@ void pu_desktop_restore_input(struct PuDesktop *desktop)
 
 void pu_desktop_isolate_input(struct PuDesktop *desktop)
 {
+    pu_workspaces_picker_cancel(desktop);
     pu_shortcuts_cancel(desktop);
     pu_data_device_cancel_drag(desktop);
     end_grab(desktop);
@@ -364,6 +365,8 @@ static void keyboard_key(struct wl_listener *listener, void *data)
     struct PuDesktopKeyboard *entry = wl_container_of(listener, entry, key);
     struct wlr_keyboard_key_event *event = data;
     struct PuDesktop *desktop = entry->desktop;
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED)
+        pu_workspaces_picker_input(desktop, desktop->seat->keyboard_state.focused_surface);
     wlr_seat_set_keyboard(desktop->seat, entry->keyboard);
     if (pu_session_lock_active(desktop)) {
         bool consumed = event->keycode < KEY_CNT && entry->consumed[event->keycode];
@@ -587,6 +590,7 @@ static struct wlr_box presented_view_box(struct PuDesktopView *view)
 
 static void sync_foreign(struct PuDesktop *desktop)
 {
+    pu_workspaces_picker_validate(desktop);
     if (!desktop->layout) return;
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop->views, link) {
@@ -1044,6 +1048,29 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
         !output_box(desktop, layer->surface->output, &bounds))
         return "The registered window menu does not own live input focus";
     return place_view(view, tile, NULL);
+}
+
+bool pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
+    bool require_hit, struct wlr_box *button, struct wlr_box *output)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (placement_admit(view) || desktop->stopping || view->fullscreen ||
+        desktop->focused != view ||
+        view->mode == PU_DESKTOP_FULLSCREEN || desktop->suppressed_button ||
+        (!menu && desktop->seat->pointer_state.button_count) ||
+        (desktop->focused_layer && desktop->focused_layer->surface->surface != menu) ||
+        (!menu && !pu_decoration_presented_current(view)) ||
+        !output_box(desktop, view->output, output) ||
+        !pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, button)) return false;
+    button->x += view->tree->node.x;
+    button->y += view->tree->node.y;
+    if (!require_hit) return true;
+    struct wlr_surface *surface;
+    double sx, sy;
+    return view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, NULL) == view &&
+        !surface && pu_decoration_hit(view, desktop->cursor->x - view->tree->node.x,
+            desktop->cursor->y - view->tree->node.y) == PU_DECORATION_MAXIMIZE &&
+        wlr_output_layout_output_at(desktop->layout, desktop->cursor->x, desktop->cursor->y) == view->output;
 }
 
 static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
@@ -1506,6 +1533,7 @@ bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surfa
 
 static void process_motion(struct PuDesktop *desktop, uint32_t time)
 {
+    pu_workspaces_picker_validate(desktop);
     if (pu_session_lock_active(desktop)) { pu_session_lock_motion(desktop, time); return; }
     pu_input_method_reposition(desktop);
     pu_data_device_motion(desktop);
@@ -1591,6 +1619,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     int part = view && !surface && modal_target(view) == view ? pu_decoration_hit(view,
         desktop->cursor->x - view->tree->node.x, desktop->cursor->y - view->tree->node.y) : 0;
     pu_decoration_hover(desktop, view, part);
+    pu_workspaces_picker_motion(desktop, view, part);
     if (surface) {
         wlr_seat_pointer_notify_enter(desktop->seat, surface, sx, sy);
         wlr_seat_pointer_notify_motion(desktop->seat, time, sx, sy);
@@ -1638,6 +1667,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
          view->presented_box.width != view->toplevel->base->geometry.width ||
          view->presented_box.height != view->toplevel->base->geometry.height)) return;
     desktop->grab = mode;
+    pu_workspaces_picker_cancel(desktop);
     desktop->grabbed = view;
     desktop->grab_edges = edges;
     desktop->grab_button = button;
@@ -1670,6 +1700,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
     struct PuDesktop *desktop = wl_container_of(listener, desktop, button);
     struct wlr_pointer_button_event *event = data;
     bool pressed = event->state == WL_POINTER_BUTTON_STATE_PRESSED;
+    if (pressed) pu_workspaces_picker_input(desktop, desktop->seat->pointer_state.focused_surface);
     if (pu_session_lock_active(desktop)) {
         if (!pressed && desktop->suppressed_button == event->button) { desktop->suppressed_button = 0; return; }
         pu_session_lock_motion(desktop, event->time_msec);

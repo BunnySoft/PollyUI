@@ -18,6 +18,8 @@ const { applicationCatalog } = await import('./desktop/shell/applications.mjs');
 const { render } = await import('./gui/sdk/js/reconciler.mjs');
 const { startMenuView } = await import('./desktop/shell/start-menu.mjs');
 const { parseLocalUserProfile } = await import('./desktop/shared/user-profile.mjs');
+const { layoutPickerPlacement } = await import('./desktop/shared/ui/theme-layout.mjs');
+const { validateTheme } = await import('./desktop/shared/ui/theme-schema.mjs');
 
 // Model the existing per-document, bubbling DOM/host callbacks, not compositor input or native focus.
 class Node {
@@ -425,6 +427,102 @@ function placementFixture({ native, state, calls }) {
   native.tileWindow = (id, side, epoch) => { calls.push(['place', id, side, epoch]); return { admitted: true }; };
   native.restoreFloatingWindow = (id, epoch) => { calls.push(['place', id, 'floating', epoch]); return { admitted: true }; };
 }
+
+function pickerFixture(options) {
+  placementFixture(options);
+  const { native, state, calls } = options;
+  native.layoutPickerCapability = () => state.pickerSupported !== false;
+  native.enableLayoutPicker = enabled => { calls.push(['picker-enabled', enabled]); state.offer = null; };
+  native.layoutPickerOffer = () => state.offer;
+  native.openLayoutPicker = (token, menu) => { calls.push(['picker-open', token, menu]); return 42; };
+  native.dismissLayoutPicker = token => { calls.push(['picker-dismiss', token]); if (state.offer?.token === token) state.offer = null; };
+}
+function offerPicker(f, token = 1, extra = {}) {
+  f.state.offer = { token, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1', ...extra };
+  f.native.onLayoutPickerChanged();
+  return f.created.findLast(window => !window.closed && window.document.getElementById('shell-layout-picker'));
+}
+scenario('caption picker uses explicit theme opt-in and a native grant, admits once and retires held callbacks', f => {
+  assert.equal(f.shell.selectTheme('xp'), true);
+  assert.deepEqual(f.calls.filter(call => call[0] === 'picker-enabled').at(-1), ['picker-enabled', false]);
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const menu = offerPicker(f);
+  assert.ok(menu);
+  assert.deepEqual(menu.options.anchors, ['top', 'left']);
+  assert.deepEqual(menu.options.margins, { left: 966, top: 33 });
+  assert.equal(menu.document.getElementById('shell-window-maximize'), null);
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left);
+  held(event('click', { currentTarget: left }));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 42]]);
+  assert.equal(menu.closed, true);
+  assert.ok(f.calls.some(call => call[0] === 'picker-dismiss' && call[1] === 1));
+  assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+}, pickerFixture);
+
+scenario('caption picker old-provider capability hides entry without issuing v4 requests', f => {
+  f.shell.selectTheme('modern');
+  assert.equal(f.calls.some(call => call[0] === 'picker-enabled'), false);
+  assert.equal(offerPicker(f), undefined);
+  const menu = f.shell.showWindowActions(1, 10);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+}, options => { pickerFixture(options); options.state.pickerSupported = false; });
+
+scenario('caption picker revocation, replacement, Escape, disabled Restore and retheme preserve scopes', f => {
+  f.shell.selectTheme('modern');
+  let menu = offerPicker(f);
+  const held = callback(find(menu, 'shell-window-tile-left'), 'click');
+  assert.equal(find(menu, 'shell-window-restore-floating').tabIndex, -1);
+  key(menu, 'Tab');
+  assert.equal(menu.document.activeElement.id, 'shell-window-tile-left');
+  key(menu, 'Tab', { shiftKey: true });
+  key(menu, 'Escape');
+  assert.equal(menu.closed, true);
+  menu = offerPicker(f, 2);
+  held(event('click'));
+  assert.equal(menu.closed, false);
+  f.state.offer = null; f.native.onLayoutPickerChanged();
+  assert.equal(menu.closed, true);
+  menu = offerPicker(f, 3);
+  f.shell.selectTheme('xp');
+  assert.equal(menu.closed, true);
+  assert.ok(!f.calls.some(call => call[0] === 'place'));
+  f.native.onLayoutPickerChanged();
+  assert.ok(f.created.every(window => window.closed || !window.document.getElementById('shell-layout-picker')));
+}, pickerFixture);
+
+scenario('caption picker failed or unknown admission is visible, closes and never retries', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  f.native.tileWindow = () => { f.calls.push(['unknown']); throw new Error('Transport outcome is unknown'); };
+  const left = find(menu, 'shell-window-tile-left'), held = callback(left, 'click');
+  click(left); held(event('click', { currentTarget: left }));
+  assert.equal(menu.closed, true);
+  assert.equal(f.calls.filter(call => call[0] === 'unknown').length, 1);
+  assert.match(f.shell.getState().error, /Transport outcome is unknown/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, pickerFixture);
+
+test('caption picker projection clamps output-local logical anchors including negative origins and tiny outputs', () => {
+  const theme = getDesktopTheme('modern');
+  for (const [width, height, x, y] of [[1280, 720, 1260, 0], [200, 140, 190, 130], [1, 1, -8, -8]]) {
+    const result = layoutPickerPlacement(theme, { x, y, width: 46, height: 33,
+      outputX: -2000, outputY: -400, outputWidth: width, outputHeight: height });
+    assert.ok(result.width <= width && result.height <= height);
+    assert.ok(result.margins.left >= 0 && result.margins.left + result.width <= width);
+    assert.ok(result.margins.top >= 0 && result.margins.top + result.height <= height);
+  }
+  const legacy = JSON.parse(JSON.stringify(theme));
+  delete legacy.window.layoutPicker;
+  assert.doesNotThrow(() => validateTheme(legacy));
+  for (const value of [0, 1, 'true', null]) {
+    const invalid = JSON.parse(JSON.stringify(legacy));
+    invalid.window.layoutPicker = value;
+    assert.throws(() => validateTheme(invalid));
+  }
+});
 
 scenario('window placement commands use an acknowledged live menu and never activate before admission', f => {
   const configuration = JSON.stringify(f.saved.snapshot);

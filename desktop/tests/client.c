@@ -10,6 +10,7 @@
 #include "decoration-frame.h"
 #include "ext-workspace-client.h"
 #include "polly-workspace-toplevel-client.h"
+#include "xdg-dialog-client.h"
 #include "text-input-v3-client.h"
 #include "input-method-v2-client.h"
 #include "virtual-keyboard-v1-client.h"
@@ -35,6 +36,7 @@ struct Configure {
 };
 
 struct Window {
+    struct xdg_dialog_v1 *dialog;
     struct Client *client;
     struct wl_surface *surface;
     struct xdg_surface *xdg;
@@ -81,6 +83,7 @@ struct Client {
     struct zwlr_layer_shell_v1 *layer_shell;
     struct zwlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct zxdg_decoration_manager_v1 *decoration_manager;
+    struct xdg_wm_dialog_v1 *dialogs;
     struct polly_appearance_v1 *appearance;
     struct polly_shortcuts_v1 *shortcuts;
     uint32_t appearance_serial, appearance_reply;
@@ -740,9 +743,37 @@ static void placement_result(void *data, struct polly_workspace_toplevel_v1 *han
     reply->placement_results++;
     snprintf(reply->placement_message, sizeof(reply->placement_message), "%s", message);
 }
+static void picker_offer(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t token, int32_t x, int32_t y, int32_t width, int32_t height, const char *name,
+    int32_t ox, int32_t oy, int32_t ow, int32_t oh)
+{
+    (void)handle; (void)x; (void)y; (void)width; (void)height; (void)name;
+    (void)ox; (void)oy; (void)ow; (void)oh;
+    struct Foreign *foreign = data;
+    struct TestReply *reply = &foreign->client->reply;
+    reply->picker_token = token;
+    if (sscanf(foreign->app_id, "org.pollywm.test.%u", &reply->picker_target) != 1) die("picker target");
+    reply->picker_offers++;
+}
+static void picker_dismissed(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t token)
+{
+    (void)handle;
+    struct TestReply *reply = &((struct Foreign *)data)->client->reply;
+    if (reply->picker_token == token) reply->picker_token = 0;
+    reply->picker_dismissals++;
+}
+static void picker_supported(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)manager;
+    ((struct Client *)data)->reply.picker_capability = supported;
+}
+static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
+    .layout_picker_capabilities = picker_supported,
+};
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = membership, .closed = membership_closed,
     .placement_state = placement_state, .result = placement_result,
+    .layout_offer = picker_offer, .layout_dismissed = picker_dismissed,
 };
 static void track_foreign(struct Foreign *foreign)
 {
@@ -891,13 +922,16 @@ static void global(void *data, struct wl_registry *registry,
         client->shortcuts = wl_registry_bind(registry, name, &polly_shortcuts_v1_interface, 2);
         polly_shortcuts_v1_add_listener(client->shortcuts, &shortcuts_listener, client);
         client->reply.shortcut_version = (int)version;
+    } else if (!strcmp(interface, xdg_wm_dialog_v1_interface.name)) {
+        client->dialogs = wl_registry_bind(registry, name, &xdg_wm_dialog_v1_interface, 1);
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
         client->workspaces = wl_registry_bind(registry, name, &ext_workspace_manager_v1_interface, 1);
         ext_workspace_manager_v1_add_listener(client->workspaces, &workspaces_listener, client);
         client->reply.workspace_capability = 1;
     } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
         client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version >= 3 ? 3 : 1);
+            version >= 4 && getenv("POLLY_TEST_WORKSPACE_V4") ? 4 : version >= 3 ? 3 : 1);
+        polly_workspace_toplevel_manager_v1_add_listener(client->workspace_toplevels, &workspace_control_listener, client);
     }
     else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
@@ -1055,6 +1089,7 @@ static void create_popup(struct Client *client, bool child, int corner)
 
 static void destroy_window(struct Window *window)
 {
+    if (window->dialog) xdg_dialog_v1_destroy(window->dialog);
     if (window->frame) wl_callback_destroy(window->frame);
     if (window->popup) xdg_popup_destroy(window->popup);
     if (window->decoration) zxdg_toplevel_decoration_v1_destroy(window->decoration);
@@ -1145,7 +1180,8 @@ int main(int argc, char **argv)
         struct Window *window = &client.window;
         struct Foreign *foreign = (request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE) ||
             request.command == TEST_WORKSPACE_MOVE ||
-            (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ?
+            (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ||
+            request.command == TEST_PICKER_OPEN || request.command == TEST_PICKER_DISMISS ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
         case TEST_EFFECT_APPEARANCE:
@@ -1285,7 +1321,14 @@ int main(int argc, char **argv)
             client.data_source = NULL;
             break;
         case TEST_DRAG_ICON_DESTROY: destroy_drag_icon(&client); break;
-        case TEST_TRANSIENT: create_transient(&client, request.id == 0); break;
+        case TEST_TRANSIENT:
+            create_transient(&client, request.id == 0);
+            if (request.edges) {
+                if (!client.dialogs) die("modal dialog unavailable");
+                client.extra.dialog = xdg_wm_dialog_v1_get_xdg_dialog(client.dialogs, client.extra.toplevel);
+                xdg_dialog_v1_set_modal(client.extra.dialog);
+            }
+            break;
         case TEST_WORKSPACE_CREATE: ext_workspace_group_handle_v1_create_workspace(client.workspace_group, ""); break;
         case TEST_WORKSPACE_ACTIVATE: ext_workspace_handle_v1_activate(find_workspace(&client, (uint32_t)request.id)->handle); break;
         case TEST_WORKSPACE_REMOVE: ext_workspace_handle_v1_remove(find_workspace(&client, (uint32_t)request.id)->handle); break;
@@ -1297,6 +1340,16 @@ int main(int argc, char **argv)
         case TEST_MENU_OPEN:
             polly_workspace_toplevel_v1_open_menu(foreign->workspace_handle, request.serial,
                 request.edges == 4 ? client.extra.surface : client.window.surface);
+            break;
+        case TEST_PICKER_ENABLE:
+            polly_workspace_toplevel_manager_v1_enable_layout_picker(client.workspace_toplevels, request.id);
+            break;
+        case TEST_PICKER_OPEN:
+            polly_workspace_toplevel_v1_open_layout_picker(foreign->workspace_handle, request.serial,
+                request.edges, request.layer.live ? client.extra.surface : client.window.surface);
+            break;
+        case TEST_PICKER_DISMISS:
+            polly_workspace_toplevel_v1_dismiss_layout_picker(foreign->workspace_handle, request.edges);
             break;
         case TEST_MENU_PLACE:
             polly_workspace_toplevel_v1_place(foreign->workspace_handle, request.serial,
@@ -1488,6 +1541,7 @@ int main(int argc, char **argv)
     if (client.workspaces) { ext_workspace_manager_v1_stop(client.workspaces); ext_workspace_manager_v1_destroy(client.workspaces); }
     if (client.retired_placement) polly_workspace_toplevel_v1_destroy(client.retired_placement);
     if (client.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(client.workspace_toplevels);
+    if (client.dialogs) xdg_wm_dialog_v1_destroy(client.dialogs);
     if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
     if (client.appearance) polly_appearance_v1_destroy(client.appearance);
     if (client.decoration_manager) zxdg_decoration_manager_v1_destroy(client.decoration_manager);

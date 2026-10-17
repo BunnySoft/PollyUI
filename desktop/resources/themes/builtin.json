@@ -2085,6 +2085,7 @@
       "window": {
         "surfaceStyle": "fluent",
         "clientMaterial": "wallpaper",
+        "layoutPicker": true,
         "nativeEffects": "rounded",
         "radius": 8,
         "border": "#a0a0a0",

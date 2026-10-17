@@ -51,6 +51,18 @@ static pid_t paused_renderer;
 static int control = -1;
 static struct TestReply reply;
 static uint32_t clock_ms = 1000;
+static struct wlr_seat_keyboard_grab picker_keyboard_grab;
+static struct wlr_keyboard_grab_interface picker_keyboard_impl;
+static struct wlr_seat_pointer_grab picker_pointer_grab;
+static struct wlr_pointer_grab_interface picker_pointer_impl;
+static struct PuWorkspace *picker_workspace;
+static int picker_wire_control = -1;
+
+static void finish_picker_grabs(void)
+{
+    if (desktop.seat->keyboard_state.grab == &picker_keyboard_grab) wlr_seat_keyboard_end_grab(desktop.seat);
+    if (desktop.seat->pointer_state.grab == &picker_pointer_grab) wlr_seat_pointer_end_grab(desktop.seat);
+}
 
 struct BackdropWatch {
     struct wl_listener listener;
@@ -1452,6 +1464,329 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
     puts("PASS: production modern Shell backdrop consumer completes mapped lifecycle, native input, peer, output, budget and privacy boundaries");
     return true;
 }
+static void picker_key(uint32_t code, bool down)
+{
+    struct wlr_keyboard_key_event event = {.time_msec = ++clock_ms, .keycode = code,
+        .update_state = true, .state = down ? WL_KEYBOARD_KEY_STATE_PRESSED : WL_KEYBOARD_KEY_STATE_RELEASED};
+    wlr_keyboard_notify_key(&keyboard, &event);
+}
+
+static bool picker_hover(struct PuDesktopView *view)
+{
+    motion(view->tree->node.x + 20, view->tree->node.y + 20);
+    CHECK(wait_presented_frame(view));
+    struct wlr_box box;
+    CHECK(pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, &box));
+    motion(view->tree->node.x + box.x + box.width / 2.0,
+        view->tree->node.y + box.y + box.height / 2.0);
+    return true;
+}
+
+static struct PuDesktopLayer *picker_menu(void)
+{
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link)
+        if (layer->surface->namespace && !strncmp(layer->surface->namespace, "PollyShell.menu.", 16) &&
+            layer->presented && layer->surface->surface->mapped) return layer;
+    return NULL;
+}
+
+static bool picker_output_size(int width, int height, int x, int y)
+{
+    struct PuDesktopView *view = wire_view();
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, width, height, 60000);
+    bool committed = wlr_output_commit_state(view->output, &state);
+    wlr_output_state_finish(&state);
+    CHECK(committed);
+    wlr_output_layout_add(desktop.layout, view->output, x, y);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view));
+    return true;
+}
+
+static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
+{
+    char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
+        "desktop/tests/layout-picker-shell.mjs", old ? "old" : "current", NULL};
+    CHECK(pu_desktop_spawn_shell(&desktop, shell));
+    unsigned checks = 0;
+    struct wlr_box floating = {0};
+    uint64_t window_id = 0;
+    uint64_t deadline = milliseconds() + 25000;
+    while (desktop.shell_pid && milliseconds() < deadline) {
+        CHECK(pump());
+        struct PuDesktopLayer *marker, *tmp;
+        wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
+            if (!marker->surface->surface->mapped) continue;
+            const char *name = marker->surface->namespace;
+            if (!name || strncmp(name, "picker-", 7)) continue;
+            char operation[32], argument[32] = {0};
+            int x = 0, y = 0;
+            CHECK(sscanf(name, "picker-%31s", operation) == 1);
+            struct PuDesktopView *view = wire_view();
+            if (!strcmp(operation, "ready")) {
+                CHECK(view && command(TEST_UNCONSTRAINED, 0, 0));
+                pu_desktop_focus_mapped(&desktop, view->workspace_window);
+                wlr_scene_node_set_position(&view->tree->node, 80, 160);
+                CHECK(wait_presented_frame(view));
+                floating = view->presented_box;
+                window_id = view->workspace_window;
+            } else if (!strcmp(operation, "original")) {
+                CHECK(view && click(view, PU_DECORATION_MAXIMIZE) && wait_presented_frame(view) &&
+                    view->mode == PU_DESKTOP_MAXIMIZED);
+                CHECK(click(view, PU_DECORATION_MAXIMIZE) && wait_presented_frame(view) &&
+                    view->mode == PU_DESKTOP_FLOATING);
+                struct wlr_box inset = {0};
+                pu_decoration_inset(view, &inset, false);
+                clock_ms += 401;
+                motion(view->tree->node.x + 40, view->tree->node.y - inset.y / 2.0);
+                CHECK(pu_decoration_hit(view, 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
+                button(true); button(false); button(true); button(false);
+                CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+                    view->mode == PU_DESKTOP_MAXIMIZED);
+                CHECK(click(view, PU_DECORATION_MAXIMIZE) && wait_presented_frame(view) &&
+                    view->mode == PU_DESKTOP_FLOATING);
+                CHECK(!picker_menu());
+            } else if (!strcmp(operation, "hover") || !strcmp(operation, "stopped")) {
+                CHECK(view && picker_hover(view));
+            } else if (!strcmp(operation, "cancel-before")) {
+                CHECK(view && picker_hover(view));
+                motion(view->tree->node.x + 20, view->tree->node.y + 20);
+            } else if (!strcmp(operation, "key")) {
+                CHECK(sscanf(name, "picker-key %d %d", &x, &y) == 2);
+                if (y) picker_key(KEY_LEFTSHIFT, true);
+                picker_key((uint32_t)x, true); picker_key((uint32_t)x, false);
+                if (y) picker_key(KEY_LEFTSHIFT, false);
+            } else if (!strcmp(operation, "click")) {
+                CHECK(sscanf(name, "picker-click %d %d", &x, &y) == 2);
+                struct PuDesktopLayer *menu = picker_menu();
+                CHECK(menu && menu == desktop.focused_layer && menu->pending_box.width > x &&
+                    menu->pending_box.height > y && x >= 0 && y >= 0);
+                motion(menu->pending_box.x + x, menu->pending_box.y + y);
+                CHECK(desktop.seat->pointer_state.focused_surface == menu->surface->surface);
+                button(true); button(false);
+            } else if (!strcmp(operation, "check")) {
+                CHECK(sscanf(name, "picker-check %d", &x) == 1 && view && wait_presented_frame(view) &&
+                    (int)view->mode == x && view->workspace_window == window_id);
+                struct wlr_box expected;
+                if (x == PU_DESKTOP_FLOATING) {
+                    expected = floating;
+                    expected.x = view->tree->node.x; expected.y = view->tree->node.y;
+                } else {
+                    wlr_output_layout_get_box(desktop.layout, view->output, &expected);
+                    expected.height -= 48;
+                    expected.width /= 2;
+                    if (x == PU_DESKTOP_TILED_RIGHT) expected.x += expected.width;
+                    pu_decoration_inset(view, &expected, false);
+                }
+                CHECK(wlr_box_equal(&view->presented_box, &expected) &&
+                    view->toplevel->base->geometry.width == expected.width &&
+                    view->toplevel->base->geometry.height == expected.height &&
+                    frame_hash(view) && pu_decoration_presented_revision(view));
+                printf("PASS: native picker actual client=%dx%d presented=%d,%d,%d,%d mode=%d ownedRevision=%u window=%llu\n",
+                    view->toplevel->base->geometry.width, view->toplevel->base->geometry.height,
+                    expected.x, expected.y, expected.width, expected.height, x,
+                    pu_decoration_presented_revision(view), (unsigned long long)window_id);
+                checks++;
+            } else if (!strcmp(operation, "guard") || !strcmp(operation, "unguard")) {
+                CHECK(sscanf(name, "picker-%*s %31s", argument) == 1);
+                bool enable = !strcmp(operation, "guard");
+                if (!strcmp(argument, "keyboard") && enable) {
+                    picker_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+                    picker_keyboard_grab.interface = &picker_keyboard_impl;
+                    wlr_seat_keyboard_start_grab(desktop.seat, &picker_keyboard_grab);
+                    CHECK(wlr_seat_keyboard_has_grab(desktop.seat));
+                } else if (!strcmp(argument, "pointer") && enable) {
+                    picker_pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+                    picker_pointer_grab.interface = &picker_pointer_impl;
+                    wlr_seat_pointer_start_grab(desktop.seat, &picker_pointer_grab);
+                    CHECK(wlr_seat_pointer_has_grab(desktop.seat));
+                } else if (!strcmp(argument, "keyboard") || !strcmp(argument, "pointer")) finish_picker_grabs();
+                else if (!strcmp(argument, "recording")) CHECK(pu_shortcuts_recording(&desktop) == enable);
+                else if (!strcmp(argument, "lock")) {
+                    if (enable) {
+                        char locker[PATH_MAX];
+                        const char *slash = strrchr(wire, '/');
+                        CHECK(slash && snprintf(locker, sizeof(locker), "%.*s/polly-lock-test-client",
+                            (int)(slash - wire), wire) < (int)sizeof(locker));
+                        char *args[] = {locker, "unlock", NULL};
+                        CHECK(pu_session_lock_spawn(&desktop, args) && pu_session_lock_active(&desktop));
+                    } else {
+                        for (int i = 0; i < 600 && pu_session_lock_active(&desktop); i++) CHECK(pump());
+                        CHECK(!pu_session_lock_active(&desktop));
+                    }
+                } else if (!strcmp(argument, "fullscreen")) {
+                    CHECK(command(enable ? TEST_FULLSCREEN : TEST_UNFULLSCREEN, 0, 0));
+                    if (enable) {
+                        for (int i = 0; i < 1200 && view->geometry_pending; i++) CHECK(pump());
+                        CHECK(view->mode == PU_DESKTOP_FULLSCREEN);
+                    } else CHECK(wait_presented_frame(view));
+                } else if (!strcmp(argument, "minimized")) {
+                    if (enable) CHECK(command(TEST_MINIMIZE, 0, 0));
+                    else pu_desktop_focus_mapped(&desktop, view->workspace_window);
+                } else if (!strcmp(argument, "modal")) {
+                    CHECK(command(enable ? TEST_TRANSIENT : TEST_DESTROY, enable ? 0 : 4, enable ? 1 : 0));
+                } else if (!strcmp(argument, "workspace")) {
+                    if (enable) { picker_workspace = desktop.active_workspace; pu_workspace_step(&desktop, 1); }
+                    else { pu_workspace_activate(&desktop, picker_workspace, view); picker_workspace = NULL; }
+                } else CHECK(false);
+                if (!enable) {
+                    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+                    CHECK(wait_presented_frame(view));
+                }
+            } else if (!strcmp(operation, "small")) {
+                CHECK(picker_output_size(640, 180, -640, -180));
+            } else if (!strcmp(operation, "normal")) {
+                CHECK(picker_output_size(1280, 720, 0, 0));
+            } else if (!strcmp(operation, "retire")) {
+                CHECK(command(TEST_QUERY, 0, 0) && command(TEST_UNMAP, 0, 0));
+            } else if (!strcmp(operation, "remap")) {
+                CHECK(command(TEST_REMAP, 0, 0) && command(TEST_UNCONSTRAINED, 0, 0));
+                view = wire_view();
+                CHECK(view && view->workspace_window > window_id && wait_presented_frame(view));
+                window_id = view->workspace_window;
+            } else if (!strcmp(operation, "success")) checks++;
+            else CHECK(false);
+            wlr_layer_surface_v1_destroy(marker->surface);
+            break;
+        }
+    }
+    CHECK(!desktop.shell_pid && WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0 &&
+        checks == (old ? 1u : 4u) && !picker_menu());
+    puts("PASS: production Shell picker completes actual native hover, old clicks, pointer/keyboard, guards and retirement");
+    return true;
+}
+
+static bool picker_request(struct TestRequest request, bool accepted)
+{
+    unsigned results = reply.placement_results;
+    CHECK(send(control, &request, sizeof(request), MSG_NOSIGNAL) == sizeof(request));
+    for (int i = 0; i < 1200; i++) {
+        ssize_t count = recv(control, &reply, sizeof(reply), MSG_DONTWAIT);
+        if (count == sizeof(reply)) {
+            CHECK(reply.placement_results == results + 1 && reply.placement_serial == request.serial &&
+                reply.placement_accepted == (uint32_t)accepted);
+            if (!accepted) CHECK(reply.placement_message[0]);
+            return true;
+        }
+        CHECK(count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) && pump());
+    }
+    CHECK(false);
+}
+
+static bool picker_raw_offer(struct PuDesktopView *view, uint32_t target)
+{
+    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+    CHECK(wait_presented_frame(view) && picker_hover(view));
+    for (int i = 0; i < 1200; i++) {
+        CHECK(command(TEST_QUERY, 0, 0));
+        if (reply.picker_token && reply.picker_target == target) return true;
+        CHECK(pump());
+    }
+    CHECK(false);
+}
+
+static bool layout_picker_protocol(const char *wire)
+{
+    CHECK(command(TEST_UNCONSTRAINED, 0, 0) && command(TEST_TRANSIENT, 1, 0));
+    struct PuDesktopView *first = wire_view(), *second = NULL, *view;
+    wl_list_for_each(view, &desktop.views, link)
+        if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollywm.test.8")) second = view;
+    CHECK(first && second && wait_presented_frame(first) && wait_presented_frame(second));
+    wlr_scene_node_set_position(&first->tree->node, 80, 160);
+    wlr_scene_node_set_position(&second->tree->node, 500, 160);
+    struct wlr_box before_first = first->presented_box, before_second = second->presented_box;
+    int sockets[2];
+    CHECK(!socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets));
+    CHECK(!fcntl(sockets[1], F_SETFD, 0) && !setenv("POLLY_TEST_WORKSPACE_V4", "1", 1));
+    char number[32]; snprintf(number, sizeof(number), "%d", sockets[1]);
+    char *args[] = {(char *)wire, "--trusted", number, NULL};
+    bool started = pu_desktop_spawn_shell(&desktop, args);
+    unsetenv("POLLY_TEST_WORKSPACE_V4");
+    close(sockets[1]);
+    CHECK(started);
+    picker_wire_control = control; control = sockets[0];
+    CHECK(command(TEST_QUERY, 0, 0) && reply.picker_capability == 1 &&
+        command(TEST_PICKER_ENABLE, 1, 0));
+    struct TestRequest layer = {.command = TEST_LAYER_MAP, .id = 3, .layer = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, .width = 280, .height = 260, .zone = -1,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE}};
+    CHECK(send(control, &layer, sizeof(layer), MSG_NOSIGNAL) == sizeof(layer));
+    bool received = false;
+    for (int i = 0; i < 1200 && !received; i++) {
+        received = recv(control, &reply, sizeof(reply), MSG_DONTWAIT) == sizeof(reply);
+        CHECK(received || pump());
+    }
+    CHECK(received && command(TEST_QUERY, 0, 0) && command(TEST_UNMAP, 0, 0));
+    CHECK(picker_raw_offer(first, 7));
+    uint32_t stale = reply.picker_token, serial = 1;
+    struct TestRequest open = {.command = TEST_PICKER_OPEN, .id = 8, .serial = serial++, .edges = stale};
+    CHECK(picker_request(open, false) && first->mode == PU_DESKTOP_FLOATING &&
+        second->mode == PU_DESKTOP_FLOATING && wlr_box_equal(&first->presented_box, &before_first) &&
+        wlr_box_equal(&second->presented_box, &before_second));
+    open.id = 7; open.serial = serial++;
+    CHECK(picker_request(open, true));
+    uint32_t epoch = reply.placement_epoch;
+    open.serial = serial++;
+    CHECK(picker_request(open, false));
+    struct TestRequest place = {.command = TEST_MENU_PLACE, .id = 7, .serial = serial++, .edges = epoch,
+        .layer = {.width = PU_TILE_LEFT}};
+    CHECK(picker_request(place, false) && first->mode == PU_DESKTOP_FLOATING && !first->geometry_pending);
+    puts("PASS: raw v4 wrong-target and duplicate grants cannot mutate either actual target or replay a menu epoch");
+
+    CHECK(picker_raw_offer(second, 8));
+    uint32_t current = reply.picker_token;
+    CHECK(current > stale);
+    open.id = 7; open.serial = serial++; open.edges = stale;
+    CHECK(picker_request(open, false) && command(TEST_QUERY, 0, 0) && reply.picker_token == current);
+    open.id = 8; open.serial = serial++; open.edges = current;
+    CHECK(picker_request(open, true));
+    epoch = reply.placement_epoch;
+    place.id = 8; place.serial = serial++; place.edges = epoch;
+    CHECK(picker_request(place, false) && second->mode == PU_DESKTOP_FLOATING && !second->geometry_pending);
+    CHECK(command(TEST_REMAP, 0, 0));
+    for (int i = 0; i < 1200 && !picker_menu(); i++) {
+        /* Raw layer has no Shell namespace; presentation is checked below. */
+        struct PuDesktopLayer *entry;
+        bool ready = false;
+        wl_list_for_each(entry, &desktop.layers, link)
+            if (entry->surface->surface->mapped && entry->presented &&
+                wl_resource_get_client(entry->surface->resource) == desktop.shell_client) ready = true;
+        if (ready) break;
+        CHECK(pump());
+    }
+    CHECK(desktop.focused_layer && desktop.focused_layer->presented);
+    struct PuDesktopLayer *menu = desktop.focused_layer;
+    motion(menu->pending_box.x + 20, menu->pending_box.y + 20);
+    CHECK(desktop.seat->pointer_state.focused_surface == menu->surface->surface);
+    place.serial = serial++;
+    CHECK(picker_request(place, true));
+    CHECK(wait_presented_frame(second) && second->mode == PU_DESKTOP_TILED_LEFT &&
+        pu_decoration_presented_revision(second) && first->mode == PU_DESKTOP_FLOATING);
+    place.serial = serial++;
+    CHECK(picker_request(place, false));
+    puts("PASS: old two-target grant rejected; unpresented exact menu denied; real mapped/presented input admits one existing placement only");
+    CHECK(command(TEST_QUERY, 0, 0) && command(TEST_UNMAP, 0, 0));
+    CHECK(picker_raw_offer(first, 7));
+    stale = reply.picker_token;
+    picker_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+    picker_keyboard_grab.interface = &picker_keyboard_impl;
+    wlr_seat_keyboard_start_grab(desktop.seat, &picker_keyboard_grab);
+    CHECK(wlr_seat_keyboard_has_grab(desktop.seat) && command(TEST_QUERY, 0, 0) && !reply.picker_token);
+    open.id = 7; open.serial = serial++; open.edges = stale;
+    CHECK(picker_request(open, false) && !first->geometry_pending);
+    finish_picker_grabs();
+    CHECK(command(TEST_PICKER_ENABLE, 0, 0));
+    CHECK(command(TEST_QUIT, 0, 0));
+    close(control); control = picker_wire_control; picker_wire_control = -1;
+    for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid);
+    puts("PASS: actual keyboard grab revokes unredeemed grant synchronously; disconnect leaves no timer or epoch");
+    return true;
+}
+
 static bool suite(const char *ui, const char *wire, const char *mode)
 {
     char *decorator[] = {(char *)ui, "--decorator", "--app-id", "org.pollyui.decorator",
@@ -1463,6 +1798,9 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
+    if (!strcmp(mode, "layout-picker") || !strcmp(mode, "layout-picker-old"))
+        return layout_picker_consumer(ui, wire, !strcmp(mode, "layout-picker-old"));
+    if (!strcmp(mode, "layout-picker-protocol")) return layout_picker_protocol(wire);
     if (!strcmp(mode, "title-snap")) return title_edge_snap(wire);
     if (!strcmp(mode, "title-drag")) return title_drag_restore();
     if (!strcmp(mode, "frame-fence")) return presented_frame_fence(ui);
@@ -1614,10 +1952,12 @@ int main(int argc, char **argv)
         passed = suite(argv[1], argv[2], argv[3]);
         if (!resume_renderer()) passed = false;
         backdrop_guard_stop();
+        finish_picker_grabs();
         stop_child(&wire_pid); stop_child(&app_pid);
         wlr_pointer_finish(&pointer); wlr_keyboard_finish(&keyboard);
     }
     if (control >= 0) close(control);
+    if (picker_wire_control >= 0 && picker_wire_control != control) close(picker_wire_control);
     pu_desktop_finish(&desktop);
     return passed ? 0 : 1;
 }
