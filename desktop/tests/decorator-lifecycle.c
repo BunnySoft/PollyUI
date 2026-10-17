@@ -2060,6 +2060,20 @@ static bool cascade_request(uint32_t serial, uint32_t epoch, bool accepted)
         .serial = serial, .edges = epoch}, accepted);
 }
 
+static bool cascade_steps(struct PuDesktopView **views)
+{
+    int x[3];
+    for (unsigned i = 0; i < 3; i++) x[i] = views[i]->tree->node.x;
+    for (unsigned i = 0; i < 3; i++)
+        for (unsigned j = i + 1; j < 3; j++)
+            if (x[j] < x[i]) { int temporary = x[i]; x[i] = x[j]; x[j] = temporary; }
+    CHECK(x[1] - x[0] == 24 && x[2] - x[1] == 24);
+    for (unsigned i = 1; i < 3; i++)
+        CHECK(views[i]->tree->node.y - views[0]->tree->node.y ==
+            views[i]->tree->node.x - views[0]->tree->node.x);
+    return true;
+}
+
 static bool cascade_protocol(const char *wire)
 {
     struct PuDesktopView *views[3];
@@ -2176,8 +2190,7 @@ static bool cascade_protocol(const char *wire)
             views[i]->presented_box.height, pu_decoration_presented_revision(views[i]), revisions[i]);
     }
     CHECK(desktop.focused == views[0] && desktop.focused_layer);
-    CHECK(abs(views[0]->tree->node.x - views[1]->tree->node.x) == 24 &&
-        abs(views[1]->tree->node.x - views[2]->tree->node.x) == 24);
+    CHECK(cascade_steps(views));
     for (unsigned i = 0; i < 3; i++) {
         struct wlr_box inset = {0}; pu_decoration_inset(views[i], &inset, false);
         CHECK(views[i]->tree->node.y - inset.y >= area.y + 31 &&
@@ -2412,8 +2425,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                 }
                 CHECK(desktop.focused == views[0] && !desktop.focused_layer);
                 if (!strcmp(operation, "check"))
-                    CHECK(abs(views[0]->tree->node.x - views[1]->tree->node.x) == 24 &&
-                        abs(views[1]->tree->node.x - views[2]->tree->node.x) == 24);
+                    CHECK(cascade_steps(views));
                 else CHECK(views[0]->tree->node.y == views[1]->tree->node.y &&
                     views[1]->tree->node.y == views[2]->tree->node.y);
                 witness_start(head);
