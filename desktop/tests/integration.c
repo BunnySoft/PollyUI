@@ -985,6 +985,7 @@ static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *vi
         CHECK(extra && resize_output(extra, 1002, 877, 1.25f));
         CHECK(wlr_output_layout_add(desktop.layout, original, 0, 0) &&
             wlr_output_layout_add(desktop.layout, extra, -801, -100));
+        CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0) && shell_client.reply.output_count == 2);
         struct TestLayer top = {.output = 2, .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
             .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
                 ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
