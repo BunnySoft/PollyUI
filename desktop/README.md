@@ -145,9 +145,10 @@ composition; moving includes filtering and output capture:
 Both full-footprint targets exceed the twofold engineering threshold, but
 **not** the 16.7ms frame budget or an all-case non-regression requirement.
 The same fixed pair recorded 37x29/sigma0.5/scale1.25 prepare
-0.812->0.906ms and moving 6.170->6.654ms; 41x33/sigma2.25/scale1.5
-prepare 1.171->1.229ms; and 4096x1/sigma0.5/scale1 moving
-16.798->16.867ms. These regressions are retained, not waived as noise or
+0.812->0.906ms (+11.6%) and moving 6.170->6.654ms (+7.8%);
+41x33/sigma2.25/scale1.5 prepare 1.171->1.229ms (+5.0%); and
+4096x1/sigma0.5/scale1 moving 16.798->16.867ms (+0.4%).
+These regressions are retained, not waived as noise or
 removed by choosing samples. All nine cases' raw times and medians remain
 part of the comparison evidence. This is not an exclusive-CPU or universal
 speedup claim. Idle captures still reuse the cache without filtering.
