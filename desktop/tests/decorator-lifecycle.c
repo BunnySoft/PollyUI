@@ -735,6 +735,8 @@ static bool title_edge_snap(const char *wire)
         wlr_scene_node_set_position(&view->tree->node, 80, 160);
         CHECK(begin_title_drag(view));
         motion(0, 200);
+        /* Drain focus configures before deliberately resetting the xdg role. */
+        CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view));
         CHECK(command(retirement ? TEST_DESTROY_ROLE : TEST_UNMAP, 0, 0));
         CHECK(!wire_view() && !desktop.grabbed && desktop.grab == PU_DESKTOP_PASSTHROUGH);
         view = NULL;
