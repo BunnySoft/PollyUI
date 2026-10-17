@@ -1270,6 +1270,43 @@ static bool snap_suite(struct TestClient *client, struct PuDesktopView *view, co
     CHECK(geometry_is(view, content.x, content.y, content.width, content.height));
     CHECK(snap_key(client, KEY_DOWN) && settle_decoration(view));
     CHECK(geometry_is(view, original.x, original.y, original.width, original.height));
+    pid_t renderer = pu_decorator_pid(&desktop);
+    CHECK(renderer > 0 && kill(renderer, SIGSTOP) == 0);
+    struct TestRequest size = { .command = TEST_CLIENT_SIZE,
+        .layer = { .width = original.width + 37, .height = original.height + 29 } };
+    CHECK(exchange(client, &size));
+    CHECK(view->mode == PU_DESKTOP_FLOATING && !pu_decoration_ready(view) &&
+        view->toplevel->base->geometry.width == original.width + 37);
+    CHECK(snap_key(client, KEY_LEFT));
+    CHECK(wlr_box_equal(&view->floating_box, &original));
+    CHECK(kill(renderer, SIGCONT) == 0);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    CHECK(snap_key(client, KEY_DOWN) && settle_decoration(view));
+    CHECK(geometry_is(view, original.x, original.y, original.width, original.height));
+    CHECK(kill(renderer, SIGSTOP) == 0);
+    size.layer.width += 4; size.layer.height += 4;
+    CHECK(exchange(client, &size) && !pu_decoration_ready(view));
+    CHECK(command(client, TEST_MAXIMIZE, 0, 0, 0));
+    CHECK(wlr_box_equal(&view->restore_box, &original));
+    CHECK(kill(renderer, SIGCONT) == 0);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0) && settle_decoration(view));
+    CHECK(geometry_is(view, original.x, original.y, original.width, original.height));
+    size.layer.width = original.width + 37; size.layer.height = original.height + 29;
+    CHECK(exchange(client, &size) && settle_decoration(view));
+    time_msec += 500;
+    motion(original.x + 80, original.y - 16); button(BTN_LEFT, true);
+    CHECK(desktop.grab == PU_DESKTOP_MOVE);
+    motion(original.x + 91, original.y - 3); button(BTN_LEFT, false);
+    original.x += 11; original.y += 13;
+    CHECK(snap_key(client, KEY_LEFT) && settle_decoration(view));
+    CHECK(view->floating_box.x == original.x && view->floating_box.y == original.y &&
+        view->floating_box.width == size.layer.width && view->floating_box.height == size.layer.height);
+    CHECK(snap_key(client, KEY_DOWN) && settle_decoration(view));
+    CHECK(geometry_is(view, original.x, original.y, size.layer.width, size.layer.height));
+    size.layer.width = original.width; size.layer.height = original.height;
+    CHECK(exchange(client, &size) && settle_decoration(view));
+    puts("PASS: tile restore retains last frame-presented floating size, not an unfenced client buffer");
     CHECK(command(client, TEST_DECORATION, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE, 0, 0));
     CHECK(settle_decoration(view));
     CHECK(resize_output(output, 1280, 720, 1));

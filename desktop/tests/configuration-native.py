@@ -152,7 +152,7 @@ with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporar
     moved.rename(real)
     run("load", migrated)
     custom = [dict(binding) for binding in shortcuts]
-    custom[0].update(modifiers=8, key="Left")
+    custom[0].update(modifiers=8, key="0x0000ff51")
     old_v3 = {**migrated, "version": 3, "shortcuts": custom}
     put(config, json.dumps(old_v3).encode())
     before = config.read_bytes()

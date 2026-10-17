@@ -53,11 +53,16 @@ const tileDefaults = [
 ];
 export const shortcutActions = Object.freeze([...legacyActions, ...tileDefaults.map(binding => binding.action)]);
 
+function tileKeySym(key) {
+  const named = { left: 0xff51, right: 0xff53, down: 0xff54 };
+  return /^0x[0-9a-fA-F]+$/.test(key) ? Number.parseInt(key.slice(2), 16) : named[key.toLowerCase()];
+}
+
 export function migrateLegacyShortcuts(bindings, report = () => {}) {
   const previous = validateCatalog(bindings, legacyActions);
   const additions = tileDefaults.map(binding => {
     const conflict = previous.find(old => old.modifiers === binding.modifiers &&
-      old.key.toLowerCase() === binding.key.toLowerCase());
+      tileKeySym(old.key) === tileKeySym(binding.key));
     if (!conflict) return { ...binding };
     report(binding.action + ' is Disabled because its new default conflicts with ' + conflict.action);
     return { action: binding.action, modifiers: 0, key: '' };

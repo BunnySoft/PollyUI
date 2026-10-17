@@ -58,6 +58,8 @@ unchanged. Only the three new defaults are added. If a new default collides with
 an old binding, that new action is explicitly Disabled and the Shell reports
 all such conflicts once after successful migration publication; Settings can
 reassign it. Migration never changes an existing user chord to make room.
+Collision matching includes the three arrows' native XKB hexadecimal keysym
+aliases (including zero-padded forms); the original stored key text is preserved.
 The desktop/launcher domains remain version 1. Older binaries do not read v4; downgrading the Shell requires a separate,
 explicit configuration compatibility decision. Before returning to an older
 binary, restore an original backup or otherwise provide a configuration that

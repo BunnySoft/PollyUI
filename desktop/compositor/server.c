@@ -572,6 +572,15 @@ static struct wlr_box view_box(struct PuDesktopView *view)
     return box;
 }
 
+static struct wlr_box presented_view_box(struct PuDesktopView *view)
+{
+    struct wlr_box box = view->presented_box;
+    /* Interactive moves update scene position without a client configure. */
+    box.x = view->tree->node.x;
+    box.y = view->tree->node.y;
+    return box;
+}
+
 static void sync_foreign(struct PuDesktop *desktop)
 {
     if (!desktop->layout) return;
@@ -800,6 +809,7 @@ static void present_geometry(struct PuDesktopView *view)
         }
     }
     wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
+    view->presented_box = box;
 }
 
 static void configure_view(struct PuDesktopView *view, struct wlr_box box,
@@ -871,7 +881,7 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     }
     if ((maximized || fullscreen) && !view->maximized && !view->fullscreen)
         view->restore_box = view->mapped && view->mode == PU_DESKTOP_FLOATING &&
-            view->tile == PU_TILE_NONE ? view_box(view) : box;
+            view->tile == PU_TILE_NONE ? presented_view_box(view) : box;
     if (maximized || fullscreen) {
         box = bounds;
     } else if (view->tile == PU_TILE_NONE && (view->maximized || view->fullscreen)) {
@@ -897,7 +907,11 @@ static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
         return;
     }
     if (tile == PU_TILE_NONE && view->tile == PU_TILE_NONE) return;
-    struct wlr_box actual = view_box(view), bounds, box;
+    struct wlr_box actual = presented_view_box(view), bounds, box;
+    if (actual.width < 1 || actual.height < 1) {
+        wlr_log(WLR_INFO, "Wait for the first presented window frame before tiling");
+        return;
+    }
     struct wlr_output *output = output_for_box(desktop, &actual);
     if (!output_box(desktop, output, &bounds)) {
         wlr_log(WLR_ERROR, "Cannot tile or restore window without an enabled output");
@@ -983,6 +997,7 @@ static void present_view(struct PuDesktopView *view)
         fail(view->desktop, "Cannot apply native window effects");
         return;
     }
+    if (view->mode == PU_DESKTOP_FLOATING) view->presented_box = view_box(view);
     update_layer_focus(view->desktop);
     sync_foreign(view->desktop);
 }
@@ -1995,6 +2010,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     view->output = NULL;
     view->restore_box = (struct wlr_box){0};
     view->floating_box = (struct wlr_box){0};
+    view->presented_box = (struct wlr_box){0};
     wlr_scene_node_set_enabled(&view->tree->node, false);
     wl_list_remove(&view->link);
     wl_list_init(&view->link);

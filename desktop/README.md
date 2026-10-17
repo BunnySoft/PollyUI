@@ -664,6 +664,9 @@ Shell transform. It partitions the actual output work area before insetting
 server decorations, including layer-exclusive panel and Dock reservations.
 An odd width gives the right half the remaining pixel. Repeating a side or
 switching sides does not replace the original floating restore box. Maximize
+and tile entry retain the last frame-presented floating size, not a newer client
+buffer still waiting on the decorator; interactive scene moves retain their
+actual position and completed resizes update that presented fact. Maximize
 and fullscreen retain the tile underneath; leaving them returns to that tile.
 Super+Down restores floating, never minimizes. Fullscreen must first be exited.
 Client min/max/fixed-size constraints that cannot fit an exact half are refused

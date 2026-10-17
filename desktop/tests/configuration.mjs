@@ -162,6 +162,20 @@ test('legacy shortcut collisions disable only new defaults and diagnose once aft
   }
 });
 
+test('legacy XKB hexadecimal aliases collide with new defaults without rewriting raw keys', () => {
+  for (const keys of [['0xff51', '0xff53', '0xff54'], ['0x0000ff51', '0x0000ff53', '0x0000ff54']]) {
+    const original = fixtureShortcuts.slice(0, 7).map((binding, index) => ({ action: binding.action,
+      modifiers: index < 3 ? 8 : 0, key: keys[index] || '' }));
+    const messages = [];
+    const result = validateShellConfiguration({ ...defaultShellConfiguration(), version: 3,
+      shortcuts: original }, message => messages.push(message));
+    assert.deepEqual(result.shortcuts.slice(0, 7), original);
+    assert.deepEqual(result.shortcuts.slice(7), ['tile-left', 'tile-right', 'restore-floating']
+      .map(action => ({ action, key: '', modifiers: 0 })));
+    assert.equal(messages.length, 3);
+  }
+});
+
 test('launcher pins are strict ordered independent snapshots and follow actual publication on failure', () => {
   let bytes = encodeUtf8(JSON.stringify(defaultShellConfiguration())), fault = '';
   const store = createShellConfiguration({ read: () => bytes, close() {}, write(next) {

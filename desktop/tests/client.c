@@ -403,17 +403,9 @@ static void frame_done(void *data, struct wl_callback *callback, uint32_t time)
 }
 static const struct wl_callback_listener frame_listener = { .done = frame_done };
 
-static void apply_configure(struct Window *window, struct Configure config)
+static void commit_size(struct Window *window, int width, int height)
 {
-    if (window->layer) zwlr_layer_surface_v1_ack_configure(window->layer, config.serial);
-    else xdg_surface_ack_configure(window->xdg, config.serial);
-    int width = config.width, height = config.height;
-    if (window->small_fullscreen && config.fullscreen) { width = 240; height = 160; }
-    if (window->refuse_tile && config.tiled) { width = 240; height = 160; }
     if (window == &window->client->window) {
-        window->client->reply.maximized = config.maximized;
-        window->client->reply.fullscreen = config.fullscreen;
-        window->client->reply.tiled = config.tiled;
         window->client->reply.width = width;
         window->client->reply.height = height;
     }
@@ -431,6 +423,21 @@ static void apply_configure(struct Window *window, struct Configure config)
         wl_callback_add_listener(window->frame, &frame_listener, window);
     }
     wl_surface_commit(window->surface);
+}
+
+static void apply_configure(struct Window *window, struct Configure config)
+{
+    if (window->layer) zwlr_layer_surface_v1_ack_configure(window->layer, config.serial);
+    else xdg_surface_ack_configure(window->xdg, config.serial);
+    int width = config.width, height = config.height;
+    if ((window->small_fullscreen && config.fullscreen) || (window->refuse_tile && config.tiled))
+        { width = 240; height = 160; }
+    if (window == &window->client->window) {
+        window->client->reply.maximized = config.maximized;
+        window->client->reply.fullscreen = config.fullscreen;
+        window->client->reply.tiled = config.tiled;
+    }
+    commit_size(window, width, height);
 }
 
 static void configure_surface(void *data, struct xdg_surface *xdg, uint32_t serial)
@@ -1326,6 +1333,7 @@ int main(int argc, char **argv)
         case TEST_SHORTCUT_COMMIT: polly_shortcuts_v1_commit(client.shortcuts, request.serial); break;
         case TEST_SHORTCUT_RECORDING: polly_shortcuts_v1_recording(client.shortcuts, request.id); break;
         case TEST_REFUSE_TILE: window->refuse_tile = request.id != 0; break;
+        case TEST_CLIENT_SIZE: commit_size(window, request.layer.width, request.layer.height); break;
         case TEST_DESTROY:
             if (request.id == 4) { destroy_window(&client.extra); break; }
             destroy_window(&client.extra);

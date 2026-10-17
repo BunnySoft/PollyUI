@@ -30,6 +30,15 @@ int main(void)
     bindings[PU_SHORTCUT_CLOSE] = (struct PuShortcutBinding){ PU_SHORTCUT_CTRL, XKB_KEY_Shift_L };
     CHECK(pu_shortcut_validate(bindings));
     xkb_keysym_t key;
+    for (int i = 0; i < 3; i++) {
+        const char *names[] = {"0xff51", "0xff53", "0xff54"};
+        const char *padded[] = {"0x0000ff51", "0x0000ff53", "0x0000ff54"};
+        pu_shortcut_defaults(bindings);
+        CHECK(pu_shortcut_key(names[i], &key) && key == bindings[PU_SHORTCUT_TILE_LEFT + i].key);
+        CHECK(pu_shortcut_key(padded[i], &key) && key == bindings[PU_SHORTCUT_TILE_LEFT + i].key);
+        bindings[PU_SHORTCUT_CLOSE] = (struct PuShortcutBinding){PU_SHORTCUT_SUPER, key};
+        CHECK(pu_shortcut_validate(bindings));
+    }
     CHECK(pu_shortcut_key("A", &key) && key == XKB_KEY_a);
     CHECK(pu_shortcut_key("+", &key) && key == XKB_KEY_plus);
     CHECK(!pu_shortcut_key("not-a-key", &key));
