@@ -20,6 +20,27 @@ control.document.body.addEventListener('keydown', event => {
     const panel = surfaces.find(surface => surface.kind === 'panel');
     const theme = BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'bigsur');
     const material = [2, 1, 16000, 8, 0xe7e7e7, 28];
+    for (const during of ['target-getter', 'theme-toJSON']) {
+      const candidate = window.create({ title: 'Backdrop.fixture.candidate', layer: 'top', width: 96, height: 64,
+        anchors: ['bottom'], exclusiveZone: 0, transparent: true });
+      const next = [dock.window, material];
+      if (during === 'target-getter') Object.defineProperty(next, 0, {
+        get() { candidate.close(); return dock.window; },
+      });
+      const snapshot = during === 'theme-toJSON' ?
+        { ...theme, toJSON() { candidate.close(); return theme; } } : theme;
+      let rejected = false;
+      try {
+        desktop.configureAppearance(snapshot, encodeDecorationLayout(theme),
+          during === 'target-getter' ? [[candidate, material], next] : [[candidate, material]]);
+      } catch (error) {
+        if (error.name !== 'TypeError' || !String(error).includes('Window is closed')) throw error;
+        rejected = true;
+        console.log('EXPECTED_BACKDROP_LIFETIME_REJECTION ' + during + ': ' + String(error));
+      } finally { if (!candidate.closed) candidate.close(); }
+      if (!rejected || dock.window.closed)
+        throw new Error('Retired candidate must be rejected before marshaling a stale native surface');
+    }
     for (const targets of [[[panel.window, material]], [[control, material]],
       [[dock.window, [1, 1, 16000, 8, 0xe7e7e7, 28]]],
       [[dock.window, [2, 1, 64000, 8, 0xe7e7e7, 28]]],

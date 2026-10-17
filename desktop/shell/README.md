@@ -218,6 +218,10 @@ damage permits a retry. Material status has independent `getState().materialErro
 and the existing visible needs-attention indicator: its failure/recovery never
 overwrites business/service errors, repeated messages are not re-reported, and
 callbacks from stopped or previous Shell lifecycles are ignored.
+The native adapter retains bounded Window handles, not raw surface pointers,
+across getters, serialization and roundtrips. It rechecks live ownership after
+those boundaries and reacquires each surface immediately before marshaling;
+retired candidates explicitly fail/cancel without touching the committed Dock.
 No screenshot/readback or foreign-target API is exposed.
 
 Big Sur also selects `panel.menuBarOpacityPercent: 88` for the menu bar's passive
