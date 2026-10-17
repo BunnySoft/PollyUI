@@ -331,6 +331,54 @@ static bool backdrop_outputs(struct PuDesktop *desktop, struct wlr_output *first
     puts("PASS: one region crosses two live outputs with different scale/transform; independent caches update from lower content, reuse when idle, and release on output/ancestor retirement");
     return true;
 }
+static bool backdrop_taller_peak_suite(struct PuDesktop *desktop, struct wlr_output *output,
+    struct wlr_scene_tree *dock)
+{
+    CHECK(output->scale == 1 && output->transform == WL_OUTPUT_TRANSFORM_NORMAL &&
+        desktop->scene->effects_cached_bytes == 0);
+    struct wlr_scene_rect *retained = wlr_scene_backdrop_create(dock,
+        &(struct wlr_box){0, 0, 96, 64}, 8, 2, (float[4]){0});
+    CHECK(retained);
+    wlr_scene_node_set_enabled(&retained->node, true);
+    struct wlr_scene_rect *control = wlr_scene_backdrop_create(dock,
+        &(struct wlr_box){0, 0, 640, 660}, 8, 16, (float[4]){0});
+    CHECK(control);
+    wlr_scene_node_destroy(&control->node);
+    struct wlr_scene_tree *large = wlr_scene_tree_create(desktop->windows);
+    struct wlr_scene_tree *extra = wlr_scene_tree_create(desktop->windows);
+    CHECK(large && extra &&
+        wlr_scene_rect_create(large, 3900, 3900, (float[4]){0.2f, 0.4f, 0.6f, 1}) &&
+        wlr_scene_rect_create(extra, 1280, 455, (float[4]){0.4f, 0.2f, 0.6f, 1}));
+    wlr_scene_node_set_position(&extra->node, 128, 96);
+    CHECK(wlr_scene_tree_set_rounding(large, &(struct wlr_box){0, 0, 3900, 3900}, 16) &&
+        wlr_scene_tree_set_rounding(extra, &(struct wlr_box){0, 0, 1280, 455}, 16));
+    uint32_t *before, *after;
+    int width, height, w, h;
+    CHECK(capture(desktop, output, &before, &width, &height));
+    size_t reserved = desktop->scene->effects_cached_bytes;
+    size_t candidate = (736u * 756u + 640u * 660u) * 8u + 97u * sizeof(float);
+    CHECK(reserved == 3900u * 3900u * 8u + 1280u * 455u * 8u + 96u * 64u * 8u &&
+        reserved == 126388352u && candidate == 7830916u &&
+        candidate > WLR_SCENE_EFFECTS_MAX_BYTES - reserved);
+    CHECK(wl_list_length(&desktop->scene->backdrops) == 1 &&
+        wl_list_length(&desktop->scene->backdrops) < WLR_SCENE_BACKDROP_MAX_NODES &&
+        736u * 756u <= WLR_SCENE_BACKDROP_MAX_PIXELS);
+    uint64_t renders = desktop->scene->backdrop_render_count;
+    CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 640, 660}, 8, 16, (float[4]){0}));
+    CHECK(desktop->scene->effects_cached_bytes == reserved &&
+        desktop->scene->backdrop_render_count == renders &&
+        wl_list_length(&desktop->scene->backdrops) == 1);
+    CHECK(capture(desktop, output, &after, &w, &h));
+    CHECK(w == width && h == height && !memcmp(before, after, (size_t)width * height * 4));
+    free(before); free(after);
+    wlr_scene_node_destroy(&extra->node);
+    wlr_scene_node_destroy(&large->node);
+    wlr_scene_node_destroy(&retained->node);
+    CHECK(desktop->scene->effects_cached_bytes == 0);
+    printf("PASS: independent 640x660 aggregate peak refusal, live=%zu candidate/scratch=%zu total=%zu limit=%u; geometry control accepted, nodecount1, old frame/cache unchanged and all reservations released\n",
+        reserved, candidate, reserved + candidate, WLR_SCENE_EFFECTS_MAX_BYTES);
+    return true;
+}
 static bool backdrop_suite(struct PuDesktop *desktop, struct wlr_output *output)
 {
     CHECK(wlr_scene_backdrop_supported(desktop->renderer));
@@ -470,22 +518,22 @@ static bool backdrop_suite(struct PuDesktop *desktop, struct wlr_output *output)
     CHECK(retained);
     wlr_scene_node_set_enabled(&retained->node, true);
     struct wlr_scene_tree *blocker = wlr_scene_tree_create(desktop->windows);
-    CHECK(blocker && wlr_scene_rect_create(blocker, 4000, 4000, (float[4]){0.2f, 0.4f, 0.6f, 1}));
-    CHECK(wlr_scene_tree_set_rounding(blocker, &(struct wlr_box){0, 0, 4000, 4000}, 16));
+    CHECK(blocker && wlr_scene_rect_create(blocker, 3900, 3900, (float[4]){0.2f, 0.4f, 0.6f, 1}));
+    CHECK(wlr_scene_tree_set_rounding(blocker, &(struct wlr_box){0, 0, 3900, 3900}, 16));
     uint32_t *before, *after;
     int width, height, w, h;
     CHECK(capture(desktop, output, &before, &width, &height));
     size_t reserved = desktop->scene->effects_cached_bytes;
     CHECK(reserved > 120u * 1000u * 1000u);
-    CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 640, 660}, 8, 16, (float[4]){0}));
+    CHECK(!wlr_scene_backdrop_create(dock, &(struct wlr_box){0, 0, 2048, 480}, 8, 8, (float[4]){0}));
     CHECK(desktop->scene->effects_cached_bytes == reserved);
     CHECK(capture(desktop, output, &after, &w, &h));
     CHECK(w == width && h == height && !memcmp(before, after, (size_t)width * height * 4));
     free(before); free(after);
     wlr_scene_node_destroy(&blocker->node);
     wlr_scene_node_destroy(&retained->node);
-    printf("PASS: real %zu-byte live rounding/backdrop reservation rejects otherwise valid 640x660 sigma16 at aggregate old-plus-candidate/scratch peak; committed whole-frame bytes remain identical\n",
-        reserved);
+    puts("PASS: real 121MiB live rounding/backdrop reservations reject an otherwise valid regional candidate at aggregate old-plus-new/workspace peak; committed whole-frame bytes remain identical");
+    CHECK(backdrop_taller_peak_suite(desktop, output, dock));
     wlr_scene_node_destroy(&upper->node);
     wlr_scene_node_destroy(&dock->node);
     wlr_scene_node_destroy(&apps->node);

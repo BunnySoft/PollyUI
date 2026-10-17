@@ -289,7 +289,7 @@ try {
       downloadLocation: 'https://github.com/libsdl-org/SDL/tree/8e37db5e797b6167f3a00d697d816a684bd259c7' },
   ];
   if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: '0.19.3-polly-effects4', licenseDeclared: 'MIT',
-    licenseComments: 'Pinned upstream source plus the packaged, SHA-256 checked PollyUI scene effects patch; ABI 3.',
+    licenseComments: 'Pinned upstream source plus the packaged, SHA-256 checked PollyUI scene effects patch; ABI 4.',
     downloadLocation: 'https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.3/wlroots-0.19.3.tar.gz' });
   if (debian) sourceComponents.push({ name: 'libinput-private', versionInfo: '1.28.1-1+deb13u1',
     licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION',
