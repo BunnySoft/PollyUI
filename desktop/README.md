@@ -215,9 +215,10 @@ ordinary scene contract passed its original accepted/pressure/tall assertions,
 but the independent published SHM fixture's first run retained a one-page and
 one-inode global-statistics deficit after a positive buffer drop. A distinct
 owner-identity diagnostic did not reproduce that deficit; it does not waive
-the original failure or establish a kernel/allocator cause. Overall ordinary
-qualification therefore remains held. These results are still far from
-16.7ms/60Hz and do not deliver a production Start consumer.
+the original failure or establish a kernel/allocator cause. The normal SHM
+test's shared-mount contract is corrected below, with stronger object-specific
+checks rather than retroactively reclassifying that original run. These results
+are still far from 16.7ms/60Hz and do not deliver a production Start consumer.
 
 The same reservation now covers every buffer created by the selected wlroots
 SHM allocator, including output/swapchain and cursor buffers. After creating the
@@ -232,15 +233,37 @@ ABI 4, but the patch/source SHA-256 changes: rebuild the paired SDK and WM in a
 separate prefix/output directory rather than overwriting a retained SDK.
 
 `desktop-shm-allocator` runs the real pinned SHM factory, checks physical fd
-backing **before** access, fully reads/writes 4096- and 131072-byte buffers and
-verifies fd/mapping/space/inode recovery plus reuse. It needs at least 1MiB free
-SHM and never fills the mount. To exercise rejection, run the same
+backing **before** access and fully reads/writes 4096- and 131072-byte buffers.
+Normal mode needs tmpfs with at least 1MiB free and no own SHM mappings, not an
+exclusive mount. It checks the actual destruction notification, old-fd `EBADF`,
+and `mincore` `ENOMEM` for every recorded old mapping page, without touching
+freed memory. Before opening proc files that could reuse a descriptor number,
+it proves the original object's release. Every phase must restore the complete
+own SHM `(fd, device, inode)` set, empty own SHM mapping set and original total
+fd count; allocation-failure paths cannot hide a leaked unpublished object.
+
+The first whole-mount VFS snapshot stays in its original position, with later
+owner/post-VFS observations explicitly separate. Normal mode reports changes
+in global space/inodes, but does not misattribute another legitimate user's
+allocation to this object's owner. A separate controlled, real same-mount
+helper counterexample retained one backed page while all three target objects
+were destroyed, closed and unmapped: the old global predicate rejected every
+one despite exact owner restoration. Releasing/waiting that owned helper
+restored all global totals and control fds. This establishes the normal-test
+assumption defect, not the cause of any historical one-page deficit, ENOSPC,
+SIGBUS or reap failure. That diagnostic is retained separately, not registered
+as ordinary CTest coverage.
+
+To exercise rejection, run the same
 `pollywm-shm-allocator-test --private-64k` binary with
 `POLLY_SHM_PRIVATE_TEST=1` **only inside a new disposable, private IPC container**
 with `--shm-size=64k` and a ten-second timeout. It checks an empty 65536-byte tmpfs,
 allocates/writes/drops 32x32 ARGB, requires three 128x256/131072-byte requests to
 return `NULL` without data access or child processes, checks recovery after each,
-then requires another 32x32 allocation to succeed. Run normal mode separately
+then requires another 32x32 allocation to succeed. This exclusive mode retains
+all original exact global free-block/available/inode restoration assertions as
+well as the stronger owner checks. No quota, timeout or rejection is relaxed.
+Run normal mode separately
 with adequate private SHM to prove the large geometry is still accepted. Missing
 preconditions return `77` with `UNAVAILABLE`, not success; CTest does not mark it
 as a passing skip. The pressure mode is deliberately not an ordinary CTest.
