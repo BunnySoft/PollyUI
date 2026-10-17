@@ -150,6 +150,9 @@ void pu_desktop_stop_shell(struct PuDesktop *desktop);
 bool pu_desktop_global_filter(const struct wl_client *client,
                               const struct wl_global *global, void *data);
 struct wlr_surface;
+const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile);
+const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
+    struct wlr_surface *surface, enum PuDesktopTile tile);
 bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
     struct wlr_box *box, struct PuDesktopOwner **owner);
 bool pu_desktop_session_exit(struct PuDesktop *desktop, struct wl_client *client,

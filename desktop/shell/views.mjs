@@ -820,23 +820,41 @@ export function applicationsView(theme, entries, query, changeQuery, launch, ref
     label(error, theme.colors.text, 11)) : null);
 }
 
-export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}) {
+export function windowActionsView(theme, window, action, close, error = '', workspaces = [], move = () => {}, placementMenu = true) {
   const l = theme.layout;
   const label = (value, color, size = l.fontSize) => themedText(theme, value, color, size, { minWidth: 0 });
+  const command = (id, title, operation, enabled = true) => {
+    const node = button(id, title, theme, operation, false, enabled ? {} : { opacity: l.disabledOpacity });
+    node.props['aria-disabled'] = String(!enabled);
+    node.props.tabIndex = enabled ? 0 : -1;
+    return guardTaskGesture(node, JSON.stringify([window.id, window.appId, window.workspaceId, id, title, enabled]));
+  };
+  const placementSupported = ['floating', 'left', 'right'].includes(window.placement) &&
+    Number.isInteger(window.placementCapabilities) && window.placementCapabilities >= 0 && window.placementCapabilities <= 7;
+  const placementEnabled = bit => placementMenu && !window.placementPending && !window.fullscreen &&
+    !window.minimized && (window.placementCapabilities & bit) !== 0;
   return panelViewport(theme, { id: 'shell-window-actions', variant: 'menu', scrollbar: true },
   label(window.title || window.appId || 'Untitled', theme.colors.text, l.headingFontSize),
-  button('shell-window-activate', 'Activate', theme, () => action('activateWindow')),
-  button('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize', theme,
+  command('shell-window-activate', 'Activate', () => action('activateWindow')),
+  command('shell-window-minimize', window.minimized ? 'Restore' : 'Minimize',
     () => action(window.minimized ? 'restoreWindow' : 'minimizeWindow')),
-  button('shell-window-maximize', window.maximized ? 'Unmaximize' : 'Maximize', theme,
+  command('shell-window-maximize', window.maximized ? 'Unmaximize' : 'Maximize',
     () => action(window.maximized ? 'unmaximizeWindow' : 'maximizeWindow')),
-  button('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen', theme,
+  command('shell-window-fullscreen', window.fullscreen ? 'Leave fullscreen' : 'Fullscreen',
     () => action(window.fullscreen ? 'unfullscreenWindow' : 'fullscreenWindow')),
-  button('shell-window-close', 'Close application window', theme, () => action('closeWindow')),
+  h('view', { id: 'shell-window-placement', style: { flexShrink: 0, minWidth: 0, gap: l.controlGap,
+    display: placementSupported ? 'flex' : 'none' } },
+  placementSupported ? [
+    command('shell-window-tile-left', 'Left half', () => action('tileLeft'), placementEnabled(1)),
+    command('shell-window-tile-right', 'Right half', () => action('tileRight'), placementEnabled(2)),
+    command('shell-window-restore-floating', 'Restore floating', () => action('restoreFloating'), placementEnabled(4)),
+    window.placementMessage ? label(window.placementMessage, theme.colors.muted, l.statusFontSize) : null,
+  ] : []),
+  command('shell-window-close', 'Close application window', () => action('closeWindow')),
   workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, l.statusFontSize) : null,
   workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>
-    button('shell-window-workspace-' + workspace.id, workspace.name, theme, () => move(workspace.id))),
-  button('shell-window-menu-close', 'Close menu', theme, close),
+    command('shell-window-workspace-' + workspace.id, workspace.name, () => move(workspace.id))),
+  command('shell-window-menu-close', 'Close menu', close),
   error ? label(error, theme.colors.text, l.statusFontSize) : null);
 }
 

@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_workspace_toplevel_v1">
-  <interface name="polly_workspace_toplevel_manager_v1" version="2">
+  <interface name="polly_workspace_toplevel_manager_v1" version="3">
     <description summary="trusted workspace membership for foreign toplevels">
       Workspace listing, creation, removal and activation use ext-workspace-v1.
       This restricted extension associates foreign toplevels with workspaces.
       Version 2 adds names, order and startup-only preference restoration.
+      Version 3 pairs with version 3 children for bounded window-menu placement.
     </description>
     <enum name="error">
       <entry name="invalid_manager" value="0" summary="workspace manager is not owned by this compositor"/>
@@ -61,7 +62,7 @@
       <arg name="message" type="string"/>
     </event>
   </interface>
-  <interface name="polly_workspace_toplevel_v1" version="1">
+  <interface name="polly_workspace_toplevel_v1" version="3">
     <request name="destroy" type="destructor"/>
     <request name="move_to">
       <description summary="move the toplevel family without activating it">
@@ -85,6 +86,69 @@
       <description summary="toplevel or workspace-manager binding is gone">
         No more events will be sent. The object is inert except for destroy.
       </description>
+    </event>
+    <enum name="placement">
+      <entry name="floating" value="0"/>
+      <entry name="left" value="1"/>
+      <entry name="right" value="2"/>
+    </enum>
+    <enum name="placement_capability" bitfield="true">
+      <entry name="left" value="1"/>
+      <entry name="right" value="2"/>
+      <entry name="floating" value="4"/>
+    </enum>
+    <request name="open_menu" since="3">
+      <description summary="bind an owned input surface to this live target">
+        Only the trusted Shell can bind this object. The compositor associates
+        the actual owned layer surface, target lifetime and current workspace
+        with a fresh server epoch. Registration can precede the first menu
+        frame; placement additionally requires that exact surface to be mapped,
+        presented, exclusive overlay input with keyboard focus. Names and
+        client-supplied roles are not authority. Only one menu epoch is live.
+        Serials are nonzero, strictly increasing for this object, without wrap.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+    <request name="close_menu" since="3">
+      <arg name="epoch" type="uint"/>
+    </request>
+    <request name="place" since="3">
+      <description summary="request one bounded placement from a live menu">
+        No arbitrary geometry, seat or window ID is accepted. The epoch must
+        still name this object's menu surface and workspace. Lock, grabs,
+        recording, non-menu exclusive focus, modal redirection, fullscreen,
+        minimized/closed targets and unfit geometry are rejected without
+        activation or mutation. A serial is consumed even on rejection.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="epoch" type="uint"/>
+      <arg name="placement" type="uint" enum="placement"/>
+    </request>
+    <event name="result" since="3">
+      <description summary="registration or placement admission, not presentation">
+        Accepted open_menu returns a fresh nonzero epoch. Accepted place means
+        the request was admitted and its configure queued, not that the client
+        acknowledged, resized or presented. Rejection leaves layout unchanged.
+        A lost result is an unknown transport outcome, never rollback success.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="epoch" type="uint"/>
+      <arg name="accepted" type="uint"/>
+      <arg name="message" type="string"/>
+    </event>
+    <event name="placement_state" since="3">
+      <description summary="presented placement and currently feasible commands">
+        Placement describes the last actually presented layout, not a request
+        acknowledgment. Pending remains set until the matching client/frame
+        fence completes, including recovery if a client declines exact size.
+        Capabilities describe geometry/policy feasibility, not a menu grant.
+        Fullscreen/maximized policy remains in foreign-toplevel state.
+      </description>
+      <arg name="placement" type="uint" enum="placement"/>
+      <arg name="pending" type="uint"/>
+      <arg name="capabilities" type="uint" enum="placement_capability"/>
+      <arg name="message" type="string"/>
     </event>
   </interface>
 </protocol>

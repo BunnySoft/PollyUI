@@ -260,6 +260,9 @@ static bool suite(const char *exe, const char *script, const char *capture)
     wlr_scene_node_set_position(&sized->tree->node, 400, 100);
     pu_desktop_focus_mapped(&desktop, owner->workspace_window);
     CHECK(desktop.focused == modal);
+    uint32_t owner_serial = owner->geometry_serial;
+    CHECK(pu_desktop_placement_check(owner, PU_TILE_LEFT) != NULL &&
+        owner->geometry_serial == owner_serial && desktop.focused == modal);
     motion(50, 140); button(true); button(false);
     CHECK(desktop.focused == modal && desktop.seat->pointer_state.focused_surface == NULL);
     CHECK(desktop.seat->keyboard_state.focused_surface == modal->toplevel->base->surface);

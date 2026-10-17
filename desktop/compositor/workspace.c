@@ -8,6 +8,8 @@
 #include <string.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
@@ -45,6 +47,12 @@ struct Tracked {
     struct wl_resource *resource, *last_workspace;
     uint64_t window;
     bool sent;
+    struct wlr_surface *menu;
+    struct PuWorkspace *menu_workspace;
+    uint32_t menu_epoch, last_serial;
+    uint32_t placement, pending, capabilities;
+    bool placement_sent;
+    char placement_message[128];
 };
 struct Output {
     struct wl_list link;
@@ -58,6 +66,7 @@ struct PuWorkspaces {
     struct wl_list workspaces, bindings, tracked, outputs;
     uint32_t next_workspace;
     uint64_t next_window;
+    uint32_t next_menu_epoch;
     bool used;
 };
 
@@ -139,16 +148,62 @@ static struct wl_resource *workspace_resource(struct Binding *binding, struct Pu
     return NULL;
 }
 
+void pu_workspaces_invalidate_menus(struct PuDesktop *desktop, struct wlr_surface *surface)
+{
+    if (!desktop->workspaces) return;
+    struct Tracked *tracked;
+    wl_list_for_each(tracked, &desktop->workspaces->tracked, link) {
+        if (surface && tracked->menu != surface) continue;
+        tracked->menu = NULL;
+        tracked->menu_workspace = NULL;
+        tracked->menu_epoch = 0;
+    }
+}
+
+static void placement_state(struct Tracked *tracked, struct PuDesktopView *view)
+{
+    if (wl_resource_get_version(tracked->resource) < 3) return;
+    uint32_t placement = view->mode == PU_DESKTOP_TILED_LEFT ? PU_TILE_LEFT :
+        view->mode == PU_DESKTOP_TILED_RIGHT ? PU_TILE_RIGHT : PU_TILE_NONE;
+    uint32_t capabilities = 0;
+    const char *message = "";
+    for (enum PuDesktopTile tile = PU_TILE_NONE; tile <= PU_TILE_RIGHT; tile++) {
+        const char *error = pu_desktop_placement_check(view, tile);
+        if (!error) capabilities |= tile == PU_TILE_NONE ? 4 : tile == PU_TILE_LEFT ? 1 : 2;
+        else if (tile == PU_TILE_LEFT) message = error;
+    }
+    uint32_t pending = view->geometry_pending || view->resize_pending;
+    if (tracked->placement_sent && tracked->placement == placement && tracked->pending == pending &&
+        tracked->capabilities == capabilities && !strcmp(tracked->placement_message, message)) return;
+    tracked->placement = placement; tracked->pending = pending; tracked->capabilities = capabilities;
+    tracked->placement_sent = true;
+    snprintf(tracked->placement_message, sizeof(tracked->placement_message), "%s", message);
+    polly_workspace_toplevel_v1_send_placement_state(tracked->resource, placement, pending, capabilities, message);
+}
+
+void pu_workspaces_placement_changed(struct PuDesktopView *view)
+{
+    if (!view->desktop->workspaces) return;
+    struct Tracked *tracked;
+    wl_list_for_each(tracked, &view->desktop->workspaces->tracked, link)
+        if (tracked->window == view->workspace_window && tracked->binding && tracked->binding->manager)
+            placement_state(tracked, view);
+}
+
 static void membership(struct Tracked *tracked)
 {
     struct PuDesktopView *view = window_for(tracked->state, tracked->window);
     if (!tracked->binding || !tracked->binding->manager || !view) return;
+    if (tracked->menu && tracked->menu_workspace != view->workspace) {
+        tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
+    }
     struct wl_resource *workspace = workspace_resource(tracked->binding, view->workspace);
     if (!tracked->sent || workspace != tracked->last_workspace) {
         polly_workspace_toplevel_v1_send_workspace(tracked->resource, workspace);
         tracked->last_workspace = workspace;
         tracked->sent = true;
     }
+    placement_state(tracked, view);
 }
 
 static void close_tracked(struct Tracked *tracked)
@@ -157,6 +212,7 @@ static void close_tracked(struct Tracked *tracked)
     tracked->window = 0;
     tracked->binding = NULL;
     tracked->last_workspace = NULL;
+    tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
 }
 
 void pu_workspaces_view_map(struct PuDesktopView *view)
@@ -561,8 +617,71 @@ static void move_request(struct wl_client *client, struct wl_resource *resource,
     if (ref->workspace) queue(tracked->binding, MOVE, ref->workspace->id, tracked->window, NULL);
     else wlr_log(WLR_DEBUG, "Ignoring move to a removed workspace");
 }
+
+static const char *menu_request(struct Tracked *tracked, struct wl_client *client, uint32_t serial)
+{
+    if (!tracked->window || !tracked->binding || !tracked->binding->manager ||
+        client != tracked->state->desktop->shell_client) return "Window or trusted manager is closed";
+    if (!serial || serial <= tracked->last_serial) return "Unknown or duplicate placement serial";
+    tracked->last_serial = serial;
+    return NULL;
+}
+
+static void open_menu(struct wl_client *client, struct wl_resource *resource,
+    uint32_t serial, struct wl_resource *surface_resource)
+{
+    struct Tracked *tracked = wl_resource_get_user_data(resource);
+    const char *error = menu_request(tracked, client, serial);
+    if (!tracked->window) { wlr_log(WLR_DEBUG, "Ignoring menu request on a closed toplevel"); return; }
+    struct PuDesktop *desktop = tracked->state->desktop;
+    struct PuDesktopView *view = window_for(tracked->state, tracked->window);
+    struct wlr_surface *surface = wlr_surface_from_resource(surface_resource);
+    struct PuDesktopLayer *layer, *owned = NULL;
+    wl_list_for_each(layer, &desktop->layers, link)
+        if (layer->surface->surface == surface &&
+            wl_resource_get_client(layer->surface->resource) == client) owned = layer;
+    if (!error && (!view || !pu_workspace_current(view))) error = "Window is not in the current workspace";
+    if (!error && (!owned || wl_resource_get_client(surface_resource) != client))
+        error = "A live owned layer surface is required";
+    if (!error && tracked->state->next_menu_epoch == UINT32_MAX) error = "Window menu epochs exhausted";
+    uint32_t epoch = 0;
+    if (!error) {
+        pu_workspaces_invalidate_menus(desktop, NULL);
+        tracked->menu = surface;
+        tracked->menu_workspace = desktop->active_workspace;
+        epoch = tracked->menu_epoch = ++tracked->state->next_menu_epoch;
+    }
+    polly_workspace_toplevel_v1_send_result(resource, serial, epoch, !error, error ? error : "");
+}
+
+static void close_menu(struct wl_client *client, struct wl_resource *resource, uint32_t epoch)
+{
+    struct Tracked *tracked = wl_resource_get_user_data(resource);
+    if (client != tracked->state->desktop->shell_client || !epoch || epoch != tracked->menu_epoch) return;
+    tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
+}
+
+static void place_request(struct wl_client *client, struct wl_resource *resource,
+    uint32_t serial, uint32_t epoch, uint32_t placement)
+{
+    struct Tracked *tracked = wl_resource_get_user_data(resource);
+    const char *error = menu_request(tracked, client, serial);
+    if (!tracked->window) { wlr_log(WLR_DEBUG, "Ignoring placement on a closed toplevel"); return; }
+    struct PuDesktopView *view = window_for(tracked->state, tracked->window);
+    if (!error && (!view || !tracked->menu || !epoch || epoch != tracked->menu_epoch ||
+        tracked->menu_workspace != tracked->state->desktop->active_workspace ||
+        view->workspace != tracked->menu_workspace)) error = "Window menu epoch is closed or stale";
+    if (!error && placement > PU_TILE_RIGHT) error = "Unknown window placement";
+    if (!error) error = pu_desktop_place_from_menu(view, tracked->menu, (enum PuDesktopTile)placement);
+    if (!error) {
+        tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
+    }
+    polly_workspace_toplevel_v1_send_result(resource, serial, epoch, !error, error ? error : "");
+}
+
 static const struct polly_workspace_toplevel_v1_interface tracked_impl = {
     .destroy = destroy_request, .move_to = move_request,
+    .open_menu = open_menu, .close_menu = close_menu, .place = place_request,
 };
 
 static void get_toplevel(struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -578,7 +697,8 @@ static void get_toplevel(struct wl_client *client, struct wl_resource *resource,
     struct Binding *binding = wl_resource_get_user_data(manager);
     struct Tracked *tracked = calloc(1, sizeof(*tracked));
     if (!tracked) { wl_resource_post_no_memory(resource); return; }
-    tracked->resource = wl_resource_create(client, &polly_workspace_toplevel_v1_interface, 1, id);
+    tracked->resource = wl_resource_create(client, &polly_workspace_toplevel_v1_interface,
+        wl_resource_get_version(resource) >= 3 ? 3 : 1, id);
     if (!tracked->resource) { free(tracked); wl_resource_post_no_memory(resource); return; }
     tracked->state = state; tracked->binding = binding;
     struct PuDesktopView *view;
@@ -742,7 +862,7 @@ bool pu_workspaces_init(struct PuDesktop *desktop)
         if (!desktop->active_workspace) desktop->active_workspace = workspace;
     }
     state->manager = wl_global_create(desktop->display, &ext_workspace_manager_v1_interface, 1, state, bind_manager);
-    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 2, state, bind_toplevels);
+    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 3, state, bind_toplevels);
     return state->manager && state->toplevel_manager;
 }
 

@@ -1166,6 +1166,43 @@ click opens maximize, fullscreen and graceful-close controls. Window-list
 overflow scrolls horizontally with the wheel. Buttons are currently text-based,
 without app grouping, icons or pinning.
 
+The same window menu also provides **Left half**, **Right half**, and
+**Restore floating** in every theme. They call the compositor's existing
+half-screen/restore geometry engine, not simulated shortcuts or transforms.
+Fullscreen must be left first; minimized, modal-blocked, pending or unfit
+targets cannot be placed. Restore floating is enabled only when a saved floating
+layout is actually available. The existing menu viewport, keyboard navigation
+and shared scrollbar remain usable on short displays. This is not a Windows 11
+caption-hover flyout or drag-to-snap implementation.
+
+Placement uses the existing restricted `polly_workspace_toplevel_v1` object,
+paired manager/child version 3. `desktop.windows()` optionally adds readonly
+`placement` (`floating`, `left`, `right`), `placementPending`,
+`placementCapabilities` (left=1, right=2, restore=4), and `placementMessage`.
+Older providers omit these fields and the three commands are hidden; the
+existence of a JavaScript function is not a capability announcement.
+`openWindowMenu(id, ownedWindow)` registers an actual owned layer surface on the
+bound live toplevel and returns a compositor-issued epoch.
+`tileWindow(id, 'left' | 'right', epoch)` and
+`restoreFloatingWindow(id, epoch)` return `{ admitted: true }` only after WM
+admission; this is **not** a resize/presentation acknowledgment. The readonly
+state changes only at the existing client/frame presentation fence, including
+floating recovery if a client declines the exact half size.
+
+At admission WM checks the exact registered surface's mapped/presented
+exclusive-overlay input focus and trusted connection, live target/family,
+workspace, lock, keyboard/pointer grabs, shortcut recording and geometry limits.
+Neither surface names nor claimed roles grant permission. Placement never
+activates first. Each admitted epoch is consumed once; `closeWindowMenu(epoch)`,
+surface unmap/destruction, workspace changes and Shell retirement revoke it.
+Nonzero request serials increase without wrap, and duplicate/unknown serials or
+stale epochs cannot replay a placement. Denials retain the menu and show an
+error; a transport-unknown result is not reported as rollback and is never
+automatically retried. Ordinary clients do not receive these private objects.
+Keyboard placement retains its separate, unchanged focus/layer/grab guards.
+This adds no preferences and changes neither configuration v4 nor appearance,
+shortcut, effects or public theme protocol versions.
+
 The workspace menu manually adds/removes/renames/reorders workspaces and switches every output
 together. Four are created on first use, or validated saved preferences restore
 the ordered names and active choice at startup. Empty workspaces are never

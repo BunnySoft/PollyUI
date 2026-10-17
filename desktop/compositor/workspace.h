@@ -7,6 +7,7 @@
 struct PuDesktop;
 struct PuDesktopView;
 struct wlr_output;
+struct wlr_surface;
 struct PuWorkspace {
     struct wl_list link;
     uint32_t id;
@@ -22,6 +23,8 @@ void pu_workspace_activate(struct PuDesktop *desktop, struct PuWorkspace *worksp
 void pu_workspace_step(struct PuDesktop *desktop, int direction);
 void pu_workspaces_view_map(struct PuDesktopView *view);
 void pu_workspaces_view_unmap(struct PuDesktopView *view);
+void pu_workspaces_placement_changed(struct PuDesktopView *view);
+void pu_workspaces_invalidate_menus(struct PuDesktop *desktop, struct wlr_surface *surface);
 void pu_workspaces_adopt_parent(struct PuDesktopView *view);
 bool pu_workspaces_output_add(struct PuDesktop *desktop, struct wlr_output *output);
 

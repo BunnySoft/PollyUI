@@ -269,6 +269,15 @@ static void presenter(struct wl_client *client, struct wl_resource *resource, ui
     }
 }
 
+bool pu_shortcuts_recording(struct PuDesktop *desktop)
+{
+    if (!desktop->shortcuts) return false;
+    struct Binding *binding;
+    wl_list_for_each(binding, &desktop->shortcuts->bindings, link)
+        if (binding->recording) return true;
+    return false;
+}
+
 static void recording(struct wl_client *client, struct wl_resource *resource, uint32_t enabled)
 {
     (void)client;

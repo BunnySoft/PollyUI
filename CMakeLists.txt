@@ -941,6 +941,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                         "${CMAKE_SOURCE_DIR}/desktop/tests/window-shell.mjs" windows)
                 set_tests_properties(desktop-window-shell-${renderer} PROPERTIES TIMEOUT 90
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=${renderer}")
+                if (renderer STREQUAL "raster")
+                    add_test(NAME desktop-window-placement-menu
+                        COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                            $<TARGET_FILE:pollyui-layer-client-test> $<TARGET_FILE:pollyui>
+                            "${CMAKE_SOURCE_DIR}/desktop/tests/window-shell.mjs" windows placement)
+                    set_tests_properties(desktop-window-placement-menu PROPERTIES TIMEOUT 90
+                        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" ENVIRONMENT "PU_RENDERER=raster")
+                endif()
             endif()
             add_test(NAME desktop-shell-${renderer}
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/native-shell.sh"

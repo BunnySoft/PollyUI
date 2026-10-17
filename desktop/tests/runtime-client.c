@@ -753,6 +753,7 @@ static bool window_suite(char *executable, char *script, char *mode)
     CHECK(pu_desktop_spawn_shell(&desktop, args));
     pid_t settings_shell_identity = desktop.shell_pid;
     bool success = false, crashed = false;
+    struct wlr_box placement_boxes[3] = {{0}};
     unsigned settings_sequence = 0;
     unsigned file_dialog_sequence = 0;
     unsigned files_sequence = 0;
@@ -781,6 +782,52 @@ static bool window_suite(char *executable, char *script, char *mode)
         wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
             if (!marker->surface->surface->mapped) continue;
             const char *name = marker->surface->namespace;
+            unsigned placement_height;
+            if (sscanf(name, "fixture-placement-output-height %u", &placement_height) == 1) {
+                CHECK(placement_height == 360 || placement_height == 720);
+                struct wlr_output_layout_output *entry;
+                wl_list_for_each(entry, &desktop.layout->outputs, link) {
+                    struct wlr_box bounds;
+                    wlr_output_layout_get_box(desktop.layout, entry->output, &bounds);
+                    if (bounds.x || bounds.y) continue;
+                    struct wlr_output_state state;
+                    wlr_output_state_init(&state);
+                    wlr_output_state_set_custom_mode(&state, 1280, (int)placement_height, 60000);
+                    CHECK(wlr_output_commit_state(entry->output, &state));
+                    wlr_output_state_finish(&state);
+                    break;
+                }
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            unsigned placement_slot, placement_mode;
+            bool placement_save = !strncmp(name, "fixture-placement-save ", 23);
+            if (sscanf(name, placement_save ? "fixture-placement-save %u %u" : "fixture-placement-check %u %u",
+                    &placement_slot, &placement_mode) == 2) {
+                CHECK(placement_slot < 3);
+                struct PuDesktopView *view = NULL, *item;
+                wl_list_for_each(item, &desktop.views, link)
+                    if (item->mapped && !item->geometry_pending && item->toplevel->app_id &&
+                        !strcmp(item->toplevel->app_id, "org.pollyui.window-fixture")) view = item;
+                if (!view) continue;
+                CHECK((unsigned)view->mode == placement_mode && pu_decoration_ready(view));
+                struct wlr_box box = view->presented_box;
+                box.x = view->tree->node.x; box.y = view->tree->node.y;
+                if (placement_save) placement_boxes[placement_slot] = box;
+                else CHECK(wlr_box_equal(&placement_boxes[placement_slot], &box));
+                printf("PLACEMENT_NATIVE %s slot=%u mode=%u box=%d,%d,%d,%d configure=%u pending=%u\n",
+                    placement_save ? "save" : "check", placement_slot, placement_mode,
+                    box.x, box.y, box.width, box.height, view->geometry_serial, view->geometry_pending);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
+            if (!strcmp(name, "fixture-placement-menu-ready")) {
+                if (!desktop.focused_layer || !desktop.focused_layer->presented) continue;
+                CHECK(desktop.focused_layer->surface->surface->mapped &&
+                    desktop.seat->keyboard_state.focused_surface == desktop.focused_layer->surface->surface);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                continue;
+            }
             char desktop_action[16], desktop_target[96];
             int desktop_x, desktop_y;
             if (sscanf(name, "fixture-desktop-pointer %15s %d %d %95s",

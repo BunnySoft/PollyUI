@@ -206,6 +206,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function releaseMenu(surface) {
     if (!surface || surface !== menu) return false;
     menu = null;
+    if (surface.placementEpoch) {
+      const epoch = surface.placementEpoch;
+      surface.placementEpoch = null;
+      try { native.closeWindowMenu(epoch); }
+      catch (failure) {
+        error = 'Could not retire window menu: ' + String(failure);
+        errorKind = 'placement';
+        report('[shell] ' + error);
+      }
+    }
     const editor = workspaceEditor;
     workspaceEditor = null;
     editor?.input.root.blur();
@@ -874,8 +884,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const selected = visibleWindows().find(window => window.id === current.windowId);
       if (!selected) { closeMenu(); return; }
       render(windowActionsView(getDesktopTheme(themeId), selected,
-        scoped(action => windowAction(selected.id, action)), close, error, workspaces,
-        scoped(id => moveWindow(selected.id, id))), current.window.document.body);
+        scoped(action => ['tileLeft', 'tileRight', 'restoreFloating'].includes(action) ?
+          windowPlacementAction(current, selected.id, action) : windowAction(selected.id, action)), close, error, workspaces,
+        scoped(id => moveWindow(selected.id, id)), !!current.placementEpoch), current.window.document.body);
       return;
     }
     if (current.mode === 'window-group') {
@@ -1127,6 +1138,20 @@ export function createDesktopShell({ host = window, configuration, report = cons
     menu.about = mode === 'about';
     menu.query = '';
     const current = menu;
+    if (mode === 'windows') {
+      const selected = visibleWindows().find(window => window.id === windowId);
+      current.windowAppId = selected?.appId;
+      current.windowWorkspaceId = selected?.workspaceId;
+      if (selected?.placement !== undefined && typeof native.openWindowMenu === 'function') {
+        try {
+          const epoch = native.openWindowMenu(windowId, current.window);
+          if (!Number.isInteger(epoch) || epoch <= 0 || epoch > 0xffffffff)
+            throw new Error('Window menu registration did not return a valid epoch');
+          current.placementEpoch = epoch;
+        }
+        catch (failure) { windowFailure(failure); errorKind = 'placement'; }
+      }
+    }
     const body = current.window.document.body;
     body.tabIndex = 0;
     listen(current, 'keydown', event => {
@@ -1379,6 +1404,36 @@ export function createDesktopShell({ host = window, configuration, report = cons
       closeMenu();
       return true;
     } catch (failure) { windowFailure(failure); return false; }
+  }
+
+  function windowPlacementAction(current, id, action) {
+    if (!currentMenu(current) || current.mode !== 'windows' || current.windowId !== id ||
+        !current.placementEpoch) return false;
+    try {
+      if (!host.displays().some(output => output.id === current.output)) return false;
+      const workspace = typeof native.workspaces === 'function' ?
+        native.workspaces().find(workspace => workspace.active)?.id : undefined;
+      const selected = native.windows().find(window => window.id === id);
+      if (!selected || selected.appId !== current.windowAppId ||
+          selected.workspaceId !== current.windowWorkspaceId ||
+          workspace !== current.windowWorkspaceId) throw new Error('Window menu target or workspace is no longer current');
+      const bit = action === 'tileLeft' ? 1 : action === 'tileRight' ? 2 : 4;
+      if (selected.fullscreen || selected.minimized || selected.placementPending ||
+          !(selected.placementCapabilities & bit)) throw new Error(selected.placementMessage || 'Window placement is unavailable');
+      const result = action === 'restoreFloating' ? native.restoreFloatingWindow(id, current.placementEpoch) :
+        native.tileWindow(id, action === 'tileLeft' ? 'left' : 'right', current.placementEpoch);
+      if (!result || typeof result !== 'object' || result.admitted !== true || Object.keys(result).length !== 1)
+        throw new Error('Window placement was not acknowledged; outcome is unknown');
+      if (currentMenu(current)) {
+        if (errorKind === 'placement' || errorKind === 'windows') { error = ''; errorKind = ''; }
+        closeMenu(current);
+      }
+      return true;
+    } catch (failure) {
+      if (currentMenu(current)) { windowFailure(failure); errorKind = 'placement'; }
+      else report('[shell] Window placement failed: ' + String(failure));
+      return false;
+    }
   }
 
   function toggleWindow(id) {
