@@ -129,6 +129,11 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" client-header "${WORKSPACE_TOPLEVEL_XML}" "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h"
     DEPENDS "${WORKSPACE_XML}" "${WORKSPACE_TOPLEVEL_XML}" VERBATIM)
 set(DECORATION_XML "${WAYLAND_PROTOCOLS_DIR}/unstable/xdg-decoration/xdg-decoration-unstable-v1.xml")
+set(DIALOG_XML "${WAYLAND_PROTOCOLS_DIR}/staging/xdg-dialog/xdg-dialog-v1.xml")
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/xdg-dialog-client.h" "${PROTOCOL_DIR}/xdg-dialog.c"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${DIALOG_XML}" "${PROTOCOL_DIR}/xdg-dialog-client.h"
+    COMMAND "${WAYLAND_SCANNER}" private-code "${DIALOG_XML}" "${PROTOCOL_DIR}/xdg-dialog.c"
+    DEPENDS "${DIALOG_XML}" VERBATIM)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
     COMMAND "${WAYLAND_SCANNER}" client-header "${DECORATION_XML}" "${PROTOCOL_DIR}/xdg-decoration-client.h"
@@ -162,6 +167,7 @@ add_custom_command(
     COMMAND "${WAYLAND_SCANNER}" private-code "${FOREIGN_XML}" "${PROTOCOL_DIR}/foreign-toplevel.c"
     DEPENDS "${FOREIGN_XML}" VERBATIM)
 add_executable(pollywm-test-client client.c ../shared/appearance-document.c ../shared/decoration-frame.c
+    "${PROTOCOL_DIR}/xdg-dialog-client.h" "${PROTOCOL_DIR}/xdg-dialog.c"
     "${PROTOCOL_DIR}/cursor-shape-client.h" "${PROTOCOL_DIR}/cursor-shape-client.c"
     "${PROTOCOL_DIR}/cursor-tablet.c"
     ${IME_TEST_PROTOCOLS}

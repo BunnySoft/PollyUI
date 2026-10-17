@@ -59,3 +59,16 @@ export function applicationMenuHeight(theme, availableHeight) {
     availableHeight - theme.panel.height + (theme.panel.kind === 'taskbar' ? l.menuBottomOverlap ?? 0 : 0) -
       (l.menuVerticalInset ?? l.overlayInset) * 2));
 }
+export function layoutPickerPlacement(theme, offer) {
+  for (const key of ['x', 'y', 'width', 'height', 'outputX', 'outputY', 'outputWidth', 'outputHeight'])
+    if (!Number.isInteger(offer?.[key])) throw new TypeError('Invalid native layout picker anchor');
+  if (offer.width < 1 || offer.height < 1 || offer.outputWidth < 1 || offer.outputHeight < 1)
+    throw new RangeError('Native layout picker anchor has no live output');
+  const width = Math.max(1, Math.min(280, offer.outputWidth));
+  const height = Math.max(1, Math.min(260, offer.outputHeight));
+  const left = Math.max(0, Math.min(offer.outputWidth - width, offer.x + offer.width - width));
+  const below = offer.y + offer.height;
+  const top = Math.max(0, Math.min(offer.outputHeight - height,
+    below + height <= offer.outputHeight ? below : offer.y - height));
+  return { width, height, anchors: ['top', 'left'], margins: { left, top } };
+}

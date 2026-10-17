@@ -93,6 +93,8 @@ PuWindow *pu_window_create(const PuWindowConfig *cfg);
 struct wl_surface;
 /* Presents the initial own layer buffer if needed; ordinary windows return NULL. */
 struct wl_surface *pu_window_layer_surface(PuWindow *w);
+/* Observe an owned layer without painting, mapping or dispatching callbacks. */
+struct wl_surface *pu_window_layer_surface_peek(PuWindow *w);
 #endif
 
 /* Install the per-frame paint callback (and request a repaint). */

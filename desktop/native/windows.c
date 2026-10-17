@@ -79,6 +79,11 @@ static struct {
     bool placement_accepted, placement_unknown, placement_waiting;
     char placement_error[192];
     JSValue placement_menu;
+    bool picker_capability, picker_changed;
+    uint32_t picker_target, picker_token;
+    int32_t picker_x, picker_y, picker_width, picker_height;
+    int32_t picker_output_x, picker_output_y, picker_output_width, picker_output_height;
+    char picker_output_name[128];
 } control;
 
 static void session_status(void *data, struct polly_session_status_v1 *status, uint32_t serial, uint32_t input_method)
@@ -129,15 +134,30 @@ static void workspace_restored(void *data, struct polly_workspace_toplevel_manag
     control.restore_result = result;
     snprintf(control.restore_error, sizeof(control.restore_error), "%s", message);
 }
+static void picker_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.picker_capability = supported == 1;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .restored = workspace_restored,
+    .layout_picker_capabilities = picker_capability,
 };
+
+static void clear_picker(uint32_t target)
+{
+    if (target && control.picker_target != target) return;
+    control.picker_target = control.picker_token = 0;
+    control.picker_changed = true;
+}
 
 static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 *handle,
                                  struct ext_workspace_handle_v1 *workspace)
 {
     (void)handle;
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
     window->pending_workspace = workspace ? ext_workspace_handle_v1_get_user_data(workspace) : NULL;
     window->workspace_changed = 1;
 }
@@ -145,6 +165,7 @@ static void workspace_membership(void *data, struct polly_workspace_toplevel_v1 
 static void workspace_window_closed(void *data, struct polly_workspace_toplevel_v1 *handle)
 {
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
     polly_workspace_toplevel_v1_destroy(handle);
     window->workspace_handle = NULL;
     window->workspace = window->pending_workspace = NULL;
@@ -184,9 +205,37 @@ static void placement_result(void *data, struct polly_workspace_toplevel_v1 *han
     snprintf(control.placement_error, sizeof(control.placement_error), "%s", message);
 }
 
+static void layout_offer(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t token, int32_t x, int32_t y, int32_t width, int32_t height, const char *output_name,
+    int32_t output_x, int32_t output_y, int32_t output_width, int32_t output_height)
+{
+    struct DesktopWindow *window = data;
+    if (!control.picker_capability || polly_workspace_toplevel_v1_get_version(handle) < 4 || !token ||
+        width < 1 || height < 1 || width > 96 || height > 96 ||
+        output_width < 1 || output_height < 1 || output_width > 32768 || output_height > 32768 ||
+        strlen(output_name) >= sizeof(control.picker_output_name)) {
+        control.failed = control.changed = 1; return;
+    }
+    control.picker_target = window->id; control.picker_token = token;
+    control.picker_x = x; control.picker_y = y;
+    control.picker_width = width; control.picker_height = height;
+    control.picker_output_x = output_x; control.picker_output_y = output_y;
+    control.picker_output_width = output_width; control.picker_output_height = output_height;
+    snprintf(control.picker_output_name, sizeof(control.picker_output_name), "%s", output_name);
+    control.picker_changed = true;
+}
+
+static void layout_dismissed(void *data, struct polly_workspace_toplevel_v1 *handle, uint32_t token)
+{
+    (void)handle;
+    struct DesktopWindow *window = data;
+    if (control.picker_target == window->id && control.picker_token == token) clear_picker(window->id);
+}
+
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = workspace_membership, .closed = workspace_window_closed,
     .placement_state = placement_state, .result = placement_result,
+    .layout_offer = layout_offer, .layout_dismissed = layout_dismissed,
 };
 
 static void watch_workspace(struct DesktopWindow *window)
@@ -370,6 +419,7 @@ static void done(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 static void closed(void *data, struct zwlr_foreign_toplevel_handle_v1 *handle)
 {
     struct DesktopWindow *window = data;
+    clear_picker(window->id);
     struct DesktopWindow **link = &control.windows;
     while (*link && *link != window) link = &(*link)->next;
     if (*link) *link = window->next;
@@ -444,7 +494,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
         control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version < 3 ? version : 3);
+            version < 4 ? version : 4);
         if (!control.workspace_toplevels ||
             polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
                 &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
@@ -505,6 +555,8 @@ static void disconnect_control(void)
     if (control.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(control.workspace_toplevels);
     control.workspace_manager = NULL; control.workspace_group = NULL; control.workspace_toplevels = NULL;
     control.workspaces_ready = control.workspaces_changed = 0;
+    control.picker_capability = false;
+    clear_picker(0);
     if (control.manager) {
         zwlr_foreign_toplevel_manager_v1_stop(control.manager);
         zwlr_foreign_toplevel_manager_v1_destroy(control.manager);
@@ -847,7 +899,7 @@ static struct DesktopWindow *placement_window(JSContext *ctx, JSValueConst value
     for (struct DesktopWindow *window = control.windows; window; window = window->next) {
         if (window->id != (uint32_t)id) continue;
         if (window->ready && window->workspace_ready && window->workspace && window->workspace_handle &&
-            polly_workspace_toplevel_v1_get_version(window->workspace_handle) == 3 && window->placement_ready)
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 3 && window->placement_ready)
             return window;
         break;
     }
@@ -891,25 +943,112 @@ static int finish_placement_request(JSContext *ctx)
     return 1;
 }
 
-static JSValue open_window_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+static JSValue open_window_menu(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int picker)
 {
     (void)self;
     if (argc != 2) return JS_ThrowTypeError(ctx, "Window ID and live owned menu Window are required");
-    struct DesktopWindow *window = placement_window(ctx, argv[0]);
+    uint32_t token = 0;
+    if (picker) {
+        double number;
+        if (!JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &number, argv[0]) < 0 ||
+            !(number > 0 && number <= UINT32_MAX) || number != (uint32_t)number)
+            return JS_ThrowTypeError(ctx, "A current native caption hover token is required");
+        token = (uint32_t)number;
+        if (token != control.picker_token || !control.picker_target)
+            return JS_ThrowTypeError(ctx, "Native caption hover grant is closed or stale");
+    }
+    JSValue target = picker ? JS_NewUint32(ctx, control.picker_target) : JS_DupValue(ctx, argv[0]);
+    struct DesktopWindow *window = placement_window(ctx, target);
+    JS_FreeValue(ctx, target);
     if (!window) return JS_EXCEPTION;
+    if (picker && (!control.picker_capability || token != control.picker_token ||
+        window->id != control.picker_target || polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 4))
+        return JS_ThrowTypeError(ctx, "Native caption picker requires a live paired workspace v4 grant");
+    uint32_t target_id = window->id;
     PuWindow *owned = pu_gui_window_from_value(ctx, argv[1]);
-    struct wl_surface *surface = owned ? pu_window_layer_surface(owned) : NULL;
+    struct wl_surface *surface = owned ? (picker ? pu_window_layer_surface_peek(owned) :
+        pu_window_layer_surface(owned)) : NULL;
     if (!surface) return JS_HasException(ctx) ? JS_EXCEPTION :
         JS_ThrowTypeError(ctx, "A live owned layer Window is required");
     if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
-    polly_workspace_toplevel_v1_open_menu(window->workspace_handle, control.placement_serial, surface);
+    if (picker) polly_workspace_toplevel_v1_open_layout_picker(window->workspace_handle,
+        control.placement_serial, token, surface);
+    else polly_workspace_toplevel_v1_open_menu(window->workspace_handle, control.placement_serial, surface);
     if (!finish_placement_request(ctx)) return JS_EXCEPTION;
+    if (picker) {
+        PuWindow *current = pu_gui_window_from_value(ctx, argv[1]);
+        if (!current || pu_window_layer_surface_peek(current) != surface ||
+            control.picker_token != token || control.picker_target != target_id)
+            return JS_HasException(ctx) ? JS_EXCEPTION :
+                JS_ThrowTypeError(ctx, "Caption picker Window or grant retired during registration");
+    }
     if (!control.placement_epoch) return JS_ThrowInternalError(ctx, "Invalid window menu epoch");
     JS_FreeValue(ctx, control.placement_menu);
     control.placement_menu = JS_DupValue(ctx, argv[1]);
     control.menu_target = control.placement_target;
     control.menu_epoch = control.placement_epoch;
     return JS_NewUint32(ctx, control.menu_epoch);
+}
+
+static JSValue layout_picker_capability(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    return JS_NewBool(ctx, control.workspace_toplevels &&
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 4 && control.picker_capability);
+}
+
+static JSValue enable_layout_picker(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    if (argc != 1 || !JS_IsBool(argv[0])) return JS_ThrowTypeError(ctx, "Picker opt-in must be boolean");
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.picker_capability || polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 4)
+        return JS_ThrowTypeError(ctx, "Native caption picker is unsupported by this provider");
+    polly_workspace_toplevel_manager_v1_enable_layout_picker(control.workspace_toplevels, JS_ToBool(ctx, argv[0]));
+    clear_picker(0);
+    if (!roundtrip()) return JS_ThrowInternalError(ctx, "Caption picker opt-in transport outcome is unknown");
+    return JS_UNDEFINED;
+}
+
+static JSValue layout_picker_offer(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self; (void)argc; (void)argv;
+    if (!ensure_workspaces(ctx)) return JS_EXCEPTION;
+    if (!control.picker_token || !control.picker_target) return JS_NULL;
+    JSValue value = JS_NewObject(ctx);
+    if (JS_IsException(value)) return value;
+    const char *names[] = {"token", "windowId", "x", "y", "width", "height",
+        "outputX", "outputY", "outputWidth", "outputHeight"};
+    int64_t numbers[] = {control.picker_token, control.picker_target, control.picker_x, control.picker_y,
+        control.picker_width, control.picker_height, control.picker_output_x, control.picker_output_y,
+        control.picker_output_width, control.picker_output_height};
+    for (unsigned i = 0; i < sizeof(numbers) / sizeof(numbers[0]); i++)
+        if (!property(ctx, value, names[i], JS_NewInt64(ctx, numbers[i]))) {
+            JS_FreeValue(ctx, value); return JS_EXCEPTION;
+        }
+    if (!property(ctx, value, "outputName", JS_NewString(ctx, control.picker_output_name))) {
+        JS_FreeValue(ctx, value); return JS_EXCEPTION;
+    }
+    return value;
+}
+
+static JSValue dismiss_layout_picker(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv)
+{
+    (void)self;
+    double token;
+    if (argc != 1 || !JS_IsNumber(argv[0]) || JS_ToFloat64(ctx, &token, argv[0]) < 0 ||
+        !(token > 0 && token <= UINT32_MAX) || token != (uint32_t)token)
+        return JS_ThrowTypeError(ctx, "A native caption hover token is required");
+    if ((uint32_t)token != control.picker_token) return JS_UNDEFINED;
+    for (struct DesktopWindow *window = control.windows; window; window = window->next)
+        if (window->id == control.picker_target && window->workspace_handle &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 4)
+            polly_workspace_toplevel_v1_dismiss_layout_picker(window->workspace_handle, (uint32_t)token);
+    clear_picker(0);
+    if (control.display && wl_display_flush(control.display) < 0 && errno != EAGAIN && errno != EINTR)
+        return JS_ThrowInternalError(ctx, "Cannot retire caption picker; transport outcome is unknown");
+    return JS_UNDEFINED;
 }
 
 static bool menu_epoch(JSContext *ctx, JSValueConst value, uint32_t *epoch)
@@ -1115,7 +1254,15 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
     if (!pu_theme_client_install(ctx, api)) return 0;
     if (!pu_decoration_client_install(ctx, api)) return 0;
     if (!property(ctx, api, "windows", JS_NewCFunction(ctx, windows, "windows", 0))) return 0;
-    if (!property(ctx, api, "openWindowMenu", JS_NewCFunction(ctx, open_window_menu, "openWindowMenu", 2)) ||
+    if (!property(ctx, api, "openWindowMenu", JS_NewCFunctionMagic(ctx, open_window_menu,
+            "openWindowMenu", 2, JS_CFUNC_generic_magic, 0)) ||
+        !property(ctx, api, "openLayoutPicker", JS_NewCFunctionMagic(ctx, open_window_menu,
+            "openLayoutPicker", 2, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "layoutPickerCapability", JS_NewCFunction(ctx, layout_picker_capability, "layoutPickerCapability", 0)) ||
+        !property(ctx, api, "layoutPickerOffer", JS_NewCFunction(ctx, layout_picker_offer, "layoutPickerOffer", 0)) ||
+        !property(ctx, api, "enableLayoutPicker", JS_NewCFunction(ctx, enable_layout_picker, "enableLayoutPicker", 1)) ||
+        !property(ctx, api, "dismissLayoutPicker", JS_NewCFunction(ctx, dismiss_layout_picker, "dismissLayoutPicker", 1)) ||
+        !property(ctx, api, "onLayoutPickerChanged", JS_NULL) ||
         !property(ctx, api, "closeWindowMenu", JS_NewCFunction(ctx, close_window_menu, "closeWindowMenu", 1)) ||
         !property(ctx, api, "tileWindow", JS_NewCFunctionMagic(ctx, place_window, "tileWindow", 3, JS_CFUNC_generic_magic, 0)) ||
         !property(ctx, api, "restoreFloatingWindow", JS_NewCFunctionMagic(ctx, place_window,
@@ -1166,6 +1313,11 @@ int pu_desktop_windows_pump(void)
     worked += pu_theme_client_pump();
     worked += pu_output_client_pump();
     worked += pu_decoration_client_pump();
+    if (control.ctx && control.picker_changed) {
+        control.picker_changed = false;
+        notify("onLayoutPickerChanged");
+        worked++;
+    }
     if (!control.ctx || (!control.changed && !control.workspaces_changed)) return worked;
     int windows = control.changed, workspaces = control.workspaces_changed;
     control.changed = control.workspaces_changed = 0;

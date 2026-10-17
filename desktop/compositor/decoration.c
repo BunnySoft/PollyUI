@@ -1,4 +1,5 @@
 #include "decoration.h"
+#include "workspace.h"
 #include "decorator-process.h"
 #include "decoration-layout.h"
 #include "decoration-frame.h"
@@ -966,6 +967,7 @@ static void commit_theme(struct wl_client *client, struct wl_resource *resource,
         snapshot->backdrop_count = 0;
     }
     owner->staged->generation = state->snapshot->generation + 1;
+    pu_workspaces_picker_cancel(state->desktop);
     snapshot_drop(state->snapshot); state->snapshot = owner->staged;
     state->initial_theme_consumed = true;
     owner->staged = NULL; owner->serial = 0;
