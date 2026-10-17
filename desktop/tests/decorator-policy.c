@@ -21,6 +21,9 @@
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/backend.h>
+#include <wlr/interfaces/wlr_keyboard.h>
+#include <wlr/types/wlr_keyboard.h>
 
 enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN,
     MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY,
@@ -54,15 +57,18 @@ struct Probe {
     struct Reply reply;
 };
 static struct PuDesktop desktop;
+static struct wlr_keyboard keyboard;
+static const struct wlr_keyboard_impl keyboard_impl = {.name = "paired-policy-keyboard"};
 #define CHECK(test) do { if (!(test)) { \
     fprintf(stderr, "FAIL decorator policy line %d: %s\n", __LINE__, #test); return false; \
 } } while (0)
 static void prepared(void *data, struct polly_appearance_v1 *object, uint32_t serial,
     uint32_t accepted, const char *message)
 {
-    (void)object; (void)message;
+    (void)object;
     struct Probe *probe = data;
     probe->reply.accepted = accepted; probe->reply.serial = serial;
+    if (!accepted) fprintf(stderr, "POLICY_REJECTION serial=%u %s\n", serial, message);
 }
 static void enabled(void *data, struct polly_appearance_v1 *object, uint32_t accepted, const char *message)
 { (void)object; (void)message; ((struct Probe *)data)->reply.accepted = accepted; }
@@ -622,7 +628,14 @@ int main(int argc, char **argv)
     setenv("XDG_RUNTIME_DIR", runtime, 1); setenv("WLR_BACKENDS", "headless", 1);
     setenv("WLR_HEADLESS_OUTPUTS", "1", 1); setenv("WLR_RENDERER", "pixman", 1);
     wlr_log_init(WLR_INFO, NULL);
-    bool passed = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) && suite(argv[0]);
+    bool ready = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop);
+    bool passed = false;
+    if (ready) {
+        wlr_keyboard_init(&keyboard, &keyboard_impl, "paired-policy-keyboard");
+        wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
+        passed = suite(argv[0]);
+        wlr_keyboard_finish(&keyboard);
+    }
     pu_desktop_finish(&desktop);
     if (passed && argc == 2) passed = legacy_server(argv[1]);
     if (rmdir(runtime)) passed = false;

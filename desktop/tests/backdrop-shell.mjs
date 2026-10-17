@@ -127,6 +127,7 @@ async function modern() {
     theme: { id: mode === 'modern-old' ? 'xp' : 'modern', filesEnabled: false } });
   const shell = createDesktopShell({ configuration, host }).start();
   const outputs = window.displays();
+  if (standard) outputs.sort((a, b) => a.height - b.height);
   const currentMenu = () => created.findLast(surface =>
     surface.options.title.startsWith('PollyShell.menu.') && !surface.window.closed);
   async function signal(name) {
