@@ -387,6 +387,20 @@ including notification-before/after workspace and membership guards. The exporte
 client geometry respectively. They use explicitly nonempty app-ID fixture
 snapshots, not evidence of compositor permissions, physical DPI or native MRU.
 
+The original `desktop-window-shell-raster` and `desktop-workspace-shell-raster`
+fullflows use real native input and independent applications through both initial
+and reconnect phases. Workspace tasks follow `windowTasks` and exact app IDs on
+both outputs; a single-window Mac Dock group activates/restores, rather than
+minimizing an active window. Classic search checks retained input text, focus,
+caret/selection editing and actual filtered rows, not SDK-internal child indexes.
+The Shell has no decoration queue or frame submission API. The original four
+submission negatives (inexact strips, unknown revision, mismatched generation and
+duplicate accepted revision) run in the existing decorator lifecycle fixture's
+`frame-policy` mode, on a real independent windowless renderer using production
+painting/submission. Its original seven modes remain, alongside live same-ID
+theme geometry/pixel and invalid-geometry preservation checks in the window
+fullflow. These headless checks do not qualify physical hardware.
+
 Start and generic Apps menus reuse the same bounded bitmap cache as desktop
 shortcuts and taskbar/Dock tasks. Only the current filtered list (up to 100
 entries) adds menu-specific resources; closing the menu releases that extra

@@ -4,6 +4,7 @@ import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 import { applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
 import { readPrivateConfigurationFile } from './desktop/shared/configuration-files.mjs';
 import { SHELL_CONFIGURATION_FILE } from './desktop/shell/configuration.mjs';
+import { windowTasks, taskLabel } from './desktop/shell/window-groups.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -42,10 +43,21 @@ function marker(title) {
     anchors: ['top', 'right'], exclusiveZone: -1 });
 }
 async function click(surface, id, button = 0) {
-  await until(() => surface.window.document.getElementById(id)?.offsetWidth > 0, id + ' layout');
-  const node = surface.window.document.getElementById(id);
-  const signal = marker(`fixture-click ${++serial} ${Math.floor(node.offsetLeft + node.offsetWidth / 2)} ` +
-    `${Math.floor(node.offsetTop + node.offsetHeight / 2)} ${button} ${surface.title}`);
+  const owner = surface.window.document, deadline = Date.now() + 30000;
+  let previous, rect;
+  for (;;) {
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const node = owner.getElementById(id), bounds = owner.body.getBoundingClientRect();
+    rect = node?.getBoundingClientRect();
+    if (!surface.window.closed && node?.ownerDocument === owner && rect?.width > 0 && rect.height > 0 &&
+        previous?.node === node && ['x', 'y', 'width', 'height'].every(key => rect[key] === previous.rect[key]) &&
+        rect.x + rect.width / 2 >= bounds.x && rect.x + rect.width / 2 < bounds.x + bounds.width &&
+        rect.y + rect.height / 2 >= bounds.y && rect.y + rect.height / 2 < bounds.y + bounds.height) break;
+    if (Date.now() > deadline) throw new Error('Timed out: stable native control geometry ' + id);
+    previous = { node, rect };
+  }
+  const signal = marker(`fixture-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ` +
+    `${Math.floor(rect.y + rect.height / 2)} ${button} ${surface.title}`);
   await until(() => signal.closed, 'compositor pointer injection');
 }
 async function captionPointer(command, exclusive = 0) {
@@ -134,7 +146,8 @@ async function run() {
       return native;
     },
   } }).start();
-  check(typeof desktop.decorationRequests === 'undefined', 'Shell cannot consume the independent renderer queue');
+  check(typeof desktop.decorationRequests === 'undefined' && typeof desktop.submitDecorationFrame === 'undefined',
+    'Shell cannot consume the independent renderer queue or submit decoration frames');
   check(shell.selectTheme('xp'), 'taskbar theme selected');
   if (['initial', 'placement', 'placement-old'].includes(mode)) {
     desktop.spawnApplication(['foot', '--app-id=org.pollyui.window-fixture', '--title=Initial title',
@@ -254,8 +267,12 @@ async function run() {
   if (mode === 'initial') await until(() => find()?.title === 'Updated title', 'metadata update');
   check(Number.isInteger(id) && ['active', 'minimized', 'maximized', 'fullscreen']
     .every(key => typeof find()[key] === 'boolean'), 'window snapshot has typed metadata and flags');
-  await until(() => shell.getSurfaces().filter(item => item.kind === 'panel')
-    .every(item => item.window.document.getElementById('shell-window-' + id)), 'window buttons on both outputs');
+  await until(() => {
+    const panels = shell.getSurfaces().filter(item => item.kind === 'panel');
+    return outputs().length === 2 && panels.length === 2 &&
+      outputs().every(output => panels.filter(panel => panel.output === output.id).length === 1) &&
+      panels.every(panel => panel.window.document.getElementById('shell-window-' + id)?.offsetWidth > 0);
+  }, 'window buttons on both outputs');
   await click(bar(), 'shell-window-' + id);
   await until(() => find()?.minimized && !find().active, 'taskbar click minimizes active application');
   await click(bar(), 'shell-window-' + id);
@@ -300,8 +317,31 @@ async function run() {
     const search = applications.document.getElementById('shell-app-search');
     check(applications.document.activeElement === search, 'native Classic menu focuses its real search field');
     await menuKey(20);
-    await until(() => search.lastChild.firstChild.textContent === 't', 'real native menu search accepts keyboard text');
-    check(applications.document.activeElement === search, 'real search retains focus after filtering');
+    await until(() => search.textContent === 't' &&
+      applications.document.getElementById('shell-app-search-hint')?.style.display === 'none' &&
+      applications.document.getElementById('shell-app-org.pollyui.settings')?.getAttribute('aria-disabled') === 'false',
+    'real native menu search accepts keyboard text and keeps matching Settings enabled');
+    await menuKey(44);
+    await until(() => search.textContent === 'tz' &&
+      !applications.document.getElementById('shell-app-org.pollyui.settings') &&
+      applications.document.getElementById('shell-start-apps')?.textContent === 'No matching applications',
+    'real typing filters application rows, not only the search label');
+    await menuKey(14);
+    await until(() => search.textContent === 't' &&
+      applications.document.getElementById('shell-app-org.pollyui.settings')?.getAttribute('aria-disabled') === 'false',
+    'native Backspace restores the matching application');
+    await menuKey(105);
+    await menuKey(18);
+    await until(() => search.textContent === 'et', 'native caret navigation survives menu reconciliation');
+    for (const [code, down] of [[29, 1], [30, 1], [30, 0], [29, 0]]) {
+      const selection = marker(`fixture-key ${code} ${down}`);
+      await until(() => selection.closed, 'native search selection');
+    }
+    await menuKey(20);
+    await until(() => search.textContent === 't', 'native selection replacement survives filtering');
+    check(applications.document.activeElement === search &&
+      applications.document.getElementById('shell-app-search') === search,
+    'real search retains its DOM identity and focus after filtering');
     await menuKey(1);
     await until(() => applications.closed, 'real Escape closes the native application menu');
     const toggleMenu = await classicApplications();
@@ -352,38 +392,48 @@ async function run() {
     check(shell.selectTheme('bigsur'), 'Big Sur Dock selected');
     const bigSurFrame = marker('fixture-frame-theme bigsur');
     await until(() => bigSurFrame.closed, 'live Big Sur application frame geometry');
-    await click(bar(), 'shell-window-' + id);
-    await until(() => find()?.minimized, 'real Dock button minimizes');
-    await click(bar(), 'shell-window-' + id);
-    await until(() => find()?.active, 'real Dock button activates');
+    check(shell.configuration.snapshot.launchers.applications.length === 0, 'Dock fixture has no catalog pins');
+    const dockTask = () => windowTasks(desktop.windows().filter(item =>
+      item.workspaceId === desktop.workspaces().find(workspace => workspace.active)?.id),
+      getDesktopTheme(shell.getState().themeId).panel.taskGrouping)
+      .find(task => task.grouped && task.windows.some(item => item.id === id));
+    const dockButtons = minimized => {
+      const task = dockTask(), surfaces = shell.getSurfaces().filter(item => item.kind === 'dock');
+      return task?.appId === find()?.appId && task.count === 1 && task.windows[0].id === id &&
+        task.minimized === minimized && outputs().length === 2 && surfaces.length === 2 &&
+        outputs().every(output => surfaces.filter(surface => surface.output === output.id).length === 1) &&
+        surfaces.every(surface => {
+          const node = surface.window.document.getElementById('shell-window-' + task.id);
+          return node?.offsetWidth > 0 && node.getAttribute('aria-label') === taskLabel(task);
+        });
+    };
+    await until(() => dockButtons(false), 'both real Docks expose the exact-appId single-window group');
+    const activateWindow = desktop.activateWindow;
+    let dockActivations = 0;
+    desktop.activateWindow = (...args) => {
+      const result = activateWindow(...args);
+      if (args[0] === id) dockActivations++;
+      return result;
+    };
+    await click(bar(), 'shell-window-' + dockTask().id);
+    await until(() => dockActivations === 1 && find()?.active && !find()?.minimized && dockButtons(false),
+      'real single-window Dock click activates without minimizing');
+    desktop.minimizeWindow(id);
+    await until(() => find()?.minimized && !find()?.active && dockButtons(true),
+      'native minimize updates the real Dock group on both outputs');
+    await click(bar(), 'shell-window-' + dockTask().id);
+    await until(() => dockActivations === 2 && find()?.active && !find()?.minimized && dockButtons(false),
+      'real Dock group restores and activates the minimized application');
+    desktop.activateWindow = activateWindow;
     const custom = JSON.parse(JSON.stringify(getDesktopTheme('bigsur')));
     custom.id = 'external-config';
     custom.name = 'External configuration';
     Object.assign(custom.window, { titleHeight: 52, borderWidth: 2, texture: 'none',
       titleFrom: '#6e3ba7', titleTo: '#6e3ba7' });
-    const submitFrame = desktop.submitDecorationFrame;
-    let frameProbes = 0;
-    desktop.submitDecorationFrame = (meta, strips) => {
-      if (frameProbes) return submitFrame(meta, strips);
-      rejects(() => submitFrame(meta, [{ ...strips[0], width: strips[0].width + 1 }, ...strips.slice(1)]),
-        'native bridge rejects an inexact strip before transport');
-      const obsolete = [...meta]; obsolete[1]++;
-      check(submitFrame(obsolete, strips) === false, 'WM rejects an unknown frame revision without changing presentation');
-      const mismatched = [...meta]; mismatched[2]++;
-      rejects(() => submitFrame(mismatched, strips), 'WM rejects a complete frame with a mismatched theme generation');
-      const accepted = submitFrame(meta, strips);
-      if (accepted) {
-        check(submitFrame(meta, strips) === false, 'WM rejects duplicate accepted revisions');
-        frameProbes++;
-      }
-      return accepted;
-    };
     installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, custom] });
     check(shell.selectTheme(custom.id), 'custom theme does not require a compiled appearance ID');
     let configured = marker('fixture-frame-style 2 52 6e3ba7');
     await until(() => configured.closed, 'runtime configuration changes real decoration metrics and pixels');
-    desktop.submitDecorationFrame = submitFrame;
-    check(frameProbes === 1, 'real GUI strips passed bounded protocol negative cases before publication');
     const changed = JSON.parse(JSON.stringify(custom));
     Object.assign(changed.window, { titleHeight: 44, borderWidth: 3, titleFrom: '#325788', titleTo: '#325788' });
     installThemeCatalog({ ...BUILTIN_THEME_CATALOG, themes: [...BUILTIN_THEME_CATALOG.themes, changed] });
