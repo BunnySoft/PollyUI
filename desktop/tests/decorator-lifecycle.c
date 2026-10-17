@@ -2532,6 +2532,7 @@ static bool arrangement_protocol(const char *wire)
     CHECK(cascade_send(layer));
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     struct PuDesktopLayer *reservation = NULL, *item;
+    bool reservation_ready = false;
     for (int i = 0; i < 1200; i++) {
         reservation = NULL;
         wl_list_for_each(item, &desktop.layers, link)
@@ -2539,9 +2540,13 @@ static bool arrangement_protocol(const char *wire)
                 CHECK(!reservation);
                 reservation = item;
             }
-        if (reservation && reservation->presented && reservation->surface->surface->mapped) break;
+        if (reservation && reservation->presented && reservation->surface->surface->mapped) {
+            reservation_ready = true;
+            break;
+        }
         CHECK(pump());
     }
+    CHECK(reservation_ready);
     printf("ARRANGEMENT_PREREQUISITES head=%s wireOutput=%d physical=%dx%d scale=%.2f logical=%d,%d %dx%d reservation=%p presented=%d mapped=%d zone=%d anchor=%u box=%d,%d %dx%d\n",
         head->name, head_index, head->width, head->height, head->scale, area.x, area.y, area.width, area.height,
         (void *)reservation, reservation && reservation->presented,
