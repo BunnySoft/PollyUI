@@ -564,9 +564,12 @@ static bool title_drag_restore(void)
         clock_ms += 401;
         motion(x, y); button(true);
         CHECK(desktop.grabbed == view && desktop.grab == PU_DESKTOP_MOVE);
+        CHECK(wait_presented_frame(view));
         CHECK(pause_renderer() && command(TEST_HOLD, 0, 0));
         uint64_t before = frame_hash(view);
         uint32_t revision = pu_decoration_presented_revision(view);
+        printf("TITLE_DRAG_BASELINE placement=%d mode=%d frameHash=%llu ownedRevision=%u\n",
+            placement, mode, (unsigned long long)before, revision);
         CHECK(before && revision);
         motion(x + 4, y);
         CHECK(!view->geometry_pending && view->mode == mode && frame_hash(view) == before);

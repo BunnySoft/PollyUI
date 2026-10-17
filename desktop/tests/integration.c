@@ -894,8 +894,7 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     CHECK(command(client, TEST_MOVE, 0, 0, 0) && desktop.grab == PU_DESKTOP_PASSTHROUGH);
 
     struct wlr_seat_keyboard_grab grab = {0};
-    static const struct wlr_keyboard_grab_interface grab_impl = {0};
-    grab.interface = &grab_impl;
+    grab.interface = desktop.seat->keyboard_state.default_grab->interface;
     wlr_seat_keyboard_start_grab(desktop.seat, &grab);
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
