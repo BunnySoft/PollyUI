@@ -147,15 +147,23 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const retired = typeof native.shellBackdropRetired === 'function' ? native.shellBackdropRetired() : 0;
     const retiredTarget = surface => surface?.backdropIndex !== null && surface?.backdropIndex !== undefined &&
       (retired & (1 << surface.backdropIndex));
-    if (retiredTarget(menu)) menu.backdropActive = false;
-    for (const bundle of bundles.values())
-      if (retiredTarget(bundle.surfaces.panel)) bundle.surfaces.panel.backdropActive = false;
-    if (message === materialError) return;
-    materialError = message;
-    if (message) report('[shell] ' + message);
+    let recipientsChanged = false;
+    const retire = surface => {
+      if (!retiredTarget(surface) || !surface.backdropActive) return;
+      surface.backdropActive = false;
+      recipientsChanged = true;
+    };
+    retire(menu);
+    for (const bundle of bundles.values()) retire(bundle.surfaces.panel);
+    const messageChanged = message !== materialError;
+    if (!messageChanged && !recipientsChanged) return;
+    if (messageChanged) {
+      materialError = message;
+      if (message) report('[shell] ' + message);
+    }
     repaintMenu();
     for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
-    if (typeof previousBackdropStatus === 'function') previousBackdropStatus();
+    if (messageChanged && typeof previousBackdropStatus === 'function') previousBackdropStatus();
   }
   const exited = event => {
     if (!running) return;

@@ -366,6 +366,57 @@ scenario('paired Start publication stays solid on failure and retains taskbars o
   installThemeCatalog(BUILTIN_THEME_CATALOG);
 });
 
+scenario('cumulative retirement repaints each target without repeating the same material diagnostic', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+  installThemeCatalog(optional);
+  try {
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const menu = f.shell.showApplications(1);
+    f.flushFrames();
+    const panels = [f.surface('panel', 1), f.surface('panel', 2)];
+    const views = [...panels.map(panel => find(panel, 'shell-panel')), find(menu, 'shell-applications')];
+    const owners = [...panels, menu];
+    assert.deepEqual(views.map(view => view.style.backgroundColor), ['transparent', 'transparent', 'transparent']);
+    const callback = f.native.onBackdropStatusChanged, calls = f.calls.length, created = f.created.length;
+    const preferences = JSON.parse(JSON.stringify(f.saved.snapshot));
+    const focus = menu.document.activeElement;
+    const message = 'Shell taskbar backdrop retired; solid material required';
+    f.state.materialMessage = message;
+    f.expectedWarnings.push('[shell] ' + message);
+    for (const [mask, colors] of [
+      [1, ['#f3f3f3', 'transparent', 'transparent']],
+      [3, ['#f3f3f3', '#f3f3f3', 'transparent']],
+      [7, ['#f3f3f3', '#f3f3f3', '#f3f3f3']],
+    ]) {
+      f.state.retiredMask = mask;
+      callback();
+      assert.deepEqual(views.map(view => view.style.backgroundColor), colors,
+        'newly retired ordinal immediately repaints despite the unchanged diagnostic: mask ' + mask);
+      const rendered = owners.map(owner => owner.document.body.__vnode);
+      callback();
+      assert.ok(owners.every((owner, index) => owner.document.body.__vnode === rendered[index]),
+        'an identical retirement notification does not repaint again');
+      assert.deepEqual(f.warnings, f.expectedWarnings, 'same message is reported only once');
+      assert.deepEqual(f.calls.slice(calls), [['previous-backdrop']],
+        'recipient-only changes preserve the previous callback message-change contract and admit no actions');
+      assert.equal(f.created.length, created);
+      assert.equal(menu.closed, false);
+      assert.equal(menu.document.activeElement, focus);
+      assert.deepEqual(f.saved.snapshot, preferences);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+}, ({ native, state, calls }) => {
+  const publish = native.configureAppearance;
+  native.configureAppearance = (...args) => { calls.push(['appearance']); return publish(...args); };
+  state.materialMessage = '';
+  state.retiredMask = 0;
+  native.backdropError = () => state.materialMessage;
+  native.shellBackdropRetired = () => state.retiredMask;
+  native.onBackdropStatusChanged = () => calls.push(['previous-backdrop']);
+});
+
 function placementFixture({ native, state, calls }) {
   Object.assign(state.windows[0], { placement: 'floating', placementPending: false,
     placementCapabilities: 3, placementMessage: '' });
