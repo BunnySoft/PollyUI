@@ -2074,6 +2074,53 @@ static bool cascade_steps(struct PuDesktopView **views)
     return true;
 }
 
+static bool cascade_scene_order(struct PuDesktopView **views, struct wlr_scene_node **order, bool compare)
+{
+    struct wlr_scene_node *node;
+    unsigned count = 0;
+    wl_list_for_each(node, &desktop.windows->children, link) {
+        bool member = false;
+        for (unsigned i = 0; i < 3; i++) if (node == &views[i]->tree->node) member = true;
+        if (!member) continue;
+        CHECK(count < 3);
+        if (compare) CHECK(order[count] == node);
+        else order[count] = node;
+        count++;
+    }
+    CHECK(count == 3);
+    return true;
+}
+
+static bool cascade_wait_client(struct PuDesktopView *view, enum PuDesktopMode mode)
+{
+    uint64_t deadline = milliseconds() + 5000;
+    while (milliseconds() < deadline) {
+        if (view->mapped && !view->geometry_pending && !view->resize_pending &&
+            view->mode == mode && view->toplevel->base->surface->buffer &&
+            view->presented_box.width == view->toplevel->base->geometry.width &&
+            view->presented_box.height == view->toplevel->base->geometry.height) return true;
+        CHECK(pump());
+    }
+    CHECK(false);
+}
+
+static bool cascade_committed_output(struct wlr_output *output)
+{
+    struct wlr_box full;
+    wlr_output_layout_get_box(desktop.layout, output, &full);
+    witness_start(output);
+    shell_fixture.mark = wlr_scene_rect_create(desktop.layer_trees[3], 1, 1, (float[4]){0.2f, 0.4f, 0.6f, 1});
+    CHECK(shell_fixture.mark);
+    wlr_scene_node_set_position(&shell_fixture.mark->node, full.x + full.width - 1, full.y);
+    wlr_output_lock_attach_render(output, true);
+    bool committed = wlr_scene_output_commit(wlr_scene_get_scene_output(desktop.scene, output), NULL);
+    wlr_output_lock_attach_render(output, false);
+    CHECK(committed && shell_fixture.output.count && shell_fixture.output.buffer);
+    witness_destroy(&shell_fixture.output.destroy, NULL);
+    wlr_scene_node_destroy(&shell_fixture.mark->node); shell_fixture.mark = NULL;
+    return true;
+}
+
 static bool cascade_protocol(const char *wire)
 {
     struct PuDesktopView *views[3];
@@ -2162,12 +2209,14 @@ static bool cascade_protocol(const char *wire)
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     CHECK(cascade_open(&serial, &epoch));
     struct wlr_box old[3];
+    struct wlr_scene_node *order[3];
     uint32_t revisions[3];
     for (unsigned i = 0; i < 3; i++) {
         old[i] = views[i]->presented_box;
         old[i].x = views[i]->tree->node.x; old[i].y = views[i]->tree->node.y;
         revisions[i] = pu_decoration_presented_revision(views[i]);
     }
+    CHECK(cascade_scene_order(views, order, false));
     CHECK(cascade_body(1, TEST_HOLD) && cascade_body(2, TEST_HOLD) && pause_renderer());
     CHECK(cascade_request(serial++, epoch, true));
     uint32_t admitted = serial - 1;
@@ -2189,7 +2238,7 @@ static bool cascade_protocol(const char *wire)
             views[i]->tree->node.x, views[i]->tree->node.y, views[i]->presented_box.width,
             views[i]->presented_box.height, pu_decoration_presented_revision(views[i]), revisions[i]);
     }
-    CHECK(desktop.focused == views[0] && desktop.focused_layer);
+    CHECK(desktop.focused == views[0] && desktop.focused_layer && cascade_scene_order(views, order, true));
     CHECK(cascade_steps(views));
     for (unsigned i = 0; i < 3; i++) {
         struct wlr_box inset = {0}; pu_decoration_inset(views[i], &inset, false);
@@ -2198,10 +2247,7 @@ static bool cascade_protocol(const char *wire)
         motion(views[i]->tree->node.x + 40, views[i]->tree->node.y - inset.y / 2.0);
         CHECK(pu_decoration_hit(views[i], 40, -inset.y / 2.0) == PU_DECORATION_TITLE);
     }
-    witness_start(head);
-    CHECK(wlr_scene_output_commit(wlr_scene_get_scene_output(desktop.scene, head), NULL) &&
-        shell_fixture.output.count && shell_fixture.output.buffer);
-    witness_destroy(&shell_fixture.output.destroy, NULL);
+    CHECK(cascade_committed_output(head));
     puts("PASS: three independent real clients cascade by 24 logical pixels below reserved native work area; focus retained; max/half ACKs and same paused renderer cannot move old frames; current owned frames and a committed output complete");
 
     struct wlr_box peer_area; wlr_output_layout_get_box(desktop.layout, peer, &peer_area);
@@ -2221,8 +2267,18 @@ static bool cascade_protocol(const char *wire)
     CHECK(cascade_request(serial++, epoch, false) && views[2]->geometry_serial == third);
     wlr_scene_node_set_position(&views[0]->tree->node, area.x + 80, area.y + 140);
     puts("PASS: actual presented main head, not stale view->output, selects membership; inactive workspace and peer head stay untouched; target crossing heads retires cascade authority");
+    views[1]->workspace = pu_workspace_at(&desktop, 1);
+    pu_desktop_workspaces_changed(&desktop, NULL);
+    CHECK(cascade_open(&serial, &epoch) && pause_renderer() && cascade_body(0, TEST_RENAME));
+    CHECK(!pu_decoration_presented_current(views[0]) && !views[0]->geometry_pending);
+    CHECK(cascade_request(serial++, epoch, false) && strstr(reply.placement_message, "No presented"));
+    CHECK(resume_renderer() && wait_presented_frame(views[0]));
+    views[1]->workspace = workspace;
+    pu_desktop_workspaces_changed(&desktop, NULL);
+    CHECK(wait_presented_frame(views[1]));
+    puts("PASS: an empty eligible plan reports explicit denial while a target has only an old native frame; no pending frame is queried by requesting a new one");
 
-    CHECK(cascade_body(1, TEST_FULLSCREEN) && wait_presented_frame(views[1]));
+    CHECK(cascade_body(1, TEST_FULLSCREEN) && cascade_wait_client(views[1], PU_DESKTOP_FULLSCREEN));
     CHECK(cascade_open(&serial, &epoch));
     second = views[1]->geometry_serial;
     CHECK(cascade_request(serial++, epoch, true) && views[1]->geometry_serial == second);
@@ -2365,6 +2421,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
         "desktop/tests/cascade-shell.mjs", old ? "old" : "current", NULL};
     CHECK(pu_desktop_spawn_shell(&desktop, shell));
     struct wlr_box sizes[3];
+    struct wlr_scene_node *order[3];
     unsigned checks = 0;
     bool success = false;
     uint64_t deadline = milliseconds() + 30000;
@@ -2384,6 +2441,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                 }
                 pu_desktop_focus_mapped(&desktop, views[0]->workspace_window);
                 CHECK(wait_presented_frame(views[0]));
+                CHECK(cascade_scene_order(views, order, false));
             } else if (!strcmp(operation, "menu-ready")) {
                 CHECK(picker_menu() && desktop.focused_layer == picker_menu() &&
                     desktop.seat->keyboard_state.focused_surface == picker_menu()->surface->surface);
@@ -2423,15 +2481,13 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                         views[i]->tree->node.x, views[i]->tree->node.y, sizes[i].width, sizes[i].height,
                         pu_decoration_presented_revision(views[i]));
                 }
-                CHECK(desktop.focused == views[0] && !desktop.focused_layer);
+                CHECK(desktop.focused == views[0] && !desktop.focused_layer &&
+                    cascade_scene_order(views, order, true));
                 if (!strcmp(operation, "check"))
                     CHECK(cascade_steps(views));
                 else CHECK(views[0]->tree->node.y == views[1]->tree->node.y &&
                     views[1]->tree->node.y == views[2]->tree->node.y);
-                witness_start(head);
-                CHECK(wlr_scene_output_commit(wlr_scene_get_scene_output(desktop.scene, head), NULL) &&
-                    shell_fixture.output.buffer && shell_fixture.output.count);
-                witness_destroy(&shell_fixture.output.destroy, NULL);
+                CHECK(cascade_committed_output(head));
                 checks++;
             } else if (!strcmp(operation, "small")) {
                 wlr_output_state_init(&state);
