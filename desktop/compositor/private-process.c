@@ -12,6 +12,64 @@
 
 extern char **environ;
 
+static int processes_exited(int signal_number, void *data)
+{
+    (void)signal_number;
+    struct PuDesktop *desktop = data;
+    desktop->private_process_pending = true;
+    if (desktop->private_process_dispatching) return 0;
+    desktop->private_process_dispatching = true;
+    do {
+        desktop->private_process_pending = false;
+        struct PuPrivateProcessWatch watches[PU_PRIVATE_PROCESS_COUNT];
+        memcpy(watches, desktop->private_processes, sizeof(watches));
+        for (unsigned i = 0; i < PU_PRIVATE_PROCESS_COUNT; i++) {
+            /* A preceding check may stop/free or replace another service. */
+            if (watches[i].check &&
+                watches[i].generation == desktop->private_processes[i].generation)
+                watches[i].check(desktop);
+        }
+        /* Shutdown can dispatch recursively. Rescan only for an actual nested
+         * notification, including exits of owners already checked in this pass. */
+    } while (desktop->private_process_pending);
+    desktop->private_process_dispatching = false;
+    return 0;
+}
+
+bool pu_private_process_watch(struct PuDesktop *desktop, enum PuPrivateProcess owner,
+    void (*check)(struct PuDesktop *desktop))
+{
+    if (!desktop->display || desktop->stopping || !check) {
+        wlr_log(WLR_ERROR, "Cannot watch private process in the current state");
+        return false;
+    }
+    if (!desktop->private_process_exit) {
+        desktop->private_process_exit = wl_event_loop_add_signal(
+            wl_display_get_event_loop(desktop->display), SIGCHLD, processes_exited, desktop);
+        if (!desktop->private_process_exit) {
+            wlr_log_errno(WLR_ERROR, "Cannot monitor private process exits");
+            return false;
+        }
+    }
+    struct PuPrivateProcessWatch *watch = &desktop->private_processes[owner];
+    if (watch->check != check) {
+        watch->generation++;
+        watch->check = check;
+    }
+    return true;
+}
+
+void pu_private_process_unwatch(struct PuDesktop *desktop, enum PuPrivateProcess owner)
+{
+    struct PuPrivateProcessWatch *watch = &desktop->private_processes[owner];
+    watch->check = NULL;
+    watch->generation++;
+    for (unsigned i = 0; i < PU_PRIVATE_PROCESS_COUNT; i++)
+        if (desktop->private_processes[i].check) return;
+    if (desktop->private_process_exit) wl_event_source_remove(desktop->private_process_exit);
+    desktop->private_process_exit = NULL;
+}
+
 bool pu_spawn_private(struct PuDesktop *desktop, char *const argv[], const char *label,
     struct wl_client **client, pid_t *pid, struct wl_listener *destroy)
 {

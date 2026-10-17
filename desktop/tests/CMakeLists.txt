@@ -1,4 +1,11 @@
 pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+add_executable(pollywm-private-process-test private-process.c)
+target_link_libraries(pollywm-private-process-test PRIVATE pollywm-core)
+target_compile_options(pollywm-private-process-test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+set_target_properties(pollywm-private-process-test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+add_test(NAME desktop-private-process COMMAND pollywm-private-process-test)
+set_tests_properties(desktop-private-process PROPERTIES TIMEOUT 15
+    ENVIRONMENT "WLR_BACKENDS=headless;WLR_RENDERER=pixman")
 add_executable(pollywm-window-contract-test window-contract.c)
 pkg_check_modules(WINDOW_PIXMAN REQUIRED IMPORTED_TARGET pixman-1)
 target_link_libraries(pollywm-window-contract-test PRIVATE pollywm-core PkgConfig::WINDOW_PIXMAN)
