@@ -800,6 +800,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     $<TARGET_FILE:pollywm-test-client> backdrop-guard)
             set_tests_properties(desktop-backdrop-fixture-lifetime PROPERTIES TIMEOUT 30
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;backdrop;test-guard")
+            add_test(NAME desktop-decoration-presented-frame-fence
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> frame-fence)
+            set_tests_properties(desktop-decoration-presented-frame-fence PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;test-fence")
             add_test(NAME desktop-shell-regional-backdrop-native
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                     $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>

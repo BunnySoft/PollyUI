@@ -400,6 +400,17 @@ static bool request_frame(struct PuDesktopView *view)
     return false;
 }
 bool pu_decoration_ready(struct PuDesktopView *view) { return request_frame(view); }
+bool pu_decoration_presented_current(const struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    return view->mapped && !view->geometry_pending && !view->resize_pending &&
+        d && d->decorated && !d->failed && d->shown && d->current &&
+        !d->ready && !d->timeout && d->accepted_revision == d->revision &&
+        d->shown->snapshot == d->current &&
+        !memcmp(d->shown->meta, d->meta, sizeof(d->meta)) &&
+        !!(d->shown->meta[PU_FRAME_STATE] & 1) ==
+            (view->desktop->focused == view && !view->desktop->focused_layer);
+}
 void pu_decoration_update(struct PuDesktopView *view)
 {
     if (!request_frame(view)) return;

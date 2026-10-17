@@ -46,6 +46,7 @@ static struct wlr_keyboard keyboard;
 static const struct wlr_pointer_impl pointer_impl = {.name = "decorator-fixture-pointer"};
 static const struct wlr_keyboard_impl keyboard_impl = {.name = "decorator-fixture-keyboard"};
 static pid_t app_pid, wire_pid;
+static pid_t paused_renderer;
 static int control = -1;
 static struct TestReply reply;
 static uint32_t clock_ms = 1000;
@@ -365,11 +366,13 @@ static bool dock_foreground_ready(struct PuDesktopLayer *dock)
     wlr_buffer_end_data_ptr_access(buffer->source);
     return format == DRM_FORMAT_ARGB8888 && opaque > 200 && clear > 1000;
 }
-static bool control_key(struct PuDesktopView *view, uint32_t expected)
+static bool control_key(struct PuDesktopView *view, uint32_t expected, bool focus)
 {
     CHECK(backdrop_guard_current());
-    pu_desktop_focus_mapped(&desktop, view->workspace_window);
-    for (int i = 0; i < 10; i++) CHECK(pump());
+    if (focus) {
+        pu_desktop_focus_mapped(&desktop, view->workspace_window);
+        for (int i = 0; i < 10; i++) CHECK(pump());
+    }
     wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, KEY_SPACE, WL_KEYBOARD_KEY_STATE_PRESSED);
     wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, KEY_SPACE, WL_KEYBOARD_KEY_STATE_RELEASED);
     uint64_t deadline = milliseconds() + 5000;
@@ -378,6 +381,116 @@ static bool control_key(struct PuDesktopView *view, uint32_t expected)
         if (body_pixel(view, expected)) return true;
     }
     CHECK(false);
+}
+static uint64_t surface_hash(struct wlr_surface *surface)
+{
+    struct wlr_client_buffer *client = surface->buffer;
+    void *data; uint32_t format; size_t stride;
+    if (!client || !client->source || !wlr_buffer_begin_data_ptr_access(client->source,
+        WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride)) return 0;
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (int y = 0; y < client->source->height; y++)
+        for (int x = 0; x < client->source->width * 4; x++) {
+            hash ^= ((unsigned char *)data)[y * stride + x]; hash *= UINT64_C(1099511628211);
+        }
+    wlr_buffer_end_data_ptr_access(client->source);
+    return format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888 ? hash : 0;
+}
+struct BackdropViewState {
+    struct wlr_box geometry;
+    int x, y;
+    uint64_t body, frame;
+    bool focused;
+};
+static bool backdrop_view_state(struct PuDesktopView *view, struct BackdropViewState *state)
+{
+    CHECK(backdrop_guard_current() && pu_decoration_presented_current(view));
+    *state = (struct BackdropViewState){.geometry = view->toplevel->base->geometry,
+        .x = view->tree->node.x, .y = view->tree->node.y,
+        .body = surface_hash(view->toplevel->base->surface), .frame = frame_hash(view),
+        .focused = desktop.focused == view && !desktop.focused_layer};
+    CHECK(state->body && state->frame);
+    return true;
+}
+static bool control_outside_backdrop(struct PuDesktopView *view, const struct wlr_box *dock)
+{
+    CHECK(backdrop_guard_current() && pu_decoration_presented_current(view));
+    CHECK(view->output && view->output->scale == 1 && wl_list_empty(&view->popups->children));
+    struct wlr_box inset = {0};
+    pu_decoration_inset(view, &inset, false);
+    struct wlr_box frame = {view->tree->node.x - inset.x, view->tree->node.y - inset.y,
+        view->toplevel->base->geometry.width + 2 * inset.x,
+        view->toplevel->base->geometry.height + inset.y + inset.x};
+    /* Schema 2 bounds sigma at 32; 96px contains every permitted kernel at scale 1. */
+    struct wlr_box sample = {dock->x - 96, dock->y - 96, dock->width + 192, dock->height + 192}, overlap;
+    CHECK(!wlr_box_intersection(&overlap, &frame, &sample));
+    struct wlr_box shadow = {0};
+    if (view->shadow->node.enabled) {
+        int x, y;
+        CHECK(wlr_scene_node_coords(&view->shadow->node, &x, &y));
+        shadow = (struct wlr_box){x, y, view->shadow->width, view->shadow->height};
+        CHECK(!wlr_box_intersection(&overlap, &shadow, &sample));
+    }
+    printf("BACKDROP_ACK_ISOLATION frame=%d,%d,%d,%d shadow=%d,%d,%d,%d maximumKernelRegion=%d,%d,%d,%d scale=1\n",
+        frame.x, frame.y, frame.width, frame.height, shadow.x, shadow.y, shadow.width, shadow.height,
+        sample.x, sample.y, sample.width, sample.height);
+    return true;
+}
+static bool resume_renderer(void)
+{
+    if (!paused_renderer) return true;
+    pid_t pid = paused_renderer;
+    paused_renderer = 0;
+    if (kill(pid, SIGCONT) == 0) return true;
+    perror("resume exact fixture renderer");
+    return false;
+}
+static bool wait_presented_frame(struct PuDesktopView *view)
+{
+    uint64_t id = view->workspace_window;
+    struct wlr_surface *surface = view->toplevel->base->surface;
+    uint64_t deadline = milliseconds() + 5000;
+    while (milliseconds() < deadline) {
+        struct PuDesktopView *candidate, *current = NULL;
+        wl_list_for_each(candidate, &desktop.views, link)
+            if (candidate == view && candidate->workspace_window == id &&
+                candidate->toplevel->base->surface == surface) { current = candidate; break; }
+        CHECK(current);
+        if (pu_decoration_presented_current(current)) return true;
+        CHECK(pump());
+    }
+    CHECK(false);
+}
+static bool presented_frame_fence(const char *ui)
+{
+    CHECK(start_app(ui));
+    struct PuDesktopView *view = wire_view(), *app = find("Decorator.fixture.app");
+    CHECK(view && app);
+    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+    CHECK(wait_presented_frame(view) && wait_presented_frame(app));
+    uint64_t before = frame_hash(view);
+    CHECK(before);
+    pid_t pid = pu_decorator_pid(&desktop);
+    CHECK(pid > 0 && !kill(pid, SIGSTOP));
+    paused_renderer = pid;
+    int status;
+    pid_t stopped;
+    do { stopped = waitpid(pid, &status, WUNTRACED); } while (stopped < 0 && errno == EINTR);
+    CHECK(stopped == pid && WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP &&
+        pu_decorator_pid(&desktop) == pid);
+    pu_desktop_focus_mapped(&desktop, app->workspace_window);
+    struct wlr_box box;
+    CHECK(desktop.focused == app && !view->geometry_pending &&
+        pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
+    CHECK(!pu_decoration_presented_current(view) && !pu_decoration_presented_current(app));
+    CHECK(frame_hash(view) == before && !pu_decoration_presented_current(view));
+    printf("FRAME_FENCE rendererPid=%ld stopped=SIGSTOP oldButtonProxy=1 latestFrame=0 retainedFrame=1\n", (long)pid);
+    CHECK(resume_renderer());
+    CHECK(wait_presented_frame(view) && wait_presented_frame(app) &&
+        pu_decorator_pid(&desktop) == pid && frame_hash(view) != before);
+    printf("FRAME_FENCE rendererPid=%ld resumedSamePid=1 latestFrame=1 actualFrameChanged=1\n", (long)pid);
+    puts("PASS: deterministic focus-frame counterexample retains an old usable button box while the pure latest-frame fence rejects it; the same stopped renderer PID submits and presents current frames after resume");
+    return true;
 }
 struct OutputWitness { struct wl_listener commit, destroy; struct wlr_buffer *buffer; unsigned count; };
 static void witness_destroy(struct wl_listener *listener, void *data)
@@ -501,6 +614,13 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     struct PuDesktopView *first = wire_view(), *second = find("Decorator.fixture.app");
     CHECK(first && second);
     backdrop_guard_start(dock, control_view, first, second);
+    pu_desktop_focus_mapped(&desktop, control_view->workspace_window);
+    for (int i = 0; i < 10; i++) CHECK(pump());
+    while (milliseconds() < deadline &&
+        (!pu_decoration_presented_current(control_view) || !pu_decoration_presented_current(first) ||
+         !pu_decoration_presented_current(second))) CHECK(pump());
+    CHECK(pu_decoration_presented_current(control_view) && pu_decoration_presented_current(first) &&
+        pu_decoration_presented_current(second));
     wlr_scene_node_set_position(&first->tree->node, box.x - 20, box.y - 45);
     wlr_scene_node_set_position(&second->tree->node, box.x + box.width / 2, box.y - 45);
     struct wlr_box output_box;
@@ -576,11 +696,29 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     }
     CHECK(milliseconds() - stable_since >= 300);
     free(actual);
+    CHECK(control_outside_backdrop(control_view, &box));
+    struct PuDesktopView *sources[] = {control_view, first, second};
+    struct BackdropViewState baseline[3];
+    for (unsigned i = 0; i < 3; i++) CHECK(backdrop_view_state(sources[i], &baseline[i]));
+    uint64_t foreground = surface_hash(dock->surface->surface);
+    CHECK(foreground);
     CHECK(scene_pixels(dock->surface->output, &actual, &width, &height));
     struct wlr_scene_rect *committed = dock->backdrop;
-    CHECK(control_key(control_view, 0x112233));
+    CHECK(control_key(control_view, 0x112233, false));
     CHECK(dock->backdrop == committed);
+    CHECK(control_outside_backdrop(control_view, &box));
+    for (unsigned i = 0; i < 3; i++) {
+        struct BackdropViewState current;
+        CHECK(backdrop_view_state(sources[i], &current));
+        CHECK(wlr_box_equal(&baseline[i].geometry, &current.geometry) &&
+            baseline[i].x == current.x && baseline[i].y == current.y &&
+            baseline[i].focused == current.focused && baseline[i].frame == current.frame &&
+            (!i || baseline[i].body == current.body));
+    }
+    CHECK(surface_hash(dock->surface->surface) == foreground &&
+        wlr_box_equal(&dock->pending_box, &box));
     CHECK(scene_pixels(dock->surface->output, &moved, &w, &h));
+    CHECK(w == width && h == height);
     for (int py = 0; py < box.height; py++)
         CHECK(!memcmp(actual + (y + py) * width + x, moved + (y + py) * width + x, (size_t)box.width * 4));
     free(actual); free(moved);
@@ -590,10 +728,10 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     CHECK(slash && snprintf(lock_client, sizeof(lock_client), "%.*s/polly-lock-test-client",
         (int)(slash - wire), wire) < (int)sizeof(lock_client));
     CHECK(live_backdrop_failure(dock, lock_client));
-    CHECK(control_key(control_view, 0x271828));
+    CHECK(control_key(control_view, 0x271828, true));
     CHECK(!sampled_layer() && wl_list_empty(&desktop.scene->backdrops));
     CHECK(pixman_region32_equal(&input, &dock->surface->surface->input_region));
-    CHECK(control_key(control_view, 0x161803));
+    CHECK(control_key(control_view, 0x161803, true));
     CHECK(sampled_layer());
     CHECK(scene_pixels(sampled_layer()->surface->output, &actual, &w, &h));
     free(actual);
@@ -639,7 +777,12 @@ static bool backdrop_guard_retirement(const char *ui)
         (backdrop_guard.watches[0].retired || backdrop_guard.watches[1].retired ||
          backdrop_guard.watches[2].retired));
     CHECK(!backdrop_guard_current());
-    CHECK(find("Backdrop.guard.control") && find("Backdrop.guard.first") && find("Backdrop.guard.second"));
+    struct PuDesktopView *fresh[] = {find("Backdrop.guard.control"), find("Backdrop.guard.first"),
+        find("Backdrop.guard.second")};
+    for (unsigned i = 0; i < 3; i++)
+        CHECK(fresh[i] && fresh[i] == backdrop_guard.views[i] &&
+            fresh[i]->workspace_window == backdrop_guard.view_ids[i] &&
+            fresh[i]->toplevel->base->surface == backdrop_guard.view_surfaces[i]);
     backdrop_guard_stop();
     puts("PASS: test-only lifetime guard rejects the original owned Dock after real client unmap/destroy; repeated checks refuse stale access while all three witnessed views remain live");
     return true;
@@ -879,6 +1022,7 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
+    if (!strcmp(mode, "frame-fence")) return presented_frame_fence(ui);
     if (!strcmp(mode, "backdrop")) return backdrop_consumer(ui, wire);
     if (!strcmp(mode, "shell-backdrop")) return modern_backdrop_consumer(ui, wire);
     struct wlr_box initial = {0};
@@ -1025,6 +1169,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        if (!resume_renderer()) passed = false;
         backdrop_guard_stop();
         stop_child(&wire_pid); stop_child(&app_pid);
         wlr_pointer_finish(&pointer); wlr_keyboard_finish(&keyboard);
