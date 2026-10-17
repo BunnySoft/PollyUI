@@ -19,12 +19,25 @@
 #include <unistd.h>
 #include <wlr/util/log.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 
 enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN,
     MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY,
     SHELL_BACKDROP_CAPABILITY,
-    DOCK_HEIGHT_512, DOCK_HEIGHT_513, DOCK_HEIGHT_640, DOCK_HEIGHT_660, DOCK_HEIGHT_64 };
+    DOCK_HEIGHT_512, DOCK_HEIGHT_513, DOCK_HEIGHT_640, DOCK_HEIGHT_660, DOCK_HEIGHT_64,
+    START_BACKDROP_CAPABILITY, MAP_PAIR, PAIR_HEIGHT_512, PAIR_HEIGHT_513, PAIR_HEIGHT_640, PAIR_HEIGHT_660,
+    PAIR_HEIGHT_769, PREPARE_PAIR, STAGE_PANEL, STAGE_START, STAGE_STANDARD, NEW_PANEL_ROLE,
+    V8_STANDARD_SCHEMA, V9_OLD_SCHEMA, RECOMMIT_PANEL, RECOMMIT_START, UNMAP_PANEL, COMMIT_OLD,
+    PREPARE_EIGHT, PREPARE_NINE };
 struct Reply { uint32_t state, bootstrap, accepted, serial, globals; bool denied; };
+struct PairSurface {
+    struct wl_surface *surface;
+    struct zwlr_layer_surface_v1 *layer;
+    struct wl_buffer *buffer;
+    uint32_t width, height;
+    bool configured;
+};
 struct Probe {
     struct wl_display *display;
     struct wl_registry *registry;
@@ -35,6 +48,7 @@ struct Probe {
     struct zwlr_layer_surface_v1 *layer;
     struct wl_surface *surface;
     struct wl_buffer *buffer;
+    struct PairSurface panel, start;
     bool configured;
     uint32_t name, version, serial;
     struct Reply reply;
@@ -73,6 +87,7 @@ static const struct polly_appearance_v1_listener listener = {
     .frame_result = result, .render_cancelled = cancelled, .renderer_status = status,
     .backdrop_prepared = prepared, .backdrop_capability = capability,
     .shell_backdrop_capability = capability,
+    .start_backdrop_capability = capability,
 };
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
@@ -155,6 +170,74 @@ static bool map_backdrop(struct Probe *probe)
     zwlr_layer_surface_v1_set_anchor(probe->layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
     return resize_backdrop(probe, 64);
 }
+static void pair_configured(void *data, struct zwlr_layer_surface_v1 *layer,
+    uint32_t serial, uint32_t width, uint32_t height)
+{
+    struct PairSurface *surface = data;
+    zwlr_layer_surface_v1_ack_configure(layer, serial);
+    surface->width = width; surface->height = height; surface->configured = true;
+}
+static const struct zwlr_layer_surface_v1_listener pair_listener = {
+    .configure = pair_configured, .closed = layer_closed,
+};
+static bool resize_pair_surface(struct Probe *probe, struct PairSurface *surface, bool panel, uint32_t height)
+{
+    surface->configured = false;
+    zwlr_layer_surface_v1_set_size(surface->layer, panel ? 0 : 640, height);
+    zwlr_layer_surface_v1_set_exclusive_zone(surface->layer, panel ? (int32_t)height : -1);
+    wl_surface_commit(surface->surface);
+    CHECK(wl_display_roundtrip(probe->display) >= 0 && surface->configured);
+    size_t bytes = (size_t)surface->width * surface->height * 4;
+    int fd = memfd_create("polly-paired-policy", MFD_CLOEXEC);
+    CHECK(fd >= 0 && !ftruncate(fd, (off_t)bytes));
+    struct wl_shm_pool *pool = wl_shm_create_pool(probe->shm, fd, (int32_t)bytes);
+    close(fd);
+    CHECK(pool);
+    if (surface->buffer) wl_buffer_destroy(surface->buffer);
+    surface->buffer = wl_shm_pool_create_buffer(pool, 0, surface->width, surface->height,
+        surface->width * 4, WL_SHM_FORMAT_ARGB8888);
+    wl_shm_pool_destroy(pool);
+    CHECK(surface->buffer);
+    wl_surface_attach(surface->surface, surface->buffer, 0, 0);
+    wl_surface_damage(surface->surface, 0, 0, surface->width, surface->height);
+    wl_surface_commit(surface->surface);
+    return true;
+}
+static bool map_pair(struct Probe *probe)
+{
+    struct PairSurface *surfaces[] = {&probe->panel, &probe->start};
+    for (unsigned i = 0; i < 2; i++) {
+        struct PairSurface *surface = surfaces[i];
+        surface->surface = wl_compositor_create_surface(probe->compositor);
+        surface->layer = zwlr_layer_shell_v1_get_layer_surface(probe->layer_shell, surface->surface,
+            NULL, i ? ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY : ZWLR_LAYER_SHELL_V1_LAYER_TOP, "raw-paired-policy");
+        CHECK(surface->surface && surface->layer);
+        zwlr_layer_surface_v1_add_listener(surface->layer, &pair_listener, surface);
+        zwlr_layer_surface_v1_set_anchor(surface->layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            (i ? 0 : ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT));
+        zwlr_layer_surface_v1_set_keyboard_interactivity(surface->layer,
+            i ? ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE :
+                ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE);
+        if (i) zwlr_layer_surface_v1_set_margin(surface->layer, 0, 0, 48, 0);
+        CHECK(resize_pair_surface(probe, surface, !i, i ? 512 : 48));
+    }
+    return true;
+}
+static void stage_pair(struct Probe *probe, enum Command command)
+{
+    bool panel = command == STAGE_PANEL || command == NEW_PANEL_ROLE;
+    bool standard = command == STAGE_STANDARD || command == NEW_PANEL_ROLE || command == V9_OLD_SCHEMA;
+    uint32_t words[] = {standard || command == V8_STANDARD_SCHEMA ? 4 : 3, panel ? 2 : 3,
+        0, 16, 0xf3f3f3, 72};
+    if (command == V9_OLD_SCHEMA) words[0] = 3;
+    struct wl_array material = {.size = sizeof(words), .data = words};
+    struct wl_surface *surface = panel ? probe->panel.surface : probe->start.surface;
+    if (standard)
+        polly_appearance_v1_prepare_start_backdrop(probe->appearance, probe->serial, surface,
+            probe->panel.surface, &material);
+    else polly_appearance_v1_prepare_shell_backdrop(probe->appearance, probe->serial, surface,
+        probe->panel.surface, &material);
+}
 static bool public_probe(struct Probe *probe)
 {
     const char *name = getenv("WAYLAND_DISPLAY");
@@ -201,6 +284,9 @@ static bool child(int fd, uint32_t version)
         case ENABLE: case FORBIDDEN: polly_appearance_v1_enable_renderer(probe.appearance); break;
         case PREPARE: CHECK(prepare(&probe, 0)); break;
         case PREPARE_REGIONAL: CHECK(prepare(&probe, 1)); break;
+        case PREPARE_PAIR: CHECK(prepare(&probe, 2)); break;
+        case PREPARE_EIGHT: CHECK(prepare(&probe, 8)); break;
+        case PREPARE_NINE: CHECK(prepare(&probe, 9)); break;
         case MAP_BACKDROP: CHECK(map_backdrop(&probe)); probe.reply.accepted = 1; break;
         case DOCK_HEIGHT_512: CHECK(resize_backdrop(&probe, 512)); break;
         case DOCK_HEIGHT_513: CHECK(resize_backdrop(&probe, 513)); break;
@@ -219,6 +305,20 @@ static bool child(int fd, uint32_t version)
             wl_surface_attach(probe.surface, NULL, 0, 0); wl_surface_commit(probe.surface); break;
         case BACKDROP_CAPABILITY: polly_appearance_v1_get_backdrop_capability(probe.appearance); break;
         case SHELL_BACKDROP_CAPABILITY: polly_appearance_v1_get_shell_backdrop_capability(probe.appearance); break;
+        case START_BACKDROP_CAPABILITY: polly_appearance_v1_get_start_backdrop_capability(probe.appearance); break;
+        case MAP_PAIR: CHECK(map_pair(&probe)); probe.reply.accepted = 1; break;
+        case PAIR_HEIGHT_512: CHECK(resize_pair_surface(&probe, &probe.start, false, 512)); break;
+        case PAIR_HEIGHT_513: CHECK(resize_pair_surface(&probe, &probe.start, false, 513)); break;
+        case PAIR_HEIGHT_640: CHECK(resize_pair_surface(&probe, &probe.start, false, 640)); break;
+        case PAIR_HEIGHT_660: CHECK(resize_pair_surface(&probe, &probe.start, false, 660)); break;
+        case PAIR_HEIGHT_769: CHECK(resize_pair_surface(&probe, &probe.start, false, 769)); break;
+        case STAGE_PANEL: case STAGE_START: case STAGE_STANDARD: case NEW_PANEL_ROLE:
+        case V8_STANDARD_SCHEMA: case V9_OLD_SCHEMA: stage_pair(&probe, command); break;
+        case RECOMMIT_PANEL: wl_surface_commit(probe.panel.surface); break;
+        case RECOMMIT_START: wl_surface_commit(probe.start.surface); break;
+        case UNMAP_PANEL:
+            wl_surface_attach(probe.panel.surface, NULL, 0, 0); wl_surface_commit(probe.panel.surface); break;
+        case COMMIT_OLD: polly_appearance_v1_commit(probe.appearance, probe.serial - 1); break;
         case COMMIT: polly_appearance_v1_commit(probe.appearance, probe.serial); break;
         case CANCEL: polly_appearance_v1_cancel(probe.appearance, probe.serial); break;
         case PUBLIC_PROBE: probe.reply.denied = public_probe(&probe); break;
@@ -268,6 +368,101 @@ static int start(const char *self, bool renderer, const char *version, struct Re
     close(inherited);
     if (!started || !receive(sockets[0], reply)) { close(sockets[0]); return -1; }
     return sockets[0];
+}
+static bool paired_policy(const char *self, int publisher, struct Reply *p)
+{
+    CHECK(command(publisher, MAP_PAIR, p) && p->accepted);
+    const enum Command sizes[] = {PAIR_HEIGHT_512, PAIR_HEIGHT_513, PAIR_HEIGHT_640, PAIR_HEIGHT_660};
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        CHECK(command(publisher, sizes[i], p));
+        CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+        CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+        CHECK(command(publisher, STAGE_START, p) && p->accepted == (i == 0));
+        CHECK(wl_list_length(&desktop.scene->backdrops) == (i == 0 ? 2 : 1));
+        CHECK(command(publisher, CANCEL, p));
+        CHECK(wl_list_empty(&desktop.scene->backdrops));
+    }
+    puts("PASS: actual bound-v8/schema3/role3 raw request accepts512 and rejects513/640/660; original taskbar authority and 512 boundary unchanged");
+    CHECK(command(publisher, FORBIDDEN, p) && p->denied);
+    pu_desktop_stop_shell(&desktop); close(publisher);
+    publisher = start(self, false, "9", p);
+    CHECK(publisher >= 0);
+    CHECK(command(publisher, START_BACKDROP_CAPABILITY, p) && p->accepted);
+    CHECK(command(publisher, MAP_PAIR, p) && p->accepted);
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        CHECK(command(publisher, sizes[i], p));
+        CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+        CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+        CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+        CHECK(wl_list_length(&desktop.scene->backdrops) == 2);
+        CHECK(command(publisher, CANCEL, p));
+        CHECK(wl_list_empty(&desktop.scene->backdrops));
+    }
+    CHECK(command(publisher, PAIR_HEIGHT_769, p));
+    CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && !p->accepted);
+    CHECK(command(publisher, CANCEL, p));
+    CHECK(command(publisher, PAIR_HEIGHT_660, p));
+    const enum Command invalid[] = {NEW_PANEL_ROLE, V8_STANDARD_SCHEMA, V9_OLD_SCHEMA};
+    for (unsigned i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+        CHECK(command(publisher, invalid[i], p) && !p->accepted);
+        CHECK(command(publisher, CANCEL, p));
+        CHECK(wl_list_empty(&desktop.scene->backdrops));
+    }
+    CHECK(command(publisher, PREPARE_NINE, p) && !p->accepted);
+    CHECK(wl_list_empty(&desktop.scene->backdrops));
+    CHECK(command(publisher, PREPARE_EIGHT, p) && p->accepted);
+    CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+    CHECK(command(publisher, COMMIT, p) && !p->accepted);
+    CHECK(command(publisher, CANCEL, p));
+    CHECK(command(publisher, PREPARE_REGIONAL, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+    CHECK(command(publisher, COMMIT, p) && !p->accepted);
+    CHECK(command(publisher, CANCEL, p));
+    CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+    CHECK(command(publisher, COMMIT, p) && !p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && !p->accepted);
+    CHECK(command(publisher, CANCEL, p));
+    CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+    CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+    CHECK(command(publisher, COMMIT, p) && p->accepted);
+    struct PuDesktopLayer *layer;
+    struct wlr_scene_rect *committed[2] = {0};
+    unsigned count = 0;
+    wl_list_for_each(layer, &desktop.layers, link) if (layer->backdrop) {
+        CHECK(count < 2); committed[count++] = layer->backdrop;
+    }
+    CHECK(count == 2);
+    const enum Command obsolete[] = {RECOMMIT_START, RECOMMIT_PANEL, QUERY, COMMIT_OLD};
+    for (unsigned i = 0; i < sizeof(obsolete) / sizeof(obsolete[0]); i++) {
+        CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+        CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+        CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+        if (obsolete[i] == QUERY) { desktop.backdrop_epoch++; wlr_scene_backdrop_clear(desktop.scene); }
+        CHECK(command(publisher, obsolete[i], p));
+        if (obsolete[i] != COMMIT_OLD) CHECK(command(publisher, COMMIT, p) && !p->accepted);
+        else CHECK(!p->accepted);
+        CHECK(command(publisher, CANCEL, p));
+        count = 0;
+        wl_list_for_each(layer, &desktop.layers, link) if (layer->backdrop) {
+            CHECK(count < 2 && layer->backdrop == committed[count]); count++;
+        }
+        CHECK(count == 2 && wl_list_length(&desktop.scene->backdrops) == 2);
+    }
+    CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
+    CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
+    CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
+    CHECK(command(publisher, UNMAP_PANEL, p));
+    CHECK(command(publisher, COMMIT, p) && !p->accepted);
+    CHECK(command(publisher, CANCEL, p));
+    CHECK(wl_list_empty(&desktop.scene->backdrops));
+    pu_desktop_stop_shell(&desktop); close(publisher);
+    puts("PASS: raw v9 standard Start accepts full640/660 only through schema4/role3; wrong request/schema/role, duplicate, missing pair, old serial, both surface sequences, privacy epoch and unpair reject without changing committed nodes");
+    return true;
 }
 static bool suite(const char *self)
 {
@@ -338,8 +533,16 @@ static bool suite(const char *self)
     CHECK(command(publisher, CANCEL, &p));
     CHECK(wl_list_empty(&desktop.scene->backdrops));
     puts("PASS: real Shell-owned mapped wl_surface capability/count staging; privacy epoch and late actual surface commit reject without replacing committed node; unmap cancels samples; unrelated namespace grants no authority");
-    CHECK(command(publisher, FORBIDDEN, &p) && p.denied);
-    pu_desktop_stop_shell(&desktop); close(publisher);
+    struct wlr_output_layout_output *output;
+    wl_list_for_each(output, &desktop.layout->outputs, link) {
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_custom_mode(&state, 1280, 1000, 60000);
+        bool committed = wlr_output_commit_state(output->output, &state);
+        wlr_output_state_finish(&state);
+        CHECK(committed);
+    }
+    CHECK(paired_policy(self, publisher, &p));
     CHECK(command(renderer, QUERY, &r) && !r.bootstrap);
     CHECK(command(renderer, DUPLICATE, &r) && r.denied);
     pu_decorator_stop(&desktop); close(renderer);

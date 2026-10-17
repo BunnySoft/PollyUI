@@ -221,11 +221,14 @@ export function validateTheme(value) {
   for (const key of ['regionalBackdrop', 'taskbarBackdrop', 'startBackdrop']) {
     if (!Object.hasOwn(value.panel, key)) continue;
     const material = value.panel[key];
-    keys(material, ['sigma', 'tint', 'opacityPercent'], 'panel.' + key);
+    keys(material, ['sigma', 'tint', 'opacityPercent', ...(key === 'startBackdrop' ? ['standardHeight'] : [])],
+      'panel.' + key, true, key === 'startBackdrop' ? ['standardHeight'] : []);
     if (!Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
         !Number.isInteger(material.opacityPercent) || material.opacityPercent < 0 || material.opacityPercent > 100 ||
         typeof material.tint !== 'string' || !/^#[0-9a-f]{6}$/i.test(material.tint))
       throw new TypeError('Invalid panel.' + key + ' backdrop');
+    if (Object.hasOwn(material, 'standardHeight') && typeof material.standardHeight !== 'boolean')
+      throw new TypeError('Invalid panel.startBackdrop.standardHeight opt-in');
   }
   if ((value.panel.taskbarBackdrop || value.panel.startBackdrop) &&
       (value.panel.kind !== 'taskbar' || value.panel.surfaceStyle !== 'fluent' ||

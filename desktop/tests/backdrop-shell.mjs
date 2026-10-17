@@ -3,6 +3,7 @@ import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
 import { BUILTIN_THEME_CATALOG, installThemeCatalog } from './desktop/shared/ui/themes.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
+import { runtimeBuild } from './desktop/client/settings-contract.mjs';
 
 const [mode] = application.arguments;
 if (mode === 'guard-retire') {
@@ -17,7 +18,7 @@ if (mode === 'guard-retire') {
     anchors: ['top', 'right'], exclusiveZone: -1 });
   ready.onclose = () => dock.close();
   window.close();
-} else if (mode === 'modern' || mode === 'modern-old') {
+} else if (['modern', 'modern-old', 'modern-standard', 'modern-v8'].includes(mode)) {
   modern().catch(failure => {
     console.error('FAIL: ' + String(failure) + '\n' + failure.stack);
     window.quit();
@@ -93,6 +94,7 @@ window.close();
 }
 
 async function modern() {
+  const standard = mode === 'modern-standard', oldV8 = mode === 'modern-v8';
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const check = (value, message) => {
     if (!value) throw new Error(message);
@@ -107,6 +109,12 @@ async function modern() {
     throw new Error('Timed out: ' + message);
   }
   const created = [];
+  if (standard || oldV8) {
+    const build = runtimeBuild();
+    check(/^[0-9a-f]{40}$/.test(build.revision) && build.sourceDirty === false,
+      'fresh GUI embeds a clean actual source revision');
+    console.log('STANDARD_START_GUI ' + JSON.stringify(build));
+  }
   const host = {
     close: () => window.close(), displays: () => window.displays(),
     create(options) {
@@ -139,6 +147,7 @@ async function modern() {
   };
   const root = menu => menu.window.document.getElementById('shell-applications');
   async function open(output, expected = 'regional') {
+    const began = Date.now();
     const before = created.filter(surface => surface.options.title.startsWith('PollyShell.menu.')).length;
     await click(panel(output), 'shell-menu');
     await until(() => currentMenu() && root(currentMenu())?.offsetWidth > 0, 'production Start mapped');
@@ -150,6 +159,16 @@ async function modern() {
       await until(() => shell.getState().materialError.includes('peak budget rejected'), 'actual budget rejection');
     check(created.filter(surface => surface.options.title.startsWith('PollyShell.menu.')).length === before + 1,
       'one real taskbar pointer activation opens exactly one Start');
+    if (standard) {
+      const actual = currentMenu().window.state;
+      check(actual.width === 640 && actual.height === (output.height === 720 ? 640 : 660),
+        'unchanged production Start actual extent is 640x' + actual.height + ' on ' + output.width + 'x' + output.height);
+      console.log('STANDARD_START_OPEN_OBSERVATION ' + JSON.stringify({
+        output: [output.width, output.height], actual: [actual.width, actual.height],
+        elapsedMs: Date.now() - began, expected,
+        work: 'taskbar geometry frames, actual pointer roundtrip, solid map/layout/paint, two presentation frames, native prepare/commit and JS background repaint; not output ACK or a frame-time qualification',
+      }));
+    }
     return currentMenu();
   }
   if (mode === 'modern-old') {
@@ -164,6 +183,46 @@ async function modern() {
     shell.stop(); window.quit(); return;
   }
   check(desktop.shellBackdropCapability() === true, 'paired v8 capability reports implemented real renderer support');
+  if (oldV8) {
+    check(desktop.startBackdropCapability() === false, 'actual old v8 provider explicitly lacks the new v9 capability');
+    const originals = shell.getSurfaces().map(surface => surface.window);
+    let menu = await open(outputs[0], 'default');
+    check(root(menu).style.backgroundColor === '#f3f3f3', 'old v8 provider retains packaged solid Start');
+    const saved = JSON.stringify(configuration.snapshot), count = created.length;
+    const focus = menu.window.document.activeElement;
+    const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+    const theme = optional.themes.find(theme => theme.id === 'modern');
+    theme.panel.startBackdrop = { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+    installThemeCatalog(optional);
+    check(!shell.selectTheme('modern') && shell.getState().error.includes('appearance v9') &&
+      JSON.stringify(configuration.snapshot) === saved && created.length === count &&
+      !menu.window.closed && menu.window.document.activeElement === focus && originals.every(surface => !surface.closed),
+      'old v8 explicitly rejects new opt-in before resources, preferences, appearance or foreground mutation');
+    let rejected = false;
+    try {
+      const panels = shell.getSurfaces().filter(surface => surface.kind === 'panel');
+      desktop.configureAppearance(theme, encodeDecorationLayout(theme),
+        [...panels.map(surface => [surface.window, [3, 2, 0, 8, 0xf3f3f3, 72], surface.window]),
+          [menu.window, [4, 3, 8000, 16, 0xf3f3f3, 72], panels[0].window]]);
+    } catch (failure) {
+      rejected = String(failure).includes('appearance v9');
+      console.log('EXPECTED_OLD_V8_NATIVE_REJECTION ' + failure);
+    }
+    check(rejected && !menu.window.closed && originals.every(surface => !surface.closed),
+      'native bridge independently refuses schema4 on actual v8 without a theme transaction');
+    theme.panel.startBackdrop = { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+    installThemeCatalog(optional);
+    check(shell.selectTheme('modern'), 'old v8 still selects the original bounded Start opt-in');
+    menu = await open(outputs[0]);
+    check(menu.window.state.height === 460 && root(menu).style.backgroundColor === 'transparent',
+      'old v8 still runs original schema3 production bounded Start at actual460');
+    await signal('backdrop-check old-v8');
+    menu.window.close();
+    shell.stop();
+    await signal('backdrop-check stopped');
+    window.quit(); return;
+  }
+  if (standard) check(desktop.startBackdropCapability() === true, 'independent v9 standard-Start capability is implemented');
   await signal('backdrop-check taskbars');
   let menu = await open(outputs[0], 'default');
   check(root(menu).style.backgroundColor === '#f3f3f3' && shell.getState().materialError === '',
@@ -171,21 +230,25 @@ async function modern() {
   menu.window.close();
   const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
   optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
-    { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+    { sigma: standard ? 16 : 12, tint: '#f3f3f3', opacityPercent: 72, ...(standard ? { standardHeight: true } : {}) };
   installThemeCatalog(optional);
   check(shell.selectTheme('modern'), 'explicit optional Start material uses the same original menu geometry');
-  menu = await open(outputs[0], 'extent');
-  check(menu.window.state.height > 512 && root(menu).style.backgroundColor === '#f3f3f3' &&
-    shell.getState().materialError.includes('4096x512'), 'actual standard Start extent is accurately rejected and stays solid');
-  await signal('backdrop-check extent');
-  await until(() => menu.window.closed, 'real output reconfiguration retires the oversized menu');
+  if (!standard) {
+    menu = await open(outputs[0], 'extent');
+    check(menu.window.state.height > 512 && root(menu).style.backgroundColor === '#f3f3f3' &&
+      shell.getState().materialError.includes('4096x512'), 'actual standard Start extent is accurately rejected and stays solid');
+    await signal('backdrop-check extent');
+    await until(() => menu.window.closed, 'real output reconfiguration retires the oversized menu');
+  }
   menu = await open(outputs[0]);
-  check(menu.window.state.height <= 512, 'unchanged menu sizing naturally fits only on the smaller actual output');
+  check(standard ? menu.window.state.height === 640 : menu.window.state.height <= 512,
+    standard ? 'full actual640 Start uses the new request without shrinking geometry' :
+      'unchanged menu sizing naturally fits only on the smaller actual output');
   check(root(menu).style.backgroundColor === 'transparent', 'Start clears only background after native transaction success');
   await signal('backdrop-check start');
   const theme = optional.themes.find(theme => theme.id === 'modern');
   const panels = shell.getSurfaces().filter(surface => surface.kind === 'panel');
-  const material = [3, 3, 8000, 12, 0xf3f3f3, 72];
+  const material = [standard ? 4 : 3, 3, 8000, standard ? 16 : 12, 0xf3f3f3, 72];
   const panelTargets = panels.map(surface => [surface.window, [3, 2, 0, 8, 0xf3f3f3, 72], surface.window]);
   for (const targets of [
     [[panels[0].window, [2, 1, 0, 8, 0xf3f3f3, 72]]],
@@ -193,6 +256,11 @@ async function modern() {
     [[menu.window, material, panels[0].window]],
     [...panelTargets, [menu.window, [3, 2, 8000, 12, 0xf3f3f3, 72], panels[0].window]],
     [...panelTargets, [menu.window, material, panels[0].window], [menu.window, material, panels[0].window]],
+    ...(standard ? [
+      [...panelTargets, [menu.window, [3, 3, 8000, 16, 0xf3f3f3, 72], panels[0].window]],
+      [[panels[0].window, [4, 2, 0, 8, 0xf3f3f3, 72], panels[0].window]],
+      [...panelTargets, [panels[0].window, material, panels[0].window]],
+    ] : []),
   ]) {
     let rejected = false;
     try { desktop.configureAppearance(theme, encodeDecorationLayout(theme), targets); }
@@ -214,7 +282,40 @@ async function modern() {
     } finally { if (!candidate.closed) candidate.close(); }
     check(rejected, 'retired actual peer is revalidated after ' + during);
   }
+  if (standard) {
+    for (const during of ['target-getter', 'theme-toJSON', 'ordinary-target']) {
+      const candidate = window.create(during === 'ordinary-target' ?
+        { title: 'Backdrop.standard.ordinary', width: 640, height: 660 } :
+        { title: 'Backdrop.standard.candidate', layer: 'overlay', width: 640, height: 660,
+          anchors: ['bottom'], margins: { bottom: 48 }, exclusiveZone: -1, keyboard: 'none', transparent: true });
+      const target = [candidate, material, panels[0].window];
+      if (during === 'target-getter') Object.defineProperty(target, 1, {
+        get() { candidate.close(); return material; },
+      });
+      const snapshot = during === 'theme-toJSON' ?
+        { ...theme, toJSON() { candidate.close(); return theme; } } : theme;
+      let rejected = false;
+      try { desktop.configureAppearance(snapshot, encodeDecorationLayout(theme), [...panelTargets, target]); }
+      catch (failure) {
+        rejected = failure.name === 'TypeError';
+        console.log('EXPECTED_STANDARD_START_LIFETIME_REJECTION ' + during + ' ' + failure);
+      } finally { if (!candidate.closed) candidate.close(); }
+      check(rejected && !menu.window.closed && panels.every(surface => !surface.window.closed),
+        'new standard request rejects ' + during + ' without replacing committed recipients');
+    }
+  }
   await signal('backdrop-check retained');
+  if (standard) {
+    const sameWindow = menu.window;
+    const search = menu.window.document.getElementById('shell-app-search');
+    search.focus();
+    await signal('backdrop-key 30');
+    await until(() => search.value === 'a', 'real native text edits the existing production Start search');
+    await signal('backdrop-key 14');
+    await until(() => search.value === '', 'real Backspace edits the same existing search input');
+    check(menu.window === sameWindow && !menu.window.closed && root(menu).style.backgroundColor === 'transparent',
+      'search edit keeps the same actual full-height Start and opaque foreground');
+  }
   menu.window.document.getElementById('shell-app-refresh').focus();
   const menuBody = menu.window.document.body;
   let tabDown = 0, tabUp = 0, tabTarget = '';
@@ -235,6 +336,12 @@ async function modern() {
   check(tabDown === 1 && tabUp === 1 && tabTarget === 'shell-app-refresh',
     'one native Tab press/release reaches the focused Refresh control exactly once');
   check(menu.window.document.activeElement?.id === 'shell-app-close', 'real Tab reaches Close menu from Refresh');
+  if (standard) {
+    await signal('backdrop-key 15 shift');
+    await until(() => menu.window.document.activeElement?.id === 'shell-app-refresh', 'native Shift+Tab reverses focus');
+    await signal('backdrop-key 15');
+    await until(() => menu.window.document.activeElement?.id === 'shell-app-close', 'native Tab returns to Close');
+  }
   await signal('backdrop-key 28');
   await until(() => menu.window.closed, 'one Enter closes production Start');
   await signal('backdrop-check closed');
@@ -256,6 +363,14 @@ async function modern() {
   await signal('backdrop-pressure off');
   menu.window.close();
   menu = await open(outputs[0]);
+  if (standard) {
+    await signal('backdrop-key 1');
+    await until(() => menu.window.closed, 'one native Escape closes the same production Start');
+    menu = await open(outputs[0]);
+    await click(menu, 'shell-app-close');
+    await until(() => menu.window.closed, 'one native Close pointer closes the same production Start');
+    menu = await open(outputs[0]);
+  }
   await signal('backdrop-check privacy');
   menu.window.close();
   menu = await open(outputs[0]);

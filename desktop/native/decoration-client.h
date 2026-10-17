@@ -21,4 +21,6 @@ JSValue pu_decoration_client_backdrop_capability(JSContext *ctx,
     struct polly_appearance_v1 *appearance, struct wl_display *display);
 JSValue pu_decoration_client_shell_backdrop_capability(JSContext *ctx,
     struct polly_appearance_v1 *appearance, struct wl_display *display);
+JSValue pu_decoration_client_start_backdrop_capability(JSContext *ctx,
+    struct polly_appearance_v1 *appearance, struct wl_display *display);
 #endif

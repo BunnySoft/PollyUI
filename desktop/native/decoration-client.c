@@ -29,6 +29,7 @@ static struct {
     bool enabled, enable_reply, frame_reply;
     bool backdrop_supported, capability_reply, backdrop_reply;
     bool shell_backdrop_supported, shell_capability_reply;
+    bool start_backdrop_supported, start_capability_reply;
     uint32_t applied_serial, retired_serial, retired_mask, committing_serial;
     char retired_error[192];
     bool backdrop_changed;
@@ -125,6 +126,11 @@ static void shell_backdrop_capability(void *data, struct polly_appearance_v1 *ap
     (void)data; (void)appearance;
     renderer.shell_backdrop_supported = supported == 1; renderer.shell_capability_reply = true;
 }
+static void start_backdrop_capability(void *data, struct polly_appearance_v1 *appearance, uint32_t supported)
+{
+    (void)data; (void)appearance;
+    renderer.start_backdrop_supported = supported == 1; renderer.start_capability_reply = true;
+}
 static void shell_backdrop_retired(void *data, struct polly_appearance_v1 *appearance,
     uint32_t serial, uint32_t target, uint32_t role, const char *message)
 {
@@ -160,6 +166,7 @@ const struct polly_appearance_v1_listener pu_decoration_client_listener = {
     .backdrop_status = backdrop_status,
     .shell_backdrop_capability = shell_backdrop_capability,
     .shell_backdrop_retired = shell_backdrop_retired,
+    .start_backdrop_capability = start_backdrop_capability,
 };
 void pu_decoration_client_attach(struct polly_appearance_v1 *appearance, struct wl_display *display,
     int (*roundtrip)(struct wl_display *display))
@@ -332,6 +339,16 @@ JSValue pu_decoration_client_shell_backdrop_capability(JSContext *ctx,
         return JS_ThrowInternalError(ctx, "Paired Shell backdrop capability was not acknowledged");
     return JS_NewBool(ctx, renderer.shell_backdrop_supported);
 }
+JSValue pu_decoration_client_start_backdrop_capability(JSContext *ctx,
+    struct polly_appearance_v1 *appearance, struct wl_display *display)
+{
+    if (!appearance || polly_appearance_v1_get_version(appearance) < 9) return JS_NewBool(ctx, false);
+    renderer.start_capability_reply = false;
+    polly_appearance_v1_get_start_backdrop_capability(appearance);
+    if (!pu_desktop_wayland_roundtrip(display) || !renderer.start_capability_reply)
+        return JS_ThrowInternalError(ctx, "Standard Start backdrop capability was not acknowledged");
+    return JS_NewBool(ctx, renderer.start_backdrop_supported);
+}
 static struct wl_surface *current_backdrop_surface(JSContext *ctx, JSValueConst handle)
 {
     PuWindow *window = pu_gui_window_from_value(ctx, handle);
@@ -387,7 +404,7 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
             JSValue material = JS_GetPropertyUint32(ctx, target, 1);
             valid = !JS_IsException(handles[i]) && read_words(ctx, material, materials[i], 6) &&
                 current_backdrop_surface(ctx, handles[i]);
-            if (valid && materials[i][0] == 3) {
+            if (valid && (materials[i][0] == 3 || materials[i][0] == 4)) {
                 peers[i] = JS_GetPropertyUint32(ctx, target, 2);
                 valid = !JS_IsException(peers[i]) && current_backdrop_surface(ctx, peers[i]);
             }
@@ -397,14 +414,26 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
             if (!JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Live owned regional Windows and numeric materials are required");
             goto failure;
         }
-        bool paired = false;
-        for (uint32_t i = 0; i < count; i++) paired |= materials[i][0] == 3;
+        bool paired = false, standard_start = false;
+        for (uint32_t i = 0; i < count; i++) {
+            paired |= materials[i][0] == 3 || materials[i][0] == 4;
+            standard_start |= materials[i][0] == 4;
+        }
         if (paired) {
             JSValue capability = pu_decoration_client_shell_backdrop_capability(ctx, appearance, display);
             bool supported = !JS_IsException(capability) && JS_ToBool(ctx, capability) == 1;
             JS_FreeValue(ctx, capability);
             if (!supported) {
                 if (!JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Paired Shell backdrop requires supported appearance v8");
+                goto failure;
+            }
+        }
+        if (standard_start) {
+            JSValue capability = pu_decoration_client_start_backdrop_capability(ctx, appearance, display);
+            bool supported = !JS_IsException(capability) && JS_ToBool(ctx, capability) == 1;
+            JS_FreeValue(ctx, capability);
+            if (!supported) {
+                if (!JS_HasException(ctx)) JS_ThrowTypeError(ctx, "Standard Start backdrop requires supported appearance v9");
                 goto failure;
             }
         }
@@ -450,10 +479,12 @@ JSValue pu_decoration_client_configure(JSContext *ctx, int argc, JSValueConst *a
         if (!surface) { polly_appearance_v1_cancel(appearance, serial); goto failure; }
         struct wl_array material = {.size = sizeof(materials[i]), .alloc = sizeof(materials[i]), .data = materials[i]};
         renderer.backdrop_reply = false;
-        if (materials[i][0] == 3) {
+        if (materials[i][0] == 3 || materials[i][0] == 4) {
             struct wl_surface *taskbar = current_backdrop_surface(ctx, peers[i]);
             if (!taskbar) { polly_appearance_v1_cancel(appearance, serial); goto failure; }
-            polly_appearance_v1_prepare_shell_backdrop(appearance, serial, surface, taskbar, &material);
+            if (materials[i][0] == 4)
+                polly_appearance_v1_prepare_start_backdrop(appearance, serial, surface, taskbar, &material);
+            else polly_appearance_v1_prepare_shell_backdrop(appearance, serial, surface, taskbar, &material);
         } else polly_appearance_v1_prepare_backdrop(appearance, serial, surface, &material);
         if (!renderer.roundtrip(display) || !renderer.backdrop_reply || renderer.accepted != 1) {
             polly_appearance_v1_cancel(appearance, serial);

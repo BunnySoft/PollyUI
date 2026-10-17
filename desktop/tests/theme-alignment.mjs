@@ -18,7 +18,8 @@ const find = (node, id) => node.props?.id === id ? node : node.children?.map(chi
 const action = () => {};
 {
   const packaged = catalog.themes.find(theme => theme.id === 'modern');
-  assert.equal(packaged.panel.startBackdrop, undefined, 'Standard-height Start stays solid with effects3');
+  assert.equal(packaged.panel.startBackdrop, undefined, 'Standard-height Start stays solid by default');
+  assert.equal(packaged.panel.standardHeight, undefined);
   const modern = { ...packaged, panel: { ...packaged.panel,
     startBackdrop: { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 } } };
   assert.deepEqual(shellBackdropMaterial(modern, 2, 1280, 48), [3, 2, 0, 8, 0xf3f3f3, 72]);
@@ -27,6 +28,26 @@ const action = () => {};
   delete omitted.panel.taskbarBackdrop;
   delete omitted.panel.startBackdrop;
   const file = theme => JSON.stringify({ schemaVersion: 1, theme });
+  const standard = structuredClone(modern);
+  standard.panel.startBackdrop.standardHeight = true;
+  assert.equal(parseThemeFile(file(standard)).panel.startBackdrop.standardHeight, true);
+  for (const height of [640, 660])
+    assert.deepEqual(shellBackdropMaterial(standard, 3, 640, height), [4, 3, 8000, 12, 0xf3f3f3, 72]);
+  assert.deepEqual(shellBackdropMaterial(standard, 2, 1280, 48), [3, 2, 0, 8, 0xf3f3f3, 72]);
+  standard.panel.startBackdrop.standardHeight = false;
+  assert.equal(shellBackdropMaterial(parseThemeFile(file(standard)), 3, 640, 660)[0], 3);
+  for (const value of [null, 0, 1, 'true', {}, []]) {
+    standard.panel.startBackdrop.standardHeight = value;
+    assert.throws(() => parseThemeFile(file(standard)), /standardHeight/);
+  }
+  for (const key of ['taskbarBackdrop', 'regionalBackdrop']) {
+    const invalid = structuredClone(modern);
+    invalid.panel[key] = { sigma: 12, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+    assert.throws(() => parseThemeFile(file(invalid)), /standardHeight/);
+  }
+  const unknown = structuredClone(modern);
+  unknown.panel.startBackdrop.standardheight = true;
+  assert.throws(() => parseThemeFile(file(unknown)), /standardheight/);
   assert.doesNotThrow(() => parseThemeFile(file(omitted)));
   assert.equal(shellBackdropMaterial(omitted, 2, 1280, 48), null);
   assert.equal(JSON.stringify(panelView(omitted, '10:31', action)),
@@ -39,6 +60,7 @@ const action = () => {};
       assert.throws(() => parseThemeFile(file(theme)), /backdrop|Backdrop/);
     }
   const unpaired = structuredClone(modern);
+  unpaired.panel.startBackdrop.standardHeight = true;
   delete unpaired.panel.taskbarBackdrop;
   assert.throws(() => parseThemeFile(file(unpaired)), /requires its taskbar/);
 }
