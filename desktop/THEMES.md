@@ -601,8 +601,8 @@ without replacing the focused real-window command or changing its action.
 Modern and the three Mac presets also display independent persistent application
 pins. Apps menus distinguish taskbar/Dock pin controls from desktop shortcuts;
 the window chooser can pin or unpin the corresponding registered application.
-At most 32 ordered catalog IDs are saved in Shell configuration v3, with atomic
-v1/v2 migration preserving every existing preference domain. Unpinning never
+At most 32 ordered catalog IDs are saved in Shell configuration v4, with atomic
+v1/v2/v3 migration preserving every existing preference domain. Unpinning never
 removes a desktop shortcut. The older reader cannot read v3 automatically.
 
 An idle pin launches through the existing current-catalog policy, while a
@@ -620,6 +620,31 @@ desktop shortcuts.
 These are Polly launcher semantics, not native MRU, drag sorting or Dock
 magnification. Classic retains its original mode; XP retains independent
 per-window tasks alongside its explicit Quick Launch prefix.
+
+Basic half-screen placement is now a real native window operation, independent
+of the selected painter: configurable Super+Left/Right partitions the current
+work area and Super+Down restores the original floating geometry. The existing
+Keyboard page consumes the ten-action catalog for recording, disabling and
+resetting; the original seven numeric action IDs remain unchanged. Private
+shortcuts version 2 is strictly paired. Configuration v4 preserves old user
+chords, including native hexadecimal arrow aliases, and disables only a
+conflicting new default with a migration diagnostic.
+
+Placement uses the original client configure/ACK and decoration frame fence,
+not a visual transform. Restore dimensions come from completed presentation,
+with actual scene positions retained after moves. Work-area reservations, odd
+partitions, size limits, delayed ACKs, max/fullscreen transitions, output changes,
+workspaces and lock/grab restrictions have actual native coverage. The complete
+Windows 11 Snap flyout, drag-to-edge/restore, overview and original-system pixel
+qualification are not supplied by these keyboard operations.
+
+Two pre-existing native test paths remain explicitly unqualified: the original
+Settings panel-click entry times out before its owned Settings handshake, and
+the original GUI Wayland pointer-resize contract fails to enter its expected
+grab. Matching old source/runtime/fixtures reproduce both failures. The new
+Keyboard check uses the real owned Settings entry, native capture, published
+file, fresh process and exact commit counts; it supplements rather than
+replaces those failing original paths.
 
 Mac-style Docks also provide bounded pointer-distance magnification through
 optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
