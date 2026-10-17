@@ -62,6 +62,22 @@ async function run() {
     admissions++; return result;
   };
   async function key(code, shift = false) { await signal('key ' + code + ' ' + Number(shift)); }
+  async function tab(menu, shift = false) {
+    const body = menu.document.body, original = menu.document.activeElement;
+    let down = 0, up = 0, target = null;
+    const pressed = event => { if (event.key === 'Tab') { down++; target = event.target; } };
+    const released = event => { if (event.key === 'Tab') up++; };
+    body.addEventListener('keydown', pressed);
+    body.addEventListener('keyup', released);
+    try {
+      await key(15, shift);
+      await until(() => up > 0, 'single actual menu Tab keyup delivery');
+    } finally {
+      body.removeEventListener('keydown', pressed);
+      body.removeEventListener('keyup', released);
+    }
+    check(down === 1 && up === 1 && target === original, 'one Tab down/up reaches its actual focused target exactly once');
+  }
   async function open() {
     const output = window.displays().find(item => item.x < 0) || window.displays()[0];
     const menu = shell.showWindowActions(output.id, target().id);
@@ -88,6 +104,7 @@ async function run() {
     await key(28);
     await until(() => menu.closed && target()?.placement === 'left' && !target()?.placementPending, 'old v4 half placement');
     check(shell.selectTheme('modern'), 'Modern picker theme enabled on the real old v4 provider');
+    check(desktop.layoutPickerCapability() === true, 'actual frozen v4 provider supports the native picker');
     await signal('hover');
     await until(() => created.some(item => !item.closed && item.document.getElementById('shell-layout-picker')), 'old v4 Maxhover picker');
     const picker = created.findLast(item => !item.closed && item.document.getElementById('shell-layout-picker'));
@@ -110,7 +127,7 @@ async function run() {
     const short = await open(), visited = new Set();
     short.document.body.focus();
     for (let i = 0; i < 26; i++) {
-      await key(15);
+      await tab(short);
       visited.add(short.document.activeElement?.id);
     }
     for (const action of ['activate', 'minimize', 'maximize', 'fullscreen', 'tile-left', 'tile-right',
@@ -120,7 +137,7 @@ async function run() {
     check(Number(short.document.getElementById('shell-window-actions-viewport-scrollbar').style.opacity) > 0,
       'short menu uses the existing shared scrollbar');
     const focus = short.document.activeElement;
-    await key(15, true);
+    await tab(short, true);
     check(short.document.activeElement !== focus, 'real Shift+Tab reverses navigation');
     await pointer(short, 'shell-window-cascade');
     await until(() => short.closed, 'short output pointer cascade');

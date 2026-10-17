@@ -1576,6 +1576,12 @@ client/GUI-native-frame fence; a maximized/half old buffer is not moved as if
 restoration were finished. Final placement is still `floating`; the v3
 placement enum and capability bits are unchanged. This is a conventional
 display-local menu layout policy, not Snap, overview or a JS batch/geometry API.
+The focused CTest cases `desktop-window-cascade-protocol` and
+`desktop-window-cascade` run the three-client protocol/fence and actual
+production-menu paths respectively (`ctest -R desktop-window-cascade`).
+Compatibility qualification additionally uses an actual frozen v4 provider
+archive with its original headers and the new GUI; that external frozen-provider
+fixture is not synthesized by reducing the new compositor's advertised version.
 
 The workspace menu manually adds/removes/renames/reorders workspaces and switches every output
 together. Four are created on first use, or validated saved preferences restore

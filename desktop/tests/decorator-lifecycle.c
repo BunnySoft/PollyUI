@@ -28,6 +28,7 @@
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
@@ -2529,6 +2530,13 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                 }
             } else if (!strcmp(operation, "hover")) {
                 CHECK(wait_presented_frame(views[0]) && picker_hover(views[0]));
+                struct wlr_box button_box;
+                CHECK(pu_decoration_button_box(views[0], PU_DECORATION_MAXIMIZE, &button_box));
+                fprintf(stderr, "CASCADE_OLD_HOVER focusedTarget=%d focusedLayer=%p mode=%d pending=%d currentRevision=%u pointer=%.1f,%.1f button=%d,%d %dx%d\n",
+                    desktop.focused == views[0], (void *)desktop.focused_layer, views[0]->mode,
+                    views[0]->geometry_pending, pu_decoration_presented_revision(views[0]),
+                    desktop.cursor->x, desktop.cursor->y, views[0]->tree->node.x + button_box.x,
+                    views[0]->tree->node.y + button_box.y, button_box.width, button_box.height);
             } else if (!strcmp(operation, "success")) success = true;
             else CHECK(false);
             wlr_layer_surface_v1_destroy(marker->surface);
@@ -2699,7 +2707,7 @@ static void stop_child(pid_t *pid)
 int main(int argc, char **argv)
 {
     if (argc != 4) return 2;
-    wlr_log_init(!strncmp(argv[3], "layout-picker", 13) ? WLR_DEBUG : WLR_INFO, NULL);
+    wlr_log_init(!strncmp(argv[3], "layout-picker", 13) || !strcmp(argv[3], "cascade-old") ? WLR_DEBUG : WLR_INFO, NULL);
     bool ready = pu_desktop_init(&desktop, "decorator-fixture") && pu_desktop_start(&desktop);
     bool passed = false;
     if (ready) {
