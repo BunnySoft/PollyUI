@@ -119,12 +119,17 @@ The exact separable filter is CPU-bounded, not a real-time performance guarantee
 When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
 unpacks exactly one four-byte pixel into four float channels. Each tap uses
 one multiplication and one addition per lane in the original tap order.
-Eight adjacent outputs now have independent four-channel accumulators in both
-passes. Each tap broadcasts its coefficient once for all eight; it does not
-share an accumulator or reorder any output's taps. Only complete blocks are
-batched, with the original single-pixel SSE2 loop handling the remainder.
-Horizontal blocks write only valid intermediate columns; vertical blocks read
-those columns together rather than rescanning each large-stride column alone.
+Four adjacent columns in the horizontal pass, and four adjacent rows at one
+column in the vertical pass, have independent four-channel accumulators.
+Three unpacked input pixels initialize a sliding register window; each tap
+loads and converts only the next four-byte packed pixel, broadcasts its
+coefficient once, then updates all four independent sums in original tap order.
+Only the unweighted input conversion is reused, never a weighted sum or an
+unrounded horizontal result. Rotation happens after consuming the current tap;
+there is no next-tap prefetch. Complete blocks alone use this path, with the
+original single-pixel SSE2 loops handling the last one to three columns or rows.
+Horizontal blocks write only valid intermediate columns. Vertical blocks read
+only those packed columns and write four valid destination rows.
 Each accumulator is stored to four local floats before the original `lroundf`;
 kernel normalization, horizontal packed-byte rounding, vertical premultiplied
 tint and rounded coverage stay unchanged. The four exit lanes use explicit
@@ -132,16 +137,30 @@ original `lroundf` calls and constant byte shifts rather than a runtime channel
 index/packing loop; vertical lanes retain the original component mapping and
 per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
 overhead without a workload threshold or a different short-kernel algorithm.
-The batching change has a separate source pin and requires a rebuilt matched
-SDK/core; the historical measurements below do not qualify its performance.
+The sliding-input change has a separate source pin and needs a rebuilt matched
+SDK/core. It currently has only production-object/static qualification;
+runtime exactness, bounds and performance require new evidence, not the earlier
+implementation's results.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
 allocated workspace, runtime CPU/policy
 channel, ISA flag, fast-math/FMA policy change or ABI change.
 The compile-time fallback retains the original scalar Gaussian source, not
-the earlier four-pixel experiment or a different material. Both guarded and
-explicitly guard-disabled paths passed the same exact-byte fixture on GCC14;
-this is not separate qualification of other architectures, compilers or flags.
+the earlier four-pixel scalar experiment or a different material. The published
+single-output SSE2 and frozen eight-output predecessor passed the exact-byte
+fixture, but those results do not qualify the new sliding-input path or other
+architectures, compilers or flags.
 A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
+
+The frozen eight-output predecessor's one comparison against the published
+single-output SSE2 library remained **HOLD**: large-case production medians
+improved only 1.21--1.24x, and the 4096x1 moving-build median regressed from
+4.5902 to 5.0047ms. Its test-driver C flags also differed (`-std=c11` versus
+the reference compiler default), so it was not a fully qualified symmetric
+performance pair. All original observations remain frozen, with neither a
+noise waiver nor a rerun. A future pair must use the same top-level CMake
+entry and explicit C standard/extensions for both roles, and compare actual
+compiler flags for every core translation unit and the scene test driver
+before collecting samples.
 
 The original native measurement was about 294ms. Earlier standard-C candidates
 did not achieve the twofold goal and remain independent frozen experiments.
