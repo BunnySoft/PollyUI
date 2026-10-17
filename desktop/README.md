@@ -103,6 +103,32 @@ per output. All old/candidate buffers and filter workspace share the existing
 Pixman effect SHM backing is reserved before rendering so tmpfs exhaustion is an
 explicit allocation failure rather than a later mapped-page SIGBUS.
 
+The same reservation now covers every buffer created by the selected wlroots
+SHM allocator, including output/swapchain and cursor buffers. After creating the
+unlinked file, it retries `posix_fallocate` on `EINTR` and reserves the entire
+backing before mapping or returning the buffer. Any other returned error is
+logged and closes the fd/frees the unpublished object, returning `NULL`; there is
+no sparse-mapping fallback. The effects wrapper's existing reservation remains.
+GBM/DRM/udmabuf allocators, imported client buffers and geometry/API contracts are
+unchanged. This is a deterministic SHM-backing safety fix, not a diagnosis of
+earlier SIGBUS, ENOSPC or process-reaping failures. The API/layout and SONAME stay
+ABI 3, but the patch/source SHA-256 changes: rebuild the paired SDK and WM in a
+separate prefix/output directory rather than overwriting a retained SDK.
+
+`desktop-shm-allocator` runs the real pinned SHM factory, checks physical fd
+backing **before** access, fully reads/writes 4096- and 131072-byte buffers and
+verifies fd/mapping/space/inode recovery plus reuse. It needs at least 1MiB free
+SHM and never fills the mount. To exercise rejection, run the same
+`pollywm-shm-allocator-test --private-64k` binary with
+`POLLY_SHM_PRIVATE_TEST=1` **only inside a new disposable, private IPC container**
+with `--shm-size=64k` and a ten-second timeout. It checks an empty 65536-byte tmpfs,
+allocates/writes/drops 32x32 ARGB, requires three 128x256/131072-byte requests to
+return `NULL` without data access or child processes, checks recovery after each,
+then requires another 32x32 allocation to succeed. Run normal mode separately
+with adequate private SHM to prove the large geometry is still accepted. Missing
+preconditions return `77` with `UNAVAILABLE`, not success; CTest does not mark it
+as a passing skip. The pressure mode is deliberately not an ordinary CTest.
+
 Only the authenticated Shell publisher can stage the actual mapped, fixed-size,
 bottom-anchored top-layer surface on its inherited connection. Theme preparation
 declares the expected target count; numeric material requests are preflighted
