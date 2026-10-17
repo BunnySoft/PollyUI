@@ -2520,11 +2520,24 @@ static bool arrangement_protocol(const char *wire)
         ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
     CHECK(cascade_send(layer));
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
-    struct wlr_box work = area; work.y += 30; work.height -= 30;
+    struct PuDesktopLayer *reservation = NULL, *item;
+    wl_list_for_each(item, &desktop.layers, link)
+        if (item->surface->output == head && item->surface->current.exclusive_zone > 0) {
+            CHECK(!reservation);
+            reservation = item;
+        }
+    CHECK(reservation && reservation->presented && reservation->surface->surface->mapped &&
+        reservation->surface->current.anchor == (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) &&
+        reservation->surface->current.exclusive_zone == 30 && reservation->pending_box.height == 30 &&
+        reservation->pending_box.y == area.y && area.width == 1027 && area.height == 583 && head->scale == 1.25f);
+    int reserved = reservation->surface->current.exclusive_zone;
+    struct wlr_box work = area; work.y += reserved; work.height -= reserved;
     printf("ARRANGEMENT_OUTPUT physical=%dx%d scale=%.2f logical=%d,%d %dx%d work=%d,%d %dx%d\n",
         head->width, head->height, head->scale, area.x, area.y, area.width, area.height,
         work.x, work.y, work.width, work.height);
-    CHECK((work.width & 1) && (work.height & 1) && area.x < 0 && area.y < 0);
+    CHECK(work.width == 1027 && work.height == 553 && work.width % 3 == 1 && work.height % 3 == 1 &&
+        (work.width & 1) && (work.height & 1) && area.x < 0 && area.y < 0);
     uint32_t serial = 1, epoch, before[3];
     struct wlr_box saved[3], floats[3], restores[3];
     CHECK(cascade_open(&serial, &epoch));
