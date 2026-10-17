@@ -1549,6 +1549,40 @@ Keyboard placement retains its separate, unchanged focus/layer/grab guards.
 This adds no preferences and changes neither configuration v4 nor appearance,
 shortcut, effects or public theme protocol versions.
 
+The ordinary single-window menu also offers **Cascade windows on this display**
+with paired workspace manager/child v5. `desktop.windows()` reports
+`cascadeSupported: false` on v3/v4 providers; those menus hide the command and
+`cascadeWindows(id, epoch)` rejects locally without sending an unsupported
+request. The caption-hover picker still contains only Left half, Right half
+and Restore floating.
+
+Cascade derives the target's main output from its actually presented position,
+not its last configure output. It preserves scene order and focus, affects only
+the current workspace on that output, and skips unmapped/minimized/fullscreen
+windows, transient families (including their ordinary parent), private Shell/renderer/lock/input
+surfaces and pending client/native frames. Saved floating sizes restore
+maximized/half windows using normal client limits, native insets and output work
+area fitting. Captions step by 24 logical pixels, wrapping deterministically to
+the work-area origin when the next size would cross a boundary; windows are not
+resized just to pack the group. All eligible sizes and the temporary plan are
+checked before any configure is sent. An empty plan, allocation failure, unfit
+limits, retired display/target/epoch or input isolation is a visible denial, not
+partial success. The epoch also remembers the target's original presented
+display, so a stale menu cannot silently retarget a different head.
+
+`cascadeWindows(id, epoch)` returns only `{ admitted: true }`, not an affected
+count or all-presented promise. Each window independently crosses the existing
+client/GUI-native-frame fence; a maximized/half old buffer is not moved as if
+restoration were finished. Final placement is still `floating`; the v3
+placement enum and capability bits are unchanged. This is a conventional
+display-local menu layout policy, not Snap, overview or a JS batch/geometry API.
+The focused CTest cases `desktop-window-cascade-protocol` and
+`desktop-window-cascade` run the three-client protocol/fence and actual
+production-menu paths respectively (`ctest -R desktop-window-cascade`).
+Compatibility qualification additionally uses an actual frozen v4 provider
+archive with its original headers and the new GUI; that external frozen-provider
+fixture is not synthesized by reducing the new compositor's advertised version.
+
 The workspace menu manually adds/removes/renames/reorders workspaces and switches every output
 together. Four are created on first use, or validated saved preferences restore
 the ordered names and active choice at startup. Empty workspaces are never

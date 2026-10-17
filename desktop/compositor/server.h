@@ -162,6 +162,7 @@ struct wlr_surface;
 const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile);
 const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     struct wlr_surface *surface, enum PuDesktopTile tile);
+const char *pu_desktop_cascade_from_menu(struct PuDesktopView *view, struct wlr_surface *surface);
 struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
     bool require_hit, struct wlr_box *button, struct wlr_box *output);
 struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds);

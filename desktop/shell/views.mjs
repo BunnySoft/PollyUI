@@ -858,6 +858,9 @@ export function windowActionsView(theme, window, action, close, error = '', work
   h('view', { id: 'shell-window-placement', style: { flexShrink: 0, minWidth: 0, gap: l.controlGap,
     display: placementSupported ? 'flex' : 'none' } },
   placements),
+  window.cascadeSupported === true ?
+    command('shell-window-cascade', 'Cascade windows on this display', () => action('cascade'),
+      placementMenu && !window.placementPending && !window.fullscreen && !window.minimized) : null,
   command('shell-window-close', 'Close application window', () => action('closeWindow')),
   workspaces.length > 1 ? label('Move window family to:', theme.colors.muted, l.statusFontSize) : null,
   workspaces.filter(workspace => workspace.id !== window.workspaceId).map(workspace =>

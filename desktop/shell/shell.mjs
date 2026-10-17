@@ -1029,9 +1029,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
       const selected = visibleWindows().find(window => window.id === current.windowId);
       if (!selected) { closeMenu(); return; }
       render(windowActionsView(getDesktopTheme(themeId), selected,
-        scoped(action => ['tileLeft', 'tileRight', 'restoreFloating'].includes(action) ?
+        scoped(action => ['tileLeft', 'tileRight', 'restoreFloating', 'cascade'].includes(action) ?
           windowPlacementAction(current, selected.id, action) : windowAction(selected.id, action)), close, error, workspaces,
-        scoped(id => moveWindow(selected.id, id)), !!current.placementEpoch,
+        scoped(id => moveWindow(selected.id, id)), !!current.placementEpoch && !current.placementSubmitted,
         current.mode === 'layout-picker'), current.window.document.body);
       return;
     }
@@ -1583,9 +1583,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function windowPlacementAction(current, id, action) {
     if (!currentMenu(current) || !['windows', 'layout-picker'].includes(current.mode) || current.windowId !== id ||
         !current.placementEpoch || current.placementSubmitted) return false;
-    if (current.mode === 'layout-picker') current.placementSubmitted = true;
+    if (action === 'cascade' && current.mode !== 'windows') return false;
+    if (current.mode === 'layout-picker' || action === 'cascade') current.placementSubmitted = true;
     try {
-      if (!host.displays().some(output => output.id === current.output)) return false;
+      if (!host.displays().some(output => output.id === current.output))
+        throw new Error('Window menu display is no longer available');
       const workspace = typeof native.workspaces === 'function' ?
         native.workspaces().find(workspace => workspace.active)?.id : undefined;
       const selected = native.windows().find(window => window.id === id);
@@ -1594,8 +1596,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
           workspace !== current.windowWorkspaceId) throw new Error('Window menu target or workspace is no longer current');
       const bit = action === 'tileLeft' ? 1 : action === 'tileRight' ? 2 : 4;
       if (selected.fullscreen || selected.minimized || selected.placementPending ||
-          !(selected.placementCapabilities & bit)) throw new Error(selected.placementMessage || 'Window placement is unavailable');
-      const result = action === 'restoreFloating' ? native.restoreFloatingWindow(id, current.placementEpoch) :
+          (action === 'cascade' ? selected.cascadeSupported !== true : !(selected.placementCapabilities & bit)))
+        throw new Error(selected.placementMessage || 'Window placement is unavailable');
+      const result = action === 'cascade' ? native.cascadeWindows(id, current.placementEpoch) :
+        action === 'restoreFloating' ? native.restoreFloatingWindow(id, current.placementEpoch) :
         native.tileWindow(id, action === 'tileLeft' ? 'left' : 'right', current.placementEpoch);
       if (!result || typeof result !== 'object' || result.admitted !== true || Object.keys(result).length !== 1)
         throw new Error('Window placement was not acknowledged; outcome is unknown');

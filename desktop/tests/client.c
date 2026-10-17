@@ -930,6 +930,7 @@ static void global(void *data, struct wl_registry *registry,
         client->reply.workspace_capability = 1;
     } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
         client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
+            version >= 5 && getenv("POLLY_TEST_WORKSPACE_V5") ? 5 :
             version >= 4 && getenv("POLLY_TEST_WORKSPACE_V4") ? 4 : version >= 3 ? 3 : 1);
         polly_workspace_toplevel_manager_v1_add_listener(client->workspace_toplevels, &workspace_control_listener, client);
     }
@@ -1165,7 +1166,7 @@ int main(int argc, char **argv)
         if (wl_display_roundtrip(client.display) < 0 || !client.renderer_enabled) die("enable separate fixture renderer");
     } else {
         if (!client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
-        if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4"))
+        if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4") && !getenv("POLLY_TEST_WORKSPACE_V5"))
             configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
     }
     bool running = true;
@@ -1186,6 +1187,7 @@ int main(int argc, char **argv)
         struct Window *window = &client.window;
         struct Foreign *foreign = (request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE) ||
             request.command == TEST_WORKSPACE_MOVE ||
+            request.command == TEST_MENU_CASCADE ||
             (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ||
             request.command == TEST_PICKER_OPEN || request.command == TEST_PICKER_DISMISS ?
             find_foreign(&client, request.id) : NULL;
@@ -1360,6 +1362,13 @@ int main(int argc, char **argv)
         case TEST_MENU_PLACE:
             polly_workspace_toplevel_v1_place(foreign->workspace_handle, request.serial,
                 request.edges, (uint32_t)request.layer.width);
+            break;
+        case TEST_MENU_CASCADE:
+            polly_workspace_toplevel_v1_cascade(foreign->workspace_handle, request.serial, request.edges);
+            break;
+        case TEST_MENU_RETIRED_CASCADE:
+            if (!client.retired_placement) die("closed cascade object missing");
+            polly_workspace_toplevel_v1_cascade(client.retired_placement, request.serial, request.edges);
             break;
         case TEST_MENU_CLOSE:
             polly_workspace_toplevel_v1_close_menu(foreign->workspace_handle, request.edges);

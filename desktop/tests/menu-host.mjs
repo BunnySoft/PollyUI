@@ -506,6 +506,84 @@ function placementFixture({ native, state, calls }) {
   native.restoreFloatingWindow = (id, epoch) => { calls.push(['place', id, 'floating', epoch]); return { admitted: true }; };
 }
 
+function cascadeFixture(options) {
+  placementFixture(options);
+  options.state.windows[0].cascadeSupported = true;
+  options.native.cascadeWindows = (id, epoch) => {
+    options.calls.push(['cascade', id, epoch]);
+    return { admitted: true };
+  };
+}
+
+scenario('cascade is a single ordinary-menu admission without activation or preference changes', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  const menu = f.shell.showWindowActions(1, 10);
+  const node = find(menu, 'shell-window-cascade'), held = callback(node, 'click');
+  click(node); held(event('click', { currentTarget: node }));
+  assert.deepEqual(f.calls.filter(call => ['cascade', 'place', 'activate'].includes(call[0])), [['cascade', 10, 41]]);
+  assert.equal(menu.closed, true);
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+  const replacement = f.shell.showWindowActions(1, 10);
+  held(event('click', { currentTarget: node }));
+  assert.equal(replacement.closed, false);
+  find(replacement, 'shell-window-cascade').focus(); key(replacement, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'cascade').length, 2);
+}, cascadeFixture);
+
+scenario('old v3/v4 cascade capability is explicitly false despite the new API and preserves old commands', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  assert.equal(menu.document.getElementById('shell-window-cascade'), null);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'place'), [['place', 10, 'left', 41]]);
+  assert.equal(f.calls.some(call => call[0] === 'cascade'), false);
+}, options => { cascadeFixture(options); options.state.windows[0].cascadeSupported = false; });
+
+scenario('cascade capability does not leak into the caption layout-only picker', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  assert.equal(menu.document.getElementById('shell-window-cascade'), null);
+  assert.ok(menu.document.getElementById('shell-window-tile-left'));
+}, options => { pickerFixture(options); options.state.windows[0].cascadeSupported = true; });
+
+scenario('cascade denial and unknown admission report once and cannot replay a retained gesture', f => {
+  for (const failure of [new Error('Client size limits do not fit'), null]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    f.native.cascadeWindows = () => {
+      f.calls.push(['cascade-attempt']);
+      if (failure) throw failure;
+      return { admitted: true, affected: 3 };
+    };
+    const node = find(menu, 'shell-window-cascade'), held = callback(node, 'click');
+    click(node); held(event('click', { currentTarget: node }));
+    assert.equal(menu.closed, false);
+    assert.match(f.shell.getState().error, failure ? /Client size limits/ : /outcome is unknown/);
+    assert.equal(find(menu, 'shell-window-cascade').tabIndex, -1);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+  assert.equal(f.calls.filter(call => call[0] === 'cascade-attempt').length, 2);
+}, cascadeFixture);
+
+scenario('cascade rechecks target identity, workspace and provider capability before submission', f => {
+  for (const change of [
+    () => { f.state.windows[0].appId = 'replacement'; },
+    () => { f.state.workspaces[0].active = false; f.state.workspaces[1].active = true; },
+    () => { f.state.windows[0].cascadeSupported = false; },
+  ]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    change();
+    click(find(menu, 'shell-window-cascade'));
+    assert.ok(f.shell.getState().error);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.calls.some(call => call[0] === 'cascade'), false);
+    key(menu, 'Escape');
+    delete f.state.windows[0].appId;
+    f.state.windows[0].cascadeSupported = true;
+    f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+    f.native.onWindowsChanged();
+  }
+}, cascadeFixture);
+
 function pickerFixture(options) {
   placementFixture(options);
   const { native, state, calls } = options;

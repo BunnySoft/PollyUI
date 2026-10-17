@@ -417,6 +417,13 @@ uint32_t pu_decoration_presented_revision(const struct PuDesktopView *view)
     return pu_decoration_presented_current(view) ?
         view->decoration->shown->meta[PU_FRAME_REVISION] : 0;
 }
+bool pu_decoration_layout_settled(const struct PuDesktopView *view)
+{
+    const struct PuDecoration *d = view->decoration;
+    if (d && d->decorated) return pu_decoration_presented_current(view);
+    return view->mapped && !view->geometry_pending && !view->resize_pending &&
+        view->toplevel->base->surface->buffer && d && !server_side(view->decoration, true);
+}
 void pu_decoration_update(struct PuDesktopView *view)
 {
     if (!request_frame(view)) return;
