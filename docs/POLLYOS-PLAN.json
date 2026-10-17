@@ -899,35 +899,35 @@
     },
     {
       "id": "bug-native-settings-panel-first-click",
-      "label": "Bug：原生 Settings 面板点击契约失败",
+      "label": "Bug：已修 Settings 原生点击契约",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "定位原 Settings-ui fixture 首次面板点击后未spawn/map独立Settings、原15秒owned handshake超时；区分产品输入/路由与fixture时序，不用另入口冒原路径已修，不放宽权限、期限或原断言。",
+      "scope": "已修原Settings-ui夹具重排前坐标/面板归属及独立页挂载采样前置，原panel首击/双output重开和完整独立Settings流程实际闭合。真实About producer已发布decorations而strict consumer少字段的契约错误同时最小对齐；未改变产品输入权限/路由/期限或用另入口代替。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "done",
       "requires": [],
-      "evidence": "半屏单元f618原10 scoped native检查8PASS2RED之一；nativeFS同样失败，不归P9。own pointer instrumentation确认全局1362,696命中output4 panel1280,672/local82,24，WM pointerhit=1，但未到spawn、无Settings map。精确旧d490 source archive175fe9235c828faf2d16d215c5406cea37d18bf6e7b3dd88c834829b865df500/nativeFS与旧GUIfff/同effects3/v1七动作配对旧WM core/原fixtures、privateHOME/XDG，同原handshake处RED已复现。原ui路径/assert/deadline未改；新Keyboard实际showSystemSettings模式仅补三新增动作的独立App录制/持久资格，不替代此失败。证据在polly-window-snap-5e19744f卷baseline-settings.log、final-native-tests.log及pointer-diagnostic.log；未定位完整根因，单列不阻已独立验证的半屏功能。"
+      "evidence": "历史半屏f618与精确旧d490配对在同nativeFS原15s handshake处RED保留。后续源16b5c8b→e2f39cc正常合42b12c5，实际SDL windowID/ownDocument down/up/click均正常，旧local82,24被Fluent bounded rAF将Settings按钮x60→614后落到背景；只修fixture在动作前frame-settled真实geometry/owner，单次真实down/up→ownedPID握手，关后第二output panel再开新PID，不调用showAPI替代。独立appClick在发动作前保PID/generation/page/appearance revision/enabled nodeIdentity，严格只捕ERR_DBUS_REMOTE+Settings.TestError+确切目标Missing为mount等待，其他transport/strict错误照抛，15s不变。完整流程暴露真实health.snapshot含decorations五字段、parseAbout仅四字段拒绝；现纳入已发布状态并同枚举strict验证，现Settings32单测含生产monitor/missing/invalid/unknown过，UI不扩。finale2f source/tree66220131、新GUI009130f6/WMb334b43d、1435raw/Gitnormalized/modes/clean父亲核，原fullui39.20s+ui-narrow17captures过；父readonly独立复跑原fullui及双output/原权限/appearance/四页/About/Tab/Enter/close流程过，原行为assert/deadline保留。生产compositor/gui/src/Shell整目录diff0，临时instrumentation清干净。初轮16b5 Loading未mount/旧坐标Missing失败日志保留，未靠重试动作或吞错追绿；此headless/privatebus合同不冒physicalOS/所有E22。"
     },
     {
       "id": "bug-gui-wayland-window-resize-grab",
-      "label": "Bug：原生窗口缩放抓取契约",
+      "label": "Bug：已修原生窗口缩放抓取契约",
       "kind": "subtask",
       "parent": "e22",
-      "scope": "定位原gui-wayland-window-contract line246的pointer resize grab未进入问题；保真实seat serial/geometry/frame/input guards，先分产品与fixture原因，不用新tiling integration覆盖原契约资格或绕过检查。",
+      "scope": "已补原gui-wayland-window-contract的真实独立窗饰服务前置、原frame-ready fence及实际border metric内部坐标，原normal/tooltip/no-dialog/lifetime/close-tree五mode全部闭合；playground仍pureGUI，产品seat/input/权限与原行为断言及期限不改。",
       "priority": "P2",
       "modes": [
         "installed",
         "live"
       ],
       "sources": [],
-      "status": "pending",
+      "status": "done",
       "requires": [],
-      "evidence": "半屏单元f618原10 scoped native检查8PASS2RED之一；同nativeFS/private可写HOME/XDG仍原line246 desktop.grab==RESIZE失败。精确旧d490 source与旧GUIfff/同effects3/旧v1七动作配对WM core+原fixture在相同处RED，baseline-window-private.log保留，非仅新tile分支。现有半屏原integration的真实drag/ACK/size/lock等合同通过，但不冒此完整窗口contract通过；未删旧断言/改startup或resize guard，根因仍pending。"
+      "evidence": "历史f618与精确旧d490配对nativeFS/privateHOME同line246 resizegrab RED保留。源16b5c8b→e2f39cc合42b12c5定位fixture从未启动已迁移独立GUI窗饰服务却依赖真实SSD shown/frame，且原601,241等点落exclusive border外界；现启动production pollyui --decorator、playground仍pureGUI，等原pu_decoration_ready+presentedbuttonbox，并用现client geometry/pu_decoration_inset的border中点，不做hit搜索/±1裸补/延迟sleep。原五mode/assert与20/20/10/10/15秒、CTest25秒不变；purebuild缺launcher/services明确提示SSD合同不可注册，完整组件仍原测试。finale2f匹配新fixture28f70c76/playground2e2a73af/lifetime13e9c7d0/closeTreecb1149f2及GUI009130f6/WMb334b43d parenthash核，五mode7.81s通过，原modal/parent/popup/minmax/resize/capture/lifetime/close树行为不削减；父独立readonly原五mode再通过。原input45/events24(expectedexception1)/composition21/pointer16/mousecapture26与half integration也保留；产品输入/WM/Shell无源变更，非physicalOS原图资格。"
     },
     {
       "id": "native-preset-live-revalidation",
@@ -5640,6 +5640,7 @@
     }
   ],
   "evidenceNotes": [
+    "- 2026-10-17两原生指针契约+About严格快照修复源e2f39cc3888e468c58ebc1b385d79e56cc78319a/tree66220131bcd202d476e9ee8d7905f990f82772d9，base4957df8，正常16b5→e2f合42b12c5。仅8paths，prod输入/compositor/gui/src/Shell diff0；fixture保真实独立服务/已呈现geometry/ownedDocument和单次手势、严格明确mount等待，不改clickthrough/权限/期限；About唯一prod修复是纳入已发布decorations状态并严格验证，非fixture-only。final6CTest6/6(55.60s): Settingscontroller32/fullSettingsUI39.20s/half integration/window5mode7.81s/capture26/SDLadapter；另原narrow17captures/Keyboard7commit/input45/events24(1刻意异常)/composition21/pointer16通过。父319Node组合/gencheck/diffcheck与readonly原fullSettingsUI+window五mode独立复跑通过；父逐file亲核1435rawhash/Gitnormalized/modes/clean（15files含CRLF，CRLF行计数378，metadata不称相同）、7binaryhash和embedded e2f/dirty0。新GUI009130f64a610b84f19b3b4ba15b6a98e41fd8116329cad4f5b3cf6b3d33ef6f/WMb334b43d4b966d56105fa10cba835f3c458dfb6bfc7107f7646618ff081757d4、archivefd7fbd8a，source卷polly-pointer-source-e2f39cc-5c309c90/输出卷polly-pointer-out-5c309c90/原effects3只读。旧RED/16b5未mount首轮fail与报告脚本错误后独立正确库hash审计均保留，不抹失败；headless EGL/MESA/缺iwd及原负例warning准确分类，非全stderr零。无SDKimage/依赖安装/OSservice/用户VM/暂停vendor改动，不把这两个独立doneBug当35编号或所有物理/native资格完成。",
     "- 2026-10-17完整native半屏单元源2adcb1069e78e72bcc03d7936108ffa8b000f3a4/tree78230779a7128cc69087e50af7051174ed8553ae，base d490170、正常5b10→f618→2ad，合10f0e6d。仅desktop28paths/配置4/shortcutprivate2，不改appearance7/effects3/vendor/renderer/字体/SDKinput。finalGUI f741aaae8626b232d9106e6a00e929d8efbb24d1cbcd0804abbc27860b7d1dc1/WMb7d5324b6eeef87bbe2f6f62e1a0ba9ded5e4978a8e62115343a26ba2e35af71/integrationf06984a2/layer14609b4d，embedded2ad/sourceDirty0。隔离polly-window-snap-5e19744f输出+source-2adcb106卷，archivec1b4fcc8，1435raw/Gitnormalized/modes/clean commit tree父逐file亲核，metadata差异/原CRLF明示。8个原相关native合同8/8(16.68s)与新独立SettingsKeyboard真录制/Off/Reset7commit+磁盘/freshPID持久通过；父318Node组合及readonly实际5812checks integration+Keyboard复跑通过。原10测试另Settings-ui panelclick15s和原GUIWaylandresizegrab246失败，在精确旧d490 source/旧GUIfff/旧privatev1七动作配对+nativeFS/privateHOME同RED，分别单列bug，原path/assert/deadline未改、补充Keyboard不冒原UIclick已绿。新半屏功能/C1基础切片完成，不冒Win11完整Snap flyout/所有E22/物理或SDK发行；旧effects3prefix及所有冻结资格不覆盖。",
     "- 2026-10-17完整regionalBackdrop切片源9ad140ac/tree3eacb959（base0f17275，正常124b→599e→9ad）合8e0752a，details见E22.33。effects3 lib483f3807fefc97045fa119481b1fec01cab7874d21a1ecb99b597d55a1d60e75/WMc53aba0b230b530600f4f2ec39893216333d851d9c84b38b6e9b832713d2857b/GUIfff862bf7a8dea193eb9e7fb5682a920ee47c27f38bd4f7854888ef2676fba08，patch db761e662f8350194cfd82813b23c75fc10d110ffe3ef49621481d2190103002，协议11dccd95/producer2187737f/adaptere17ac3fa父与合入源亲核；ordinaryruntime实际revision9ad/sourceDirtyfalse。仅新volume polly-backdrop-effects3-5cfbf0a3/prefix3，旧effects2/newoldGUI资格全只读。sourcefs受控snapshot保1435tracked raw bytes差0/Git normalized blob差0/mode-symlink差0，CRLF13记录、metadata差异不隐瞒；canonical archive523f8e1c与rawarchivea57b2c76、manifeste2e80529。native /src ext4 snapshot同bin/原deadline cold一次PASS及原8CTest一次8/8(21.13s)，logSHA1fa2ea03；父独立recipe+真实productionbackdrop压力/锁屏/retire再过。P9同bin前两轮7/8失败原crash1sframe/restart5s和cold5sstartup保留logSHAafa12497/6f8a11f3，instrumentedP9cold又PASS、模块I/O开销对照不证明timeout根因，未放宽期限/断言/删失败或声称startup race已修。原scene/default-none/oldroundshadow、caption/七mode lifecycle/versionpair/recipe/GLESshader/sessionlock+newproduction均在8内，新增backdrop明确Pixmanonly；不是物理GPU/所有OSraw/所有E22或SDK发行。父300/300集成含原业务断言，12个首次reviewRED修复后全保；无环境重启/安装下载/暂停Yoga分支混入。",
     "- 2026-10-17当前配套native栈补验：f864仅挂父Dmain192fda7/tree629bdcd9只读，在新volume polly-current-pair-f864-192fda7编指定5targets，原image4ef/只读effectsABI2 lib16dd73bd/patch9395ed69/Skia/SDL/HB/ICU不重建，UID1000/networknone/pullnever/readonlyroot/tmpfs，无SDKimage/安装/服务/VM/源码改动或暂停vendor混入。GUI94544fefc0cd5556679aa4a50c5bf6ab360208c779017e7a04dd6cdd4d443a66、WM38f1f03748d6879dac655c1b52f8a5bb26ef5bba078849ad04ee4f36d9773c32、scene b39db4e8、lifecycle85c4f45a、wiree1927494父独立hash精确匹配；DT_NEEDED仍wlroots-polly-effects2。原caption-effects及decorator-lifecycle-raster两CTest2/2，7mode/20lifecyclePASS全部原断言不降，父再跑currentpair caption8记录过。新.pc复制仅改prefix到真正冻结checkpoint而不修改旧metadata/cache；新sessionrunner初次CRLF在set失败未进入配置，转换LF后同lane正常完成，失败保留。子sessionfiles/current-pair-192fda7冻结readonly，testslog SHAceed815c/LastTest9736e830/inputhashfee10f29父核，parent remaining-gui-review/current-pair-parent-caption.log保独立复跑。此为current fullprivateGUI+WM这两个已有合同的真实headless/Pixman资格，不是所有Native功能/真实用户session/外部服务/物理或原OS全场景，35编号仍7done/28partial或blocked。",

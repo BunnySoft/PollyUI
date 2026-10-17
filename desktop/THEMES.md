@@ -638,13 +638,24 @@ workspaces and lock/grab restrictions have actual native coverage. The complete
 Windows 11 Snap flyout, drag-to-edge/restore, overview and original-system pixel
 qualification are not supplied by these keyboard operations.
 
-Two pre-existing native test paths remain explicitly unqualified: the original
-Settings panel-click entry times out before its owned Settings handshake, and
-the original GUI Wayland pointer-resize contract fails to enter its expected
-grab. Matching old source/runtime/fixtures reproduce both failures. The new
-Keyboard check uses the real owned Settings entry, native capture, published
-file, fresh process and exact commit counts; it supplements rather than
-replaces those failing original paths.
+The two previously failing native test paths are now qualified through their
+original workflows. Settings clicks use the current owner and frame-settled
+geometry rather than coordinates sampled before Fluent layout repositioning.
+Each physical gesture is sent once; the real panels on both outputs open owned
+Settings processes. Independent-page sampling also retains PID/generation, page,
+appearance revision and enabled control identity; only the probe's exact
+target-specific not-yet-mounted error is transient.
+
+The native window contract starts the existing production windowless decorator,
+waits on its presented-frame fence and derives resize points from actual border
+metrics instead of an exclusive outer edge. The playground remains a pure GUI
+client, and all five original window modes retain their deadlines and behavioral
+assertions. Builds without the required launcher/services explicitly report that
+this SSD contract is unavailable rather than pretending to provide those frames.
+No WM, SDL host, bridge input policy or Shell action routing changed. The full
+Settings workflow also exposed and corrected a real strict-DTO mismatch: About
+now accepts and validates the already-published decoration-health state without
+inventing readiness or extending the UI.
 
 Mac-style Docks also provide bounded pointer-distance magnification through
 optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and

@@ -24,6 +24,10 @@ owned instance's navigation/presentation; Shell activates its current window.
 | Keyboard | Change, disable or reset the ten-action native shortcut catalog, including left/right half-screen placement and floating restore. Defaults for those three actions are Super+Left/Right/Down; existing user mappings survive the v4 configuration migration. Change opens only a small trusted recording prompt, not another full Keyboard page. Capture starts on actual prompt activation and ends on Escape, deactivation/lock focus loss, timeout, page detach or owned-process exit. The ordinary Settings window never receives a global keyboard hook. Conflicts and save/rollback errors remain visible. |
 | About | Grouped system build, session and preference cards show the actual system release, full build revision/source state, appearance, display count and service status. Expand Technical details for Settings's separate application version/runtime, identity/directories and saved profile information. Unknown source metadata is explicit. Login/lock behavior remains deployment-policy-dependent; account/password/administrator actions are unavailable here. |
 
+About's strict service snapshot includes the session monitor's existing
+`decorations` state alongside input-method/audio state. Missing fields, unknown
+fields and invented states are rejected; the UI does not turn them into readiness.
+
 Missing native APIs are visibly unavailable, not fake ready services. Existing
 native APIs can still report an unavailable service, denied operation or missing
 device; their real state/error remains on the corresponding page. Power keeps
