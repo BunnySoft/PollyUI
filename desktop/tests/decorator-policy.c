@@ -194,7 +194,7 @@ static bool child(int fd, uint32_t version)
         case PREPARE_REGIONAL: CHECK(prepare(&probe, 1)); break;
         case MAP_BACKDROP: CHECK(map_backdrop(&probe)); probe.reply.accepted = 1; break;
         case STAGE_REGIONAL: {
-            uint32_t words[] = {1, 1, 12, 2, 0xe7e7e7, 28};
+            uint32_t words[] = {2, 1, 12000, 2, 0xe7e7e7, 28};
             struct wl_array material = {.size = sizeof(words), .data = words};
             polly_appearance_v1_prepare_backdrop(probe.appearance, probe.serial, probe.surface, &material);
             break;

@@ -206,11 +206,19 @@ Active selection queries the actual regional capability before creating surfaces
 or publishing appearance. Appearance7 stages numeric material against the current
 owned/mapped Dock `wl_surface`, reserves old-plus-candidate/kernel peak resources,
 and revalidates count, owner, generation, commit sequence and geometry on commit.
+Its private numeric material schema 2 carries radius in thousandths of a logical
+pixel. JS projects the requested radius to both axes of the current configured
+footprint (including half-pixel radii); it never rewrites explicit theme dimensions.
+Retained material data is inactive when the panel is not a Dock.
 Failure preserves the last committed state; it does not silently substitute alpha.
 Inactive catalog/data lookup does not query capabilities. GLES explicitly rejects
 this new capability but retains its existing radius/shadow support. Live regional
 failures are reported to the Shell and hold the last output frame until new scene
-damage permits a retry. No screenshot/readback or foreign-target API is exposed.
+damage permits a retry. Material status has independent `getState().materialError`
+and the existing visible needs-attention indicator: its failure/recovery never
+overwrites business/service errors, repeated messages are not re-reported, and
+callbacks from stopped or previous Shell lifecycles are ignored.
+No screenshot/readback or foreign-target API is exposed.
 
 Big Sur also selects `panel.menuBarOpacityPercent: 88` for the menu bar's passive
 background gradient. This separate optional integer 0..100 field defaults to 100;

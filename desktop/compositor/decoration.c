@@ -733,8 +733,8 @@ static void prepare_backdrop(struct wl_client *client, struct wl_resource *resou
         owner->serial == serial && snapshot->backdrop_count < snapshot->backdrop_expected && layer &&
         snapshot->backdrop_epoch == owner->state->desktop->backdrop_epoch &&
         wl_resource_get_client(surface) == client &&
-        configuration->size == sizeof(words) && words[0] == 1 && words[1] == 1 &&
-        words[2] <= 64 && words[3] >= 1 && words[3] <= 32 &&
+        configuration->size == sizeof(words) && words[0] == 2 && words[1] == 1 &&
+        words[2] <= 64000 && words[3] >= 1 && words[3] <= 32 &&
         words[4] <= 0xffffff && words[5] <= 100 &&
         !pu_session_lock_active(owner->state->desktop);
     for (unsigned i = 0; valid && i < snapshot->backdrop_count; i++)
@@ -745,7 +745,7 @@ static void prepare_backdrop(struct wl_client *client, struct wl_resource *resou
         float tint[4] = {((words[4] >> 16) & 255) / 255.0f * alpha,
             ((words[4] >> 8) & 255) / 255.0f * alpha, (words[4] & 255) / 255.0f * alpha, alpha};
         struct wlr_box box = {0, 0, layer->pending_box.width, layer->pending_box.height};
-        node = wlr_scene_backdrop_create(layer->tree, &box, words[2], words[3], tint);
+        node = wlr_scene_backdrop_create(layer->tree, &box, words[2] / 1000.0f, words[3], tint);
     }
     if (!node) {
         polly_appearance_v1_send_backdrop_prepared(resource, serial, 0,

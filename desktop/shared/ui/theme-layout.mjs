@@ -20,6 +20,16 @@ export function dockSurfaceWidth(theme, taskCount, availableWidth) {
   return Math.max(1, Math.min(width, availableWidth - l.screenInset * 2));
 }
 
+export function dockBackdropMaterial(theme, width, height) {
+  const material = theme.panel.regionalBackdrop;
+  if (theme.panel.kind !== 'dock' || !material) return null;
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0)
+    throw new RangeError('A current positive Dock footprint is required');
+  const radius = Math.min(theme.panel.radius, width / 2, height / 2);
+  return [2, 1, Math.round(radius * 1000), material.sigma,
+    Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
+}
+
 export function applicationMenuPlacement(theme, availableWidth) {
   const l = theme.layout, mac = theme.panel.kind === 'dock';
   const inset = l.menuLeftInset ?? l.screenInset;

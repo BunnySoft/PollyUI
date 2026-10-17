@@ -221,8 +221,7 @@ export function validateTheme(value) {
   if (Object.hasOwn(value.panel, 'regionalBackdrop')) {
     const material = value.panel.regionalBackdrop;
     keys(material, ['sigma', 'tint', 'opacityPercent'], 'panel.regionalBackdrop');
-    if (value.panel.kind !== 'dock' || value.panel.radius > value.panel.height / 2 ||
-        !Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
+    if (!Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
         !Number.isInteger(material.opacityPercent) || material.opacityPercent < 0 || material.opacityPercent > 100 ||
         typeof material.tint !== 'string' || !/^#[0-9a-f]{6}$/i.test(material.tint))
       throw new TypeError('Invalid regional Dock backdrop');

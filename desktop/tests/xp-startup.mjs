@@ -106,6 +106,8 @@ function fixture(t, { maximumSchema = 7, initialTheme = 'xp', failure = null, ba
   const backend = {
     maximumSchema, failure, rejectedTheme: null, committed: null,
     backdropCapability: () => backdrop,
+    materialMessage: '',
+    backdropError() { return this.materialMessage; },
     applicationFiles: () => [],
     sessionServices: () => ({ inputMethod: 'disabled', decorations: 'ready', decorationMessage: '' }),
     configureAppearance(theme, words, targets) {
@@ -251,7 +253,49 @@ test('supported regional publication binds the actual planned Dock Windows and g
   const attempt = f.attempts.at(-1), docks = f.shell.getSurfaces().filter(item => item.kind === 'dock');
   assert.equal(attempt.targets.length, 2);
   assert.deepEqual(attempt.targets.map(([window]) => window), docks.map(item => item.window));
-  assert.deepEqual(attempt.targets[0][1], [1, 1, 16, 8, 0xe7e7e7, 28]);
+  assert.deepEqual(attempt.targets[0][1], [2, 1, 16000, 8, 0xe7e7e7, 28]);
   assert.equal(f.shell.selectTheme('xp'), true);
   assert.deepEqual(f.attempts.at(-1).targets, []);
+});
+
+test('material failure/recovery preserves independent business errors, reports only changes and ignores retired callbacks', t => {
+  const f = fixture(t);
+  f.shell.start();
+  f.backend.rejectedTheme = 'aqua';
+  assert.equal(f.shell.selectTheme('aqua'), false);
+  const businessError = f.shell.getState().error;
+  assert.match(businessError, /Could not apply\/save appearance/);
+  const callback = f.backend.onBackdropStatusChanged;
+  let reports = f.reports.length;
+  f.backend.materialMessage = 'Regional output unavailable';
+  callback();
+  assert.equal(f.shell.getState().error, businessError);
+  assert.equal(f.shell.getState().materialError, f.backend.materialMessage);
+  assert.equal(f.reports.length, ++reports);
+  callback();
+  f.shell.refresh(true);
+  assert.equal(f.reports.length, reports, 'same status and clock refresh do not repeat the material report');
+  f.backend.materialMessage = '';
+  callback();
+  assert.equal(f.shell.getState().error, businessError);
+  assert.equal(f.shell.getState().materialError, '');
+  assert.equal(f.reports.length, reports);
+  f.backend.rejectedTheme = null;
+  assert.equal(f.shell.selectTheme('xp'), true);
+  f.backend.materialMessage = 'Regional output unavailable';
+  callback();
+  assert.equal(f.shell.getState().error, '');
+  assert.equal(f.shell.getState().materialError, f.backend.materialMessage);
+  assert.ok(f.shell.getSurfaces().filter(surface => surface.kind === 'panel').every(surface =>
+    descendants(surface.window.document.body).some(node => node.nodeValue === 'Desktop needs attention')),
+  'material-only failure is visible without taking ownership of the business error');
+  reports = f.reports.length;
+  f.shell.stop();
+  callback();
+  assert.equal(f.reports.length, reports);
+  assert.equal(f.shell.getState().materialError, '');
+  f.shell.start();
+  callback();
+  assert.equal(f.reports.length, reports, 'previous lifecycle callback stays inert after restart');
+  assert.equal(f.shell.getState().materialError, '');
 });

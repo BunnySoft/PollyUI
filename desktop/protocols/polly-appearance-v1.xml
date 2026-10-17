@@ -123,7 +123,8 @@
         Shell publisher only, on its inherited authenticated connection. Surface
         must be its current mapped fixed-size bottom-anchored top layer, with
         rectangular input and no keyboard grab. No title/namespace authorization.
-        Configuration is six uint words: schema 1, role 1 (Dock), radius 0-64,
+        Configuration is six uint words: schema 2, role 1 (Dock), radius in
+        thousandths of a logical pixel (0-64000),
         sigma 1-32, RGB 0-16777215, tint opacity 0-100 percent. The entire actual
         surface is the footprint; no pixel readback is exposed. Geometry, surface
         commit sequence, owner and theme generation are rechecked on commit.

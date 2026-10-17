@@ -19,10 +19,11 @@ control.document.body.addEventListener('keydown', event => {
     const surfaces = shell.getSurfaces(), dock = surfaces.find(surface => surface.kind === 'dock');
     const panel = surfaces.find(surface => surface.kind === 'panel');
     const theme = BUILTIN_THEME_CATALOG.themes.find(theme => theme.id === 'bigsur');
-    const material = [1, 1, 16, 8, 0xe7e7e7, 28];
+    const material = [2, 1, 16000, 8, 0xe7e7e7, 28];
     for (const targets of [[[panel.window, material]], [[control, material]],
-      [[dock.window, [1, 1, 64, 8, 0xe7e7e7, 28]]],
-      [[dock.window, [1, 1, 16, 33, 0xe7e7e7, 28]]],
+      [[dock.window, [1, 1, 16000, 8, 0xe7e7e7, 28]]],
+      [[dock.window, [2, 1, 64000, 8, 0xe7e7e7, 28]]],
+      [[dock.window, [2, 1, 16000, 33, 0xe7e7e7, 28]]],
       [[dock.window, material], [dock.window, material]]]) {
       let rejected = false;
       try { desktop.configureAppearance(theme, encodeDecorationLayout(theme), targets); }

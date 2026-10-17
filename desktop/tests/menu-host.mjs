@@ -227,6 +227,15 @@ function fixture(configure = () => {}) {
   const clone = value => JSON.parse(JSON.stringify(value));
   const original = () => calls.push(['previous-windows']);
   const native = {
+    backdropCapability: () => true,
+    configureAppearance(theme, words, targets = []) {
+      assert.equal(words[0], 7);
+      assert.equal(targets.length, theme.panel.kind === 'dock' && theme.panel.regionalBackdrop ? state.outputs.length : 0);
+      for (const [window, material] of targets) {
+        assert.equal(window.options.layer, 'top');
+        assert.equal(material[0], 2);
+      }
+    },
     onWindowsChanged: original,
     windows: () => clone(state.windows),
     workspaces: () => clone(state.workspaces),

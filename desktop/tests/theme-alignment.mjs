@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 register('./root-loader.mjs', import.meta.url);
 const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import('../shared/ui/theme-schema.mjs');
-const { dockSurfaceWidth, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
+const { dockSurfaceWidth, dockBackdropMaterial, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const { button } = await import('../shared/ui/button.mjs');
@@ -15,6 +15,19 @@ const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fal
 assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
+{
+  const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1, themes: {
+    bigsur: { panel: { height: 28 }, layout: { dockIconSize: 16 } },
+  } })).themes.find(theme => theme.id === 'bigsur');
+  assert.equal(theme.panel.radius, 16, 'Legal existing theme data is not rewritten');
+  assert.equal(dockBackdropMaterial(theme, 300, 28)[2], 14000);
+  assert.equal(dockBackdropMaterial(theme, 15, 28)[2], 7500,
+    'Effective radius follows both actual footprint axes, including half pixels');
+  assert.equal(dockBackdropMaterial({ ...theme, panel: { ...theme.panel, kind: 'taskbar' } }, 300, 28), null,
+    'Retained inactive backdrop data does not activate a different panel role');
+  assert.equal(find(dockView(theme, action, action, action), 'shell-dock').props.style.borderRadius, 16);
+  assert.throws(() => dockBackdropMaterial(theme, 0, 28), /footprint/);
+}
 {
   const theme = structuredClone(catalog.themes[0]);
   assert.equal(theme.layout.fontFamily, undefined);
