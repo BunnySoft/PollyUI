@@ -63,6 +63,10 @@ struct TestClient {
 static struct PuDesktop desktop;
 static struct wlr_keyboard keyboard;
 static struct wlr_pointer pointer;
+static struct wlr_seat_keyboard_grab title_restore_keyboard_grab;
+static struct wlr_keyboard_grab_interface title_restore_keyboard_impl;
+static struct wlr_seat_pointer_grab title_restore_pointer_grab;
+static struct wlr_pointer_grab_interface title_restore_pointer_impl;
 static struct TestClient clients[3];
 static struct TestClient shell_client = { .control = -1 };
 static int checks;
@@ -76,6 +80,14 @@ static const struct wlr_pointer_impl pointer_impl = { .name = "pollywm-test" };
 static void find_headless(struct wlr_backend *backend, void *data);
 static bool resize_output(struct wlr_output *output, int width, int height, float scale);
 static bool snap_key(struct TestClient *client, uint32_t code);
+
+static void finish_title_restore_grabs(void)
+{
+    if (desktop.seat->pointer_state.grab == &title_restore_pointer_grab)
+        wlr_seat_pointer_end_grab(desktop.seat);
+    if (desktop.seat->keyboard_state.grab == &title_restore_keyboard_grab)
+        wlr_seat_keyboard_end_grab(desktop.seat);
+}
 
 static void test_input(struct wl_listener *listener, void *data)
 {
@@ -893,10 +905,9 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     button(BTN_LEFT, false);
     CHECK(command(client, TEST_MOVE, 0, 0, 0) && desktop.grab == PU_DESKTOP_PASSTHROUGH);
 
-    struct wlr_seat_keyboard_grab grab = {0};
-    struct wlr_keyboard_grab_interface grab_impl = *desktop.seat->keyboard_state.default_grab->interface;
-    grab.interface = &grab_impl;
-    wlr_seat_keyboard_start_grab(desktop.seat, &grab);
+    title_restore_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+    title_restore_keyboard_grab.interface = &title_restore_keyboard_impl;
+    wlr_seat_keyboard_start_grab(desktop.seat, &title_restore_keyboard_grab);
     CHECK(wlr_seat_keyboard_has_grab(desktop.seat));
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
@@ -904,17 +915,16 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     motion(x, y); button(BTN_LEFT, true); button(BTN_LEFT, false);
     button(BTN_LEFT, true); button(BTN_LEFT, false);
     CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
-    wlr_seat_keyboard_end_grab(desktop.seat);
-    struct wlr_seat_pointer_grab pointer_grab = {0};
-    struct wlr_pointer_grab_interface pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
-    pointer_grab.interface = &pointer_impl;
-    wlr_seat_pointer_start_grab(desktop.seat, &pointer_grab);
+    finish_title_restore_grabs();
+    title_restore_pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+    title_restore_pointer_grab.interface = &title_restore_pointer_impl;
+    wlr_seat_pointer_start_grab(desktop.seat, &title_restore_pointer_grab);
     CHECK(wlr_seat_pointer_has_grab(desktop.seat));
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
     motion(x, y); button(BTN_LEFT, true); button(BTN_LEFT, false);
     button(BTN_LEFT, true); button(BTN_LEFT, false);
     CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
-    wlr_seat_pointer_end_grab(desktop.seat);
+    finish_title_restore_grabs();
     CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 1, 0, 0));
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
@@ -2729,6 +2739,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         passed = live_startup ? live_startup_suite(argv[1]) : cursor_only ? cursor_suite(argv[1]) :
             cursor_resources ? cursor_resource_suite() : suite(argv[1]);
+        finish_title_restore_grabs();
         if (!stop_clients(passed)) passed = false;
         wlr_pointer_finish(&pointer);
         if (desktop.grab != PU_DESKTOP_PASSTHROUGH) passed = false;
