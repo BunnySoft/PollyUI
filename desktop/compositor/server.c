@@ -1158,7 +1158,6 @@ const char *pu_desktop_arrange_from_menu(struct PuDesktopView *target, struct wl
                 error = "Native insets do not fit the arrangement cell"; break;
             }
         }
-        fit_floating(view, &box, &bounds);
         struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
         if (box.width > bounds.width || box.height > bounds.height ||
             box.width < limits->min_width || box.height < limits->min_height ||

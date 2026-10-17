@@ -2622,6 +2622,43 @@ static bool arrangement_protocol(const char *wire)
     }
     puts("PASS: any peer min/max/fixed-size violation rejects both whole plans before configure or saved geometry mutation");
 
+    unsigned peer_index = 0;
+    while (peer_index < 3 && order[peer_index] != &views[1]->tree->node) peer_index++;
+    CHECK(peer_index < 3);
+    struct wlr_box peer_inset = {0}; pu_decoration_inset(views[1], &peer_inset, false);
+    int cell_width = (int)((int64_t)work.width * (peer_index + 1) / 3) -
+        (int)((int64_t)work.width * peer_index / 3) - 2 * peer_inset.x;
+    CHECK(cell_width > 1 && cell_width + 1 < work.width - 2 * peer_inset.x);
+    for (unsigned exact = 0; exact < 2; exact++) {
+        struct TestRequest limits = {.command = TEST_LIMITS};
+        if (!exact) limits.layer.width = cell_width + 1;
+        else limits.layer.right = cell_width - 1;
+        CHECK(arrangement_peer(1, limits));
+        for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+        CHECK((!exact && views[1]->toplevel->current.min_width == cell_width + 1) ||
+            (exact && views[1]->toplevel->current.max_width == cell_width - 1));
+        CHECK(cascade_open(&serial, &epoch));
+        struct wlr_box pending[3];
+        for (unsigned i = 0; i < 3; i++) {
+            before[i] = views[i]->geometry_serial; saved[i] = views[i]->presented_box;
+            pending[i] = views[i]->pending_box;
+            floats[i] = views[i]->floating_box; restores[i] = views[i]->restore_box;
+        }
+        CHECK(arrangement_request(serial++, epoch, 2, false));
+        for (unsigned i = 0; i < 3; i++)
+            CHECK(!views[i]->geometry_pending && views[i]->geometry_serial == before[i] &&
+                wlr_box_equal(&pending[i], &views[i]->pending_box) &&
+                wlr_box_equal(&saved[i], &views[i]->presented_box) &&
+                wlr_box_equal(&floats[i], &views[i]->floating_box) &&
+                wlr_box_equal(&restores[i], &views[i]->restore_box));
+        CHECK(cascade_body(1, TEST_UNCONSTRAINED));
+    }
+    CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_LIMITS,
+        .layer = {.width = cell_width, .right = cell_width}}) &&
+        cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+        arrangement_cells(views, order, work, false) && cascade_body(1, TEST_UNCONSTRAINED));
+    puts("PASS: cell+1 minimum and cell-1 maximum (both inside full work area) reject the complete unchanged plan; exact cell-width equality admits");
+
     struct wlr_box peer_area; wlr_output_layout_get_box(desktop.layout, peer, &peer_area);
     wlr_scene_node_set_position(&views[2]->tree->node, peer_area.x + 80, peer_area.y + 100);
     CHECK(views[2]->output == head);
