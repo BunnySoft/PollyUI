@@ -74,7 +74,6 @@ export function createDesktopShell({ host = window, configuration, report = cons
       }
       openMenu(output.id, 'layout-picker', target.id, { pickerOffer: offer });
     } catch (failure) { windowFailure(failure); errorKind = 'placement'; }
-    if (typeof previousPickerChanged === 'function') previousPickerChanged();
   }
   let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
   let appearanceRevision = 0;
@@ -1882,8 +1881,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
       pickerScope = {};
       if (typeof native?.layoutPickerOffer === 'function') {
         const scope = pickerScope;
-        pickerChanged = () => receivePicker(scope);
         previousPickerChanged = native.onLayoutPickerChanged;
+        const previous = previousPickerChanged;
+        pickerChanged = () => {
+          if (!running || scope !== pickerScope) return;
+          receivePicker(scope);
+          if (typeof previous === 'function') {
+            try { previous(); }
+            catch (failure) { report('[shell] Previous caption picker observer failed: ' + String(failure)); }
+          }
+        };
         native.onLayoutPickerChanged = pickerChanged;
       }
       sessionExit.start();

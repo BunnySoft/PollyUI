@@ -48,8 +48,9 @@ async function run() {
       return owned;
     },
   } }).start();
-  const keeper = window.create({ title: 'Picker.fixture.keepalive', layer: 'overlay', width: 1, height: 1,
+  const keepAlive = () => window.create({ title: 'Picker.fixture.keepalive', layer: 'overlay', width: 1, height: 1,
     anchors: ['top', 'right'], exclusiveZone: -1 });
+  let keeper = keepAlive();
   const current = () => created.findLast(item => !item.window.closed &&
     item.window.document.getElementById('shell-layout-picker'));
   const target = () => desktop.windows().find(item => item.appId === 'org.pollywm.test.7');
@@ -155,6 +156,8 @@ async function run() {
     await signal('picker-output-retire');
     await until(() => menu.window.closed, 'actual granted output retirement revokes picker');
     menu = await hover();
+    if (keeper.closed) keeper = keepAlive();
+    check(!keeper.closed, 'independent noninteractive shutdown witness belongs to the current live output');
     shell.stop();
     await until(() => menu.window.closed, 'Shell stop revokes and closes owned picker');
     await signal('picker-stopped');

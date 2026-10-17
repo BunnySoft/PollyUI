@@ -436,6 +436,11 @@ function pickerFixture(options) {
   native.layoutPickerOffer = () => state.offer;
   native.openLayoutPicker = (token, menu) => { calls.push(['picker-open', token, menu]); return 42; };
   native.dismissLayoutPicker = token => { calls.push(['picker-dismiss', token]); if (state.offer?.token === token) state.offer = null; };
+  state.previousPickerObserver = () => {
+    calls.push(['previous-picker']);
+    if (state.previousPickerThrows) throw new Error('fixture picker observer failure');
+  };
+  native.onLayoutPickerChanged = state.previousPickerObserver;
 }
 function offerPicker(f, token = 1, extra = {}) {
   f.state.offer = { token, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
@@ -524,6 +529,27 @@ scenario('caption picker retained callbacks from a stopped owner cannot process 
   assert.ok(!f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
   f.native.onLayoutPickerChanged();
   assert.ok(f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
+}, pickerFixture);
+
+scenario('caption picker chains current prior observers for null, open and disabled notifications without consuming business errors', f => {
+  f.state.offer = null; f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 1);
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 3);
+  const error = f.shell.getState().error;
+  f.state.previousPickerThrows = true;
+  f.native.onLayoutPickerChanged();
+  f.expectedWarnings.push('[shell] Previous caption picker observer failed: Error: fixture picker observer failure');
+  assert.equal(menu.closed, false);
+  assert.equal(f.shell.getState().error, error);
+  f.state.previousPickerThrows = false;
+  f.shell.selectTheme('xp');
+  f.native.onLayoutPickerChanged();
+  assert.equal(f.calls.filter(call => call[0] === 'previous-picker').length, 5);
+  f.shell.stop();
+  assert.equal(f.native.onLayoutPickerChanged, f.state.previousPickerObserver);
 }, pickerFixture);
 
 test('caption picker projection clamps output-local logical anchors including negative origins and tiny outputs', () => {
