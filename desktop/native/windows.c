@@ -1110,7 +1110,8 @@ static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValue
     if (epoch != control.menu_epoch || window->id != control.menu_target)
         return JS_ThrowTypeError(ctx, "Window menu is closed or stale");
     PuWindow *owned = pu_gui_window_from_value(ctx, control.placement_menu);
-    if (!owned || !pu_window_layer_surface(owned)) return JS_HasException(ctx) ? JS_EXCEPTION :
+    if (!owned || !(command == 2 ? pu_window_layer_surface_peek(owned) : pu_window_layer_surface(owned)))
+        return JS_HasException(ctx) ? JS_EXCEPTION :
         JS_ThrowTypeError(ctx, "Window menu is closed");
     if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
     if (command == 2) polly_workspace_toplevel_v1_cascade(window->workspace_handle, control.placement_serial, epoch);

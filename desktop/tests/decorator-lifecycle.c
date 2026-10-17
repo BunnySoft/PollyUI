@@ -2121,6 +2121,22 @@ static bool cascade_protocol(const char *wire)
         CHECK(views[i]->geometry_serial == before[i] && wlr_box_equal(&saved[i], &views[i]->presented_box));
     puts("PASS: cascade zero/stale serial, wrong epoch, both actual grabs, recording and session exit reject without any partial configure");
 
+    CHECK(command(TEST_UNMAP, 0, 0) && cascade_open(&serial, &epoch) &&
+        cascade_request(serial++, epoch, false));
+    for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
+    CHECK(command(TEST_PICKER_ENABLE, 1, 0) && picker_raw_offer(views[0], 7));
+    uint32_t token = reply.picker_token;
+    CHECK(picker_request((struct TestRequest){.command = TEST_PICKER_OPEN, .id = 7,
+        .serial = serial++, .edges = token}, true));
+    epoch = reply.placement_epoch;
+    CHECK(command(TEST_REMAP, 0, 0));
+    for (int i = 0; i < 1200 && (!desktop.focused_layer || !desktop.focused_layer->presented); i++) CHECK(pump());
+    CHECK(desktop.focused_layer && desktop.focused_layer->presented &&
+        cascade_request(serial++, epoch, false));
+    for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
+    CHECK(command(TEST_PICKER_ENABLE, 0, 0));
+    puts("PASS: an unpresented registered ordinary menu cannot cascade; a redeemed actual v5 caption-hover picker epoch cannot grant bulk cascade even with presented exclusive focus");
+
     CHECK(cascade_body(1, TEST_MAXIMIZE) && wait_presented_frame(views[1]));
     CHECK(command(TEST_MENU_CLOSE, 7, epoch) && command(TEST_UNMAP, 0, 0));
     pu_desktop_focus_mapped(&desktop, views[2]->workspace_window);
@@ -2230,6 +2246,36 @@ static bool cascade_protocol(const char *wire)
     CHECK(cascade_request(serial++, epoch, false));
     for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
     CHECK(cascade_body(1, TEST_UNCONSTRAINED));
+    CHECK(command(TEST_UNMAP, 0, 0));
+    pu_desktop_focus_mapped(&desktop, views[0]->workspace_window);
+    placement_key(KEY_LEFT);
+    CHECK(cascade_body(0, TEST_QUERY) && wait_presented_frame(views[0]) &&
+        views[0]->mode == PU_DESKTOP_TILED_LEFT);
+    CHECK(cascade_body(0, TEST_MAXIMIZE) && wait_presented_frame(views[0]));
+    struct wlr_box original_float = views[0]->floating_box;
+    CHECK(command(TEST_REMAP, 0, 0));
+    for (unsigned i = 0; i < 2; i++) CHECK(wait_presented_frame(views[i]));
+    CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true) &&
+        wait_presented_frame(views[0]) && views[0]->mode == PU_DESKTOP_FLOATING &&
+        views[0]->presented_box.width == original_float.width &&
+        views[0]->presented_box.height == original_float.height);
+    saved_control = control; control = cascade_controls[1];
+    bool csd = command(TEST_DECORATION, 1, 0);
+    control = saved_control;
+    CHECK(csd);
+    for (int i = 0; i < 1200 && (views[1]->geometry_pending ||
+        views[1]->toplevel->base->current.configure_serial < views[1]->geometry_serial); i++) CHECK(pump());
+    CHECK(!views[1]->geometry_pending && !pu_decoration_presented_current(views[1]));
+    wlr_scene_node_set_position(&views[1]->tree->node, area.x + 200, area.y + 200);
+    second = views[1]->geometry_serial;
+    CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true) &&
+        views[1]->geometry_serial != second);
+    struct wlr_box csd_box = views[1]->pending_box;
+    CHECK(cascade_body(1, TEST_QUERY) && !views[1]->geometry_pending &&
+        views[1]->tree->node.x == csd_box.x && views[1]->tree->node.y == csd_box.y);
+    puts("PASS: max-from-half restores the original floating dimensions; actual CSD participates without pretending it has a current server decoration frame");
+    control = cascade_controls[1]; csd = command(TEST_DECORATION, 2, 0); control = saved_control;
+    CHECK(csd && wait_presented_frame(views[1]));
     CHECK(cascade_open(&serial, &epoch));
     pu_workspace_step(&desktop, 1);
     CHECK(cascade_request(serial++, epoch, false));
