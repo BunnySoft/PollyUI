@@ -204,7 +204,24 @@ async function modern() {
   }
   await signal('backdrop-check retained');
   menu.window.document.getElementById('shell-app-refresh').focus();
-  await signal('backdrop-key 15');
+  const menuBody = menu.window.document.body;
+  let tabDown = 0, tabUp = 0, tabTarget = '';
+  const tabPressed = event => {
+    if (event.key === 'Tab') { tabDown++; tabTarget = event.target.id; }
+  };
+  const tabReleased = event => { if (event.key === 'Tab') tabUp++; };
+  menuBody.addEventListener('keydown', tabPressed);
+  menuBody.addEventListener('keyup', tabReleased);
+  try {
+    await signal('backdrop-key 15');
+    // Marker closure acknowledges injection, not delivery through the GUI event queue.
+    await until(() => tabUp > 0, 'single native Tab delivery to the production menu');
+  } finally {
+    menuBody.removeEventListener('keydown', tabPressed);
+    menuBody.removeEventListener('keyup', tabReleased);
+  }
+  check(tabDown === 1 && tabUp === 1 && tabTarget === 'shell-app-refresh',
+    'one native Tab press/release reaches the focused Refresh control exactly once');
   check(menu.window.document.activeElement?.id === 'shell-app-close', 'real Tab reaches Close menu from Refresh');
   await signal('backdrop-key 28');
   await until(() => menu.window.closed, 'one Enter closes production Start');
