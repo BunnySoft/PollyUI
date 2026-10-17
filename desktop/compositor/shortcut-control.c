@@ -320,6 +320,10 @@ static void bind_control(struct wl_client *client, void *data, uint32_t version,
         wl_client_post_implementation_error(client, "Shortcut control requires the trusted Shell");
         return;
     }
+    if (version != 2) {
+        wl_client_post_implementation_error(client, "Shortcut control requires version 2 and the ten-action catalog");
+        return;
+    }
     struct Binding *binding = calloc(1, sizeof(*binding));
     if (!binding) { wl_client_post_no_memory(client); return; }
     binding->resource = wl_resource_create(client, &polly_shortcuts_v1_interface, version, id);
@@ -337,7 +341,7 @@ bool pu_shortcuts_init(struct PuDesktop *desktop)
     desktop->shortcuts = state; state->desktop = desktop;
     wl_list_init(&state->bindings);
     pu_shortcut_defaults(state->current);
-    state->global = wl_global_create(desktop->display, &polly_shortcuts_v1_interface, 1, state, bind_control);
+    state->global = wl_global_create(desktop->display, &polly_shortcuts_v1_interface, 2, state, bind_control);
     return state->global != NULL;
 }
 

@@ -198,9 +198,9 @@ regenerate from the repository root with the existing playground, set
 The checked-in PNGs are installed directly; regeneration is not a runtime or
 release dependency.
 
-The [v3 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
+The [v4 Shell configuration](./SHELL-CONFIGURATION.md) preserves existing
 theme/audio/display/workspace/keyboard/desktop preferences and atomically migrates
-v1/v2 profiles. Taskbar/Dock pins are independent of desktop shortcuts; returning
+v1/v2/v3 profiles. Taskbar/Dock pins are independent of desktop shortcuts; returning
 to an older Shell requires a configuration version it understands.
 This feature is PollyOS Shell behavior, not Windows Explorer/macOS replacement,
 a desktop filesystem, cross-app drag-and-drop, animation, or an accessibility
@@ -634,6 +634,8 @@ alternate window manager.
 | Alt + right-button drag | Resize from the bottom-right |
 | Alt + Tab / Alt + Shift + Tab | Preview next/previous window; release Alt to activate |
 | Ctrl + Super + Left / Right | Switch to previous/next workspace without wrapping |
+| Super + Left / Right | Tile the focused window into the left/right half of its current work area |
+| Super + Down | Restore a tiled window's original floating position and size |
 | Alt + F4 | Ask the focused client to close |
 | Alt + F9 | Minimize the focused window |
 | Alt + F10 | Toggle maximize |
@@ -647,12 +649,35 @@ Escape cancels it, and clicking a row accepts it. Standalone PollyWM without
 an opted-in Shell presenter retains immediate switching. The picker uses text
 labels rather than live window thumbnails, and appears on the first display.
 
-**Appearance > Keyboard shortcuts** records, disables and resets the seven
+**Settings > Keyboard** records, disables and resets the ten
 window/workspace bindings above, except the fixed development exit.
 Conflicting bindings are rejected as a whole, including collisions with reverse
 window switching. Preferences survive a full compositor restart through the
 Shell's app-scoped storage. Binding-recording mode and picker cancellation do
-not invoke the Alt+Escape session exit.
+not invoke the Alt+Escape session exit. Configuration v4 migrates the original
+seven bindings without changing user chords; a conflicting new default is
+Disabled with a once-only migration diagnostic. The private shortcut interface
+requires paired version 2 binaries.
+
+Half-screen tiling is native configure/ACK/buffer/frame-fenced geometry, not a
+Shell transform. It partitions the actual output work area before insetting
+server decorations, including layer-exclusive panel and Dock reservations.
+An odd width gives the right half the remaining pixel. Repeating a side or
+switching sides does not replace the original floating restore box. Maximize
+and tile entry retain the last frame-presented floating size, not a newer client
+buffer still waiting on the decorator; interactive scene moves retain their
+actual position and completed resizes update that presented fact. Maximize
+and fullscreen retain the tile underneath; leaving them returns to that tile.
+Super+Down restores floating, never minimizes. Fullscreen must first be exited.
+Client min/max/fixed-size constraints that cannot fit an exact half are refused
+with a diagnostic and no geometry/state mutation. If a later output/work-area
+change makes a tile impossible, it explicitly returns to constrained floating
+geometry instead of pretending to fit. Output removal restores against a live
+output, not a retained output pointer. Lock, workspace, focus, trusted recording
+and seat grabs retain the existing input authority. Tiled windows use XDG tiled
+edges, not maximized/fullscreen flags, and have no floating shadow/rounding.
+Restore floating before interactive move/resize. No Snap flyout, drag-to-edge,
+drag-to-restore, overview or physical-GPU qualification is implied.
 The parent desktop may intercept shortcuts in nested mode. Negotiating clients
 can use PollyWM titlebars; clients requesting self-drawn headers retain them.
 Maximize/fullscreen capabilities are advertised. Restore a maximized/fullscreen

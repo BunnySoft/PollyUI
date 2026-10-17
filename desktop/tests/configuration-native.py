@@ -8,7 +8,7 @@ import tempfile
 
 runtime, oracle = map(str, sys.argv[1:])
 repo = Path(__file__).resolve().parents[2]
-default = dict(version=3, theme=dict(id=None, filesEnabled=True),
+default = dict(version=4, theme=dict(id=None, filesEnabled=True),
                audio=None, display=None, workspace=None, shortcuts=None,
                desktop=dict(version=1, shortcuts=[]), launchers=dict(version=1, applications=[]))
 with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporary:
@@ -47,6 +47,10 @@ with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporar
     put(config, json.dumps(old_json).encode())
     run("reject", fault="write")
     assert json.loads(config.read_bytes()) == old_json
+    run("load", changed)
+    assert json.loads(config.read_bytes()) == changed
+    old_v3 = {**changed, "version": 3}
+    put(config, json.dumps(old_v3).encode())
     run("load", changed)
     assert json.loads(config.read_bytes()) == changed
     old_v2 = {key: value for key, value in changed.items() if key != "launchers"}
@@ -95,7 +99,9 @@ with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporar
     shortcuts = [dict(action="minimize-window", modifiers=2, key="m")] + [
         dict(action=action, modifiers=0, key="") for action in ("switch-window", "close-window",
             "maximize-window", "fullscreen-window", "previous-workspace", "next-workspace")]
-    migrated = {**changed, "audio": audio, "display": display, "shortcuts": shortcuts}
+    snap_defaults = [dict(action=action, modifiers=8, key=key) for action, key in
+                     (("tile-left", "Left"), ("tile-right", "Right"), ("restore-floating", "Down"))]
+    migrated = {**changed, "audio": audio, "display": display, "shortcuts": shortcuts + snap_defaults}
     pairs = [("desktop.theme", "bigsur"), ("desktop.theme.files", "disabled"),
              ("desktop.audio.v1", json.dumps(audio)), ("desktop.displays.v1", json.dumps(display)),
              ("desktop.shortcuts.v1", json.dumps(shortcuts)),
@@ -145,4 +151,16 @@ with tempfile.TemporaryDirectory(prefix="polly-config-", dir="/tmp") as temporar
     real.unlink()
     moved.rename(real)
     run("load", migrated)
+    custom = [dict(binding) for binding in shortcuts]
+    custom[0].update(modifiers=8, key="0x0000ff51")
+    old_v3 = {**migrated, "version": 3, "shortcuts": custom}
+    put(config, json.dumps(old_v3).encode())
+    before = config.read_bytes()
+    run("reject", fault="write")
+    assert config.read_bytes() == before
+    run("reject-committed", fault="directory")
+    expected = {**migrated, "shortcuts": custom + [
+        dict(action="tile-left", modifiers=0, key=""), *snap_defaults[1:]]}
+    assert json.loads(config.read_bytes()) == expected
+    run("load", expected)
 print("PASS: native configuration closure")

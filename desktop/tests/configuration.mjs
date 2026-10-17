@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 
 register('./root-loader.mjs', import.meta.url);
 const { createShellConfiguration, defaultShellConfiguration, migrateShellConfiguration,
   validateShellConfiguration } = await import('../shell/configuration.mjs');
 const { encodeUtf8, decodeUtf8 } = await import('../../sysrt/sdk/js/encoding.mjs');
 const { fixtureShortcuts } = await import('./configuration-memory.mjs');
+const { shortcutActions } = await import('../shared/shortcuts.mjs');
+
+test('native, preferences and Settings share the ordered ten-action catalog', () => {
+  const source = readFileSync(new URL('../shared/shortcuts.c', import.meta.url), 'utf8');
+  assert.deepEqual([...source.matchAll(/\{ "([^"]+)", "[^"]+", "[^"]+", PU_SHORTCUT_/g)].map(match => match[1]),
+    shortcutActions);
+  assert.equal(shortcutActions.length, 10);
+  assert.deepEqual(shortcutActions.slice(7), ['tile-left', 'tile-right', 'restore-floating']);
+  assert.throws(() => validateShellConfiguration({ ...defaultShellConfiguration(),
+    shortcuts: fixtureShortcuts.slice(0, 7).map(({ action, key, modifiers }) => ({ action, key, modifiers })) }));
+});
 
 test('typed configuration defaults, complete validation, immutable copy, restart and once-only migration', () => {
   let bytes = null, legacyReads = 0, writes = 0;
@@ -76,22 +88,28 @@ test('invalid existing JSON never reads legacy or writes a replacement, and clos
   }
 });
 
-test('v1 and v2 migrate atomically to v3 once preserving every saved domain and desktop shortcut', () => {
+test('v1/v2/v3 migrate atomically to v4 once preserving all old fields, bindings and launcher pins', () => {
   const populated = { ...defaultShellConfiguration(), theme: { id: 'bigsur', filesEnabled: false },
     audio: { version: 1, preferredSink: 'speaker', preferredSource: '', devices: [
       { name: 'speaker', class: 'Audio/Sink', volume: 0.4, muted: false }] },
     display: { version: 1, heads: [{ name: 'DP-1', make: 'Fixture', model: 'Display', serialNumber: 'A',
       enabled: true, width: 1280, height: 720, refresh: 60000, scale: 1, transform: 0, x: 0, y: 0, adaptiveSync: false }] },
     workspace: { version: 1, names: ['Code', 'Notes'], active: 1 },
-    shortcuts: fixtureShortcuts.map(({ action, key, modifiers }) => ({ action, key, modifiers })),
+    shortcuts: fixtureShortcuts.filter(binding => !['tile-left', 'tile-right', 'restore-floating'].includes(binding.action))
+      .map(({ action, key, modifiers }) => ({ action, key, modifiers })),
     desktop: { version: 1, shortcuts: [{ id: 'files.desktop', name: 'Files',
       output: { name: 'DP-1', make: 'Fixture', model: 'Display', serialNumber: 'A' }, x: 16, y: 16 }] } };
-  for (const version of [1, 2]) {
+  populated.launchers = { version: 1, applications: ['saved.desktop', 'bundle:org.example.notes'] };
+  for (const version of [1, 2, 3]) {
     const { launchers, ...source } = populated;
     source.version = version;
+    if (version === 3) source.launchers = launchers;
     if (version === 1) delete source.desktop;
     let bytes = encodeUtf8(JSON.stringify(source)), writes = 0;
-    const expected = { ...populated, desktop: version === 1 ? { version: 1, shortcuts: [] } : populated.desktop };
+    const expected = { ...populated, desktop: version === 1 ? { version: 1, shortcuts: [] } : populated.desktop,
+      launchers: version === 3 ? launchers : { version: 1, applications: [] },
+      shortcuts: [...source.shortcuts, { action: 'tile-left', modifiers: 8, key: 'Left' },
+        { action: 'tile-right', modifiers: 8, key: 'Right' }, { action: 'restore-floating', modifiers: 8, key: 'Down' }] };
     const files = { read: () => bytes, close() {}, write(next, initial) {
       assert.equal(initial, false); bytes = next.slice(); writes++;
     } };
@@ -112,6 +130,49 @@ test('v1 and v2 migrate atomically to v3 once preserving every saved domain and 
         } }, () => assert.fail('invalid migration fallback')), error => error.committed === committed);
       assert.deepEqual(JSON.parse(decodeUtf8(bytes)), committed ? expected : source);
     }
+  }
+});
+
+test('legacy shortcut collisions disable only new defaults and diagnose once after publication', () => {
+  for (const version of [1, 2, 3]) for (const shortcuts of [null,
+    fixtureShortcuts.slice(0, 7).map(binding => ({ action: binding.action, modifiers: binding.modifiers, key: binding.key })),
+    fixtureShortcuts.slice(0, 7).map((binding, index) => ({ action: binding.action,
+      modifiers: index < 3 ? 8 : 0, key: index === 0 ? 'left' : index === 1 ? 'Right' : index === 2 ? 'Down' : '' }))]) {
+    const source = { ...defaultShellConfiguration(), version, shortcuts };
+    if (version < 3) delete source.launchers;
+    if (version === 1) delete source.desktop;
+    let bytes = encodeUtf8(JSON.stringify(source)), writes = 0;
+    const reports = [];
+    const files = { read: () => bytes, close() {}, write(next) { bytes = next.slice(); writes++; } };
+    const create = () => createShellConfiguration(files, () => assert.fail('legacy reread'), value => reports.push(value));
+    let store = create();
+    assert.equal(store.snapshot.version, 4);
+    if (shortcuts === null) assert.equal(store.snapshot.shortcuts, null);
+    else {
+      assert.deepEqual(store.snapshot.shortcuts.slice(0, 7), shortcuts);
+      assert.equal(store.snapshot.shortcuts.length, 10);
+      const conflict = shortcuts[0].modifiers === 8;
+      assert.deepEqual(store.snapshot.shortcuts.slice(7).map(binding => [binding.modifiers, binding.key]),
+        conflict ? [[0, ''], [0, ''], [0, '']] : [[8, 'Left'], [8, 'Right'], [8, 'Down']]);
+      assert.equal(reports.length, conflict ? 1 : 0);
+    }
+    const saved = bytes.slice(), count = reports.length;
+    store.close(); store = create(); store.close();
+    assert.deepEqual(bytes, saved); assert.equal(writes, 1); assert.equal(reports.length, count);
+  }
+});
+
+test('legacy XKB hexadecimal aliases collide with new defaults without rewriting raw keys', () => {
+  for (const keys of [['0xff51', '0xff53', '0xff54'], ['0x0000ff51', '0x0000ff53', '0x0000ff54']]) {
+    const original = fixtureShortcuts.slice(0, 7).map((binding, index) => ({ action: binding.action,
+      modifiers: index < 3 ? 8 : 0, key: keys[index] || '' }));
+    const messages = [];
+    const result = validateShellConfiguration({ ...defaultShellConfiguration(), version: 3,
+      shortcuts: original }, message => messages.push(message));
+    assert.deepEqual(result.shortcuts.slice(0, 7), original);
+    assert.deepEqual(result.shortcuts.slice(7), ['tile-left', 'tile-right', 'restore-floating']
+      .map(action => ({ action, key: '', modifiers: 0 })));
+    assert.equal(messages.length, 3);
   }
 });
 

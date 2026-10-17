@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_shortcuts_v1">
-  <interface name="polly_shortcuts_v1" version="1">
+  <interface name="polly_shortcuts_v1" version="2">
     <description summary="trusted shortcut configuration and switcher presentation">
       Only the compositor-owned Shell connection may bind this interface.
       Actions are a fixed catalog, not commands or executable strings.
       The compositor owns switcher selection and commits it when the trigger
       modifiers are released. The Shell presents bounded display labels.
+      Version 2 requires the ten-action catalog: the original seven numeric
+      actions retain their order, followed by tile-left, tile-right and
+      restore-floating. Version 1 bindings are rejected, not partially applied.
     </description>
     <request name="destroy" type="destructor"/>
     <request name="set_binding">

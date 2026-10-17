@@ -124,6 +124,9 @@ add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/polly-appearance-client.h"
     COMMAND "${WAYLAND_SCANNER}" client-header "${APPEARANCE_XML}" "${PROTOCOL_DIR}/polly-appearance-client.h"
     DEPENDS "${APPEARANCE_XML}" VERBATIM)
+add_custom_command(OUTPUT "${PROTOCOL_DIR}/polly-shortcuts-client.h"
+    COMMAND "${WAYLAND_SCANNER}" client-header "${SHORTCUTS_XML}" "${PROTOCOL_DIR}/polly-shortcuts-client.h"
+    DEPENDS "${SHORTCUTS_XML}" VERBATIM)
 add_custom_command(
     OUTPUT "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c"
     COMMAND "${WAYLAND_SCANNER}" client-header "${XDG_SHELL_XML}"
@@ -152,6 +155,7 @@ add_executable(pollywm-test-client client.c ../shared/appearance-document.c ../s
     "${PROTOCOL_DIR}/polly-workspace-toplevel-client.h" "${PROTOCOL_DIR}/polly-workspace-toplevel.c"
     "${PROTOCOL_DIR}/xdg-decoration-client.h" "${PROTOCOL_DIR}/xdg-decoration.c"
     "${PROTOCOL_DIR}/polly-appearance-client.h" "${PROTOCOL_DIR}/polly-appearance.c"
+    "${PROTOCOL_DIR}/polly-shortcuts-client.h" "${PROTOCOL_DIR}/polly-shortcuts.c"
     "${PROTOCOL_DIR}/foreign-toplevel-client.h" "${PROTOCOL_DIR}/foreign-toplevel.c"
     "${PROTOCOL_DIR}/layer-shell-client-protocol.h" "${PROTOCOL_DIR}/layer-shell-protocol.c"
     "${PROTOCOL_DIR}/xdg-shell-client-protocol.h" "${PROTOCOL_DIR}/xdg-shell-protocol.c")
@@ -161,6 +165,7 @@ target_compile_definitions(pollywm-test-client PRIVATE _POSIX_C_SOURCE=200809L)
 target_link_libraries(pollywm-test-client PRIVATE PkgConfig::WAYLAND_CLIENT m)
 
 add_executable(pollywm-integration integration.c)
+add_dependencies(pollywm-integration polly-lock-test-client)
 target_link_libraries(pollywm-integration PRIVATE pollywm-core)
 add_custom_command(OUTPUT "${PROTOCOL_DIR}/polly-session-status-client.h"
     COMMAND "${WAYLAND_SCANNER}" client-header "${SESSION_STATUS_XML}" "${PROTOCOL_DIR}/polly-session-status-client.h"

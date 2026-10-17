@@ -10,6 +10,9 @@ const struct PuShortcutSpec pu_shortcut_specs[PU_SHORTCUT_COUNT] = {
     { "fullscreen-window", "Toggle fullscreen", "F11", PU_SHORTCUT_ALT },
     { "previous-workspace", "Previous workspace", "Left", PU_SHORTCUT_CTRL | PU_SHORTCUT_SUPER },
     { "next-workspace", "Next workspace", "Right", PU_SHORTCUT_CTRL | PU_SHORTCUT_SUPER },
+    { "tile-left", "Tile window left", "Left", PU_SHORTCUT_SUPER },
+    { "tile-right", "Tile window right", "Right", PU_SHORTCUT_SUPER },
+    { "restore-floating", "Restore floating window", "Down", PU_SHORTCUT_SUPER },
 };
 
 void pu_shortcut_defaults(struct PuShortcutBinding *bindings)

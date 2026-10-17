@@ -6,6 +6,8 @@ import { settingsEnvironment, settingsLaunchSpec } from './desktop/shared/settin
 import { getDesktopTheme } from './desktop/shell/themes.mjs';
 import { createSettingsClient, waitSettingsReply } from './desktop/client/settings.mjs';
 import { runtimeBuild, buildLabel } from './desktop/client/settings-contract.mjs';
+import { readPrivateConfigurationFile } from './desktop/shared/configuration-files.mjs';
+import { decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const [mode, executable, script] = application.arguments;
@@ -171,6 +173,31 @@ async function audio(settings) {
   await capture(settings, 'audio-changed');
   check(desktop.audioState().defaultSink === node('Polly-Test-B').id, 'Settings uses existing native default-device policy');
 }
+async function snapBindings(beforeReset = null) {
+  for (const [action, code, key] of [['tile-left', 35, 'h'], ['tile-right', 36, 'j'], ['restore-floating', 37, 'k']]) {
+    await appClick('shell-shortcut-' + action);
+    await until(() => surfaces.some(item => !item.window.closed &&
+      item.title.startsWith('PollyShell.shortcut-recording.') && item.window.active), action + ' trusted capture');
+    await signal('fixture-key 29 1'); await signal('fixture-key ' + code + ' 1');
+    await signal('fixture-key ' + code + ' 0'); await signal('fixture-key 29 0');
+    await until(() => desktop.shortcuts().some(binding => binding.action === action &&
+      binding.key === key && binding.modifiers === 2), action + ' actual native binding');
+    check(shell.configuration.snapshot.shortcuts.some(binding => binding.action === action &&
+      binding.key === key && binding.modifiers === 2), action + ' saved after acknowledgement');
+    const saved = JSON.parse(decodeUtf8(readPrivateConfigurationFile(application.configDir, 'shell-preferences.json')));
+    check(saved.version === 4 && saved.shortcuts.some(binding => binding.action === action &&
+      binding.key === key && binding.modifiers === 2), action + ' exact binding read back from the published native file');
+    await appClick('shell-shortcut-disable-' + action);
+    await until(() => desktop.shortcuts().some(binding => binding.action === action &&
+      !binding.key && !binding.modifiers), action + ' actually disabled');
+  }
+  if (beforeReset) await beforeReset();
+  await appClick('shell-shortcuts-reset');
+  await until(() => ['tile-left', 'tile-right', 'restore-floating'].every(action =>
+    desktop.shortcuts().some(binding => binding.action === action && binding.modifiers === 8 &&
+      binding.key === ({ 'tile-left': 'Left', 'tile-right': 'Right', 'restore-floating': 'Down' })[action])),
+  'all real snap defaults restored');
+}
 async function migration(output, firstPid, survivor) {
   await appClick('shell-settings-page-displays');
   await until(async () => (await query({ op: 'state' })).pageState.snapshot?.heads?.length === 2,
@@ -192,7 +219,7 @@ async function migration(output, firstPid, survivor) {
   await capture(independent, 'display-kept');
   await audio(independent);
   await appClick('shell-settings-page-keyboard');
-  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 7,
+  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 10,
     'independent Settings reads the real shortcut catalog');
   await capture(independent, 'keyboard');
   await appClick('shell-shortcut-minimize-window');
@@ -208,6 +235,7 @@ async function migration(output, firstPid, survivor) {
   await appClick('shell-shortcuts-reset');
   await until(() => desktop.shortcuts().some(binding => binding.action === 'minimize-window' && binding.key === 'F9'),
     'real shortcut defaults restored');
+  await snapBindings();
   await appClick('shell-settings-page-about'); await capture(independent, 'about');
   check(!surfaces.some(item => item.title === 'Desktop control panel'), 'all complete pages remain in the one owned Settings process');
   await signal('fixture-settings-close ' + ++serial);
@@ -254,6 +282,44 @@ async function run() {
     '', 'settings-survivor');
   survivorPid = survivor;
   const output = shell.getState().outputs[0];
+  if (mode === 'keyboard') {
+    await shell.showSystemSettings(output, 'keyboard');
+    await until(() => shell.getSettingsState().connected, 'owned Keyboard Settings handshake');
+    await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 10,
+      'independent Keyboard consumes the actual ten-action native catalog');
+    const setter = desktop.setShortcuts;
+    let commits = 0;
+    desktop.setShortcuts = bindings => { commits++; return setter(bindings); };
+    try { await snapBindings(async () => {
+      const first = shell.getSettingsState().pid;
+      const saved = JSON.parse(decodeUtf8(readPrivateConfigurationFile(application.configDir, 'shell-preferences.json')));
+      const disabled = bindings => ['tile-left', 'tile-right', 'restore-floating'].every(action =>
+        bindings.some(binding => binding.action === action && !binding.key && !binding.modifiers));
+      check(disabled(saved.shortcuts), 'all three disabled bindings are present in the committed file');
+      await signal('fixture-settings-close ' + ++serial);
+      await until(() => exits.has(first) && !shell.getSettingsState().pid, 'first Keyboard process actually exits');
+      await shell.showSystemSettings(output, 'keyboard');
+      await until(() => shell.getSettingsState().connected && shell.getSettingsState().pid !== first,
+        'Keyboard reopens in a fresh owned process');
+      await until(async () => {
+        const snapshot = (await query({ op: 'state' })).pageState.snapshot;
+        return snapshot?.bindings?.length === 10 && disabled(snapshot.bindings);
+      }, 'reopened independent Keyboard reads all three persisted disabled bindings');
+      check(disabled(shell.configuration.snapshot.shortcuts), 'Settings reopen preserves the committed configuration');
+    }); }
+    finally { desktop.setShortcuts = setter; }
+    check(commits === 7, 'three recordings, three disables and one reset each commit exactly once');
+    const finalPid = shell.getSettingsState().pid;
+    await signal('fixture-settings-close ' + ++serial);
+    await until(() => exits.has(finalPid) && !shell.getSettingsState().pid, 'owned Keyboard Settings closes');
+    await until(() => desktop.windows().some(item => item.appId === 'org.pollyui.settings-survivor'),
+      'ordinary survivor maps');
+    desktop.closeWindow(desktop.windows().find(item => item.appId === 'org.pollyui.settings-survivor').id);
+    await until(() => exits.has(survivor), 'ordinary survivor cleanup');
+    check(reports.length === 0, 'native Keyboard reports no unexpected errors');
+    console.log('PASS: native Settings keyboard complete');
+    await signal('fixture-success'); queryClient.close(); shell.stop(); window.quit(); return;
+  }
   const panel = shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output === output);
   await until(() => panel.window.document.getElementById('shell-panel-settings')?.offsetWidth > 0, 'Settings taskbar entry');
   await click('shell-panel-settings');

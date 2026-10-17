@@ -669,6 +669,31 @@ test('Domain snapshots reject unknown fields, fabricated readiness and mixed ide
   const displays = f.domains.displays(); displays.heads[0].adaptiveSync = 'true';
   assert.throws(() => parseDisplays(JSON.stringify(displays)));
 });
+
+test('Keyboard consumes all three snap actions with one capture, commit and persistence per edit', async t => {
+  const f = domainFixture(t); await f.app.present('keyboard'); await tick();
+  assert.equal(f.domains.keyboard(f.owner).bindings.length, 10);
+  for (const [action, key] of [['tile-left', 'h'], ['tile-right', 'j'], ['restore-floating', 'k']]) {
+    assert.ok(f.document.getElementById('shell-shortcut-' + action));
+    const commits = f.calls.filter(item => item[0] === 'shortcuts').length;
+    const saves = f.calls.filter(item => item[0] === 'save' && item[1] === 'shortcuts').length;
+    await deliver(f.document.getElementById('shell-shortcut-' + action)); await tick();
+    const surface = f.host.windows.at(-1); surface.active = true; surface.onactivate();
+    await deliver(surface.document.body, 'keydown', { key, ctrlKey: true, repeat: true });
+    await deliver(surface.document.body, 'keydown', { key, ctrlKey: true, isComposing: true });
+    assert.equal(f.calls.filter(item => item[0] === 'shortcuts').length, commits);
+    await deliver(surface.document.body, 'keydown', { key, ctrlKey: true });
+    assert.deepEqual(f.saved().shortcuts.find(binding => binding.action === action),
+      { action, key, modifiers: 2 });
+    assert.equal(f.calls.filter(item => item[0] === 'shortcuts').length, commits + 1);
+    assert.equal(f.calls.filter(item => item[0] === 'save' && item[1] === 'shortcuts').length, saves + 1);
+    await f.app.pages.refresh(); await tick();
+    await deliver(f.document.getElementById('shell-shortcut-disable-' + action)); await tick();
+    assert.equal(f.native.shortcuts().find(binding => binding.action === action).key, '');
+  }
+  await deliver(f.document.getElementById('shell-shortcuts-reset')); await tick();
+  assert.deepEqual(f.native.shortcuts(), fixtureShortcuts);
+});
 test('shared appearance view uses the explicit remote catalog rather than a Shell module-global list', () => {
   const theme = BUILTIN_THEME_CATALOG.themes[0];
   const tree = settingsView(theme, () => {}, () => {}, () => {}, '', false, null, null, null, null,

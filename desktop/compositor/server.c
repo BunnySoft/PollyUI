@@ -82,6 +82,7 @@ struct PuDesktopPopup {
 static void end_grab(struct PuDesktop *desktop);
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
                            struct wlr_output *preferred);
+static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile);
 static void constrain_popups(struct PuDesktopView *view);
 static void popup_reposition(struct wl_listener *listener, void *data);
 static void process_motion(struct PuDesktop *desktop, uint32_t time);
@@ -344,6 +345,13 @@ void pu_desktop_shortcut_action(struct PuDesktop *desktop, int action, bool reve
             set_view_state(view, view->maximized, !view->fullscreen, NULL);
         }
         return;
+    case PU_SHORTCUT_TILE_LEFT:
+    case PU_SHORTCUT_TILE_RIGHT:
+    case PU_SHORTCUT_RESTORE_FLOATING:
+        if (desktop->focused)
+            set_view_tile(desktop->focused, action == PU_SHORTCUT_TILE_LEFT ? PU_TILE_LEFT :
+                action == PU_SHORTCUT_TILE_RIGHT ? PU_TILE_RIGHT : PU_TILE_NONE);
+        return;
     default: return;
     }
 }
@@ -564,6 +572,15 @@ static struct wlr_box view_box(struct PuDesktopView *view)
     return box;
 }
 
+static struct wlr_box presented_view_box(struct PuDesktopView *view)
+{
+    struct wlr_box box = view->presented_box;
+    /* Interactive moves update scene position without a client configure. */
+    box.x = view->tree->node.x;
+    box.y = view->tree->node.y;
+    return box;
+}
+
 static void sync_foreign(struct PuDesktop *desktop)
 {
     if (!desktop->layout) return;
@@ -747,12 +764,38 @@ static void fit_floating(struct PuDesktopView *view, struct wlr_box *box,
 
 static void present_view(struct PuDesktopView *view);
 
+static enum PuDesktopMode requested_mode(struct PuDesktopView *view)
+{
+    return view->fullscreen ? PU_DESKTOP_FULLSCREEN : view->maximized ? PU_DESKTOP_MAXIMIZED :
+        view->tile == PU_TILE_LEFT ? PU_DESKTOP_TILED_LEFT :
+        view->tile == PU_TILE_RIGHT ? PU_DESKTOP_TILED_RIGHT : PU_DESKTOP_FLOATING;
+}
+
+static bool tile_box(struct PuDesktopView *view, enum PuDesktopTile tile,
+                     const struct wlr_box *work, struct wlr_box *box)
+{
+    *box = *work;
+    int left = work->width / 2;
+    box->width = tile == PU_TILE_LEFT ? left : work->width - left;
+    if (tile == PU_TILE_RIGHT) box->x += left;
+    struct wlr_box outer = *box;
+    pu_decoration_inset(view, box, true);
+    struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
+    /* A half is an exact outer partition, not a clamped maximize suggestion. */
+    return outer.width > 0 && outer.height > 0 &&
+        box->width > 0 && box->height > 0 &&
+        box->x + box->width <= outer.x + outer.width &&
+        box->y + box->height <= outer.y + outer.height &&
+        box->width >= limits->min_width && box->height >= limits->min_height &&
+        (!limits->max_width || box->width <= limits->max_width) &&
+        (!limits->max_height || box->height <= limits->max_height);
+}
+
 static void present_geometry(struct PuDesktopView *view)
 {
     view->geometry_pending = false;
     pu_decoration_present(view);
-    view->mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
-                 view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    view->mode = requested_mode(view);
     view->presented_box = view->pending_box;
     struct wlr_box box = view->pending_box;
     if (view->mode == PU_DESKTOP_FLOATING) {
@@ -766,6 +809,7 @@ static void present_geometry(struct PuDesktopView *view)
         }
     }
     wlr_scene_node_set_position(&view->tree->node, box.x, box.y);
+    view->presented_box = box;
 }
 
 static void configure_view(struct PuDesktopView *view, struct wlr_box box,
@@ -777,13 +821,15 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
         box.height = clamp_size(box.height, limits->min_height, limits->max_height);
     }
     struct wlr_xdg_surface *surface = view->toplevel->base;
-    enum PuDesktopMode mode = view->fullscreen ? PU_DESKTOP_FULLSCREEN :
-                              view->maximized ? PU_DESKTOP_MAXIMIZED : PU_DESKTOP_FLOATING;
+    enum PuDesktopMode mode = requested_mode(view);
+    uint32_t tiled = !view->maximized && !view->fullscreen && view->tile != PU_TILE_NONE ?
+        WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT : 0;
     bool reuse_buffer = view->mapped && surface->surface->buffer &&
         !view->geometry_pending && !view->resize_pending &&
         view->mode == mode && !view->toplevel->current.resizing &&
         view->toplevel->current.maximized == view->maximized &&
         view->toplevel->current.fullscreen == view->fullscreen &&
+        view->toplevel->current.tiled == tiled &&
         box.width == surface->geometry.width && box.height == surface->geometry.height &&
         !pu_decoration_mode_pending(view);
     if (view->desktop->grabbed == view) end_grab(view->desktop);
@@ -793,6 +839,7 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
     wlr_xdg_toplevel_set_bounds(view->toplevel, bounds->width, bounds->height);
     wlr_xdg_toplevel_set_maximized(view->toplevel, view->maximized);
     wlr_xdg_toplevel_set_fullscreen(view->toplevel, view->fullscreen);
+    wlr_xdg_toplevel_set_tiled(view->toplevel, tiled);
     wlr_xdg_toplevel_set_resizing(view->toplevel, false);
     view->geometry_serial = wlr_xdg_toplevel_set_size(view->toplevel, box.width, box.height);
     view->geometry_pending = true;
@@ -812,7 +859,7 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     struct wlr_box box = view->geometry_pending ? view->pending_box : view_box(view);
     struct wlr_box bounds;
     struct wlr_output *output = preferred;
-    if (!maximized && !fullscreen && (view->maximized || view->fullscreen))
+    if (!maximized && !fullscreen && view->tile == PU_TILE_NONE && (view->maximized || view->fullscreen))
         output = output_for_box(desktop, &view->restore_box);
     if (!output_box(desktop, output, &bounds)) {
         output = view->output;
@@ -826,19 +873,66 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
     }
     if (!fullscreen) {
         use_work_area(output, &bounds);
+        if (!maximized && view->tile != PU_TILE_NONE && !tile_box(view, view->tile, &bounds, &box)) {
+            wlr_log(WLR_ERROR, "Cannot restore tiled window: client size limits do not fit the work area");
+            return;
+        }
         pu_decoration_inset(view, &bounds, true);
     }
     if ((maximized || fullscreen) && !view->maximized && !view->fullscreen)
-        view->restore_box = box;
+        view->restore_box = view->mapped && view->mode == PU_DESKTOP_FLOATING &&
+            view->tile == PU_TILE_NONE ? presented_view_box(view) : box;
     if (maximized || fullscreen) {
         box = bounds;
-    } else if (view->maximized || view->fullscreen) {
+    } else if (view->tile == PU_TILE_NONE && (view->maximized || view->fullscreen)) {
         box = view->restore_box;
     }
     view->output = output;
     view->maximized = maximized;
     view->fullscreen = fullscreen;
-    if (!maximized && !fullscreen) fit_floating(view, &box, &bounds);
+    if (!maximized && !fullscreen && view->tile == PU_TILE_NONE) fit_floating(view, &box, &bounds);
+    configure_view(view, box, &bounds);
+    sync_foreign(desktop);
+}
+
+static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
+{
+    struct PuDesktop *desktop = view->desktop;
+    if (!view->mapped || view->minimized || !pu_workspace_current(view) || modal_target(view) != view ||
+        desktop->focused != view || desktop->focused_layer ||
+        pu_session_lock_active(desktop) || wlr_seat_keyboard_has_grab(desktop->seat) ||
+        desktop->grab != PU_DESKTOP_PASSTHROUGH) return;
+    if (view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN) {
+        wlr_log(WLR_INFO, "Exit fullscreen before tiling or restoring a floating window");
+        return;
+    }
+    if (tile == PU_TILE_NONE && view->tile == PU_TILE_NONE) return;
+    struct wlr_box actual = presented_view_box(view), bounds, box;
+    if (actual.width < 1 || actual.height < 1) {
+        wlr_log(WLR_INFO, "Wait for the first presented window frame before tiling");
+        return;
+    }
+    struct wlr_output *output = output_for_box(desktop, &actual);
+    if (!output_box(desktop, output, &bounds)) {
+        wlr_log(WLR_ERROR, "Cannot tile or restore window without an enabled output");
+        return;
+    }
+    use_work_area(output, &bounds);
+    if (tile != PU_TILE_NONE) {
+        if (!tile_box(view, tile, &bounds, &box)) {
+            wlr_log(WLR_ERROR, "Cannot tile window: client size limits do not fit the half-screen work area");
+            return;
+        }
+        if (view->tile == PU_TILE_NONE)
+            view->floating_box = view->maximized ? view->restore_box : actual;
+    } else {
+        box = view->floating_box;
+        pu_decoration_inset(view, &bounds, true);
+        fit_floating(view, &box, &bounds);
+    }
+    view->output = output;
+    view->tile = tile;
+    view->maximized = false;
     configure_view(view, box, &bounds);
     sync_foreign(desktop);
 }
@@ -861,6 +955,20 @@ static void present_view(struct PuDesktopView *view)
         /* A buffer for an older configure must not acquire the latest position. */
         uint32_t serial = view->toplevel->base->current.configure_serial;
         if (!view->geometry_reuse && (int32_t)(serial - view->geometry_serial) < 0) return;
+        if (view->tile != PU_TILE_NONE && !view->maximized && !view->fullscreen &&
+            (view->toplevel->base->geometry.width != view->pending_box.width ||
+             view->toplevel->base->geometry.height != view->pending_box.height)) {
+            if (view->geometry_reuse) return;
+            wlr_log(WLR_ERROR, "Client declined exact tiled geometry; restoring floating window");
+            view->tile = PU_TILE_NONE;
+            struct wlr_box bounds, box = view->floating_box;
+            if (!output_box(view->desktop, view->output, &bounds)) return;
+            use_work_area(view->output, &bounds);
+            pu_decoration_inset(view, &bounds, true);
+            fit_floating(view, &box, &bounds);
+            configure_view(view, box, &bounds);
+            return;
+        }
         if (!pu_decoration_ready(view)) {
             struct wlr_box clip = view->toplevel->base->geometry;
             pu_decoration_waiting_clip(view, &clip);
@@ -889,6 +997,7 @@ static void present_view(struct PuDesktopView *view)
         fail(view->desktop, "Cannot apply native window effects");
         return;
     }
+    if (view->mode == PU_DESKTOP_FLOATING) view->presented_box = view_box(view);
     update_layer_focus(view->desktop);
     sync_foreign(view->desktop);
 }
@@ -911,16 +1020,23 @@ static void refresh_views(struct PuDesktop *desktop)
         struct wlr_box box = view->geometry_pending ? view->pending_box : view_box(view);
         struct wlr_box bounds;
         struct wlr_output *output = view->output;
-        if ((!view->fullscreen && !view->maximized) || !output_box(desktop, output, &bounds))
+        if ((!view->fullscreen && !view->maximized && view->tile == PU_TILE_NONE) ||
+            !output_box(desktop, output, &bounds))
             output = output_for_box(desktop, &box);
         view->output = output;
         if (!output_box(desktop, output, &bounds)) continue;
         if (!view->fullscreen) {
             use_work_area(output, &bounds);
+            if (!view->maximized && view->tile != PU_TILE_NONE &&
+                !tile_box(view, view->tile, &bounds, &box)) {
+                wlr_log(WLR_ERROR, "Tiled window no longer fits changed work area; restoring floating geometry");
+                view->tile = PU_TILE_NONE;
+                box = view->floating_box;
+            }
             pu_decoration_inset(view, &bounds, true);
         }
         if (view->fullscreen || view->maximized) box = bounds;
-        else fit_floating(view, &box, &bounds);
+        else if (view->tile == PU_TILE_NONE) fit_floating(view, &box, &bounds);
         configure_view(view, box, &bounds);
     }
 }
@@ -1890,8 +2006,11 @@ static void view_unmap(struct wl_listener *listener, void *data)
     view->minimized = false;
     view->geometry_pending = view->maximized = view->fullscreen = false;
     view->mode = PU_DESKTOP_FLOATING;
+    view->tile = PU_TILE_NONE;
     view->output = NULL;
     view->restore_box = (struct wlr_box){0};
+    view->floating_box = (struct wlr_box){0};
+    view->presented_box = (struct wlr_box){0};
     wlr_scene_node_set_enabled(&view->tree->node, false);
     wl_list_remove(&view->link);
     wl_list_init(&view->link);
@@ -1941,6 +2060,13 @@ static void view_commit(struct wl_listener *listener, void *data)
             view->toplevel->requested.fullscreen ? view->toplevel->requested.fullscreen_output : view->output);
     }
     if (!view->mapped) return;
+    if (view->tile != PU_TILE_NONE && !view->maximized && !view->fullscreen) {
+        struct wlr_box bounds, box;
+        if (output_box(view->desktop, view->output, &bounds)) {
+            use_work_area(view->output, &bounds);
+            if (!tile_box(view, view->tile, &bounds, &box)) refresh_views(view->desktop);
+        }
+    }
     present_view(view);
     if (view->resize_pending) {
         /* Anchor the opposite edge using the size actually committed by the client. */

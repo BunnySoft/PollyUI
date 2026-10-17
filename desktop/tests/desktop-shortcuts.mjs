@@ -129,11 +129,11 @@ test('v1 JSON atomically upgrades once preserving all original domains; failed m
     assert.equal(initial, false); bytes = next; writes++;
   } };
   const store = createShellConfiguration(files, () => assert.fail('legacy storage read'));
-  assert.deepEqual(store.snapshot, { ...legacy, version: 3, desktop, launchers });
+  assert.deepEqual(store.snapshot, { ...legacy, version: 4, desktop, launchers });
   store.close();
   createShellConfiguration(files, () => assert.fail('legacy storage read')).close();
   assert.equal(writes, 1);
-  assert.equal(JSON.parse(decodeUtf8(bytes)).version, 3);
+  assert.equal(JSON.parse(decodeUtf8(bytes)).version, 4);
   for (const committed of [false, true]) {
     const badFiles = { read: () => encodeUtf8(JSON.stringify(legacy)), close() {},
       write() { throw Object.assign(new Error('migration write failure'), { committed }); } };

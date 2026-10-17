@@ -2,13 +2,13 @@ import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 import { validateAudioPreferences, readAudioPreferences } from './desktop/shell/audio-preferences.mjs';
 import { validateDisplayProfile, readDisplayProfile } from './desktop/shell/display-profiles.mjs';
 import { validateWorkspacePreferences, readWorkspacePreferences } from './desktop/shell/workspaces.mjs';
-import { validateShortcuts } from './desktop/shell/shortcuts.mjs';
+import { validateShortcuts, migrateLegacyShortcuts } from './desktop/shell/shortcuts.mjs';
 import { validateDesktopShortcuts } from './desktop/shell/desktop-shortcuts.mjs';
 import { validateLauncherPins } from './desktop/shell/launcher-pins.mjs';
 
 export const SHELL_CONFIGURATION_FILE = 'shell-preferences.json';
 export function defaultShellConfiguration() {
-  return { version: 3, theme: { id: null, filesEnabled: true },
+  return { version: 4, theme: { id: null, filesEnabled: true },
     audio: null, display: null, workspace: null, shortcuts: null,
     desktop: { version: 1, shortcuts: [] }, launchers: { version: 1, applications: [] } };
 }
@@ -16,21 +16,23 @@ function keys(value, expected) {
   return value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).sort().join(',') === expected;
 }
-export function validateShellConfiguration(value) {
+export function validateShellConfiguration(value, report) {
   const legacy = value?.version === 1 && keys(value, 'audio,display,shortcuts,theme,version,workspace');
   const previous = value?.version === 2 && keys(value, 'audio,desktop,display,shortcuts,theme,version,workspace');
-  const current = value?.version === 3 && keys(value, 'audio,desktop,display,launchers,shortcuts,theme,version,workspace');
-  if ((!legacy && !previous && !current) ||
+  const withLaunchers = (value?.version === 3 || value?.version === 4) &&
+    keys(value, 'audio,desktop,display,launchers,shortcuts,theme,version,workspace');
+  if ((!legacy && !previous && !withLaunchers) ||
       !keys(value.theme, 'filesEnabled,id') || typeof value.theme.filesEnabled !== 'boolean' ||
       (value.theme.id !== null && (typeof value.theme.id !== 'string' || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.theme.id))))
     throw new TypeError('Invalid or unsupported Shell configuration schema');
-  return { version: 3, theme: { ...value.theme },
+  return { version: 4, theme: { ...value.theme },
     audio: value.audio === null ? null : validateAudioPreferences(value.audio),
     display: value.display === null ? null : validateDisplayProfile(value.display),
     workspace: value.workspace === null ? null : validateWorkspacePreferences(value.workspace),
-    shortcuts: value.shortcuts === null ? null : validateShortcuts(value.shortcuts),
+    shortcuts: value.shortcuts === null ? null : value.version === 4 ? validateShortcuts(value.shortcuts) :
+      migrateLegacyShortcuts(value.shortcuts, report),
     desktop: legacy ? { version: 1, shortcuts: [] } : validateDesktopShortcuts(value.desktop),
-    launchers: current ? validateLauncherPins(value.launchers) : { version: 1, applications: [] } };
+    launchers: withLaunchers ? validateLauncherPins(value.launchers) : { version: 1, applications: [] } };
 }
 function freeze(value) {
   if (value && typeof value === 'object') {
@@ -42,7 +44,7 @@ function freeze(value) {
 function snapshot(value) {
   return freeze(JSON.parse(JSON.stringify(validateShellConfiguration(value))));
 }
-export function migrateShellConfiguration(bytes) {
+export function migrateShellConfiguration(bytes, report) {
   const result = defaultShellConfiguration();
   if (bytes === null) return result;
   if (!(bytes instanceof Uint8Array) || decodeUtf8(bytes.subarray(0, 6)) !== 'PUST1\n')
@@ -72,13 +74,13 @@ export function migrateShellConfiguration(bytes) {
       case 'desktop.audio.v1': result.audio = readAudioPreferences(value); break;
       case 'desktop.displays.v1': result.display = readDisplayProfile(value); break;
       case 'desktop.workspaces.v1': result.workspace = readWorkspacePreferences(value); break;
-      case 'desktop.shortcuts.v1': result.shortcuts = validateShortcuts(JSON.parse(value)); break;
+      case 'desktop.shortcuts.v1': result.shortcuts = migrateLegacyShortcuts(JSON.parse(value), report); break;
     }
   }
   return validateShellConfiguration(result);
 }
 
-export function createShellConfiguration(files, readLegacy) {
+export function createShellConfiguration(files, readLegacy, report = console.error) {
   let current, closed = false;
   function publish(value, initial = false) {
     const next = snapshot(value), bytes = encodeUtf8(JSON.stringify(next) + '\n');
@@ -91,13 +93,16 @@ export function createShellConfiguration(files, readLegacy) {
   }
   try {
     const bytes = files.read();
-    if (bytes === null) publish(migrateShellConfiguration(readLegacy()), true);
+    const diagnostics = [];
+    const diagnostic = message => diagnostics.push('[shell] Shortcut migration: ' + message);
+    if (bytes === null) publish(migrateShellConfiguration(readLegacy(), diagnostic), true);
     else {
       const parsed = JSON.parse(decodeUtf8(bytes));
-      const migrated = snapshot(parsed);
-      if (parsed.version !== 3) publish(migrated);
+      const migrated = snapshot(validateShellConfiguration(parsed, diagnostic));
+      if (parsed.version !== 4) publish(migrated);
       else current = migrated;
     }
+    if (diagnostics.length) report(diagnostics.join('; '));
   } catch (error) {
     try { files.close(); }
     catch (cleanup) {
