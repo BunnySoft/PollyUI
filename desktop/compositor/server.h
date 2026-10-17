@@ -60,6 +60,8 @@ struct PuDesktopView {
     struct wlr_output *output;
     struct wlr_box restore_box, floating_box, pending_box, presented_box;
     uint32_t geometry_serial;
+    bool drag_restore_pending;
+    double drag_restore_anchor;
     bool resize_pending;
     struct wlr_box resize_anchor;
     uint32_t resize_edges;
