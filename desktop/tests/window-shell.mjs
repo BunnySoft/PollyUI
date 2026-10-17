@@ -408,15 +408,23 @@ async function run() {
         });
     };
     await until(() => dockButtons(false), 'both real Docks expose the exact-appId single-window group');
+    const activateWindow = desktop.activateWindow;
+    let dockActivations = 0;
+    desktop.activateWindow = (...args) => {
+      const result = activateWindow(...args);
+      if (args[0] === id) dockActivations++;
+      return result;
+    };
     await click(bar(), 'shell-window-' + dockTask().id);
-    await until(() => find()?.active && !find()?.minimized && dockButtons(false),
+    await until(() => dockActivations === 1 && find()?.active && !find()?.minimized && dockButtons(false),
       'real single-window Dock click activates without minimizing');
     desktop.minimizeWindow(id);
     await until(() => find()?.minimized && !find()?.active && dockButtons(true),
       'native minimize updates the real Dock group on both outputs');
     await click(bar(), 'shell-window-' + dockTask().id);
-    await until(() => find()?.active && !find()?.minimized && dockButtons(false),
+    await until(() => dockActivations === 2 && find()?.active && !find()?.minimized && dockButtons(false),
       'real Dock group restores and activates the minimized application');
+    desktop.activateWindow = activateWindow;
     const custom = JSON.parse(JSON.stringify(getDesktopTheme('bigsur')));
     custom.id = 'external-config';
     custom.name = 'External configuration';
