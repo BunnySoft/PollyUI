@@ -6,6 +6,7 @@
 #include "shortcut-control.h"
 #include "session-lock.h"
 #include "polly-appearance-server.h"
+#include "polly-workspace-toplevel-server.h"
 #include "decoration-layout-fixtures.h"
 #include "wire.h"
 #include <drm_fourcc.h>
@@ -2417,7 +2418,366 @@ static bool cascade_protocol(const char *wire)
     return true;
 }
 
-static bool cascade_consumer(const char *ui, const char *wire, bool old)
+static bool arrangement_wait(struct PuDesktopView *view)
+{
+    CHECK(cascade_wait_client(view, PU_DESKTOP_FLOATING));
+    for (int i = 0; i < 1200; i++) {
+        if (pu_decoration_layout_settled(view)) return true;
+        CHECK(pump());
+    }
+    CHECK(false);
+}
+
+static bool arrangement_cells(struct PuDesktopView **views, struct wlr_scene_node **order,
+    struct wlr_box work, bool horizontal)
+{
+    int axis = horizontal ? work.height : work.width;
+    for (unsigned i = 0; i < 3; i++) {
+        struct PuDesktopView *view = NULL;
+        for (unsigned j = 0; j < 3; j++) if (order[i] == &views[j]->tree->node) view = views[j];
+        CHECK(view && arrangement_wait(view));
+        struct wlr_box inset = {0}; pu_decoration_inset(view, &inset, false);
+        struct wlr_box outer = {.x = view->tree->node.x - inset.x, .y = view->tree->node.y - inset.y,
+            .width = view->presented_box.width + 2 * inset.x,
+            .height = view->presented_box.height + inset.y + inset.x};
+        struct wlr_box expected = work;
+        int start = (int)((int64_t)axis * i / 3), end = (int)((int64_t)axis * (i + 1) / 3);
+        if (horizontal) { expected.y += start; expected.height = end - start; }
+        else { expected.x += start; expected.width = end - start; }
+        CHECK(wlr_box_equal(&outer, &expected) && view->tile == PU_TILE_NONE && !view->maximized &&
+            !view->toplevel->current.tiled && !view->toplevel->current.maximized);
+        printf("ARRANGEMENT_FRAME window=%llu direction=%s outer=%d,%d %dx%d client=%d,%d %dx%d insets=%d,%d revision=%u\n",
+            (unsigned long long)view->workspace_window, horizontal ? "horizontal" : "vertical",
+            outer.x, outer.y, outer.width, outer.height, view->tree->node.x, view->tree->node.y,
+            view->presented_box.width, view->presented_box.height, inset.x, inset.y,
+            pu_decoration_presented_revision(view));
+    }
+    CHECK(cascade_scene_order(views, order, true));
+    return true;
+}
+
+#ifdef POLLY_WORKSPACE_TOPLEVEL_V1_ARRANGE_SINCE_VERSION
+static bool arrangement_request(uint32_t serial, uint32_t epoch, unsigned direction, bool accepted)
+{
+    return picker_request((struct TestRequest){.command = TEST_MENU_ARRANGE, .id = 7,
+        .serial = serial, .edges = epoch, .layer.width = (int)direction}, accepted);
+}
+
+static bool arrangement_peer(unsigned index, struct TestRequest request)
+{
+    int saved = control;
+    struct TestReply previous = reply;
+    control = cascade_controls[index];
+    bool ok = cascade_send(request);
+    control = saved; reply = previous;
+    return ok;
+}
+
+static bool arrangement_protocol(const char *wire)
+{
+    struct PuDesktopView *views[3];
+    CHECK(cascade_clients(wire, views));
+    backdrop_guard_views(views[0], views[1], views[2]);
+    struct wlr_output *head = views[0]->output, *peer = NULL;
+    struct wlr_output_layout_output *entry;
+    wl_list_for_each(entry, &desktop.layout->outputs, link)
+        if (entry->output != head) peer = entry->output;
+    CHECK(peer);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, 1281, 721, 60000);
+    wlr_output_state_set_scale(&state, 1.25f);
+    CHECK(wlr_output_commit_state(head, &state));
+    wlr_output_state_finish(&state);
+    struct wlr_box area;
+    wlr_output_layout_get_box(desktop.layout, head, &area);
+    wlr_output_layout_add(desktop.layout, head, -area.width, -50);
+    wlr_output_layout_add(desktop.layout, peer, 0, 0);
+    wlr_output_layout_get_box(desktop.layout, head, &area);
+    for (unsigned i = 0; i < 3; i++) {
+        CHECK(wait_presented_frame(views[i]));
+        wlr_scene_node_set_position(&views[i]->tree->node, area.x + 60 + (int)i * 100, area.y + 90);
+    }
+    pu_desktop_focus_mapped(&desktop, views[0]->workspace_window);
+    int sockets[2];
+    CHECK(!socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets) &&
+        !fcntl(sockets[1], F_SETFD, 0) && !setenv("POLLY_TEST_WORKSPACE_V6", "1", 1));
+    char number[32]; snprintf(number, sizeof(number), "%d", sockets[1]);
+    char *args[] = {(char *)wire, "--trusted", number, NULL};
+    bool started = pu_desktop_spawn_shell(&desktop, args);
+    unsetenv("POLLY_TEST_WORKSPACE_V6"); close(sockets[1]);
+    CHECK(started);
+    picker_wire_control = control; control = sockets[0];
+    struct TestRequest layer = {.command = TEST_LAYER_MAP, .id = 3, .layer = {
+        .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, .width = 220, .height = 180, .zone = -1,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE}};
+    CHECK(cascade_send(layer) && reply.arrangement_capability == 1);
+    layer.id = 4; layer.layer.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    layer.layer.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    layer.layer.width = 0; layer.layer.height = layer.layer.zone = 30;
+    layer.layer.anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    CHECK(cascade_send(layer));
+    for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
+    struct wlr_box work = area; work.y += 30; work.height -= 30;
+    CHECK((work.width & 1) && (work.height & 1) && area.x < 0 && area.y < 0);
+    uint32_t serial = 1, epoch, before[3];
+    struct wlr_box saved[3], floats[3], restores[3];
+    CHECK(cascade_open(&serial, &epoch));
+    for (unsigned i = 0; i < 3; i++) {
+        before[i] = views[i]->geometry_serial; saved[i] = views[i]->presented_box;
+        floats[i] = views[i]->floating_box; restores[i] = views[i]->restore_box;
+    }
+    CHECK(arrangement_request(0, epoch, 1, false) && arrangement_request(serial++, epoch + 1, 2, false) &&
+        arrangement_request(serial++, epoch, 0, false) && arrangement_request(serial++, epoch, UINT32_MAX, false));
+    picker_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+    picker_keyboard_grab.interface = &picker_keyboard_impl;
+    wlr_seat_keyboard_start_grab(desktop.seat, &picker_keyboard_grab);
+    CHECK(arrangement_request(serial++, epoch, 1, false));
+    finish_picker_grabs();
+    picker_pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+    picker_pointer_grab.interface = &picker_pointer_impl;
+    wlr_seat_pointer_start_grab(desktop.seat, &picker_pointer_grab);
+    CHECK(arrangement_request(serial++, epoch, 2, false));
+    finish_picker_grabs();
+    CHECK(command(TEST_SHORTCUT_RECORDING, 1, 0) && arrangement_request(serial++, epoch, 1, false) &&
+        command(TEST_SHORTCUT_RECORDING, 0, 0));
+    desktop.session_exit_pending = true;
+    CHECK(arrangement_request(serial++, epoch, 2, false));
+    desktop.session_exit_pending = false;
+    CHECK(command(TEST_UNMAP, 0, 0) && cascade_open(&serial, &epoch) &&
+        arrangement_request(serial++, epoch, 1, false));
+    CHECK(command(TEST_PICKER_ENABLE, 1, 0) && picker_raw_offer(views[0], 7));
+    CHECK(picker_request((struct TestRequest){.command = TEST_PICKER_OPEN, .id = 7,
+        .serial = serial++, .edges = reply.picker_token}, true));
+    epoch = reply.placement_epoch;
+    CHECK(command(TEST_REMAP, 0, 0));
+    for (int i = 0; i < 1200 && (!desktop.focused_layer || !desktop.focused_layer->presented); i++) CHECK(pump());
+    CHECK(desktop.focused_layer && desktop.focused_layer->presented &&
+        arrangement_request(serial++, epoch, 1, false) && arrangement_request(serial++, epoch, 2, false));
+    CHECK(command(TEST_PICKER_ENABLE, 0, 0));
+    for (unsigned i = 0; i < 3; i++)
+        CHECK(views[i]->geometry_serial == before[i] && wlr_box_equal(&saved[i], &views[i]->presented_box) &&
+            wlr_box_equal(&floats[i], &views[i]->floating_box) && wlr_box_equal(&restores[i], &views[i]->restore_box));
+    puts("PASS: bounded v6 directions, serial/epoch, both grabs, recording, unpresented menu and actual redeemed picker reject without geometry or saved-float mutation");
+
+    CHECK(cascade_body(1, TEST_MAXIMIZE) && wait_presented_frame(views[1]));
+    CHECK(command(TEST_UNMAP, 0, 0));
+    pu_desktop_focus_mapped(&desktop, views[2]->workspace_window);
+    placement_key(KEY_LEFT);
+    CHECK(cascade_body(2, TEST_QUERY) && wait_presented_frame(views[2]) && views[2]->mode == PU_DESKTOP_TILED_LEFT);
+    CHECK(command(TEST_REMAP, 0, 0));
+    pu_desktop_focus_mapped(&desktop, views[0]->workspace_window);
+    for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
+    struct wlr_scene_node *order[3];
+    CHECK(cascade_scene_order(views, order, false) && cascade_open(&serial, &epoch));
+    for (unsigned i = 0; i < 3; i++) {
+        saved[i] = views[i]->presented_box;
+        saved[i].x = views[i]->tree->node.x; saved[i].y = views[i]->tree->node.y;
+    }
+    CHECK(cascade_body(1, TEST_HOLD) && cascade_body(2, TEST_HOLD) && pause_renderer() &&
+        arrangement_request(serial++, epoch, 1, true));
+    CHECK(arrangement_request(serial - 1, epoch, 2, false) && arrangement_request(serial++, epoch, 2, false));
+    for (unsigned i = 1; i < 3; i++)
+        CHECK(views[i]->geometry_pending && wlr_box_equal(&saved[i], &views[i]->presented_box) &&
+            views[i]->tree->node.x == saved[i].x && views[i]->tree->node.y == saved[i].y);
+    CHECK(cascade_body(1, TEST_RELEASE) && cascade_body(2, TEST_RELEASE));
+    for (unsigned i = 1; i < 3; i++)
+        CHECK(views[i]->geometry_pending && !pu_decoration_presented_current(views[i]) &&
+            views[i]->tree->node.x == saved[i].x && views[i]->tree->node.y == saved[i].y);
+    CHECK(resume_renderer() && arrangement_cells(views, order, work, true) && cascade_committed_output(head));
+    CHECK(desktop.focused == views[0]);
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+        arrangement_cells(views, order, work, false) && cascade_committed_output(head));
+    puts("PASS: odd negative-origin 1.25-scale work area partitions exact outer rows and columns; actual client/native-frame fences retain old max/half content; scene/focus unchanged");
+
+    CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_DECORATION, .id = 1}) &&
+        arrangement_peer(2, (struct TestRequest){.command = TEST_DECORATION_DESTROY}));
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    CHECK(!pu_decoration_presented_current(views[1]) && !pu_decoration_presented_current(views[2]));
+    for (unsigned direction = 1; direction <= 2; direction++) {
+        CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, direction, true) &&
+            arrangement_cells(views, order, work, direction == 1));
+    }
+    CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_DECORATION, .id = 2}) &&
+        wait_presented_frame(views[1]));
+    puts("PASS: SSD, explicit CSD and frameless clients share exact outer cells with different native insets, never the old SSD-only query");
+
+    for (unsigned limit = 0; limit < 3; limit++) {
+        struct TestRequest limits = {.command = TEST_LIMITS};
+        if (limit == 0) { limits.layer.width = 5000; limits.layer.height = 10; }
+        if (limit == 1) { limits.layer.right = 100; limits.layer.bottom = 100; }
+        if (limit == 2) { limits.layer.width = limits.layer.right = 240; limits.layer.height = limits.layer.bottom = 160; }
+        CHECK(arrangement_peer(1, limits) && cascade_open(&serial, &epoch));
+        for (unsigned i = 0; i < 3; i++) {
+            before[i] = views[i]->geometry_serial; saved[i] = views[i]->presented_box;
+            floats[i] = views[i]->floating_box; restores[i] = views[i]->restore_box;
+        }
+        CHECK(arrangement_request(serial++, epoch, 1, false) && arrangement_request(serial++, epoch, 2, false));
+        for (unsigned i = 0; i < 3; i++)
+            CHECK(views[i]->geometry_serial == before[i] && wlr_box_equal(&saved[i], &views[i]->presented_box) &&
+                wlr_box_equal(&floats[i], &views[i]->floating_box) && wlr_box_equal(&restores[i], &views[i]->restore_box));
+        CHECK(cascade_body(1, TEST_UNCONSTRAINED));
+    }
+    puts("PASS: any peer min/max/fixed-size violation rejects both whole plans before configure or saved geometry mutation");
+
+    struct wlr_box peer_area; wlr_output_layout_get_box(desktop.layout, peer, &peer_area);
+    wlr_scene_node_set_position(&views[2]->tree->node, peer_area.x + 80, peer_area.y + 100);
+    CHECK(views[2]->output == head);
+    struct PuWorkspace *workspace = views[1]->workspace;
+    views[1]->workspace = pu_workspace_at(&desktop, 1);
+    pu_desktop_workspaces_changed(&desktop, NULL);
+    uint32_t second = views[1]->geometry_serial, third = views[2]->geometry_serial;
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
+        views[1]->geometry_serial == second && views[2]->geometry_serial == third && arrangement_wait(views[0]));
+    CHECK(cascade_open(&serial, &epoch) && pause_renderer() && cascade_body(0, TEST_RENAME) &&
+        arrangement_request(serial++, epoch, 2, false) && strstr(reply.placement_message, "No presented"));
+    CHECK(resume_renderer() && wait_presented_frame(views[0]));
+    CHECK(cascade_open(&serial, &epoch));
+    wlr_scene_node_set_position(&views[0]->tree->node, peer_area.x + 80, peer_area.y + 100);
+    CHECK(arrangement_request(serial++, epoch, 2, false));
+    wlr_scene_node_set_position(&views[0]->tree->node, area.x + 80, area.y + 100);
+    views[1]->workspace = workspace; pu_desktop_workspaces_changed(&desktop, NULL);
+    wlr_scene_node_set_position(&views[2]->tree->node, area.x + 200, area.y + 100);
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    puts("PASS: presented principal head overrides stale output; inactive workspace and peer display stay untouched; head crossing and no eligible windows deny explicitly");
+
+    for (unsigned modal = 0; modal < 2; modal++) {
+        CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_TRANSIENT, .edges = modal}));
+        for (int i = 0; i < 10; i++) CHECK(pump());
+        struct PuDesktopView *child = find("org.pollywm.test.transient");
+        if (!child) {
+            struct PuDesktopView *candidate;
+            wl_list_for_each(candidate, &desktop.views, link)
+                if (candidate->toplevel->parent == views[1]->toplevel) child = candidate;
+        }
+        CHECK(child);
+        second = views[1]->geometry_serial; third = child->geometry_serial;
+        CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+            views[1]->geometry_serial == second && child->geometry_serial == third);
+        CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_DESTROY, .id = 4}));
+        for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    }
+    CHECK(cascade_body(1, TEST_FULLSCREEN) && cascade_wait_client(views[1], PU_DESKTOP_FULLSCREEN));
+    second = views[1]->geometry_serial;
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
+        views[1]->geometry_serial == second);
+    CHECK(cascade_body(1, TEST_UNFULLSCREEN) && wait_presented_frame(views[1]));
+    CHECK(command(TEST_FOREIGN_MINIMIZE, 8, 0) && views[1]->minimized);
+    second = views[1]->geometry_serial;
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+        views[1]->geometry_serial == second);
+    CHECK(command(TEST_FOREIGN_RESTORE, 8, 0) && wait_presented_frame(views[1]));
+    CHECK(cascade_body(1, TEST_HOLD) && cascade_body(1, TEST_MAXIMIZE));
+    second = views[1]->geometry_serial;
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
+        views[1]->geometry_serial == second);
+    CHECK(cascade_body(1, TEST_RELEASE) && wait_presented_frame(views[1]));
+    puts("PASS: entire ordinary and modal transient families, fullscreen, minimized and pending peers are skipped");
+
+    CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_REFUSE_TILE, .id = 2}));
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true));
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    CHECK(views[1]->presented_box.width == 240 && views[1]->presented_box.height == 160 &&
+        views[1]->mode == PU_DESKTOP_FLOATING);
+    second = views[1]->geometry_serial;
+    for (int i = 0; i < 10; i++) CHECK(pump());
+    CHECK(views[1]->geometry_serial == second);
+    CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_REFUSE_TILE}));
+    puts("PASS: actual wire client declines equal cell size; real 240x160 floating geometry is presented without retry (one explicit compositor error above)");
+
+    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true));
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    struct wlr_box new_float = views[0]->presented_box;
+    CHECK(command(TEST_UNMAP, 0, 0));
+    pu_desktop_focus_mapped(&desktop, views[0]->workspace_window);
+    placement_key(KEY_LEFT);
+    CHECK(cascade_body(0, TEST_QUERY) && wait_presented_frame(views[0]) &&
+        views[0]->floating_box.width == new_float.width && views[0]->floating_box.height == new_float.height);
+    CHECK(cascade_body(0, TEST_MAXIMIZE) && wait_presented_frame(views[0]));
+    CHECK(command(TEST_REMAP, 0, 0) && cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true));
+    CHECK(arrangement_wait(views[0]) && views[0]->presented_box.width == new_float.width &&
+        views[0]->presented_box.height == new_float.height);
+    puts("PASS: later half/max-from-half and coupled v5 Cascade restore the newly presented float size, not its pre-arrangement size");
+
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    CHECK(cascade_body(1, TEST_HOLD) && cascade_open(&serial, &epoch) &&
+        arrangement_request(serial++, epoch, 2, true));
+    uint32_t arranged = views[1]->geometry_serial;
+    CHECK(cascade_body(1, TEST_MAXIMIZE) && views[1]->geometry_serial != arranged);
+    uint32_t superseding = views[1]->geometry_serial;
+    CHECK(cascade_body(1, TEST_APPLY_FIRST) && views[1]->geometry_pending &&
+        views[1]->geometry_serial == superseding);
+    CHECK(cascade_body(1, TEST_RELEASE) && wait_presented_frame(views[1]) &&
+        views[1]->mode == PU_DESKTOP_MAXIMIZED && views[1]->geometry_serial == superseding);
+    CHECK(cascade_body(1, TEST_UNMAXIMIZE) && wait_presented_frame(views[1]));
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    puts("PASS: a newer maximize supersedes a held arrangement; its late first ACK cannot revive the retired geometry");
+
+    CHECK(cascade_open(&serial, &epoch));
+    pu_workspace_step(&desktop, 1);
+    CHECK(arrangement_request(serial++, epoch, 1, false));
+    pu_workspace_activate(&desktop, workspace, views[0]);
+    CHECK(arrangement_request(serial++, epoch, 2, false));
+    CHECK(cascade_open(&serial, &epoch) && command(TEST_UNMAP, 0, 0) && command(TEST_REMAP, 0, 0) &&
+        arrangement_request(serial++, epoch, 1, false));
+    char locker[PATH_MAX]; const char *slash = strrchr(wire, '/');
+    CHECK(slash && snprintf(locker, sizeof(locker), "%.*s/polly-lock-test-client", (int)(slash - wire), wire) <
+        (int)sizeof(locker));
+    CHECK(cascade_open(&serial, &epoch));
+    char *lock_args[] = {locker, "unlock", NULL};
+    CHECK(pu_session_lock_spawn(&desktop, lock_args) && pu_session_lock_active(&desktop) &&
+        arrangement_request(serial++, epoch, 2, false));
+    for (int i = 0; i < 1200 && pu_session_lock_active(&desktop); i++) CHECK(pump());
+    CHECK(!pu_session_lock_active(&desktop));
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    CHECK(cascade_open(&serial, &epoch));
+    uint64_t target_id = views[0]->workspace_window, peer_id = views[1]->workspace_window;
+    struct wlr_surface *surface = views[0]->toplevel->base->surface, *peer_surface = views[1]->toplevel->base->surface;
+    second = views[1]->geometry_serial;
+    backdrop_guard_stop();
+    CHECK(cascade_body(0, TEST_UNMAP) && command(TEST_QUERY, 0, 0));
+    uint32_t results = reply.placement_results;
+    CHECK(cascade_send((struct TestRequest){.command = TEST_MENU_RETIRED_ARRANGE, .serial = serial++,
+        .edges = epoch, .layer.width = 1}) && reply.placement_results == results);
+    struct PuDesktopView *candidate, *current = NULL;
+    wl_list_for_each(candidate, &desktop.views, link)
+        if (candidate == views[1] && candidate->workspace_window == peer_id &&
+            candidate->toplevel->base->surface == peer_surface) current = candidate;
+    CHECK(current && current->geometry_serial == second && cascade_body(0, TEST_REMAP));
+    current = wire_view();
+    CHECK(current == views[0] && current->workspace_window != target_id && current->toplevel->base->surface == surface);
+    backdrop_guard_views(views[0], views[1], views[2]);
+    CHECK(cascade_body(0, TEST_UNCONSTRAINED));
+    wlr_output_layout_add(desktop.layout, peer, 10000, 0);
+    wlr_output_state_init(&state);
+    wlr_output_state_set_custom_mode(&state, 2, 721, 60000);
+    CHECK(wlr_output_commit_state(head, &state));
+    wlr_output_state_finish(&state);
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    CHECK(cascade_open(&serial, &epoch));
+    for (unsigned i = 0; i < 3; i++) before[i] = views[i]->geometry_serial;
+    CHECK(arrangement_request(serial++, epoch, 2, false) &&
+        strstr(reply.placement_message, "nonempty arrangement cells"));
+    for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
+    puts("PASS: more eligible windows than logical axis pixels rejects zero-cell partition before mutation");
+    CHECK(cascade_open(&serial, &epoch));
+    wlr_output_destroy(head);
+    for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
+    for (unsigned i = 0; i < 3; i++) before[i] = views[i]->geometry_serial;
+    CHECK(arrangement_request(serial++, epoch, 2, false));
+    for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
+    CHECK(command(TEST_QUIT, 0, 0));
+    close(control); control = picker_wire_control; picker_wire_control = -1;
+    for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
+    CHECK(!desktop.shell_pid);
+    puts("PASS: workspace/lock/menu remap/target retirement/output loss cancel authority without replay or partial changes");
+    return true;
+}
+#endif
+
+static bool cascade_consumer(const char *ui, const char *wire, bool old, bool arrangement)
 {
     struct PuDesktopView *views[3];
     CHECK(cascade_clients(wire, views));
@@ -2439,7 +2799,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
     if (!app_pid) {
         setenv("WAYLAND_DISPLAY", desktop.socket_name, 1);
         execl(ui, ui, "--app-id", "org.pollyui.cascade-public",
-            "desktop/tests/cascade-shell.mjs", "denied", (char *)NULL);
+            arrangement ? "desktop/tests/arrangement-shell.mjs" : "desktop/tests/cascade-shell.mjs", "denied", (char *)NULL);
         _exit(127);
     }
     bool public_done = false, public_witness = false;
@@ -2453,7 +2813,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
     }
     CHECK(public_done && public_witness && WIFEXITED(status) && WEXITSTATUS(status) == 0);
     char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
-        "desktop/tests/cascade-shell.mjs", old ? "old" : "current", NULL};
+        arrangement ? "desktop/tests/arrangement-shell.mjs" : "desktop/tests/cascade-shell.mjs", old ? "old" : "current", NULL};
     CHECK(pu_desktop_spawn_shell(&desktop, shell));
     struct wlr_box sizes[3];
     struct wlr_scene_node *order[3];
@@ -2504,6 +2864,18 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                 motion(menu->pending_box.x + x, menu->pending_box.y + y);
                 CHECK(desktop.seat->pointer_state.focused_surface == menu->surface->surface);
                 button(true); button(false);
+            } else if (!strcmp(operation, "horizontal") || !strcmp(operation, "vertical")) {
+                for (int i = 0; i < 1200 && picker_menu(); i++) CHECK(pump());
+                CHECK(arrangement && !picker_menu() && !desktop.focused_layer);
+                struct wlr_box work; wlr_output_layout_get_box(desktop.layout, head, &work);
+                struct PuDesktopLayer *panel;
+                wl_list_for_each(panel, &desktop.layers, link)
+                    if (panel->surface->output == head && panel->surface->current.exclusive_zone > 0 &&
+                        panel->surface->current.anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM)
+                        work.height -= panel->surface->current.exclusive_zone;
+                CHECK(arrangement_cells(views, order, work, !strcmp(operation, "horizontal")) &&
+                    desktop.focused == views[0] && cascade_committed_output(head));
+                checks++;
             } else if (!strcmp(operation, "check") || !strcmp(operation, "wrapped")) {
                 for (int i = 0; i < 1200 && picker_menu(); i++) CHECK(pump());
                 CHECK(!picker_menu() && !desktop.focused_layer);
@@ -2606,8 +2978,11 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
         }
     }
     CHECK(!desktop.shell_pid && desktop.shell_exited && WIFEXITED(desktop.shell_status) &&
-        WEXITSTATUS(desktop.shell_status) == 0 && success && checks == (old ? 0u : 3u));
-    puts(old ? "PASS: actual frozen v4 provider rejects cascade locally, hides its command and retains real half placement and Maxhover" :
+        WEXITSTATUS(desktop.shell_status) == 0 && success && checks == (arrangement ? (old ? 1u : 4u) : (old ? 0u : 3u)));
+    puts(arrangement ? (old ?
+        "PASS: actual frozen v5 provider hides and locally rejects both new arrangements, retains production Cascade, half placement and Maxhover" :
+        "PASS: production horizontal/vertical GUI completes pointer/Enter and short-menu Tab/Shift+Tab/scroll with committed native frames and public denial") :
+        old ? "PASS: actual frozen v4 provider rejects cascade locally, hides its command and retains real half placement and Maxhover" :
         "PASS: production cascade GUI completes real pointer/Enter and short-menu Tab/Shift+Tab/scroll, committed native frames and public-connection denial");
     return true;
 }
@@ -2625,7 +3000,12 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
     if (!strcmp(mode, "cascade-protocol")) return cascade_protocol(wire);
     if (!strcmp(mode, "cascade") || !strcmp(mode, "cascade-old"))
-        return cascade_consumer(ui, wire, !strcmp(mode, "cascade-old"));
+        return cascade_consumer(ui, wire, !strcmp(mode, "cascade-old"), false);
+#ifdef POLLY_WORKSPACE_TOPLEVEL_V1_ARRANGE_SINCE_VERSION
+    if (!strcmp(mode, "arrangement-protocol")) return arrangement_protocol(wire);
+#endif
+    if (!strcmp(mode, "arrangement") || !strcmp(mode, "arrangement-old"))
+        return cascade_consumer(ui, wire, !strcmp(mode, "arrangement-old"), true);
     if (!strcmp(mode, "layout-picker") || !strcmp(mode, "layout-picker-old"))
         return layout_picker_consumer(ui, wire, !strcmp(mode, "layout-picker-old"));
     if (!strcmp(mode, "layout-picker-protocol")) return layout_picker_protocol(wire);

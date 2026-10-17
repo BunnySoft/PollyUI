@@ -1431,6 +1431,36 @@ processes, window positions or persistent Wayland IDs are restored. The memory-o
 Live ISO still loses these settings at guest shutdown. No dynamic workspaces, per-output
 switching, automatic reordering or speculative settings for these are included.
 
+### Traditional window arrangements
+
+The ordinary window menu includes **Cascade windows on this display** with a
+paired workspace v5 provider. A paired workspace v6 provider additionally
+advertises `arrangementSupported` and offers **Tile windows horizontally**
+(full-width rows) and **Tile windows vertically** (full-height columns).
+`desktop.arrangeWindows(windowId, 'horizontal' | 'vertical', menuEpoch)` uses
+the actual menu target's presented principal display and current workspace,
+not caller-supplied coordinates or a window list. Older v3/v4/v5 providers
+hide the new commands and the native API rejects them locally; v5 Cascade
+and the existing half/restore and Maxhover actions remain available.
+
+These are one-time arrangements of floating windows, not persistent Snap,
+four-way tiling, preview or overview modes. Their final windows remain freely
+movable and resizable. The compositor partitions the complete work area's
+outer frames exactly before applying each client's native insets. It preflights
+all eligible clients' min/max sizes before sending any configure; an unfit
+cell, allocation failure or no eligible clients rejects the entire request
+without geometry changes. Minimized/fullscreen/pending/private-role windows
+and entire transient families are skipped. Other displays/workspaces, scene
+order and focus are preserved. Only a live ordinary menu can authorize these
+batch actions; the layout-only Maxhover picker cannot.
+
+The result is exactly `{admitted: true}`, not a count or an all-presented
+guarantee. Client buffers and native GUI frames still cross their normal
+presentation fences. An uncooperative client can decline the suggested size;
+the compositor presents its actual final floating geometry and logs a one-shot
+diagnostic rather than retrying, scaling pixels or pretending every cell fit.
+This is not a claim of GPU/physical-display validation or exact Windows behavior.
+
 ### Input event contract
 
 Native host callbacks now take the structs in `gui/include/pollyui/input.h` rather than

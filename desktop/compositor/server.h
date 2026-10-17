@@ -39,6 +39,7 @@ enum PuDesktopMode {
 };
 
 enum PuDesktopTile { PU_TILE_NONE, PU_TILE_LEFT, PU_TILE_RIGHT };
+enum PuDesktopArrangement { PU_ARRANGE_CASCADE, PU_ARRANGE_HORIZONTAL, PU_ARRANGE_VERTICAL };
 
 struct PuDesktopView {
     struct PuDesktop *desktop;
@@ -60,6 +61,7 @@ struct PuDesktopView {
     struct wlr_output *output;
     struct wlr_box restore_box, floating_box, pending_box, presented_box;
     uint32_t geometry_serial;
+    enum PuDesktopArrangement pending_arrangement;
     bool drag_restore_pending;
     double drag_restore_anchor;
     bool resize_pending;
@@ -163,6 +165,8 @@ const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDeskto
 const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     struct wlr_surface *surface, enum PuDesktopTile tile);
 const char *pu_desktop_cascade_from_menu(struct PuDesktopView *view, struct wlr_surface *surface);
+const char *pu_desktop_arrange_from_menu(struct PuDesktopView *view, struct wlr_surface *surface,
+    enum PuDesktopArrangement arrangement);
 struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
     bool require_hit, struct wlr_box *button, struct wlr_box *output);
 struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds);

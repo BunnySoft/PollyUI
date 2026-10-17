@@ -46,7 +46,8 @@ struct Window {
     struct zwlr_layer_surface_v1 *layer;
     struct wl_callback *frame;
     int width, height;
-    bool maximized, fullscreen, hold, small_fullscreen, refuse_tile;
+    bool maximized, fullscreen, hold, small_fullscreen;
+    unsigned refuse_tile;
     uint32_t tiled;
     struct Configure pending[32];
     size_t pending_count;
@@ -435,7 +436,8 @@ static void apply_configure(struct Window *window, struct Configure config)
     if (window->layer) zwlr_layer_surface_v1_ack_configure(window->layer, config.serial);
     else xdg_surface_ack_configure(window->xdg, config.serial);
     int width = config.width, height = config.height;
-    if ((window->small_fullscreen && config.fullscreen) || (window->refuse_tile && config.tiled))
+    if ((window->small_fullscreen && config.fullscreen) ||
+        (window->refuse_tile && (config.tiled || window->refuse_tile == 2)))
         { width = 240; height = 160; }
     if (window == &window->client->window) {
         window->client->reply.maximized = config.maximized;
@@ -767,8 +769,14 @@ static void picker_supported(void *data, struct polly_workspace_toplevel_manager
     (void)manager;
     ((struct Client *)data)->reply.picker_capability = supported;
 }
+static void arrangement_supported(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)manager;
+    ((struct Client *)data)->reply.arrangement_capability = supported;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .layout_picker_capabilities = picker_supported,
+    .arrangement_capabilities = arrangement_supported,
 };
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = membership, .closed = membership_closed,
@@ -930,6 +938,7 @@ static void global(void *data, struct wl_registry *registry,
         client->reply.workspace_capability = 1;
     } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
         client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
+            version >= 6 && getenv("POLLY_TEST_WORKSPACE_V6") ? 6 :
             version >= 5 && getenv("POLLY_TEST_WORKSPACE_V5") ? 5 :
             version >= 4 && getenv("POLLY_TEST_WORKSPACE_V4") ? 4 : version >= 3 ? 3 : 1);
         polly_workspace_toplevel_manager_v1_add_listener(client->workspace_toplevels, &workspace_control_listener, client);
@@ -1166,7 +1175,8 @@ int main(int argc, char **argv)
         if (wl_display_roundtrip(client.display) < 0 || !client.renderer_enabled) die("enable separate fixture renderer");
     } else {
         if (!client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
-        if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4") && !getenv("POLLY_TEST_WORKSPACE_V5"))
+        if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4") && !getenv("POLLY_TEST_WORKSPACE_V5") &&
+            !getenv("POLLY_TEST_WORKSPACE_V6"))
             configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
     }
     bool running = true;
@@ -1188,6 +1198,7 @@ int main(int argc, char **argv)
         struct Foreign *foreign = (request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE) ||
             request.command == TEST_WORKSPACE_MOVE ||
             request.command == TEST_MENU_CASCADE ||
+            request.command == TEST_MENU_ARRANGE ||
             (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ||
             request.command == TEST_PICKER_OPEN || request.command == TEST_PICKER_DISMISS ?
             find_foreign(&client, request.id) : NULL;
@@ -1366,6 +1377,15 @@ int main(int argc, char **argv)
         case TEST_MENU_CASCADE:
             polly_workspace_toplevel_v1_cascade(foreign->workspace_handle, request.serial, request.edges);
             break;
+        case TEST_MENU_ARRANGE:
+            polly_workspace_toplevel_v1_arrange(foreign->workspace_handle, request.serial,
+                request.edges, (uint32_t)request.layer.width);
+            break;
+        case TEST_MENU_RETIRED_ARRANGE:
+            if (!client.retired_placement) die("closed arrangement object missing");
+            polly_workspace_toplevel_v1_arrange(client.retired_placement, request.serial,
+                request.edges, (uint32_t)request.layer.width);
+            break;
         case TEST_MENU_RETIRED_CASCADE:
             if (!client.retired_placement) die("closed cascade object missing");
             polly_workspace_toplevel_v1_cascade(client.retired_placement, request.serial, request.edges);
@@ -1442,7 +1462,7 @@ int main(int argc, char **argv)
             break;
         case TEST_SHORTCUT_COMMIT: polly_shortcuts_v1_commit(client.shortcuts, request.serial); break;
         case TEST_SHORTCUT_RECORDING: polly_shortcuts_v1_recording(client.shortcuts, request.id); break;
-        case TEST_REFUSE_TILE: window->refuse_tile = request.id != 0; break;
+        case TEST_REFUSE_TILE: window->refuse_tile = (unsigned)request.id; break;
         case TEST_CLIENT_SIZE: commit_size(window, request.layer.width, request.layer.height); break;
         case TEST_DESTROY:
             if (request.id == 4) { destroy_window(&client.extra); break; }

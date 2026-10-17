@@ -79,7 +79,7 @@ static struct {
     bool placement_accepted, placement_unknown, placement_waiting;
     char placement_error[192];
     JSValue placement_menu;
-    bool picker_capability, picker_changed;
+    bool picker_capability, picker_changed, arrangement_capability;
     uint32_t picker_target, picker_token;
     int32_t picker_x, picker_y, picker_width, picker_height;
     int32_t picker_output_x, picker_output_y, picker_output_width, picker_output_height;
@@ -140,9 +140,17 @@ static void picker_capability(void *data, struct polly_workspace_toplevel_manage
     if (supported > 1) { control.failed = control.changed = 1; return; }
     control.picker_capability = supported == 1;
 }
+static void arrangement_capability(void *data, struct polly_workspace_toplevel_manager_v1 *manager, uint32_t supported)
+{
+    (void)data; (void)manager;
+    if (supported > 1) { control.failed = control.changed = 1; return; }
+    control.arrangement_capability = supported == 1;
+    control.changed = 1;
+}
 static const struct polly_workspace_toplevel_manager_v1_listener workspace_control_listener = {
     .restored = workspace_restored,
     .layout_picker_capabilities = picker_capability,
+    .arrangement_capabilities = arrangement_capability,
 };
 
 static void clear_picker(uint32_t target)
@@ -494,7 +502,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
         control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version < 5 ? version : 5);
+            version < 6 ? version : 6);
         if (!control.workspace_toplevels ||
             polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
                 &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
@@ -556,6 +564,7 @@ static void disconnect_control(void)
     control.workspace_manager = NULL; control.workspace_group = NULL; control.workspace_toplevels = NULL;
     control.workspaces_ready = control.workspaces_changed = 0;
     control.picker_capability = false;
+    control.arrangement_capability = false;
     clear_picker(0);
     if (control.manager) {
         zwlr_foreign_toplevel_manager_v1_stop(control.manager);
@@ -878,6 +887,12 @@ static JSValue windows(JSContext *ctx, JSValueConst self, int argc, JSValueConst
             polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 5))) {
             JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
         }
+        if (!property(ctx, item, "arrangementSupported", JS_NewBool(ctx,
+            control.arrangement_capability && window->workspace_handle && control.workspace_toplevels &&
+            polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 6 &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 6))) {
+            JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+        }
         if (window->placement_ready) {
             const char *placements[] = { "floating", "left", "right" };
             if (!property(ctx, item, "placement", JS_NewString(ctx, placements[window->placement])) ||
@@ -1089,32 +1104,42 @@ static JSValue close_window_menu(JSContext *ctx, JSValueConst self, int argc, JS
 static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int command)
 {
     (void)self;
-    if (argc != (command ? 2 : 3)) return JS_ThrowTypeError(ctx, "Window, placement and current menu epoch are required");
+    if (argc != (command == 1 || command == 2 ? 2 : 3))
+        return JS_ThrowTypeError(ctx, "Window, placement and current menu epoch are required");
     struct DesktopWindow *window = placement_window(ctx, argv[0]);
     if (!window) return JS_EXCEPTION;
     if (command == 2 && (polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 5 ||
         polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 5))
         return JS_ThrowTypeError(ctx, "Window cascade is unsupported by this provider; paired workspace v5 is required");
+    if (command == 3 && (!control.arrangement_capability ||
+        polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 6 ||
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 6))
+        return JS_ThrowTypeError(ctx, "Window arrangement is unsupported by this provider; paired workspace v6 capability is required");
     uint32_t placement = 0, epoch;
-    if (!command) {
-        if (!JS_IsString(argv[1])) return JS_ThrowTypeError(ctx, "Placement must be left or right");
+    if (!command || command == 3) {
+        if (!JS_IsString(argv[1])) return JS_ThrowTypeError(ctx, "A bounded window placement or arrangement is required");
         size_t length;
         const char *side = JS_ToCStringLen(ctx, &length, argv[1]);
         if (!side) return JS_EXCEPTION;
-        placement = length == 4 && !memcmp(side, "left", 4) ? 1 :
-            length == 5 && !memcmp(side, "right", 5) ? 2 : 0;
+        placement = command == 3 ?
+            (length == 10 && !memcmp(side, "horizontal", 10) ? 1 :
+             length == 8 && !memcmp(side, "vertical", 8) ? 2 : 0) :
+            (length == 4 && !memcmp(side, "left", 4) ? 1 :
+             length == 5 && !memcmp(side, "right", 5) ? 2 : 0);
         JS_FreeCString(ctx, side);
-        if (!placement) return JS_ThrowTypeError(ctx, "Placement must be left or right");
+        if (!placement) return JS_ThrowTypeError(ctx, command == 3 ?
+            "Arrangement must be horizontal or vertical" : "Placement must be left or right");
     }
-    if (!menu_epoch(ctx, argv[command ? 1 : 2], &epoch)) return JS_EXCEPTION;
+    if (!menu_epoch(ctx, argv[command == 1 || command == 2 ? 1 : 2], &epoch)) return JS_EXCEPTION;
     if (epoch != control.menu_epoch || window->id != control.menu_target)
         return JS_ThrowTypeError(ctx, "Window menu is closed or stale");
     PuWindow *owned = pu_gui_window_from_value(ctx, control.placement_menu);
-    if (!owned || !(command == 2 ? pu_window_layer_surface_peek(owned) : pu_window_layer_surface(owned)))
+    if (!owned || !(command >= 2 ? pu_window_layer_surface_peek(owned) : pu_window_layer_surface(owned)))
         return JS_HasException(ctx) ? JS_EXCEPTION :
         JS_ThrowTypeError(ctx, "Window menu is closed");
     if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
-    if (command == 2) polly_workspace_toplevel_v1_cascade(window->workspace_handle, control.placement_serial, epoch);
+    if (command == 3) polly_workspace_toplevel_v1_arrange(window->workspace_handle, control.placement_serial, epoch, placement);
+    else if (command == 2) polly_workspace_toplevel_v1_cascade(window->workspace_handle, control.placement_serial, epoch);
     else polly_workspace_toplevel_v1_place(window->workspace_handle, control.placement_serial, epoch, placement);
     if (!finish_placement_request(ctx)) return JS_EXCEPTION;
     if (control.placement_epoch != epoch) {
@@ -1285,7 +1310,9 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
         !property(ctx, api, "restoreFloatingWindow", JS_NewCFunctionMagic(ctx, place_window,
             "restoreFloatingWindow", 2, JS_CFUNC_generic_magic, 1)) ||
         !property(ctx, api, "cascadeWindows", JS_NewCFunctionMagic(ctx, place_window,
-            "cascadeWindows", 2, JS_CFUNC_generic_magic, 2))) return 0;
+            "cascadeWindows", 2, JS_CFUNC_generic_magic, 2)) ||
+        !property(ctx, api, "arrangeWindows", JS_NewCFunctionMagic(ctx, place_window,
+            "arrangeWindows", 3, JS_CFUNC_generic_magic, 3))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
     if (!property(ctx, api, "backdropCapability", JS_NewCFunction(ctx, backdrop_capability, "backdropCapability", 0))) return 0;
     if (!property(ctx, api, "shellBackdropCapability",

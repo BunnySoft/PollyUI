@@ -584,6 +584,111 @@ scenario('cascade rechecks target identity, workspace and provider capability be
   }
 }, cascadeFixture);
 
+function arrangementFixture(options) {
+  cascadeFixture(options);
+  options.state.windows[0].arrangementSupported = true;
+  options.native.arrangeWindows = (id, direction, epoch) => {
+    options.calls.push(['arrange', id, direction, epoch]);
+    return { admitted: true };
+  };
+}
+
+scenario('both traditional arrangements admit exactly once and reject retained old callbacks', f => {
+  const preferences = JSON.stringify(f.saved.snapshot);
+  for (const direction of ['horizontal', 'vertical']) {
+    const menu = f.shell.showWindowActions(1, 10);
+    const node = find(menu, 'shell-window-tile-' + direction), held = callback(node, 'click');
+    if (direction === 'horizontal') click(node);
+    else { node.focus(); key(menu, 'Enter'); }
+    held(event('click', { currentTarget: node }));
+    assert.equal(menu.closed, true);
+    const replacement = f.shell.showWindowActions(1, 10);
+    held(event('click', { currentTarget: node }));
+    assert.equal(replacement.closed, false);
+    key(replacement, 'Escape');
+  }
+  assert.deepEqual(f.calls.filter(call => ['arrange', 'place', 'cascade', 'activate'].includes(call[0])),
+    [['arrange', 10, 'horizontal', 41], ['arrange', 10, 'vertical', 41]]);
+  assert.equal(JSON.stringify(f.saved.snapshot), preferences);
+}, arrangementFixture);
+
+scenario('v3 v4 v5 without the new capability hide both arrangements but retain v5 Cascade', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const direction of ['horizontal', 'vertical'])
+    assert.equal(menu.document.getElementById('shell-window-tile-' + direction), null);
+  click(find(menu, 'shell-window-cascade'));
+  assert.deepEqual(f.calls.filter(call => ['arrange', 'cascade'].includes(call[0])), [['cascade', 10, 41]]);
+}, options => { arrangementFixture(options); options.state.windows[0].arrangementSupported = false; });
+
+scenario('new arrangement capability never adds batch commands to Maxhover layoutOnly', f => {
+  f.shell.selectTheme('modern');
+  const menu = offerPicker(f);
+  for (const id of ['cascade', 'tile-horizontal', 'tile-vertical'])
+    assert.equal(menu.document.getElementById('shell-window-' + id), null);
+  assert.ok(menu.document.getElementById('shell-window-tile-left'));
+}, options => { pickerFixture(options); options.state.windows[0].arrangementSupported = true; });
+
+scenario('arrangement denial or unknown result is visible and cannot replay through either batch command', f => {
+  for (const failure of [new Error('Client size limits do not fit'), null]) {
+    f.native.arrangeWindows = () => {
+      f.calls.push(['arrange-attempt']);
+      if (failure) throw failure;
+      return { admitted: true, affectedCount: 3 };
+    };
+    const menu = f.shell.showWindowActions(1, 10);
+    const node = find(menu, 'shell-window-tile-horizontal'), held = callback(node, 'click');
+    click(node); held(event('click', { currentTarget: node }));
+    click(find(menu, 'shell-window-tile-vertical'));
+    assert.equal(menu.closed, false);
+    assert.match(f.shell.getState().error, failure ? /Client size limits/ : /outcome is unknown/);
+    for (const direction of ['horizontal', 'vertical'])
+      assert.equal(find(menu, 'shell-window-tile-' + direction).tabIndex, -1);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+  assert.equal(f.calls.filter(call => call[0] === 'arrange-attempt').length, 2);
+}, arrangementFixture);
+
+scenario('arrangement rechecks target identity workspace and capability before dispatch', f => {
+  for (const change of [
+    () => { f.state.windows[0].appId = 'replacement'; },
+    () => { f.state.workspaces[0].active = false; f.state.workspaces[1].active = true; },
+    () => { f.state.windows[0].arrangementSupported = false; },
+    () => { f.state.windows[0].placementPending = true; },
+  ]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    change();
+    click(find(menu, 'shell-window-tile-vertical'));
+    assert.ok(f.shell.getState().error);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.calls.some(call => call[0] === 'arrange'), false);
+    key(menu, 'Escape');
+    delete f.state.windows[0].appId;
+    f.state.windows[0].arrangementSupported = true;
+    f.state.windows[0].placementPending = false;
+    f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+    f.native.onWindowsChanged();
+  }
+}, arrangementFixture);
+
+scenario('both arrangement commands stay in the shared short-menu focus and scroll surface', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const viewport = find(menu, 'shell-window-actions-viewport');
+  viewport.offsetHeight = 100; viewport.scrollHeight = 900;
+  const ids = [];
+  menu.document.body.focus();
+  for (let i = 0; i < 30; i++) { key(menu, 'Tab'); ids.push(menu.document.activeElement?.id); }
+  for (const direction of ['horizontal', 'vertical']) {
+    const id = 'shell-window-tile-' + direction;
+    assert.ok(ids.includes(id));
+    assert.ok(descendants(viewport).includes(find(menu, id)));
+  }
+  const focus = menu.document.activeElement;
+  key(menu, 'Tab', { shiftKey: true });
+  assert.notEqual(menu.document.activeElement, focus);
+  assert.ok(find(menu, 'shell-window-actions-viewport-scrollbar'));
+}, arrangementFixture);
+
 function pickerFixture(options) {
   placementFixture(options);
   const { native, state, calls } = options;

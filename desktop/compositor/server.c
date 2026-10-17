@@ -830,11 +830,20 @@ static void present_geometry(struct PuDesktopView *view)
         view->desktop->grab_y = view->desktop->cursor->y - box.y;
     }
     view->drag_restore_pending = false;
+    if (view->pending_arrangement != PU_ARRANGE_CASCADE &&
+        (box.width != view->pending_box.width || box.height != view->pending_box.height))
+        wlr_log(WLR_ERROR, "Client declined exact %s window arrangement: window=%llu requested=%d,%d %dx%d presented=%d,%d %dx%d; retaining actual floating geometry",
+            view->pending_arrangement == PU_ARRANGE_HORIZONTAL ? "horizontal" : "vertical",
+            (unsigned long long)view->workspace_window,
+            view->pending_box.x, view->pending_box.y, view->pending_box.width, view->pending_box.height,
+            box.x, box.y, box.width, box.height);
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
 }
 
 static void configure_geometry(struct PuDesktopView *view, struct wlr_box box,
                                const struct wlr_box *bounds)
 {
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
     if (view->maximized && !view->fullscreen) {
         struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
         box.width = clamp_size(box.width, limits->min_width, limits->max_width);
@@ -1054,7 +1063,7 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     return error ? error : place_view(view, tile, NULL);
 }
 
-static bool cascade_application(struct PuDesktopView *view)
+static bool arrangement_application(struct PuDesktopView *view)
 {
     struct PuDesktop *desktop = view->desktop;
     struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
@@ -1068,10 +1077,10 @@ static bool cascade_application(struct PuDesktopView *view)
     return true;
 }
 
-static bool cascade_candidate(struct PuDesktopView *view, struct wlr_output *output)
+static bool arrangement_candidate(struct PuDesktopView *view, struct wlr_output *output)
 {
     struct wlr_box actual = presented_view_box(view);
-    return cascade_application(view) && view->mapped && !view->minimized &&
+    return arrangement_application(view) && view->mapped && !view->minimized &&
         pu_workspace_current(view) && view->tree->node.enabled && modal_target(view) == view &&
         !view->fullscreen && view->mode != PU_DESKTOP_FULLSCREEN &&
         !view->geometry_pending && !view->resize_pending && !view->drag_restore_pending &&
@@ -1079,30 +1088,37 @@ static bool cascade_candidate(struct PuDesktopView *view, struct wlr_output *out
         output_for_box(view->desktop, &actual) == output;
 }
 
-const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wlr_surface *surface)
+const char *pu_desktop_arrange_from_menu(struct PuDesktopView *target, struct wlr_surface *surface,
+    enum PuDesktopArrangement arrangement)
 {
+    if (arrangement < PU_ARRANGE_CASCADE || arrangement > PU_ARRANGE_VERTICAL)
+        return "Unknown window arrangement";
+    bool cascade = arrangement == PU_ARRANGE_CASCADE;
     struct PuDesktop *desktop = target->desktop;
     const char *error = placement_admit(target);
     if (!error) error = menu_input_check(desktop, surface);
-    if (!error && (desktop->stopping || !cascade_application(target) ||
+    if (!error && (desktop->stopping || !arrangement_application(target) ||
         target->fullscreen || target->mode == PU_DESKTOP_FULLSCREEN))
-        error = "Cascade requires a live ordinary application outside fullscreen";
+        error = "Window arrangement requires a live ordinary application outside fullscreen";
     struct wlr_box actual = presented_view_box(target), work;
     struct wlr_output *output = output_for_box(desktop, &actual);
     if (!error && !output_box(desktop, output, &work)) error = "Window has no enabled output";
     if (error) return error;
     use_work_area(output, &work);
-    struct CascadePlan { struct PuDesktopView *view; struct wlr_box box, bounds; };
+    struct ArrangementPlan { struct PuDesktopView *view; struct wlr_box box, bounds; };
     size_t count = 0;
     struct PuDesktopView *view;
     wl_list_for_each(view, &desktop->views, link) {
-        if (!cascade_candidate(view, output)) continue;
-        if (count == SIZE_MAX / sizeof(struct CascadePlan)) return "Too many windows to cascade";
+        if (!arrangement_candidate(view, output)) continue;
+        if (count == SIZE_MAX / sizeof(struct ArrangementPlan)) return "Too many windows to arrange";
         count++;
     }
-    if (!count) return "No presented application windows are eligible for cascade";
-    struct CascadePlan *plans = calloc(count, sizeof(*plans));
-    if (!plans) return "Cannot allocate the window cascade plan";
+    if (!count) return "No presented application windows are eligible for arrangement";
+    int axis = arrangement == PU_ARRANGE_HORIZONTAL ? work.height : work.width;
+    if (!cascade && (axis < 1 || count > (size_t)axis))
+        return "Too many windows for nonempty arrangement cells";
+    struct ArrangementPlan *plans = calloc(count, sizeof(*plans));
+    if (!plans) return "Cannot allocate the window arrangement plan";
     size_t index = 0;
     int offset = 0;
     struct wlr_scene_node *node;
@@ -1110,13 +1126,37 @@ const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wl
     wl_list_for_each(node, &desktop->windows->children, link) {
         struct PuDesktopOwner *owner = node->data;
         view = owner ? owner->view : NULL;
-        if (!view || !cascade_candidate(view, output)) continue;
+        if (!view || !arrangement_candidate(view, output)) continue;
+        if (index == count) { error = "Window arrangement scene membership changed"; break; }
         struct wlr_box bounds = work;
         pu_decoration_inset(view, &bounds, true);
-        struct wlr_box box = view->tile != PU_TILE_NONE ? view->floating_box :
-            view->maximized ? view->restore_box : presented_view_box(view);
-        if (box.width < 1 || box.height < 1) {
-            error = "A cascade window has no presented floating size"; break;
+        struct wlr_box box;
+        if (cascade) {
+            box = view->tile != PU_TILE_NONE ? view->floating_box :
+                view->maximized ? view->restore_box : presented_view_box(view);
+            if (box.width < 1 || box.height < 1) {
+                error = "A cascade window has no presented floating size"; break;
+            }
+            fit_floating(view, &box, &bounds);
+        } else {
+            /* Partition outer frames, including the remainder, before per-view insets. */
+            int64_t start = (int64_t)axis * (int64_t)index / (int64_t)count;
+            int64_t end = (int64_t)axis * (int64_t)(index + 1) / (int64_t)count;
+            box = work;
+            if (arrangement == PU_ARRANGE_HORIZONTAL) {
+                box.y += (int)start; box.height = (int)(end - start);
+            } else {
+                box.x += (int)start; box.width = (int)(end - start);
+            }
+            struct wlr_box outer = box;
+            pu_decoration_inset(view, &box, true);
+            struct wlr_box insets = {0};
+            pu_decoration_inset(view, &insets, true);
+            /* inset() clamps tiny boxes; reject instead of accepting a fabricated 1px client. */
+            if ((int64_t)box.width + 2 * insets.x != outer.width ||
+                (int64_t)box.height + insets.y + insets.x != outer.height) {
+                error = "Native insets do not fit the arrangement cell"; break;
+            }
         }
         fit_floating(view, &box, &bounds);
         struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
@@ -1125,16 +1165,17 @@ const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wl
             (limits->max_width && box.width > limits->max_width) ||
             (limits->max_height && box.height > limits->max_height) ||
             bounds.x >= work.x + work.width || bounds.y >= work.y + work.height) {
-            error = "Client size limits or native insets do not fit the cascade work area"; break;
+            error = "Client size limits or native insets do not fit the arrangement work area"; break;
         }
-        if (offset > bounds.width - box.width || offset > bounds.height - box.height) offset = 0;
-        box.x = bounds.x + offset; box.y = bounds.y + offset;
-        keep_visible(&box, &bounds);
-        if (index == count) { error = "Window cascade scene membership changed"; break; }
-        plans[index++] = (struct CascadePlan){view, box, bounds};
-        offset = offset <= INT_MAX - 24 ? offset + 24 : 0;
+        if (cascade) {
+            if (offset > bounds.width - box.width || offset > bounds.height - box.height) offset = 0;
+            box.x = bounds.x + offset; box.y = bounds.y + offset;
+            keep_visible(&box, &bounds);
+            offset = offset <= INT_MAX - 24 ? offset + 24 : 0;
+        }
+        plans[index++] = (struct ArrangementPlan){view, box, bounds};
     }
-    if (!error && index != count) error = "Window cascade scene membership changed";
+    if (!error && index != count) error = "Window arrangement scene membership changed";
     if (!error) {
         for (size_t i = 0; i < count; i++) {
             view = plans[i].view;
@@ -1142,11 +1183,17 @@ const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wl
             view->tile = PU_TILE_NONE;
             view->maximized = false;
             configure_view(view, plans[i].box, &plans[i].bounds);
+            if (view->geometry_pending) view->pending_arrangement = arrangement;
         }
         sync_foreign(desktop);
     }
     free(plans);
     return error;
+}
+
+const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wlr_surface *surface)
+{
+    return pu_desktop_arrange_from_menu(target, surface, PU_ARRANGE_CASCADE);
 }
 
 struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds)
@@ -2364,6 +2411,7 @@ static void view_unmap(struct wl_listener *listener, void *data)
     view->geometry_pending = view->maximized = view->fullscreen = false;
     view->drag_restore_pending = false;
     view->mode = PU_DESKTOP_FLOATING;
+    view->pending_arrangement = PU_ARRANGE_CASCADE;
     view->tile = PU_TILE_NONE;
     view->output = NULL;
     view->restore_box = (struct wlr_box){0};
