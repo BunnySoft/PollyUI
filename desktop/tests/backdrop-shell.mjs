@@ -120,6 +120,15 @@ async function modern() {
     create(options) {
       const surface = window.create(options);
       created.push({ window: surface, options });
+      if (oldV8) {
+        console.log('OLD_V8_CREATE ' + JSON.stringify({ title: options.title, output: options.output,
+          width: options.width, height: options.height }));
+        const close = surface.close;
+        surface.close = (...args) => {
+          console.log('OLD_V8_CLOSE ' + JSON.stringify({ title: options.title, closed: surface.closed }));
+          return close.apply(surface, args);
+        };
+      }
       return surface;
     },
   };
@@ -143,6 +152,7 @@ async function modern() {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const node = surface.window.document.getElementById(id), rect = node?.getBoundingClientRect();
     check(rect?.width > 0 && rect.height > 0, id + ' has actual native geometry');
+    if (oldV8) console.log('OLD_V8_DOM_TARGET ' + JSON.stringify({ id, rect }));
     await signal('backdrop-click ' + Math.floor(rect.x + rect.width / 2) + ' ' +
       Math.floor(rect.y + rect.height / 2) + ' ' + surface.options.title);
   }
@@ -191,7 +201,19 @@ async function modern() {
   if (oldV8) {
     check(desktop.startBackdropCapability() === false, 'actual old v8 provider explicitly lacks the new v9 capability');
     const originals = shell.getSurfaces().map(surface => surface.window);
+    await signal('backdrop-check taskbars');
+    const input = { mousedown: 0, mouseup: 0, click: 0 };
+    const launcher = panel(outputs[0]).window.document.getElementById('shell-menu');
+    for (const type of Object.keys(input)) launcher.addEventListener(type, event => {
+      input[type]++;
+      console.log('OLD_V8_GUI_INPUT ' + JSON.stringify({ type, count: input[type], target: event.target.id,
+        currentTarget: event.currentTarget.id, button: event.button, clientX: event.clientX, clientY: event.clientY,
+        menus: created.filter(surface => surface.options.title.startsWith('PollyShell.menu.')).map(surface =>
+          ({ title: surface.options.title, closed: surface.window.closed })) }));
+    });
     let menu = await open(outputs[0], 'default');
+    check(input.mousedown === 1 && input.mouseup === 1 && input.click === 1,
+      'old v8 default Start receives the single actual down/up/click exactly once after real taskbar presentation');
     check(root(menu).style.backgroundColor === '#f3f3f3', 'old v8 provider retains packaged solid Start');
     const saved = JSON.stringify(configuration.snapshot), count = created.length;
     const focus = menu.window.document.activeElement;
