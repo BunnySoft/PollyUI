@@ -894,8 +894,10 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     CHECK(command(client, TEST_MOVE, 0, 0, 0) && desktop.grab == PU_DESKTOP_PASSTHROUGH);
 
     struct wlr_seat_keyboard_grab grab = {0};
-    grab.interface = desktop.seat->keyboard_state.default_grab->interface;
+    struct wlr_keyboard_grab_interface grab_impl = *desktop.seat->keyboard_state.default_grab->interface;
+    grab.interface = &grab_impl;
     wlr_seat_keyboard_start_grab(desktop.seat, &grab);
+    CHECK(wlr_seat_keyboard_has_grab(desktop.seat));
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
     CHECK(desktop.grab == PU_DESKTOP_PASSTHROUGH && view->maximized);
@@ -903,6 +905,16 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     button(BTN_LEFT, true); button(BTN_LEFT, false);
     CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
     wlr_seat_keyboard_end_grab(desktop.seat);
+    struct wlr_seat_pointer_grab pointer_grab = {0};
+    struct wlr_pointer_grab_interface pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+    pointer_grab.interface = &pointer_impl;
+    wlr_seat_pointer_start_grab(desktop.seat, &pointer_grab);
+    CHECK(wlr_seat_pointer_has_grab(desktop.seat));
+    motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
+    motion(x, y); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    wlr_seat_pointer_end_grab(desktop.seat);
     CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 1, 0, 0));
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);

@@ -730,6 +730,7 @@ static struct wlr_output *output_for_box(struct PuDesktop *desktop, const struct
 
 double pu_desktop_view_scale(struct PuDesktopView *view)
 {
+    /* This feeds caption requests, not the old frame's scene/output scale. */
     if (view->drag_restore_pending && view->output) return view->output->scale;
     struct wlr_box box = view_box(view);
     struct wlr_output *output = output_for_box(view->desktop, &box);
