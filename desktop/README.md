@@ -71,8 +71,8 @@ both its header ABI and required linked symbols; startup and packaging also comp
 the actual library's embedded patch SHA-256, not only an adjacent receipt file.
 Private appearance protocol and
 geometry schema 7 reject older WM/Shell/decorator pairings; the private library is
-effects ABI 3 (`libwlroots-0.19-polly-effects3.so`). Its SDK prefix is
-`/opt/pollyui-wlroots-effects3`; do not overwrite an effects2 installation.
+effects ABI 4 (`libwlroots-0.19-polly-effects4.so`). Its SDK prefix is
+`/opt/pollyui-wlroots-effects4`; do not overwrite an effects2/effects3 installation.
 GLES rounding/shadow effects still require 23-bit fragment highp precision, checked explicitly;
 unsupported precision fails effects rather than using a mediump shape. Ordinary
 no-effect rectangles keep their existing path. Stock SDKs are not a supported fallback.
@@ -88,7 +88,7 @@ its glyphs, bitmaps, focus, grouping, markers, counts and hover animation remain
 separate foreground content. No other panel, menu bar, application or lock surface
 automatically acquires glass.
 
-Effects3's generic non-input node composes the current lower scene in paint
+Effects4's generic non-input node composes the current lower scene in paint
 order into an expanded regional target, filters premultiplied RGBA with a
 normalized separable Gaussian truncated at three sigma, applies premultiplied
 tint and rounded coverage, and clips back to the footprint. It neither captures
@@ -96,12 +96,31 @@ the node/foreground nor reads a previous output frame. JavaScript never receives
 scene pixels. Each output has its own scale/position-keyed cache; scene changes
 conservatively damage the footprint, not a periodic full-output repaint. Hiding,
 destroying, output removal and compositor lock/unlock release retained samples.
-The regional path is bounded to eight nodes, 4096x512 logical pixels per node,
-sigma 1..32, at most 64 physical sigma and two megapixels including kernel padding
-per output. All old/candidate buffers and filter workspace share the existing
-128MiB scene effects peak budget.
+The generic regional path exposes `WLR_SCENE_BACKDROP_*` limits: eight nodes,
+4096x768 logical pixels per node, sigma 0.5..32, at most 64 physical sigma and
+2*1024*1024 physical pixels including `ceil(3*sigma*actual_output_scale)` padding
+on **each** side. Each expanded axis must also fit 32768 pixels. Logical admission
+does not guarantee support at every scale/sigma: for example 640x660 at scale 1,
+sigma 16 fits, but scale 2 with the same sigma exceeds the expanded pixel limit
+and is explicitly rejected. No production geometry reduction, tiling, second
+renderer or JS readback is used. All old/candidate buffers and filter workspace
+share the unchanged 128MiB scene effects peak budget; even a geometry within the
+pixel limit can be rejected when that shared reservation is occupied.
 Pixman effect SHM backing is reserved before rendering so tmpfs exhaustion is an
 explicit allocation failure rather than a later mapped-page SIGBUS.
+
+The existing private v7/schema2/role1 **Dock** request retains its original
+4096x512 logical extent explicitly in `prepare_backdrop`. A newer generic library
+does not grant that protocol taller targets or Start/menu authority. This
+primitive/SDK extension does not deliver a production Start consumer, change
+theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
+
+The unchanged exact separable filter is CPU-bounded, not a real-time performance
+guarantee. A full 640x660, sigma16, scale1 update performs 351,621,120 channel taps;
+the native headless measurement was about 290ms on the qualification host, while
+idle frames reused the cache without filtering. This is not 60Hz moving-desktop
+qualification. `desktop-scene-effects` records the actual full-footprint work and
+timing without lowering geometry, sigma, kernel quality or the existing timeout.
 
 Only the authenticated Shell publisher can stage the actual mapped, fixed-size,
 bottom-anchored top-layer surface on its inherited connection. Theme preparation
@@ -881,7 +900,7 @@ required by independent applications such as `foot`/libfcft.
 ## Build independently on Linux
 
 wlroots has an unstable API: this target requires the pinned 0.19.3 source plus
-the checked-in effects ABI 3 patch and embedded source identity. Stock Alpine
+the checked-in effects ABI 4 patch and embedded source identity. Stock Alpine
 `wlroots0.19-dev` is no longer a current build SDK. Earlier 0.19
 versions omit `wlr_buffer_finish()` in the SHM allocator destructor, causing
 use-after-free during nested/Pixman teardown. Upstream 0.19.3 fixes this; do not
@@ -895,7 +914,7 @@ archived user-tested Alpine images are not current rebuild evidence.
 
 ```sh
 # Inside the pinned Debian SDK, from the repository root:
-export PKG_CONFIG_PATH=/opt/pollyui-wlroots-effects3/lib/pkgconfig:${PKG_CONFIG_PATH}
+export PKG_CONFIG_PATH=/opt/pollyui-wlroots-effects4/lib/pkgconfig:${PKG_CONFIG_PATH}
 cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/desktop
 ctest --test-dir build/desktop --output-on-failure

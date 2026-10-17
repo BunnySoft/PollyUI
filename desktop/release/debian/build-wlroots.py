@@ -30,12 +30,12 @@ for name in ("wlr-protocols", "wlroots"):
         spec.loader.exec_module(effects)
         effects_record = effects.apply(directory)
         subprocess.run(["meson", "setup", str(directory / "build"), str(directory),
-                        "--prefix=/opt/pollyui-wlroots-effects3", "--libdir=lib", "--buildtype=release",
+                        "--prefix=/opt/pollyui-wlroots-effects4", "--libdir=lib", "--buildtype=release",
                         "--wrap-mode=nofallback", "-Dexamples=false", "-Dxwayland=disabled",
                         "-Dbackends=drm,libinput", "-Drenderers=gles2", "-Dsession=enabled",
                         "-Dcolor-management=enabled",
                         "-Dpolly-effects-sha256=" + effects_record["patchSha256"]], check=True)
         subprocess.run(["meson", "compile", "-C", str(directory / "build"), "-j", "2"], check=True)
         subprocess.run(["meson", "install", "-C", str(directory / "build")], check=True)
-        effects.record_install(Path("/opt/pollyui-wlroots-effects3"))
-        effects.check_install(Path("/opt/pollyui-wlroots-effects3"))
+        effects.record_install(Path("/opt/pollyui-wlroots-effects4"))
+        effects.check_install(Path("/opt/pollyui-wlroots-effects4"))

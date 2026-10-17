@@ -83,20 +83,28 @@ diff --git a/include/wlr/types/wlr_scene.h b/include/wlr/types/wlr_scene.h
 index 2292f1f..1ed5b98 100644
 --- a/include/wlr/types/wlr_scene.h
 +++ b/include/wlr/types/wlr_scene.h
-@@ -38,6 +38,17 @@ struct wlr_surface;
+@@ -38,6 +38,25 @@ struct wlr_surface;
  
  struct wlr_scene_node;
  struct wlr_scene_buffer;
 +struct wlr_scene_rounding;
 +
-+#define WLR_SCENE_EFFECTS_ABI 3
++#define WLR_SCENE_EFFECTS_ABI 4
 +#define WLR_SCENE_EFFECTS_MAX_AXIS 32768
 +#define WLR_SCENE_EFFECTS_MAX_PIXELS (16u * 1024u * 1024u)
 +#define WLR_SCENE_EFFECTS_MAX_BYTES (128u * 1024u * 1024u)
++#define WLR_SCENE_BACKDROP_MAX_WIDTH 4096
++#define WLR_SCENE_BACKDROP_MAX_HEIGHT 768
++#define WLR_SCENE_BACKDROP_MAX_PIXELS (2u * 1024u * 1024u)
++#define WLR_SCENE_BACKDROP_MAX_NODES 8
++#define WLR_SCENE_BACKDROP_MAX_RADIUS 64
++#define WLR_SCENE_BACKDROP_MIN_SIGMA 0.5f
++#define WLR_SCENE_BACKDROP_MAX_SIGMA 32
++#define WLR_SCENE_BACKDROP_MAX_SCALED_SIGMA 64
 +
 +/* A separately named symbol makes a new compositor/old library mismatch fatal. */
-+uint32_t wlr_scene_effects_abi_v3(void);
-+const char *wlr_scene_effects_source_sha256_v3(void);
++uint32_t wlr_scene_effects_abi_v4(void);
++const char *wlr_scene_effects_source_sha256_v4(void);
 +struct wlr_scene_backdrop;
  struct wlr_scene_output_layout;
  
@@ -141,7 +149,7 @@ index 2292f1f..1ed5b98 100644
  	struct wl_list link; // wlr_scene.outputs
  	struct wlr_scene *scene;
  	struct wlr_addon addon;
-@@ -361,6 +384,35 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
+@@ -361,6 +384,39 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
   */
  struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
  
@@ -167,6 +175,10 @@ index 2292f1f..1ed5b98 100644
 + * all intersecting outputs and renders candidate caches before returning disabled. NULL
 + * leaves all existing nodes unchanged. Caches and temporary work share the scene
 + * effects budget, including old-plus-candidate peak. At most eight nodes.
++ * Logical extent is at most 4096x768, not a guarantee at every scale/sigma:
++ * the actual scaled rectangle plus ceil(3*sigma*scale) padding on each side
++ * must also fit MAX_AXIS/MAX_PIXELS and the scene-wide peak reservation.
++ * Limits are exposed by WLR_SCENE_BACKDROP_*; no tiling or quality fallback.
 + */
 +bool wlr_scene_backdrop_supported(struct wlr_renderer *renderer);
 +/** Drop all retained backdrop pixels at a compositor privacy boundary. */
@@ -204,7 +216,7 @@ index 7aea9f0..a0040e1 100644
  symbols_flag = '-Wl,--version-script,@0@/@1@'.format(meson.current_source_dir(), symbols_file)
  lib_wlr = library(
 -	versioned_name, wlr_files,
-+	versioned_name + '-polly-effects3', wlr_files,
++	versioned_name + '-polly-effects4', wlr_files,
  	dependencies: wlr_deps,
  	include_directories: [wlr_inc],
  	install: true,
@@ -577,11 +589,11 @@ index e823d62..f0f2f29 100644
 +	struct wl_list caches;
 +};
 +
-+uint32_t wlr_scene_effects_abi_v3(void) {
++uint32_t wlr_scene_effects_abi_v4(void) {
 +	return WLR_SCENE_EFFECTS_ABI;
 +}
 +
-+const char *wlr_scene_effects_source_sha256_v3(void) {
++const char *wlr_scene_effects_source_sha256_v4(void) {
 +	return WLR_SCENE_EFFECTS_SOURCE_SHA256;
 +}
 +
@@ -956,11 +968,11 @@ index e823d62..f0f2f29 100644
 +		const struct wlr_box *box, float radius, float sigma, const float tint[static 4]) {
 +	struct wlr_scene *scene = scene_node_get_root(&parent->node);
 +	if (!box || box->width <= 0 || box->height <= 0 ||
-+			box->width > 4096 || box->height > 512 ||
-+			!isfinite(radius) || radius < 0 || radius > 64 ||
++			box->width > WLR_SCENE_BACKDROP_MAX_WIDTH || box->height > WLR_SCENE_BACKDROP_MAX_HEIGHT ||
++			!isfinite(radius) || radius < 0 || radius > WLR_SCENE_BACKDROP_MAX_RADIUS ||
 +			radius > fminf(box->width, box->height) / 2 ||
-+			!isfinite(sigma) || sigma < 0.5f || sigma > 32 ||
-+			wl_list_length(&scene->backdrops) >= 8 ||
++			!isfinite(sigma) || sigma < WLR_SCENE_BACKDROP_MIN_SIGMA || sigma > WLR_SCENE_BACKDROP_MAX_SIGMA ||
++			wl_list_length(&scene->backdrops) >= WLR_SCENE_BACKDROP_MAX_NODES ||
 +			parent->rounding || scene_node_rounding(&parent->node)) {
 +		wlr_log(WLR_ERROR, "Invalid regional backdrop geometry or node limit");
 +		return NULL;
@@ -1546,10 +1558,10 @@ index e823d62..f0f2f29 100644
 +	float sigma = backdrop->sigma * data->scale;
 +	int pad = ceilf(3 * sigma);
 +	int width = physical.width + pad * 2, height = physical.height + pad * 2;
-+	if (!wlr_scene_backdrop_supported(output->renderer) || !isfinite(sigma) || sigma > 64 ||
++	if (!wlr_scene_backdrop_supported(output->renderer) || !isfinite(sigma) || sigma > WLR_SCENE_BACKDROP_MAX_SCALED_SIGMA ||
 +			physical.width <= 0 || physical.height <= 0 ||
 +			width > WLR_SCENE_EFFECTS_MAX_AXIS || height > WLR_SCENE_EFFECTS_MAX_AXIS ||
-+			(uint64_t)width * height > 2u * 1024u * 1024u) {
++			(uint64_t)width * height > WLR_SCENE_BACKDROP_MAX_PIXELS) {
 +		wlr_log(WLR_ERROR, "Unsupported backdrop renderer/scale or regional pixel budget");
 +		return false;
 +	}
