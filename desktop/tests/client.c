@@ -65,6 +65,7 @@ struct Foreign {
     int outputs, done;
     struct polly_workspace_toplevel_v1 *workspace_handle;
     struct Workspace *workspace;
+    uint32_t placement, placement_pending, placement_capabilities;
 };
 struct Workspace {
     struct Client *client;
@@ -89,6 +90,7 @@ struct Client {
     struct ext_workspace_manager_v1 *workspaces;
     struct ext_workspace_group_handle_v1 *workspace_group;
     struct polly_workspace_toplevel_manager_v1 *workspace_toplevels;
+    struct polly_workspace_toplevel_v1 *retired_placement;
     struct Workspace workspace[32];
     struct wl_seat *seat;
     struct wl_keyboard *keyboard;
@@ -714,11 +716,33 @@ static void membership(void *data, struct polly_workspace_toplevel_v1 *handle, s
 static void membership_closed(void *data, struct polly_workspace_toplevel_v1 *handle)
 {
     struct Foreign *foreign = data;
-    polly_workspace_toplevel_v1_destroy(handle);
+    if (polly_workspace_toplevel_v1_get_version(handle) >= 3) {
+        if (foreign->client->retired_placement)
+            polly_workspace_toplevel_v1_destroy(foreign->client->retired_placement);
+        foreign->client->retired_placement = handle;
+    } else polly_workspace_toplevel_v1_destroy(handle);
     foreign->workspace_handle = NULL; foreign->workspace = NULL;
+}
+static void placement_state(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t placement, uint32_t pending, uint32_t capabilities, const char *message)
+{
+    (void)handle; (void)message;
+    struct Foreign *foreign = data;
+    foreign->placement = placement; foreign->placement_pending = pending;
+    foreign->placement_capabilities = capabilities;
+}
+static void placement_result(void *data, struct polly_workspace_toplevel_v1 *handle,
+    uint32_t serial, uint32_t epoch, uint32_t accepted, const char *message)
+{
+    (void)handle;
+    struct TestReply *reply = &((struct Foreign *)data)->client->reply;
+    reply->placement_serial = serial; reply->placement_epoch = epoch; reply->placement_accepted = accepted;
+    reply->placement_results++;
+    snprintf(reply->placement_message, sizeof(reply->placement_message), "%s", message);
 }
 static const struct polly_workspace_toplevel_v1_listener membership_listener = {
     .workspace = membership, .closed = membership_closed,
+    .placement_state = placement_state, .result = placement_result,
 };
 static void track_foreign(struct Foreign *foreign)
 {
@@ -872,7 +896,8 @@ static void global(void *data, struct wl_registry *registry,
         ext_workspace_manager_v1_add_listener(client->workspaces, &workspaces_listener, client);
         client->reply.workspace_capability = 1;
     } else if (strcmp(interface, polly_workspace_toplevel_manager_v1_interface.name) == 0) {
-        client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface, 1);
+        client->workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
+            version >= 3 ? 3 : 1);
     }
     else if (strcmp(interface, zwlr_layer_shell_v1_interface.name) == 0) {
         client->layer_shell = wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 4);
@@ -1119,7 +1144,8 @@ int main(int argc, char **argv)
         if (recv(control, &request, sizeof(request), 0) != sizeof(request)) die("control read");
         struct Window *window = &client.window;
         struct Foreign *foreign = (request.command >= TEST_FOREIGN_QUERY && request.command <= TEST_FOREIGN_CLOSE) ||
-            request.command == TEST_WORKSPACE_MOVE ?
+            request.command == TEST_WORKSPACE_MOVE ||
+            (request.command >= TEST_MENU_OPEN && request.command <= TEST_MENU_CLOSE) ?
             find_foreign(&client, request.id) : NULL;
         switch (request.command) {
         case TEST_EFFECT_APPEARANCE:
@@ -1268,6 +1294,22 @@ int main(int argc, char **argv)
             if (!foreign->workspace_handle) die("window workspace handle missing");
             polly_workspace_toplevel_v1_move_to(foreign->workspace_handle, find_workspace(&client, request.edges)->handle);
             break;
+        case TEST_MENU_OPEN:
+            polly_workspace_toplevel_v1_open_menu(foreign->workspace_handle, request.serial,
+                request.edges == 4 ? client.extra.surface : client.window.surface);
+            break;
+        case TEST_MENU_PLACE:
+            polly_workspace_toplevel_v1_place(foreign->workspace_handle, request.serial,
+                request.edges, (uint32_t)request.layer.width);
+            break;
+        case TEST_MENU_CLOSE:
+            polly_workspace_toplevel_v1_close_menu(foreign->workspace_handle, request.edges);
+            break;
+        case TEST_MENU_RETIRED_PLACE:
+            if (!client.retired_placement) die("closed placement object missing");
+            polly_workspace_toplevel_v1_place(client.retired_placement, request.serial,
+                request.edges, POLLY_WORKSPACE_TOPLEVEL_V1_PLACEMENT_LEFT);
+            break;
         case TEST_APPEARANCE:
             if (!client.appearance || request.id < 0 || (size_t)request.id >= PU_DECORATION_LAYOUT_COUNT)
                 die("invalid appearance request");
@@ -1393,6 +1435,9 @@ int main(int argc, char **argv)
             wl_display_roundtrip(client.display) < 0) die("command roundtrip");
         client.reply.pending = (int)window->pending_count;
         if (foreign) {
+            client.reply.placement = foreign->placement;
+            client.reply.placement_pending = foreign->placement_pending;
+            client.reply.placement_capabilities = foreign->placement_capabilities;
             client.reply.foreign_workspace = foreign->workspace ? (int)foreign->workspace->order : -1;
             client.reply.foreign_state = (int)foreign->state;
             client.reply.foreign_outputs = foreign->outputs;
@@ -1437,6 +1482,7 @@ int main(int argc, char **argv)
         if (client.workspace[i].handle) ext_workspace_handle_v1_destroy(client.workspace[i].handle);
     if (client.workspace_group) ext_workspace_group_handle_v1_destroy(client.workspace_group);
     if (client.workspaces) { ext_workspace_manager_v1_stop(client.workspaces); ext_workspace_manager_v1_destroy(client.workspaces); }
+    if (client.retired_placement) polly_workspace_toplevel_v1_destroy(client.retired_placement);
     if (client.workspace_toplevels) polly_workspace_toplevel_manager_v1_destroy(client.workspace_toplevels);
     if (client.foreign_manager) zwlr_foreign_toplevel_manager_v1_destroy(client.foreign_manager);
     if (client.appearance) polly_appearance_v1_destroy(client.appearance);

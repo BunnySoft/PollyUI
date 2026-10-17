@@ -1116,6 +1116,156 @@ static bool snap_key(struct TestClient *client, uint32_t code)
     return command(client, TEST_QUERY, 0, 0, 0);
 }
 
+static bool menu_place(uint32_t serial, uint32_t epoch, enum PuDesktopTile tile, bool accepted)
+{
+    uint32_t results = shell_client.reply.placement_results;
+    struct TestRequest request = { .command = TEST_MENU_PLACE, .id = 2,
+        .serial = serial, .edges = epoch, .layer = { .width = tile } };
+    CHECK(exchange(&shell_client, &request));
+    CHECK(shell_client.reply.placement_results == results + 1 &&
+        shell_client.reply.placement_serial == serial &&
+        shell_client.reply.placement_accepted == accepted);
+    if (!accepted) CHECK(shell_client.reply.placement_message[0]);
+    return true;
+}
+
+static bool menu_placement_suite(struct TestClient *client, struct PuDesktopView *view, const char *path)
+{
+    struct TestLayer menu = { .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT,
+        .width = 300, .height = 300, .zone = -1,
+        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE };
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, menu));
+    struct PuDesktopLayer *layer = find_layer(3);
+    CHECK(layer && desktop.focused_layer == layer && layer->presented);
+    pu_desktop_focus_mapped(&desktop, find_view(1)->workspace_window);
+    CHECK(desktop.focused == find_view(1) && desktop.focused_layer == layer);
+    struct wlr_box original = view->presented_box;
+    original.x = view->tree->node.x; original.y = view->tree->node.y;
+    uint32_t serial = 1;
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    uint32_t epoch = shell_client.reply.placement_epoch;
+    CHECK(epoch && shell_client.reply.placement_accepted);
+    uint32_t geometry = view->geometry_serial;
+    CHECK(snap_key(client, KEY_LEFT) && view->geometry_serial == geometry);
+    CHECK(command(client, TEST_HOLD, 0, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, true));
+    CHECK(view->geometry_pending && view->mode == PU_DESKTOP_FLOATING &&
+        shell_client.reply.placement == PU_TILE_NONE && shell_client.reply.placement_pending);
+    geometry = view->geometry_serial;
+    CHECK(menu_place(serial - 1, epoch, PU_TILE_RIGHT, false) && view->geometry_serial == geometry);
+    CHECK(menu_place(serial++, epoch, PU_TILE_RIGHT, false) && view->geometry_serial == geometry);
+    CHECK(command(client, TEST_RELEASE, 0, 0, 0) && settle_decoration(view));
+    CHECK(view->mode == PU_DESKTOP_TILED_LEFT);
+    CHECK(command(&shell_client, TEST_FOREIGN_QUERY, 2, 0, 0) &&
+        shell_client.reply.placement == PU_TILE_LEFT && !shell_client.reply.placement_pending);
+    for (enum PuDesktopTile tile = PU_TILE_RIGHT; ; tile = PU_TILE_NONE) {
+        CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+        epoch = shell_client.reply.placement_epoch;
+        CHECK(menu_place(serial++, epoch, tile, true));
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+        if (tile == PU_TILE_NONE) break;
+        CHECK(view->mode == PU_DESKTOP_TILED_RIGHT);
+    }
+    CHECK(geometry_is(view, original.x, original.y, original.width, original.height));
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    epoch = shell_client.reply.placement_epoch;
+    geometry = view->geometry_serial;
+    struct PuDesktopView *focused = desktop.focused;
+    CHECK(menu_place(0, epoch, PU_TILE_LEFT, false));
+    CHECK(menu_place(serial++, epoch + 1, PU_TILE_LEFT, false));
+    CHECK(menu_place(serial++, epoch, (enum PuDesktopTile)99, false));
+    CHECK(view->geometry_serial == geometry && desktop.focused == focused && desktop.focused_layer == layer);
+    struct TestLayer blocker = { .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM, .width = 120, .height = 40, .zone = 40,
+        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE };
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 4, blocker));
+    CHECK(desktop.focused_layer == find_layer(4));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false) && desktop.focused == focused);
+    blocker.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    blocker.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 4, blocker) && desktop.focused_layer == layer);
+    CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 1, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 0, 0, 0));
+    struct wlr_seat_keyboard_grab grab = {0};
+    static const struct wlr_keyboard_grab_interface grab_impl = {0};
+    grab.interface = &grab_impl;
+    wlr_seat_keyboard_start_grab(desktop.seat, &grab);
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false) && view->geometry_serial == geometry);
+    wlr_seat_keyboard_end_grab(desktop.seat);
+    char locker[PATH_MAX];
+    const char *slash = strrchr(path, '/');
+    CHECK(slash && snprintf(locker, sizeof(locker), "%.*s/polly-lock-test-client", (int)(slash - path), path) <
+        (int)sizeof(locker));
+    char *lock_args[] = {locker, "unlock", NULL};
+    CHECK(pu_session_lock_spawn(&desktop, lock_args) && pu_session_lock_active(&desktop));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false) && view->geometry_serial == geometry);
+    for (int i = 0; i < 600 && pu_session_lock_active(&desktop); i++) CHECK(pump());
+    CHECK(!pu_session_lock_active(&desktop));
+    CHECK(command(client, TEST_FULLSCREEN, 0, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(client, TEST_UNFULLSCREEN, 0, 0, 0) && settle_decoration(view));
+    struct TestRequest limits = { .command = TEST_LIMITS, .layer = { .width = 2000, .height = 100 } };
+    CHECK(exchange(client, &limits));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_FOREIGN_MINIMIZE, 2, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false) && view->minimized);
+    CHECK(command(&shell_client, TEST_FOREIGN_RESTORE, 2, 0, 0));
+    CHECK(command(&shell_client, TEST_MENU_CLOSE, 2, 0, epoch));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    epoch = shell_client.reply.placement_epoch;
+    struct PuWorkspace *workspace = desktop.active_workspace;
+    pu_workspace_step(&desktop, 1);
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    pu_workspace_activate(&desktop, workspace, view);
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    epoch = shell_client.reply.placement_epoch;
+    CHECK(command(&shell_client, TEST_UNMAP, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_REMAP, 0, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    epoch = shell_client.reply.placement_epoch;
+    menu.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, menu));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, false));
+    menu.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, menu));
+    CHECK(command(client, TEST_REFUSE_TILE, 1, 0, 0));
+    CHECK(menu_place(serial++, epoch, PU_TILE_LEFT, true));
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    CHECK(view->tile == PU_TILE_NONE && view->mode == PU_DESKTOP_FLOATING &&
+        geometry_is(view, original.x, original.y, original.width, original.height));
+    CHECK(command(client, TEST_REFUSE_TILE, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_MENU_OPEN, 2, serial++, 0));
+    epoch = shell_client.reply.placement_epoch;
+    CHECK(command(client, TEST_UNMAP, 0, 0, 0));
+    CHECK(command(&shell_client, TEST_QUERY, 0, 0, 0));
+    uint32_t results = shell_client.reply.placement_results;
+    CHECK(command(&shell_client, TEST_MENU_RETIRED_PLACE, 0, serial++, epoch));
+    CHECK(shell_client.reply.placement_results == results);
+    CHECK(command(client, TEST_REMAP, 0, 0, 0) && settle_decoration(view));
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
+    geometry = view->geometry_serial;
+    CHECK(command(&shell_client, TEST_MENU_RETIRED_PLACE, 0, serial++, epoch));
+    CHECK(shell_client.reply.placement_results == results && view->geometry_serial == geometry);
+    struct TestLayer top = { .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+        .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT, .height = 32, .zone = 32 };
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 3, top));
+    blocker.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 4, blocker));
+    blocker.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    CHECK(layer_command(TEST_LAYER_CONFIGURE, 4, blocker));
+    pu_desktop_focus_mapped(&desktop, view->workspace_window);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && settle_decoration(view));
+    puts("PASS: private menu v3 admits once, separates ACK/presentation, rejects serial/epoch/focus/grab/recording/fullscreen/minimized/limits/workspace/unmap, and recovers declined size");
+    return true;
+}
+
 static bool snap_suite(struct TestClient *client, struct PuDesktopView *view, const char *path)
 {
     CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
@@ -1374,6 +1524,7 @@ static bool layer_suite(const char *path)
     CHECK(command(&clients[1], TEST_QUERY, 0, 0, 0));
     CHECK(geometry_is(view, full.x, full.y + 32, full.width, full.height - 72));
     CHECK(snap_suite(&clients[1], view, path));
+    CHECK(menu_placement_suite(&clients[1], view, path));
     CHECK(command(&clients[1], TEST_MAXIMIZE, 0, 0, 0));
     dock.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
     top.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;

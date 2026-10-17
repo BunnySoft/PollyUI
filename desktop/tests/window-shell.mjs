@@ -2,12 +2,21 @@ import { createDesktopShell } from './desktop/tests/configured-shell.mjs';
 import { BUILTIN_THEME_CATALOG, getDesktopTheme, installThemeCatalog } from './desktop/shell/themes.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 import { applicationMenuPlacement } from './desktop/shared/ui/theme-layout.mjs';
+import { readPrivateConfigurationFile } from './desktop/shared/configuration-files.mjs';
+import { SHELL_CONFIGURATION_FILE } from './desktop/shell/configuration.mjs';
 
 const [mode, executable, script] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function check(value, message) {
   if (!value) throw new Error(message);
   console.log('PASS: ' + message);
+}
+async function placementMenu(id) {
+  const native = shell.showWindowActions(outputs()[0].id, id);
+  await until(() => native.document.getElementById('shell-window-tile-left')?.offsetWidth > 0, 'window menu layout');
+  const ready = marker('fixture-placement-menu-ready');
+  await until(() => ready.closed, 'actual menu presentation and native keyboard focus');
+  return native;
 }
 function rejects(action, message, reason = null) {
   let error = null;
@@ -68,6 +77,17 @@ async function menuAction(id, action) {
   const menu = created.find(item => item.title.startsWith('PollyShell.menu.') && !item.window.closed);
   await click(menu, 'shell-window-' + action);
 }
+async function snapKey(code) {
+  const down = marker('fixture-key 125 1');
+  await until(() => down.closed, 'Super down');
+  await menuKey(code);
+  const up = marker('fixture-key 125 0');
+  await until(() => up.closed, 'Super up');
+}
+async function placementMark(command, slot, mode) {
+  const signal = marker(`fixture-placement-${command} ${slot} ${mode}`);
+  await until(() => signal.closed, 'native placement ' + command + ' ' + slot);
+}
 const find = () => desktop.windows().find(item => item.appId === 'org.pollyui.window-fixture');
 const exitCodes = new Map();
 async function run() {
@@ -97,6 +117,7 @@ async function run() {
     window.create({ title: 'Public window-management rejection', width: 160, height: 100 });
     rejects(() => desktop.windows(), 'public connection cannot enumerate or control foreign windows');
     rejects(() => desktop.activateWindow(1), 'public connection cannot activate a guessed handle');
+    rejects(() => desktop.tileWindow(1, 'left', 1), 'public connection cannot place another application using guessed IDs or epochs');
     const theme = getDesktopTheme('xp');
     rejects(() => desktop.configureAppearance(theme, encodeDecorationLayout(theme)),
       'public connection cannot submit decoration data',
@@ -115,12 +136,114 @@ async function run() {
   } }).start();
   check(typeof desktop.decorationRequests === 'undefined', 'Shell cannot consume the independent renderer queue');
   check(shell.selectTheme('xp'), 'taskbar theme selected');
-  if (mode === 'initial') {
+  if (['initial', 'placement', 'placement-old'].includes(mode)) {
     desktop.spawnApplication(['foot', '--app-id=org.pollyui.window-fixture', '--title=Initial title',
       '/bin/sh', '-c', "sleep 0.4; printf '\\033]2;Updated title\\007'; sleep 300"], '', 'window-fixture');
   }
   await until(() => find()?.active, 'live independent application');
   const id = find().id;
+  if (mode === 'placement-old') {
+    check(typeof desktop.tileWindow === 'function' && find().placement === undefined,
+      'old compositor does not invent placement capability from new API function presence');
+    const current = shell.showWindowActions(outputs()[0].id, id);
+    await until(() => current.document.getElementById('shell-window-close')?.offsetWidth > 0, 'old-provider production menu');
+    check(['tile-left', 'tile-right', 'restore-floating'].every(action =>
+      !current.document.getElementById('shell-window-' + action)), 'old-provider menu hides all unavailable placement commands');
+    current.document.getElementById('shell-window-menu-close').focus();
+    await menuKey(28);
+    await until(() => current.closed, 'old-provider Close menu remains functional');
+    const success = marker('fixture-success');
+    await until(() => success.closed, 'old-provider suite acknowledgement');
+    shell.stop(); window.quit(); return;
+  }
+  if (mode === 'placement') {
+    check(typeof desktop.tileWindow === 'function' && typeof desktop.restoreFloatingWindow === 'function' &&
+      ['floating', 'left', 'right'].includes(find().placement), 'real paired native placement API and readonly state');
+    const tileWindow = desktop.tileWindow, restoreFloatingWindow = desktop.restoreFloatingWindow;
+    let admissions = 0;
+    desktop.tileWindow = (...args) => { const result = tileWindow(...args); if (result.admitted) admissions++; return result; };
+    desktop.restoreFloatingWindow = (...args) => {
+      const result = restoreFloatingWindow(...args); if (result.admitted) admissions++; return result;
+    };
+    await until(() => !find()?.placementPending && (find()?.placementCapabilities & 3) === 3, 'settled native placement capability');
+    await placementMark('save', 0, 0);
+    await snapKey(105);
+    await until(() => find()?.placement === 'left' && !find()?.placementPending, 'keyboard half-left presented');
+    await placementMark('save', 1, 3);
+    await snapKey(106);
+    await until(() => find()?.placement === 'right' && !find()?.placementPending, 'keyboard half-right presented');
+    await placementMark('save', 2, 4);
+    await snapKey(108);
+    await until(() => find()?.placement === 'floating' && !find()?.placementPending, 'keyboard restore presented');
+    await placementMark('check', 0, 0);
+    const preferences = () => JSON.stringify(Array.from(readPrivateConfigurationFile(application.configDir, SHELL_CONFIGURATION_FILE)));
+    const pointerPreferences = preferences();
+    for (const [action, state, slot, nativeMode] of [
+      ['tile-left', 'left', 1, 3], ['tile-right', 'right', 2, 4], ['restore-floating', 'floating', 0, 0],
+    ]) {
+      const count = admissions;
+      await menuAction(id, action);
+      await until(() => find()?.placement === state && !find()?.placementPending, action + ' actual client/frame presentation');
+      await placementMark('check', slot, nativeMode);
+      check(admissions === count + 1, 'real pointer admits exactly one ' + action);
+    }
+    check(preferences() === pointerPreferences && shell.configuration.snapshot.version === 4,
+      'native pointer placement preserves exact v4 preference bytes');
+    check(shell.selectTheme('server2003'), 'Classic uses the same native window placement commands');
+    const keyboardPreferences = preferences();
+    for (const [action, state] of [['tile-left', 'left'], ['tile-right', 'right'], ['restore-floating', 'floating']]) {
+      const count = admissions;
+      const current = await placementMenu(id);
+      const node = current.document.getElementById('shell-window-' + action);
+      node.focus();
+      await menuKey(28);
+      await until(() => current.closed && find()?.placement === state && !find()?.placementPending,
+        'real Enter admits one Classic ' + action);
+      check(admissions === count + 1, 'real Enter admits exactly one ' + action);
+    }
+    check(preferences() === keyboardPreferences, 'native Enter placement preserves exact preference bytes');
+    const deniedMenu = await placementMenu(id);
+    const before = find().placement;
+    await snapKey(105);
+    check(find().placement === before, 'original keyboard path still rejects a focused menu layer');
+    deniedMenu.document.getElementById('shell-window-menu-close').focus();
+    await menuKey(28);
+    await until(() => deniedMenu.closed, 'real Enter closes the placement menu');
+    const resize = marker('fixture-placement-output-height 360');
+    await until(() => resize.closed && outputs()[0].height === 360 &&
+      shell.getSurfaces().find(item => item.kind === 'wallpaper' && item.output === outputs()[0].id)
+        ?.window.document.body.offsetHeight === 360, 'real short output and production Shell surfaces');
+    await menuAction(id, 'tile-left');
+    await until(() => find()?.placement === 'left' && !find()?.placementPending, 'short-output half presented');
+    const short = await placementMenu(id), visited = new Set();
+    short.document.body.focus();
+    for (let index = 0; index < 24; index++) {
+      await menuKey(15);
+      visited.add(short.document.activeElement?.id);
+    }
+    for (const command of ['activate', 'minimize', 'maximize', 'fullscreen', 'tile-left', 'tile-right',
+      'restore-floating', 'close', 'menu-close'])
+      check(visited.has('shell-window-' + command), 'real short-menu Tab reaches ' + command);
+    check([...visited].some(id => id?.startsWith('shell-window-workspace-')), 'short-menu Tab reaches Move workspace');
+    const beforeBack = short.document.activeElement;
+    const shift = marker('fixture-key 42 1');
+    await until(() => shift.closed, 'Shift down');
+    await menuKey(15);
+    const shiftUp = marker('fixture-key 42 0');
+    await until(() => shiftUp.closed, 'Shift up');
+    check(short.document.activeElement !== beforeBack, 'real Shift+Tab reverses window menu navigation');
+    check(Number(short.document.getElementById('shell-window-actions-viewport-scrollbar').style.opacity) > 0,
+      'long short-output menu retains the shared interactive scrollbar');
+    await menuKey(1);
+    await until(() => short.closed, 'short menu Escape');
+    const restoreOutput = marker('fixture-placement-output-height 720');
+    await until(() => restoreOutput.closed && outputs()[0].height === 720, 'restore fixture output only');
+    check(!shell.getState().error, 'placement menu has no management error');
+    desktop.tileWindow = tileWindow; desktop.restoreFloatingWindow = restoreFloatingWindow;
+    const success = marker('fixture-success');
+    await until(() => success.closed, 'placement suite acknowledgement');
+    shell.stop(); window.quit(); return;
+  }
   rejects(() => shell.selectTheme('missing'), 'unknown catalog appearance is rejected without losing Shell privilege');
   const invalidIdentity = { ...getDesktopTheme('xp'), id: 'xp\0invalid' };
   rejects(() => desktop.configureAppearance(invalidIdentity, encodeDecorationLayout(invalidIdentity)),

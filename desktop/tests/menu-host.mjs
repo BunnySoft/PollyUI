@@ -318,6 +318,116 @@ function scenario(name, run, configure) {
   });
 }
 
+function placementFixture({ native, state, calls }) {
+  Object.assign(state.windows[0], { placement: 'floating', placementPending: false,
+    placementCapabilities: 3, placementMessage: '' });
+  native.openWindowMenu = (id, menu) => { calls.push(['open-window-menu', id, menu]); return 41; };
+  native.closeWindowMenu = epoch => calls.push(['close-window-menu', epoch]);
+  native.tileWindow = (id, side, epoch) => { calls.push(['place', id, side, epoch]); return { admitted: true }; };
+  native.restoreFloatingWindow = (id, epoch) => { calls.push(['place', id, 'floating', epoch]); return { admitted: true }; };
+}
+
+scenario('window placement commands use an acknowledged live menu and never activate before admission', f => {
+  const configuration = JSON.stringify(f.saved.snapshot);
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const id of ['tile-left', 'tile-right', 'restore-floating'])
+    assert.ok(menu.document.getElementById('shell-window-' + id), id);
+  click(find(menu, 'shell-window-tile-left'));
+  assert.deepEqual(f.calls.filter(call => ['place', 'activate'].includes(call[0])), [['place', 10, 'left', 41]]);
+  assert.equal(menu.closed, true);
+  assert.equal(JSON.stringify(f.saved.snapshot), configuration);
+}, placementFixture);
+
+scenario('window placement capability is actual provider state, not function presence', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  assert.equal(menu.document.getElementById('shell-window-tile-left'), null);
+  assert.equal(f.calls.some(call => call[0] === 'open-window-menu'), false);
+  click(find(menu, 'shell-window-close'));
+  assert.deepEqual(f.calls.filter(call => call[0] === 'close-window'), [['close-window', 10]]);
+}, options => {
+  placementFixture(options);
+  for (const key of ['placement', 'placementPending', 'placementCapabilities', 'placementMessage'])
+    delete options.state.windows[0][key];
+});
+
+scenario('denied or transport-unknown placement retains the menu and reports no rollback', f => {
+  for (const failure of [new Error('Input is grabbed'), null]) {
+    const menu = f.shell.showWindowActions(1, 10);
+    f.native.tileWindow = () => { if (failure) throw failure; };
+    click(find(menu, 'shell-window-tile-left'));
+    assert.equal(menu.closed, false);
+    assert.equal(f.calls.some(call => call[0] === 'activate'), false);
+    assert.match(f.shell.getState().error, failure ? /Input is grabbed/ : /outcome is unknown/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    key(menu, 'Escape');
+  }
+}, placementFixture);
+
+scenario('window placement rechecks workspace and retired callbacks do not admit requests', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const node = find(menu, 'shell-window-tile-left'), retired = callback(node, 'click');
+  f.state.workspaces[0].active = false; f.state.workspaces[1].active = true;
+  click(node);
+  assert.match(f.shell.getState().error, /workspace is no longer current/);
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+  assert.equal(menu.closed, false);
+  key(menu, 'Escape');
+  f.state.workspaces[0].active = true; f.state.workspaces[1].active = false;
+  f.native.onWindowsChanged();
+  const replacement = f.shell.showWindowActions(1, 10);
+  retired(event('click', { currentTarget: node }));
+  assert.equal(replacement.closed, false);
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+}, placementFixture);
+
+scenario('held window rows retain identity when capability arrives, state changes, or the menu rethemes', f => {
+  const menu = f.shell.showWindowActions(1, 10);
+  const close = find(menu, 'shell-window-close');
+  press(close);
+  Object.assign(f.state.windows[0], { placement: 'floating', placementPending: false, placementCapabilities: 3 });
+  f.native.onWindowsChanged();
+  assert.equal(find(menu, 'shell-window-close'), close);
+  domEvent(close, 'click');
+  assert.deepEqual(f.calls.filter(call => call[0] === 'close-window'), [['close-window', 10]]);
+  const next = f.shell.showWindowActions(1, 10), left = find(next, 'shell-window-tile-left');
+  press(left);
+  f.state.windows[0].placementPending = true;
+  f.native.onWindowsChanged();
+  assert.equal(find(next, 'shell-window-tile-left'), left);
+  domEvent(left, 'click');
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+  assert.equal(next.closed, false);
+  f.state.windows[0].placementPending = false;
+  f.native.onWindowsChanged();
+  press(left);
+  f.shell.selectTheme('xp');
+  domEvent(left, 'click');
+  assert.equal(f.calls.filter(call => call[0] === 'place').length, 0);
+  assert.equal(next.closed, true, 'existing theme changes retire rather than repurpose a held menu');
+  const replacement = f.shell.showWindowActions(1, 10);
+  find(replacement, 'shell-window-tile-left').focus(); key(replacement, 'Enter');
+  assert.equal(f.calls.filter(call => call[0] === 'place').length, 1);
+}, options => {
+  placementFixture(options);
+  delete options.state.windows[0].placement;
+});
+
+scenario('fullscreen and pending layout disable placement while preserving old commands and Close menu', f => {
+  f.state.windows[0].fullscreen = true;
+  f.native.onWindowsChanged();
+  const menu = f.shell.showWindowActions(1, 10);
+  for (const id of ['tile-left', 'tile-right', 'restore-floating']) {
+    const node = find(menu, 'shell-window-' + id);
+    assert.equal(node.getAttribute('aria-disabled'), 'true');
+    assert.equal(node.tabIndex, -1);
+    click(node); node.focus(); key(menu, 'Enter');
+  }
+  assert.equal(f.calls.some(call => call[0] === 'place'), false);
+  assert.equal(menu.closed, false);
+  find(menu, 'shell-window-menu-close').focus(); key(menu, 'Enter');
+  assert.equal(menu.closed, true);
+}, placementFixture);
+
 test('Start display profile: real metadata or explicit unavailable labels do not replace brand defaults, search or menu authority', async () => {
   const name = '\u7231\u4e3d\u4e1d \ud83d\udc30 ' + '\u957f\u540d'.repeat(20);
   const available = parseLocalUserProfile('alice:x:1000:1000:' + name + ',Unused:/not-returned:/not-returned\n', 1000);
