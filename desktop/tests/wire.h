@@ -70,6 +70,7 @@ struct TestReply {
     char placement_message[192];
     uint32_t picker_capability, picker_token, picker_target, picker_offers, picker_dismissals;
     uint32_t arrangement_capability;
+    uint32_t output_ids[8];
 };
 
 #endif

@@ -2508,10 +2508,18 @@ static bool arrangement_protocol(const char *wire)
     unsetenv("POLLY_TEST_WORKSPACE_V6"); close(sockets[1]);
     CHECK(started);
     picker_wire_control = control; control = sockets[0];
+    CHECK(command(TEST_QUERY, 0, 0) && reply.arrangement_capability == 1);
+    int head_index = 0;
+    struct wl_resource *output_resource;
+    wl_resource_for_each(output_resource, &head->resources)
+        if (wl_resource_get_client(output_resource) == desktop.shell_client)
+            for (unsigned i = 0; i < 8; i++)
+                if (reply.output_ids[i] == wl_resource_get_id(output_resource)) head_index = (int)i + 1;
+    CHECK(head_index > 0);
     struct TestRequest layer = {.command = TEST_LAYER_MAP, .id = 3, .layer = {
         .layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, .width = 220, .height = 180, .zone = -1,
         .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
-        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE}};
+        .keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE, .output = head_index}};
     CHECK(cascade_send(layer) && reply.arrangement_capability == 1);
     layer.id = 4; layer.layer.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
     layer.layer.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
@@ -2521,11 +2529,24 @@ static bool arrangement_protocol(const char *wire)
     CHECK(cascade_send(layer));
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     struct PuDesktopLayer *reservation = NULL, *item;
-    wl_list_for_each(item, &desktop.layers, link)
-        if (item->surface->output == head && item->surface->current.exclusive_zone > 0) {
-            CHECK(!reservation);
-            reservation = item;
-        }
+    for (int i = 0; i < 1200; i++) {
+        reservation = NULL;
+        wl_list_for_each(item, &desktop.layers, link)
+            if (item->surface->output == head && item->surface->current.exclusive_zone > 0) {
+                CHECK(!reservation);
+                reservation = item;
+            }
+        if (reservation && reservation->presented && reservation->surface->surface->mapped) break;
+        CHECK(pump());
+    }
+    printf("ARRANGEMENT_PREREQUISITES head=%s wireOutput=%d physical=%dx%d scale=%.2f logical=%d,%d %dx%d reservation=%p presented=%d mapped=%d zone=%d anchor=%u box=%d,%d %dx%d\n",
+        head->name, head_index, head->width, head->height, head->scale, area.x, area.y, area.width, area.height,
+        (void *)reservation, reservation && reservation->presented,
+        reservation && reservation->surface->surface->mapped,
+        reservation ? reservation->surface->current.exclusive_zone : 0,
+        reservation ? reservation->surface->current.anchor : 0,
+        reservation ? reservation->pending_box.x : 0, reservation ? reservation->pending_box.y : 0,
+        reservation ? reservation->pending_box.width : 0, reservation ? reservation->pending_box.height : 0);
     CHECK(reservation && reservation->presented && reservation->surface->surface->mapped &&
         reservation->surface->current.anchor == (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
             ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) &&

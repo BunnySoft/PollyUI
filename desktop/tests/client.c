@@ -964,6 +964,7 @@ static void global(void *data, struct wl_registry *registry,
             if (client->outputs[i].output) continue;
             client->outputs[i].name = name;
             client->outputs[i].output = wl_registry_bind(registry, name, &wl_output_interface, 1);
+            client->reply.output_ids[i] = wl_proxy_get_id((struct wl_proxy *)client->outputs[i].output);
             wl_output_add_listener(client->outputs[i].output, &output_listener, client);
             client->reply.output_count++;
             break;
@@ -978,6 +979,7 @@ static void global_remove(void *data, struct wl_registry *registry, uint32_t nam
         if (client->outputs[i].name != name || !client->outputs[i].output) continue;
         wl_output_destroy(client->outputs[i].output);
         client->outputs[i].output = NULL;
+        client->reply.output_ids[i] = 0;
         client->reply.output_count--;
     }
 }
