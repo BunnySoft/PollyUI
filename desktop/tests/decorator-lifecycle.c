@@ -2462,6 +2462,8 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
             if (!marker->surface->surface->mapped || !name || strncmp(name, "cascade-", 8)) continue;
             char operation[32];
             CHECK(sscanf(name, "cascade-%31s", operation) == 1);
+            struct wlr_layer_surface_v1 *marker_role = marker->surface;
+            struct wl_resource *marker_resource = marker_role->surface->resource;
             if (!strcmp(operation, "ready")) {
                 for (unsigned i = 0; i < 3; i++) {
                     CHECK(wait_presented_frame(views[i]));
@@ -2490,6 +2492,8 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                 CHECK(desktop.seat->pointer_state.focused_surface == menu->surface->surface);
                 button(true); button(false);
             } else if (!strcmp(operation, "check") || !strcmp(operation, "wrapped")) {
+                for (int i = 0; i < 1200 && picker_menu(); i++) CHECK(pump());
+                CHECK(!picker_menu() && !desktop.focused_layer);
                 struct wlr_box full; wlr_output_layout_get_box(desktop.layout, head, &full);
                 int bottom = full.y + full.height;
                 struct PuDesktopLayer *panel;
@@ -2514,8 +2518,23 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                     cascade_scene_order(views, order, true));
                 if (!strcmp(operation, "check"))
                     CHECK(cascade_steps(views));
-                else CHECK(views[0]->tree->node.y == views[1]->tree->node.y &&
-                    views[1]->tree->node.y == views[2]->tree->node.y);
+                else {
+                    int offset = 0;
+                    bool wrapped = false;
+                    for (unsigned i = 0; i < 3; i++) {
+                        struct PuDesktopView *item = NULL;
+                        for (unsigned j = 0; j < 3; j++) if (order[i] == &views[j]->tree->node) item = views[j];
+                        CHECK(item);
+                        struct wlr_box bounds = full;
+                        bounds.height = bottom - full.y;
+                        pu_decoration_inset(item, &bounds, false);
+                        if (offset > bounds.width - item->presented_box.width ||
+                            offset > bounds.height - item->presented_box.height) { offset = 0; wrapped = true; }
+                        CHECK(item->tree->node.x == bounds.x + offset && item->tree->node.y == bounds.y + offset);
+                        offset += 24;
+                    }
+                    CHECK(wrapped);
+                }
                 CHECK(cascade_committed_output(head));
                 checks++;
             } else if (!strcmp(operation, "small")) {
@@ -2528,6 +2547,20 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                     CHECK(wait_presented_frame(views[i]));
                     sizes[i] = views[i]->toplevel->base->geometry;
                 }
+            } else if (!strcmp(operation, "modern-ready")) {
+                int height;
+                CHECK(sscanf(name, "cascade-modern-ready %d", &height) == 1);
+                unsigned panels = 0;
+                struct PuDesktopLayer *panel;
+                wl_list_for_each(panel, &desktop.layers, link)
+                    if (panel->surface->namespace && !strncmp(panel->surface->namespace, "PollyShell.panel.", 17)) {
+                        CHECK(panel->presented && panel->surface->surface->mapped &&
+                            panel->surface->current.exclusive_zone == height && panel->pending_box.height == height);
+                        panels++;
+                    }
+                CHECK(panels == 2 && !picker_menu() && !desktop.focused_layer);
+                for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
+                puts("PASS: actual Modern taskbar reservations, mapped/presented foreground and all current native captions precede the one old-provider hover");
             } else if (!strcmp(operation, "hover")) {
                 CHECK(wait_presented_frame(views[0]) && picker_hover(views[0]));
                 struct wlr_box button_box;
@@ -2539,7 +2572,11 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
                     views[0]->tree->node.y + button_box.y, button_box.width, button_box.height);
             } else if (!strcmp(operation, "success")) success = true;
             else CHECK(false);
-            wlr_layer_surface_v1_destroy(marker->surface);
+            struct PuDesktopLayer *fresh = NULL, *item;
+            wl_list_for_each(item, &desktop.layers, link)
+                if (item->surface == marker_role && item->surface->surface->resource == marker_resource) fresh = item;
+            CHECK(fresh);
+            wlr_layer_surface_v1_destroy(fresh->surface);
             break;
         }
     }

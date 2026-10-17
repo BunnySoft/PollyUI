@@ -2,6 +2,7 @@ import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
 import { runtimeBuild } from './desktop/client/settings-contract.mjs';
+import { getDesktopTheme } from './desktop/shell/themes.mjs';
 
 const [mode] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -105,6 +106,16 @@ async function run() {
     await until(() => menu.closed && target()?.placement === 'left' && !target()?.placementPending, 'old v4 half placement');
     check(shell.selectTheme('modern'), 'Modern picker theme enabled on the real old v4 provider');
     check(desktop.layoutPickerCapability() === true, 'actual frozen v4 provider supports the native picker');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const panelHeight = getDesktopTheme('modern').panel.height;
+    await until(() => {
+      const panels = shell.getSurfaces().filter(item => item.kind === 'panel');
+      return panels.length === window.displays().length && panels.every(item =>
+        item.window.document.body.offsetHeight === panelHeight &&
+        item.window.document.getElementById('shell-panel')?.offsetHeight === panelHeight &&
+        item.window.document.getElementById('shell-window-' + target().id)?.offsetWidth > 0);
+    }, 'actual Modern panel layout and task foreground after retheme');
+    await signal('modern-ready ' + panelHeight);
     await signal('hover');
     await until(() => created.some(item => !item.closed && item.document.getElementById('shell-layout-picker')), 'old v4 Maxhover picker');
     const picker = created.findLast(item => !item.closed && item.document.getElementById('shell-layout-picker'));
