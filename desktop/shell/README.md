@@ -193,7 +193,7 @@ Lion reflection/Dock shadow remain absent.
 
 The production Big Sur Dock additionally opts into
 `panel.regionalBackdrop: { sigma: 8, tint: "#e7e7e7", opacityPercent: 28 }`.
-This is a real effects3/Pixman lower-scene regional Gaussian underlay, not these
+This is a real paired effects4/Pixman lower-scene regional Gaussian underlay, not these
 RGBA fills and not a wallpaper-derived base. The client omits only its passive
 gradient after successful native publication; foreground, border, hitbox, scroll,
 hover and actions are unchanged. These are Polly design parameters, not measured

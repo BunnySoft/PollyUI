@@ -21,7 +21,8 @@
 #include <wlr/types/wlr_scene.h>
 
 enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN,
-    MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY };
+    MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY,
+    DOCK_HEIGHT_512, DOCK_HEIGHT_513, DOCK_HEIGHT_640, DOCK_HEIGHT_660, DOCK_HEIGHT_64 };
 struct Reply { uint32_t state, bootstrap, accepted, serial, globals; bool denied; };
 struct Probe {
     struct wl_display *display;
@@ -120,6 +121,27 @@ static void configured(void *data, struct zwlr_layer_surface_v1 *layer,
 static void layer_closed(void *data, struct zwlr_layer_surface_v1 *layer)
 { (void)data; (void)layer; }
 static const struct zwlr_layer_surface_v1_listener layer_listener = {.configure = configured, .closed = layer_closed};
+static bool resize_backdrop(struct Probe *probe, int height)
+{
+    probe->configured = false;
+    zwlr_layer_surface_v1_set_size(probe->layer, 96, height);
+    zwlr_layer_surface_v1_set_exclusive_zone(probe->layer, height);
+    wl_surface_commit(probe->surface);
+    CHECK(wl_display_roundtrip(probe->display) >= 0 && probe->configured);
+    int fd = memfd_create("polly-backdrop-policy", MFD_CLOEXEC);
+    CHECK(fd >= 0 && !ftruncate(fd, 96 * height * 4));
+    struct wl_shm_pool *pool = wl_shm_create_pool(probe->shm, fd, 96 * height * 4);
+    close(fd);
+    CHECK(pool);
+    if (probe->buffer) wl_buffer_destroy(probe->buffer);
+    probe->buffer = wl_shm_pool_create_buffer(pool, 0, 96, height, 96 * 4, WL_SHM_FORMAT_ARGB8888);
+    wl_shm_pool_destroy(pool);
+    CHECK(probe->buffer);
+    wl_surface_attach(probe->surface, probe->buffer, 0, 0);
+    wl_surface_damage(probe->surface, 0, 0, 96, height);
+    wl_surface_commit(probe->surface);
+    return true;
+}
 static bool map_backdrop(struct Probe *probe)
 {
     CHECK(probe->compositor && probe->shm && probe->layer_shell);
@@ -128,23 +150,8 @@ static bool map_backdrop(struct Probe *probe)
         NULL, ZWLR_LAYER_SHELL_V1_LAYER_TOP, "not-an-authorization-token");
     CHECK(probe->surface && probe->layer);
     zwlr_layer_surface_v1_add_listener(probe->layer, &layer_listener, probe);
-    zwlr_layer_surface_v1_set_size(probe->layer, 96, 64);
     zwlr_layer_surface_v1_set_anchor(probe->layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM);
-    zwlr_layer_surface_v1_set_exclusive_zone(probe->layer, 64);
-    wl_surface_commit(probe->surface);
-    CHECK(wl_display_roundtrip(probe->display) >= 0 && probe->configured);
-    int fd = memfd_create("polly-backdrop-policy", MFD_CLOEXEC);
-    CHECK(fd >= 0 && !ftruncate(fd, 96 * 64 * 4));
-    struct wl_shm_pool *pool = wl_shm_create_pool(probe->shm, fd, 96 * 64 * 4);
-    close(fd);
-    CHECK(pool);
-    probe->buffer = wl_shm_pool_create_buffer(pool, 0, 96, 64, 96 * 4, WL_SHM_FORMAT_ARGB8888);
-    wl_shm_pool_destroy(pool);
-    CHECK(probe->buffer);
-    wl_surface_attach(probe->surface, probe->buffer, 0, 0);
-    wl_surface_damage(probe->surface, 0, 0, 96, 64);
-    wl_surface_commit(probe->surface);
-    return true;
+    return resize_backdrop(probe, 64);
 }
 static bool public_probe(struct Probe *probe)
 {
@@ -193,6 +200,11 @@ static bool child(int fd, uint32_t version)
         case PREPARE: CHECK(prepare(&probe, 0)); break;
         case PREPARE_REGIONAL: CHECK(prepare(&probe, 1)); break;
         case MAP_BACKDROP: CHECK(map_backdrop(&probe)); probe.reply.accepted = 1; break;
+        case DOCK_HEIGHT_512: CHECK(resize_backdrop(&probe, 512)); break;
+        case DOCK_HEIGHT_513: CHECK(resize_backdrop(&probe, 513)); break;
+        case DOCK_HEIGHT_640: CHECK(resize_backdrop(&probe, 640)); break;
+        case DOCK_HEIGHT_660: CHECK(resize_backdrop(&probe, 660)); break;
+        case DOCK_HEIGHT_64: CHECK(resize_backdrop(&probe, 64)); break;
         case STAGE_REGIONAL: {
             uint32_t words[] = {2, 1, 12000, 2, 0xe7e7e7, 28};
             struct wl_array material = {.size = sizeof(words), .data = words};
@@ -281,6 +293,17 @@ static bool suite(const char *self)
     CHECK(command(renderer, BACKDROP_CAPABILITY, &r) && !r.accepted);
     CHECK(command(publisher, BACKDROP_CAPABILITY, &p) && p.accepted);
     CHECK(command(publisher, MAP_BACKDROP, &p) && p.accepted);
+    const enum Command sizes[] = {DOCK_HEIGHT_512, DOCK_HEIGHT_513, DOCK_HEIGHT_640, DOCK_HEIGHT_660};
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        CHECK(command(publisher, sizes[i], &p));
+        CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
+        CHECK(command(publisher, STAGE_REGIONAL, &p) && p.accepted == (i == 0));
+        CHECK(wl_list_length(&desktop.scene->backdrops) == (i == 0 ? 1 : 0));
+        CHECK(command(publisher, CANCEL, &p));
+        CHECK(wl_list_empty(&desktop.scene->backdrops));
+    }
+    CHECK(command(publisher, DOCK_HEIGHT_64, &p));
+    puts("PASS: raw v7/schema2/role1 Dock accepts height512 but rejects 513/640/660 despite effects4 generic extent; failed staging creates no cache or authority");
     CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
     CHECK(command(publisher, COMMIT, &p) && !p.accepted);
     CHECK(wl_list_empty(&desktop.scene->backdrops));

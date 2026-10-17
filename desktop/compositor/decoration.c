@@ -731,6 +731,8 @@ static void prepare_backdrop(struct wl_client *client, struct wl_resource *resou
     struct PuDesktopLayer *layer = backdrop_layer(owner, id);
     bool valid = !owner->renderer_role && snapshot && snapshot->backdrop_expected &&
         owner->serial == serial && snapshot->backdrop_count < snapshot->backdrop_expected && layer &&
+        /* The v7/schema2/role1 Dock contract does not inherit effects4's taller extent. */
+        layer->pending_box.width <= 4096 && layer->pending_box.height <= 512 &&
         snapshot->backdrop_epoch == owner->state->desktop->backdrop_epoch &&
         wl_resource_get_client(surface) == client &&
         configuration->size == sizeof(words) && words[0] == 2 && words[1] == 1 &&
