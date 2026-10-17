@@ -2485,7 +2485,7 @@ static bool arrangement_protocol(const char *wire)
     CHECK(peer);
     struct wlr_output_state state;
     wlr_output_state_init(&state);
-    wlr_output_state_set_custom_mode(&state, 1281, 721, 60000);
+    wlr_output_state_set_custom_mode(&state, 1284, 729, 60000);
     wlr_output_state_set_scale(&state, 1.25f);
     CHECK(wlr_output_commit_state(head, &state));
     wlr_output_state_finish(&state);
@@ -2521,6 +2521,9 @@ static bool arrangement_protocol(const char *wire)
     CHECK(cascade_send(layer));
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     struct wlr_box work = area; work.y += 30; work.height -= 30;
+    printf("ARRANGEMENT_OUTPUT physical=%dx%d scale=%.2f logical=%d,%d %dx%d work=%d,%d %dx%d\n",
+        head->width, head->height, head->scale, area.x, area.y, area.width, area.height,
+        work.x, work.y, work.width, work.height);
     CHECK((work.width & 1) && (work.height & 1) && area.x < 0 && area.y < 0);
     uint32_t serial = 1, epoch, before[3];
     struct wlr_box saved[3], floats[3], restores[3];
