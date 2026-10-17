@@ -1559,7 +1559,7 @@ and Restore floating.
 Cascade derives the target's main output from its actually presented position,
 not its last configure output. It preserves scene order and focus, affects only
 the current workspace on that output, and skips unmapped/minimized/fullscreen
-windows, transients, modal-blocked families, private Shell/renderer/lock/input
+windows, transient families (including their ordinary parent), private Shell/renderer/lock/input
 surfaces and pending client/native frames. Saved floating sizes restore
 maximized/half windows using normal client limits, native insets and output work
 area fitting. Captions step by 24 logical pixels, wrapping deterministically to

@@ -1058,9 +1058,14 @@ static bool cascade_application(struct PuDesktopView *view)
 {
     struct PuDesktop *desktop = view->desktop;
     struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
-    return client != desktop->shell_client && !pu_decorator_allowed(desktop, client) &&
-        !pu_input_method_allowed(desktop, client) && !pu_session_lock_allowed(desktop, client) &&
-        !view->toplevel->parent && !(view->dialog && view->dialog->modal);
+    if (client == desktop->shell_client || pu_decorator_allowed(desktop, client) ||
+        pu_input_method_allowed(desktop, client) || pu_session_lock_allowed(desktop, client) ||
+        view->toplevel->parent || (view->dialog && view->dialog->modal)) return false;
+    struct PuDesktopView *child;
+    wl_list_for_each(child, &desktop->all_views, all_link)
+        if (child->toplevel->parent == view->toplevel &&
+            wl_resource_get_client(child->toplevel->resource) == client) return false;
+    return true;
 }
 
 static bool cascade_candidate(struct PuDesktopView *view, struct wlr_output *output)

@@ -2302,16 +2302,19 @@ static bool cascade_protocol(const char *wire)
     CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true) &&
         views[1]->geometry_serial == second);
     CHECK(cascade_body(1, TEST_RELEASE) && wait_presented_frame(views[1]));
-    int saved_control = control; control = cascade_controls[1];
-    bool modal = command(TEST_TRANSIENT, 0, 1);
-    control = saved_control;
-    CHECK(modal);
-    for (int i = 0; i < 10; i++) CHECK(pump());
-    second = views[1]->geometry_serial;
-    CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true) &&
-        views[1]->geometry_serial == second);
-    control = cascade_controls[1]; modal = command(TEST_DESTROY, 4, 0); control = saved_control;
-    CHECK(modal && wait_presented_frame(views[1]));
+    int saved_control = control;
+    for (unsigned modal = 0; modal < 2; modal++) {
+        control = cascade_controls[1];
+        bool created = command(TEST_TRANSIENT, 0, modal);
+        control = saved_control;
+        CHECK(created);
+        for (int i = 0; i < 10; i++) CHECK(pump());
+        second = views[1]->geometry_serial;
+        CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true) &&
+            views[1]->geometry_serial == second);
+        control = cascade_controls[1]; created = command(TEST_DESTROY, 4, 0); control = saved_control;
+        CHECK(created && wait_presented_frame(views[1]));
+    }
     puts("PASS: fullscreen, minimized, pending and modal-blocked peer windows are skipped rather than restored or mutated");
 
     CHECK(cascade_body(1, TEST_UNMAXIMIZE) && wait_presented_frame(views[1]));
