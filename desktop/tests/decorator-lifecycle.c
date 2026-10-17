@@ -497,7 +497,7 @@ static bool backdrop_consumer(const char *ui, const char *wire)
 static bool suite(const char *ui, const char *wire, const char *mode)
 {
     char *decorator[] = {(char *)ui, "--decorator", "--app-id", "org.pollyui.decorator",
-        "desktop/decorator/main.mjs", NULL};
+        !strcmp(mode, "frame-policy") ? "desktop/tests/decorator-app.mjs" : "desktop/decorator/main.mjs", NULL};
     CHECK(pu_decorator_spawn(&desktop, decorator));
     CHECK(wait_service(0));
     CHECK(wl_list_empty(&desktop.all_views) && wl_list_empty(&desktop.layers));
