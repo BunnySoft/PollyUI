@@ -33,7 +33,10 @@ enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, 
     PAIR_HEIGHT_769, PREPARE_PAIR, STAGE_PANEL, STAGE_START, STAGE_STANDARD, NEW_PANEL_ROLE,
     V8_STANDARD_SCHEMA, V9_OLD_SCHEMA, RECOMMIT_PANEL, RECOMMIT_START, UNMAP_PANEL, COMMIT_OLD,
     PREPARE_EIGHT, PREPARE_NINE };
-struct Reply { uint32_t state, bootstrap, accepted, serial, globals, retired; bool denied; };
+struct Reply {
+    uint32_t state, bootstrap, accepted, serial, globals, retired, retired_serial, retired_target, retired_role;
+    bool denied;
+};
 struct PairSurface {
     struct wl_surface *surface;
     struct zwlr_layer_surface_v1 *layer;
@@ -94,6 +97,9 @@ static void retired(void *data, struct polly_appearance_v1 *object,
     (void)object;
     struct Probe *probe = data;
     probe->reply.retired++;
+    probe->reply.retired_serial = serial;
+    probe->reply.retired_target = target;
+    probe->reply.retired_role = role;
     fprintf(stderr, "POLICY_RETIREMENT serial=%u target=%u role=%u %s\n", serial, target, role, message);
 }
 static const struct polly_appearance_v1_listener listener = {
@@ -446,6 +452,7 @@ static bool paired_policy(const char *self, int publisher, struct Reply *p)
     CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
     CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
     CHECK(command(publisher, COMMIT, p) && p->accepted);
+    uint32_t installed_serial = p->serial;
     struct PuDesktopLayer *layer;
     struct wlr_scene_rect *committed[2] = {0};
     unsigned count = 0;
@@ -472,7 +479,8 @@ static bool paired_policy(const char *self, int publisher, struct Reply *p)
     CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
     CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
     CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
-    CHECK(command(publisher, UNMAP_PANEL, p) && p->retired);
+    CHECK(command(publisher, UNMAP_PANEL, p) && p->retired &&
+        p->retired_serial == installed_serial && p->retired_target == 1 && p->retired_role == 3);
     CHECK(command(publisher, COMMIT, p) && !p->accepted);
     CHECK(command(publisher, CANCEL, p));
     CHECK(wl_list_empty(&desktop.scene->backdrops));
@@ -561,6 +569,11 @@ static bool suite(const char *self)
     CHECK(paired_policy(self, publisher, &p));
     CHECK(command(renderer, QUERY, &r) && !r.bootstrap);
     CHECK(command(renderer, DUPLICATE, &r) && r.denied);
+    pu_decorator_stop(&desktop); close(renderer);
+    renderer = start(self, true, "9", &r);
+    CHECK(renderer >= 0);
+    CHECK(command(renderer, START_BACKDROP_CAPABILITY, &r) && !r.accepted);
+    CHECK(command(renderer, PREPARE_PAIR, &r) && !r.accepted);
     pu_decorator_stop(&desktop); close(renderer);
     renderer = start(self, true, "6", &r);
     CHECK(renderer >= 0 && r.denied);

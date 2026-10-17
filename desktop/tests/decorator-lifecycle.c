@@ -1074,11 +1074,10 @@ static bool live_backdrop_failure(struct PuDesktopLayer *dock, const char *lock_
     while (milliseconds() < deadline && pu_session_lock_pid(&desktop)) CHECK(pump());
     CHECK(!pu_session_lock_pid(&desktop) && pu_session_lock_active(&desktop));
     CHECK(desktop.scene->backdrop_render_count == renders);
-    uint32_t *locked;
     int width, screen_height;
-    CHECK(scene_pixels(output, &locked, &width, &screen_height));
-    CHECK((locked[(screen_height / 2) * width + width / 2] & 0xffffff) == 0);
-    free(locked);
+    CHECK(scene_pixels(output, &shell_fixture.actual, &width, &screen_height));
+    CHECK((shell_fixture.actual[(screen_height / 2) * width + width / 2] & 0xffffff) == 0);
+    free(shell_fixture.actual); shell_fixture.actual = NULL;
     wlr_scene_node_destroy(&pressure->node); shell_fixture.pressure = NULL;
     char *unlock[] = {(char *)lock_client, "unlock", NULL};
     CHECK(pu_session_lock_spawn(&desktop, unlock));
@@ -1090,7 +1089,7 @@ static bool live_backdrop_failure(struct PuDesktopLayer *dock, const char *lock_
     witness_destroy(&witness->destroy, NULL);
     wlr_scene_node_destroy(&mark->node); shell_fixture.mark = NULL;
     free(committed); shell_fixture.committed = NULL;
-    puts("PASS: real backing/cache pressure fails live Dock composition, reports to Shell, holds identical last committed output bytes with no retry tick, then recovers on new damage");
+    puts("PASS: real backing/cache pressure fails live regional composition, reports to Shell, holds identical last committed output bytes with no retry tick, then recovers on new damage");
     puts("PASS: headless private lock overrides stalled old output with black; crashed lock stays black with zero backdrop resampling; unlock crosses privacy epoch and samples freshly");
     return true;
 }
