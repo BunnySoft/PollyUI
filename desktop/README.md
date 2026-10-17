@@ -115,12 +115,38 @@ does not grant that protocol taller targets or Start/menu authority. This
 primitive/SDK extension does not deliver a production Start consumer, change
 theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
 
-The unchanged exact separable filter is CPU-bounded, not a real-time performance
-guarantee. A full 640x660, sigma16, scale1 update performs 351,621,120 channel taps;
-the native headless measurement was about 290ms on the qualification host, while
-idle frames reused the cache without filtering. This is not 60Hz moving-desktop
-qualification. `desktop-scene-effects` records the actual full-footprint work and
-timing without lowering geometry, sigma, kernel quality or the existing timeout.
+The exact separable filter is CPU-bounded, not a real-time performance guarantee.
+Each tap now loads one packed pixel and updates four independent channel
+accumulators, allowing compiler SLP without changing any channel's tap order,
+kernel normalization, horizontal packed-byte rounding, tint or coverage.
+There are no platform intrinsics, fast-math flags, approximations or new ABI.
+A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
+
+The original native measurement was about 294ms. A separate pinned-CPU GCC14/O3
+comparison of the frozen reference and this implementation, in sequential
+processes on the same host with one warmup and three measured samples per case,
+gave these full-preparation medians (including actual lower-scene composition):
+
+| Footprint, sigma16, scale1 | Reference | Four-channel loop | Speedup |
+| --- | ---: | ---: | ---: |
+| 640x640 | 353.178ms | 191.437ms | 1.84x |
+| 640x660 | 331.922ms | 204.985ms | 1.62x |
+
+These paired results do **not** meet the optimization's 2x engineering goal or
+the 16.7ms frame budget. Some small-target/low-sigma cases were slower; this is
+not an across-the-board speedup claim. Idle captures still reuse the cache
+without filtering. Neither these results nor byte equivalence resolve the
+historical unknown SIGBUS hold or deliver a production Start consumer.
+
+`desktop-scene-effects` retains its original assertions and 30-second timeout.
+Its separate `--gaussian-compare EXISTING_OUTPUT_DIRECTORY` mode records raw
+prepare/moving/idle timings for nine fixed full-scene cases and writes each
+case's complete initial/moving frames. Link the same test source separately
+against each correctly paired compositor core/SDK, rather than swapping
+libraries under a mismatched core; compare the resulting files byte for byte.
+The mode rebuilds each backdrop/cache for every sample, checks movement causes
+one new filter, checks idle causes none, and verifies destruction returns cached
+bytes to zero. It does not reduce geometry, sigma, padding or kernel quality.
 
 Only the authenticated Shell publisher can stage the actual mapped, fixed-size,
 bottom-anchored top-layer surface on its inherited connection. Theme preparation

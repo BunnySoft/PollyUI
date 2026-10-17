@@ -109,7 +109,7 @@ index 2292f1f..1ed5b98 100644
  struct wlr_scene_output_layout;
  
  struct wlr_presentation;
-@@ -91,6 +102,7 @@ struct wlr_scene_tree {
+@@ -91,6 +110,7 @@ struct wlr_scene_tree {
  	struct wlr_scene_node node;
  
  	struct wl_list children; // wlr_scene_node.link
@@ -117,7 +117,7 @@ index 2292f1f..1ed5b98 100644
  };
  
  /** The root scene-graph node. */
-@@ -102,6 +114,12 @@ struct wlr_scene {
+@@ -102,6 +122,12 @@ struct wlr_scene {
  	// May be NULL
  	struct wlr_linux_dmabuf_v1 *linux_dmabuf_v1;
  	struct wlr_gamma_control_manager_v1 *gamma_control_manager_v1;
@@ -130,7 +130,7 @@ index 2292f1f..1ed5b98 100644
  
  	struct {
  		struct wl_listener linux_dmabuf_v1_destroy;
-@@ -140,6 +158,10 @@ struct wlr_scene_rect {
+@@ -140,6 +166,10 @@ struct wlr_scene_rect {
  	struct wlr_scene_node node;
  	int width, height;
  	float color[4];
@@ -141,7 +141,7 @@ index 2292f1f..1ed5b98 100644
  };
  
  struct wlr_scene_outputs_update_event {
-@@ -211,6 +233,7 @@ struct wlr_scene_buffer {
+@@ -211,6 +241,7 @@ struct wlr_scene_buffer {
  /** A viewport for an output in the scene-graph */
  struct wlr_scene_output {
  	struct wlr_output *output;
@@ -149,7 +149,7 @@ index 2292f1f..1ed5b98 100644
  	struct wl_list link; // wlr_scene.outputs
  	struct wlr_scene *scene;
  	struct wlr_addon addon;
-@@ -361,6 +384,39 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
+@@ -361,6 +392,39 @@ void wlr_scene_set_gamma_control_manager_v1(struct wlr_scene *scene,
   */
  struct wlr_scene_tree *wlr_scene_tree_create(struct wlr_scene_tree *parent);
  
@@ -1259,7 +1259,7 @@ index e823d62..f0f2f29 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +1984,491 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1471,6 +1984,502 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  	pixman_region32_fini(&render_region);
  }
  
@@ -1636,13 +1636,18 @@ index e823d62..f0f2f29 100644
 +		for (int py = 0; py < height; py++) {
 +			uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
 +			for (int px = pad; px < width - pad; px++) {
++				float values[4] = {0};
++				for (int i = -pad; i <= pad; i++) {
++					uint32_t sample = row[px + i];
++					float weight = kernel[i + pad];
++					values[0] += (sample & 255) * weight;
++					values[1] += ((sample >> 8) & 255) * weight;
++					values[2] += ((sample >> 16) & 255) * weight;
++					values[3] += (sample >> 24) * weight;
++				}
 +				uint32_t pixel = 0;
 +				for (int channel = 0; channel < 32; channel += 8) {
-+					float value = 0;
-+					for (int i = -pad; i <= pad; i++) {
-+						value += ((row[px + i] >> channel) & 255) * kernel[i + pad];
-+					}
-+					pixel |= (uint32_t)lroundf(value) << channel;
++					pixel |= (uint32_t)lroundf(values[channel / 8]) << channel;
 +				}
 +				temporary[py * width + px] = pixel;
 +			}
@@ -1655,12 +1660,18 @@ index e823d62..f0f2f29 100644
 +				float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
 +				float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
 +				float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++				float values[4] = {0};
++				for (int i = -pad; i <= pad; i++) {
++					uint32_t sample = temporary[(py + pad + i) * width + px + pad];
++					float weight = kernel[i + pad];
++					values[0] += (sample & 255) * weight;
++					values[1] += ((sample >> 8) & 255) * weight;
++					values[2] += ((sample >> 16) & 255) * weight;
++					values[3] += (sample >> 24) * weight;
++				}
 +				uint32_t pixel = 0;
 +				for (int channel = 0; channel < 32; channel += 8) {
-+					float value = 0;
-+					for (int i = -pad; i <= pad; i++) {
-+						value += ((temporary[(py + pad + i) * width + px + pad] >> channel) & 255) * kernel[i + pad];
-+					}
++					float value = values[channel / 8];
 +					int component = channel == 24 ? 3 : 2 - channel / 8;
 +					value = rect->color[component] * 255 + value * (1 - rect->color[3]);
 +					pixel |= (uint32_t)lroundf(fminf(value, 255) * coverage) << channel;
@@ -1751,7 +1762,7 @@ index e823d62..f0f2f29 100644
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
  		void *data) {
  	struct wlr_scene *scene =
-@@ -1756,7 +2754,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
+@@ -1756,7 +2765,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
  	} else if (node->type == WLR_SCENE_NODE_RECT) {
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  
@@ -1760,7 +1771,7 @@ index e823d62..f0f2f29 100644
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
  
-@@ -1772,6 +2770,7 @@ struct render_list_constructor_data {
+@@ -1772,6 +2781,7 @@ struct render_list_constructor_data {
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -1768,7 +1779,7 @@ index e823d62..f0f2f29 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +2785,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +2796,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -1808,7 +1819,7 @@ index e823d62..f0f2f29 100644
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -1800,7 +2832,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
+@@ -1800,7 +2843,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  		float *black = (float[4]){ 0.f, 0.f, 0.f, 1.f };
  
@@ -1817,7 +1828,7 @@ index e823d62..f0f2f29 100644
  			return false;
  		}
  	}
-@@ -2046,6 +3078,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
+@@ -2046,6 +3089,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
  
  bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		struct wlr_output_state *state, const struct wlr_scene_output_state_options *options) {
@@ -1825,7 +1836,7 @@ index e823d62..f0f2f29 100644
  	struct wlr_scene_output_state_options default_options = {0};
  	if (!options) {
  		options = &default_options;
-@@ -2073,6 +3106,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2073,6 +3117,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		.logical = { .x = scene_output->x, .y = scene_output->y },
  		.output = scene_output,
  	};
@@ -1834,7 +1845,7 @@ index e823d62..f0f2f29 100644
  
  	int resolution_width, resolution_height;
  	output_pending_resolution(output, state,
-@@ -2117,6 +3152,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2117,6 +3163,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -1872,7 +1883,7 @@ index e823d62..f0f2f29 100644
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
-@@ -2330,7 +3396,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2330,7 +3407,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
  	pixman_region32_fini(&render_data.damage);
  

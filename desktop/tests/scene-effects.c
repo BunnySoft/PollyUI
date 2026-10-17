@@ -896,9 +896,213 @@ static bool suite(struct PuDesktop *desktop)
     CHECK(taller_extent_suite(desktop, output));
     return true;
 }
+
+/* Link this same fixture separately to each paired core/SDK. Timings exclude
+ * desktop setup and include the complete lower-scene preparation. */
+static int gaussian_probe(struct PuDesktop *desktop, unsigned index, const char *directory,
+    uint32_t *frames, uint32_t *expected, size_t capacity)
+{
+    const struct { int width, height, x, y; float sigma, scale, radius, tint[4]; } cases[] = {
+        {640, 640, 64, 64, 16, 1, 8, {0.1f, 0.05f, 0.2f, 0.25f}},
+        {640, 660, 64, 64, 16, 1, 8, {0.1f, 0.05f, 0.2f, 0.25f}},
+        {37, 29, 17, 19, 0.5f, 1.25f, 8, {0}},
+        {41, 33, 19, 17, 2.25f, 1.5f, 0, {0.07f, 0.1f, 0.02f, 0.4f}},
+        {96, 64, 32, 31, 32, 2, 32, {0.2f, 0.1f, 0.05f, 0.5f}},
+        {16, 768, 8, 8, 0.5f, 1, 8, {0}},
+        {4096, 1, 0, 0, 0.5f, 1, 0, {0}},
+        {4092, 508, 0, 0, 0.5f, 1, 0, {0}},
+        {4093, 1, 0, 0, 0.5f, 8, 0, {0}},
+    };
+    if (index >= sizeof(cases) / sizeof(cases[0])) return 2;
+    double case_start = milliseconds(), measured_ms = 0;
+    bool ok;
+    {
+        struct wlr_output_layout_output *entry = wl_container_of(desktop->layout->outputs.next, entry, link);
+        struct wlr_output *output = entry->output;
+        float scale = cases[index].scale;
+        int logical_width = cases[index].width > 800 ? cases[index].width : 800;
+        int logical_height = cases[index].height > 800 ? cases[index].height : 800;
+        /* Extreme padded-axis coverage needs only a visible strip, not a
+         * 32768-by-6400 output unrelated to the admitted regional target. */
+        if (scale == 8) { logical_width = 100; logical_height = 100; }
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_custom_mode(&state, (int)(logical_width * scale),
+            (int)(logical_height * scale), 60000);
+        wlr_output_state_set_scale(&state, scale);
+        ok = wlr_output_commit_state(output, &state);
+        wlr_output_state_finish(&state);
+        struct wlr_scene_tree *apps = wlr_scene_tree_create(desktop->windows);
+        struct wlr_scene_tree *second = apps ? wlr_scene_tree_create(apps) : NULL;
+        struct wlr_scene_tree *target = wlr_scene_tree_create(desktop->layer_trees[2]);
+        ok = ok && apps && second && target;
+        if (apps) wlr_scene_node_set_enabled(&apps->node, false);
+        uint32_t seed = 0x22e4a17u;
+        for (int y = 0; ok && y < logical_height; y += 16) {
+            for (int x = 0; ok && x < logical_width; x += 16) {
+                seed = seed * 1664525u + 1013904223u;
+                float alpha = ((seed >> 24) + 1) / 256.0f;
+                float color[4] = {(seed & 255) / 255.0f * alpha,
+                    ((seed >> 8) & 255) / 255.0f * alpha,
+                    ((seed >> 16) & 255) / 255.0f * alpha, alpha};
+                if (index < 2) {
+                    color[0] = ((x / 16 + y / 16) & 1) ? 0.8f : 0.2f;
+                    color[1] = 0.1f; color[2] = 0.2f; color[3] = 1;
+                }
+                struct wlr_scene_rect *tile = wlr_scene_rect_create(apps, 16, 16, color);
+                ok = tile != NULL;
+                if (tile) wlr_scene_node_set_position(&tile->node, x, y);
+                if (ok && x < 320) {
+                    tile = wlr_scene_rect_create(second, 16, 16,
+                        (float[4]){0.1f, ((x / 16 + y / 16) & 1) ? 0.3f : 0.9f, 0.4f, 1});
+                    ok = tile != NULL;
+                    if (tile) wlr_scene_node_set_position(&tile->node, x, y);
+                }
+            }
+        }
+        if (second) {
+            wlr_scene_node_raise_to_top(&second->node);
+            wlr_scene_node_set_position(&second->node, 400, 0);
+        }
+        if (apps) wlr_scene_node_set_enabled(&apps->node, true);
+        struct wlr_scene_rect *glyph = target ? wlr_scene_rect_create(target, 16, 24,
+            (float[4]){1, 1, 0, 1}) : NULL;
+        struct wlr_scene_rect *upper = wlr_scene_rect_create(desktop->layer_trees[3], 32, 16,
+            (float[4]){0, 0, 1, 1});
+        ok = ok && glyph && upper;
+        if (glyph) wlr_scene_node_set_position(&glyph->node, 364, 364);
+        if (upper) wlr_scene_node_set_position(&upper->node, 464, 464);
+        printf("GAUSSIAN_FIXTURE: case=%u setup_ms=%.6f logical=%dx%d sigma=%g scale=%g radius=%g\n",
+            index, milliseconds() - case_start, cases[index].width, cases[index].height,
+            cases[index].sigma, scale, cases[index].radius);
+        int expected_width = 0, expected_height = 0;
+        for (unsigned trial = 0; ok && trial < 4; trial++) {
+            double times[4] = {0};
+            wlr_scene_node_set_position(&second->node, 400, 0);
+            ok = desktop->scene->effects_cached_bytes == 0;
+            double start = milliseconds();
+            uint64_t count = desktop->scene->backdrop_render_count;
+            struct wlr_scene_rect *rect = ok ? wlr_scene_backdrop_create(target,
+                &(struct wlr_box){cases[index].x, cases[index].y, cases[index].width, cases[index].height},
+                cases[index].radius, cases[index].sigma, cases[index].tint) : NULL;
+            times[0] = milliseconds() - start;
+            ok = ok && rect && desktop->scene->backdrop_render_count == count + 1;
+            uint32_t *actual = NULL, *idle = NULL, *moved = NULL;
+            int width = 0, height = 0, w = 0, h = 0;
+            if (ok) {
+                wlr_scene_node_set_enabled(&rect->node, true);
+                start = milliseconds();
+                ok = capture(desktop, output, &actual, &width, &height);
+                times[3] = milliseconds() - start;
+            }
+            uint64_t initial_filters = desktop->scene->backdrop_render_count - count;
+            count = desktop->scene->backdrop_render_count;
+            if (ok) {
+                start = milliseconds();
+                ok = capture(desktop, output, &idle, &w, &h);
+                times[2] = milliseconds() - start;
+                ok = ok && w == width && h == height &&
+                    desktop->scene->backdrop_render_count == count &&
+                    !memcmp(actual, idle, (size_t)width * height * 4);
+            }
+            if (ok) {
+                wlr_scene_node_set_position(&second->node, 320, 0);
+                start = milliseconds();
+                ok = capture(desktop, output, &moved, &w, &h);
+                times[1] = milliseconds() - start;
+                ok = ok && w == width && h == height &&
+                    desktop->scene->backdrop_render_count == count + 1;
+                if (index < 2) ok = ok && memcmp(actual, moved, (size_t)width * height * 4);
+            }
+            size_t pixels = (size_t)width * height, bytes = pixels * 8;
+            if (ok && capacity >= pixels * 2) {
+                memcpy(frames, actual, pixels * 4);
+                memcpy(frames + pixels, moved, pixels * 4);
+                if (trial == 0) {
+                    memcpy(expected, frames, bytes);
+                    expected_width = width; expected_height = height;
+                } else {
+                    ok = width == expected_width && height == expected_height &&
+                        !memcmp(expected, frames, bytes);
+                }
+            } else {
+                ok = false;
+            }
+            if (ok && trial == 1) {
+                char path[4096];
+                int length = snprintf(path, sizeof(path), "%s/case-%u.rgba", directory, index);
+                FILE *file = length > 0 && (size_t)length < sizeof(path) ? fopen(path, "wb") : NULL;
+                if (file) {
+                    bool written = fwrite(frames, 1, bytes, file) == bytes;
+                    ok = fclose(file) == 0 && written;
+                } else {
+                    ok = false;
+                }
+            }
+            free(actual); free(idle); free(moved);
+            if (rect) wlr_scene_node_destroy(&rect->node);
+            ok = ok && desktop->scene->effects_cached_bytes == 0;
+            measured_ms += times[0] + times[1] + times[2] + times[3];
+            if (!ok) fprintf(stderr, "FAIL Gaussian probe case=%u trial=%u capacity=%zu pixels=%zu\n",
+                index, trial, capacity, pixels);
+            printf("GAUSSIAN: case=%u trial=%u warmup=%u output=%dx%d bytes=%zu prepare_ms=%.6f moving_ms=%.6f idle_ms=%.6f initial_capture_ms=%.6f initial_filters=%llu cache_after_destroy=%zu measured_cumulative_ms=%.6f wall_cumulative_ms=%.6f\n",
+                index, trial, trial == 0, width, height, bytes, times[0], times[1], times[2], times[3],
+                (unsigned long long)initial_filters, desktop->scene->effects_cached_bytes,
+                measured_ms, milliseconds() - case_start);
+        }
+        if (upper) wlr_scene_node_destroy(&upper->node);
+        if (target) wlr_scene_node_destroy(&target->node);
+        if (apps) {
+            wlr_scene_node_set_enabled(&apps->node, false);
+            wlr_scene_node_destroy(&apps->node);
+        }
+        ok = ok && desktop->scene->effects_cached_bytes == 0 &&
+            desktop->scene->effects_peak_bytes <= WLR_SCENE_EFFECTS_MAX_BYTES;
+    }
+    printf("GAUSSIAN_CASE_TOTAL: case=%u measured_ms=%.6f other_ms=%.6f\n",
+        index, measured_ms, milliseconds() - case_start - measured_ms);
+    return ok ? 0 : 1;
+}
+
+static bool gaussian_measurements(struct PuDesktop *desktop, const char *directory)
+{
+    size_t capacity = 2u * 4096u * 800u;
+    uint32_t *frames = malloc(capacity * 4), *expected = malloc(capacity * 4);
+    CHECK(frames && expected);
+    printf("GAUSSIAN: abi=%u patch=%s seed=0x22e4a17 warmup=1 measurements=3\n",
+        wlr_scene_effects_abi_v4(), wlr_scene_effects_source_sha256_v4());
+    for (unsigned index = 0;; index++) {
+        int result = gaussian_probe(desktop, index, directory, frames, expected, capacity);
+        if (result != 0) {
+            free(frames); free(expected);
+            CHECK(result == 2);
+            return true;
+        }
+    }
+}
+
+static bool gaussian_comparison(const char *directory)
+{
+    char runtime[] = "/tmp/polly-gaussian-XXXXXX";
+    CHECK(mkdtemp(runtime));
+    setenv("XDG_RUNTIME_DIR", runtime, 1);
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_HEADLESS_OUTPUTS", "1", 1);
+    setenv("WLR_RENDERER", "pixman", 1);
+    wlr_log_init(WLR_ERROR, NULL);
+    struct PuDesktop desktop = {0};
+    bool ok = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) &&
+        gaussian_measurements(&desktop, directory);
+    pu_desktop_finish(&desktop);
+    if (rmdir(runtime)) ok = false;
+    return ok;
+}
+
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
+    if (argc == 3 && !strcmp(argv[1], "--gaussian-compare"))
+        return gaussian_comparison(argv[2]) ? 0 : 1;
     if (argc != 1 && !(argc == 3 && !strcmp(argv[1], "--caption"))) return 2;
     char runtime[] = "/tmp/polly-effects-XXXXXX";
     if (!mkdtemp(runtime)) return 1;
