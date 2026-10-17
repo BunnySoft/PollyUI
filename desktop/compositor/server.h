@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <wayland-server-core.h>
 #include <wlr/util/box.h>
+#include "private-process.h"
 
 struct PuDesktop;
 struct PuDesktopOwner {
@@ -122,11 +123,13 @@ struct PuDesktop {
     bool live_startup, live_splash, live_ready;
     const char *socket_name;
     struct wl_event_source *sigint, *sigterm;
-    struct wl_event_source *shell_exit;
+    struct wl_event_source *private_process_exit;
+    struct PuPrivateProcessWatch private_processes[PU_PRIVATE_PROCESS_COUNT];
+    bool private_process_dispatching, private_process_pending;
     struct wl_event_source *shell_restart_timer;
     char **shell_command;
     unsigned shell_restarts_left, shell_restarts_used;
-    bool shell_restart_pending, exit_with_shell, exit_on_shell_failure;
+    bool shell_restart_pending, shell_stopping, exit_with_shell, exit_on_shell_failure;
     struct wl_client *shell_client;
     struct wl_listener shell_client_destroy;
     pid_t shell_pid;
