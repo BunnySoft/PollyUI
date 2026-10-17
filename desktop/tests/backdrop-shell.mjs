@@ -5,7 +5,19 @@ import { BUILTIN_THEME_CATALOG, installThemeCatalog } from './desktop/shared/ui/
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 
 const [mode] = application.arguments;
-if (mode === 'modern' || mode === 'modern-old') {
+if (mode === 'guard-retire') {
+  const dock = window.create({ title: 'Backdrop.guard.Dock', layer: 'top', width: 96, height: 64,
+    anchors: ['bottom'], exclusiveZone: 64, transparent: true });
+  dock.document.body.style.backgroundColor = '#314159';
+  for (const name of ['control', 'first', 'second']) {
+    const view = window.create({ title: 'Backdrop.guard.' + name, width: 160, height: 80 });
+    view.document.body.style.backgroundColor = '#234567';
+  }
+  const ready = window.create({ title: 'Backdrop.guard.ready', layer: 'overlay', width: 1, height: 1,
+    anchors: ['top', 'right'], exclusiveZone: -1 });
+  ready.onclose = () => dock.close();
+  window.close();
+} else if (mode === 'modern' || mode === 'modern-old') {
   modern().catch(failure => {
     console.error('FAIL: ' + String(failure) + '\n' + failure.stack);
     window.quit();

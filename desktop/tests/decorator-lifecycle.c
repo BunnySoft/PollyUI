@@ -50,10 +50,115 @@ static int control = -1;
 static struct TestReply reply;
 static uint32_t clock_ms = 1000;
 
+struct BackdropWatch {
+    struct wl_listener listener;
+    const char *event;
+    bool retired, linked;
+};
+static struct {
+    bool active, reported;
+    struct PuDesktopLayer *layer;
+    struct wlr_layer_surface_v1 *role;
+    struct wlr_surface *surface;
+    struct wl_resource *resource;
+    struct wl_client *owner;
+    struct wlr_output *output;
+    struct PuDesktopView *views[3];
+    struct wlr_surface *view_surfaces[3];
+    uint64_t view_ids[3];
+    struct BackdropWatch watches[10];
+    unsigned count;
+} backdrop_guard;
+static void backdrop_retired(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    struct BackdropWatch *watch = wl_container_of(listener, watch, listener);
+    watch->retired = true;
+    wl_list_remove(&watch->listener.link);
+    watch->linked = false;
+}
+static void backdrop_watch(struct wl_signal *signal, const char *event)
+{
+    struct BackdropWatch *watch = &backdrop_guard.watches[backdrop_guard.count++];
+    *watch = (struct BackdropWatch){.event = event, .linked = true};
+    watch->listener.notify = backdrop_retired;
+    wl_signal_add(signal, &watch->listener);
+}
+static void backdrop_guard_stop(void)
+{
+    backdrop_guard.active = false;
+    for (unsigned i = 0; i < backdrop_guard.count; i++)
+        if (backdrop_guard.watches[i].linked) {
+            wl_list_remove(&backdrop_guard.watches[i].listener.link);
+            backdrop_guard.watches[i].linked = false;
+        }
+}
+static void backdrop_guard_start(struct PuDesktopLayer *layer, struct PuDesktopView *control_view,
+    struct PuDesktopView *first, struct PuDesktopView *second)
+{
+    backdrop_guard_stop();
+    memset(&backdrop_guard, 0, sizeof(backdrop_guard));
+    backdrop_guard.layer = layer; backdrop_guard.role = layer->surface;
+    backdrop_guard.surface = layer->surface->surface;
+    backdrop_guard.resource = backdrop_guard.surface->resource;
+    backdrop_guard.owner = wl_resource_get_client(backdrop_guard.resource);
+    backdrop_guard.output = layer->surface->output;
+    backdrop_watch(&layer->surface->events.destroy, "Dock layer destroyed");
+    backdrop_watch(&backdrop_guard.surface->events.destroy, "Dock surface destroyed");
+    backdrop_watch(&backdrop_guard.surface->events.unmap, "Dock surface unmapped");
+    backdrop_watch(&backdrop_guard.output->events.destroy, "Dock output destroyed");
+    struct PuDesktopView *views[] = {control_view, first, second};
+    const char *destroyed[] = {"control destroyed", "first lower view destroyed", "second lower view destroyed"};
+    const char *unmapped[] = {"control unmapped", "first lower view unmapped", "second lower view unmapped"};
+    for (unsigned i = 0; i < 3; i++) {
+        backdrop_guard.views[i] = views[i];
+        backdrop_guard.view_surfaces[i] = views[i]->toplevel->base->surface;
+        backdrop_guard.view_ids[i] = views[i]->workspace_window;
+        backdrop_watch(&views[i]->toplevel->events.destroy, destroyed[i]);
+        backdrop_watch(&backdrop_guard.view_surfaces[i]->events.unmap, unmapped[i]);
+    }
+    backdrop_guard.active = true;
+}
+static bool backdrop_guard_current(void)
+{
+    if (!backdrop_guard.active) return true;
+    const char *error = NULL;
+    for (unsigned i = 0; i < backdrop_guard.count; i++)
+        if (backdrop_guard.watches[i].retired) { error = backdrop_guard.watches[i].event; break; }
+    if (!error) {
+        struct PuDesktopLayer *layer, *current = NULL;
+        wl_list_for_each(layer, &desktop.layers, link)
+            if (layer->surface == backdrop_guard.role && layer->surface->surface == backdrop_guard.surface &&
+                layer->surface->surface->resource == backdrop_guard.resource) { current = layer; break; }
+        if (current != backdrop_guard.layer || desktop.shell_client != backdrop_guard.owner ||
+            wl_resource_get_client(current->surface->surface->resource) != backdrop_guard.owner ||
+            current->surface->output != backdrop_guard.output)
+            error = "original owner/surface/layer/output identity changed";
+    }
+    for (unsigned i = 0; !error && i < 3; i++) {
+        struct PuDesktopView *view;
+        bool current = false;
+        wl_list_for_each(view, &desktop.all_views, all_link)
+            if (view == backdrop_guard.views[i]) {
+                current = view->mapped && view->toplevel->base->surface == backdrop_guard.view_surfaces[i] &&
+                    view->workspace_window == backdrop_guard.view_ids[i];
+                break;
+            }
+        if (!current) error = "original view identity or mapping changed";
+    }
+    if (error && !backdrop_guard.reported) {
+        fprintf(stderr, "[backdrop-fixture] %s; refusing stale target access\n", error);
+        backdrop_guard.reported = true;
+    }
+    return error == NULL;
+}
+
 static bool pump(void)
 {
+    if (!backdrop_guard_current()) return false;
     wl_display_flush_clients(desktop.display);
-    return wl_event_loop_dispatch(wl_display_get_event_loop(desktop.display), 5) >= 0 && !desktop.failed;
+    bool dispatched = wl_event_loop_dispatch(wl_display_get_event_loop(desktop.display), 5) >= 0 && !desktop.failed;
+    return backdrop_guard_current() && dispatched;
 }
 static struct PuDesktopView *find(const char *title)
 {
@@ -158,6 +263,7 @@ static unsigned buffer_count(struct wlr_scene_node *node)
 }
 static bool body_pixel(struct PuDesktopView *view, uint32_t expected)
 {
+    if (!backdrop_guard_current()) return false;
     struct wlr_client_buffer *buffer = view->toplevel->base->surface->buffer;
     if (!buffer || !buffer->source) return false;
     void *pixels; uint32_t format, pixel; size_t stride;
@@ -212,6 +318,7 @@ static bool wait_service(pid_t previous)
 }
 static bool scene_pixels(struct wlr_output *output, uint32_t **pixels, int *width, int *height)
 {
+    CHECK(backdrop_guard_current());
     struct wlr_output_state state;
     wlr_output_state_init(&state);
     wlr_output_lock_attach_render(output, true);
@@ -243,6 +350,7 @@ static uint64_t milliseconds(void)
 }
 static bool dock_foreground_ready(struct PuDesktopLayer *dock)
 {
+    if (!backdrop_guard_current()) return false;
     struct wlr_client_buffer *buffer = dock ? dock->surface->surface->buffer : NULL;
     void *data; uint32_t format; size_t stride;
     if (!buffer || !buffer->source ||
@@ -259,6 +367,7 @@ static bool dock_foreground_ready(struct PuDesktopLayer *dock)
 }
 static bool control_key(struct PuDesktopView *view, uint32_t expected)
 {
+    CHECK(backdrop_guard_current());
     pu_desktop_focus_mapped(&desktop, view->workspace_window);
     for (int i = 0; i < 10; i++) CHECK(pump());
     wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, KEY_SPACE, WL_KEYBOARD_KEY_STATE_PRESSED);
@@ -391,6 +500,7 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     struct wlr_box box = dock->pending_box;
     struct PuDesktopView *first = wire_view(), *second = find("Decorator.fixture.app");
     CHECK(first && second);
+    backdrop_guard_start(dock, control_view, first, second);
     wlr_scene_node_set_position(&first->tree->node, box.x - 20, box.y - 45);
     wlr_scene_node_set_position(&second->tree->node, box.x + box.width / 2, box.y - 45);
     struct wlr_box output_box;
@@ -487,13 +597,51 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     CHECK(sampled_layer());
     CHECK(scene_pixels(sampled_layer()->surface->output, &actual, &w, &h));
     free(actual);
+    CHECK(backdrop_guard_current());
     pu_desktop_focus_mapped(&desktop, control_view->workspace_window);
     wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, KEY_SPACE, WL_KEYBOARD_KEY_STATE_PRESSED);
     wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, KEY_SPACE, WL_KEYBOARD_KEY_STATE_RELEASED);
+    backdrop_guard_stop();
     for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
     CHECK(!desktop.shell_pid && wl_list_empty(&desktop.scene->backdrops));
     pixman_region32_fini(&input);
     puts("PASS: real missing-field legacy retirement, reactivation and Shell exit release all regional nodes/pixels");
+    return true;
+}
+static bool backdrop_guard_retirement(const char *ui)
+{
+    char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
+        "desktop/tests/backdrop-shell.mjs", "guard-retire", NULL};
+    CHECK(pu_desktop_spawn_shell(&desktop, shell));
+    struct PuDesktopLayer *dock = NULL, *ready = NULL;
+    struct PuDesktopView *control_view = NULL, *first = NULL, *second = NULL;
+    for (int i = 0; i < 1200; i++) {
+        CHECK(pump());
+        control_view = find("Backdrop.guard.control");
+        first = find("Backdrop.guard.first"); second = find("Backdrop.guard.second");
+        struct PuDesktopLayer *layer;
+        dock = ready = NULL;
+        wl_list_for_each(layer, &desktop.layers, link) {
+            if (!layer->presented || !layer->surface->surface->mapped) continue;
+            if (!strcmp(layer->surface->namespace, "Backdrop.guard.Dock")) dock = layer;
+            if (!strcmp(layer->surface->namespace, "Backdrop.guard.ready")) ready = layer;
+        }
+        if (dock && ready && control_view && first && second) break;
+    }
+    CHECK(dock && ready && control_view && first && second);
+    backdrop_guard_start(dock, control_view, first, second);
+    CHECK(backdrop_guard_current());
+    /* The owned client closes its original Dock when this test-only handshake retires. */
+    wlr_layer_surface_v1_destroy(ready->surface);
+    bool current = true;
+    for (int i = 0; i < 1200 && current; i++) current = pump();
+    CHECK(!current && !desktop.failed && backdrop_guard.reported &&
+        (backdrop_guard.watches[0].retired || backdrop_guard.watches[1].retired ||
+         backdrop_guard.watches[2].retired));
+    CHECK(!backdrop_guard_current());
+    CHECK(find("Backdrop.guard.control") && find("Backdrop.guard.first") && find("Backdrop.guard.second"));
+    backdrop_guard_stop();
+    puts("PASS: test-only lifetime guard rejects the original owned Dock after real client unmap/destroy; repeated checks refuse stale access while all three witnessed views remain live");
     return true;
 }
 static unsigned shell_backdrop_count(uint32_t role)
@@ -727,6 +875,7 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(pu_decorator_spawn(&desktop, decorator));
     CHECK(wait_service(0));
     CHECK(wl_list_empty(&desktop.all_views) && wl_list_empty(&desktop.layers));
+    if (!strcmp(mode, "backdrop-guard")) return backdrop_guard_retirement(ui);
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
@@ -876,6 +1025,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        backdrop_guard_stop();
         stop_child(&wire_pid); stop_child(&app_pid);
         wlr_pointer_finish(&pointer); wlr_keyboard_finish(&keyboard);
     }
