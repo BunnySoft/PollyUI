@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "server.h"
 #include "session-lock.h"
 #include <drm_fourcc.h>
@@ -15,6 +16,7 @@
 #include <wlr/types/wlr_scene.h>
 #include <wlr/util/log.h>
 #include <wlr/util/transform.h>
+#include "scene-effects-metrics.h"
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL effects:%d: %s\n", __LINE__, #c); return false; } } while (0)
 struct Pixels { struct wlr_buffer base; uint32_t pixels[]; };
@@ -39,25 +41,41 @@ static struct wlr_buffer *pattern(void)
         pixels->pixels[y * 24 + x] = 0x80000000 | (uint32_t)(x * 5) << 16 | (uint32_t)(y * 6) << 8 | 64;
     return &pixels->base;
 }
-static bool capture(struct PuDesktop *desktop, struct wlr_output *target, uint32_t **copy, int *width, int *height)
+static bool capture_frame(struct PuDesktop *desktop, struct wlr_output *target,
+    uint32_t **copy, int *width, int *height, uint32_t *storage, size_t storage_pixels)
 {
     struct wlr_scene_output *output = wlr_scene_get_scene_output(desktop->scene, target);
     struct wlr_output_state state;
     wlr_output_state_init(&state);
+    struct stage_stamp build_begin = stage_stamp();
     wlr_output_lock_attach_render(target, true);
     bool built = wlr_scene_output_build_state(output, &state, NULL);
     wlr_output_lock_attach_render(target, false);
+    stage_record("capture_build", build_begin);
     CHECK(built && state.buffer);
+    if (storage && storage_pixels < (size_t)state.buffer->width * state.buffer->height) {
+        fputs("FAIL Gaussian verification storage capacity\n", stderr);
+        wlr_output_state_finish(&state);
+        return false;
+    }
+    struct stage_stamp copy_begin = stage_stamp();
     void *data; uint32_t format; size_t stride;
     CHECK(wlr_buffer_begin_data_ptr_access(state.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
     *width = state.buffer->width; *height = state.buffer->height;
-    *copy = malloc((size_t)*width * *height * 4);
+    *copy = storage ? storage : malloc((size_t)*width * *height * 4);
     CHECK(*copy && (format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888));
     for (int y = 0; y < *height; y++)
         memcpy(*copy + y * *width, (char *)data + y * stride, (size_t)*width * 4);
     wlr_buffer_end_data_ptr_access(state.buffer);
+    stage_record("capture_copy", copy_begin);
+    struct stage_stamp finish_begin = stage_stamp();
     wlr_output_state_finish(&state);
+    stage_record("capture_finish", finish_begin);
     return true;
+}
+static bool capture(struct PuDesktop *desktop, struct wlr_output *target, uint32_t **copy, int *width, int *height)
+{
+    return capture_frame(desktop, target, copy, width, height, NULL, 0);
 }
 static float distance_to_round(float x, float y, float width, float height, float radius)
 {
@@ -972,6 +990,21 @@ static int gaussian_probe(struct PuDesktop *desktop, unsigned index, const char 
         ok = ok && glyph && upper;
         if (glyph) wlr_scene_node_set_position(&glyph->node, 364, 364);
         if (upper) wlr_scene_node_set_position(&upper->node, 464, 464);
+        size_t verify_pixels = (size_t)output->width * output->height;
+        uint32_t *verify[3] = {0};
+        double allocation_start = milliseconds();
+        for (unsigned slot = 0; ok && slot < 3; slot++) {
+            verify[slot] = malloc(verify_pixels * 4);
+            if (!verify[slot]) {
+                fputs("FAIL Gaussian verification storage allocation\n", stderr);
+                ok = false;
+                break;
+            }
+            volatile uint32_t *prefault = verify[slot];
+            for (size_t pixel = 0; pixel < verify_pixels; pixel++) prefault[pixel] = 0;
+        }
+        printf("GAUSSIAN_VERIFY_STORAGE: case=%u output=%dx%d buffers=3 bytes=%zu allocation_prefault_ms=%.6f outside_production_timers=1\n",
+            index, output->width, output->height, verify_pixels * 12, milliseconds() - allocation_start);
         printf("GAUSSIAN_FIXTURE: case=%u setup_ms=%.6f logical=%dx%d sigma=%g scale=%g radius=%g\n",
             index, milliseconds() - case_start, cases[index].width, cases[index].height,
             cases[index].sigma, scale, cases[index].radius);
@@ -980,36 +1013,49 @@ static int gaussian_probe(struct PuDesktop *desktop, unsigned index, const char 
             double times[4] = {0};
             wlr_scene_node_set_position(&second->node, 400, 0);
             ok = desktop->scene->effects_cached_bytes == 0;
+            stage_index = index; stage_trial = trial;
+            stage_phase = "prepare";
+            struct stage_stamp outer_begin = stage_stamp();
             double start = milliseconds();
             uint64_t count = desktop->scene->backdrop_render_count;
             struct wlr_scene_rect *rect = ok ? wlr_scene_backdrop_create(target,
                 &(struct wlr_box){cases[index].x, cases[index].y, cases[index].width, cases[index].height},
                 cases[index].radius, cases[index].sigma, cases[index].tint) : NULL;
             times[0] = milliseconds() - start;
+            stage_record("total", outer_begin);
             ok = ok && rect && desktop->scene->backdrop_render_count == count + 1;
-            uint32_t *actual = NULL, *idle = NULL, *moved = NULL;
+            uint32_t *actual = verify[0], *idle = verify[1], *moved = verify[2];
             int width = 0, height = 0, w = 0, h = 0;
             if (ok) {
                 wlr_scene_node_set_enabled(&rect->node, true);
+                stage_phase = "initial_capture";
+                outer_begin = stage_stamp();
                 start = milliseconds();
-                ok = capture(desktop, output, &actual, &width, &height);
+                ok = capture_frame(desktop, output, &actual, &width, &height, verify[0], verify_pixels);
                 times[3] = milliseconds() - start;
+                stage_record("total", outer_begin);
             }
             uint64_t initial_filters = desktop->scene->backdrop_render_count - count;
             count = desktop->scene->backdrop_render_count;
             if (ok) {
+                stage_phase = "idle";
+                outer_begin = stage_stamp();
                 start = milliseconds();
-                ok = capture(desktop, output, &idle, &w, &h);
+                ok = capture_frame(desktop, output, &idle, &w, &h, verify[1], verify_pixels);
                 times[2] = milliseconds() - start;
+                stage_record("total", outer_begin);
                 ok = ok && w == width && h == height &&
                     desktop->scene->backdrop_render_count == count &&
                     !memcmp(actual, idle, (size_t)width * height * 4);
             }
             if (ok) {
                 wlr_scene_node_set_position(&second->node, 320, 0);
+                stage_phase = "moving";
+                outer_begin = stage_stamp();
                 start = milliseconds();
-                ok = capture(desktop, output, &moved, &w, &h);
+                ok = capture_frame(desktop, output, &moved, &w, &h, verify[2], verify_pixels);
                 times[1] = milliseconds() - start;
+                stage_record("total", outer_begin);
                 ok = ok && w == width && h == height &&
                     desktop->scene->backdrop_render_count == count + 1;
                 if (index < 2) ok = ok && memcmp(actual, moved, (size_t)width * height * 4);
@@ -1039,7 +1085,6 @@ static int gaussian_probe(struct PuDesktop *desktop, unsigned index, const char 
                     ok = false;
                 }
             }
-            free(actual); free(idle); free(moved);
             if (rect) wlr_scene_node_destroy(&rect->node);
             ok = ok && desktop->scene->effects_cached_bytes == 0;
             measured_ms += times[0] + times[1] + times[2] + times[3];
@@ -1050,6 +1095,7 @@ static int gaussian_probe(struct PuDesktop *desktop, unsigned index, const char 
                 (unsigned long long)initial_filters, desktop->scene->effects_cached_bytes,
                 measured_ms, milliseconds() - case_start);
         }
+        for (unsigned slot = 0; slot < 3; slot++) free(verify[slot]);
         if (upper) wlr_scene_node_destroy(&upper->node);
         if (target) wlr_scene_node_destroy(&target->node);
         if (apps) {
@@ -1069,6 +1115,10 @@ static bool gaussian_measurements(struct PuDesktop *desktop, const char *directo
     size_t capacity = 2u * 4096u * 800u;
     uint32_t *frames = malloc(capacity * 4), *expected = malloc(capacity * 4);
     CHECK(frames && expected);
+    stage_active = true;
+    stage_index = UINT32_MAX; stage_trial = 0; stage_phase = "empty";
+    struct stage_stamp empty = stage_stamp();
+    stage_record("empty", empty);
     printf("GAUSSIAN: abi=%u patch=%s seed=0x22e4a17 warmup=1 measurements=3\n",
         wlr_scene_effects_abi_v4(), wlr_scene_effects_source_sha256_v4());
     for (unsigned index = 0;; index++) {
@@ -1076,6 +1126,8 @@ static bool gaussian_measurements(struct PuDesktop *desktop, const char *directo
         if (result != 0) {
             free(frames); free(expected);
             CHECK(result == 2);
+            stage_flush();
+            stage_active = false;
             return true;
         }
     }
@@ -1089,7 +1141,16 @@ static bool gaussian_comparison(const char *directory)
     setenv("WLR_BACKENDS", "headless", 1);
     setenv("WLR_HEADLESS_OUTPUTS", "1", 1);
     setenv("WLR_RENDERER", "pixman", 1);
-    wlr_log_init(WLR_ERROR, NULL);
+    wlr_log_init(WLR_INFO, NULL);
+    char actual_executable[4096];
+    ssize_t actual_length = readlink("/proc/self/exe", actual_executable, sizeof(actual_executable) - 1);
+    if (actual_length <= 0 || (size_t)actual_length >= sizeof(actual_executable) - 1) {
+        fputs("FAIL Gaussian executable identity\n", stderr);
+        if (rmdir(runtime)) perror("rmdir Gaussian runtime");
+        return false;
+    }
+    actual_executable[actual_length] = 0;
+    printf("GAUSSIAN_CONTEXT: executable=%s\n", actual_executable);
     struct PuDesktop desktop = {0};
     bool ok = pu_desktop_init(&desktop, NULL) && pu_desktop_start(&desktop) &&
         gaussian_measurements(&desktop, directory);

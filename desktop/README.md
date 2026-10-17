@@ -174,6 +174,51 @@ bytes to zero. Enabling a prepared backdrop also causes an initial capture
 filter in both SDKs; its separate timing and equal filter counts are retained.
 The comparison does not reduce geometry, sigma, padding or kernel quality.
 
+Comparison mode now separates production work from screenshot verification.
+It allocates three actual-output-sized validation buffers and touches every
+pixel once during each case's setup, then reuses them for the unchanged four
+trials. The maximum validation storage is 39,321,600 bytes. Its allocation,
+prefault cost and longer lifetime are disclosed, not charged to the Gaussian
+kernel or presented as lower whole-program memory use. The ordinary scene suite
+still allocates its captures normally; production SDK sample/result/workspace,
+output allocation and cache limits are unchanged. Each capture still copies
+every output pixel using the real stride and performs the original byte checks.
+
+`GAUSSIAN_STAGE` reports wall time, thread CPU time and per-thread voluntary and
+involuntary context switches for prepare, initial capture, moving and idle.
+Capture build, verification copy and state finish are separate. Build includes
+lower-scene/FIR preflight, output allocation and rendering, **not pure FIR**.
+Metrics are buffered until all cases finish; the one empty measurement is
+reported without subtracting it. Missing clocks/counters and record overflow
+fail explicitly. `GAUSSIAN_CONTEXT` and the cursor log identify the real
+executable/resource paths: a relocated or symlinked test must not silently use
+different cursor assets from its reference.
+
+One corrected, symmetric GCC14/O3 comparison of the exit-expanded filter and
+the original scalar math, both using the published safety allocator/core,
+retained all nine cases, one warmup plus three measurements, CPU 0, 30 seconds
+per process and 65,536,000 bytes of SHM. Its predeclared production-stage medians
+were:
+
+| Footprint, sigma16, scale1 | Scalar prepare / moving build | SSE2 prepare / moving build | Speedup prepare / moving build |
+| --- | ---: | ---: | ---: |
+| 640x640 | 305.994 / 293.538ms | 112.836 / 116.834ms | 2.71x / 2.51x |
+| 640x660 | 302.796 / 302.197ms | 115.604 / 115.964ms | 2.62x / 2.61x |
+
+All seven other cases' observed prepare/moving-build medians also improved,
+without a tolerance or sample exclusion. Full frames and filter/cache counts
+remained identical. Complete three-sample ranges and CPU/context data are
+retained: this is one shared-host observation, not a statistical guarantee for
+arbitrary runs. Earlier malloc-inclusive and cursor-asymmetric observations
+remain separate evidence, not retroactively passing results. The matched
+ordinary scene contract passed its original accepted/pressure/tall assertions,
+but the independent published SHM fixture's first run retained a one-page and
+one-inode global-statistics deficit after a positive buffer drop. A distinct
+owner-identity diagnostic did not reproduce that deficit; it does not waive
+the original failure or establish a kernel/allocator cause. Overall ordinary
+qualification therefore remains held. These results are still far from
+16.7ms/60Hz and do not deliver a production Start consumer.
+
 The same reservation now covers every buffer created by the selected wlroots
 SHM allocator, including output/swapchain and cursor buffers. After creating the
 unlinked file, it retries `posix_fallocate` on `EINTR` and reserves the entire
