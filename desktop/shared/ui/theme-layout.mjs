@@ -29,6 +29,16 @@ export function dockBackdropMaterial(theme, width, height) {
   return [2, 1, Math.round(radius * 1000), material.sigma,
     Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
 }
+export function shellBackdropMaterial(theme, role, width, height) {
+  if (![2, 3].includes(role)) throw new RangeError('Unknown paired Shell backdrop role');
+  const material = theme.panel[role === 2 ? 'taskbarBackdrop' : 'startBackdrop'];
+  if (theme.panel.kind !== 'taskbar' || theme.panel.surfaceStyle !== 'fluent' || !material) return null;
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0)
+    throw new RangeError('A current positive Shell footprint is required');
+  const radius = Math.min(role === 2 ? theme.panel.radius : 8, width / 2, height / 2);
+  return [3, role, Math.round(radius * 1000), material.sigma,
+    Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
+}
 
 export function applicationMenuPlacement(theme, availableWidth) {
   const l = theme.layout, mac = theme.panel.kind === 'dock';

@@ -2149,6 +2149,7 @@
       },
       "panel": {
         "surfaceStyle": "fluent",
+        "taskbarBackdrop": { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 },
         "taskGrouping": "applications",
         "kind": "taskbar",
         "from": "#f3f3f3",

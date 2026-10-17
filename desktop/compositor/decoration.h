@@ -10,6 +10,7 @@ struct PuDecoration;
 struct PuDecorations;
 struct wlr_output;
 void pu_decorations_backdrop_status(struct PuDesktop *desktop, struct wlr_output *output, const char *message);
+void pu_decorations_validate_shell_backdrops(struct PuDesktop *desktop);
 
 /* Edge hit results use the wlroots edge bitmask. */
 enum PuDecorationPart {
@@ -33,6 +34,10 @@ bool pu_decoration_mode_pending(struct PuDesktopView *view);
 void pu_decoration_present(struct PuDesktopView *view);
 bool pu_decoration_effects(struct PuDesktopView *view);
 bool pu_decoration_ready(struct PuDesktopView *view);
+/* Observe the latest complete server frame without requesting or presenting one. */
+bool pu_decoration_presented_current(const struct PuDesktopView *view);
+/* Zero denotes a frame which is not current; no scene hit-testing is involved. */
+uint32_t pu_decoration_presented_revision(const struct PuDesktopView *view);
 void pu_decoration_update(struct PuDesktopView *view);
 void pu_decoration_inset(struct PuDesktopView *view, struct wlr_box *bounds, bool pending);
 int pu_decoration_hit(struct PuDesktopView *view, double x, double y);

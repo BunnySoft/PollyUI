@@ -1,15 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="7">
+  <interface name="polly_appearance_v1" version="8">
     <description summary="separate trusted appearance publisher and renderer">
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
       renders but can publish only the first theme, before a Shell transaction.
-      Version 7 requires the separately supervised GUI service, geometry schema 7
-      and effects ABI 3. Regional backdrop is a separately queried capability.
+      The current service requires the separately supervised GUI, geometry schema
+      7 and effects ABI 4. Regional backdrop is a separately queried capability.
       The optional native radius is numeric geometry, not a style identifier.
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
+      Version 8 optionally pairs regional taskbar and Start recipients. Version
+      7 and its Dock material keep their original meaning.
     </description>
     <enum name="error">
       <entry name="unauthorized" value="1" summary="connection does not own this role"/>
@@ -126,7 +128,8 @@
         Configuration is six uint words: schema 2, role 1 (Dock), radius in
         thousandths of a logical pixel (0-64000),
         sigma 1-32, RGB 0-16777215, tint opacity 0-100 percent. The entire actual
-        surface is the footprint; no pixel readback is exposed. Geometry, surface
+        surface is the footprint, bounded to 4096x512 logical pixels independently
+        of the generic renderer's taller limit; no pixel readback is exposed. Geometry, surface
         commit sequence, owner and theme generation are rechecked on commit.
         Failure retains all previously committed layers and appearance. Candidate
         resources and kernel workspace share the effects scene-wide peak budget.
@@ -147,6 +150,48 @@
         scene damage. Empty message reports recovery. Only the current Shell
         owner of a mapped regional layer on that output receives this event.
       </description>
+      <arg name="message" type="string"/>
+    </event>
+    <request name="get_shell_backdrop_capability" since="8"/>
+    <event name="shell_backdrop_capability" since="8">
+      <description summary="1 only for implemented Shell recipients and a supported regional renderer"/>
+      <arg name="supported" type="uint"/>
+    </event>
+    <request name="prepare_shell_backdrop" since="8">
+      <description summary="stage a real paired taskbar or Start recipient">
+        Authenticated Shell publisher only. Configuration is six uint words:
+        schema 3, role 2 (taskbar) or 3 (Start), radius in thousandths of a
+        logical pixel, sigma, RGB and tint opacity with the v7 numeric bounds.
+        Taskbar role requires surface == taskbar: top layer, bottom/left/right
+        anchors, stretched width, positive height, no keyboard grab, exclusive
+        zone equal to actual height, zero margins and actual full output width.
+        Start requires a distinct surface on that same actual output: overlay,
+        bottom-only anchor, fixed positive dimensions, exclusive zone -1,
+        exclusive keyboard focus, zero top/left/right margins and nonnegative
+        bottom margin. Its actual footprint fits above the paired taskbar.
+        Both surfaces must be mapped, presented and have matching current buffer
+        dimensions. No namespace, title or claimed application role is authority.
+        Each recipient remains bounded to 4096x512 logical pixels even when the
+        generic effects renderer supports taller footprints.
+        Both sequences and boxes are rechecked on commit, along with the privacy
+        epoch and generation. Each output has at most one taskbar, and a snapshot
+        has at most one Start, whose taskbar must also be in that snapshot.
+        The original total of eight targets and scene-wide peak budget apply.
+        backdrop_prepared acknowledges this request. Failure preserves the last
+        commit. Unmap, destroy or invalid actual geometry revokes the recipient;
+        losing a paired taskbar also revokes Start, never other valid taskbars.
+        shell_backdrop_retired identifies the committed serial and role so a
+        delayed notification cannot alter a subsequently committed recipient.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="taskbar" type="object" interface="wl_surface"/>
+      <arg name="configuration" type="array"/>
+    </request>
+    <event name="shell_backdrop_retired" since="8">
+      <arg name="serial" type="uint" summary="appearance serial that installed this recipient"/>
+      <arg name="target" type="uint" summary="zero-based target ordinal in that complete appearance transaction"/>
+      <arg name="role" type="uint" summary="2 taskbar or 3 Start"/>
       <arg name="message" type="string"/>
     </event>
   </interface>

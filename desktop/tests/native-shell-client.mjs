@@ -35,7 +35,8 @@ async function run() {
       const solid = ['classic', 'fluent'].includes(theme.panel.surfaceStyle);
       check(panel.window.document.body.childNodes.length === 1 &&
         panel.window.document.body.firstChild.id === 'shell-panel' &&
-        panel.window.document.body.firstChild.style.backgroundColor === colors[0] &&
+        panel.window.document.body.firstChild.style.backgroundColor ===
+          (theme.panel.taskbarBackdrop ? 'transparent' : colors[0]) &&
         (solid || (panel.window.document.body.firstChild.style.gradientFrom === colors[0] &&
           panel.window.document.body.firstChild.style.gradientTo === colors[1])),
         theme.id + ' updates the existing native panel tree');

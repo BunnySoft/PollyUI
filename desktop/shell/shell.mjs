@@ -1,4 +1,5 @@
-import { dockSurfaceWidth, dockBackdropMaterial, applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
+import { dockSurfaceWidth, dockBackdropMaterial, shellBackdropMaterial,
+  applicationMenuPlacement, applicationMenuHeight } from './desktop/shared/ui/theme-layout.mjs';
 import { encodeDecorationLayout } from './desktop/shared/ui/caption-layout.mjs';
 import { h, render } from './gui/sdk/js/reconciler.mjs';
 import { DEFAULT_DESKTOP_THEME, getDesktopTheme, THEME_LOAD_ERROR, THEME_REVISION,
@@ -143,12 +144,26 @@ export function createDesktopShell({ host = window, configuration, report = cons
   function receiveBackdropStatus(scope) {
     if (!running || scope !== backdropScope) return;
     const message = native.backdropError();
-    if (message === materialError) return;
-    materialError = message;
-    if (message) report('[shell] ' + message);
+    const retired = typeof native.shellBackdropRetired === 'function' ? native.shellBackdropRetired() : 0;
+    const retiredTarget = surface => surface?.backdropIndex !== null && surface?.backdropIndex !== undefined &&
+      (retired & (1 << surface.backdropIndex));
+    let recipientsChanged = false;
+    const retire = surface => {
+      if (!retiredTarget(surface) || !surface.backdropActive) return;
+      surface.backdropActive = false;
+      recipientsChanged = true;
+    };
+    retire(menu);
+    for (const bundle of bundles.values()) retire(bundle.surfaces.panel);
+    const messageChanged = message !== materialError;
+    if (!messageChanged && !recipientsChanged) return;
+    if (messageChanged) {
+      materialError = message;
+      if (message) report('[shell] ' + message);
+    }
     repaintMenu();
     for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
-    if (typeof previousBackdropStatus === 'function') previousBackdropStatus();
+    if (messageChanged && typeof previousBackdropStatus === 'function') previousBackdropStatus();
   }
   const exited = event => {
     if (!running) return;
@@ -196,16 +211,34 @@ export function createDesktopShell({ host = window, configuration, report = cons
   }
 
   function releaseSurface(surface) {
+    if (surface.backdropFrame !== undefined && surface.backdropFrame !== null)
+      cancelAnimationFrame(surface.backdropFrame);
+    surface.backdropFrame = null;
     surface.desktopBinding?.stop();
     surface.desktopBinding = null;
     for (const remove of surface.listeners.splice(0)) remove();
-    surface.window.document.activeElement?.blur();
+    if (!surface.window.closed) surface.window.document.activeElement?.blur();
     surface.displayInputs?.clear();
   }
 
   function releaseMenu(surface) {
     if (!surface || surface !== menu) return false;
     menu = null;
+    if (surface.backdropAppearance) {
+      surface.backdropAppearance = null;
+      surface.backdropActive = false;
+      if (running) {
+        try {
+          const theme = getDesktopTheme(themeId);
+          const outputs = new Set(host.displays().map(output => output.id));
+          const plans = [...bundles.values()].filter(plan =>
+            outputs.has(plan.output.id) && !plan.surfaces.panel.window.closed);
+          native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, plans));
+          setBackdropIndices(theme, plans);
+          clearMaterialFailure();
+        } catch (failure) { materialFailure('Could not retire Start material: ', failure); }
+      }
+    }
     if (surface.placementEpoch) {
       const epoch = surface.placementEpoch;
       surface.placementEpoch = null;
@@ -218,10 +251,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
     }
     const editor = workspaceEditor;
     workspaceEditor = null;
-    editor?.input.root.blur();
+    if (!surface.window.closed) editor?.input.root.blur();
     const search = surface.search;
     surface.search = null;
-    if (search) {
+    if (search && !surface.window.closed) {
       search.input.root.cancelComposition();
       search.input.root.blur();
       search.input.value = '';
@@ -343,6 +376,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
         anchors: [dock ? 'top' : 'bottom', 'left', 'right'], exclusiveZone: dock ? layout.menuBarHeight : theme.panel.height,
         ...(dock && (theme.panel.menuBarOpacityPercent ?? 100) < 100 ? { transparent: true } : {}) },
     };
+    if (theme.panel.taskbarBackdrop) result.panel.transparent = true;
     if (dock) result.dock = {
       layer: 'top', width: dockSurfaceWidth(theme, displayTasks(theme).length, output.width), height: theme.panel.height,
       anchors: ['bottom'], margins: { bottom: theme.panel.inset }, exclusiveZone: theme.panel.height,
@@ -612,7 +646,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       notifications.count() ? { count: notifications.count(), open: surfaceAction(panel, notifications.show) } : null,
       { items: tray.items(), error: tray.error(), activate: surfaceAction(panel, (item, kind, x, y) => tray.activate(item, kind,
         x + bundle.output.x, y + bundle.output.y + (theme.panel.kind === 'taskbar' ?
-          bundle.output.height - theme.panel.height : 0))), scroll: surfaceAction(panel, tray.scroll) }, taskImages),
+          bundle.output.height - theme.panel.height : 0))), scroll: surfaceAction(panel, tray.scroll) }, taskImages,
+      !!panel.backdropActive),
       panel.window.document.body);
     if (dock && !dock.window.closed) render(dockView(theme, surfaceAction(dock, () => showSystemSettings(bundle.output.id)),
       surfaceAction(dock, () => showSystemSettings(bundle.output.id, 'about')),
@@ -637,6 +672,10 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (regional && (typeof native?.backdropCapability !== 'function' ||
         native.backdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
       throw new Error('The active compositor does not support real regional Dock backdrops');
+    const shellRegional = !!theme.panel.taskbarBackdrop;
+    if (shellRegional && (typeof native?.shellBackdropCapability !== 'function' ||
+        native.shellBackdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
+      throw new Error('The active compositor does not support paired regional Shell backdrops (appearance v8)');
     preflightBodyFont(theme);
     const outputs = host.displays();
     const staged = [];
@@ -672,10 +711,19 @@ export function createDesktopShell({ host = window, configuration, report = cons
         } else if (output.name) identity = outputIdentity(output);
         plans.push({ output, surfaces, identity });
       }
-      if ((compositorAppearance !== appearance || regional &&
-          plans.some(plan => plan.surfaces.dock.backdropAppearance !== appearance)) &&
+      for (const plan of plans)
+        if (shellRegional && staged.includes(plan.surfaces.panel))
+          render(h('view', { style: { width: '100%', height: '100%', backgroundColor: theme.panel.from } }),
+            plan.surfaces.panel.window.document.body);
+      if ((compositorAppearance !== appearance || (regional || shellRegional) &&
+          plans.some(plan => {
+            const surface = regional ? plan.surfaces.dock : plan.surfaces.panel;
+            return surface.backdropAppearance !== appearance || shellRegional &&
+              surface.backdropGeometry !== panelBackdropGeometry(plan);
+          })) &&
           typeof native?.configureAppearance === 'function') {
-        native.configureAppearance(theme, encodeDecorationLayout(theme), dockTargets(theme, plans));
+        native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, plans));
+        setBackdropIndices(theme, plans);
         compositorAppearance = appearance;
         configured = true;
       }
@@ -692,7 +740,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (configured) {
         try {
           native.configureAppearance(previousTheme, encodeDecorationLayout(previousTheme),
-            dockTargets(previousTheme, [...bundles.values()]));
+            appearanceTargets(previousTheme, [...bundles.values()], menu?.backdropActive ? menu : null));
+          setBackdropIndices(previousTheme, [...bundles.values()], menu?.backdropActive ? menu : null);
           compositorAppearance = previousAppearance;
         } catch (rollback) {
           throw new Error(String(failure) + '; could not restore native appearance: ' + String(rollback));
@@ -703,6 +752,18 @@ export function createDesktopShell({ host = window, configuration, report = cons
     const retained = new Set(plans.flatMap(plan => Object.values(plan.surfaces)));
     for (const plan of plans) if (plan.surfaces.dock)
       plan.surfaces.dock.backdropAppearance = regional ? appearance : null;
+    for (const plan of plans) {
+      plan.surfaces.panel.backdropAppearance = shellRegional ? appearance : null;
+      if (configured) {
+        plan.surfaces.panel.backdropActive = shellRegional;
+        plan.surfaces.panel.backdropGeometry = shellRegional ? panelBackdropGeometry(plan) : null;
+      }
+    }
+    if (configured && menu?.backdropAppearance) {
+      menu.backdropAppearance = null;
+      menu.backdropActive = false;
+      repaintMenu();
+    }
     for (const bundle of bundles.values())
       for (const surface of Object.values(bundle.surfaces)) if (!retained.has(surface)) closeSurface(surface);
     bundles.clear();
@@ -722,12 +783,54 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (publicationFailure) throw publicationFailure;
   }
 
-  function dockTargets(theme, plans) {
-    return theme.panel.kind === 'dock' && theme.panel.regionalBackdrop ? plans.map(plan => {
+  function appearanceTargets(theme, plans, applicationMenu = null) {
+    if (theme.panel.kind === 'dock' && theme.panel.regionalBackdrop) return plans.map(plan => {
       const dock = plan.surfaces.dock;
       const { width, height } = dock.window.state ?? dock.size;
       return [dock.window, dockBackdropMaterial(theme, width, height)];
-    }) : [];
+    });
+    if (!theme.panel.taskbarBackdrop) return [];
+    const targets = plans.map(plan => {
+      const panel = plan.surfaces.panel;
+      const { width, height } = panel.window.state ?? { width: plan.output.width, height: theme.panel.height };
+      return [panel.window, shellBackdropMaterial(theme, 2, width, height), panel.window];
+    });
+    if (applicationMenu && theme.panel.startBackdrop && currentMenu(applicationMenu)) {
+      const panel = plans.find(plan => plan.output.id === applicationMenu.output)?.surfaces.panel;
+      if (!panel) throw new Error('Start material has no current paired taskbar');
+      const { width, height } = applicationMenu.window.state ?? applicationMenu.size;
+      targets.push([applicationMenu.window, shellBackdropMaterial(theme, 3, width, height), panel.window]);
+    }
+    return targets;
+  }
+
+  function panelBackdropGeometry(plan) {
+    const { width, height } = plan.surfaces.panel.window.state ?? plan.surfaces.panel.size;
+    return JSON.stringify([plan.output.x, plan.output.y, plan.output.width, plan.output.height, width, height]);
+  }
+
+  function setBackdropIndices(theme, plans, applicationMenu = null) {
+    let index = 0;
+    for (const plan of plans) {
+      plan.surfaces.panel.backdropIndex = null;
+      if (plan.surfaces.dock) plan.surfaces.dock.backdropIndex = null;
+      const surface = theme.panel.kind === 'dock' && theme.panel.regionalBackdrop ? plan.surfaces.dock :
+        theme.panel.taskbarBackdrop ? plan.surfaces.panel : null;
+      if (surface) surface.backdropIndex = index++;
+    }
+    if (menu) menu.backdropIndex = applicationMenu && theme.panel.startBackdrop ? index : null;
+  }
+
+  function materialFailure(prefix, failure) {
+    materialError = prefix + String(failure);
+    report('[shell] ' + materialError);
+    repaintMenu();
+    for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
+  }
+
+  function clearMaterialFailure() {
+    if (materialError.startsWith('Could not ')) materialError =
+      typeof native?.backdropError === 'function' ? native.backdropError() : '';
   }
 
   function releaseThemeAsset(asset) {
@@ -1066,7 +1169,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
           change: scoped((id, expected) => host.displays().some(output => output.id === current.output) &&
             configuration.snapshot.launchers.applications.includes(id) === expected ?
             changeLauncherPin(id, !expected) : false),
-        } : null, displayProfile),
+        } : null, displayProfile, !!current.backdropActive),
         current.window.document.body);
       const search = current.search?.input.root;
       const slot = current.window.document.getElementById('shell-app-search-slot');
@@ -1163,6 +1266,29 @@ export function createDesktopShell({ host = window, configuration, report = cons
     });
     body.focus();
     repaintMenu();
+    if (mode === 'applications' && theme.panel.startBackdrop && currentMenu(current))
+      current.backdropFrame = requestAnimationFrame(() => {
+        current.backdropFrame = requestAnimationFrame(() => {
+          current.backdropFrame = null;
+          if (!currentMenu(current) || getDesktopTheme(themeId) !== theme) return;
+          try {
+            native.configureAppearance(theme, encodeDecorationLayout(theme),
+              appearanceTargets(theme, [...bundles.values()], current));
+            setBackdropIndices(theme, [...bundles.values()], current);
+            if (currentMenu(current)) {
+              if (typeof native.shellBackdropRetired === 'function' &&
+                  (native.shellBackdropRetired() & (1 << current.backdropIndex)))
+                throw new Error('Start recipient retired during appearance commit');
+              current.backdropAppearance = compositorAppearance;
+              current.backdropActive = true;
+              clearMaterialFailure();
+              repaintMenu();
+            }
+          } catch (failure) {
+            if (currentMenu(current)) materialFailure('Could not enable Start material; solid retained: ', failure);
+          }
+        });
+      });
     if (mode === 'applications' && currentMenu(current))
       current.window.document.getElementById('shell-app-search').focus();
     if (mode === 'window-group' && currentMenu(current))
@@ -1681,7 +1807,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
         for (const bundle of bundles.values()) paint(bundle, getDesktopTheme(themeId));
         return;
       }
-      if (menu && !outputs.some(output => output.id === menu.output)) closeMenu();
+      if (menu && !outputs.some(output => output.id === menu.output &&
+          JSON.stringify(output) === JSON.stringify(bundles.get(menu.output)?.output))) closeMenu();
       reconcile(themeId, false);
         if (errorKind === 'display') {
         error = ''; errorKind = '';

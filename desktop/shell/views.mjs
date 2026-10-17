@@ -474,7 +474,8 @@ function windowButtons(theme, windows, toggle, actions, compact = false, images 
 }
 
 export function panelView(theme, clock, openMenu, error = '', openSettings = openMenu,
-  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null, images = null) {
+  windows = [], toggle = () => {}, actions = () => {}, workspace = null, notifications = null, tray = null, images = null,
+  regionalBackdrop = false) {
   const panel = theme.panel;
   const label = labelFor(theme);
   if (isLuna(theme, 'panel') && panel.kind === 'taskbar') {
@@ -531,7 +532,8 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
     const wheel = tasks.props.onWheel;
     tasks.props.onWheel = event => { event.stopPropagation(); wheel(event); };
     return h('view', { id: 'shell-panel', style: { ...row, width: '100%', height: '100%',
-      gap: theme.layout.panelGap, paddingLeft: 12, paddingRight: 12, backgroundColor: panel.from,
+      gap: theme.layout.panelGap, paddingLeft: 12, paddingRight: 12,
+      backgroundColor: regionalBackdrop ? 'transparent' : panel.from,
       borderTopWidth: 1, borderColor: theme.colors.border, position: 'relative' },
       onMount: sync, onUpdate: sync,
       onLeave: (node, done) => { stopFluentPanel(node); done(); } },
@@ -546,7 +548,7 @@ export function panelView(theme, clock, openMenu, error = '', openSettings = ope
       workspace ? iconButton('shell-workspaces', workspace.name, 'displays', workspace.open) : null,
       tasks),
     h('view', { id: 'shell-notification-area', style: { ...row, position: 'absolute', right: 12, top: 1,
-      height: panel.height - 1, gap: 4, backgroundColor: panel.from } },
+      height: panel.height - 1, gap: 4, backgroundColor: regionalBackdrop ? 'transparent' : panel.from } },
       error ? themedText(theme, 'Needs attention', panel.text, 11) : null,
       tray?.items.length || tray?.error ? trayView(theme, tray.items, tray.activate, tray.scroll, tray.error) : null,
       notifications ? iconButton('shell-notifications', 'Notifications ' + notifications.count, 'info', notifications.open) : null,
@@ -742,10 +744,11 @@ export function dockView(theme, openSettings, openAbout, openApplications = open
 }
 
 export function applicationsView(theme, entries, query, changeQuery, launch, refresh, close, error = '',
-  logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null) {
+  logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null,
+  displayProfile = null, regionalBackdrop = false) {
   if (theme.panel.menuStyle || ['luna', 'classic', 'fluent'].includes(surfaceStyle(theme, 'panel')))
     return startMenuView(theme, entries, query, changeQuery, launch, refresh, close, error, logout, desktop, programs,
-      images, searchInput, launchers);
+      images, searchInput, launchers, displayProfile, regionalBackdrop);
   const label = labelFor(theme);
   const filtered = entries.filter(entry =>
     (entry.name + ' ' + (entry.genericName || '') + ' ' + entry.comment + ' ' +

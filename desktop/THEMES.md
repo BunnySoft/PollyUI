@@ -1404,6 +1404,33 @@ original pressure regression and add exact area/axis/height boundaries,
 640x640/660 Gaussian pixels, unchanged foreground/input, idle reuse and privacy.
 No larger Start or other surface gains authority from this primitive extension.
 
+### Modern taskbar and bounded Start opt-in
+
+Public theme JSON remains schema 1. A fluent taskbar can optionally provide
+`panel.taskbarBackdrop: { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 }`;
+packaged Modern selects these original Polly design values. They are not
+Windows measurements, DWM/Mica or an official Acrylic reproduction. Missing
+fields preserve the original solid paint and other packaged themes.
+
+Optional `panel.startBackdrop` uses the same strict sigma (integer 1..32),
+RGB tint and integer opacity percentage (0..100) fields. It requires a fluent
+taskbar with `taskbarBackdrop`. The separately probed private appearance v8
+capability uses the current ABI4 renderer and binds actual owned taskbar/Start
+surfaces on the same output; v7 Dock support alone is not that capability.
+The decorator may still bind v7 with geometry schema 7. Only complete native
+transaction success clears the background; foreground opacity and input do not
+change. Serial plus exact-target retirement prevents old notifications from
+altering newly committed recipients.
+
+The v8 recipient policy explicitly remains 4096x512, even though the ABI4 generic
+primitive admits 4096x768. Packaged Start therefore has no `startBackdrop` default:
+its unchanged 660px menu token produces an actual 640px menu on a 720px output.
+An explicit oversized request is rejected and retains solid Start and committed
+taskbars. Only naturally shorter actual menus, such as 460px on a 540px output,
+can use the bounded optional material. Neither that result nor generic tall
+scene qualification delivers standard-height Start, original-OS pixels or E22
+completion. See the [paired consumer contract](README.md#modern-taskbar-and-bounded-optional-start-recipients).
+
 On the qualified GCC14/O3 x86-64 path, baseline SSE2 accumulates four channels
 in the original tap order, then uses the original scalar rounding with explicit
 constant lane packing. Other builds retain the original scalar source; there

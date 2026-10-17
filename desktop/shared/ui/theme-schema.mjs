@@ -154,7 +154,7 @@ export function validateTheme(value) {
   for (const group of groups) {
     const prefix = value.id + '.' + group;
     const optional = [...Object.keys(optionalOptions[group] || {}), ...Object.keys(optionalNumbers[group] || {}),
-      ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop'] : group === 'window' ? ['nativeShadowColor'] :
+      ...(group === 'colors' ? ['selectionText'] : group === 'panel' ? ['regionalBackdrop', 'taskbarBackdrop', 'startBackdrop'] : group === 'window' ? ['nativeShadowColor'] :
         group === 'layout' ? ['fontFamily'] : [])];
     keys(value[group], [...colors[group], ...Object.keys(numbers[group]), ...Object.keys(options[group]),
       ...optional, ...(group === 'desktop' ? ['asset', 'layers'] : group === 'window' ? ['fontFamily'] : [])],
@@ -218,14 +218,19 @@ export function validateTheme(value) {
       value.panel.height - 12, value.panel.height + 2 - 2 * marker))
       throw new RangeError('Dock icons and running indicators do not fit the configured slot/panel geometry');
   }
-  if (Object.hasOwn(value.panel, 'regionalBackdrop')) {
-    const material = value.panel.regionalBackdrop;
-    keys(material, ['sigma', 'tint', 'opacityPercent'], 'panel.regionalBackdrop');
+  for (const key of ['regionalBackdrop', 'taskbarBackdrop', 'startBackdrop']) {
+    if (!Object.hasOwn(value.panel, key)) continue;
+    const material = value.panel[key];
+    keys(material, ['sigma', 'tint', 'opacityPercent'], 'panel.' + key);
     if (!Number.isInteger(material.sigma) || material.sigma < 1 || material.sigma > 32 ||
         !Number.isInteger(material.opacityPercent) || material.opacityPercent < 0 || material.opacityPercent > 100 ||
         typeof material.tint !== 'string' || !/^#[0-9a-f]{6}$/i.test(material.tint))
-      throw new TypeError('Invalid regional Dock backdrop');
+      throw new TypeError('Invalid panel.' + key + ' backdrop');
   }
+  if ((value.panel.taskbarBackdrop || value.panel.startBackdrop) &&
+      (value.panel.kind !== 'taskbar' || value.panel.surfaceStyle !== 'fluent' ||
+       value.panel.startBackdrop && !value.panel.taskbarBackdrop))
+    throw new TypeError('Paired Shell backdrops require a fluent taskbar and Start requires its taskbar material');
   const asset = value.desktop.asset;
   if (typeof asset !== 'string' || asset.length > 192 || (asset &&
     (!/^(?:[a-z0-9_-][a-z0-9_.-]*\/)*[a-z0-9_-][a-z0-9_.-]*\.(?:png|jpe?g)$/i.test(asset) ||
