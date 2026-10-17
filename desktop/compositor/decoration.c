@@ -404,12 +404,17 @@ bool pu_decoration_presented_current(const struct PuDesktopView *view)
 {
     const struct PuDecoration *d = view->decoration;
     return view->mapped && !view->geometry_pending && !view->resize_pending &&
-        d && d->decorated && !d->failed && d->shown && d->current &&
+        d && d->decorated && !d->failed && d->shown && d->current && d->revision &&
         !d->ready && !d->timeout && d->accepted_revision == d->revision &&
         d->shown->snapshot == d->current &&
         !memcmp(d->shown->meta, d->meta, sizeof(d->meta)) &&
         !!(d->shown->meta[PU_FRAME_STATE] & 1) ==
             (view->desktop->focused == view && !view->desktop->focused_layer);
+}
+uint32_t pu_decoration_presented_revision(const struct PuDesktopView *view)
+{
+    return pu_decoration_presented_current(view) ?
+        view->decoration->shown->meta[PU_FRAME_REVISION] : 0;
 }
 void pu_decoration_update(struct PuDesktopView *view)
 {

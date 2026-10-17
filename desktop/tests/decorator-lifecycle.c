@@ -434,21 +434,33 @@ static bool control_key(struct PuDesktopView *view, uint32_t expected, bool focu
 static uint64_t surface_hash(struct wlr_surface *surface)
 {
     struct wlr_client_buffer *client = surface->buffer;
-    void *data; uint32_t format; size_t stride;
-    if (!client || !client->source || !wlr_buffer_begin_data_ptr_access(client->source,
-        WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride)) return 0;
+    struct wlr_buffer *source = client ? client->source : NULL;
+    void *data = NULL; uint32_t format = 0; size_t stride = 0;
+    bool access = source && wlr_buffer_begin_data_ptr_access(source,
+        WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride);
+    bool valid = access && data && source->width > 0 && source->height > 0 &&
+        stride >= (size_t)source->width * 4 &&
+        (format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888);
+    if (!valid) {
+        fprintf(stderr, "[backdrop-fixture] unreadable input: surface=%p resource=%u client=%p source=%p dimensions=%dx%d format=%#x stride=%zu access=%d\n",
+            (void *)surface, wl_resource_get_id(surface->resource), (void *)client, (void *)source,
+            source ? source->width : 0, source ? source->height : 0, format, stride, access);
+        if (access) wlr_buffer_end_data_ptr_access(source);
+        return 0;
+    }
     uint64_t hash = UINT64_C(14695981039346656037);
-    for (int y = 0; y < client->source->height; y++)
-        for (int x = 0; x < client->source->width * 4; x++) {
+    for (int y = 0; y < source->height; y++)
+        for (int x = 0; x < source->width * 4; x++) {
             hash ^= ((unsigned char *)data)[y * stride + x]; hash *= UINT64_C(1099511628211);
         }
-    wlr_buffer_end_data_ptr_access(client->source);
-    return format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888 ? hash : 0;
+    wlr_buffer_end_data_ptr_access(source);
+    return hash;
 }
 struct BackdropViewState {
     struct wlr_box geometry;
     int x, y;
-    uint64_t body, frame;
+    uint64_t body;
+    uint32_t frame_revision;
     bool focused;
 };
 static bool backdrop_view_state(struct PuDesktopView *view, struct BackdropViewState *state)
@@ -456,9 +468,14 @@ static bool backdrop_view_state(struct PuDesktopView *view, struct BackdropViewS
     CHECK(backdrop_guard_current() && pu_decoration_presented_current(view));
     *state = (struct BackdropViewState){.geometry = view->toplevel->base->geometry,
         .x = view->tree->node.x, .y = view->tree->node.y,
-        .body = surface_hash(view->toplevel->base->surface), .frame = frame_hash(view),
+        .body = surface_hash(view->toplevel->base->surface),
+        .frame_revision = pu_decoration_presented_revision(view),
         .focused = desktop.focused == view && !desktop.focused_layer};
-    CHECK(state->body && state->frame);
+    if (!state->body || !state->frame_revision)
+        fprintf(stderr, "[backdrop-fixture] invalid owned input fingerprint: view=%p workspaceId=%llu surface=%p body=%016llx ownedCurrentRevision=%u\n",
+            (void *)view, (unsigned long long)view->workspace_window,
+            (void *)view->toplevel->base->surface, (unsigned long long)state->body, state->frame_revision);
+    CHECK(state->body && state->frame_revision);
     return true;
 }
 static bool control_outside_backdrop(struct PuDesktopView *view, const struct wlr_box *dock)
@@ -517,7 +534,7 @@ static bool presented_frame_fence(const char *ui)
     CHECK(view && app);
     pu_desktop_focus_mapped(&desktop, view->workspace_window);
     CHECK(wait_presented_frame(view) && wait_presented_frame(app));
-    uint64_t before = frame_hash(view);
+    uint32_t before = pu_decoration_presented_revision(view);
     CHECK(before);
     pid_t pid = pu_decorator_pid(&desktop);
     CHECK(pid > 0 && !kill(pid, SIGSTOP));
@@ -532,12 +549,14 @@ static bool presented_frame_fence(const char *ui)
     CHECK(desktop.focused == app && !view->geometry_pending &&
         pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
     CHECK(!pu_decoration_presented_current(view) && !pu_decoration_presented_current(app));
-    CHECK(frame_hash(view) == before && !pu_decoration_presented_current(view));
-    printf("FRAME_FENCE rendererPid=%ld stopped=SIGSTOP oldButtonProxy=1 latestFrame=0 retainedFrame=1\n", (long)pid);
+    CHECK(!pu_decoration_presented_revision(view) && !pu_decoration_presented_current(view));
+    printf("FRAME_FENCE rendererPid=%ld stopped=SIGSTOP oldButtonProxy=1 latestFrame=0 previousOwnedRevision=%u\n",
+        (long)pid, before);
     CHECK(resume_renderer());
     CHECK(wait_presented_frame(view) && wait_presented_frame(app) &&
-        pu_decorator_pid(&desktop) == pid && frame_hash(view) != before);
-    printf("FRAME_FENCE rendererPid=%ld resumedSamePid=1 latestFrame=1 actualFrameChanged=1\n", (long)pid);
+        pu_decorator_pid(&desktop) == pid && pu_decoration_presented_revision(view) > before);
+    printf("FRAME_FENCE rendererPid=%ld resumedSamePid=1 latestFrame=1 currentOwnedRevision=%u\n",
+        (long)pid, pu_decoration_presented_revision(view));
     puts("PASS: deterministic focus-frame counterexample retains an old usable button box while the pure latest-frame fence rejects it; the same stopped renderer PID submits and presents current frames after resume");
     return true;
 }
@@ -765,7 +784,7 @@ static bool backdrop_consumer(const char *ui, const char *wire)
         CHECK(backdrop_view_state(sources[i], &current));
         CHECK(wlr_box_equal(&baseline[i].geometry, &current.geometry) &&
             baseline[i].x == current.x && baseline[i].y == current.y &&
-            baseline[i].focused == current.focused && baseline[i].frame == current.frame &&
+            baseline[i].focused == current.focused && baseline[i].frame_revision == current.frame_revision &&
             (!i || baseline[i].body == current.body));
     }
     CHECK(surface_hash(dock->surface->surface) == foreground &&
