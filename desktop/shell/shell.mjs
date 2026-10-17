@@ -222,8 +222,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (running) {
         try {
           const theme = getDesktopTheme(themeId);
-          native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, [...bundles.values()]));
-          setBackdropIndices(theme, [...bundles.values()]);
+          const outputs = new Set(host.displays().map(output => output.id));
+          const plans = [...bundles.values()].filter(plan =>
+            outputs.has(plan.output.id) && !plan.surfaces.panel.window.closed);
+          native.configureAppearance(theme, encodeDecorationLayout(theme), appearanceTargets(theme, plans));
+          setBackdropIndices(theme, plans);
           clearMaterialFailure();
         } catch (failure) { materialFailure('Could not retire Start material: ', failure); }
       }

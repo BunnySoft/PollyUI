@@ -246,6 +246,8 @@ async function modern() {
   menu = await open(outputs[1]);
   await signal('backdrop-check output');
   await until(() => menu.window.closed, 'removed actual output closes Start');
+  check(!shell.getState().materialError.startsWith('Could not retire Start material'),
+    'output retirement submits only current live taskbars, never a closed peer');
   shell.stop();
   await signal('backdrop-check stopped');
   window.quit();

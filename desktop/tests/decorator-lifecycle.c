@@ -661,6 +661,10 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
                     CHECK(applied);
                 }
             } else if (!strcmp(stage, "legacy") || !strcmp(stage, "stopped")) {
+                if (!strcmp(stage, "stopped")) {
+                    uint64_t retired = milliseconds() + 3000;
+                    while (!wl_list_empty(&desktop.scene->backdrops) && milliseconds() < retired) CHECK(pump());
+                }
                 CHECK(wl_list_empty(&desktop.scene->backdrops));
             } else if (!strcmp(stage, "budget")) {
                 CHECK(pressure && shell_backdrop_count(2) == 2 && !shell_backdrop_count(3));
