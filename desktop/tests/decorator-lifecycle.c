@@ -1761,6 +1761,7 @@ static bool layout_picker_protocol(const char *wire)
     }
     CHECK(received);
     CHECK(picker_raw_offer(first, 7));
+    before_first = first->presented_box; before_second = second->presented_box;
     uint32_t stale = reply.picker_token, serial = 1;
     struct TestRequest open = {.command = TEST_PICKER_OPEN, .id = 8, .serial = serial++, .edges = stale};
     CHECK(picker_request(open, false) && first->mode == PU_DESKTOP_FLOATING &&

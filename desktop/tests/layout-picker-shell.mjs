@@ -48,6 +48,8 @@ async function run() {
       return owned;
     },
   } }).start();
+  const keeper = window.create({ title: 'Picker.fixture.keepalive', layer: 'overlay', width: 1, height: 1,
+    anchors: ['top', 'right'], exclusiveZone: -1 });
   const current = () => created.findLast(item => !item.window.closed &&
     item.window.document.getElementById('shell-layout-picker'));
   const target = () => desktop.windows().find(item => item.appId === 'org.pollywm.test.7');
@@ -163,6 +165,7 @@ async function run() {
   shell.stop();
   installThemeCatalog(BUILTIN_THEME_CATALOG);
   await signal('picker-success');
+  keeper.close();
   window.quit();
 }
 run().catch(failure => {
