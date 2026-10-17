@@ -23,6 +23,8 @@ const debian = !alpine && existsSync('/etc/debian_version') &&
 if ((!alpine?.startsWith('3.24.') && !debian) || run('uname', ['-m']) !== 'x86_64')
   throw new Error('Runtime packaging supports Alpine 3.24 or Debian trixie on x86_64');
 const distribution = debian ? 'debian13' : 'alpine3.24';
+const wlrootsEffects = debian ? JSON.parse(readFileSync(path.join(repo,
+  'desktop/release/debian/wlroots-effects.json'), 'utf8')) : null;
 if (alpine)
   throw new Error('Current desktop packaging requires the pinned Debian scene-effects SDK; historical Alpine packages are not rebuildable until their paired SDK is ported');
 const mesaCache = debian ? path.resolve(process.env.POLLY_MESA_CACHE || '/opt/pollyui-local-debs/mesa') : null;
@@ -288,8 +290,9 @@ try {
     { name: 'SDL', versionInfo: '3.4.10-polly-sync-lifetime', licenseDeclared: 'Zlib',
       downloadLocation: 'https://github.com/libsdl-org/SDL/tree/8e37db5e797b6167f3a00d697d816a684bd259c7' },
   ];
-  if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: '0.19.3-polly-effects3', licenseDeclared: 'MIT',
+  if (debian) sourceComponents.push({ name: 'wlroots', versionInfo: wlrootsEffects.version, licenseDeclared: 'MIT',
     licenseComments: 'Pinned upstream source plus the packaged, SHA-256 checked PollyUI scene effects patch; ABI 3.',
+    sourceInfo: `PollyUI wlroots patch SHA-256: ${wlrootsEffects.patchSha256}; effects ABI ${wlrootsEffects.abi}.`,
     downloadLocation: 'https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.19.3/wlroots-0.19.3.tar.gz' });
   if (debian) sourceComponents.push({ name: 'libinput-private', versionInfo: '1.28.1-1+deb13u1',
     licenseDeclared: 'MIT', downloadLocation: 'NOASSERTION',
@@ -333,8 +336,7 @@ try {
     throw new Error('Source inputs changed during runtime rebuild/install; freeze the checkout before packaging');
   manifest.runtimeContract = { schemaVersion: 1, kind: 'gui-sysrt-js', installFiles, postprocess,
     nativeLibraries, bundledLibraries,
-    ...(debian ? { wlrootsEffects: JSON.parse(readFileSync(path.join(repo,
-      'desktop/release/debian/wlroots-effects.json'), 'utf8')) } : {}),
+    ...(debian ? { wlrootsEffects } : {}),
     abi: { path: 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs',
       sha256: hash(path.join(root, 'usr/share/pollyui/sysrt/bindings/generated/files-linux-x86_64.mjs')),
       target: 'linux-x86_64-lp64', verified: true } };

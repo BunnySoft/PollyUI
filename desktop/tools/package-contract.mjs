@@ -203,7 +203,8 @@ export function validateRuntimeContract(manifest, inputs, packages, sbom) {
     for (const name of ['wlroots-scene-effects.patch', 'wlroots-effects.json', 'apply-wlroots-effects.py'])
       assert.ok(payload.has('usr/share/licenses/pollyui/wlroots/' + name),
         'Missing paired wlroots scene-effects source: ' + name);
-    assert.ok(sbom.packages.some(pkg => pkg.name === 'wlroots' && pkg.versionInfo === effects.version),
+    assert.ok(sbom.packages.some(pkg => pkg.name === 'wlroots' && pkg.versionInfo === effects.version &&
+      pkg.sourceInfo === `PollyUI wlroots patch SHA-256: ${effects.patchSha256}; effects ABI ${effects.abi}.`),
       'wlroots scene-effects SBOM differs from dependency identity');
   }
 }

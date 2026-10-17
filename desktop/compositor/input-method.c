@@ -52,9 +52,8 @@ struct PuInputMethod {
     struct PuDesktop *desktop;
     struct wl_client *client;
     struct wl_global *status_global;
-    bool requested, initialized, initialization_lost;
+    bool requested, initialized, initialization_lost, finishing;
     pid_t pid;
-    struct wl_event_source *exit;
     struct wl_listener client_destroy, new_input, new_method, new_keyboard, focus;
     struct wl_listener method_commit, method_destroy, popup, grab, initialized_grab_destroy;
     struct wl_list inputs, popups, keyboards;
@@ -563,28 +562,32 @@ static bool reap(struct PuInputMethod *state, int options)
     if (state->client) wl_client_destroy(state->client);
     return true;
 }
-static int exited(int signal_number, void *data)
-{ (void)signal_number; reap(data, WNOHANG); return 0; }
+static void exited(struct PuDesktop *desktop)
+{ if (desktop->input_method) reap(desktop->input_method, WNOHANG); }
 bool pu_input_method_spawn(struct PuDesktop *desktop, char *const argv[])
 {
     struct PuInputMethod *state = desktop->input_method;
     if (!state) { wlr_log(WLR_ERROR, "Input-method relay is not initialized"); return false; }
-    if (state->client || state->pid) {
+    if (state->client || state->pid || state->finishing) {
         wlr_log(WLR_ERROR, "Input method is already running");
         return false;
     }
     state->requested = true;
     state->initialized = false;
     state->initialization_lost = false;
-    if (!state->exit) state->exit = wl_event_loop_add_signal(wl_display_get_event_loop(desktop->display), SIGCHLD, exited, state);
-    if (!state->exit) { wlr_log_errno(WLR_ERROR, "Cannot watch input-method process"); return false; }
+    if (!pu_private_process_watch(desktop, PU_PRIVATE_INPUT_METHOD, exited)) return false;
     state->client_destroy.notify = disconnected;
-    return pu_spawn_private(desktop, argv, "input method", &state->client, &state->pid, &state->client_destroy);
+    if (pu_spawn_private(desktop, argv, "input method", &state->client, &state->pid, &state->client_destroy))
+        return true;
+    pu_private_process_unwatch(desktop, PU_PRIVATE_INPUT_METHOD);
+    return false;
 }
 void pu_input_method_stop(struct PuDesktop *desktop)
 {
     struct PuInputMethod *state = desktop->input_method;
     if (!state) return;
+    pu_private_process_unwatch(desktop, PU_PRIVATE_INPUT_METHOD);
+    uint64_t generation = desktop->private_processes[PU_PRIVATE_INPUT_METHOD].generation;
     if (reap(state, WNOHANG)) return;
     if (kill(state->pid, SIGTERM) < 0 && errno != ESRCH) wlr_log_errno(WLR_ERROR, "Cannot terminate input method");
     for (int i = 0; i < 100 && !reap(state, WNOHANG); i++) {
@@ -594,14 +597,20 @@ void pu_input_method_stop(struct PuDesktop *desktop)
             wlr_log_errno(WLR_ERROR, "Cannot dispatch input-method shutdown");
             break;
         }
+        if (desktop->input_method != state ||
+            generation != desktop->private_processes[PU_PRIVATE_INPUT_METHOD].generation) return;
         struct timespec delay = { .tv_nsec = 10000000 }; nanosleep(&delay, NULL);
     }
+    if (desktop->input_method != state ||
+        generation != desktop->private_processes[PU_PRIVATE_INPUT_METHOD].generation) return;
     if (state->pid) {
         wlr_log(WLR_ERROR, "Input method did not exit; sending SIGKILL");
         if (kill(state->pid, SIGKILL) < 0 && errno != ESRCH) wlr_log_errno(WLR_ERROR, "Cannot kill input method");
         else reap(state, 0);
     }
-    if (state->client) wl_client_destroy(state->client);
+    if (desktop->input_method == state &&
+        generation == desktop->private_processes[PU_PRIVATE_INPUT_METHOD].generation && state->client)
+        wl_client_destroy(state->client);
 }
 bool pu_input_method_init(struct PuDesktop *desktop)
 {
@@ -624,10 +633,10 @@ bool pu_input_method_init(struct PuDesktop *desktop)
 void pu_input_method_finish(struct PuDesktop *desktop)
 {
     struct PuInputMethod *state = desktop->input_method;
-    if (!state) return;
+    if (!state || state->finishing) return;
+    state->finishing = true;
     pu_input_method_stop(desktop);
     if (state->status_global) wl_global_destroy(state->status_global);
-    if (state->exit) wl_event_source_remove(state->exit);
     unlisten(&state->new_input); unlisten(&state->new_method); unlisten(&state->new_keyboard); unlisten(&state->focus);
     if (state->tree) wlr_scene_node_destroy(&state->tree->node);
     free(state); desktop->input_method = NULL;
