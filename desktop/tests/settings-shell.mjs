@@ -192,7 +192,7 @@ async function migration(output, firstPid, survivor) {
   await capture(independent, 'display-kept');
   await audio(independent);
   await appClick('shell-settings-page-keyboard');
-  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 7,
+  await until(async () => (await query({ op: 'state' })).pageState.snapshot?.bindings?.length === 10,
     'independent Settings reads the real shortcut catalog');
   await capture(independent, 'keyboard');
   await appClick('shell-shortcut-minimize-window');
@@ -208,6 +208,25 @@ async function migration(output, firstPid, survivor) {
   await appClick('shell-shortcuts-reset');
   await until(() => desktop.shortcuts().some(binding => binding.action === 'minimize-window' && binding.key === 'F9'),
     'real shortcut defaults restored');
+  for (const [action, code, key] of [['tile-left', 35, 'h'], ['tile-right', 36, 'j'], ['restore-floating', 37, 'k']]) {
+    await appClick('shell-shortcut-' + action);
+    await until(() => surfaces.some(item => !item.window.closed &&
+      item.title.startsWith('PollyShell.shortcut-recording.') && item.window.active), action + ' trusted capture');
+    await signal('fixture-key 29 1'); await signal('fixture-key ' + code + ' 1');
+    await signal('fixture-key ' + code + ' 0'); await signal('fixture-key 29 0');
+    await until(() => desktop.shortcuts().some(binding => binding.action === action &&
+      binding.key === key && binding.modifiers === 2), action + ' actual native binding');
+    check(shell.configuration.snapshot.shortcuts.some(binding => binding.action === action &&
+      binding.key === key && binding.modifiers === 2), action + ' saved after acknowledgement');
+    await appClick('shell-shortcut-disable-' + action);
+    await until(() => desktop.shortcuts().some(binding => binding.action === action &&
+      !binding.key && !binding.modifiers), action + ' actually disabled');
+  }
+  await appClick('shell-shortcuts-reset');
+  await until(() => ['tile-left', 'tile-right', 'restore-floating'].every(action =>
+    desktop.shortcuts().some(binding => binding.action === action && binding.modifiers === 8 &&
+      binding.key === ({ 'tile-left': 'Left', 'tile-right': 'Right', 'restore-floating': 'Down' })[action])),
+  'all real snap defaults restored');
   await appClick('shell-settings-page-about'); await capture(independent, 'about');
   check(!surfaces.some(item => item.title === 'Desktop control panel'), 'all complete pages remain in the one owned Settings process');
   await signal('fixture-settings-close ' + ++serial);

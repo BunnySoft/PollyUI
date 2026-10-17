@@ -1,4 +1,4 @@
-# Shell configuration v3
+# Shell configuration v4
 
 Shell is the sole writer of `application.configDir/shell-preferences.json`.
 Independent Settings requests changes through the existing authenticated IPC;
@@ -6,7 +6,7 @@ it never receives a configuration handle. Linux Shell composition passes
 `--no-legacy-storage`; ordinary applications, protected roles, headless tests
 and Windows retain their existing localStorage composition by default.
 
-The JSON object has exactly `version: 3`, `theme: { id, filesEnabled }`,
+The JSON object has exactly `version: 4`, `theme: { id, filesEnabled }`,
 `audio`, `display`, `workspace`, `shortcuts`, `desktop`, and `launchers`. A null theme ID selects the
 packaged default; `filesEnabled` defaults to true. Null preference sections
 mean no saved profile. Non-null audio/display/workspace sections retain their
@@ -14,6 +14,14 @@ existing v1 domain schemas and validation limits; shortcuts store only
 action/modifiers/key, not labels or live handles. Unknown fields/versions and
 invalid values fail explicitly. All updates validate the complete next object.
 Snapshots are deeply frozen and published only after file publication.
+
+The shortcut catalog has ten actions. The original seven retain their IDs and
+numeric order; `tile-left`, `tile-right`, and `restore-floating` append defaults
+Super+Left, Super+Right, and Super+Down. Null shortcuts use native defaults;
+non-null v4 shortcuts must contain every action exactly once. Independent
+Settings consumes this same catalog for recording, disabling and resetting.
+The private `polly_shortcuts_v1` interface is strictly paired at version 2;
+old clients/servers fail explicitly instead of applying a partial catalog.
 
 `desktop` is `{ version: 1, shortcuts: [...] }`, initially empty. Each of at most
 128 shortcuts is `{ id, name, output: { name, make, model, serialNumber }, x, y }`.
@@ -40,12 +48,17 @@ followed by unchanged individual Window.id tasks. Missing/`windows` mode remains
 unchanged. All modes share this saved pin order; no new preference version or
 separate Quick Launch store is introduced.
 
-Existing v1/v2 JSON is validated, upgraded once by the same atomic writer, and
+Existing v1/v2/v3 JSON is validated, upgraded once by the same atomic writer, and
 preserves every original domain. It does not reread legacy localStorage.
 An upgrade write failure is explicit, retains the uncommitted original file, and
 does not create a success-shaped in-memory configuration. A post-rename
-durability failure retains the published v3 file and reports uncertain durability.
-The desktop shortcut domain remains version 1. Older binaries do not read v3; downgrading the Shell requires a separate,
+durability failure retains the published v4 file and reports uncertain durability.
+The seven legacy shortcut bindings, including disabled/custom bindings, remain
+unchanged. Only the three new defaults are added. If a new default collides with
+an old binding, that new action is explicitly Disabled and the Shell reports
+all such conflicts once after successful migration publication; Settings can
+reassign it. Migration never changes an existing user chord to make room.
+The desktop/launcher domains remain version 1. Older binaries do not read v4; downgrading the Shell requires a separate,
 explicit configuration compatibility decision. Before returning to an older
 binary, restore an original backup or otherwise provide a configuration that
 that binary understands; there is no automatic downgrade or backup framework.

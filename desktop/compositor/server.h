@@ -31,7 +31,11 @@ enum PuDesktopMode {
     PU_DESKTOP_FLOATING,
     PU_DESKTOP_MAXIMIZED,
     PU_DESKTOP_FULLSCREEN,
+    PU_DESKTOP_TILED_LEFT,
+    PU_DESKTOP_TILED_RIGHT,
 };
+
+enum PuDesktopTile { PU_TILE_NONE, PU_TILE_LEFT, PU_TILE_RIGHT };
 
 struct PuDesktopView {
     struct PuDesktop *desktop;
@@ -48,9 +52,10 @@ struct PuDesktopView {
     uint64_t workspace_window;
     /* Policy may lead the presented mode until a matching configure is committed. */
     bool maximized, fullscreen, geometry_pending, geometry_reuse;
+    enum PuDesktopTile tile;
     enum PuDesktopMode mode;
     struct wlr_output *output;
-    struct wlr_box restore_box, pending_box, presented_box;
+    struct wlr_box restore_box, floating_box, pending_box, presented_box;
     uint32_t geometry_serial;
     bool resize_pending;
     struct wlr_box resize_anchor;

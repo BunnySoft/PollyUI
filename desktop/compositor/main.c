@@ -27,6 +27,7 @@ static void usage(FILE *out)
         "Alt+Tab: cycle windows; Alt+F4: close; Alt+Escape: confirm ordinary logout in the trusted Shell.\n"
         "Alt+F10: toggle maximize; Alt+F11: toggle fullscreen.\n"
         "Alt+F9: minimize; Alt+Tab also restores minimized windows.\n"
+        "Super+Left/Right: tile on the current work area; Super+Down: restore floating.\n"
         "Alt+left drag: move; Alt+right drag: resize.\n");
 }
 

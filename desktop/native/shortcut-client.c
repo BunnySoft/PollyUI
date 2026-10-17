@@ -39,7 +39,8 @@ static void free_picker(struct Picker *picker)
 static void binding(void *data, struct polly_shortcuts_v1 *proxy, uint32_t action, uint32_t mods, const char *name)
 {
     (void)data; (void)proxy;
-    if (action >= PU_SHORTCUT_COUNT || !pu_shortcut_key(name, &client.pending[action].key)) {
+    if (action >= PU_SHORTCUT_COUNT || (client.mask & (1u << action)) ||
+        !pu_shortcut_key(name, &client.pending[action].key)) {
         client.failed = client.changed = 1;
         return;
     }
@@ -118,12 +119,18 @@ static const struct polly_shortcuts_v1_listener listener = {
     .switcher_done = picker_done, .switcher_closed = picker_closed,
 };
 
-int pu_shortcut_client_bind(struct wl_display *display, struct wl_registry *registry, uint32_t name, const char *interface)
+int pu_shortcut_client_bind(struct wl_display *display, struct wl_registry *registry, uint32_t name,
+    const char *interface, uint32_t version)
 {
     if (strcmp(interface, "polly_shortcuts_v1")) return 0;
+    if (version != 2) {
+        SDL_Log("Shortcut control requires version 2 and the ten-action catalog (server version %u)", version);
+        client.failed = client.changed = 1;
+        return 1;
+    }
     if (client.proxy) return 1;
     client.display = display;
-    client.proxy = wl_registry_bind(registry, name, &polly_shortcuts_v1_interface, 1);
+    client.proxy = wl_registry_bind(registry, name, &polly_shortcuts_v1_interface, 2);
     if (!client.proxy || polly_shortcuts_v1_add_listener(client.proxy, &listener, NULL) < 0)
         client.failed = client.changed = 1;
     return 1;

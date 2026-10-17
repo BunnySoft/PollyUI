@@ -22,7 +22,8 @@ enum TestCommand {
     TEST_TEXT_ENABLE, TEST_TEXT_DISABLE, TEST_IME_CREATE, TEST_IME_COMMIT, TEST_IME_POPUP,
     TEST_IME_FORCE_BIND, TEST_IME_FORWARD,
     TEST_CURSOR_SHAPE, TEST_CURSOR_SURFACE, TEST_CURSOR_IMAGE_DESTROY, TEST_DRAG_TARGET,
-    TEST_CURSOR_INVALID, TEST_UNCONSTRAINED, TEST_EFFECT_APPEARANCE, TEST_EFFECT_SUBSURFACE
+    TEST_CURSOR_INVALID, TEST_UNCONSTRAINED, TEST_EFFECT_APPEARANCE, TEST_EFFECT_SUBSURFACE,
+    TEST_LIMITS, TEST_SHORTCUT_BIND, TEST_SHORTCUT_COMMIT, TEST_SHORTCUT_RECORDING, TEST_REFUSE_TILE
 };
 
 struct TestLayer {
@@ -37,6 +38,7 @@ struct TestRequest {
     uint32_t serial;
     uint32_t edges;
     struct TestLayer layer;
+    char key[128];
 };
 
 struct TestReply {
@@ -56,6 +58,9 @@ struct TestReply {
     uint32_t serial;
     uint32_t cursor_enter_serial;
     int cursor_shape_capability;
+    uint32_t tiled, shortcut_mask;
+    int shortcut_version, shortcut_committed;
+    char shortcut_error[128];
 };
 
 #endif

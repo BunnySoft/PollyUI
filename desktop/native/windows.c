@@ -375,7 +375,7 @@ static const struct wl_seat_listener seat_listener = { .capabilities = capabilit
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
     (void)data;
-    if (pu_shortcut_client_bind(control.display, registry, name, interface)) return;
+    if (pu_shortcut_client_bind(control.display, registry, name, interface, version)) return;
     if (pu_output_client_bind(control.display, registry, name, interface, version)) return;
     if (!control.session_status && !strcmp(interface, polly_session_status_v1_interface.name)) {
         control.session_status = wl_registry_bind(registry, name, &polly_session_status_v1_interface, version >= 2 ? 2 : 1);

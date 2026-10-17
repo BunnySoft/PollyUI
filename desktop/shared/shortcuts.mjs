@@ -11,7 +11,8 @@ export function shortcutText(binding) {
 }
 
 export function shortcutFromEvent(event) {
-  if (event.repeat || ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock'].includes(event.key)) return null;
+  if (event.repeat || event.isComposing ||
+      ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'NumLock'].includes(event.key)) return null;
   const names = { ' ': 'space', Enter: 'Return', ArrowLeft: 'Left', ArrowRight: 'Right',
     ArrowUp: 'Up', ArrowDown: 'Down', PageUp: 'Prior', PageDown: 'Next' };
   return {
@@ -22,6 +23,10 @@ export function shortcutFromEvent(event) {
 }
 
 export function validateShortcuts(bindings) {
+  return validateCatalog(bindings, shortcutActions);
+}
+
+function validateCatalog(bindings, actions) {
   if (!Array.isArray(bindings) || bindings.length !== actions.length)
     throw new TypeError('Invalid shortcut preferences');
   const seen = new Set();
@@ -39,5 +44,23 @@ export function validateShortcuts(bindings) {
 }
 import { encodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
 
-const actions = ['switch-window', 'close-window', 'minimize-window', 'maximize-window',
+const legacyActions = ['switch-window', 'close-window', 'minimize-window', 'maximize-window',
   'fullscreen-window', 'previous-workspace', 'next-workspace'];
+const tileDefaults = [
+  { action: 'tile-left', modifiers: 8, key: 'Left' },
+  { action: 'tile-right', modifiers: 8, key: 'Right' },
+  { action: 'restore-floating', modifiers: 8, key: 'Down' },
+];
+export const shortcutActions = Object.freeze([...legacyActions, ...tileDefaults.map(binding => binding.action)]);
+
+export function migrateLegacyShortcuts(bindings, report = () => {}) {
+  const previous = validateCatalog(bindings, legacyActions);
+  const additions = tileDefaults.map(binding => {
+    const conflict = previous.find(old => old.modifiers === binding.modifiers &&
+      old.key.toLowerCase() === binding.key.toLowerCase());
+    if (!conflict) return { ...binding };
+    report(binding.action + ' is Disabled because its new default conflicts with ' + conflict.action);
+    return { action: binding.action, modifiers: 0, key: '' };
+  });
+  return [...previous, ...additions];
+}

@@ -5,7 +5,8 @@
 struct wl_display;
 struct wl_registry;
 int pu_shortcut_client_install(JSContext *ctx, JSValueConst api);
-int pu_shortcut_client_bind(struct wl_display *display, struct wl_registry *registry, uint32_t name, const char *interface);
+int pu_shortcut_client_bind(struct wl_display *display, struct wl_registry *registry, uint32_t name,
+    const char *interface, uint32_t version);
 int pu_shortcut_client_pump(void);
 void pu_shortcut_client_shutdown(void);
 #endif

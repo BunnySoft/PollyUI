@@ -22,10 +22,11 @@ function descriptors() {
   });
 }
 const before = descriptors();
-if (mode === 'reject') {
+if (mode === 'reject' || mode === 'reject-committed') {
   let error = null;
   try { openShellConfiguration(paths).close(); } catch (failure) { error = failure; }
-  check(error && !error.committed, 'bad/unsafe configuration fails explicitly before publication');
+  check(error && !!error.committed === (mode === 'reject-committed'),
+    'bad/unsafe configuration or migration failure reports exact publication status');
   if (expected) check(error.code === expected, 'second native process is rejected specifically by the writer lock');
   check(descriptors() === before, 'failed open leaves exact descriptor count unchanged');
 } else {

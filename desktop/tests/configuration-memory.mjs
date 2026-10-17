@@ -1,5 +1,6 @@
 import { createShellConfiguration, defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { encodeUtf8, decodeUtf8 } from './sysrt/sdk/js/encoding.mjs';
+import { shortcutActions } from './desktop/shared/shortcuts.mjs';
 
 export function memoryConfiguration(initial = defaultShellConfiguration(), write = () => {}) {
   let bytes = encodeUtf8(JSON.stringify(initial));
@@ -15,6 +16,6 @@ export function memoryConfiguration(initial = defaultShellConfiguration(), write
 }
 export const fixtureShortcuts = [
   { action: 'minimize-window', label: 'Minimize', modifiers: 4, key: 'F9' },
-  ...['switch-window', 'close-window', 'maximize-window', 'fullscreen-window',
-    'previous-workspace', 'next-workspace'].map(action => ({ action, label: action, modifiers: 0, key: '' })),
+  ...shortcutActions.filter(action => action !== 'minimize-window').map(action =>
+    ({ action, label: action, modifiers: 0, key: '' })),
 ];

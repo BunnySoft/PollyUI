@@ -283,8 +283,8 @@ In explicit `applications` or `windows-launchers` mode, each Apps entry has a se
 or Dock+/Dock- control. Its accessible name says which application and destination
 it changes. This is independent of the existing desktop Pin/Unpin control: removing
 a taskbar or Dock launcher never deletes a desktop shortcut. The ordered list of
-at most 32 unique catalog IDs persists in Shell configuration v3's version-1
-`launchers` domain. Existing v1/v2 configurations migrate atomically without losing
+at most 32 unique catalog IDs persists in Shell configuration v4's version-1
+`launchers` domain. Existing v1/v2/v3 configurations migrate atomically without losing
 their other domains; see `desktop/SHELL-CONFIGURATION.md`.
 
 Pins occupy the first display slots in saved order. In `applications` mode a uniquely associated running

@@ -4,6 +4,7 @@
 #include "foreign-toplevel-client.h"
 #include "xdg-decoration-client.h"
 #include "polly-appearance-client.h"
+#include "polly-shortcuts-client.h"
 #include "decoration-layout-fixtures.h"
 #include "appearance-document.h"
 #include "decoration-frame.h"
@@ -30,6 +31,7 @@ struct Configure {
     int width, height;
     bool maximized, fullscreen;
     uint32_t serial;
+    uint32_t tiled;
 };
 
 struct Window {
@@ -42,7 +44,8 @@ struct Window {
     struct zwlr_layer_surface_v1 *layer;
     struct wl_callback *frame;
     int width, height;
-    bool maximized, fullscreen, hold, small_fullscreen;
+    bool maximized, fullscreen, hold, small_fullscreen, refuse_tile;
+    uint32_t tiled;
     struct Configure pending[32];
     size_t pending_count;
 };
@@ -78,6 +81,7 @@ struct Client {
     struct zwlr_foreign_toplevel_manager_v1 *foreign_manager;
     struct zxdg_decoration_manager_v1 *decoration_manager;
     struct polly_appearance_v1 *appearance;
+    struct polly_shortcuts_v1 *shortcuts;
     uint32_t appearance_serial, appearance_reply;
     int appearance_phase, appearance_accepted;
     bool renderer_enabled;
@@ -405,9 +409,11 @@ static void apply_configure(struct Window *window, struct Configure config)
     else xdg_surface_ack_configure(window->xdg, config.serial);
     int width = config.width, height = config.height;
     if (window->small_fullscreen && config.fullscreen) { width = 240; height = 160; }
+    if (window->refuse_tile && config.tiled) { width = 240; height = 160; }
     if (window == &window->client->window) {
         window->client->reply.maximized = config.maximized;
         window->client->reply.fullscreen = config.fullscreen;
+        window->client->reply.tiled = config.tiled;
         window->client->reply.width = width;
         window->client->reply.height = height;
     }
@@ -435,6 +441,7 @@ static void configure_surface(void *data, struct xdg_surface *xdg, uint32_t seri
     struct Configure config = {
         .width = window->width, .height = window->height,
         .maximized = window->maximized, .fullscreen = window->fullscreen, .serial = serial,
+        .tiled = window->tiled,
     };
     if (window->hold) {
         if (window->pending_count == 32) die("too many pending configures");
@@ -481,10 +488,15 @@ static void configure_toplevel(void *data, struct xdg_toplevel *toplevel,
     window->width = width > 0 ? width : 240;
     window->height = height > 0 ? height : 160;
     window->maximized = window->fullscreen = false;
+    window->tiled = 0;
     uint32_t *state;
     wl_array_for_each(state, states) {
         if (*state == XDG_TOPLEVEL_STATE_MAXIMIZED) window->maximized = true;
         if (*state == XDG_TOPLEVEL_STATE_FULLSCREEN) window->fullscreen = true;
+        if (*state == XDG_TOPLEVEL_STATE_TILED_LEFT) window->tiled |= 1;
+        if (*state == XDG_TOPLEVEL_STATE_TILED_RIGHT) window->tiled |= 2;
+        if (*state == XDG_TOPLEVEL_STATE_TILED_TOP) window->tiled |= 4;
+        if (*state == XDG_TOPLEVEL_STATE_TILED_BOTTOM) window->tiled |= 8;
     }
 }
 static void close_toplevel(void *data, struct xdg_toplevel *toplevel)
@@ -790,6 +802,26 @@ static struct Workspace *find_workspace(struct Client *client, uint32_t order)
     return NULL;
 }
 
+static void shortcut_binding(void *data, struct polly_shortcuts_v1 *proxy, uint32_t action,
+    uint32_t modifiers, const char *key)
+{
+    (void)proxy; (void)modifiers; (void)key;
+    if (action >= 32) die("invalid shortcut action");
+    ((struct Client *)data)->reply.shortcut_mask |= 1u << action;
+}
+static void shortcut_done(void *data, struct polly_shortcuts_v1 *proxy) { (void)data; (void)proxy; }
+static void shortcut_configured(void *data, struct polly_shortcuts_v1 *proxy, uint32_t serial,
+    const char *error)
+{
+    (void)proxy; (void)serial;
+    struct Client *client = data;
+    client->reply.shortcut_committed++;
+    snprintf(client->reply.shortcut_error, sizeof(client->reply.shortcut_error), "%s", error);
+}
+static const struct polly_shortcuts_v1_listener shortcuts_listener = {
+    .binding = shortcut_binding, .bindings_done = shortcut_done, .configured = shortcut_configured,
+};
+
 static void global(void *data, struct wl_registry *registry,
                    uint32_t name, const char *interface, uint32_t version)
 {
@@ -823,6 +855,11 @@ static void global(void *data, struct wl_registry *registry,
         client->appearance = wl_registry_bind(registry, name, &polly_appearance_v1_interface, 7);
         polly_appearance_v1_add_listener(client->appearance, &appearance_listener, client);
         client->reply.appearance_capability = 1;
+    } else if (!strcmp(interface, polly_shortcuts_v1_interface.name)) {
+        if (version != 2) die("shortcuts require paired protocol version 2");
+        client->shortcuts = wl_registry_bind(registry, name, &polly_shortcuts_v1_interface, 2);
+        polly_shortcuts_v1_add_listener(client->shortcuts, &shortcuts_listener, client);
+        client->reply.shortcut_version = (int)version;
     } else if (strcmp(interface, ext_workspace_manager_v1_interface.name) == 0) {
         client->workspaces = wl_registry_bind(registry, name, &ext_workspace_manager_v1_interface, 1);
         ext_workspace_manager_v1_add_listener(client->workspaces, &workspaces_listener, client);
@@ -1278,6 +1315,17 @@ int main(int argc, char **argv)
             xdg_toplevel_set_max_size(window->toplevel, 0, 0);
             wl_surface_commit(window->surface);
             break;
+        case TEST_LIMITS:
+            xdg_toplevel_set_min_size(window->toplevel, request.layer.width, request.layer.height);
+            xdg_toplevel_set_max_size(window->toplevel, request.layer.right, request.layer.bottom);
+            wl_surface_commit(window->surface);
+            break;
+        case TEST_SHORTCUT_BIND:
+            polly_shortcuts_v1_set_binding(client.shortcuts, request.id, request.serial, request.key);
+            break;
+        case TEST_SHORTCUT_COMMIT: polly_shortcuts_v1_commit(client.shortcuts, request.serial); break;
+        case TEST_SHORTCUT_RECORDING: polly_shortcuts_v1_recording(client.shortcuts, request.id); break;
+        case TEST_REFUSE_TILE: window->refuse_tile = request.id != 0; break;
         case TEST_DESTROY:
             if (request.id == 4) { destroy_window(&client.extra); break; }
             destroy_window(&client.extra);

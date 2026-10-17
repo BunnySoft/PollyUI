@@ -11,6 +11,12 @@ int main(void)
     CHECK(pu_shortcut_match(bindings, XKB_KEY_Tab, PU_SHORTCUT_ALT) == PU_SHORTCUT_SWITCH);
     CHECK(pu_shortcut_match(bindings, XKB_KEY_ISO_Left_Tab, PU_SHORTCUT_ALT | PU_SHORTCUT_SHIFT) == PU_SHORTCUT_SWITCH);
     CHECK(pu_shortcut_match(bindings, XKB_KEY_Tab, PU_SHORTCUT_CTRL) == -1);
+    CHECK(PU_SHORTCUT_TILE_LEFT == 7 && PU_SHORTCUT_COUNT == 10);
+    CHECK(pu_shortcut_match(bindings, XKB_KEY_Left, PU_SHORTCUT_SUPER) == PU_SHORTCUT_TILE_LEFT);
+    CHECK(pu_shortcut_match(bindings, XKB_KEY_Right, PU_SHORTCUT_SUPER) == PU_SHORTCUT_TILE_RIGHT);
+    CHECK(pu_shortcut_match(bindings, XKB_KEY_Down, PU_SHORTCUT_SUPER) == PU_SHORTCUT_RESTORE_FLOATING);
+    CHECK(pu_shortcut_match(bindings, XKB_KEY_Left, PU_SHORTCUT_SUPER | PU_SHORTCUT_CTRL) == PU_SHORTCUT_WORKSPACE_PREVIOUS);
+    CHECK(pu_shortcut_match(bindings, XKB_KEY_Right, PU_SHORTCUT_SUPER | PU_SHORTCUT_CTRL) == PU_SHORTCUT_WORKSPACE_NEXT);
     bindings[PU_SHORTCUT_CLOSE] = (struct PuShortcutBinding){ PU_SHORTCUT_ALT | PU_SHORTCUT_SHIFT, XKB_KEY_Tab };
     CHECK(pu_shortcut_validate(bindings));
     pu_shortcut_defaults(bindings);
