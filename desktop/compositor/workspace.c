@@ -157,7 +157,7 @@ void pu_workspaces_picker_validate(struct PuDesktop *desktop)
     }
     struct wlr_box anchor, bounds;
     if (state->picker_phase == PICKER_WAITING) {
-        if (pu_desktop_picker_anchor(view, NULL, false, &anchor, &bounds) != state->picker_output ||
+        if (pu_desktop_picker_output(view, &bounds) != state->picker_output ||
             !wlr_box_equal(&bounds, &state->picker_bounds)) pu_workspaces_picker_cancel(desktop);
         return;
     }
@@ -228,8 +228,8 @@ void pu_workspaces_picker_motion(struct PuDesktop *desktop, struct PuDesktopView
     state->hover_window = window;
     if (!window || !state->picker_manager || !view || !view->mapped || view->minimized ||
         !pu_workspace_current(view)) return;
-    struct wlr_box anchor, bounds;
-    struct wlr_output *head = pu_desktop_picker_anchor(view, NULL, false, &anchor, &bounds);
+    struct wlr_box bounds;
+    struct wlr_output *head = pu_desktop_picker_output(view, &bounds);
     if (!head) return;
     state->picker_window = window; state->picker_view = view->toplevel->resource;
     state->picker_output = head; state->picker_workspace = view->workspace;

@@ -164,6 +164,7 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     struct wlr_surface *surface, enum PuDesktopTile tile);
 struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
     bool require_hit, struct wlr_box *button, struct wlr_box *output);
+struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds);
 bool pu_desktop_surface_box(struct PuDesktop *desktop, struct wlr_surface *surface,
     struct wlr_box *box, struct PuDesktopOwner **owner);
 bool pu_desktop_session_exit(struct PuDesktop *desktop, struct wl_client *client,
