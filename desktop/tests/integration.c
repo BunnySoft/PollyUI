@@ -982,7 +982,7 @@ static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *vi
         wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
         CHECK(backend);
         struct wlr_output *extra = wlr_headless_add_output(backend, 801, 701);
-        CHECK(extra && resize_output(extra, 1001, 876, 1.25f));
+        CHECK(extra && resize_output(extra, 1002, 877, 1.25f));
         CHECK(wlr_output_layout_add(desktop.layout, original, 0, 0) &&
             wlr_output_layout_add(desktop.layout, extra, -801, -100));
         struct TestLayer top = {.output = 2, .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
@@ -995,6 +995,8 @@ static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *vi
         CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
         struct wlr_box target;
         wlr_output_layout_get_box(desktop.layout, extra, &target);
+        printf("TITLE_SNAP_OUTPUT physical=%dx%d scale=%.2f logical=%d,%d,%d,%d\n",
+            extra->width, extra->height, extra->scale, target.x, target.y, target.width, target.height);
         CHECK(target.x == -801 && target.y == -100 && target.width == 801 && target.height == 701);
         for (int edge = 0; edge < 3; edge++) {
             wlr_scene_node_set_position(&view->tree->node, 80, 160);
