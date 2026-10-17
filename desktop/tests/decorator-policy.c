@@ -182,6 +182,7 @@ static const struct zwlr_layer_surface_v1_listener pair_listener = {
 };
 static bool resize_pair_surface(struct Probe *probe, struct PairSurface *surface, bool panel, uint32_t height)
 {
+    if (surface->buffer && surface->height == height) return true;
     surface->configured = false;
     zwlr_layer_surface_v1_set_size(surface->layer, panel ? 0 : 640, height);
     zwlr_layer_surface_v1_set_exclusive_zone(surface->layer, panel ? (int32_t)height : -1);
