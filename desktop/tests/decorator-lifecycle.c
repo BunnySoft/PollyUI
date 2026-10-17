@@ -1657,14 +1657,27 @@ static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
                     CHECK(wait_presented_frame(view));
                 }
             } else if (!strcmp(operation, "cross-head")) {
-                CHECK(view && view->mode == PU_DESKTOP_FLOATING && !cross_output && !picker_menu());
+                CHECK(view && !cross_output);
+                for (int i = 0; i < 1200 && picker_menu(); i++) CHECK(pump());
+                CHECK(!picker_menu() && wait_presented_frame(view) && view->mode == PU_DESKTOP_FLOATING);
                 struct wlr_backend *backend = NULL;
                 wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
                 CHECK(backend);
                 cross_origin = view->output;
                 wlr_output_layout_get_box(desktop.layout, cross_origin, &cross_origin_box);
                 cross_output = wlr_headless_add_output(backend, 1280, 720);
-                CHECK(cross_output && cross_output != cross_origin && wait_presented_frame(view));
+                CHECK(cross_output && cross_output != cross_origin);
+                bool panel_ready = false;
+                for (int i = 0; i < 1200 && !panel_ready; i++) {
+                    struct PuDesktopLayer *panel;
+                    wl_list_for_each(panel, &desktop.layers, link)
+                        if (panel->surface->output == cross_output && panel->presented &&
+                            panel->surface->surface->mapped && panel->surface->current.exclusive_zone == 48 &&
+                            wl_resource_get_client(panel->surface->resource) == desktop.shell_client &&
+                            !strncmp(panel->surface->namespace, "PollyShell.panel.", 17)) panel_ready = true;
+                    if (!panel_ready) CHECK(pump());
+                }
+                CHECK(panel_ready && wait_presented_frame(view));
                 struct wlr_box destination;
                 wlr_output_layout_get_box(desktop.layout, cross_output, &destination);
                 CHECK(destination.x == cross_origin_box.x + cross_origin_box.width &&
