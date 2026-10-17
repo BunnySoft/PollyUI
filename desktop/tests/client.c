@@ -1165,7 +1165,8 @@ int main(int argc, char **argv)
         if (wl_display_roundtrip(client.display) < 0 || !client.renderer_enabled) die("enable separate fixture renderer");
     } else {
         if (!client.compositor || !client.shm || !client.wm || !client.seat) die("registry");
-        if (client.appearance) configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
+        if (client.appearance && !getenv("POLLY_TEST_WORKSPACE_V4"))
+            configure_appearance(&client, PU_DECORATION_DEFAULT_LAYOUT);
     }
     bool running = true;
     while (running) {

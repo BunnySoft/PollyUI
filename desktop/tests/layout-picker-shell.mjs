@@ -2,6 +2,7 @@ import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
 import { runtimeBuild } from './desktop/client/settings-contract.mjs';
+import { BUILTIN_THEME_CATALOG, installThemeCatalog } from './desktop/shared/ui/themes.mjs';
 
 const [mode] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -126,6 +127,10 @@ async function run() {
     check(shell.selectTheme('xp'), 'retaining ordinary theme switch');
     await until(() => menu.window.closed, 'retheme revokes picker');
     check(shell.selectTheme('modern'), 'restore Modern opt-in');
+    const solid = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+    delete solid.themes.find(theme => theme.id === 'modern').panel.taskbarBackdrop;
+    installThemeCatalog(solid);
+    check(shell.selectTheme('modern'), 'small-output geometry fixture isolates picker from optional taskbar material reconfiguration');
     await signal('picker-small');
     menu = await hover();
     const { width, height, margins } = menu.options;
@@ -145,6 +150,9 @@ async function run() {
     await until(() => menu.window.closed, 'actual target unmap revokes picker');
     await signal('picker-remap');
     menu = await hover();
+    await signal('picker-output-retire');
+    await until(() => menu.window.closed, 'actual granted output retirement revokes picker');
+    menu = await hover();
     shell.stop();
     await until(() => menu.window.closed, 'Shell stop revokes and closes owned picker');
     await signal('picker-stopped');
@@ -153,6 +161,7 @@ async function run() {
   }
   check(!shell.getState().error, 'no picker business error replaced independent material status');
   shell.stop();
+  installThemeCatalog(BUILTIN_THEME_CATALOG);
   await signal('picker-success');
   window.quit();
 }

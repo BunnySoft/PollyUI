@@ -1665,9 +1665,19 @@ static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
                 view = wire_view();
                 CHECK(view && view->workspace_window > window_id && wait_presented_frame(view));
                 window_id = view->workspace_window;
+            } else if (!strcmp(operation, "output-retire")) {
+                struct wlr_backend *backend = NULL;
+                wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+                CHECK(backend && view && picker_menu());
+                struct wlr_output *old_output = view->output;
+                struct wlr_output *replacement = wlr_headless_add_output(backend, 1280, 720);
+                CHECK(replacement && replacement != old_output);
+                wlr_layer_surface_v1_destroy(marker->surface); marker = NULL;
+                wlr_output_destroy(old_output);
+                CHECK(command(TEST_QUERY, 0, 0) && view->output == replacement && wait_presented_frame(view));
             } else if (!strcmp(operation, "success")) checks++;
             else CHECK(false);
-            wlr_layer_surface_v1_destroy(marker->surface);
+            if (marker) wlr_layer_surface_v1_destroy(marker->surface);
             break;
         }
     }
