@@ -2444,13 +2444,16 @@ static bool arrangement_cells(struct PuDesktopView **views, struct wlr_scene_nod
         int start = (int)((int64_t)axis * i / 3), end = (int)((int64_t)axis * (i + 1) / 3);
         if (horizontal) { expected.y += start; expected.height = end - start; }
         else { expected.x += start; expected.width = end - start; }
-        CHECK(wlr_box_equal(&outer, &expected) && view->tile == PU_TILE_NONE && !view->maximized &&
-            !view->toplevel->current.tiled && !view->toplevel->current.maximized);
         printf("ARRANGEMENT_FRAME window=%llu direction=%s outer=%d,%d %dx%d client=%d,%d %dx%d insets=%d,%d revision=%u\n",
             (unsigned long long)view->workspace_window, horizontal ? "horizontal" : "vertical",
             outer.x, outer.y, outer.width, outer.height, view->tree->node.x, view->tree->node.y,
             view->presented_box.width, view->presented_box.height, inset.x, inset.y,
             pu_decoration_presented_revision(view));
+        if (!wlr_box_equal(&outer, &expected))
+            fprintf(stderr, "ARRANGEMENT_EXPECTED window=%llu cell=%d,%d %dx%d\n",
+                (unsigned long long)view->workspace_window, expected.x, expected.y, expected.width, expected.height);
+        CHECK(wlr_box_equal(&outer, &expected) && view->tile == PU_TILE_NONE && !view->maximized &&
+            !view->toplevel->current.tiled && !view->toplevel->current.maximized);
     }
     CHECK(cascade_scene_order(views, order, true));
     return true;
@@ -2551,9 +2554,12 @@ static bool arrangement_protocol(const char *wire)
         reservation->surface->current.anchor == (ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
             ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT) &&
         reservation->surface->current.exclusive_zone == 30 && reservation->pending_box.height == 30 &&
-        reservation->pending_box.y == area.y && area.width == 1027 && area.height == 583 && head->scale == 1.25f);
-    int reserved = reservation->surface->current.exclusive_zone;
-    struct wlr_box work = area; work.y += reserved; work.height -= reserved;
+        reservation->pending_box.x == area.x && reservation->pending_box.y == area.y &&
+        reservation->pending_box.width == area.width &&
+        area.width == 1027 && area.height == 583 && head->scale == 1.25f);
+    struct wlr_box work = reservation->pending_box;
+    work.y += work.height;
+    work.height = area.y + area.height - work.y;
     printf("ARRANGEMENT_OUTPUT physical=%dx%d scale=%.2f logical=%d,%d %dx%d work=%d,%d %dx%d\n",
         head->width, head->height, head->scale, area.x, area.y, area.width, area.height,
         work.x, work.y, work.width, work.height);
@@ -2770,7 +2776,9 @@ static bool arrangement_protocol(const char *wire)
     CHECK(cascade_body(0, TEST_QUERY) && wait_presented_frame(views[0]) &&
         views[0]->floating_box.width == new_float.width && views[0]->floating_box.height == new_float.height);
     CHECK(cascade_body(0, TEST_MAXIMIZE) && wait_presented_frame(views[0]));
-    CHECK(command(TEST_REMAP, 0, 0) && cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true));
+    CHECK(command(TEST_REMAP, 0, 0));
+    CHECK(wait_presented_frame(views[0]) && wait_presented_frame(views[1]) && arrangement_wait(views[2]));
+    CHECK(cascade_open(&serial, &epoch) && cascade_request(serial++, epoch, true));
     CHECK(arrangement_wait(views[0]) && views[0]->presented_box.width == new_float.width &&
         views[0]->presented_box.height == new_float.height);
     puts("PASS: later half/max-from-half and coupled v5 Cascade restore the newly presented float size, not its pre-arrangement size");
@@ -3005,6 +3013,19 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old, bool ar
                 for (unsigned i = 0; i < 3; i++) {
                     CHECK(wait_presented_frame(views[i]));
                     sizes[i] = views[i]->toplevel->base->geometry;
+                }
+                if (arrangement) {
+                    struct wlr_box full; wlr_output_layout_get_box(desktop.layout, head, &full);
+                    for (unsigned i = 0; i < 3; i++) {
+                        struct wlr_box inset = {0}, actual;
+                        pu_decoration_inset(views[i], &inset, false);
+                        /* Keep even a formerly full-height column's entire right edge off the peer. */
+                        wlr_scene_node_set_position(&views[i]->tree->node,
+                            full.x + full.width - sizes[i].width - inset.x, full.y + inset.y);
+                        CHECK(pu_desktop_picker_output(views[i], &actual) == head &&
+                            wlr_box_equal(&actual, &full));
+                    }
+                    CHECK(desktop.focused == views[0] && cascade_scene_order(views, order, true));
                 }
             } else if (!strcmp(operation, "modern-ready")) {
                 int height;
