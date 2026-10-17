@@ -121,8 +121,13 @@ unpacks exactly one four-byte pixel into four float channels. Each tap uses
 one multiplication and one addition per lane in the original tap order.
 The accumulator is stored to four local floats before the original `lroundf`;
 kernel normalization, horizontal packed-byte rounding, vertical premultiplied
-tint and rounded coverage stay unchanged. There is no SIMD-width neighboring
-pixel read, approximate rounding, new allocated workspace, runtime CPU/policy
+tint and rounded coverage stay unchanged. The four exit lanes use explicit
+original `lroundf` calls and constant byte shifts rather than a runtime channel
+index/packing loop; vertical lanes retain the original component mapping and
+per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
+overhead without a workload threshold or a different short-kernel algorithm.
+There is no SIMD-width neighboring pixel read, approximate rounding, new
+allocated workspace, runtime CPU/policy
 channel, ISA flag, fast-math/FMA policy change or ABI change.
 The compile-time fallback retains the original scalar Gaussian source, not
 the earlier four-pixel experiment or a different material. Both guarded and
@@ -132,6 +137,8 @@ A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
 
 The original native measurement was about 294ms. Earlier standard-C candidates
 did not achieve the twofold goal and remain independent frozen experiments.
+The following measurements predate the exit-lane expansion and the published
+SHM/private-process safety composition; they do not qualify that new pairing.
 One GCC14/O3 reference-versus-SSE2 comparison, in sequential processes pinned
 to the same allowed CPU on a shared host, with one warmup and three measured
 samples per case, gave these medians. Preparation includes real lower-scene

@@ -4,5 +4,5 @@
   "version": "0.19.3-polly-effects4",
   "abi": 4,
   "patch": "wlroots-scene-effects.patch",
-  "patchSha256": "90a9fe3834e61e319d9f3048f7c26e7ecbe88aa56ec06f6487b345ec70c537f8"
+  "patchSha256": "01a53cfb04ffb6aaf6a09b3e2049e25da4f2eb273cc095d0f2d94402c64a926c"
 }
