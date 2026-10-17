@@ -650,9 +650,12 @@ static bool title_drag_restore(void)
         pu_desktop_view_scale(view) == 1.25 && frame_hash(view));
     button(false);
     CHECK(command(TEST_MAXIMIZE, 0, 0) && wait_presented_frame(view));
-    x = view->tree->node.x + 20;
     y = view->tree->node.y - 16;
-    CHECK(pu_decoration_hit(view, 20, -16) == PU_DECORATION_TITLE);
+    int title_x = 0;
+    while (title_x < view->presented_box.width &&
+        pu_decoration_hit(view, title_x, -16) != PU_DECORATION_TITLE) title_x++;
+    CHECK(title_x < view->presented_box.width && pu_decoration_hit(view, title_x, -16) == PU_DECORATION_TITLE);
+    x = view->tree->node.x + title_x;
     clock_ms += 401;
     motion(x, y); button(true);
     CHECK(desktop.grab == PU_DESKTOP_MOVE && desktop.grabbed == view);
