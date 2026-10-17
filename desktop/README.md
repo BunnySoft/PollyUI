@@ -119,13 +119,21 @@ The exact separable filter is CPU-bounded, not a real-time performance guarantee
 When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
 unpacks exactly one four-byte pixel into four float channels. Each tap uses
 one multiplication and one addition per lane in the original tap order.
-The accumulator is stored to four local floats before the original `lroundf`;
+Eight adjacent outputs now have independent four-channel accumulators in both
+passes. Each tap broadcasts its coefficient once for all eight; it does not
+share an accumulator or reorder any output's taps. Only complete blocks are
+batched, with the original single-pixel SSE2 loop handling the remainder.
+Horizontal blocks write only valid intermediate columns; vertical blocks read
+those columns together rather than rescanning each large-stride column alone.
+Each accumulator is stored to four local floats before the original `lroundf`;
 kernel normalization, horizontal packed-byte rounding, vertical premultiplied
 tint and rounded coverage stay unchanged. The four exit lanes use explicit
 original `lroundf` calls and constant byte shifts rather than a runtime channel
 index/packing loop; vertical lanes retain the original component mapping and
 per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
 overhead without a workload threshold or a different short-kernel algorithm.
+The batching change has a separate source pin and requires a rebuilt matched
+SDK/core; the historical measurements below do not qualify its performance.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
 allocated workspace, runtime CPU/policy
 channel, ISA flag, fast-math/FMA policy change or ABI change.
