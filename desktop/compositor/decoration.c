@@ -813,6 +813,13 @@ static void get_shell_backdrop_capability(struct wl_client *client, struct wl_re
     polly_appearance_v1_send_shell_backdrop_capability(resource, !owner->renderer_role &&
         wlr_scene_backdrop_supported(owner->state->desktop->renderer));
 }
+static void get_start_backdrop_capability(struct wl_client *client, struct wl_resource *resource)
+{
+    struct AppearanceClient *owner = wl_resource_get_user_data(resource);
+    if (!authorized(client, owner)) return;
+    polly_appearance_v1_send_start_backdrop_capability(resource, !owner->renderer_role &&
+        wlr_scene_backdrop_supported(owner->state->desktop->renderer));
+}
 static void prepare_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
     struct wl_resource *surface, struct wl_array *configuration)
 {
@@ -855,8 +862,8 @@ static void prepare_backdrop(struct wl_client *client, struct wl_resource *resou
     wl_signal_add(&node->node.events.destroy, &target->destroy);
     polly_appearance_v1_send_backdrop_prepared(resource, serial, 1, "");
 }
-static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
-    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration)
+static void prepare_paired_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration, bool standard_start)
 {
     struct AppearanceClient *owner = wl_resource_get_user_data(resource);
     if (!authorized(client, owner)) return;
@@ -870,7 +877,8 @@ static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource 
         owner->serial == serial && snapshot->backdrop_count < snapshot->backdrop_expected && layer && panel &&
         snapshot->backdrop_epoch == owner->state->desktop->backdrop_epoch &&
         wl_resource_get_client(surface) == client && wl_resource_get_client(taskbar) == client &&
-        configuration->size == sizeof(words) && words[0] == 3 &&
+        configuration->size == sizeof(words) && words[0] == (standard_start ? 4u : 3u) &&
+        (!standard_start || words[1] == 3) &&
         words[2] <= 64000 && words[3] >= 1 && words[3] <= 32 &&
         words[4] <= 0xffffff && words[5] <= 100 &&
         !pu_session_lock_active(owner->state->desktop);
@@ -883,8 +891,9 @@ static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource 
         }
     }
     struct wlr_scene_rect *node = NULL;
-    if (valid && (layer->pending_box.width > 4096 || layer->pending_box.height > 512)) {
+    if (valid && (layer->pending_box.width > 4096 || layer->pending_box.height > (standard_start ? 768 : 512))) {
         polly_appearance_v1_send_backdrop_prepared(resource, serial, 0,
+            standard_start ? "Standard Start recipient extent exceeds 4096x768 logical-pixel limit" :
             "Paired Shell recipient extent exceeds 4096x512 logical-pixel limit");
         return;
     }
@@ -909,6 +918,16 @@ static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource 
     target->destroy.notify = backdrop_candidate_destroyed;
     wl_signal_add(&node->node.events.destroy, &target->destroy);
     polly_appearance_v1_send_backdrop_prepared(resource, serial, 1, "");
+}
+static void prepare_shell_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration)
+{
+    prepare_paired_backdrop(client, resource, serial, surface, taskbar, configuration, false);
+}
+static void prepare_start_backdrop(struct wl_client *client, struct wl_resource *resource, uint32_t serial,
+    struct wl_resource *surface, struct wl_resource *taskbar, struct wl_array *configuration)
+{
+    prepare_paired_backdrop(client, resource, serial, surface, taskbar, configuration, true);
 }
 static void commit_theme(struct wl_client *client, struct wl_resource *resource, uint32_t serial)
 {
@@ -1078,6 +1097,7 @@ static const struct polly_appearance_v1_interface appearance_impl = {
     .submit_frame = submit_frame, .frame_failed = frame_failed,
     .get_backdrop_capability = get_backdrop_capability, .prepare_backdrop = prepare_backdrop,
     .get_shell_backdrop_capability = get_shell_backdrop_capability, .prepare_shell_backdrop = prepare_shell_backdrop,
+    .get_start_backdrop_capability = get_start_backdrop_capability, .prepare_start_backdrop = prepare_start_backdrop,
 };
 static void appearance_bind(struct wl_client *client, void *data, uint32_t version, uint32_t id)
 {
@@ -1113,7 +1133,7 @@ bool pu_decorations_init(struct PuDesktop *desktop)
     if (!state->budget) return false;
     state->budget->refs = 1; state->theme_revision = 1;
     state->manager = wlr_xdg_decoration_manager_v1_create(desktop->display);
-    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 8, state, appearance_bind);
+    state->appearance = wl_global_create(desktop->display, &polly_appearance_v1_interface, 9, state, appearance_bind);
     state->theme_feed = wl_global_create(desktop->display, &polly_theme_manager_v1_interface, 1, state, theme_feed_bind);
     if (!state->manager || !state->appearance || !state->theme_feed) return false;
     state->new_decoration.notify = new_decoration;

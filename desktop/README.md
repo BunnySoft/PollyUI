@@ -308,8 +308,8 @@ above, not wallpaper-derived client material or foreground opacity. Missing
 fields retain the original solid paint. All other packaged consumers and the
 v7/schema-2/role-1 Dock contract remain unchanged.
 
-The private appearance global advertises version 8 while still accepting version
-7. Shell negotiates at most 8; the independent decorator can remain on 7 and
+The private appearance global advertises version 9 while still accepting version
+7. Shell negotiates at most 9; the independent decorator can remain on 7 and
 geometry schema 7. `shellBackdropCapability()` separately queries implemented
 Shell-recipient support **and** the active renderer. An actual old v7 provider
 returns false, even if its Dock capability is true. Unsupported theme selection
@@ -338,7 +338,7 @@ Foreground, input, slots, hitboxes and menu keyboard behavior do not change.
 Material failures are independent of business errors and are not retried in a
 timer loop; live composition failure retains the last output frame.
 
-**Standard-height Start is not delivered by this consumer slice.** Both the v7
+Both the v7
 Dock and v8 paired Shell recipient policies explicitly retain a 4096x512 logical
 footprint limit, separately from effects4's generic 4096x768 primitive. The newer
 SDK does not grant Start or other overlays additional authority. Modern's unchanged
@@ -349,10 +349,31 @@ the same strict sigma/tint/opacity fields, only with `taskbarBackdrop` present.
 An actual footprint above 512 is explicitly rejected, keeps Start solid and
 preserves committed taskbars. A naturally shorter real output, e.g. height 540
 and unchanged 460px menu sizing, can use this bounded opt-in. That limited positive
-case is not qualification of the standard 640/660px menu. Enabling taller Start
-recipients requires a separately reviewed consumer policy and qualification;
-this slice changes neither surface geometry nor the generic filter. GLES new blur and physical/GPU qualification remain
-unsupported/unclaimed.
+case is not qualification of the standard 640/660px menu.
+
+**Standard-height Start is a separate explicit correctness opt-in, not a default
+or real-time guarantee.** A custom theme can add `"standardHeight": true` inside
+`panel.startBackdrop`. This strict optional boolean selects schema 4 / role 3 and
+the independent appearance-v9 `startBackdropCapability()` /
+`prepare_start_backdrop` pair, admitting the entire actual Start up to 4096x768.
+Absent or false keeps the original v8/schema3 request and 512 limit, even on a v9
+provider. Taskbars always use v8/schema3. An old v8 provider reports the new
+capability false; explicit opt-in is rejected before replacing surfaces,
+committing appearance, changing foreground or saving preferences. Public JSON
+stays schema 1 and numeric geometry stays schema 7. Both builtin and fallback
+catalogs omit the opt-in and keep packaged Start solid.
+
+The standard path reuses the same menu, placement, search, scroll, input and
+solid-first/clear-after-commit transaction. The unchanged 660px layout token
+produces actual 640px on 1280x720 and actual 660px when output height permits.
+Ownership, paired taskbar, current mapped/presented buffers, sequences, privacy,
+retirement, eight-target and shared 128MiB limits are unchanged. Resource refusal
+leaves Start solid and previously committed taskbars intact with a visible
+independent material error, without timer retry. The unchanged exact filter can
+take substantially longer than a 16.7ms frame for these extents; correctness
+does not qualify 60Hz, interactive budgets, a default change or full E22 completion.
+No SDK/kernel/algorithm, surface geometry, resource quotas or deadlines change.
+GLES new blur and physical/GPU qualification remain unsupported/unclaimed.
 
 `desktop-shell-regional-backdrop-native` extends the original native lifecycle
 fixture: actual two-output taskbars and a naturally bounded production Start over

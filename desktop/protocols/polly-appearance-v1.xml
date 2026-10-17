@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_appearance_v1">
-  <interface name="polly_appearance_v1" version="8">
+  <interface name="polly_appearance_v1" version="9">
     <description summary="separate trusted appearance publisher and renderer">
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
@@ -11,7 +11,8 @@
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
       Version 8 optionally pairs regional taskbar and Start recipients. Version
-      7 and its Dock material keep their original meaning.
+      7 and its Dock material keep their original meaning. Version 9 separately
+      opts into a standard-height Start recipient; version 8 remains bounded.
     </description>
     <enum name="error">
       <entry name="unauthorized" value="1" summary="connection does not own this role"/>
@@ -194,6 +195,33 @@
       <arg name="role" type="uint" summary="2 taskbar or 3 Start"/>
       <arg name="message" type="string"/>
     </event>
+    <request name="get_start_backdrop_capability" since="9"/>
+    <event name="start_backdrop_capability" since="9">
+      <description summary="1 only for implemented standard-height Start and a supported regional renderer">
+        This capability does not qualify frame-time or interactive performance.
+        Version 7 and 8 requests keep their original 4096x512 extent.
+      </description>
+      <arg name="supported" type="uint"/>
+    </event>
+    <request name="prepare_start_backdrop" since="9">
+      <description summary="explicitly stage a standard-height paired Start recipient">
+        Authenticated Shell publisher only. Configuration is six uint words:
+        schema 4, role 3 (Start), radius, sigma, RGB and tint opacity with the
+        v8 numeric bounds. The entire actual footprint is bounded to 4096x768
+        logical pixels, also subject to the unchanged expanded pixel and shared
+        scene-wide peak budgets. No tiling, pixel readback or performance promise.
+        All v8 Start ownership, actual mapped/presented/current buffer, output,
+        keyboard/input, box, sequence, privacy epoch and generation checks apply.
+        Its taskbar must be included via the original v8/schema3/role2 request
+        in the same complete snapshot. The total remains eight recipients.
+        backdrop_prepared acknowledges this request. Commit, cancel and exact
+        serial/ordinal shell_backdrop_retired semantics are unchanged.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="taskbar" type="object" interface="wl_surface"/>
+      <arg name="configuration" type="array"/>
+    </request>
   </interface>
   <interface name="polly_theme_manager_v1" version="1">
     <description summary="read-only appearance subscription for opt-in applications">

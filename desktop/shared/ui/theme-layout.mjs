@@ -36,7 +36,7 @@ export function shellBackdropMaterial(theme, role, width, height) {
   if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0)
     throw new RangeError('A current positive Shell footprint is required');
   const radius = Math.min(role === 2 ? theme.panel.radius : 8, width / 2, height / 2);
-  return [3, role, Math.round(radius * 1000), material.sigma,
+  return [role === 3 && material.standardHeight === true ? 4 : 3, role, Math.round(radius * 1000), material.sigma,
     Number.parseInt(material.tint.slice(1), 16), material.opacityPercent];
 }
 

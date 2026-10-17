@@ -1405,7 +1405,7 @@ original pressure regression and add exact area/axis/height boundaries,
 640x640/660 Gaussian pixels, unchanged foreground/input, idle reuse and privacy.
 No larger Start or other surface gains authority from this primitive extension.
 
-### Modern taskbar and bounded Start opt-in
+### Modern taskbar and explicit Start opt-ins
 
 Public theme JSON remains schema 1. A fluent taskbar can optionally provide
 `panel.taskbarBackdrop: { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 }`;
@@ -1431,6 +1431,33 @@ taskbars. Only naturally shorter actual menus, such as 460px on a 540px output,
 can use the bounded optional material. Neither that result nor generic tall
 scene qualification delivers standard-height Start, original-OS pixels or E22
 completion. See the [paired consumer contract](README.md#modern-taskbar-and-bounded-optional-start-recipients).
+
+To explicitly enable the separate standard-height correctness path in a custom
+theme, use:
+
+```json
+"startBackdrop": {
+  "sigma": 16, "tint": "#f3f3f3", "opacityPercent": 72,
+  "standardHeight": true
+}
+```
+
+`standardHeight` is optional and strictly boolean, only in `panel.startBackdrop`.
+True requires the independently queried appearance v9 standard-Start capability
+and selects `[4, 3, radiusMilliLogicalPixels, sigma, tintRGB, opacityPercent]` via
+`prepare_start_backdrop`. Absent/false preserves v8/schema3/role3 and its 512 limit;
+v9 does not enlarge either old request. The v9 request admits only an actual
+paired Start, up to 4096x768 with the same expanded-area/axis/scale and aggregate
+old-plus-candidate/scratch/backing limits. Its taskbar remains v8/schema3/role2.
+Unsupported opt-in fails before resources, foreground, committed theme or saved
+preferences change. No public schema version, geometry, menu layout or input
+contract changes. The same original menu first paints solid; only a successful
+complete transaction clears its background, never glyph/text opacity.
+
+Both packaged catalogs deliberately omit this field and all Start material
+defaults. Standard 640/660-height correctness is not a 16.7ms/60Hz or interaction
+performance qualification, a default enablement, original-OS fidelity or full
+E22 completion.
 
 On the qualified GCC14/O3 x86-64 path, baseline SSE2 accumulates four channels
 in the original tap order, then uses the original scalar rounding with explicit

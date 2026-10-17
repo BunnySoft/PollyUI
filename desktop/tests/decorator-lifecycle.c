@@ -940,15 +940,27 @@ static bool presented_frame_fence(const char *ui)
     puts("PASS: deterministic focus-frame counterexample retains an old usable button box while the pure latest-frame fence rejects it; the same stopped renderer PID submits and presents current frames after resume");
     return true;
 }
-struct OutputWitness { struct wl_listener commit, destroy; struct wlr_buffer *buffer; unsigned count; };
+struct OutputWitness { struct wl_listener commit, destroy; struct wlr_buffer *buffer; unsigned count; bool linked; };
+static struct {
+    struct OutputWitness output;
+    struct wlr_scene_tree *pressure;
+    struct wlr_scene_rect *mark;
+    struct wlr_buffer *reading;
+    unsigned char *committed;
+    uint32_t *actual, *plain, *moved;
+    pixman_region32_t input;
+    bool input_initialized, standard;
+} shell_fixture;
 static void witness_destroy(struct wl_listener *listener, void *data)
 {
     (void)data;
     struct OutputWitness *witness = wl_container_of(listener, witness, destroy);
+    if (!witness->linked) return;
     wl_list_remove(&witness->commit.link);
     wl_list_remove(&witness->destroy.link);
     if (witness->buffer) wlr_buffer_unlock(witness->buffer);
     witness->buffer = NULL;
+    witness->linked = false;
 }
 static void witness_commit(struct wl_listener *listener, void *data)
 {
@@ -959,63 +971,114 @@ static void witness_commit(struct wl_listener *listener, void *data)
     witness->buffer = wlr_buffer_lock(event->state->buffer);
     witness->count++;
 }
+static void witness_start(struct wlr_output *output)
+{
+    struct OutputWitness *witness = &shell_fixture.output;
+    witness_destroy(&witness->destroy, NULL);
+    *witness = (struct OutputWitness){.commit.notify = witness_commit, .destroy.notify = witness_destroy,
+        .linked = true};
+    wl_signal_add(&output->events.commit, &witness->commit);
+    wl_signal_add(&output->events.destroy, &witness->destroy);
+}
+static void shell_fixture_cleanup(void)
+{
+    if (shell_fixture.reading) wlr_buffer_end_data_ptr_access(shell_fixture.reading);
+    witness_destroy(&shell_fixture.output.destroy, NULL);
+    if (shell_fixture.mark) wlr_scene_node_destroy(&shell_fixture.mark->node);
+    if (shell_fixture.pressure) wlr_scene_node_destroy(&shell_fixture.pressure->node);
+    if (shell_fixture.input_initialized) pixman_region32_fini(&shell_fixture.input);
+    free(shell_fixture.committed); free(shell_fixture.actual); free(shell_fixture.plain); free(shell_fixture.moved);
+    memset(&shell_fixture, 0, sizeof(shell_fixture));
+}
+static bool shell_buffer_begin(struct wlr_buffer *buffer, void **data, uint32_t *format, size_t *stride)
+{
+    bool accessed = wlr_buffer_begin_data_ptr_access(buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, data, format, stride);
+    if (accessed) shell_fixture.reading = buffer;
+    return accessed;
+}
+static void shell_buffer_end(void)
+{
+    wlr_buffer_end_data_ptr_access(shell_fixture.reading); shell_fixture.reading = NULL;
+}
+static bool committed_shell_pixels(struct wlr_output *output, uint32_t **pixels, int *width, int *height)
+{
+    if (!shell_fixture.standard) return scene_pixels(output, pixels, width, height);
+    witness_start(output);
+    shell_fixture.mark = wlr_scene_rect_create(desktop.layer_trees[3], 1, 1, (float[4]){0.2f, 0.4f, 0.6f, 1});
+    CHECK(shell_fixture.mark);
+    wlr_scene_node_set_position(&shell_fixture.mark->node, output->width - 1, 0);
+    wlr_output_lock_attach_render(output, true);
+    bool committed = wlr_scene_output_commit(wlr_scene_get_scene_output(desktop.scene, output), NULL);
+    wlr_output_lock_attach_render(output, false);
+    struct OutputWitness *witness = &shell_fixture.output;
+    CHECK(committed && witness->count && witness->buffer);
+    void *data; uint32_t format; size_t stride;
+    CHECK(shell_buffer_begin(witness->buffer, &data, &format, &stride));
+    *width = witness->buffer->width; *height = witness->buffer->height;
+    *pixels = malloc((size_t)*width * *height * 4);
+    bool valid = *pixels && (format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888);
+    if (valid) for (int y = 0; y < *height; y++)
+        memcpy(*pixels + y * *width, (char *)data + y * stride, (size_t)*width * 4);
+    shell_buffer_end();
+    CHECK(valid);
+    witness_destroy(&witness->destroy, NULL);
+    wlr_scene_node_destroy(&shell_fixture.mark->node); shell_fixture.mark = NULL;
+    return true;
+}
 static bool live_backdrop_failure(struct PuDesktopLayer *dock, const char *lock_client)
 {
     struct wlr_output *output = dock->surface->output;
     struct wlr_scene_output *scene_output = wlr_scene_get_scene_output(desktop.scene, output);
-    static struct OutputWitness witness;
-    witness = (struct OutputWitness){.commit.notify = witness_commit, .destroy.notify = witness_destroy};
-    wl_signal_add(&output->events.commit, &witness.commit);
-    wl_signal_add(&output->events.destroy, &witness.destroy);
-    struct wlr_scene_rect *mark = wlr_scene_rect_create(desktop.layer_trees[3], 1, 1,
+    witness_start(output);
+    struct OutputWitness *witness = &shell_fixture.output;
+    struct wlr_scene_rect *mark = shell_fixture.mark = wlr_scene_rect_create(desktop.layer_trees[3], 1, 1,
         (float[4]){0.2f, 0.4f, 0.6f, 1});
-    CHECK(mark && wlr_scene_output_commit(scene_output, NULL) && witness.buffer);
+    CHECK(mark && wlr_scene_output_commit(scene_output, NULL) && witness->buffer);
     void *data; uint32_t format; size_t stride;
-    CHECK(wlr_buffer_begin_data_ptr_access(witness.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
-    size_t bytes = stride * witness.buffer->height;
-    unsigned char *committed = malloc(bytes);
+    CHECK(shell_buffer_begin(witness->buffer, &data, &format, &stride));
+    size_t bytes = stride * witness->buffer->height;
+    unsigned char *committed = shell_fixture.committed = malloc(bytes);
     CHECK(committed);
     memcpy(committed, data, bytes);
-    wlr_buffer_end_data_ptr_access(witness.buffer);
-    unsigned commits = witness.count;
+    shell_buffer_end();
+    unsigned commits = witness->count;
     uint32_t sequence = output->commit_seq;
     size_t available = WLR_SCENE_EFFECTS_MAX_BYTES - desktop.scene->effects_cached_bytes;
     CHECK(available > 100u * 1024u * 1024u);
     int height = (int)((available - 128u * 1024u) / (4096u * 8u));
     CHECK(height > 3000 && height < 4096);
-    struct wlr_scene_tree *pressure = wlr_scene_tree_create(desktop.windows);
+    struct wlr_scene_tree *pressure = shell_fixture.pressure = wlr_scene_tree_create(desktop.windows);
     CHECK(pressure && wlr_scene_rect_create(pressure, 4096, height, (float[4]){0.4f, 0.2f, 0.6f, 1}) &&
         wlr_scene_tree_set_rounding(pressure, &(struct wlr_box){0, 0, 4096, height}, 16));
     wl_signal_emit_mutable(&output->events.frame, NULL);
-    CHECK(scene_output->backdrop_failed && !desktop.failed && witness.count == commits && output->commit_seq == sequence);
+    CHECK(scene_output->backdrop_failed && !desktop.failed && witness->count == commits && output->commit_seq == sequence);
     uint64_t renders = desktop.scene->backdrop_render_count;
     for (int i = 0; i < 10; i++) wl_signal_emit_mutable(&output->events.frame, NULL);
-    CHECK(witness.count == commits && desktop.scene->backdrop_render_count == renders);
+    CHECK(witness->count == commits && desktop.scene->backdrop_render_count == renders);
     uint64_t deadline = milliseconds() + 100;
     while (milliseconds() < deadline) CHECK(pump());
-    CHECK(witness.count == commits && output->commit_seq == sequence && !desktop.failed);
-    CHECK(wlr_buffer_begin_data_ptr_access(witness.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
+    CHECK(witness->count == commits && output->commit_seq == sequence && !desktop.failed);
+    CHECK(shell_buffer_begin(witness->buffer, &data, &format, &stride));
     CHECK(!memcmp(committed, data, bytes));
-    wlr_buffer_end_data_ptr_access(witness.buffer);
+    shell_buffer_end();
     uint64_t epoch = desktop.backdrop_epoch;
     char *crash[] = {(char *)lock_client, "crash", NULL};
     CHECK(pu_session_lock_spawn(&desktop, crash) && pu_session_lock_active(&desktop) &&
         desktop.backdrop_epoch != epoch);
     wl_signal_emit_mutable(&output->events.frame, NULL);
     CHECK(!desktop.failed && !scene_output->backdrop_failed && output->commit_seq != sequence);
-    CHECK(wlr_buffer_begin_data_ptr_access(witness.buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
+    CHECK(shell_buffer_begin(witness->buffer, &data, &format, &stride));
     CHECK((((uint32_t *)((char *)data + (output->height / 2) * stride))[output->width / 2] & 0xffffff) == 0);
-    wlr_buffer_end_data_ptr_access(witness.buffer);
+    shell_buffer_end();
     deadline = milliseconds() + 5000;
     while (milliseconds() < deadline && pu_session_lock_pid(&desktop)) CHECK(pump());
     CHECK(!pu_session_lock_pid(&desktop) && pu_session_lock_active(&desktop));
     CHECK(desktop.scene->backdrop_render_count == renders);
-    uint32_t *locked;
     int width, screen_height;
-    CHECK(scene_pixels(output, &locked, &width, &screen_height));
-    CHECK((locked[(screen_height / 2) * width + width / 2] & 0xffffff) == 0);
-    free(locked);
-    wlr_scene_node_destroy(&pressure->node);
+    CHECK(scene_pixels(output, &shell_fixture.actual, &width, &screen_height));
+    CHECK((shell_fixture.actual[(screen_height / 2) * width + width / 2] & 0xffffff) == 0);
+    free(shell_fixture.actual); shell_fixture.actual = NULL;
+    wlr_scene_node_destroy(&pressure->node); shell_fixture.pressure = NULL;
     char *unlock[] = {(char *)lock_client, "unlock", NULL};
     CHECK(pu_session_lock_spawn(&desktop, unlock));
     deadline = milliseconds() + 5000;
@@ -1023,10 +1086,10 @@ static bool live_backdrop_failure(struct PuDesktopLayer *dock, const char *lock_
         desktop.scene->backdrop_render_count == renders)) CHECK(pump());
     CHECK(!pu_session_lock_active(&desktop) && desktop.backdrop_epoch > epoch &&
         desktop.scene->backdrop_render_count > renders && !desktop.failed);
-    witness_destroy(&witness.destroy, NULL);
-    wlr_scene_node_destroy(&mark->node);
-    free(committed);
-    puts("PASS: real backing/cache pressure fails live Dock composition, reports to Shell, holds identical last committed output bytes with no retry tick, then recovers on new damage");
+    witness_destroy(&witness->destroy, NULL);
+    wlr_scene_node_destroy(&mark->node); shell_fixture.mark = NULL;
+    free(committed); shell_fixture.committed = NULL;
+    puts("PASS: real backing/cache pressure fails live regional composition, reports to Shell, holds identical last committed output bytes with no retry tick, then recovers on new damage");
     puts("PASS: headless private lock overrides stalled old output with black; crashed lock stays black with zero backdrop resampling; unlock crosses privacy epoch and samples freshly");
     return true;
 }
@@ -1095,7 +1158,7 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     void *data; uint32_t format; size_t stride;
     CHECK(client && client->source && client->source->width == box.width &&
         client->source->height == box.height &&
-        wlr_buffer_begin_data_ptr_access(client->source, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
+        shell_buffer_begin(client->source, &data, &format, &stride));
     CHECK(format == DRM_FORMAT_ARGB8888);
     unsigned opaque = 0, changed_pixels = 0, clear = 0;
     for (int py = 0; py < box.height; py++) for (int px = 0; px < box.width; px++) {
@@ -1111,7 +1174,7 @@ static bool backdrop_consumer(const char *ui, const char *wire)
         }
         changed_pixels += actual[offset] != plain[offset];
     }
-    wlr_buffer_end_data_ptr_access(client->source);
+    shell_buffer_end();
     if (!(opaque > 200 && clear > 1000 && changed_pixels > 1000))
         fprintf(stderr, "Dock pixels: opaque=%u clear=%u changed=%u size=%dx%d\n",
             opaque, clear, changed_pixels, box.width, box.height);
@@ -1256,11 +1319,10 @@ static bool shell_region_pixels(struct PuDesktopLayer *layer)
     wlr_output_layout_get_box(desktop.layout, layer->surface->output, &output_box);
     wlr_scene_node_set_position(&first->tree->node, box.x - 20, box.y + box.height / 2 - 45);
     wlr_scene_node_set_position(&second->tree->node, box.x + box.width / 2, box.y + box.height / 2 - 45);
-    uint32_t *actual, *plain, *moved;
     int width, height, w, h;
-    CHECK(scene_pixels(layer->surface->output, &actual, &width, &height));
+    CHECK(committed_shell_pixels(layer->surface->output, &shell_fixture.actual, &width, &height));
     wlr_scene_node_set_enabled(&layer->backdrop->node, false);
-    CHECK(scene_pixels(layer->surface->output, &plain, &w, &h));
+    CHECK(committed_shell_pixels(layer->surface->output, &shell_fixture.plain, &w, &h) && w == width && h == height);
     wlr_scene_node_set_enabled(&layer->backdrop->node, true);
     struct wlr_client_buffer *client = layer->surface->surface->buffer;
     void *data; uint32_t format; size_t stride;
@@ -1274,34 +1336,48 @@ static bool shell_region_pixels(struct PuDesktopLayer *layer)
     for (int py = 0; py < box.height; py++) for (int px = 0; px < box.width; px++) {
         uint32_t pixel = ((uint32_t *)((char *)data + py * stride))[px];
         size_t offset = (size_t)(y + py) * width + x + px;
-        if ((pixel >> 24) == 255) { CHECK(actual[offset] == plain[offset]); opaque++; }
+        if ((pixel >> 24) == 255) { CHECK(shell_fixture.actual[offset] == shell_fixture.plain[offset]); opaque++; }
         clear += (pixel >> 24) == 0;
-        effect += actual[offset] != plain[offset];
+        effect += shell_fixture.actual[offset] != shell_fixture.plain[offset];
     }
     wlr_buffer_end_data_ptr_access(client->source);
     CHECK(opaque > 200 && clear > 1000 && effect > 1000);
-    pixman_region32_t input;
-    pixman_region32_init(&input);
-    pixman_region32_copy(&input, &layer->surface->surface->input_region);
+    pixman_region32_init(&shell_fixture.input); shell_fixture.input_initialized = true;
+    pixman_region32_copy(&shell_fixture.input, &layer->surface->surface->input_region);
     wlr_scene_node_set_position(&first->tree->node, box.x + 30, box.y + box.height / 2 - 45);
-    CHECK(scene_pixels(layer->surface->output, &moved, &w, &h));
+    CHECK(committed_shell_pixels(layer->surface->output, &shell_fixture.moved, &w, &h) && w == width && h == height);
     unsigned changes = 0;
     for (int py = 0; py < box.height; py++) for (int px = 0; px < box.width; px++) {
         size_t offset = (size_t)(y + py) * width + x + px;
-        changes += actual[offset] != moved[offset];
+        changes += shell_fixture.actual[offset] != shell_fixture.moved[offset];
     }
-    CHECK(changes > 100 && pixman_region32_equal(&input, &layer->surface->surface->input_region));
-    printf("PASS: production Shell role %u output %s current-lower-app movement changes %u regional pixels; %u opaque foreground pixels and actual input unchanged\n",
-        layer->backdrop_role, layer->surface->output->name, changes, opaque);
-    pixman_region32_fini(&input);
-    free(actual); free(plain); free(moved);
+    CHECK(changes > 100 && pixman_region32_equal(&shell_fixture.input, &layer->surface->surface->input_region));
+    printf("PASS: production Shell role %u output %s entire actual %dx%d current-lower-app movement changes %u regional pixels; %u opaque foreground pixels and actual input unchanged; outputCommitted=%u\n",
+        layer->backdrop_role, layer->surface->output->name, box.width, box.height, changes, opaque, shell_fixture.standard);
+    pixman_region32_fini(&shell_fixture.input); shell_fixture.input_initialized = false;
+    free(shell_fixture.actual); free(shell_fixture.plain); free(shell_fixture.moved);
+    shell_fixture.actual = shell_fixture.plain = shell_fixture.moved = NULL;
     return true;
 }
-static bool modern_backdrop_consumer(const char *ui, const char *wire)
+static void picker_key(uint32_t code, bool down);
+static bool modern_backdrop_consumer(const char *ui, const char *wire, const char *mode)
 {
+    bool standard = !strcmp(mode, "standard-start"), old = !strcmp(mode, "standard-start-old");
+    shell_fixture.standard = standard;
+    if (standard || old) {
+        struct wlr_output_layout_output *entry;
+        wl_list_for_each(entry, &desktop.layout->outputs, link) {
+            struct wlr_output_state state;
+            wlr_output_state_init(&state);
+            wlr_output_state_set_custom_mode(&state, 1280, old ? 540 : entry->x == 0 ? 720 : 800, 60000);
+            bool applied = wlr_output_commit_state(entry->output, &state);
+            wlr_output_state_finish(&state);
+            CHECK(applied);
+        }
+    }
     CHECK(start_app(ui));
     char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
-        "desktop/tests/backdrop-shell.mjs", "modern", NULL};
+        "desktop/tests/backdrop-shell.mjs", old ? "modern-v8" : standard ? "modern-standard" : "modern", NULL};
     CHECK(pu_desktop_spawn_shell(&desktop, shell));
     struct wlr_scene_tree *pressure = NULL;
     struct wlr_scene_rect *retained[2] = {0};
@@ -1331,9 +1407,11 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
             if (sscanf(name, "backdrop-key %u", &code) == 1) {
                 CHECK(desktop.focused_layer && desktop.focused_layer->surface->current.keyboard_interactive ==
                     ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
+                bool shift = strstr(name, " shift") != NULL;
                 wlr_layer_surface_v1_destroy(marker->surface);
-                wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, code, WL_KEYBOARD_KEY_STATE_PRESSED);
-                wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, code, WL_KEYBOARD_KEY_STATE_RELEASED);
+                if (shift) picker_key(KEY_LEFTSHIFT, true);
+                picker_key(code, true); picker_key(code, false);
+                if (shift) picker_key(KEY_LEFTSHIFT, false);
                 break;
             }
             if (sscanf(name, "backdrop-pressure %31s", stage) == 1) {
@@ -1348,16 +1426,19 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
                     size_t available = WLR_SCENE_EFFECTS_MAX_BYTES - desktop.scene->effects_cached_bytes;
                     int height = (int)((available - 128u * 1024u) / (4096u * 8u));
                     CHECK(height > 3000 && height < 4096);
-                    pressure = wlr_scene_tree_create(desktop.windows);
+                    pressure = shell_fixture.pressure = wlr_scene_tree_create(desktop.windows);
                     CHECK(pressure && wlr_scene_rect_create(pressure, 4096, height, (float[4]){0.4f, 0.2f, 0.6f, 1}) &&
                         wlr_scene_tree_set_rounding(pressure, &(struct wlr_box){0, 0, 4096, height}, 16));
                 } else {
-                    CHECK(pressure); wlr_scene_node_destroy(&pressure->node); pressure = NULL;
+                    CHECK(pressure); wlr_scene_node_destroy(&pressure->node); pressure = shell_fixture.pressure = NULL;
                 }
                 wlr_layer_surface_v1_destroy(marker->surface); break;
             }
             if (sscanf(name, "backdrop-check %31s", stage) != 1) continue;
-            if (!strcmp(stage, "taskbars") || !strcmp(stage, "start") || !strcmp(stage, "retained")) {
+            if (!strcmp(stage, "old-v8")) {
+                CHECK(old && shell_backdrop_count(2) == 2 && shell_backdrop_count(3) == 1);
+                puts("PASS: actual frozen v8 provider retains taskbars and original bounded Start with new GUI; new capability false and explicit opt-in rejected without mutation");
+            } else if (!strcmp(stage, "taskbars") || !strcmp(stage, "start") || !strcmp(stage, "retained")) {
                 CHECK(shell_backdrop_count(2) == 2);
                 CHECK(shell_backdrop_count(3) == (strcmp(stage, "taskbars") ? 1u : 0u));
                 struct PuDesktopLayer *layer;
@@ -1366,6 +1447,11 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
                         layer->backdrop_role == 3)) {
                         uint64_t ready = milliseconds() + 3000;
                         while (!dock_foreground_ready(layer) && milliseconds() < ready) CHECK(pump());
+                        if (standard && layer->backdrop_role == 3) {
+                            CHECK(layer->pending_box.width == 640 &&
+                                layer->pending_box.height == (layer->surface->output->height == 720 ? 640 : 660));
+                            CHECK(desktop.focused_layer == layer && layer->surface->surface->current.width == 640);
+                        }
                         CHECK(shell_region_pixels(layer));
                         if (!strcmp(stage, "retained")) {
                             retired_serial = layer->backdrop_serial;
@@ -1449,6 +1535,15 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
                 wl_list_for_each(layer, &desktop.layers, link)
                     if (layer->backdrop && layer->backdrop_role == 3) output = layer->surface->output;
                 CHECK(output);
+                struct PuDesktopView *keeper = wire_view();
+                struct wlr_output_layout_output *entry;
+                wl_list_for_each(entry, &desktop.layout->outputs, link)
+                    if (entry->output != output && keeper) {
+                        struct wlr_box full;
+                        wlr_output_layout_get_box(desktop.layout, entry->output, &full);
+                        wlr_scene_node_set_position(&keeper->tree->node, full.x + 20, full.y + 80);
+                        keeper->output = entry->output;
+                    }
                 wlr_layer_surface_v1_destroy(marker->surface);
                 wlr_output_destroy(output);
                 CHECK(!shell_backdrop_count(3));
@@ -1460,7 +1555,7 @@ static bool modern_backdrop_consumer(const char *ui, const char *wire)
             break;
         }
     }
-    CHECK(!desktop.shell_pid && checks >= 9 && !pressure && wl_list_empty(&desktop.scene->backdrops));
+    CHECK(!desktop.shell_pid && checks >= (old ? 2u : 9u) && !pressure && wl_list_empty(&desktop.scene->backdrops));
     puts("PASS: production modern Shell backdrop consumer completes mapped lifecycle, native input, peer, output, budget and privacy boundaries");
     return true;
 }
@@ -1911,7 +2006,8 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     if (!strcmp(mode, "title-drag")) return title_drag_restore();
     if (!strcmp(mode, "frame-fence")) return presented_frame_fence(ui);
     if (!strcmp(mode, "backdrop")) return backdrop_consumer(ui, wire);
-    if (!strcmp(mode, "shell-backdrop")) return modern_backdrop_consumer(ui, wire);
+    if (!strcmp(mode, "shell-backdrop") || !strncmp(mode, "standard-start", 14))
+        return modern_backdrop_consumer(ui, wire, mode);
     struct wlr_box initial = {0};
     pu_decoration_inset(view, &initial, false);
     if (!strncmp(mode, "cold", 4)) {
@@ -2056,6 +2152,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        shell_fixture_cleanup();
         if (!resume_renderer()) passed = false;
         backdrop_guard_stop();
         finish_picker_grabs();

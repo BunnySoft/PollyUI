@@ -704,6 +704,9 @@ export function createDesktopShell({ host = window, configuration, report = cons
     if (shellRegional && (typeof native?.shellBackdropCapability !== 'function' ||
         native.shellBackdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
       throw new Error('The active compositor does not support paired regional Shell backdrops (appearance v8)');
+    if (theme.panel.startBackdrop?.standardHeight === true &&
+        (typeof native?.startBackdropCapability !== 'function' || native.startBackdropCapability() !== true))
+      throw new Error('The active compositor does not support standard-height Start backdrops (appearance v9)');
     preflightBodyFont(theme);
     const outputs = host.displays();
     const pickerSignature = JSON.stringify(outputs);

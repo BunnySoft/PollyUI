@@ -231,6 +231,7 @@ function fixture(configure = () => {}) {
   const native = {
     backdropCapability: () => true,
     shellBackdropCapability: () => true,
+    startBackdropCapability: () => true,
     configureAppearance(theme, words, targets = []) {
       assert.equal(words[0], 7);
       const paired = !!theme.panel.taskbarBackdrop;
@@ -239,7 +240,7 @@ function fixture(configure = () => {}) {
         state.outputs.length + start.length : 0);
       for (const [window, material, peer] of targets) {
         assert.equal(window.options.layer, material[1] === 3 ? 'overlay' : 'top');
-        assert.equal(material[0], paired ? 3 : 2);
+        assert.equal(material[0], paired ? material[1] === 3 && theme.panel.startBackdrop?.standardHeight ? 4 : 3 : 2);
         if (paired) assert.ok(peer && !peer.closed);
       }
     },
@@ -324,6 +325,83 @@ function scenario(name, run, configure) {
     try { await run(f); } finally { f.done(); }
   });
 }
+
+scenario('standard Start explicitly selects schema4 at full unchanged 640/660 height, taskbars remain schema3', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    f.state.outputs[1].height = 800;
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const original = f.native.configureAppearance, targets = [];
+    f.native.configureAppearance = (...args) => { targets.push(args[2]); return original(...args); };
+    for (const [id, height] of [[1, 640], [2, 660]]) {
+      f.surface('wallpaper', id).document.body.offsetHeight = f.state.outputs.find(output => output.id === id).height;
+      const menu = f.shell.showApplications(id);
+      assert.equal(menu.options.width, 640);
+      assert.equal(menu.options.height, height);
+      assert.equal(find(menu, 'shell-applications').style.backgroundColor, '#f3f3f3');
+      f.flushFrames();
+      const actual = targets.at(-1);
+      assert.deepEqual(actual.slice(0, 2).map(([, material]) => material[0]), [3, 3]);
+      assert.equal(actual[2][0], menu);
+      assert.deepEqual(actual[2][1], [4, 3, 8000, 16, 0xf3f3f3, 72]);
+      assert.equal(actual[2][2], f.surface('panel', id));
+      assert.equal(find(menu, 'shell-applications').style.backgroundColor, 'transparent');
+      menu.close();
+      assert.equal(menu.closeCount, 1);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
+
+scenario('old provider rejects standard-height opt-in before surfaces, preferences, appearance or foreground mutation', f => {
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const menu = f.shell.showApplications(1);
+  const created = f.created.length, focus = menu.document.activeElement;
+  const saved = JSON.parse(JSON.stringify(f.saved.snapshot)), calls = f.calls.length;
+  const originalWindows = f.shell.getSurfaces().map(surface => surface.window);
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    f.native.configureAppearance = () => assert.fail('Unsupported opt-in cannot stage appearance');
+    assert.equal(f.shell.selectTheme('modern'), false);
+    assert.match(f.shell.getState().error, /appearance v9/);
+    f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+    assert.equal(f.created.length, created);
+    assert.equal(menu.closed, false);
+    assert.equal(menu.document.activeElement, focus);
+    assert.ok(originalWindows.every(window => !window.closed));
+    assert.deepEqual(f.saved.snapshot, saved);
+    assert.equal(f.calls.length, calls);
+    f.native.configureAppearance = () => {};
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+}, ({ native }) => { native.startBackdropCapability = () => false; });
+
+scenario('standard Start pending callback cannot revive material after close, retheme or stop', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 16, tint: '#f3f3f3', opacityPercent: 72, standardHeight: true };
+  installThemeCatalog(optional);
+  try {
+    assert.equal(f.shell.selectTheme('modern'), true);
+    const original = f.native.configureAppearance, appearances = [];
+    f.native.configureAppearance = (...args) => { appearances.push(args[2]); return original(...args); };
+    for (const action of ['close', 'retheme', 'stop']) {
+      const menu = f.shell.showApplications(1);
+      if (action === 'close') menu.close();
+      else if (action === 'retheme') assert.equal(f.shell.selectTheme('xp'), true);
+      else f.shell.stop();
+      f.flushFrames();
+      assert.ok(appearances.every(targets => targets.every(([window]) => window !== menu)));
+      assert.equal(menu.closed, true);
+      assert.equal(menu.closeCount, 1);
+      if (action === 'retheme') assert.equal(f.shell.selectTheme('modern'), true);
+    }
+  } finally { installThemeCatalog(BUILTIN_THEME_CATALOG); }
+});
 
 scenario('paired Start publication stays solid on failure and retains taskbars on close without polling', f => {
   const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
