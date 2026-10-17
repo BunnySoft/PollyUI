@@ -163,6 +163,18 @@ Byte equivalence and performance observations do not explain the earlier
 ENOSPC, SIGBUS or reap holds, or deliver a production Start consumer.
 
 `desktop-scene-effects` retains its original assertions and 30-second timeout.
+Maximum-geometry acceptance qualification uses an independent private IPC
+namespace with 65,536,000 bytes of SHM, all available before the scene driver
+starts, rather than sharing a namespace with preceding GUI lifecycle suites.
+The matched ABI4 driver passed the complete original scene contract in that
+recorded envelope and restored every VFS field after exit. A separate first
+combined 64MiB run failed backing reservation at the accepted 4092x508 case;
+its available space at that point was not recorded. That failure remains
+unresolved, not reclassified as a proven leak or a passing combined suite.
+Neither geometry assertions nor resource limits were relaxed. This scene
+qualification envelope does not make the normal owner-specific SHM allocator
+contract require an exclusive mount.
+
 Its separate `--gaussian-compare EXISTING_OUTPUT_DIRECTORY` mode records raw
 prepare/moving/idle timings for nine fixed full-scene cases and writes each
 case's complete initial/moving frames. Link the same test source separately

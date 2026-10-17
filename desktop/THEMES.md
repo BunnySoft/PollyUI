@@ -1215,9 +1215,10 @@ macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
 The existing whole-window effect tree samples only its own client and frame;
 the wallpaper-material helper paints an opaque, wallpaper-derived client base.
 Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
-The separate effects4 regional mechanism described below now supplies that
-lower-scene sampling for the explicitly enabled Big Sur Dock only; it does not
-turn Settings' wallpaper material into live Acrylic or enable other surfaces.
+The separate effects4 regional mechanism described below supplies that
+lower-scene sampling for the explicitly enabled Big Sur Dock and paired v8
+Modern taskbar/bounded optional Start recipients. It does not turn Settings'
+wallpaper material into live Acrylic or grant arbitrary surfaces sampling access.
 For bitmap wallpaper, packaged Settings reads only a bounded projection of the
 Shell's already-held committed asset through its authenticated, unique-owner
 `GetMaterialSource` binding. The PNG is at most 128 pixels per axis and 128 KiB;
