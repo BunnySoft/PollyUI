@@ -1050,27 +1050,29 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
     return place_view(view, tile, NULL);
 }
 
-bool pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
+struct wlr_output *pu_desktop_picker_anchor(struct PuDesktopView *view, struct wlr_surface *menu,
     bool require_hit, struct wlr_box *button, struct wlr_box *output)
 {
     struct PuDesktop *desktop = view->desktop;
+    struct wlr_box actual = presented_view_box(view);
+    struct wlr_output *head = output_for_box(desktop, &actual);
     if (placement_admit(view) || desktop->stopping || view->fullscreen ||
         desktop->focused != view ||
         view->mode == PU_DESKTOP_FULLSCREEN || desktop->suppressed_button ||
         (!menu && desktop->seat->pointer_state.button_count) ||
         (desktop->focused_layer && desktop->focused_layer->surface->surface != menu) ||
-        (!menu && !pu_decoration_presented_current(view)) ||
-        !output_box(desktop, view->output, output) ||
-        !pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, button)) return false;
+        (!menu && require_hit && !pu_decoration_presented_current(view)) ||
+        !output_box(desktop, head, output) ||
+        !pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, button)) return NULL;
     button->x += view->tree->node.x;
     button->y += view->tree->node.y;
-    if (!require_hit) return true;
+    if (!require_hit) return head;
     struct wlr_surface *surface;
     double sx, sy;
     return view_at(desktop, desktop->cursor->x, desktop->cursor->y, &surface, &sx, &sy, NULL) == view &&
         !surface && pu_decoration_hit(view, desktop->cursor->x - view->tree->node.x,
             desktop->cursor->y - view->tree->node.y) == PU_DECORATION_MAXIMIZE &&
-        wlr_output_layout_output_at(desktop->layout, desktop->cursor->x, desktop->cursor->y) == view->output;
+        wlr_output_layout_output_at(desktop->layout, desktop->cursor->x, desktop->cursor->y) == head ? head : NULL;
 }
 
 static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)

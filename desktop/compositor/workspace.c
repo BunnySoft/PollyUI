@@ -140,7 +140,7 @@ static struct PuDesktopView *picker_view(struct PuWorkspaces *state)
 {
     struct PuDesktopView *view = window_for(state, state->picker_window);
     return view && view->toplevel->resource == state->picker_view &&
-        view->workspace == state->picker_workspace && view->output == state->picker_output &&
+        view->workspace == state->picker_workspace &&
         view->workspace == state->desktop->active_workspace ? view : NULL;
 }
 
@@ -155,13 +155,17 @@ void pu_workspaces_picker_validate(struct PuDesktop *desktop)
          pu_desktop_placement_check(view, PU_TILE_NONE))) {
         pu_workspaces_picker_cancel(desktop); return;
     }
-    if (state->picker_phase == PICKER_WAITING) return;
-    struct Tracked *tracked = state->picker_target;
     struct wlr_box anchor, bounds;
+    if (state->picker_phase == PICKER_WAITING) {
+        if (pu_desktop_picker_anchor(view, NULL, false, &anchor, &bounds) != state->picker_output ||
+            !wlr_box_equal(&bounds, &state->picker_bounds)) pu_workspaces_picker_cancel(desktop);
+        return;
+    }
+    struct Tracked *tracked = state->picker_target;
     bool registered = state->picker_phase == PICKER_REGISTERED;
     if (!tracked || !tracked->binding || !tracked->binding->manager ||
         (registered && (!tracked->menu || !tracked->menu_epoch)) ||
-        !pu_desktop_picker_anchor(view, registered ? tracked->menu : NULL, false, &anchor, &bounds) ||
+        pu_desktop_picker_anchor(view, registered ? tracked->menu : NULL, false, &anchor, &bounds) != state->picker_output ||
         !wlr_box_equal(&anchor, &state->picker_anchor) || !wlr_box_equal(&bounds, &state->picker_bounds) ||
         (!registered && pu_decoration_presented_revision(view) != state->picker_revision))
         pu_workspaces_picker_cancel(desktop);
@@ -187,7 +191,8 @@ static int picker_timeout(void *data)
     struct wlr_box anchor, bounds;
     struct Tracked *tracked = NULL, *item;
     if (state->picker_phase == PICKER_WAITING && state->picker_manager && view &&
-        pu_desktop_picker_anchor(view, NULL, true, &anchor, &bounds))
+        pu_desktop_picker_anchor(view, NULL, true, &anchor, &bounds) == state->picker_output &&
+        state->picker_output && wlr_box_equal(&bounds, &state->picker_bounds))
         wl_list_for_each(item, &state->tracked, link) {
             if (item->window == state->picker_window && item->binding && item->binding->manager &&
                 item->toplevel_manager == state->picker_manager &&
@@ -207,7 +212,7 @@ static int picker_timeout(void *data)
         (unsigned long long)state->picker_window, state->picker_token, state->picker_revision);
     polly_workspace_toplevel_v1_send_layout_offer(tracked->resource, state->picker_token,
         anchor.x - bounds.x, anchor.y - bounds.y, anchor.width, anchor.height,
-        view->output->name, bounds.x, bounds.y, bounds.width, bounds.height);
+        state->picker_output->name, bounds.x, bounds.y, bounds.width, bounds.height);
     return 0;
 }
 
@@ -223,8 +228,12 @@ void pu_workspaces_picker_motion(struct PuDesktop *desktop, struct PuDesktopView
     state->hover_window = window;
     if (!window || !state->picker_manager || !view || !view->mapped || view->minimized ||
         !pu_workspace_current(view)) return;
+    struct wlr_box anchor, bounds;
+    struct wlr_output *head = pu_desktop_picker_anchor(view, NULL, false, &anchor, &bounds);
+    if (!head) return;
     state->picker_window = window; state->picker_view = view->toplevel->resource;
-    state->picker_output = view->output; state->picker_workspace = view->workspace;
+    state->picker_output = head; state->picker_workspace = view->workspace;
+    state->picker_bounds = bounds;
     state->picker_phase = PICKER_WAITING;
     wlr_log(WLR_DEBUG, "Arming native picker window=%llu", (unsigned long long)window);
     state->picker_timer = wl_event_loop_add_timer(wl_display_get_event_loop(desktop->display), picker_timeout, state);
@@ -807,7 +816,7 @@ static void open_layout_picker(struct wl_client *client, struct wl_resource *res
     struct wlr_box anchor, bounds;
     if (!error && (state->picker_phase != PICKER_OFFERED || state->picker_target != tracked ||
         !token || token != state->picker_token || !view ||
-        !pu_desktop_picker_anchor(view, NULL, true, &anchor, &bounds) ||
+        pu_desktop_picker_anchor(view, NULL, true, &anchor, &bounds) != state->picker_output ||
         pu_decoration_presented_revision(view) != state->picker_revision))
         error = "Native caption hover grant is closed, duplicate or stale";
     struct wlr_surface *surface = wlr_surface_from_resource(surface_resource);

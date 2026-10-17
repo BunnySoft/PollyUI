@@ -1531,6 +1531,8 @@ static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
     CHECK(pu_desktop_spawn_shell(&desktop, shell));
     unsigned checks = 0;
     struct wlr_box floating = {0};
+    struct wlr_output *cross_origin = NULL, *cross_output = NULL;
+    struct wlr_box cross_origin_box = {0};
     uint64_t window_id = 0;
     uint64_t deadline = milliseconds() + 25000;
     while (desktop.shell_pid && milliseconds() < deadline) {
@@ -1654,6 +1656,51 @@ static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
                     pu_desktop_focus_mapped(&desktop, view->workspace_window);
                     CHECK(wait_presented_frame(view));
                 }
+            } else if (!strcmp(operation, "cross-head")) {
+                CHECK(view && view->mode == PU_DESKTOP_FLOATING && !cross_output && !picker_menu());
+                struct wlr_backend *backend = NULL;
+                wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+                CHECK(backend);
+                cross_origin = view->output;
+                wlr_output_layout_get_box(desktop.layout, cross_origin, &cross_origin_box);
+                cross_output = wlr_headless_add_output(backend, 1280, 720);
+                CHECK(cross_output && cross_output != cross_origin && wait_presented_frame(view));
+                struct wlr_box destination;
+                wlr_output_layout_get_box(desktop.layout, cross_output, &destination);
+                CHECK(destination.x == cross_origin_box.x + cross_origin_box.width &&
+                    destination.y == cross_origin_box.y && begin_title_drag(view));
+                motion(destination.x + 300, destination.y + 200);
+                button(false);
+                CHECK(wait_presented_frame(view) && view->mode == PU_DESKTOP_FLOATING &&
+                    view->output == cross_origin);
+                struct wlr_box button_box;
+                CHECK(pu_decoration_button_box(view, PU_DECORATION_MAXIMIZE, &button_box) &&
+                    wlr_output_layout_output_at(desktop.layout,
+                        view->tree->node.x + button_box.x + button_box.width / 2.0,
+                        view->tree->node.y + button_box.y + button_box.height / 2.0) == cross_output);
+                printf("PASS: actual native caption MOVE released on head B with remembered view output still A; ownedRevision=%u\n",
+                    pu_decoration_presented_revision(view));
+            } else if (!strcmp(operation, "cross-check")) {
+                CHECK(view && cross_output && wait_presented_frame(view) &&
+                    view->mode == PU_DESKTOP_TILED_LEFT && view->output == cross_output);
+                struct wlr_box expected, origin;
+                wlr_output_layout_get_box(desktop.layout, cross_output, &expected);
+                expected.width /= 2; expected.height -= 48;
+                pu_decoration_inset(view, &expected, false);
+                wlr_output_layout_get_box(desktop.layout, cross_origin, &origin);
+                CHECK(wlr_box_equal(&origin, &cross_origin_box) &&
+                    wlr_box_equal(&view->presented_box, &expected) &&
+                    view->toplevel->base->geometry.width == expected.width &&
+                    view->toplevel->base->geometry.height == expected.height &&
+                    frame_hash(view) && pu_decoration_presented_revision(view));
+                printf("PASS: cross-head picker places actual client=%dx%d at B=%d,%d with current ownedRevision=%u; head A unchanged\n",
+                    expected.width, expected.height, expected.x, expected.y, pu_decoration_presented_revision(view));
+                checks++;
+            } else if (!strcmp(operation, "cross-clean")) {
+                CHECK(view && cross_output && view->mode == PU_DESKTOP_FLOATING);
+                wlr_layer_surface_v1_destroy(marker->surface); marker = NULL;
+                wlr_output_destroy(cross_output); cross_output = NULL;
+                CHECK(wait_presented_frame(view) && view->output == cross_origin);
             } else if (!strcmp(operation, "small")) {
                 CHECK(picker_output_size(640, 180, -640, -180));
             } else if (!strcmp(operation, "normal")) {
@@ -1682,7 +1729,7 @@ static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
         }
     }
     CHECK(!desktop.shell_pid && WIFEXITED(desktop.shell_status) && WEXITSTATUS(desktop.shell_status) == 0 &&
-        checks == (old ? 1u : 4u) && !picker_menu());
+        checks == (old ? 1u : 5u) && !picker_menu());
     puts("PASS: production Shell picker completes actual native hover, old clicks, pointer/keyboard, guards and retirement");
     return true;
 }

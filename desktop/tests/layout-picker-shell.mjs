@@ -134,6 +134,22 @@ async function run() {
     delete solid.themes.find(theme => theme.id === 'modern').panel.taskbarBackdrop;
     installThemeCatalog(solid);
     check(shell.selectTheme('modern'), 'small-output geometry fixture isolates picker from optional taskbar material reconfiguration');
+    await signal('picker-cross-head');
+    menu = await hover();
+    const projected = desktop.layoutPickerOffer();
+    const head = window.displays().find(output => output.x === projected?.outputX &&
+      output.y === projected?.outputY && output.width === projected?.outputWidth && output.height === projected?.outputHeight);
+    check(head && head.x > 0 && menu.options.output === head.id,
+      'native caption move with a stale configure output projects the actual hover picker onto the second head');
+    await click(menu, 'shell-window-tile-left');
+    await until(() => menu.window.closed && target()?.placement === 'left' && !target()?.placementPending,
+      'cross-head left admission and presentation');
+    await signal('picker-cross-check');
+    menu = await hover();
+    await click(menu, 'shell-window-restore-floating');
+    await until(() => menu.window.closed && target()?.placement === 'floating' && !target()?.placementPending,
+      'cross-head floating restore');
+    await signal('picker-cross-clean');
     await signal('picker-small');
     menu = await hover();
     const { width, height, margins } = menu.options;

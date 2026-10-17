@@ -1424,6 +1424,11 @@ input deadline) opens the existing QuickJS Shell menu with **Left half**,
 input and the shared short-viewport scrollbar use the ordinary menu controls.
 The actual native button and output supply output-local logical anchoring;
 the Shell clamps the popup to that output, including negative global origins.
+The anchor uses the presented window's actual maximum-overlap output, like
+placement, rather than its remembered configure output. A floating caption
+drag across displays therefore needs no unrelated reconfigure before hovering.
+If a window straddles outputs and Max lies outside that principal output, no
+hover grant is issued.
 
 This requires explicitly advertised paired workspace manager/child v4
 capability. v3 retains existing window menus and maximize clicks without
