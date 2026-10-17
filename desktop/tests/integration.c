@@ -992,6 +992,8 @@ static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *vi
         struct TestLayer dock = {.output = 2, .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
             .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM, .width = 120, .height = 39, .zone = 39};
         CHECK(layer_command(TEST_LAYER_MAP, 3, top) && layer_command(TEST_LAYER_MAP, 4, dock));
+        CHECK(find_layer(3) && find_layer(4) && find_layer(3)->surface->output == extra &&
+            find_layer(4)->surface->output == extra && find_layer(3)->presented && find_layer(4)->presented);
         CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
         struct wlr_box target;
         wlr_output_layout_get_box(desktop.layout, extra, &target);
@@ -1015,6 +1017,10 @@ static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *vi
                 if (edge) expected.x += 400;
             }
             pu_decoration_inset(view, &expected, false);
+            printf("TITLE_SNAP_LANDING edge=%d pointer=%.3f,%.3f targetOutput=%d mode=%d actual=%d,%d,%d,%d expected=%d,%d,%d,%d client=%dx%d\n",
+                edge, desktop.cursor->x, desktop.cursor->y, view->output == extra, view->mode,
+                view->presented_box.x, view->presented_box.y, view->presented_box.width, view->presented_box.height,
+                expected.x, expected.y, expected.width, expected.height, client->reply.width, client->reply.height);
             CHECK(view->output == extra && wlr_box_equal(&view->presented_box, &expected) &&
                 geometry_is(view, expected.x, expected.y, expected.width, expected.height));
             if (edge == 2) CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
