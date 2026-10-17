@@ -1063,6 +1063,20 @@ boundaries now keep the 512-codepoint cap and measured ellipsis on complete
 graphemes. Other platforms retain the SDK's existing code-point fallback.
 Font equivalence and full platform/state qualification remain incomplete.
 
+The current Linux GUI source has also been built in an isolated output using
+the existing SDL, static HarfBuzz, ICU and Skia dependencies, without modifying
+the frozen effects stack or shipping a new SDK. Actual native input/event,
+composition, pointer and complex-text entries pass. Installed DejaVu Sans/Mono
+literal families retain complete-string Arabic, Hebrew, Indic, CJK, combining
+and emoji shaping; named input measurement, native rendering, caret/hit testing,
+controlled selection/IME and mixed-instance controls use the same family.
+The existing selection pixel oracle reports no full/partial differences,
+including mixed RTL and real color emoji. These are matching Linux software
+runtime results, not original-system font equivalence, physical input or GPU
+certification. The current production GUI runtime also passes the original
+caption composition seam against the frozen native scene helper; this is not
+a rebuild or full qualification of the current compositor.
+
 ### Per-theme discrepancy tasks
 
 Execution state and evidence live only in
