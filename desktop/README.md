@@ -116,36 +116,43 @@ primitive/SDK extension does not deliver a production Start consumer, change
 theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
 
 The exact separable filter is CPU-bounded, not a real-time performance guarantee.
-Four adjacent pixels now use sixteen independent local float accumulators;
-each tap loads each packed pixel once and updates its four channels. Remaining
-one to three pixels use the single-pixel four-channel loop. This permits compiler
-SLP without changing any channel's tap order, kernel normalization, horizontal
-packed-byte rounding, tint or coverage, and adds no allocated workspace.
-There are no platform intrinsics, fast-math flags, approximations or new ABI.
+When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
+unpacks exactly one four-byte pixel into four float channels. Each tap uses
+one multiplication and one addition per lane in the original tap order.
+The accumulator is stored to four local floats before the original `lroundf`;
+kernel normalization, horizontal packed-byte rounding, vertical premultiplied
+tint and rounded coverage stay unchanged. There is no SIMD-width neighboring
+pixel read, approximate rounding, new allocated workspace, runtime CPU/policy
+channel, ISA flag, fast-math/FMA policy change or ABI change.
+The compile-time fallback retains the original scalar Gaussian source, not
+the earlier four-pixel experiment or a different material. Both guarded and
+explicitly guard-disabled paths passed the same exact-byte fixture on GCC14;
+this is not separate qualification of other architectures, compilers or flags.
 A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
 
-The original native measurement was about 294ms. The first fused-channel
-implementation measured 331.922ms reference versus 204.985ms candidate (1.62x)
-for 640x660. A separate GCC14/O3 comparison of the frozen reference and the
-four-pixel experiment, in sequential processes pinned to the same allowed CPU
-on a shared host, with one warmup and three measured samples per case, gave
-these full-preparation medians (including actual lower-scene composition):
+The original native measurement was about 294ms. Earlier standard-C candidates
+did not achieve the twofold goal and remain independent frozen experiments.
+One GCC14/O3 reference-versus-SSE2 comparison, in sequential processes pinned
+to the same allowed CPU on a shared host, with one warmup and three measured
+samples per case, gave these medians. Preparation includes real lower-scene
+composition; moving includes filtering and output capture:
 
-| Footprint, sigma16, scale1 | Reference | Four-pixel blocks | Speedup |
+| Footprint, sigma16, scale1 | Reference prepare / moving | SSE2 prepare / moving | Speedup prepare / moving |
 | --- | ---: | ---: | ---: |
-| 640x640 | 288.368ms | 160.806ms | 1.79x |
-| 640x660 | 298.809ms | 167.688ms | 1.78x |
+| 640x640 | 296.347 / 301.344ms | 117.124 / 117.771ms | 2.53x / 2.56x |
+| 640x660 | 294.193 / 297.001ms | 118.720 / 122.445ms | 2.48x / 2.43x |
 
-These paired results do **not** meet the optimization's 2x engineering goal or
-the 16.7ms frame budget. The two paired runs are not a direct first-candidate
-versus block comparison or an exclusive-CPU qualification. Some small-target
-cases were slower: the 41x33, sigma2.25, scale1.5 prepare median increased from
-1.218ms to 1.741ms. The actual GCC14 block loops still transpose across taps
-and introduce vector stack traffic; this experiment does not establish the
-intended across-pixel SIMD schedule or an across-the-board speedup.
-Idle captures still reuse the cache
-without filtering. Neither these results nor byte equivalence resolve the
-historical unknown SIGBUS hold or deliver a production Start consumer.
+Both full-footprint targets exceed the twofold engineering threshold, but
+**not** the 16.7ms frame budget or an all-case non-regression requirement.
+The same fixed pair recorded 37x29/sigma0.5/scale1.25 prepare
+0.812->0.906ms and moving 6.170->6.654ms; 41x33/sigma2.25/scale1.5
+prepare 1.171->1.229ms; and 4096x1/sigma0.5/scale1 moving
+16.798->16.867ms. These regressions are retained, not waived as noise or
+removed by choosing samples. All nine cases' raw times and medians remain
+part of the comparison evidence. This is not an exclusive-CPU or universal
+speedup claim. Idle captures still reuse the cache without filtering.
+Byte equivalence and performance observations do not explain the earlier
+ENOSPC, SIGBUS or reap holds, or deliver a production Start consumer.
 
 `desktop-scene-effects` retains its original assertions and 30-second timeout.
 Its separate `--gaussian-compare EXISTING_OUTPUT_DIRECTORY` mode records raw
@@ -155,7 +162,9 @@ against each correctly paired compositor core/SDK, rather than swapping
 libraries under a mismatched core; compare the resulting files byte for byte.
 The mode rebuilds each backdrop/cache for every sample, checks movement causes
 one new filter, checks idle causes none, and verifies destruction returns cached
-bytes to zero. It does not reduce geometry, sigma, padding or kernel quality.
+bytes to zero. Enabling a prepared backdrop also causes an initial capture
+filter in both SDKs; its separate timing and equal filter counts are retained.
+The comparison does not reduce geometry, sigma, padding or kernel quality.
 
 Only the authenticated Shell publisher can stage the actual mapped, fixed-size,
 bottom-anchored top-layer surface on its inherited connection. Theme preparation
