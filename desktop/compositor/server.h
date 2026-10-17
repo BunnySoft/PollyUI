@@ -23,6 +23,8 @@ struct PuDesktopLayer {
     struct wl_list link;
     struct wl_listener map, unmap, commit, destroy;
     struct wlr_box pending_box;
+    struct wlr_box backdrop_box;
+    uint32_t backdrop_role, backdrop_taskbar, backdrop_serial, backdrop_index;
     uint32_t serial;
     bool ready, positioned, presented;
 };

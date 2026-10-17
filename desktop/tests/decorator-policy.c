@@ -21,7 +21,8 @@
 #include <wlr/types/wlr_scene.h>
 
 enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, FORBIDDEN,
-    MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY };
+    MAP_BACKDROP, PREPARE_REGIONAL, STAGE_REGIONAL, RECOMMIT_SURFACE, UNMAP_SURFACE, BACKDROP_CAPABILITY,
+    SHELL_BACKDROP_CAPABILITY };
 struct Reply { uint32_t state, bootstrap, accepted, serial, globals; bool denied; };
 struct Probe {
     struct wl_display *display;
@@ -70,6 +71,7 @@ static const struct polly_appearance_v1_listener listener = {
     .prepared = prepared, .applied = prepared, .renderer_enabled = enabled, .render_request = requested,
     .frame_result = result, .render_cancelled = cancelled, .renderer_status = status,
     .backdrop_prepared = prepared, .backdrop_capability = capability,
+    .shell_backdrop_capability = capability,
 };
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
@@ -152,7 +154,7 @@ static bool public_probe(struct Probe *probe)
     struct wl_display *display = wl_display_connect(name);
     CHECK(display);
     struct wl_registry *registry = wl_display_get_registry(display);
-    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 7);
+    struct polly_appearance_v1 *forged = wl_registry_bind(registry, probe->name, &polly_appearance_v1_interface, 8);
     CHECK(forged && wl_display_roundtrip(display) < 0 && wl_display_get_error(display) == EPROTO);
     wl_proxy_destroy((struct wl_proxy *)forged); wl_registry_destroy(registry); wl_display_disconnect(display);
     return true;
@@ -204,6 +206,7 @@ static bool child(int fd, uint32_t version)
         case UNMAP_SURFACE:
             wl_surface_attach(probe.surface, NULL, 0, 0); wl_surface_commit(probe.surface); break;
         case BACKDROP_CAPABILITY: polly_appearance_v1_get_backdrop_capability(probe.appearance); break;
+        case SHELL_BACKDROP_CAPABILITY: polly_appearance_v1_get_shell_backdrop_capability(probe.appearance); break;
         case COMMIT: polly_appearance_v1_commit(probe.appearance, probe.serial); break;
         case CANCEL: polly_appearance_v1_cancel(probe.appearance, probe.serial); break;
         case PUBLIC_PROBE: probe.reply.denied = public_probe(&probe); break;
@@ -262,7 +265,7 @@ static bool suite(const char *self)
     CHECK(command(renderer, ENABLE, &r) && r.accepted && r.bootstrap);
     CHECK(command(renderer, PUBLIC_PROBE, &r) && r.denied);
     CHECK(command(renderer, PREPARE, &r) && r.accepted);
-    int publisher = start(self, false, "7", &p);
+    int publisher = start(self, false, "8", &p);
     CHECK(publisher >= 0 && (p.globals & 4));
     CHECK(command(publisher, PREPARE, &p) && p.accepted);
     CHECK(command(renderer, COMMIT, &r) && !r.accepted);
@@ -280,6 +283,7 @@ static bool suite(const char *self)
     CHECK(command(publisher, COMMIT, &p) && p.accepted);
     CHECK(command(renderer, BACKDROP_CAPABILITY, &r) && !r.accepted);
     CHECK(command(publisher, BACKDROP_CAPABILITY, &p) && p.accepted);
+    CHECK(command(publisher, SHELL_BACKDROP_CAPABILITY, &p) && p.accepted);
     CHECK(command(publisher, MAP_BACKDROP, &p) && p.accepted);
     CHECK(command(publisher, PREPARE_REGIONAL, &p) && p.accepted);
     CHECK(command(publisher, COMMIT, &p) && !p.accepted);

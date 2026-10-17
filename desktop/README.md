@@ -121,6 +121,67 @@ whole-frame byte restoration. `desktop-regional-backdrop-native` uses the actual
 Shell Dock over independently running applications and checks foreground/input,
 transaction rejection and retirement. This is not DRM/hardware qualification.
 
+### Modern taskbar and bounded optional Start recipients
+
+Packaged Modern opts its real per-output taskbar into
+`panel.taskbarBackdrop: { "sigma": 8, "tint": "#f3f3f3", "opacityPercent": 72 }`.
+These are Polly design values, not Windows measurements, DWM/Mica or an official
+Acrylic reproduction. This is the same current-lower-scene Pixman path described
+above, not wallpaper-derived client material or foreground opacity. Missing
+fields retain the original solid paint. All other packaged consumers and the
+v7/schema-2/role-1 Dock contract remain unchanged.
+
+The private appearance global advertises version 8 while still accepting version
+7. Shell negotiates at most 8; the independent decorator can remain on 7 and
+geometry schema 7. `shellBackdropCapability()` separately queries implemented
+Shell-recipient support **and** the active renderer. An actual old v7 provider
+returns false, even if its Dock capability is true. Unsupported theme selection
+fails before creating replacement surfaces or changing preferences/appearance.
+Public clients receive no new capability.
+
+`prepare_shell_backdrop` uses the existing complete appearance transaction and
+six numeric words: `[3, role, radiusMilliLogicalPixels, sigma, tintRGB, opacityPercent]`,
+where role 2 is a stretched bottom taskbar and role 3 a focused, fixed-size Start.
+The request pairs actual owned `wl_surface` objects, not titles or role strings.
+Both must be mapped/presented, belong to the authenticated Shell on the same
+actual output, and match their real anchors, layer, keyboard/exclusive policy,
+buffer dimensions and footprint. Commit rechecks both sequences/boxes, privacy
+epoch and theme generation. Start additionally requires its taskbar in that
+same snapshot; one taskbar per output and one Start share the original eight-node
+and aggregate 128MiB old-plus-candidate/workspace limits.
+
+Start first maps with its original solid background and becomes transparent only
+after a successful whole-set native transaction. Close/reopen, peer destruction,
+output changes, focus/shape invalidation and lock retire the relevant recipient,
+not other outputs. Since-8 retirement notifications carry the installing serial
+and exact target ordinal; native state keeps only numeric identities after the
+call, not a Window or raw surface. Late old-serial notifications cannot alter a
+new menu, and rejected pending transactions do not erase the applied identity.
+Foreground, input, slots, hitboxes and menu keyboard behavior do not change.
+Material failures are independent of business errors and are not retried in a
+timer loop; live composition failure retains the last output frame.
+
+**Standard-height Start is not delivered by this effects3 slice.** Effects3
+strictly limits each footprint to 4096x512 logical pixels. Modern's unchanged
+660px menu token produces a real 640px menu on a 720px output, so packaged Start
+does **not** set `startBackdrop` and remains solid without an expected error on
+each open. A custom Modern theme may optionally set `panel.startBackdrop` with
+the same strict sigma/tint/opacity fields, only with `taskbarBackdrop` present.
+An actual footprint above 512 is explicitly rejected, keeps Start solid and
+preserves committed taskbars. A naturally shorter real output, e.g. height 540
+and unchanged 460px menu sizing, can use this bounded opt-in. That limited positive
+case is not qualification of the standard 640/660px menu. Supporting taller
+regional targets is a separate dependency; no geometry, SDK, effects3 bound or
+renderer was changed here. GLES new blur and physical/GPU qualification remain
+unsupported/unclaimed.
+
+`desktop-shell-regional-backdrop-native` extends the original native lifecycle
+fixture: actual two-output taskbars and a naturally bounded production Start over
+moving applications, unchanged opaque foreground/input, real pointer/Tab/Enter,
+strict pair/transaction rejection, precise stale retirement, budget and privacy
+boundaries, plus the standard-height solid rejection. It does not close E22 or
+claim Windows-reference pixel equivalence.
+
 ## Desktop application shortcuts
 
 The desktop starts empty. Open **Polly > Applications** and choose **Add to

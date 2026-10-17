@@ -64,7 +64,7 @@ function stopGridScroll(node, done) {
 
 export function startMenuView(theme, entries, query, changeQuery, launch, refresh, close,
   error = '', logout = null, desktop = null, programs = null, images = null, searchInput = null, launchers = null,
-  displayProfile = null) {
+  displayProfile = null, regionalBackdrop = false) {
   if (displayProfile !== null) displayProfile = validateUserProfile(displayProfile);
   const kind = surfaceStyle(theme, 'panel'), xp = kind === 'luna', modern = kind === 'fluent';
   const l = theme.layout, c = theme.colors, classic = kind === 'classic';
@@ -227,7 +227,8 @@ export function startMenuView(theme, entries, query, changeQuery, launch, refres
     };
   }
   return h('view', { id: 'shell-applications', style: { width: '100%', height: '100%',
-    backgroundColor: c.body, borderWidth: classic ? 0 : xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
+    backgroundColor: modern && regionalBackdrop ? 'transparent' : c.body,
+    borderWidth: classic ? 0 : xp ? 2 : 1, borderColor: xp ? '#1854c2' : c.border,
     borderRadius: modern ? 8 : xp ? 6 : theme.window.radius, overflow: scrollGrid ? 'scroll' : 'hidden', position: 'relative',
     padding: classic ? 3 : 0, gap: grid ? 20 : 0 },
     ...(scrollGrid ? { onWheel: scrollDesktop, onMount: syncGridScroll, onUpdate: syncGridScroll,

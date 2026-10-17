@@ -79,7 +79,8 @@ function schemaRejection(schema, message = 'Unsupported or out-of-range appearan
     code: 'ERR_APPEARANCE_SCHEMA_REJECTED', appearanceSchema: schema, compositorMessage: message,
   });
 }
-function fixture(t, { maximumSchema = 7, initialTheme = 'xp', failure = null, backdrop = false } = {}) {
+function fixture(t, { maximumSchema = 7, initialTheme = 'xp', failure = null, backdrop = false,
+  shellBackdrop = true } = {}) {
   const originalFrame = globalThis.requestAnimationFrame, originalCancel = globalThis.cancelAnimationFrame;
   // Publication-only fake DOM: retain pending layout work without running it.
   globalThis.requestAnimationFrame = () => 1;
@@ -106,6 +107,7 @@ function fixture(t, { maximumSchema = 7, initialTheme = 'xp', failure = null, ba
   const backend = {
     maximumSchema, failure, rejectedTheme: null, committed: null,
     backdropCapability: () => backdrop,
+    shellBackdropCapability: () => shellBackdrop,
     materialMessage: '',
     backdropError() { return this.materialMessage; },
     applicationFiles: () => [],
@@ -256,6 +258,18 @@ test('supported regional publication binds the actual planned Dock Windows and g
   assert.deepEqual(attempt.targets[0][1], [2, 1, 16000, 8, 0xe7e7e7, 28]);
   assert.equal(f.shell.selectTheme('xp'), true);
   assert.deepEqual(f.attempts.at(-1).targets, []);
+});
+
+test('v7 Dock support cannot authorize v8 Shell recipients or change the current commit', t => {
+  const f = fixture(t, { backdrop: true, shellBackdrop: false });
+  f.shell.start();
+  const created = f.created.length, attempts = f.attempts.length, committed = f.backend.committed;
+  assert.equal(f.shell.selectTheme('modern'), false);
+  assert.equal(f.created.length, created);
+  assert.equal(f.attempts.length, attempts);
+  assert.equal(f.backend.committed, committed);
+  assert.equal(f.saves.length, 0);
+  assert.match(f.shell.getState().error, /paired regional Shell backdrops/);
 });
 
 test('material failure/recovery preserves independent business errors, reports only changes and ignores retired callbacks', t => {

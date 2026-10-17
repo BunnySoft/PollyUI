@@ -216,6 +216,7 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
         wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, !layer);
     enter_keyboard(desktop);
     sync_foreign(desktop);
+    pu_decorations_validate_shell_backdrops(desktop);
 }
 
 static struct PuDesktopView *modal_target(struct PuDesktopView *view)
@@ -1248,6 +1249,7 @@ static void arrange_layers(struct PuDesktop *desktop)
     desktop->arranging_layers = false;
     if (changed) refresh_views(desktop);
     update_layer_focus(desktop);
+    pu_decorations_validate_shell_backdrops(desktop);
     refresh_pointer(desktop);
 }
 
@@ -1283,6 +1285,7 @@ static void layer_commit(struct wl_listener *listener, void *data)
     else {
         present_layer(layer);
         update_layer_focus(layer->desktop);
+        pu_decorations_validate_shell_backdrops(layer->desktop);
         refresh_pointer(layer->desktop);
     }
 }

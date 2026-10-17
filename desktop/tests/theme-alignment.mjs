@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { register } from 'node:module';
 register('./root-loader.mjs', import.meta.url);
 const { parseThemeCatalog, parseThemeFile, applyThemeOverrides } = await import('../shared/ui/theme-schema.mjs');
-const { dockSurfaceWidth, dockBackdropMaterial, applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
+const { dockSurfaceWidth, dockBackdropMaterial, shellBackdropMaterial,
+  applicationMenuPlacement, applicationMenuHeight } = await import('../shared/ui/theme-layout.mjs');
 const { panelView, dockView, applicationsView } = await import('../shell/views.mjs');
 const { desktopCommand } = await import('../shared/ui/presentation.mjs');
 const { button } = await import('../shared/ui/button.mjs');
@@ -15,6 +16,32 @@ const recovery = parseThemeCatalog(readFileSync(new URL('../resources/themes/fal
 assert.deepEqual(catalog, recovery);
 const find = (node, id) => node.props?.id === id ? node : node.children?.map(child => find(child, id)).find(Boolean);
 const action = () => {};
+{
+  const packaged = catalog.themes.find(theme => theme.id === 'modern');
+  assert.equal(packaged.panel.startBackdrop, undefined, 'Standard-height Start stays solid with effects3');
+  const modern = { ...packaged, panel: { ...packaged.panel,
+    startBackdrop: { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 } } };
+  assert.deepEqual(shellBackdropMaterial(modern, 2, 1280, 48), [3, 2, 0, 8, 0xf3f3f3, 72]);
+  assert.equal(shellBackdropMaterial(modern, 3, 9, 7)[2], 3500);
+  const omitted = structuredClone(modern);
+  delete omitted.panel.taskbarBackdrop;
+  delete omitted.panel.startBackdrop;
+  const file = theme => JSON.stringify({ schemaVersion: 1, theme });
+  assert.doesNotThrow(() => parseThemeFile(file(omitted)));
+  assert.equal(shellBackdropMaterial(omitted, 2, 1280, 48), null);
+  assert.equal(JSON.stringify(panelView(omitted, '10:31', action)),
+    JSON.stringify(panelView(modern, '10:31', action)), 'Opt-in data alone never clears solid view paint');
+  for (const key of ['taskbarBackdrop', 'startBackdrop'])
+    for (const material of [{ ...modern.panel[key], sigma: 0 }, { ...modern.panel[key], opacityPercent: 101 },
+      { ...modern.panel[key], tint: 'transparent' }, { ...modern.panel[key], role: 'Start' }]) {
+      const theme = structuredClone(modern);
+      theme.panel[key] = material;
+      assert.throws(() => parseThemeFile(file(theme)), /backdrop|Backdrop/);
+    }
+  const unpaired = structuredClone(modern);
+  delete unpaired.panel.taskbarBackdrop;
+  assert.throws(() => parseThemeFile(file(unpaired)), /requires its taskbar/);
+}
 {
   const theme = applyThemeOverrides(catalog, JSON.stringify({ schemaVersion: 1, themes: {
     bigsur: { panel: { height: 28 }, layout: { dockIconSize: 16 } },

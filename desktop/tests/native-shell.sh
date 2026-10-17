@@ -46,7 +46,11 @@ for definition in themes:
         assert image.height == height, (theme, image.size)
         color = image.convert("RGB").getpixel((image.width // 2, height // 2))
         a = tuple(bytes.fromhex(start.removeprefix("#"))); b = tuple(bytes.fromhex(end.removeprefix("#")))
-        assert all(min(lo, hi) - 3 <= v <= max(lo, hi) + 3 for v, lo, hi in zip(color, a, b)), (theme, color)
+        if panel.get("taskbarBackdrop"):
+            alpha = list(image.convert("RGBA").getchannel("A").getdata())
+            assert alpha.count(0) > 1000 and alpha.count(255) > 200, (theme, "separate regional foreground")
+        else:
+            assert all(min(lo, hi) - 3 <= v <= max(lo, hi) + 3 for v, lo, hi in zip(color, a, b)), (theme, color)
     if dock:
         with Image.open(directory / f"shell-{theme}-dock.png") as image:
             assert image.convert("RGBA").getpixel((0, 0))[3] == 0, (theme, "opaque Dock corner")

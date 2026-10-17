@@ -228,12 +228,17 @@ function fixture(configure = () => {}) {
   const original = () => calls.push(['previous-windows']);
   const native = {
     backdropCapability: () => true,
+    shellBackdropCapability: () => true,
     configureAppearance(theme, words, targets = []) {
       assert.equal(words[0], 7);
-      assert.equal(targets.length, theme.panel.kind === 'dock' && theme.panel.regionalBackdrop ? state.outputs.length : 0);
-      for (const [window, material] of targets) {
-        assert.equal(window.options.layer, 'top');
-        assert.equal(material[0], 2);
+      const paired = !!theme.panel.taskbarBackdrop;
+      const start = targets.filter(([, material]) => material[1] === 3);
+      assert.equal(targets.length, theme.panel.kind === 'dock' && theme.panel.regionalBackdrop || paired ?
+        state.outputs.length + start.length : 0);
+      for (const [window, material, peer] of targets) {
+        assert.equal(window.options.layer, material[1] === 3 ? 'overlay' : 'top');
+        assert.equal(material[0], paired ? 3 : 2);
+        if (paired) assert.ok(peer && !peer.closed);
       }
     },
     onWindowsChanged: original,
@@ -317,6 +322,49 @@ function scenario(name, run, configure) {
     try { await run(f); } finally { f.done(); }
   });
 }
+
+scenario('paired Start publication stays solid on failure and retains taskbars on close without polling', f => {
+  const optional = JSON.parse(JSON.stringify(BUILTIN_THEME_CATALOG));
+  optional.themes.find(theme => theme.id === 'modern').panel.startBackdrop =
+    { sigma: 12, tint: '#f3f3f3', opacityPercent: 72 };
+  installThemeCatalog(optional);
+  assert.equal(f.shell.selectTheme('modern'), true);
+  const original = f.native.configureAppearance;
+  const attempts = [];
+  let reject = true;
+  f.native.configureAppearance = (theme, words, targets) => {
+    attempts.push(targets);
+    if (reject) throw new Error('peak budget rejected');
+    return original(theme, words, targets);
+  };
+  const panels = [f.surface('panel', 1), f.surface('panel', 2)];
+  const solid = f.shell.showApplications(1);
+  f.flushFrames();
+  assert.equal(find(solid, 'shell-applications').style.backgroundColor, '#f3f3f3');
+  assert.match(f.shell.getState().materialError, /solid retained/);
+  assert.equal(f.shell.getState().error, '');
+  f.expectedWarnings.push('[shell] ' + f.shell.getState().materialError);
+  solid.close();
+  reject = false;
+  const menu = f.shell.showApplications(1);
+  f.flushFrames();
+  const targets = attempts.at(-1);
+  assert.deepEqual(targets.slice(0, 2).map(([window, , peer]) => [window, peer]),
+    panels.map(panel => [panel, panel]));
+  assert.equal(targets.length, 3);
+  assert.equal(targets[2][0], menu);
+  assert.equal(targets[2][2], panels[0]);
+  assert.deepEqual(targets[2][1], [3, 3, 8000, 12, 0xf3f3f3, 72]);
+  assert.equal(find(menu, 'shell-applications').style.backgroundColor, 'transparent');
+  menu.close();
+  assert.equal(attempts.at(-1).length, 2);
+  assert.ok(panels.every(panel => !panel.closed));
+  const reopened = f.shell.showApplications(2);
+  f.flushFrames();
+  assert.notEqual(reopened, menu);
+  assert.equal(attempts.at(-1)[2][2], panels[1]);
+  installThemeCatalog(BUILTIN_THEME_CATALOG);
+});
 
 function placementFixture({ native, state, calls }) {
   Object.assign(state.windows[0], { placement: 'floating', placementPending: false,
@@ -507,7 +555,8 @@ test('menu-bar alpha uses existing transparent surface creation and retires repl
   });
   try {
     const select = id => { assert.equal(f.state.settingsHandlers.select(id), true); return f.surface('panel'); };
-    assert.equal(f.surface('panel').options.transparent, undefined, 'Taskbar stays opaque even with explicit zero');
+    assert.equal(f.surface('panel').options.transparent, true,
+      'Modern regional material, not unrelated menu-bar opacity, opts this taskbar into an alpha buffer');
     for (const id of ['aqua', 'lion']) {
       assert.equal(select(id).options.transparent, undefined, 'Unchanged menu bar does not add a surface option');
       assert.equal(f.surface('dock').options.transparent, true, 'Existing transparent Dock is unchanged');

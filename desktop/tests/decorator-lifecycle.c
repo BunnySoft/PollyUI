@@ -5,6 +5,7 @@
 #include "workspace.h"
 #include "shortcut-control.h"
 #include "session-lock.h"
+#include "polly-appearance-server.h"
 #include "decoration-layout-fixtures.h"
 #include "wire.h"
 #include <drm_fourcc.h>
@@ -22,6 +23,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <wlr/backend.h>
+#include <wlr/backend/headless.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/interfaces/wlr_pointer.h>
 #include <wlr/types/wlr_buffer.h>
@@ -494,6 +496,226 @@ static bool backdrop_consumer(const char *ui, const char *wire)
     puts("PASS: real missing-field legacy retirement, reactivation and Shell exit release all regional nodes/pixels");
     return true;
 }
+static unsigned shell_backdrop_count(uint32_t role)
+{
+    unsigned count = 0;
+    struct PuDesktopLayer *layer;
+    wl_list_for_each(layer, &desktop.layers, link)
+        if (layer->backdrop && layer->backdrop_role == role) count++;
+    return count;
+}
+static bool shell_region_pixels(struct PuDesktopLayer *layer)
+{
+    struct PuDesktopView *first = wire_view(), *second = find("Decorator.fixture.app");
+    CHECK(first && second && layer->backdrop && dock_foreground_ready(layer));
+    struct wlr_box box = layer->pending_box, output_box;
+    wlr_output_layout_get_box(desktop.layout, layer->surface->output, &output_box);
+    wlr_scene_node_set_position(&first->tree->node, box.x - 20, box.y + box.height / 2 - 45);
+    wlr_scene_node_set_position(&second->tree->node, box.x + box.width / 2, box.y + box.height / 2 - 45);
+    uint32_t *actual, *plain, *moved;
+    int width, height, w, h;
+    CHECK(scene_pixels(layer->surface->output, &actual, &width, &height));
+    wlr_scene_node_set_enabled(&layer->backdrop->node, false);
+    CHECK(scene_pixels(layer->surface->output, &plain, &w, &h));
+    wlr_scene_node_set_enabled(&layer->backdrop->node, true);
+    struct wlr_client_buffer *client = layer->surface->surface->buffer;
+    void *data; uint32_t format; size_t stride;
+    CHECK(client && client->source &&
+        wlr_buffer_begin_data_ptr_access(client->source, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &format, &stride));
+    CHECK(format == DRM_FORMAT_ARGB8888 && client->source->width == box.width &&
+        client->source->height == box.height);
+    unsigned opaque = 0, clear = 0, effect = 0;
+    int x = box.x - output_box.x, y = box.y - output_box.y;
+    CHECK(x >= 0 && y >= 0 && x + box.width <= width && y + box.height <= height);
+    for (int py = 0; py < box.height; py++) for (int px = 0; px < box.width; px++) {
+        uint32_t pixel = ((uint32_t *)((char *)data + py * stride))[px];
+        size_t offset = (size_t)(y + py) * width + x + px;
+        if ((pixel >> 24) == 255) { CHECK(actual[offset] == plain[offset]); opaque++; }
+        clear += (pixel >> 24) == 0;
+        effect += actual[offset] != plain[offset];
+    }
+    wlr_buffer_end_data_ptr_access(client->source);
+    CHECK(opaque > 200 && clear > 1000 && effect > 1000);
+    pixman_region32_t input;
+    pixman_region32_init(&input);
+    pixman_region32_copy(&input, &layer->surface->surface->input_region);
+    wlr_scene_node_set_position(&first->tree->node, box.x + 30, box.y + box.height / 2 - 45);
+    CHECK(scene_pixels(layer->surface->output, &moved, &w, &h));
+    unsigned changes = 0;
+    for (int py = 0; py < box.height; py++) for (int px = 0; px < box.width; px++) {
+        size_t offset = (size_t)(y + py) * width + x + px;
+        changes += actual[offset] != moved[offset];
+    }
+    CHECK(changes > 100 && pixman_region32_equal(&input, &layer->surface->surface->input_region));
+    printf("PASS: production Shell role %u output %s current-lower-app movement changes %u regional pixels; %u opaque foreground pixels and actual input unchanged\n",
+        layer->backdrop_role, layer->surface->output->name, changes, opaque);
+    pixman_region32_fini(&input);
+    free(actual); free(plain); free(moved);
+    return true;
+}
+static bool modern_backdrop_consumer(const char *ui, const char *wire)
+{
+    CHECK(start_app(ui));
+    char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
+        "desktop/tests/backdrop-shell.mjs", "modern", NULL};
+    CHECK(pu_desktop_spawn_shell(&desktop, shell));
+    struct wlr_scene_tree *pressure = NULL;
+    struct wlr_scene_rect *retained[2] = {0};
+    unsigned checks = 0;
+    uint32_t retired_serial = 0, retired_target = 0;
+    uint64_t deadline = milliseconds() + 60000;
+    while (desktop.shell_pid && milliseconds() < deadline) {
+        CHECK(pump());
+        struct PuDesktopLayer *marker, *tmp;
+        wl_list_for_each_safe(marker, tmp, &desktop.layers, link) {
+            if (!marker->surface->surface->mapped) continue;
+            const char *name = marker->surface->namespace;
+            int x, y;
+            unsigned code;
+            char target[96], stage[32];
+            if (sscanf(name, "backdrop-click %d %d %95s", &x, &y, target) == 3) {
+                struct PuDesktopLayer *layer, *found = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (!strcmp(layer->surface->namespace, target) && layer->presented &&
+                        layer->surface->surface->mapped) { found = layer; break; }
+                CHECK(found);
+                int lx = found->pending_box.x + x, ly = found->pending_box.y + y;
+                wlr_layer_surface_v1_destroy(marker->surface);
+                motion(lx, ly); button(true); button(false);
+                break;
+            }
+            if (sscanf(name, "backdrop-key %u", &code) == 1) {
+                CHECK(desktop.focused_layer && desktop.focused_layer->surface->current.keyboard_interactive ==
+                    ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, code, WL_KEYBOARD_KEY_STATE_PRESSED);
+                wlr_seat_keyboard_notify_key(desktop.seat, ++clock_ms, code, WL_KEYBOARD_KEY_STATE_RELEASED);
+                break;
+            }
+            if (sscanf(name, "backdrop-pressure %31s", stage) == 1) {
+                if (!strcmp(stage, "on")) {
+                    unsigned i = 0;
+                    struct PuDesktopLayer *layer;
+                    wl_list_for_each(layer, &desktop.layers, link)
+                        if (layer->backdrop && layer->backdrop_role == 2) {
+                            CHECK(i < 2); retained[i++] = layer->backdrop;
+                        }
+                    CHECK(i == 2 && !pressure);
+                    size_t available = WLR_SCENE_EFFECTS_MAX_BYTES - desktop.scene->effects_cached_bytes;
+                    int height = (int)((available - 128u * 1024u) / (4096u * 8u));
+                    CHECK(height > 3000 && height < 4096);
+                    pressure = wlr_scene_tree_create(desktop.windows);
+                    CHECK(pressure && wlr_scene_rect_create(pressure, 4096, height, (float[4]){0.4f, 0.2f, 0.6f, 1}) &&
+                        wlr_scene_tree_set_rounding(pressure, &(struct wlr_box){0, 0, 4096, height}, 16));
+                } else {
+                    CHECK(pressure); wlr_scene_node_destroy(&pressure->node); pressure = NULL;
+                }
+                wlr_layer_surface_v1_destroy(marker->surface); break;
+            }
+            if (sscanf(name, "backdrop-check %31s", stage) != 1) continue;
+            if (!strcmp(stage, "taskbars") || !strcmp(stage, "start") || !strcmp(stage, "retained")) {
+                CHECK(shell_backdrop_count(2) == 2);
+                CHECK(shell_backdrop_count(3) == (strcmp(stage, "taskbars") ? 1u : 0u));
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop && (!strcmp(stage, "taskbars") ? layer->backdrop_role == 2 :
+                        layer->backdrop_role == 3)) {
+                        uint64_t ready = milliseconds() + 3000;
+                        while (!dock_foreground_ready(layer) && milliseconds() < ready) CHECK(pump());
+                        CHECK(shell_region_pixels(layer));
+                        if (!strcmp(stage, "retained")) {
+                            retired_serial = layer->backdrop_serial;
+                            retired_target = layer->backdrop_index;
+                        }
+                    }
+            } else if (!strcmp(stage, "stale")) {
+                struct PuDesktopLayer *layer, *current = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop && layer->backdrop_role == 3) current = layer;
+                CHECK(current && retired_serial && current->backdrop_serial != retired_serial);
+                polly_appearance_v1_send_shell_backdrop_retired(current->backdrop_owner, retired_serial,
+                    retired_target, 3, "stale Start retirement must be ignored");
+                polly_appearance_v1_send_shell_backdrop_retired(current->backdrop_owner, retired_serial,
+                    0, 2, "stale taskbar retirement must be ignored");
+                puts("PASS: real v8 old-serial Start/taskbar retirement events sent after close/reopen on another output");
+            } else if (!strcmp(stage, "closed")) {
+                CHECK(shell_backdrop_count(2) == 2 && !shell_backdrop_count(3));
+                puts("PASS: actual Tab/Enter closes Start with both production taskbars retained");
+            } else if (!strcmp(stage, "extent")) {
+                CHECK(shell_backdrop_count(2) == 2 && !shell_backdrop_count(3));
+                struct PuDesktopLayer *layer;
+                bool oversized = false;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->surface->current.keyboard_interactive ==
+                        ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE)
+                        oversized |= layer->pending_box.height > 512 && !layer->backdrop;
+                CHECK(oversized);
+                puts("PASS: actual standard 640-high Start is rejected at effects3 512 bound, retaining solid foreground and both taskbars; standard-height Start remains BLOCKED");
+                struct wlr_output_layout_output *entry;
+                wl_list_for_each(entry, &desktop.layout->outputs, link) {
+                    struct wlr_output_state state;
+                    wlr_output_state_init(&state);
+                    wlr_output_state_set_custom_mode(&state, 1280, 540, 60000);
+                    bool applied = wlr_output_commit_state(entry->output, &state);
+                    wlr_output_state_finish(&state);
+                    CHECK(applied);
+                }
+            } else if (!strcmp(stage, "legacy") || !strcmp(stage, "stopped")) {
+                CHECK(wl_list_empty(&desktop.scene->backdrops));
+            } else if (!strcmp(stage, "budget")) {
+                CHECK(pressure && shell_backdrop_count(2) == 2 && !shell_backdrop_count(3));
+                unsigned i = 0;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop && layer->backdrop_role == 2) CHECK(layer->backdrop == retained[i++]);
+                CHECK(i == 2);
+                puts("PASS: actual old-plus-candidate/scratch peak rejects Start without replacing either committed taskbar");
+            } else if (!strcmp(stage, "privacy")) {
+                char lock_client[PATH_MAX];
+                const char *slash = strrchr(wire, '/');
+                CHECK(slash && snprintf(lock_client, sizeof(lock_client), "%.*s/polly-lock-test-client",
+                    (int)(slash - wire), wire) < (int)sizeof(lock_client));
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop_role == 3 && layer->backdrop) {
+                        CHECK(live_backdrop_failure(layer, lock_client)); break;
+                    }
+            } else if (!strcmp(stage, "unpair")) {
+                struct PuDesktopLayer *layer, *peer = NULL;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop && layer->backdrop_role == 3) {
+                        struct PuDesktopLayer *candidate;
+                        wl_list_for_each(candidate, &desktop.layers, link)
+                            if (wl_resource_get_id(candidate->surface->surface->resource) == layer->backdrop_taskbar)
+                                peer = candidate;
+                    }
+                CHECK(peer);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                wlr_layer_surface_v1_destroy(peer->surface);
+                CHECK(!shell_backdrop_count(3) && shell_backdrop_count(2) == 1);
+                puts("PASS: destruction of the real paired taskbar revokes Start immediately, retaining the other output taskbar");
+                break;
+            } else if (!strcmp(stage, "output")) {
+                struct wlr_output *output = NULL;
+                struct PuDesktopLayer *layer;
+                wl_list_for_each(layer, &desktop.layers, link)
+                    if (layer->backdrop && layer->backdrop_role == 3) output = layer->surface->output;
+                CHECK(output);
+                wlr_layer_surface_v1_destroy(marker->surface);
+                wlr_output_destroy(output);
+                CHECK(!shell_backdrop_count(3));
+                puts("PASS: actual output destruction retires its Start and taskbar without cross-output sampling");
+                break;
+            } else CHECK(false);
+            checks++;
+            wlr_layer_surface_v1_destroy(marker->surface);
+            break;
+        }
+    }
+    CHECK(!desktop.shell_pid && checks >= 9 && !pressure && wl_list_empty(&desktop.scene->backdrops));
+    puts("PASS: production modern Shell backdrop consumer completes mapped lifecycle, native input, peer, output, budget and privacy boundaries");
+    return true;
+}
 static bool suite(const char *ui, const char *wire, const char *mode)
 {
     char *decorator[] = {(char *)ui, "--decorator", "--app-id", "org.pollyui.decorator",
@@ -505,6 +727,7 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
     if (!strcmp(mode, "backdrop")) return backdrop_consumer(ui, wire);
+    if (!strcmp(mode, "shell-backdrop")) return modern_backdrop_consumer(ui, wire);
     struct wlr_box initial = {0};
     pu_decoration_inset(view, &initial, false);
     if (!strncmp(mode, "cold", 4)) {

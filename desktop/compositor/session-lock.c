@@ -1,5 +1,6 @@
 #include "session-lock.h"
 #include "server.h"
+#include "decoration.h"
 #include "private-process.h"
 #include "output-control.h"
 #include <errno.h>
@@ -316,6 +317,7 @@ bool pu_session_lock_spawn(struct PuDesktop *desktop, char *const argv[])
     lock->active = true; lock->acknowledged = false; lock->unlocking = false;
     desktop->backdrop_epoch++;
     wlr_scene_backdrop_clear(desktop->scene);
+    pu_decorations_validate_shell_backdrops(desktop);
     struct LockOutput *output;
     wl_list_for_each(output, &lock->outputs, link) if (!recovering) {
         output->presented = output->pending = false;

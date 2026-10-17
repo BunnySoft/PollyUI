@@ -10,6 +10,7 @@ struct PuDecoration;
 struct PuDecorations;
 struct wlr_output;
 void pu_decorations_backdrop_status(struct PuDesktop *desktop, struct wlr_output *output, const char *message);
+void pu_decorations_validate_shell_backdrops(struct PuDesktop *desktop);
 
 /* Edge hit results use the wlroots edge bitmask. */
 enum PuDecorationPart {
