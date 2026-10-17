@@ -698,6 +698,13 @@ identity in a separate SDK prefix. This does not explain earlier unknown
 SIGBUS/ENOSPC/reaping failures, enable held material/extent/filter candidates, or
 complete their performance or physical qualification.
 
+Private Shell, decorator, input-method and lock exits also share one event-loop
+notification source, while each owner still reaps only its exact PID. The
+production-core ready-batch regression covers the previous missed wakeup,
+simultaneous exits, restart, replacement and nested shutdown without polling or
+changing input/lock policy. This independent fix does not by itself attribute
+every historical reaping failure or qualify held effects/performance candidates.
+
 Mac-style Docks also provide bounded pointer-distance magnification through
 optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
 `icons.dockMagnificationRadius` (integer 0-3, missing/0 preserves the previous
