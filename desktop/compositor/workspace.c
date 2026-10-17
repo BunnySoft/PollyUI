@@ -118,6 +118,9 @@ void pu_workspaces_picker_cancel(struct PuDesktop *desktop)
 {
     struct PuWorkspaces *state = desktop->workspaces;
     if (!state) return;
+    if (state->picker_phase != PICKER_IDLE)
+        wlr_log(WLR_DEBUG, "Retiring native picker phase=%u window=%llu token=%u",
+            state->picker_phase, (unsigned long long)state->picker_window, state->picker_token);
     if (state->picker_timer) wl_event_source_remove(state->picker_timer);
     state->picker_timer = NULL;
     struct Tracked *tracked = state->picker_target;
@@ -191,6 +194,8 @@ static int picker_timeout(void *data)
                 wl_resource_get_version(item->resource) >= 4) { tracked = item; break; }
         }
     if (!tracked || state->next_picker_token == UINT32_MAX) {
+        wlr_log(WLR_DEBUG, "Native picker hover ended without grant: live=%d currentFrame=%u tracked=%d",
+            view != NULL, view ? pu_decoration_presented_revision(view) : 0, tracked != NULL);
         pu_workspaces_picker_cancel(state->desktop); return 0;
     }
     state->picker_target = tracked;
@@ -198,6 +203,8 @@ static int picker_timeout(void *data)
     state->picker_revision = pu_decoration_presented_revision(view);
     state->picker_token = ++state->next_picker_token;
     state->picker_phase = PICKER_OFFERED;
+    wlr_log(WLR_DEBUG, "Offering native picker window=%llu token=%u revision=%u",
+        (unsigned long long)state->picker_window, state->picker_token, state->picker_revision);
     polly_workspace_toplevel_v1_send_layout_offer(tracked->resource, state->picker_token,
         anchor.x - bounds.x, anchor.y - bounds.y, anchor.width, anchor.height,
         view->output->name, bounds.x, bounds.y, bounds.width, bounds.height);
@@ -219,6 +226,7 @@ void pu_workspaces_picker_motion(struct PuDesktop *desktop, struct PuDesktopView
     state->picker_window = window; state->picker_view = view->toplevel->resource;
     state->picker_output = view->output; state->picker_workspace = view->workspace;
     state->picker_phase = PICKER_WAITING;
+    wlr_log(WLR_DEBUG, "Arming native picker window=%llu", (unsigned long long)window);
     state->picker_timer = wl_event_loop_add_timer(wl_display_get_event_loop(desktop->display), picker_timeout, state);
     if (!state->picker_timer || wl_event_source_timer_update(state->picker_timer, 500) < 0) {
         wlr_log(WLR_ERROR, "Cannot schedule native caption picker");

@@ -1100,7 +1100,7 @@ static void destroy_window(struct Window *window)
     memset(window, 0, sizeof(*window));
 }
 
-static void create_transient(struct Client *client, bool parented)
+static void create_transient(struct Client *client, bool parented, uint32_t flags)
 {
     struct Window *window = &client->extra;
     window->client = client; window->width = 160; window->height = 100;
@@ -1109,6 +1109,11 @@ static void create_transient(struct Client *client, bool parented)
     xdg_surface_add_listener(window->xdg, &surface_listener, window);
     window->toplevel = xdg_surface_get_toplevel(window->xdg);
     xdg_toplevel_add_listener(window->toplevel, &toplevel_listener, window);
+    if (flags & 8) {
+        if (!client->decoration_manager) die("transient decoration unavailable");
+        window->decoration = zxdg_decoration_manager_v1_get_toplevel_decoration(client->decoration_manager, window->toplevel);
+        zxdg_toplevel_decoration_v1_add_listener(window->decoration, &decoration_listener, window);
+    }
     xdg_toplevel_set_app_id(window->toplevel, "org.pollywm.test.8");
     if (parented) xdg_toplevel_set_parent(window->toplevel, client->window.toplevel);
     wl_surface_commit(window->surface);
@@ -1322,8 +1327,8 @@ int main(int argc, char **argv)
             break;
         case TEST_DRAG_ICON_DESTROY: destroy_drag_icon(&client); break;
         case TEST_TRANSIENT:
-            create_transient(&client, request.id == 0);
-            if (request.edges) {
+            create_transient(&client, request.id == 0, request.edges);
+            if (request.edges & 1) {
                 if (!client.dialogs) die("modal dialog unavailable");
                 client.extra.dialog = xdg_wm_dialog_v1_get_xdg_dialog(client.dialogs, client.extra.toplevel);
                 xdg_dialog_v1_set_modal(client.extra.dialog);

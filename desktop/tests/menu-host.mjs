@@ -449,6 +449,12 @@ scenario('caption picker uses explicit theme opt-in and a native grant, admits o
   assert.equal(f.shell.selectTheme('modern'), true);
   const menu = offerPicker(f);
   assert.ok(menu);
+  const registered = f.calls.length;
+  f.shell.refresh(true);
+  f.shell.refresh();
+  f.native.onWindowsChanged();
+  assert.equal(menu.closed, false, 'ordinary refresh cannot retire the active picker');
+  assert.equal(f.calls.slice(registered).some(call => call[0] === 'picker-enabled'), false);
   assert.deepEqual(menu.options.anchors, ['top', 'left']);
   assert.deepEqual(menu.options.margins, { left: 966, top: 33 });
   assert.equal(menu.document.getElementById('shell-window-maximize'), null);
@@ -503,6 +509,21 @@ scenario('caption picker failed or unknown admission is visible, closes and neve
   assert.equal(f.calls.filter(call => call[0] === 'unknown').length, 1);
   assert.match(f.shell.getState().error, /Transport outcome is unknown/);
   f.expectedWarnings.push('[shell] ' + f.shell.getState().error);
+}, pickerFixture);
+
+scenario('caption picker retained callbacks from a stopped owner cannot process a restarted Shell offer', f => {
+  const retired = f.native.onLayoutPickerChanged;
+  f.shell.stop();
+  f.shell.start();
+  f.shell.selectTheme('modern');
+  f.state.offer = { token: 42, windowId: 10, x: 1200, y: 0, width: 46, height: 33,
+    outputX: 0, outputY: 0, outputWidth: 1280, outputHeight: 720, outputName: 'HEADLESS-1' };
+  const count = f.calls.length;
+  retired();
+  assert.equal(f.calls.length, count);
+  assert.ok(!f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
+  f.native.onLayoutPickerChanged();
+  assert.ok(f.created.some(window => !window.closed && window.document.getElementById('shell-layout-picker')));
 }, pickerFixture);
 
 test('caption picker projection clamps output-local logical anchors including negative origins and tiny outputs', () => {

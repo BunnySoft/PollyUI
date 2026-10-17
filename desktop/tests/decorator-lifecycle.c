@@ -1507,6 +1507,25 @@ static bool picker_output_size(int width, int height, int x, int y)
 
 static bool layout_picker_consumer(const char *ui, const char *wire, bool old)
 {
+    app_pid = fork();
+    CHECK(app_pid >= 0);
+    if (!app_pid) {
+        setenv("WAYLAND_DISPLAY", desktop.socket_name, 1);
+        execl(ui, ui, "--app-id", "org.pollyui.picker-public",
+            "desktop/tests/layout-picker-shell.mjs", "denied", (char *)NULL);
+        _exit(127);
+    }
+    int public_status = 0;
+    bool public_done = false, public_denied = false;
+    for (int i = 0; i < 1200; i++) {
+        pid_t result = waitpid(app_pid, &public_status, WNOHANG);
+        if (result == app_pid) { app_pid = 0; public_done = true; break; }
+        CHECK(result == 0 && pump());
+        struct PuDesktopView *witness = find("Picker.public.denied");
+        if (witness) { public_denied = true; wlr_xdg_toplevel_send_close(witness->toplevel); }
+    }
+    CHECK(public_done && public_denied && WIFEXITED(public_status) && WEXITSTATUS(public_status) == 0 &&
+        !desktop.shell_client && wire_view());
     char *shell[] = {(char *)ui, "--desktop", "--no-legacy-storage", "--app-id", "org.pollyui.shell",
         "desktop/tests/layout-picker-shell.mjs", old ? "old" : "current", NULL};
     CHECK(pu_desktop_spawn_shell(&desktop, shell));
@@ -1689,7 +1708,7 @@ static bool picker_raw_offer(struct PuDesktopView *view, uint32_t target)
 
 static bool layout_picker_protocol(const char *wire)
 {
-    CHECK(command(TEST_UNCONSTRAINED, 0, 0) && command(TEST_TRANSIENT, 1, 0));
+    CHECK(command(TEST_UNCONSTRAINED, 0, 0) && command(TEST_TRANSIENT, 1, 8));
     struct PuDesktopView *first = wire_view(), *second = NULL, *view;
     wl_list_for_each(view, &desktop.views, link)
         if (view->toplevel->app_id && !strcmp(view->toplevel->app_id, "org.pollywm.test.8")) second = view;
@@ -1720,12 +1739,28 @@ static bool layout_picker_protocol(const char *wire)
         CHECK(received || pump());
     }
     CHECK(received && command(TEST_QUERY, 0, 0) && command(TEST_UNMAP, 0, 0));
+    layer.id = 4;
+    layer.layer.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    layer.layer.keyboard = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
+    layer.layer.width = layer.layer.height = 12; layer.layer.zone = 0;
+    CHECK(send(control, &layer, sizeof(layer), MSG_NOSIGNAL) == sizeof(layer));
+    received = false;
+    for (int i = 0; i < 1200 && !received; i++) {
+        received = recv(control, &reply, sizeof(reply), MSG_DONTWAIT) == sizeof(reply);
+        CHECK(received || pump());
+    }
+    CHECK(received);
     CHECK(picker_raw_offer(first, 7));
     uint32_t stale = reply.picker_token, serial = 1;
     struct TestRequest open = {.command = TEST_PICKER_OPEN, .id = 8, .serial = serial++, .edges = stale};
     CHECK(picker_request(open, false) && first->mode == PU_DESKTOP_FLOATING &&
         second->mode == PU_DESKTOP_FLOATING && wlr_box_equal(&first->presented_box, &before_first) &&
         wlr_box_equal(&second->presented_box, &before_second));
+    open.id = 7; open.serial = serial++; open.layer.live = 1;
+    CHECK(picker_request(open, false) && !first->geometry_pending && !second->geometry_pending);
+    CHECK(command(TEST_QUERY, 0, 0) && !reply.picker_token && picker_raw_offer(first, 7));
+    stale = reply.picker_token;
+    open.edges = stale; open.layer.live = 0;
     open.id = 7; open.serial = serial++;
     CHECK(picker_request(open, true));
     uint32_t epoch = reply.placement_epoch;
@@ -1941,7 +1976,7 @@ static void stop_child(pid_t *pid)
 int main(int argc, char **argv)
 {
     if (argc != 4) return 2;
-    wlr_log_init(WLR_INFO, NULL);
+    wlr_log_init(!strncmp(argv[3], "layout-picker", 13) ? WLR_DEBUG : WLR_INFO, NULL);
     bool ready = pu_desktop_init(&desktop, "decorator-fixture") && pu_desktop_start(&desktop);
     bool passed = false;
     if (ready) {

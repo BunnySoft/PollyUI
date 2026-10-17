@@ -934,6 +934,15 @@ int pu_window_save_frame(PuWindow *w, const char *path)
  * everything else (buttons, content) as NORMAL so clicks/hover work. Coordinates
  * are in window points — the same space region_fn (DOM hit-test) expects. */
 #ifdef __linux__
+struct wl_surface *pu_window_layer_surface_peek(PuWindow *w)
+{
+#ifdef PU_LAYER_SHELL
+    return w && w->running && w->layer_surface ? pu_layer_surface(w->layer_surface) : NULL;
+#else
+    (void)w;
+    return NULL;
+#endif
+}
 struct wl_surface *pu_window_layer_surface(PuWindow *w)
 {
 #ifdef PU_LAYER_SHELL

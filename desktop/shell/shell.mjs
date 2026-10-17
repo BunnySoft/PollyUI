@@ -51,15 +51,16 @@ export function createDesktopShell({ host = window, configuration, report = cons
   let lastServicePoll = 0;
   let timer = null;
   let menu = null;
-  let pickerEnabled = false, previousPickerChanged = null, pickerScope = null;
+  let pickerEnabled = false, previousPickerChanged = null, pickerScope = null, pickerChanged = null;
+  let pickerTheme = null, pickerOutputs = '';
   function configurePicker(enabled) {
     pickerEnabled = false;
     if (typeof native?.layoutPickerCapability !== 'function' || native.layoutPickerCapability() !== true) return;
     native.enableLayoutPicker(enabled);
     pickerEnabled = enabled;
   }
-  const pickerChanged = () => {
-    if (!running || !pickerScope) return;
+  function receivePicker(scope) {
+    if (!running || scope !== pickerScope) return;
     try {
       const offer = native.layoutPickerOffer();
       if (menu?.mode === 'layout-picker' && menu.pickerOffer?.token !== offer?.token) closeMenu();
@@ -74,7 +75,7 @@ export function createDesktopShell({ host = window, configuration, report = cons
       openMenu(output.id, 'layout-picker', target.id, { pickerOffer: offer });
     } catch (failure) { windowFailure(failure); errorKind = 'placement'; }
     if (typeof previousPickerChanged === 'function') previousPickerChanged();
-  };
+  }
   let settingsBridge = null, settingsReady = null, settingsStartupError = null, settingsScope = {};
   let appearanceRevision = 0;
   const materialSource = createMaterialSource({
@@ -696,8 +697,6 @@ export function createDesktopShell({ host = window, configuration, report = cons
 
   function reconcile(nextTheme, persist, filesEnabled = themeFilesEnabled) {
     const theme = getDesktopTheme(nextTheme);
-    if (menu?.mode === 'layout-picker') closeMenu();
-    if (pickerEnabled) configurePicker(false);
     const regional = theme.panel.kind === 'dock' && theme.panel.regionalBackdrop;
     if (regional && (typeof native?.backdropCapability !== 'function' ||
         native.backdropCapability() !== true || typeof native?.configureAppearance !== 'function'))
@@ -708,6 +707,12 @@ export function createDesktopShell({ host = window, configuration, report = cons
       throw new Error('The active compositor does not support paired regional Shell backdrops (appearance v8)');
     preflightBodyFont(theme);
     const outputs = host.displays();
+    const pickerSignature = JSON.stringify(outputs);
+    const pickerReconfigured = pickerTheme !== theme || pickerOutputs !== pickerSignature;
+    if (pickerReconfigured) {
+      if (menu?.mode === 'layout-picker') closeMenu();
+      if (pickerEnabled) configurePicker(false);
+    }
     const staged = [];
     const plans = [];
     const previousAppearance = compositorAppearance, previousTheme = appliedTheme ?? getDesktopTheme(themeId);
@@ -810,7 +815,11 @@ export function createDesktopShell({ host = window, configuration, report = cons
       if (previousAsset && previousAsset !== asset) releaseThemeAsset(previousAsset);
     }
     lastFailure = '';
-    configurePicker(theme.window.layoutPicker === true);
+    if (pickerReconfigured) {
+      configurePicker(theme.window.layoutPicker === true);
+      pickerTheme = theme;
+      pickerOutputs = pickerSignature;
+    }
     if (publicationFailure) throw publicationFailure;
   }
 
@@ -1872,6 +1881,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       running = true;
       pickerScope = {};
       if (typeof native?.layoutPickerOffer === 'function') {
+        const scope = pickerScope;
+        pickerChanged = () => receivePicker(scope);
         previousPickerChanged = native.onLayoutPickerChanged;
         native.onLayoutPickerChanged = pickerChanged;
       }
@@ -1924,6 +1935,8 @@ export function createDesktopShell({ host = window, configuration, report = cons
       }
       pickerScope = null;
       if (native?.onLayoutPickerChanged === pickerChanged) native.onLayoutPickerChanged = previousPickerChanged;
+      pickerChanged = null;
+      pickerTheme = null; pickerOutputs = '';
       running = false;
       backdropScope = null; materialError = '';
       compositorAppearance = null;

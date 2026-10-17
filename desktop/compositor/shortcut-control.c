@@ -1,7 +1,6 @@
 #include "shortcut-control.h"
 #include "server.h"
 #include "workspace.h"
-#include "workspace.h"
 #include "input-method.h"
 #include "polly-shortcuts-server.h"
 

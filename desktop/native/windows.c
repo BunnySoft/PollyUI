@@ -964,8 +964,10 @@ static JSValue open_window_menu(JSContext *ctx, JSValueConst self, int argc, JSV
     if (picker && (!control.picker_capability || token != control.picker_token ||
         window->id != control.picker_target || polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 4))
         return JS_ThrowTypeError(ctx, "Native caption picker requires a live paired workspace v4 grant");
+    uint32_t target_id = window->id;
     PuWindow *owned = pu_gui_window_from_value(ctx, argv[1]);
-    struct wl_surface *surface = owned ? pu_window_layer_surface(owned) : NULL;
+    struct wl_surface *surface = owned ? (picker ? pu_window_layer_surface_peek(owned) :
+        pu_window_layer_surface(owned)) : NULL;
     if (!surface) return JS_HasException(ctx) ? JS_EXCEPTION :
         JS_ThrowTypeError(ctx, "A live owned layer Window is required");
     if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
@@ -973,6 +975,13 @@ static JSValue open_window_menu(JSContext *ctx, JSValueConst self, int argc, JSV
         control.placement_serial, token, surface);
     else polly_workspace_toplevel_v1_open_menu(window->workspace_handle, control.placement_serial, surface);
     if (!finish_placement_request(ctx)) return JS_EXCEPTION;
+    if (picker) {
+        PuWindow *current = pu_gui_window_from_value(ctx, argv[1]);
+        if (!current || pu_window_layer_surface_peek(current) != surface ||
+            control.picker_token != token || control.picker_target != target_id)
+            return JS_HasException(ctx) ? JS_EXCEPTION :
+                JS_ThrowTypeError(ctx, "Caption picker Window or grant retired during registration");
+    }
     if (!control.placement_epoch) return JS_ThrowInternalError(ctx, "Invalid window menu epoch");
     JS_FreeValue(ctx, control.placement_menu);
     control.placement_menu = JS_DupValue(ctx, argv[1]);

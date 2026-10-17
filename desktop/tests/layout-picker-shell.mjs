@@ -1,6 +1,7 @@
 import { createDesktopShell } from './desktop/shell/shell.mjs';
 import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
+import { runtimeBuild } from './desktop/client/settings-contract.mjs';
 
 const [mode] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -22,10 +23,16 @@ function denied(action) {
   check(!!error, 'public connection cannot access native caption grants');
 }
 async function run() {
+  const build = runtimeBuild();
+  check(/^[0-9a-f]{40}$/.test(build.revision) && build.sourceDirty === false, 'fresh GUI embeds a clean actual source revision');
+  console.log('PICKER_GUI_BUILD ' + JSON.stringify(build));
   if (mode === 'denied') {
     denied(() => desktop.layoutPickerCapability());
     denied(() => desktop.enableLayoutPicker(true));
     denied(() => desktop.openLayoutPicker(1, window));
+    const witness = window.create({ title: 'Picker.public.denied', width: 160, height: 80 });
+    window.close();
+    await until(() => witness.closed, 'public denial witness acknowledged');
     window.quit();
     return;
   }
