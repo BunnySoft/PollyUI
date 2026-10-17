@@ -677,6 +677,17 @@ Settings workflow also exposed and corrected a real strict-DTO mismatch: About
 now accepts and validates the already-published decoration-health state without
 inventing readiness or extending the UI.
 
+The original full window and workspace Shell workflows also pass through both
+initial and reconnect phases. Their assertions now follow the retained public
+search text/editing behavior and the real exact-app-ID task groups on both
+outputs, rather than private text-input child indexes or obsolete Dock window
+IDs. A single-window Mac group activates/restores; actual native minimize remains
+covered separately. Four frame-submission negatives run in the existing
+independent windowless decorator lifecycle fixture using production painting.
+The Shell still has neither its renderer queue nor its frame-submission API.
+No production code or policy changed for this fixture maintenance, and it does
+not establish original-OS pixels, physical hardware or complete E22 qualification.
+
 Mac-style Docks also provide bounded pointer-distance magnification through
 optional `icons.dockHoverPercent` (integer 100-125, missing/100 disables) and
 `icons.dockMagnificationRadius` (integer 0-3, missing/0 preserves the previous
