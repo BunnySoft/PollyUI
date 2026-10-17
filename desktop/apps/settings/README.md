@@ -113,6 +113,10 @@ and reopens Settings through the actual panels on both outputs, checking the own
 Document's first press/release and owned-process handshake. It waits for frame-driven
 control geometry to settle before sampling coordinates, never retries the click or
 changes the ordinary client's native activation policy.
+Independent control sampling also retains the owned PID/generation, page, appearance
+revision and enabled node identity across layout frames. Only the test probe's exact
+target-specific not-yet-mounted error is a mount-readiness condition; other remote
+errors and malformed replies fail normally.
 
 ## Opaque wallpaper-derived client base
 

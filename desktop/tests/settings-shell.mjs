@@ -66,7 +66,9 @@ async function settledRect(read, message) {
   for (;;) {
     await painted();
     const current = await read();
-    if (previous && ['x', 'y', 'width', 'height'].every(key => current[key] === previous[key]))
+    if (current?.width > 0 && current.height > 0 && previous &&
+        ['x', 'y', 'width', 'height', 'page', 'pid', 'generation', 'revision', 'nodeIdentity', 'enabled']
+          .every(key => current[key] === previous[key]))
       return current;
     if (Date.now() > deadline) {
       diagnose(message);
@@ -132,16 +134,29 @@ async function openSettingsFromPanel(panel) {
   check(shell.getSettingsState().pid > 0, 'native first-click activates the real owned Settings process');
 }
 async function appClick(id) {
-  await until(async () => {
-    if ((await query({ op: 'state' })).busy) return false;
-    try { return (await query({ op: 'control', id })).enabled; } catch { return false; }
-  }, 'independent Settings control ready: ' + id);
-  await painted();
-  let rect = await query({ op: 'control', id });
-  await painted(); rect = await query({ op: 'control', id });
+  const owner = shell.getSettingsState();
+  const rect = await settledRect(async () => {
+    const state = await query({ op: 'state' }), current = shell.getSettingsState();
+    if (!current.connected || current.pid !== owner.pid || current.generation !== owner.generation ||
+        state.pid !== owner.pid || state.closed || state.unavailable)
+      throw new Error('Independent Settings owner changed before the native gesture: ' + id);
+    if (state.busy) return null;
+    const control = await findAppControl(id);
+    return control?.enabled ? { ...control, page: state.page, pid: state.pid,
+      generation: current.generation, revision: state.appearance?.revision } : null;
+  }, 'independent Settings control ready and geometry settled: ' + id);
   check(rect.width > 0 && rect.height > 0, 'Independent Settings control laid out: ' + id);
   console.log('SETTINGS_CONTROL: ' + JSON.stringify({ id, ...rect }));
   await signal(`fixture-xdg-click ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 Settings`);
+}
+async function findAppControl(id) {
+  try { return await query({ op: 'control', id }); }
+  catch (error) {
+    // Only the probe's exact not-yet-mounted response is a readiness condition.
+    if (error.code === 'ERR_DBUS_REMOTE' && error.dbusName === 'org.pollyui.Settings.TestError' &&
+        error.message === 'Error: Missing independent Settings control: ' + id) return null;
+    throw error;
+  }
 }
 async function capture(settings, name) {
   await painted();
@@ -449,7 +464,7 @@ async function run() {
     const contentId = { displays: 'shell-displays', keyboard: 'shell-shortcuts', audio: 'shell-audio-settings' }[page];
     if (mode === 'audio' && page === 'audio') await audio(settings);
     else if (['displays', 'keyboard'].includes(page))
-      await until(async () => (await query({ op: 'control', id: contentId })).width > 0,
+      await until(async () => (await findAppControl(contentId))?.width > 0,
         'independent Settings mounts actual ' + page + ' controls');
     await capture(settings, page);
     check(!surfaces.some(item => item.title === 'Desktop control panel'), 'no complete settings page is delegated to Shell');
