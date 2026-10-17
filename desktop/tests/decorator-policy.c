@@ -33,7 +33,7 @@ enum Command { QUERY, ENABLE, PREPARE, COMMIT, CANCEL, PUBLIC_PROBE, DUPLICATE, 
     PAIR_HEIGHT_769, PREPARE_PAIR, STAGE_PANEL, STAGE_START, STAGE_STANDARD, NEW_PANEL_ROLE,
     V8_STANDARD_SCHEMA, V9_OLD_SCHEMA, RECOMMIT_PANEL, RECOMMIT_START, UNMAP_PANEL, COMMIT_OLD,
     PREPARE_EIGHT, PREPARE_NINE };
-struct Reply { uint32_t state, bootstrap, accepted, serial, globals; bool denied; };
+struct Reply { uint32_t state, bootstrap, accepted, serial, globals, retired; bool denied; };
 struct PairSurface {
     struct wl_surface *surface;
     struct zwlr_layer_surface_v1 *layer;
@@ -88,12 +88,21 @@ static void status(void *data, struct polly_appearance_v1 *object, uint32_t stat
 }
 static void capability(void *data, struct polly_appearance_v1 *object, uint32_t supported)
 { (void)object; ((struct Probe *)data)->reply.accepted = supported; }
+static void retired(void *data, struct polly_appearance_v1 *object,
+    uint32_t serial, uint32_t target, uint32_t role, const char *message)
+{
+    (void)object;
+    struct Probe *probe = data;
+    probe->reply.retired++;
+    fprintf(stderr, "POLICY_RETIREMENT serial=%u target=%u role=%u %s\n", serial, target, role, message);
+}
 static const struct polly_appearance_v1_listener listener = {
     .prepared = prepared, .applied = prepared, .renderer_enabled = enabled, .render_request = requested,
     .frame_result = result, .render_cancelled = cancelled, .renderer_status = status,
     .backdrop_prepared = prepared, .backdrop_capability = capability,
     .shell_backdrop_capability = capability,
     .start_backdrop_capability = capability,
+    .shell_backdrop_retired = retired,
 };
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version)
 {
@@ -463,7 +472,7 @@ static bool paired_policy(const char *self, int publisher, struct Reply *p)
     CHECK(command(publisher, PREPARE_PAIR, p) && p->accepted);
     CHECK(command(publisher, STAGE_PANEL, p) && p->accepted);
     CHECK(command(publisher, STAGE_STANDARD, p) && p->accepted);
-    CHECK(command(publisher, UNMAP_PANEL, p));
+    CHECK(command(publisher, UNMAP_PANEL, p) && p->retired);
     CHECK(command(publisher, COMMIT, p) && !p->accepted);
     CHECK(command(publisher, CANCEL, p));
     CHECK(wl_list_empty(&desktop.scene->backdrops));

@@ -127,7 +127,11 @@ async function modern() {
     theme: { id: mode === 'modern-old' ? 'xp' : 'modern', filesEnabled: false } });
   const shell = createDesktopShell({ configuration, host }).start();
   const outputs = window.displays();
-  if (standard) outputs.sort((a, b) => a.height - b.height);
+  if (standard) {
+    outputs.sort((a, b) => a.height - b.height);
+    check(outputs.length === 2 && outputs[0].width === 1280 && outputs[0].height === 720 &&
+      outputs[1].width === 1280 && outputs[1].height === 800, 'two real output identities are exactly 1280x720 and 1280x800');
+  }
   const currentMenu = () => created.findLast(surface =>
     surface.options.title.startsWith('PollyShell.menu.') && !surface.window.closed);
   async function signal(name) {
@@ -201,7 +205,7 @@ async function modern() {
       'old v8 explicitly rejects new opt-in before resources, preferences, appearance or foreground mutation');
     let rejected = false;
     try {
-      const panels = shell.getSurfaces().filter(surface => surface.kind === 'panel');
+      const panels = outputs.map(output => shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output === output.id));
       desktop.configureAppearance(theme, encodeDecorationLayout(theme),
         [...panels.map(surface => [surface.window, [3, 2, 0, 8, 0xf3f3f3, 72], surface.window]),
           [menu.window, [4, 3, 8000, 16, 0xf3f3f3, 72], panels[0].window]]);
@@ -248,7 +252,7 @@ async function modern() {
   check(root(menu).style.backgroundColor === 'transparent', 'Start clears only background after native transaction success');
   await signal('backdrop-check start');
   const theme = optional.themes.find(theme => theme.id === 'modern');
-  const panels = shell.getSurfaces().filter(surface => surface.kind === 'panel');
+  const panels = outputs.map(output => shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output === output.id));
   const material = [standard ? 4 : 3, 3, 8000, standard ? 16 : 12, 0xf3f3f3, 72];
   const panelTargets = panels.map(surface => [surface.window, [3, 2, 0, 8, 0xf3f3f3, 72], surface.window]);
   for (const targets of [
@@ -311,9 +315,9 @@ async function modern() {
     const search = menu.window.document.getElementById('shell-app-search');
     search.focus();
     await signal('backdrop-key 30');
-    await until(() => search.value === 'a', 'real native text edits the existing production Start search');
+    await until(() => search.textContent === 'a', 'real native text edits the existing production Start search');
     await signal('backdrop-key 14');
-    await until(() => search.value === '', 'real Backspace edits the same existing search input');
+    await until(() => search.textContent === '', 'real Backspace edits the same existing search input');
     check(menu.window === sameWindow && !menu.window.closed && root(menu).style.backgroundColor === 'transparent',
       'search edit keeps the same actual full-height Start and opaque foreground');
   }
