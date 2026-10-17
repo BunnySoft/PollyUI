@@ -125,8 +125,14 @@ Three unpacked input pixels initialize a sliding register window; each tap
 loads and converts only the next four-byte packed pixel, broadcasts its
 coefficient once, then updates all four independent sums in original tap order.
 Only the unweighted input conversion is reused, never a weighted sum or an
-unrounded horizontal result. Rotation happens after consuming the current tap;
-there is no next-tap prefetch. Complete blocks alone use this path, with the
+unrounded horizontal result. The tap main loop now expands four ordered phases:
+the next converted pixel replaces cached channels 3, 0, 1 and 2 respectively,
+so the cache names naturally return to the initial phase without register
+rotation after each tap. Each phase still multiplies and adds its own coefficient
+to each output in original order. The main loop requires all four taps to exist;
+the last one to three taps use the previous single-tap rotation loop. A three-tap
+kernel skips the expanded loop entirely. There is no next-tap prefetch.
+Complete output blocks alone use this path, with the
 original single-pixel SSE2 loops handling the last one to three columns or rows.
 Horizontal blocks write only valid intermediate columns. Vertical blocks read
 only those packed columns and write four valid destination rows.
@@ -137,8 +143,8 @@ original `lroundf` calls and constant byte shifts rather than a runtime channel
 index/packing loop; vertical lanes retain the original component mapping and
 per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
 overhead without a workload threshold or a different short-kernel algorithm.
-The sliding-input change has a separate source pin and needs a rebuilt matched
-SDK/core. It currently has only production-object/static qualification;
+The four-phase change has a separate source pin and needs a rebuilt matched
+SDK/core. This candidate is limited to production-object/static qualification;
 runtime exactness, bounds and performance require new evidence, not the earlier
 implementation's results.
 There is no SIMD-width neighboring pixel read, approximate rounding, new
@@ -147,7 +153,7 @@ channel, ISA flag, fast-math/FMA policy change or ABI change.
 The compile-time fallback retains the original scalar Gaussian source, not
 the earlier four-pixel scalar experiment or a different material. The published
 single-output SSE2 and frozen eight-output predecessor passed the exact-byte
-fixture, but those results do not qualify the new sliding-input path or other
+fixture, but those results do not qualify the new four-phase path or other
 architectures, compilers or flags.
 A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
 
@@ -161,6 +167,18 @@ noise waiver nor a rerun. A future pair must use the same top-level CMake
 entry and explicit C standard/extensions for both roles, and compare actual
 compiler flags for every core translation unit and the scene test driver
 before collecting samples.
+
+The subsequent single-tap sliding-input predecessor completed exact-byte math,
+guard pages, a separately qualified isolated scene resource contract and the
+full same-ROOT compiler pairing precheck. Its one valid nine-case comparison
+against published single-output SSE2 still remained **HOLD**: 640x640 prepare
+was 1.8633085x faster, and 640x660 moving build was 1.9946530x, both below the
+required 2x for those stages. Five small-case stages also had positive median
+regressions. No rounding, tolerance, noise waiver or rerun changes that result.
+Its earlier combined CTest scene `ENOSPC` first failure remains separately
+retained with unknown cause; the isolated scene pass is not a diagnosis or a
+retroactive passing combined run. None of this predecessor evidence qualifies
+the new four-phase candidate's mathematics, runtime or performance.
 
 The original native measurement was about 294ms. Earlier standard-C candidates
 did not achieve the twofold goal and remain independent frozen experiments.
