@@ -306,3 +306,18 @@ the existing dynamic bubble walk reaches it.
 without suppressing listeners. Exceptions are explicitly reported and do not
 silently suppress subsequent listeners. Registration allocation or identity
 exhaustion throws rather than claiming success while dropping a callback.
+
+## Native Wayland window contract
+
+`gui-wayland-window-contract` requires `PU_BUILD_DESKTOP`, `PU_BUILD_LAUNCHER`
+and `PU_DESKTOP_SERVICES`: the fixture starts the production `pollyui --decorator`
+as an independent windowless renderer. The playground remains a pure GUI client.
+Without the launcher/services this SSD input contract is explicitly not registered;
+bare compositor/CSD operation does not supply interactive server-side frames.
+
+The original normal, tooltip, no-dialog, native-lifetime and close-tree modes keep
+their assertions and deadlines. Resize and caption clicks wait on the existing
+decoration readiness fence and a presented button box. Resize coordinates come from
+the current client geometry and decoration inset, inside the real border rather
+than on its exclusive outer edge. No hit-test search, fixed sleep, fallback painter
+or global activation click-through is used.

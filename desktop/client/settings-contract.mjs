@@ -145,8 +145,8 @@ export function parseAbout(text) {
   fields(value, ['version', 'services', 'outputs', 'themeId', 'applicationId', 'profiles', 'build'], 'about snapshot');
   if (value.version !== 1) throw new TypeError('Unsupported Settings snapshot version');
   validateBuild(value.build);
-  fields(value.services, ['inputMethod', 'audio', 'message', 'error'], 'service snapshot');
-  for (const key of ['inputMethod', 'audio'])
+  fields(value.services, ['inputMethod', 'audio', 'decorations', 'message', 'error'], 'service snapshot');
+  for (const key of ['inputMethod', 'audio', 'decorations'])
     if (!['unavailable', 'disabled', 'starting', 'ready', 'failed'].includes(value.services[key]))
       throw new TypeError('Invalid session service state');
   boundedText(value.services.message, 16384, 'service message');

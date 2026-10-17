@@ -6,6 +6,7 @@ const { BUILTIN_THEME_CATALOG } = await import('./desktop/shell/themes.mjs');
 const { parseAppearance, parseAbout, parseMaterialSource, SETTINGS_APP_ID, runtimeBuild, buildLabel } = await import('./desktop/client/settings-contract.mjs');
 const { createSettingsClient } = await import('./desktop/client/settings.mjs');
 const { createMaterialSource } = await import('./desktop/shell/material-source.mjs');
+const { createSessionMonitor } = await import('./desktop/shell/health.mjs');
 const { parseThemeFile, applyThemeOverrides } = await import('./desktop/shared/ui/theme-schema.mjs');
 const { createSettingsController } = await import('./desktop/apps/settings/logic/controller.mjs');
 const { createSettingsService } = await import('./desktop/shell/settings-service.mjs');
@@ -24,7 +25,7 @@ const { parseDisplays, parseAudio, parseKeyboard, displayDraft } = await import(
 const { fixtureShortcuts } = await import('./desktop/tests/configuration-memory.mjs');
 const appearance = () => ({ version: 1, revision: 1, catalogRevision: 1, themeId: 'xp',
   catalog: BUILTIN_THEME_CATALOG, themeFilesEnabled: true, themeFilesAvailable: true, status: '', error: '', build: runtimeBuild() });
-const about = () => ({ version: 1, services: { inputMethod: 'disabled', audio: 'ready', message: '', error: '' },
+const about = () => ({ version: 1, services: { inputMethod: 'disabled', audio: 'ready', decorations: 'ready', message: '', error: '' },
   outputs: 2, themeId: 'xp', applicationId: 'org.pollyui.shell', build: runtimeBuild(),
   profiles: { display: 'Confirmed layout saved', audio: 'Saved audio profile', workspace: 'Saved workspace profile' } });
 const tick = () => new Promise(resolve => setTimeout(resolve, 20));
@@ -724,7 +725,27 @@ test('versioned business snapshots reject unknown fields, unsafe data and invent
     assert.throws(() => parseAppearance(JSON.stringify(value)));
   }
   assert.throws(() => parseAbout(JSON.stringify({ ...about(), services: { ...about().services, audio: 'invented' } })));
+  for (const change of [
+    services => { delete services.decorations; },
+    services => { services.decorations = 'invented'; },
+    services => { services.extra = 'ready'; },
+  ]) {
+    const value = about(); change(value.services);
+    assert.throws(() => parseAbout(JSON.stringify(value)));
+  }
   assert.throws(() => parseAppearance('x'.repeat(1024 * 1024 + 1)));
+});
+test('About accepts the production session monitor snapshot without dropping decoration health', () => {
+  let decorations = 'ready';
+  const monitor = createSessionMonitor({ native: {
+    sessionServices: () => ({ inputMethod: 'disabled', decorations, decorationMessage: '' }),
+    audioAvailable: false,
+  }, report() {} });
+  assert.equal(parseAbout(JSON.stringify({ ...about(), services: monitor.snapshot() })).services.decorations, 'unavailable');
+  for (decorations of ['disabled', 'starting', 'ready', 'failed']) {
+    const services = monitor.refresh();
+    assert.deepEqual(parseAbout(JSON.stringify({ ...about(), services })).services, services);
+  }
 });
 test('standalone controller acknowledges writes, shows real failures, and never replays uncertain operations', async () => {
   const calls = [], reports = [];

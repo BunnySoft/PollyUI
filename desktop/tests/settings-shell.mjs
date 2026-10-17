@@ -60,6 +60,21 @@ async function until(predicate, message) {
 async function painted() {
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
+async function settledRect(read, message) {
+  const deadline = Date.now() + 15000;
+  let previous = null;
+  for (;;) {
+    await painted();
+    const current = await read();
+    if (previous && ['x', 'y', 'width', 'height'].every(key => current[key] === previous[key]))
+      return current;
+    if (Date.now() > deadline) {
+      diagnose(message);
+      throw new Error('Timed out: ' + message);
+    }
+    previous = current;
+  }
+}
 async function signal(title) {
   const marker = window.create({ title, layer: 'overlay', width: 1, height: 1,
     anchors: ['top', 'right'], exclusiveZone: -1 });
@@ -67,13 +82,19 @@ async function signal(title) {
   marker.onclose = () => { closed = true; };
   await until(() => closed, title);
 }
-async function click(id) {
+async function click(id, owner = null) {
   await painted();
-  const surface = surfaces.findLast(item => !item.window.closed && item.window.document.getElementById(id));
-  if (!surface) return appClick(id);
+  const surface = surfaces.findLast(item => !item.window.closed && (!owner || item.window === owner) &&
+    item.window.document.getElementById(id));
+  if (!surface) {
+    if (owner) throw new Error('Missing control in the requested native window: ' + id);
+    return appClick(id);
+  }
   const node = surface?.window.document.getElementById(id);
   check(node?.offsetWidth > 0, 'Settings native control laid out: ' + id);
-  let rect = node.getBoundingClientRect();
+  // Frame callbacks can themselves reposition a control; sample after that layout
+  // has reached a subsequent frame, without retrying the physical gesture.
+  let rect = await settledRect(() => node.getBoundingClientRect(), 'native control geometry: ' + id);
   const bounds = surface.window.document.body.getBoundingClientRect();
   for (let parent = node.parentNode; parent; parent = parent.parentNode) {
     if (parent.style.overflow !== 'scroll') continue;
@@ -87,6 +108,28 @@ async function click(id) {
     'Settings native control is inside the viewport: ' + id);
   const verb = surface.layer ? 'fixture-click' : 'fixture-xdg-click';
   await signal(`${verb} ${++serial} ${Math.floor(rect.x + rect.width / 2)} ${Math.floor(rect.y + rect.height / 2)} 0 ${surface.title}`);
+}
+async function openSettingsFromPanel(panel) {
+  await until(() => panel.window.document.getElementById('shell-panel-settings')?.offsetWidth > 0, 'Settings taskbar entry');
+  const panelDocument = panel.window.document, gesture = [];
+  const record = event => {
+    let target = event.target;
+    while (target && target.id !== 'shell-panel-settings') target = target.parentNode;
+    if (!target) return;
+    check(event.target.ownerDocument === panelDocument && event.currentTarget === panelDocument.body,
+      'Settings entry receives native ' + event.type + ' in its own panel Document');
+    gesture.push(event.type);
+  };
+  for (const type of ['mousedown', 'mouseup']) panelDocument.body.addEventListener(type, record);
+  try {
+    await click('shell-panel-settings', panel.window);
+    await until(() => gesture.length >= 2, 'native Settings entry gesture delivered');
+  } finally {
+    for (const type of ['mousedown', 'mouseup']) panelDocument.body.removeEventListener(type, record);
+  }
+  check(gesture.join(',') === 'mousedown,mouseup', 'one native Settings entry press/release, without a retry');
+  await until(() => shell.getSettingsState().connected, 'Shell-owned independent Settings handshake');
+  check(shell.getSettingsState().pid > 0, 'native first-click activates the real owned Settings process');
 }
 async function appClick(id) {
   await until(async () => {
@@ -321,9 +364,9 @@ async function run() {
     await signal('fixture-success'); queryClient.close(); shell.stop(); window.quit(); return;
   }
   const panel = shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output === output);
-  await until(() => panel.window.document.getElementById('shell-panel-settings')?.offsetWidth > 0, 'Settings taskbar entry');
-  await click('shell-panel-settings');
-  await until(() => shell.getSettingsState().connected, 'Shell-owned independent Settings handshake');
+  await until(() => desktop.windows().some(item => item.appId === 'org.pollyui.settings-survivor'),
+    'ordinary survivor maps before the panel gesture');
+  await openSettingsFromPanel(panel);
   await until(async () => {
     try { return (await query({ op: 'state' })).appearance !== null; } catch { return false; }
   }, 'independent Settings test probe');
@@ -449,7 +492,9 @@ async function run() {
   diagnose('WM Settings onclose acknowledged');
   await signal('fixture-settings-state ' + ++serial + ' 0');
   check(shell.getState().running && !exits.has(survivor), 'Settings close keeps Shell and ordinary PID alive');
-  await shell.showSystemSettings(output, 'appearance');
+  const secondPanel = shell.getSurfaces().find(surface => surface.kind === 'panel' && surface.output !== output);
+  check(secondPanel, 'another output has its own native Settings entry');
+  await openSettingsFromPanel(secondPanel);
   const reopened = independent, reopenedPid = shell.getSettingsState().pid;
   check(reopenedPid !== firstPid, 'closed Settings reopens in a new owned PID/generation');
   await signal('fixture-settings-state ' + ++serial + ' 1');
