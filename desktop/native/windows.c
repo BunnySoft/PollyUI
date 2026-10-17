@@ -494,7 +494,7 @@ static void global(void *data, struct wl_registry *registry, uint32_t name, cons
             control.failed = control.changed = 1;
     } else if (!control.workspace_toplevels && !strcmp(interface, "polly_workspace_toplevel_manager_v1")) {
         control.workspace_toplevels = wl_registry_bind(registry, name, &polly_workspace_toplevel_manager_v1_interface,
-            version < 4 ? version : 4);
+            version < 5 ? version : 5);
         if (!control.workspace_toplevels ||
             polly_workspace_toplevel_manager_v1_add_listener(control.workspace_toplevels,
                 &workspace_control_listener, NULL) < 0) control.failed = control.changed = 1;
@@ -872,6 +872,12 @@ static JSValue windows(JSContext *ctx, JSValueConst self, int argc, JSValueConst
             !property(ctx, item, "fullscreen", JS_NewBool(ctx, window->state & 8))) {
             JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
         }
+        if (!property(ctx, item, "cascadeSupported", JS_NewBool(ctx,
+            window->workspace_handle && control.workspace_toplevels &&
+            polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) >= 5 &&
+            polly_workspace_toplevel_v1_get_version(window->workspace_handle) >= 5))) {
+            JS_FreeValue(ctx, item); JS_FreeValue(ctx, array); return JS_EXCEPTION;
+        }
         if (window->placement_ready) {
             const char *placements[] = { "floating", "left", "right" };
             if (!property(ctx, item, "placement", JS_NewString(ctx, placements[window->placement])) ||
@@ -1080,14 +1086,17 @@ static JSValue close_window_menu(JSContext *ctx, JSValueConst self, int argc, JS
     return JS_UNDEFINED;
 }
 
-static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int floating)
+static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValueConst *argv, int command)
 {
     (void)self;
-    if (argc != (floating ? 2 : 3)) return JS_ThrowTypeError(ctx, "Window, placement and current menu epoch are required");
+    if (argc != (command ? 2 : 3)) return JS_ThrowTypeError(ctx, "Window, placement and current menu epoch are required");
     struct DesktopWindow *window = placement_window(ctx, argv[0]);
     if (!window) return JS_EXCEPTION;
+    if (command == 2 && (polly_workspace_toplevel_v1_get_version(window->workspace_handle) < 5 ||
+        polly_workspace_toplevel_manager_v1_get_version(control.workspace_toplevels) < 5))
+        return JS_ThrowTypeError(ctx, "Window cascade is unsupported by this provider; paired workspace v5 is required");
     uint32_t placement = 0, epoch;
-    if (!floating) {
+    if (!command) {
         if (!JS_IsString(argv[1])) return JS_ThrowTypeError(ctx, "Placement must be left or right");
         size_t length;
         const char *side = JS_ToCStringLen(ctx, &length, argv[1]);
@@ -1097,14 +1106,15 @@ static JSValue place_window(JSContext *ctx, JSValueConst self, int argc, JSValue
         JS_FreeCString(ctx, side);
         if (!placement) return JS_ThrowTypeError(ctx, "Placement must be left or right");
     }
-    if (!menu_epoch(ctx, argv[floating ? 1 : 2], &epoch)) return JS_EXCEPTION;
+    if (!menu_epoch(ctx, argv[command ? 1 : 2], &epoch)) return JS_EXCEPTION;
     if (epoch != control.menu_epoch || window->id != control.menu_target)
         return JS_ThrowTypeError(ctx, "Window menu is closed or stale");
     PuWindow *owned = pu_gui_window_from_value(ctx, control.placement_menu);
     if (!owned || !pu_window_layer_surface(owned)) return JS_HasException(ctx) ? JS_EXCEPTION :
         JS_ThrowTypeError(ctx, "Window menu is closed");
     if (!begin_placement_request(ctx, window)) return JS_EXCEPTION;
-    polly_workspace_toplevel_v1_place(window->workspace_handle, control.placement_serial, epoch, placement);
+    if (command == 2) polly_workspace_toplevel_v1_cascade(window->workspace_handle, control.placement_serial, epoch);
+    else polly_workspace_toplevel_v1_place(window->workspace_handle, control.placement_serial, epoch, placement);
     if (!finish_placement_request(ctx)) return JS_EXCEPTION;
     if (control.placement_epoch != epoch) {
         control.placement_unknown = true;
@@ -1272,7 +1282,9 @@ int pu_desktop_windows_install(JSContext *ctx, JSValueConst api)
         !property(ctx, api, "closeWindowMenu", JS_NewCFunction(ctx, close_window_menu, "closeWindowMenu", 1)) ||
         !property(ctx, api, "tileWindow", JS_NewCFunctionMagic(ctx, place_window, "tileWindow", 3, JS_CFUNC_generic_magic, 0)) ||
         !property(ctx, api, "restoreFloatingWindow", JS_NewCFunctionMagic(ctx, place_window,
-            "restoreFloatingWindow", 2, JS_CFUNC_generic_magic, 1))) return 0;
+            "restoreFloatingWindow", 2, JS_CFUNC_generic_magic, 1)) ||
+        !property(ctx, api, "cascadeWindows", JS_NewCFunctionMagic(ctx, place_window,
+            "cascadeWindows", 2, JS_CFUNC_generic_magic, 2))) return 0;
     if (!property(ctx, api, "configureAppearance", JS_NewCFunction(ctx, configure_appearance, "configureAppearance", 2))) return 0;
     if (!property(ctx, api, "backdropCapability", JS_NewCFunction(ctx, backdrop_capability, "backdropCapability", 0))) return 0;
     if (!property(ctx, api, "shellBackdropCapability",

@@ -52,6 +52,8 @@ struct Tracked {
     bool sent;
     struct wlr_surface *menu;
     struct PuWorkspace *menu_workspace;
+    struct wlr_output *menu_output;
+    bool layout_menu;
     uint32_t menu_epoch, last_serial;
     uint32_t placement, pending, capabilities;
     bool placement_sent;
@@ -800,6 +802,9 @@ static void open_menu(struct wl_client *client, struct wl_resource *resource,
         pu_workspaces_invalidate_menus(desktop, NULL);
         tracked->menu = surface;
         tracked->menu_workspace = desktop->active_workspace;
+        struct wlr_box bounds;
+        tracked->menu_output = pu_desktop_picker_output(view, &bounds);
+        tracked->layout_menu = false;
         epoch = tracked->menu_epoch = ++tracked->state->next_menu_epoch;
     }
     polly_workspace_toplevel_v1_send_result(resource, serial, epoch, !error, error ? error : "");
@@ -843,6 +848,7 @@ static void open_layout_picker(struct wl_client *client, struct wl_resource *res
         other->menu = NULL; other->menu_workspace = NULL; other->menu_epoch = 0;
     }
     tracked->menu = surface; tracked->menu_workspace = state->picker_workspace;
+    tracked->menu_output = state->picker_output; tracked->layout_menu = true;
     tracked->menu_epoch = ++state->next_menu_epoch;
     state->picker_phase = PICKER_REGISTERED;
     polly_workspace_toplevel_v1_send_result(resource, serial, tracked->menu_epoch, 1, "");
@@ -864,6 +870,15 @@ static void close_menu(struct wl_client *client, struct wl_resource *resource, u
     tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
 }
 
+static const char *menu_target(struct Tracked *tracked, uint32_t epoch, struct PuDesktopView **view)
+{
+    *view = window_for(tracked->state, tracked->window);
+    if (!*view || !tracked->menu || !epoch || epoch != tracked->menu_epoch ||
+        tracked->menu_workspace != tracked->state->desktop->active_workspace ||
+        (*view)->workspace != tracked->menu_workspace) return "Window menu epoch is closed or stale";
+    return NULL;
+}
+
 static void place_request(struct wl_client *client, struct wl_resource *resource,
     uint32_t serial, uint32_t epoch, uint32_t placement)
 {
@@ -871,12 +886,29 @@ static void place_request(struct wl_client *client, struct wl_resource *resource
     pu_workspaces_picker_validate(tracked->state->desktop);
     const char *error = menu_request(tracked, client, serial);
     if (!tracked->window) { wlr_log(WLR_DEBUG, "Ignoring placement on a closed toplevel"); return; }
-    struct PuDesktopView *view = window_for(tracked->state, tracked->window);
-    if (!error && (!view || !tracked->menu || !epoch || epoch != tracked->menu_epoch ||
-        tracked->menu_workspace != tracked->state->desktop->active_workspace ||
-        view->workspace != tracked->menu_workspace)) error = "Window menu epoch is closed or stale";
+    struct PuDesktopView *view = NULL;
+    if (!error) error = menu_target(tracked, epoch, &view);
     if (!error && placement > PU_TILE_RIGHT) error = "Unknown window placement";
     if (!error) error = pu_desktop_place_from_menu(view, tracked->menu, (enum PuDesktopTile)placement);
+    if (!error) {
+        tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
+    }
+    polly_workspace_toplevel_v1_send_result(resource, serial, epoch, !error, error ? error : "");
+}
+
+static void cascade_request(struct wl_client *client, struct wl_resource *resource,
+    uint32_t serial, uint32_t epoch)
+{
+    struct Tracked *tracked = wl_resource_get_user_data(resource);
+    const char *error = menu_request(tracked, client, serial);
+    if (!tracked->window) { wlr_log(WLR_DEBUG, "Ignoring cascade on a closed toplevel"); return; }
+    struct PuDesktopView *view = NULL;
+    if (!error) error = menu_target(tracked, epoch, &view);
+    struct wlr_box bounds;
+    if (!error && (tracked->layout_menu || !tracked->menu_output ||
+        pu_desktop_picker_output(view, &bounds) != tracked->menu_output))
+        error = "Cascade requires the ordinary window menu on its original live target display";
+    if (!error) error = pu_desktop_cascade_from_menu(view, tracked->menu);
     if (!error) {
         tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
     }
@@ -887,6 +919,7 @@ static const struct polly_workspace_toplevel_v1_interface tracked_impl = {
     .destroy = destroy_request, .move_to = move_request,
     .open_menu = open_menu, .close_menu = close_menu, .place = place_request,
     .open_layout_picker = open_layout_picker, .dismiss_layout_picker = dismiss_layout_picker,
+    .cascade = cascade_request,
 };
 
 static void get_toplevel(struct wl_client *client, struct wl_resource *resource, uint32_t id,
@@ -903,7 +936,8 @@ static void get_toplevel(struct wl_client *client, struct wl_resource *resource,
     struct Tracked *tracked = calloc(1, sizeof(*tracked));
     if (!tracked) { wl_resource_post_no_memory(resource); return; }
     tracked->resource = wl_resource_create(client, &polly_workspace_toplevel_v1_interface,
-        wl_resource_get_version(resource) >= 4 ? 4 : wl_resource_get_version(resource) >= 3 ? 3 : 1, id);
+        wl_resource_get_version(resource) >= 5 ? 5 : wl_resource_get_version(resource) >= 4 ? 4 :
+        wl_resource_get_version(resource) >= 3 ? 3 : 1, id);
     if (!tracked->resource) { free(tracked); wl_resource_post_no_memory(resource); return; }
     tracked->state = state; tracked->binding = binding;
     tracked->toplevel_manager = resource;
@@ -1051,6 +1085,12 @@ static void output_destroyed(struct wl_listener *listener, void *data)
     struct Output *output = wl_container_of(listener, output, destroy);
     if (output->state->picker_output == output->output)
         pu_workspaces_picker_cancel(output->state->desktop);
+    struct Tracked *tracked;
+    wl_list_for_each(tracked, &output->state->tracked, link)
+        if (tracked->menu_output == output->output) {
+            tracked->menu = NULL; tracked->menu_workspace = NULL; tracked->menu_epoch = 0;
+            tracked->menu_output = NULL;
+        }
     struct Binding *binding;
     wl_list_for_each(binding, &output->state->bindings, link) {
         if (!binding->manager || !binding->group) continue;
@@ -1104,7 +1144,7 @@ bool pu_workspaces_init(struct PuDesktop *desktop)
         if (!desktop->active_workspace) desktop->active_workspace = workspace;
     }
     state->manager = wl_global_create(desktop->display, &ext_workspace_manager_v1_interface, 1, state, bind_manager);
-    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 4, state, bind_toplevels);
+    state->toplevel_manager = wl_global_create(desktop->display, &polly_workspace_toplevel_manager_v1_interface, 5, state, bind_toplevels);
     state->picker_keyboard_grab.notify = picker_keyboard_grab;
     wl_signal_add(&desktop->seat->events.keyboard_grab_begin, &state->picker_keyboard_grab);
     state->picker_pointer_grab.notify = picker_pointer_grab;

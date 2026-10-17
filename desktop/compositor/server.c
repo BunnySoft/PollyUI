@@ -1031,12 +1031,8 @@ const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDeskto
     return placement_box(view, tile, NULL, &box, &bounds, &output);
 }
 
-const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
-    struct wlr_surface *surface, enum PuDesktopTile tile)
+static const char *menu_input_check(struct PuDesktop *desktop, struct wlr_surface *surface)
 {
-    struct PuDesktop *desktop = view->desktop;
-    const char *error = pu_desktop_placement_check(view, tile);
-    if (error) return error;
     struct PuDesktopLayer *layer = desktop->focused_layer;
     struct wlr_box bounds;
     if (!layer || layer->surface->surface != surface || !layer->presented ||
@@ -1047,7 +1043,105 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
         desktop->seat->keyboard_state.focused_surface != surface ||
         !output_box(desktop, layer->surface->output, &bounds))
         return "The registered window menu does not own live input focus";
-    return place_view(view, tile, NULL);
+    return NULL;
+}
+
+const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
+    struct wlr_surface *surface, enum PuDesktopTile tile)
+{
+    const char *error = pu_desktop_placement_check(view, tile);
+    if (!error) error = menu_input_check(view->desktop, surface);
+    return error ? error : place_view(view, tile, NULL);
+}
+
+static bool cascade_application(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    struct wl_client *client = wl_resource_get_client(view->toplevel->resource);
+    return client != desktop->shell_client && !pu_decorator_allowed(desktop, client) &&
+        !pu_input_method_allowed(desktop, client) && !pu_session_lock_allowed(desktop, client) &&
+        !view->toplevel->parent && !(view->dialog && view->dialog->modal);
+}
+
+static bool cascade_candidate(struct PuDesktopView *view, struct wlr_output *output)
+{
+    struct wlr_box actual = presented_view_box(view);
+    return cascade_application(view) && view->mapped && !view->minimized &&
+        pu_workspace_current(view) && view->tree->node.enabled && modal_target(view) == view &&
+        !view->fullscreen && view->mode != PU_DESKTOP_FULLSCREEN &&
+        !view->geometry_pending && !view->resize_pending && !view->drag_restore_pending &&
+        pu_decoration_layout_settled(view) && actual.width > 0 && actual.height > 0 &&
+        output_for_box(view->desktop, &actual) == output;
+}
+
+const char *pu_desktop_cascade_from_menu(struct PuDesktopView *target, struct wlr_surface *surface)
+{
+    struct PuDesktop *desktop = target->desktop;
+    const char *error = placement_admit(target);
+    if (!error) error = menu_input_check(desktop, surface);
+    if (!error && (desktop->stopping || !cascade_application(target) ||
+        target->fullscreen || target->mode == PU_DESKTOP_FULLSCREEN))
+        error = "Cascade requires a live ordinary application outside fullscreen";
+    struct wlr_box actual = presented_view_box(target), work;
+    struct wlr_output *output = output_for_box(desktop, &actual);
+    if (!error && !output_box(desktop, output, &work)) error = "Window has no enabled output";
+    if (error) return error;
+    use_work_area(output, &work);
+    struct CascadePlan { struct PuDesktopView *view; struct wlr_box box, bounds; };
+    size_t count = 0;
+    struct PuDesktopView *view;
+    wl_list_for_each(view, &desktop->views, link) {
+        if (!cascade_candidate(view, output)) continue;
+        if (count == SIZE_MAX / sizeof(struct CascadePlan)) return "Too many windows to cascade";
+        count++;
+    }
+    if (!count) return "No presented application windows are eligible for cascade";
+    struct CascadePlan *plans = calloc(count, sizeof(*plans));
+    if (!plans) return "Cannot allocate the window cascade plan";
+    size_t index = 0;
+    int offset = 0;
+    struct wlr_scene_node *node;
+    /* Bottom-to-top scene order exposes earlier captions without raising or focusing windows. */
+    wl_list_for_each(node, &desktop->windows->children, link) {
+        struct PuDesktopOwner *owner = node->data;
+        view = owner ? owner->view : NULL;
+        if (!view || !cascade_candidate(view, output)) continue;
+        struct wlr_box bounds = work;
+        pu_decoration_inset(view, &bounds, true);
+        struct wlr_box box = view->tile != PU_TILE_NONE ? view->floating_box :
+            view->maximized ? view->restore_box : presented_view_box(view);
+        if (box.width < 1 || box.height < 1) {
+            error = "A cascade window has no presented floating size"; break;
+        }
+        fit_floating(view, &box, &bounds);
+        struct wlr_xdg_toplevel_state *limits = &view->toplevel->current;
+        if (box.width > bounds.width || box.height > bounds.height ||
+            box.width < limits->min_width || box.height < limits->min_height ||
+            (limits->max_width && box.width > limits->max_width) ||
+            (limits->max_height && box.height > limits->max_height) ||
+            bounds.x >= work.x + work.width || bounds.y >= work.y + work.height) {
+            error = "Client size limits or native insets do not fit the cascade work area"; break;
+        }
+        if (offset > bounds.width - box.width || offset > bounds.height - box.height) offset = 0;
+        box.x = bounds.x + offset; box.y = bounds.y + offset;
+        keep_visible(&box, &bounds);
+        if (index == count) { error = "Window cascade scene membership changed"; break; }
+        plans[index++] = (struct CascadePlan){view, box, bounds};
+        offset = offset <= INT_MAX - 24 ? offset + 24 : 0;
+    }
+    if (!error && index != count) error = "Window cascade scene membership changed";
+    if (!error) {
+        for (size_t i = 0; i < count; i++) {
+            view = plans[i].view;
+            view->output = output;
+            view->tile = PU_TILE_NONE;
+            view->maximized = false;
+            configure_view(view, plans[i].box, &plans[i].bounds);
+        }
+        sync_foreign(desktop);
+    }
+    free(plans);
+    return error;
 }
 
 struct wlr_output *pu_desktop_picker_output(struct PuDesktopView *view, struct wlr_box *bounds)
