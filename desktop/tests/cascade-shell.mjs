@@ -102,6 +102,11 @@ async function run() {
     await signal('check');
     check(admissions === 1, 'one real pointer gesture admits exactly one cascade');
     await signal('small');
+    await until(() => {
+      const output = window.displays().find(item => item.x < 0 && item.width === 401 && item.height === 241);
+      return output && shell.getSurfaces().find(item => item.output === output.id && item.kind === 'wallpaper')
+        ?.window.document.body.offsetHeight === 241;
+    }, 'short output processed by GUI and actual Shell surfaces');
     const short = await open(), visited = new Set();
     short.document.body.focus();
     for (let i = 0; i < 26; i++) {
@@ -133,4 +138,4 @@ async function run() {
   await signal('success');
   shell.stop(); keeper.close(); window.quit();
 }
-run().catch(error => { console.error(String(error.stack || error)); window.quit(1); });
+run().catch(error => { console.error(String(error) + '\n' + String(error.stack || '')); window.quit(1); });

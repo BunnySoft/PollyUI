@@ -2093,12 +2093,19 @@ static bool cascade_scene_order(struct PuDesktopView **views, struct wlr_scene_n
 
 static bool cascade_wait_client(struct PuDesktopView *view, enum PuDesktopMode mode)
 {
+    uint64_t id = view->workspace_window;
+    struct wlr_surface *surface = view->toplevel->base->surface;
     uint64_t deadline = milliseconds() + 5000;
     while (milliseconds() < deadline) {
-        if (view->mapped && !view->geometry_pending && !view->resize_pending &&
-            view->mode == mode && view->toplevel->base->surface->buffer &&
-            view->presented_box.width == view->toplevel->base->geometry.width &&
-            view->presented_box.height == view->toplevel->base->geometry.height) return true;
+        struct PuDesktopView *candidate, *current = NULL;
+        wl_list_for_each(candidate, &desktop.views, link)
+            if (candidate == view && candidate->workspace_window == id &&
+                candidate->toplevel->base->surface == surface) { current = candidate; break; }
+        CHECK(current);
+        if (current->mapped && !current->geometry_pending && !current->resize_pending &&
+            current->mode == mode && current->toplevel->base->surface->buffer &&
+            current->presented_box.width == current->toplevel->base->geometry.width &&
+            current->presented_box.height == current->toplevel->base->geometry.height) return true;
         CHECK(pump());
     }
     CHECK(false);
@@ -2125,6 +2132,7 @@ static bool cascade_protocol(const char *wire)
 {
     struct PuDesktopView *views[3];
     CHECK(cascade_clients(wire, views));
+    backdrop_guard_views(views[0], views[1], views[2]);
     struct wlr_output *head = views[0]->output, *peer = NULL;
     struct wlr_output_layout_output *entry;
     wl_list_for_each(entry, &desktop.layout->outputs, link)
@@ -2364,17 +2372,33 @@ static bool cascade_protocol(const char *wire)
     CHECK(!pu_session_lock_active(&desktop));
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     CHECK(cascade_open(&serial, &epoch));
+    uint64_t target_id = views[0]->workspace_window, peer_id = views[1]->workspace_window;
+    struct wlr_surface *target_surface = views[0]->toplevel->base->surface,
+        *peer_surface = views[1]->toplevel->base->surface;
+    second = views[1]->geometry_serial;
+    backdrop_guard_stop();
+    CHECK(cascade_body(0, TEST_UNMAP));
+    CHECK(command(TEST_QUERY, 0, 0));
+    unsigned results = reply.placement_results;
+    CHECK(cascade_send((struct TestRequest){.command = TEST_MENU_RETIRED_CASCADE, .serial = serial++, .edges = epoch}) &&
+        reply.placement_results == results);
+    struct PuDesktopView *candidate, *current = NULL;
+    wl_list_for_each(candidate, &desktop.views, link)
+        if (candidate == views[1] && candidate->workspace_window == peer_id &&
+            candidate->toplevel->base->surface == peer_surface) current = candidate;
+    CHECK(current && current->geometry_serial == second);
+    CHECK(cascade_body(0, TEST_REMAP));
+    current = wire_view();
+    CHECK(current == views[0] && current->toplevel->base->surface == target_surface &&
+        current->workspace_window != target_id);
+    backdrop_guard_views(views[0], views[1], views[2]);
+    for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
+    CHECK(cascade_open(&serial, &epoch));
     wlr_output_destroy(head);
     for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
     for (unsigned i = 0; i < 3; i++) before[i] = views[i]->geometry_serial;
     CHECK(cascade_request(serial++, epoch, false));
     for (unsigned i = 0; i < 3; i++) CHECK(views[i]->geometry_serial == before[i]);
-    CHECK(cascade_open(&serial, &epoch));
-    CHECK(cascade_body(0, TEST_UNMAP));
-    CHECK(command(TEST_QUERY, 0, 0));
-    unsigned results = reply.placement_results;
-    CHECK(cascade_send((struct TestRequest){.command = TEST_MENU_RETIRED_CASCADE, .serial = serial++, .edges = epoch}) &&
-        reply.placement_results == results && views[1]->geometry_serial == before[1]);
     CHECK(command(TEST_QUIT, 0, 0));
     close(control); control = picker_wire_control; picker_wire_control = -1;
     for (int i = 0; i < 1200 && desktop.shell_pid; i++) CHECK(pump());
@@ -2387,6 +2411,7 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
 {
     struct PuDesktopView *views[3];
     CHECK(cascade_clients(wire, views));
+    backdrop_guard_views(views[0], views[1], views[2]);
     struct wlr_output *head = views[0]->output, *peer = NULL;
     struct wlr_output_layout_output *entry;
     wl_list_for_each(entry, &desktop.layout->outputs, link)
