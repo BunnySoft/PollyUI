@@ -72,6 +72,12 @@ struct BackdropWatch {
     const char *event;
     bool retired, linked;
 };
+static struct BackdropWatch cascade_marker_watch;
+static void cascade_marker_stop(void)
+{
+    if (cascade_marker_watch.linked) wl_list_remove(&cascade_marker_watch.listener.link);
+    memset(&cascade_marker_watch, 0, sizeof(cascade_marker_watch));
+}
 static struct {
     bool active, reported;
     struct PuDesktopLayer *layer;
@@ -2464,6 +2470,13 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
             CHECK(sscanf(name, "cascade-%31s", operation) == 1);
             struct wlr_layer_surface_v1 *marker_role = marker->surface;
             struct wl_resource *marker_resource = marker_role->surface->resource;
+            struct wlr_surface *marker_surface = marker_role->surface;
+            struct wl_resource *marker_role_resource = marker_role->resource;
+            struct wl_client *marker_owner = wl_resource_get_client(marker_role_resource);
+            CHECK(marker_owner == desktop.shell_client && !cascade_marker_watch.linked);
+            cascade_marker_watch = (struct BackdropWatch){.event = "cascade marker role destroyed", .linked = true};
+            cascade_marker_watch.listener.notify = backdrop_retired;
+            wl_resource_add_destroy_listener(marker_role_resource, &cascade_marker_watch.listener);
             if (!strcmp(operation, "ready")) {
                 for (unsigned i = 0; i < 3; i++) {
                     CHECK(wait_presented_frame(views[i]));
@@ -2550,15 +2563,23 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
             } else if (!strcmp(operation, "modern-ready")) {
                 int height;
                 CHECK(sscanf(name, "cascade-modern-ready %d", &height) == 1);
-                unsigned panels = 0;
-                struct PuDesktopLayer *panel;
-                wl_list_for_each(panel, &desktop.layers, link)
-                    if (panel->surface->namespace && !strncmp(panel->surface->namespace, "PollyShell.panel.", 17)) {
-                        CHECK(panel->presented && panel->surface->surface->mapped &&
-                            panel->surface->current.exclusive_zone == height && panel->pending_box.height == height);
-                        panels++;
-                    }
-                CHECK(panels == 2 && !picker_menu() && !desktop.focused_layer);
+                bool panels_ready = false;
+                uint64_t panel_deadline = milliseconds() + 5000;
+                while (milliseconds() < panel_deadline) {
+                    unsigned panels = 0;
+                    panels_ready = true;
+                    struct PuDesktopLayer *panel;
+                    wl_list_for_each(panel, &desktop.layers, link)
+                        if (panel->surface->namespace && !strncmp(panel->surface->namespace, "PollyShell.panel.", 17)) {
+                            panels_ready &= panel->presented && panel->surface->surface->mapped &&
+                                panel->surface->current.exclusive_zone == height && panel->pending_box.height == height;
+                            panels++;
+                        }
+                    panels_ready &= panels == 2 && !picker_menu() && !desktop.focused_layer;
+                    if (panels_ready) break;
+                    CHECK(pump());
+                }
+                CHECK(panels_ready);
                 for (unsigned i = 0; i < 3; i++) CHECK(wait_presented_frame(views[i]));
                 puts("PASS: actual Modern taskbar reservations, mapped/presented foreground and all current native captions precede the one old-provider hover");
             } else if (!strcmp(operation, "hover")) {
@@ -2573,16 +2594,21 @@ static bool cascade_consumer(const char *ui, const char *wire, bool old)
             } else if (!strcmp(operation, "success")) success = true;
             else CHECK(false);
             struct PuDesktopLayer *fresh = NULL, *item;
+            CHECK(!cascade_marker_watch.retired);
             wl_list_for_each(item, &desktop.layers, link)
-                if (item->surface == marker_role && item->surface->surface->resource == marker_resource) fresh = item;
+                if (item->surface == marker_role && item->surface->resource == marker_role_resource &&
+                    item->surface->surface == marker_surface && item->surface->surface->resource == marker_resource &&
+                    wl_resource_get_client(item->surface->resource) == marker_owner) fresh = item;
             CHECK(fresh);
+            cascade_marker_stop();
             wlr_layer_surface_v1_destroy(fresh->surface);
             break;
         }
     }
     CHECK(!desktop.shell_pid && desktop.shell_exited && WIFEXITED(desktop.shell_status) &&
         WEXITSTATUS(desktop.shell_status) == 0 && success && checks == (old ? 0u : 3u));
-    puts("PASS: production cascade GUI completes real pointer/Enter and short-menu Tab/Shift+Tab/scroll, committed native frames and public-connection denial; real old-v4 path retains placement and Maxhover");
+    puts(old ? "PASS: actual frozen v4 provider rejects cascade locally, hides its command and retains real half placement and Maxhover" :
+        "PASS: production cascade GUI completes real pointer/Enter and short-menu Tab/Shift+Tab/scroll, committed native frames and public-connection denial");
     return true;
 }
 
@@ -2753,6 +2779,7 @@ int main(int argc, char **argv)
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         passed = suite(argv[1], argv[2], argv[3]);
+        cascade_marker_stop();
         shell_fixture_cleanup();
         if (!resume_renderer()) passed = false;
         backdrop_guard_stop();

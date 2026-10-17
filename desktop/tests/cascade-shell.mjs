@@ -3,6 +3,7 @@ import { defaultShellConfiguration } from './desktop/shell/configuration.mjs';
 import { memoryConfiguration } from './desktop/tests/configuration-memory.mjs';
 import { runtimeBuild } from './desktop/client/settings-contract.mjs';
 import { getDesktopTheme } from './desktop/shell/themes.mjs';
+import { windowTasks } from './desktop/shell/window-groups.mjs';
 
 const [mode] = application.arguments;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -107,13 +108,14 @@ async function run() {
     check(shell.selectTheme('modern'), 'Modern picker theme enabled on the real old v4 provider');
     check(desktop.layoutPickerCapability() === true, 'actual frozen v4 provider supports the native picker');
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const panelHeight = getDesktopTheme('modern').panel.height;
+    const modern = getDesktopTheme('modern'), panelHeight = modern.panel.height;
+    const taskId = windowTasks([target()], modern.panel.taskGrouping).find(item => !item.launcher).id;
     await until(() => {
       const panels = shell.getSurfaces().filter(item => item.kind === 'panel');
       return panels.length === window.displays().length && panels.every(item =>
         item.window.document.body.offsetHeight === panelHeight &&
         item.window.document.getElementById('shell-panel')?.offsetHeight === panelHeight &&
-        item.window.document.getElementById('shell-window-' + target().id)?.offsetWidth > 0);
+        item.window.document.getElementById('shell-window-' + taskId)?.offsetWidth > 0);
     }, 'actual Modern panel layout and task foreground after retheme');
     await signal('modern-ready ' + panelHeight);
     await signal('hover');
