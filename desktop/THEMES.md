@@ -1079,9 +1079,15 @@ controlled selection/IME and mixed-instance controls use the same family.
 The existing selection pixel oracle reports no full/partial differences,
 including mixed RTL and real color emoji. These are matching Linux software
 runtime results, not original-system font equivalence, physical input or GPU
-certification. The current production GUI runtime also passes the original
-caption composition seam against the frozen native scene helper; this is not
-a rebuild or full qualification of the current compositor.
+certification. After the current GUI passed the original caption seam against
+the frozen scene helper, a separate isolated build also paired the current
+private GUI and WM with the unchanged, verified effects-ABI-2 library. Both
+original caption-effects and decorator-lifecycle tests pass, including all seven
+existing cold/normal/crash/saved/corrupt/legacy modes. The latter exercises real
+four-strip rendering, title/hover/press, resize/scale, minimize/maximize/restore,
+CSD/frameless/fullscreen exclusions and renderer recovery through actual native
+input and pixels. This is bounded current-stack headless/Pixman qualification,
+not all native features, physical hardware or six original-system comparisons.
 
 ### Per-theme discrepancy tasks
 
