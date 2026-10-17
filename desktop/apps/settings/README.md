@@ -106,6 +106,17 @@ of hardware. Packaged Settings explicitly enables the wallpaper-derived opaque
 client material described below; it is not Windows DWM Mica or live Acrylic.
 About keeps system/session information separate from expandable technical paths,
 storage identities and Settings's own application version.
+Its strict service snapshot includes the session monitor's existing `decorations`
+state alongside input-method/audio state and messages; missing, unknown or invented
+states are rejected rather than converted to readiness. The native UI fixture opens
+and reopens Settings through the actual panels on both outputs, checking the owning
+Document's first press/release and owned-process handshake. It waits for frame-driven
+control geometry to settle before sampling coordinates, never retries the click or
+changes the ordinary client's native activation policy.
+Independent control sampling also retains the owned PID/generation, page, appearance
+revision and enabled node identity across layout frames. Only the test probe's exact
+target-specific not-yet-mounted error is a mount-readiness condition; other remote
+errors and malformed replies fail normally.
 
 ## Opaque wallpaper-derived client base
 

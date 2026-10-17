@@ -1,5 +1,6 @@
 #include "server.h"
 #include "decoration.h"
+#include "decorator-process.h"
 #include "shortcut-control.h"
 #include <drm_fourcc.h>
 #include <linux/input-event-codes.h>
@@ -133,6 +134,33 @@ static bool wait_size(int width, int height, bool maximized)
     CHECK(false);
 }
 
+static bool wait_frame(struct PuDesktopView *v)
+{
+    for (int i = 0; i < 600; i++) {
+        CHECK(pump());
+        struct wlr_box button;
+        if (!v->geometry_pending && pu_decoration_ready(v) &&
+            pu_decoration_button_box(v, PU_DECORATION_MAXIMIZE, &button)) return true;
+    }
+    CHECK(false);
+}
+
+static bool resize_corner(struct PuDesktopView *v)
+{
+    CHECK(wait_frame(v));
+    struct wlr_box inset = v->toplevel->base->geometry;
+    inset.x = inset.y = 0;
+    pu_decoration_inset(v, &inset, false);
+    CHECK(inset.x > 0);
+    int x, y;
+    CHECK(wlr_scene_node_coords(&v->tree->node, &x, &y));
+    /* Use the center of the presented frame's border, not its exclusive edge. */
+    motion(x + v->toplevel->base->geometry.width + inset.x / 2.0,
+        y + v->toplevel->base->geometry.height + inset.x / 2.0);
+    button(true);
+    return true;
+}
+
 static bool suite(const char *exe, const char *script, const char *capture)
 {
     struct wlr_output_layout_output *entry = wl_container_of(desktop.layout->outputs.next, entry, link);
@@ -242,22 +270,24 @@ static bool suite(const char *exe, const char *script, const char *capture)
     wlr_keyboard_notify_key(&keyboard, &key);
     CHECK(wait_pixel("Contract.modal", 0x20c040));
     puts("PASS: same-client xdg parents and standard modal block owner-native input only");
-    motion(601, 241); button(true);
+    CHECK(resize_corner(sized));
     CHECK(desktop.grab == PU_DESKTOP_RESIZE && desktop.grabbed == sized);
     motion(1100, 700);
     CHECK(wait_size(420, 300, false));
     button(false);
-    motion(821, 401); button(true);
+    CHECK(resize_corner(sized));
     CHECK(desktop.grab == PU_DESKTOP_RESIZE);
     motion(402, 102);
     CHECK(wait_size(200, 140, false));
     button(false);
     struct wlr_box box;
+    CHECK(wait_frame(sized));
     CHECK(pu_decoration_button_box(sized, PU_DECORATION_MAXIMIZE, &box));
     motion(sized->tree->node.x + box.x + box.width / 2,
         sized->tree->node.y + box.y + box.height / 2);
     button(true); button(false);
     CHECK(wait_size(420, 300, true));
+    CHECK(wait_frame(sized));
     CHECK(pu_decoration_button_box(sized, PU_DECORATION_MAXIMIZE, &box));
     motion(sized->tree->node.x + box.x + box.width / 2,
         sized->tree->node.y + box.y + box.height / 2);
@@ -313,23 +343,28 @@ static bool suite(const char *exe, const char *script, const char *capture)
 
 int main(int argc, char **argv)
 {
-    if (argc != 4 && argc != 5) return 2;
-    no_dialog = argc == 5 && !strcmp(argv[4], "--no-dialog");
-    tooltip = argc == 5 && !strcmp(argv[4], "--tooltip");
-    lifetime = argc == 5 && !strcmp(argv[4], "--lifetime");
-    close_tree = argc == 5 && !strcmp(argv[4], "--close-tree");
-    if (argc == 5 && !no_dialog && !tooltip && !lifetime && !close_tree) return 2;
+    if (argc != 5 && argc != 6) return 2;
+    no_dialog = argc == 6 && !strcmp(argv[5], "--no-dialog");
+    tooltip = argc == 6 && !strcmp(argv[5], "--tooltip");
+    lifetime = argc == 6 && !strcmp(argv[5], "--lifetime");
+    close_tree = argc == 6 && !strcmp(argv[5], "--close-tree");
+    if (argc == 6 && !no_dialog && !tooltip && !lifetime && !close_tree) return 2;
     wlr_log_init(WLR_INFO, NULL);
     bool ready = pu_desktop_init(&desktop, "native-window-contract");
     if (ready && no_dialog) wl_display_set_global_filter(desktop.display, global_filter, &desktop);
     if (ready) ready = pu_desktop_start(&desktop);
+    if (ready) {
+        char *decorator[] = {argv[1], "--decorator", "--app-id", "org.pollyui.decorator",
+            "desktop/decorator/main.mjs", NULL};
+        ready = pu_decorator_spawn(&desktop, decorator);
+    }
     bool passed = false;
     if (ready) {
         wlr_keyboard_init(&keyboard, &keyboard_impl, "window-contract-keyboard");
         wlr_pointer_init(&pointer, &pointer_impl, "window-contract-pointer");
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &keyboard.base);
         wl_signal_emit_mutable(&desktop.backend->events.new_input, &pointer.base);
-        passed = suite(argv[1], argv[2], argv[3]);
+        passed = suite(argv[2], argv[3], argv[4]);
         if (child > 0) {
             kill(child, SIGTERM);
             for (int i = 0; i < 50 && child > 0; i++) {
