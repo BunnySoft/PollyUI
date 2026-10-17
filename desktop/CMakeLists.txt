@@ -15,17 +15,19 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(WLROOTS REQUIRED IMPORTED_TARGET "wlroots-0.19>=0.19.3" "wlroots-0.19<0.20")
 include(CheckCSourceCompiles)
 set(CMAKE_REQUIRED_LIBRARIES PkgConfig::WLROOTS)
-unset(PU_WLROOTS_EFFECTS_ABI_3 CACHE)
+unset(PU_WLROOTS_EFFECTS_ABI_4 CACHE)
 check_c_source_compiles("#define WLR_USE_UNSTABLE
 #include <wlr/types/wlr_scene.h>
-#if !defined(WLR_SCENE_EFFECTS_ABI) || WLR_SCENE_EFFECTS_ABI != 3
+#if !defined(WLR_SCENE_EFFECTS_ABI) || WLR_SCENE_EFFECTS_ABI != 4
 #error Paired PollyUI scene effects SDK required
 #endif
-int main(void) { return wlr_scene_effects_abi_v3() != WLR_SCENE_EFFECTS_ABI ||
-    wlr_scene_effects_source_sha256_v3() == 0; }"
-    PU_WLROOTS_EFFECTS_ABI_3)
+_Static_assert(WLR_SCENE_BACKDROP_MAX_WIDTH == 4096 && WLR_SCENE_BACKDROP_MAX_HEIGHT == 768,
+    \"Paired bounded backdrop extent required\");
+int main(void) { return wlr_scene_effects_abi_v4() != WLR_SCENE_EFFECTS_ABI ||
+    wlr_scene_effects_source_sha256_v4() == 0; }"
+    PU_WLROOTS_EFFECTS_ABI_4)
 unset(CMAKE_REQUIRED_LIBRARIES)
-if (NOT PU_WLROOTS_EFFECTS_ABI_3)
+if (NOT PU_WLROOTS_EFFECTS_ABI_4)
     message(FATAL_ERROR "Build the pinned PollyUI wlroots scene effects SDK; stock/old headers or libraries are unsupported")
 endif()
 pkg_check_modules(WAYLAND_SERVER REQUIRED IMPORTED_TARGET wayland-server)

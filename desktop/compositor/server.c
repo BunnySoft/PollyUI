@@ -2508,8 +2508,8 @@ bool pu_desktop_init(struct PuDesktop *desktop, const char *socket_name)
     wl_list_init(&desktop->keyboards);
     wl_list_init(&desktop->pointers);
     wl_list_init(&desktop->layers);
-    if (wlr_scene_effects_abi_v3() != WLR_SCENE_EFFECTS_ABI ||
-        strcmp(wlr_scene_effects_source_sha256_v3(), PU_WLROOTS_EFFECTS_SHA256)) {
+    if (wlr_scene_effects_abi_v4() != WLR_SCENE_EFFECTS_ABI ||
+        strcmp(wlr_scene_effects_source_sha256_v4(), PU_WLROOTS_EFFECTS_SHA256)) {
         wlr_log(WLR_ERROR, "PollyWM requires its paired wlroots scene effects ABI");
         desktop->failed = true;
         return false;

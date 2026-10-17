@@ -5,8 +5,8 @@
       This private global is restricted to compositor-owned Shell and decorator
       connections. The Shell publishes themes but cannot render. The decorator
       renders but can publish only the first theme, before a Shell transaction.
-      Version 7 requires the separately supervised GUI service, geometry schema 7
-      and effects ABI 3. Regional backdrop is a separately queried capability.
+      The current service requires the separately supervised GUI, geometry schema
+      7 and effects ABI 4. Regional backdrop is a separately queried capability.
       The optional native radius is numeric geometry, not a style identifier.
       Earlier private versions are deliberately rejected. Render requests expose
       caption geometry and text, never client content or input injection.
@@ -128,7 +128,8 @@
         Configuration is six uint words: schema 2, role 1 (Dock), radius in
         thousandths of a logical pixel (0-64000),
         sigma 1-32, RGB 0-16777215, tint opacity 0-100 percent. The entire actual
-        surface is the footprint; no pixel readback is exposed. Geometry, surface
+        surface is the footprint, bounded to 4096x512 logical pixels independently
+        of the generic renderer's taller limit; no pixel readback is exposed. Geometry, surface
         commit sequence, owner and theme generation are rechecked on commit.
         Failure retains all previously committed layers and appearance. Candidate
         resources and kernel workspace share the effects scene-wide peak budget.
@@ -170,6 +171,8 @@
         bottom margin. Its actual footprint fits above the paired taskbar.
         Both surfaces must be mapped, presented and have matching current buffer
         dimensions. No namespace, title or claimed application role is authority.
+        Each recipient remains bounded to 4096x512 logical pixels even when the
+        generic effects renderer supports taller footprints.
         Both sequences and boxes are rechecked on commit, along with the privacy
         epoch and generation. Each output has at most one taskbar, and a snapshot
         has at most one Start, whose taskbar must also be in that snapshot.

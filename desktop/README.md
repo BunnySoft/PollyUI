@@ -71,8 +71,8 @@ both its header ABI and required linked symbols; startup and packaging also comp
 the actual library's embedded patch SHA-256, not only an adjacent receipt file.
 Private appearance protocol and
 geometry schema 7 reject older WM/Shell/decorator pairings; the private library is
-effects ABI 3 (`libwlroots-0.19-polly-effects3.so`). Its SDK prefix is
-`/opt/pollyui-wlroots-effects3`; do not overwrite an effects2 installation.
+effects ABI 4 (`libwlroots-0.19-polly-effects4.so`). Its SDK prefix is
+`/opt/pollyui-wlroots-effects4`; do not overwrite an effects2/effects3 installation.
 GLES rounding/shadow effects still require 23-bit fragment highp precision, checked explicitly;
 unsupported precision fails effects rather than using a mediump shape. Ordinary
 no-effect rectangles keep their existing path. Stock SDKs are not a supported fallback.
@@ -88,7 +88,7 @@ its glyphs, bitmaps, focus, grouping, markers, counts and hover animation remain
 separate foreground content. No other panel, menu bar, application or lock surface
 automatically acquires glass.
 
-Effects3's generic non-input node composes the current lower scene in paint
+Effects4's generic non-input node composes the current lower scene in paint
 order into an expanded regional target, filters premultiplied RGBA with a
 normalized separable Gaussian truncated at three sigma, applies premultiplied
 tint and rounded coverage, and clips back to the footprint. It neither captures
@@ -96,12 +96,129 @@ the node/foreground nor reads a previous output frame. JavaScript never receives
 scene pixels. Each output has its own scale/position-keyed cache; scene changes
 conservatively damage the footprint, not a periodic full-output repaint. Hiding,
 destroying, output removal and compositor lock/unlock release retained samples.
-The regional path is bounded to eight nodes, 4096x512 logical pixels per node,
-sigma 1..32, at most 64 physical sigma and two megapixels including kernel padding
-per output. All old/candidate buffers and filter workspace share the existing
-128MiB scene effects peak budget.
+The generic regional path exposes `WLR_SCENE_BACKDROP_*` limits: eight nodes,
+4096x768 logical pixels per node, sigma 0.5..32, at most 64 physical sigma and
+2*1024*1024 physical pixels including `ceil(3*sigma*actual_output_scale)` padding
+on **each** side. Each expanded axis must also fit 32768 pixels. Logical admission
+does not guarantee support at every scale/sigma: for example 640x660 at scale 1,
+sigma 16 fits, but scale 2 with the same sigma exceeds the expanded pixel limit
+and is explicitly rejected. No production geometry reduction, tiling, second
+renderer or JS readback is used. All old/candidate buffers and filter workspace
+share the unchanged 128MiB scene effects peak budget; even a geometry within the
+pixel limit can be rejected when that shared reservation is occupied.
 Pixman effect SHM backing is reserved before rendering so tmpfs exhaustion is an
 explicit allocation failure rather than a later mapped-page SIGBUS.
+
+The existing private v7/schema2/role1 **Dock** request retains its original
+4096x512 logical extent explicitly in `prepare_backdrop`. A newer generic library
+does not grant that protocol taller targets or Start/menu authority. This
+primitive/SDK extension does not deliver a production Start consumer, change
+theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
+
+The exact separable filter is CPU-bounded, not a real-time performance guarantee.
+When `__x86_64__` and `__SSE2__` are defined, an internal baseline-SSE2 helper
+unpacks exactly one four-byte pixel into four float channels. Each tap uses
+one multiplication and one addition per lane in the original tap order.
+The accumulator is stored to four local floats before the original `lroundf`;
+kernel normalization, horizontal packed-byte rounding, vertical premultiplied
+tint and rounded coverage stay unchanged. The four exit lanes use explicit
+original `lroundf` calls and constant byte shifts rather than a runtime channel
+index/packing loop; vertical lanes retain the original component mapping and
+per-channel tint, clamp and coverage order. This removes fixed per-pixel packing
+overhead without a workload threshold or a different short-kernel algorithm.
+There is no SIMD-width neighboring pixel read, approximate rounding, new
+allocated workspace, runtime CPU/policy
+channel, ISA flag, fast-math/FMA policy change or ABI change.
+The compile-time fallback retains the original scalar Gaussian source, not
+the earlier four-pixel experiment or a different material. Both guarded and
+explicitly guard-disabled paths passed the same exact-byte fixture on GCC14;
+this is not separate qualification of other architectures, compilers or flags.
+A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
+
+The original native measurement was about 294ms. Earlier standard-C candidates
+did not achieve the twofold goal and remain independent frozen experiments.
+The following measurements predate the exit-lane expansion and the published
+SHM/private-process safety composition; they do not qualify that new pairing.
+One GCC14/O3 reference-versus-SSE2 comparison, in sequential processes pinned
+to the same allowed CPU on a shared host, with one warmup and three measured
+samples per case, gave these medians. Preparation includes real lower-scene
+composition; moving includes filtering and output capture:
+
+| Footprint, sigma16, scale1 | Reference prepare / moving | SSE2 prepare / moving | Speedup prepare / moving |
+| --- | ---: | ---: | ---: |
+| 640x640 | 296.347 / 301.344ms | 117.124 / 117.771ms | 2.53x / 2.56x |
+| 640x660 | 294.193 / 297.001ms | 118.720 / 122.445ms | 2.48x / 2.43x |
+
+Both full-footprint targets exceed the twofold engineering threshold, but
+**not** the 16.7ms frame budget or an all-case non-regression requirement.
+The same fixed pair recorded 37x29/sigma0.5/scale1.25 prepare
+0.812->0.906ms (+11.6%) and moving 6.170->6.654ms (+7.8%);
+41x33/sigma2.25/scale1.5 prepare 1.171->1.229ms (+5.0%); and
+4096x1/sigma0.5/scale1 moving 16.798->16.867ms (+0.4%).
+These regressions are retained, not waived as noise or
+removed by choosing samples. All nine cases' raw times and medians remain
+part of the comparison evidence. This is not an exclusive-CPU or universal
+speedup claim. Idle captures still reuse the cache without filtering.
+Byte equivalence and performance observations do not explain the earlier
+ENOSPC, SIGBUS or reap holds, or deliver a production Start consumer.
+
+`desktop-scene-effects` retains its original assertions and 30-second timeout.
+Its separate `--gaussian-compare EXISTING_OUTPUT_DIRECTORY` mode records raw
+prepare/moving/idle timings for nine fixed full-scene cases and writes each
+case's complete initial/moving frames. Link the same test source separately
+against each correctly paired compositor core/SDK, rather than swapping
+libraries under a mismatched core; compare the resulting files byte for byte.
+The mode rebuilds each backdrop/cache for every sample, checks movement causes
+one new filter, checks idle causes none, and verifies destruction returns cached
+bytes to zero. Enabling a prepared backdrop also causes an initial capture
+filter in both SDKs; its separate timing and equal filter counts are retained.
+The comparison does not reduce geometry, sigma, padding or kernel quality.
+
+Comparison mode now separates production work from screenshot verification.
+It allocates three actual-output-sized validation buffers and touches every
+pixel once during each case's setup, then reuses them for the unchanged four
+trials. The maximum validation storage is 39,321,600 bytes. Its allocation,
+prefault cost and longer lifetime are disclosed, not charged to the Gaussian
+kernel or presented as lower whole-program memory use. The ordinary scene suite
+still allocates its captures normally; production SDK sample/result/workspace,
+output allocation and cache limits are unchanged. Each capture still copies
+every output pixel using the real stride and performs the original byte checks.
+
+`GAUSSIAN_STAGE` reports wall time, thread CPU time and per-thread voluntary and
+involuntary context switches for prepare, initial capture, moving and idle.
+Capture build, verification copy and state finish are separate. Build includes
+lower-scene/FIR preflight, output allocation and rendering, **not pure FIR**.
+Metrics are buffered until all cases finish; the one empty measurement is
+reported without subtracting it. Missing clocks/counters and record overflow
+fail explicitly. `GAUSSIAN_CONTEXT` and the cursor log identify the real
+executable/resource paths: a relocated or symlinked test must not silently use
+different cursor assets from its reference.
+
+One corrected, symmetric GCC14/O3 comparison of the exit-expanded filter and
+the original scalar math, both using the published safety allocator/core,
+retained all nine cases, one warmup plus three measurements, CPU 0, 30 seconds
+per process and 65,536,000 bytes of SHM. Its predeclared production-stage medians
+were:
+
+| Footprint, sigma16, scale1 | Scalar prepare / moving build | SSE2 prepare / moving build | Speedup prepare / moving build |
+| --- | ---: | ---: | ---: |
+| 640x640 | 305.994 / 293.538ms | 112.836 / 116.834ms | 2.71x / 2.51x |
+| 640x660 | 302.796 / 302.197ms | 115.604 / 115.964ms | 2.62x / 2.61x |
+
+All seven other cases' observed prepare/moving-build medians also improved,
+without a tolerance or sample exclusion. Full frames and filter/cache counts
+remained identical. Complete three-sample ranges and CPU/context data are
+retained: this is one shared-host observation, not a statistical guarantee for
+arbitrary runs. Earlier malloc-inclusive and cursor-asymmetric observations
+remain separate evidence, not retroactively passing results. The matched
+ordinary scene contract passed its original accepted/pressure/tall assertions,
+but the independent published SHM fixture's first run retained a one-page and
+one-inode global-statistics deficit after a positive buffer drop. A distinct
+owner-identity diagnostic did not reproduce that deficit; it does not waive
+the original failure or establish a kernel/allocator cause. The normal SHM
+test's shared-mount contract is corrected below, with stronger object-specific
+checks rather than retroactively reclassifying that original run. These results
+are still far from 16.7ms/60Hz and do not deliver a production Start consumer.
 
 The same reservation now covers every buffer created by the selected wlroots
 SHM allocator, including output/swapchain and cursor buffers. After creating the
@@ -112,19 +229,41 @@ no sparse-mapping fallback. The effects wrapper's existing reservation remains.
 GBM/DRM/udmabuf allocators, imported client buffers and geometry/API contracts are
 unchanged. This is a deterministic SHM-backing safety fix, not a diagnosis of
 earlier SIGBUS, ENOSPC or process-reaping failures. The API/layout and SONAME stay
-ABI 3, but the patch/source SHA-256 changes: rebuild the paired SDK and WM in a
+ABI 4, but the patch/source SHA-256 changes: rebuild the paired SDK and WM in a
 separate prefix/output directory rather than overwriting a retained SDK.
 
 `desktop-shm-allocator` runs the real pinned SHM factory, checks physical fd
-backing **before** access, fully reads/writes 4096- and 131072-byte buffers and
-verifies fd/mapping/space/inode recovery plus reuse. It needs at least 1MiB free
-SHM and never fills the mount. To exercise rejection, run the same
+backing **before** access and fully reads/writes 4096- and 131072-byte buffers.
+Normal mode needs tmpfs with at least 1MiB free and no own SHM mappings, not an
+exclusive mount. It checks the actual destruction notification, old-fd `EBADF`,
+and `mincore` `ENOMEM` for every recorded old mapping page, without touching
+freed memory. Before opening proc files that could reuse a descriptor number,
+it proves the original object's release. Every phase must restore the complete
+own SHM `(fd, device, inode)` set, empty own SHM mapping set and original total
+fd count; allocation-failure paths cannot hide a leaked unpublished object.
+
+The first whole-mount VFS snapshot stays in its original position, with later
+owner/post-VFS observations explicitly separate. Normal mode reports changes
+in global space/inodes, but does not misattribute another legitimate user's
+allocation to this object's owner. A separate controlled, real same-mount
+helper counterexample retained one backed page while all three target objects
+were destroyed, closed and unmapped: the old global predicate rejected every
+one despite exact owner restoration. Releasing/waiting that owned helper
+restored all global totals and control fds. This establishes the normal-test
+assumption defect, not the cause of any historical one-page deficit, ENOSPC,
+SIGBUS or reap failure. That diagnostic is retained separately, not registered
+as ordinary CTest coverage.
+
+To exercise rejection, run the same
 `pollywm-shm-allocator-test --private-64k` binary with
 `POLLY_SHM_PRIVATE_TEST=1` **only inside a new disposable, private IPC container**
 with `--shm-size=64k` and a ten-second timeout. It checks an empty 65536-byte tmpfs,
 allocates/writes/drops 32x32 ARGB, requires three 128x256/131072-byte requests to
 return `NULL` without data access or child processes, checks recovery after each,
-then requires another 32x32 allocation to succeed. Run normal mode separately
+then requires another 32x32 allocation to succeed. This exclusive mode retains
+all original exact global free-block/available/inode restoration assertions as
+well as the stronger owner checks. No quota, timeout or rejection is relaxed.
+Run normal mode separately
 with adequate private SHM to prove the large geometry is still accepted. Missing
 preconditions return `77` with `UNAVAILABLE`, not success; CTest does not mark it
 as a passing skip. The pressure mode is deliberately not an ordinary CTest.
@@ -187,8 +326,10 @@ Foreground, input, slots, hitboxes and menu keyboard behavior do not change.
 Material failures are independent of business errors and are not retried in a
 timer loop; live composition failure retains the last output frame.
 
-**Standard-height Start is not delivered by this effects3 slice.** Effects3
-strictly limits each footprint to 4096x512 logical pixels. Modern's unchanged
+**Standard-height Start is not delivered by this consumer slice.** Both the v7
+Dock and v8 paired Shell recipient policies explicitly retain a 4096x512 logical
+footprint limit, separately from effects4's generic 4096x768 primitive. The newer
+SDK does not grant Start or other overlays additional authority. Modern's unchanged
 660px menu token produces a real 640px menu on a 720px output, so packaged Start
 does **not** set `startBackdrop` and remains solid without an expected error on
 each open. A custom Modern theme may optionally set `panel.startBackdrop` with
@@ -196,9 +337,9 @@ the same strict sigma/tint/opacity fields, only with `taskbarBackdrop` present.
 An actual footprint above 512 is explicitly rejected, keeps Start solid and
 preserves committed taskbars. A naturally shorter real output, e.g. height 540
 and unchanged 460px menu sizing, can use this bounded opt-in. That limited positive
-case is not qualification of the standard 640/660px menu. Supporting taller
-regional targets is a separate dependency; no geometry, SDK, effects3 bound or
-renderer was changed here. GLES new blur and physical/GPU qualification remain
+case is not qualification of the standard 640/660px menu. Enabling taller Start
+recipients requires a separately reviewed consumer policy and qualification;
+this slice changes neither surface geometry nor the generic filter. GLES new blur and physical/GPU qualification remain
 unsupported/unclaimed.
 
 `desktop-shell-regional-backdrop-native` extends the original native lifecycle
@@ -968,7 +1109,7 @@ required by independent applications such as `foot`/libfcft.
 ## Build independently on Linux
 
 wlroots has an unstable API: this target requires the pinned 0.19.3 source plus
-the checked-in effects ABI 3 patch and embedded source identity. Stock Alpine
+the checked-in effects ABI 4 patch and embedded source identity. Stock Alpine
 `wlroots0.19-dev` is no longer a current build SDK. Earlier 0.19
 versions omit `wlr_buffer_finish()` in the SHM allocator destructor, causing
 use-after-free during nested/Pixman teardown. Upstream 0.19.3 fixes this; do not
@@ -982,7 +1123,7 @@ archived user-tested Alpine images are not current rebuild evidence.
 
 ```sh
 # Inside the pinned Debian SDK, from the repository root:
-export PKG_CONFIG_PATH=/opt/pollyui-wlroots-effects3/lib/pkgconfig:${PKG_CONFIG_PATH}
+export PKG_CONFIG_PATH=/opt/pollyui-wlroots-effects4/lib/pkgconfig:${PKG_CONFIG_PATH}
 cmake -S desktop -B build/desktop -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/desktop
 ctest --test-dir build/desktop --output-on-failure
