@@ -1859,6 +1859,11 @@ static bool picker_request(struct TestRequest request, bool accepted)
     for (int i = 0; i < 1200; i++) {
         ssize_t count = recv(control, &reply, sizeof(reply), MSG_DONTWAIT);
         if (count == sizeof(reply)) {
+            if (reply.placement_results != results + 1 || reply.placement_serial != request.serial ||
+                reply.placement_accepted != (uint32_t)accepted)
+                fprintf(stderr, "MENU_RESULT command=%u serial=%u expectedAccepted=%u actualSerial=%u accepted=%u results=%u previous=%u message=%s\n",
+                    request.command, request.serial, accepted, reply.placement_serial,
+                    reply.placement_accepted, reply.placement_results, results, reply.placement_message);
             CHECK(reply.placement_results == results + 1 && reply.placement_serial == request.serial &&
                 reply.placement_accepted == (uint32_t)accepted);
             if (!accepted) CHECK(reply.placement_message[0]);
@@ -2739,28 +2744,29 @@ static bool arrangement_protocol(const char *wire)
         }
         CHECK(child);
         second = views[1]->geometry_serial; third = child->geometry_serial;
-        CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+        CHECK(wait_presented_frame(views[0]) && cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
             views[1]->geometry_serial == second && child->geometry_serial == third);
         CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_DESTROY, .id = 4}));
         for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
     }
     CHECK(cascade_body(1, TEST_FULLSCREEN) && cascade_wait_client(views[1], PU_DESKTOP_FULLSCREEN));
     second = views[1]->geometry_serial;
-    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
+    CHECK(wait_presented_frame(views[0]) && cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
         views[1]->geometry_serial == second);
     CHECK(cascade_body(1, TEST_UNFULLSCREEN) && wait_presented_frame(views[1]));
     CHECK(command(TEST_FOREIGN_MINIMIZE, 8, 0) && views[1]->minimized);
     second = views[1]->geometry_serial;
-    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
+    CHECK(wait_presented_frame(views[0]) && cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true) &&
         views[1]->geometry_serial == second);
     CHECK(command(TEST_FOREIGN_RESTORE, 8, 0) && wait_presented_frame(views[1]));
     CHECK(cascade_body(1, TEST_HOLD) && cascade_body(1, TEST_MAXIMIZE));
     second = views[1]->geometry_serial;
-    CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
+    CHECK(wait_presented_frame(views[0]) && cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 1, true) &&
         views[1]->geometry_serial == second);
     CHECK(cascade_body(1, TEST_RELEASE) && wait_presented_frame(views[1]));
     puts("PASS: entire ordinary and modal transient families, fullscreen, minimized and pending peers are skipped");
 
+    CHECK(wait_presented_frame(views[0]) && wait_presented_frame(views[1]) && arrangement_wait(views[2]));
     CHECK(arrangement_peer(1, (struct TestRequest){.command = TEST_REFUSE_TILE, .id = 2}));
     CHECK(cascade_open(&serial, &epoch) && arrangement_request(serial++, epoch, 2, true));
     for (unsigned i = 0; i < 3; i++) CHECK(arrangement_wait(views[i]));
