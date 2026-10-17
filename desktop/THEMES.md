@@ -693,10 +693,10 @@ publishing output, cursor or effect buffers. Insufficient backing is an explicit
 allocation failure with full cleanup, not a returned sparse mapping that can
 fault on first write. Real isolated 64KiB rejection and adequately provisioned
 131072-byte read/write checks cover this safety class; existing Dock, scene,
-caption and renderer-role contracts remain. ABI3 requires the updated exact patch
-identity in a separate SDK prefix. This does not explain earlier unknown
-SIGBUS/ENOSPC/reaping failures, enable held material/extent/filter candidates, or
-complete their performance or physical qualification.
+caption and renderer-role contracts remain. The backing fix first shipped with
+ABI3 and remains in the current ABI4 SDK with its updated exact patch identity
+and separate prefix. This does not explain earlier unknown
+SIGBUS/ENOSPC/reaping failures or enable held modern Shell material consumers.
 
 Private Shell, decorator, input-method and lock exits also share one event-loop
 notification source, while each owner still reaps only its exact PID. The
@@ -1215,7 +1215,7 @@ macOS/Metal evidence likewise cannot be inferred from Windows raster fixtures.
 The existing whole-window effect tree samples only its own client and frame;
 the wallpaper-material helper paints an opaque, wallpaper-derived client base.
 Neither is a behind-scene regional sampling API for live Acrylic/vibrancy.
-The separate effects3 regional mechanism described below now supplies that
+The separate effects4 regional mechanism described below now supplies that
 lower-scene sampling for the explicitly enabled Big Sur Dock only; it does not
 turn Settings' wallpaper material into live Acrylic or enable other surfaces.
 For bitmap wallpaper, packaged Settings reads only a bounded projection of the
@@ -1321,7 +1321,7 @@ physical pixel phase. Damage and visibility drive invalidation and sampling:
 there is no periodic idle rendering loop. Budget/allocation failures explicitly
 fail composition rather than producing an unreported square or missing shadow.
 
-Runtime library identity, headers, effects ABI 3, distinct SONAME and the packaged
+Runtime library identity, headers, effects ABI 4, distinct SONAME and the packaged
 patch hash must match.
 Stock SDKs are explicitly rejected rather than producing a square fallback.
 Current desktop builds use the paired Debian SDK; historical Alpine build and
@@ -1338,7 +1338,8 @@ its square. Software llvmpipe checks exercise the pinned GLSL primitives at
 The complete WM GLES path remains unqualified without a usable DRM device.
 The original effects2 results remain historical qualifications of that frozen
 stack. A later current-source private GUI/WM pair passed the original caption
-and seven-mode decorator lifecycle checks; effects3 retains those contracts.
+and seven-mode decorator lifecycle checks; those frozen effects3 results remain
+historical evidence, separate from the effects4 checks below.
 None of these software/headless results is physical GPU or original-OS pixel
 qualification.
 
@@ -1372,9 +1373,9 @@ inactive catalog lookup stays pure.
 
 The new regional capability is **Pixman only**. GLES explicitly rejects its
 activation before publication, while existing GLES rounding/shadows retain
-their prior support. This is not a silent alpha/solid fallback. Effects3 uses
-`libwlroots-0.19-polly-effects3.so` and a separate prefix; the old effects2
-library and frozen validation outputs are not overwritten.
+their prior support. This is not a silent alpha/solid fallback. Effects4 uses
+`libwlroots-0.19-polly-effects4.so` and a separate prefix; the old effects2/3
+libraries and frozen validation outputs are not overwritten.
 
 At most eight regional nodes are retained, with bounded dimensions, sigma and
 per-output pixels. Old/candidate caches and workspace share the scene's 128MiB
@@ -1391,8 +1392,37 @@ The actual production Dock check moves two independent applications, preserves
 targets without replacing the committed Dock, and exercises real allocation
 pressure plus lock-client crash/recovery. Native scene checks compare Gaussian
 pixels, mixed-scale/rotated outputs, aggregate peak refusal and byte-exact
-disable restoration. All eight native checks pass with the frozen matching
+disable restoration. All eight historical native checks passed with the frozen matching
 effects3/GUI/WM on a byte-verified native Linux source snapshot.
+
+The current generic primitive admits at most 4096x768 logical pixels, but the
+original v7/schema2/role1 Dock contract explicitly keeps its 4096x512 limit.
+Expanded physical area remains at most 2*1024*1024 pixels, with unchanged
+32768-axis, sigma, eight-node and 128MiB peak bounds. Logical admission is not a
+guarantee at every scale or under backing pressure. Native checks retain the
+original pressure regression and add exact area/axis/height boundaries,
+640x640/660 Gaussian pixels, unchanged foreground/input, idle reuse and privacy.
+No larger Start or other surface gains authority from this primitive extension.
+
+On the qualified GCC14/O3 x86-64 path, baseline SSE2 accumulates four channels
+in the original tap order, then uses the original scalar rounding with explicit
+constant lane packing. Other builds retain the original scalar source; there
+are no approximations, new ISA flags, workload thresholds or larger workspace.
+Both paths passed 40 exact-byte cases each, including the packed intermediate,
+alpha, tint and coverage; a guard-page check verifies the four-byte pixel read.
+Nine real scenes also retained identical complete frames and filter counts.
+
+One symmetric shared-host comparison, with one warmup and three samples per case,
+measured roughly 2.5-2.7x improvement for 640x640/660 production preparation and
+moving output builds; all seven other cases' observed production-stage medians
+also improved. Verification copy/storage is reported separately, with its
+allocation/prefault cost and longer lifetime disclosed. These are bounded
+observations, not statistical guarantees or 16.7ms/60Hz qualification: the large
+updates still take about 113-117ms. The corrected normal SHM test proves actual
+owner destruction, closed fd identity and unmapped pages rather than attributing
+shared-mount totals to one object; private 64KiB tests keep exact global recovery.
+Earlier failures and measurements remain preserved without a retrospective
+claim that all historical SIGBUS, ENOSPC or reaping causes are known.
 
 Two runs of the same binaries against Windows/P9 source mounts hit unchanged
 window-decoration frame/startup deadlines. Their failures remain preserved:
