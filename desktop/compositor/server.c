@@ -210,6 +210,7 @@ static void focus_layer(struct PuDesktop *desktop, struct PuDesktopLayer *layer)
 {
     if (pu_session_lock_active(desktop)) { pu_session_lock_focus(desktop); return; }
     if (desktop->focused_layer == layer) return;
+    if (layer && desktop->grab_title) end_grab(desktop);
     if (layer) pu_shortcuts_cancel(desktop);
     desktop->focused_layer = layer;
     if (desktop->focused)
@@ -256,6 +257,7 @@ static void focus_view(struct PuDesktop *desktop, struct PuDesktopView *view)
     }
     if (!exclusive_layer(desktop->focused_layer)) desktop->focused_layer = NULL;
     if (desktop->focused != view) {
+        if (desktop->grab_title) end_grab(desktop);
         if (desktop->focused)
             wlr_xdg_toplevel_set_activated(desktop->focused->toplevel, false);
         desktop->focused = view;
@@ -476,6 +478,7 @@ static void end_grab(struct PuDesktop *desktop)
         wlr_xdg_toplevel_set_resizing(desktop->grabbed->toplevel, false);
     desktop->grab = PU_DESKTOP_PASSTHROUGH;
     desktop->grabbed = NULL;
+    desktop->grab_title = desktop->grab_title_moved = desktop->grab_title_restored = false;
     if (active) pu_cursor_cancel(desktop);
 }
 
@@ -909,6 +912,7 @@ static bool restore_title_move(struct PuDesktopView *view)
     if (anchor > 1) anchor = 1;
     view->drag_restore_anchor = anchor;
     desktop->grab_box = view->tile != PU_TILE_NONE ? view->floating_box : view->restore_box;
+    desktop->grab_title_restored = true;
     return configure_restored_move(view, initial_output(desktop));
 }
 
@@ -957,7 +961,8 @@ static void set_view_state(struct PuDesktopView *view, bool maximized, bool full
 }
 
 static const char *placement_box(struct PuDesktopView *view, enum PuDesktopTile tile,
-    struct wlr_box *box, struct wlr_box *bounds, struct wlr_output **output)
+    struct wlr_output *preferred, struct wlr_box *box, struct wlr_box *bounds,
+    struct wlr_output **output)
 {
     struct PuDesktop *desktop = view->desktop;
     if (tile < PU_TILE_NONE || tile > PU_TILE_RIGHT) return "Unknown window placement";
@@ -966,7 +971,7 @@ static const char *placement_box(struct PuDesktopView *view, enum PuDesktopTile 
     if (tile == PU_TILE_NONE && view->tile == PU_TILE_NONE) return "No floating layout to restore";
     struct wlr_box actual = presented_view_box(view);
     if (actual.width < 1 || actual.height < 1) return "Wait for the first presented window frame";
-    *output = output_for_box(desktop, &actual);
+    *output = preferred ? preferred : output_for_box(desktop, &actual);
     if (!output_box(desktop, *output, bounds)) return "Window has no enabled output";
     use_work_area(*output, bounds);
     if (tile != PU_TILE_NONE) {
@@ -980,11 +985,12 @@ static const char *placement_box(struct PuDesktopView *view, enum PuDesktopTile 
     return NULL;
 }
 
-static const char *place_view(struct PuDesktopView *view, enum PuDesktopTile tile)
+static const char *place_view(struct PuDesktopView *view, enum PuDesktopTile tile,
+    struct wlr_output *preferred)
 {
     struct wlr_box bounds, box;
     struct wlr_output *output;
-    const char *error = placement_box(view, tile, &box, &bounds, &output);
+    const char *error = placement_box(view, tile, preferred, &box, &bounds, &output);
     if (error) return error;
     if (tile != PU_TILE_NONE && view->tile == PU_TILE_NONE)
         view->floating_box = view->maximized ? view->restore_box : presented_view_box(view);
@@ -996,7 +1002,7 @@ static const char *place_view(struct PuDesktopView *view, enum PuDesktopTile til
     return NULL;
 }
 
-const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile)
+static const char *placement_admit(struct PuDesktopView *view)
 {
     struct PuDesktop *desktop = view->desktop;
     if (!view->mapped || !view->workspace_window) return "Window is closed";
@@ -1009,9 +1015,16 @@ const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDeskto
         return "Input is grabbed";
     if (pu_shortcuts_recording(desktop)) return "Shortcut recording is active";
     if (view->geometry_pending || view->resize_pending) return "Wait for the presented layout";
+    return NULL;
+}
+
+const char *pu_desktop_placement_check(struct PuDesktopView *view, enum PuDesktopTile tile)
+{
+    const char *error = placement_admit(view);
+    if (error) return error;
     struct wlr_box bounds, box;
     struct wlr_output *output;
-    return placement_box(view, tile, &box, &bounds, &output);
+    return placement_box(view, tile, NULL, &box, &bounds, &output);
 }
 
 const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
@@ -1030,7 +1043,7 @@ const char *pu_desktop_place_from_menu(struct PuDesktopView *view,
         desktop->seat->keyboard_state.focused_surface != surface ||
         !output_box(desktop, layer->surface->output, &bounds))
         return "The registered window menu does not own live input focus";
-    return place_view(view, tile);
+    return place_view(view, tile, NULL);
 }
 
 static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
@@ -1040,8 +1053,54 @@ static void set_view_tile(struct PuDesktopView *view, enum PuDesktopTile tile)
         desktop->focused != view || desktop->focused_layer ||
         pu_session_lock_active(desktop) || wlr_seat_keyboard_has_grab(desktop->seat) ||
         desktop->grab != PU_DESKTOP_PASSTHROUGH) return;
-    const char *error = place_view(view, tile);
+    const char *error = place_view(view, tile, NULL);
     if (error) wlr_log(WLR_INFO, "%s", error);
+}
+
+static void release_grab(struct PuDesktop *desktop, uint32_t button)
+{
+    struct PuDesktopView *view = desktop->grabbed;
+    bool snap = view && desktop->grab == PU_DESKTOP_MOVE && button == desktop->grab_button &&
+        desktop->grab_title && desktop->grab_title_moved;
+    struct wlr_box floating = {0};
+    if (snap) {
+        floating = presented_view_box(view);
+        if (desktop->grab_title_restored) {
+            floating.width = desktop->grab_box.width;
+            floating.height = desktop->grab_box.height;
+        }
+    }
+    /* End precisely this gesture before using the normal no-active-grab admission. */
+    end_grab(desktop);
+    if (!snap) return;
+    struct wlr_output *output = wlr_output_layout_output_at(desktop->layout,
+        desktop->cursor->x, desktop->cursor->y);
+    struct wlr_box full;
+    if (!output_box(desktop, output, &full)) return;
+    /* Half-open 12 logical pixel strips of the actual output, not its work area.
+     * Top wins at corners; placement itself still uses the reserved work area. */
+    bool top = desktop->cursor->y < full.y + 12;
+    enum PuDesktopTile tile = desktop->cursor->x < full.x + 12 ? PU_TILE_LEFT :
+        desktop->cursor->x >= full.x + full.width - 12 ? PU_TILE_RIGHT : PU_TILE_NONE;
+    if (!top && tile == PU_TILE_NONE) return;
+    const char *error = placement_admit(view);
+    if (!error && (desktop->stopping || desktop->focused != view || desktop->focused_layer))
+        error = "Window does not own desktop input focus";
+    if (!error && (view->fullscreen || view->mode == PU_DESKTOP_FULLSCREEN))
+        error = "Leave fullscreen before changing placement";
+    if (!error && (view->drag_restore_pending || view->mode != PU_DESKTOP_FLOATING ||
+        pu_decoration_mode_pending(view) || !pu_decoration_presented_current(view)))
+        error = "Wait for the presented floating window and native frame";
+    if (!error) {
+        if (top) {
+            set_view_state(view, true, false, output);
+            view->restore_box = floating;
+        } else {
+            error = place_view(view, tile, output);
+            if (!error) view->floating_box = floating;
+        }
+    }
+    if (error) wlr_log(WLR_INFO, "Cannot snap title drag on release: %s", error);
 }
 
 void pu_desktop_redecorate(struct PuDesktopView *view)
@@ -1454,11 +1513,17 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     if (view && desktop->grab == PU_DESKTOP_MOVE) {
         if (!view->mapped || view->minimized || !pu_workspace_current(view) ||
             modal_target(view) != view || desktop->session_exit_pending ||
+            (desktop->grab_title && (desktop->focused != view || desktop->focused_layer ||
+                view->fullscreen || pu_decoration_mode_pending(view))) ||
             pu_shortcuts_recording(desktop) ||
             wlr_seat_pointer_has_grab(desktop->seat) || wlr_seat_keyboard_has_grab(desktop->seat)) {
             end_grab(desktop);
             return;
         }
+        double moved_x = desktop->cursor->x - desktop->grab_start_x;
+        double moved_y = desktop->cursor->y - desktop->grab_start_y;
+        if (desktop->grab_title && moved_x * moved_x + moved_y * moved_y > 25)
+            desktop->grab_title_moved = true;
         double dx = desktop->cursor->x - desktop->last_title_x;
         double dy = desktop->cursor->y - desktop->last_title_y;
         if (dx * dx + dy * dy > 25) desktop->last_title_click = NULL;
@@ -1576,6 +1641,10 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
     desktop->grabbed = view;
     desktop->grab_edges = edges;
     desktop->grab_button = button;
+    desktop->grab_start_x = desktop->cursor->x;
+    desktop->grab_start_y = desktop->cursor->y;
+    desktop->grab_title = title && mode == PU_DESKTOP_MOVE;
+    desktop->grab_title_moved = desktop->grab_title_restored = false;
     desktop->grab_x = desktop->cursor->x;
     desktop->grab_y = desktop->cursor->y;
     if (mode == PU_DESKTOP_MOVE) {
@@ -1616,7 +1685,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
         desktop->decoration_pressed = NULL;
         desktop->decoration_part = 0;
         if (view) pu_decoration_update(view);
-        end_grab(desktop);
+        release_grab(desktop, event->button);
         struct wlr_surface *surface;
         double sx, sy;
         struct PuDesktopView *hit = view_at(desktop, desktop->cursor->x, desktop->cursor->y,
@@ -1699,7 +1768,7 @@ static void cursor_button(struct wl_listener *listener, void *data)
     wlr_seat_pointer_notify_button(desktop->seat, event->time_msec,
                                   event->button, event->state);
     if (!pressed && event->button == desktop->grab_button) {
-        end_grab(desktop);
+        release_grab(desktop, event->button);
     }
     if (!pressed && desktop->seat->pointer_state.button_count == 0) {
         process_motion(desktop, event->time_msec);

@@ -812,6 +812,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     $<TARGET_FILE:pollywm-test-client> title-drag)
             set_tests_properties(desktop-title-drag-restore PROPERTIES TIMEOUT 30
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
+            add_test(NAME desktop-title-edge-snap
+                COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/decorator-lifecycle.sh"
+                    $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                    $<TARGET_FILE:pollywm-test-client> title-snap)
+            set_tests_properties(desktop-title-edge-snap PROPERTIES TIMEOUT 30
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator")
             add_test(NAME desktop-shell-regional-backdrop-native
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                     $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>

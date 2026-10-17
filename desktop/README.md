@@ -736,7 +736,8 @@ Painting through the GUI does not itself add accessible DOM controls to native
 captions; platform caption accessibility integration is still a separate gap.
 The current frames have rounded titlebar tops, not rounded clipping of client
 content, blur or shadows. Input bounds remain rectangular. Restore a maximized
-window before dragging it; drag-to-restore and tiling gestures remain deferred.
+or half-screen window by dragging its native title; basic drag-edge release is
+described below. Client move/resize requests still require floating placement.
 
 ## Appearance direction and native preview
 
@@ -916,13 +917,14 @@ geometry instead of pretending to fit. Output removal restores against a live
 output, not a retained output pointer. Lock, workspace, focus, trusted recording
 and seat grabs retain the existing input authority. Tiled windows use XDG tiled
 edges, not maximized/fullscreen flags, and have no floating shadow/rounding.
-Restore floating before interactive move/resize. No Snap flyout, drag-to-edge,
-drag-to-restore, overview or physical-GPU qualification is implied.
+Client move/resize requires floating placement; native-title drag-to-restore and
+basic drag-edge release are described below. No Snap flyout, overview or
+physical-GPU qualification is implied.
 The parent desktop may intercept shortcuts in nested mode. Negotiating clients
 can use PollyWM titlebars; clients requesting self-drawn headers retain them.
-Maximize/fullscreen capabilities are advertised. Restore a maximized/fullscreen
-window before dragging it; interactive move/resize is ignored while in those
-states or while a state/placement configure is outstanding. State requests during
+Maximize/fullscreen capabilities are advertised. Fullscreen must be exited before
+dragging. Except for the admitted native-title restoration, interactive move/resize
+is ignored in placed states or while a state/placement configure is outstanding. State requests during
 an existing interactive drag end that drag. Maximized/fullscreen sizes follow the
 output rather than floating min/max size hints. Floating windows whose minimum
 size exceeds an output may extend beyond it, but their top-left remains reachable.
@@ -1413,7 +1415,7 @@ Fullscreen must be left first; minimized, modal-blocked, pending or unfit
 targets cannot be placed. Restore floating is enabled only when a saved floating
 layout is actually available. The existing menu viewport, keyboard navigation
 and shared scrollbar remain usable on short displays. This is not a Windows 11
-caption-hover flyout or drag-to-snap implementation.
+caption-hover flyout.
 
 Holding a native caption on a maximized or half-screen window arms a drag without
 changing placement. Moving more than 5 logical pixels restores the last saved
@@ -1433,8 +1435,42 @@ configure and caption-scale revision; the earlier output's ACK/frame cannot
 present the new landing point. Workspace, lock/input isolation, target retirement,
 output/layout changes or another geometry command end the gesture, and a late
 frame never restarts it. Already admitted geometry can finish at its frozen point
-unless superseded or unmapped. This adds no JavaScript geometry channel, edge
-snap, hover flyout, polling or new input deadlines.
+unless superseded or unmapped.
+
+Releasing an admitted native-title MOVE after **more than 5 logical pixels**
+also supports basic edge snap: the left/right outer **12 logical pixels** of the
+output under the actual pointer request the existing half-screen placement;
+the top 12 request the existing maximize path. For output box `(x, y, w, h)`,
+the strips are `[x, x+12)`, `[x+w-12, x+w)` and `[y, y+12)`, intersected with
+that output's real bounds. Top wins at both corners; no quarter-screen layout is
+implied. Output gaps never select a nearest head. The destination geometry uses
+that head's current reserved work area (including panels/Docks), native insets,
+client limits and the existing client/native-frame presentation fence, not the
+head with the largest window overlap. Nothing is committed before release.
+
+Clicks, movement of exactly 5 pixels or less, middle-of-output release, canceled
+gestures, client/Alt moves, ordinary client drags and resize do not snap.
+Admission runs once after ending this exact caption gesture and rechecks the
+live target, current workspace, focus, modal, lock/exit, exclusive-layer, seat-grab,
+recording, fullscreen, pending-layout and native-frame boundaries. Denials log
+`Cannot snap title drag on release` with the reason and leave the legal floating
+transaction intact; there are no retries or simulated shortcuts. In particular,
+**release while drag restoration or its native frame is still pending refuses
+snap**: only the already admitted restoration may finish at its frozen release
+point. It never queues a snap to run after ACK. Once restoration has actually
+presented, the same held gesture can snap; the original saved floating size is
+retained even if a smaller destination temporarily constrained that restoration.
+Keyboard/menu output selection and title double-click are unchanged.
+
+`pollywm-integration` covers exact strip/drag thresholds, top-first corners,
+non-caption moves, authority rejection and negative-origin, odd-width 125%
+outputs with panel/Dock reservations. The real GUI `title-snap` decorator fixture
+checks release-only admission, old-frame retention through client ACK, matching
+client geometry plus shown owned current native revision, completed/pending
+drag restoration, saved size and lock/output/role retirement. This is basic
+drag-edge release, not a full Windows snap flyout, preview, animation, overview
+or four-way tiling. It adds no JavaScript geometry channel, polling, input
+deadline, preference or new renderer.
 
 Placement uses the existing restricted `polly_workspace_toplevel_v1` object,
 paired manager/child version 3. `desktop.windows()` optionally adds readonly
