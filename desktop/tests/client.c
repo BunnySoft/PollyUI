@@ -1425,6 +1425,10 @@ int main(int argc, char **argv)
             destroy_window(&client.popup);
             break;
         case TEST_DESTROY_ROLE:
+            if (window->decoration) {
+                zxdg_toplevel_decoration_v1_destroy(window->decoration);
+                window->decoration = NULL;
+            }
             xdg_toplevel_destroy(window->toplevel);
             window->toplevel = NULL;
             break;
