@@ -379,8 +379,14 @@ header markup; single-column and zero-header layouts do not acquire a new area.
 The existing generic avatar, Search/input identity, Programs/source folders,
 both pin domains, Quick Launch and logout remain unchanged. The original XP
 software GUI entry verifies injected Unicode/success/unavailable snapshots in
-the real header and actual pointer launch; it does not certify a live Linux
-passwd source, Windows account, original-system art or native compositor.
+the real header and actual pointer launch. A later matching-current-runtime
+Linux check also reads the isolated container's actual uid/euid and trusted
+local passwd through the production adapter, validates the immutable snapshot,
+and renders its real name/username/UID in the same 380x64 XP header. The real
+privileged-session case retains UID 0, empty names and the explicit unavailable
+header without changing that geometry. Neither check is a Windows/host account,
+NSS, authentication, account-management, original-system-art or native compositor
+qualification; no account/password write or source-record content is logged.
 
 ### Fluent taskbar and Start surface coverage
 
