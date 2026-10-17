@@ -1259,7 +1259,7 @@ index e823d62..f0f2f29 100644
  
  		if (entry->highlight_transparent_region) {
  			wlr_render_pass_add_rect(data->render_pass, &(struct wlr_render_rect_options){
-@@ -1471,6 +1984,502 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
+@@ -1471,6 +1984,553 @@ static void scene_entry_render(struct render_list_entry *entry, const struct ren
  	pixman_region32_fini(&render_region);
  }
  
@@ -1635,7 +1635,28 @@ index e823d62..f0f2f29 100644
 +		}
 +		for (int py = 0; py < height; py++) {
 +			uint32_t *row = (uint32_t *)((uint8_t *)source + py * source_stride);
-+			for (int px = pad; px < width - pad; px++) {
++			int px = pad;
++			for (; px + 3 < width - pad; px += 4) {
++				float values[4][4] = {0};
++				for (int i = -pad; i <= pad; i++) {
++					float weight = kernel[i + pad];
++					for (int lane = 0; lane < 4; lane++) {
++						uint32_t sample = row[px + i + lane];
++						values[0][lane] += (sample & 255) * weight;
++						values[1][lane] += ((sample >> 8) & 255) * weight;
++						values[2][lane] += ((sample >> 16) & 255) * weight;
++						values[3][lane] += (sample >> 24) * weight;
++					}
++				}
++				for (int lane = 0; lane < 4; lane++) {
++					uint32_t pixel = 0;
++					for (int channel = 0; channel < 32; channel += 8) {
++						pixel |= (uint32_t)lroundf(values[channel / 8][lane]) << channel;
++					}
++					temporary[py * width + px + lane] = pixel;
++				}
++			}
++			for (; px < width - pad; px++) {
 +				float values[4] = {0};
 +				for (int i = -pad; i <= pad; i++) {
 +					uint32_t sample = row[px + i];
@@ -1654,7 +1675,37 @@ index e823d62..f0f2f29 100644
 +		}
 +		for (int py = 0; py < physical.height; py++) {
 +			uint32_t *row = (uint32_t *)((uint8_t *)destination + py * dest_stride);
-+			for (int px = 0; px < physical.width; px++) {
++			int px = 0;
++			for (; px + 3 < physical.width; px += 4) {
++				float values[4][4] = {0};
++				for (int i = -pad; i <= pad; i++) {
++					float weight = kernel[i + pad];
++					for (int lane = 0; lane < 4; lane++) {
++						uint32_t sample = temporary[(py + pad + i) * width + px + pad + lane];
++						values[0][lane] += (sample & 255) * weight;
++						values[1][lane] += ((sample >> 8) & 255) * weight;
++						values[2][lane] += ((sample >> 16) & 255) * weight;
++						values[3][lane] += (sample >> 24) * weight;
++					}
++				}
++				for (int lane = 0; lane < 4; lane++) {
++					int x = px + lane;
++					float radius = rect->corner_radius * data->scale;
++					float qx = fabsf(x + 0.5f - physical.width / 2.0f) - physical.width / 2.0f + radius;
++					float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
++					float distance = hypotf(fmaxf(qx, 0), fmaxf(qy, 0)) + fminf(fmaxf(qx, qy), 0) - radius;
++					float coverage = radius == 0 ? 1 : fminf(fmaxf(0.5f - distance, 0), 1);
++					uint32_t pixel = 0;
++					for (int channel = 0; channel < 32; channel += 8) {
++						float value = values[channel / 8][lane];
++						int component = channel == 24 ? 3 : 2 - channel / 8;
++						value = rect->color[component] * 255 + value * (1 - rect->color[3]);
++						pixel |= (uint32_t)lroundf(fminf(value, 255) * coverage) << channel;
++					}
++					row[x] = pixel;
++				}
++			}
++			for (; px < physical.width; px++) {
 +				float radius = rect->corner_radius * data->scale;
 +				float qx = fabsf(px + 0.5f - physical.width / 2.0f) - physical.width / 2.0f + radius;
 +				float qy = fabsf(py + 0.5f - physical.height / 2.0f) - physical.height / 2.0f + radius;
@@ -1762,7 +1813,7 @@ index e823d62..f0f2f29 100644
  static void scene_handle_linux_dmabuf_v1_destroy(struct wl_listener *listener,
  		void *data) {
  	struct wlr_scene *scene =
-@@ -1756,7 +2765,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
+@@ -1756,7 +2816,7 @@ static bool scene_node_invisible(struct wlr_scene_node *node) {
  	} else if (node->type == WLR_SCENE_NODE_RECT) {
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  
@@ -1771,7 +1822,7 @@ index e823d62..f0f2f29 100644
  	} else if (node->type == WLR_SCENE_NODE_BUFFER) {
  		struct wlr_scene_buffer *buffer = wlr_scene_buffer_from_node(node);
  
-@@ -1772,6 +2781,7 @@ struct render_list_constructor_data {
+@@ -1772,6 +2832,7 @@ struct render_list_constructor_data {
  	bool calculate_visibility;
  	bool highlight_transparent_region;
  	bool fractional_scale;
@@ -1779,7 +1830,7 @@ index e823d62..f0f2f29 100644
  };
  
  static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer) {
-@@ -1786,6 +2796,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
+@@ -1786,6 +2847,39 @@ static bool scene_buffer_is_black_opaque(struct wlr_scene_buffer *scene_buffer)
  static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		int lx, int ly, void *_data) {
  	struct render_list_constructor_data *data = _data;
@@ -1819,7 +1870,7 @@ index e823d62..f0f2f29 100644
  
  	if (scene_node_invisible(node)) {
  		return false;
-@@ -1800,7 +2843,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
+@@ -1800,7 +2894,7 @@ static bool construct_render_list_iterator(struct wlr_scene_node *node,
  		struct wlr_scene_rect *rect = wlr_scene_rect_from_node(node);
  		float *black = (float[4]){ 0.f, 0.f, 0.f, 1.f };
  
@@ -1828,7 +1879,7 @@ index e823d62..f0f2f29 100644
  			return false;
  		}
  	}
-@@ -2046,6 +3089,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
+@@ -2046,6 +3140,7 @@ static void scene_output_state_attempt_gamma(struct wlr_scene_output *scene_outp
  
  bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		struct wlr_output_state *state, const struct wlr_scene_output_state_options *options) {
@@ -1836,7 +1887,7 @@ index e823d62..f0f2f29 100644
  	struct wlr_scene_output_state_options default_options = {0};
  	if (!options) {
  		options = &default_options;
-@@ -2073,6 +3117,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2073,6 +3168,8 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  		.logical = { .x = scene_output->x, .y = scene_output->y },
  		.output = scene_output,
  	};
@@ -1845,7 +1896,7 @@ index e823d62..f0f2f29 100644
  
  	int resolution_width, resolution_height;
  	output_pending_resolution(output, state,
-@@ -2117,6 +3163,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2117,6 +3214,37 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  
  	struct render_list_entry *list_data = list_con.render_list->data;
  	int list_len = list_con.render_list->size / sizeof(*list_data);
@@ -1883,7 +1934,7 @@ index e823d62..f0f2f29 100644
  
  	if (debug_damage == WLR_SCENE_DEBUG_DAMAGE_RERENDER) {
  		scene_output_damage_whole(scene_output);
-@@ -2330,7 +3407,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
+@@ -2330,7 +3458,7 @@ bool wlr_scene_output_build_state(struct wlr_scene_output *scene_output,
  	wlr_output_add_software_cursors_to_render_pass(output, render_pass, &render_data.damage);
  	pixman_region32_fini(&render_data.damage);
  

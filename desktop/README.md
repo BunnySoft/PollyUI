@@ -116,25 +116,34 @@ primitive/SDK extension does not deliver a production Start consumer, change
 theme JSON/config/geometry schemas, or qualify GLES/physical GPUs.
 
 The exact separable filter is CPU-bounded, not a real-time performance guarantee.
-Each tap now loads one packed pixel and updates four independent channel
-accumulators, allowing compiler SLP without changing any channel's tap order,
-kernel normalization, horizontal packed-byte rounding, tint or coverage.
+Four adjacent pixels now use sixteen independent local float accumulators;
+each tap loads each packed pixel once and updates its four channels. Remaining
+one to three pixels use the single-pixel four-channel loop. This permits compiler
+SLP without changing any channel's tap order, kernel normalization, horizontal
+packed-byte rounding, tint or coverage, and adds no allocated workspace.
 There are no platform intrinsics, fast-math flags, approximations or new ABI.
 A full 640x660, sigma16, scale1 update still performs 351,621,120 channel taps.
 
-The original native measurement was about 294ms. A separate pinned-CPU GCC14/O3
-comparison of the frozen reference and this implementation, in sequential
-processes on the same host with one warmup and three measured samples per case,
-gave these full-preparation medians (including actual lower-scene composition):
+The original native measurement was about 294ms. The first fused-channel
+implementation measured 331.922ms reference versus 204.985ms candidate (1.62x)
+for 640x660. A separate GCC14/O3 comparison of the frozen reference and the
+four-pixel experiment, in sequential processes pinned to the same allowed CPU
+on a shared host, with one warmup and three measured samples per case, gave
+these full-preparation medians (including actual lower-scene composition):
 
-| Footprint, sigma16, scale1 | Reference | Four-channel loop | Speedup |
+| Footprint, sigma16, scale1 | Reference | Four-pixel blocks | Speedup |
 | --- | ---: | ---: | ---: |
-| 640x640 | 353.178ms | 191.437ms | 1.84x |
-| 640x660 | 331.922ms | 204.985ms | 1.62x |
+| 640x640 | 288.368ms | 160.806ms | 1.79x |
+| 640x660 | 298.809ms | 167.688ms | 1.78x |
 
 These paired results do **not** meet the optimization's 2x engineering goal or
-the 16.7ms frame budget. Some small-target/low-sigma cases were slower; this is
-not an across-the-board speedup claim. Idle captures still reuse the cache
+the 16.7ms frame budget. The two paired runs are not a direct first-candidate
+versus block comparison or an exclusive-CPU qualification. Some small-target
+cases were slower: the 41x33, sigma2.25, scale1.5 prepare median increased from
+1.218ms to 1.741ms. The actual GCC14 block loops still transpose across taps
+and introduce vector stack traffic; this experiment does not establish the
+intended across-pixel SIMD schedule or an across-the-board speedup.
+Idle captures still reuse the cache
 without filtering. Neither these results nor byte equivalence resolve the
 historical unknown SIGBUS hold or deliver a production Start consumer.
 
