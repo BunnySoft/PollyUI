@@ -556,6 +556,199 @@ static void find_headless(struct wlr_backend *backend, void *data)
 {
     if (wlr_backend_is_headless(backend)) *(struct wlr_backend **)data = backend;
 }
+static bool begin_title_drag(struct PuDesktopView *view)
+{
+    CHECK(wait_presented_frame(view));
+    struct wlr_box inset = {0};
+    pu_decoration_inset(view, &inset, false);
+    int x = 0;
+    for (int i = 0; i < view->presented_box.width; i++) {
+        x = (view->presented_box.width / 4 + i) % view->presented_box.width;
+        if (pu_decoration_hit(view, x, -inset.y / 2.0) == PU_DECORATION_TITLE) break;
+    }
+    CHECK(pu_decoration_hit(view, x, -inset.y / 2.0) == PU_DECORATION_TITLE);
+    clock_ms += 401;
+    motion(view->tree->node.x + x, view->tree->node.y - inset.y / 2.0);
+    button(true);
+    CHECK(desktop.grabbed == view && desktop.grab == PU_DESKTOP_MOVE && desktop.grab_title);
+    CHECK(wait_presented_frame(view));
+    return true;
+}
+static bool title_edge_snap(const char *wire)
+{
+    struct PuDesktopView *view = wire_view();
+    CHECK(view && wl_list_length(&desktop.views) == 1 &&
+        command(TEST_UNCONSTRAINED, 0, 0) && wait_presented_frame(view));
+    struct wlr_output *original = view->output;
+    struct wlr_box full;
+    wlr_output_layout_get_box(desktop.layout, original, &full);
+    CHECK(full.x == 0 && full.y == 0 && full.width == 1280 && full.height == 720);
+    int width = view->presented_box.width, height = view->presented_box.height;
+    for (int edge = 0; edge < 3; edge++) {
+        wlr_scene_node_set_position(&view->tree->node, 80, 160);
+        CHECK(begin_title_drag(view));
+        motion(edge == 0 ? 0 : edge == 1 ? 1279 : 600, edge == 2 ? 0 : 200);
+        CHECK(wait_presented_frame(view) && pause_renderer() && command(TEST_HOLD, 0, 0));
+        struct wlr_box old = view->presented_box;
+        int x = view->tree->node.x, y = view->tree->node.y;
+        uint64_t before = frame_hash(view);
+        uint32_t revision = pu_decoration_presented_revision(view), serial = view->geometry_serial;
+        CHECK(before && revision && !view->geometry_pending && view->mode == PU_DESKTOP_FLOATING);
+        button(false);
+        CHECK(view->geometry_pending && view->geometry_serial != serial &&
+            desktop.grab == PU_DESKTOP_PASSTHROUGH && view->mode == PU_DESKTOP_FLOATING &&
+            wlr_box_equal(&view->presented_box, &old) && frame_hash(view) == before);
+        CHECK(command(TEST_QUERY, 0, 0) && command(TEST_RELEASE, 0, 0));
+        struct wlr_box expected = full;
+        if (edge != 2) {
+            expected.width = 640;
+            if (edge) expected.x = 640;
+        }
+        pu_decoration_inset(view, &expected, true);
+        CHECK(view->toplevel->base->geometry.width == expected.width &&
+            view->toplevel->base->geometry.height == expected.height &&
+            view->geometry_pending && !pu_decoration_presented_current(view) &&
+            view->mode == PU_DESKTOP_FLOATING && view->tree->node.x == x &&
+            view->tree->node.y == y && frame_hash(view) == before);
+        serial = view->geometry_serial;
+        motion(300, 400);
+        CHECK(resume_renderer() && wait_presented_frame(view));
+        CHECK(wlr_box_equal(&view->presented_box, &expected) &&
+            view->tree->node.x == expected.x && view->tree->node.y == expected.y &&
+            view->mode == (edge == 2 ? PU_DESKTOP_MAXIMIZED :
+                edge == 0 ? PU_DESKTOP_TILED_LEFT : PU_DESKTOP_TILED_RIGHT) &&
+            pu_decoration_presented_revision(view) > revision && frame_hash(view) &&
+            view->geometry_serial == serial);
+        printf("PASS: GUI edge release %d holds old owned frame through client ACK; actual client %dx%d and current native revision=%u present at %d,%d exactly once\n",
+            edge, expected.width, expected.height, pu_decoration_presented_revision(view), expected.x, expected.y);
+        if (edge == 2) CHECK(command(TEST_UNMAXIMIZE, 0, 0));
+        else placement_key(KEY_DOWN);
+        CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+            view->presented_box.width == width && view->presented_box.height == height);
+    }
+
+    /* A completed drag restore can snap within the same held gesture. */
+    placement_key(KEY_LEFT);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) && begin_title_drag(view));
+    motion(500, 250);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->mode == PU_DESKTOP_FLOATING && desktop.grab_title_restored);
+    motion(1279, 250); button(false);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->mode == PU_DESKTOP_TILED_RIGHT &&
+        view->floating_box.width == width && view->floating_box.height == height);
+    placement_key(KEY_DOWN);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->presented_box.width == width && view->presented_box.height == height);
+
+    /* Pending restore is rejected, not queued for an ACK-triggered edge action. */
+    placement_key(KEY_LEFT);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) && begin_title_drag(view));
+    CHECK(pause_renderer() && command(TEST_HOLD, 0, 0));
+    motion(1279, 250);
+    CHECK(view->geometry_pending && view->drag_restore_pending);
+    uint32_t serial = view->geometry_serial;
+    struct wlr_box frozen = view->pending_box;
+    button(false);
+    CHECK(view->geometry_serial == serial && view->tile == PU_TILE_NONE && !view->maximized &&
+        desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    motion(0, 0);
+    CHECK(wlr_box_equal(&view->pending_box, &frozen) && command(TEST_RELEASE, 0, 0) &&
+        resume_renderer() && wait_presented_frame(view));
+    CHECK(view->mode == PU_DESKTOP_FLOATING && view->geometry_serial == serial &&
+        !view->drag_restore_pending && !view->tile && !view->maximized &&
+        view->presented_box.width == width && view->presented_box.height == height &&
+        view->tree->node.y == frozen.y);
+    struct wlr_box inset = {0};
+    pu_decoration_inset(view, &inset, false);
+    CHECK(view->tree->node.x == full.width - inset.x - width);
+    puts("PASS: GUI pending restore edge release is explicitly refused, landing freezes, late ACK/frame never replay snap");
+
+    /* A newer native caption alone must also be presented before admission. */
+    wlr_scene_node_set_position(&view->tree->node, 80, 160);
+    CHECK(begin_title_drag(view) && pause_renderer() && command(TEST_RENAME, 0, 0));
+    motion(0, 200);
+    CHECK(!pu_decoration_presented_current(view));
+    serial = view->geometry_serial;
+    button(false);
+    CHECK(view->geometry_serial == serial && !view->geometry_pending && !view->tile && !view->maximized);
+    CHECK(resume_renderer() && wait_presented_frame(view) && view->mode == PU_DESKTOP_FLOATING &&
+        view->geometry_serial == serial);
+
+    struct wlr_backend *backend = NULL;
+    wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+    CHECK(backend);
+    struct wlr_output *extra = wlr_headless_add_output(backend, 200, 300);
+    CHECK(extra);
+    struct wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_scale(&state, 1.25f);
+    CHECK(wlr_output_commit_state(extra, &state));
+    wlr_output_state_finish(&state);
+    CHECK(command(TEST_MAXIMIZE, 0, 0) && wait_presented_frame(view));
+    struct wlr_box destination;
+    wlr_output_layout_get_box(desktop.layout, extra, &destination);
+    CHECK(begin_title_drag(view));
+    motion(destination.x + destination.width / 2, destination.y + 80);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->mode == PU_DESKTOP_FLOATING && view->presented_box.width < width &&
+        view->output == extra && pu_desktop_view_scale(view) == 1.25);
+    motion(destination.x + destination.width - 1, destination.y + 100);
+    CHECK(wait_presented_frame(view));
+    button(false);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->mode == PU_DESKTOP_TILED_RIGHT && view->output == extra && frame_hash(view) &&
+        view->floating_box.width == width && view->floating_box.height == height);
+    struct wlr_box expected = destination;
+    expected.x += expected.width / 2; expected.width -= destination.width / 2;
+    pu_decoration_inset(view, &expected, false);
+    CHECK(wlr_box_equal(&view->presented_box, &expected) &&
+        view->toplevel->base->geometry.width == expected.width &&
+        view->toplevel->base->geometry.height == expected.height);
+    placement_key(KEY_DOWN);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->floating_box.width == width && view->floating_box.height == height);
+    CHECK(begin_title_drag(view));
+    motion(destination.x + destination.width - 1, destination.y + 100);
+    wlr_output_destroy(extra);
+    CHECK(!desktop.grabbed && desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    button(false);
+    CHECK(command(TEST_QUERY, 0, 0) && wait_presented_frame(view) &&
+        view->mode == PU_DESKTOP_FLOATING && view->output == original);
+    puts("PASS: GUI cross-output restore then edge snap preserves original floating size, presents correct 125% native frame, and output retirement prevents replay");
+
+    wlr_scene_node_set_position(&view->tree->node, 80, 160);
+    CHECK(begin_title_drag(view));
+    motion(0, 200);
+    char locker[PATH_MAX];
+    const char *slash = strrchr(wire, '/');
+    CHECK(slash && snprintf(locker, sizeof(locker), "%.*s/polly-lock-test-client",
+        (int)(slash - wire), wire) < (int)sizeof(locker));
+    char *args[] = {locker, "unlock", NULL};
+    CHECK(pu_session_lock_spawn(&desktop, args) && pu_session_lock_active(&desktop) &&
+        desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    button(false);
+    for (int i = 0; i < 600 && pu_session_lock_active(&desktop); i++) CHECK(pump());
+    CHECK(!pu_session_lock_active(&desktop) && command(TEST_QUERY, 0, 0) &&
+        wait_presented_frame(view) && view->mode == PU_DESKTOP_FLOATING);
+    for (int retirement = 0; retirement < 2; retirement++) {
+        wlr_scene_node_set_position(&view->tree->node, 80, 160);
+        CHECK(begin_title_drag(view));
+        motion(0, 200);
+        CHECK(command(retirement ? TEST_DESTROY_ROLE : TEST_UNMAP, 0, 0));
+        CHECK(!wire_view() && !desktop.grabbed && desktop.grab == PU_DESKTOP_PASSTHROUGH);
+        view = NULL;
+        button(false);
+        if (!retirement) {
+            CHECK(command(TEST_REMAP, 0, 0));
+            view = wire_view();
+            CHECK(view && wait_presented_frame(view) && view->mode == PU_DESKTOP_FLOATING);
+        }
+    }
+    CHECK(command(TEST_DESTROY, 0, 0) && command(TEST_QUIT, 0, 0));
+    puts("PASS: GUI lock, unmap/remap and role retirement cancel edge gestures without stale release operations");
+    return true;
+}
 static bool title_drag_restore(void)
 {
     struct PuDesktopView *view = wire_view();
@@ -1268,6 +1461,7 @@ static bool suite(const char *ui, const char *wire, const char *mode)
     CHECK(start_wire(wire));
     struct PuDesktopView *view = wire_view();
     CHECK(frame_hash(view) && buffer_count(&view->tree->node) == 5);
+    if (!strcmp(mode, "title-snap")) return title_edge_snap(wire);
     if (!strcmp(mode, "title-drag")) return title_drag_restore();
     if (!strcmp(mode, "frame-fence")) return presented_frame_fence(ui);
     if (!strcmp(mode, "backdrop")) return backdrop_consumer(ui, wire);

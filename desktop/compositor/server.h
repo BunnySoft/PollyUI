@@ -119,6 +119,8 @@ struct PuDesktop {
     double last_title_x, last_title_y;
     enum PuDesktopGrab grab;
     double grab_x, grab_y;
+    double grab_start_x, grab_start_y;
+    bool grab_title, grab_title_moved, grab_title_restored;
     struct wlr_box grab_box;
     uint32_t grab_edges, grab_button, suppressed_button;
     int output_count;

@@ -827,6 +827,208 @@ static bool current_native_frame(struct PuDesktopView *view)
     CHECK(false);
 }
 
+static bool begin_title_drag(struct PuDesktopView *view)
+{
+    CHECK(current_native_frame(view));
+    struct wlr_box inset = {0};
+    pu_decoration_inset(view, &inset, false);
+    int x = view->presented_box.width / 4;
+    for (int i = 0; i < view->presented_box.width; i++) {
+        x = (view->presented_box.width / 4 + i) % view->presented_box.width;
+        if (pu_decoration_hit(view, x, -inset.y / 2.0) == PU_DECORATION_TITLE) break;
+    }
+    CHECK(pu_decoration_hit(view, x, -inset.y / 2.0) == PU_DECORATION_TITLE);
+    time_msec += 401;
+    motion(view->tree->node.x + x, view->tree->node.y - inset.y / 2.0);
+    button(BTN_LEFT, true);
+    CHECK(desktop.grabbed == view && desktop.grab == PU_DESKTOP_MOVE && desktop.grab_title);
+    CHECK(current_native_frame(view));
+    return true;
+}
+
+static bool title_snap_suite(struct TestClient *client, struct PuDesktopView *view)
+{
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0) && current_native_frame(view));
+    struct wlr_output *original = view->output;
+    struct wlr_box full;
+    wlr_output_layout_get_box(desktop.layout, original, &full);
+    CHECK(full.x == 0 && full.y == 0 && full.width == 1280 && full.height == 720);
+    const struct { double x, y; enum PuDesktopMode mode; } cases[] = {
+        {11.5, 200, PU_DESKTOP_TILED_LEFT}, {12, 200, PU_DESKTOP_FLOATING},
+        {1268, 200, PU_DESKTOP_TILED_RIGHT}, {1267.5, 200, PU_DESKTOP_FLOATING},
+        {600, 11.5, PU_DESKTOP_MAXIMIZED}, {600, 12, PU_DESKTOP_FLOATING},
+        {0, 0, PU_DESKTOP_MAXIMIZED}, {1279, 0, PU_DESKTOP_MAXIMIZED},
+        {500, 300, PU_DESKTOP_FLOATING},
+    };
+    int width = view->presented_box.width, height = view->presented_box.height;
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        wlr_scene_node_set_position(&view->tree->node, 80, 160);
+        CHECK(begin_title_drag(view));
+        uint32_t serial = view->geometry_serial;
+        motion(cases[i].x, cases[i].y);
+        CHECK(desktop.grab_title_moved && view->tile == PU_TILE_NONE &&
+            !view->maximized && !view->geometry_pending && view->geometry_serial == serial);
+        CHECK(current_native_frame(view));
+        button(BTN_LEFT, false);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+        CHECK(view->mode == cases[i].mode && desktop.grab == PU_DESKTOP_PASSTHROUGH &&
+            !desktop.grab_title && !desktop.grab_title_moved);
+        if (cases[i].mode == PU_DESKTOP_FLOATING) CHECK(view->geometry_serial == serial);
+        else {
+            struct wlr_box expected = full;
+            if (cases[i].mode != PU_DESKTOP_MAXIMIZED) {
+                expected.width = 640;
+                if (cases[i].mode == PU_DESKTOP_TILED_RIGHT) expected.x = 640;
+            }
+            pu_decoration_inset(view, &expected, false);
+            CHECK(wlr_box_equal(&view->presented_box, &expected) &&
+                geometry_is(view, expected.x, expected.y, expected.width, expected.height));
+            CHECK(client->reply.maximized == (cases[i].mode == PU_DESKTOP_MAXIMIZED) &&
+                client->reply.tiled == (cases[i].mode == PU_DESKTOP_MAXIMIZED ? 0 : 15));
+            serial = view->geometry_serial;
+            motion(300, 300);
+            CHECK(command(client, TEST_QUERY, 0, 0, 0) && view->geometry_serial == serial);
+            if (view->maximized) CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
+            else CHECK(snap_key(client, KEY_DOWN));
+            CHECK(current_native_frame(view) && view->presented_box.width == width &&
+                view->presented_box.height == height);
+        }
+    }
+    /* A caption already inside the top strip is not a snap without >5px motion. */
+    for (int distance = 0; distance <= 6; distance += distance == 0 ? 4 : 1) {
+        struct wlr_box inset = {0};
+        pu_decoration_inset(view, &inset, false);
+        wlr_scene_node_set_position(&view->tree->node, 80, inset.y / 2 + 6);
+        CHECK(begin_title_drag(view));
+        double x = desktop.cursor->x, y = desktop.cursor->y;
+        uint32_t serial = view->geometry_serial;
+        motion(x + distance, y);
+        CHECK(current_native_frame(view));
+        button(BTN_LEFT, false);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+        CHECK(distance == 6 ? view->mode == PU_DESKTOP_MAXIMIZED :
+            view->mode == PU_DESKTOP_FLOATING && view->geometry_serial == serial);
+        if (distance == 6) CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
+        CHECK(current_native_frame(view));
+    }
+    wlr_scene_node_set_position(&view->tree->node, 80, 160);
+    struct TestRequest limits = {.command = TEST_LIMITS, .layer = {.width = 700}};
+    CHECK(exchange(client, &limits) && current_native_frame(view));
+    struct wlr_box saved = view->floating_box;
+    CHECK(begin_title_drag(view));
+    uint32_t serial = view->geometry_serial;
+    motion(0, 200); button(BTN_LEFT, false);
+    CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+    CHECK(view->mode == PU_DESKTOP_FLOATING && view->geometry_serial == serial &&
+        wlr_box_equal(&view->floating_box, &saved));
+    CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
+
+    /* Real serial client move, Alt move, resize and ordinary client drags do not snap. */
+    struct TestRequest size = {.command = TEST_CLIENT_SIZE, .layer = {.width = width, .height = height}};
+    for (int kind = 0; kind < 4; kind++) {
+        CHECK(exchange(client, &size) && current_native_frame(view));
+        wlr_scene_node_set_position(&view->tree->node, 80, 160);
+        CHECK(current_native_frame(view));
+        time_msec += 401;
+        motion(100, 180); button(BTN_LEFT, true);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0));
+        if (kind == 0) CHECK(command(client, TEST_MOVE, 0, client->reply.serial, 0));
+        if (kind == 2) CHECK(command(client, TEST_RESIZE, 0, client->reply.serial, WLR_EDGE_RIGHT));
+        if (kind == 1) {
+            button(BTN_LEFT, false);
+            key(KEY_LEFTALT, true); button(BTN_LEFT, true);
+        }
+        CHECK(!desktop.grab_title);
+        motion(0, 200); button(BTN_LEFT, false);
+        if (kind == 1) key(KEY_LEFTALT, false);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+        CHECK(view->mode == PU_DESKTOP_FLOATING && !view->tile && !view->maximized);
+    }
+    CHECK(exchange(client, &size) && current_native_frame(view));
+
+    /* Recheck authority on release even when no new motion can run its guard. */
+    for (int blocker = 0; blocker < 5; blocker++) {
+        wlr_scene_node_set_position(&view->tree->node, 80, 160);
+        CHECK(begin_title_drag(view));
+        motion(0, 200);
+        serial = view->geometry_serial;
+        if (blocker == 0) desktop.session_exit_pending = true;
+        if (blocker == 1) {
+            title_restore_keyboard_impl = *desktop.seat->keyboard_state.default_grab->interface;
+            title_restore_keyboard_grab.interface = &title_restore_keyboard_impl;
+            wlr_seat_keyboard_start_grab(desktop.seat, &title_restore_keyboard_grab);
+            CHECK(wlr_seat_keyboard_has_grab(desktop.seat));
+        }
+        if (blocker == 2) {
+            title_restore_pointer_impl = *desktop.seat->pointer_state.default_grab->interface;
+            title_restore_pointer_grab.interface = &title_restore_pointer_impl;
+            wlr_seat_pointer_start_grab(desktop.seat, &title_restore_pointer_grab);
+            CHECK(wlr_seat_pointer_has_grab(desktop.seat));
+        }
+        if (blocker == 3) CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 1, 0, 0));
+        struct PuWorkspace *workspace = desktop.active_workspace;
+        if (blocker == 4) pu_workspace_step(&desktop, 1);
+        button(BTN_LEFT, false);
+        desktop.session_exit_pending = false;
+        finish_title_restore_grabs();
+        if (blocker == 3) CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 0, 0, 0));
+        if (blocker == 4) pu_workspace_activate(&desktop, workspace, view);
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+        CHECK(view->geometry_serial == serial && !view->maximized && !view->tile &&
+            desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    }
+    if (!nested) {
+        struct wlr_backend *backend = NULL;
+        wlr_multi_for_each_backend(desktop.backend, find_headless, &backend);
+        CHECK(backend);
+        struct wlr_output *extra = wlr_headless_add_output(backend, 801, 701);
+        CHECK(extra && resize_output(extra, 1001, 876, 1.25f));
+        CHECK(wlr_output_layout_add(desktop.layout, original, 0, 0) &&
+            wlr_output_layout_add(desktop.layout, extra, -801, -100));
+        struct TestLayer top = {.output = 2, .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+            .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+                ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT,
+            .height = 31, .zone = 31};
+        struct TestLayer dock = {.output = 2, .layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP,
+            .anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM, .width = 120, .height = 39, .zone = 39};
+        CHECK(layer_command(TEST_LAYER_MAP, 3, top) && layer_command(TEST_LAYER_MAP, 4, dock));
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+        struct wlr_box target;
+        wlr_output_layout_get_box(desktop.layout, extra, &target);
+        CHECK(target.x == -801 && target.y == -100 && target.width == 801 && target.height == 701);
+        for (int edge = 0; edge < 3; edge++) {
+            wlr_scene_node_set_position(&view->tree->node, 80, 160);
+            CHECK(begin_title_drag(view));
+            double x = edge == 0 ? -790 : edge == 1 ? -1 : -400;
+            double y = edge == 2 ? -99 : 200;
+            motion(x, y);
+            CHECK(current_native_frame(view));
+            /* Right-edge pointer is on extra while most of the floating body is on original. */
+            if (edge == 1) CHECK(view->tree->node.x + width / 2 > 0);
+            button(BTN_LEFT, false);
+            CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+            struct wlr_box expected = {-801, -69, 801, 631};
+            if (edge != 2) {
+                expected.width = edge ? 401 : 400;
+                if (edge) expected.x += 400;
+            }
+            pu_decoration_inset(view, &expected, false);
+            CHECK(view->output == extra && wlr_box_equal(&view->presented_box, &expected) &&
+                geometry_is(view, expected.x, expected.y, expected.width, expected.height));
+            if (edge == 2) CHECK(command(client, TEST_UNMAXIMIZE, 0, 0, 0));
+            else CHECK(snap_key(client, KEY_DOWN));
+            CHECK(current_native_frame(view));
+        }
+        wlr_output_destroy(extra);
+        CHECK(command(&shell_client, TEST_DESTROY, 0, 0, 0));
+        CHECK(command(client, TEST_QUERY, 0, 0, 0) && current_native_frame(view));
+    }
+    wlr_scene_node_set_position(&view->tree->node, 80, 160);
+    CHECK(exchange(client, &size) && current_native_frame(view));
+    puts("PASS: caption-only release snap uses >5px motion, half-open 12px outer strips/top-first corners, single release admission, size rejection, seat/workspace/exit/recording guards and pointer-selected negative-origin 125% odd work area");
+    return true;
+}
+
 static bool title_restore_suite(struct TestClient *client, struct PuDesktopView *view, const char *path)
 {
     CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0) && current_native_frame(view));
@@ -1074,6 +1276,7 @@ static bool decoration_suite(const char *path)
      * its own real native window-contract fixture. */
     CHECK(command(client, TEST_UNCONSTRAINED, 0, 0, 0));
     CHECK(title_restore_suite(client, view, path));
+    CHECK(title_snap_suite(client, view));
     CHECK(decoration_click(client, view, PU_DECORATION_MAXIMIZE));
     CHECK(view->mode == PU_DESKTOP_MAXIMIZED);
     CHECK(pu_decoration_button_box(view, PU_DECORATION_CLOSE, &box));
