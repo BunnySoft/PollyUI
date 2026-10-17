@@ -1583,6 +1583,38 @@ Compatibility qualification additionally uses an actual frozen v4 provider
 archive with its original headers and the new GUI; that external frozen-provider
 fixture is not synthesized by reducing the new compositor's advertised version.
 
+The ordinary menu additionally offers **Tile windows horizontally** (full-width
+rows) and **Tile windows vertically** (full-height columns) with paired workspace
+manager/child v6 and its explicit arrangement capability.
+`desktop.windows()` reports `arrangementSupported: false` on v3/v4/v5 providers;
+both commands are hidden and
+`desktop.arrangeWindows(id, 'horizontal' | 'vertical', epoch)` rejects locally
+without sending an unsupported request. V5 Cascade, half/restore and the three
+layout-only Maxhover actions remain independently available.
+
+These are one-time floating arrangements, not persistent Snap, four-way tiling,
+preview or overview. They reuse Cascade's ordinary-menu authority, presented
+principal output, current workspace, skipped entire transient families and
+private/minimized/fullscreen/pending windows. Each outer frame receives an exact
+integer partition of the complete work area before its own native insets are
+applied. A cell that cannot exactly accommodate any declared min/max/fixed client
+size or native insets rejects the whole temporary plan before any configure or
+saved floating geometry changes. Empty cells, no eligible clients and allocation
+failure are also explicit denials; no fit-to-work-area clamping is used to make
+an unfit cell appear valid. Scene order and focus are preserved.
+
+The result remains exactly `{admitted: true}`, not an affected count or a promise
+that every client has presented. Each client and GUI-native frame crosses the
+existing presentation fence. A client may decline the suggested cell size; its
+actual final floating geometry is presented with a one-shot compositor error,
+not silent success, forced pixel scaling or infinite retries. Windows remain
+freely movable/resizable afterward, and later half/max operations save their
+newly presented float size. This does not claim GPU/physical-display validation
+or exact Windows replication. The focused CTest selectors are
+`desktop-window-arrangement-protocol` and `desktop-window-arrangement`; external
+compatibility qualification uses the actual frozen v5 archive and its original
+headers/XML with the new GUI, not a reduced version advertisement.
+
 The workspace menu manually adds/removes/renames/reorders workspaces and switches every output
 together. Four are created on first use, or validated saved preferences restore
 the ordered names and active choice at startup. Empty workspaces are never

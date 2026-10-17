@@ -26,7 +26,8 @@ enum TestCommand {
     TEST_LIMITS, TEST_SHORTCUT_BIND, TEST_SHORTCUT_COMMIT, TEST_SHORTCUT_RECORDING, TEST_REFUSE_TILE,
     TEST_CLIENT_SIZE, TEST_MENU_OPEN, TEST_MENU_PLACE, TEST_MENU_CLOSE, TEST_MENU_RETIRED_PLACE,
     TEST_PICKER_ENABLE, TEST_PICKER_OPEN, TEST_PICKER_DISMISS,
-    TEST_MENU_CASCADE, TEST_MENU_RETIRED_CASCADE
+    TEST_MENU_CASCADE, TEST_MENU_RETIRED_CASCADE,
+    TEST_MENU_ARRANGE, TEST_MENU_RETIRED_ARRANGE
 };
 
 struct TestLayer {
@@ -68,6 +69,8 @@ struct TestReply {
     uint32_t placement, placement_pending, placement_capabilities;
     char placement_message[192];
     uint32_t picker_capability, picker_token, picker_target, picker_offers, picker_dismissals;
+    uint32_t arrangement_capability;
+    uint32_t output_ids[8];
 };
 
 #endif

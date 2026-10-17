@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <protocol name="polly_workspace_toplevel_v1">
-  <interface name="polly_workspace_toplevel_manager_v1" version="5">
+  <interface name="polly_workspace_toplevel_manager_v1" version="6">
     <description summary="trusted workspace membership for foreign toplevels">
       Workspace listing, creation, removal and activation use ext-workspace-v1.
       This restricted extension associates foreign toplevels with workspaces.
@@ -8,6 +8,7 @@
       Version 3 pairs with version 3 children for bounded window-menu placement.
       Version 4 pairs with version 4 children for a native-caption hover grant.
       Version 5 pairs with version 5 children for display-local menu cascade.
+      Version 6 pairs with version 6 children for horizontal/vertical arrangement.
       Older bindings retain their original menu semantics and have no picker.
     </description>
     <enum name="error">
@@ -77,8 +78,11 @@
     <event name="layout_picker_capabilities" since="4">
       <arg name="supported" type="uint" summary="one supports the paired v4 grant; zero does not"/>
     </event>
+    <event name="arrangement_capabilities" since="6">
+      <arg name="supported" type="uint" summary="one supports both bounded v6 arrangements; zero does not"/>
+    </event>
   </interface>
-  <interface name="polly_workspace_toplevel_v1" version="5">
+  <interface name="polly_workspace_toplevel_v1" version="6">
     <request name="destroy" type="destructor"/>
     <request name="move_to">
       <description summary="move the toplevel family without activating it">
@@ -224,6 +228,30 @@
       </description>
       <arg name="serial" type="uint"/>
       <arg name="epoch" type="uint"/>
+    </request>
+    <enum name="arrangement" since="6">
+      <entry name="horizontal" value="1" summary="full-width rows"/>
+      <entry name="vertical" value="2" summary="full-height columns"/>
+    </enum>
+    <request name="arrange" since="6">
+      <description summary="one floating arrangement of current-workspace applications">
+        Requires arrangement_capabilities and paired v6 manager/child objects.
+        Uses the same ordinary-menu epoch, serial, target display, eligibility,
+        input guards and atomic preflight as cascade. A layout picker epoch
+        never authorizes a batch command. No output, window array or arbitrary
+        geometry is accepted. Each outer frame receives an exact integer
+        partition of the whole work area, then its own native insets. Any
+        client size limit or native inset that cannot fit its cell rejects
+        the whole request before mutation, as do empty cells or no candidates.
+        Existing scene order and focus remain. Final placement is floating,
+        not a new persistent snap mode; v3 state and capability bits do not
+        change. Accepted result means admitted, not all clients presented.
+        A client may decline a suggested size; its actual final floating
+        geometry is presented and the compositor logs a one-shot diagnostic.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="epoch" type="uint"/>
+      <arg name="arrangement" type="uint" enum="arrangement"/>
     </request>
   </interface>
 </protocol>

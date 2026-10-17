@@ -827,6 +827,15 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PU_BUILD_DESKTOP AND PU_BUILD_LAUNCHE
                     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;cascade"
                     ENVIRONMENT "PU_RENDERER=raster")
             endforeach()
+            foreach(arrangement_mode IN ITEMS arrangement-protocol arrangement)
+                add_test(NAME desktop-window-${arrangement_mode}
+                    COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
+                        $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
+                        $<TARGET_FILE:pollywm-test-client> ${arrangement_mode})
+                set_tests_properties(desktop-window-${arrangement_mode} PROPERTIES TIMEOUT 40
+                    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" LABELS "private-native;decorator;arrangement"
+                    ENVIRONMENT "PU_RENDERER=raster")
+            endforeach()
             add_test(NAME desktop-shell-regional-backdrop-native
                 COMMAND sh "${CMAKE_SOURCE_DIR}/desktop/tests/runtime-client.sh"
                     $<TARGET_FILE:pollywm-decorator-lifecycle-test> $<TARGET_FILE:pollyui>
