@@ -730,6 +730,7 @@ static struct wlr_output *output_for_box(struct PuDesktop *desktop, const struct
 
 double pu_desktop_view_scale(struct PuDesktopView *view)
 {
+    if (view->drag_restore_pending && view->output) return view->output->scale;
     struct wlr_box box = view_box(view);
     struct wlr_output *output = output_for_box(view->desktop, &box);
     return output ? output->scale : 1;
@@ -869,11 +870,10 @@ static void configure_view(struct PuDesktopView *view, struct wlr_box box,
     configure_geometry(view, box, bounds);
 }
 
-static bool restore_title_move(struct PuDesktopView *view)
+static bool configure_restored_move(struct PuDesktopView *view, struct wlr_output *output)
 {
     struct PuDesktop *desktop = view->desktop;
-    struct wlr_box box = view->tile != PU_TILE_NONE ? view->floating_box : view->restore_box;
-    struct wlr_output *output = initial_output(desktop);
+    struct wlr_box box = desktop->grab_box;
     struct wlr_box bounds;
     if (box.width < 1 || box.height < 1 || !output_box(desktop, output, &bounds)) {
         wlr_log(WLR_INFO, "Cannot drag-restore without saved floating geometry and an enabled output");
@@ -883,10 +883,7 @@ static bool restore_title_move(struct PuDesktopView *view)
     use_work_area(output, &bounds);
     pu_decoration_inset(view, &bounds, true);
     fit_floating(view, &box, &bounds);
-    double anchor = desktop->grab_x / desktop->grab_box.width;
-    if (anchor < 0) anchor = 0;
-    if (anchor > 1) anchor = 1;
-    desktop->grab_x = (int)(box.width * anchor);
+    desktop->grab_x = (int)(box.width * view->drag_restore_anchor);
     box.x = (int)(desktop->cursor->x - desktop->grab_x);
     box.y = (int)(desktop->cursor->y - desktop->grab_y);
     keep_visible(&box, &bounds);
@@ -896,12 +893,22 @@ static bool restore_title_move(struct PuDesktopView *view)
     view->maximized = false;
     view->tile = PU_TILE_NONE;
     view->drag_restore_pending = true;
-    view->drag_restore_anchor = anchor;
     /* Only this admitted title gesture survives its own configure. All other
      * geometry changes still use configure_view and retire the grab. */
     configure_geometry(view, box, &bounds);
     sync_foreign(desktop);
     return true;
+}
+
+static bool restore_title_move(struct PuDesktopView *view)
+{
+    struct PuDesktop *desktop = view->desktop;
+    double anchor = desktop->grab_x / desktop->grab_box.width;
+    if (anchor < 0) anchor = 0;
+    if (anchor > 1) anchor = 1;
+    view->drag_restore_anchor = anchor;
+    desktop->grab_box = view->tile != PU_TILE_NONE ? view->floating_box : view->restore_box;
+    return configure_restored_move(view, initial_output(desktop));
 }
 
 static void set_view_state(struct PuDesktopView *view, bool maximized, bool fullscreen,
@@ -1446,6 +1453,7 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
     if (view && desktop->grab == PU_DESKTOP_MOVE) {
         if (!view->mapped || view->minimized || !pu_workspace_current(view) ||
             modal_target(view) != view || desktop->session_exit_pending ||
+            pu_shortcuts_recording(desktop) ||
             wlr_seat_pointer_has_grab(desktop->seat) || wlr_seat_keyboard_has_grab(desktop->seat)) {
             end_grab(desktop);
             return;
@@ -1462,10 +1470,13 @@ static void process_motion(struct PuDesktop *desktop, uint32_t time)
         if (view->drag_restore_pending) {
             /* Never move the old placed frame while either client or native
              * caption is pending. Release freezes this transaction's last point. */
-            view->pending_box.x = (int)(desktop->cursor->x - desktop->grab_x);
-            view->pending_box.y = (int)(desktop->cursor->y - desktop->grab_y);
             struct wlr_output *output = initial_output(desktop);
-            if (output) view->output = output;
+            if (output != view->output) {
+                configure_restored_move(view, output);
+            } else {
+                view->pending_box.x = (int)(desktop->cursor->x - desktop->grab_x);
+                view->pending_box.y = (int)(desktop->cursor->y - desktop->grab_y);
+            }
             return;
         }
         wlr_scene_node_set_position(&view->tree->node,
@@ -1547,6 +1558,7 @@ static void begin_grab(struct PuDesktopView *view, enum PuDesktopGrab mode,
 {
     struct PuDesktop *desktop = view->desktop;
     if (pu_session_lock_active(desktop) || desktop->session_exit_pending ||
+        pu_shortcuts_recording(desktop) ||
         wlr_seat_pointer_has_grab(desktop->seat) || wlr_seat_keyboard_has_grab(desktop->seat)) return;
     if (modal_target(view) != view) return;
     if (!view->mapped || view->minimized || !pu_workspace_current(view) || desktop->grab != PU_DESKTOP_PASSTHROUGH ||
@@ -1646,7 +1658,8 @@ static void cursor_button(struct wl_listener *listener, void *data)
             desktop->cursor->x - view->tree->node.x, desktop->cursor->y - view->tree->node.y) : 0;
         if (part != PU_DECORATION_TITLE || event->button != BTN_LEFT) desktop->last_title_click = NULL;
         if (part && event->button == BTN_LEFT && !desktop->focused_layer &&
-            !desktop->session_exit_pending && !wlr_seat_keyboard_has_grab(desktop->seat)) {
+            !desktop->session_exit_pending && !pu_shortcuts_recording(desktop) &&
+            !wlr_seat_keyboard_has_grab(desktop->seat)) {
             desktop->suppressed_button = event->button;
             if (part < PU_DECORATION_TITLE) begin_grab(view, PU_DESKTOP_RESIZE, (uint32_t)part, event->button, false);
             else if (part == PU_DECORATION_TITLE) {

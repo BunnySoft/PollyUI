@@ -899,7 +899,17 @@ static bool title_restore_suite(struct TestClient *client, struct PuDesktopView 
     time_msec += 401;
     motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
     CHECK(desktop.grab == PU_DESKTOP_PASSTHROUGH && view->maximized);
+    motion(x, y); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
     wlr_seat_keyboard_end_grab(desktop.seat);
+    CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 1, 0, 0));
+    time_msec += 401;
+    motion(x, y); button(BTN_LEFT, true); motion(x + 30, y + 50); button(BTN_LEFT, false);
+    motion(x, y); button(BTN_LEFT, true); button(BTN_LEFT, false);
+    button(BTN_LEFT, true); button(BTN_LEFT, false);
+    CHECK(view->maximized && !view->geometry_pending && desktop.grab == PU_DESKTOP_PASSTHROUGH);
+    CHECK(command(&shell_client, TEST_SHORTCUT_RECORDING, 0, 0, 0));
 
     /* A workspace switch cancels both an armed and an admitted pending gesture. */
     for (int pending = 0; pending < 2; pending++) {

@@ -1427,7 +1427,10 @@ restore early.
 Restoration uses the shared client-configure/native-caption presentation fence:
 the old placed frame does not move while waiting for a client buffer or GUI
 caption. Motion updates the pending landing point; release freezes that point
-even if presentation is late. Workspace, lock/input isolation, target retirement,
+even if presentation is late. Crossing to another output while pending refits
+the original saved size to that output's work area and issues a matching client
+configure and caption-scale revision; the earlier output's ACK/frame cannot
+present the new landing point. Workspace, lock/input isolation, target retirement,
 output/layout changes or another geometry command end the gesture, and a late
 frame never restarts it. Already admitted geometry can finish at its frozen point
 unless superseded or unmapped. This adds no JavaScript geometry channel, edge
