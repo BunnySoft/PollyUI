@@ -21,6 +21,8 @@ printf 'PollyDesktop Live hardware report. Local only; review before sharing.\n'
 printf 'Mode=%s GPU-selection=%s\n' "${POLLY_LIVE_MODE:-unknown}" "${POLLY_LIVE_GPU:-unknown}" >>"$report"
 capture uname -a
 capture cat /proc/cmdline
+capture cat /proc/uptime
+capture cat /usr/share/pollyui/runtime-origin.json
 capture cat /proc/meminfo
 capture lspci -nnk
 capture lsusb
@@ -44,13 +46,30 @@ if command -v rc-status >/dev/null 2>&1; then
     capture rc-status -a
 else
     capture systemctl --failed --no-pager
+    capture systemctl list-jobs --no-pager
+    capture systemd-analyze --no-pager time
+    capture systemd-analyze --no-pager blame
+    capture systemd-analyze --no-pager critical-chain getty@tty1.service
+    capture systemctl show systemd-udev-settle.service polly-hardware-log.service \
+        polly-live-splash.service polly-live-handoff.service getty@tty1.service \
+        systemd-logind.service systemd-user-sessions.service \
+        --property=Id,ActiveState,SubState,Result,ExecMainCode,ExecMainStatus,TimeoutStartUSec,InactiveExitTimestampMonotonic,ActiveEnterTimestampMonotonic,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,After,Wants
+    capture systemctl cat systemd-udev-settle.service polly-hardware-log.service \
+        polly-live-splash.service polly-live-handoff.service getty@tty1.service
+    capture journalctl -b -k -o short-monotonic --no-pager
+    capture journalctl -b -o short-monotonic --no-pager \
+        -u systemd-udev-settle.service -u polly-hardware-log.service \
+        -u polly-live-splash.service -u polly-live-handoff.service \
+        -u getty@tty1.service -u systemd-logind.service -u systemd-user-sessions.service
+    capture journalctl -b -o short-monotonic --no-pager \
+        -t polly-live -t polly-login -t polly-session
     capture journalctl -b -n 3000 --no-pager
 fi
 capture iw dev
 capture loginctl show-session "${XDG_SESSION_ID:-}" --property=Active --property=User --property=Seat --property=Type
 capture findmnt -rn -o TARGET,SOURCE,FSTYPE,OPTIONS
 capture dmesg
-capture sh -c 'for log in /run/polly-live/boot-hardware.log /var/log/messages; do
+capture sh -c 'for log in /run/polly-live/boot-hardware.log /var/log/messages /run/plymouth/plymouth-debug.log /var/log/boot.log; do
     [ ! -r "$log" ] || { printf "\n%s\n" "$log"; tail -c 4194304 "$log"; }
 done'
 for log in "$HOME"/polly-session-*; do

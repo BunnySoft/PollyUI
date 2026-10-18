@@ -289,6 +289,117 @@ desktop check, visible early-boot/timeout/verbose fallback review, and physical
 display-transition confirmation. No such new-image or physical acceptance is
 claimed by source or native-fixture results.
 
+## Diagnosing a long, silent screen after GRUB
+
+Start with **Advanced startup → Verbose startup (no splash)**. This existing
+entry removes `quiet`/`polly.splash=1`, uses `loglevel=7` and
+`systemd.show_status=yes`, and keeps the same baseline renderer and desktop
+launch. It does not need a rebuilt ISO or change a saved boot configuration.
+Esc only reveals Plymouth details after Plymouth is running; it cannot reveal
+GRUB file loading or kernel work before that daemon exists.
+
+For a one-boot edit, press **E** on the selected entry, remove `quiet`,
+`loglevel=3`, `vt.global_cursor_default=0` and `polly.splash=1` from its `linux`
+line, and add `loglevel=7 systemd.show_status=yes`. Keep `rdinit=/init`,
+the original `initrd` line and `polly.mode=baseline`; use Ctrl+X or F10 to boot.
+Do not begin by adding `nomodeset`, changing GPU/renderer, masking services,
+changing memory or rebuilding the image: those alter the path being measured.
+`initcall_debug ignore_loglevel` is a separate, very verbose second diagnostic
+for a delay already localized to kernel/driver initialization; its logging
+overhead can change timings.
+
+### Locate the interval before choosing a cause
+
+Record wall-clock times from selecting the entry to the first Linux text,
+then the first systemd text, splash handoff, and the usable desktop. Record
+whether a logo/dots ever appeared, whether the desktop eventually opens, and
+the actual ISO SHA/source, machine or VM type, RAM, boot medium and display/GPU.
+Do not infer the tested ISO revision from the current Git branch.
+
+| Interval | Source-supported explanation to investigate | Evidence |
+| --- | --- | --- |
+| GRUB selection → first Linux message | `linux`/`initrd` file loading or firmware/media I/O; afterwards kernel initramfs unpacking. The splash cannot cover this whole interval | Stopwatch/video plus verbose first kernel messages; GRUB time is not in the kernel journal |
+| First kernel message → systemd | Kernel/driver initialization and initramfs unpacking, then `/init` mounts and `exec /sbin/init` | Earliest `journalctl -b -k -o short-monotonic`; find large gaps around unpacking, firmware and DRM records |
+| systemd → tty1/PAM | Unit dependency waits, especially the explicit udev settle → hardware logger → getty chain | `list-jobs`, `critical-chain getty@tty1.service`, actual unit definitions, monotonic start/end properties and journal |
+| Plymouth handoff → compositor output | Plymouth exits before getty/PAM, private D-Bus/audio, DRM/logind setup and first compositor output | Handoff/getty/logind journal versus `polly-live`, `polly-login` and `polly-session` records |
+| Compositor output → usable desktop | Decorator/Shell/IME or presentation readiness; supervisor waits for actual `POLLY_LIVE_DESKTOP_READY outputs=N` | Private `~/polly-session-*` and tag-filtered journal; output mapping/submission alone is not readiness |
+
+Two specific blind intervals are present in the current source, not a proven
+diagnosis of an individual user's machine:
+
+- Default GRUB suppresses most kernel messages. This is a memory-root image:
+  the delivered `8433048` manifest records **1,509,735,523 unpacked regular-file
+  bytes** in a 711,337,984-byte ISO. Loading and unpacking are real work before
+  the systemd Plymouth unit. These sizes do not measure their duration.
+- `polly-hardware-log.service` wants and waits for
+  `systemd-udev-settle.service`, and tty1 getty waits for that hardware logger.
+  The logger itself runs `lspci -nnk` and `dmesg`. Global udev settle can wait
+  on unrelated hardware events; the exact timeout must be read from the
+  running image, not guessed. Separately, `polly-live-handoff.service` quits
+  Plymouth before getty and does not wait for the hardware logger. Thus a
+  retained splash can be handed off while a different getty prerequisite is
+  still pending. Whether that display becomes black depends on the real
+  firmware/DRM/VT transition.
+
+The desktop supervisor's **90 seconds start only after the ordinary-user
+launcher begins**. They do not bound GRUB, unpacking, kernel init, systemd or
+the earlier udev/getty wait. Plymouth's unit timeout and its configured device
+timeout are different bounds, not a whole-system startup deadline.
+
+### Collect evidence in the running Live guest
+
+If the desktop eventually starts, use its terminal or Ctrl+Alt+F2. If necessary
+choose **Advanced startup → Diagnostics console (no desktop)** on the next
+boot; that still uses the system/getty prerequisites and is not a bypass of
+udev settle. Run as the ordinary Live user:
+
+```sh
+cat /proc/cmdline
+cat /proc/uptime
+cat /usr/share/pollyui/runtime-origin.json
+systemctl list-jobs --no-pager
+systemd-analyze --no-pager time
+systemd-analyze --no-pager blame
+systemd-analyze --no-pager critical-chain getty@tty1.service
+systemctl cat systemd-udev-settle.service polly-hardware-log.service \
+  polly-live-splash.service polly-live-handoff.service getty@tty1.service
+journalctl -b -k -o short-monotonic --no-pager
+journalctl -b -o short-monotonic --no-pager \
+  -u systemd-udev-settle.service -u polly-hardware-log.service \
+  -u polly-live-splash.service -u polly-live-handoff.service -u getty@tty1.service
+journalctl -b -o short-monotonic --no-pager -t polly-live -t polly-login -t polly-session
+polly-live-diagnostics
+```
+
+`systemd-analyze time/blame/critical-chain` may report that boot is not finished;
+preserve that error and collect `list-jobs`, journal and unit properties instead.
+`blame` is not proof of the critical path and normally does not include time
+queued before activation or GRUB/firmware time. In a memory-root boot the kernel
+may report initramfs unpacking as kernel time rather than a separate systemd
+initrd phase; do not add overlapping times. A missing origin file means this
+older image does not carry that receipt, not that the source revision is known.
+
+Current-source `polly-live-diagnostics` additionally records these timelines and
+monotonic unit properties, including actual timeout settings. Older delivered
+ISOs keep their original collector; the individual commands above work without
+that collector update. Missing tools/permissions are explicitly retained as
+`[unavailable or failed: exit N]`, not replaced by an empty success result.
+If kernel logs are denied, use only an already-authorized guest administrator
+session to read them; do not weaken host or guest log-access policy.
+
+The report is private/local under `~/polly-diagnostics.*/report.txt`, and both
+journal and HOME disappear at shutdown in this memory-only system. Review for
+device identifiers, network addresses, filenames and other private data before
+exporting. Do not upload a whole report without review.
+
+**Interpretation:** a long gap before the first kernel message is not a Shell
+problem. A long/failed udev-settle unit that holds getty identifies a system-unit
+wait to investigate. A handoff-to-PAM gap and a PAM-to-ready gap are different
+stages. An existing ready marker followed by a black screen is a later
+display/session failure, not an unmet startup gate. Do not remove a dependency,
+disable splash, increase a timeout or replace a GPU backend as a claimed root
+cause fix without the corresponding interval and actual logs.
+
 ## Build
 
 First generate and verify the `0.1.0-alpha.4` runtime package and its runtime

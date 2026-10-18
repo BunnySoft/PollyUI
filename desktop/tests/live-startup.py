@@ -3,8 +3,10 @@
 import ast
 import io
 import json
+import os
 from pathlib import Path
 import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -131,6 +133,52 @@ class Startup(unittest.TestCase):
         self.assertEqual(pixels[index:index + 4], bytes((*assets["FOREGROUND"], 255)))
         dependencies = json.loads((REPO / "desktop/release/debian/boot-dependencies.json").read_text())
         self.assertEqual(set(dependencies["packages"].values()), {"24.004.60-5"})
+
+    def test_diagnostics_keeps_boot_timeline_and_reports_unavailable_tools(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tools, home = root / "tools", root / "home"
+            tools.mkdir()
+            home.mkdir()
+            stub = tools / "diagnostic-stub"
+            stub.write_text("#!/bin/sh\n"
+                            "name=${0##*/}\n"
+                            "if [ \"$name\" = id ]; then printf '1000\\n'; exit 0; fi\n"
+                            "if [ \"$name\" = systemd-analyze ]; then\n"
+                            "  printf 'Boot timing unavailable while startup is still in progress\\n'\n"
+                            "  exit 1\n"
+                            "fi\n"
+                            "printf 'fixture %s %s\\n' \"$name\" \"$*\"\n")
+            stub.chmod(0o755)
+            for name in ("id", "uname", "cat", "lspci", "lsusb", "lsmod", "aplay",
+                         "arecord", "ip", "rfkill", "systemctl", "systemd-analyze",
+                         "journalctl", "iw", "loginctl", "findmnt", "dmesg", "sh"):
+                (tools / name).symlink_to(stub.name)
+            (tools / "mktemp").symlink_to(shutil.which("mktemp"))
+            # Restrict utility discovery so no host journal/device command can run.
+            script = REPO / "desktop/release/live/diagnostics"
+            result = subprocess.run(["/bin/sh", str(script)], text=True, capture_output=True,
+                                    timeout=10, env={**os.environ, "HOME": str(home),
+                                    "XDG_RUNTIME_DIR": "/run/user/1000", "PATH": str(tools)})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            report, = home.glob("polly-diagnostics.*/report.txt")
+            text = report.read_text()
+            for command in ("cat /proc/uptime", "cat /usr/share/pollyui/runtime-origin.json",
+                            "systemctl list-jobs", "systemd-analyze --no-pager time",
+                            "systemd-analyze --no-pager blame",
+                            "systemd-analyze --no-pager critical-chain getty@tty1.service",
+                            "journalctl -b -k -o short-monotonic",
+                            "journalctl -b -o short-monotonic --no-pager -t polly-live"):
+                self.assertIn(command, text)
+            self.assertIn("InactiveExitTimestampMonotonic", text)
+            self.assertIn("systemd-udev-settle.service", text)
+            self.assertIn("polly-live-handoff.service", text)
+            self.assertIn("[unavailable or failed: exit 1]", text)
+            self.assertIn("fixture journalctl -b -k -o short-monotonic", text)
+            self.assertEqual(text.count("Boot timing unavailable while startup is still in progress"), 3)
+            self.assertIn("Saved local diagnostics:", result.stdout)
+            self.assertEqual(report.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(report.parent.stat().st_mode & 0o777, 0o700)
 
 
 if __name__ == "__main__":
