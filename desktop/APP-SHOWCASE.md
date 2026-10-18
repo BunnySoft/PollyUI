@@ -40,17 +40,18 @@
 
 ## 图标设计规范
 
-- **风格**：以物体为主的轻拟物（soft skeuomorphism），参考 Apple 的圆润体积感和
-  XP 的材质/高光，但不过度做旧；保留现代圆角、克制渐变、细边缘。
-- **结构**：1024×1024 母版，导出 256/128/64；透明背景，主体四周留白一致。
-- **光照**：顶部柔和高光、1–2px 深色描边、向下 18–22px 高斯阴影、局部内阴影。
-- **配色**：Files 暖黄、Settings 银蓝、Terminal 石墨、Text Editor 纸白+蓝、
-  Photos 天蓝+草绿、Music 宝蓝、Calculator 银+橙、Calendar 红+白、
-  System Monitor 深灰+荧光绿、Browser 蓝+红白指针。
+- **风格**：现代简约。圆角方形渐变底板 + 粗实心白色符号，弱阴影、无高光/描边/纹理；
+  远看是干净的 App 图标，近看仍有体积和层次，不回到 XP 的拟物细节。
+- **结构**：1024×1024 母版，导出 256/128/64；透明背景，圆角 196px，主体留白一致。
+- **光照**：极轻的顶部提亮 + 14px 高斯阴影，不做玻璃高光、斜面或金属反射。
+- **配色**：Files 暖黄、Settings 银灰蓝、Terminal 石墨、Text Editor 宝蓝、
+  Photos 橙红、Music 玫红、Calculator 深灰、Calendar 正红、
+  System Monitor 青绿、Browser 亮蓝；功能徽章沿用同一色系。
 - **边界**：不包含 Microsoft/Apple 的商标、系统图标、Segoe UI/SF 字体或下载素材；
   全部为原创 Pillow 绘制。
 - **功能图标**：Wi-Fi、Bluetooth、Volume、Brightness、Battery、Airplane、
-  Night light、Accessibility 使用同光照的圆角徽章 + 白色符号，便于任务栏/快捷面板复用。
+  Night light、Accessibility 使用同色系圆角徽章 + 白色实心符号。
+
 
 ## 文件与再生成
 
